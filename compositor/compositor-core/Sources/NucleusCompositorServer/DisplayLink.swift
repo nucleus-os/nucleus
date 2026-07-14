@@ -1,0 +1,267 @@
+import Glibc
+
+// The per-output frame scheduler. Owned by `Display` (one per
+// output); the compositor display registry (`DesktopLayout`) drives it. The
+// behavioral contract — frame-demand consumption, present-id issuance,
+// predicted-present / deadline math, and continuous-demand bits — is preserved
+// exactly against the frame-pacing fixtures.
+//
+// The composition root publishes the scheduler's samples to Tracy because this
+// cxx-free model module must not import the C++ Tracy bridge. Submit/present
+// crossings also open and close one discontinuous frame range per output.
+
+public enum PresentSource: Sendable, Equatable {
+    case drmPageFlip
+    case vkPresentTiming
+    case synthetic
+}
+
+public struct PresentReport: Sendable, Equatable {
+    public var source: PresentSource
+    public var presentationNs: UInt64
+    public var presentID: UInt64?
+    public var targetPresentNs: UInt64?
+    public var predictedPresentNs: UInt64?
+    public var refreshIntervalNs: UInt64?
+
+    public init(
+        source: PresentSource,
+        presentationNs: UInt64,
+        presentID: UInt64? = nil,
+        targetPresentNs: UInt64? = nil,
+        predictedPresentNs: UInt64? = nil,
+        refreshIntervalNs: UInt64? = nil
+    ) {
+        self.source = source
+        self.presentationNs = presentationNs
+        self.presentID = presentID
+        self.targetPresentNs = targetPresentNs
+        self.predictedPresentNs = predictedPresentNs
+        self.refreshIntervalNs = refreshIntervalNs
+    }
+}
+
+@inline(__always)
+private func nsNow() -> UInt64 {
+    var ts = timespec()
+    clock_gettime(CLOCK_MONOTONIC, &ts)
+    return UInt64(ts.tv_sec) &* 1_000_000_000 &+ UInt64(ts.tv_nsec)
+}
+
+@inline(__always)
+private func satAdd(_ a: UInt64, _ b: UInt64) -> UInt64 {
+    let (sum, overflow) = a.addingReportingOverflow(b)
+    return overflow ? .max : sum
+}
+
+@inline(__always)
+private func satMul(_ a: UInt64, _ b: UInt64) -> UInt64 {
+    let (product, overflow) = a.multipliedReportingOverflow(by: b)
+    return overflow ? .max : product
+}
+
+public struct DisplayLink: Sendable {
+    /// One-bit-per-source tracking for continuous demand. Each source toggles
+    /// its own slot so turning one off doesn't cancel another's demand.
+    public struct ContinuousDemand: Sendable, Equatable {
+        public var animation: Bool = false
+        public var notification: Bool = false
+        public var screenshot: Bool = false
+        public var background: Bool = false
+
+        public init(
+            animation: Bool = false,
+            notification: Bool = false,
+            screenshot: Bool = false,
+            background: Bool = false
+        ) {
+            self.animation = animation
+            self.notification = notification
+            self.screenshot = screenshot
+            self.background = background
+        }
+
+        public func any() -> Bool {
+            animation || notification || screenshot || background
+        }
+    }
+
+    public struct OutputTimelineSample: Sendable, Equatable {
+        public var deadlineNs: UInt64
+        public var predictedPresentNs: UInt64
+        public var targetPresentNs: UInt64?
+        public var lastPresentID: UInt64
+        public var nextPresentID: UInt64
+        public var source: PresentSource
+        public var presentationTimeSeconds: Double
+        public var refreshIntervalNs: UInt64
+    }
+
+    public var refreshIntervalNs: UInt64
+    public var lastPresentationNs: Int64
+    public var outputTag: String
+    public var attachedSource: PresentSource = .drmPageFlip
+    public var lastPresentID: UInt64 = 0
+    public var lastAckedPresentID: UInt64 = 0
+    public var submittedFrameOpen: Bool = false
+    public var requested: Bool = false
+    public var frameDue: Bool = false
+    public var operationDeadlineNs: UInt64? = nil
+    public var continuous: ContinuousDemand = .init()
+
+    public init(refreshHz: UInt32, outputTag: String = "bootstrap") {
+        self.init(refreshIntervalNs: 1_000_000_000 / UInt64(max(1, refreshHz)), outputTag: outputTag)
+    }
+
+    public init(refreshIntervalNs: UInt64, outputTag: String = "bootstrap") {
+        self.refreshIntervalNs = refreshIntervalNs
+        self.lastPresentationNs = Int64(bitPattern: nsNow())
+        self.outputTag = outputTag
+    }
+
+    public mutating func attachSource(_ source: PresentSource) {
+        attachedSource = source
+    }
+
+    public mutating func request() {
+        requested = true
+    }
+
+    public mutating func cancelRequest() {
+        requested = false
+    }
+
+    public mutating func updateRefreshInterval(_ refreshIntervalNs: UInt64) {
+        self.refreshIntervalNs = refreshIntervalNs
+    }
+
+    /// Mark a one-shot frame need. Idempotent within a frame.
+    public mutating func requestFrame() {
+        frameDue = true
+    }
+
+    public mutating func requestOperationDeadline(_ deadlineNs: UInt64) {
+        if let current = operationDeadlineNs {
+            operationDeadlineNs = min(current, deadlineNs)
+        } else {
+            operationDeadlineNs = deadlineNs
+        }
+    }
+
+    /// Consume scheduler demand for a frame accepted by the present primitive.
+    /// Returns whether demand was present (transient, continuous, or
+    /// deadline-driven) and clears transient state.
+    public mutating func consumeFrameDemand() -> Bool {
+        let nowNs = Int64(bitPattern: nsNow())
+        let operationDue = operationDeadlineDue(nowNs)
+        let had = frameDue || continuous.any() || operationDue
+        frameDue = false
+        if operationDue { operationDeadlineNs = nil }
+        return had
+    }
+
+    public func hasFrameRequest() -> Bool {
+        frameDue || continuous.any() || operationDeadlineDue(Int64(bitPattern: nsNow()))
+    }
+
+    public mutating func nextPresentID() -> UInt64 {
+        lastPresentID = lastPresentID &+ 1
+        if lastPresentID == 0 { lastPresentID = 1 }
+        return lastPresentID
+    }
+
+    public func peekNextPresentID() -> UInt64 {
+        let next = lastPresentID &+ 1
+        return next == 0 ? 1 : next
+    }
+
+    /// Open the per-output submitted-frame range for a frame accepted by the
+    /// present primitive. The range closes when `presented` observes
+    /// presentation completion.
+    public mutating func beginSubmittedFrame() {
+        if submittedFrameOpen { cancelSubmittedFrame() }
+        submittedFrameOpen = true
+    }
+
+    public mutating func presented(_ report: PresentReport) {
+        attachedSource = report.source
+        lastPresentationNs = Int64(bitPattern: report.presentationNs)
+        if let presentID = report.presentID {
+            lastAckedPresentID = max(lastAckedPresentID, presentID)
+            if presentID > lastPresentID { lastPresentID = presentID }
+        }
+        if let refreshIntervalNs = report.refreshIntervalNs {
+            self.refreshIntervalNs = refreshIntervalNs
+        }
+        closeSubmittedFrame()
+    }
+
+    public mutating func cancelSubmittedFrame() {
+        guard submittedFrameOpen else { return }
+        closeSubmittedFrame()
+    }
+
+    public func predictedPresentNs(_ frameOffset: UInt32) -> UInt64 {
+        let intervalNs = max(refreshIntervalNs, 1)
+        var predicted = UInt64(max(lastPresentationNs &+ Int64(bitPattern: intervalNs), 0))
+        let now = nsNow()
+        if predicted <= now {
+            let elapsedNs = now - predicted
+            let missedIntervals = elapsedNs / intervalNs + 1
+            predicted = satAdd(predicted, satMul(missedIntervals, intervalNs))
+        }
+        predicted = satAdd(predicted, satMul(UInt64(frameOffset), intervalNs))
+        return predicted
+    }
+
+    public func targetPresentNs() -> UInt64? {
+        if !requested && !hasFrameRequest() { return nil }
+        return currentDeadlineNs()
+    }
+
+    public func nextDeadlineNs() -> Int64 {
+        Int64(bitPattern: currentDeadlineNs())
+    }
+
+    private func currentDeadlineNs() -> UInt64 {
+        let vsyncDeadline = predictedPresentNs(0)
+        if let deadline = operationDeadlineNs {
+            return min(vsyncDeadline, deadline)
+        }
+        return vsyncDeadline
+    }
+
+    private mutating func closeSubmittedFrame() {
+        guard submittedFrameOpen else { return }
+        submittedFrameOpen = false
+    }
+
+    public func msUntilDeadline() -> Int32 {
+        let remainingNs = nextDeadlineNs() - Int64(bitPattern: nsNow())
+        if remainingNs <= 0 { return 0 }
+        return Int32(clamping: remainingNs / 1_000_000)
+    }
+
+    public func presentationTimeSeconds() -> Double {
+        Double(currentDeadlineNs()) / 1_000_000_000
+    }
+
+    public func sampleTimeline() -> OutputTimelineSample {
+        let deadline = currentDeadlineNs()
+        return OutputTimelineSample(
+            deadlineNs: deadline,
+            predictedPresentNs: predictedPresentNs(0),
+            targetPresentNs: targetPresentNs(),
+            lastPresentID: lastPresentID,
+            nextPresentID: peekNextPresentID(),
+            source: attachedSource,
+            presentationTimeSeconds: Double(deadline) / 1_000_000_000,
+            refreshIntervalNs: refreshIntervalNs
+        )
+    }
+
+    private func operationDeadlineDue(_ nowNs: Int64) -> Bool {
+        guard let deadline = operationDeadlineNs else { return false }
+        return nowNs >= Int64(bitPattern: deadline)
+    }
+}

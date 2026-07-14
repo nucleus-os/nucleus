@@ -1,0 +1,10 @@
+// SwiftPM-owned module map for the first-party text-layout C++ bridge. Separate
+// from swift/Sources/NucleusReactRuntime/cxx/include/ (which holds the Zig build's
+// own map + a second module's map) so clang never auto-loads two maps for one
+// include dir. The header is the same first-party source, symlinked in. Header-
+// only: the implementation lives in libnucleus-text-backend.so (linked later).
+module NucleusTextCxxBridge {
+    requires cplusplus
+    header "TextLayoutBuilder.hpp"
+    export *
+}

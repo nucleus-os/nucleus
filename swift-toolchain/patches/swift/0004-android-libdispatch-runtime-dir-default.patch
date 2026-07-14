@@ -1,0 +1,52 @@
+Subject: [PATCH] cmake/modules/Libdispatch.cmake: default
+ LIBDISPATCH_RUNTIME_DIR defensively when cross-compiling to Android from a
+ Darwin build host
+
+LIBDISPATCH_RUNTIME_DIR is normally set once, earlier in this same
+foreach(sdk ...) loop, inside `if(NOT CMAKE_SYSTEM_NAME STREQUAL
+"Darwin")`. That guard has been observed to not reliably evaluate as
+expected when cross-compiling to a non-Apple SDK (e.g. ANDROID) from a
+Darwin build machine — the same class of CMAKE_SYSTEM_NAME-based guard
+unreliability fixed elsewhere in this tree for -arch/-dead_strip leakage
+(see the AddSwift.cmake and AddSwiftStdlib.cmake patches) — silently
+leaving the variable empty.
+
+An empty LIBDISPATCH_RUNTIME_DIR collapses
+"<INSTALL_DIR>/${LIBDISPATCH_RUNTIME_DIR}/…" to "<INSTALL_DIR>//…" a few
+lines down, and libdispatch's own ExternalProject_Add INSTALL_COMMAND copy
+step (which is what actually populates the destdir, since
+CMAKE_INSTALL_LIBDIR is forced to "lib" nearby) never finds anything at
+that doubled-slash path, failing with "No such file or directory". Default
+the variable defensively to "lib" instead of relying on the outer guard.
+
+This patch is a candidate for filing upstream.
+
+Sentinel: NUCLEUS_SWIFT_SOURCE_ANDROID_LIBDISPATCH_RUNTIME_DIR
+
+diff --git a/cmake/modules/Libdispatch.cmake b/cmake/modules/Libdispatch.cmake
+index ff68c9ed593..f21d3d89a1a 100644
+--- a/cmake/modules/Libdispatch.cmake
++++ b/cmake/modules/Libdispatch.cmake
+@@ -137,6 +137,22 @@ foreach(sdk ${DISPATCH_SDKS})
+       set(SWIFT_LIBDISPATCH_SYSTEM_PROCESSOR  -DCMAKE_SYSTEM_PROCESSOR=${arch})
+     endif()
+
++    if(NOT DEFINED LIBDISPATCH_RUNTIME_DIR OR "${LIBDISPATCH_RUNTIME_DIR}" STREQUAL "")
++      # LIBDISPATCH_RUNTIME_DIR is normally set once, above, inside
++      # `if(NOT CMAKE_SYSTEM_NAME STREQUAL "Darwin")` — that guard has been
++      # observed to not reliably evaluate as expected when cross-compiling
++      # to a non-Apple SDK from a Darwin build machine (same class of issue
++      # as the CMAKE_SYSTEM_NAME-based guards fixed elsewhere in this tree
++      # for -arch/-dead_strip leakage), silently leaving this variable
++      # empty. An empty value collapses "<INSTALL_DIR>/${LIBDISPATCH_RUNTIME_DIR}/…"
++      # to "<INSTALL_DIR>//…" below, and libdispatch's own install() step
++      # (forced to CMAKE_INSTALL_LIBDIR=lib a few lines down) never
++      # actually installs there, so the INSTALL_COMMAND's copy step fails
++      # with "No such file or directory". Default defensively instead of
++      # relying on that outer guard.
++      set(LIBDISPATCH_RUNTIME_DIR lib)
++    endif()
++
+     if(NOT SWIFT_SDK_${sdk}_STATIC_ONLY)
+       ExternalProject_Add("${LIBDISPATCH_VARIANT_NAME}"
+         SOURCE_DIR

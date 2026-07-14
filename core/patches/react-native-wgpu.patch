@@ -1,0 +1,237 @@
+diff --git a/cpp/rnwgpu/RNWebGPUManager.cpp b/cpp/rnwgpu/RNWebGPUManager.cpp
+index 5a2decc09f9372f5071f0c70c6c7867e2c01180c..272b46d749fb8e5f39f484117d52091a88259b62 100644
+--- a/cpp/rnwgpu/RNWebGPUManager.cpp
++++ b/cpp/rnwgpu/RNWebGPUManager.cpp
+@@ -119,6 +119,71 @@ RNWebGPUManager::RNWebGPUManager(
+   installWebGPUWorkletHelpers(*_jsRuntime);
+ }
+ 
++RNWebGPUManager::RNWebGPUManager(
++    jsi::Runtime *jsRuntime,
++    std::shared_ptr<facebook::react::CallInvoker> jsCallInvoker,
++    std::shared_ptr<PlatformContext> platformContext,
++    wgpu::Instance externalInstance)
++    : _jsRuntime(jsRuntime), _jsCallInvoker(jsCallInvoker),
++      _platformContext(platformContext) {
++
++  BaseRuntimeAwareCache::setMainJsRuntime(_jsRuntime);
++
++  auto gpu = std::make_shared<GPU>(*_jsRuntime, externalInstance);
++  auto rnWebGPU =
++      std::make_shared<RNWebGPU>(gpu, _platformContext, _jsCallInvoker);
++  _gpu = gpu->get();
++  _jsRuntime->global().setProperty(*_jsRuntime, "RNWebGPU",
++                                   RNWebGPU::create(*_jsRuntime, rnWebGPU));
++
++  GPU::installConstructor(*_jsRuntime);
++  GPUAdapter::installConstructor(*_jsRuntime);
++  GPUAdapterInfo::installConstructor(*_jsRuntime);
++  GPUBindGroup::installConstructor(*_jsRuntime);
++  GPUBindGroupLayout::installConstructor(*_jsRuntime);
++  GPUBuffer::installConstructor(*_jsRuntime);
++  GPUCanvasContext::installConstructor(*_jsRuntime);
++  GPUCommandBuffer::installConstructor(*_jsRuntime);
++  GPUCommandEncoder::installConstructor(*_jsRuntime);
++  GPUCompilationInfo::installConstructor(*_jsRuntime);
++  GPUCompilationMessage::installConstructor(*_jsRuntime);
++  GPUComputePassEncoder::installConstructor(*_jsRuntime);
++  GPUComputePipeline::installConstructor(*_jsRuntime);
++  GPUDevice::installConstructor(*_jsRuntime);
++  GPUDeviceLostInfo::installConstructor(*_jsRuntime);
++  GPUError::installConstructor(*_jsRuntime);
++  GPUExternalTexture::installConstructor(*_jsRuntime);
++  GPUInternalError::installConstructor(*_jsRuntime);
++  GPUOutOfMemoryError::installConstructor(*_jsRuntime);
++  GPUValidationError::installConstructor(*_jsRuntime);
++  GPUUncapturedErrorEvent::installConstructor(*_jsRuntime);
++  GPUPipelineLayout::installConstructor(*_jsRuntime);
++  GPUQuerySet::installConstructor(*_jsRuntime);
++  GPUQueue::installConstructor(*_jsRuntime);
++  GPURenderBundle::installConstructor(*_jsRuntime);
++  GPURenderBundleEncoder::installConstructor(*_jsRuntime);
++  GPURenderPassEncoder::installConstructor(*_jsRuntime);
++  GPURenderPipeline::installConstructor(*_jsRuntime);
++  GPUSampler::installConstructor(*_jsRuntime);
++  GPUShaderModule::installConstructor(*_jsRuntime);
++  GPUSupportedLimits::installConstructor(*_jsRuntime);
++  GPUTexture::installConstructor(*_jsRuntime);
++  GPUTextureView::installConstructor(*_jsRuntime);
++
++  _jsRuntime->global().setProperty(*_jsRuntime, "GPUBufferUsage",
++                                   GPUBufferUsage::create(*_jsRuntime));
++  _jsRuntime->global().setProperty(*_jsRuntime, "GPUColorWrite",
++                                   GPUColorWrite::create(*_jsRuntime));
++  _jsRuntime->global().setProperty(*_jsRuntime, "GPUMapMode",
++                                   GPUMapMode::create(*_jsRuntime));
++  _jsRuntime->global().setProperty(*_jsRuntime, "GPUShaderStage",
++                                   GPUShaderStage::create(*_jsRuntime));
++  _jsRuntime->global().setProperty(*_jsRuntime, "GPUTextureUsage",
++                                   GPUTextureUsage::create(*_jsRuntime));
++
++  installWebGPUWorkletHelpers(*_jsRuntime);
++}
++
+ void RNWebGPUManager::installWebGPUWorkletHelpers(jsi::Runtime &runtime) {
+   // __webgpuIsWebGPUObject - checks if a value is a WebGPU NativeObject
+   auto isWebGPUObjectFunc = jsi::Function::createFromHostFunction(
+diff --git a/cpp/rnwgpu/RNWebGPUManager.h b/cpp/rnwgpu/RNWebGPUManager.h
+index 2043c96589cc8a12f8145522cbf198e15f39298b..2ff295b23fe36ebb12dbcb07535d9736f07d2644 100644
+--- a/cpp/rnwgpu/RNWebGPUManager.h
++++ b/cpp/rnwgpu/RNWebGPUManager.h
+@@ -25,6 +25,14 @@ public:
+   RNWebGPUManager(jsi::Runtime *jsRuntime,
+                   std::shared_ptr<facebook::react::CallInvoker> jsCallInvoker,
+                   std::shared_ptr<PlatformContext> platformContext);
++
++  /// Construct with an externally-owned Dawn instance (for shared-device hosts
++  /// like React Native Anywhere where the GPU device is shared with Skia).
++  RNWebGPUManager(jsi::Runtime *jsRuntime,
++                  std::shared_ptr<facebook::react::CallInvoker> jsCallInvoker,
++                  std::shared_ptr<PlatformContext> platformContext,
++                  wgpu::Instance externalInstance);
++
+   ~RNWebGPUManager();
+ 
+   /**
+diff --git a/cpp/rnwgpu/api/GPU.cpp b/cpp/rnwgpu/api/GPU.cpp
+index 764a9aa32efb017b1042d7a40ade7d5a34925f73..423d1d67a04f3bc7b62715b5d83d05b7b2f6ce76 100644
+--- a/cpp/rnwgpu/api/GPU.cpp
++++ b/cpp/rnwgpu/api/GPU.cpp
+@@ -26,6 +26,12 @@ GPU::GPU(jsi::Runtime &runtime) : NativeObject(CLASS_NAME) {
+   _async = async::AsyncRunner::getOrCreate(runtime, _instance, dispatcher);
+ }
+ 
++GPU::GPU(jsi::Runtime &runtime, wgpu::Instance externalInstance)
++    : NativeObject(CLASS_NAME), _instance(externalInstance) {
++  auto dispatcher = std::make_shared<async::JSIMicrotaskDispatcher>(runtime);
++  _async = async::AsyncRunner::getOrCreate(runtime, _instance, dispatcher);
++}
++
+ async::AsyncTaskHandle GPU::requestAdapter(
+     std::optional<std::shared_ptr<GPURequestAdapterOptions>> options) {
+   wgpu::RequestAdapterOptions aOptions;
+diff --git a/cpp/rnwgpu/api/GPU.h b/cpp/rnwgpu/api/GPU.h
+index f6bb4ede321e7be0212e0146f67874da65686e4f..b4bcd9717109c89419f79488e4d46e2e37430de2 100644
+--- a/cpp/rnwgpu/api/GPU.h
++++ b/cpp/rnwgpu/api/GPU.h
+@@ -29,6 +29,10 @@ public:
+ 
+   explicit GPU(jsi::Runtime &runtime);
+ 
++  /// Construct with an externally-owned Dawn instance (for shared-device hosts).
++  /// The caller is responsible for keeping the instance alive.
++  GPU(jsi::Runtime &runtime, wgpu::Instance externalInstance);
++
+ public:
+   std::string getBrand() { return CLASS_NAME; }
+ 
+diff --git a/cpp/rnwgpu/api/GPUFeatures.h b/cpp/rnwgpu/api/GPUFeatures.h
+index 4edfb71c485529cd5581e1fb33b245c63dae0a6e..93c79d770224e2fd68b257ca954978b58fc31f8e 100644
+--- a/cpp/rnwgpu/api/GPUFeatures.h
++++ b/cpp/rnwgpu/api/GPUFeatures.h
+@@ -89,9 +89,7 @@ static void convertEnumToJSUnion(wgpu::FeatureName inEnum,
+   case wgpu::FeatureName::Unorm16TextureFormats:
+     *outUnion = "unorm16-texture-formats";
+     break;
+-  case wgpu::FeatureName::Snorm16TextureFormats:
+-    *outUnion = "snorm16-texture-formats";
+-    break;
++  // Snorm16TextureFormats removed (merged into Unorm16TextureFormats)
+   case wgpu::FeatureName::MultiPlanarFormatExtendedUsages:
+     *outUnion = "multi-planar-format-extended-usages";
+     break;
+@@ -122,18 +120,14 @@ static void convertEnumToJSUnion(wgpu::FeatureName inEnum,
+   case wgpu::FeatureName::AdapterPropertiesVk:
+     *outUnion = "adapter-properties-vk";
+     break;
+-  case wgpu::FeatureName::R8UnormStorage:
+-    *outUnion = "r8unorm-storage";
+-    break;
++  // R8UnormStorage removed (renamed to BGRA8UnormStorage)
+   case wgpu::FeatureName::DawnFormatCapabilities:
+     *outUnion = "format-capabilities";
+     break;
+   case wgpu::FeatureName::DawnDrmFormatCapabilities:
+     *outUnion = "drm-format-capabilities";
+     break;
+-  case wgpu::FeatureName::Norm16TextureFormats:
+-    *outUnion = "norm16-texture-formats";
+-    break;
++  // Norm16TextureFormats removed (merged into Unorm16TextureFormats)
+   case wgpu::FeatureName::MultiPlanarFormatNv16:
+     *outUnion = "multi-planar-format-nv16";
+     break;
+diff --git a/cpp/rnwgpu/api/GPURenderPassEncoder.cpp b/cpp/rnwgpu/api/GPURenderPassEncoder.cpp
+index 99be1f2522f2cd84018a4d402465c53ed452edb1..782aa448c25d26d275422011a679d0f0719dd302 100644
+--- a/cpp/rnwgpu/api/GPURenderPassEncoder.cpp
++++ b/cpp/rnwgpu/api/GPURenderPassEncoder.cpp
+@@ -41,14 +41,14 @@ void GPURenderPassEncoder::setBindGroup(
+     std::optional<std::vector<uint32_t>> dynamicOffsets) {
+   auto dynOffsets = dynamicOffsets.value_or(std::vector<uint32_t>());
+   if (dynOffsets.size() == 0) {
+-    if (std::holds_alternative<nullptr_t>(bindGroup)) {
++    if (std::holds_alternative<std::nullptr_t>(bindGroup)) {
+       _instance.SetBindGroup(groupIndex, nullptr, 0, nullptr);
+     } else {
+       auto group = std::get<std::shared_ptr<GPUBindGroup>>(bindGroup);
+       _instance.SetBindGroup(groupIndex, group->get(), 0, nullptr);
+     }
+   } else {
+-    if (std::holds_alternative<nullptr_t>(bindGroup)) {
++    if (std::holds_alternative<std::nullptr_t>(bindGroup)) {
+       _instance.SetBindGroup(groupIndex, nullptr, dynOffsets.size(),
+                              dynamicOffsets->data());
+     } else {
+diff --git a/cpp/rnwgpu/api/descriptors/Unions.h b/cpp/rnwgpu/api/descriptors/Unions.h
+index 3240eaf9d1c231568901972b20530648de43581d..9aea9f2e98d61bec299dcee7430263e2e2108e6f 100644
+--- a/cpp/rnwgpu/api/descriptors/Unions.h
++++ b/cpp/rnwgpu/api/descriptors/Unions.h
+@@ -464,7 +464,7 @@ inline void convertJSUnionToEnum(const std::string &inUnion,
+   } else if (inUnion == "unorm16-texture-formats") {
+     *outEnum = wgpu::FeatureName::Unorm16TextureFormats;
+   } else if (inUnion == "snorm16-texture-formats") {
+-    *outEnum = wgpu::FeatureName::Snorm16TextureFormats;
++    *outEnum = wgpu::FeatureName::Unorm16TextureFormats; // merged into Unorm16
+   } else if (inUnion == "multi-planar-format-extended-usages") {
+     *outEnum = wgpu::FeatureName::MultiPlanarFormatExtendedUsages;
+   } else if (inUnion == "multi-planar-format-p010") {
+@@ -486,11 +486,11 @@ inline void convertJSUnionToEnum(const std::string &inUnion,
+   } else if (inUnion == "adapter-properties-vk") {
+     *outEnum = wgpu::FeatureName::AdapterPropertiesVk;
+   } else if (inUnion == "r8unorm-storage") {
+-    *outEnum = wgpu::FeatureName::R8UnormStorage;
++    *outEnum = wgpu::FeatureName::BGRA8UnormStorage; // renamed
+   } else if (inUnion == "format-capabilities") {
+     *outEnum = wgpu::FeatureName::DawnFormatCapabilities;
+   } else if (inUnion == "norm16-texture-formats") {
+-    *outEnum = wgpu::FeatureName::Norm16TextureFormats;
++    *outEnum = wgpu::FeatureName::Unorm16TextureFormats; // merged into Unorm16
+   } else if (inUnion == "multi-planar-format-nv16") {
+     *outEnum = wgpu::FeatureName::MultiPlanarFormatNv16;
+   } else if (inUnion == "multi-planar-format-nv24") {
+@@ -629,9 +629,7 @@ inline void convertEnumToJSUnion(wgpu::FeatureName inEnum,
+   case wgpu::FeatureName::Unorm16TextureFormats:
+     *outUnion = "unorm16-texture-formats";
+     break;
+-  case wgpu::FeatureName::Snorm16TextureFormats:
+-    *outUnion = "snorm16-texture-formats";
+-    break;
++  // Snorm16TextureFormats removed (merged into Unorm16TextureFormats)
+   case wgpu::FeatureName::MultiPlanarFormatExtendedUsages:
+     *outUnion = "multi-planar-format-extended-usages";
+     break;
+@@ -662,12 +660,8 @@ inline void convertEnumToJSUnion(wgpu::FeatureName inEnum,
+   case wgpu::FeatureName::AdapterPropertiesVk:
+     *outUnion = "adapter-properties-vk";
+     break;
+-  case wgpu::FeatureName::R8UnormStorage:
+-    *outUnion = "r8unorm-storage";
+-    break;
+-  case wgpu::FeatureName::Norm16TextureFormats:
+-    *outUnion = "norm16-texture-formats";
+-    break;
++  // R8UnormStorage removed (renamed to BGRA8UnormStorage)
++  // Norm16TextureFormats removed (merged into Unorm16TextureFormats)
+   case wgpu::FeatureName::MultiPlanarFormatNv16:
+     *outUnion = "multi-planar-format-nv16";
+     break;

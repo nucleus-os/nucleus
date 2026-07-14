@@ -1,0 +1,4 @@
+module NucleusCompositorXcbC {
+    header "NucleusCompositorXcbC.h"
+    export *
+}

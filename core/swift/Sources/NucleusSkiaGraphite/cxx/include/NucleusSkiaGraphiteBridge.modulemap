@@ -1,0 +1,5 @@
+module NucleusSkiaGraphiteBridge {
+    requires cplusplus
+    header "NucleusSkiaGraphite/Graphite.hpp"
+    export *
+}

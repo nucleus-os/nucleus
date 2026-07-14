@@ -1,0 +1,4 @@
+module NucleusReactFabricSmokeC {
+    header "smoke.h"
+    export *
+}

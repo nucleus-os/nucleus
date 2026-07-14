@@ -1,0 +1,7 @@
+/.build/
+/Tools/.build/
+/.nucleus/
+**/.build/
+**/.rn-build/
+**/.skia-build/
+**/.cxx-build/

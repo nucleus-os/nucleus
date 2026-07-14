@@ -1,0 +1,12 @@
+module NucleusReactRuntimeCxxBridge {
+  requires cplusplus
+  header "NucleusReactRuntime/Bridge.hpp"
+  header "NucleusReactRuntime/ReactRuntimeHostFacade.hpp"
+  header "NucleusReactRuntime/MountingObserver.hpp"
+  header "NucleusReactRuntime/TextLayoutManager.hpp"
+  header "NucleusReactRuntime/CxxVirtualOverrideProbe.hpp"
+  // RuntimeJSCallInvoker, DeviceEventEmitter, and TurboModuleRegistry are
+  // C++-internal: they include React Native headers that Swift's interop
+  // does not need to see. Swift access goes through the facade.
+  export *
+}

@@ -1,0 +1,80 @@
+Subject: [PATCH] SwiftBuild: derive Android -tools-directory from discovered NDK
+
+For an Android cross-link, swiftc drives the link. To find the linker it
+honors -tools-directory: if that directory contains a clang, swiftc uses it
+as the link driver (GenericUnixToolchain+LinkerSupport.swift). When no usable
+-tools-directory is given, swiftc falls back to the host clang, which adds the
+host toolchain's own lib directory to the link and drags host x86_64
+libc++/libunwind onto the aarch64 link:
+
+    ld.lld: error: <host>/lib/libunwind.a(...) is incompatible with aarch64linux
+
+The Android Swift SDK supplies -tools-directory only indirectly, through the
+bundle's swift-toolset.json `rootPath` (translated to -tools-directory by the
+android-preserve-swift-sdk-toolsets patch). That path points at the bundle's
+ndk-toolchain/bin, which is populated from the local NDK by a post-install
+setup step. If that step is skipped the directory is empty, swiftc finds no
+clang there, and the host clang leak above occurs — even though the SDK plugin
+already discovered the NDK and is passing its sysroot, clang resource dir, and
+ld.lld.
+
+Make the discovered NDK the single source of truth for the tool path: inject
+-tools-directory <ndk>/bin into OTHER_SWIFT_FLAGS and OTHER_LDFLAGS directly in
+the Android platform plugin, alongside the SYSROOT / CLANG_RESOURCE_DIR /
+ALTERNATE_LINKER_PATH it already derives from the same NDK. Correctness no
+longer depends on the SDK bundle's ndk-toolchain/bin being set up.
+
+Sentinel: NUCLEUS_SWIFT_BUILD_ANDROID_NDK_TOOLS_DIRECTORY
+
+diff --git a/Sources/SWBAndroidPlatform/Plugin.swift b/Sources/SWBAndroidPlatform/Plugin.swift
+index 7e1dc23e..8a2b1c40 100644
+--- a/Sources/SWBAndroidPlatform/Plugin.swift
++++ b/Sources/SWBAndroidPlatform/Plugin.swift
+@@ -185,16 +185,37 @@ struct AndroidPlatformExtension: PlatformInfoExtension {
+
+ // Properties applied to the builtin NDK-only SDK as well as Swift SDKs
+ fileprivate func androidSDKAdditionalCustomProperties(ndk: AndroidSDK.NDK, hostOS: OperatingSystem) -> [String: PropertyListItem] {
+-    [
++    // NUCLEUS_SWIFT_BUILD_ANDROID_NDK_TOOLS_DIRECTORY:
++    // Derive -tools-directory from the discovered NDK so that swiftc, when it
++    // drives the link, resolves the NDK clang instead of falling back to the
++    // host clang. The host clang adds its own lib directory to the link, which
++    // leaks host x86_64 libc++/libunwind onto the Android (aarch64) link and
++    // fails with "incompatible with aarch64linux". This makes the discovered
++    // NDK the single source of truth for the tool path — matching how SYSROOT,
++    // CLANG_RESOURCE_DIR, and ALTERNATE_LINKER_PATH are already derived here —
++    // so correctness no longer depends on a post-install setup step populating
++    // the SDK bundle's ndk-toolchain/bin (a toolset rootPath).
++    let ndkToolsDirectory = ndk.toolchainPath.path.join("bin").str
++    return [
+         // Unlike most platforms, the Android version goes on the environment field rather than the system field
+         // FIXME: Make this configurable in a better way so we don't need to push build settings at the SDK definition level
+         "SWIFT_TARGET_TRIPLE": .plString("$(CURRENT_ARCH)-unknown-$(SWIFT_PLATFORM_TARGET_PREFIX)$(LLVM_TARGET_TRIPLE_SUFFIX)"),
+         "LLVM_TARGET_TRIPLE_OS_VERSION": .plString("$(SWIFT_PLATFORM_TARGET_PREFIX)"),
+         "LLVM_TARGET_TRIPLE_SUFFIX": .plString("-android$(SWIFT_DEPLOYMENT_TARGET)"),
+
++        // Resolve the NDK clang/ld as the swiftc tools directory for both
++        // compilation and swiftc-driven linking.
++        "OTHER_SWIFT_FLAGS": .plArray([
++            .plString("$(inherited)"),
++            .plString("-tools-directory"),
++            .plString(ndkToolsDirectory)
++        ]),
++
+         // Android NDK r28+ defaults to 16kb page sizes for aarch64 and x86_64.
+         "OTHER_LDFLAGS[arch=aarch64]": .plArray([
+             .plString("$(inherited)"),
++            .plString("-tools-directory"),
++            .plString(ndkToolsDirectory),
+             .plString("-Xlinker"),
+             .plString("-z"),
+             .plString("-Xlinker"),
+@@ -202,6 +223,8 @@ fileprivate func androidSDKAdditionalCustomProperties(ndk: AndroidSDK.NDK, hostO
+         ]),
+         "OTHER_LDFLAGS[arch=x86_64]": .plArray([
+             .plString("$(inherited)"),
++            .plString("-tools-directory"),
++            .plString(ndkToolsDirectory),
+             .plString("-Xlinker"),
+             .plString("-z"),
+             .plString("-Xlinker"),

@@ -1,0 +1,54 @@
+{
+  "name": "@nucleus-os/app",
+  "version": "0.1.1",
+  "description": "NUCLEUS core runtime",
+  "license": "MIT",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "nucleus.config.schema.json",
+    "Platform.nucleus.js",
+    "ReactNativeVersionCheck.nucleus.js",
+    "Settings.nucleus.js",
+    "Libraries/**",
+    "shims/**",
+    "src/**",
+    "tools/**",
+    "cpp/**"
+  ],
+  "exports": {
+    "./Platform.nucleus": "./Platform.nucleus.js",
+    "./ReactNativeVersionCheck.nucleus": "./ReactNativeVersionCheck.nucleus.js",
+    "./Settings.nucleus": "./Settings.nucleus.js",
+    "./Libraries/Modal/AnchoredOverlay.nucleus": "./Libraries/Modal/AnchoredOverlay.nucleus.js",
+    "./Libraries/Modal/OverlayHostViewNativeComponent.nucleus": "./Libraries/Modal/OverlayHostViewNativeComponent.nucleus.js",
+    "./tools/babel-config": "./tools/babel-config.js",
+    "./tools/metro-config": "./tools/metro-config.js",
+    ".": "./index.js"
+  },
+  "peerDependencies": {
+    "react": "19.2.3",
+    "react-native": "0.86.0-rc.0",
+    "react-native-reanimated": ">=4.0.0",
+    "react-native-worklets": ">=0.8.0-0"
+  },
+  "dependencies": {
+    "@nucleus-os/metro-resolver": "workspace:*",
+    "@nucleus-os/window": "workspace:*",
+    "@rnx-kit/metro-resolver-symlinks": "^0.2.8",
+    "ws": "^8.18.3"
+  },
+  "peerDependenciesMeta": {
+    "react-native-reanimated": {
+      "optional": true
+    },
+    "react-native-worklets": {
+      "optional": true
+    }
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

@@ -1,0 +1,11 @@
+# Host packages needed to bootstrap the CEF/Chromium source build.
+# The bulk of Chromium's build dependencies are installed by Chromium's own
+# build/install-build-deps.sh (run once via `cef/build.sh --install-build-deps`
+# after the first sync); these are the tools needed before that point.
+git
+curl
+python3
+python3-venv
+pkg-config
+ccache
+lsb-release

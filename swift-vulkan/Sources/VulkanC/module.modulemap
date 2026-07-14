@@ -1,0 +1,5 @@
+module VulkanC {
+    header "VulkanC.h"
+    link "vulkan"
+    export *
+}

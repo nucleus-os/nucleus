@@ -1,0 +1,256 @@
+#!/usr/bin/env bash
+# Verify framebuffer-effect evidence from capture-compositor trace summaries.
+
+set -euo pipefail
+
+usage() {
+    cat >&2 <<'USAGE'
+Usage:
+  tools/profile/verify-framebuffer-effects [options]
+
+Options:
+  --shell DIR        Shell-only baseline profile directory
+  --kitty DIR        Native Wayland kitty blur profile directory
+  --mixed DIR        Chrome plus kitty profile directory
+  --popup DIR        Popup/menu profile directory
+  --allow-no-popup-blur
+                     Do not fail the popup profile when no popup blur request
+                     reached the framebuffer-effect path
+  -h, --help         Show this help
+
+Each DIR must contain trace-summary.txt from tools/profile/capture-compositor.
+USAGE
+}
+
+shell_profile=""
+kitty_profile=""
+mixed_profile=""
+popup_profile=""
+allow_no_popup_blur=0
+failures=0
+
+while (($# > 0)); do
+    case "$1" in
+        --shell)
+            shell_profile="${2:?missing value for --shell}"
+            shift 2
+            ;;
+        --kitty)
+            kitty_profile="${2:?missing value for --kitty}"
+            shift 2
+            ;;
+        --mixed)
+            mixed_profile="${2:?missing value for --mixed}"
+            shift 2
+            ;;
+        --popup)
+            popup_profile="${2:?missing value for --popup}"
+            shift 2
+            ;;
+        --allow-no-popup-blur)
+            allow_no_popup_blur=1
+            shift
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        *)
+            echo "error: unknown argument '$1'" >&2
+            usage
+            exit 2
+            ;;
+    esac
+done
+
+if [[ -z "$shell_profile$kitty_profile$mixed_profile$popup_profile" ]]; then
+    echo "error: provide at least one profile directory" >&2
+    usage
+    exit 2
+fi
+
+declare -A summary=()
+
+load_summary() {
+    local profile="$1"
+    local path="$profile/trace-summary.txt"
+    summary=()
+    if [[ ! -f "$path" ]]; then
+        echo "FAIL $profile: missing trace-summary.txt"
+        failures=$((failures + 1))
+        return 1
+    fi
+    while IFS='=' read -r key value; do
+        [[ -n "$key" ]] || continue
+        summary["$key"]="$value"
+    done < "$path"
+}
+
+value() {
+    local key="$1"
+    printf '%s\n' "${summary[$key]:-0}"
+}
+
+numeric_gt() {
+    local actual="$1"
+    local threshold="$2"
+    awk -v actual="$actual" -v threshold="$threshold" 'BEGIN { exit !((actual + 0) > (threshold + 0)) }'
+}
+
+numeric_eq() {
+    local actual="$1"
+    local expected="$2"
+    awk -v actual="$actual" -v expected="$expected" 'BEGIN { exit !((actual + 0) == (expected + 0)) }'
+}
+
+check_gt() {
+    local label="$1"
+    local key="$2"
+    local threshold="${3:-0}"
+    local actual
+    actual="$(value "$key")"
+    if numeric_gt "$actual" "$threshold"; then
+        echo "OK   $label: $key=$actual"
+    else
+        echo "FAIL $label: expected $key > $threshold, got $actual"
+        failures=$((failures + 1))
+    fi
+}
+
+check_eq() {
+    local label="$1"
+    local key="$2"
+    local expected="$3"
+    local actual
+    actual="$(value "$key")"
+    if numeric_eq "$actual" "$expected"; then
+        echo "OK   $label: $key=$actual"
+    else
+        echo "FAIL $label: expected $key == $expected, got $actual"
+        failures=$((failures + 1))
+    fi
+}
+
+check_any_gt() {
+    local label="$1"
+    local description="$2"
+    shift 2
+    local key actual
+    for key in "$@"; do
+        actual="$(value "$key")"
+        if numeric_gt "$actual" 0; then
+            echo "OK   $label: $description via $key=$actual"
+            return
+        fi
+    done
+    echo "FAIL $label: expected $description; all candidates were 0"
+    failures=$((failures + 1))
+}
+
+check_no_workspace_failures() {
+    local label="$1"
+    check_eq "$label" "framebuffer_effect_cache.create_failures" 0
+}
+
+verify_shell() {
+    local profile="$1"
+    load_summary "$profile" || return
+    local label="shell"
+    echo "== $label: $profile =="
+    check_gt "$label" "render.emit.shell_framebuffer_effects.max"
+    check_gt "$label" "render.scene.coverage.shell_framebuffer_effects.max"
+    check_gt "$label" "render.scene.queue.shell_framebuffer_effects.max"
+    check_gt "$label" "render.scene.record.shell_framebuffer_effects.max"
+    check_eq "$label" "render.emit.wayland_surface_framebuffer_effects.max" 0
+    check_eq "$label" "render.emit.kde_surface_framebuffer_effects.max" 0
+    check_no_workspace_failures "$label"
+}
+
+verify_kitty() {
+    local profile="$1"
+    load_summary "$profile" || return
+    local label="kitty"
+    echo "== $label: $profile =="
+    check_any_gt "$label" "protocol blur request" \
+        "wayland.ext_background_effect.requested_surfaces.max" \
+        "wayland.kde_blur.requested_surfaces.max"
+    check_any_gt "$label" "protocol committed blur state" \
+        "wayland.ext_background_effect.committed_surfaces.max" \
+        "wayland.kde_blur.committed_surfaces.max"
+    check_gt "$label" "wayland.surface_background_effect.committed_nonempty.max"
+    check_any_gt "$label" "client presentation emission" \
+        "render.emit.wayland_surface_framebuffer_effects.max" \
+        "render.emit.kde_surface_framebuffer_effects.max"
+    check_any_gt "$label" "client scene lowering" \
+        "render.scene.coverage.wayland_surface_framebuffer_effects.max" \
+        "render.scene.coverage.kde_surface_framebuffer_effects.max"
+    check_any_gt "$label" "client Vulkan queue" \
+        "render.scene.queue.wayland_surface_framebuffer_effects.max" \
+        "render.scene.queue.kde_surface_framebuffer_effects.max"
+    check_any_gt "$label" "client Vulkan record" \
+        "render.scene.record.wayland_surface_framebuffer_effects.max" \
+        "render.scene.record.kde_surface_framebuffer_effects.max"
+    check_no_workspace_failures "$label"
+}
+
+verify_mixed() {
+    local profile="$1"
+    load_summary "$profile" || return
+    local label="mixed"
+    echo "== $label: $profile =="
+    check_gt "$label" "render.emit.shell_framebuffer_effects.max"
+    check_gt "$label" "render.scene.coverage.shell_framebuffer_effects.max"
+    check_gt "$label" "render.scene.queue.shell_framebuffer_effects.max"
+    check_gt "$label" "render.scene.record.shell_framebuffer_effects.max"
+    check_any_gt "$label" "protocol blur request" \
+        "wayland.ext_background_effect.requested_surfaces.max" \
+        "wayland.kde_blur.requested_surfaces.max"
+    check_any_gt "$label" "protocol committed blur state" \
+        "wayland.ext_background_effect.committed_surfaces.max" \
+        "wayland.kde_blur.committed_surfaces.max"
+    check_gt "$label" "wayland.surface_background_effect.committed_nonempty.max"
+    check_any_gt "$label" "client presentation emission" \
+        "render.emit.wayland_surface_framebuffer_effects.max" \
+        "render.emit.kde_surface_framebuffer_effects.max"
+    check_any_gt "$label" "client scene lowering" \
+        "render.scene.coverage.wayland_surface_framebuffer_effects.max" \
+        "render.scene.coverage.kde_surface_framebuffer_effects.max"
+    check_any_gt "$label" "client Vulkan queue" \
+        "render.scene.queue.wayland_surface_framebuffer_effects.max" \
+        "render.scene.queue.kde_surface_framebuffer_effects.max"
+    check_any_gt "$label" "client Vulkan record" \
+        "render.scene.record.wayland_surface_framebuffer_effects.max" \
+        "render.scene.record.kde_surface_framebuffer_effects.max"
+    check_gt "$label" "screenshot.pipeline_submit"
+    check_gt "$label" "screenshot.gpu_submit"
+    check_gt "$label" "screenshot.worker_encode"
+    check_no_workspace_failures "$label"
+}
+
+verify_popup() {
+    local profile="$1"
+    load_summary "$profile" || return
+    local label="popup"
+    echo "== $label: $profile =="
+    if ((allow_no_popup_blur)); then
+        echo "INFO $label: popup blur is optional for this check"
+    else
+        check_gt "$label" "render.emit.popup_framebuffer_effects.max"
+        check_gt "$label" "render.scene.coverage.popup_framebuffer_effects.max"
+        check_gt "$label" "render.scene.queue.popup_framebuffer_effects.max"
+        check_gt "$label" "render.scene.record.popup_framebuffer_effects.max"
+    fi
+    check_no_workspace_failures "$label"
+}
+
+if [[ -n "$shell_profile" ]]; then verify_shell "$shell_profile"; fi
+if [[ -n "$kitty_profile" ]]; then verify_kitty "$kitty_profile"; fi
+if [[ -n "$mixed_profile" ]]; then verify_mixed "$mixed_profile"; fi
+if [[ -n "$popup_profile" ]]; then verify_popup "$popup_profile"; fi
+
+if ((failures > 0)); then
+    echo "framebuffer-effect verification failed: $failures issue(s)"
+    exit 1
+fi
+
+echo "framebuffer-effect verification passed"

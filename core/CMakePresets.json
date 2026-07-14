@@ -1,0 +1,38 @@
+{
+  "version": 6,
+  "configurePresets": [
+    {
+      "name": "rna-base",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build"
+    },
+    {
+      "name": "rna-release",
+      "inherits": "rna-base",
+      "displayName": "Release (Ninja)",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "rna-debug",
+      "inherits": "rna-base",
+      "displayName": "Debug (Ninja)",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "rna-default",
+      "configurePreset": "rna-release"
+    },
+    {
+      "name": "rna-rust-test",
+      "configurePreset": "rna-release",
+      "targets": ["rust_test"]
+    }
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "lib": ["ES2020", "DOM"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
+    "allowJs": true,
+    "checkJs": false,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "resolveJsonModule": true,
+    "strict": true,
+    "isolatedModules": true,
+    "types": ["react", "react-native", "node"],
+    "baseUrl": "."
+  },
+  "include": ["packages/**/*", "tools/**/*", "bundles/**/*"],
+  "exclude": [
+    "**/node_modules/**",
+    "**/*.rna.js",
+    "**/*.nucleus.js",
+    "packages/**/generated/**",
+    "third-party/**",
+    "**/build/**",
+    "**/target/**",
+    "tmp/**",
+    "dist/**"
+  ]
+}

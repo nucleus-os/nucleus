@@ -1,0 +1,18 @@
+{
+  "name": "@nucleus-os/shell",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The Nucleus first-party desktop shell — a React Native layer-shell client.",
+  "main": "bundles/bar/index.jsx",
+  "scripts": {
+    "bundle:bar": "metro build bundles/bar/index.jsx --config tools/metro.config.js --out ../.rn-build/bundles/bar.bundle.js --platform nucleus --dev false --minify true"
+  },
+  "dependencies": {
+    "react": "19.2.3",
+    "react-native": "file:../../react-native/third-party/react-native/packages/react-native"
+  },
+  "devDependencies": {
+    "@react-native/babel-preset": "0.86.0-rc.0",
+    "metro": "0.84.3"
+  }
+}

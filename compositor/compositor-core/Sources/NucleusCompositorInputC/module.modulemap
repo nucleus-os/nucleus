@@ -1,0 +1,5 @@
+// NucleusCompositorInputC: importer façade over libinput/libudev/libseat/libxkbcommon.
+module NucleusCompositorInputC {
+    header "NucleusCompositorInputC.h"
+    export *
+}

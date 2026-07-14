@@ -1,0 +1,11 @@
+.build/
+.swiftpm/
+Packages/
+*.o
+# JS bundle + node deps
+js/node_modules/
+js/.metro-cache/
+.rn-build/
+# The generated client Wayland C module is committed (like the compositor's server-side
+# module): regenerated in place by `swift package generate-wayland-client`. Only the
+# per-protocol scanner output is machine-produced; the placeholders are tracked.

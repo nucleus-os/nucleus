@@ -1,0 +1,35 @@
+# Build tools
+clang
+cmake
+git
+ninja-build
+pkg-config
+curl
+tar
+nodejs
+python3
+python3-jinja2
+python3-markupsafe
+
+# Linux compositor development headers
+libdrm-dev
+libgbm-dev
+libwayland-dev
+libxcb1-dev
+libxcb-ewmh-dev
+libxcb-icccm4-dev
+libxcb-composite0-dev
+libxcb-xfixes0-dev
+libxcb-res0-dev
+libinput-dev
+libudev-dev
+libseat-dev
+libxkbcommon-dev
+libsystemd-dev
+libvulkan-dev
+libfontconfig1-dev
+libfreetype-dev
+libicu-dev
+libevent-dev
+libssl-dev
+vulkan-validationlayers

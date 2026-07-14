@@ -1,0 +1,189 @@
+Subject: [PATCH] SwiftBuild: propagate C++ interop to generated test runners
+
+Swift Build creates a separate synthesized runner which imports each test
+module. Unlike the native build planner, the PIF path did not copy a test
+module's C++ interoperability mode to that runner. Importing a Swift module
+built with C++ interop from the plain runner consequently failed with:
+
+  module was built with C++ interoperability enabled, but current compilation
+  does not enable C++ interoperability
+
+Propagate only the manifest's interoperability mode and its adjacent C++
+language-standard argument, preserving configuration and platform conditions.
+Do not copy unrelated unsafe Swift flags from the test module.
+
+Sentinel: NUCLEUS_SWIFTPM_TEST_RUNNER_CXX_INTEROP
+
+diff --git a/Sources/SwiftBuildSupport/PackagePIFBuilder+Helpers.swift b/Sources/SwiftBuildSupport/PackagePIFBuilder+Helpers.swift
+index ee5652fe..e33915a0 100644
+--- a/Sources/SwiftBuildSupport/PackagePIFBuilder+Helpers.swift
++++ b/Sources/SwiftBuildSupport/PackagePIFBuilder+Helpers.swift
+@@ -674,6 +674,48 @@ extension PackageGraph.ResolvedModule {
+             }
+         }
+ 
++        // NUCLEUS_SWIFTPM_TEST_RUNNER_CXX_INTEROP: A Swift Build test runner is
++        // a distinct synthesized target which imports the test module. Preserve
++        // the test module's C++ interop mode on that import boundary, matching
++        // the native build planner's generated-entry-point propagation.
++        func applyCxxInterop(to buildSettings: inout ProjectModel.BuildSettings,
++                             for configuration: BuildConfiguration) {
++            guard let multipleValuesByPlatform = targetMultipleValueSettings[configuration] else {
++                return
++            }
++            for (platform, multipleValues) in multipleValuesByPlatform {
++                guard let swiftFlags = multipleValues[.OTHER_SWIFT_FLAGS] else { continue }
++                var interopFlags: [String] = []
++                var index = swiftFlags.startIndex
++                while index < swiftFlags.endIndex {
++                    let flag = swiftFlags[index]
++                    guard flag.hasPrefix("-cxx-interoperability-mode=") else {
++                        index = swiftFlags.index(after: index)
++                        continue
++                    }
++                    interopFlags.append(flag)
++                    index = swiftFlags.index(after: index)
++                    if index < swiftFlags.endIndex, swiftFlags[index] == "-Xcc" {
++                        let standardIndex = swiftFlags.index(after: index)
++                        if standardIndex < swiftFlags.endIndex,
++                           swiftFlags[standardIndex].hasPrefix("-std=") {
++                            interopFlags.append("-Xcc")
++                            interopFlags.append(swiftFlags[standardIndex])
++                            index = swiftFlags.index(after: standardIndex)
++                        }
++                    }
++                }
++                guard !interopFlags.isEmpty else { continue }
++                if let platform {
++                    let inherited = buildSettings[.OTHER_SWIFT_FLAGS, platform] ?? ["$(inherited)"]
++                    buildSettings[.OTHER_SWIFT_FLAGS, platform] = inherited + interopFlags
++                } else {
++                    let inherited = buildSettings[.OTHER_SWIFT_FLAGS] ?? ["$(inherited)"]
++                    buildSettings[.OTHER_SWIFT_FLAGS] = inherited + interopFlags
++                }
++            }
++        }
++
+         /// Apply imparted settings to a ProjectModel.BuildSettings instance
+         func applyImparted(to buildSettings: inout ProjectModel.BuildSettings) {
+             // Apply imparted single value settings for all platforms
+diff --git a/Sources/SwiftBuildSupport/PackagePIFProjectBuilder+Products.swift b/Sources/SwiftBuildSupport/PackagePIFProjectBuilder+Products.swift
+index 78216c00..75ca0997 100644
+--- a/Sources/SwiftBuildSupport/PackagePIFProjectBuilder+Products.swift
++++ b/Sources/SwiftBuildSupport/PackagePIFProjectBuilder+Products.swift
+@@ -543,7 +543,8 @@ extension PackagePIFProjectBuilder {
+         self.builtModulesAndProducts.append(moduleOrProduct)
+ 
+         if moduleOrProductType == .unitTest {
+-            try makeTestRunnerProduct(for: moduleOrProduct)
++            try makeTestRunnerProduct(
++                for: moduleOrProduct, testModuleBuildSettings: allBuildSettings)
+         }
+     }
+ 
+@@ -1052,7 +1053,10 @@ extension PackagePIFProjectBuilder {
+     }
+ 
+     // MARK: - Test Runners
+-    mutating func makeTestRunnerProduct(for unitTestProduct: PackagePIFBuilder.ModuleOrProduct) throws {
++    mutating func makeTestRunnerProduct(
++        for unitTestProduct: PackagePIFBuilder.ModuleOrProduct,
++        testModuleBuildSettings: PackageGraph.ResolvedModule.AllBuildSettings
++    ) throws {
+         // Only generate a test runner for root packages with tests.
+         guard pifBuilder.delegate.isRootPackage else {
+             return
+@@ -1123,18 +1127,23 @@ extension PackagePIFProjectBuilder {
+             linkProduct: true
+         )
+ 
++        var debugSettings = settings
++        var releaseSettings = settings
++        testModuleBuildSettings.applyCxxInterop(to: &debugSettings, for: .debug)
++        testModuleBuildSettings.applyCxxInterop(to: &releaseSettings, for: .release)
++
+         self.project[keyPath: testRunnerTargetKeyPath].common.addBuildConfig { id in
+             BuildConfig(
+                 id: id,
+                 name: "Debug",
+-                settings: settings,
++                settings: debugSettings,
+                 impartedBuildSettings: impartedSettings
+             )
+         }
+         self.project[keyPath: testRunnerTargetKeyPath].common.addBuildConfig { id in
+             BuildConfig(
+                 id: id,
+                 name: "Release",
+-                settings: settings,
++                settings: releaseSettings,
+                 impartedBuildSettings: impartedSettings
+             )
+         }
+diff --git a/Fixtures/CFamilyTargets/CxxInteropTestRunner/Package.swift b/Fixtures/CFamilyTargets/CxxInteropTestRunner/Package.swift
+new file mode 100644
+index 00000000..025677b8
+--- /dev/null
++++ b/Fixtures/CFamilyTargets/CxxInteropTestRunner/Package.swift
+@@ -0,0 +1,16 @@
++// swift-tools-version: 6.4
++import PackageDescription
++
++let package = Package(
++    name: "CxxInteropTestRunner",
++    products: [.library(name: "Example", targets: ["Example"])],
++    targets: [
++        .target(name: "Example"),
++        .testTarget(
++            name: "ExampleTests",
++            dependencies: ["Example"],
++            swiftSettings: [
++                .interoperabilityMode(.Cxx),
++                .unsafeFlags(["-DTEST_MODULE_ONLY"]),
++            ])
++    ])
+diff --git a/Fixtures/CFamilyTargets/CxxInteropTestRunner/Sources/Example/Example.swift b/Fixtures/CFamilyTargets/CxxInteropTestRunner/Sources/Example/Example.swift
+new file mode 100644
+index 00000000..fc7d7421
+--- /dev/null
++++ b/Fixtures/CFamilyTargets/CxxInteropTestRunner/Sources/Example/Example.swift
+@@ -0,0 +1 @@
++public struct Example {}
+diff --git a/Fixtures/CFamilyTargets/CxxInteropTestRunner/Tests/ExampleTests/ExampleTests.swift b/Fixtures/CFamilyTargets/CxxInteropTestRunner/Tests/ExampleTests/ExampleTests.swift
+new file mode 100644
+index 00000000..e31b3aae
+--- /dev/null
++++ b/Fixtures/CFamilyTargets/CxxInteropTestRunner/Tests/ExampleTests/ExampleTests.swift
+@@ -0,0 +1,5 @@
++import Testing
++import Example
++
++@Test func exampleExists() {
++    _ = Example()
++}
+diff --git a/Tests/SwiftBuildSupportTests/PIFBuilderTests.swift b/Tests/SwiftBuildSupportTests/PIFBuilderTests.swift
+index fa91a235..78c9fbb2 100644
+--- a/Tests/SwiftBuildSupportTests/PIFBuilderTests.swift
++++ b/Tests/SwiftBuildSupportTests/PIFBuilderTests.swift
+@@ -1439,6 +1439,21 @@ final class PIFBuilderTests {
+         }
+     }
+ 
++    @Test func cxxInteropTestRunnerInheritsInteropMode() async throws {
++        try await withGeneratedPIF(fromFixture: "CFamilyTargets/CxxInteropTestRunner") {
++            pif, observabilitySystem, _ in
++            #expect(observabilitySystem.diagnostics.filter { $0.severity == .error }.isEmpty)
++            let project = try pif.workspace.project(named: "CxxInteropTestRunner")
++            let runner = try project.target(named: "ExampleTests-test-runner")
++            for configuration in [BuildConfiguration.debug, .release] {
++                let flags = try runner.buildConfig(named: configuration)
++                    .settings[.OTHER_SWIFT_FLAGS] ?? []
++                #expect(flags.contains("-cxx-interoperability-mode=default"))
++                #expect(!flags.contains("-DTEST_MODULE_ONLY"))
++            }
++        }
++    }
++
+     @Test func mixedSourceTarget() async throws {
+         let fs = InMemoryFileSystem(
+             emptyFiles:

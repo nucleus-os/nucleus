@@ -1,0 +1,4 @@
+module NucleusCompositorLoop {
+    header "NucleusCompositorLoop.h"
+    export *
+}

@@ -1,0 +1,135 @@
+Subject: [PATCH] stdlib/cmake/modules/AddSwiftStdlib.cmake: fix
+ target-library cross-compile flag leakage, dead-strip gating, and shared
+ library suffix when the build host is Darwin and the target SDK isn't
+
+Four related fixes for cross-compiling the Swift standard library to a
+non-Apple SDK (e.g. ANDROID) from a Darwin (macOS) build machine, all in
+the add_swift_target_library family of functions:
+
+1. _add_target_variant_c_compile_link_flags: same stray "-arch <host arch>
+   -isysroot <host SDK>" leakage described in the AddSwift.cmake patch,
+   for the per-target-library (rather than per-host-tool) compile lines.
+   Downgrade to -Qunused-arguments when the build host is Darwin and the
+   target SDK isn't an Apple platform.
+
+2. _add_target_variant_link_flags: the -dead_strip optimization was gated
+   on `CMAKE_SYSTEM_NAME MATCHES "Darwin"` alone, which stays true when
+   cross-compiling to Android from a Darwin host, passing the Darwin-only
+   "-Wl,-dead_strip" through to ld.lld, which rejects it as an unrecognized
+   argument for an ELF/Android target. Require the actual *target* SDK
+   (LFLAGS_SDK) to be an Apple platform too, matching the per-SDK gating
+   pattern already used one line above for SWIFT_SDK_${LFLAGS_SDK}_USE_BUILD_ID.
+
+3. add_swift_target_library_single: CMake's Swift-language support computes
+   shared-library file extensions independently of
+   SWIFT_SDK_${sdk}_SHARED_LIBRARY_SUFFIX (correctly ".so" for every ELF
+   SDK per configure_sdk_unix) and of CMAKE_SHARED_LIBRARY_SUFFIX_Swift
+   (overriding it via -DCMAKE_SHARED_LIBRARY_SUFFIX_Swift:STRING=.so has no
+   effect on this target), and lands on macOS's own ".dylib" when
+   cross-compiling to a non-Apple SDK from a Darwin build host. Every
+   installed Swift shared library then ends up named "*.dylib" instead of
+   "*.so", breaking anything downstream that links against it by name
+   (e.g. -lswiftCore). Force the correct, target-appropriate SUFFIX
+   property directly.
+
+4. add_swift_target_library's UNIVERSAL_LIBRARY_NAME (the flattened/copied
+   library path used outside the per-CFG-intdir case): same ".dylib"
+   leakage as #3, but for this one specific path construction, which uses
+   the bare CMAKE_SHARED_LIBRARY_SUFFIX global instead of the per-target-SDK
+   SWIFT_SDK_${sdk}_SHARED_LIBRARY_SUFFIX — even though the actual per-arch
+   shared-library targets built moments earlier in the very same configure
+   correctly resolve to ".so". Use the per-SDK variable here too.
+
+This patch is a candidate for filing upstream.
+
+Sentinel: NUCLEUS_SWIFT_SOURCE_ANDROID_DARWIN_HOST_ADD_SWIFT_STDLIB_CMAKE
+
+diff --git a/stdlib/cmake/modules/AddSwiftStdlib.cmake b/stdlib/cmake/modules/AddSwiftStdlib.cmake
+index ed1ee34fc48..5efb6a9501a 100644
+--- a/stdlib/cmake/modules/AddSwiftStdlib.cmake
++++ b/stdlib/cmake/modules/AddSwiftStdlib.cmake
+@@ -98,6 +98,23 @@ function(_add_target_variant_c_compile_link_flags)
+
+   set(result ${${CFLAGS_RESULT_VAR_NAME}})
+
++  if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Darwin" AND NOT "${CFLAGS_SDK}" IN_LIST SWIFT_APPLE_PLATFORMS)
++    # Cross-compiling to a non-Apple SDK (e.g. ANDROID) from a Darwin build
++    # machine: some of these per-target compile lines pick up a stray
++    # "-arch <host arch> -isysroot <host SDK>" pair from somewhere in
++    # Swift's CMake macros that we were unable to pin down exactly (traced
++    # through _add_host_variant_c_compile_link_flags,
++    # _add_target_variant_c_compile_link_flags's own OSX_ARCHITECTURES
++    # handling, and CMake's own Apple Silicon default-arch enforcement,
++    # none of which reproduced it in isolation). clang then rejects -arch
++    # outright as unsupported for the non-Darwin -target triple actually
++    # being compiled for. Downgrading it to a silently-ignored unused
++    # argument here, once, covers every add_swift_target_library target
++    # instead of patching each affected target's CMakeLists.txt
++    # individually as the bug is found file by file.
++    list(APPEND result "-Qunused-arguments")
++  endif()
++
+   if(DEFINED maccatalyst_build_flavor AND DEFINED CFLAGS_DEPLOYMENT_VERSION_MACCATALYST)
+     set(DEPLOYMENT_VERSION_OSX "${CFLAGS_DEPLOYMENT_VERSION_MACCATALYST}")
+   else()
+@@ -650,7 +667,16 @@ function(_add_target_variant_link_flags)
+   # TODO: Evaluate/enable -f{function,data}-sections --gc-sections for bfd,
+   # gold, and lld.
+   if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
+-    if(CMAKE_SYSTEM_NAME MATCHES "Darwin")
++    # CMAKE_SYSTEM_NAME MATCHES "Darwin" alone isn't a reliable guard when
++    # cross-compiling to a non-Apple SDK (e.g. ANDROID) from a Darwin build
++    # machine — this gate has been observed to still evaluate true in that
++    # scenario, passing "-Wl,-dead_strip" (translated to a bare -dead_strip
++    # on the linker command line) through to ld.lld, which doesn't
++    # recognize it as an ELF/Android linker flag at all ("unknown
++    # argument"). Require the actual *target* SDK to be Apple too, matching
++    # the per-SDK gating pattern already used immediately above
++    # (SWIFT_SDK_${LFLAGS_SDK}_USE_BUILD_ID).
++    if(CMAKE_SYSTEM_NAME MATCHES "Darwin" AND "${LFLAGS_SDK}" IN_LIST SWIFT_APPLE_PLATFORMS)
+       # See rdar://48283130: This gives 6MB+ size reductions for swift and
+       # SourceKitService, and much larger size reductions for sil-opt etc.
+       list(APPEND result "-Wl,-dead_strip")
+@@ -1685,6 +1711,22 @@ function(add_swift_target_library_single target name)
+     if(TARGET "${target_static}")
+       set_property(TARGET ${target_static} PROPERTY OSX_ARCHITECTURES "${SWIFTLIB_SINGLE_ARCHITECTURE}")
+     endif()
++  else()
++    # CMake's Swift-language support computes shared-library file
++    # extensions on its own (independent of SWIFT_SDK_${sdk}_SHARED_LIBRARY_SUFFIX,
++    # which is correctly ".so" for every ELF SDK per configure_sdk_unix
++    # above, and independent of CMAKE_SHARED_LIBRARY_SUFFIX_Swift, which we
++    # tried overriding via --extra-swift-cmake-options with no effect on
++    # this target) and lands on macOS's own ".dylib" when cross-compiling
++    # to a non-Apple SDK from a Darwin build host — so every installed
++    # Swift shared library ends up named "*.dylib" instead of "*.so",
++    # breaking anything downstream that links against it by name (e.g.
++    # -lswiftCore). Force the correct, target-appropriate suffix directly.
++    get_target_property(_swiftlib_single_target_type ${target} TYPE)
++    if("${_swiftlib_single_target_type}" STREQUAL "SHARED_LIBRARY")
++      set_property(TARGET ${target} PROPERTY SUFFIX "${SWIFT_SDK_${SWIFTLIB_SINGLE_SDK}_SHARED_LIBRARY_SUFFIX}")
++    endif()
++    unset(_swiftlib_single_target_type)
+   endif()
+
+   target_link_libraries(${target} PRIVATE
+@@ -2739,8 +2781,18 @@ function(add_swift_target_library name)
+           set(UNIVERSAL_LIBRARY_NAME
+             "${CMAKE_BINARY_DIR}/${CMAKE_CFG_INTDIR}/lib/swift-${SWIFTLIB_BACK_DEPLOYMENT_LIBRARY}/${library_subdir}/${CMAKE_SHARED_LIBRARY_PREFIX}${name}${CMAKE_SHARED_LIBRARY_SUFFIX}")
+         else()
++          # NOTE: deliberately SWIFT_SDK_${sdk}_SHARED_LIBRARY_SUFFIX (the
++          # per-target-SDK value computed in configure_sdk_unix/_darwin —
++          # correctly ".so" for every ELF SDK including ANDROID), not the
++          # bare CMAKE_SHARED_LIBRARY_SUFFIX. The bare global has been
++          # observed to still resolve to Darwin's ".dylib" for this
++          # specific "universal"/flattened-copy library name even though
++          # the actual per-arch shared-library targets built moments
++          # earlier in this same configure correctly land on ".so" — i.e.
++          # this one spot doesn't reliably track the cross-compile target
++          # the rest of the configure agrees on.
+           set(UNIVERSAL_LIBRARY_NAME
+-            "${SWIFTLIB_DIR}/${library_subdir}/${CMAKE_SHARED_LIBRARY_PREFIX}${name}${CMAKE_SHARED_LIBRARY_SUFFIX}")
++            "${SWIFTLIB_DIR}/${library_subdir}/${CMAKE_SHARED_LIBRARY_PREFIX}${name}${SWIFT_SDK_${sdk}_SHARED_LIBRARY_SUFFIX}")
+         endif()
+       else()
+         if(SWIFT_SDK_${sdk}_STATIC_ONLY)

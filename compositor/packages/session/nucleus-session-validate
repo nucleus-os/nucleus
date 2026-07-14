@@ -1,0 +1,117 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+fail() {
+  echo "nucleus-session-validate: $*" >&2
+  exit 1
+}
+
+require_dir() {
+  local name="$1"
+  local path="${!name:-}"
+  [ -n "$path" ] || fail "$name is not set"
+  case "$path" in
+    /*) ;;
+    *) fail "$name must be absolute: $path" ;;
+  esac
+  [ ! -L "$path" ] || fail "$name must not be a symlink: $path"
+  [ -d "$path" ] || fail "$name must be an existing directory: $path"
+}
+
+require_unset() {
+  local name="$1"
+  [ -z "${!name+x}" ] || fail "$name must be unset for normal launched clients"
+}
+
+home="${HOME:-}"
+case "$home" in
+  /*) ;;
+  *) fail "HOME must be absolute" ;;
+esac
+[ "$home" != "/" ] || fail "HOME must not be /"
+
+[ "${XDG_SESSION_TYPE:-}" = "wayland" ] || fail "XDG_SESSION_TYPE must be wayland"
+require_dir XDG_RUNTIME_DIR
+
+runtime_base="${XDG_RUNTIME_DIR##*/}"
+case "$runtime_base" in
+  nucleus-?*) ;;
+  *) fail "XDG_RUNTIME_DIR basename must be nucleus-<id>: $XDG_RUNTIME_DIR" ;;
+esac
+runtime_id="${runtime_base#nucleus-}"
+
+if [ -n "${NUCLEUS_SESSION_RUNTIME_DIR+x}" ]; then
+  [ "$NUCLEUS_SESSION_RUNTIME_DIR" = "$XDG_RUNTIME_DIR" ] ||
+    fail "NUCLEUS_SESSION_RUNTIME_DIR must match XDG_RUNTIME_DIR"
+fi
+if [ -n "${NUCLEUS_SESSION_ID+x}" ]; then
+  [ -n "$NUCLEUS_SESSION_ID" ] || fail "NUCLEUS_SESSION_ID must be non-empty"
+  case "$NUCLEUS_SESSION_ID" in
+    */*) fail "NUCLEUS_SESSION_ID must not contain '/'" ;;
+  esac
+  [ "$NUCLEUS_SESSION_ID" = "$runtime_id" ] ||
+    fail "NUCLEUS_SESSION_ID must match XDG_RUNTIME_DIR basename"
+fi
+
+[ -n "${DBUS_SESSION_BUS_ADDRESS:-}" ] || fail "DBUS_SESSION_BUS_ADDRESS is not set"
+case "$DBUS_SESSION_BUS_ADDRESS" in
+  unix:path="$XDG_RUNTIME_DIR"/bus*|unix:path=/tmp/dbus-*|unix:abstract=*)
+    ;;
+  *)
+    fail "DBUS_SESSION_BUS_ADDRESS does not look like a private dbus-run-session address: $DBUS_SESSION_BUS_ADDRESS"
+    ;;
+esac
+
+[ -n "${WAYLAND_DISPLAY:-}" ] || fail "WAYLAND_DISPLAY is not set"
+case "$WAYLAND_DISPLAY" in
+  /*) wayland_socket="$WAYLAND_DISPLAY" ;;
+  *) wayland_socket="$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY" ;;
+esac
+[ -S "$wayland_socket" ] || fail "Wayland socket does not exist: $wayland_socket"
+
+require_dir XDG_CONFIG_HOME
+require_dir XDG_DATA_HOME
+require_dir XDG_STATE_HOME
+require_dir XDG_CACHE_HOME
+
+xdg_root="${XDG_CONFIG_HOME%/config}"
+[ "$XDG_DATA_HOME" = "$xdg_root/data" ] ||
+  fail "XDG_DATA_HOME must share the XDG root: $XDG_DATA_HOME"
+[ "$XDG_STATE_HOME" = "$xdg_root/state" ] ||
+  fail "XDG_STATE_HOME must share the XDG root: $XDG_STATE_HOME"
+[ "$XDG_CACHE_HOME" = "$xdg_root/cache" ] ||
+  fail "XDG_CACHE_HOME must share the XDG root: $XDG_CACHE_HOME"
+
+if [ "${NUCLEUS_EPHEMERAL_CONFIG:-0}" = "1" ]; then
+  [ "$xdg_root" = "$XDG_RUNTIME_DIR" ] ||
+    fail "ephemeral XDG roots must live under XDG_RUNTIME_DIR"
+elif [ -n "${NUCLEUS_SESSION_STATE_ROOT+x}" ]; then
+  [ -n "$NUCLEUS_SESSION_STATE_ROOT" ] || fail "NUCLEUS_SESSION_STATE_ROOT must be non-empty"
+  case "$NUCLEUS_SESSION_STATE_ROOT" in
+    /*) ;;
+    *) fail "NUCLEUS_SESSION_STATE_ROOT must be absolute: $NUCLEUS_SESSION_STATE_ROOT" ;;
+  esac
+  [ "$NUCLEUS_SESSION_STATE_ROOT" != "/" ] || fail "NUCLEUS_SESSION_STATE_ROOT must not be /"
+  [ "$NUCLEUS_SESSION_STATE_ROOT" != "$home" ] ||
+    fail "NUCLEUS_SESSION_STATE_ROOT must not equal HOME"
+  [ ! -L "$NUCLEUS_SESSION_STATE_ROOT" ] ||
+    fail "NUCLEUS_SESSION_STATE_ROOT must not be a symlink"
+  [ "$xdg_root" = "$NUCLEUS_SESSION_STATE_ROOT" ] ||
+    fail "XDG roots must live under NUCLEUS_SESSION_STATE_ROOT"
+else
+  [ "$xdg_root" = "$home/.config-nucleus" ] ||
+    fail "persistent XDG roots must live under HOME/.config-nucleus"
+fi
+
+require_unset WAYLAND_SOCKET
+require_unset DBUS_STARTER_ADDRESS
+require_unset DBUS_STARTER_BUS_TYPE
+require_unset XAUTHORITY
+
+if command -v dbus-send >/dev/null 2>&1; then
+  dbus-send --session --dest=org.freedesktop.DBus --type=method_call --print-reply \
+    /org/freedesktop/DBus org.freedesktop.DBus.ListNames >/dev/null ||
+    fail "session D-Bus did not answer ListNames"
+fi
+
+echo "nucleus-session-validate: OK"

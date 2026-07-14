@@ -1,0 +1,42 @@
+Subject: [PATCH] stdlib/public/Cxx/std: forward the libc++ wchar.h
+ const-overloads guard through -Xcc for the CxxStdlib stdlib build itself
+
+NDK 30's libc++ module map marks C compatibility headers such as
+<wchar.h> as textual. While importing the Android libc++ std module here,
+Clang can textually include libc++'s <wchar.h> more than once and hit
+duplicate definitions for its preferred-overload shims (wcschr, wcspbrk,
+wcsrchr, wcsstr, wmemchr). patches/swift/0001-clangimporter-libcxx-cxxstdlib.patch
+already fixes this at the ClangImporter level (defining
+_LIBCPP_WCHAR_H_HAS_CONST_OVERLOADS=1 for every Android ClangImporter
+invocation), which covers everything downstream of a rebuilt host
+toolchain. This patch forwards the same guard via -Xcc for the CxxStdlib
+stdlib build's own compile line, so a source tree can still build (or
+rebuild) swiftCxxStdlib for Android against a not-yet-rebuilt host swiftc.
+Inert on non-Android SDKs.
+
+This patch is a candidate for filing upstream.
+
+Sentinel: NUCLEUS_SWIFT_SOURCE_ANDROID_CXXSTDLIB_WCHAR_WORKAROUND
+
+diff --git a/stdlib/public/Cxx/std/CMakeLists.txt b/stdlib/public/Cxx/std/CMakeLists.txt
+index 0165f9aff50..5ce584bf526 100644
+--- a/stdlib/public/Cxx/std/CMakeLists.txt
++++ b/stdlib/public/Cxx/std/CMakeLists.txt
+@@ -43,6 +43,17 @@ add_swift_target_library(swiftCxxStdlib STATIC NO_LINK_NAME IS_STDLIB IS_SWIFT_O
+
+     SWIFT_COMPILE_FLAGS ${SWIFT_RUNTIME_SWIFT_COMPILE_FLAGS} ${SWIFT_STANDARD_LIBRARY_SWIFT_FLAGS}
+     -cxx-interoperability-mode=default
++    # NDK 30's libc++ module map marks C compatibility headers such as
++    # <wchar.h> as textual. While importing the Android libc++ std module
++    # here, Clang can textually include libc++'s <wchar.h> more than once
++    # and hit duplicate definitions for its preferred-overload shims
++    # (wcschr, wcspbrk, wcsrchr, wcsstr, wmemchr). Forward libc++'s own
++    # guard for that redundant shim block through to the ClangImporter's
++    # invocation via -Xcc; inert on non-Android SDKs (swift-toolchain
++    # carries the equivalent fix as a compiler source patch, but that
++    # requires rebuilding the host toolchain — this achieves the same
++    # effect for stdlib-build-time compiles without one).
++    -Xcc -D_LIBCPP_WCHAR_H_HAS_CONST_OVERLOADS=1
+     -Xfrontend -module-interface-preserve-types-as-written
+     -Xfrontend -disable-module-selectors-in-module-interface
+

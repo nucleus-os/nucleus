@@ -1,0 +1,21 @@
+{
+  "name": "@nucleus-os/metro-resolver",
+  "version": "0.1.0",
+  "description": "Metro resolver helper for the Nucleus React Native platform.",
+  "license": "MIT",
+  "main": "index.js",
+  "files": [
+    "index.js",
+    "README.md"
+  ],
+  "sideEffects": false,
+  "dependencies": {
+    "metro-resolver": ">=0.80.0"
+  },
+  "peerDependencies": {
+    "react-native": ">=0.85.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nucleus.dev/schemas/nucleus.config.schema.json",
+  "title": "nucleus.config.json",
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "app": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "displayName": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Human-readable app name (used for window title / app label)."
+        },
+        "iconPath": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Path to a PNG icon file, relative to the app root (used for macOS .app bundle icon generation; if the PNG is fully opaque, xtask will apply padding/rounded corners when generating AppIcon.icns)."
+        },
+        "moduleName": {
+          "type": "string",
+          "minLength": 1,
+          "description": "React Native AppRegistry module name (e.g. \"Example\", \"Basic\")."
+        }
+      }
+    },
+    "window": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "width": {"type": "number"},
+        "height": {"type": "number"},
+        "scale": {"type": "number"},
+        "fontScale": {"type": "number"},
+        "headless": {"type": "boolean"},
+        "windowDecorations": {
+          "type": "string",
+          "enum": ["client", "server"],
+          "default": "client",
+          "description": "Window decoration mode. 'client' (default): Nucleus renders window chrome including resize handles. 'server': use native OS window decorations."
+        },
+        "titlebar": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "appearsTransparent": {"type": "boolean"},
+            "trafficLightPosition": {
+              "type": "object",
+              "properties": {
+                "x": {"type": "number"},
+                "y": {"type": "number"}
+              }
+            }
+          }
+        }
+      }
+    },
+    "bundler": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "port": {"type": "number"},
+        "segments": {"type": "boolean"}
+      }
+    },
+    "host": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": ["default", "custom"],
+          "description": "Host selection mode. default: use shared host; custom: use app-defined host binary/build."
+        },
+        "bin": {"type": ["string", "array"], "items": {"type": "string"}},
+        "binDebug": {"type": ["string", "array"], "items": {"type": "string"}},
+        "binRelease": {"type": ["string", "array"], "items": {"type": "string"}},
+        "debug": {"type": ["string", "array"], "items": {"type": "string"}},
+        "release": {"type": ["string", "array"], "items": {"type": "string"}},
+        "build": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "cwd": {"type": "string"},
+            "env": {"type": "object", "additionalProperties": {"type": "string"}},
+            "command": {
+              "description": "Shell command or argv array to build the host.",
+              "oneOf": [
+                {"type": "string"},
+                {"type": "array", "items": {"type": "string"}, "minItems": 1}
+              ]
+            },
+            "commandDebug": {
+              "oneOf": [
+                {"type": "string"},
+                {"type": "array", "items": {"type": "string"}, "minItems": 1}
+              ]
+            },
+            "commandRelease": {
+              "oneOf": [
+                {"type": "string"},
+                {"type": "array", "items": {"type": "string"}, "minItems": 1}
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}

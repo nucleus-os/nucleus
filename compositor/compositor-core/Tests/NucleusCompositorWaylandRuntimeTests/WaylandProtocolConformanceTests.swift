@@ -1,0 +1,689 @@
+// Wire-level Wayland protocol conformance tests. Each test drives the real router over the
+// in-process `WaylandTestClient` harness and asserts observable protocol behaviour —
+// the same gate the parity fixtures use, revived as a swift-testing target.
+//
+// These cover the fixes that need no client buffer (protocol-error and inert-state
+// paths). Buffer-backed cases (already_constructed, dimensions_mismatch, screencopy
+// validation) build on the `ShmScratch` helper below.
+
+import Testing
+import Glibc
+import WaylandServerC
+import NucleusCompositorServer
+@testable import NucleusCompositorWaylandRuntime
+
+private let testDrmFormatXrgb8888: UInt32 = 0x3432_5258
+
+private final class AcceptingDmabufDelegate: DmabufDelegate {
+    func dmabufSupportedFormats() -> [DmabufFormat] {
+        [DmabufFormat(format: testDrmFormatXrgb8888, modifier: 0)]
+    }
+    func dmabufImport(_: DmabufAttrs) -> Bool { true }
+}
+
+@MainActor @Suite(.serialized)
+struct WaylandProtocolConformanceTests {
+
+/// A decoded `wl_display.error` (object 1, opcode 0): offending object id, code, message.
+private struct WireError {
+    let objectID: UInt32
+    let code: UInt32
+    static func first(_ messages: [WireMessage]) -> WireError? {
+        guard let m = WireMessage.first(messages, object: 1, opcode: 0) else { return nil }
+        return WireError(objectID: m.u32(0), code: m.u32(4))
+    }
+}
+
+/// Bind a global discovered on the registry into `b` (registry is object 2).
+private func bind(
+    _ b: inout WireBuilder, _ iface: String, _ id: UInt32,
+    _ globals: [(name: UInt32, interface: String, version: UInt32)]
+) throws {
+    guard let g = globals.first(where: { $0.interface == iface }) else {
+        Issue.record("global \(iface) not advertised"); throw CancellationError()
+    }
+    b.message(object: 2, opcode: 0) {
+        $0.uint(g.name); $0.string(iface); $0.uint(g.version); $0.newId(id)
+    }
+}
+
+// MARK: - layer-shell
+
+/// A layer surface must reject an out-of-range anchor bitfield with invalid_anchor
+/// (value 2 on the layer_surface). Regression guard for the `set_anchor` validation.
+@Test func layerShellRejectsInvalidAnchor() throws {
+    let router = try #require(NucleusWaylandRouter())
+    WlCompositor().register(in: router)
+    WlOutput(info: OutputInfo(
+        physicalWidthMm: 600, physicalHeightMm: 340, pixelWidth: 1920, pixelHeight: 1080,
+        refreshMhz: 60000, scale: 1, name: "DP-1", description: "Out")).register(in: router)
+    let layerShell = ZwlrLayerShell(); layerShell.register(in: router)
+
+    let client = try #require(WaylandTestClient(display: router.display))
+    let globals = client.globals()
+    let lsId: UInt32 = 3, compId: UInt32 = 4, outId: UInt32 = 5, surfId: UInt32 = 6, layerId: UInt32 = 7
+
+    var a = WireBuilder()
+    try bind(&a, "zwlr_layer_shell_v1", lsId, globals)
+    try bind(&a, "wl_compositor", compId, globals)
+    try bind(&a, "wl_output", outId, globals)
+    a.message(object: compId, opcode: 0) { $0.newId(surfId) }  // create_surface
+    a.message(object: lsId, opcode: 0) {                        // get_layer_surface(top=2, "panel")
+        $0.newId(layerId); $0.object(surfId); $0.object(outId); $0.uint(2); $0.string("panel")
+    }
+    a.message(object: layerId, opcode: 1) { $0.uint(0x40) }     // set_anchor: bit outside top|bottom|left|right
+    client.send(a)
+    client.pump()
+
+    let err = try #require(WireError.first(client.drainEvents()), "expected a protocol error")
+    #expect(err.objectID == layerId)
+    #expect(err.code == 2)  // invalid_anchor
+}
+
+/// `set_layer` with an out-of-range layer must raise invalid_layer (value 1), not
+/// invalid_anchor. Regression guard for the corrected error code.
+@Test func layerShellRejectsInvalidLayer() throws {
+    let router = try #require(NucleusWaylandRouter())
+    WlCompositor().register(in: router)
+    WlOutput(info: OutputInfo(
+        physicalWidthMm: 600, physicalHeightMm: 340, pixelWidth: 1920, pixelHeight: 1080,
+        refreshMhz: 60000, scale: 1, name: "DP-1", description: "Out")).register(in: router)
+    ZwlrLayerShell().register(in: router)
+
+    let client = try #require(WaylandTestClient(display: router.display))
+    let globals = client.globals()
+    let lsId: UInt32 = 3, compId: UInt32 = 4, outId: UInt32 = 5, surfId: UInt32 = 6, layerId: UInt32 = 7
+
+    var a = WireBuilder()
+    try bind(&a, "zwlr_layer_shell_v1", lsId, globals)
+    try bind(&a, "wl_compositor", compId, globals)
+    try bind(&a, "wl_output", outId, globals)
+    a.message(object: compId, opcode: 0) { $0.newId(surfId) }
+    a.message(object: lsId, opcode: 0) {
+        $0.newId(layerId); $0.object(surfId); $0.object(outId); $0.uint(2); $0.string("panel")
+    }
+    a.message(object: layerId, opcode: 8) { $0.uint(4) }  // set_layer: 4 is out of range (0…3)
+    client.send(a)
+    client.pump()
+
+    let err = try #require(WireError.first(client.drainEvents()), "expected a protocol error")
+    #expect(err.objectID == layerId)
+    #expect(err.code == 1)  // invalid_layer, not 2 (invalid_anchor)
+}
+
+// MARK: - foreign-toplevel
+
+/// Decode a zwlr_foreign_toplevel_handle_v1.state event (opcode 4) — a wl_array of
+/// u32 state values (byte-length prefixed).
+private func stateSet(_ m: WireMessage) -> [UInt32] {
+    let byteLen = Int(m.u32(0))
+    var out: [UInt32] = []
+    var off = 4
+    while off + 4 <= 4 + byteLen { out.append(m.u32(off)); off += 4 }
+    return out
+}
+
+/// The handle `state` array must carry `minimized` (value 1) exactly when the model
+/// window is minimized — in both directions. Regression guard for the state that was
+/// previously never reported (so taskbars rendered minimized windows as un-minimized),
+/// and the reconcile path the unminimize fix drives.
+@MainActor @Test func foreignToplevelReportsMinimizedState() throws {
+    let router = try #require(NucleusWaylandRouter())
+    let compositor = WlCompositor(); compositor.register(in: router)
+    let server = NucleusCompositorServer.shared
+    for w in server.windows.windows { _ = server.destroyWindow(id: w.id) }  // isolate the shared model
+    defer { for w in server.windows.windows { _ = server.destroyWindow(id: w.id) } }
+
+    let window = server.createWindow(source: .xdg)
+    window.managedAppWindow = true
+    window.surfaceObjectId = 4242
+    window.title = "T"; window.appId = "app"
+    window.mapped = true
+    window.minimized = true
+
+    let manager = ZwlrForeignToplevelManager(compositor: compositor); manager.register(in: router)
+    let client = try #require(WaylandTestClient(display: router.display))
+    let globals = client.globals()
+    let mgrId: UInt32 = 3
+
+    var a = WireBuilder()
+    try bind(&a, "zwlr_foreign_toplevel_manager_v1", mgrId, globals)  // bind → replays the window
+    client.send(a)
+    client.pump()
+    let enumerated = client.drainEvents()
+
+    // The manager announces the handle (toplevel event, opcode 0, new_id arg).
+    let toplevel = try #require(WireMessage.first(enumerated, object: mgrId, opcode: 0), "no toplevel handle")
+    let handleId = toplevel.u32(0)
+    // The replayed state array carries minimized.
+    let firstState = try #require(
+        enumerated.last { $0.objectId == handleId && $0.opcode == 4 }, "no state event")
+    #expect(stateSet(firstState).contains(1), "minimized must be reported when the window is minimized")
+
+    // Restore the window: the next reconcile drops minimized from the state array.
+    window.minimized = false
+    server.drainChanges()
+    let afterRestore = client.drainEvents()
+    let restoredState = try #require(
+        afterRestore.last { $0.objectId == handleId && $0.opcode == 4 }, "no state event after restore")
+    #expect(!stateSet(restoredState).contains(1), "minimized must clear when the window is restored")
+}
+
+// MARK: - screencopy
+
+private final class ScreencopyStub: ScreencopyDelegate {
+    func screencopyParams(output: WlOutput?, region: WlRect?) -> ScreencopyParams? {
+        // Advertise a 64×48 XRGB8888 frame at stride 256.
+        ScreencopyParams(shmFormat: 1, width: 64, height: 48, stride: 256, drmFourcc: 0x3432_5258)
+    }
+}
+
+/// `copy` with a buffer whose format/size/stride doesn't match the advertised params
+/// must be rejected with invalid_buffer (value 1) before any readback. Regression
+/// guard for the validation that pre-empts an out-of-bounds copy.
+@Test func screencopyRejectsMismatchedBuffer() throws {
+    let router = try #require(NucleusWaylandRouter())
+    WlCompositor().register(in: router)
+    WlOutput(info: OutputInfo(
+        physicalWidthMm: 600, physicalHeightMm: 340, pixelWidth: 64, pixelHeight: 48,
+        refreshMhz: 60000, scale: 1, name: "DP-1", description: "Out")).register(in: router)
+    let stub = ScreencopyStub()
+    let mgr = ScreencopyManager(); mgr.delegate = stub; mgr.register(in: router)
+
+    let client = try #require(WaylandTestClient(display: router.display))
+    let globals = client.globals()
+    let shmId: UInt32 = 3, outId: UInt32 = 4, scId: UInt32 = 5
+    let poolId: UInt32 = 6, bufId: UInt32 = 7, frameId: UInt32 = 8
+
+    var bindings = WireBuilder()
+    try bind(&bindings, "wl_shm", shmId, globals)
+    try bind(&bindings, "wl_output", outId, globals)
+    try bind(&bindings, "zwlr_screencopy_manager_v1", scId, globals)
+    #expect(client.send(bindings))
+    client.pump()
+
+    // A 4×4/stride-16/ARGB buffer — mismatches the advertised 64×48/256/XRGB frame.
+    var shm = WireBuilder()
+    let fd = try appendShmBuffer(&shm, shmId: shmId, poolId: poolId, bufId: bufId,
+        width: 4, height: 4, stride: 16, format: 0)
+    try client.send(shm, fd: fd)
+    client.pump()
+
+    var capture = WireBuilder()
+    capture.message(object: scId, opcode: 0) {
+        $0.newId(frameId); $0.int(0); $0.object(outId)
+    }
+    #expect(client.send(capture))
+    client.pump()
+    // The frame advertises its buffer (opcode 0); the client then copies.
+    #expect(WireMessage.first(client.drainEvents(), object: frameId, opcode: 0) != nil, "no buffer event")
+
+    var b = WireBuilder()
+    b.message(object: frameId, opcode: 0) { $0.object(bufId) }  // copy(buffer)
+    client.send(b)
+    client.pump()
+    let err = try #require(WireError.first(client.drainEvents()), "expected invalid_buffer")
+    #expect(err.objectID == frameId)
+    #expect(err.code == 1)  // invalid_buffer
+}
+
+// MARK: - buffer helper
+
+/// A memfd-backed wl_shm pool with one buffer, appended to `b`. Returns the fd to
+/// pass to `client.send(_, fd:)` (SCM_RIGHTS). The owned wrapper closes it after send.
+/// `format` 0 = ARGB8888, 1 = XRGB8888.
+private func appendShmBuffer(
+    _ b: inout WireBuilder, shmId: UInt32, poolId: UInt32, bufId: UInt32,
+    width: Int32, height: Int32, stride: Int32, format: UInt32
+) throws -> OwnedTestFD {
+    let (size, overflow) = stride.multipliedReportingOverflow(by: height)
+    guard !overflow, size > 0 else { throw WaylandWireError.sizeOverflow }
+    let fd = memfd_create("nucleus-wayland-conformance", 0)
+    guard fd >= 0 else { throw WaylandWireError.systemCall("memfd_create", errno) }
+    let owned = OwnedTestFD(fd)
+    guard ftruncate(fd, off_t(size)) == 0 else {
+        throw WaylandWireError.systemCall("ftruncate", errno)
+    }
+    b.message(object: shmId, opcode: 0) { $0.newId(poolId); $0.int(size) }  // create_pool (fd ancillary)
+    b.message(object: poolId, opcode: 0) {                                   // create_buffer
+        $0.newId(bufId); $0.int(0); $0.int(width); $0.int(height); $0.int(stride); $0.uint(format)
+    }
+    return owned
+}
+
+private final class PreferredScaleProbe: PreferredScaleSink {
+    var lastScale120: UInt32?
+    func sendPreferredScale(_ scale120: UInt32) { lastScale120 = scale120 }
+}
+
+/// Fractional scaling has two distinct protocol representations: wl_output.scale
+/// is integer-only, while xdg-output geometry and wp_fractional_scale must retain
+/// the compositor's exact scale. Rounding 1.5 up to 2 made full-width layer-shell
+/// surfaces cover only part of the physical output.
+@Test func fractionalOutputPreservesLogicalGeometryAndPreferredScale() throws {
+    let router = try #require(NucleusWaylandRouter())
+    let compositor = WlCompositor()
+    compositor.register(in: router)
+    let output = WlOutput(info: OutputInfo(
+        outputId: 822,
+        physicalWidthMm: 600, physicalHeightMm: 340,
+        pixelWidth: 3840, pixelHeight: 2160, refreshMhz: 120_000,
+        scale: 2, name: "DP-1", description: "Fractional output",
+        logicalWidth: 2560, logicalHeight: 1440, fractionalScale: 1.5))
+    compositor.addOutput(output)
+
+    #expect(output.logicalRect.width == 2560)
+    #expect(output.logicalRect.height == 1440)
+
+    let client = try #require(WaylandTestClient(display: router.display))
+    let globals = client.globals()
+    let compId: UInt32 = 3, surfaceId: UInt32 = 4
+    var requests = WireBuilder()
+    try bind(&requests, "wl_compositor", compId, globals)
+    requests.message(object: compId, opcode: 0) { $0.newId(surfaceId) }
+    #expect(client.send(requests))
+    client.pump()
+
+    let surface = try #require(compositor.surface(id: surfaceId))
+    let probe = PreferredScaleProbe()
+    surface.fractionalScaleSink = probe
+    surface.updateEnteredOutputs([822])
+    #expect(probe.lastScale120 == 180)
+}
+
+/// A client may destroy a wl_buffer after committing it. Replacing that content
+/// later must not send wl_buffer.release through the now-freed wl_resource.
+/// Regression guard for the profile-session SIGSEGV in wl_resource_post_event.
+@Test func replacingDestroyedCurrentBufferDoesNotUseFreedResource() throws {
+    let router = try #require(NucleusWaylandRouter())
+    let compositor = WlCompositor()
+    compositor.register(in: router)
+
+    let client = try #require(WaylandTestClient(display: router.display))
+    let globals = client.globals()
+    let shmId: UInt32 = 3, compId: UInt32 = 4, surfId: UInt32 = 5
+    let poolA: UInt32 = 6, bufA: UInt32 = 7, poolB: UInt32 = 8, bufB: UInt32 = 9
+
+    var bindings = WireBuilder()
+    try bind(&bindings, "wl_shm", shmId, globals)
+    try bind(&bindings, "wl_compositor", compId, globals)
+    bindings.message(object: compId, opcode: 0) { $0.newId(surfId) }
+    #expect(client.send(bindings))
+    client.pump()
+    _ = client.drainEvents()
+
+    var createA = WireBuilder()
+    let fdA = try appendShmBuffer(
+        &createA, shmId: shmId, poolId: poolA, bufId: bufA,
+        width: 4, height: 4, stride: 16, format: 0)
+    try client.send(createA, fd: fdA)
+
+    var createB = WireBuilder()
+    let fdB = try appendShmBuffer(
+        &createB, shmId: shmId, poolId: poolB, bufId: bufB,
+        width: 4, height: 4, stride: 16, format: 0)
+    try client.send(createB, fd: fdB)
+    client.pump()
+
+    var firstCommit = WireBuilder()
+    firstCommit.message(object: surfId, opcode: 1) {
+        $0.object(bufA); $0.int(0); $0.int(0)
+    }
+    firstCommit.message(object: surfId, opcode: 6) { _ in }
+    #expect(client.send(firstCommit))
+    client.pump()
+
+    // Destroy A's wire object, then replace its still-current content with B.
+    // The old implementation retained bufA's raw wl_resource pointer here and
+    // crashed in wl_buffer_send_release while dispatching the second commit.
+    var replace = WireBuilder()
+    replace.message(object: bufA, opcode: 0) { _ in }  // wl_buffer.destroy
+    replace.message(object: surfId, opcode: 1) {
+        $0.object(bufB); $0.int(0); $0.int(0)
+    }
+    replace.message(object: surfId, opcode: 6) { _ in }
+    #expect(client.send(replace))
+    client.pump()
+
+    let surface = try #require(compositor.surface(id: surfId))
+    #expect(surface.hasCurrentBuffer)
+    #expect(surface.currentBuffer.map { wl_resource_get_id($0) } == bufB)
+}
+
+/// A buffer rejected before renderer ownership is immediately reusable, but its
+/// later replacement must not emit a second wl_buffer.release. This exercises the
+/// exact-once failure transition independently of any hardware import backend.
+@Test func immediatelyReusableBufferIsReleasedExactlyOnce() throws {
+    let router = try #require(NucleusWaylandRouter())
+    let compositor = WlCompositor()
+    compositor.register(in: router)
+
+    let client = try #require(WaylandTestClient(display: router.display))
+    let globals = client.globals()
+    let shmID: UInt32 = 3, compositorID: UInt32 = 4, surfaceID: UInt32 = 5
+    let poolA: UInt32 = 6, bufferA: UInt32 = 7
+    let poolB: UInt32 = 8, bufferB: UInt32 = 9
+
+    var setup = WireBuilder()
+    try bind(&setup, "wl_shm", shmID, globals)
+    try bind(&setup, "wl_compositor", compositorID, globals)
+    setup.message(object: compositorID, opcode: 0) { $0.newId(surfaceID) }
+    #expect(client.send(setup))
+    client.pump()
+    _ = client.drainEvents()
+
+    var createA = WireBuilder()
+    let fdA = try appendShmBuffer(
+        &createA, shmId: shmID, poolId: poolA, bufId: bufferA,
+        width: 4, height: 4, stride: 16, format: 0)
+    try client.send(createA, fd: fdA)
+    var createB = WireBuilder()
+    let fdB = try appendShmBuffer(
+        &createB, shmId: shmID, poolId: poolB, bufId: bufferB,
+        width: 4, height: 4, stride: 16, format: 0)
+    try client.send(createB, fd: fdB)
+    client.pump()
+    _ = client.drainEvents()
+
+    var attachA = WireBuilder()
+    attachA.message(object: surfaceID, opcode: 1) {
+        $0.object(bufferA); $0.int(0); $0.int(0)
+    }
+    attachA.message(object: surfaceID, opcode: 6) { _ in }
+    #expect(client.send(attachA))
+    client.pump()
+    _ = client.drainEvents()
+
+    let surface = try #require(compositor.surface(id: surfaceID))
+    surface.releaseCurrentBufferImmediately()
+    surface.releaseCurrentBufferImmediately()
+    router.flushClients()
+    let failedEvents = client.drainEvents()
+    #expect(failedEvents.filter { $0.objectId == bufferA && $0.opcode == 0 }.count == 1)
+
+    var attachB = WireBuilder()
+    attachB.message(object: surfaceID, opcode: 1) {
+        $0.object(bufferB); $0.int(0); $0.int(0)
+    }
+    attachB.message(object: surfaceID, opcode: 6) { _ in }
+    #expect(client.send(attachB))
+    client.pump()
+    #expect(WireMessage.first(client.drainEvents(), object: bufferA, opcode: 0) == nil)
+}
+
+@Test func importedDmabufReleaseWaitsForRendererRetirement() throws {
+    let router = try #require(NucleusWaylandRouter())
+    let compositor = WlCompositor()
+    compositor.register(in: router)
+    let dmabuf = ZwpLinuxDmabuf()
+    let dmabufDelegate = AcceptingDmabufDelegate()
+    dmabuf.delegate = dmabufDelegate
+    dmabuf.register(in: router)
+
+    let client = try #require(WaylandTestClient(display: router.display))
+    let globals = client.globals()
+    let compID: UInt32 = 3, dmaID: UInt32 = 4, surfaceID: UInt32 = 5
+    let paramsA: UInt32 = 6, bufferA: UInt32 = 7
+    let paramsB: UInt32 = 8, bufferB: UInt32 = 9
+    var setup = WireBuilder()
+    try bind(&setup, "wl_compositor", compID, globals)
+    try bind(&setup, "zwp_linux_dmabuf_v1", dmaID, globals)
+    setup.message(object: compID, opcode: 0) { $0.newId(surfaceID) }
+    #expect(client.send(setup))
+    client.pump()
+    _ = client.drainEvents()
+
+    func createBuffer(paramsID: UInt32, bufferID: UInt32) throws {
+        let fd = memfd_create("nucleus-retirement-test", 0)
+        try #require(fd >= 0)
+        let ownedFD = OwnedTestFD(fd)
+        var request = WireBuilder()
+        request.message(object: dmaID, opcode: 1) { $0.newId(paramsID) }
+        request.message(object: paramsID, opcode: 1) {
+            $0.uint(0); $0.uint(0); $0.uint(64); $0.uint(0); $0.uint(0)
+        }
+        request.message(object: paramsID, opcode: 3) {
+            $0.newId(bufferID); $0.int(4); $0.int(4)
+            $0.uint(testDrmFormatXrgb8888); $0.uint(0)
+        }
+        try client.send(request, fd: ownedFD)
+        client.pump()
+        _ = client.drainEvents()
+    }
+    try createBuffer(paramsID: paramsA, bufferID: bufferA)
+    try createBuffer(paramsID: paramsB, bufferID: bufferB)
+
+    var first = WireBuilder()
+    first.message(object: surfaceID, opcode: 1) {
+        $0.object(bufferA); $0.int(0); $0.int(0)
+    }
+    first.message(object: surfaceID, opcode: 6) { _ in }
+    #expect(client.send(first))
+    client.pump()
+    let surface = try #require(compositor.surface(id: surfaceID))
+    surface.renderIosurfaceId = 77
+    _ = client.drainEvents()
+
+    var replace = WireBuilder()
+    replace.message(object: surfaceID, opcode: 1) {
+        $0.object(bufferB); $0.int(0); $0.int(0)
+    }
+    replace.message(object: surfaceID, opcode: 6) { _ in }
+    #expect(client.send(replace))
+    client.pump()
+    #expect(WireMessage.first(client.drainEvents(), object: bufferA, opcode: 0) == nil)
+
+    compositor.retireBuffer(iosurfaceID: 77)
+    router.flushClients()
+    #expect(WireMessage.first(client.drainEvents(), object: bufferA, opcode: 0) != nil)
+}
+
+/// A wl_surface with a committed buffer cannot become a layer surface:
+/// already_constructed (value 2 on the zwlr_layer_shell_v1). Regression guard.
+@Test func layerShellRejectsBufferedSurface() throws {
+    let router = try #require(NucleusWaylandRouter())
+    WlCompositor().register(in: router)
+    WlOutput(info: OutputInfo(
+        physicalWidthMm: 600, physicalHeightMm: 340, pixelWidth: 1920, pixelHeight: 1080,
+        refreshMhz: 60000, scale: 1, name: "DP-1", description: "Out")).register(in: router)
+    ZwlrLayerShell().register(in: router)
+
+    let client = try #require(WaylandTestClient(display: router.display))
+    let globals = client.globals()
+    let shmId: UInt32 = 3, compId: UInt32 = 4, outId: UInt32 = 5, lsId: UInt32 = 6
+    let poolId: UInt32 = 7, bufId: UInt32 = 8, surfId: UInt32 = 9, layerId: UInt32 = 10
+
+    var a = WireBuilder()
+    try bind(&a, "wl_shm", shmId, globals)
+    try bind(&a, "wl_compositor", compId, globals)
+    try bind(&a, "wl_output", outId, globals)
+    try bind(&a, "zwlr_layer_shell_v1", lsId, globals)
+    let fd = try appendShmBuffer(&a, shmId: shmId, poolId: poolId, bufId: bufId,
+        width: 4, height: 4, stride: 16, format: 0)
+    a.message(object: compId, opcode: 0) { $0.newId(surfId) }         // create_surface
+    a.message(object: surfId, opcode: 1) { $0.object(bufId); $0.int(0); $0.int(0) }  // attach
+    a.message(object: surfId, opcode: 6) { _ in }                     // commit → surface has a buffer
+    try client.send(a, fd: fd)
+    client.pump()
+    _ = client.drainEvents()
+
+    // Now try to make it a layer surface — must be rejected.
+    var b = WireBuilder()
+    b.message(object: lsId, opcode: 0) {
+        $0.newId(layerId); $0.object(surfId); $0.object(outId); $0.uint(2); $0.string("panel")
+    }
+    client.send(b)
+    client.pump()
+    let err = try #require(WireError.first(client.drainEvents()), "expected already_constructed")
+    #expect(err.objectID == lsId)
+    #expect(err.code == 2)  // already_constructed
+}
+
+/// The foreign-toplevel minimize *routing* fix: `unset_minimized` (and activate)
+/// must restore a minimized window. Exercises `RouterWindowDriver.foreignSetMinimized`
+/// directly — before the fix, the `false` branch was a no-op and `window.minimized`
+/// had no path back, so this would leave the window stranded.
+@MainActor @Test func foreignToplevelUnminimizeRestoresWindow() throws {
+    let compositor = WlCompositor()
+    let driver = RouterWindowDriver(
+        seatDriver: RouterSeatDriver(seat: WlSeat(), compositor: compositor), compositor: compositor)
+    let server = NucleusCompositorServer.shared
+    for w in server.windows.windows { _ = server.destroyWindow(id: w.id) }
+    defer { for w in server.windows.windows { _ = server.destroyWindow(id: w.id) } }
+
+    let window = server.createWindow(source: .xdg)
+    window.managedAppWindow = true
+    window.surfaceObjectId = 7777
+    window.mapped = true
+
+    driver.foreignSetMinimized(windowID: window.id, true)
+    #expect(window.minimized, "set_minimized should hide the window")
+    driver.foreignSetMinimized(windowID: window.id, false)
+    #expect(!window.minimized, "unset_minimized must restore the window (was a permanent dead-end)")
+}
+
+// MARK: - session-lock
+
+private final class LockGateStub: SessionLockDelegate {
+    var began = false
+    func sessionLockBegin() -> Bool { began = true; return true }
+    func sessionLockEnd() {}
+    func sessionLockSurfaceMapped(_ surface: WlSurface, output: WlOutput?) {}
+}
+
+/// A denied second locker is inert: it receives `finished` and any further
+/// `get_lock_surface` is ignored (no configure), so it cannot map a lock surface
+/// behind the granted lock. The granted first lock still configures normally.
+@Test func sessionLockSecondLockerIsInert() throws {
+    let router = try #require(NucleusWaylandRouter())
+    let compositor = WlCompositor(); compositor.register(in: router)
+    WlOutput(info: OutputInfo(
+        physicalWidthMm: 600, physicalHeightMm: 340, pixelWidth: 64, pixelHeight: 48,
+        refreshMhz: 60000, scale: 1, name: "LOCK-1", description: "Lock")).register(in: router)
+    let gate = LockGateStub()
+    let lockMgr = SessionLockManager(); lockMgr.delegate = gate; lockMgr.register(in: router)
+
+    let client = try #require(WaylandTestClient(display: router.display))
+    let globals = client.globals()
+    let compId: UInt32 = 3, outId: UInt32 = 4, mgrId: UInt32 = 5
+    let lock1: UInt32 = 6, lock2: UInt32 = 7
+    let surf1: UInt32 = 8, surf2: UInt32 = 9, ls1: UInt32 = 10, ls2: UInt32 = 11
+
+    var a = WireBuilder()
+    try bind(&a, "wl_compositor", compId, globals)
+    try bind(&a, "wl_output", outId, globals)
+    try bind(&a, "ext_session_lock_manager_v1", mgrId, globals)
+    a.message(object: mgrId, opcode: 1) { $0.newId(lock1) }  // lock (granted)
+    a.message(object: mgrId, opcode: 1) { $0.newId(lock2) }  // lock (denied → finished + inert)
+    a.message(object: compId, opcode: 0) { $0.newId(surf1) }
+    a.message(object: compId, opcode: 0) { $0.newId(surf2) }
+    // get_lock_surface(id, surface, output) on each lock.
+    a.message(object: lock1, opcode: 1) { $0.newId(ls1); $0.object(surf1); $0.object(outId) }
+    a.message(object: lock2, opcode: 1) { $0.newId(ls2); $0.object(surf2); $0.object(outId) }
+    client.send(a)
+    client.pump()
+    let events = client.drainEvents()
+
+    #expect(gate.began)
+    // lock2 was denied.
+    #expect(WireMessage.first(events, object: lock2, opcode: 1) != nil, "lock2 should be finished")
+    // The granted lock's surface is configured (ext_session_lock_surface_v1.configure = op 0).
+    #expect(WireMessage.first(events, object: ls1, opcode: 0) != nil, "granted lock surface must configure")
+    // The inert lock's get_lock_surface is ignored — no configure on ls2.
+    #expect(WireMessage.first(events, object: ls2, opcode: 0) == nil, "inert lock must not configure a surface")
+}
+
+/// A lock surface that commits a buffer not matching its configured size must be
+/// rejected with dimensions_mismatch (value 2). Regression guard.
+@Test func sessionLockRejectsMismatchedBuffer() throws {
+    let router = try #require(NucleusWaylandRouter())
+    WlCompositor().register(in: router)
+    WlOutput(info: OutputInfo(
+        physicalWidthMm: 600, physicalHeightMm: 340, pixelWidth: 64, pixelHeight: 48,
+        refreshMhz: 60000, scale: 1, name: "LOCK-1", description: "Lock")).register(in: router)
+    let gate = LockGateStub()
+    let lockMgr = SessionLockManager(); lockMgr.delegate = gate; lockMgr.register(in: router)
+
+    let client = try #require(WaylandTestClient(display: router.display))
+    let globals = client.globals()
+    let shmId: UInt32 = 3, compId: UInt32 = 4, outId: UInt32 = 5, mgrId: UInt32 = 6
+    let lock1: UInt32 = 7, poolId: UInt32 = 8, bufId: UInt32 = 9, surfId: UInt32 = 10, lsurf: UInt32 = 11
+
+    var a = WireBuilder()
+    try bind(&a, "wl_shm", shmId, globals)
+    try bind(&a, "wl_compositor", compId, globals)
+    try bind(&a, "wl_output", outId, globals)
+    try bind(&a, "ext_session_lock_manager_v1", mgrId, globals)
+    a.message(object: mgrId, opcode: 1) { $0.newId(lock1) }  // lock (granted)
+    // A 4×4 buffer — the output (and thus the configure) is 64×48, so it mismatches.
+    let fd = try appendShmBuffer(&a, shmId: shmId, poolId: poolId, bufId: bufId,
+        width: 4, height: 4, stride: 16, format: 0)
+    a.message(object: compId, opcode: 0) { $0.newId(surfId) }
+    a.message(object: lock1, opcode: 1) { $0.newId(lsurf); $0.object(surfId); $0.object(outId) }  // get_lock_surface
+    try client.send(a, fd: fd)
+    client.pump()
+    let configured = client.drainEvents()
+
+    let cfg = try #require(WireMessage.first(configured, object: lsurf, opcode: 0), "no configure")
+    let serial = cfg.u32(0)
+    #expect(cfg.u32(4) == 64 && cfg.u32(8) == 48)  // configured to the output
+
+    var b = WireBuilder()
+    b.message(object: lsurf, opcode: 1) { $0.uint(serial) }  // ack_configure
+    b.message(object: surfId, opcode: 1) { $0.object(bufId); $0.int(0); $0.int(0) }  // attach 4×4
+    b.message(object: surfId, opcode: 6) { _ in }            // commit → mismatch
+    client.send(b)
+    client.pump()
+    let err = try #require(WireError.first(client.drainEvents()), "expected dimensions_mismatch")
+    #expect(err.objectID == lsurf)
+    #expect(err.code == 2)  // dimensions_mismatch
+}
+
+// MARK: - present tick (M0: the live driver for wl_surface.frame + wp_presentation_feedback)
+
+/// The present-report tick — driven live from a real page flip via
+/// `nucleus_runtime_router_note_presented` — must fan out to the surfaces on the flipped output:
+/// fire wl_surface.frame (a wl_callback.done) and deliver wp_presentation_feedback.presented with
+/// the flip's 64-bit timestamp/MSC split into protocol hi/lo halves. Regression guard: this seam
+/// (`completeFrameCallbacks(forOutput:)` / `completePresentedFrame`) had NO live caller until M0.
+@MainActor @Test func presentTickDeliversFrameCallbackAndFeedback() throws {
+    let router = try #require(NucleusWaylandRouter())
+    let compositor = WlCompositor()
+    compositor.register(in: router)
+    router.compositor = compositor  // wired by WaylandRouterRuntime live; the present tick routes through it
+    WpPresentation().register(in: router)
+
+    let client = try #require(WaylandTestClient(display: router.display))
+    let globals = client.globals()
+    let compId: UInt32 = 3, presId: UInt32 = 4, surfId: UInt32 = 5, cbId: UInt32 = 6, fbId: UInt32 = 7
+
+    var a = WireBuilder()
+    try bind(&a, "wl_compositor", compId, globals)
+    try bind(&a, "wp_presentation", presId, globals)
+    a.message(object: compId, opcode: 0) { $0.newId(surfId) }                  // create_surface
+    a.message(object: surfId, opcode: 3) { $0.newId(cbId) }                    // wl_surface.frame(callback)
+    a.message(object: presId, opcode: 1) { $0.object(surfId); $0.newId(fbId) }  // wp_presentation.feedback
+    a.message(object: surfId, opcode: 6) { _ in }                             // commit (latches both)
+    client.send(a)
+    client.pump()
+    _ = client.drainEvents()  // discard bind/create acks
+
+    // Drive the tick exactly as nucleus_runtime_router_note_presented does off a page flip.
+    router.completeFrameCallbacks(forOutput: 1, timeMs: 7000)
+    router.completePresentedFrame(outputId: 1, timestampNs: 7_000_000_123,
+                                  refreshNs: 16_666_666, sequence: 42, flags: 0xf)
+    let events = client.drainEvents()
+
+    // wl_surface.frame → wl_callback.done on the callback id.
+    #expect(WireMessage.first(events, object: cbId, opcode: 0) != nil)
+    // wp_presentation_feedback.presented with the 64-bit timestamp/seq split into hi/lo.
+    let p = try #require(WireMessage.first(events, object: fbId, opcode: 1), "no presented")
+    #expect(p.u32(0) == 0)             // tv_sec_hi
+    #expect(p.u32(4) == 7)             // tv_sec_lo  (7_000_000_123 ns → 7 s)
+    #expect(p.u32(8) == 123)           // tv_nsec
+    #expect(p.u32(12) == 16_666_666)   // refresh
+    #expect(p.u32(16) == 0)            // seq_hi
+    #expect(p.u32(20) == 42)           // seq_lo
+    #expect(p.u32(24) == 0xf)          // flags
+}
+}

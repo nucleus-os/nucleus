@@ -1,0 +1,90 @@
+Subject: [PATCH] ClangImporter: add libc++ CxxStdlib support hooks
+
+Swift's `CxxStdlib` stdlib build on Linux is wired up for libstdc++.
+With CLANG_DEFAULT_CXX_STDLIB=libc++ baked into the toolchain (required
+to make `std::__1::basic_string` reachable from Swift's CxxStdlib
+overlay), the build fails compiling CxxStdlib's `std.swift` with
+"underlying Objective-C module 'CxxStdlib' not found", because:
+
+  1. swift's ClangImporter constructs cc1 args via
+     `clang::createInvocation`. The driver's libc++ include path
+     injection (which on a normal `clang -stdlib=libc++` invocation
+     adds `<clang-binary>/../include/c++/v1` via
+     `Toolchain::AddClangCXXStdlibIncludeArgs`) does NOT take effect
+     for swift's internal mode.
+
+  2. As a result, libc++'s public headers (`<chrono>`, `<string>`,
+     etc.) and libc++'s own `module.modulemap` (which defines
+     `module std`, what swift's existing name-aliasing logic maps to
+     `import CxxStdlib`) are unreachable.
+
+The fix: inject the libc++ include path explicitly into the swift
+ClangImporter's invocation arg list when running on Linux with
+`LangOpts.CXXStdlib == Libcxx`. The path is derived from the swift
+resource-dir's `clang` symlink, which in any in-tree build points at
+the actual clang resource-dir (e.g. `<llvm-build>/lib/clang/<v>/`).
+libc++ lives at `<llvm-build>/include/c++/v1/`, reachable as
+`<swift-resource>/clang/../../../include/c++/v1`.
+
+Android needs a related ClangImporter-side fix with NDK 30. libc++ marks
+C compatibility headers such as `<wchar.h>` as textual modules, so
+building or verifying `CxxStdlib.swiftinterface` can include libc++'s
+`<wchar.h>` more than once and trip duplicate preferred-overload shims
+for `wcschr`, `wcspbrk`, `wcsrchr`, `wcsstr`, and `wmemchr`. Android's
+C++ stdlib is libc++, so the importer defines
+`_LIBCPP_WCHAR_H_HAS_CONST_OVERLOADS=1` for Android targets to suppress
+that redundant shim block.
+
+This patch is a candidate for filing upstream.
+
+Sentinel: NUCLEUS_SWIFT_SOURCE_LIBCXX_LINUX,
+          NUCLEUS_SWIFT_SOURCE_ANDROID_LIBCXX_WCHAR
+
+diff --git a/lib/ClangImporter/ClangImporter.cpp b/lib/ClangImporter/ClangImporter.cpp
+index e864387d440..bd92f74b73c 100644
+--- a/lib/ClangImporter/ClangImporter.cpp
++++ b/lib/ClangImporter/ClangImporter.cpp
+@@ -761,6 +761,43 @@ void importer::getNormalInvocationArguments(
+     }
+   }
+ 
++  // NUCLEUS_SWIFT_SOURCE_LIBCXX_LINUX:
++  // On Linux with libc++ as the C++ stdlib, swift's clang importer
++  // constructs cc1 args via `clang::createInvocation`. The driver's
++  // libc++ include path injection (which on a normal `clang -stdlib=libc++`
++  // invocation finds `<clang-binary>/../include/c++/v1`) does not happen
++  // for the swift-internal mode, so libc++'s public headers (`<chrono>`,
++  // `<string>`, etc.) and its own `module std` modulemap are unreachable.
++  // The CxxStdlib stdlib build fails with "underlying Objective-C module
++  // 'CxxStdlib' not found".
++  //
++  // Inject the libc++ include path explicitly when CXXStdlib is libc++.
++  // We derive it from the swift resource-dir's `clang` symlink, which
++  // points at the actual clang resource-dir
++  // (e.g. <llvm-build>/lib/clang/<v>/). libc++ lives at
++  // <llvm-build>/include/c++/v1/, which is reachable as
++  // <swift-resource>/clang/../../../include/c++/v1.
++  if (triple.isOSLinux() &&
++      LangOpts.CXXStdlib == CXXStdlibKind::Libcxx) {
++    llvm::SmallString<128> libcxxIncludePath(
++        searchPathOpts.RuntimeResourcePath);
++    llvm::sys::path::append(libcxxIncludePath, "clang", "..", "..");
++    llvm::sys::path::append(libcxxIncludePath, "..", "include", "c++", "v1");
++    invocationArgStrs.push_back("-isystem");
++    invocationArgStrs.push_back(libcxxIncludePath.str().str());
++  }
++
++  // NUCLEUS_SWIFT_SOURCE_ANDROID_LIBCXX_WCHAR:
++  // NDK 30's libc++ module map marks C compatibility headers such as
++  // <wchar.h> as textual. While importing the Android libc++ std module,
++  // Clang can textually include libc++'s <wchar.h> more than once and hit
++  // duplicate definitions for its preferred-overload shims. Android uses
++  // libc++ as its C++ stdlib, so define the guard libc++ uses to skip that
++  // redundant shim block.
++  if (triple.isAndroid()) {
++    invocationArgStrs.push_back("-D_LIBCPP_WCHAR_H_HAS_CONST_OVERLOADS=1");
++  }
++
+   const std::string &moduleCachePath = importerOpts.ModuleCachePath;
+   const std::string &scannerCachePath = importerOpts.ClangScannerModuleCachePath;
+   // If a scanner cache is specified, this must be a scanning action. Prefer this

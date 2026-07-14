@@ -1,0 +1,64 @@
+diff --git a/Common/cpp/reanimated/NativeModules/ReanimatedModuleProxy.cpp b/Common/cpp/reanimated/NativeModules/ReanimatedModuleProxy.cpp
+index 313c66d175d7ef83fa28c7bf02ecd9b006fe11ea..2f3fb32aefb5be7d36a12ed4ddeb5907acbf0350 100644
+--- a/Common/cpp/reanimated/NativeModules/ReanimatedModuleProxy.cpp
++++ b/Common/cpp/reanimated/NativeModules/ReanimatedModuleProxy.cpp
+@@ -44,6 +44,12 @@ constexpr bool shouldUseSynchronousUpdatesInPerformOperations() {
+   return StaticFeatureFlags::getFlag("IOS_SYNCHRONOUSLY_UPDATE_UI_PROPS") &&
+       !StaticFeatureFlags::getFlag("ENABLE_SHARED_ELEMENT_TRANSITIONS");
+ }
++#elif defined(NUCLEUS)
++constexpr bool shouldUseSynchronousUpdatesInPerformOperations() {
++  // Nucleus: enable synchronous visual prop updates (transform, opacity, etc.)
++  // to avoid ShadowTree commits for supported props.
++  return true;
++}
+ #else
+ constexpr bool shouldUseSynchronousUpdatesInPerformOperations() {
+   return false;
+@@ -1161,6 +1167,46 @@ void ReanimatedModuleProxy::applySynchronousUpdates(UpdatesBatch &updatesBatch,
+ 
+   updatesBatch = std::move(shadowTreeUpdatesBatch);
+ #endif // __APPLE__
++
++#if defined(NUCLEUS)
++  // Nucleus: same approach as iOS — use folly::dynamic props format,
++  // partition with all-or-nothing per view (allowPartialUpdates=false).
++  static const std::unordered_set<std::string> synchronousProps = {
++      "opacity",
++      "backgroundColor",
++      "tintColor",
++      "borderRadius",
++      "borderTopLeftRadius",
++      "borderTopRightRadius",
++      "borderTopStartRadius",
++      "borderTopEndRadius",
++      "borderBottomLeftRadius",
++      "borderBottomRightRadius",
++      "borderBottomStartRadius",
++      "borderBottomEndRadius",
++      "borderStartStartRadius",
++      "borderStartEndRadius",
++      "borderEndStartRadius",
++      "borderEndEndRadius",
++      "borderColor",
++      "borderTopColor",
++      "borderBottomColor",
++      "borderLeftColor",
++      "borderRightColor",
++      "borderStartColor",
++      "borderEndColor",
++      "transform",
++  };
++
++  auto [synchronousUpdatesBatch, shadowTreeUpdatesBatch] =
++      partitionUpdates(updatesBatch, synchronousProps, false, allowPartialUpdates);
++
++  for (const auto &[shadowNode, props] : synchronousUpdatesBatch) {
++    synchronouslyUpdateUIPropsFunction_(shadowNode->getTag(), props);
++  }
++
++  updatesBatch = std::move(shadowTreeUpdatesBatch);
++#endif // NUCLEUS
+ }
+ 
+ void ReanimatedModuleProxy::requestFlushRegistry() {

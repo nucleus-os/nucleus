@@ -1,0 +1,4 @@
+module TracyBridge {
+  header "TracyBridge/TraceBridge.hpp"
+  export *
+}

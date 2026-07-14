@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "toolchain": {
+    "swiftVersionPrefix": "6.4",
+    "clangMajor": 21
+  },
+  "tools": {
+    "cmakeMinimum": "4.0.0",
+    "ninjaMinimum": "1.11.0",
+    "nodeAllowedMajors": [22, 24],
+    "nodeMinimumFutureMajor": 26,
+    "yarnVersion": "1.22.22",
+    "bunVersion": "1.3.11",
+    "pythonMinimum": "3.12.0",
+    "jinja2Minimum": "3.1.0",
+    "markupsafeMinimum": "3.0.0"
+  },
+  "libraries": {
+    "icuMinimum": "76.0",
+    "libeventMinimum": "2.1.12",
+    "opensslMinimum": "3.0.0",
+    "vulkanMinimum": "1.3.0",
+    "fontconfigMinimum": "2.14.0",
+    "freetypeMinimum": "24.0.0"
+  },
+  "cef": {
+    "branch": "7871",
+    "chromiumVersion": "150.0.7871.115",
+    "proprietaryCodecs": true,
+    "ffmpegBranding": "Chrome",
+    "dbus": true,
+    "mpris": true
+  }
+}

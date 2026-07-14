@@ -1,0 +1,8 @@
+// SwiftPM-owned module map for the libsystemd sd-bus façade. Separate from the
+// Zig build's valence/systemd/c/NucleusCompositorSystemdC.modulemap (which stays until the
+// build.zig retirement) so clang never auto-loads two maps for one include dir.
+// The header is the same first-party façade source, symlinked in.
+module NucleusCompositorSystemdC {
+    header "NucleusCompositorSystemdC.h"
+    export *
+}

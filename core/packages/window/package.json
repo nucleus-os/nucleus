@@ -1,0 +1,19 @@
+{
+  "name": "@nucleus-os/window",
+  "version": "0.1.0",
+  "description": "Window controls for NUCLEUS desktop apps",
+  "license": "MIT",
+  "main": "js/index.ts",
+  "types": "js/index.ts",
+  "files": [
+    "js/**"
+  ],
+  "peerDependencies": {
+    "@nucleus-os/app": "workspace:*",
+    "react": ">=18.0.0",
+    "react-native": ">=0.76.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

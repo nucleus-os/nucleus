@@ -1,0 +1,4 @@
+module NucleusAndroidC {
+    header "nucleus_android_jni.h"
+    export *
+}

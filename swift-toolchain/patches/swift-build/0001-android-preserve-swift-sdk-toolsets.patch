@@ -1,0 +1,152 @@
+Subject: [PATCH] SwiftBuild: preserve Android Swift SDK toolsets
+
+Swift Build's Android platform plugin was discarding Swift SDK toolsets
+and relying entirely on its locally discovered NDK settings. That breaks
+Android artifact bundles that need to pass Swift-driver options such as
+`-tools-directory` so the driver uses the NDK clang driver instead of the
+host toolchain's clang.
+
+Keep Android Swift SDK toolsets in the synthesized SDK, and match
+SwiftPM's native build-system behavior by translating a toolset `rootPath`
+into `-tools-directory` for Swift compilation and swiftc-driven linking.
+
+Sentinel: NUCLEUS_SWIFT_BUILD_ANDROID_SWIFT_SDK_TOOLSETS
+
+diff --git a/Sources/SWBAndroidPlatform/Plugin.swift b/Sources/SWBAndroidPlatform/Plugin.swift
+index 7de15a91..2e52ae01 100644
+--- a/Sources/SWBAndroidPlatform/Plugin.swift
++++ b/Sources/SWBAndroidPlatform/Plugin.swift
+@@ -174,10 +174,7 @@ struct AndroidPlatformExtension: PlatformInfoExtension {
+             // Trick the build system into passing -sdk <ndk-path>, as the flag is broken right now despite passing -sysroot
+             overrideSdkRoot: ndk.sysroot.path,
+ 
+-            // HACK: All information in swift-toolset.json for Android Swift SDKs is redundant.
+-            // Ignore it until it can be removed from the SDK itself when the native build system is removed from SwiftPM, and then this can be removed.
+-            overrideToolsetAbsolutePaths: [],
+-
++            // NUCLEUS_SWIFT_BUILD_ANDROID_SWIFT_SDK_TOOLSETS: preserve Swift SDK toolsets so Android bundles can pass driver options such as -tools-directory.
+             additionalCustomProperties: androidSDKAdditionalCustomProperties(ndk: ndk, hostOS: context.hostOperatingSystem)
+         )
+     }
+diff --git a/Sources/SWBCore/Settings/Settings.swift b/Sources/SWBCore/Settings/Settings.swift
+index cfff81f7..c7e38a9b 100644
+--- a/Sources/SWBCore/Settings/Settings.swift
++++ b/Sources/SWBCore/Settings/Settings.swift
+@@ -2868,22 +2868,24 @@ private class SettingsBuilder: ProjectMatchLookup {
+                     if let path = toolset.swiftCompiler?.path {
+                         table.push(BuiltinMacros.SWIFT_EXEC, literal: toolset.resolveToolPath(path, toolsetPath: toolsetPath).str)
+                     }
+-                    if let extraCLIOptions = toolset.swiftCompiler?.extraCLIOptions, !extraCLIOptions.isEmpty {
+-                        table.push(BuiltinMacros.OTHER_SWIFT_FLAGS, table.namespace.parseStringList(["$(inherited)"] + extraCLIOptions))
++                    let toolsDirectoryOptions = toolset.resolveRootPath(toolsetPath: toolsetPath).map { ["-tools-directory", $0.str] } ?? []
++                    let swiftCompilerOptions = (toolset.swiftCompiler?.extraCLIOptions ?? []) + toolsDirectoryOptions
++                    if !swiftCompilerOptions.isEmpty {
++                        table.push(BuiltinMacros.OTHER_SWIFT_FLAGS, table.namespace.parseStringList(["$(inherited)"] + swiftCompilerOptions))
+                         // Historically, SwiftPM passed extra swift compiler flags to swiftc when used as a linker driver.
+                         // To maintain compatibility wherever possible, continue doing this when using swiftc to link.
+                         // In the future, we should consider changes to the toolset.json spec so users can make it clear
+                         // whether or not this behavior is desired.
+                         table.push(
+                             table.namespace.lookupOrDeclareMacro(StringListMacroDeclaration.self, "OTHER_LDFLAGS_FROM_TOOLSET_LINKER_DRIVER_swiftc"),
+-                            table.namespace.parseStringList(["$(inherited)"] + extraCLIOptions)
++                            table.namespace.parseStringList(["$(inherited)"] + swiftCompilerOptions)
+                         )
+                         table.push(
+                             BuiltinMacros.OTHER_LDFLAGS,
+                             table.namespace.parseStringList(["$(inherited)", "$(OTHER_LDFLAGS_FROM_TOOLSET_LINKER_DRIVER_$(LINKER_DRIVER))"])
+                         )
+ 
+-                        for option in extraCLIOptions {
++                        for option in swiftCompilerOptions {
+                             switch option {
+                             // Previously we set SWIFT_FORCE_STATIC_LINK_STDLIB here if the toolset contained -static-stdlib,
+                             // to ensure the static resource directory was selected. However, as of 4/1/26, The WebAssembly
+diff --git a/Sources/SWBProtocol/SwiftSDK.swift b/Sources/SWBProtocol/SwiftSDK.swift
+index 1c773f09..4ea067c1 100644
+--- a/Sources/SWBProtocol/SwiftSDK.swift
++++ b/Sources/SWBProtocol/SwiftSDK.swift
+@@ -120,6 +120,18 @@ public struct SwiftSDK: Sendable, Hashable, Codable, SerializableCodable {
+             }
+             return toolsetPath.dirname.join(toolPath)
+         }
++
++        public func resolveRootPath(toolsetPath: Path) -> Path? {
++            guard let rootPath else {
++                return nil
++            }
++
++            let root = Path(rootPath)
++            if root.isAbsolute {
++                return root
++            }
++            return toolsetPath.dirname.join(root)
++        }
+     }
+ 
+     /// The path to the SDK.
+diff --git a/Tests/SWBAndroidPlatformTests/SWBAndroidPlatformTests.swift b/Tests/SWBAndroidPlatformTests/SWBAndroidPlatformTests.swift
+index 3bbf54a2..b754878e 100644
+--- a/Tests/SWBAndroidPlatformTests/SWBAndroidPlatformTests.swift
++++ b/Tests/SWBAndroidPlatformTests/SWBAndroidPlatformTests.swift
+@@ -95,6 +95,7 @@ fileprivate struct AndroidTaskConstructionTests: CoreBasedTests {
+             try await localFS.writeFileContents(sdkManifestDir.join("swift-toolset.json"), waitForNewTimestamp: false, body: { stream in
+                 stream.write("""
+                 {
++                    "rootPath": "ndk-toolchain/bin",
+                     "cCompiler": { "extraCLIOptions": ["-fPIC"] },
+                     "swiftCompiler": { "extraCLIOptions": ["-Xclang-linker", "-fuse-ld=lld"] },
+                     "linker": { "extraCLIOptions": ["-z", "max-page-size=16384"] },
+@@ -121,6 +122,8 @@ fileprivate struct AndroidTaskConstructionTests: CoreBasedTests {
+                         ["-resource-dir", sdkManifestDir.join("swift-resources").join("usr").join("lib").join("swift-\(architecture)").str],
+                         ["-sdk", ndk.sysroot.path.str],
+                         ["-target", "\(architecture)-unknown-linux-android28"],
++                        ["-Xclang-linker", "-fuse-ld=lld"],
++                        ["-tools-directory", sdkManifestDir.join("ndk-toolchain").join("bin").str],
+                     ].reduce([], +))
+ 
+                     task.checkCommandLineMatches([.equal("-sysroot"), .pathEqual(prefix: "", ndk.sysroot.path)])
+diff --git a/Tests/SWBCoreTests/SwiftSDKToolsetSettingsTests.swift b/Tests/SWBCoreTests/SwiftSDKToolsetSettingsTests.swift
+index d27aca7f..7cd933b3 100644
+--- a/Tests/SWBCoreTests/SwiftSDKToolsetSettingsTests.swift
++++ b/Tests/SWBCoreTests/SwiftSDKToolsetSettingsTests.swift
+@@ -86,6 +86,7 @@ fileprivate struct SwiftSDKToolsetSettingsTests: CoreBasedTests {
+             #expect(settings.globalScope.evaluate(BuiltinMacros.OTHER_CFLAGS).contains("-DCFLAG"))
+             #expect(settings.globalScope.evaluate(BuiltinMacros.OTHER_CPLUSPLUSFLAGS).contains("-DCXXFLAG"))
+             #expect(settings.globalScope.evaluate(BuiltinMacros.OTHER_SWIFT_FLAGS).contains("-DSWIFTFLAG"))
++            #expect(settings.globalScope.evaluate(BuiltinMacros.OTHER_SWIFT_FLAGS).contains(["-tools-directory", Path.root.join("toolchain").str]))
+             #expect(settings.globalScope.evaluate(BuiltinMacros.OTHER_LDFLAGS).contains(["-Xlinker", "-lLib"]))
+             #expect(settings.globalScope.evaluate(BuiltinMacros.OTHER_LIBTOOLFLAGS).contains("-lOtherLib"))
+         }
+@@ -141,6 +142,32 @@ fileprivate struct SwiftSDKToolsetSettingsTests: CoreBasedTests {
+         }
+     }
+ 
++    @Test(.requireSDKs(.host))
++    func toolsetRootPathPassedToSwiftCompilerAndLinkerDriver() async throws {
++        try await withTemporaryDirectory { tmpDir in
++            let toolsetPath = tmpDir.join("toolset.json")
++            let toolset = SwiftSDK.Toolset(
++                rootPath: "ndk-toolchain/bin"
++            )
++            try writeToolsetJSON(toolset, to: toolsetPath)
++            let settings = try await createTestSettings(projectBuildSettings: [
++                "SWIFT_SDK_TOOLSETS": toolsetPath.strWithPosixSlashes,
++                "LINKER_DRIVER": "swiftc",
++            ])
++
++            let toolsDirectory = toolsetPath.dirname.join("ndk-toolchain").join("bin").str
++            #expect(settings.globalScope.evaluate(BuiltinMacros.OTHER_SWIFT_FLAGS).contains(["-tools-directory", toolsDirectory]))
++            #expect(settings.globalScope.evaluate(BuiltinMacros.OTHER_LDFLAGS).contains(["-tools-directory", toolsDirectory]))
++
++            let settings2 = try await createTestSettings(projectBuildSettings: [
++                "SWIFT_SDK_TOOLSETS": toolsetPath.strWithPosixSlashes,
++                "LINKER_DRIVER": "clang",
++            ])
++            #expect(settings2.globalScope.evaluate(BuiltinMacros.OTHER_SWIFT_FLAGS).contains(["-tools-directory", toolsDirectory]))
++            #expect(!settings2.globalScope.evaluate(BuiltinMacros.OTHER_LDFLAGS).contains(["-tools-directory", toolsDirectory]))
++        }
++    }
++
+     @Test(.requireSDKs(.host))
+     func toolPathResolution() async throws {
+         try await withTemporaryDirectory { tmpDir in

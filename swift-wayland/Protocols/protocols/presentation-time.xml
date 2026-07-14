@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<protocol name="presentation_time">
+  <interface name="wp_presentation" version="2">
+    <description summary="presentation timing feedback"/>
+    <enum name="error">
+      <entry name="invalid_timestamp" value="0" summary="invalid value in tv_nsec"/>
+      <entry name="invalid_flag" value="1" summary="invalid flag"/>
+    </enum>
+    <request name="destroy" type="destructor">
+      <description summary="destroy presentation global binding"/>
+    </request>
+    <request name="feedback">
+      <description summary="request presentation feedback for current submission"/>
+      <arg name="surface" type="object" interface="wl_surface" summary="target surface"/>
+      <arg name="callback" type="new_id" interface="wp_presentation_feedback" summary="feedback object"/>
+    </request>
+    <event name="clock_id">
+      <description summary="presentation clock ID"/>
+      <arg name="clk_id" type="uint" summary="platform clock identifier"/>
+    </event>
+  </interface>
+
+  <interface name="wp_presentation_feedback" version="2">
+    <description summary="per-commit presentation feedback"/>
+    <event name="sync_output">
+      <description summary="presentation output"/>
+      <arg name="output" type="object" interface="wl_output" summary="presentation output"/>
+    </event>
+    <enum name="kind" bitfield="true">
+      <entry name="vsync" value="0x1" summary="presentation was synchronized to vblank"/>
+      <entry name="hw_clock" value="0x2" summary="timestamp came from hardware"/>
+      <entry name="hw_completion" value="0x4" summary="hardware reported presentation start"/>
+      <entry name="zero_copy" value="0x8" summary="presentation used the client buffer directly"/>
+    </enum>
+    <event name="presented" type="destructor">
+      <description summary="content was presented"/>
+      <arg name="tv_sec_hi" type="uint" summary="high 32 bits of seconds"/>
+      <arg name="tv_sec_lo" type="uint" summary="low 32 bits of seconds"/>
+      <arg name="tv_nsec" type="uint" summary="nanoseconds"/>
+      <arg name="refresh" type="uint" summary="nanoseconds until next refresh"/>
+      <arg name="seq_hi" type="uint" summary="high 32 bits of refresh sequence"/>
+      <arg name="seq_lo" type="uint" summary="low 32 bits of refresh sequence"/>
+      <arg name="flags" type="uint" enum="kind" summary="presentation flags"/>
+    </event>
+    <event name="discarded" type="destructor">
+      <description summary="content was not presented"/>
+    </event>
+  </interface>
+</protocol>

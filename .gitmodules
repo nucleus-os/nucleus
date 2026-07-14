@@ -1,0 +1,42 @@
+[submodule "core/third-party/skia"]
+	path = core/third-party/skia
+	url = https://skia.googlesource.com/skia.git
+[submodule "core/third-party/libxkbcommon"]
+	path = core/third-party/libxkbcommon
+	url = https://github.com/xkbcommon/libxkbcommon.git
+[submodule "core/third-party/swift-system"]
+	path = core/third-party/swift-system
+	url = git@github.com:maddythewisp/swift-system.git
+	branch = release/1.7.0
+[submodule "third-party/swift-java"]
+	path = third-party/swift-java
+	url = git@github.com:maddythewisp/swift-java.git
+	branch = nucleus-cxx-interop
+[submodule "third-party/swift-java-jni-core"]
+	path = third-party/swift-java-jni-core
+	url = git@github.com:maddythewisp/swift-java-jni-core.git
+	branch = nucleus-cxx-interop
+[submodule "react-native/third-party/hermes"]
+	path = react-native/third-party/hermes
+	url = https://github.com/facebook/hermes
+[submodule "react-native/third-party/folly"]
+	path = react-native/third-party/folly
+	url = https://github.com/facebook/folly
+[submodule "react-native/third-party/glog"]
+	path = react-native/third-party/glog
+	url = https://github.com/google/glog
+[submodule "react-native/third-party/fmt"]
+	path = react-native/third-party/fmt
+	url = https://github.com/fmtlib/fmt
+[submodule "react-native/third-party/fast_float"]
+	path = react-native/third-party/fast_float
+	url = https://github.com/fastfloat/fast_float
+[submodule "react-native/third-party/react-native"]
+	path = react-native/third-party/react-native
+	url = https://github.com/facebook/react-native.git
+[submodule "react-native/third-party/double-conversion"]
+	path = react-native/third-party/double-conversion
+	url = https://github.com/google/double-conversion
+[submodule "swift-tracy/third-party/tracy"]
+	path = swift-tracy/third-party/tracy
+	url = https://github.com/wolfpld/tracy.git

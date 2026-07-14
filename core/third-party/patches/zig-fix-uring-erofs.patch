@@ -1,0 +1,20 @@
+diff --git a/lib/std/Io/Uring.zig b/lib/std/Io/Uring.zig
+index b28d78db79..35d3e3f6b6 100644
+--- a/lib/std/Io/Uring.zig
++++ b/lib/std/Io/Uring.zig
+@@ -2729,6 +2729,7 @@ fn dirOpenDir(
+             error.FileBusy => return errnoBug(.TXTBSY),
+             error.PathAlreadyExists => return errnoBug(.EXIST), // Not creating.
+             error.OperationUnsupported => return errnoBug(.OPNOTSUPP), // No TMPFILE, no locks.
++            error.ReadOnlyFileSystem => return errnoBug(.ROFS), // Not creating.
+             else => |e| return e,
+         },
+     };
+@@ -3154,6 +3155,7 @@ fn dirRealPathFile(
+     }, 0) catch |err| switch (err) {
+         error.WouldBlock => return errnoBug(.AGAIN),
+         error.OperationUnsupported => return errnoBug(.OPNOTSUPP), // Not asking for locks.
++        error.ReadOnlyFileSystem => return errnoBug(.ROFS), // Not creating.
+         else => |e| return e,
+     };
+     defer ev.closeAsync(fd);

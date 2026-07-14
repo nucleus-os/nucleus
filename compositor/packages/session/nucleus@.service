@@ -1,0 +1,19 @@
+[Unit]
+Description=Nucleus compositor session %i
+Documentation=man:systemd.service(5)
+
+[Service]
+Type=simple
+RuntimeDirectory=nucleus-%i
+RuntimeDirectoryMode=0700
+Environment=NUCLEUS_SESSION_ID=%i
+Environment=NUCLEUS_SESSION_RUNTIME_DIR=%t/nucleus-%i
+Environment=XDG_SESSION_TYPE=wayland
+Environment=XDG_CURRENT_DESKTOP=Nucleus:Wayland
+Environment=XDG_SESSION_DESKTOP=Nucleus
+Environment=DESKTOP_SESSION=Nucleus
+ExecStart=@bindir@/nucleus-session @bindir@/nucleus-compositor
+Restart=no
+
+[Install]
+WantedBy=default.target

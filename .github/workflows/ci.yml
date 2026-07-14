@@ -1,0 +1,25 @@
+name: monorepo-ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: monorepo-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    runs-on: [self-hosted, Linux, X64, nucleus]
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Validate host contract
+        run: tools/nucleus doctor
+      - name: Bootstrap and build all products
+        run: tools/nucleus bootstrap
+      - name: Test all products
+        run: tools/nucleus test all

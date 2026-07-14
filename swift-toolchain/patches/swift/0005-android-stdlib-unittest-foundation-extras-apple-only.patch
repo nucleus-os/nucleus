@@ -1,0 +1,33 @@
+Subject: [PATCH] stdlib/private/StdlibUnittestFoundationExtras: restrict to
+ Apple platforms
+
+swiftStdlibUnittestFoundationExtras imports ObjectiveC (via
+UnavailableFoundationMethodThunks.mm and its Darwin-only
+Foundation/Observation SWIFT_MODULE_DEPENDS_* lists a few lines above) —
+genuinely Apple-only content, but the add_swift_target_library call had no
+TARGET_SDKS restriction saying so. When cross-compiling the standard
+library to Android (or any other non-Apple SDK) from this same build, it
+was attempted anyway and failed to import ObjectiveC. Restrict it to
+ALL_APPLE_PLATFORMS, matching what its own dependency lists already imply.
+
+This patch is a candidate for filing upstream.
+
+Sentinel: NUCLEUS_SWIFT_SOURCE_ANDROID_STDLIB_UNITTEST_FOUNDATION_EXTRAS
+
+diff --git a/stdlib/private/StdlibUnittestFoundationExtras/CMakeLists.txt b/stdlib/private/StdlibUnittestFoundationExtras/CMakeLists.txt
+index ffcb3259043..1b7ffc3c585 100644
+--- a/stdlib/private/StdlibUnittestFoundationExtras/CMakeLists.txt
++++ b/stdlib/private/StdlibUnittestFoundationExtras/CMakeLists.txt
+@@ -18,6 +18,12 @@ add_swift_target_library(swiftStdlibUnittestFoundationExtras ${SWIFT_STDLIB_LIBR
+   SWIFT_MODULE_DEPENDS_MACCATALYST ${swift_stdlib_unittest_foundationextras_darwin_dependencies}
+   SWIFT_MODULE_DEPENDS StdlibUnittest
+   SWIFT_COMPILE_FLAGS ${SWIFT_STANDARD_LIBRARY_SWIFT_FLAGS}
++  # This module imports ObjectiveC (via UnavailableFoundationMethodThunks.mm
++  # and the Darwin-only Foundation/Observation deps above) — genuinely
++  # Apple-only content with no TARGET_SDKS restriction to say so, so it was
++  # being attempted (and failing to import ObjectiveC) when cross-compiling
++  # to Android too.
++  TARGET_SDKS ALL_APPLE_PLATFORMS
+   INSTALL_IN_COMPONENT stdlib-experimental
+   DARWIN_INSTALL_NAME_DIR "${SWIFT_DARWIN_STDLIB_PRIVATE_INSTALL_NAME_DIR}"
+

@@ -1,0 +1,268 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [ "${1:-}" = "--help" ]; then
+  cat <<'USAGE'
+usage: nucleus-session [nucleus-compositor [args...]]
+
+Construct the Nucleus Linux session environment and run the compositor inside a
+private session bus. The compositor consumes the resulting environment; it does
+not own session construction in production.
+USAGE
+  exit 0
+fi
+
+uid="$(id -u)"
+parent_runtime_dir="${XDG_RUNTIME_DIR:-/run/user/$uid}"
+home="${HOME:-}"
+while [ "$parent_runtime_dir" != "/" ] && [ "${parent_runtime_dir%/}" != "$parent_runtime_dir" ]; do
+  parent_runtime_dir="${parent_runtime_dir%/}"
+done
+while [ "$home" != "/" ] && [ "${home%/}" != "$home" ]; do
+  home="${home%/}"
+done
+case "$parent_runtime_dir" in
+  /*) ;;
+  *)
+    echo "nucleus-session: XDG_RUNTIME_DIR must be an absolute path: $parent_runtime_dir" >&2
+    exit 64
+    ;;
+esac
+case "$parent_runtime_dir" in
+  /|/run|/run/user)
+    echo "nucleus-session: refusing unsafe XDG_RUNTIME_DIR: $parent_runtime_dir" >&2
+    exit 64
+    ;;
+esac
+if [ -L "$parent_runtime_dir" ]; then
+  echo "nucleus-session: refusing symlink XDG_RUNTIME_DIR: $parent_runtime_dir" >&2
+  exit 64
+fi
+if [ ! -d "$parent_runtime_dir" ]; then
+  echo "nucleus-session: XDG_RUNTIME_DIR must exist as a directory: $parent_runtime_dir" >&2
+  exit 64
+fi
+case "$home" in
+  /*) ;;
+  *)
+    echo "nucleus-session: HOME must be an absolute path" >&2
+    exit 64
+    ;;
+esac
+if [ "$home" = "/" ]; then
+  echo "nucleus-session: refusing unsafe HOME: $home" >&2
+  exit 64
+fi
+session_id_explicit=0
+if [ -n "${NUCLEUS_SESSION_ID+x}" ]; then
+  session_id_explicit=1
+  session_id="$NUCLEUS_SESSION_ID"
+else
+  session_id="$$"
+fi
+case "$session_id" in
+  ""|*/*)
+    echo "nucleus-session: NUCLEUS_SESSION_ID must be non-empty and must not contain '/'" >&2
+    exit 64
+    ;;
+esac
+explicit_runtime_dir=0
+if [ -n "${NUCLEUS_SESSION_RUNTIME_DIR+x}" ]; then
+  explicit_runtime_dir=1
+  runtime_dir="$NUCLEUS_SESSION_RUNTIME_DIR"
+else
+  runtime_dir="$parent_runtime_dir/nucleus-$session_id"
+fi
+if [ -n "${NUCLEUS_SESSION_STATE_ROOT+x}" ]; then
+  state_root="$NUCLEUS_SESSION_STATE_ROOT"
+else
+  state_root="$home/.config-nucleus"
+fi
+while [ "$runtime_dir" != "/" ] && [ "${runtime_dir%/}" != "$runtime_dir" ]; do
+  runtime_dir="${runtime_dir%/}"
+done
+while [ "$state_root" != "/" ] && [ "${state_root%/}" != "$state_root" ]; do
+  state_root="${state_root%/}"
+done
+parent_pipewire_remote="${PIPEWIRE_REMOTE:-pipewire-0}"
+parent_pulse_server="${PULSE_SERVER:-unix:$parent_runtime_dir/pulse/native}"
+compositor="${1:-nucleus-compositor}"
+if [ "$#" -gt 0 ]; then
+  shift
+fi
+
+runtime_base="${runtime_dir##*/}"
+runtime_parent="${runtime_dir%/*}"
+case "$runtime_dir" in
+  /*) ;;
+  *)
+    echo "nucleus-session: runtime dir must be an absolute path: $runtime_dir" >&2
+    exit 64
+    ;;
+esac
+case "$runtime_base" in
+  nucleus-?*) ;;
+  *)
+    echo "nucleus-session: runtime dir basename must start with nucleus- and include an id: $runtime_dir" >&2
+    exit 64
+    ;;
+esac
+runtime_session_id="${runtime_base#nucleus-}"
+if [ "$explicit_runtime_dir" -eq 1 ]; then
+  if [ "$session_id_explicit" -eq 1 ] && [ "$session_id" != "$runtime_session_id" ]; then
+    echo "nucleus-session: NUCLEUS_SESSION_ID must match NUCLEUS_SESSION_RUNTIME_DIR basename: $session_id != $runtime_session_id" >&2
+    exit 64
+  fi
+  if [ "$session_id_explicit" -eq 0 ]; then
+    session_id="$runtime_session_id"
+  fi
+fi
+case "$runtime_dir" in
+  /|/run|/run/user|"$parent_runtime_dir")
+    echo "nucleus-session: refusing unsafe runtime dir: $runtime_dir" >&2
+    exit 64
+    ;;
+esac
+case "$runtime_dir" in
+  "$parent_runtime_dir"/nucleus-*) ;;
+  *)
+    echo "nucleus-session: runtime dir must live under XDG_RUNTIME_DIR: $runtime_dir" >&2
+    exit 64
+    ;;
+esac
+if [ "$runtime_parent" != "$parent_runtime_dir" ]; then
+  echo "nucleus-session: runtime dir must be a direct child of XDG_RUNTIME_DIR: $runtime_dir" >&2
+  exit 64
+fi
+if [ -L "$runtime_dir" ]; then
+  echo "nucleus-session: refusing symlink runtime dir: $runtime_dir" >&2
+  exit 64
+fi
+if [ -e "$runtime_dir" ] && [ ! -d "$runtime_dir" ]; then
+  echo "nucleus-session: runtime dir path exists but is not a directory: $runtime_dir" >&2
+  exit 64
+fi
+if [ "$explicit_runtime_dir" -eq 1 ] && [ ! -d "$runtime_dir" ]; then
+  echo "nucleus-session: explicit runtime dir must already exist: $runtime_dir" >&2
+  exit 64
+fi
+
+case "$state_root" in
+  /*) ;;
+  *)
+    echo "nucleus-session: state root must be an absolute path: $state_root" >&2
+    exit 64
+    ;;
+esac
+case "$state_root" in
+  /|"$home")
+    echo "nucleus-session: refusing unsafe state root: $state_root" >&2
+    exit 64
+    ;;
+esac
+if [ -L "$state_root" ]; then
+  echo "nucleus-session: refusing symlink state root: $state_root" >&2
+  exit 64
+fi
+if [ -e "$state_root" ] && [ ! -d "$state_root" ]; then
+  echo "nucleus-session: state root path exists but is not a directory: $state_root" >&2
+  exit 64
+fi
+
+created_runtime=0
+if [ "$explicit_runtime_dir" -eq 0 ] && [ -d "$runtime_dir" ]; then
+  rm -rf -- "$runtime_dir"
+fi
+if [ ! -d "$runtime_dir" ]; then
+  mkdir -m 700 -- "$runtime_dir"
+  created_runtime=1
+fi
+chmod 700 -- "$runtime_dir"
+
+cleanup() {
+  if [ "$created_runtime" -eq 1 ]; then
+    rm -rf -- "$runtime_dir"
+  fi
+}
+trap cleanup EXIT
+
+export NUCLEUS_SESSION_ID="$session_id"
+export NUCLEUS_SESSION_RUNTIME_DIR="$runtime_dir"
+export XDG_RUNTIME_DIR="$runtime_dir"
+unset WAYLAND_DISPLAY
+unset WAYLAND_SOCKET
+unset DISPLAY
+unset XAUTHORITY
+unset DBUS_SESSION_BUS_ADDRESS
+unset DBUS_STARTER_ADDRESS
+unset DBUS_STARTER_BUS_TYPE
+unset PIPEWIRE_RUNTIME_DIR
+unset PIPEWIRE_REMOTE
+unset PULSE_SERVER
+
+if [ "${NUCLEUS_EPHEMERAL_CONFIG:-0}" = "1" ]; then
+  xdg_root="$runtime_dir"
+else
+  xdg_root="$state_root"
+fi
+if [ -L "$xdg_root" ]; then
+  echo "nucleus-session: refusing symlink XDG root: $xdg_root" >&2
+  exit 64
+fi
+if [ -e "$xdg_root" ] && [ ! -d "$xdg_root" ]; then
+  echo "nucleus-session: XDG root path exists but is not a directory: $xdg_root" >&2
+  exit 64
+fi
+mkdir -p "$xdg_root/config" "$xdg_root/data" "$xdg_root/state" "$xdg_root/cache"
+for xdg_child in "$xdg_root/config" "$xdg_root/data" "$xdg_root/state" "$xdg_root/cache"; do
+  if [ -L "$xdg_child" ]; then
+    echo "nucleus-session: refusing symlink XDG child root: $xdg_child" >&2
+    exit 64
+  fi
+  if [ ! -d "$xdg_child" ]; then
+    echo "nucleus-session: XDG child root must be a directory: $xdg_child" >&2
+    exit 64
+  fi
+done
+chmod 700 "$xdg_root" "$xdg_root/config" "$xdg_root/data" "$xdg_root/state" "$xdg_root/cache"
+export XDG_CONFIG_HOME="$xdg_root/config"
+export XDG_DATA_HOME="$xdg_root/data"
+export XDG_STATE_HOME="$xdg_root/state"
+export XDG_CACHE_HOME="$xdg_root/cache"
+
+if [ -z "${GIT_CONFIG_GLOBAL:-}" ]; then
+  if [ -f "$home/.config/git/config" ]; then
+    export GIT_CONFIG_GLOBAL="$home/.config/git/config"
+  elif [ -f "$home/.gitconfig" ]; then
+    export GIT_CONFIG_GLOBAL="$home/.gitconfig"
+  fi
+fi
+
+if [ -S "$parent_runtime_dir/pipewire-0" ]; then
+  export PIPEWIRE_RUNTIME_DIR="$parent_runtime_dir"
+  export PIPEWIRE_REMOTE="$parent_pipewire_remote"
+fi
+if [ -S "$parent_runtime_dir/pulse/native" ]; then
+  export PULSE_SERVER="$parent_pulse_server"
+fi
+
+export XDG_SESSION_TYPE=wayland
+export XDG_CURRENT_DESKTOP=Nucleus:Wayland
+export XDG_SESSION_DESKTOP=Nucleus
+export DESKTOP_SESSION=Nucleus
+
+if ! command -v dbus-run-session >/dev/null 2>&1; then
+  echo "nucleus-session: dbus-run-session is required for the private session bus" >&2
+  exit 127
+fi
+
+dbus_run_session=(dbus-run-session)
+if [ -n "${NUCLEUS_DBUS_SESSION_CONFIG:-}" ]; then
+  dbus_run_session+=("--config-file=$NUCLEUS_DBUS_SESSION_CONFIG")
+fi
+
+set +e
+"${dbus_run_session[@]}" -- "$compositor" "$@"
+status=$?
+set -e
+exit "$status"

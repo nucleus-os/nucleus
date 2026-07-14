@@ -1,0 +1,12 @@
+[versions]
+agp = "9.2.1"
+compileSdkApi = "37"
+compileSdkMinor = "0"
+minSdk = "24"
+targetSdkApi = "37"
+buildTools = "36.0.0"
+ndk = "30.0.14904198"
+
+[plugins]
+androidApplication = { id = "com.android.application", version.ref = "agp" }
+androidLibrary = { id = "com.android.library", version.ref = "agp" }

@@ -1,0 +1,71 @@
+Subject: [PATCH] SwiftDriver: fall back to resource-dir swiftrt for Android
+
+Swift's new Swift driver prefers `swiftrt.o` from the SDK sysroot when
+`-sdk` is present. That is correct for SDKs that bundle Swift runtime
+objects, but Android builds pass the NDK sysroot as `-sdk` and the NDK
+does not ship Swift runtime files.
+
+During the Android SDK build, libdispatch/Foundation CMake projects pass
+both the NDK sysroot and the just-built Swift resource dir. The link job
+therefore has enough information to find `swiftrt.o`, but currently still
+looks under `<ndk-sysroot>/usr/lib/swift/...` and fails unless the NDK is
+patched. For Android only, fall back to the explicit Swift resource dir
+when the SDK runtime object is absent and the resource-dir object exists.
+
+This keeps the installed NDK unmodified while preserving the SDK-first
+behavior for platforms that actually bundle Swift runtime files in their
+SDK.
+
+Sentinel: NUCLEUS_SWIFT_DRIVER_ANDROID_SWIFTRT_RESOURCE_FALLBACK
+
+diff --git a/Sources/SwiftDriver/Jobs/GenericUnixToolchain+LinkerSupport.swift b/Sources/SwiftDriver/Jobs/GenericUnixToolchain+LinkerSupport.swift
+index 7724d4a8..775dfb8f 100644
+--- a/Sources/SwiftDriver/Jobs/GenericUnixToolchain+LinkerSupport.swift
++++ b/Sources/SwiftDriver/Jobs/GenericUnixToolchain+LinkerSupport.swift
+@@ -187,8 +187,13 @@ extension GenericUnixToolchain {
+       }
+ 
+       if !isEmbeddedEnabled && !parsedOptions.hasArgument(.nostartfiles) {
+-        let rsrc: VirtualPath
++        let platform: String = targetTriple.platformName() ?? ""
++        let architecture: String = majorArchitectureName(for: targetTriple)
++        let resourceRuntimeObject = VirtualPath.lookup(targetInfo.runtimeResourcePath.path)
++          .appending(components: platform, architecture, "swiftrt.o")
++
+         // Prefer the swiftrt.o runtime file from the SDK if it's specified.
++        let runtimeObject: VirtualPath
+         if let sdk = targetInfo.sdkPath {
+           let swiftDir: String
+           if staticStdlib || staticExecutable {
+@@ -196,13 +201,26 @@ extension GenericUnixToolchain {
+           } else {
+             swiftDir = "swift"
+           }
+-          rsrc = VirtualPath.lookup(sdk.path).appending(components: "usr", "lib", swiftDir)
++          let sdkRuntimeObject = VirtualPath.lookup(sdk.path)
++            .appending(components: "usr", "lib", swiftDir, platform, architecture, "swiftrt.o")
++
++          // NUCLEUS_SWIFT_DRIVER_ANDROID_SWIFTRT_RESOURCE_FALLBACK:
++          // Android NDK sysroots do not ship Swift runtime objects. When an
++          // Android build passes the NDK sysroot as -sdk and an explicit Swift
++          // resource dir, use the resource-dir swiftrt.o rather than requiring
++          // the NDK to be patched with Swift files.
++          let sdkHasRuntimeObject = try fileSystem.exists(sdkRuntimeObject)
++          let resourceHasRuntimeObject = try fileSystem.exists(resourceRuntimeObject)
++          if targetTriple.environment == .android &&
++              !sdkHasRuntimeObject && resourceHasRuntimeObject {
++            runtimeObject = resourceRuntimeObject
++          } else {
++            runtimeObject = sdkRuntimeObject
++          }
+         } else {
+-          rsrc = VirtualPath.lookup(targetInfo.runtimeResourcePath.path)
++          runtimeObject = resourceRuntimeObject
+         }
+-        let platform: String = targetTriple.platformName() ?? ""
+-        let architecture: String = majorArchitectureName(for: targetTriple)
+-        commandLine.appendPath(rsrc.appending(components: platform, architecture, "swiftrt.o"))
++        commandLine.appendPath(runtimeObject)
+       }
+ 
+       // If we are linking statically, we need to add all

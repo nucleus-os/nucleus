@@ -1,0 +1,8 @@
+.build/
+.swiftpm/
+.tracy-build/
+profiles/
+Tools/.build/
+compositor-core/Packages/
+compositor/Packages/
+*.o

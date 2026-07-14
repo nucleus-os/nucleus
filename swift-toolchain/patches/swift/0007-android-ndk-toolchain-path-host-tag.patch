@@ -1,0 +1,55 @@
+Subject: [PATCH] swift_build_support/targets.py: fix NDK toolchain path for
+ non-Linux build hosts
+
+AndroidPlatform.ndk_toolchain_path() constructed the NDK prebuilt-clang
+directory path from StdlibDeploymentTarget.host_target().name — Swift's
+own host-target identifier (e.g. "macosx-arm64" on Apple Silicon macOS),
+not the NDK's prebuilt-directory host tag. On Linux the two happen to
+coincide ("linux-x86_64" either way), which is presumably why this went
+unnoticed, but on a macOS build host Swift's tag ("macosx-arm64") doesn't
+exist as an NDK directory at all — the NDK's own convention is
+"darwin-x86_64" regardless of host CPU architecture (a universal
+x86_64+arm64 Mach-O despite the name; see SwiftPM's
+SWBAndroidPlatform/AndroidSDK.swift hostTag(_:) for the authoritative
+mapping this mirrors). This broke resolving --host-cc/--host-cxx and the
+native Clang tools path outright when cross-compiling to Android from
+macOS.
+
+Map the build host's platform.system() to the NDK's own host-tag
+convention directly instead of reusing Swift's host-target name.
+
+This patch is a candidate for filing upstream.
+
+Sentinel: NUCLEUS_SWIFT_SOURCE_ANDROID_NDK_TOOLCHAIN_PATH_HOST_TAG
+
+diff --git a/utils/swift_build_support/swift_build_support/targets.py b/utils/swift_build_support/swift_build_support/targets.py
+index c2ee75f6626..b29f59df3b6 100644
+--- a/utils/swift_build_support/swift_build_support/targets.py
++++ b/utils/swift_build_support/swift_build_support/targets.py
+@@ -178,8 +178,25 @@ class AndroidPlatform(Platform):
+         return options
+
+     def ndk_toolchain_path(self, args):
++        # NOTE: StdlibDeploymentTarget.host_target().name (e.g.
++        # "macosx-arm64") is Swift's own host-target identifier, not the
++        # NDK's prebuilt-directory host tag. On Linux the two happen to
++        # coincide ("linux-x86_64" either way), which is presumably why
++        # this went unnoticed, but on a macOS build host Swift's tag
++        # ("macosx-arm64") doesn't exist as an NDK directory at all — the
++        # NDK's own convention is "darwin-x86_64" regardless of host arch
++        # (a universal x86_64+arm64 binary despite the name; see
++        # SWBAndroidPlatform/AndroidSDK.swift's hostTag(_:) for the
++        # authoritative mapping this mirrors).
++        system = platform.system()
++        if system == 'Darwin':
++            ndk_host_tag = 'darwin-x86_64'
++        elif system == 'Windows':
++            ndk_host_tag = 'windows-x86_64'
++        else:
++            ndk_host_tag = 'linux-x86_64'
+         return '%s/toolchains/llvm/prebuilt/%s' % (
+-            args.android_ndk, StdlibDeploymentTarget.host_target().name)
++            args.android_ndk, ndk_host_tag)
+
+     def swiftpm_config(self, args, output_dir, swift_toolchain, resource_path):
+         config_file = '%s/swiftpm-android-%s.json' % (output_dir, args.android_arch)

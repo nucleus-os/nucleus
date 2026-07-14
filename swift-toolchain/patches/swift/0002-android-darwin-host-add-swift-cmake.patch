@@ -1,0 +1,81 @@
+Subject: [PATCH] cmake/modules/AddSwift.cmake: fix host-tool cross-compile
+ flag leakage and dead-strip gating when the build host is Darwin and the
+ target SDK isn't
+
+When cross-compiling Swift host tools to a non-Apple SDK (e.g. ANDROID)
+from a Darwin (macOS) build machine, two of AddSwift.cmake's host-variant
+helper functions behave incorrectly because they gate only on the build
+host being Darwin, not on whether the actual target SDK is also an Apple
+platform:
+
+1. _add_host_variant_c_compile_link_flags: some per-target compile lines
+   pick up a stray "-arch <host arch> -isysroot <host SDK>" pair from
+   elsewhere in Swift's CMake macros (not pinned down to one exact source
+   after tracing through the host-variant flag helpers and CMake's own
+   Apple Silicon default-arch enforcement). clang rejects -arch outright
+   for a non-Darwin -target triple, aborting the compile. Downgrading it
+   to a silently-ignored unused argument via -Qunused-arguments, gated to
+   only the cross-to-non-Apple-SDK case, covers every
+   add_swift_host_library target without patching each one individually.
+
+2. _add_host_variant_link_flags: the -dead_strip optimization is gated on
+   `CMAKE_SYSTEM_NAME MATCHES Darwin` alone, which stays true even when
+   cross-compiling to Android from this same Darwin machine. The
+   Darwin-only linker flag "-Wl,-dead_strip" then reaches ld.lld, which
+   doesn't recognize it as a valid ELF/Android linker argument. Require
+   the actual host-variant SDK to be an Apple platform too.
+
+Both fixes have an exact counterpart in
+stdlib/cmake/modules/AddSwiftStdlib.cmake's
+_add_target_variant_c_compile_link_flags /_add_target_variant_link_flags
+(the add_swift_target_library side of the same issue; see that patch).
+
+This patch is a candidate for filing upstream.
+
+Sentinel: NUCLEUS_SWIFT_SOURCE_ANDROID_DARWIN_HOST_ADD_SWIFT_CMAKE
+
+diff --git a/cmake/modules/AddSwift.cmake b/cmake/modules/AddSwift.cmake
+index b52fe0d5c0c..c9c2de350f2 100644
+--- a/cmake/modules/AddSwift.cmake
++++ b/cmake/modules/AddSwift.cmake
+@@ -115,6 +115,23 @@ endfunction()
+ # Usage:
+ # _add_host_variant_c_compile_link_flags(name)
+ function(_add_host_variant_c_compile_link_flags name)
++  if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Darwin" AND
++     NOT "${SWIFT_HOST_VARIANT_SDK}" IN_LIST SWIFT_DARWIN_PLATFORMS)
++    # Cross-compiling to a non-Apple SDK (e.g. ANDROID) from a Darwin build
++    # machine: some of these per-target compile lines pick up a stray
++    # "-arch <host arch> -isysroot <host SDK>" pair from somewhere in
++    # Swift's CMake macros that we were unable to pin down exactly. clang
++    # then rejects -arch outright as unsupported for the non-Darwin
++    # -target triple actually being compiled for. Downgrading it to a
++    # silently-ignored unused argument here, once, covers every
++    # add_swift_host_library target. See the matching guard in
++    # stdlib/cmake/modules/AddSwiftStdlib.cmake's
++    # _add_target_variant_c_compile_link_flags for the add_swift_target_library
++    # counterpart of this same issue.
++    target_compile_options(${name} PRIVATE
++      $<$<COMPILE_LANGUAGE:C,CXX,OBJC,OBJCXX>:-Qunused-arguments>)
++  endif()
++
+   # MSVC and gcc don't understand -target.
+   # clang-cl understands --target.
+   if(CMAKE_C_COMPILER_ID MATCHES "Clang")
+@@ -430,7 +447,15 @@ function(_add_host_variant_link_flags target)
+   #
+   # TODO: Evaluate/enable -f{function,data}-sections --gc-sections for bfd,
+   # gold, and lld.
+-  if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug" AND CMAKE_SYSTEM_NAME MATCHES Darwin)
++  # CMAKE_SYSTEM_NAME MATCHES Darwin alone isn't a reliable guard when
++  # cross-compiling to a non-Apple SDK (e.g. ANDROID) from a Darwin build
++  # machine — see the matching comment in
++  # stdlib/cmake/modules/AddSwiftStdlib.cmake's
++  # _add_target_variant_link_flags for the add_swift_target_library
++  # counterpart of this same issue. Require the actual host-variant SDK to
++  # be Apple too.
++  if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug" AND CMAKE_SYSTEM_NAME MATCHES Darwin
++     AND "${SWIFT_HOST_VARIANT_SDK}" IN_LIST SWIFT_DARWIN_PLATFORMS)
+     if (NOT SWIFT_DISABLE_DEAD_STRIPPING)
+       # See rdar://48283130: This gives 6MB+ size reductions for swift and
+       # SourceKitService, and much larger size reductions for sil-opt etc.

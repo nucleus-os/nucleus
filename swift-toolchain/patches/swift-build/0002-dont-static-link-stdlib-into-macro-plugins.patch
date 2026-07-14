@@ -1,0 +1,44 @@
+Subject: [PATCH] SwiftCompiler: never statically link the Swift stdlib into
+ host macro-plugin products
+
+`--static-swift-stdlib` sets `SWIFT_FORCE_STATIC_LINK_STDLIB` globally, and
+`staticallyLinkSwiftStdlib` honored it for *every* product, including macro
+implementation plugins. A macro plugin is dlopen'd by `swift-plugin-server`
+(which already links the Swift runtime dynamically); statically linking the
+stdlib into the plugin embeds a second runtime, which conflicts at load time
+and makes the plugin fail to vend its macros:
+
+  error: external macro implementation type 'X.Y' could not be found for
+  macro '...'; '.../Plugin' produced malformed response
+
+This blocks any macro-using package (e.g. swift-java's `@JavaClass`) from
+cross-compiling under `--static-swift-stdlib`, even though the target product
+links fine statically. Gate on `SWIFT_IMPLEMENTS_MACROS_FOR_MODULE_NAMES`
+(set on macro-implementation products) and always link those plugins
+dynamically; target products still honor the static flag.
+---
+diff --git a/Sources/SWBCore/SpecImplementations/Tools/SwiftCompiler.swift b/Sources/SWBCore/SpecImplementations/Tools/SwiftCompiler.swift
+index 84f271ff..c10be633 100644
+--- a/Sources/SWBCore/SpecImplementations/Tools/SwiftCompiler.swift
++++ b/Sources/SWBCore/SpecImplementations/Tools/SwiftCompiler.swift
+@@ -2594,6 +2594,20 @@ public final class SwiftCompilerSpec : CompilerSpec, SpecIdentifierType, SwiftDi
+         //
+         // NOTE: With Swift in the OS, static libs aren't being supplied by the toolchains
+         //       so users of this flag will need to provide their own.
++
++        // A product that implements macros is a compiler plugin: it is dlopen'd
++        // by swift-plugin-server, which already has its own dynamically-linked
++        // Swift runtime. Statically linking the stdlib into the plugin embeds a
++        // second copy of the runtime, which conflicts at load time and makes the
++        // plugin fail to vend its macro implementations ("external macro
++        // implementation type '...' could not be found ... produced malformed
++        // response"). Always link such host plugins dynamically, even when
++        // --static-swift-stdlib (SWIFT_FORCE_STATIC_LINK_STDLIB) is requested for
++        // the build's target products.
++        if !scope.evaluate(BuiltinMacros.SWIFT_IMPLEMENTS_MACROS_FOR_MODULE_NAMES, lookup: lookup).isEmpty {
++            return false
++        }
++
+         if scope.evaluate(BuiltinMacros.SWIFT_FORCE_STATIC_LINK_STDLIB, lookup: lookup) {
+             return true
+         }
