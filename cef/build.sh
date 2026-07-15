@@ -142,24 +142,22 @@ export CEF_USE_GN=1
 export GN_DEFINES="$NUCLEUS_CEF_GN_DEFINES_BASE ${NUCLEUS_CEF_GN_EXTRA}"
 echo "-- GN_DEFINES: $GN_DEFINES"
 
-apply_nucleus_cef_patches() {
+reverse_nucleus_cef_patches() {
   local chromium_root="$NUCLEUS_CEF_SRC_ROOT/chromium/src"
   local applied_patch_dir="$NUCLEUS_CEF_SRC_ROOT/.nucleus-applied-patches"
-  local generated_api_patch="9999-generated-cef-api-hashes.patch"
   local patch_file
   local patches=("$script_dir"/patches/*.patch)
   local applied_patches=("$applied_patch_dir"/*.patch)
   local patch_index
   if [[ ! -d "$chromium_root/.git" ]]; then
-    echo "!! Chromium checkout is missing: $chromium_root" >&2
-    exit 1
+    return
   fi
 
-  # Refresh the complete project patch stack as a unit. Keep a generated copy
-  # of the stack that was actually applied so renamed, merged, or deleted patch
-  # files can still be reversed on the next run without resyncing Chromium.
-  # Older checkouts predate this state directory, so use the current stack once
-  # as the migration fallback.
+  # Remove our previous stack before CEF updates its own Chromium patch stack.
+  # Several files are intentionally touched by both, so updating upstream first
+  # makes CEF mistake our still-applied changes for a failed upstream patch.
+  # Keep a generated copy of the exact applied stack so renamed, merged, or
+  # deleted project patches can still be reversed on the next run.
   if [[ ! -d "$applied_patch_dir" ]]; then
     applied_patches=("${patches[@]}")
   fi
@@ -173,6 +171,18 @@ apply_nucleus_cef_patches() {
       git -C "$chromium_root" apply --reverse "$patch_file"
     fi
   done
+}
+
+apply_nucleus_cef_patches() {
+  local chromium_root="$NUCLEUS_CEF_SRC_ROOT/chromium/src"
+  local applied_patch_dir="$NUCLEUS_CEF_SRC_ROOT/.nucleus-applied-patches"
+  local generated_api_patch="9999-generated-cef-api-hashes.patch"
+  local patch_file
+  local patches=("$script_dir"/patches/*.patch)
+  if [[ ! -d "$chromium_root/.git" ]]; then
+    echo "!! Chromium checkout is missing: $chromium_root" >&2
+    exit 1
+  fi
 
   for patch_file in "${patches[@]}"; do
     if [[ ! -f "$patch_file" ]]; then
@@ -221,6 +231,8 @@ if [[ $package_only -eq 0 ]]; then
     --build-target=cefsimple  # pulls in libcef + wrapper without cefclient's extra deps
   )
 
+  reverse_nucleus_cef_patches
+
   if [[ $no_update -eq 0 ]]; then
     sync_args=("${automate_common[@]}" --no-build --no-distrib)
     if [[ -n "$NUCLEUS_CEF_CHECKOUT" ]]; then
@@ -233,16 +245,37 @@ if [[ $package_only -eq 0 ]]; then
     python3 "$automate" "${sync_args[@]}"
   fi
 
+  # Run CEF's own patch/configuration hook while the Chromium tree contains
+  # only upstream changes. Our patches deliberately overlap a few of CEF's
+  # patches, so automate-git.py cannot safely run this hook after they land.
+  chromium_root="$NUCLEUS_CEF_SRC_ROOT/chromium/src"
+  echo "-- generating upstream CEF build configuration"
+  (
+    cd "$chromium_root/cef"
+    python3 tools/gclient_hook.py
+  )
+
   apply_nucleus_cef_patches
 
-  build_args=(
+  # Regenerate Ninja after applying our BUILD.gn changes, then build directly.
+  # A second automate-git.py build pass would rerun CEF's patch hook over our
+  # modified sources and report the intentional overlap as an upstream failure.
+  release_out="$chromium_root/out/Release_GN_x64"
+  echo "-- regenerating project files after project patches"
+  "$chromium_root/buildtools/linux64/gn" gen "$release_out"
+  echo "-- building CEF release targets"
+  PATH="$chromium_root/third_party/depot_tools:$PATH" \
+    autoninja -j "$NUCLEUS_CEF_JOBS" -C "$release_out" cefsimple chrome_sandbox
+
+  distrib_args=(
     "${automate_common[@]}"
     --no-update
-    --force-build
+    --no-build
+    --force-distrib
     --minimal-distrib-only
   )
-  echo "-- automate-git.py ${build_args[*]}"
-  python3 "$automate" "${build_args[@]}"
+  echo "-- automate-git.py ${distrib_args[*]}"
+  python3 "$automate" "${distrib_args[@]}"
 fi
 
 # ---------------------------------------------------------------------------
