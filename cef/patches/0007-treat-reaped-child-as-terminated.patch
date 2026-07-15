@@ -1,0 +1,20 @@
+diff --git a/base/process/kill_posix.cc b/base/process/kill_posix.cc
+index 1477c3f..9188722 100644
+--- a/base/process/kill_posix.cc
++++ b/base/process/kill_posix.cc
+@@ -29,6 +29,15 @@ TerminationStatus GetTerminationStatusImpl(ProcessHandle handle,
+   const pid_t result =
+       HANDLE_EINTR(waitpid(handle, &status, can_block ? 0 : WNOHANG));
+   if (result == -1) {
++    // A duplicated Process can race another Chromium reaper for the same
++    // child. ECHILD means that this process no longer has an unwaited child
++    // with this PID, so the only useful status here is the same normal
++    // termination result returned below. This race is expected during CEF
++    // shutdown and must not be reported as an application error.
++    if (errno == ECHILD) {
++      *exit_code = 0;
++      return TERMINATION_STATUS_NORMAL_TERMINATION;
++    }
+     DPLOG(ERROR) << "waitpid(" << handle << ")";
+     *exit_code = 0;
+     return TERMINATION_STATUS_NORMAL_TERMINATION;

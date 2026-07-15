@@ -1,0 +1,65 @@
+diff --git a/third_party/angle/src/libANGLE/renderer/vulkan/vk_renderer.cpp b/third_party/angle/src/libANGLE/renderer/vulkan/vk_renderer.cpp
+index 5067f32..957b47f 100644
+--- a/third_party/angle/src/libANGLE/renderer/vulkan/vk_renderer.cpp
++++ b/third_party/angle/src/libANGLE/renderer/vulkan/vk_renderer.cpp
+@@ -3935,10 +3935,26 @@ void Renderer::enableDeviceExtensionsNotPromoted(const vk::ExtensionNameList &de
+     {
+         mEnabledDeviceExtensions.push_back(VK_EXT_EXTERNAL_MEMORY_DMA_BUF_EXTENSION_NAME);
+     }
++#if defined(ANGLE_PLATFORM_LINUX)
++    // Chromium borrows ANGLE's Vulkan device for native-pixmap shared images.
++    // Linux DMA-BUF ownership transfers use VK_QUEUE_FAMILY_FOREIGN_EXT, so
++    // the device that actually records those barriers must enable its defining
++    // extension as well.
++    if (mFeatures.supportsExternalMemoryDmaBuf.enabled &&
++        ExtensionFound(VK_EXT_QUEUE_FAMILY_FOREIGN_EXTENSION_NAME, deviceExtensionNames))
++    {
++        mEnabledDeviceExtensions.push_back(VK_EXT_QUEUE_FAMILY_FOREIGN_EXTENSION_NAME);
++    }
++#endif
+ 
+     if (mFeatures.supportsImageDrmFormatModifier.enabled)
+     {
+         mEnabledDeviceExtensions.push_back(VK_EXT_IMAGE_DRM_FORMAT_MODIFIER_EXTENSION_NAME);
++        if (!mFeatures.supportsImageFormatList.enabled &&
++            ExtensionFound(VK_KHR_IMAGE_FORMAT_LIST_EXTENSION_NAME, deviceExtensionNames))
++        {
++            mEnabledDeviceExtensions.push_back(VK_KHR_IMAGE_FORMAT_LIST_EXTENSION_NAME);
++        }
+     }
+ 
+     if (mFeatures.supportsExternalMemoryHost.enabled)
+@@ -5461,7 +5477,9 @@ void Renderer::initFeatures(const vk::ExtensionNameList &deviceExtensionNames,
+ 
+     ANGLE_FEATURE_CONDITION(
+         &mFeatures, supportsSharedPresentableImageExtension,
+-        ExtensionFound(VK_KHR_SHARED_PRESENTABLE_IMAGE_EXTENSION_NAME, deviceExtensionNames));
++        useVulkanSwapchain == UseVulkanSwapchain::Yes &&
++            ExtensionFound(VK_KHR_SHARED_PRESENTABLE_IMAGE_EXTENSION_NAME,
++                           deviceExtensionNames));
+ 
+     ANGLE_FEATURE_CONDITION(&mFeatures, supportsGetMemoryRequirements2, true);
+ 
+@@ -5545,7 +5563,8 @@ void Renderer::initFeatures(const vk::ExtensionNameList &deviceExtensionNames,
+ 
+     ANGLE_FEATURE_CONDITION(
+         &mFeatures, supportsIncrementalPresent,
+-        ExtensionFound(VK_KHR_INCREMENTAL_PRESENT_EXTENSION_NAME, deviceExtensionNames));
++        useVulkanSwapchain == UseVulkanSwapchain::Yes &&
++            ExtensionFound(VK_KHR_INCREMENTAL_PRESENT_EXTENSION_NAME, deviceExtensionNames));
+ 
+ #if defined(ANGLE_PLATFORM_ANDROID)
+     ANGLE_FEATURE_CONDITION(
+diff --git a/ui/ozone/platform/wayland/gpu/vulkan_implementation_wayland.cc b/ui/ozone/platform/wayland/gpu/vulkan_implementation_wayland.cc
+index a1db0f4..6fc6a68 100644
+--- a/ui/ozone/platform/wayland/gpu/vulkan_implementation_wayland.cc
++++ b/ui/ozone/platform/wayland/gpu/vulkan_implementation_wayland.cc
+@@ -70,6 +70,8 @@ VulkanImplementationWayland::GetRequiredDeviceExtensions() {
+       VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME,
+       VK_KHR_EXTERNAL_SEMAPHORE_EXTENSION_NAME,
+       VK_KHR_EXTERNAL_SEMAPHORE_FD_EXTENSION_NAME,
++      VK_KHR_IMAGE_FORMAT_LIST_EXTENSION_NAME,
++      VK_EXT_QUEUE_FAMILY_FOREIGN_EXTENSION_NAME,
+   };
+ 
+   if (!use_swiftshader())

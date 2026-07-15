@@ -24,8 +24,8 @@
     "freetypeMinimum": "24.0.0"
   },
   "cef": {
-    "branch": "7871",
-    "chromiumVersion": "150.0.7871.115",
+    "branch": "7922",
+    "chromiumVersion": "151.0.7922.19",
     "proprietaryCodecs": true,
     "ffmpegBranding": "Chrome",
     "dbus": true,

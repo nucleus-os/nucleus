@@ -16,6 +16,10 @@ import Foundation
 private let gnArgs = [
     "is_official_build=true", "skia_enable_tools=false",
     "skia_enable_graphite=true", "skia_use_dawn=true", "skia_use_vulkan=true",
+    // CEF owns the process-wide PartitionAlloc shim in CEF-enabled hosts. Keep
+    // the standalone render SDK allocator-neutral so embedding it cannot add a
+    // second malloc/free owner to the process.
+    "skia_use_partition_alloc=false",
     "dawn_enable_vulkan=true", "dawn_enable_d3d11=false", "dawn_enable_d3d12=false",
     "dawn_enable_metal=false", "dawn_enable_opengles=false",
     "skia_use_freetype=true", "skia_use_harfbuzz=true", "skia_use_icu=true",
@@ -48,9 +52,7 @@ struct BuildSkia: CommandPlugin {
         let script = """
         set -e
         cd "\(skia)"
-        if [ ! -f "\(build)/build.ninja" ]; then
-            ./bin/gn gen "\(build)" --args='\(gnArgs)'
-        fi
+        ./bin/gn gen "\(build)" --args='\(gnArgs)'
         ninja -C "\(build)" \(ninjaTargets.joined(separator: " "))
         """
         let proc = Process()

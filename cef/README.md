@@ -41,9 +41,9 @@ Chromium branch (the third component of the Chromium version):
 
 | CEF branch | Chromium tag        |
 |------------|---------------------|
-| `7871`     | `150.0.7871.115`    |
+| `7922`     | `151.0.7922.19`     |
 
-Branch `7871` pins `chromium_checkout: refs/tags/150.0.7871.115`. Bump the
+Branch `7922` pins `chromium_checkout: refs/tags/151.0.7922.19`. Bump the
 branch in `scripts/cef-env.sh` (and mirror in `config/build-contract.json`) to
 upgrade; building the branch produces a self-consistent dist whose wrapper and
 headers match its own `libcef.so` — never mix a source build's `libcef.so` with

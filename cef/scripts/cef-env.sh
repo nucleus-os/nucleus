@@ -7,15 +7,15 @@
 # ---------------------------------------------------------------------------
 # Pinned version. CEF adopted Chromium's branch numbering, so the CEF release
 # branch == the Chromium branch (the third component of the Chromium version).
-# Chromium 150.0.7871.115  ->  CEF branch 7871, which pins
-# chromium_checkout refs/tags/150.0.7871.115. Bump both together on upgrade;
+# Chromium 151.0.7922.19  ->  CEF branch 7922, which pins
+# chromium_checkout refs/tags/151.0.7922.19. Bump both together on upgrade;
 # keep in sync with config/build-contract.json and the consuming shells.
 # ---------------------------------------------------------------------------
-export NUCLEUS_CEF_BRANCH="${NUCLEUS_CEF_BRANCH:-7871}"
+export NUCLEUS_CEF_BRANCH="${NUCLEUS_CEF_BRANCH:-7922}"
 # Exact CEF version to check out. Empty => most recent on the branch (still the
-# same Chromium tag). Set to e.g. 150.0.11 to pin a specific patch.
+# same Chromium tag). Set this only when pinning a specific CEF patch release.
 export NUCLEUS_CEF_CHECKOUT="${NUCLEUS_CEF_CHECKOUT:-}"
-export NUCLEUS_CEF_CHROMIUM_VERSION="${NUCLEUS_CEF_CHROMIUM_VERSION:-150.0.7871.115}"
+export NUCLEUS_CEF_CHROMIUM_VERSION="${NUCLEUS_CEF_CHROMIUM_VERSION:-151.0.7922.19}"
 
 # The whole point of building from source: official CEF ships without patented
 # codecs. These GN args add H.264/AAC (ffmpeg_branding=Chrome) which Apple

@@ -20,6 +20,7 @@ force_clean=0
 package_only=0
 skip_deps=0
 run_install_build_deps=0
+no_update=0
 
 usage() {
   cat <<EOF
@@ -32,6 +33,8 @@ ${NUCLEUS_CEF_DIST_ROOT}.
 Options:
   --force-clean          Wipe and re-sync the Chromium checkout before building.
   --package-only         Skip build; just (re)package the last build's distrib.
+  --no-update            Reuse the current checkout, apply project patches,
+                         then rebuild and package it.
   --skip-deps            Do not clone/update depot_tools (assume present).
   --install-build-deps   Run Chromium's install-build-deps.sh (needs sudo) after
                          the first sync. Do this once on a fresh host.
@@ -50,6 +53,7 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --force-clean) force_clean=1 ;;
     --package-only) package_only=1 ;;
+    --no-update) no_update=1 ;;
     --skip-deps) skip_deps=1 ;;
     --install-build-deps) run_install_build_deps=1 ;;
     -h|--help) usage; exit 0 ;;
@@ -138,27 +142,107 @@ export CEF_USE_GN=1
 export GN_DEFINES="$NUCLEUS_CEF_GN_DEFINES_BASE ${NUCLEUS_CEF_GN_EXTRA}"
 echo "-- GN_DEFINES: $GN_DEFINES"
 
+apply_nucleus_cef_patches() {
+  local chromium_root="$NUCLEUS_CEF_SRC_ROOT/chromium/src"
+  local applied_patch_dir="$NUCLEUS_CEF_SRC_ROOT/.nucleus-applied-patches"
+  local generated_api_patch="9999-generated-cef-api-hashes.patch"
+  local patch_file
+  local patches=("$script_dir"/patches/*.patch)
+  local applied_patches=("$applied_patch_dir"/*.patch)
+  local patch_index
+  if [[ ! -d "$chromium_root/.git" ]]; then
+    echo "!! Chromium checkout is missing: $chromium_root" >&2
+    exit 1
+  fi
+
+  # Refresh the complete project patch stack as a unit. Keep a generated copy
+  # of the stack that was actually applied so renamed, merged, or deleted patch
+  # files can still be reversed on the next run without resyncing Chromium.
+  # Older checkouts predate this state directory, so use the current stack once
+  # as the migration fallback.
+  if [[ ! -d "$applied_patch_dir" ]]; then
+    applied_patches=("${patches[@]}")
+  fi
+  for ((patch_index=${#applied_patches[@]} - 1; patch_index >= 0; patch_index--)); do
+    patch_file="${applied_patches[$patch_index]}"
+    if [[ ! -f "$patch_file" ]]; then
+      continue
+    fi
+    if git -C "$chromium_root" apply --reverse --check "$patch_file" >/dev/null 2>&1; then
+      echo "-- refreshing patch: $(basename "$patch_file")"
+      git -C "$chromium_root" apply --reverse "$patch_file"
+    fi
+  done
+
+  for patch_file in "${patches[@]}"; do
+    if [[ ! -f "$patch_file" ]]; then
+      continue
+    fi
+    if git -C "$chromium_root" apply --check "$patch_file"; then
+      echo "-- applying patch: $(basename "$patch_file")"
+      git -C "$chromium_root" apply "$patch_file"
+    else
+      echo "!! CEF source patch no longer applies: $patch_file" >&2
+      exit 1
+    fi
+  done
+
+  # API hashes cover the complete public-header surface and are branch-local
+  # generated output. Always derive them from the synced CEF checkout after the
+  # source patches have landed; never carry hashes forward from another branch.
+  echo "-- regenerating CEF API hashes for branch $NUCLEUS_CEF_BRANCH"
+  (
+    cd "$chromium_root/cef"
+    python3 tools/version_manager.py -c --force-update
+  )
+
+  rm -rf "$applied_patch_dir"
+  mkdir -p "$applied_patch_dir"
+  for patch_file in "${patches[@]}"; do
+    cp "$patch_file" "$applied_patch_dir/"
+  done
+  git -C "$chromium_root/cef" diff \
+    --src-prefix=a/cef/ --dst-prefix=b/cef/ -- cef_api_versions.json \
+    >"$applied_patch_dir/$generated_api_patch"
+  if [[ ! -s "$applied_patch_dir/$generated_api_patch" ]]; then
+    echo "!! CEF API hash regeneration produced no patch" >&2
+    exit 1
+  fi
+}
+
 if [[ $package_only -eq 0 ]]; then
-  automate_args=(
+  automate_common=(
     "--download-dir=$NUCLEUS_CEF_SRC_ROOT"
     "--depot-tools-dir=$NUCLEUS_CEF_DEPOT_TOOLS"
     "--branch=$NUCLEUS_CEF_BRANCH"
     --x64-build
     --no-debug-build          # Release only — halves build time + disk
     --no-chromium-history     # shallow Chromium checkout — big disk saving
-    --minimal-distrib-only    # we only consume the minimal dist
-    --force-build
     --build-target=cefsimple  # pulls in libcef + wrapper without cefclient's extra deps
   )
-  if [[ -n "$NUCLEUS_CEF_CHECKOUT" ]]; then
-    automate_args+=("--checkout=$NUCLEUS_CEF_CHECKOUT")
-  fi
-  if [[ $force_clean -eq 1 ]]; then
-    automate_args+=(--force-clean)
+
+  if [[ $no_update -eq 0 ]]; then
+    sync_args=("${automate_common[@]}" --no-build --no-distrib)
+    if [[ -n "$NUCLEUS_CEF_CHECKOUT" ]]; then
+      sync_args+=("--checkout=$NUCLEUS_CEF_CHECKOUT")
+    fi
+    if [[ $force_clean -eq 1 ]]; then
+      sync_args+=(--force-clean)
+    fi
+    echo "-- automate-git.py ${sync_args[*]}"
+    python3 "$automate" "${sync_args[@]}"
   fi
 
-  echo "-- automate-git.py ${automate_args[*]}"
-  python3 "$automate" "${automate_args[@]}"
+  apply_nucleus_cef_patches
+
+  build_args=(
+    "${automate_common[@]}"
+    --no-update
+    --force-build
+    --minimal-distrib-only
+  )
+  echo "-- automate-git.py ${build_args[*]}"
+  python3 "$automate" "${build_args[@]}"
 fi
 
 # ---------------------------------------------------------------------------
