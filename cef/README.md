@@ -71,7 +71,7 @@ Output (all under `~/.cache/nucleus/cef/`):
 
 ```
 dist/<version>/                     extracted, ready-to-consume distribution
-  Release/   libcef.so, chrome-sandbox, v8 snapshot, swiftshader,
+  Release/   libcef.so, chrome-sandbox, v8 snapshot,
              + symlinks to the Resources/ payload (icudtl.dat, *.pak, locales/)
   Resources/ icudtl.dat, *.pak, locales/
   include/   public C++ API headers

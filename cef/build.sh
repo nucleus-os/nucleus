@@ -295,6 +295,17 @@ rm -rf "$staged"
 mkdir -p "$staged"
 cp -a "$produced/." "$staged/"
 
+# Noctalia and CEF must share the system Vulkan loader and the hardware device
+# selected through the published UUID/render-node contract. The stock minimal
+# distribution bundles SwiftShader and a private libvulkan with the same SONAME
+# as the system loader; because Release/ is in Noctalia's RUNPATH that private
+# loader would also hijack Noctalia's direct Vulkan dependency. This product has
+# no software-rendering fallback, so omit the complete SwiftShader payload.
+rm -f \
+  "$staged/Release/libvk_swiftshader.so" \
+  "$staged/Release/libvulkan.so.1" \
+  "$staged/Release/vk_swiftshader_icd.json"
+
 # Colocate the split Resources/ payload next to libcef.so in Release/ — ICU
 # (icudtl.dat) initializes before resource_dir settings apply, so it must sit
 # beside the library. The consuming shell points its resource paths at Release/.
@@ -336,5 +347,5 @@ echo "dist:     $staged"
 echo "tarball:  $tarball"
 echo "sha256:   $(cat "$tarball.sha256")"
 echo
-echo "Verify codecs by loading the dist in the shell's CEF spike and checking"
+echo "Verify codecs by loading the dist in Noctalia and checking"
 echo "canPlayType('audio/mp4; codecs=\"mp4a.40.2\"') is non-empty."
