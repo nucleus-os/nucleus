@@ -5,7 +5,7 @@ index f528c04ede..a4e5f567a2 100644
 @@ -94,6 +94,12 @@ class GmbVideoFramePoolContext
      return sii_in_process_->GetCapabilities();
    }
- 
+
 +  gfx::GpuMemoryBufferHandle CloneGpuMemoryBufferHandleForExternalConsumer(
 +      const gpu::Mailbox& mailbox) override {
 +    return sii_in_process_
@@ -22,11 +22,11 @@ index 35d0201b15..b8f2d53439 100644
 @@ -60,7 +60,8 @@ MappableSharedImageVideoFramePool::CloneHandleForDelivery(
      const media::VideoFrame& frame) {
    CHECK(frame.HasMappableSharedImage());
- 
+
 -  gfx::GpuMemoryBufferHandle handle = frame.GetGpuMemoryBufferHandle();
 +  gfx::GpuMemoryBufferHandle handle =
 +      video_frame_pool_->CloneGpuMemoryBufferHandleForExternalConsumer(frame);
- 
+
    return media::mojom::VideoBufferHandle::NewGpuMemoryBufferHandle(
        std::move(handle));
 diff --git a/gpu/command_buffer/service/shared_image/ozone_image_backing.cc b/gpu/command_buffer/service/shared_image/ozone_image_backing.cc
@@ -35,14 +35,14 @@ index 906a8f8078..2e01c87c0c 100644
 +++ b/gpu/command_buffer/service/shared_image/ozone_image_backing.cc
 @@ -128,7 +128,9 @@ bool OzoneImageBacking::IsImportedFromExo() {
  }
- 
+
  gfx::GpuMemoryBufferHandle OzoneImageBacking::GetGpuMemoryBufferHandle() {
 -  return gfx::GpuMemoryBufferHandle(pixmap_->ExportHandle());
 +  gfx::NativePixmapHandle handle = pixmap_->ExportHandle();
 +  handle.acquire_fence = write_fence_.Clone();
 +  return gfx::GpuMemoryBufferHandle(std::move(handle));
  }
- 
+
  gfx::GpuMemoryBufferHandle
 diff --git a/gpu/command_buffer/service/shared_image/shared_image_factory.cc b/gpu/command_buffer/service/shared_image/shared_image_factory.cc
 index 024b928341..763e12743c 100644
@@ -51,7 +51,7 @@ index 024b928341..763e12743c 100644
 @@ -789,6 +789,19 @@ bool SharedImageFactory::CopyToGpuMemoryBufferAsync(
  }
  #endif
- 
+
 +bool SharedImageFactory::CloneGpuMemoryBufferHandle(
 +    const Mailbox& mailbox,
 +    gfx::GpuMemoryBufferHandle& handle) {
@@ -74,7 +74,7 @@ index 30d7b88110..bfb713b1e5 100644
 +++ b/gpu/command_buffer/service/shared_image/shared_image_factory.h
 @@ -163,6 +163,8 @@ class GPU_GLES2_EXPORT SharedImageFactory {
  #endif
- 
+
    void SetGpuExtraInfo(const gfx::GpuExtraInfo& gpu_info);
 +  bool CloneGpuMemoryBufferHandle(const Mailbox& mailbox,
 +                                  gfx::GpuMemoryBufferHandle& handle);
@@ -102,7 +102,7 @@ index 2541ee9aec..521e0a33ce 100644
 @@ -240,6 +240,43 @@ SharedImageInterfaceInProcessBase::GetGpuMemoryBufferHandleInfo(
    return GpuMemoryBufferHandleInfo(std::move(handle), buffer_usage);
  }
- 
+
 +gfx::GpuMemoryBufferHandle SharedImageInterfaceInProcessBase::
 +    CloneGpuMemoryBufferHandleForExternalConsumer(const Mailbox& mailbox) {
 +  base::WaitableEvent completion(
@@ -150,7 +150,7 @@ index 0ac7049ab0..e2af07fc97 100644
 @@ -88,6 +88,12 @@ class GPU_GLES2_EXPORT SharedImageInterfaceInProcessBase
    void WaitSyncToken(const SyncToken& sync_token) final;
    const SharedImageCapabilities& GetCapabilities() final;
- 
+
 +  // Returns a newly exported native handle for an existing SharedImage. Unlike
 +  // the handle cached by ClientSharedImage at allocation time, this export can
 +  // carry the completion fence for the most recent producer write.
@@ -163,7 +163,7 @@ index 0ac7049ab0..e2af07fc97 100644
 @@ -153,6 +159,11 @@ class GPU_GLES2_EXPORT SharedImageInterfaceInProcessBase
        SurfaceHandle surface_handle,
        gfx::BufferUsage buffer_usage);
- 
+
 +  void CloneGpuMemoryBufferHandleOnGpuThread(
 +      const Mailbox& mailbox,
 +      gfx::GpuMemoryBufferHandle* handle,
@@ -177,9 +177,9 @@ index 7354aa4925..da7fd384ce 100644
 --- a/media/video/renderable_mappable_shared_image_video_frame_pool.cc
 +++ b/media/video/renderable_mappable_shared_image_video_frame_pool.cc
 @@ -29,6 +29,12 @@
- 
+
  namespace media {
- 
+
 +gfx::GpuMemoryBufferHandle RenderableMappableSharedImageVideoFramePool::Context::
 +    CloneGpuMemoryBufferHandleForExternalConsumer(
 +        const gpu::Mailbox& mailbox) {
@@ -187,22 +187,22 @@ index 7354aa4925..da7fd384ce 100644
 +}
 +
  namespace {
- 
+
  class InternalRefCountedPool;
 @@ -145,6 +151,9 @@ class RenderableMappableSharedImageVideoFramePoolImpl
        const gfx::Size& visible_size,
        const gfx::ColorSpace& color_space) override;
- 
+
 +  gfx::GpuMemoryBufferHandle CloneGpuMemoryBufferHandleForExternalConsumer(
 +      const VideoFrame& frame) override;
 +
    ~RenderableMappableSharedImageVideoFramePoolImpl() override;
- 
+
    const VideoPixelFormat format_;
 @@ -408,6 +417,19 @@ RenderableMappableSharedImageVideoFramePoolImpl::MaybeCreateVideoFrame(
    return pool_internal_->MaybeCreateVideoFrame(visible_size, color_space);
  }
- 
+
 +gfx::GpuMemoryBufferHandle RenderableMappableSharedImageVideoFramePoolImpl::
 +    CloneGpuMemoryBufferHandleForExternalConsumer(const VideoFrame& frame) {
 +  CHECK(frame.HasMappableSharedImage());
@@ -224,13 +224,13 @@ index 2fb4d6b6aa..a95f05f84c 100644
 --- a/media/video/renderable_mappable_shared_image_video_frame_pool.h
 +++ b/media/video/renderable_mappable_shared_image_video_frame_pool.h
 @@ -17,11 +17,13 @@
- 
+
  namespace gfx {
  class ColorSpace;
 +struct GpuMemoryBufferHandle;
  class Size;
  }  // namespace gfx
- 
+
  namespace gpu {
  class ClientSharedImage;
 +struct Mailbox;
@@ -238,9 +238,9 @@ index 2fb4d6b6aa..a95f05f84c 100644
  class SharedImageInterface;
  struct SyncToken;
 @@ -62,6 +64,12 @@ class MEDIA_EXPORT RenderableMappableSharedImageVideoFramePool {
- 
+
      virtual const gpu::SharedImageCapabilities& GetCapabilities() = 0;
- 
+
 +    // Export a fresh native handle so it includes synchronization produced by
 +    // rendering that happened after the SharedImage was allocated.
 +    virtual gfx::GpuMemoryBufferHandle
@@ -249,17 +249,17 @@ index 2fb4d6b6aa..a95f05f84c 100644
 +
      virtual ~Context() = default;
    };
- 
+
 @@ -82,6 +90,9 @@ class MEDIA_EXPORT RenderableMappableSharedImageVideoFramePool {
        const gfx::Size& coded_size,
        const gfx::ColorSpace& color_space) = 0;
- 
+
 +  virtual gfx::GpuMemoryBufferHandle
 +  CloneGpuMemoryBufferHandleForExternalConsumer(const VideoFrame& frame) = 0;
 +
    virtual ~RenderableMappableSharedImageVideoFramePool() = default;
  };
- 
+
 diff --git a/cef/include/cef_browser.h b/cef/include/cef_browser.h
 index 1831ac202..53fce6a09 100644
 --- a/cef/include/cef_browser.h
@@ -267,7 +267,7 @@ index 1831ac202..53fce6a09 100644
 @@ -744,6 +744,19 @@ class CefBrowserHost : public virtual CefBaseRefCounted {
    /*--cef()--*/
    virtual void SendExternalBeginFrame() = 0;
- 
+
 +  ///
 +  /// Set a release fence for the accelerated paint frame identified by
 +  /// |capture_counter|. This method is only supported on Linux with windowless
@@ -300,7 +300,7 @@ index 16b5c2f58..5b325a50d 100644
 +  ///
 +  int acquire_fence_fd;
  } cef_accelerated_paint_info_t;
- 
+
  #ifdef __cplusplus
 diff --git a/cef/libcef/browser/alloy/alloy_browser_host_impl.cc b/cef/libcef/browser/alloy/alloy_browser_host_impl.cc
 index b10a9fd42..d5875bad3 100644
@@ -309,7 +309,7 @@ index b10a9fd42..d5875bad3 100644
 @@ -409,6 +409,20 @@ void AlloyBrowserHostImpl::SendExternalBeginFrame() {
    }
  }
- 
+
 +void AlloyBrowserHostImpl::SetAcceleratedPaintReleaseFence(
 +    int64_t capture_counter,
 +    int fd) {
@@ -347,7 +347,7 @@ index 167b2af62..cff59f0f7 100644
 @@ -404,6 +404,12 @@ void CefBrowserPlatformDelegate::SendExternalBeginFrame() {
    DCHECK(false);
  }
- 
+
 +void CefBrowserPlatformDelegate::SetAcceleratedPaintReleaseFence(
 +    int64_t capture_counter,
 +    int fd) {
@@ -364,13 +364,13 @@ index 698913fc8..f7941ac1b 100644
 @@ -315,6 +315,9 @@ class CefBrowserPlatformDelegate {
    // Send the external begin frame message. Only used with windowless rendering.
    virtual void SendExternalBeginFrame();
- 
+
 +  // Delay recycling the accelerated paint buffer until |fd| signals.
 +  virtual void SetAcceleratedPaintReleaseFence(int64_t capture_counter, int fd);
 +
    // Set the windowless frame rate. Only used with windowless rendering.
    virtual void SetWindowlessFrameRate(int frame_rate);
- 
+
 diff --git a/cef/libcef/browser/chrome/chrome_browser_host_impl.cc b/cef/libcef/browser/chrome/chrome_browser_host_impl.cc
 index fd0128f64..fd6d4f706 100644
 --- a/cef/libcef/browser/chrome/chrome_browser_host_impl.cc
@@ -378,7 +378,7 @@ index fd0128f64..fd6d4f706 100644
 @@ -247,6 +247,12 @@ void ChromeBrowserHostImpl::SendExternalBeginFrame() {
    NOTIMPLEMENTED();
  }
- 
+
 +void ChromeBrowserHostImpl::SetAcceleratedPaintReleaseFence(
 +    int64_t capture_counter,
 +    int fd) {
@@ -408,7 +408,7 @@ index 44e49530f..34f9a68c5 100644
 @@ -265,6 +265,15 @@ void CefBrowserPlatformDelegateOsr::SendExternalBeginFrame() {
    }
  }
- 
+
 +void CefBrowserPlatformDelegateOsr::SetAcceleratedPaintReleaseFence(
 +    int64_t capture_counter,
 +    int fd) {
@@ -441,7 +441,7 @@ index 75c303fad..18c4c1077 100644
 @@ -1207,6 +1207,14 @@ void CefRenderWidgetHostViewOSR::SendExternalBeginFrame() {
    }
  }
- 
+
 +void CefRenderWidgetHostViewOSR::SetAcceleratedPaintReleaseFence(
 +    int64_t capture_counter,
 +    int fd) {
@@ -470,9 +470,9 @@ index 321bf9e51..5d426ab3f 100644
 --- a/cef/libcef/browser/osr/video_consumer_osr.cc
 +++ b/cef/libcef/browser/osr/video_consumer_osr.cc
 @@ -4,6 +4,14 @@
- 
+
  #include "cef/libcef/browser/osr/video_consumer_osr.h"
- 
+
 +#include <poll.h>
 +#include <unistd.h>
 +
@@ -485,9 +485,9 @@ index 321bf9e51..5d426ab3f 100644
  #include "media/base/video_frame_metadata.h"
  #include "media/capture/mojom/video_capture_buffer.mojom.h"
 @@ -12,17 +20,60 @@
- 
+
  namespace {
- 
+
 -// Helper to always call Done() at the end of OnFrameCaptured().
 +constexpr int kReleaseFenceTimeoutMs = 1000;
 +
@@ -539,26 +539,26 @@ index 321bf9e51..5d426ab3f 100644
 +  TakeCallbacks() {
 +    return std::move(callbacks_);
 +  }
- 
+
   private:
 -  mojo::Remote<viz::mojom::FrameSinkVideoConsumerFrameCallbacks> callbacks_;
 +  mojo::PendingRemote<viz::mojom::FrameSinkVideoConsumerFrameCallbacks>
 +      callbacks_;
 +  base::ScopedFD release_fence_;
  };
- 
+
  }  // namespace
 @@ -44,15 +95,23 @@ CefVideoConsumerOSR::CefVideoConsumerOSR(CefRenderWidgetHostViewOSR* view,
    SetActive(true);
  }
- 
+
 -CefVideoConsumerOSR::~CefVideoConsumerOSR() = default;
 +CefVideoConsumerOSR::~CefVideoConsumerOSR() {
 +  for (auto& entry : pending_frames_) {
 +    CompleteFrame(std::move(entry.second), true);
 +  }
 +}
- 
+
  void CefVideoConsumerOSR::SetActive(bool active) {
    if (active) {
      video_capturer_->Start(
@@ -579,7 +579,7 @@ index 321bf9e51..5d426ab3f 100644
 @@ -79,6 +138,66 @@ void CefVideoConsumerOSR::RequestRefreshFrame(
    video_capturer_->RequestRefreshFrame();
  }
- 
+
 +void CefVideoConsumerOSR::SetAcceleratedPaintReleaseFence(
 +    int64_t capture_counter,
 +    int fd) {
@@ -649,7 +649,7 @@ index 321bf9e51..5d426ab3f 100644
      paint_info.modifier = native_pixmap.modifier;
 +    paint_info.acquire_fence_fd = native_pixmap.acquire_fence.Peek();
      paint_info.format = pixel_format;
- 
+
      auto cef_plain_index = 0;
 @@ -204,6 +324,8 @@ void CefVideoConsumerOSR::OnFrameCaptured(
        cef_plane.fd = plane.fd.get();
@@ -666,29 +666,29 @@ index c5aad5c6e..21de088a6 100644
 +++ b/cef/libcef/browser/osr/video_consumer_osr.h
 @@ -2,9 +2,12 @@
  #define LIBCEF_BROWSER_OSR_VIDEO_CONSUMER_OSR_H_
- 
+
  #include <optional>
 +#include <map>
- 
+
 +#include "base/files/scoped_file.h"
  #include "base/functional/callback.h"
  #include "base/memory/raw_ptr.h"
 +#include "base/memory/weak_ptr.h"
  #include "components/viz/host/client_frame_sink_video_capturer.h"
  #include "media/capture/mojom/video_capture_types.mojom.h"
- 
+
 @@ -24,6 +27,7 @@ class CefVideoConsumerOSR : public viz::mojom::FrameSinkVideoConsumer {
    void SetFrameRate(base::TimeDelta frame_rate);
    void SizeChanged(const gfx::Size& size_in_pixels);
    void RequestRefreshFrame(const std::optional<gfx::Rect>& bounds_in_pixels);
 +  void SetAcceleratedPaintReleaseFence(int64_t capture_counter, int fd);
- 
+
   private:
    // viz::mojom::FrameSinkVideoConsumer implementation.
 @@ -39,6 +43,14 @@ class CefVideoConsumerOSR : public viz::mojom::FrameSinkVideoConsumer {
    void OnNewCaptureVersion(
        const media::CaptureVersion& capture_version) override {}
- 
+
 +  using PendingFrameCallbacks =
 +      mojo::PendingRemote<viz::mojom::FrameSinkVideoConsumerFrameCallbacks>;
 +  void RegisterPendingFrame(int64_t capture_counter,
@@ -698,14 +698,95 @@ index c5aad5c6e..21de088a6 100644
 +                            base::ScopedFD release_fence);
 +
    const bool use_shared_texture_;
- 
+
    const raw_ptr<CefRenderWidgetHostViewOSR> view_;
 @@ -46,6 +58,8 @@ class CefVideoConsumerOSR : public viz::mojom::FrameSinkVideoConsumer {
- 
+
    gfx::Size size_in_pixels_;
    std::optional<gfx::Rect> bounds_in_pixels_;
 +  std::map<int64_t, PendingFrameCallbacks> pending_frames_;
 +  base::WeakPtrFactory<CefVideoConsumerOSR> weak_ptr_factory_{this};
  };
- 
+
  #endif  // LIBCEF_BROWSER_OSR_VIDEO_CONSUMER_OSR_H_
+diff --git a/ui/gfx/mojom/native_handle_types.mojom b/ui/gfx/mojom/native_handle_types.mojom
+index 28117e1ae6..358b76cbc0 100644
+--- a/ui/gfx/mojom/native_handle_types.mojom
++++ b/ui/gfx/mojom/native_handle_types.mojom
+@@ -23,6 +23,10 @@ struct NativePixmapPlane {
+ struct NativePixmapHandle {
+   array<NativePixmapPlane> planes;
+
++  // Signals completion of the producer's most recent write.
++  [EnableIf=is_chromeos|is_linux]
++  handle<platform>? acquire_fence_handle;
++
+   [EnableIf=is_chromeos|is_linux]
+   uint64 modifier;
+
+diff --git a/ui/gfx/mojom/native_handle_types_mojom_traits.cc b/ui/gfx/mojom/native_handle_types_mojom_traits.cc
+index 22313e64a5..e9eede6dc1 100644
+--- a/ui/gfx/mojom/native_handle_types_mojom_traits.cc
++++ b/ui/gfx/mojom/native_handle_types_mojom_traits.cc
+@@ -127,6 +127,10 @@ bool StructTraits<
+     gfx::NativePixmapHandle>::Read(gfx::mojom::NativePixmapHandleDataView data,
+                                    gfx::NativePixmapHandle* out) {
+ #if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
++  mojo::PlatformHandle acquire_fence = data.TakeAcquireFenceHandle();
++  if (acquire_fence.is_fd()) {
++    out->acquire_fence.Adopt(acquire_fence.TakeFD());
++  }
+   out->modifier = data.modifier();
+   out->supports_zero_copy_webgpu_import =
+       data.supports_zero_copy_webgpu_import();
+diff --git a/ui/gfx/mojom/native_handle_types_mojom_traits.h b/ui/gfx/mojom/native_handle_types_mojom_traits.h
+index 6101c5b0e0..21e65ad79c 100644
+--- a/ui/gfx/mojom/native_handle_types_mojom_traits.h
++++ b/ui/gfx/mojom/native_handle_types_mojom_traits.h
+@@ -78,6 +78,11 @@ struct COMPONENT_EXPORT(GFX_NATIVE_HANDLE_TYPES_SHARED_MOJOM_TRAITS)
+   }
+
+ #if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
++  static mojo::PlatformHandle acquire_fence_handle(
++      gfx::NativePixmapHandle& pixmap_handle) {
++    return mojo::PlatformHandle(pixmap_handle.acquire_fence.Release());
++  }
++
+   static uint64_t modifier(const gfx::NativePixmapHandle& pixmap_handle) {
+     return pixmap_handle.modifier;
+   }
+diff --git a/ui/gfx/native_pixmap_handle.cc b/ui/gfx/native_pixmap_handle.cc
+index 283d48686a..dc8695deba 100644
+--- a/ui/gfx/native_pixmap_handle.cc
++++ b/ui/gfx/native_pixmap_handle.cc
+@@ -114,6 +114,7 @@ NativePixmapHandle CloneHandleForIPC(const NativePixmapHandle& handle) {
+   }
+
+ #if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
++  clone.acquire_fence = handle.acquire_fence.Clone();
+   clone.modifier = handle.modifier;
+   clone.supports_zero_copy_webgpu_import =
+       handle.supports_zero_copy_webgpu_import;
+diff --git a/ui/gfx/native_pixmap_handle.h b/ui/gfx/native_pixmap_handle.h
+index a0f06338cd..57647058be 100644
+--- a/ui/gfx/native_pixmap_handle.h
++++ b/ui/gfx/native_pixmap_handle.h
+@@ -13,6 +13,7 @@
+ #include "base/component_export.h"
+ #include "build/build_config.h"
+ #include "components/viz/common/resources/shared_image_format.h"
++#include "ui/gfx/gpu_fence_handle.h"
+
+ #if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
+ #include "base/files/scoped_file.h"
+@@ -79,6 +80,10 @@ struct COMPONENT_EXPORT(GFX) NativePixmapHandle {
+   std::vector<NativePixmapPlane> planes;
+
+ #if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
++  // Completion fence for the most recent producer write. Consumers importing
++  // the DMA-BUF on another Vulkan device must wait before accessing it.
++  GpuFenceHandle acquire_fence;
++
+   // The modifier is retrieved from GBM library and passed to EGL driver.
+   // Generally it's platform specific, and we don't need to modify it in
+   // Chromium code. Also one per plane per entry.
