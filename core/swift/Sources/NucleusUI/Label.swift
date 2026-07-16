@@ -57,14 +57,14 @@ public final class Label: View, ~Sendable {
         }
     }
 
-    public init(_ text: String = "") throws(UIError) {
+    public init(_ text: String = "") {
         self.text = text
         self.alignment = .leading
         self.font = .systemFont(ofSize: 14)
         self.lineBreakMode = .byClipping
         self.numberOfLines = 1
         self.textColor = Color(1, 1, 1, 1)
-        try super.init()
+        super.init()
     }
 
     public override var intrinsicContentSize: Size {
@@ -100,7 +100,7 @@ public final class Label: View, ~Sendable {
         )
     }
 
-    package override func displayCommands(in dirtyRect: Rect) throws(UIError) -> [ViewLayerContentCommand] {
+    package override func displayCommands(in dirtyRect: Rect) -> [ViewLayerContentCommand] {
         textLayout(containerWidth: Double(frame.size.width)).layerContentCommands(color: textColor)
     }
 

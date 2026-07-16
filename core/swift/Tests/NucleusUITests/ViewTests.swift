@@ -16,7 +16,7 @@ import Testing
     final class LayoutProbeView: View {
         var layoutCount = 0
 
-        override func layout() throws(UIError) {
+        override func layout() {
             layoutCount += 1
         }
     }
@@ -25,7 +25,7 @@ import Testing
         var drawCount = 0
         var lastDirtyRect: Rect?
 
-        override func draw(_ dirtyRect: Rect) throws(UIError) {
+        override func draw(_ dirtyRect: Rect) {
             drawCount += 1
             lastDirtyRect = dirtyRect
         }

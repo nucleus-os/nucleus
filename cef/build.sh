@@ -262,9 +262,12 @@ if [[ $package_only -eq 0 ]]; then
   # modified sources and report the intentional overlap as an upstream failure.
   release_out="$chromium_root/out/Release_GN_x64"
   echo "-- regenerating project files after project patches"
-  "$chromium_root/buildtools/linux64/gn" gen "$release_out"
+  (
+    cd "$chromium_root"
+    "$chromium_root/buildtools/linux64/gn" gen "$release_out"
+  )
   echo "-- building CEF release targets"
-  PATH="$chromium_root/third_party/depot_tools:$PATH" \
+  PATH="$NUCLEUS_CEF_DEPOT_TOOLS:$PATH" \
     autoninja -j "$NUCLEUS_CEF_JOBS" -C "$release_out" cefsimple chrome_sandbox
 
   distrib_args=(

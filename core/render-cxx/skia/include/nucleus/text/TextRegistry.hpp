@@ -28,5 +28,6 @@ float paragraphLayoutWidth(uint64_t handle);
 sk_sp<SkFontMgr> sharedFontMgr();
 sk_sp<::skia::textlayout::FontCollection> sharedFontCollection();
 sk_sp<SkUnicode> sharedUnicode();
+void invalidateSharedFonts();
 
 } // namespace nucleus::text

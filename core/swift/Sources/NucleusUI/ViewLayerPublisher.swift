@@ -95,7 +95,7 @@ package final class ViewLayerPublisher: ~Sendable {
 
         var snapshots: [ViewLayerSnapshot] = []
         for root in roots {
-            try appendViewTree(root, parentBackingLayerID: 0, snapshots: &snapshots)
+            appendViewTree(root, parentBackingLayerID: 0, snapshots: &snapshots)
         }
         Trace.plot("swift.nucleus.view_layer.snapshots", UInt64(snapshots.count))
 
@@ -115,12 +115,12 @@ package final class ViewLayerPublisher: ~Sendable {
         _ view: View,
         parentBackingLayerID: UInt64,
         snapshots: inout [ViewLayerSnapshot]
-    ) throws(UIError) -> Bool {
+    ) -> Bool {
         guard !view.isHidden else {
             return false
         }
-        try view.layoutIfNeeded()
-        try view.displayIfNeeded()
+        view.layoutIfNeeded()
+        view.displayIfNeeded()
         let content = view.layerContent
         let presentation = content.presentation
         let frame = view.frame
@@ -137,7 +137,7 @@ package final class ViewLayerPublisher: ~Sendable {
         }
         var childSnapshots: [ViewLayerSnapshot] = []
         for child in view.childViews {
-            try appendViewTree(child, parentBackingLayerID: backingLayerID, snapshots: &childSnapshots)
+            appendViewTree(child, parentBackingLayerID: backingLayerID, snapshots: &childSnapshots)
         }
         let hasSemanticLayer = view.backingLayer.descriptor.kind != .container
         let hasOwnContent = hasSemanticLayer ||

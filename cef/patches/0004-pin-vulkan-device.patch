@@ -1,0 +1,105 @@
+diff --git a/gpu/vulkan/vulkan_device_queue.cc b/gpu/vulkan/vulkan_device_queue.cc
+index 2021a3827c..ca47656103 100644
+--- a/gpu/vulkan/vulkan_device_queue.cc
++++ b/gpu/vulkan/vulkan_device_queue.cc
+@@ -12,9 +12,11 @@
+ #include <utility>
+ #include <vector>
+
++#include "base/command_line.h"
+ #include "base/compiler_specific.h"
+ #include "base/feature_list.h"
+ #include "base/logging.h"
++#include "base/strings/string_number_conversions.h"
+ #include "base/strings/stringprintf.h"
+ #include "base/task/single_thread_task_runner.h"
+ #include "base/trace_event/memory_dump_manager.h"
+@@ -105,6 +107,26 @@ bool VulkanDeviceQueue::Initialize(
+
+   const VulkanInfo& info = instance_->vulkan_info();
+
++  std::vector<uint8_t> preferred_device_uuid;
++#if BUILDFLAG(IS_LINUX)
++  std::string preferred_device_uuid_string;
++  const base::CommandLine* command_line =
++      base::CommandLine::ForCurrentProcess();
++  if (command_line->HasSwitch("cef-vulkan-device-uuid")) {
++    preferred_device_uuid_string =
++        command_line->GetSwitchValueASCII("cef-vulkan-device-uuid");
++  }
++  if (!preferred_device_uuid_string.empty()) {
++    if (!base::HexStringToBytes(preferred_device_uuid_string,
++                                &preferred_device_uuid) ||
++        preferred_device_uuid.size() != VK_UUID_SIZE) {
++      LOG(ERROR) << "Invalid CEF Vulkan device UUID; expected exactly "
++                    "32 hexadecimal digits";
++      return false;
++    }
++  }
++#endif
++
+   VkResult result = VK_SUCCESS;
+
+   VkQueueFlags queue_flags = 0;
+@@ -136,6 +158,23 @@ bool VulkanDeviceQueue::Initialize(
+   for (size_t i = 0; i < info.physical_devices.size(); ++i) {
+     const auto& device_info = info.physical_devices[i];
+     const auto& device_properties = device_info.properties;
++#if BUILDFLAG(IS_LINUX)
++    if (!preferred_device_uuid.empty()) {
++      VkPhysicalDeviceIDProperties id_properties = {
++          .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ID_PROPERTIES,
++      };
++      VkPhysicalDeviceProperties2 properties2 = {
++          .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
++          .pNext = &id_properties,
++      };
++      vkGetPhysicalDeviceProperties2(device_info.device, &properties2);
++      if (std::memcmp(id_properties.deviceUUID,
++                      preferred_device_uuid.data(),
++                      VK_UUID_SIZE) != 0) {
++        continue;
++      }
++    }
++#endif
+     if (device_properties.apiVersion < info.used_api_version)
+       continue;
+
+diff --git a/ui/gl/gl_display.cc b/ui/gl/gl_display.cc
+index 376561c053..d027710802 100644
+--- a/ui/gl/gl_display.cc
++++ b/ui/gl/gl_display.cc
+@@ -67,5 +67,33 @@ EGLDisplay GetPlatformANGLEDisplay(
+   TRACE_EVENT("gpu,startup", "gl_display::GetPlatformANGLEDisplay");
+   std::vector<EGLAttrib> display_attribs(extra_display_attribs);
+
++  const base::CommandLine* process_command_line =
++      base::CommandLine::ForCurrentProcess();
++  const bool has_cef_uuid =
++      process_command_line->HasSwitch("cef-vulkan-device-uuid");
++  if (platform_type == EGL_PLATFORM_ANGLE_TYPE_VULKAN_ANGLE &&
++      has_cef_uuid) {
++    static const std::vector<uint8_t>* const preferred_uuid = [] {
++      auto* value = new std::vector<uint8_t>();
++      const base::CommandLine* command_line =
++          base::CommandLine::ForCurrentProcess();
++      std::string uuid;
++      if (command_line->HasSwitch("cef-vulkan-device-uuid")) {
++        uuid = command_line->GetSwitchValueASCII("cef-vulkan-device-uuid");
++      }
++      if (!base::HexStringToBytes(uuid, value) ||
++          value->size() != 16U) {
++        LOG(ERROR) << "Invalid CEF Vulkan device UUID; expected exactly "
++                      "32 hexadecimal digits";
++        value->clear();
++      }
++      return value;
++    }();
++    if (preferred_uuid->size() != 16U)
++      return EGL_NO_DISPLAY;
++    display_attribs.push_back(EGL_PLATFORM_ANGLE_VULKAN_DEVICE_UUID_ANGLE);
++    display_attribs.push_back(reinterpret_cast<EGLAttrib>(preferred_uuid->data()));
++  }
++
+   display_attribs.push_back(EGL_PLATFORM_ANGLE_TYPE_ANGLE);
+   display_attribs.push_back(static_cast<EGLAttrib>(platform_type));

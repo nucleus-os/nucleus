@@ -1,0 +1,35 @@
+diff --git a/ui/native_theme/native_theme_fluent.cc b/ui/native_theme/native_theme_fluent.cc
+index a10b471a48..05077c892b 100644
+--- a/ui/native_theme/native_theme_fluent.cc
++++ b/ui/native_theme/native_theme_fluent.cc
+@@ -286,6 +286,13 @@ void NativeThemeFluent::PaintScrollbarTrack(
+     const gfx::Rect& rect,
+     bool forced_colors,
+     PreferredContrast contrast) const {
++  // Overlay scrollbars float above page content, so painting an opaque track
++  // on hover obscures the content they are intended to preserve. Keep the
++  // track for accessibility modes that require additional contrast.
++  if (use_overlay_scrollbar() && !forced_colors &&
++      contrast != PreferredContrast::kMore) {
++    return;
++  }
+   gfx::Rect track_fill_rect = rect;
+   // See comments in `PaintArrowButton()` re: the condition here.
+   if (forced_colors || contrast == PreferredContrast::kMore) {
+diff --git a/cc/layers/painted_scrollbar_layer_impl.cc b/cc/layers/painted_scrollbar_layer_impl.cc
+index bbbfdfeafb..6d9510cb08 100644
+--- a/cc/layers/painted_scrollbar_layer_impl.cc
++++ b/cc/layers/painted_scrollbar_layer_impl.cc
+@@ -188,5 +188,12 @@ void PaintedScrollbarLayerImpl::AppendTrackAndButtonsQuads(
+     viz::CompositorRenderPass* render_pass,
+     AppendQuadsData* append_quads_data) {
++  // Fluent overlay scrollbars retain their track geometry for hit testing,
++  // but only the thumb should be visible over page content.
++  if (IsFluentOverlayScrollbarEnabled() &&
++      !has_find_in_page_tickmarks()) {
++    return;
++  }
++
+   if (IsFluentOverlayScrollbarEnabled() &&
+       thumb_thickness_scale_factor() <= GetIdleThicknessScale() &&
+       !has_find_in_page_tickmarks()) {

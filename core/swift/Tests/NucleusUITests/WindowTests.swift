@@ -16,15 +16,15 @@ import Testing
             try super.init()
         }
 
-        override func loadView() throws(UIError) {
+        override func loadView() {
             setView(loadedView)
         }
 
-        override func viewDidLoad() throws(UIError) {
+        override func viewDidLoad() {
             didLoadCount += 1
         }
 
-        override func viewWillAppear() throws(UIError) {
+        override func viewWillAppear() {
             willAppearCount += 1
         }
     }

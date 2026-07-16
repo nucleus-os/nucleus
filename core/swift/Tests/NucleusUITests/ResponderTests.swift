@@ -12,7 +12,7 @@ import Testing
             try super.init()
         }
 
-        override func handleEvent(_ event: Event) throws(UIError) -> EventHandling {
+        override func handleEvent(_ event: Event) -> EventHandling {
             events.append(event)
             return result
         }
@@ -67,7 +67,7 @@ import Testing
         final class HandlingViewController: ViewController {
             var events: [Event] = []
 
-            override func handleEvent(_ event: Event) throws(UIError) -> EventHandling {
+            override func handleEvent(_ event: Event) -> EventHandling {
                 events.append(event)
                 return .handled
             }

@@ -96,7 +96,6 @@ let skiaLinkFlags: [String] = [
     "-lsvg", "-lskcms", "-lskresources", "-lfreetype2", "-lharfbuzz", "-licu",
     "-lpng", "-ljpeg", "-ljpeg12", "-ljpeg16", "-lwebp", "-lwebp_sse41", "-lexpat",
     "-lzlib", "-lwuffs", "-ldng_sdk", "-lpiex", "-ldawn_combined",
-    "-lallocator_base", "-lallocator_core", "-lallocator_shim", "-lraw_ptr",
     "-Xlinker", "--end-group",
     "-lvulkan", "-lfontconfig", "-lfreetype", "-lz", "-ldl", "-lpthread", "-lm",
 ]

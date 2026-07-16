@@ -151,25 +151,25 @@ final class ShellOverlayMenuView: View, ~Sendable {
     /// raised by this so its first row aligns with the parent row that spawned it.
     static var topPadding: Double { MenuMetrics.verticalPadding }
 
-    init(menu: Menu) throws(UIError) {
+    init(menu: Menu) {
         self.menu = menu
-        self.backgroundEffectView = try VisualEffectView(
+        self.backgroundEffectView = VisualEffectView(
             material: .menu,
             state: .active,
             cornerRadius: MenuMetrics.cornerRadius
         )
-        try super.init()
+        super.init()
         cornerRadius = MenuMetrics.cornerRadius
         shadow = ShellShadow.menu
-        try addSubview(backgroundEffectView)
+        addSubview(backgroundEffectView)
         for item in menu.items {
             if item.isSeparator {
-                let separator = try View()
-                try addSubview(separator)
+                let separator = View()
+                addSubview(separator)
                 separatorViews.append(separator)
             } else {
-                let row = try MenuRowView(item: item)
-                try addSubview(row)
+                let row = MenuRowView(item: item)
+                addSubview(row)
                 rowViews.append(row)
             }
         }
@@ -247,7 +247,7 @@ final class ShellOverlayMenuView: View, ~Sendable {
         setHighlightedIndex(next)
     }
 
-    override func layout() throws(UIError) {
+    override func layout() {
         let bounds = frame
         let width = bounds.size.width
         backgroundEffectView.frame = Rect(x: 0, y: 0, width: width, height: bounds.size.height)
@@ -272,7 +272,7 @@ final class ShellOverlayMenuView: View, ~Sendable {
                 let row = rowViews[rowIndex]
                 rowIndex += 1
                 row.frame = Rect(x: 0, y: y, width: width, height: MenuMetrics.rowHeight)
-                try row.layoutIfNeeded()
+                row.layoutIfNeeded()
                 y += MenuMetrics.rowHeight
             }
         }
@@ -292,22 +292,22 @@ private final class MenuRowView: View, ~Sendable {
     private let arrowLabel: Label?
     private var highlighted = false
 
-    init(item: MenuItem) throws(UIError) {
+    init(item: MenuItem) {
         self.item = item
         self.isEnabled = item.isEnabled
-        self.highlightView = try View()
-        self.titleLabel = try Label(item.label)
-        self.arrowLabel = (item.submenu != nil) ? try Label("\u{203A}") : nil
-        try super.init()
+        self.highlightView = View()
+        self.titleLabel = Label(item.label)
+        self.arrowLabel = (item.submenu != nil) ? Label("\u{203A}") : nil
+        super.init()
         highlightView.cornerRadius = 4
         highlightView.isHidden = true
         titleLabel.fontSize = MenuMetrics.fontSize
-        try addSubview(highlightView)
-        try addSubview(titleLabel)
+        addSubview(highlightView)
+        addSubview(titleLabel)
         if let arrowLabel {
             arrowLabel.fontSize = MenuMetrics.fontSize
             arrowLabel.alignment = .center
-            try addSubview(arrowLabel)
+            addSubview(arrowLabel)
         }
     }
 
@@ -323,7 +323,7 @@ private final class MenuRowView: View, ~Sendable {
         setNeedsLayout()
     }
 
-    override func layout() throws(UIError) {
+    override func layout() {
         let bounds = frame
         let width = bounds.size.width
         let height = bounds.size.height

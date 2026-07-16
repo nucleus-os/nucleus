@@ -11,25 +11,25 @@ final class ShellOverlayNotificationView: View, ~Sendable {
     let closeButton: Button
     private var dismissHandler: ((UInt32) -> Void)?
 
-    init(info: ShellOverlayNotificationInfo, metrics: ShellOverlayNotificationMetrics = .init()) throws(UIError) {
+    init(info: ShellOverlayNotificationInfo, metrics: ShellOverlayNotificationMetrics = .init()) {
         self.info = info
         self.metrics = metrics.updated(showsThumbnail: info.showsThumbnail, hasBody: !info.body.isEmpty)
-        self.backgroundEffectView = try VisualEffectView(material: .popover, state: .active, cornerRadius: 18)
-        self.summaryLabel = try Label(info.summary)
-        self.bodyLabel = try Label(info.body)
-        self.thumbnailView = try ImageView(
+        self.backgroundEffectView = VisualEffectView(material: .popover, state: .active, cornerRadius: 18)
+        self.summaryLabel = Label(info.summary)
+        self.bodyLabel = Label(info.body)
+        self.thumbnailView = ImageView(
             image: info.showsThumbnail ? ImageHandle(id: info.thumbnailHandle) : nil,
             imageSize: Size(width: 116, height: 76)
         )
-        self.closeButton = try Button(title: "")
-        try super.init()
+        self.closeButton = Button(title: "")
+        super.init()
 
-        try addSubview(backgroundEffectView)
-        try addSubview(thumbnailView)
-        try addSubview(summaryLabel)
-        try addSubview(bodyLabel)
-        try addSubview(closeButton)
-        try closeButton.onPress { [weak self] _ in
+        addSubview(backgroundEffectView)
+        addSubview(thumbnailView)
+        addSubview(summaryLabel)
+        addSubview(bodyLabel)
+        addSubview(closeButton)
+        closeButton.onPress { [weak self] _ in
             guard let self else { return }
             self.dismissHandler?(self.info.id)
         }
@@ -64,7 +64,7 @@ final class ShellOverlayNotificationView: View, ~Sendable {
         UInt64(info.id)
     }
 
-    override func layout() throws(UIError) {
+    override func layout() {
         var textX = metrics.cardPad
         var summaryY = metrics.cardPad
         var bodyY = metrics.cardPad + metrics.summaryTextHeight + 6
@@ -219,8 +219,8 @@ final class ShellOverlayNotificationListView: StackView, ~Sendable {
     var frameInfo: ShellOverlayFrameInfo?
     private var dismissHandler: ((UInt32) -> Void)?
 
-    init() throws(UIError) {
-        try super.init(axis: .vertical, spacing: 0, alignment: .trailing)
+    init() {
+        super.init(axis: .vertical, spacing: 0, alignment: .trailing)
         hidesHiddenArrangedSubviews = false
     }
 
@@ -231,13 +231,13 @@ final class ShellOverlayNotificationListView: StackView, ~Sendable {
         }
     }
 
-    func setNotifications(_ notifications: [ShellOverlayNotificationView]) throws(UIError) {
+    func setNotifications(_ notifications: [ShellOverlayNotificationView]) {
         for view in arrangedSubviews where !notifications.contains(where: { $0 === view }) {
-            try removeArrangedSubview(view)
+            removeArrangedSubview(view)
         }
         for notification in notifications where !arrangedSubviews.contains(where: { $0 === notification }) {
             notification.alphaValue = 1
-            try addArrangedSubview(notification)
+            addArrangedSubview(notification)
         }
         if let dismissHandler {
             for notification in notifications {
@@ -247,7 +247,7 @@ final class ShellOverlayNotificationListView: StackView, ~Sendable {
         setNeedsLayout()
     }
 
-    override func layout() throws(UIError) {
+    override func layout() {
         guard let frameInfo else {
             return
         }

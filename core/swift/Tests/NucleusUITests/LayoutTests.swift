@@ -6,7 +6,7 @@ import Testing
     final class LayoutCountingView: View {
         var layoutCount = 0
 
-        override func layout() throws(UIError) {
+        override func layout() {
             layoutCount += 1
         }
     }

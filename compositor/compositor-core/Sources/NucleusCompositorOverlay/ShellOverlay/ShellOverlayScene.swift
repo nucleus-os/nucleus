@@ -78,7 +78,7 @@ public final class ShellOverlayScene: ~Sendable {
     }
 
     package func hostedSurface(for id: HostedSurfaceID) throws(UIError) -> HostedSurface {
-        try hostedSurfaceRegistry.surface(
+        hostedSurfaceRegistry.surface(
             for: id,
             frame: frame.map { Self.hostedSurfaceFrame($0) },
             role: .shellChrome,
@@ -140,37 +140,37 @@ public final class ShellOverlayScene: ~Sendable {
         let publicationContext = try WindowScenePublicationContext(commitSink: commitSink)
         self.publicationContext = publicationContext
         self.hostedSurfaceRegistry = publicationContext.makeHostedSurfaceRegistry()
-        let notificationListView = try publicationContext.withSemanticContext {
-            try ShellOverlayNotificationListView()
+        let notificationListView = publicationContext.withSemanticContext {
+            ShellOverlayNotificationListView()
         }
-        let hotkeyView = try publicationContext.withSemanticContext {
-            try ShellOverlayHotkeyView()
+        let hotkeyView = publicationContext.withSemanticContext {
+            ShellOverlayHotkeyView()
         }
         self.notificationListView = notificationListView
         self.hotkeyView = hotkeyView
-        self.notificationViewController = try ViewController(view: notificationListView)
-        self.hotkeyViewController = try ViewController(view: hotkeyView)
-        self.notificationWindow = try publicationContext.withSemanticContext {
-            try Window(title: "Notifications", role: .notification, level: .overlay)
+        self.notificationViewController = ViewController(view: notificationListView)
+        self.hotkeyViewController = ViewController(view: hotkeyView)
+        self.notificationWindow = publicationContext.withSemanticContext {
+            Window(title: "Notifications", role: .notification, level: .overlay)
         }
-        self.hotkeyWindow = try publicationContext.withSemanticContext {
-            try Window(title: "Keyboard Shortcuts", role: .statusOverlay, level: .criticalOverlay)
+        self.hotkeyWindow = publicationContext.withSemanticContext {
+            Window(title: "Keyboard Shortcuts", role: .statusOverlay, level: .criticalOverlay)
         }
-        self.menuWindow = try publicationContext.withSemanticContext {
-            try Window(title: "Menu", role: .statusOverlay, level: .criticalOverlay)
+        self.menuWindow = publicationContext.withSemanticContext {
+            Window(title: "Menu", role: .statusOverlay, level: .criticalOverlay)
         }
         self.windowScene = publicationContext.makeWindowScene(windows: [notificationWindow, hotkeyWindow, menuWindow])
         try publicationContext.withSemanticContext {
-            try notificationWindow.setContentViewController(notificationViewController)
-            try notificationWindow.orderFront()
-            try hotkeyWindow.setContentViewController(hotkeyViewController)
-            try hotkeyWindow.orderFront()
-            try menuWindow.setContentViewController(ViewController(view: View()))
+            notificationWindow.setContentViewController(notificationViewController)
+            notificationWindow.orderFront()
+            hotkeyWindow.setContentViewController(hotkeyViewController)
+            hotkeyWindow.orderFront()
+            menuWindow.setContentViewController(ViewController(view: View()))
             menuWindow.orderOut()
             if let frame {
                 try updateWindowFrames(frame)
             }
-            try hotkeyView.update(visible: hotkeyVisible)
+            hotkeyView.update(visible: hotkeyVisible)
         }
         self.notificationListView.setDismissHandler { [weak self] id in
             _ = self?.dismissNotification(id, reason: 2)
@@ -216,20 +216,14 @@ public final class ShellOverlayScene: ~Sendable {
                 notificationRecords[index].view.update(notification)
                 return changed
             } else {
-                do {
-                    let view = try publicationContext.withSemanticContext {
-                        try ShellOverlayNotificationView(info: notification)
-                    }
-                    view.setDismissHandler { [weak self] id in
-                        _ = self?.dismissNotification(id, reason: 2)
-                    }
-                    notificationRecords.append(.init(info: notification, view: view, createdNs: clockNs()))
-                    try notificationListView.setNotifications(notificationViews)
-                } catch {
-                    notificationRecords.removeAll { $0.info.id == notification.id }
-                    logShellOverlayError("notification add failed id=\(notification.id): \(error)")
-                    return false
+                let view = publicationContext.withSemanticContext {
+                    ShellOverlayNotificationView(info: notification)
                 }
+                view.setDismissHandler { [weak self] id in
+                    _ = self?.dismissNotification(id, reason: 2)
+                }
+                notificationRecords.append(.init(info: notification, view: view, createdNs: clockNs()))
+                notificationListView.setNotifications(notificationViews)
             }
             trimOverflow()
             Trace.plot("swift.overlay.notifications.count", UInt64(notificationRecords.count))
@@ -255,7 +249,7 @@ public final class ShellOverlayScene: ~Sendable {
             do {
                 if let frame {
                     try updateNotificationWindowFrame(frame)
-                    try notificationListView.layoutIfNeeded()
+                    notificationListView.layoutIfNeeded()
                 }
                 try notificationListView.removeArrangedSubview(
                     view,
@@ -281,12 +275,12 @@ public final class ShellOverlayScene: ~Sendable {
         }
         hotkeyVisible = visible
         do {
-            try hotkeyView.update(visible: hotkeyVisible)
+            hotkeyView.update(visible: hotkeyVisible)
             if visible {
                 if let frame {
                     try updateHotkeyFrame(frame)
                 }
-                try hotkeyWindow.orderFront()
+                hotkeyWindow.orderFront()
             } else {
                 hotkeyWindow.orderOut()
             }
@@ -314,29 +308,24 @@ public final class ShellOverlayScene: ~Sendable {
     ) -> Bool {
         Trace.zone("overlay.scene.show_menu", color: Trace.Color.green) {
             _ = dismissMenu()
-            do {
-                let container = try View()
-                let controller = try ViewController(view: container)
-                let outputSize = menuOutputSize()
-                try publicationContext.withSemanticContext {
-                    try menuWindow.setContentViewController(controller)
-                    try menuWindow.setFrame(Rect(x: 0, y: 0, width: outputSize.width, height: outputSize.height), display: false)
-                    try menuWindow.orderFront()
-                }
-                menuContainer = container
-                menuSelectHandler = onSelect
-                guard pushMenuLevel(items: menu.items, anchor: anchor, parentActionID: Self.menuRootSentinel) else {
-                    _ = dismissMenu()
-                    return false
-                }
-                // Stay open after the opening gesture: swallow the release of the click
-                // that brought the menu up rather than treating it as a dismiss.
-                menuStickyArmed = true
-                return true
-            } catch {
-                logShellOverlayError("show menu failed: \(error)")
+            let container = View()
+            let controller = ViewController(view: container)
+            let outputSize = menuOutputSize()
+            publicationContext.withSemanticContext {
+                menuWindow.setContentViewController(controller)
+                menuWindow.setFrame(Rect(x: 0, y: 0, width: outputSize.width, height: outputSize.height), display: false)
+                menuWindow.orderFront()
+            }
+            menuContainer = container
+            menuSelectHandler = onSelect
+            guard pushMenuLevel(items: menu.items, anchor: anchor, parentActionID: Self.menuRootSentinel) else {
+                _ = dismissMenu()
                 return false
             }
+            // Stay open after the opening gesture: swallow the release of the click
+            // that brought the menu up rather than treating it as a dismiss.
+            menuStickyArmed = true
+            return true
         }
     }
 
@@ -356,27 +345,22 @@ public final class ShellOverlayScene: ~Sendable {
     @discardableResult
     private func pushMenuLevel(items: [MenuItem], anchor: Point, parentActionID: Int) -> Bool {
         guard let container = menuContainer else { return false }
-        do {
-            let view = try publicationContext.withSemanticContext {
-                try ShellOverlayMenuView(menu: Menu(items: items))
-            }
-            let frameRect = clampedMenuFrame(anchor: anchor, size: view.preferredSize)
-            view.frame = frameRect
-            try container.addSubview(view)
-            try view.layoutIfNeeded()
-            menuLevels.append(MenuLevel(view: view, frame: frameRect, parentActionID: parentActionID))
-            return true
-        } catch {
-            logShellOverlayError("open menu level failed: \(error)")
-            return false
+        let view = publicationContext.withSemanticContext {
+            ShellOverlayMenuView(menu: Menu(items: items))
         }
+        let frameRect = clampedMenuFrame(anchor: anchor, size: view.preferredSize)
+        view.frame = frameRect
+        container.addSubview(view)
+        view.layoutIfNeeded()
+        menuLevels.append(MenuLevel(view: view, frame: frameRect, parentActionID: parentActionID))
+        return true
     }
 
     /// Close every panel deeper than `depth`, removing each from the container.
     private func popMenuLevels(toDepth depth: Int) {
         while menuLevels.count > depth {
             let level = menuLevels.removeLast()
-            try? level.view.removeFromSuperview()
+            level.view.removeFromSuperview()
         }
     }
 
@@ -557,8 +541,8 @@ public final class ShellOverlayScene: ~Sendable {
             return .init(consumed: false, wantsFrame: false, cursor: cursor)
         }
 
-        let targetWindow = try? windowScene.hitTestWindow(at: pointEvent.location)
-        let handled = targetWindow.flatMap { try? $0.dispatchEvent(nucleonEvent) } == .handled
+        let targetWindow = windowScene.hitTestWindow(at: pointEvent.location)
+        let handled = targetWindow.map { $0.dispatchEvent(nucleonEvent) } == .handled
         if handled {
             if pointEvent.kind == .pointerDown {
                 capturedPointerButtons.insert(pointEvent.button)
@@ -622,7 +606,7 @@ public final class ShellOverlayScene: ~Sendable {
     }
 
     private func cursor(for location: Point) -> ShellOverlayCursor {
-        guard let target = try? windowScene.hitTest(at: location)?.view else {
+        guard let target = windowScene.hitTest(at: location)?.view else {
             return .default
         }
         var current: Responder? = target
@@ -645,7 +629,7 @@ public final class ShellOverlayScene: ~Sendable {
     private func updateNotificationWindowFrame(_ frame: ShellOverlayFrameInfo) throws(UIError) {
         notificationListView.frameInfo = frame
         let outputSize = frame.outputSizeInPoints
-        try notificationWindow.setFrame(Rect(
+        notificationWindow.setFrame(Rect(
             x: 0,
             y: 0,
             width: outputSize.width,
@@ -654,8 +638,8 @@ public final class ShellOverlayScene: ~Sendable {
     }
 
     private func updateHotkeyFrame(_ frame: ShellOverlayFrameInfo) throws(UIError) {
-        try hotkeyView.updateFrame(frame)
-        try hotkeyWindow.setFrame(hotkeyView.frame, display: false)
+        hotkeyView.updateFrame(frame)
+        hotkeyWindow.setFrame(hotkeyView.frame, display: false)
     }
 
     private static func hostedSurfaceFrame(_ frame: ShellOverlayFrameInfo) -> Rect {
@@ -705,12 +689,7 @@ public final class ShellOverlayScene: ~Sendable {
             closed.append(notificationRecords.removeFirst().info.id)
         }
         if !closed.isEmpty {
-            do {
-                try notificationListView.setNotifications(notificationViews)
-            } catch {
-                logShellOverlayError("notification overflow trim failed: \(error)")
-                return
-            }
+            notificationListView.setNotifications(notificationViews)
             for id in closed {
                 notificationClosed(id, 1)
             }

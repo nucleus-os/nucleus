@@ -79,14 +79,14 @@ final class ShellOverlayHotkeyRowView: Control, ~Sendable {
     private var textBaselineY: Float = 0
     private var rowFrame: Rect = Rect(x: 0, y: 0, width: 0, height: 0)
 
-    init(entry: ShellOverlayHotkeyEntry, metrics: ShellOverlayHotkeyMetrics) throws(UIError) {
+    init(entry: ShellOverlayHotkeyEntry, metrics: ShellOverlayHotkeyMetrics) {
         self.entry = entry
         self.metrics = metrics
-        self.keyLabel = try Label(entry.key)
-        self.descriptionLabel = try Label(entry.description)
-        try super.init()
-        try addSubview(keyLabel)
-        try addSubview(descriptionLabel)
+        self.keyLabel = Label(entry.key)
+        self.descriptionLabel = Label(entry.description)
+        super.init()
+        addSubview(keyLabel)
+        addSubview(descriptionLabel)
         isEnabled = false
         isAccessibilityElement = true
         accessibilityLabel = "\(entry.key), \(entry.description)"
@@ -101,7 +101,7 @@ final class ShellOverlayHotkeyRowView: Control, ~Sendable {
         setNeedsLayout()
     }
 
-    func place(boxWidth: Float, baselineY: Float) throws(UIError) {
+    func place(boxWidth: Float, baselineY: Float) {
         self.boxWidth = boxWidth
         let rowX = metrics.pad - 8
         let rowH = max(metrics.lineH * 0.92, metrics.rowTextHeight + 4)
@@ -111,10 +111,10 @@ final class ShellOverlayHotkeyRowView: Control, ~Sendable {
         textBaselineY = baselineY - rowY
         self.frame = rowFrame
         setNeedsLayout()
-        try layoutIfNeeded()
+        layoutIfNeeded()
     }
 
-    override func layout() throws(UIError) {
+    override func layout() {
         let appearance = effectiveAppearance
         let rowX = Float(rowFrame.origin.x)
         keyLabel.fontSize = metrics.fontSize
@@ -146,27 +146,27 @@ final class ShellOverlayHotkeyView: View, ~Sendable {
     private let entries: [ShellOverlayHotkeyEntry]
     private var lastFrameInfo: ShellOverlayFrameInfo?
 
-    init(entries: [ShellOverlayHotkeyEntry] = shellOverlayHotkeyEntries) throws(UIError) {
+    init(entries: [ShellOverlayHotkeyEntry] = shellOverlayHotkeyEntries) {
         self.entries = entries
         self.metrics = ShellOverlayHotkeyMetrics()
-        self.backgroundEffectView = try VisualEffectView(material: .hudWindow, state: .active, cornerRadius: 18)
-        self.separatorView = try View()
-        self.titleLabel = try Label("Nucleus Keybindings")
-        self.footerLabel = try Label("Press Esc or click outside controls to dismiss")
+        self.backgroundEffectView = VisualEffectView(material: .hudWindow, state: .active, cornerRadius: 18)
+        self.separatorView = View()
+        self.titleLabel = Label("Nucleus Keybindings")
+        self.footerLabel = Label("Press Esc or click outside controls to dismiss")
         self.rowViews = []
-        try super.init()
+        super.init()
         backgroundEffectView.layerPresentation = ViewLayerPresentation(
             role: .hotkeyOverlay,
             backdropGroup: .hotkeyOverlay
         )
-        try addSubview(backgroundEffectView)
-        try addSubview(separatorView)
-        try addSubview(titleLabel)
-        try addSubview(footerLabel)
+        addSubview(backgroundEffectView)
+        addSubview(separatorView)
+        addSubview(titleLabel)
+        addSubview(footerLabel)
         shadow = ShellShadow.hotkeyOverlay
         for entry in entries where !entry.key.isEmpty {
-            let row = try ShellOverlayHotkeyRowView(entry: entry, metrics: metrics)
-            try addSubview(row)
+            let row = ShellOverlayHotkeyRowView(entry: entry, metrics: metrics)
+            addSubview(row)
             rowViews.append(row)
         }
         isAccessibilityElement = true
@@ -175,7 +175,7 @@ final class ShellOverlayHotkeyView: View, ~Sendable {
         accessibilityChildren = [titleLabel] + rowViews + [footerLabel]
     }
 
-    func update(visible: Bool) throws(UIError) {
+    func update(visible: Bool) {
         self.visible = visible
         isHidden = (!visible)
         setNeedsLayout()
@@ -186,7 +186,7 @@ final class ShellOverlayHotkeyView: View, ~Sendable {
         UInt64.max - 1
     }
 
-    func updateFrame(_ frame: ShellOverlayFrameInfo) throws(UIError) {
+    func updateFrame(_ frame: ShellOverlayFrameInfo) {
         guard lastFrameInfo != frame else {
             return
         }
@@ -207,10 +207,10 @@ final class ShellOverlayHotkeyView: View, ~Sendable {
         self.frame = Rect(x: Double(x), y: Double(y), width: Double(boxW), height: Double(boxH))
         setNeedsLayout()
         setNeedsDisplay()
-        try layoutIfNeeded()
+        layoutIfNeeded()
     }
 
-    override func layout() throws(UIError) {
+    override func layout() {
         let bounds = frame
         let boxWidth = Float(bounds.size.width)
         let appearance = effectiveAppearance
@@ -253,7 +253,7 @@ final class ShellOverlayHotkeyView: View, ~Sendable {
             }
             let row = rowViews[rowIndex]
             row.update(metrics: metrics)
-            try row.place(boxWidth: boxWidth, baselineY: y)
+            row.place(boxWidth: boxWidth, baselineY: y)
             rowIndex += 1
             y += metrics.lineH
         }

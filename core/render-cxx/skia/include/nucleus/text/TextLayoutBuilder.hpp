@@ -5,6 +5,8 @@
 #include <string>
 #include <vector>
 
+class SkCanvas;
+
 namespace nucleus::text {
 
 enum : uint32_t {
@@ -49,6 +51,9 @@ enum class TextLineBreakMode : uint8_t {
   WordWrapping,
 };
 
+enum class EllipsisMode : uint8_t { None, Start, Middle, End };
+enum class ParagraphDirection : uint8_t { Automatic, Ltr, Rtl };
+
 struct TextStringView final {
   const char *data{nullptr};
   size_t size{0};
@@ -60,6 +65,8 @@ struct TextStyle final {
   float lineHeight{0.0f};
   int fontWeight{400};
   bool italic{false};
+  bool underline{false};
+  bool strikeThrough{false};
   float red{1.0f};
   float green{1.0f};
   float blue{1.0f};
@@ -76,6 +83,8 @@ struct ParagraphStyle final {
   uint32_t maximumNumberOfLines{0};
   TextAlignment alignment{TextAlignment::Leading};
   bool ellipsizeTail{false};
+  EllipsisMode ellipsisMode{EllipsisMode::None};
+  ParagraphDirection direction{ParagraphDirection::Automatic};
 };
 
 struct ParagraphMetrics final {
@@ -97,6 +106,8 @@ struct TextRunView final {
   uint32_t weight{FontWeightRegular};
   uint32_t width{FontWidthStandard};
   uint32_t slant{FontSlantUpright};
+  bool underline{false};
+  bool strikeThrough{false};
   float red{1.0f};
   float green{1.0f};
   float blue{1.0f};
@@ -126,12 +137,27 @@ struct TextPosition final {
   uint32_t affinity{TextAffinityDownstream};
 };
 
+struct TextCaret final {
+  float x{0.0f};
+  float y{0.0f};
+  float height{0.0f};
+  uint32_t direction{TextDirectionLtr};
+  uint32_t affinity{TextAffinityDownstream};
+};
+
 struct TextRect final {
   float x{0.0f};
   float y{0.0f};
   float width{0.0f};
   float height{0.0f};
   uint32_t direction{TextDirectionLtr};
+};
+
+struct TextBounds final {
+  float left{0.0f};
+  float top{0.0f};
+  float right{0.0f};
+  float bottom{0.0f};
 };
 
 struct FontMetrics final {
@@ -201,6 +227,12 @@ class TextLayoutService final {
       float y,
       TextPosition *outPosition) const;
 
+  bool caretForOffset(
+      uint64_t handle,
+      uint32_t utf16Offset,
+      uint32_t affinity,
+      TextCaret *outCaret) const;
+
   bool rectsForRange(
       uint64_t handle,
       uint32_t startUtf16Offset,
@@ -208,6 +240,13 @@ class TextLayoutService final {
       TextRect *outRects,
       size_t rectCapacity,
       uint32_t *outRectCount) const;
+
+  bool inkBounds(uint64_t handle, TextBounds *outBounds) const;
+
+  bool graphemeBreaks(TextStringView text, uint32_t *outUtf8Offsets, size_t capacity, uint32_t *outCount) const;
+  void invalidateFontCollection() const;
+
+  bool paint(uint64_t handle, SkCanvas *canvas, float x, float y) const;
 };
 
 ParagraphMetrics measureParagraph(

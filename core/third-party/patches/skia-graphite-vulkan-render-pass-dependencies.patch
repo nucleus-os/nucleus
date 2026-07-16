@@ -1,0 +1,41 @@
+diff --git a/src/gpu/graphite/vk/VulkanRenderPass.cpp b/src/gpu/graphite/vk/VulkanRenderPass.cpp
+index dfce65facc..99a6c63d4d 100644
+--- a/src/gpu/graphite/vk/VulkanRenderPass.cpp
++++ b/src/gpu/graphite/vk/VulkanRenderPass.cpp
+@@ -280,6 +280,36 @@ void populate_subpass_dependencies(const VulkanSharedContext* context,
+                                    const SubpassDependency& defaultSubpassDependency) {
+     const int mainSubpassIdx = needLoadMSAAFromResolveSubpass ? 1 : 0;
+
++    // Graphite may split a single SkCanvas recording into multiple Vulkan
++    // render passes (for example when text atlas uploads interrupt drawing).
++    // A following pass commonly loads the color attachment written by the
++    // preceding pass. Make both sides of that render-pass boundary explicit;
++    // the outgoing dependency covers the final layout transition, while the
++    // incoming dependency makes its result available to the next attachment
++    // load. The internal self-dependency below only orders accesses within one
++    // render pass.
++    SubpassDependency& incomingDependency = deps.push_back();
++    incomingDependency = defaultSubpassDependency;
++    incomingDependency.srcSubpass = VK_SUBPASS_EXTERNAL;
++    incomingDependency.dstSubpass = mainSubpassIdx;
++    incomingDependency.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
++    incomingDependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
++    incomingDependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
++    incomingDependency.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
++    incomingDependency.dstAccessMask =
++            VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
++
++    SubpassDependency& outgoingDependency = deps.push_back();
++    outgoingDependency = defaultSubpassDependency;
++    outgoingDependency.srcSubpass = mainSubpassIdx;
++    outgoingDependency.dstSubpass = VK_SUBPASS_EXTERNAL;
++    outgoingDependency.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
++    outgoingDependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
++    outgoingDependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
++    outgoingDependency.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
++    outgoingDependency.dstAccessMask =
++            VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
++
+     // Adding a single subpass self-dependency for color attachments is basically free, so apply
+     // one to every RenderPass which has an input attachment on the main subpass. This is useful
+     // because it means that as we perform draw calls, if we encounter a draw that uses a blend

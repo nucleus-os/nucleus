@@ -38,10 +38,10 @@ public final class ImageView: View, ~Sendable {
             setNeedsDisplay()
         }
     }
-    public init(image: ImageHandle? = nil, imageSize: Size = .zero) throws(UIError) {
+    public init(image: ImageHandle? = nil, imageSize: Size = .zero) {
         self.image = image
         self.imageSize = imageSize
-        try super.init()
+        super.init()
     }
 
     public override var intrinsicContentSize: Size {
@@ -49,7 +49,7 @@ public final class ImageView: View, ~Sendable {
         return image == nil ? .zero : imageSize
     }
 
-    package override func displayCommands(in dirtyRect: Rect) throws(UIError) -> [ViewLayerContentCommand] {
+    package override func displayCommands(in dirtyRect: Rect) -> [ViewLayerContentCommand] {
         guard let image else {
             return []
         }

@@ -438,7 +438,22 @@ diff --git a/cef/libcef/browser/osr/render_widget_host_view_osr.cc b/cef/libcef/
 index 75c303fad..18c4c1077 100644
 --- a/cef/libcef/browser/osr/render_widget_host_view_osr.cc
 +++ b/cef/libcef/browser/osr/render_widget_host_view_osr.cc
-@@ -1207,6 +1207,14 @@ void CefRenderWidgetHostViewOSR::SendExternalBeginFrame() {
+@@ -1182,7 +1182,13 @@ void CefRenderWidgetHostViewOSR::SendExternalBeginFrame() {
+
+   base::TimeTicks frame_time = base::TimeTicks::Now();
+   base::TimeTicks deadline = base::TimeTicks();
+-  base::TimeDelta interval = viz::BeginFrameArgs::DefaultInterval();
++  // Match external begin-frame metadata to the OSR rate selected by the
++  // embedder. Using DefaultInterval() here aliases a high-refresh external
++  // clock against Chromium's default cadence even when
++  // windowless_frame_rate has been configured correctly.
++  base::TimeDelta interval = frame_rate_threshold_us_ > 0
++                                 ? base::Microseconds(frame_rate_threshold_us_)
++                                 : viz::BeginFrameArgs::DefaultInterval();
+
+   viz::BeginFrameArgs begin_frame_args = viz::BeginFrameArgs::Create(
+       BEGINFRAME_FROM_HERE, begin_frame_source_.source_id(),
+@@ -1209,6 +1215,14 @@ void CefRenderWidgetHostViewOSR::SendExternalBeginFrame() {
    }
  }
 
@@ -469,7 +484,7 @@ diff --git a/cef/libcef/browser/osr/video_consumer_osr.cc b/cef/libcef/browser/o
 index 321bf9e51..5d426ab3f 100644
 --- a/cef/libcef/browser/osr/video_consumer_osr.cc
 +++ b/cef/libcef/browser/osr/video_consumer_osr.cc
-@@ -4,6 +4,14 @@
+@@ -4,6 +4,13 @@
 
  #include "cef/libcef/browser/osr/video_consumer_osr.h"
 
@@ -478,13 +493,12 @@ index 321bf9e51..5d426ab3f 100644
 +
 +#include "base/logging.h"
 +#include "base/posix/eintr_wrapper.h"
-+#include "base/task/single_thread_task_runner.h"
 +#include "base/task/task_traits.h"
 +#include "base/task/thread_pool.h"
  #include "cef/libcef/browser/osr/render_widget_host_view_osr.h"
  #include "media/base/video_frame_metadata.h"
  #include "media/capture/mojom/video_capture_buffer.mojom.h"
-@@ -12,17 +20,60 @@
+@@ -12,17 +19,48 @@
 
  namespace {
 
@@ -521,18 +535,7 @@ index 321bf9e51..5d426ab3f 100644
 +    if (!callbacks_.is_valid()) {
 +      return;
 +    }
-+    if (!release_fence_.is_valid()) {
-+      CompleteFrame(std::move(callbacks_), true);
-+      return;
-+    }
-+    base::ThreadPool::PostTaskAndReplyWithResult(
-+        FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
-+        base::BindOnce(&WaitForReleaseFence, std::move(release_fence_)),
-+        base::BindOnce(&CompleteFrame, std::move(callbacks_)));
-+  }
-+
-+  void SetReleaseFence(base::ScopedFD release_fence) {
-+    release_fence_ = std::move(release_fence);
++    CompleteFrame(std::move(callbacks_), true);
 +  }
 +
 +  mojo::PendingRemote<viz::mojom::FrameSinkVideoConsumerFrameCallbacks>
@@ -544,11 +547,10 @@ index 321bf9e51..5d426ab3f 100644
 -  mojo::Remote<viz::mojom::FrameSinkVideoConsumerFrameCallbacks> callbacks_;
 +  mojo::PendingRemote<viz::mojom::FrameSinkVideoConsumerFrameCallbacks>
 +      callbacks_;
-+  base::ScopedFD release_fence_;
  };
 
  }  // namespace
-@@ -44,15 +95,23 @@ CefVideoConsumerOSR::CefVideoConsumerOSR(CefRenderWidgetHostViewOSR* view,
+@@ -44,15 +82,23 @@ CefVideoConsumerOSR::CefVideoConsumerOSR(CefRenderWidgetHostViewOSR* view,
    SetActive(true);
  }
 
@@ -566,8 +568,8 @@ index 321bf9e51..5d426ab3f 100644
 -        use_shared_texture_
 -            ? viz::mojom::BufferFormatPreference::kPreferMappableSharedImage
 -            : viz::mojom::BufferFormatPreference::kDefault);
-+        // Noctalia copies accelerated OSR frames directly into Vulkan and
-+        // never maps them in production. Prefer an exportable native handle
++        // Native-handle clients sample accelerated OSR frames directly and do
++        // not map them. Prefer an exportable native handle
 +        // so the compositor writes the GPU allocation that is shared with the
 +        // client instead of the CPU-mappable shadow path used by default.
 +        use_shared_texture_ ? viz::mojom::BufferFormatPreference::
@@ -576,7 +578,7 @@ index 321bf9e51..5d426ab3f 100644
    } else {
      video_capturer_->Stop();
    }
-@@ -79,6 +138,66 @@ void CefVideoConsumerOSR::RequestRefreshFrame(
+@@ -79,6 +125,48 @@ void CefVideoConsumerOSR::RequestRefreshFrame(
    video_capturer_->RequestRefreshFrame();
  }
 
@@ -603,24 +605,6 @@ index 321bf9e51..5d426ab3f 100644
 +    pending_frames_.erase(existing);
 +  }
 +  pending_frames_.emplace(capture_counter, std::move(callbacks));
-+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
-+      FROM_HERE,
-+      base::BindOnce(&CefVideoConsumerOSR::ExpirePendingFrame,
-+                     weak_ptr_factory_.GetWeakPtr(), capture_counter),
-+      base::Milliseconds(kReleaseFenceTimeoutMs));
-+}
-+
-+void CefVideoConsumerOSR::ExpirePendingFrame(int64_t capture_counter) {
-+  auto it = pending_frames_.find(capture_counter);
-+  if (it == pending_frames_.end()) {
-+    return;
-+  }
-+  LOG(ERROR) << "Accelerated paint release fence was not supplied before "
-+                "timeout for capture counter "
-+             << capture_counter << "; recycling frame";
-+  auto callbacks = std::move(it->second);
-+  pending_frames_.erase(it);
-+  CompleteFrame(std::move(callbacks), true);
 +}
 +
 +void CefVideoConsumerOSR::CompletePendingFrame(
@@ -643,7 +627,7 @@ index 321bf9e51..5d426ab3f 100644
  // Frame size values are as follows:
  //   info->coded_size = Width and height of the video frame. Not all pixels in
  //   this region are valid.
-@@ -193,6 +312,7 @@ void CefVideoConsumerOSR::OnFrameCaptured(
+@@ -193,6 +281,7 @@ void CefVideoConsumerOSR::OnFrameCaptured(
      paint_info.extra = extra;
      paint_info.plane_count = native_pixmap.planes.size();
      paint_info.modifier = native_pixmap.modifier;
@@ -651,7 +635,7 @@ index 321bf9e51..5d426ab3f 100644
      paint_info.format = pixel_format;
 
      auto cef_plain_index = 0;
-@@ -204,6 +324,8 @@ void CefVideoConsumerOSR::OnFrameCaptured(
+@@ -204,6 +293,8 @@ void CefVideoConsumerOSR::OnFrameCaptured(
        cef_plane.fd = plane.fd.get();
        paint_info.planes[cef_plain_index++] = cef_plane;
      }
@@ -664,7 +648,7 @@ diff --git a/cef/libcef/browser/osr/video_consumer_osr.h b/cef/libcef/browser/os
 index c5aad5c6e..21de088a6 100644
 --- a/cef/libcef/browser/osr/video_consumer_osr.h
 +++ b/cef/libcef/browser/osr/video_consumer_osr.h
-@@ -2,9 +2,12 @@
+@@ -2,9 +2,11 @@
  #define LIBCEF_BROWSER_OSR_VIDEO_CONSUMER_OSR_H_
 
  #include <optional>
@@ -673,11 +657,10 @@ index c5aad5c6e..21de088a6 100644
 +#include "base/files/scoped_file.h"
  #include "base/functional/callback.h"
  #include "base/memory/raw_ptr.h"
-+#include "base/memory/weak_ptr.h"
  #include "components/viz/host/client_frame_sink_video_capturer.h"
  #include "media/capture/mojom/video_capture_types.mojom.h"
 
-@@ -24,6 +27,7 @@ class CefVideoConsumerOSR : public viz::mojom::FrameSinkVideoConsumer {
+@@ -24,6 +26,7 @@ class CefVideoConsumerOSR : public viz::mojom::FrameSinkVideoConsumer {
    void SetFrameRate(base::TimeDelta frame_rate);
    void SizeChanged(const gfx::Size& size_in_pixels);
    void RequestRefreshFrame(const std::optional<gfx::Rect>& bounds_in_pixels);
@@ -685,7 +668,7 @@ index c5aad5c6e..21de088a6 100644
 
   private:
    // viz::mojom::FrameSinkVideoConsumer implementation.
-@@ -39,6 +43,14 @@ class CefVideoConsumerOSR : public viz::mojom::FrameSinkVideoConsumer {
+@@ -39,6 +42,13 @@ class CefVideoConsumerOSR : public viz::mojom::FrameSinkVideoConsumer {
    void OnNewCaptureVersion(
        const media::CaptureVersion& capture_version) override {}
 
@@ -693,19 +676,17 @@ index c5aad5c6e..21de088a6 100644
 +      mojo::PendingRemote<viz::mojom::FrameSinkVideoConsumerFrameCallbacks>;
 +  void RegisterPendingFrame(int64_t capture_counter,
 +                            PendingFrameCallbacks callbacks);
-+  void ExpirePendingFrame(int64_t capture_counter);
 +  void CompletePendingFrame(int64_t capture_counter,
 +                            base::ScopedFD release_fence);
 +
    const bool use_shared_texture_;
 
    const raw_ptr<CefRenderWidgetHostViewOSR> view_;
-@@ -46,6 +58,8 @@ class CefVideoConsumerOSR : public viz::mojom::FrameSinkVideoConsumer {
+@@ -46,6 +56,7 @@ class CefVideoConsumerOSR : public viz::mojom::FrameSinkVideoConsumer {
 
    gfx::Size size_in_pixels_;
    std::optional<gfx::Rect> bounds_in_pixels_;
 +  std::map<int64_t, PendingFrameCallbacks> pending_frames_;
-+  base::WeakPtrFactory<CefVideoConsumerOSR> weak_ptr_factory_{this};
  };
 
  #endif  // LIBCEF_BROWSER_OSR_VIDEO_CONSUMER_OSR_H_

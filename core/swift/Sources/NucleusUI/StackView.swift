@@ -86,7 +86,7 @@ open class StackView: View, ~Sendable {
     private var queuedRemovals: [QueuedRemoval]
     private var activeRemoval: ActiveRemoval?
 
-    public init(axis: Axis = .vertical, spacing: Double = 0, alignment: Alignment = .fill) throws(UIError) {
+    public init(axis: Axis = .vertical, spacing: Double = 0, alignment: Alignment = .fill) {
         self.axis = axis
         self.spacing = spacing
         self.alignment = alignment
@@ -95,22 +95,22 @@ open class StackView: View, ~Sendable {
         self.arranged = []
         self.queuedRemovals = []
         self.activeRemoval = nil
-        try super.init()
+        super.init()
     }
 
     public var arrangedSubviews: [View] {
         arranged
     }
 
-    public func addArrangedSubview(_ view: View) throws(UIError) {
-        try addSubview(view)
+    public func addArrangedSubview(_ view: View) {
+        addSubview(view)
         arranged.append(view)
         setNeedsLayout()
     }
 
-    public func removeArrangedSubview(_ view: View) throws(UIError) {
+    public func removeArrangedSubview(_ view: View) {
         arranged.removeAll { $0 === view }
-        try view.removeFromSuperview()
+        view.removeFromSuperview()
         setNeedsLayout()
     }
 
@@ -145,14 +145,14 @@ open class StackView: View, ~Sendable {
             switch activeRemoval.phase {
             case .exiting:
                 if nowNs >= activeRemoval.startedNs + activeRemoval.queued.transition.durationNs {
-                    try removeArrangedSubview(activeRemoval.queued.view)
+                    removeArrangedSubview(activeRemoval.queued.view)
                     activeRemoval.queued.didRemove?()
                     activeRemoval.phase = .reflowing
                     activeRemoval.startedNs = nowNs
                     self.activeRemoval = activeRemoval
                     try animateInOwnContext(actionPolicy: activeRemoval.queued.reflow.actionPolicy) {
                         self.setNeedsLayout()
-                        try self.layoutIfNeeded()
+                        self.layoutIfNeeded()
                     }
                 }
             case .reflowing:
@@ -197,7 +197,7 @@ open class StackView: View, ~Sendable {
         return queuedRemovals.contains { $0.view === view }
     }
 
-    open override func layout() throws(UIError) {
+    open override func layout() {
         let bounds = frame
         let contentX = bounds.origin.x + layoutMargins.left
         let contentY = bounds.origin.y + layoutMargins.top
@@ -206,7 +206,7 @@ open class StackView: View, ~Sendable {
         var cursor: Double = 0
 
         for view in arranged where !(hidesHiddenArrangedSubviews && view.isHidden) {
-            let preferred = try preferredSize(for: view)
+            let preferred = preferredSize(for: view)
             let childFrame: Rect
             switch axis {
             case .vertical:
@@ -267,7 +267,7 @@ open class StackView: View, ~Sendable {
         }
     }
 
-    private func preferredSize(for view: View) throws(UIError) -> Size {
+    private func preferredSize(for view: View) -> Size {
         let intrinsic = view.intrinsicContentSize
         let current = view.frame.size
         return Size(

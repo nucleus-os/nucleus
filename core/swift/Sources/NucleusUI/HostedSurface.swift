@@ -16,18 +16,12 @@
         role: WindowRole = .hostedSurface,
         level: WindowLevel = .normal,
         frame: Rect? = nil
-    ) throws(UIError) {
+    ) {
         self.surfaceID = surfaceID
         self.role = role
         self.level = level
-        do {
-            self.rootView = try Application.withContext(context) {
-                try View()
-            }
-        } catch let error as UIError {
-            throw error
-        } catch {
-            throw UIError.invalidArgument(detail: String(describing: error))
+        self.rootView = Application.withContext(context) {
+            View()
         }
         if let frame {
             updateFrame(frame)
@@ -90,7 +84,7 @@
         frame: Rect? = nil,
         role: WindowRole = .hostedSurface,
         level: WindowLevel = .normal
-    ) throws(UIError) -> HostedSurface {
+    ) -> HostedSurface {
         if let surface = records[identifier] {
             surface.role = role
             surface.level = level
@@ -99,7 +93,7 @@
             }
             return surface
         }
-        let surface = try HostedSurface(
+        let surface = HostedSurface(
             surfaceID: nextSurfaceID,
             context: context,
             role: role,

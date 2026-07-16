@@ -16,9 +16,11 @@ import Foundation
 private let gnArgs = [
     "is_official_build=true", "skia_enable_tools=false",
     "skia_enable_graphite=true", "skia_use_dawn=true", "skia_use_vulkan=true",
-    // CEF owns the process-wide PartitionAlloc shim in CEF-enabled hosts. Keep
-    // the standalone render SDK allocator-neutral so embedding it cannot add a
-    // second malloc/free owner to the process.
+    // No component of a CEF-enabled host installs a process-wide allocator shim:
+    // CEF builds with `use_allocator_shim=false`, so the whole process allocates
+    // through the system malloc. Keep the render SDK allocator-neutral so it
+    // cannot become the process's only PartitionAlloc owner and reintroduce the
+    // malloc/free boundary that arrangement exists to avoid.
     "skia_use_partition_alloc=false",
     "dawn_enable_vulkan=true", "dawn_enable_d3d11=false", "dawn_enable_d3d12=false",
     "dawn_enable_metal=false", "dawn_enable_opengles=false",

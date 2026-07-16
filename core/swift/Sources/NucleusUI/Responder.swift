@@ -1,9 +1,9 @@
 @MainActor
 open class Responder: ~Sendable {
-    package var responderActions: [ActionID: (Event) throws(UIError) -> Void]
+    package var responderActions: [ActionID: (Event) -> Void]
     package weak var explicitNextResponder: Responder?
 
-    public init() throws(UIError) {
+    public init() {
         responderActions = [:]
         explicitNextResponder = nil
     }
@@ -13,36 +13,42 @@ open class Responder: ~Sendable {
         set { explicitNextResponder = newValue }
     }
 
-    open func handleEvent(_ event: Event) throws(UIError) -> EventHandling {
+    open func handleEvent(_ event: Event) -> EventHandling {
         _ = event
         return .notHandled
     }
 
-    open func tryToPerform(_ action: ActionID, event: Event) throws(UIError) -> Bool {
+    /// Invoke `action` on this responder alone. Returns whether a handler was
+    /// registered. Mirrors `NSResponder.tryToPerform(_:with:)`.
+    open func tryToPerform(_ action: ActionID, event: Event) -> Bool {
         guard let handler = responderActions[action] else {
             return false
         }
-        try handler(event)
+        handler(event)
         return true
     }
 
-    public func setAction(_ action: ActionID, handler: @escaping (Event) throws(UIError) -> Void) throws(UIError) {
+    public func setAction(_ action: ActionID, handler: @escaping (Event) -> Void) {
         responderActions[action] = handler
     }
 
-    public func clearAction(_ action: ActionID) throws(UIError) {
+    public func clearAction(_ action: ActionID) {
         responderActions.removeValue(forKey: action)
     }
 
-    public func performAction(_ action: ActionID, event: Event) throws(UIError) {
-        if try tryToPerform(action, event: event) {
-            return
+    /// Walk the responder chain until one responder handles `action`. Returns
+    /// whether any did. An unhandled action is a normal outcome, not an error —
+    /// mirrors `NSApplication.sendAction(_:to:from:)`.
+    @discardableResult
+    public func performAction(_ action: ActionID, event: Event) -> Bool {
+        var current: Responder? = self
+        while let responder = current {
+            if responder.tryToPerform(action, event: event) {
+                return true
+            }
+            current = responder.nextResponder
         }
-        if let nextResponder {
-            try nextResponder.performAction(action, event: event)
-            return
-        }
-        throw .notImplemented(detail: "responder action is not registered")
+        return false
     }
 }
 
@@ -54,13 +60,13 @@ public enum EventHandling: Sendable, Equatable {
 
 @MainActor
 public enum EventDispatcher {
-    public static func dispatch(_ event: Event, from root: View) throws(UIError) -> EventHandling {
-        guard let target = try root.hitTest(event.location) else {
+    public static func dispatch(_ event: Event, from root: View) -> EventHandling {
+        guard let target = root.hitTest(event.location) else {
             return .notHandled
         }
         var current: Responder? = target
         while let responder = current {
-            let result = try responder.handleEvent(event)
+            let result = responder.handleEvent(event)
             if result == .handled {
                 return .handled
             }

@@ -17,7 +17,7 @@ public struct Transaction: ~Copyable, ~Sendable {
     package var actionPolicy: ActionPolicy
     package var completed: Bool
 
-    public init() throws(UIError) {
+    public init() {
         self.init(context: Application.currentContext)
     }
 

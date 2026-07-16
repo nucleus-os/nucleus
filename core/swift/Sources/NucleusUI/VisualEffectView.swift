@@ -121,14 +121,14 @@ public final class VisualEffectView: View, ~Sendable {
         cornerRadius: Double = 0,
         materialOpacity: Double = 1,
         appearance: Appearance? = nil
-    ) throws(UIError) {
+    ) {
         self.material = material
         self.blendingMode = blendingMode
         self.state = state
         self.isEmphasized = isEmphasized
         self.maskImage = nil
         self.materialOpacity = min(max(0, materialOpacity), 1)
-        try super.init(layerDescriptor: LayerDescriptor(
+        super.init(layerDescriptor: LayerDescriptor(
             kind: .backdrop,
             backdropMaterial: MaterialBridge.backdropMaterial(
                 material: material,
@@ -144,23 +144,23 @@ public final class VisualEffectView: View, ~Sendable {
         self.appearance = appearance
         self.cornerRadius = max(0, cornerRadius)
         isAccessibilityElement = false
-        try applyBackdrop()
+        applyBackdrop()
     }
 
     /// UIKit-shaped convenience: `init(effect:)`.
-    public convenience init(effect: VisualEffect) throws(UIError) {
-        try self.init()
+    public convenience init(effect: VisualEffect) {
+        self.init()
         self.effect = effect
     }
 
     private func syncBackdrop() {
-        try? applyBackdrop()
+        applyBackdrop()
         setNeedsDisplay()
         setNeedsLayout()
     }
 
-    private func applyBackdrop() throws(UIError) {
-        try setProperties(ViewProperties(backdropMaterial: resolvedBackdropMaterial()))
+    private func applyBackdrop() {
+        setProperties(ViewProperties(backdropMaterial: resolvedBackdropMaterial()))
     }
 
     package func resolvedBackdropMaterial() -> BackdropMaterial {
@@ -180,7 +180,7 @@ public final class VisualEffectView: View, ~Sendable {
         ViewProperties(frame: frame, isHidden: isHidden, backdropMaterial: resolvedBackdropMaterial())
     }
 
-    package override func displayCommands(in dirtyRect: Rect) throws(UIError) -> [ViewLayerContentCommand] {
+    package override func displayCommands(in dirtyRect: Rect) -> [ViewLayerContentCommand] {
         []
     }
 }

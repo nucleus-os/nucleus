@@ -11,34 +11,28 @@ open class Control: View, ~Sendable {
     public private(set) var isHighlighted: Bool
     public private(set) var isPressed: Bool
 
-    public override init() throws(UIError) {
+    public override init() {
         self.isEnabled = true
         self.isHighlighted = false
         self.isPressed = false
-        try super.init()
+        super.init()
     }
 
-    public func onPrimaryAction(_ handler: @escaping (Control) -> Void) throws(UIError) {
-        try setAction(.primary) { [weak self] _ in
+    public func onPrimaryAction(_ handler: @escaping (Control) -> Void) {
+        setAction(.primary) { [weak self] _ in
             guard let self else { return }
             handler(self)
         }
     }
 
-    public func sendAction(_ action: ActionID, event: Event) throws(UIError) -> EventHandling {
+    public func sendAction(_ action: ActionID, event: Event) -> EventHandling {
         guard isEnabled else {
             return .notHandled
         }
-
-        do {
-            try performAction(action, event: event)
-            return .handled
-        } catch UIError.notImplemented {
-            return .notHandled
-        }
+        return performAction(action, event: event) ? .handled : .notHandled
     }
 
-    public override func handleEvent(_ event: Event) throws(UIError) -> EventHandling {
+    public override func handleEvent(_ event: Event) -> EventHandling {
         guard isEnabled else {
             return .notHandled
         }
@@ -51,9 +45,9 @@ open class Control: View, ~Sendable {
         case .pointerUp:
             isPressed = false
             isHighlighted = false
-            return try sendAction(.primary, event: event)
+            return sendAction(.primary, event: event)
         case .action:
-            return try sendAction(.primary, event: event)
+            return sendAction(.primary, event: event)
         }
     }
 }

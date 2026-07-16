@@ -24,7 +24,7 @@ export NUCLEUS_CEF_CHROMIUM_VERSION="${NUCLEUS_CEF_CHROMIUM_VERSION:-151.0.7922.
 # CEF release builds consume Chromium's pinned compiler/toolchain but can still
 # surface warnings from generated third-party bindings. Keep those warnings in
 # the log without turning them into source-build failures.
-export NUCLEUS_CEF_GN_DEFINES_BASE="proprietary_codecs=true ffmpeg_branding=Chrome use_dbus=true treat_warnings_as_errors=false"
+export NUCLEUS_CEF_GN_DEFINES_BASE="proprietary_codecs=true ffmpeg_branding=Chrome use_dbus=true use_allocator_shim=false enable_backup_ref_ptr_support=false treat_warnings_as_errors=false"
 # Appended verbatim — e.g. is_official_build=true (slower, needs PGO) for a
 # perf-optimized redistribution build.
 export NUCLEUS_CEF_GN_EXTRA="${NUCLEUS_CEF_GN_EXTRA:-}"

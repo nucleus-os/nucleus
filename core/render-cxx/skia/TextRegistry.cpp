@@ -7,6 +7,8 @@
 #include <modules/skparagraph/include/Paragraph.h>
 #include <modules/skunicode/include/SkUnicode_icu.h>
 
+#include <fontconfig/fontconfig.h>
+
 #include <atomic>
 #include <mutex>
 #include <unordered_map>
@@ -104,7 +106,7 @@ float paragraphLayoutWidth(uint64_t handle) {
 sk_sp<SkFontMgr> sharedFontMgr() {
   std::lock_guard<std::mutex> lock(g_font_mutex);
   if (!g_font_mgr) {
-    g_font_mgr = SkFontMgr_New_FontConfig(nullptr, SkFontScanner_Make_FreeType());
+    g_font_mgr = SkFontMgr_New_FontConfig(FcConfigReference(FcConfigGetCurrent()), SkFontScanner_Make_FreeType());
   }
   return g_font_mgr;
 }
@@ -114,7 +116,7 @@ sk_sp<skia::textlayout::FontCollection> sharedFontCollection() {
   if (!g_font_collection) {
     auto collection = sk_make_sp<skia::textlayout::FontCollection>();
     if (!g_font_mgr) {
-      g_font_mgr = SkFontMgr_New_FontConfig(nullptr, SkFontScanner_Make_FreeType());
+      g_font_mgr = SkFontMgr_New_FontConfig(FcConfigReference(FcConfigGetCurrent()), SkFontScanner_Make_FreeType());
     }
     collection->setDefaultFontManager(g_font_mgr);
     collection->enableFontFallback();
@@ -129,6 +131,12 @@ sk_sp<SkUnicode> sharedUnicode() {
     g_unicode = SkUnicodes::ICU::Make();
   }
   return g_unicode;
+}
+
+void invalidateSharedFonts() {
+  std::lock_guard<std::mutex> lock(g_font_mutex);
+  g_font_collection.reset();
+  g_font_mgr.reset();
 }
 
 } // namespace nucleus::text

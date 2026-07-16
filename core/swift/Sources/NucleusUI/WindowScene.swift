@@ -63,11 +63,11 @@ public final class WindowScene: ~Sendable {
         return windows.count != oldCount
     }
 
-    public func orderFront(_ window: Window) throws(UIError) {
+    public func orderFront(_ window: Window) {
         addWindow(window)
         windows.removeAll { $0 === window }
         windows.append(window)
-        try window.setVisible(true)
+        window.setVisible(true)
     }
 
     public func orderOut(_ window: Window) {
@@ -208,9 +208,9 @@ public final class WindowScene: ~Sendable {
         return PublishedScene(visualContent: visualContent)
     }
 
-    public func hitTest(at point: Point) throws(UIError) -> WindowHitTestResult? {
+    public func hitTest(at point: Point) -> WindowHitTestResult? {
         for window in windowsForDisplay().reversed() where window.isVisible && window.participatesInHitTesting {
-            guard let root = window.root, let view = try root.hitTest(point) else {
+            guard let root = window.root, let view = root.hitTest(point) else {
                 continue
             }
             return .init(window: window, view: view)
@@ -218,8 +218,8 @@ public final class WindowScene: ~Sendable {
         return nil
     }
 
-    public func hitTestWindow(at point: Point) throws(UIError) -> Window? {
-        try hitTest(at: point)?.window
+    public func hitTestWindow(at point: Point) -> Window? {
+        hitTest(at: point)?.window
     }
 
     private func windowsForDisplay() -> [Window] {

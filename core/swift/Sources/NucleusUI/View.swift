@@ -24,7 +24,7 @@ open class View: Responder, Accessible, ~Sendable {
     package var storedTransform: Transform
     package var storedLayerPresentation: ViewLayerPresentation
 
-    public override init() throws(UIError) {
+    public override init() {
         self.backingLayer = Application.currentContext.makeLayer()
         self.registryContext = backingLayer.context
         self.childViews = []
@@ -38,10 +38,10 @@ open class View: Responder, Accessible, ~Sendable {
         self.storedAccessibilityChildren = nil
         self.storedTransform = .identity
         self.storedLayerPresentation = .default
-        try super.init()
+        super.init()
     }
 
-    init(layerDescriptor: LayerDescriptor) throws(UIError) {
+    init(layerDescriptor: LayerDescriptor) {
         self.backingLayer = Application.currentContext.makeLayer(layerDescriptor)
         self.registryContext = backingLayer.context
         self.childViews = []
@@ -55,7 +55,7 @@ open class View: Responder, Accessible, ~Sendable {
         self.storedAccessibilityChildren = nil
         self.storedTransform = .identity
         self.storedLayerPresentation = .default
-        try super.init()
+        super.init()
     }
 
     // `isolated deinit` runs the body on the `@MainActor` (the layer registry and
@@ -75,7 +75,7 @@ open class View: Responder, Accessible, ~Sendable {
         registryContext?.layers.removeValue(forKey: backingLayer.id)
     }
 
-    public func addSubview(_ child: View) throws(UIError) {
+    public func addSubview(_ child: View) {
         // Eager Swift-tree mutation: matches `NSView.addSubview`. The
         // FFI-side layer insert journals into whatever transaction is
         // currently active for this context (explicit if one is in
@@ -84,16 +84,14 @@ open class View: Responder, Accessible, ~Sendable {
         child.detachFromSwiftTree()
         childViews.append(child)
         child.parentView = self
-        do {
-            child.backingLayer.attach(to: backingLayer, at: UInt32.max)
-        }
+        child.backingLayer.attach(to: backingLayer, at: UInt32.max)
         LayerTransaction.appendAmbient(
             .inserted(layer: child.backingLayer.id, parent: backingLayer.id, index: UInt32.max),
             in: backingLayer.context
         )
     }
 
-    public func removeFromSuperview() throws(UIError) {
+    public func removeFromSuperview() {
         let layer = backingLayer
         let context = layer.context
         detachFromSwiftTree()
@@ -104,7 +102,7 @@ open class View: Responder, Accessible, ~Sendable {
     /// Apply a batched ViewProperties update. Local model state updates
     /// eagerly; the FFI commit is journaled into the active ambient
     /// transaction.
-    public func setProperties(_ properties: ViewProperties) throws(UIError) {
+    public func setProperties(_ properties: ViewProperties) {
         let update = properties.layerUpdate()
         backingLayer.apply(update)
         LayerTransaction.appendAmbient(.properties(layer: backingLayer.id, update), in: backingLayer.context)
@@ -400,36 +398,36 @@ open class View: Responder, Accessible, ~Sendable {
         dirtyDisplayRects.append(rect)
     }
 
-    open func layout() throws(UIError) {
+    open func layout() {
     }
 
-    open func draw(_ dirtyRect: Rect) throws(UIError) {
+    open func draw(_ dirtyRect: Rect) {
     }
 
-    package func displayCommands(in dirtyRect: Rect) throws(UIError) -> [ViewLayerContentCommand] {
+    package func displayCommands(in dirtyRect: Rect) -> [ViewLayerContentCommand] {
         []
     }
 
-    public func layoutIfNeeded() throws(UIError) {
+    public func layoutIfNeeded() {
         if layoutNeedsUpdate {
-            try layout()
+            layout()
             layoutNeedsUpdate = false
         }
         for child in childViews {
-            try child.layoutIfNeeded()
+            child.layoutIfNeeded()
         }
     }
 
-    public func displayIfNeeded() throws(UIError) {
+    public func displayIfNeeded() {
         if displayNeedsUpdate {
             let dirtyRect = dirtyDisplayRects.last ?? bounds
-            try draw(dirtyRect)
-            cachedLayerContentCommands = try displayCommands(in: dirtyRect)
+            draw(dirtyRect)
+            cachedLayerContentCommands = displayCommands(in: dirtyRect)
             dirtyDisplayRects.removeAll(keepingCapacity: true)
             displayNeedsUpdate = false
         }
         for child in childViews {
-            try child.displayIfNeeded()
+            child.displayIfNeeded()
         }
     }
 
@@ -438,7 +436,7 @@ open class View: Responder, Accessible, ~Sendable {
         set { explicitNextResponder = newValue }
     }
 
-    open func hitTest(_ point: Point) throws(UIError) -> View? {
+    open func hitTest(_ point: Point) -> View? {
         guard !isHidden else {
             return nil
         }
@@ -453,7 +451,7 @@ open class View: Responder, Accessible, ~Sendable {
             y: point.y - ownFrame.origin.y
         )
         for child in childViews.reversed() {
-            if let hit = try child.hitTest(localPoint) {
+            if let hit = child.hitTest(localPoint) {
                 return hit
             }
         }

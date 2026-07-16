@@ -33,23 +33,23 @@ public final class Button: Control, ~Sendable {
         }
     }
 
-    public init(title: String = "") throws(UIError) {
+    public init(title: String = "") {
         self.title = title
         self.glyph = .none
         self.foregroundColor = Color(1, 1, 1, 1)
         self.fontSize = 14
-        try super.init()
+        super.init()
     }
 
-    public func onPress(_ handler: @escaping (Button) -> Void) throws(UIError) {
-        try onPrimaryAction { [weak self] _ in
+    public func onPress(_ handler: @escaping (Button) -> Void) {
+        onPrimaryAction { [weak self] _ in
             guard let self else { return }
             handler(self)
         }
     }
 
-    public func performPress() throws(UIError) {
-        _ = try handleEvent(Event(type: .action))
+    public func performPress() {
+        _ = handleEvent(Event(type: .action))
     }
 
     public override var intrinsicContentSize: Size {
@@ -61,7 +61,7 @@ public final class Button: Control, ~Sendable {
         )
     }
 
-    package override func displayCommands(in dirtyRect: Rect) throws(UIError) -> [ViewLayerContentCommand] {
+    package override func displayCommands(in dirtyRect: Rect) -> [ViewLayerContentCommand] {
         switch glyph {
         case .none:
             guard !title.isEmpty else {

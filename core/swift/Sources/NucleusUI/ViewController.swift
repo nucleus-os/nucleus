@@ -5,26 +5,26 @@ open class ViewController: Responder, ~Sendable {
     public var representedObject: Any?
     package weak var parentWindow: Window?
 
-    public override init() throws(UIError) {
-        try super.init()
+    public override init() {
+        super.init()
     }
 
-    public convenience init(view: View) throws(UIError) {
-        try self.init()
+    public convenience init(view: View) {
+        self.init()
         setView(view)
     }
 
-    open func loadView() throws(UIError) {
-        storedView = try View()
+    open func loadView() {
+        storedView = View()
     }
 
-    open func viewDidLoad() throws(UIError) {}
-    open func viewWillAppear() throws(UIError) {}
-    open func viewDidLayout() throws(UIError) {}
+    open func viewDidLoad() {}
+    open func viewWillAppear() {}
+    open func viewDidLayout() {}
 
     public var view: View {
-        get throws(UIError) {
-            try loadViewIfNeeded()
+        get {
+            loadViewIfNeeded()
             return storedView!
         }
     }
@@ -45,12 +45,12 @@ open class ViewController: Responder, ~Sendable {
         loaded = false
     }
 
-    public func loadViewIfNeeded() throws(UIError) {
+    public func loadViewIfNeeded() {
         guard !loaded else { return }
-        try loadView()
+        loadView()
         storedView?.owningViewController = self
         loaded = true
-        try viewDidLoad()
+        viewDidLoad()
     }
 
     open override var nextResponder: Responder? {

@@ -81,7 +81,7 @@ open class Window: Responder, ~Sendable {
         level: WindowLevel = .normal,
         styleMask: WindowStyleMask = [],
         participatesInHitTesting: Bool = true
-    ) throws(UIError) {
+    ) {
         self.title = title
         self.frame = frame
         self.role = role
@@ -98,37 +98,28 @@ open class Window: Responder, ~Sendable {
         self.isVisible = false
         self.isKeyWindow = false
         self.firstResponder = nil
-        try super.init()
-        try syncTitlebarThrowing()
+        super.init()
+        syncTitlebar()
     }
 
     /// Allocate or clear `titlebar` to match the current `styleMask`.
     /// Idempotent; safe to call repeatedly. Mirrors `NSWindow`'s
     /// titlebar-on-demand allocation.
-    private func syncTitlebarThrowing() throws(UIError) {
+    private func syncTitlebar() {
         if styleMask.contains(.titled) {
             if titlebar == nil {
-                titlebar = try VisualEffectView(material: .titlebar)
+                titlebar = VisualEffectView(material: .titlebar)
             }
         } else {
             titlebar = nil
         }
     }
 
-    /// Non-throwing wrapper for the `didSet` path. A `VisualEffectView`
-    /// allocation failure in response to a property set is dropped on
-    /// the floor (matches AppKit's never-fails titlebar accessor); the
-    /// init path uses `syncTitlebarThrowing` directly so app code that
-    /// constructs a titled window sees the error.
-    private func syncTitlebar() {
-        try? syncTitlebarThrowing()
-    }
-
-    public func setTitle(_ title: String) throws(UIError) {
+    public func setTitle(_ title: String) {
         self.title = title
     }
 
-    package func setRootView(_ view: View) throws(UIError) {
+    package func setRootView(_ view: View) {
         // Eager Swift-tree update. The FFI insert journals into whatever
         // transaction is currently active for the context; the
         // consumer's flush trigger delivers it at the next frame
@@ -161,13 +152,13 @@ open class Window: Responder, ~Sendable {
         )
     }
 
-    public func setFrame(_ frame: Rect, display shouldDisplay: Bool = true) throws(UIError) {
+    public func setFrame(_ frame: Rect, display shouldDisplay: Bool = true) {
         self.frame = frame
         syncContentViewFrame()
         if shouldDisplay {
             rootView?.setNeedsDisplay()
         }
-        try contentViewController?.viewDidLayout()
+        contentViewController?.viewDidLayout()
     }
 
     public var stableHandle: Handle {
@@ -182,32 +173,32 @@ open class Window: Responder, ~Sendable {
         rootView
     }
 
-    public func setContentView(_ view: View?) throws(UIError) {
+    public func setContentView(_ view: View?) {
         if let view {
-            try setRootView(view)
+            setRootView(view)
         } else if let oldRoot = rootView {
             contentViewController?.parentWindow = nil
             contentViewController = nil
-            try oldRoot.removeFromSuperview()
+            oldRoot.removeFromSuperview()
         }
     }
 
-    public func setContentViewController(_ controller: ViewController) throws(UIError) {
+    public func setContentViewController(_ controller: ViewController) {
         contentViewController?.parentWindow = nil
         contentViewController = controller
         controller.parentWindow = self
-        try controller.loadViewIfNeeded()
-        let contentView = try controller.view
-        try setRootView(contentView)
+        controller.loadViewIfNeeded()
+        let contentView = controller.view
+        setRootView(contentView)
         contentView.owningViewController = controller
     }
 
-    public func orderFront(_ sender: Any? = nil) throws(UIError) {
+    public func orderFront(_ sender: Any? = nil) {
         _ = sender
         if let windowScene {
-            try windowScene.orderFront(self)
+            windowScene.orderFront(self)
         } else {
-            try setVisible(true)
+            setVisible(true)
         }
     }
 
@@ -224,11 +215,11 @@ open class Window: Responder, ~Sendable {
         windowScene?.makeKey(self) ?? setKey(true)
     }
 
-    public func dispatchEvent(_ event: Event) throws(UIError) -> EventHandling {
+    public func dispatchEvent(_ event: Event) -> EventHandling {
         guard let rootView else {
             return .notHandled
         }
-        return try EventDispatcher.dispatch(event, from: rootView)
+        return EventDispatcher.dispatch(event, from: rootView)
     }
 
     open override var nextResponder: Responder? {
@@ -236,13 +227,13 @@ open class Window: Responder, ~Sendable {
         set { explicitNextResponder = newValue }
     }
 
-    package func setVisible(_ visible: Bool) throws(UIError) {
+    package func setVisible(_ visible: Bool) {
         guard isVisible != visible else {
             return
         }
         isVisible = visible
         if visible {
-            try contentViewController?.viewWillAppear()
+            contentViewController?.viewWillAppear()
         } else {
             setOrderedOut()
         }
