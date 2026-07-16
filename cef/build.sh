@@ -295,15 +295,12 @@ rm -rf "$staged"
 mkdir -p "$staged"
 cp -a "$produced/." "$staged/"
 
-# Noctalia and CEF must share the system Vulkan loader and the hardware device
-# selected through the published UUID/render-node contract. The stock minimal
-# distribution bundles SwiftShader and a private libvulkan with the same SONAME
-# as the system loader; because Release/ is in Noctalia's RUNPATH that private
-# loader would also hijack Noctalia's direct Vulkan dependency. This product has
-# no software-rendering fallback, so omit the complete SwiftShader payload.
+# Keep Chromium's Vulkan loader: ANGLE is built and tested against this copy,
+# and Noctalia safely shares it through the process-wide Vulkan SONAME. Remove
+# only the SwiftShader implementation and ICD so software rendering cannot be
+# selected as a fallback.
 rm -f \
   "$staged/Release/libvk_swiftshader.so" \
-  "$staged/Release/libvulkan.so.1" \
   "$staged/Release/vk_swiftshader_icd.json"
 
 # Colocate the split Resources/ payload next to libcef.so in Release/ — ICU
