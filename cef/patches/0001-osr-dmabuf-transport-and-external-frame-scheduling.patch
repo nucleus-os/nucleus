@@ -1,0 +1,1202 @@
+diff --git a/cef/BUILD.gn b/cef/BUILD.gn
+index ae04ae3bb..242f30fbc 100644
+--- a/cef/BUILD.gn
++++ b/cef/BUILD.gn
+@@ -411,11 +411,14 @@ source_set("libcef_static_unittested") {
+   sources = [
+     "libcef/browser/devtools/devtools_util.cc",
+     "libcef/browser/devtools/devtools_util.h",
++    "libcef/browser/osr/external_begin_frame_state.cc",
++    "libcef/browser/osr/external_begin_frame_state.h",
+     "libcef/browser/geometry_util.h",
+     "libcef/browser/geometry_util.cc",
+   ]
+ 
+   deps = [
++    "//components/viz/common",
+     "//ui/gfx/geometry",
+   ]
+ 
+@@ -438,6 +441,7 @@ test("libcef_static_unittests") {
+   sources = [
+     "libcef/browser/devtools/devtools_util_unittest.cc",
+     "libcef/browser/geometry_util_unittest.cc",
++    "libcef/browser/osr/external_begin_frame_state_unittest.cc",
+   ]
+ 
+   deps = [
+diff --git a/cef/include/cef_browser.h b/cef/include/cef_browser.h
+index 1831ac202..d04bd36bb 100644
+--- a/cef/include/cef_browser.h
++++ b/cef/include/cef_browser.h
+@@ -52,6 +52,22 @@
+ class CefBrowserHost;
+ class CefClient;
+ 
++///
++/// Callback for CefBrowserHost::SendExternalBeginFrameWithTiming. OnComplete
++/// is called on the CEF UI thread after Chromium acknowledges the accepted
++/// BeginFrame. |has_damage| reflects the matching BeginFrameAck.
++///
++/*--cef(source=client)--*/
++class CefExternalBeginFrameCallback : public virtual CefBaseRefCounted {
++ public:
++  ///
++  /// Called after Chromium acknowledges the accepted BeginFrame.
++  /// |has_damage| will be true if the frame produced visual damage.
++  ///
++  /*--cef()--*/
++  virtual void OnComplete(bool has_damage) = 0;
++};
++
+ ///
+ /// Class used to represent a browser. When used in the browser process the
+ /// methods of this class may be called on any thread unless otherwise indicated
+@@ -744,6 +760,32 @@ class CefBrowserHost : public virtual CefBaseRefCounted {
+   /*--cef()--*/
+   virtual void SendExternalBeginFrame() = 0;
+ 
++  ///
++  /// Issue a presentation-timed BeginFrame request to Chromium. This method
++  /// must be called on the CEF UI thread and is only valid when
++  /// CefWindowInfo::external_begin_frame_enabled is true. Returns true if the
++  /// request was accepted. Only one request may be outstanding at a time.
++  /// When accepted, |callback| will be called after Chromium acknowledges the
++  /// matching BeginFrame, including when that frame produces no damage.
++  ///
++  /*--cef()--*/
++  virtual bool SendExternalBeginFrameWithTiming(
++      const CefExternalBeginFrameArgs& args,
++      CefRefPtr<CefExternalBeginFrameCallback> callback) = 0;
++
++  ///
++  /// Set a release fence for the accelerated paint frame identified by
++  /// |capture_counter|. This method is only supported on Linux with windowless
++  /// rendering. It may be called during or after OnAcceleratedPaint, but must
++  /// be called on the CEF UI thread before CEF's bounded release timeout. CEF
++  /// duplicates |fd| before returning, and the caller retains ownership of
++  /// |fd|. The frame capture buffer will not be recycled until the fence
++  /// signals.
++  ///
++  /*--cef()--*/
++  virtual void SetAcceleratedPaintReleaseFence(int64_t capture_counter,
++                                               int fd) = 0;
++
+   ///
+   /// Send a key event to the browser.
+   ///
+diff --git a/cef/include/internal/cef_types.h b/cef/include/internal/cef_types.h
+index 7e00f3d6f..69391f3db 100644
+--- a/cef/include/internal/cef_types.h
++++ b/cef/include/internal/cef_types.h
+@@ -1915,6 +1915,29 @@ typedef enum {
+   JSDIALOGTYPE_NUM_VALUES,
+ } cef_jsdialog_type_t;
+ 
++///
++/// Timing metadata for an externally supplied BeginFrame. All durations are
++/// relative and use nanoseconds so the client does not need to share
++/// Chromium's TimeTicks epoch.
++///
++typedef struct _cef_external_begin_frame_args_t {
++  ///
++  /// Size of this structure.
++  ///
++  size_t size;
++
++  ///
++  /// Time from the call to the compositor deadline. Must be greater than zero.
++  ///
++  int64_t deadline_delta_ns;
++
++  ///
++  /// Refresh interval represented by this BeginFrame. Must be greater than
++  /// zero.
++  ///
++  int64_t interval_ns;
++} cef_external_begin_frame_args_t;
++
+ ///
+ /// Screen information used when window rendering is disabled. This structure is
+ /// passed as a parameter to CefRenderHandler::GetScreenInfo and should be
+diff --git a/cef/include/internal/cef_types_linux.h b/cef/include/internal/cef_types_linux.h
+index 16b5c2f58..5b325a50d 100644
+--- a/cef/include/internal/cef_types_linux.h
++++ b/cef/include/internal/cef_types_linux.h
+@@ -209,6 +209,13 @@ typedef struct _cef_accelerated_paint_info_t {
+   /// The extra common info.
+   ///
+   cef_accelerated_paint_info_common_t extra;
++
++  ///
++  /// Borrowed sync-file descriptor that signals completion of the producer's
++  /// most recent write. Valid only for the duration of OnAcceleratedPaint, or
++  /// -1 when unavailable.
++  ///
++  int acquire_fence_fd;
+ } cef_accelerated_paint_info_t;
+ 
+ #ifdef __cplusplus
+diff --git a/cef/include/internal/cef_types_wrappers.h b/cef/include/internal/cef_types_wrappers.h
+index 9aaca31ab..22cb16b32 100644
+--- a/cef/include/internal/cef_types_wrappers.h
++++ b/cef/include/internal/cef_types_wrappers.h
+@@ -322,6 +322,21 @@ inline bool operator!=(const CefDraggableRegion& a,
+   return !(a == b);
+ }
+ 
++///
++/// Timing metadata for an externally supplied BeginFrame.
++///
++class CefExternalBeginFrameArgs
++    : public CefStructBaseSimple<cef_external_begin_frame_args_t> {
++ public:
++  using base_type = CefStructBaseSimple<cef_external_begin_frame_args_t>;
++  using base_type::CefStructBaseSimple;
++  using base_type::operator=;
++
++  void Set(const cef_external_begin_frame_args_t& source, bool /*copy*/) {
++    *this = source;
++  }
++};
++
+ ///
+ /// Class representing the virtual screen information for use when window
+ /// rendering is disabled.
+diff --git a/cef/libcef/browser/alloy/alloy_browser_host_impl.cc b/cef/libcef/browser/alloy/alloy_browser_host_impl.cc
+index b10a9fd42..a23775e92 100644
+--- a/cef/libcef/browser/alloy/alloy_browser_host_impl.cc
++++ b/cef/libcef/browser/alloy/alloy_browser_host_impl.cc
+@@ -409,6 +409,33 @@ void AlloyBrowserHostImpl::SendExternalBeginFrame() {
+   }
+ }
+ 
++bool AlloyBrowserHostImpl::SendExternalBeginFrameWithTiming(
++    const CefExternalBeginFrameArgs& args,
++    CefRefPtr<CefExternalBeginFrameCallback> callback) {
++  if (!IsWindowless() || !CEF_CURRENTLY_ON_UIT()) {
++    DCHECK(false) << "Timed external BeginFrames require windowless rendering "
++                     "on the CEF UI thread";
++    return false;
++  }
++
++  return platform_delegate_ &&
++         platform_delegate_->SendExternalBeginFrameWithTiming(args, callback);
++}
++
++void AlloyBrowserHostImpl::SetAcceleratedPaintReleaseFence(
++    int64_t capture_counter,
++    int fd) {
++  if (!IsWindowless() || !CEF_CURRENTLY_ON_UIT()) {
++    DCHECK(false) << "Release fences require windowless rendering on the CEF "
++                     "UI thread";
++    return;
++  }
++
++  if (platform_delegate_) {
++    platform_delegate_->SetAcceleratedPaintReleaseFence(capture_counter, fd);
++  }
++}
++
+ void AlloyBrowserHostImpl::SendTouchEvent(const CefTouchEvent& event) {
+   if (!IsWindowless()) {
+     DCHECK(false) << "Window rendering is not disabled";
+diff --git a/cef/libcef/browser/alloy/alloy_browser_host_impl.h b/cef/libcef/browser/alloy/alloy_browser_host_impl.h
+index 705fb3411..90275473e 100644
+--- a/cef/libcef/browser/alloy/alloy_browser_host_impl.h
++++ b/cef/libcef/browser/alloy/alloy_browser_host_impl.h
+@@ -87,6 +87,11 @@ class AlloyBrowserHostImpl : public CefBrowserHostBase,
+   void WasHidden(bool hidden) override;
+   void Invalidate(PaintElementType type) override;
+   void SendExternalBeginFrame() override;
++  bool SendExternalBeginFrameWithTiming(
++      const CefExternalBeginFrameArgs& args,
++      CefRefPtr<CefExternalBeginFrameCallback> callback) override;
++  void SetAcceleratedPaintReleaseFence(int64_t capture_counter,
++                                       int fd) override;
+   void SendTouchEvent(const CefTouchEvent& event) override;
+   void SendCaptureLostEvent() override;
+   int GetWindowlessFrameRate() override;
+diff --git a/cef/libcef/browser/browser_platform_delegate.cc b/cef/libcef/browser/browser_platform_delegate.cc
+index 167b2af62..2c4e628c1 100644
+--- a/cef/libcef/browser/browser_platform_delegate.cc
++++ b/cef/libcef/browser/browser_platform_delegate.cc
+@@ -404,6 +404,19 @@ void CefBrowserPlatformDelegate::SendExternalBeginFrame() {
+   DCHECK(false);
+ }
+ 
++bool CefBrowserPlatformDelegate::SendExternalBeginFrameWithTiming(
++    const CefExternalBeginFrameArgs& args,
++    CefRefPtr<CefExternalBeginFrameCallback> callback) {
++  DCHECK(false);
++  return false;
++}
++
++void CefBrowserPlatformDelegate::SetAcceleratedPaintReleaseFence(
++    int64_t capture_counter,
++    int fd) {
++  DCHECK(false);
++}
++
+ void CefBrowserPlatformDelegate::SetWindowlessFrameRate(int frame_rate) {
+   DCHECK(false);
+ }
+diff --git a/cef/libcef/browser/browser_platform_delegate.h b/cef/libcef/browser/browser_platform_delegate.h
+index 698913fc8..bbf156584 100644
+--- a/cef/libcef/browser/browser_platform_delegate.h
++++ b/cef/libcef/browser/browser_platform_delegate.h
+@@ -315,6 +315,15 @@ class CefBrowserPlatformDelegate {
+   // Send the external begin frame message. Only used with windowless rendering.
+   virtual void SendExternalBeginFrame();
+ 
++  // Send a presentation-timed external begin frame and report its real
++  // Chromium acknowledgment. Only used with windowless rendering.
++  virtual bool SendExternalBeginFrameWithTiming(
++      const CefExternalBeginFrameArgs& args,
++      CefRefPtr<CefExternalBeginFrameCallback> callback);
++
++  // Delay recycling the accelerated paint buffer until |fd| signals.
++  virtual void SetAcceleratedPaintReleaseFence(int64_t capture_counter, int fd);
++
+   // Set the windowless frame rate. Only used with windowless rendering.
+   virtual void SetWindowlessFrameRate(int frame_rate);
+ 
+diff --git a/cef/libcef/browser/chrome/chrome_browser_host_impl.cc b/cef/libcef/browser/chrome/chrome_browser_host_impl.cc
+index fd0128f64..39fa9f253 100644
+--- a/cef/libcef/browser/chrome/chrome_browser_host_impl.cc
++++ b/cef/libcef/browser/chrome/chrome_browser_host_impl.cc
+@@ -247,6 +247,19 @@ void ChromeBrowserHostImpl::SendExternalBeginFrame() {
+   NOTIMPLEMENTED();
+ }
+ 
++bool ChromeBrowserHostImpl::SendExternalBeginFrameWithTiming(
++    const CefExternalBeginFrameArgs& args,
++    CefRefPtr<CefExternalBeginFrameCallback> callback) {
++  NOTIMPLEMENTED();
++  return false;
++}
++
++void ChromeBrowserHostImpl::SetAcceleratedPaintReleaseFence(
++    int64_t capture_counter,
++    int fd) {
++  NOTIMPLEMENTED();
++}
++
+ void ChromeBrowserHostImpl::SendTouchEvent(const CefTouchEvent& event) {
+   NOTIMPLEMENTED();
+ }
+diff --git a/cef/libcef/browser/chrome/chrome_browser_host_impl.h b/cef/libcef/browser/chrome/chrome_browser_host_impl.h
+index 98e7dde38..2e7a94cad 100644
+--- a/cef/libcef/browser/chrome/chrome_browser_host_impl.h
++++ b/cef/libcef/browser/chrome/chrome_browser_host_impl.h
+@@ -81,6 +81,11 @@ class ChromeBrowserHostImpl : public CefBrowserHostBase {
+   void WasHidden(bool hidden) override;
+   void Invalidate(PaintElementType type) override;
+   void SendExternalBeginFrame() override;
++  bool SendExternalBeginFrameWithTiming(
++      const CefExternalBeginFrameArgs& args,
++      CefRefPtr<CefExternalBeginFrameCallback> callback) override;
++  void SetAcceleratedPaintReleaseFence(int64_t capture_counter,
++                                       int fd) override;
+   void SendTouchEvent(const CefTouchEvent& event) override;
+   void SendCaptureLostEvent() override;
+   int GetWindowlessFrameRate() override;
+diff --git a/cef/libcef/browser/osr/browser_platform_delegate_osr.cc b/cef/libcef/browser/osr/browser_platform_delegate_osr.cc
+index 44e49530f..7abacefd4 100644
+--- a/cef/libcef/browser/osr/browser_platform_delegate_osr.cc
++++ b/cef/libcef/browser/osr/browser_platform_delegate_osr.cc
+@@ -265,6 +265,22 @@ void CefBrowserPlatformDelegateOsr::SendExternalBeginFrame() {
+   }
+ }
+ 
++bool CefBrowserPlatformDelegateOsr::SendExternalBeginFrameWithTiming(
++    const CefExternalBeginFrameArgs& args,
++    CefRefPtr<CefExternalBeginFrameCallback> callback) {
++  CefRenderWidgetHostViewOSR* view = GetOSRHostView();
++  return view && view->SendExternalBeginFrameWithTiming(args, callback);
++}
++
++void CefBrowserPlatformDelegateOsr::SetAcceleratedPaintReleaseFence(
++    int64_t capture_counter,
++    int fd) {
++  CefRenderWidgetHostViewOSR* view = GetOSRHostView();
++  if (view) {
++    view->SetAcceleratedPaintReleaseFence(capture_counter, fd);
++  }
++}
++
+ void CefBrowserPlatformDelegateOsr::SetWindowlessFrameRate(int frame_rate) {
+   CefRenderWidgetHostViewOSR* view = GetOSRHostView();
+   if (view) {
+diff --git a/cef/libcef/browser/osr/browser_platform_delegate_osr.h b/cef/libcef/browser/osr/browser_platform_delegate_osr.h
+index cdc84ed35..577916def 100644
+--- a/cef/libcef/browser/osr/browser_platform_delegate_osr.h
++++ b/cef/libcef/browser/osr/browser_platform_delegate_osr.h
+@@ -59,6 +59,11 @@ class CefBrowserPlatformDelegateOsr
+   void NotifyScreenInfoChanged() override;
+   void Invalidate(cef_paint_element_type_t type) override;
+   void SendExternalBeginFrame() override;
++  bool SendExternalBeginFrameWithTiming(
++      const CefExternalBeginFrameArgs& args,
++      CefRefPtr<CefExternalBeginFrameCallback> callback) override;
++  void SetAcceleratedPaintReleaseFence(int64_t capture_counter,
++                                       int fd) override;
+   void SetWindowlessFrameRate(int frame_rate) override;
+   void ImeSetComposition(const CefString& text,
+                          const std::vector<CefCompositionUnderline>& underlines,
+diff --git a/cef/libcef/browser/osr/external_begin_frame_state.cc b/cef/libcef/browser/osr/external_begin_frame_state.cc
+new file mode 100644
+index 000000000..e86dffea3
+--- /dev/null
++++ b/cef/libcef/browser/osr/external_begin_frame_state.cc
+@@ -0,0 +1,42 @@
++// Copyright (c) 2026 The Chromium Embedded Framework Authors.
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "cef/libcef/browser/osr/external_begin_frame_state.h"
++
++#include <utility>
++
++#include "base/check.h"
++
++bool CefExternalBeginFrameState::Begin(
++    CefRefPtr<CefExternalBeginFrameCallback> callback) {
++  if (pending_) {
++    return false;
++  }
++  pending_ = true;
++  callback_ = callback;
++  return true;
++}
++
++void CefExternalBeginFrameState::Complete(bool has_damage) {
++  CHECK(pending_);
++  CefRefPtr<CefExternalBeginFrameCallback> callback = std::move(callback_);
++  pending_ = false;
++  if (callback) {
++    callback->OnComplete(has_damage);
++  }
++}
++
++viz::BeginFrameArgs MakeExternalBeginFrameArgs(
++    uint64_t source_id,
++    uint64_t sequence_number,
++    base::TimeTicks frame_time,
++    int64_t deadline_delta_ns,
++    int64_t interval_ns) {
++  CHECK_GT(deadline_delta_ns, 0);
++  CHECK_GT(interval_ns, 0);
++  return viz::BeginFrameArgs::Create(
++      BEGINFRAME_FROM_HERE, source_id, sequence_number, frame_time,
++      frame_time + base::Nanoseconds(deadline_delta_ns),
++      base::Nanoseconds(interval_ns), viz::BeginFrameArgs::NORMAL);
++}
+diff --git a/cef/libcef/browser/osr/external_begin_frame_state.h b/cef/libcef/browser/osr/external_begin_frame_state.h
+new file mode 100644
+index 000000000..4ea022a48
+--- /dev/null
++++ b/cef/libcef/browser/osr/external_begin_frame_state.h
+@@ -0,0 +1,34 @@
++// Copyright (c) 2026 The Chromium Embedded Framework Authors.
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef CEF_LIBCEF_BROWSER_OSR_EXTERNAL_BEGIN_FRAME_STATE_H_
++#define CEF_LIBCEF_BROWSER_OSR_EXTERNAL_BEGIN_FRAME_STATE_H_
++#pragma once
++
++#include "base/time/time.h"
++#include "cef/include/cef_browser.h"
++#include "components/viz/common/frame_sinks/begin_frame_args.h"
++
++// Enforces the single-in-flight external BeginFrame contract and owns the
++// client callback until the matching Chromium acknowledgment.
++class CefExternalBeginFrameState {
++ public:
++  bool Begin(CefRefPtr<CefExternalBeginFrameCallback> callback);
++  void Complete(bool has_damage);
++
++  bool pending() const { return pending_; }
++
++ private:
++  bool pending_ = false;
++  CefRefPtr<CefExternalBeginFrameCallback> callback_;
++};
++
++viz::BeginFrameArgs MakeExternalBeginFrameArgs(
++    uint64_t source_id,
++    uint64_t sequence_number,
++    base::TimeTicks frame_time,
++    int64_t deadline_delta_ns,
++    int64_t interval_ns);
++
++#endif  // CEF_LIBCEF_BROWSER_OSR_EXTERNAL_BEGIN_FRAME_STATE_H_
+diff --git a/cef/libcef/browser/osr/external_begin_frame_state_unittest.cc b/cef/libcef/browser/osr/external_begin_frame_state_unittest.cc
+new file mode 100644
+index 000000000..2dc688205
+--- /dev/null
++++ b/cef/libcef/browser/osr/external_begin_frame_state_unittest.cc
+@@ -0,0 +1,69 @@
++// Copyright (c) 2026 The Chromium Embedded Framework Authors.
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "cef/libcef/browser/osr/external_begin_frame_state.h"
++
++#include "tests/gtest/include/gtest/gtest.h"
++
++namespace {
++
++class ReentrantCallback : public CefExternalBeginFrameCallback {
++ public:
++  explicit ReentrantCallback(CefExternalBeginFrameState* state)
++      : state_(state) {}
++
++  void OnComplete(bool has_damage) override {
++    called_ = true;
++    has_damage_ = has_damage;
++    reentrant_begin_accepted_ = state_->Begin(nullptr);
++  }
++
++  bool called() const { return called_; }
++  bool has_damage() const { return has_damage_; }
++  bool reentrant_begin_accepted() const { return reentrant_begin_accepted_; }
++
++ private:
++  CefExternalBeginFrameState* state_;
++  bool called_ = false;
++  bool has_damage_ = false;
++  bool reentrant_begin_accepted_ = false;
++
++  IMPLEMENT_REFCOUNTING(ReentrantCallback);
++};
++
++}  // namespace
++
++TEST(ExternalBeginFrameState, RejectsSecondRequestAndCompletesExactlyOnce) {
++  CefExternalBeginFrameState state;
++  CefRefPtr<ReentrantCallback> callback = new ReentrantCallback(&state);
++
++  EXPECT_TRUE(state.Begin(callback));
++  EXPECT_TRUE(state.pending());
++  EXPECT_FALSE(state.Begin(nullptr));
++
++  state.Complete(true);
++  EXPECT_TRUE(callback->called());
++  EXPECT_TRUE(callback->has_damage());
++  EXPECT_TRUE(callback->reentrant_begin_accepted());
++  EXPECT_TRUE(state.pending());
++
++  state.Complete(false);
++  EXPECT_FALSE(state.pending());
++}
++
++TEST(ExternalBeginFrameState, PreservesExactPresentationTiming) {
++  constexpr int64_t kIntervalNs = 8'333'333;
++  constexpr int64_t kDeadlineDeltaNs = 4'123'456;
++  const base::TimeTicks frame_time = base::TimeTicks::Now();
++
++  const viz::BeginFrameArgs args = MakeExternalBeginFrameArgs(
++      7, 11, frame_time, kDeadlineDeltaNs, kIntervalNs);
++
++  EXPECT_TRUE(args.IsValid());
++  EXPECT_EQ(args.frame_id.source_id, 7u);
++  EXPECT_EQ(args.frame_id.sequence_number, 11u);
++  EXPECT_EQ(args.frame_time, frame_time);
++  EXPECT_EQ(args.deadline, frame_time + base::Nanoseconds(kDeadlineDeltaNs));
++  EXPECT_EQ(args.interval, base::Nanoseconds(kIntervalNs));
++}
+diff --git a/cef/libcef/browser/osr/render_widget_host_view_osr.cc b/cef/libcef/browser/osr/render_widget_host_view_osr.cc
+index 501889ac8..a921f81b6 100644
+--- a/cef/libcef/browser/osr/render_widget_host_view_osr.cc
++++ b/cef/libcef/browser/osr/render_widget_host_view_osr.cc
+@@ -1017,10 +1017,10 @@ void CefRenderWidgetHostViewOSR::DidNavigate() {
+ 
+ void CefRenderWidgetHostViewOSR::OnFrameComplete(
+     const viz::BeginFrameAck& ack) {
+-  DCHECK(begin_frame_pending_);
++  DCHECK(begin_frame_state_.pending());
+   DCHECK_EQ(begin_frame_source_.source_id(), ack.frame_id.source_id);
+   DCHECK_EQ(begin_frame_number_, ack.frame_id.sequence_number);
+-  begin_frame_pending_ = false;
++  begin_frame_state_.Complete(ack.has_damage);
+ }
+ 
+ void CefRenderWidgetHostViewOSR::OnRenderFrameMetadataChangedAfterActivation(
+@@ -1173,21 +1173,37 @@ void CefRenderWidgetHostViewOSR::Invalidate(
+ }
+ 
+ void CefRenderWidgetHostViewOSR::SendExternalBeginFrame() {
+-  DCHECK(external_begin_frame_enabled_);
++  base::TimeDelta interval = frame_rate_threshold_us_ > 0
++                                 ? base::Microseconds(frame_rate_threshold_us_)
++                                 : viz::BeginFrameArgs::DefaultInterval();
++  SendExternalBeginFrameInternal(interval.InNanoseconds(),
++                                 interval.InNanoseconds(), nullptr);
++}
+ 
+-  if (begin_frame_pending_) {
+-    return;
++bool CefRenderWidgetHostViewOSR::SendExternalBeginFrameWithTiming(
++    const CefExternalBeginFrameArgs& args,
++    CefRefPtr<CefExternalBeginFrameCallback> callback) {
++  if (args.deadline_delta_ns <= 0 || args.interval_ns <= 0 || !callback) {
++    return false;
+   }
+-  begin_frame_pending_ = true;
++  return SendExternalBeginFrameInternal(args.deadline_delta_ns,
++                                        args.interval_ns, callback);
++}
+ 
+-  base::TimeTicks frame_time = base::TimeTicks::Now();
+-  base::TimeTicks deadline = base::TimeTicks();
+-  base::TimeDelta interval = viz::BeginFrameArgs::DefaultInterval();
++bool CefRenderWidgetHostViewOSR::SendExternalBeginFrameInternal(
++    int64_t deadline_delta_ns,
++    int64_t interval_ns,
++    CefRefPtr<CefExternalBeginFrameCallback> callback) {
++  DCHECK(external_begin_frame_enabled_);
++
++  if (!compositor_ || !begin_frame_state_.Begin(callback)) {
++    return false;
++  }
+ 
+-  viz::BeginFrameArgs begin_frame_args = viz::BeginFrameArgs::Create(
+-      BEGINFRAME_FROM_HERE, begin_frame_source_.source_id(),
+-      ++begin_frame_number_, frame_time, deadline, interval,
+-      viz::BeginFrameArgs::NORMAL);
++  const base::TimeTicks frame_time = base::TimeTicks::Now();
++  viz::BeginFrameArgs begin_frame_args = MakeExternalBeginFrameArgs(
++      begin_frame_source_.source_id(), ++begin_frame_number_, frame_time,
++      deadline_delta_ns, interval_ns);
+ 
+   DCHECK(begin_frame_args.IsValid());
+ 
+@@ -1195,17 +1211,23 @@ void CefRenderWidgetHostViewOSR::SendExternalBeginFrame() {
+     render_widget_host_->ProgressFlingIfNeeded(frame_time);
+   }
+ 
+-  if (compositor_) {
+-    compositor_->IssueExternalBeginFrame(
+-        begin_frame_args, /* force= */ true,
+-        base::BindOnce(&CefRenderWidgetHostViewOSR::OnFrameComplete,
+-                       weak_ptr_factory_.GetWeakPtr()));
+-  } else {
+-    begin_frame_pending_ = false;
+-  }
++  compositor_->IssueExternalBeginFrame(
++      begin_frame_args, /* force= */ true,
++      base::BindOnce(&CefRenderWidgetHostViewOSR::OnFrameComplete,
++                     weak_ptr_factory_.GetWeakPtr()));
+ 
+   if (!IsPopupWidget() && popup_host_view_) {
+-    popup_host_view_->SendExternalBeginFrame();
++    popup_host_view_->SendExternalBeginFrameInternal(
++        deadline_delta_ns, interval_ns, nullptr);
++  }
++  return true;
++}
++
++void CefRenderWidgetHostViewOSR::SetAcceleratedPaintReleaseFence(
++    int64_t capture_counter,
++    int fd) {
++  if (video_consumer_) {
++    video_consumer_->SetAcceleratedPaintReleaseFence(capture_counter, fd);
+   }
+ }
+ 
+diff --git a/cef/libcef/browser/osr/render_widget_host_view_osr.h b/cef/libcef/browser/osr/render_widget_host_view_osr.h
+index 89ac6b7fe..6c09660ae 100644
+--- a/cef/libcef/browser/osr/render_widget_host_view_osr.h
++++ b/cef/libcef/browser/osr/render_widget_host_view_osr.h
+@@ -18,6 +18,7 @@
+ #include "cef/include/cef_base.h"
+ #include "cef/include/cef_browser.h"
+ #include "cef/libcef/browser/alloy/alloy_browser_host_impl.h"
++#include "cef/libcef/browser/osr/external_begin_frame_state.h"
+ #include "cef/libcef/browser/osr/host_display_client_osr.h"
+ #include "cef/libcef/browser/osr/motion_event_osr.h"
+ #include "components/viz/common/frame_sinks/begin_frame_source.h"
+@@ -213,6 +214,10 @@ class CefRenderWidgetHostViewOSR
+   void CancelSuccessfulPresentationTimeRequestForHostAndDelegate() override;
+ 
+   void OnFrameComplete(const viz::BeginFrameAck& ack);
++  bool SendExternalBeginFrameInternal(
++      int64_t deadline_delta_ns,
++      int64_t interval_ns,
++      CefRefPtr<CefExternalBeginFrameCallback> callback);
+ 
+   // RenderFrameMetadataProvider::Observer implementation.
+   void OnRenderFrameMetadataChangedBeforeActivation(
+@@ -248,6 +253,10 @@ class CefRenderWidgetHostViewOSR
+   void OnScreenInfoChanged();
+   void Invalidate(CefBrowserHost::PaintElementType type);
+   void SendExternalBeginFrame();
++  bool SendExternalBeginFrameWithTiming(
++      const CefExternalBeginFrameArgs& args,
++      CefRefPtr<CefExternalBeginFrameCallback> callback);
++  void SetAcceleratedPaintReleaseFence(int64_t capture_counter, int fd);
+   void SendKeyEvent(const input::NativeWebKeyboardEvent& event);
+   void SendMouseEvent(const blink::WebMouseEvent& event);
+   void SendMouseWheelEvent(const blink::WebMouseWheelEvent& event);
+@@ -408,7 +417,7 @@ class CefRenderWidgetHostViewOSR
+   // Provides |source_id| for BeginFrameArgs that we create.
+   viz::StubBeginFrameSource begin_frame_source_;
+   uint64_t begin_frame_number_ = viz::BeginFrameArgs::kStartingFrameNumber;
+-  bool begin_frame_pending_ = false;
++  CefExternalBeginFrameState begin_frame_state_;
+ 
+   bool use_shared_texture_ = false;
+   bool sync_frame_rate_ = false;
+diff --git a/cef/libcef/browser/osr/video_consumer_osr.cc b/cef/libcef/browser/osr/video_consumer_osr.cc
+index 321bf9e51..992338a8a 100644
+--- a/cef/libcef/browser/osr/video_consumer_osr.cc
++++ b/cef/libcef/browser/osr/video_consumer_osr.cc
+@@ -4,6 +4,13 @@
+ 
+ #include "cef/libcef/browser/osr/video_consumer_osr.h"
+ 
++#include <poll.h>
++#include <unistd.h>
++
++#include "base/logging.h"
++#include "base/posix/eintr_wrapper.h"
++#include "base/task/task_traits.h"
++#include "base/task/thread_pool.h"
+ #include "cef/libcef/browser/osr/render_widget_host_view_osr.h"
+ #include "media/base/video_frame_metadata.h"
+ #include "media/capture/mojom/video_capture_buffer.mojom.h"
+@@ -12,17 +19,48 @@
+ 
+ namespace {
+ 
+-// Helper to always call Done() at the end of OnFrameCaptured().
++constexpr int kReleaseFenceTimeoutMs = 1000;
++
++bool WaitForReleaseFence(base::ScopedFD fence) {
++  pollfd descriptor = {.fd = fence.get(), .events = POLLIN, .revents = 0};
++  const int result = HANDLE_EINTR(poll(&descriptor, 1, kReleaseFenceTimeoutMs));
++  return result > 0;
++}
++
++void CompleteFrame(
++    mojo::PendingRemote<viz::mojom::FrameSinkVideoConsumerFrameCallbacks>
++        callbacks,
++    bool fence_signaled) {
++  if (!fence_signaled) {
++    LOG(ERROR) << "Accelerated paint release fence timed out; recycling frame";
++  }
++  mojo::Remote<viz::mojom::FrameSinkVideoConsumerFrameCallbacks> remote(
++      std::move(callbacks));
++  remote->Done();
++}
++
++// Helper to always call Done(), optionally after a client release fence.
+ class ScopedVideoFrameDone {
+  public:
+   explicit ScopedVideoFrameDone(
+       mojo::PendingRemote<viz::mojom::FrameSinkVideoConsumerFrameCallbacks>
+           callbacks)
+       : callbacks_(std::move(callbacks)) {}
+-  ~ScopedVideoFrameDone() { callbacks_->Done(); }
++  ~ScopedVideoFrameDone() {
++    if (!callbacks_.is_valid()) {
++      return;
++    }
++    CompleteFrame(std::move(callbacks_), true);
++  }
++
++  mojo::PendingRemote<viz::mojom::FrameSinkVideoConsumerFrameCallbacks>
++  TakeCallbacks() {
++    return std::move(callbacks_);
++  }
+ 
+  private:
+-  mojo::Remote<viz::mojom::FrameSinkVideoConsumerFrameCallbacks> callbacks_;
++  mojo::PendingRemote<viz::mojom::FrameSinkVideoConsumerFrameCallbacks>
++      callbacks_;
+ };
+ 
+ }  // namespace
+@@ -44,15 +82,23 @@ CefVideoConsumerOSR::CefVideoConsumerOSR(CefRenderWidgetHostViewOSR* view,
+   SetActive(true);
+ }
+ 
+-CefVideoConsumerOSR::~CefVideoConsumerOSR() = default;
++CefVideoConsumerOSR::~CefVideoConsumerOSR() {
++  for (auto& entry : pending_frames_) {
++    CompleteFrame(std::move(entry.second), true);
++  }
++}
+ 
+ void CefVideoConsumerOSR::SetActive(bool active) {
+   if (active) {
+     video_capturer_->Start(
+         this,
+-        use_shared_texture_
+-            ? viz::mojom::BufferFormatPreference::kPreferMappableSharedImage
+-            : viz::mojom::BufferFormatPreference::kDefault);
++        // Native-handle clients sample accelerated OSR frames directly and do
++        // not map them. Prefer an exportable native handle
++        // so the compositor writes the GPU allocation that is shared with the
++        // client instead of the CPU-mappable shadow path used by default.
++        use_shared_texture_ ? viz::mojom::BufferFormatPreference::
++                                  kPreferSharedImageWithNativeHandle
++                            : viz::mojom::BufferFormatPreference::kDefault);
+   } else {
+     video_capturer_->Stop();
+   }
+@@ -79,6 +125,48 @@ void CefVideoConsumerOSR::RequestRefreshFrame(
+   video_capturer_->RequestRefreshFrame();
+ }
+ 
++void CefVideoConsumerOSR::SetAcceleratedPaintReleaseFence(
++    int64_t capture_counter,
++    int fd) {
++  if (fd < 0) {
++    DCHECK(false) << "Release fence descriptor is invalid";
++    return;
++  }
++  base::ScopedFD release_fence(HANDLE_EINTR(dup(fd)));
++  PCHECK(release_fence.is_valid());
++  CompletePendingFrame(capture_counter, std::move(release_fence));
++}
++
++void CefVideoConsumerOSR::RegisterPendingFrame(
++    int64_t capture_counter,
++    PendingFrameCallbacks callbacks) {
++  auto existing = pending_frames_.find(capture_counter);
++  if (existing != pending_frames_.end()) {
++    LOG(ERROR) << "Duplicate accelerated paint capture counter "
++               << capture_counter << "; recycling the older frame";
++    CompleteFrame(std::move(existing->second), true);
++    pending_frames_.erase(existing);
++  }
++  pending_frames_.emplace(capture_counter, std::move(callbacks));
++}
++
++void CefVideoConsumerOSR::CompletePendingFrame(
++    int64_t capture_counter,
++    base::ScopedFD release_fence) {
++  auto it = pending_frames_.find(capture_counter);
++  if (it == pending_frames_.end()) {
++    LOG(ERROR) << "No pending accelerated paint frame for release counter "
++               << capture_counter;
++    return;
++  }
++  auto callbacks = std::move(it->second);
++  pending_frames_.erase(it);
++  base::ThreadPool::PostTaskAndReplyWithResult(
++      FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
++      base::BindOnce(&WaitForReleaseFence, std::move(release_fence)),
++      base::BindOnce(&CompleteFrame, std::move(callbacks)));
++}
++
+ // Frame size values are as follows:
+ //   info->coded_size = Width and height of the video frame. Not all pixels in
+ //   this region are valid.
+@@ -193,6 +281,7 @@ void CefVideoConsumerOSR::OnFrameCaptured(
+     paint_info.extra = extra;
+     paint_info.plane_count = native_pixmap.planes.size();
+     paint_info.modifier = native_pixmap.modifier;
++    paint_info.acquire_fence_fd = native_pixmap.acquire_fence.Peek();
+     paint_info.format = pixel_format;
+ 
+     auto cef_plain_index = 0;
+@@ -204,6 +293,8 @@ void CefVideoConsumerOSR::OnFrameCaptured(
+       cef_plane.fd = plane.fd.get();
+       paint_info.planes[cef_plain_index++] = cef_plane;
+     }
++    CHECK(extra.has_capture_counter);
++    RegisterPendingFrame(extra.capture_counter, scoped_done.TakeCallbacks());
+     view_->OnAcceleratedPaint(damage_rect, info->coded_size, paint_info);
+ #endif
+     return;
+diff --git a/cef/libcef/browser/osr/video_consumer_osr.h b/cef/libcef/browser/osr/video_consumer_osr.h
+index c5aad5c6e..1f4efb88e 100644
+--- a/cef/libcef/browser/osr/video_consumer_osr.h
++++ b/cef/libcef/browser/osr/video_consumer_osr.h
+@@ -2,7 +2,9 @@
+ #define LIBCEF_BROWSER_OSR_VIDEO_CONSUMER_OSR_H_
+ 
+ #include <optional>
++#include <map>
+ 
++#include "base/files/scoped_file.h"
+ #include "base/functional/callback.h"
+ #include "base/memory/raw_ptr.h"
+ #include "components/viz/host/client_frame_sink_video_capturer.h"
+@@ -24,6 +26,7 @@ class CefVideoConsumerOSR : public viz::mojom::FrameSinkVideoConsumer {
+   void SetFrameRate(base::TimeDelta frame_rate);
+   void SizeChanged(const gfx::Size& size_in_pixels);
+   void RequestRefreshFrame(const std::optional<gfx::Rect>& bounds_in_pixels);
++  void SetAcceleratedPaintReleaseFence(int64_t capture_counter, int fd);
+ 
+  private:
+   // viz::mojom::FrameSinkVideoConsumer implementation.
+@@ -39,6 +42,13 @@ class CefVideoConsumerOSR : public viz::mojom::FrameSinkVideoConsumer {
+   void OnNewCaptureVersion(
+       const media::CaptureVersion& capture_version) override {}
+ 
++  using PendingFrameCallbacks =
++      mojo::PendingRemote<viz::mojom::FrameSinkVideoConsumerFrameCallbacks>;
++  void RegisterPendingFrame(int64_t capture_counter,
++                            PendingFrameCallbacks callbacks);
++  void CompletePendingFrame(int64_t capture_counter,
++                            base::ScopedFD release_fence);
++
+   const bool use_shared_texture_;
+ 
+   const raw_ptr<CefRenderWidgetHostViewOSR> view_;
+@@ -46,6 +56,7 @@ class CefVideoConsumerOSR : public viz::mojom::FrameSinkVideoConsumer {
+ 
+   gfx::Size size_in_pixels_;
+   std::optional<gfx::Rect> bounds_in_pixels_;
++  std::map<int64_t, PendingFrameCallbacks> pending_frames_;
+ };
+ 
+ #endif  // LIBCEF_BROWSER_OSR_VIDEO_CONSUMER_OSR_H_
+diff --git a/components/viz/service/frame_sinks/gmb_video_frame_pool_context_provider_impl.cc b/components/viz/service/frame_sinks/gmb_video_frame_pool_context_provider_impl.cc
+index f528c04ed..a4e5f567a 100644
+--- a/components/viz/service/frame_sinks/gmb_video_frame_pool_context_provider_impl.cc
++++ b/components/viz/service/frame_sinks/gmb_video_frame_pool_context_provider_impl.cc
+@@ -94,6 +94,12 @@ class GmbVideoFramePoolContext
+     return sii_in_process_->GetCapabilities();
+   }
+ 
++  gfx::GpuMemoryBufferHandle CloneGpuMemoryBufferHandleForExternalConsumer(
++      const gpu::Mailbox& mailbox) override {
++    return sii_in_process_
++        ->CloneGpuMemoryBufferHandleForExternalConsumer(mailbox);
++  }
++
+  private:
+   void InitializeOnGpu(base::WaitableEvent* event) {
+     DCHECK_CALLED_ON_VALID_SEQUENCE(gpu_sequence_checker_);
+diff --git a/components/viz/service/frame_sinks/video_capture/mappable_shared_image_video_frame_pool.cc b/components/viz/service/frame_sinks/video_capture/mappable_shared_image_video_frame_pool.cc
+index 35d0201b1..b8f2d5343 100644
+--- a/components/viz/service/frame_sinks/video_capture/mappable_shared_image_video_frame_pool.cc
++++ b/components/viz/service/frame_sinks/video_capture/mappable_shared_image_video_frame_pool.cc
+@@ -60,7 +60,8 @@ MappableSharedImageVideoFramePool::CloneHandleForDelivery(
+     const media::VideoFrame& frame) {
+   CHECK(frame.HasMappableSharedImage());
+ 
+-  gfx::GpuMemoryBufferHandle handle = frame.GetGpuMemoryBufferHandle();
++  gfx::GpuMemoryBufferHandle handle =
++      video_frame_pool_->CloneGpuMemoryBufferHandleForExternalConsumer(frame);
+ 
+   return media::mojom::VideoBufferHandle::NewGpuMemoryBufferHandle(
+       std::move(handle));
+diff --git a/gpu/command_buffer/service/shared_image/ozone_image_backing.cc b/gpu/command_buffer/service/shared_image/ozone_image_backing.cc
+index 906a8f807..2e01c87c0 100644
+--- a/gpu/command_buffer/service/shared_image/ozone_image_backing.cc
++++ b/gpu/command_buffer/service/shared_image/ozone_image_backing.cc
+@@ -128,7 +128,9 @@ bool OzoneImageBacking::IsImportedFromExo() {
+ }
+ 
+ gfx::GpuMemoryBufferHandle OzoneImageBacking::GetGpuMemoryBufferHandle() {
+-  return gfx::GpuMemoryBufferHandle(pixmap_->ExportHandle());
++  gfx::NativePixmapHandle handle = pixmap_->ExportHandle();
++  handle.acquire_fence = write_fence_.Clone();
++  return gfx::GpuMemoryBufferHandle(std::move(handle));
+ }
+ 
+ gfx::GpuMemoryBufferHandle
+diff --git a/gpu/command_buffer/service/shared_image/shared_image_factory.cc b/gpu/command_buffer/service/shared_image/shared_image_factory.cc
+index 024b92834..763e12743 100644
+--- a/gpu/command_buffer/service/shared_image/shared_image_factory.cc
++++ b/gpu/command_buffer/service/shared_image/shared_image_factory.cc
+@@ -789,6 +789,19 @@ bool SharedImageFactory::CopyToGpuMemoryBufferAsync(
+ }
+ #endif
+ 
++bool SharedImageFactory::CloneGpuMemoryBufferHandle(
++    const Mailbox& mailbox,
++    gfx::GpuMemoryBufferHandle& handle) {
++  auto* shared_image = GetFactoryRef(mailbox);
++  if (!shared_image) {
++    LOG(ERROR)
++        << "CloneGpuMemoryBufferHandle: Could not find shared image mailbox";
++    return false;
++  }
++  handle = shared_image->CloneGpuMemoryBufferHandle();
++  return true;
++}
++
+ bool SharedImageFactory::GetGpuMemoryBufferHandleInfo(
+     const Mailbox& mailbox,
+     gfx::GpuMemoryBufferHandle& handle,
+diff --git a/gpu/command_buffer/service/shared_image/shared_image_factory.h b/gpu/command_buffer/service/shared_image/shared_image_factory.h
+index 30d7b8811..bfb713b1e 100644
+--- a/gpu/command_buffer/service/shared_image/shared_image_factory.h
++++ b/gpu/command_buffer/service/shared_image/shared_image_factory.h
+@@ -163,6 +163,8 @@ class GPU_GLES2_EXPORT SharedImageFactory {
+ #endif
+ 
+   void SetGpuExtraInfo(const gfx::GpuExtraInfo& gpu_info);
++  bool CloneGpuMemoryBufferHandle(const Mailbox& mailbox,
++                                  gfx::GpuMemoryBufferHandle& handle);
+   bool GetGpuMemoryBufferHandleInfo(const Mailbox& mailbox,
+                                     gfx::GpuMemoryBufferHandle& handle,
+                                     gfx::BufferUsage& buffer_usage);
+diff --git a/gpu/command_buffer/service/shared_image/shared_image_representation.h b/gpu/command_buffer/service/shared_image/shared_image_representation.h
+index b38ee31b4..d0e50b4ab 100644
+--- a/gpu/command_buffer/service/shared_image/shared_image_representation.h
++++ b/gpu/command_buffer/service/shared_image/shared_image_representation.h
+@@ -190,6 +190,9 @@ class SharedImageRepresentationFactoryRef : public SharedImageRepresentation {
+   void CopyToGpuMemoryBufferAsync(base::OnceCallback<void(bool)> callback) {
+     backing()->CopyToGpuMemoryBufferAsync(std::move(callback));
+   }
++  gfx::GpuMemoryBufferHandle CloneGpuMemoryBufferHandle() {
++    return backing()->GetGpuMemoryBufferHandle();
++  }
+   void GetGpuMemoryBufferHandleInfo(gfx::GpuMemoryBufferHandle& handle,
+                                     gfx::BufferUsage& buffer_usage) {
+     handle = backing()->GetGpuMemoryBufferHandle();
+diff --git a/gpu/command_buffer/service/shared_image_interface_in_process_base.cc b/gpu/command_buffer/service/shared_image_interface_in_process_base.cc
+index 2541ee9ae..521e0a33c 100644
+--- a/gpu/command_buffer/service/shared_image_interface_in_process_base.cc
++++ b/gpu/command_buffer/service/shared_image_interface_in_process_base.cc
+@@ -240,6 +240,43 @@ SharedImageInterfaceInProcessBase::GetGpuMemoryBufferHandleInfo(
+   return GpuMemoryBufferHandleInfo(std::move(handle), buffer_usage);
+ }
+ 
++gfx::GpuMemoryBufferHandle SharedImageInterfaceInProcessBase::
++    CloneGpuMemoryBufferHandleForExternalConsumer(const Mailbox& mailbox) {
++  base::WaitableEvent completion(
++      base::WaitableEvent::ResetPolicy::MANUAL,
++      base::WaitableEvent::InitialState::NOT_SIGNALED);
++
++  gfx::GpuMemoryBufferHandle handle;
++  ScheduleGpuTask(
++      base::BindOnce(&SharedImageInterfaceInProcessBase::
++                         CloneGpuMemoryBufferHandleOnGpuThread,
++                     this, mailbox, &handle, &completion),
++      /*sync_token_fences=*/{}, SyncToken());
++  completion.Wait();
++  return handle;
++}
++
++void SharedImageInterfaceInProcessBase::
++    CloneGpuMemoryBufferHandleOnGpuThread(
++        const Mailbox& mailbox,
++        gfx::GpuMemoryBufferHandle* handle,
++        base::WaitableEvent* completion) {
++  DCHECK_CALLED_ON_VALID_SEQUENCE(gpu_sequence_checker_);
++  absl::Cleanup completion_runner = [completion] { completion->Signal(); };
++
++  SharedImageFactory* shared_image_factory = GetSharedImageFactoryOnGpuThread();
++  DCHECK(shared_image_factory);
++
++  // A CompoundImageBacking can export its native handle while intentionally
++  // leaving buffer_usage unset. External consumers only need the handle and
++  // its producer fence, so do not route through the generic info helper that
++  // requires buffer_usage.value().
++  if (!shared_image_factory->CloneGpuMemoryBufferHandle(mailbox, *handle)) {
++    LOG(ERROR) << "SharedImageInterfaceInProcessBase: Unable to clone "
++                  "GpuMemoryBufferHandle";
++  }
++}
++
+ void SharedImageInterfaceInProcessBase::GetGpuMemoryBufferHandleInfoOnGpuThread(
+     const Mailbox& mailbox,
+     gfx::GpuMemoryBufferHandle* handle,
+diff --git a/gpu/command_buffer/service/shared_image_interface_in_process_base.h b/gpu/command_buffer/service/shared_image_interface_in_process_base.h
+index 0ac7049ab..e2af07fc9 100644
+--- a/gpu/command_buffer/service/shared_image_interface_in_process_base.h
++++ b/gpu/command_buffer/service/shared_image_interface_in_process_base.h
+@@ -88,6 +88,12 @@ class GPU_GLES2_EXPORT SharedImageInterfaceInProcessBase
+   void WaitSyncToken(const SyncToken& sync_token) final;
+   const SharedImageCapabilities& GetCapabilities() final;
+ 
++  // Returns a newly exported native handle for an existing SharedImage. Unlike
++  // the handle cached by ClientSharedImage at allocation time, this export can
++  // carry the completion fence for the most recent producer write.
++  gfx::GpuMemoryBufferHandle CloneGpuMemoryBufferHandleForExternalConsumer(
++      const Mailbox& mailbox);
++
+  protected:
+   // `MakeSyncToken()` creates a sync token with `namespace_id` and
+   // `command_buffer_id`; `GenCreationSyncToken()` verifies that sync token
+@@ -153,6 +159,11 @@ class GPU_GLES2_EXPORT SharedImageInterfaceInProcessBase
+       SurfaceHandle surface_handle,
+       gfx::BufferUsage buffer_usage);
+ 
++  void CloneGpuMemoryBufferHandleOnGpuThread(
++      const Mailbox& mailbox,
++      gfx::GpuMemoryBufferHandle* handle,
++      base::WaitableEvent* completion);
++
+   void GetGpuMemoryBufferHandleInfoOnGpuThread(
+       const Mailbox& mailbox,
+       gfx::GpuMemoryBufferHandle* handle,
+diff --git a/media/video/renderable_mappable_shared_image_video_frame_pool.cc b/media/video/renderable_mappable_shared_image_video_frame_pool.cc
+index 348e83091..4b5a8bcd6 100644
+--- a/media/video/renderable_mappable_shared_image_video_frame_pool.cc
++++ b/media/video/renderable_mappable_shared_image_video_frame_pool.cc
+@@ -29,6 +29,12 @@
+ 
+ namespace media {
+ 
++gfx::GpuMemoryBufferHandle RenderableMappableSharedImageVideoFramePool::Context::
++    CloneGpuMemoryBufferHandleForExternalConsumer(
++        const gpu::Mailbox& mailbox) {
++  return {};
++}
++
+ namespace {
+ 
+ class InternalRefCountedPool;
+@@ -145,6 +151,9 @@ class RenderableMappableSharedImageVideoFramePoolImpl
+       const gfx::Size& visible_size,
+       const gfx::ColorSpace& color_space) override;
+ 
++  gfx::GpuMemoryBufferHandle CloneGpuMemoryBufferHandleForExternalConsumer(
++      const VideoFrame& frame) override;
++
+   ~RenderableMappableSharedImageVideoFramePoolImpl() override;
+ 
+   const VideoPixelFormat format_;
+@@ -426,6 +435,19 @@ RenderableMappableSharedImageVideoFramePoolImpl::MaybeCreateVideoFrame(
+   return pool_internal_->MaybeCreateVideoFrame(visible_size, color_space);
+ }
+ 
++gfx::GpuMemoryBufferHandle RenderableMappableSharedImageVideoFramePoolImpl::
++    CloneGpuMemoryBufferHandleForExternalConsumer(const VideoFrame& frame) {
++  CHECK(frame.HasMappableSharedImage());
++  CHECK(frame.HasSharedImage());
++  auto handle = pool_internal_->GetContext()
++                    ->CloneGpuMemoryBufferHandleForExternalConsumer(
++                        frame.shared_image()->mailbox());
++  if (!handle.is_null()) {
++    return handle;
++  }
++  return frame.GetGpuMemoryBufferHandle();
++}
++
+ RenderableMappableSharedImageVideoFramePoolImpl::
+     ~RenderableMappableSharedImageVideoFramePoolImpl() {
+   pool_internal_->Shutdown();
+diff --git a/media/video/renderable_mappable_shared_image_video_frame_pool.h b/media/video/renderable_mappable_shared_image_video_frame_pool.h
+index 2fb4d6b6a..a95f05f84 100644
+--- a/media/video/renderable_mappable_shared_image_video_frame_pool.h
++++ b/media/video/renderable_mappable_shared_image_video_frame_pool.h
+@@ -17,11 +17,13 @@
+ 
+ namespace gfx {
+ class ColorSpace;
++struct GpuMemoryBufferHandle;
+ class Size;
+ }  // namespace gfx
+ 
+ namespace gpu {
+ class ClientSharedImage;
++struct Mailbox;
+ struct SharedImageCapabilities;
+ class SharedImageInterface;
+ struct SyncToken;
+@@ -62,6 +64,12 @@ class MEDIA_EXPORT RenderableMappableSharedImageVideoFramePool {
+ 
+     virtual const gpu::SharedImageCapabilities& GetCapabilities() = 0;
+ 
++    // Export a fresh native handle so it includes synchronization produced by
++    // rendering that happened after the SharedImage was allocated.
++    virtual gfx::GpuMemoryBufferHandle
++    CloneGpuMemoryBufferHandleForExternalConsumer(
++        const gpu::Mailbox& mailbox);
++
+     virtual ~Context() = default;
+   };
+ 
+@@ -82,6 +90,9 @@ class MEDIA_EXPORT RenderableMappableSharedImageVideoFramePool {
+       const gfx::Size& coded_size,
+       const gfx::ColorSpace& color_space) = 0;
+ 
++  virtual gfx::GpuMemoryBufferHandle
++  CloneGpuMemoryBufferHandleForExternalConsumer(const VideoFrame& frame) = 0;
++
+   virtual ~RenderableMappableSharedImageVideoFramePool() = default;
+ };
+ 
+diff --git a/ui/gfx/mojom/native_handle_types.mojom b/ui/gfx/mojom/native_handle_types.mojom
+index 28117e1ae..358b76cbc 100644
+--- a/ui/gfx/mojom/native_handle_types.mojom
++++ b/ui/gfx/mojom/native_handle_types.mojom
+@@ -23,6 +23,10 @@ struct NativePixmapPlane {
+ struct NativePixmapHandle {
+   array<NativePixmapPlane> planes;
+ 
++  // Signals completion of the producer's most recent write.
++  [EnableIf=is_chromeos|is_linux]
++  handle<platform>? acquire_fence_handle;
++
+   [EnableIf=is_chromeos|is_linux]
+   uint64 modifier;
+ 
+diff --git a/ui/gfx/mojom/native_handle_types_mojom_traits.cc b/ui/gfx/mojom/native_handle_types_mojom_traits.cc
+index 22313e64a..e9eede6dc 100644
+--- a/ui/gfx/mojom/native_handle_types_mojom_traits.cc
++++ b/ui/gfx/mojom/native_handle_types_mojom_traits.cc
+@@ -127,6 +127,10 @@ bool StructTraits<
+     gfx::NativePixmapHandle>::Read(gfx::mojom::NativePixmapHandleDataView data,
+                                    gfx::NativePixmapHandle* out) {
+ #if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
++  mojo::PlatformHandle acquire_fence = data.TakeAcquireFenceHandle();
++  if (acquire_fence.is_fd()) {
++    out->acquire_fence.Adopt(acquire_fence.TakeFD());
++  }
+   out->modifier = data.modifier();
+   out->supports_zero_copy_webgpu_import =
+       data.supports_zero_copy_webgpu_import();
+diff --git a/ui/gfx/mojom/native_handle_types_mojom_traits.h b/ui/gfx/mojom/native_handle_types_mojom_traits.h
+index 6101c5b0e..21e65ad79 100644
+--- a/ui/gfx/mojom/native_handle_types_mojom_traits.h
++++ b/ui/gfx/mojom/native_handle_types_mojom_traits.h
+@@ -78,6 +78,11 @@ struct COMPONENT_EXPORT(GFX_NATIVE_HANDLE_TYPES_SHARED_MOJOM_TRAITS)
+   }
+ 
+ #if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
++  static mojo::PlatformHandle acquire_fence_handle(
++      gfx::NativePixmapHandle& pixmap_handle) {
++    return mojo::PlatformHandle(pixmap_handle.acquire_fence.Release());
++  }
++
+   static uint64_t modifier(const gfx::NativePixmapHandle& pixmap_handle) {
+     return pixmap_handle.modifier;
+   }
+diff --git a/ui/gfx/native_pixmap_handle.cc b/ui/gfx/native_pixmap_handle.cc
+index 283d48686..dc8695deb 100644
+--- a/ui/gfx/native_pixmap_handle.cc
++++ b/ui/gfx/native_pixmap_handle.cc
+@@ -114,6 +114,7 @@ NativePixmapHandle CloneHandleForIPC(const NativePixmapHandle& handle) {
+   }
+ 
+ #if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
++  clone.acquire_fence = handle.acquire_fence.Clone();
+   clone.modifier = handle.modifier;
+   clone.supports_zero_copy_webgpu_import =
+       handle.supports_zero_copy_webgpu_import;
+diff --git a/ui/gfx/native_pixmap_handle.h b/ui/gfx/native_pixmap_handle.h
+index a0f06338c..57647058b 100644
+--- a/ui/gfx/native_pixmap_handle.h
++++ b/ui/gfx/native_pixmap_handle.h
+@@ -13,6 +13,7 @@
+ #include "base/component_export.h"
+ #include "build/build_config.h"
+ #include "components/viz/common/resources/shared_image_format.h"
++#include "ui/gfx/gpu_fence_handle.h"
+ 
+ #if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
+ #include "base/files/scoped_file.h"
+@@ -79,6 +80,10 @@ struct COMPONENT_EXPORT(GFX) NativePixmapHandle {
+   std::vector<NativePixmapPlane> planes;
+ 
+ #if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
++  // Completion fence for the most recent producer write. Consumers importing
++  // the DMA-BUF on another Vulkan device must wait before accessing it.
++  GpuFenceHandle acquire_fence;
++
+   // The modifier is retrieved from GBM library and passed to EGL driver.
+   // Generally it's platform specific, and we don't need to modify it in
+   // Chromium code. Also one per plane per entry.

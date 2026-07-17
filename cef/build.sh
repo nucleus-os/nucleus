@@ -197,6 +197,16 @@ apply_nucleus_cef_patches() {
     fi
   done
 
+  # Public API patches must reach both sides of CEF's generated C/C++ bridge
+  # before libcef is compiled. Packaging also runs the translator, but that is
+  # too late: the shared library and the distributed wrapper would otherwise
+  # be built from different virtual-method contracts on a clean checkout.
+  echo "-- regenerating CEF C/C++ API translation"
+  (
+    cd "$chromium_root"
+    python3 cef/tools/translator.py --root-dir cef
+  )
+
   # API hashes cover the complete public-header surface and are branch-local
   # generated output. Always derive them from the synced CEF checkout after the
   # source patches have landed; never carry hashes forward from another branch.
