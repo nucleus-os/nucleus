@@ -685,18 +685,22 @@ index 6b89694..671f1c1 100644
        did_swap_buffer_complete_callback_(
            std::move(did_swap_buffer_complete_callback)),
        context_lost_callback_(std::move(context_lost_callback)),
-@@ -1936,6 +1942,10 @@ bool SkiaOutputSurfaceImplOnGpu::Initialize() {
-     DLOG(ERROR) << "Failed to create GrContext or GraphiteContext";
-     return false;
-   }
-+  if (offscreen_output_connection_ && !is_using_vulkan()) {
-+    LOG(ERROR) << "Exportable offscreen output requires Vulkan";
-+    return false;
-+  }
- 
-   if (is_using_vulkan()) {
-     if (!InitializeForVulkan()) {
-@@ -2059,6 +2069,14 @@ bool SkiaOutputSurfaceImplOnGpu::InitializeForGL() {
+@@ -1970,6 +1976,14 @@ bool SkiaOutputSurfaceImplOnGpu::InitializeForGL() {
+   if (dependency_->IsOffscreen()) {
++    if (offscreen_output_connection_) {
++      output_device_ = std::make_unique<SkiaOutputDeviceOffscreenExport>(
++          context_state_, shared_gpu_deps_->memory_tracker(),
++          GetDidSwapBuffersCompleteCallback(), shared_image_factory_.get(),
++          shared_image_representation_factory_.get(),
++          std::move(offscreen_output_connection_));
++      return true;
++    }
+     output_device_ = std::make_unique<SkiaOutputDeviceOffscreen>(
+         context_state_, gfx::SurfaceOrigin::kTopLeft,
+         renderer_settings_.requires_alpha_channel,
+         shared_gpu_deps_->memory_tracker(),
+         GetDidSwapBuffersCompleteCallback());
+@@ -2059,6 +2073,14 @@ bool SkiaOutputSurfaceImplOnGpu::InitializeForGL() {
  #if BUILDFLAG(ENABLE_VULKAN)
  bool SkiaOutputSurfaceImplOnGpu::InitializeForVulkan() {
    if (dependency_->IsOffscreen()) {
@@ -711,6 +715,8 @@ index 6b89694..671f1c1 100644
      output_device_ = std::make_unique<SkiaOutputDeviceOffscreen>(
          context_state_, gfx::SurfaceOrigin::kBottomLeft,
          renderer_settings_.requires_alpha_channel,
+         shared_gpu_deps_->memory_tracker(),
+         GetDidSwapBuffersCompleteCallback());
 diff --git a/components/viz/service/display_embedder/skia_output_surface_impl_on_gpu.h b/components/viz/service/display_embedder/skia_output_surface_impl_on_gpu.h
 index efaad72..ef6cd77 100644
 --- a/components/viz/service/display_embedder/skia_output_surface_impl_on_gpu.h
@@ -1074,7 +1080,7 @@ new file mode 100644
 index 0000000000..d15e024209
 --- /dev/null
 +++ b/components/viz/service/display_embedder/skia_output_device_offscreen_export.cc
-@@ -0,0 +1,306 @@
+@@ -0,0 +1,312 @@
 +// Copyright 2026 The Chromium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -1204,7 +1210,13 @@ index 0000000000..d15e024209
 +  if (!rendering_slot_) {
 +    return;
 +  }
-+  slots_[*rendering_slot_].write.reset();
++  Slot& slot = slots_[*rendering_slot_];
++  slot.write.reset();
++  // The write access above initializes the complete output buffer. Mark the
++  // SharedImage cleared before acquiring the overlay read representation;
++  // otherwise SharedImageRepresentation correctly rejects the export as an
++  // uninitialized read.
++  slot.skia->SetCleared();
 +}
 +
 +void SkiaOutputDeviceOffscreenExport::Present(
