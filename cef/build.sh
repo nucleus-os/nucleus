@@ -142,6 +142,60 @@ export CEF_USE_GN=1
 export GN_DEFINES="$NUCLEUS_CEF_GN_DEFINES_BASE ${NUCLEUS_CEF_GN_EXTRA}"
 echo "-- GN_DEFINES: $GN_DEFINES"
 
+pgo_profile_name=""
+pgo_profile_path=""
+
+ensure_linux_pgo_profile() {
+  local chromium_root="$NUCLEUS_CEF_SRC_ROOT/chromium/src"
+  local descriptor="$chromium_root/chrome/build/linux.pgo.txt"
+  if [[ ! -f "$descriptor" ]]; then
+    echo "!! Chromium Linux PGO descriptor is missing: $descriptor" >&2
+    exit 1
+  fi
+
+  pgo_profile_name="$(tr -d '\r\n' < "$descriptor")"
+  if [[ -z "$pgo_profile_name" || "$pgo_profile_name" == */* ]]; then
+    echo "!! Chromium Linux PGO descriptor is invalid: $pgo_profile_name" >&2
+    exit 1
+  fi
+  pgo_profile_path="$chromium_root/chrome/build/pgo_profiles/$pgo_profile_name"
+  if [[ ! -f "$pgo_profile_path" ]]; then
+    echo "-- fetching branch-matched Chromium Linux PGO profile: $pgo_profile_name"
+    (
+      cd "$chromium_root"
+      python3 tools/update_pgo_profiles.py \
+        --target=linux update \
+        --gs-url-base=chromium-optimization-profiles/pgo_profiles
+    )
+  fi
+  if [[ ! -s "$pgo_profile_path" ]]; then
+    echo "!! Chromium Linux PGO profile was not provisioned: $pgo_profile_path" >&2
+    exit 1
+  fi
+  echo "-- PGO profile ready: $pgo_profile_name"
+}
+
+ensure_v8_builtins_pgo_profiles() {
+  local chromium_root="$NUCLEUS_CEF_SRC_ROOT/chromium/src"
+  local profile="$chromium_root/v8/tools/builtins-pgo/profiles/x64.profile"
+  if [[ ! -s "$profile" ]]; then
+    echo "-- fetching branch-matched V8 builtins PGO profiles"
+    (
+      cd "$chromium_root"
+      PATH="$NUCLEUS_CEF_DEPOT_TOOLS:$PATH" \
+        python3 v8/tools/builtins-pgo/download_profiles.py \
+          download \
+          --depot-tools third_party/depot_tools \
+          --check-v8-revision
+    )
+  fi
+  if [[ ! -s "$profile" ]]; then
+    echo "!! V8 x64 builtins PGO profile was not provisioned: $profile" >&2
+    exit 1
+  fi
+  echo "-- V8 builtins PGO profile ready"
+}
+
 reverse_nucleus_cef_patches() {
   local chromium_root="$NUCLEUS_CEF_SRC_ROOT/chromium/src"
   local applied_patch_dir="$NUCLEUS_CEF_SRC_ROOT/.nucleus-applied-patches"
@@ -238,13 +292,17 @@ if [[ $package_only -eq 0 ]]; then
     --x64-build
     --no-debug-build          # Release only — halves build time + disk
     --no-chromium-history     # shallow Chromium checkout — big disk saving
+    --with-pgo-profiles       # exact branch-matched production profile
     --build-target=cefsimple  # pulls in libcef + wrapper without cefclient's extra deps
   )
 
   reverse_nucleus_cef_patches
 
   if [[ $no_update -eq 0 ]]; then
-    sync_args=("${automate_common[@]}" --no-build --no-distrib)
+    # Force regenerate .gclient so an existing non-PGO checkout adopts
+    # checkout_pgo_profiles=true through automate-git instead of a manual edit
+    # to generated configuration.
+    sync_args=("${automate_common[@]}" --force-config --no-build --no-distrib)
     if [[ -n "$NUCLEUS_CEF_CHECKOUT" ]]; then
       sync_args+=("--checkout=$NUCLEUS_CEF_CHECKOUT")
     fi
@@ -254,6 +312,9 @@ if [[ $package_only -eq 0 ]]; then
     echo "-- automate-git.py ${sync_args[*]}"
     python3 "$automate" "${sync_args[@]}"
   fi
+
+  ensure_linux_pgo_profile
+  ensure_v8_builtins_pgo_profiles
 
   # Run CEF's own patch/configuration hook while the Chromium tree contains
   # only upstream changes. Our patches deliberately overlap a few of CEF's
@@ -303,52 +364,43 @@ fi
 
 version="$(basename "$produced" | sed -E 's/^cef_binary_(.+)_linux64_minimal$/\1/')"
 staged="$NUCLEUS_CEF_DIST_ROOT/$version"
-echo "-- staging $produced -> $staged"
-rm -rf "$staged"
-mkdir -p "$staged"
-cp -a "$produced/." "$staged/"
+prepared="$NUCLEUS_CEF_DIST_ROOT/.${version}.$$.prepared"
+current_link_tmp="$NUCLEUS_CEF_DIST_ROOT/.current.$$.tmp"
+trap '[[ -z "${prepared:-}" ]] || rm -rf "$prepared"; [[ -z "${current_link_tmp:-}" ]] || rm -f "$current_link_tmp"' EXIT
+echo "-- preparing $produced -> $prepared"
+rm -rf "$prepared"
+mkdir -p "$prepared"
+cp -a "$produced/." "$prepared/"
 
 # Keep Chromium's Vulkan loader: ANGLE is built and tested against this copy,
 # and Noctalia safely shares it through the process-wide Vulkan SONAME. Remove
 # only the SwiftShader implementation and ICD so software rendering cannot be
 # selected as a fallback.
 rm -f \
-  "$staged/Release/libvk_swiftshader.so" \
-  "$staged/Release/vk_swiftshader_icd.json"
+  "$prepared/Release/libvk_swiftshader.so" \
+  "$prepared/Release/vk_swiftshader_icd.json"
 
 # Colocate the split Resources/ payload next to libcef.so in Release/ — ICU
 # (icudtl.dat) initializes before resource_dir settings apply, so it must sit
 # beside the library. The consuming shell points its resource paths at Release/.
-if [[ -d "$staged/Resources" ]]; then
-  for f in "$staged"/Resources/*; do
-    ln -sfn "../Resources/$(basename "$f")" "$staged/Release/$(basename "$f")"
+if [[ -d "$prepared/Resources" ]]; then
+  for f in "$prepared"/Resources/*; do
+    ln -sfn "../Resources/$(basename "$f")" "$prepared/Release/$(basename "$f")"
   done
 fi
+
+echo "-- atomically publishing $prepared -> $staged"
+python3 "$script_dir/scripts/atomic-publish-directory.py" "$prepared" "$staged"
 
 tarball="$NUCLEUS_CEF_DIST_ROOT/cef-${version}-linux64-codecs.tar.gz"
 echo "-- packaging $tarball"
 tar -C "$NUCLEUS_CEF_DIST_ROOT" -czf "$tarball" "$version"
 ( cd "$NUCLEUS_CEF_DIST_ROOT" && sha256sum "$(basename "$tarball")" > "$tarball.sha256" )
 
-# Record a machine-readable pointer to the freshest build.
-cat > "$NUCLEUS_CEF_DIST_ROOT/latest.json" <<EOF
-{
-  "version": "$version",
-  "branch": "$NUCLEUS_CEF_BRANCH",
-  "chromium_version": "$NUCLEUS_CEF_CHROMIUM_VERSION",
-  "dist_dir": "$staged",
-  "tarball": "$tarball",
-  "sha256_file": "$tarball.sha256",
-  "gn_defines": "$GN_DEFINES"
-}
-EOF
-
-cat > "$NUCLEUS_CEF_LOG_DIR/latest-run.env" <<EOF
-NUCLEUS_CEF_VERSION=$version
-NUCLEUS_CEF_BRANCH=$NUCLEUS_CEF_BRANCH
-NUCLEUS_CEF_DIST_DIR=$staged
-NUCLEUS_CEF_TARBALL=$tarball
-EOF
+# Publish one stable consumer path without duplicating build metadata. The
+# temporary relative symlink and rename make switching versions atomic.
+ln -s "$version" "$current_link_tmp"
+mv -Tf "$current_link_tmp" "$NUCLEUS_CEF_DIST_ROOT/current"
 
 echo
 echo "== CEF build complete =="

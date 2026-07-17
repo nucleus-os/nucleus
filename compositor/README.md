@@ -53,7 +53,6 @@ grep -vE '^(#|$)' packages/ubuntu.txt | xargs sudo apt-get install -y
 # Bun is distributed independently of Ubuntu packages.
 curl -fsSL https://bun.sh/install | bash
 
-tools/nucleus doctor
 tools/nucleus bootstrap
 tools/nucleus build
 ```
@@ -78,7 +77,9 @@ swift build --package-path compositor
 tools/nucleus install compositor
 ```
 
-The root workspace CLI provisions the render SDK through `core/`, then builds both compositor packages directly through SwiftPM. Bootstrap is incremental and skips stages whose fingerprints and declared outputs are current.
+The root workspace CLI provisions the render SDK through `core/`, then builds
+both compositor packages directly through SwiftPM. Their underlying build
+systems own incremental rebuild state.
 
 ## Tests
 

@@ -8,7 +8,6 @@ This package provides the retained render tree, the layer system, the Skia Graph
 
 ```sh
 # From the monorepo root
-tools/nucleus doctor
 tools/nucleus bootstrap core
 tools/nucleus build core
 ```

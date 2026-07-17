@@ -9,12 +9,12 @@
 # branch == the Chromium branch (the third component of the Chromium version).
 # Chromium 151.0.7922.19  ->  CEF branch 7922, which pins
 # chromium_checkout refs/tags/151.0.7922.19. Bump both together on upgrade;
-# keep in sync with config/build-contract.json and the consuming shells.
 # ---------------------------------------------------------------------------
 export NUCLEUS_CEF_BRANCH="${NUCLEUS_CEF_BRANCH:-7922}"
-# Exact CEF version to check out. Empty => most recent on the branch (still the
-# same Chromium tag). Set this only when pinning a specific CEF patch release.
-export NUCLEUS_CEF_CHECKOUT="${NUCLEUS_CEF_CHECKOUT:-}"
+# Exact CEF version to check out. A release branch can advance to a newer
+# Chromium patch version without changing its branch number, so production
+# builds must pin the CEF commit that matches NUCLEUS_CEF_CHROMIUM_VERSION.
+export NUCLEUS_CEF_CHECKOUT="${NUCLEUS_CEF_CHECKOUT:-6c664b86a4ef3be5c95b1290068f5e5d52b72db3}"
 export NUCLEUS_CEF_CHROMIUM_VERSION="${NUCLEUS_CEF_CHROMIUM_VERSION:-151.0.7922.19}"
 
 # The whole point of building from source: official CEF ships without patented
@@ -24,9 +24,12 @@ export NUCLEUS_CEF_CHROMIUM_VERSION="${NUCLEUS_CEF_CHROMIUM_VERSION:-151.0.7922.
 # CEF release builds consume Chromium's pinned compiler/toolchain but can still
 # surface warnings from generated third-party bindings. Keep those warnings in
 # the log without turning them into source-build failures.
-export NUCLEUS_CEF_GN_DEFINES_BASE="proprietary_codecs=true ffmpeg_branding=Chrome use_dbus=true use_allocator_shim=false enable_backup_ref_ptr_support=false treat_warnings_as_errors=false"
-# Appended verbatim — e.g. is_official_build=true (slower, needs PGO) for a
-# perf-optimized redistribution build.
+# Production CEF is an official optimized build. CEF's Linux official
+# configuration already avoids PartitionAlloc-as-malloc for client
+# compatibility; keep the allocator shim and BackupRefPtr support explicitly
+# disabled as well so the embedding libc++ process retains one malloc ABI.
+export NUCLEUS_CEF_GN_DEFINES_BASE="proprietary_codecs=true ffmpeg_branding=Chrome use_dbus=true is_official_build=true symbol_level=0 dcheck_always_on=false enable_expensive_dchecks=false chrome_pgo_phase=2 use_thin_lto=true thin_lto_enable_optimizations=true use_mold=false use_lld=true use_allocator_shim=false enable_backup_ref_ptr_support=false treat_warnings_as_errors=false"
+# Appended verbatim for narrow build experiments.
 export NUCLEUS_CEF_GN_EXTRA="${NUCLEUS_CEF_GN_EXTRA:-}"
 
 # ---------------------------------------------------------------------------

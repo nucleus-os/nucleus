@@ -51,7 +51,7 @@ Nucleus is one monorepo containing independently buildable Swift packages:
 │  NucleusRenderer (Skia Graphite + Dawn + Vulkan)          │
 │  NucleusTextBackend · NucleusUI · NucleusApp              │
 │  NucleusRenderHost · NucleusAppHostProtocols              │
-│  NucleusSkiaGraphiteBridge · host build contract          │
+│  NucleusSkiaGraphiteBridge · native SDK tooling           │
 └───────────────────────────────────────────────────────────┘
 ```
 
@@ -62,7 +62,6 @@ Nucleus is one monorepo containing independently buildable Swift packages:
 - **The shell is out-of-process.** `nucleus-shell` is a normal Wayland client connected over `WAYLAND_DISPLAY`. The compositor and shell meet only at runtime over standard protocols — each is swappable independently.
 - **The React Native platform remains an architectural boundary.** `react-native/` owns Fabric/Hermes/folly and the Swift runtime bridge, while living in the same atomic source-control unit.
 - **Shared native SDKs.** The `render` SDK (Skia Graphite + Dawn + Vulkan) and the `rn` SDK (Hermes + ReactCommon + folly) are provisioned into `~/.cache/nucleus/nucleus-native-sdk/` by the root Swift bootstrap stage graph. All components consume from this stable cache path, decoupling build artifacts from any single source directory.
-- **One explicit build contract.** `config/build-contract.json` defines supported tool and library versions. The workspace CLI validates it before orchestration.
 
 ## Supporting components
 
@@ -90,17 +89,15 @@ If the repository was cloned without `--recurse-submodules`, `bootstrap` initial
 required third-party submodules.
 
 ```sh
-tools/nucleus doctor
 tools/nucleus bootstrap
 tools/nucleus build all
 tools/nucleus test all
 ```
 
-It selects the installed Nucleus Swift toolchain and validates every ABI- or
-code-generation-sensitive host dependency against the versioned contract. Bootstrap records
-content fingerprints under `.nucleus/state` for source synchronization, Dawn generation,
-the render SDK, RN codegen, the RN SDK, Swift products, and JS bundles. A stage is skipped only
-when both its fingerprint and declared outputs are current.
+It selects the installed Nucleus Swift toolchain and runs the component
+bootstrap sequence. SwiftPM, CMake, Ninja, Yarn, and the package generators own
+their normal incremental state; the workspace does not maintain a second
+fingerprint/cache layer around them.
 
 The same Swift CLI owns the cross-component workflows that previously lived in
 component shell scripts:
@@ -122,15 +119,6 @@ ordering, verification, profiling, and packaging are Swift-owned.
 
 All first-party SwiftPM dependencies use monorepo-relative paths. No sibling-repository
 detection or local dependency override step is required.
-
-Native SDK caches can be promoted to deterministic, checksummed artifacts:
-
-```sh
-tools/nucleus sdk build render
-tools/nucleus sdk build rn
-tools/nucleus sdk verify .nucleus/artifacts/render-<fingerprint>.tar.gz
-tools/nucleus sdk fetch render --from <directory-or-https-base-url>
-```
 
 The top-level CLI is the sole orchestration entry point; individual SwiftPM packages remain
 directly buildable with `swift build --package-path …`.

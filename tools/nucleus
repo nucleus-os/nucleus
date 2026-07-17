@@ -8,8 +8,5 @@ export NUCLEUS_WORKSPACE_ROOT="$workspace_root"
 # Components remain independently buildable; the workspace reuses the core's
 # canonical toolchain selection when it is present.
 source "$workspace_root/core/tools/host-env.sh"
-nucleus_require_supported_node
 
-swift build --package-path "$workspace_root" --product nucleus-workspace >/dev/null
-bin_dir="$(swift build --package-path "$workspace_root" --show-bin-path)"
-exec "$bin_dir/nucleus-workspace" "$@"
+exec swift run --package-path "$workspace_root" nucleus-workspace "$@"

@@ -1,3 +1,5 @@
+Subject: [PATCH] Keep overlay scrollbar tracks transparent
+
 diff --git a/ui/native_theme/native_theme_fluent.cc b/ui/native_theme/native_theme_fluent.cc
 index a10b471a48..05077c892b 100644
 --- a/ui/native_theme/native_theme_fluent.cc

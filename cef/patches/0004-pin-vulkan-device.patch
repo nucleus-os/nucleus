@@ -1,3 +1,5 @@
+Subject: [PATCH] Allow CEF to pin Chromium's Vulkan device
+
 diff --git a/gpu/vulkan/vulkan_device_queue.cc b/gpu/vulkan/vulkan_device_queue.cc
 index 2021a3827c..ca47656103 100644
 --- a/gpu/vulkan/vulkan_device_queue.cc

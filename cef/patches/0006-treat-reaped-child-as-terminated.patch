@@ -1,3 +1,5 @@
+Subject: [PATCH] Treat an already reaped child as terminated
+
 diff --git a/base/process/kill_posix.cc b/base/process/kill_posix.cc
 index 1477c3f..9188722 100644
 --- a/base/process/kill_posix.cc

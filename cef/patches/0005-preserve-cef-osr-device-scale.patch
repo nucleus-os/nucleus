@@ -1,3 +1,5 @@
+Subject: [PATCH] Preserve the CEF OSR device scale factor
+
 diff --git a/content/browser/renderer_host/render_widget_host_view_base.cc b/content/browser/renderer_host/render_widget_host_view_base.cc
 index 8773aec..f78f2c3 100644
 --- a/content/browser/renderer_host/render_widget_host_view_base.cc

@@ -34,9 +34,6 @@ struct ProfilingCommand {
                 "Tracy submodule is at \(checkout), expected pinned commit \(commit); "
                 + "run git submodule update --init --recursive swift-tracy/third-party/tracy")
         }
-        let stamp = build.appendingPathComponent(".built-commit")
-        let capture = build.appendingPathComponent("tracy-capture")
-        let csv = build.appendingPathComponent("tracy-csvexport")
         // The pre-submodule receiver builder cloned Tracy under `source/` and its
         // CMake caches permanently record that path. Remove those ignored build
         // artifacts once so CMake never mixes the old clone with the submodule.
@@ -45,11 +42,6 @@ struct ProfilingCommand {
             if FileManager.default.fileExists(atPath: path.path) {
                 try FileManager.default.removeItem(at: path)
             }
-        }
-        if (try? String(contentsOf: stamp, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)) == commit,
-           FileManager.default.isExecutableFile(atPath: capture.path), FileManager.default.isExecutableFile(atPath: csv.path) {
-            print("tracy receivers up to date (\(commit))")
-            return
         }
         try FileManager.default.createDirectory(at: build, withIntermediateDirectories: true)
         for (name, subdirectory) in [("tracy-capture", "capture"), ("tracy-csvexport", "csvexport")] {
@@ -63,7 +55,6 @@ struct ProfilingCommand {
             if FileManager.default.fileExists(atPath: output.path) { try FileManager.default.removeItem(at: output) }
             try FileManager.default.copyItem(at: toolBuild.appendingPathComponent(name), to: output)
         }
-        try Data((commit + "\n").utf8).write(to: stamp, options: .atomic)
         print("built Tracy receivers at \(build.path)")
     }
 }

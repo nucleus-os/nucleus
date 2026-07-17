@@ -28,11 +28,23 @@ purely the AAC/H.264 decoders, which only appear when Chromium is compiled with:
 process exports its active Media Session as `org.mpris.MediaPlayer2.chromium.instance<PID>`,
 including metadata, artwork, position, and transport controls.
 
-So this component compiles CEF from source with those GN args. Building CEF also
+So this component compiles CEF from source with those GN args. Production CEF
+is additionally a Chromium official build: DCHECKs and expensive DCHECKs are
+disabled, the exact branch-matched Linux PGO profile is applied, and optimized
+ThinLTO links with LLD. The build script provisions both Chromium's Linux
+instrumentation profile and V8's version-matched builtins profile. Building CEF also
 builds Chromium — a long-running, disk-heavy job in the same class as
 `swift-toolchain/build.sh` and `swift-android-sdk/build.sh`. Like those, it is
 an explicit, independently-run build, **not** part of `tools/nucleus build all`.
 Nucleus consumes the produced artifact, not the build.
+
+The project patch stack implements direct Viz offscreen output for explicitly
+requested Linux accelerated OSR. A generic Mojo contract carries an exportable
+root frame and the matching consumer release fence between the browser and Viz
+processes; a four-slot native-pixmap SharedImage queue renders the final root
+pass directly, so the production path does not create a video capturer or
+perform its full-surface capture blit. Ordinary Chromium compositors and
+upstream capture modes remain unchanged.
 
 ## Version pinning
 
@@ -43,11 +55,12 @@ Chromium branch (the third component of the Chromium version):
 |------------|---------------------|
 | `7922`     | `151.0.7922.19`     |
 
-Branch `7922` pins `chromium_checkout: refs/tags/151.0.7922.19`. Bump the
-branch in `scripts/cef-env.sh` (and mirror in `config/build-contract.json`) to
-upgrade; building the branch produces a self-consistent dist whose wrapper and
-headers match its own `libcef.so` — never mix a source build's `libcef.so` with
-another distribution's wrapper.
+CEF commit `6c664b86a4ef3be5c95b1290068f5e5d52b72db3` on branch `7922`
+pins `chromium_checkout: refs/tags/151.0.7922.19`. Both values are mandatory:
+the release branch can advance to a newer Chromium patch version without
+changing its branch number. Bump the commit and Chromium version together in
+`scripts/cef-env.sh`; the resulting dist must
+always ship the wrapper and headers built with its own `libcef.so`.
 
 ## Building
 
@@ -67,6 +80,12 @@ cef/build.sh --force-clean   # wipe the Chromium checkout and re-sync first
 cef/build.sh --package-only  # re-package the last build without rebuilding
 ```
 
+Packaging primitive regression test:
+
+```sh
+python3 cef/scripts/atomic-publish-directory-test.py
+```
+
 Output (all under `~/.cache/nucleus/cef/`):
 
 ```
@@ -77,13 +96,20 @@ dist/<version>/                     extracted, ready-to-consume distribution
   include/   public C++ API headers
   libcef_dll/ wrapper source (compiled by the consumer)
 dist/cef-<version>-linux64-codecs.tar.gz(.sha256)   checksummed artifact
-dist/latest.json                    pointer to the freshest build
-logs/latest.log, logs/latest-run.env
+dist/current -> <version>/          stable pointer to the freshest build
+logs/latest.log
 ```
+
+Publication prepares the complete tree under a sibling temporary path, then
+uses an atomic Linux directory exchange. An interrupted rebuild therefore
+leaves either the old complete SDK or the new complete SDK visible, never a
+mixed wrapper and `libcef.so`. It then atomically switches the `current`
+symlink to the published version.
 
 ## How the shell consumes it
 
-The shell's build points at `dist/<version>/` (or unpacks the tarball): link
+The shell's build points at `dist/current/`, an explicit `dist/<version>/`, or
+an unpacked tarball: link
 `libcef.so` from `Release/`, compile the `libcef_dll` wrapper, and set the CEF
 resource paths to `Release/` (ICU initializes before resource-dir settings
 apply, so `icudtl.dat` must sit beside `libcef.so` — the build colocates it
@@ -95,6 +121,8 @@ consumes the same artifact path.
 
 ## Disk & resources
 
-A shallow Chromium checkout plus a Release build is on the order of ~100 GB
-under `~/.cache/nucleus/cef/`. The build saturates all cores; `ccache`
-(shared `~/.cache/ccache`) makes subsequent rebuilds cheap.
+A shallow Chromium checkout plus an official PGO/ThinLTO Release build is on
+the order of ~100 GB under `~/.cache/nucleus/cef/`. ThinLTO uses materially more
+link memory and time than the developer Release configuration. The build
+saturates all cores; `ccache` (shared `~/.cache/ccache`) makes subsequent
+compilation cheaper, although the final optimized link remains substantial.
