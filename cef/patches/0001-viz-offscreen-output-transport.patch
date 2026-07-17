@@ -889,7 +889,7 @@ diff --git a/components/viz/test/test_output_surface_provider.h b/components/viz
 index d9e96c4..932f050 100644
 --- a/components/viz/test/test_output_surface_provider.h
 +++ b/components/viz/test/test_output_surface_provider.h
-@@ -33,11 +33,19 @@ class TestOutputSurfaceProvider : public OutputSurfaceProvider {
+@@ -33,10 +33,18 @@ class TestOutputSurfaceProvider : public OutputSurfaceProvider {
        DisplayCompositorMemoryAndTaskController* display_controller,
        const RendererSettings& renderer_settings,
        const DebugRendererSettings* debug_settings,
@@ -900,7 +900,6 @@ index d9e96c4..932f050 100644
    gpu::SharedImageManager* GetSharedImageManager() override;
    gpu::SyncPointManager* GetSyncPointManager() override;
    gpu::Scheduler* GetGpuScheduler() override;
- 
 +  bool last_output_had_offscreen_connection() const {
 +    return last_output_had_offscreen_connection_;
 +  }
@@ -955,10 +954,9 @@ index 364ed19..3889370 100644
  import "services/viz/privileged/mojom/compositing/renderer_settings.mojom";
  import "services/viz/public/mojom/compositing/compositor_frame_sink.mojom";
  import "services/viz/public/mojom/compositing/copy_output_request.mojom";
-@@ -69,6 +70,10 @@ struct RootCompositorFrameSinkParams {
+@@ -69,5 +70,9 @@ struct RootCompositorFrameSinkParams {
  
     bool use_proxy_output_device = false;
- 
 +  // Optional paired endpoints for an explicitly requested exportable
 +  // offscreen root. Both endpoints must either be valid or absent.
 +  pending_remote<OffscreenOutputClient>? offscreen_output_client;
