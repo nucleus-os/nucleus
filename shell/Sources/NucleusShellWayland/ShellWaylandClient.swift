@@ -27,6 +27,7 @@ public enum WaylandGlobalKind: String, CaseIterable {
     case viewporter = "wp_viewporter"
     case fractionalScale = "wp_fractional_scale_manager_v1"
     case xdgOutput = "zxdg_output_manager_v1"
+    case textInputManager = "zwp_text_input_manager_v3"
 
     /// The interface descriptor pointer the client binds against (from the generated accessors).
     var interface: UnsafePointer<wl_interface>? {
@@ -42,6 +43,7 @@ public enum WaylandGlobalKind: String, CaseIterable {
         case .viewporter: return swift_wayland_iface_wp_viewporter()
         case .fractionalScale: return swift_wayland_iface_wp_fractional_scale_manager_v1()
         case .xdgOutput: return swift_wayland_iface_zxdg_output_manager_v1()
+        case .textInputManager: return swift_wayland_iface_zwp_text_input_manager_v3()
         }
     }
 
@@ -59,6 +61,7 @@ public enum WaylandGlobalKind: String, CaseIterable {
         case .viewporter: return 1
         case .fractionalScale: return 1
         case .xdgOutput: return 3
+        case .textInputManager: return 1
         }
     }
 

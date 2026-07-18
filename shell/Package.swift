@@ -292,6 +292,8 @@ let package = Package(
             name: "NucleusShellInput",
             dependencies: [
                 "NucleusShellWayland",
+                .product(name: "WaylandClientC", package: "swift-wayland"),
+                .product(name: "WaylandClientDispatch", package: "swift-wayland"),
                 .product(name: "NucleusUI", package: "Nucleus"),
             ],
             path: "Sources/NucleusShellInput",

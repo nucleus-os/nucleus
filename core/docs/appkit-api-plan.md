@@ -145,7 +145,7 @@ only by a hypothetical future client.
 | 7 | Publication, and privilege as a module boundary | **complete** |
 | 8 | Event vocabulary and responder wiring | **partial** |
 | 9 | Layout: measure/arrange and flex | **complete** |
-| 10 | TextField and input-method foundation | pending |
+| 10 | TextField and input-method foundation | **partial** |
 | 11 | ScrollView, the interaction capstone | pending |
 | 12 | TextView and multiline editing | pending |
 
@@ -618,32 +618,101 @@ with no shell-specific placement rule.
 transition snapshots child frames synchronously at that moment, so this is a genuine
 settle-before-read barrier rather than the incidental layout the phase set out to remove.
 
-## Phase 10 — TextField and input-method foundation
+## Phase 10 — TextField and input-method foundation — partial
 
-Secure credential entry is required before the native shell can prove its lock-screen path,
-so single-line editing lands before scrolling and multiline editing.
+Secure credential entry is required before the native shell can prove its lock-screen path, so
+single-line editing lands before scrolling and multiline editing.
 
-The text substrate already exposes glyph positions, selection rectangles, caret affinity,
-grapheme boundaries, and bidi geometry. Build one editor model on it:
+**`TextEditorModel` is a value type with no view, layout, or platform dependency**, so the whole
+editing contract is testable without a window — 41 tests, none of which construct one. UTF-16 is
+its index space because that is what the text substrate already speaks (`sourceUTF16Range`,
+`glyphPosition(at:)`, `selectionRects(forUTF16Range:)`); UTF-8 conversion happens only at the
+input-method boundary rather than carrying two index spaces internally. Caret movement is by
+grapheme cluster, so a flag emoji is one step rather than four, and a combining sequence moves
+with its base.
 
-- UTF-8/UTF-16 mapping, selection, caret movement, affinity, deletion, insertion, password
-  masking, undo grouping, and composition state.
-- Native `TextField` with pointer selection, keyboard navigation, focus, caret animation,
-  horizontal reveal, placeholder, and secure-entry behavior.
-- A platform-neutral input-method client seam owned by NucleusUI/app-host protocols.
-- Shell-side `zwp_text_input_v3` client integration: enable/disable, surrounding text, content
-  type and purpose, cursor rectangle, preedit, commit, deletion, and done serials.
-- Nucleus Compositor server-side `zwp_text_input_v3` binding so the same out-of-process shell
-  path works there.
-- Secure fields never expose credentials to logs, clipboard, persistence, accessibility
-  values, or optional higher-level runtimes.
+**Undo coalesces typing into one step** and breaks on a change of edit kind or a caret move —
+type, click elsewhere, type again is two steps. A composition records its undo entry when the
+preedit *opens*, so undoing after a commit goes back past the whole composition rather than to a
+half-typed preedit; abandoning a composition pops that entry rather than leaving a no-op step.
 
-Files: new `NucleusUI/{TextEditorModel,TextField}.swift`; `NucleusUI/TextSystem.swift`;
-`NucleusAppHostProtocols/`; `NucleusShellWayland/`; `NucleusShellRuntime/`;
-`compositor-core/` text-input binding.
+**Secure entry closes every path the contents could escape through**, and each is tested: masked
+per grapheme in `displayText` so a combining sequence does not leak its length, no clipboard, no
+surrounding text to an input method, no accessibility value, a redacted `description`, and a
+content type that cannot be configured back to ordinary text.
 
-**Lands with:** the native shell lock surface accepting composed text through the Wayland
-input method without a JavaScript runtime.
+**`TextField`** puts every edit through the model, so a keystroke, a paste, and an input method's
+commit take one path — there is no second editing implementation for composed text. It carries
+pointer selection (click, shift-click, double-click word, triple-click all, drag), keyboard
+navigation with word and line modifiers, focus that activates the input context, a caret blink
+driven by the host's frame clock rather than an internal timer, horizontal reveal so the caret
+stays visible in a field narrower than its text, placeholder, and secure entry.
+
+**`TextInputClient`/`TextInputAdapter`/`TextInputContext` are the platform-neutral seam**, shaped
+after `NSTextInputClient`. `core/` resolves no Wayland dependency and does not adopt its
+vocabulary; adapters translate. A field works with no adapter attached at all, which is what
+tests and sessions without an input method exercise.
+
+**Shell-side `zwp_text_input_v3`** is bound and driven: enable/disable on focus, surrounding
+text, content type and purpose, cursor rectangle, preedit, commit, delete-surrounding, and the
+double-buffered `done` serials — state from a `done` whose serial is stale is discarded, because
+its offsets refer to text that no longer exists. Delete applies before commit before preedit, the
+order the protocol fixes.
+
+Delivered in `NucleusUI/{TextEditorModel,TextInput,TextField,Window,View,WindowScene}.swift`,
+`shell/Sources/NucleusShellInput/{ShellInputRouter,ShellTextInput}.swift`,
+`shell/Sources/NucleusShellWayland/ShellSeat.swift`, and `shell/Sources/NucleusShellInputC/`.
+
+**Outstanding: the compositor's server-side `zwp_text_input_v3` binding.** Deliberately not
+half-built. Server-side text-input exists to serve *clients*, and it has nothing to serve them
+until the compositor also sources composed text from an input method — `zwp_input_method_v2` or
+equivalent — which is its own protocol with its own lifecycle. The compositor's own overlay does
+not need it: it takes composed text straight from its xkb state, which is the Phase 8 work that
+landed alongside this. Building the server binding before the input-method source would produce a
+protocol object with no composition behind it.
+
+### Phase 8's deferrals, closed here
+
+**Composed text** now travels from `xkb_state_key_get_utf8` through the wire event to
+`Event.characters`. The wire type had carried a `text` field and a doc comment since Phase 8 but
+hardcoded `nil`; the field is populated, and — caught by a test rather than by reading — the
+wire struct's initializer was not assigning the parameter to storage either, so threading it
+would otherwise have been silently inert.
+
+**Modifier flags** reach views. The overlay key path passed `modifiers: 0` unconditionally, so
+shift, control, and command never arrived.
+
+**The keyboard gate widened** from "a window menu is visible" to "the overlay scene wants keys",
+which includes a focused responder in its own scene. A text field in overlay UI previously
+received no keyboard input whatsoever.
+
+**Key repeat** runs off the overlay's existing frame clock rather than a new timer, at the
+600 ms/25 Hz the compositor already advertises to Wayland clients over `wl_keyboard.repeat_info`.
+It catches up after a stalled frame instead of swallowing repeats, bounded so a long stall cannot
+flood. Action keys do not repeat; releasing an unrelated key does not cancel one in progress.
+
+**The shell's Wayland input adapter** existed only as an unbound `wl_seat` global — no listener,
+no pointer, no keyboard, not even a stub. `ShellSeat` now attaches both, compiles the keymap the
+compositor sends over `wl_keyboard.keymap`, and composes text client-side because a compositor
+sends keycodes and never text. Pointer and keyboard need separate listener owners:
+`wl_pointer.leave` and `wl_keyboard.leave` have identical Swift signatures, so one type cannot
+conform to both generated protocols. Key repeat is implemented here too — a client receives the
+advertised rate, never the repeats — and the host's poll timeout shortens when one is due so
+repeats are not quantized to the frame rate.
+
+`ShellInputRouter` is the only place the two vocabularies meet, in its own target so the
+translation is testable without linking React Native, Vulkan, or the render backend.
+`WindowScene` gained `resignKey()`: keyboard focus genuinely leaves a scene, and without it the
+scene would keep routing keys to a window that no longer has focus.
+
+**Two things named rather than hidden.** The evdev key table is duplicated between the shell's
+router and the compositor's overlay adapter. Both are Linux Wayland processes reading evdev, but
+they share no package below `core/`, and `core/` cannot hold the table without adopting a
+platform's numbering — the thing `KeyCode` exists to avoid. Unifying it needs a shared platform
+package that does not exist yet. And the shell's seat registers no window by default: the bar is
+a React Native surface with its own touch handling, so routing framework events into it would
+mean two input paths over one tree. A native surface owner opts in through
+`register(window:forSurface:)`, which is what the native lock surface will do.
 
 ## Phase 11 — ScrollView, the interaction capstone
 
