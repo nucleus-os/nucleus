@@ -143,7 +143,7 @@ only by a hypothetical future client.
 | 5 | GraphicsContext and the vocabulary collapse | **complete** |
 | 6 | Retire the RN committer | **complete** |
 | 7 | Publication, and privilege as a module boundary | **complete** |
-| 8 | Event vocabulary and responder wiring | **partial** |
+| 8 | Event vocabulary and responder wiring | **complete** |
 | 9 | Layout: measure/arrange and flex | **complete** |
 | 10 | TextField and input-method foundation | **partial** |
 | 11 | ScrollView, the interaction capstone | pending |
@@ -507,7 +507,7 @@ the product target itself depends on `NucleusUI` alone, and the check enforces t
 product test should be able to verify what a view drew without reaching into the embedder tier.
 That seam should be designed when there is more product code to inform its shape.
 
-## Phase 8 — Event vocabulary and responder wiring — partial
+## Phase 8 — Event vocabulary and responder wiring — complete
 
 `Event` was four fields and three types; it is now an NSEvent-shaped record carrying modifier
 flags, click count, scroll deltas with a precise-device flag, key code, composed characters,
@@ -549,11 +549,9 @@ callers.
 **Landed with:** `handleMenuKey`, `capturedPointerButtons`, the left-click-only filter, and
 `EventDispatcher` all deleted; 15 dispatch tests plus 3 new control-tracking tests.
 
-**Deferred, and named honestly:** the shell's Wayland adapter and key repeat. The compositor
-adapter is in place and the vocabulary it targets is settled, but the shell's pointer/keyboard
-callbacks still need routing into it, and `ShellOverlayInputEvent.text` is threaded but not yet
-populated — that requires carrying composed text through the compositor's wire `InputEvent`.
-Phase 10 needs both for text input and is where they belong.
+**The deferrals closed in Phase 10.** The shell's Wayland adapter, key repeat, and populating
+`ShellOverlayInputEvent.text` from `XkbKeyboard.keyGetText` through the wire `InputEvent` all
+landed alongside text input, which is what needed them. See Phase 10 for what each became.
 
 ## Phase 9 — Layout: measure/arrange and flex — complete
 
