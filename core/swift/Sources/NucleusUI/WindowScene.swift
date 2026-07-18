@@ -86,7 +86,7 @@ public final class WindowScene: ~Sendable {
 
     /// The scene's root layer, created and attached on first use. An embedder
     /// attaching its own content parents it here.
-    @_spi(NucleusCompositor) public func ensureRootAttached() throws(UIError) -> Layer {
+    package func ensureRootAttached() throws(UIError) -> Layer {
         try publisher.ensureRootAttached()
     }
 
@@ -96,7 +96,7 @@ public final class WindowScene: ~Sendable {
     ///
     /// The scene answers *where*; the embedder does the attaching, because what
     /// it is attaching is its own concept.
-    @_spi(NucleusCompositor) public func insertionIndex(forLevel level: WindowLevel) -> UInt32 {
+    package func insertionIndex(forLevel level: WindowLevel) -> UInt32 {
         let precedingWindowCount = windowsForDisplay().filter { window in
             window.isVisible &&
                 window.root != nil &&
@@ -125,18 +125,22 @@ public final class WindowScene: ~Sendable {
         return PublishedScene(visualContent: visualContent)
     }
 
-    package func publish(
-        placing placements: [ScenePlacement]
+    package func publishPlacing(
+        _ placements: [ScenePlacement]
     ) throws(UIError) -> PublishedScene {
-        try publish(placing: placements) { _ in true }
+        try publishPlacing(placements) { _ in true }
     }
 
     /// Publish this scene's windows interleaved with embedder-owned content by
     /// window level. The scene does not know what a placement *is* — only where
     /// it sorts — which is what keeps compositor concepts like hosted client
     /// surfaces out of the UI framework.
-    @_spi(NucleusCompositor) public func publish(
-        placing placements: [ScenePlacement],
+    /// Named distinctly from `publish` so `NucleusUIEmbedder`'s public
+    /// `publish(placing:includes:)` forwards here rather than shadowing itself.
+    /// A same-signature forwarding extension recurses silently — it compiles,
+    /// and it dies at run time.
+    package func publishPlacing(
+        _ placements: [ScenePlacement],
         includes windowIncluded: @MainActor (Window) -> Bool
     ) throws(UIError) -> PublishedScene {
         let displayWindows = windowsForDisplay().filter { window in

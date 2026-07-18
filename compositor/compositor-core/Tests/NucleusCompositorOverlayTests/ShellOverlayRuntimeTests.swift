@@ -1,6 +1,7 @@
 @_spi(NucleusCompositor) import NucleusLayers
 import NucleusCompositorOverlayTypes
-@_spi(NucleusCompositor) import NucleusUI
+import NucleusUI
+import NucleusUIEmbedder
 @testable import NucleusCompositorOverlay
 import Testing
 
@@ -223,8 +224,8 @@ import Testing
         #expect(keyBaseline < row.keyLabel.frame.origin.y + row.keyLabel.frame.size.height)
 
         // The container itself paints no content; its separator is a filled rect.
-        #expect(scene.hotkeyView.layerContent.recording.isEmpty)
-        #expect(scene.hotkeyView.separatorView.layerContent.recording.commands.first?.kind == .rect)
+        #expect(scene.hotkeyView.recordedDrawing.isEmptyDrawing)
+        #expect(scene.hotkeyView.separatorView.recordedDrawing.paintCommands.first?.kind == .rect)
     }
 
     @Test func notificationLabelsUseTextLayoutHeights() throws {
@@ -251,9 +252,9 @@ import Testing
         #expect(notification.summaryLabel.frame.size.height > Double(notification.summaryLabel.fontSize))
         #expect(notification.bodyLabel.frame.size.height > Double(notification.bodyLabel.fontSize))
         #expect(notification.metrics.cardH >= notification.metrics.cardPad * 2 + notification.metrics.textHeight(hasBody: true))
-        #expect(notification.summaryLabel.layerContent.recording.commands.first?.kind == .textLayout)
-        #expect(notification.summaryLabel.layerContent.recording.commands.first?.h == Float(notification.summaryLabel.frame.size.height))
-        #expect(notification.bodyLabel.layerContent.recording.commands.first?.h == Float(notification.bodyLabel.frame.size.height))
+        #expect(notification.summaryLabel.recordedDrawing.paintCommands.first?.kind == .textLayout)
+        #expect(notification.summaryLabel.recordedDrawing.paintCommands.first?.h == Float(notification.summaryLabel.frame.size.height))
+        #expect(notification.bodyLabel.recordedDrawing.paintCommands.first?.h == Float(notification.bodyLabel.frame.size.height))
     }
 
     @Test func notificationBackdropRadiusMatchesShadowAcrossBackingScale() throws {
@@ -658,8 +659,8 @@ import Testing
         // committed to the visual sink until publish. (`Context.id` itself is a
         // core-internal detail; the sink type + shared-context identity are the
         // observable contract.)
-        #expect(scene.notificationListView.backingLayer.context.commitSink is InMemoryCommitSink)
-        #expect(scene.hotkeyView.backingLayer.context === scene.notificationListView.backingLayer.context)
+        #expect(scene.notificationListView.embedderBackingLayer.context.commitSink is InMemoryCommitSink)
+        #expect(scene.hotkeyView.embedderBackingLayer.context === scene.notificationListView.embedderBackingLayer.context)
         #expect(visualSink.transactions.isEmpty)
 
         #expect(scene.showNotification(.init(
@@ -672,7 +673,7 @@ import Testing
             expireTimeoutMs: 5000
         )))
 
-        #expect(scene.notificationViews.first?.backingLayer.context.commitSink is InMemoryCommitSink)
+        #expect(scene.notificationViews.first?.embedderBackingLayer.context.commitSink is InMemoryCommitSink)
         #expect(visualSink.transactions.isEmpty)
 
         let publication = scene.publishVisuals()
@@ -687,7 +688,7 @@ import Testing
         let firstVisualTransaction = try #require(visualSink.transactions.first)
         let createdLayerIDs = Set(firstVisualTransaction.created.map(\.0))
         #expect(!createdLayerIDs.isEmpty)
-        let summaryLayerID = try #require(scene.notificationViews.first).summaryLabel.backingLayer.id
+        let summaryLayerID = try #require(scene.notificationViews.first).summaryLabel.embedderBackingLayer.id
         #expect(firstVisualTransaction.propertyUpdates.contains {
             $0.layer == summaryLayerID && $0.properties.content?.kind == .paint
         })

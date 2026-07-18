@@ -279,6 +279,7 @@ let package = Package(
                 .product(name: "NucleusRenderHost", package: "Nucleus"),
                 .product(name: "NucleusLayers", package: "Nucleus"),
                 .product(name: "NucleusUI", package: "Nucleus"),
+                .product(name: "NucleusUIEmbedder", package: "Nucleus"),
                 .product(name: "NucleusAppHostBundle", package: "Nucleus"),
                 .product(name: "NucleusAppHostProtocols", package: "Nucleus"),
                 .product(name: "Tracy", package: "swift-tracy"),
@@ -301,6 +302,8 @@ let package = Package(
             dependencies: [
                 "NucleusShellProduct",
                 .product(name: "NucleusUI", package: "Nucleus"),
+                .product(name: "NucleusUIEmbedder", package: "Nucleus"),
+                .product(name: "NucleusTypes", package: "Nucleus"),
                 .product(name: "NucleusTextBackend", package: "Nucleus"),
             ],
             path: "Tests/NucleusShellProductTests",

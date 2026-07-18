@@ -24,8 +24,8 @@ public struct ViewLayerPresentation: Sendable, Equatable {
     public static let `default` = ViewLayerPresentation()
 }
 
-@_spi(NucleusCompositor) public struct ViewLayerContent: Sendable, Equatable {
-    @_spi(NucleusCompositor) public var recording: PaintRecording
+package struct ViewLayerContent: Sendable, Equatable {
+    package var recording: PaintRecording
     package var presentation: ViewLayerPresentation
     package var shadow: Shadow?
 

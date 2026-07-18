@@ -1,5 +1,5 @@
 import Testing
-@_spi(NucleusCompositor) import NucleusUI
+import NucleusUI
 @_spi(NucleusCompositor) import NucleusLayers
 import NucleusAppHostProtocols
 import NucleusTypes

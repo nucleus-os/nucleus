@@ -1,4 +1,4 @@
-@_spi(NucleusCompositor) import NucleusLayers
+import NucleusLayers
 import NucleusTypes
 
 /// Registered paint content plus the layer update that binds it.
@@ -7,10 +7,9 @@ import NucleusTypes
 /// handles alive until it is deallocated. A caller must keep it alive until the
 /// update has been appended to a transaction or applied to a layer — releasing
 /// early would drop the content's last reference before the compositor reads it.
-@_spi(NucleusCompositor)
-public final class RegisteredPaint {
+package final class RegisteredPaint {
     /// The property update binding the registered content, ready to apply.
-    @_spi(NucleusCompositor) public let update: NucleusLayers.LayerPropertyUpdate
+    package let update: NucleusLayers.LayerPropertyUpdate
 
     private let content: PaintContent?
     private let transientTextHandles: [UInt64]
@@ -39,15 +38,13 @@ public final class RegisteredPaint {
 ///
 /// Host-facing SPI, not product API: a client authoring a `View` subclass sees
 /// `GraphicsContext` and never a recording, layer, context, or registrar.
-@_spi(NucleusCompositor)
-public enum PaintRegistration {
+package enum PaintRegistration {
     /// Register `recording` at the given authored size and return the update
     /// that binds it. An empty recording produces the clear-content update, so
     /// a view that stops drawing releases its content rather than keeping the
     /// last frame.
     @MainActor
-    @_spi(NucleusCompositor)
-    public static func register(
+    package static func register(
         _ recording: PaintRecording,
         width: Float,
         height: Float,

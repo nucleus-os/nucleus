@@ -1,5 +1,8 @@
 import Glibc
-@_spi(NucleusCompositor) import NucleusUI
+import NucleusUI
+import NucleusUIEmbedder
+import class NucleusLayers.Layer
+import protocol NucleusLayers.CommitSink
 import Tracy
 
 @MainActor

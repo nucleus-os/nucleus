@@ -1,5 +1,6 @@
-@_spi(NucleusCompositor) import NucleusUI
-@_spi(NucleusCompositor) import NucleusLayers
+import NucleusUI
+import NucleusUIEmbedder
+import NucleusLayers
 import NucleusAppHostProtocols
 
 private final class RegisteredImageLease: Sendable {
@@ -53,7 +54,7 @@ public final class ReactImageComponentView: ReactComponentView {
         let frame = event.frame
         let maxWidth = Self.pixelDimension(frame.size.width)
         let maxHeight = Self.pixelDimension(frame.size.height)
-        let resourceHostHandle = view.backingLayer.context.commitSink.resourceHostHandle
+        let resourceHostHandle = view.embedderBackingLayer.context.commitSink.resourceHostHandle
         if let handle = Self.registerImage(
             path: path,
             maxWidth: maxWidth,

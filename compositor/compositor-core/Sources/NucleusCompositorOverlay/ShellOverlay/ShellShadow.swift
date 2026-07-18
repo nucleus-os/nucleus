@@ -1,4 +1,5 @@
-@_spi(NucleusCompositor) import NucleusUI
+import NucleusUI
+import NucleusUIEmbedder
 
 /// Default macOS-style drop shadows for shell-overlay surfaces. Tuned to
 /// approximate the visual weight of a `NSPanel` / `NSPopover` shadow on

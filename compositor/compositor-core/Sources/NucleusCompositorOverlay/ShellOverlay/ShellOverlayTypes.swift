@@ -1,5 +1,6 @@
 import NucleusCompositorOverlayTypes
-@_spi(NucleusCompositor) import NucleusUI
+import NucleusUI
+import NucleusUIEmbedder
 
 public struct ShellOverlayFrameInfo: Sendable, Equatable {
     public var outputWidth: UInt32

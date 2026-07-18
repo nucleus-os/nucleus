@@ -1,17 +1,21 @@
 import NucleusLayers
+import NucleusUI
 
-@_spi(NucleusCompositor) public typealias CommitSink = NucleusLayers.CommitSink
-@_spi(NucleusCompositor) public typealias Layer = NucleusLayers.Layer
+// The embedder tier may name layer-model types directly; that is what
+// distinguishes it from the product tier. NucleusUI used to re-export
+// `CommitSink` and `Layer` as SPI typealiases, which made every downstream
+// signature naming them SPI as well. They are gone — an embedder imports
+// `NucleusLayers`.
 
 @MainActor
-@_spi(NucleusCompositor) public final class WindowScenePublicationContext: ~Sendable {
-    package let semanticContext: Context
+public final class WindowScenePublicationContext: ~Sendable {
+    public let semanticContext: Context
     /// The context embedder-owned content is minted into, so an embedder can
     /// build its own scene-attached objects (the compositor's hosted surfaces)
     /// in the same context as this scene's layers.
-    @_spi(NucleusCompositor) public let visualContext: Context
+    public let visualContext: Context
 
-    @_spi(NucleusCompositor) public init(
+    public init(
         visualContextID: ContextID = .shellOverlay,
         commitSink: any CommitSink
     ) throws(UIError) {
@@ -23,13 +27,13 @@ import NucleusLayers
         }
     }
 
-    @_spi(NucleusCompositor) public func withSemanticContext<T>(
+    public func withSemanticContext<T>(
         _ body: () throws -> T
     ) rethrows -> T {
         try Application.withContext(semanticContext, body)
     }
 
-    @_spi(NucleusCompositor) public func makeWindowScene(windows: [Window]) -> WindowScene {
+    public func makeWindowScene(windows: [Window]) -> WindowScene {
         WindowScene(windows: windows, visualContext: visualContext)
     }
 }

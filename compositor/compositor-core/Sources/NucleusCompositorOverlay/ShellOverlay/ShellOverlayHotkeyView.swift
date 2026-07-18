@@ -1,4 +1,5 @@
-@_spi(NucleusCompositor) import NucleusUI
+import NucleusUI
+import NucleusUIEmbedder
 
 struct ShellOverlayHotkeyEntry: Sendable, Equatable {
     var key: String

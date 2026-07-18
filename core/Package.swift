@@ -161,6 +161,7 @@ let package = Package(
         .library(name: "NucleusAppHostProtocols", targets: ["NucleusAppHostProtocols"]),
         .library(name: "NucleusRenderHost", targets: ["NucleusRenderHost"]),
         .library(name: "NucleusUI", targets: ["NucleusUI"]),
+        .library(name: "NucleusUIEmbedder", targets: ["NucleusUIEmbedder"]),
         .library(name: "NucleusApp", targets: ["NucleusApp"]),
         .library(name: "NucleusSkiaGraphiteBridge", targets: ["NucleusSkiaGraphiteBridge"]),
     ],
@@ -226,6 +227,18 @@ let package = Package(
             name: "NucleusUI",
             dependencies: ["NucleusTypes", "NucleusLayers", .product(name: "Tracy", package: "swift-tracy"), "NucleusTextCxxBridge"],
             path: "swift/Sources/NucleusUI",
+            swiftSettings: [.interoperabilityMode(.Cxx)]
+        ),
+        // NucleusUIEmbedder — the API for code that *embeds* a NucleusUI scene into a
+        // platform and feeds it a surface, input, and a frame clock: the compositor, the
+        // shell runtime, the React Native runtime. Plain `public`; it reaches NucleusUI's
+        // internals through `package` access rather than SPI, which is what makes the
+        // boundary enforceable by the build graph instead of by an annotation any client
+        // could simply write. Product code depends on NucleusUI and never on this.
+        .target(
+            name: "NucleusUIEmbedder",
+            dependencies: ["NucleusUI", "NucleusLayers", "NucleusTypes"],
+            path: "swift/Sources/NucleusUIEmbedder",
             swiftSettings: [.interoperabilityMode(.Cxx)]
         ),
         // NucleusApp — the SwiftUI-shaped App/Scene entry vocabulary and the single-import
@@ -379,6 +392,13 @@ let package = Package(
         // these (ShellOverlayRuntimeTests, the sibling WindowSceneTests) were
         // relocated to compositor-core's test graph, where their compositor targets
         // live — this React/compositor-agnostic core package cannot depend on them.
+        .testTarget(
+            name: "NucleusUIEmbedderTests",
+            dependencies: ["NucleusUIEmbedder", "NucleusUI", "NucleusLayers", "NucleusTypes", "NucleusTextBackend"],
+            path: "swift/Tests/NucleusUIEmbedderTests",
+            swiftSettings: [.interoperabilityMode(.Cxx)],
+            linkerSettings: [.unsafeFlags(skiaLinkFlags)]
+        ),
         .testTarget(
             name: "NucleusUITests",
             dependencies: ["NucleusUI", "NucleusLayers", "NucleusTypes", "NucleusTextBackend", "NucleusSkiaGraphiteBridge"],

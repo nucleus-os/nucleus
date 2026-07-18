@@ -1,6 +1,7 @@
 import NucleusCompositorOverlayTypes
 import Glibc
-@_spi(NucleusCompositor) import NucleusUI
+import NucleusUI
+import NucleusUIEmbedder
 import NucleusRenderHost
 import NucleusCompositorOverlay
 import NucleusCompositorServer

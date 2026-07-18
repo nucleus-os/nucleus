@@ -1,4 +1,5 @@
-@_spi(NucleusCompositor) import NucleusUI
+import NucleusUI
+import NucleusUIEmbedder
 
 /// One row of a `Menu`. `actionID` is caller-defined: a window-verb tag for the
 /// window menu, a `com.canonical.dbusmenu` item id for an application pulldown.

@@ -23,7 +23,7 @@ public enum Application {
     }
 
     @MainActor
-    @_spi(NucleusCompositor) public static func withContext<T>(
+    package static func withContext<T>(
         _ context: Context,
         _ body: () throws -> T
     ) rethrows -> T {
@@ -38,12 +38,12 @@ public enum Application {
     /// flag under region isolation. Push before materializing, `popContext()` after
     /// (pair them with `defer`). Main-actor state, like `withContext`.
     @MainActor
-    @_spi(NucleusCompositor) public static func pushContext(_ context: Context) {
+    package static func pushContext(_ context: Context) {
         contextStack.append(context)
     }
 
     @MainActor
-    @_spi(NucleusCompositor) public static func popContext() {
+    package static func popContext() {
         _ = contextStack.popLast()
     }
 

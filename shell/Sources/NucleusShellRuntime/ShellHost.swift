@@ -1,5 +1,6 @@
 @_spi(NucleusCompositor) import NucleusReactRuntime
-@_spi(NucleusCompositor) import NucleusUI
+import NucleusUI
+import NucleusUIEmbedder
 import NucleusLayers
 import NucleusRenderModel
 import NucleusRenderHost
@@ -111,7 +112,7 @@ public final class ShellHost {
             let context = try Context(commitSink: RenderCommitSink(store: .shared))
             // Make it the current context for the shell's lifetime, so Views (the bar root)
             // mint their backing layers into it and commit through its sink.
-            Application.pushContext(context)
+            EmbedderApplication.pushContext(context)
             renderContext = context
         } catch {
             writeErr("shell: failed to build render context: \(error)")

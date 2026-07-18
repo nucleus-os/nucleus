@@ -309,12 +309,10 @@ import Testing
         }
         let scene = WindowScene(windows: [windows.0, windows.1], visualContext: visualContext)
 
-        let published = try scene.publish(
-            placing: [
+        let published = try scene.publishPlacing([
                 ScenePlacement(id: 40, rootLayerID: 400, level: .shellChrome),
                 ScenePlacement(id: 41, rootLayerID: 401, visible: false),
-            ]
-        )
+            ])
 
         // The id sequence states the interleaving directly: the placement sorts
         // between the two windows by level, and the invisible one is dropped.

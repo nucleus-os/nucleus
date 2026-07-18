@@ -10,7 +10,7 @@
 // the protocol; the platform side conforms and registers.
 
 import NucleusLayers
-@_spi(NucleusCompositor) import NucleusUI
+import NucleusUI
 
 #if canImport(Glibc)
 import Glibc

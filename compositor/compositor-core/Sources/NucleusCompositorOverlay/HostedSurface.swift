@@ -1,13 +1,14 @@
-@_spi(NucleusCompositor) import NucleusUI
+import NucleusUI
+import NucleusUIEmbedder
 // Selective imports: this file needs the layer model's transaction vocabulary,
 // but `NucleusLayers` also defines a `Rect`, and the frames here are the UI
 // framework's. Naming what is used keeps that unambiguous without qualifying
 // every geometry mention.
-@_spi(NucleusCompositor) import class NucleusLayers.Context
-@_spi(NucleusCompositor) import class NucleusLayers.Layer
-@_spi(NucleusCompositor) import struct NucleusLayers.LayerTransaction
-@_spi(NucleusCompositor) import struct NucleusLayers.LayerPropertyUpdate
-@_spi(NucleusCompositor) import typealias NucleusLayers.GeometryRect
+import class NucleusLayers.Context
+import class NucleusLayers.Layer
+import struct NucleusLayers.LayerTransaction
+import struct NucleusLayers.LayerPropertyUpdate
+import typealias NucleusLayers.GeometryRect
 
 // Hosted surfaces: Wayland client surfaces placed inside the compositor's own
 // scene.
@@ -38,7 +39,7 @@ public final class HostedSurface: ~Sendable {
         self.surfaceID = surfaceID
         self.role = role
         self.level = level
-        self.rootView = Application.withContext(context) {
+        self.rootView = EmbedderApplication.withContext(context) {
             View()
         }
         if let frame {
@@ -57,9 +58,9 @@ public final class HostedSurface: ~Sendable {
     public func detach() throws(UIError) {
         hasCommittedContent = false
         commitsFrameUpdates = false
-        var transaction = LayerTransaction(context: rootView.backingLayer.context)
+        var transaction = LayerTransaction(context: rootView.embedderBackingLayer.context)
         do {
-            try transaction.remove(rootView.backingLayer)
+            try transaction.remove(rootView.embedderBackingLayer)
             try transaction.commit()
         } catch {
             transaction.abort()
@@ -75,13 +76,8 @@ public final class HostedSurface: ~Sendable {
             width: frame.size.width,
             height: frame.size.height
         ))
-        rootView.backingLayer.apply(update)
-        if commitsFrameUpdates {
-            LayerTransaction.appendAmbient(
-                .properties(layer: rootView.backingLayer.id, update),
-                in: rootView.backingLayer.context
-            )
-        }
+        rootView.embedderBackingLayer.applyProperties(
+            update, ambient: commitsFrameUpdates)
     }
 }
 
@@ -157,7 +153,7 @@ public final class HostedSurfaceRegistry<Identifier: Hashable>: ~Sendable {
             }
             return ScenePlacement(
                 id: UInt64(surface.surfaceID),
-                rootLayerID: surface.rootView.backingLayer.id.rawValue,
+                rootLayerID: surface.rootView.embedderBackingLayer.id.rawValue,
                 level: surface.level,
                 visible: surface.hasCommittedContent
             )
@@ -172,8 +168,8 @@ public final class HostedSurfaceRegistry<Identifier: Hashable>: ~Sendable {
         in scene: WindowScene,
         using attach: (View, Int, Layer, UInt32) throws -> Result
     ) throws -> Result {
-        let parentLayer = try scene.ensureRootAttached()
-        let index = scene.insertionIndex(forLevel: surface.level)
+        let parentLayer = try scene.attachedRootLayer()
+        let index = scene.sublayerIndex(forLevel: surface.level)
         let result = try attach(surface.rootView, surface.surfaceID, parentLayer, index)
         surface.markCommittedContent()
         surface.beginCommittedFrameUpdates()
@@ -193,9 +189,9 @@ public final class HostedSurfaceRegistry<Identifier: Hashable>: ~Sendable {
         var parentLayer: Layer?
         var attachedAtLevel: [WindowLevel: UInt32] = [:]
         for surface in surfaces where shouldAttach(surface) {
-            let resolvedParent = try parentLayer ?? scene.ensureRootAttached()
+            let resolvedParent = try parentLayer ?? scene.attachedRootLayer()
             parentLayer = resolvedParent
-            let baseIndex = scene.insertionIndex(forLevel: surface.level)
+            let baseIndex = scene.sublayerIndex(forLevel: surface.level)
             let levelOffset = attachedAtLevel[surface.level] ?? 0
             try attach(surface.rootView, surface.surfaceID, resolvedParent, baseIndex + levelOffset)
             attachedAtLevel[surface.level] = levelOffset + 1

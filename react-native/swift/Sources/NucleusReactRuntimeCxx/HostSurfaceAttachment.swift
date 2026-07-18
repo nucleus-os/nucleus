@@ -1,5 +1,6 @@
-@_spi(NucleusCompositor) import NucleusUI
-@_spi(NucleusCompositor) import NucleusLayers
+import NucleusUI
+import NucleusUIEmbedder
+import NucleusLayers
 
 extension Host {
     @MainActor
@@ -14,7 +15,7 @@ extension Host {
         guard let consumer = mountConsumer else {
             return ViewComponentViewRegistry()
         }
-        let renderContext = rootView.backingLayer.context
+        let renderContext = rootView.embedderBackingLayer.context
         let environment = ReactSurfaceEnvironment(backingScaleFactor: backingScaleFactor)
         let registry = surfaceRegistries[surfaceID] ?? ViewComponentViewRegistry()
         surfaceRegistries[surfaceID] = registry
@@ -55,7 +56,7 @@ extension Host {
             }
         }
 
-        Application.withContext(renderContext) {
+        EmbedderApplication.withContext(renderContext) {
             consumer.registerContext(surfaceContext)
         }
 
@@ -88,11 +89,11 @@ extension Host {
 
         if !attachedSurfaceIDs.contains(surfaceID) {
             var transaction = LayerTransaction(context: renderContext)
-            try transaction.createExisting(rootView.backingLayer)
+            try transaction.createExisting(rootView.embedderBackingLayer)
             for component in registry.components where component.view !== rootView {
-                try transaction.createExisting(component.view.backingLayer)
+                try transaction.createExisting(component.view.embedderBackingLayer)
             }
-            try transaction.insert(rootView.backingLayer, into: parentLayer, at: insertionIndex)
+            try transaction.insert(rootView.embedderBackingLayer, into: parentLayer, at: insertionIndex)
             try transaction.commit()
             attachedSurfaceIDs.insert(surfaceID)
         }

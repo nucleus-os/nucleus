@@ -1,5 +1,6 @@
 import Testing
-@_spi(NucleusCompositor) import NucleusUI
+import NucleusUI
+import NucleusUIEmbedder
 @_spi(NucleusCompositor) import NucleusLayers
 @testable import NucleusCompositorOverlay
 
@@ -71,7 +72,7 @@ import Testing
 
         #expect(surface.surfaceID == 9)
         #expect(surface.frame == Rect(x: 0, y: 0, width: 100, height: 80))
-        #expect(surface.rootView.backingLayer.frame == GeometryRect(x: 0, y: 0, width: 100, height: 80))
+        #expect(surface.rootView.embedderBackingLayer.frame == GeometryRect(x: 0, y: 0, width: 100, height: 80))
         #expect(!surface.hasCommittedContent)
         #expect(!surface.commitsFrameUpdates)
 
@@ -85,7 +86,7 @@ import Testing
         #expect(surface.frame == Rect(x: 0, y: 0, width: 320, height: 200))
         #expect(visualSink.transactions.contains { transaction in
             transaction.propertyUpdates.contains {
-                $0.layer == surface.rootView.backingLayer.id &&
+                $0.layer == surface.rootView.embedderBackingLayer.id &&
                     $0.properties.position == GeometryPoint(x: 0, y: 0) &&
                     $0.properties.bounds == GeometrySize(width: 320, height: 200)
             }
@@ -95,7 +96,7 @@ import Testing
         #expect(!surface.hasCommittedContent)
         #expect(!surface.commitsFrameUpdates)
         #expect(visualSink.transactions.contains { transaction in
-            transaction.removed.contains(surface.rootView.backingLayer.id)
+            transaction.removed.contains(surface.rootView.embedderBackingLayer.id)
         })
     }
 
@@ -122,8 +123,8 @@ import Testing
         let visualContent = registry.placements()
         #expect(visualContent.map(\.id) == [1, 2])
         #expect(visualContent.map(\.rootLayerID) == [
-            dock.rootView.backingLayer.id.rawValue,
-            menuBar.rootView.backingLayer.id.rawValue,
+            dock.rootView.embedderBackingLayer.id.rawValue,
+            menuBar.rootView.embedderBackingLayer.id.rawValue,
         ])
         #expect(visualContent.allSatisfy { $0.visible })
         #expect(dock.frame == Rect(x: 0, y: 0, width: 320, height: 200))
@@ -134,7 +135,7 @@ import Testing
         #expect(registry.surfaces.map(\.surfaceID) == [2])
         #expect(registry.placements().map(\.id) == [2])
         #expect(visualSink.transactions.contains { transaction in
-            transaction.removed.contains(dock.rootView.backingLayer.id)
+            transaction.removed.contains(dock.rootView.embedderBackingLayer.id)
         })
     }
 

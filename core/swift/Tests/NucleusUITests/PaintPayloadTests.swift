@@ -1,5 +1,5 @@
 import Testing
-@_spi(NucleusCompositor) import NucleusUI
+import NucleusUI
 import NucleusTypes
 
 /// The payload blob is the one format written by `GraphicsContext` and read by

@@ -39,20 +39,29 @@ public enum BlendMode: Sendable, Equatable {
 /// One view's recorded drawing. Pure data: no handles are minted while
 /// recording, so two recordings of the same drawing compare equal and the
 /// publisher's diff can suppress a redundant re-registration.
-@_spi(NucleusCompositor)
+/// One view's recorded drawing.
+///
+/// The type is public because `GraphicsContext` produces it, but its contents
+/// are `package`: reading a recording is an embedder concern. A product view
+/// authors through `GraphicsContext` and never inspects what it produced — and
+/// a product *test* that reaches for the command list is asserting on the wrong
+/// thing, which is how a bug that rendered nothing once passed a green suite.
 public struct PaintRecording: Sendable, Equatable {
-    @_spi(NucleusCompositor) public var commands: [PaintCommand] = []
-    @_spi(NucleusCompositor) public var payload: [UInt8] = []
+    package var commands: [PaintCommand] = []
+    package var payload: [UInt8] = []
     /// Text layouts referenced by `textLayoutHandle`, which during recording
     /// holds a **one-based index into this array**, not a registry handle.
     /// `PaintRegistration` resolves those indices to real handles. Minting
     /// during recording would make every recording containing text unequal to
     /// the last one and re-register the view on every publish.
-    @_spi(NucleusCompositor) public var textLayouts: [TextLayout] = []
+    package var textLayouts: [TextLayout] = []
 
-    @_spi(NucleusCompositor) public var isEmpty: Bool { commands.isEmpty }
+    package var isEmpty: Bool { commands.isEmpty }
 
-    @_spi(NucleusCompositor) public init() {}
+    package init() {}
+
+    /// Whether anything was drawn.
+    public var isEmptyDrawing: Bool { commands.isEmpty }
 }
 
 /// The drawing surface handed to `View.draw(in:)`.
@@ -76,7 +85,7 @@ public final class GraphicsContext {
     /// view's recording. Balancing here keeps a client's mistake from changing
     /// how *later* commands render. Prefer `withGraphicsState {}`, which cannot
     /// unbalance in the first place.
-    @_spi(NucleusCompositor) public var recording: PaintRecording {
+    package var recording: PaintRecording {
         guard !stack.isEmpty else { return storedRecording }
         var balanced = storedRecording
         for _ in stack { balanced.commands.append(PaintCommand(kind: .restore)) }
@@ -101,7 +110,7 @@ public final class GraphicsContext {
     /// Host-facing: product code receives a context in `View.draw(in:)` rather
     /// than constructing one. Publication paths that record outside the normal
     /// display pass construct their own.
-    @_spi(NucleusCompositor) public init() {}
+    package init() {}
 
     // MARK: - Graphics state
 

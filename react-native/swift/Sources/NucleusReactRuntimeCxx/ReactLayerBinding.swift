@@ -1,5 +1,6 @@
-@_spi(NucleusCompositor) import NucleusUI
-@_spi(NucleusCompositor) import NucleusLayers
+import NucleusUI
+import NucleusUIEmbedder
+import NucleusLayers
 
 // Binding a mounted component's drawing to its backing layer.
 //
@@ -24,18 +25,13 @@ extension ReactComponentView {
     /// uses, so there is one path rather than two vocabularies to keep in sync.
     public func commitDisplayContentIfNeeded() throws {
         view.displayIfNeeded()
-        let registered = try PaintRegistration.register(
-            view.layerContent.recording,
+        let layer = view.embedderBackingLayer
+        let registered = try registerPaint(
+            view.recordedDrawing,
             width: Float(view.bounds.size.width),
             height: Float(view.bounds.size.height),
-            in: view.backingLayer.context)
-        view.backingLayer.apply(registered.update)
-        LayerTransaction.appendAmbient(
-            .properties(layer: view.backingLayer.id, registered.update),
-            in: view.backingLayer.context)
-        // Hold the registered content and any transient text handles until the
-        // update has been applied and appended.
-        withExtendedLifetime(registered) {}
+            in: layer.context)
+        registered.bind(to: layer)
     }
 }
 

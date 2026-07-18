@@ -1,5 +1,6 @@
 import CxxStdlib
-@_spi(NucleusCompositor) import NucleusUI
+import NucleusUI
+import NucleusUIEmbedder
 import NucleusReactRuntimeCxxBridge
 import Synchronization
 import Tracy

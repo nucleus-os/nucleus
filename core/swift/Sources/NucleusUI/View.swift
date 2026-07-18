@@ -2,7 +2,7 @@
 
 @MainActor
 open class View: Responder, Accessible, ~Sendable {
-    @_spi(NucleusCompositor) public let backingLayer: Layer
+    package let backingLayer: Layer
     /// A `weak` handle to the context owning `backingLayer`'s registry, captured at
     /// init. The deinit prunes the registry through this rather than
     /// `backingLayer.context` — an `unowned` ref that traps if the context was torn
@@ -256,7 +256,7 @@ open class View: Responder, Accessible, ~Sendable {
         ViewProperties(frame: frame, isHidden: isHidden)
     }
 
-    @_spi(NucleusCompositor) public var layerContent: ViewLayerContent {
+    package var layerContent: ViewLayerContent {
         ViewLayerContent(
             recording: cachedRecording,
             presentation: layerPresentation,

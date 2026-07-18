@@ -421,6 +421,7 @@ let package = Package(
             name: "NucleusReactRuntimeCxx",
             dependencies: [
                 .product(name: "NucleusUI", package: "Nucleus"),
+                .product(name: "NucleusUIEmbedder", package: "Nucleus"),
                 .product(name: "NucleusLayers", package: "Nucleus"),
                 .product(name: "Tracy", package: "swift-tracy"),
                 .product(name: "NucleusTextCxxBridge", package: "Nucleus"),
@@ -473,6 +474,7 @@ let package = Package(
             dependencies: [
                 "NucleusReactRuntimeCxx",
                 .product(name: "NucleusUI", package: "Nucleus"),
+                .product(name: "NucleusUIEmbedder", package: "Nucleus"),
                 .product(name: "NucleusLayers", package: "Nucleus"),
                 .product(name: "NucleusTypes", package: "Nucleus"),
                 .product(name: "NucleusAppHostProtocols", package: "Nucleus"),

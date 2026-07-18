@@ -1,4 +1,5 @@
-@_spi(NucleusCompositor) import NucleusUI
+import NucleusUI
+import NucleusUIEmbedder
 
 @MainActor
 final class ShellOverlayNotificationView: View, ~Sendable {
