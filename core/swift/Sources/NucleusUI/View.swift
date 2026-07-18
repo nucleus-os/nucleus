@@ -438,6 +438,27 @@ open class View: Responder, Accessible, ~Sendable {
         set { explicitNextResponder = newValue }
     }
 
+    /// Hit-test `event.location` in this subtree and deliver the event to the
+    /// view found, then up its responder chain. The location is rebased into
+    /// each view's own coordinates on the way down.
+    ///
+    /// This is single-tree dispatch with no pointer capture. `WindowScene`
+    /// dispatch adds capture and enter/exit tracking, which need scene-wide
+    /// state; a view alone cannot know the pointer left it for a sibling.
+    @discardableResult
+    public func dispatchEvent(_ event: Event) -> EventHandling {
+        guard let target = hitTest(event.location) else { return .notHandled }
+        var origin = Point(x: 0, y: 0)
+        var node: View? = target
+        while let current = node, current !== self {
+            origin = Point(
+                x: origin.x + current.frame.origin.x,
+                y: origin.y + current.frame.origin.y)
+            node = current.parentView
+        }
+        return target.deliverEvent(event.offsetting(by: origin))
+    }
+
     open func hitTest(_ point: Point) -> View? {
         guard !isHidden else {
             return nil

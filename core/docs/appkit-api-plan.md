@@ -143,7 +143,7 @@ only by a hypothetical future client.
 | 5 | GraphicsContext and the vocabulary collapse | **complete** |
 | 6 | Retire the RN committer | **complete** |
 | 7 | Publication, and privilege as a module boundary | **complete** |
-| 8 | Event vocabulary and responder wiring | pending |
+| 8 | Event vocabulary and responder wiring | **partial** |
 | 9 | Layout: measure/arrange and flex | pending |
 | 10 | TextField and input-method foundation | pending |
 | 11 | ScrollView, the interaction capstone | pending |
@@ -507,42 +507,53 @@ the product target itself depends on `NucleusUI` alone, and the check enforces t
 product test should be able to verify what a view drew without reaching into the embedder tier.
 That seam should be designed when there is more product code to inform its shape.
 
-## Phase 8 — Event vocabulary and responder wiring
+## Phase 8 — Event vocabulary and responder wiring — complete
 
-The narrow waist is `Action.swift` — 29 lines. Everything above it is already AppKit-shaped
-and everything below it is built but unreachable.
+`Event` was four fields and three types; it is now an NSEvent-shaped record carrying modifier
+flags, click count, scroll deltas with a precise-device flag, key code, composed characters,
+repeat state, and touch identity, across 15 event types. `core/` still resolves no compositor
+or shell dependency: `PointerButton` and `KeyCode` are platform-neutral, and adapters translate.
 
-`WireEventKind` (`compositor-core/Sources/NucleusCompositorServerTypes/ServerTypes.swift:16`)
-is NSEvent in all but name — 24 cases including `leftMouseDown`, `mouseMoved`, `keyDown`,
-`flagsChanged`, `scrollWheel`, and touch. `WireEventRecord` (`:314`) is CGEvent-shaped
-(`kind, flags, timestampNs, x, y, data0…data3`). NucleusUI discards most of it, while the
-out-of-process shell needs the same normalized vocabulary from Wayland client callbacks.
+**Routing is two paths, as in AppKit.** Keyboard-like events go to the key window's first
+responder and up its chain, ignoring the pointer entirely; pointer events hit-test and then
+traverse that view's chain, with locations rebased into each view's own coordinates.
+`makeFirstResponder` honours both sides' refusals — an outgoing responder can decline to resign
+and an incoming one can decline to accept.
 
-`core/` deliberately resolves no compositor or shell dependency. NucleusUI defines the
-platform-neutral event; compositor and shell adapters translate into it.
+**A press captures.** `WindowScene` holds the capture, so a release reaching the pressed view is
+guaranteed even after the pointer has left it. That is what makes drag-cancel expressible at all:
+without it a control cannot distinguish "released on me" from "released somewhere else".
+Enter/exit fire as the pointer crosses view boundaries.
 
-- `Event` becomes a tagged record carrying kind, modifier flags, location, timestamp, button,
-  click count, scroll deltas, key code, characters, and touch payload as applicable.
-- `EventType` grows pointer down/up/moved/dragged/entered/exited, scroll wheel, key
-  down/up, flags changed, and touch events.
-- Wire `firstResponder` and `isKeyWindow`. Keyboard events route key-window → first
-  responder; pointer events hit-test and then traverse the responder chain.
-- Add `becomeFirstResponder`, `resignFirstResponder`, `acceptsFirstResponder`, and explicit
-  pointer capture.
-- `Control` gains pointer-exit and drag-cancel behavior.
-- Produce characters with XKB UTF-8 and compose state instead of reducing keyboard input to a
-  keysym.
-- Add key repeat at the NucleusUI host boundary.
-- Add both adapters now: compositor wire events → NucleusUI events, and shell Wayland
-  keyboard/pointer/touch callbacks → NucleusUI events.
+`Control` gained the full tracking contract: only the primary button presses, dragging off
+un-highlights while keeping the press latched so dragging back re-arms, and releasing outside
+cancels rather than fires. Previously the latch cleared on any release wherever it landed, so
+dragging off a button and letting go still triggered it.
 
-Files: `NucleusUI/{Action,Responder,Control,Window,WindowScene}.swift`;
-`NucleusCompositorOverlay/ShellOverlay/{ShellOverlayTypes,ShellOverlayScene}.swift`;
-`compositor-core/.../InputXkb.swift`; `NucleusShellWayland/`; `NucleusShellRuntime/`.
+**`EventDispatcher` is deleted.** Adding scene dispatch would have left two dispatch paths, so
+the old one folded into `View.dispatchEvent` — single-tree hit-test-and-deliver, with capture and
+tracking staying at the scene where the necessary state lives.
 
-**Lands with:** the overlay's raw menu-key switch, private pointer-button capture, and
-left-click-only filter deleted; the native shell routes real pointer, keyboard, modifier, and
-scroll input through the same responder semantics.
+**The overlay's raw key switch is gone.** `handleMenuKey` was a switch over hardcoded evdev
+integers reached because the input path noticed a menu was open. `ShellOverlayMenuView` now
+implements `handleEvent` and receives keys *because it holds focus*; it owns highlight movement
+and delegates the outcomes it cannot carry out — dismiss, ascend, descend, activate — to the
+scene that owns the level stack. `capturedPointerButtons` and the `button != 272` filter are
+deleted with it: scene capture replaces the first, and right- and middle-clicks now reach views
+for the first time.
+
+`XkbKeyboard.keyGetText` produces composed UTF-8 through XKB, rejecting control characters so a
+Return or Escape does not insert one into a field. The dead `keyGetOneSym` it supersedes had no
+callers.
+
+**Landed with:** `handleMenuKey`, `capturedPointerButtons`, the left-click-only filter, and
+`EventDispatcher` all deleted; 15 dispatch tests plus 3 new control-tracking tests.
+
+**Deferred, and named honestly:** the shell's Wayland adapter and key repeat. The compositor
+adapter is in place and the vocabulary it targets is settled, but the shell's pointer/keyboard
+callbacks still need routing into it, and `ShellOverlayInputEvent.text` is threaded but not yet
+populated — that requires carrying composed text through the compositor's wire `InputEvent`.
+Phase 10 needs both for text input and is where they belong.
 
 ## Phase 9 — Layout: measure/arrange and flex
 
@@ -679,10 +690,12 @@ Tests assert **runtime behavior and contracts, never source-code shape** — no 
   Publication ordering
   is asserted through the resulting id sequence rather than a content-kind discriminant. Product
   tests observe rendered output or public view state rather than recordings.
-- **Phase 8**: dispatch tests for key routing (key-window → first responder), scroll, pointer
-  enter/exit, drag-cancel, and capture. The overlay menu behaves identically with
-  `handleMenuKey` deleted, and the shell adapter routes the same event vocabulary into a
-  native window.
+- **Phase 8** — done for the framework and the compositor: 15 dispatch tests cover key routing
+  (key-window → first responder), chain climb, first-responder refusal, view-local coordinates,
+  capture, enter/exit, and scroll; 3 control tests cover press-release, release-outside cancel,
+  and secondary-button rejection. The overlay menu behaves identically with `handleMenuKey`
+  deleted. **Outstanding:** the shell's Wayland adapter and key repeat, and populating
+  `ShellOverlayInputEvent.text` from `XkbKeyboard.keyGetText` through the wire `InputEvent`.
 - **Phase 9**: extend `LayoutTests.swift` with measure/arrange under constraints, flex
   distribution, and text-wrap-participates-in-layout. **Add the missing test that would have
   caught the coordinate bug: lay out a `StackView` at a non-zero origin and hit-test a point

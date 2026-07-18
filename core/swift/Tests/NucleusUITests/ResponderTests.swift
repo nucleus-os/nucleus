@@ -41,7 +41,7 @@ import Testing
         child.frame = (Rect(x: 0, y: 0, width: 50, height: 50))
         root.addSubview(child)
 
-        let result = EventDispatcher.dispatch(Event(type: .pointerDown, location: Point(x: 10, y: 10)), from: root)
+        let result = root.dispatchEvent(Event(type: .pointerDown, location: Point(x: 10, y: 10)))
 
         #expect(result == .handled)
         #expect(child.events.count == 1)
@@ -56,7 +56,7 @@ import Testing
         child.frame = (Rect(x: 0, y: 0, width: 50, height: 50))
         root.addSubview(child)
 
-        let result = EventDispatcher.dispatch(Event(type: .pointerDown, location: Point(x: 10, y: 10)), from: root)
+        let result = root.dispatchEvent(Event(type: .pointerDown, location: Point(x: 10, y: 10)))
 
         #expect(result == .handled)
         #expect(child.events.count == 1)
@@ -109,7 +109,7 @@ import Testing
 
         root.frame = (Rect(x: 0, y: 0, width: 100, height: 100))
 
-        let result = EventDispatcher.dispatch(Event(type: .pointerDown, location: Point(x: 200, y: 200)), from: root)
+        let result = root.dispatchEvent(Event(type: .pointerDown, location: Point(x: 200, y: 200)))
 
         #expect(result == .notHandled)
         #expect(root.events.count == 0)
@@ -138,10 +138,70 @@ import Testing
             pressed += 1
         }
 
-        let result = EventDispatcher.dispatch(Event(type: .pointerUp, location: Point(x: 10, y: 10)), from: button)
+        // A press then a release inside the button. The press has to happen:
+        // a release with no press is a stray event, not a click.
+        _ = button.dispatchEvent(
+            Event(type: .pointerDown, location: Point(x: 10, y: 10)))
+        let result = button.dispatchEvent(
+            Event(type: .pointerUp, location: Point(x: 10, y: 10)))
 
         #expect(result == .handled)
         #expect(pressed == 1)
+    }
+
+    @Test func aReleaseWithoutAPressDoesNotFire() throws {
+        let button = Button(title: "OK")
+        var pressed = 0
+        button.frame = Rect(x: 0, y: 0, width: 80, height: 30)
+        button.onPress { _ in pressed += 1 }
+
+        _ = button.dispatchEvent(
+            Event(type: .pointerUp, location: Point(x: 10, y: 10)))
+        #expect(pressed == 0)
+    }
+
+    /// Releasing outside the button cancels rather than fires. Previously the
+    /// press latch cleared on any release wherever it landed, so dragging off a
+    /// button and letting go still triggered it.
+    ///
+    /// Dispatched through a scene rather than the view: only scene dispatch
+    /// holds a pointer capture, and without capture the outside release never
+    /// reaches the button to be cancelled at all.
+    @Test func releasingOutsideTheButtonCancels() throws {
+        let root = View()
+        root.frame = Rect(x: 0, y: 0, width: 300, height: 300)
+        let button = Button(title: "OK")
+        button.frame = Rect(x: 0, y: 0, width: 80, height: 30)
+        var pressed = 0
+        button.onPress { _ in pressed += 1 }
+        root.addSubview(button)
+
+        let window = Window(title: "Tracking")
+        window.setContentView(root)
+        window.orderFront()
+        let scene = WindowScene(windows: [window])
+
+        _ = scene.dispatchEvent(Event(type: .pointerDown, location: Point(x: 10, y: 10)))
+        #expect(button.isPressed)
+        _ = scene.dispatchEvent(Event(type: .pointerUp, location: Point(x: 200, y: 200)))
+
+        #expect(pressed == 0, "released outside: cancelled")
+        #expect(!button.isPressed, "the latch cleared")
+    }
+
+    /// A right-click must not fire the primary action; it should be free to
+    /// reach a context menu instead.
+    @Test func aSecondaryButtonPressDoesNotFire() throws {
+        let button = Button(title: "OK")
+        var pressed = 0
+        button.frame = Rect(x: 0, y: 0, width: 80, height: 30)
+        button.onPress { _ in pressed += 1 }
+
+        _ = button.dispatchEvent(
+            Event(type: .pointerDown, location: Point(x: 10, y: 10), button: .right))
+        _ = button.dispatchEvent(
+            Event(type: .pointerUp, location: Point(x: 10, y: 10), button: .right))
+        #expect(pressed == 0)
     }
 
     @Test func disabledButtonDoesNotHandlePress() throws {
@@ -154,7 +214,7 @@ import Testing
         }
         button.isEnabled = false
 
-        let result = EventDispatcher.dispatch(Event(type: .pointerUp, location: Point(x: 10, y: 10)), from: button)
+        let result = button.dispatchEvent(Event(type: .pointerUp, location: Point(x: 10, y: 10)))
 
         #expect(result == .notHandled)
         #expect(!pressed)

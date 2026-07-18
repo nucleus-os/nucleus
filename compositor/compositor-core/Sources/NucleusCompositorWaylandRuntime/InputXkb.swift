@@ -175,6 +175,33 @@ final class XkbKeyboard {
         xkb_state_key_get_one_sym(state, xkbKeycode)
     }
 
+    /// The composed UTF-8 text this key produces in the current layout and
+    /// modifier state, or nil if it produces none (a modifier, an arrow key).
+    ///
+    /// This is what `Event.characters` carries. A keysym cannot stand in for
+    /// it: the same physical key yields different text under a different
+    /// layout, and dead-key sequences produce text on a *later* press than the
+    /// one that started them.
+    func keyGetText(xkbKeycode: UInt32) -> String? {
+        // Ask for the size first; xkb writes a NUL-terminated string and
+        // returns the length excluding it.
+        let needed = xkb_state_key_get_utf8(state, xkbKeycode, nil, 0)
+        guard needed > 0 else { return nil }
+        var buffer = [CChar](repeating: 0, count: Int(needed) + 1)
+        _ = buffer.withUnsafeMutableBufferPointer { out in
+            xkb_state_key_get_utf8(state, xkbKeycode, out.baseAddress, out.count)
+        }
+        let text = String(decoding: buffer.prefix(Int(needed)).map { UInt8(bitPattern: $0) },
+                          as: UTF8.self)
+        // Control characters are key *actions*, not text: Return, Escape, and
+        // Backspace all produce one, and inserting it would put a control
+        // character into a text field.
+        guard let scalar = text.unicodeScalars.first,
+              text.unicodeScalars.count > 1 || !(scalar.value < 0x20 || scalar.value == 0x7F)
+        else { return nil }
+        return text
+    }
+
     // MARK: - helpers
 
     private func modActive(_ name: String, locked: Bool) -> Bool {

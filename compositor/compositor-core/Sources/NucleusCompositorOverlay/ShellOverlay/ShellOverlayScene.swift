@@ -55,7 +55,6 @@ public final class ShellOverlayScene: ~Sendable {
     private let notificationClosed: @MainActor (UInt32, UInt32) -> Void
     private let windowScene: WindowScene
     private let clockNs: @MainActor () -> UInt64
-    private var capturedPointerButtons: Set<UInt32> = []
 
     package var notifications: [ShellOverlayNotificationInfo] {
         notificationRecords.map(\.info)
@@ -356,12 +355,39 @@ public final class ShellOverlayScene: ~Sendable {
         view.frame = frameRect
         container.addSubview(view)
         view.layoutIfNeeded()
+        let level = menuLevels.count
+        // The scene owns the level stack, so the menu delegates the outcomes it
+        // cannot carry out itself and keeps only highlight movement.
+        view.onDismiss = { [weak self] in
+            guard let self else { return }
+            if level > 0 { popMenuLevels(toDepth: level) } else { _ = dismissMenu() }
+        }
+        view.onAscend = { [weak self] in
+            guard let self, level > 0 else { return }
+            popMenuLevels(toDepth: level)
+        }
+        view.onDescend = { [weak self] in
+            self?.openHighlightedSubmenu(atLevel: level)
+        }
+        view.onActivateHighlighted = { [weak self] in
+            self?.activateHighlightedRow(atLevel: level)
+        }
         menuLevels.append(MenuLevel(view: view, frame: frameRect, parentActionID: parentActionID))
+        // The deepest open menu takes keyboard focus, so key events reach it
+        // because it *has* focus rather than because the input path noticed a
+        // menu was open.
+        windowScene.makeKey(menuWindow)
+        menuWindow.makeFirstResponder(view)
         return true
     }
 
     /// Close every panel deeper than `depth`, removing each from the container.
     private func popMenuLevels(toDepth depth: Int) {
+        defer {
+            // Focus follows the stack back down; with no levels left the menu
+            // window holds no first responder at all.
+            menuWindow.makeFirstResponder(menuLevels.last?.view)
+        }
         while menuLevels.count > depth {
             let level = menuLevels.removeLast()
             level.view.removeFromSuperview()
@@ -418,47 +444,21 @@ public final class ShellOverlayScene: ~Sendable {
     /// activate a leaf, Left/Escape close the top panel (Escape at the root
     /// dismisses). Other keys are swallowed so the client beneath stays frozen.
     /// Keycodes are evdev, the value the seat delivers.
-    private func handleMenuKey(_ keycode: UInt32) -> ShellOverlayInputResult {
-        guard let topIndex = menuLevels.indices.last else {
-            return .init(consumed: true, wantsFrame: false, cursor: .default)
+    /// Activate the highlighted row of the level at `index`: descend if it has
+    /// a submenu, otherwise fire its action and dismiss.
+    private func activateHighlightedRow(atLevel index: Int) {
+        guard index < menuLevels.count else { return }
+        let top = menuLevels[index]
+        guard let rowIndex = top.view.highlightedRowIndex,
+              let item = top.view.item(at: rowIndex) else { return }
+        if let submenu = item.submenu, !submenu.isEmpty {
+            openHighlightedSubmenu(atLevel: index)
+            return
         }
-        let top = menuLevels[topIndex]
-        switch keycode {
-        case 1: // KEY_ESC
-            if topIndex > 0 {
-                popMenuLevels(toDepth: topIndex)
-                return .init(consumed: true, wantsFrame: true, cursor: .default)
-            }
-            let changed = dismissMenu()
-            return .init(consumed: true, wantsFrame: changed, cursor: .default)
-        case 103: // KEY_UP
-            top.view.moveHighlight(by: -1)
-            return .init(consumed: true, wantsFrame: true, cursor: .default)
-        case 108: // KEY_DOWN
-            top.view.moveHighlight(by: 1)
-            return .init(consumed: true, wantsFrame: true, cursor: .default)
-        case 106: // KEY_RIGHT — descend into the highlighted row's submenu
-            openHighlightedSubmenu(atLevel: topIndex)
-            return .init(consumed: true, wantsFrame: true, cursor: .default)
-        case 105: // KEY_LEFT — close the top submenu (back to its parent)
-            if topIndex > 0 { popMenuLevels(toDepth: topIndex) }
-            return .init(consumed: true, wantsFrame: true, cursor: .default)
-        case 28, 96, 57: // KEY_ENTER, KEY_KPENTER, KEY_SPACE
-            if let idx = top.view.highlightedRowIndex, let item = top.view.item(at: idx) {
-                if let submenu = item.submenu, !submenu.isEmpty {
-                    openHighlightedSubmenu(atLevel: topIndex)
-                    return .init(consumed: true, wantsFrame: true, cursor: .default)
-                }
-                let handler = menuSelectHandler
-                let actionID = item.actionID
-                _ = dismissMenu()
-                handler?(actionID)
-                return .init(consumed: true, wantsFrame: true, cursor: .default)
-            }
-            return .init(consumed: true, wantsFrame: false, cursor: .default)
-        default:
-            return .init(consumed: true, wantsFrame: false, cursor: .default)
-        }
+        let handler = menuSelectHandler
+        let actionID = item.actionID
+        _ = dismissMenu()
+        handler?(actionID)
     }
 
     package var menuVisible: Bool { !menuLevels.isEmpty }
@@ -527,7 +527,11 @@ public final class ShellOverlayScene: ~Sendable {
                 }
                 return .init(consumed: true, wantsFrame: false, cursor: .pointer)
             case .keyDown:
-                return handleMenuKey(pointEvent.keycode)
+                guard let keyEvent = pointEvent.nucleonEvent else {
+                    return .init(consumed: true, wantsFrame: false, cursor: .default)
+                }
+                let handled = windowScene.dispatchEvent(keyEvent) == .handled
+                return .init(consumed: true, wantsFrame: handled, cursor: .default)
             default:
                 return .init(consumed: true, wantsFrame: false, cursor: hit != nil ? .pointer : .default)
             }
@@ -537,35 +541,20 @@ public final class ShellOverlayScene: ~Sendable {
             return .init(consumed: false, wantsFrame: false, cursor: cursor)
         }
 
-        if (pointEvent.kind == .pointerDown || pointEvent.kind == .pointerUp) && pointEvent.button != 272 {
-            return .init(consumed: false, wantsFrame: false, cursor: cursor)
-        }
-
         guard let nucleonEvent = pointEvent.nucleonEvent else {
             return .init(consumed: false, wantsFrame: false, cursor: cursor)
         }
 
-        let targetWindow = windowScene.hitTestWindow(at: pointEvent.location)
-        let handled = targetWindow.map { $0.dispatchEvent(nucleonEvent) } == .handled
+        // Scene dispatch holds the pointer capture now, so a press and its
+        // release reach the same view without the overlay tracking buttons
+        // itself. Right- and middle-clicks reach views for the first time; the
+        // old path filtered everything but BTN_LEFT before dispatch.
+        let handled = windowScene.dispatchEvent(nucleonEvent) == .handled
         if handled {
-            if pointEvent.kind == .pointerDown {
-                capturedPointerButtons.insert(pointEvent.button)
-            } else if pointEvent.kind == .pointerUp {
-                capturedPointerButtons.remove(pointEvent.button)
-            }
-            return .init(
-                consumed: true,
-                wantsFrame: true,
-                cursor: cursor
-            )
+            return .init(consumed: true, wantsFrame: true, cursor: cursor)
         }
 
-        if pointEvent.kind == .pointerUp && capturedPointerButtons.remove(pointEvent.button) != nil {
-            return .init(consumed: true, wantsFrame: false, cursor: cursor)
-        }
-
-        if hotkeyVisible && pointEvent.kind == .pointerDown && pointEvent.button == 272 {
-            capturedPointerButtons.insert(pointEvent.button)
+        if hotkeyVisible, pointEvent.kind == .pointerDown, nucleonEvent.button == .left {
             let changed = setHotkeyVisible(false)
             return .init(consumed: true, wantsFrame: changed, cursor: cursor)
         }

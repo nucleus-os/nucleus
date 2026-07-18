@@ -72,7 +72,9 @@ open class Window: Responder, ~Sendable {
     public private(set) var contentViewController: ViewController?
     public private(set) var isVisible: Bool
     public private(set) var isKeyWindow: Bool
-    public var firstResponder: Responder?
+    /// The responder keyboard events route to. Set through
+    /// `makeFirstResponder(_:)` so both sides get their lifecycle callbacks.
+    public private(set) var firstResponder: Responder?
 
     public init(
         title: String = "",
@@ -143,7 +145,7 @@ open class Window: Responder, ~Sendable {
         } else {
             syncContentViewFrame()
         }
-        if firstResponder == nil {
+        if firstResponder == nil, view.acceptsFirstResponder {
             firstResponder = view
         }
         LayerTransaction.appendAmbient(
@@ -215,11 +217,13 @@ open class Window: Responder, ~Sendable {
         windowScene?.makeKey(self) ?? setKey(true)
     }
 
+    /// Route an event within this window: keyboard-like events to the first
+    /// responder, pointer events by hit test.
+    @discardableResult
     public func dispatchEvent(_ event: Event) -> EventHandling {
-        guard let rootView else {
-            return .notHandled
-        }
-        return EventDispatcher.dispatch(event, from: rootView)
+        if event.isKeyEvent { return deliverKeyEvent(event) }
+        guard let rootView else { return .notHandled }
+        return rootView.dispatchEvent(event)
     }
 
     open override var nextResponder: Responder? {
@@ -237,6 +241,42 @@ open class Window: Responder, ~Sendable {
         } else {
             setOrderedOut()
         }
+    }
+
+    // MARK: - First responder
+
+    /// Move keyboard focus to `responder`, honouring both sides' refusals.
+    ///
+    /// Returns whether focus moved. Mirrors `NSWindow.makeFirstResponder(_:)`:
+    /// the outgoing responder may refuse to resign (a field with invalid
+    /// content), and the incoming one may refuse to accept.
+    @discardableResult
+    public func makeFirstResponder(_ responder: Responder?) -> Bool {
+        if firstResponder === responder { return true }
+        if let current = firstResponder, !current.resignFirstResponder() {
+            return false
+        }
+        guard let responder else {
+            firstResponder = nil
+            return true
+        }
+        guard responder.becomeFirstResponder() else {
+            // The outgoing responder already resigned, so focus lands nowhere
+            // rather than silently staying put — otherwise a refused move would
+            // leave a resigned responder still receiving keys.
+            firstResponder = nil
+            return false
+        }
+        firstResponder = responder
+        return true
+    }
+
+    /// Route a key event to the first responder and up its chain. Returns
+    /// whether anything handled it.
+    @discardableResult
+    package func deliverKeyEvent(_ event: Event) -> EventHandling {
+        guard let firstResponder else { return .notHandled }
+        return firstResponder.deliverEvent(event)
     }
 
     package func setKey(_ key: Bool) {

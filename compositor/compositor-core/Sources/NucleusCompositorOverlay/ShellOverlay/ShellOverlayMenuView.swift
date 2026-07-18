@@ -235,6 +235,45 @@ final class ShellOverlayMenuView: View, ~Sendable {
     /// Move the keyboard selection by `delta` (−1 up, +1 down), skipping disabled
     /// rows and wrapping at the ends (the macOS menu behavior). With no current
     /// selection it lands on the first enabled row going down, the last going up.
+    // MARK: - Keyboard
+
+    /// Semantic outcomes the menu cannot carry out itself: it owns highlight
+    /// movement, but dismissing, descending into a submenu, and activating a
+    /// row all belong to the scene that owns the level stack.
+    var onDismiss: (() -> Void)?
+    var onAscend: (() -> Void)?
+    var onDescend: (() -> Void)?
+    var onActivateHighlighted: (() -> Void)?
+
+    override var acceptsFirstResponder: Bool { true }
+
+    /// Menu keyboard navigation, as a first-responder implementation.
+    ///
+    /// This replaces a switch over hardcoded evdev integers in the scene's
+    /// input path. Two things changed: the keys are named rather than numbered,
+    /// and the menu is asked *because it has focus* rather than because the
+    /// scene noticed a menu was open.
+    override func handleEvent(_ event: Event) -> EventHandling {
+        guard event.type == .keyDown else { return .notHandled }
+        switch event.keyCode {
+        case .upArrow:
+            moveHighlight(by: -1)
+        case .downArrow:
+            moveHighlight(by: 1)
+        case .rightArrow:
+            onDescend?()
+        case .leftArrow:
+            onAscend?()
+        case .escape:
+            onDismiss?()
+        case .return, .space:
+            onActivateHighlighted?()
+        default:
+            return .notHandled
+        }
+        return .handled
+    }
+
     func moveHighlight(by delta: Int) {
         let enabled = rowViews.indices.filter { rowViews[$0].isEnabled }
         guard !enabled.isEmpty else { return }

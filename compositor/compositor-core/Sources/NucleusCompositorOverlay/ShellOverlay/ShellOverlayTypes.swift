@@ -71,6 +71,9 @@ public struct ShellOverlayInputEvent: Sendable, Equatable {
     public var scrollY: Float
     public var keycode: UInt32
     public var modifiers: UInt32
+    /// Composed text for a key event, produced by XKB with compose state — not
+    /// derived from `keycode`, which cannot account for layout or dead keys.
+    public var text: String?
     public var timestampNanoseconds: UInt64
 
     public init(_ event: NucleusCompositorOverlayTypes.InputEvent) {
@@ -81,6 +84,7 @@ public struct ShellOverlayInputEvent: Sendable, Equatable {
         scrollY = event.scrollY
         keycode = event.keycode
         modifiers = event.modifiers
+        text = nil
         timestampNanoseconds = event.timestampNs
     }
 
@@ -92,15 +96,96 @@ public struct ShellOverlayInputEvent: Sendable, Equatable {
         return copy
     }
 
+    /// Translate a compositor input event into NucleusUI's platform-neutral
+    /// vocabulary.
+    ///
+    /// This is the adapter the tier split calls for: `core/` resolves no
+    /// compositor dependency, so evdev button and key codes are mapped here
+    /// rather than leaking into the UI framework. It used to narrow six kinds
+    /// to two and drop the keycode and modifiers entirely.
     public var nucleonEvent: Event? {
+        let modifiers = nucleonModifiers
         switch kind {
         case .pointerDown:
-            Event(type: .pointerDown, button: button, location: location, timestampNanoseconds: timestampNanoseconds)
+            return Event(
+                type: .pointerDown, modifierFlags: modifiers, location: location,
+                timestampNanoseconds: timestampNanoseconds,
+                button: Self.nucleonButton(button), clickCount: 1)
         case .pointerUp:
-            Event(type: .pointerUp, button: button, location: location, timestampNanoseconds: timestampNanoseconds)
-        case .pointerMove, .scroll, .keyDown, .keyUp:
-            nil
+            return Event(
+                type: .pointerUp, modifierFlags: modifiers, location: location,
+                timestampNanoseconds: timestampNanoseconds,
+                button: Self.nucleonButton(button), clickCount: 1)
+        case .pointerMove:
+            return Event(
+                type: .pointerMoved, modifierFlags: modifiers, location: location,
+                timestampNanoseconds: timestampNanoseconds)
+        case .scroll:
+            return Event(
+                type: .scrollWheel, modifierFlags: modifiers, location: location,
+                timestampNanoseconds: timestampNanoseconds,
+                scrollDeltaX: Double(scrollX), scrollDeltaY: Double(scrollY),
+                hasPreciseScrollingDeltas: true)
+        case .keyDown:
+            return Event(
+                type: .keyDown, modifierFlags: modifiers, location: location,
+                timestampNanoseconds: timestampNanoseconds,
+                keyCode: Self.nucleonKeyCode(keycode), characters: text)
+        case .keyUp:
+            return Event(
+                type: .keyUp, modifierFlags: modifiers, location: location,
+                timestampNanoseconds: timestampNanoseconds,
+                keyCode: Self.nucleonKeyCode(keycode), characters: text)
         }
+    }
+
+    /// evdev `BTN_*` codes to platform-neutral buttons.
+    static func nucleonButton(_ code: UInt32) -> PointerButton {
+        switch code {
+        case 272: .left     // BTN_LEFT
+        case 273: .right    // BTN_RIGHT
+        case 274: .middle   // BTN_MIDDLE
+        case 275: .back     // BTN_SIDE
+        case 276: .forward  // BTN_EXTRA
+        default: PointerButton(rawValue: code)
+        }
+    }
+
+    /// evdev `KEY_*` codes to platform-neutral key codes. Only the keys the
+    /// framework names are mapped; anything else keeps its platform value so a
+    /// client that knows better can still read it, but must not assume a
+    /// meaning the framework has not defined.
+    static func nucleonKeyCode(_ code: UInt32) -> KeyCode {
+        switch code {
+        case 1: .escape
+        case 14: .delete        // KEY_BACKSPACE
+        case 15: .tab
+        case 28, 96: .return    // KEY_ENTER, KEY_KPENTER
+        case 57: .space
+        case 102: .home
+        case 103: .upArrow
+        case 104: .pageUp
+        case 105: .leftArrow
+        case 106: .rightArrow
+        case 107: .end
+        case 108: .downArrow
+        case 109: .pageDown
+        case 111: .forwardDelete
+        default: KeyCode(rawValue: code)
+        }
+    }
+
+    /// The compositor packs modifier state as XKB-style bits; `EventFlagBit`
+    /// already mirrors CGEventFlags positions, so this maps those onto the
+    /// framework's flags.
+    var nucleonModifiers: EventModifierFlags {
+        var flags: EventModifierFlags = []
+        if modifiers & (1 << 17) != 0 { flags.insert(.shift) }
+        if modifiers & (1 << 18) != 0 { flags.insert(.control) }
+        if modifiers & (1 << 19) != 0 { flags.insert(.option) }
+        if modifiers & (1 << 20) != 0 { flags.insert(.command) }
+        if modifiers & (1 << 16) != 0 { flags.insert(.capsLock) }
+        return flags
     }
 }
 

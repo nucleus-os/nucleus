@@ -12,17 +12,17 @@ import Testing
             callCount += 1
             #expect(event == Event(
                 type: .pointerDown,
-                button: 2,
                 location: Point(x: 10, y: 20),
-                timestampNanoseconds: 123
+                timestampNanoseconds: 123,
+                button: .middle
             ))
         }
 
         let handled = view.performAction(action, event: Event(
             type: .pointerDown,
-            button: 2,
             location: Point(x: 10, y: 20),
-            timestampNanoseconds: 123
+            timestampNanoseconds: 123,
+            button: .middle
         ))
         #expect(handled)
         #expect(callCount == 1)

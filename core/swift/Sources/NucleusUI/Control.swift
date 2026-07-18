@@ -39,15 +39,56 @@ open class Control: View, ~Sendable {
 
         switch event.type {
         case .pointerDown:
+            // Only the primary button presses a control; a right-click should
+            // reach a context menu, not fire the action.
+            guard event.button == .left else { return .notHandled }
             isPressed = true
             isHighlighted = true
             return .handled
+
+        case .pointerDragged:
+            // Dragging off a pressed control un-highlights it but keeps the
+            // press latched, so dragging back in re-arms it. This is the
+            // AppKit/UIKit tracking contract, and it is why a press cannot be
+            // cancelled just by leaving.
+            guard isPressed else { return .notHandled }
+            isHighlighted = contains(event.location)
+            return .handled
+
+        case .pointerExited:
+            guard isPressed else { return .notHandled }
+            isHighlighted = false
+            return .handled
+
+        case .pointerEntered:
+            guard isPressed else { return .notHandled }
+            isHighlighted = true
+            return .handled
+
         case .pointerUp:
+            guard event.button == .left, isPressed else { return .notHandled }
+            let wasInside = contains(event.location)
             isPressed = false
             isHighlighted = false
+            // Releasing outside cancels rather than fires. Previously the latch
+            // cleared on any release wherever it landed, so dragging off a
+            // button and letting go still triggered it.
+            guard wasInside else { return .handled }
             return sendAction(.primary, event: event)
+
         case .action:
             return sendAction(.primary, event: event)
+
+        case .pointerMoved, .scrollWheel,
+             .keyDown, .keyUp, .flagsChanged,
+             .touchDown, .touchMoved, .touchUp, .touchCancelled:
+            return .notHandled
         }
+    }
+
+    /// Whether a view-local point lies inside this control.
+    private func contains(_ point: Point) -> Bool {
+        point.x >= 0 && point.y >= 0
+            && point.x < bounds.size.width && point.y < bounds.size.height
     }
 }

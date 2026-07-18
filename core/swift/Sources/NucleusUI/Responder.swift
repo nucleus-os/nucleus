@@ -18,6 +18,36 @@ open class Responder: ~Sendable {
         return .notHandled
     }
 
+    // MARK: - First responder
+
+    /// Whether this responder will accept keyboard focus. Mirrors
+    /// `NSResponder.acceptsFirstResponder`; `false` by default, so a plain view
+    /// is not focusable until it opts in.
+    open var acceptsFirstResponder: Bool { false }
+
+    /// Called when this responder is about to become first responder. Return
+    /// `false` to refuse. Mirrors `NSResponder.becomeFirstResponder()`.
+    @discardableResult
+    open func becomeFirstResponder() -> Bool { acceptsFirstResponder }
+
+    /// Called when this responder is about to lose first-responder status.
+    /// Return `false` to refuse to give it up.
+    @discardableResult
+    open func resignFirstResponder() -> Bool { true }
+
+    /// Deliver `event` to this responder, then up the chain until one handles
+    /// it. The routing counterpart to `performAction`: that walks the chain for
+    /// a *semantic action*, this walks it for a *raw event*.
+    @discardableResult
+    public func deliverEvent(_ event: Event) -> EventHandling {
+        var current: Responder? = self
+        while let responder = current {
+            if responder.handleEvent(event) == .handled { return .handled }
+            current = responder.nextResponder
+        }
+        return .notHandled
+    }
+
     /// Invoke `action` on this responder alone. Returns whether a handler was
     /// registered. Mirrors `NSResponder.tryToPerform(_:with:)`.
     open func tryToPerform(_ action: ActionID, event: Event) -> Bool {
@@ -56,22 +86,4 @@ open class Responder: ~Sendable {
 public enum EventHandling: Sendable, Equatable {
     case handled
     case notHandled
-}
-
-@MainActor
-public enum EventDispatcher {
-    public static func dispatch(_ event: Event, from root: View) -> EventHandling {
-        guard let target = root.hitTest(event.location) else {
-            return .notHandled
-        }
-        var current: Responder? = target
-        while let responder = current {
-            let result = responder.handleEvent(event)
-            if result == .handled {
-                return .handled
-            }
-            current = responder.nextResponder
-        }
-        return .notHandled
-    }
 }

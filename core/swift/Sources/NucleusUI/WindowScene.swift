@@ -20,6 +20,12 @@ public final class WindowScene: ~Sendable {
     public private(set) var windows: [Window] = []
     public private(set) var keyWindow: Window?
 
+    /// The view a press latched onto, if any. Drags and the release go here
+    /// regardless of where the pointer currently is.
+    private var pointerCapture: WindowHitTestResult?
+    /// The view the pointer is currently over, for enter/exit.
+    private weak var trackedView: View?
+
     public init(
         windows: [Window] = []
     ) {
@@ -175,6 +181,78 @@ public final class WindowScene: ~Sendable {
             return content
         }
         return PublishedScene(visualContent: visualContent)
+    }
+
+    // MARK: - Event dispatch
+
+    /// Route an event into the scene and return whether anything handled it.
+    ///
+    /// Two routes, as in AppKit. Keyboard-like events go to the key window's
+    /// first responder and up its chain, ignoring the pointer entirely. Pointer
+    /// events hit-test to a view and then traverse *that* view's chain. A
+    /// capture, if one is active, overrides the hit test so a drag that leaves
+    /// the pressed view keeps reaching it.
+    @discardableResult
+    public func dispatchEvent(_ event: Event) -> EventHandling {
+        if event.isKeyEvent {
+            guard let keyWindow else { return .notHandled }
+            return keyWindow.deliverKeyEvent(event)
+        }
+
+        if let capture = pointerCapture {
+            let local = convert(event.location, toViewIn: capture)
+            let delivered = capture.view.deliverEvent(event.offsetting(by: local.origin))
+            if event.type == .pointerUp { releasePointerCapture() }
+            return delivered
+        }
+
+        guard let hit = hitTest(at: event.location) else { return .notHandled }
+        let local = convert(event.location, toViewIn: hit)
+        let localEvent = event.offsetting(by: local.origin)
+
+        // A press captures, so the release and any intervening drags reach the
+        // same view even if the pointer has moved off it. Without this a
+        // control could never distinguish "released on me" from "released
+        // somewhere else", which is what makes drag-cancel possible.
+        if event.type == .pointerDown {
+            pointerCapture = hit
+        }
+        updateTrackedView(hit.view, event: localEvent)
+        return hit.view.deliverEvent(localEvent)
+    }
+
+    /// Give up an active pointer capture without delivering anything.
+    public func releasePointerCapture() {
+        pointerCapture = nil
+    }
+
+    /// Send enter/exit as the pointer crosses view boundaries, so a control can
+    /// un-highlight when the pointer leaves it.
+    private func updateTrackedView(_ view: View, event: Event) {
+        guard trackedView !== view else { return }
+        if let previous = trackedView {
+            var exit = event
+            exit.type = .pointerExited
+            _ = previous.deliverEvent(exit)
+        }
+        trackedView = view
+        var enter = event
+        enter.type = .pointerEntered
+        _ = view.deliverEvent(enter)
+    }
+
+    /// The origin of `hit`'s view in scene coordinates, so a scene-space
+    /// location can be rebased into that view.
+    private func convert(_ point: Point, toViewIn hit: WindowHitTestResult) -> Rect {
+        var originX = hit.window.frame.origin.x
+        var originY = hit.window.frame.origin.y
+        var node: View? = hit.view
+        while let current = node, current !== hit.window.root {
+            originX += current.frame.origin.x
+            originY += current.frame.origin.y
+            node = current.parentView
+        }
+        return Rect(x: originX, y: originY, width: 0, height: 0)
     }
 
     public func hitTest(at point: Point) -> WindowHitTestResult? {
