@@ -10,16 +10,12 @@ export {
   Zoom,
   ZOOM_CHANGED_EVENT,
   useWindow,
-  WindowDragRegion,
   Titlebar,
-  WindowControls,
-  WindowControlButton,
   getTitlebarMetrics,
   useTitlebarMetrics,
   useCurrentWindowId,
   useWindowContext,
   WindowProvider,
-  NativeWindowControlRegion,
 } from '@nucleus-os/window';
 
 export type {
@@ -33,14 +29,8 @@ export type {
   ZoomSpec,
   UseWindowOptions,
   UseWindowResult,
-  WindowDragRegionProps,
   TitlebarProps,
-  WindowControlsProps,
-  WindowControlButtonProps,
-  WindowControlButtonType,
   WindowContextValue,
-  NativeWindowControlRegionProps,
-  WindowControlArea,
   SerializableProps,
 } from '@nucleus-os/window';
 

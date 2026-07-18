@@ -93,21 +93,13 @@ NUCLEUS can hide the native titlebar and let React render custom chrome. On macO
 the native traffic lights remain, while Windows/Linux can use custom controls.
 
 ```tsx
-import {
-  Titlebar,
-  WindowControls,
-  WindowDragRegion,
-  useTitlebarMetrics,
-} from '@nucleus-os/window';
+import { Titlebar, useTitlebarMetrics } from '@nucleus-os/window';
 
 function AppChrome() {
   const { height, leftInset } = useTitlebarMetrics();
   return (
     <Titlebar height={height} leftInset={leftInset}>
-      <WindowDragRegion style={{ flex: 1 }}>
-        <MyMenuBar />
-      </WindowDragRegion>
-      <WindowControls />
+      <MyMenuBar />
     </Titlebar>
   );
 }
@@ -135,7 +127,3 @@ export default {
   },
 };
 ```
-
-`WindowControls` and `WindowDragRegion` automatically target the current
-window when used inside a `<Window>` surface. Otherwise they fall back to
-the root window (or you can pass `windowId` manually).

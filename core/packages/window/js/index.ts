@@ -63,27 +63,10 @@ export type { UseWindowOptions, UseWindowResult } from './useWindow';
 export { Window } from './Window';
 export type { WindowProps, SerializableProps } from './Window';
 
-export { WindowDragRegion } from './WindowDragRegion';
-export type { WindowDragRegionProps } from './WindowDragRegion';
-
 export { Titlebar } from './Titlebar';
 export type { TitlebarProps } from './Titlebar';
-
-export { WindowControls, WindowControlButton } from './WindowControls';
-export type {
-  WindowControlsProps,
-  WindowControlButtonProps,
-  WindowControlButtonType,
-} from './WindowControls';
 
 export { getTitlebarMetrics, useTitlebarMetrics } from './useTitlebarMetrics';
 
 export { useCurrentWindowId, useWindowContext, WindowProvider } from './WindowContext';
 export type { WindowContextValue } from './WindowContext';
-
-// Re-export native component spec for advanced use cases
-export { default as NativeWindowControlRegion } from './specs/WindowControlRegionNativeComponent';
-export type {
-  WindowControlRegionProps as NativeWindowControlRegionProps,
-  WindowControlArea,
-} from './specs/WindowControlRegionNativeComponent';
