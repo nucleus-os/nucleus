@@ -220,6 +220,63 @@ import NucleusShellWayland
         withExtendedLifetime(window) {}
     }
 
+    /// A window away from the scene's origin still hit-tests correctly. Wayland
+    /// reports pointer positions surface-local; the shell places surfaces in
+    /// disjoint logical regions so they do not composite over each other, so
+    /// without rebasing every hit test misses by the window's origin. This is
+    /// exactly the lock screen's situation.
+    @Test func pointerEventsRebaseOntoAWindowAwayFromTheOrigin() {
+        let scene = WindowScene(windows: [])
+        let window = Window(title: "Lock")
+        let view = RecordingView()
+        view.frame = Rect(x: 0, y: 0, width: 800, height: 600)
+        window.setContentView(view)
+        window.setFrame(Rect(x: 0, y: 1_000_000, width: 800, height: 600))
+        window.orderFront()
+        scene.addWindow(window)
+
+        let router = ShellInputRouter(scene: scene, seat: nil)
+        router.register(window: window, forSurface: 42)
+
+        // Surface-local (10, 10) — near the window's top-left, a million points
+        // down in scene space.
+        var press = ShellInputEvent(kind: .pointerButtonDown)
+        press.surface = 42
+        press.button = 272
+        press.x = 10
+        press.y = 10
+        router.deliver(press)
+
+        #expect(view.received.contains(.pointerDown), "the press found the window")
+        withExtendedLifetime(window) {}
+    }
+
+    /// An unregistered surface is left alone rather than rebased onto some other
+    /// window's origin.
+    @Test func anUnregisteredSurfacesPointerIsNotRebased() {
+        let scene = WindowScene(windows: [])
+        let window = Window(title: "Lock")
+        let view = RecordingView()
+        view.frame = Rect(x: 0, y: 0, width: 800, height: 600)
+        window.setContentView(view)
+        window.setFrame(Rect(x: 0, y: 1_000_000, width: 800, height: 600))
+        window.orderFront()
+        scene.addWindow(window)
+
+        let router = ShellInputRouter(scene: scene, seat: nil)
+        router.register(window: window, forSurface: 42)
+
+        var press = ShellInputEvent(kind: .pointerButtonDown)
+        press.surface = 99
+        press.button = 272
+        press.x = 10
+        press.y = 10
+        router.deliver(press)
+
+        #expect(!view.received.contains(.pointerDown))
+        withExtendedLifetime(window) {}
+    }
+
     @Test func pointerEventsReachAViewThroughTheScene() {
         let scene = WindowScene(windows: [])
         let window = Window(title: "Bar")

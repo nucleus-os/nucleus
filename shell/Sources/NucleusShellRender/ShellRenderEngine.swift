@@ -66,6 +66,28 @@ public final class ShellRenderEngine {
         return id
     }
 
+    /// Place a surface's logical rectangle within the shell's shared logical space.
+    ///
+    /// `addSurface` and `resizeSurface` both assume the origin, which is right
+    /// for a single presentation target. A shell with more than one — a bar and
+    /// a lock screen — needs them in disjoint regions, because the render core
+    /// composites one logical plane and any two targets whose rectangles overlap
+    /// show the same content.
+    public func placeSurface(
+        _ id: UInt64,
+        logicalX: Double, logicalY: Double,
+        logicalWidth: Double, logicalHeight: Double,
+        scale: Double
+    ) {
+        guard let presenter = presenters[id] else { return }
+        core.attachOutputGeometry(
+            outputID: id, logicalX: logicalX, logicalY: logicalY,
+            logicalWidth: logicalWidth, logicalHeight: logicalHeight,
+            pixelWidth: UInt32(max(0, presenter.lastExtentWidth)),
+            pixelHeight: UInt32(max(0, presenter.lastExtentHeight)),
+            fractionalScale: scale)
+    }
+
     /// Resize a surface's swapchain (on a subsequent layer-shell `configure`). The surface is
     /// already created — the makeSurface closure is a no-op (SwapchainPresenter caches it).
     public func resizeSurface(_ id: UInt64, width: Int32, height: Int32, scale: Double) {

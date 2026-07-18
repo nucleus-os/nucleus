@@ -459,6 +459,18 @@ public struct TextEditorModel: Equatable, Sendable {
         return true
     }
 
+    /// Drop the undo and redo history outright.
+    ///
+    /// Clearing a secure field's text is not enough on its own: the previous
+    /// contents stay recoverable through undo, which on a lock screen means a
+    /// credential sitting in a buffer after it was supposedly cleared.
+    public mutating func discardUndoHistory() {
+        undoStack.removeAll()
+        redoStack.removeAll()
+        openGroup = nil
+        compositionUndoRecorded = false
+    }
+
     /// End the current coalescing run, so the next edit starts a fresh undo
     /// step. Called on caret moves and by a field losing focus.
     public mutating func closeUndoGroup() {

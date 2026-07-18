@@ -75,11 +75,27 @@ public final class ShellInputRouter: ShellSeatDelegate {
                 location: pointerLocation,
                 timestampNanoseconds: event.timestampNanoseconds))
         default:
-            if let nucleon = ShellInputRouter.nucleonEvent(event, lastLocation: pointerLocation) {
-                if nucleon.isPointerEvent { pointerLocation = nucleon.location }
-                _ = scene.dispatchEvent(nucleon)
+            guard var nucleon = ShellInputRouter.nucleonEvent(
+                event, lastLocation: pointerLocation) else { return }
+            if nucleon.isPointerEvent {
+                // Wayland reports pointer positions surface-local, but the scene
+                // hit-tests in its own logical space, where a window may sit at
+                // any origin — the shell places its surfaces in disjoint regions
+                // so they do not composite on top of each other. Rebase, or every
+                // hit test misses by the window's origin.
+                nucleon.location = rebased(nucleon.location, forSurface: event.surface)
+                pointerLocation = nucleon.location
             }
+            _ = scene.dispatchEvent(nucleon)
         }
+    }
+
+    /// Surface-local to scene-logical, using the registered window's origin.
+    /// An unregistered surface is left alone: there is no window to rebase onto.
+    private func rebased(_ location: Point, forSurface surfaceID: UInt) -> Point {
+        guard let window = windowsBySurface[surfaceID] else { return location }
+        let origin = window.frame.origin
+        return Point(x: location.x + origin.x, y: location.y + origin.y)
     }
 
     // MARK: - Translation

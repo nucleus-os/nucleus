@@ -60,6 +60,12 @@ public final class ShellHost {
     public private(set) var inputScene: WindowScene?
     public private(set) var inputRouter: ShellInputRouter?
 
+    /// Session lock. Nothing here locks on its own — no idle timer, no lid
+    /// switch — and `lock()` refuses without an authenticator, because the
+    /// compositor is deliberately fail-closed and a lock the shell cannot
+    /// release would strand the session.
+    public private(set) var lockController: ShellLockController?
+
     fileprivate var toplevels: ForeignToplevelManager?
     private var running = false
     private let exitSignalFD: Int32
@@ -146,7 +152,10 @@ public final class ShellHost {
         }
         inputScene = scene
         self.seat = seat
-        inputRouter = ShellInputRouter(scene: scene, seat: seat)
+        let router = ShellInputRouter(scene: scene, seat: seat)
+        inputRouter = router
+        lockController = ShellLockController(
+            client: client, engine: engine, scene: scene, inputRouter: router)
     }
 
     // MARK: - Bar surface

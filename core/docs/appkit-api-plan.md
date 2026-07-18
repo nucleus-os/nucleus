@@ -661,6 +661,50 @@ Delivered in `NucleusUI/{TextEditorModel,TextInput,TextField,Window,View,WindowS
 `shell/Sources/NucleusShellInput/{ShellInputRouter,ShellTextInput}.swift`,
 `shell/Sources/NucleusShellWayland/ShellSeat.swift`, and `shell/Sources/NucleusShellInputC/`.
 
+### The native lock surface
+
+Phase 10's landing criterion, and the first native NucleusUI scene in the shell process. Before
+it, everything Phases 8–10 built had no consumer there: the router registered no window, the
+session-lock client was an unfinished skeleton with zero callers, and the bar is React Native.
+
+`SessionLockSurface` completes the `ext_session_lock_v1` handshake the skeleton lacked. It is
+stricter than layer-shell's: every configure must be acked and the buffer must be *exactly* the
+configured size, because a wrongly-sized commit is a protocol error that kills the locker — and a
+killed locker leaves the compositor holding a blank fail-closed session. `SessionLockClient` now
+tracks whether the lock was actually confirmed, refuses `unlock_and_destroy` on a lock it never
+held, and drops the lock object on `finished` rather than touching it further, both of which are
+protocol errors otherwise.
+
+`LockScreenView` is product-tier, NucleusUI-only: a prompt, a secure `TextField`, a status line,
+laid out from measured sizes so it centres at any output size. It owns no Wayland, render, or
+authentication vocabulary. `LockAuthenticator` is a protocol implemented outside this package, so
+the lock UI never links a credential backend.
+
+**The hazard here is not "someone gets in", it is "nobody gets out"** — the compositor is
+deliberately fail-closed. Two rules are enforced rather than documented: `lock()` refuses without
+an authenticator, because requesting a lock the shell cannot release would strand the session;
+and nothing locks automatically. An idle timer may call `lock()`; the controller never decides to.
+With no authenticator every attempt reports unavailable, which is distinct from rejected so a
+user is never told their password is wrong when the backend simply could not be reached.
+
+The credential is cleared at hand-off rather than when the answer returns, so it never sits in a
+widget while a backend takes its time, and `discardUndoHistory()` was added to the editor model
+because clearing the text alone leaves the previous contents recoverable through undo — a
+credential in a buffer after it was supposedly cleared. Attempts do not queue while one is in
+flight, so a held Return cannot drive the backend.
+
+**Two architectural facts surfaced by being the second surface.** The render core composites one
+logical plane and gives each presentation target a rectangle within it, so two surfaces whose
+rectangles overlap show the same content — the bar's layers would have appeared on the lock
+screen. The lock takes a disjoint region, and `ShellRenderEngine.placeSurface` exists because
+`addSurface` assumes the origin. That in turn broke input: Wayland reports pointer positions
+surface-local, so every hit test missed by the window's origin until `ShellInputRouter` learned to
+rebase through the registered window.
+
+**Outstanding: a real authenticator, and hardware validation.** No PAM backend is written, so the
+lock is presently unusable by design rather than by accident — `canLock` is false. Nothing in this
+has been seen on a display.
+
 **Outstanding: the compositor's server-side `zwp_text_input_v3` binding.** Deliberately not
 half-built. Server-side text-input exists to serve *clients*, and it has nothing to serve them
 until the compositor also sources composed text from an input method — `zwp_input_method_v2` or

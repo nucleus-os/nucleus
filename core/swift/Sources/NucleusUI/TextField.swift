@@ -127,6 +127,12 @@ open class TextField: Control, TextInputClient, ~Sendable {
         afterSelectionChange()
     }
 
+    /// Drop the undo and redo history. Clearing a secure field's text leaves the
+    /// previous contents recoverable through undo without this.
+    public func discardUndoHistory() {
+        model.discardUndoHistory()
+    }
+
     public func setSelectedRange(_ range: Range<Int>) {
         model.setSelection(TextSelection(anchor: range.lowerBound, head: range.upperBound))
         afterSelectionChange()
