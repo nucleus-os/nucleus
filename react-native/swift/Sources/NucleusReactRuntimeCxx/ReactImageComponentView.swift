@@ -80,10 +80,6 @@ public final class ReactImageComponentView: ReactComponentView {
         self.environment = environment
     }
 
-    public func commitDisplayContentIfNeeded() throws {
-        try ReactLayerContentCommitter.commitDisplayContentIfNeeded(for: view)
-    }
-
     private static func pixelDimension(_ value: Double) -> UInt32 {
         guard value.isFinite, value > 0 else { return 0 }
         return UInt32(Swift.min(value.rounded(.up), Double(UInt32.max)))

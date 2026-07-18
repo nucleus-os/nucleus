@@ -1,4 +1,5 @@
 import Testing
+@_spi(NucleusCompositor) import NucleusUI
 import NucleusTypes
 
 /// The payload blob is the one format written by `GraphicsContext` and read by
@@ -101,5 +102,65 @@ import NucleusTypes
             PaintPayload.decode(blob, offset: slice.offset, length: slice.length))
         #expect(regions.verbs == [.move, .arc])
         #expect(regions.points.count == 8)
+    }
+}
+
+/// `GraphicsContext`'s graphics-state stack.
+@MainActor
+@Suite struct GraphicsStateTests {
+    /// A view that saves and forgets to restore must not change how its own
+    /// later commands render. Skia's canvas would otherwise stay saved, and a
+    /// clip set after the save would leak forward through the recording.
+    @Test func anUnbalancedSaveIsClosedOff() {
+        let context = GraphicsContext()
+        context.saveGState()
+        context.clip(to: Rect(x: 0, y: 0, width: 10, height: 10))
+        context.fill(Rect(x: 0, y: 0, width: 20, height: 20))
+
+        let kinds = context.recording.commands.map(\.kind)
+        #expect(kinds.first == .save)
+        #expect(kinds.last == .restore, "the dangling save is balanced")
+        #expect(kinds.filter { $0 == .save }.count == kinds.filter { $0 == .restore }.count)
+    }
+
+    @Test func nestedUnbalancedSavesAreAllClosed() {
+        let context = GraphicsContext()
+        context.saveGState()
+        context.saveGState()
+        context.fill(Rect(x: 0, y: 0, width: 10, height: 10))
+
+        let kinds = context.recording.commands.map(\.kind)
+        #expect(kinds.filter { $0 == .save }.count == 2)
+        #expect(kinds.filter { $0 == .restore }.count == 2)
+    }
+
+    @Test func aBalancedScopeIsUnchanged() {
+        let context = GraphicsContext()
+        context.withGraphicsState {
+            context.fill(Rect(x: 0, y: 0, width: 10, height: 10))
+        }
+        let kinds = context.recording.commands.map(\.kind)
+        #expect(kinds == [.save, .path, .restore])
+    }
+
+    /// Reading `recording` must not consume or mutate the balancing, so a
+    /// second read gives the same answer.
+    @Test func readingTheRecordingTwiceIsStable() {
+        let context = GraphicsContext()
+        context.saveGState()
+        context.fill(Rect(x: 0, y: 0, width: 10, height: 10))
+        #expect(context.recording == context.recording)
+        #expect(context.recording.commands.count == 3)
+    }
+
+    /// State is restored, not just the canvas: a color set inside a scope does
+    /// not leak past it.
+    @Test func restoringUndoesStateChanges() {
+        let context = GraphicsContext()
+        context.fillColor = Color(1, 0, 0, 1)
+        context.withGraphicsState {
+            context.fillColor = Color(0, 0, 1, 1)
+        }
+        #expect(context.fillColor == Color(1, 0, 0, 1))
     }
 }

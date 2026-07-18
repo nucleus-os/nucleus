@@ -66,7 +66,22 @@ public struct PaintRecording: Sendable, Equatable {
 /// host boundary after recording completes.
 @MainActor
 public final class GraphicsContext {
-    @_spi(NucleusCompositor) public private(set) var recording = PaintRecording()
+    private var storedRecording = PaintRecording()
+
+    /// The recorded drawing, with any unbalanced `saveGState` closed off.
+    ///
+    /// A `draw(in:)` override that calls `saveGState()` and returns early leaves
+    /// an unmatched save; the rasterizer would then replay a canvas save with no
+    /// restore, and a clip set after it would persist for the rest of that
+    /// view's recording. Balancing here keeps a client's mistake from changing
+    /// how *later* commands render. Prefer `withGraphicsState {}`, which cannot
+    /// unbalance in the first place.
+    @_spi(NucleusCompositor) public var recording: PaintRecording {
+        guard !stack.isEmpty else { return storedRecording }
+        var balanced = storedRecording
+        for _ in stack { balanced.commands.append(PaintCommand(kind: .restore)) }
+        return balanced
+    }
 
     private struct State {
         var fillColor = Color(1, 1, 1, 1)
@@ -218,7 +233,7 @@ public final class GraphicsContext {
         var command = PaintCommand(kind: .clipPath, flags: pathFlags(path, stroke: false))
         applyStyle(&command, color: state.fillColor)
         let slice = PaintPayload.append(
-            to: &recording.payload,
+            to: &storedRecording.payload,
             verbs: path.verbs,
             points: transformedPoints(path))
         command.payloadOffset = slice.offset
@@ -236,12 +251,12 @@ public final class GraphicsContext {
     /// operation, not publication plumbing.
     public func draw(_ layout: TextLayout, in rect: Rect) {
         guard !layout.isEmpty else { return }
-        recording.textLayouts.append(layout.applyingDefaultColor(state.fillColor))
+        storedRecording.textLayouts.append(layout.applyingDefaultColor(state.fillColor))
         var command = PaintCommand(kind: .textLayout)
         applyStyle(&command, color: state.fillColor)
         setGeometry(&command, rect)
         // One-based index; resolved to a registry handle at registration.
-        command.textLayoutHandle = UInt64(recording.textLayouts.count)
+        command.textLayoutHandle = UInt64(storedRecording.textLayouts.count)
         append(command)
     }
 
@@ -280,7 +295,7 @@ public final class GraphicsContext {
     // MARK: -
 
     private func append(_ command: PaintCommand) {
-        recording.commands.append(command)
+        storedRecording.commands.append(command)
     }
 
     private func pathFlags(_ path: Path, stroke: Bool) -> PaintCommandFlags {
@@ -373,7 +388,7 @@ public final class GraphicsContext {
         }
 
         let slice = PaintPayload.append(
-            to: &recording.payload,
+            to: &storedRecording.payload,
             verbs: path.verbs,
             points: transformedPoints(path),
             scalars: scalars,

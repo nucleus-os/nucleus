@@ -418,9 +418,6 @@ public class ReactBaseComponentView: ReactComponentView {
         self.environment = environment
     }
 
-    public func commitDisplayContentIfNeeded() throws {
-        try ReactLayerContentCommitter.commitDisplayContentIfNeeded(for: view)
-    }
 }
 
 @MainActor
@@ -444,11 +441,13 @@ public final class ReactViewComponentView: ReactBaseComponentView {
 
 @MainActor
 public final class ReactParagraphComponentView: ReactBaseComponentView {
+    /// The same object as `view`, held typed so text can be applied to it.
     private let paragraphView: ReactParagraphView
 
-    init(tag: Int, componentName: String, nativeID: String, view: View, paragraphView: ReactParagraphView) {
+    init(tag: Int, componentName: String, nativeID: String, paragraphView: ReactParagraphView) {
         self.paragraphView = paragraphView
-        super.init(tag: tag, componentName: componentName, nativeID: nativeID, view: view)
+        super.init(
+            tag: tag, componentName: componentName, nativeID: nativeID, view: paragraphView)
     }
 
     public override func apply(_ event: MountEvent) {
@@ -468,13 +467,6 @@ public final class ReactParagraphComponentView: ReactBaseComponentView {
         }
     }
 
-    public override func commitDisplayContentIfNeeded() throws {
-        let frame = view.frame
-        let recording = paragraphView.recordDisplay(
-            containerWidth: frame.size.width > 0 ? frame.size.width : nil
-        )
-        try ReactLayerContentCommitter.commit(recording: recording, for: view)
-    }
 }
 
 @MainActor
@@ -497,7 +489,6 @@ public enum ReactComponentViewFactory {
                 tag: event.tag,
                 componentName: event.componentName,
                 nativeID: event.nativeID,
-                view: View(),
                 paragraphView: ReactParagraphView()
             )
         }

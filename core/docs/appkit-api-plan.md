@@ -131,7 +131,7 @@ only by a hypothetical future client.
 | 3 | Skia facade and rasterizer | **complete** |
 | 4 | RuntimeEffectRegistrar | **complete** |
 | 5 | GraphicsContext and the vocabulary collapse | **complete** |
-| 6 | Retire the RN committer | pending |
+| 6 | Retire the RN committer | **complete** |
 | 7 | Publication and native shell hosting | pending |
 | 8 | Event vocabulary and responder wiring | pending |
 | 9 | Layout: measure/arrange and flex | pending |
@@ -145,12 +145,13 @@ Phases 0–5 built the pipeline and the API on top of it. Drawing is now reachab
 `NucleusShellProduct` in `shell/` authors real shell chrome — paths, arcs, gradients, strokes,
 caps — against public `NucleusUI` alone, and its tests are the out-of-package authoring proof.
 
-Both carry-forward constraints are discharged. `PaintRegistration` is the tree-independent seam
-Phase 6 needs, and React Native already consumes it. Borders stroke end to end.
+Both carry-forward constraints are discharged, and Phase 6 closed the last of the parallel paint
+path: React Native authors through `draw(in:)` like any other client. Borders stroke end to end.
 
 The remaining phases are additive rather than structural: publication (7), input (8), layout (9),
 and then the text/scroll/editing stack (10–12). Each lands with a real native client, per the
-principle above.
+principle above. Phase 7 is the pivot — after it, the port grows inside `NucleusShellProduct`
+and later phases are driven by what it actually needs.
 
 ## Phase 0 — Render-SDK link contract — complete
 
@@ -407,38 +408,37 @@ what nothing previously could — that an unchanged view and, critically, unchan
 re-register, while a changed drawing does; they assert the first publish *does* register, so
 they cannot pass by never registering at all.
 
-## Phase 6 — Retire the RN committer
+## Phase 6 — Retire the RN committer — complete
 
-This phase is repository coherence, not a commitment to build the native shell in React
-Native. New shell product UI remains native Swift.
+Repository coherence, not a commitment to build the native shell in React Native. New shell
+product UI remains native Swift.
 
-**The gate has been run, and it resolved against the plan's original framing.** RN does not
-use `ViewLayerPublisher` — the only reference in the tree is `WindowLayerPublisher.swift:11`,
-inside core. RN builds its own layer tree in `HostSurfaceAttachment.swift:90-103`
-(`LayerTransaction.createExisting` for root and each component, `insert` into the parent,
-`flushImplicit`) and commits paint per component through `commitDisplayContentIfNeeded()`
-(`MountConsumer.swift:426, :480`). This is a mount-architecture change, not a deletion.
+Phase 5 had already deleted the duplicated lowering and moved RN onto `PaintRegistration`, so
+what remained was the mount-architecture change:
 
-The committer duplicated two separable things, and **the first is already gone.** Phase 5
-deleted the vocabulary RN was lowering into, and every phase lands green, so RN moved onto the
-shared seam in that phase rather than this one:
+- **`ReactParagraphView` is a real `View` subclass** overriding `draw(in:)` and
+  `intrinsicContentSize`. It was a standalone text holder living *beside* a plain `View`, which
+  is what a component looks like when the framework gives it no way to author content.
+  `ReactParagraphComponentView` now holds one object and passes it as its own `view`.
+- **`ReactLayerContentCommitter.swift` is deleted.** Its remaining step — binding a recording's
+  update to RN's own layer — became a default implementation on the `ReactComponentView`
+  protocol, so `ReactBaseComponentView` and `ReactImageComponentView` share one path instead of
+  carrying a copy each. It lives in `ReactLayerBinding.swift` because `NucleusLayers` and
+  `NucleusUI` both define a `Rect` and the mount consumer works in the NucleusUI one.
 
-1. **Lowering** — `paintKind`, `paintCommand`, and transient text-layout handle minting were
-   deleted in Phase 5. `ReactParagraphView` records through a `GraphicsContext`.
-2. **Paint registration** — the committer now calls `PaintRegistration`, the same unit
-   `ViewLayerPublisher` uses. It retains only RN's own layer-binding step
-   (`backingLayer.apply` → `appendAmbient`), which exists because RN builds its own layer tree.
+RN now authors through `draw(in:)` like any other client, and the only RN-specific step left is
+layer binding — which exists because RN builds its own layer tree, not because it reaches around
+the framework.
 
-**What remains is the mount-architecture change.** `ReactParagraphView`
-(`ReactComponentViews.swift:6`) is a standalone `~Sendable` text holder, not a `View` subclass;
-`ReactParagraphComponentView` owns both a plain `View` and a `ReactParagraphView` beside it
-(`MountConsumer.swift:451-455`). Collapse those two objects into one `View` subclass overriding
-`draw(in:)`, then delete `ReactLayerContentCommitter.swift` in full by folding its layer-binding
-step into the component view.
+**Graphics-state hardening landed alongside.** `GraphicsContext.recording` now closes off any
+unbalanced `saveGState`. A `draw(in:)` override that saves and returns early would otherwise
+leave the rasterizer's canvas saved, and a clip set after it would leak forward through the rest
+of that view's recording. Blast radius was one view's own texture, but Phase 11's ScrollView
+leans on clipping, so the recording should be self-balancing before anything depends on it.
+`withGraphicsState {}` remains the form that cannot unbalance.
 
-**Lands with:** the committer file deleted and the `appendAmbient`/`backingLayer` SPI use gone,
-with RN authoring against `draw(in:)` like any other client — restoring the
-NucleusUI-is-the-front-door invariant.
+**Landed with:** the committer file deleted and the last `appendAmbient`/`backingLayer` use
+confined to one shared binding step; 5 graphics-state tests; all suites green.
 
 ## Phase 7 — Publication and native shell hosting
 
@@ -641,9 +641,8 @@ Tests assert **runtime behavior and contracts, never source-code shape** — no 
   compare equal. `PaintRegistrationTests` counts registrations through a counting registrar and
   pins that an unchanged view, and unchanged text specifically, re-register nothing while a
   changed drawing does.
-- **Phase 6**: RN already registers through the shared seam as of Phase 5, so the remaining gate
-  is that collapsing the paragraph component into one `View` subclass keeps producing the same
-  registered content. Assert through the stub registrar, not through pixels.
+- **Phase 6** — done: RN builds and the whole tree stays green with the committer deleted;
+  graphics-state balancing is covered by 5 tests.
 - **Phase 7**: `NucleusShellProduct` creates and publishes its scene through public NucleusUI
   authoring types. `NucleusShellRuntime` retains privileged host installation without exposing
   raw layers or commit sinks to product code.
@@ -676,10 +675,8 @@ remains.
 
 ## Risks
 
-- **RN's publish path (Phase 6)** — traced and confirmed: RN bypasses `ViewLayerPublisher`
-  entirely and owns its own layer-tree construction. The registration seam it needed landed in
-  Phase 5 and RN already consumes it, so the remaining risk is confined to the mount-architecture
-  change: collapsing the paragraph component's two objects into one `View` subclass.
+- **RN's publish path** — retired. RN authors through `draw(in:)` and registers through the
+  shared seam; only layer binding remains RN-specific, because RN builds its own layer tree.
 - **Text-layout handle stability** — retired. Handles are no longer minted while recording, so
   the failure mode does not exist; registration-counting coverage guards the regression.
 - **Payload-offset determinism** — discharged. `PaintPayload.append` is append-only, and a test

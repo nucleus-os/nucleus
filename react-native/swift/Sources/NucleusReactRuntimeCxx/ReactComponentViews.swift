@@ -2,8 +2,14 @@ import CxxStdlib
 @_spi(NucleusCompositor) import NucleusUI
 import NucleusReactRuntimeCxxBridge
 
+/// The mounted view for an RN text component.
+///
+/// A real `View` subclass drawing through `draw(in:)`, like any other client of
+/// the framework. It was previously a standalone text holder living *beside* a
+/// plain `View`, because RN had no way to author content — the reason the
+/// parallel commit path existed at all.
 @MainActor
-final class ReactParagraphView: ~Sendable {
+final class ReactParagraphView: View {
     private var textRuns: [TextRun] = []
     private var alignment: TextAlignment = .leading
     private var lineBreakMode: LineBreakMode = .byClipping
@@ -12,6 +18,7 @@ final class ReactParagraphView: ~Sendable {
     private var fallbackColor = Color(1, 1, 1, 1)
 
     func applyText(_ text: String, attributes: TextAttributesSnapshot?) {
+        defer { setNeedsDisplay() }
         guard let attributes else {
             textRuns = []
             return
@@ -27,7 +34,7 @@ final class ReactParagraphView: ~Sendable {
         lineHeight = attributes.lineHeight > 0 ? attributes.lineHeight : nil
     }
 
-    var intrinsicContentSize: Size {
+    override var intrinsicContentSize: Size {
         let layout = textLayout(containerWidth: nil)
         return Size(
             width: layout.intrinsicSize.width,
@@ -35,23 +42,19 @@ final class ReactParagraphView: ~Sendable {
         )
     }
 
-    /// Record this paragraph's drawing. Named for what it produces now; Phase 6
-    /// replaces it with a `View.draw(in:)` override on a real subclass.
-    @MainActor
-    func recordDisplay(containerWidth: Double?) -> PaintRecording {
-        guard !textRuns.isEmpty else {
-            return PaintRecording()
-        }
-        let layout = textLayout(containerWidth: containerWidth)
+    override func draw(in context: GraphicsContext) {
+        guard !textRuns.isEmpty else { return }
+        let width = frame.size.width
+        let layout = textLayout(containerWidth: width > 0 ? width : nil)
+        // Centre the line box vertically when the component asked for a line
+        // height taller than the text needs.
         let targetLineHeight = lineHeight ?? layout.usedRect.size.height
         let y = max(0, (targetLineHeight - layout.usedRect.size.height) * 0.5)
-        let context = GraphicsContext()
         context.fillColor = fallbackColor
         context.draw(layout, in: Rect(
             x: 0, y: y,
             width: layout.usedRect.size.width,
             height: layout.usedRect.size.height))
-        return context.recording
     }
 
     private func textLayout(containerWidth: Double?) -> TextLayout {
