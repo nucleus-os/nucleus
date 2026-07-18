@@ -91,20 +91,69 @@ requires a UPower client, a D-Bus client stack under it, an icon or glyph, a lab
 a click target that opens a panel. That single vertical slice forces the service pattern, the
 tooltip and tracking gap, and the popup layer — each of which is currently a guess.
 
+## Status
+
+| Phase | | |
+|---|---|---|
+| 1 | The D-Bus client seam | **complete** |
+| 2 | UPower, and the battery widget | **complete** |
+| 3 | Tracking, cursors, and tooltips | pending |
+| 4 | The popup layer | pending |
+| 5 | Scrolling | pending |
+| 6 | The control kit | pending |
+| 7 | The remaining bar services | pending |
+| 8 | The bar, natively | pending |
+
 ## Phases
 
-**Phase 1 — The D-Bus client seam.** A session and system bus client, an interface-proxy shape,
-signal subscription, and a poll source folded into the shell's existing event loop. Modelled on the
-compositor's `DBusService`, which already establishes the C interop and the descriptor style.
-Nothing about a specific service belongs here.
+**Phase 1 — The D-Bus client seam — complete.** `DBusConnection` opens either bus and exposes what a poll loop
+needs: a descriptor, the events it currently wants, and sd-bus's absolute CLOCK_MONOTONIC deadline
+converted to a relative wait. `process()` drains and flushes, reporting whether it did anything so
+a caller can tell a spurious wakeup from real work. Properties read as bool, uint32, int64, double,
+and string; methods taking no arguments call; signals subscribe by match rule, with a helper for
+the `PropertiesChanged` rule nearly every service uses.
 
-**Phase 2 — UPower, and the battery widget.** The first service and the first real widget
-together. Delivers a native bar item that displays live system state, and settles how a service's
-updates reach a view: the widget holds its controls and mutates them, so a property change is the
-whole update path.
+The C façade came out nearly empty, which was the useful discovery. The compositor's equivalent
+wraps the `SD_BUS_VTABLE_*` macros and the variadic message ops because a *service* needs them; a
+client needs neither, and every entry point here imports directly from `<systemd/sd-bus.h>`.
 
-**Phase 3 — Tracking, cursors, and tooltips.** What the battery widget's hover behaviour needs and
-NucleusUI has no answer for. Tracking areas producing enter/exit at the view level, a cursor
+Signal handlers take no arguments. Decoding a body means a full variant reader, and the pattern a
+widget actually uses is "something changed, re-read what I display" — `PropertiesChanged` carries
+an invalidated-properties list precisely because its payload is not always authoritative.
+
+`DBusError` separates a service that is *absent* from one that *failed*, because a widget for a
+service that is not running must render as unavailable rather than as broken.
+
+Fifteen tests, against a live bus where one is reachable and degrading to a skip where it is not,
+including a real round trip to the bus daemon and a real `NameOwnerChanged` signal arriving at a
+handler.
+
+**Phase 2 — UPower, and the battery widget — complete.** The tier split it forced is the result
+worth keeping. `BatteryWidget` renders a `BatteryLevel` and nothing else — no bus, no service, no
+device path — so every state a real machine takes weeks to produce is one assignment away in a
+test. `UPowerService` maps the bus onto a `BatteryReading` and never sees a view. The runtime
+composes them, which is the only place the two vocabularies meet, and is what keeps
+`NucleusShellProduct` NucleusUI-only: a service-injected widget would have broken that.
+
+UPower's `DisplayDevice` is read rather than a chosen battery. It already aggregates every battery
+on the machine, and picking one is policy a service has no business inventing.
+
+Absence is first-class throughout. A machine with no UPower, or UPower with no battery, is a
+configuration and not an error: `start()` does not throw, the reading says absent rather than zero
+percent, and the widget hides rather than drawing an empty cell. A transient bus failure leaves the
+last good reading in place instead of blanking a working widget. Identical readings do not notify,
+because UPower emits `PropertiesChanged` for values a bar never displays.
+
+The system bus joined the poll loop with its own timeouts — sd-bus has deadlines for pending calls,
+so the loop must not sleep past them.
+
+Twenty-three tests. One of them asserted on `PaintCommand.w` for a path fill, which is meaningless:
+path geometry lives in the payload blob. The fill rectangle is now computed separately, which is
+the part worth testing, and `draw` fills it.
+
+**Phase 3 — Tracking, cursors, and tooltips.** Confirmed by Phase 2: the battery widget has a
+hover state and a click target with nowhere to put either. NucleusUI has whole-view enter/exit at
+the scene, and no cursor, no tooltip, and no hover state on `Control`. Tracking areas producing enter/exit at the view level, a cursor
 region model, and tooltips with a content provider — the reference's shape, since it is the one a
 bar actually uses.
 

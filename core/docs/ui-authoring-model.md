@@ -116,16 +116,19 @@ system services that do not exist here yet. Phases 1 and 2 landed and stand. The
 behind the service work, tracking and tooltips, and the popup layer.
 
 
-**Phase 1 — The view builder.** A `@resultBuilder` producing subviews, plus `setBody { }` on
+**Phase 1 — The view builder — complete.** A `@resultBuilder` producing subviews, plus `setBody { }` on
 `View`, so a container's structure reads as a nested expression rather than a sequence of
 `addSubview` calls. Children are `View` instances, so a stored property placed inside the builder
 is the same object the surface mutates later. Rebuilding a body replaces the subtree, which is the
 escape hatch for structure that genuinely changes, not the update path.
 
-**Phase 2 — Chainable configuration.** `@discardableResult` modifiers returning `Self` for the
+**Phase 2 — Chainable configuration — complete.** `@discardableResult` modifiers returning `Self` for the
 properties a builder expression sets inline: sizing, spacing, colour, corner radius, flex factors,
 visibility. Each one sets the same stored property a caller could set directly; a modifier is
 sugar over the property and never the only way to reach it.
+
+**Phases 3 to 6 below are superseded**; see `noctalia-port-priorities.md` for where each landed in
+the reprioritized sequence.
 
 **Phase 3 — The control kit.** `Toggle`, `Slider`, `Checkbox`, `RadioButton`, `Select`,
 `Segmented`, `Stepper`, `ProgressBar`, `Spinner`, `Separator`, `Spacer`, built on `Control` and
