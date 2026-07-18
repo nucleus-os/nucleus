@@ -110,6 +110,12 @@ express the easier problem.
 
 ## Phases
 
+The sequence below is superseded by `noctalia-port-priorities.md`, which reprioritizes from the
+reference's actual file distribution: about a fifth of it is UI, and the bar's widgets are gated on
+system services that do not exist here yet. Phases 1 and 2 landed and stand. The control kit moves
+behind the service work, tracking and tooltips, and the popup layer.
+
+
 **Phase 1 — The view builder.** A `@resultBuilder` producing subviews, plus `setBody { }` on
 `View`, so a container's structure reads as a nested expression rather than a sequence of
 `addSubview` calls. Children are `View` instances, so a stored property placed inside the builder
