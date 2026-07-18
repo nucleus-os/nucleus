@@ -316,6 +316,22 @@ let package = Package(
             swiftSettings: [.interoperabilityMode(.Cxx)]
         ),
 
+        // ── System services. Each one maps a bus peer onto a plain value type;
+        //    no service knows what a view is, and no product view knows what a
+        //    bus is. The runtime composes them.
+        .target(
+            name: "NucleusShellServices",
+            dependencies: ["NucleusShellDBus"],
+            path: "Sources/NucleusShellServices",
+            swiftSettings: [.interoperabilityMode(.Cxx)]
+        ),
+        .testTarget(
+            name: "NucleusShellServicesTests",
+            dependencies: ["NucleusShellServices"],
+            path: "Tests/NucleusShellServicesTests",
+            swiftSettings: [.interoperabilityMode(.Cxx)]
+        ),
+
         // The wire format alone, with no dependencies, so the helper links
         // almost nothing: a smaller image spawns faster and gives a crashing PAM
         // module less to reach.
@@ -375,6 +391,7 @@ let package = Package(
             dependencies: [
                 "NucleusShellWayland", "NucleusShellRender", "NucleusShellSignalC",
                 "NucleusShellProduct", "NucleusShellInput", "NucleusShellAuth",
+                "NucleusShellServices",
                 .product(name: "NucleusReactRuntime", package: "NucleusReactNative"),
                 .product(name: "NucleusReactRuntimeCxx", package: "NucleusReactNative"),
                 .product(name: "NucleusRenderer", package: "Nucleus"),

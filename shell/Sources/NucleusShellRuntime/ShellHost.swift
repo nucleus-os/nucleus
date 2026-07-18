@@ -8,6 +8,9 @@ import NucleusAppHostBundle
 import NucleusShellWayland
 import NucleusShellInput
 import NucleusShellAuth
+import NucleusShellDBus
+import NucleusShellServices
+import NucleusShellProduct
 import NucleusShellRender
 import NucleusShellSignalC
 import Foundation
@@ -68,6 +71,14 @@ public final class ShellHost {
     public private(set) var lockController: ShellLockController?
     private var authenticator: PamAuthenticator?
 
+    /// The system bus and the services on it. Opened lazily: a session with no
+    /// bus is unusual but not fatal, and the shell renders either way.
+    private var systemBus: DBusConnection?
+    public private(set) var upower: UPowerService?
+    /// Bar items driven by services. Held here because the runtime is what
+    /// composes a service with a view — neither knows about the other.
+    public let batteryWidget = BatteryWidget()
+
     fileprivate var toplevels: ForeignToplevelManager?
     private var running = false
     private let exitSignalFD: Int32
@@ -118,10 +129,14 @@ public final class ShellHost {
         // 4. The seat: pointer and keyboard, translated into framework events.
         setupInput()
 
-        // 5. The bar layer-shell surface. Its first configure builds the swapchain + boots RN.
+        // 5. System services. Each maps a bus peer onto a value type and hands
+        //    it to a view; this is the only place the two meet.
+        setupServices()
+
+        // 6. The bar layer-shell surface. Its first configure builds the swapchain + boots RN.
         createBarSurface()
 
-        // 6. The event loop: wl_display fd + a frame timer.
+        // 7. The event loop: wl_display fd + a frame timer.
         running = true
         loop()
     }
@@ -165,6 +180,31 @@ public final class ShellHost {
             client: client, engine: engine, scene: scene, inputRouter: router)
         controller.authenticator = authenticator
         lockController = controller
+    }
+
+    // MARK: - Services
+
+    private func setupServices() {
+        guard let bus = try? DBusConnection(.system) else {
+            writeErr("shell: no system bus; running without system services")
+            return
+        }
+        systemBus = bus
+
+        let upower = UPowerService(connection: bus)
+        upower.onChange = { [weak self] reading in
+            self?.batteryWidget.update(BatteryLevel(
+                fraction: reading.percentage / 100,
+                isCharging: reading.state.isPluggedIn,
+                isPresent: reading.isPresent,
+                secondsRemaining: reading.secondsRemaining))
+        }
+        do {
+            try upower.start()
+        } catch {
+            writeErr("shell: UPower unavailable: \(error)")
+        }
+        self.upower = upower
     }
 
     // MARK: - Bar surface
@@ -305,9 +345,19 @@ public final class ShellHost {
             // the verdict arrives as soon as the helper answers rather than at
             // the next frame — and the lock screen keeps drawing meanwhile.
             let authFD = authenticator?.pendingFD
+            let busFD = systemBus?.fileDescriptor ?? -1
             pollfds.removeSubrange(2...)
             if let authFD {
                 pollfds.append(pollfd(fd: authFD, events: Int16(POLLIN), revents: 0))
+            }
+            if busFD >= 0, let systemBus {
+                pollfds.append(pollfd(
+                    fd: busFD, events: systemBus.pollEvents, revents: 0))
+                // sd-bus has deadlines of its own — a pending call's timeout —
+                // so the loop must not sleep past them.
+                if let untilBusUs = systemBus.timeoutMicroseconds() {
+                    timeoutMs = min(timeoutMs, Int32(clamping: untilBusUs / 1000))
+                }
             }
 
             let ready = poll(&pollfds, nfds_t(pollfds.count), timeoutMs)
@@ -326,6 +376,16 @@ public final class ShellHost {
             if ready > 0, authFD != nil, pollfds.count > 2,
                pollfds[2].revents & Int16(POLLIN | POLLHUP) != 0 {
                 authenticator?.drainPendingAttempt()
+            }
+
+            if busFD >= 0 {
+                // Timeouts fire without the descriptor becoming readable, so the
+                // bus is processed on a bare wakeup too.
+                do {
+                    try systemBus?.process()
+                } catch {
+                    writeErr("nucleus-shell: system bus error: \(error)")
+                }
             }
 
             // Emit any key repeats that came due while polling.
