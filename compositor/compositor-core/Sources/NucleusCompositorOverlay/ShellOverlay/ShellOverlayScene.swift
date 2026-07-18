@@ -354,7 +354,6 @@ public final class ShellOverlayScene: ~Sendable {
         let frameRect = clampedMenuFrame(anchor: anchor, size: view.preferredSize)
         view.frame = frameRect
         container.addSubview(view)
-        view.layoutIfNeeded()
         let level = menuLevels.count
         // The scene owns the level stack, so the menu delegates the outcomes it
         // cannot carry out itself and keeps only highlight movement.

@@ -12,6 +12,10 @@ import Testing
         #expect(button.needsIntrinsicContentSizeUpdate)
         let updated = button.intrinsicContentSize
         #expect(updated.width > initial.width)
+        // Reading the size does not clear the flag — the layout pass that
+        // consumes the new size does.
+        #expect(button.needsIntrinsicContentSizeUpdate)
+        button.layoutIfNeeded()
         #expect(!button.needsIntrinsicContentSizeUpdate)
     }
 

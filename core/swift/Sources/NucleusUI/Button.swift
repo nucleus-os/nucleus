@@ -53,13 +53,26 @@ public final class Button: Control, ~Sendable {
     }
 
     public override var intrinsicContentSize: Size {
-        intrinsicContentSizeNeedsUpdate = false
         let layout = titleTextLayout(containerWidth: nil)
         return Size(
-            width: max(64, layout.intrinsicSize.width + 24),
-            height: max(28, layout.intrinsicSize.height + 10)
+            width: max(64, layout.intrinsicSize.width + Button.titleInsetWidth),
+            height: max(28, layout.intrinsicSize.height + Button.titleInsetHeight)
         )
     }
+
+    /// Measures its title within the proposed width less the title inset, so a
+    /// button in a narrow column grows taller rather than clipping its label.
+    public override func measure(_ constraints: LayoutConstraints) -> Size {
+        let available = constraints.proposedWidth.map { max(0, $0 - Button.titleInsetWidth) }
+        let layout = titleTextLayout(containerWidth: available)
+        return constraints.constrain(Size(
+            width: max(64, layout.intrinsicSize.width + Button.titleInsetWidth),
+            height: max(28, layout.intrinsicSize.height + Button.titleInsetHeight)
+        ))
+    }
+
+    private static let titleInsetWidth: Double = 24
+    private static let titleInsetHeight: Double = 10
 
     public override func draw(in context: GraphicsContext) {
         switch glyph {

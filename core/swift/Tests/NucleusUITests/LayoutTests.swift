@@ -36,8 +36,11 @@ import Testing
 
         let firstHeight = first.intrinsicContentSize.height
         let secondHeight = second.intrinsicContentSize.height
-        #expect(first.frame == Rect(x: 10, y: 20, width: 200, height: firstHeight))
-        #expect(second.frame == Rect(x: 10, y: 20 + firstHeight + 4, width: 200, height: secondHeight))
+        // Child frames are relative to the stack, not to the stack's own
+        // position in its parent. The stack sitting at (10, 20) must not push
+        // its children by that much again.
+        #expect(first.frame == Rect(x: 0, y: 0, width: 200, height: firstHeight))
+        #expect(second.frame == Rect(x: 0, y: firstHeight + 4, width: 200, height: secondHeight))
     }
 
     @Test func horizontalStackCentersChildrenOnCrossAxis() throws {
@@ -294,7 +297,7 @@ import Testing
         stack.addArrangedSubview(child)
         stack.layoutIfNeeded()
 
-        #expect(child.frame == Rect(x: 5, y: 6, width: 44, height: 18))
+        #expect(child.frame == Rect(x: 0, y: 0, width: 44, height: 18))
     }
 
     @Test func stackRespectsLayoutMarginsAndHiddenArrangedSubviews() throws {
@@ -313,9 +316,248 @@ import Testing
 
         let firstHeight = first.intrinsicContentSize.height
         let secondHeight = second.intrinsicContentSize.height
-        #expect(first.frame == Rect(x: 15, y: 24, width: 108, height: firstHeight))
-        #expect(second.frame == Rect(x: 15, y: 24 + firstHeight + 3, width: 108, height: secondHeight))
+        // Only the margins offset the children — the stack's own origin does not.
+        #expect(first.frame == Rect(x: 5, y: 4, width: 108, height: firstHeight))
+        #expect(second.frame == Rect(x: 5, y: 4 + firstHeight + 3, width: 108, height: secondHeight))
         #expect(hidden.frame == Rect(x: 0, y: 0, width: 0, height: 0))
+    }
+
+    /// The point of child-local placement: an arranged subview in a stack that
+    /// is not at the origin must still be reachable by a pointer. Parent-space
+    /// placement double-counted the stack's origin, pushing every child out of
+    /// the region `hitTest` searches.
+    @Test func arrangedSubviewsAreHittable() throws {
+        let root = View()
+        root.frame = Rect(x: 0, y: 0, width: 300, height: 300)
+        let stack = StackView(axis: .vertical, spacing: 0, alignment: .fill)
+        stack.frame = Rect(x: 40, y: 50, width: 100, height: 200)
+        let child = Button(title: "Hit me")
+        root.addSubview(stack)
+        stack.addArrangedSubview(child)
+        stack.layoutIfNeeded()
+
+        // A point inside the child, expressed in the root's coordinates.
+        let inChild = Point(x: 40 + 10, y: 50 + 5)
+        #expect(root.hitTest(inChild) === child)
+    }
+
+    // MARK: - measure
+
+    @Test func measuringUnconstrainedMatchesTheIntrinsicSize() throws {
+        let label = Label("Some text")
+        #expect(label.measure(.unconstrained) == label.intrinsicContentSize)
+    }
+
+    /// The case `intrinsicContentSize` structurally cannot answer: a wrapped
+    /// label is taller at a narrow width than at a wide one.
+    @Test func aLabelMeasuresTallerWhenOfferedLessWidth() throws {
+        let label = Label("One two three four five six")
+        label.font = .systemFont(ofSize: 10)
+        label.lineBreakMode = .byWordWrapping
+        label.numberOfLines = 5
+
+        let wide = label.measure(LayoutConstraints(maxWidth: 400))
+        let narrow = label.measure(LayoutConstraints(maxWidth: 60))
+
+        #expect(narrow.height > wide.height)
+        #expect(narrow.width <= 60)
+    }
+
+    @Test func tightConstraintsOverrideWhatAViewWants() throws {
+        let button = Button(title: "A very long button title indeed")
+        let size = button.measure(.tight(Size(width: 30, height: 12)))
+        #expect(size == Size(width: 30, height: 12))
+    }
+
+    @Test func constraintsInsetReservesSpaceOnBothAxes() throws {
+        let inner = LayoutConstraints(maxWidth: 100, maxHeight: 50)
+            .inset(by: EdgeInsets(top: 4, left: 5, bottom: 6, right: 7))
+        #expect(inner.maxWidth == 88)
+        #expect(inner.maxHeight == 40)
+        // An unbounded axis stays unbounded rather than going negative.
+        #expect(LayoutConstraints.unconstrained
+            .inset(by: EdgeInsets(top: 10, left: 10)).maxWidth == .infinity)
+    }
+
+    /// A stack reports its own size from its children, so nesting works.
+    @Test func aStackMeasuresFromItsChildrenPlusSpacingAndMargins() throws {
+        let stack = StackView(axis: .vertical, spacing: 4, alignment: .leading)
+        stack.layoutMargins = EdgeInsets(top: 2, left: 3, bottom: 2, right: 3)
+        let first = Label("One")
+        let second = Label("Two")
+        stack.addArrangedSubview(first)
+        stack.addArrangedSubview(second)
+
+        let measured = stack.measure(.unconstrained)
+        let expectedHeight = first.intrinsicContentSize.height
+            + second.intrinsicContentSize.height + 4 + 4
+        #expect(abs(measured.height - expectedHeight) < 0.001)
+        #expect(measured.width > 0)
+    }
+
+    // MARK: - Flex and distribution
+
+    @Test func growFactorsSplitSurplusSpace() throws {
+        let stack = StackView(axis: .horizontal, spacing: 0, alignment: .fill)
+        stack.frame = Rect(x: 0, y: 0, width: 300, height: 40)
+        let fixed = View()
+        fixed.frame = Rect(x: 0, y: 0, width: 100, height: 40)
+        let flexible = View()
+        flexible.frame = Rect(x: 0, y: 0, width: 50, height: 40)
+        flexible.growFactor = 1
+        stack.addArrangedSubview(fixed)
+        stack.addArrangedSubview(flexible)
+        stack.layoutIfNeeded()
+
+        // 150 used, 150 surplus, all of it to the one growing child.
+        #expect(fixed.frame.size.width == 100)
+        #expect(flexible.frame.size.width == 200)
+        #expect(flexible.frame.origin.x == 100)
+    }
+
+    @Test func surplusIsSplitInProportionToGrowFactors() throws {
+        let stack = StackView(axis: .horizontal, spacing: 0, alignment: .fill)
+        stack.frame = Rect(x: 0, y: 0, width: 300, height: 40)
+        let one = View()
+        one.frame = Rect(x: 0, y: 0, width: 50, height: 40)
+        one.growFactor = 1
+        let three = View()
+        three.frame = Rect(x: 0, y: 0, width: 50, height: 40)
+        three.growFactor = 3
+        stack.addArrangedSubview(one)
+        stack.addArrangedSubview(three)
+        stack.layoutIfNeeded()
+
+        // 200 surplus split 1:3.
+        #expect(one.frame.size.width == 100)
+        #expect(three.frame.size.width == 200)
+    }
+
+    @Test func overflowShrinksChildrenRatherThanRunningPastTheEdge() throws {
+        let stack = StackView(axis: .horizontal, spacing: 0, alignment: .fill)
+        stack.frame = Rect(x: 0, y: 0, width: 100, height: 40)
+        let first = View()
+        first.frame = Rect(x: 0, y: 0, width: 100, height: 40)
+        let second = View()
+        second.frame = Rect(x: 0, y: 0, width: 100, height: 40)
+        stack.addArrangedSubview(first)
+        stack.addArrangedSubview(second)
+        stack.layoutIfNeeded()
+
+        #expect(first.frame.size.width == 50)
+        #expect(second.frame.size.width == 50)
+        #expect(second.frame.origin.x + second.frame.size.width == 100)
+    }
+
+    @Test func aZeroShrinkFactorHoldsAChildAtItsMeasuredSize() throws {
+        let stack = StackView(axis: .horizontal, spacing: 0, alignment: .fill)
+        stack.frame = Rect(x: 0, y: 0, width: 100, height: 40)
+        let rigid = View()
+        rigid.frame = Rect(x: 0, y: 0, width: 100, height: 40)
+        rigid.shrinkFactor = 0
+        let yielding = View()
+        yielding.frame = Rect(x: 0, y: 0, width: 100, height: 40)
+        stack.addArrangedSubview(rigid)
+        stack.addArrangedSubview(yielding)
+        stack.layoutIfNeeded()
+
+        #expect(rigid.frame.size.width == 100)
+        #expect(yielding.frame.size.width == 0)
+    }
+
+    @Test func layoutBasisOverridesTheMeasuredMainAxisSize() throws {
+        let stack = StackView(axis: .vertical, spacing: 0, alignment: .fill)
+        stack.frame = Rect(x: 0, y: 0, width: 100, height: 200)
+        let label = Label("One")
+        label.layoutBasis = 44
+        stack.addArrangedSubview(label)
+        stack.layoutIfNeeded()
+
+        #expect(label.frame.size.height == 44)
+        #expect(label.intrinsicContentSize.height != 44)
+    }
+
+    @Test func fillEquallyGivesEveryChildTheSameMainAxisSize() throws {
+        let stack = StackView(
+            axis: .horizontal, spacing: 10, alignment: .fill, distribution: .fillEqually)
+        stack.frame = Rect(x: 0, y: 0, width: 320, height: 40)
+        let views = (0..<3).map { _ -> View in
+            let view = View()
+            view.frame = Rect(x: 0, y: 0, width: 10, height: 40)
+            stack.addArrangedSubview(view)
+            return view
+        }
+        stack.layoutIfNeeded()
+
+        // (320 - 20 spacing) / 3
+        for view in views {
+            #expect(abs(view.frame.size.width - 100) < 0.001)
+        }
+        #expect(abs(views[2].frame.origin.x - 220) < 0.001)
+    }
+
+    @Test func equalSpacingKeepsSizesAndWidensTheGaps() throws {
+        let stack = StackView(
+            axis: .horizontal, spacing: 0, alignment: .fill, distribution: .equalSpacing)
+        stack.frame = Rect(x: 0, y: 0, width: 300, height: 40)
+        let first = View()
+        first.frame = Rect(x: 0, y: 0, width: 50, height: 40)
+        let second = View()
+        second.frame = Rect(x: 0, y: 0, width: 50, height: 40)
+        stack.addArrangedSubview(first)
+        stack.addArrangedSubview(second)
+        stack.layoutIfNeeded()
+
+        #expect(first.frame.size.width == 50)
+        #expect(second.frame.size.width == 50)
+        #expect(second.frame.origin.x == 250)
+    }
+
+    // MARK: - Dirty tracking
+
+    /// A clean subtree is skipped outright, so a per-frame pass over a settled
+    /// tree does no work at all.
+    @Test func aCleanSubtreeIsNotWalked() throws {
+        let root = LayoutCountingView()
+        root.frame = Rect(x: 0, y: 0, width: 100, height: 100)
+        let child = LayoutCountingView()
+        root.addSubview(child)
+        root.layoutIfNeeded()
+        let baseline = child.layoutCount
+
+        root.layoutIfNeeded()
+        #expect(child.layoutCount == baseline, "nothing was dirty, so nothing ran")
+    }
+
+    /// But a dirty descendant is still reached through a clean ancestor.
+    @Test func aDirtyDescendantIsReachedThroughACleanAncestor() throws {
+        let root = LayoutCountingView()
+        root.frame = Rect(x: 0, y: 0, width: 100, height: 100)
+        let middle = View()
+        let leaf = LayoutCountingView()
+        root.addSubview(middle)
+        middle.addSubview(leaf)
+        root.layoutIfNeeded()
+        let baseline = leaf.layoutCount
+
+        leaf.setNeedsLayout()
+        root.layoutIfNeeded()
+        #expect(leaf.layoutCount == baseline + 1)
+    }
+
+    /// Reading a view's size is a question, not a mutation. The getter used to
+    /// clear the invalidation flag as a side effect, so anything that merely
+    /// measured a view silently marked it clean.
+    @Test func readingIntrinsicContentSizeDoesNotClearInvalidation() throws {
+        let button = Button(title: "OK")
+        button.title = "Install Updates"
+        #expect(button.needsIntrinsicContentSizeUpdate)
+
+        _ = button.intrinsicContentSize
+        #expect(button.needsIntrinsicContentSizeUpdate, "asking is not answering")
+
+        button.layoutIfNeeded()
+        #expect(!button.needsIntrinsicContentSizeUpdate, "the layout pass consumed it")
     }
 
     @Test func arrangedSubviewRemovalTransitionsSerializeExitThenReflow() throws {

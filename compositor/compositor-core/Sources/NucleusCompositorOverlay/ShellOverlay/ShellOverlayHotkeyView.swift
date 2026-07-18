@@ -112,7 +112,6 @@ final class ShellOverlayHotkeyRowView: Control, ~Sendable {
         textBaselineY = baselineY - rowY
         self.frame = rowFrame
         setNeedsLayout()
-        layoutIfNeeded()
     }
 
     override func layout() {
@@ -208,11 +207,10 @@ final class ShellOverlayHotkeyView: View, ~Sendable {
         self.frame = Rect(x: Double(x), y: Double(y), width: Double(boxW), height: Double(boxH))
         setNeedsLayout()
         setNeedsDisplay()
-        layoutIfNeeded()
     }
 
     override func layout() {
-        let bounds = frame
+        let bounds = self.bounds
         let boxWidth = Float(bounds.size.width)
         let appearance = effectiveAppearance
         let separatorY = metrics.sepY

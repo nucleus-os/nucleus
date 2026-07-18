@@ -68,8 +68,15 @@ public final class Label: View, ~Sendable {
     }
 
     public override var intrinsicContentSize: Size {
-        intrinsicContentSizeNeedsUpdate = false
         return textLayout(containerWidth: nil).intrinsicSize
+    }
+
+    /// The reason two-phase layout exists. A label's height is a function of the
+    /// width it is given, so it measures its text against the proposed width
+    /// rather than reporting the single-line intrinsic size and overflowing.
+    public override func measure(_ constraints: LayoutConstraints) -> Size {
+        let layout = textLayout(containerWidth: constraints.proposedWidth)
+        return constraints.constrain(layout.intrinsicSize)
     }
 
     public var firstBaselineOffsetFromTop: Double {

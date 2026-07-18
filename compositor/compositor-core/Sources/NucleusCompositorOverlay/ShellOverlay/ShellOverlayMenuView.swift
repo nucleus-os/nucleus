@@ -288,7 +288,7 @@ final class ShellOverlayMenuView: View, ~Sendable {
     }
 
     override func layout() {
-        let bounds = frame
+        let bounds = self.bounds
         let width = bounds.size.width
         backgroundEffectView.frame = Rect(x: 0, y: 0, width: width, height: bounds.size.height)
         let appearance = effectiveAppearance
@@ -312,7 +312,6 @@ final class ShellOverlayMenuView: View, ~Sendable {
                 let row = rowViews[rowIndex]
                 rowIndex += 1
                 row.frame = Rect(x: 0, y: y, width: width, height: MenuMetrics.rowHeight)
-                row.layoutIfNeeded()
                 y += MenuMetrics.rowHeight
             }
         }
@@ -364,7 +363,7 @@ private final class MenuRowView: View, ~Sendable {
     }
 
     override func layout() {
-        let bounds = frame
+        let bounds = self.bounds
         let width = bounds.size.width
         let height = bounds.size.height
         let appearance = effectiveAppearance

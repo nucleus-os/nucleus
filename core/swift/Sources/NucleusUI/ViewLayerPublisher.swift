@@ -90,6 +90,10 @@ package final class ViewLayerPublisher: ~Sendable {
             throw UIError(error)
         }
 
+        // Settle geometry and paint before reading any of it. Snapshotting is a
+        // pure read of a tree that is already final.
+        LayoutScheduler.run(roots: roots)
+
         var snapshots: [ViewLayerSnapshot] = []
         for root in roots {
             appendViewTree(root, parentBackingLayerID: 0, snapshots: &snapshots)
@@ -116,8 +120,6 @@ package final class ViewLayerPublisher: ~Sendable {
         guard !view.isHidden else {
             return false
         }
-        view.layoutIfNeeded()
-        view.displayIfNeeded()
         let content = view.layerContent
         let presentation = content.presentation
         let frame = view.frame

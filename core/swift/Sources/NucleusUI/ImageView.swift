@@ -45,7 +45,6 @@ public final class ImageView: View, ~Sendable {
     }
 
     public override var intrinsicContentSize: Size {
-        intrinsicContentSizeNeedsUpdate = false
         return image == nil ? .zero : imageSize
     }
 

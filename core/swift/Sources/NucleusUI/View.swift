@@ -16,6 +16,10 @@ open class View: Responder, Accessible, ~Sendable {
     package var intrinsicContentSizeNeedsUpdate: Bool
     package var layoutNeedsUpdate: Bool
     package var displayNeedsUpdate: Bool
+    /// Whether some descendant needs layout, even if this view does not. Without
+    /// it `layoutIfNeeded` has to walk every view on every pass to find out.
+    package var subtreeLayoutNeedsUpdate: Bool
+    package var subtreeDisplayNeedsUpdate: Bool
     package var cachedRecording: PaintRecording
     package var storedStyle: ViewStyle
     package var storedAccessibilityProperties: AccessibilityProperties
@@ -30,6 +34,8 @@ open class View: Responder, Accessible, ~Sendable {
         self.intrinsicContentSizeNeedsUpdate = false
         self.layoutNeedsUpdate = false
         self.displayNeedsUpdate = true
+        self.subtreeLayoutNeedsUpdate = false
+        self.subtreeDisplayNeedsUpdate = true
         self.cachedRecording = PaintRecording()
         self.storedStyle = .none
         self.storedAccessibilityProperties = AccessibilityProperties()
@@ -46,6 +52,8 @@ open class View: Responder, Accessible, ~Sendable {
         self.intrinsicContentSizeNeedsUpdate = false
         self.layoutNeedsUpdate = false
         self.displayNeedsUpdate = true
+        self.subtreeLayoutNeedsUpdate = false
+        self.subtreeDisplayNeedsUpdate = true
         self.cachedRecording = PaintRecording()
         self.storedStyle = .none
         self.storedAccessibilityProperties = AccessibilityProperties()
@@ -81,6 +89,10 @@ open class View: Responder, Accessible, ~Sendable {
         child.detachFromSwiftTree()
         childViews.append(child)
         child.parentView = self
+        // The new child carries its own dirty state; the ancestors that will run
+        // the next pass have to learn there is now work under them.
+        markSubtreeNeedsLayout()
+        markSubtreeNeedsDisplay()
         child.backingLayer.attach(to: backingLayer, at: UInt32.max)
         LayerTransaction.appendAmbient(
             .inserted(layer: child.backingLayer.id, parent: backingLayer.id, index: UInt32.max),
@@ -364,13 +376,62 @@ open class View: Responder, Accessible, ~Sendable {
         displayNeedsUpdate
     }
 
+    /// This view's natural size with no constraint applied. The unconstrained
+    /// case of `measure(_:)`; anything whose size depends on the space offered
+    /// — wrapped text above all — must override `measure(_:)` too, because this
+    /// question cannot express the answer.
+    ///
+    /// A pure read. It used to clear `intrinsicContentSizeNeedsUpdate` as a side
+    /// effect, which meant merely *asking* a view its size silently marked it
+    /// clean; the flag is now cleared by the layout pass that consumed it.
     open var intrinsicContentSize: Size {
-        intrinsicContentSizeNeedsUpdate = false
-        return .zero
+        .zero
+    }
+
+    /// The size this view wants within `constraints`.
+    ///
+    /// The first half of two-phase layout: a parent measures children to decide
+    /// how much room each gets, then `arrange(in:)` assigns final geometry.
+    /// Measuring must not mutate geometry — a parent may measure the same child
+    /// several times while resolving flexible space.
+    open func measure(_ constraints: LayoutConstraints) -> Size {
+        constraints.constrain(intrinsicContentSize)
+    }
+
+    /// Place this view at `rect` and lay its subtree out within it. The second
+    /// half of two-phase layout.
+    open func arrange(in rect: Rect) {
+        if frame != rect {
+            frame = rect
+        }
+        layoutIfNeeded()
+    }
+
+    // MARK: - Flexible sizing
+
+    /// Share of a container's *surplus* main-axis space this view absorbs,
+    /// relative to its siblings. `0` (the default) means "stay at measured size".
+    public var growFactor: Double = 0 {
+        didSet { if growFactor != oldValue { parentView?.setNeedsLayout() } }
+    }
+
+    /// Share of a container's main-axis *overflow* this view gives back, weighted
+    /// by measured size. `1` by default, so children shrink together rather than
+    /// letting the last one overflow.
+    public var shrinkFactor: Double = 1 {
+        didSet { if shrinkFactor != oldValue { parentView?.setNeedsLayout() } }
+    }
+
+    /// Main-axis starting size, overriding the measured one. `nil` means measure.
+    public var layoutBasis: Double? = nil {
+        didSet { if layoutBasis != oldValue { parentView?.setNeedsLayout() } }
     }
 
     open func invalidateIntrinsicContentSize() {
         intrinsicContentSizeNeedsUpdate = true
+        // Both: this view's own layout depends on its size, and its container's
+        // arrangement of siblings does too.
+        setNeedsLayout()
         parentView?.setNeedsLayout()
     }
 
@@ -379,7 +440,26 @@ open class View: Responder, Accessible, ~Sendable {
             return
         }
         layoutNeedsUpdate = true
-        parentView?.setNeedsLayout()
+        parentView?.markSubtreeNeedsLayout()
+    }
+
+    /// Record that *something below* needs layout, without dirtying this view's
+    /// own arrangement. A child moving does not mean its parent must re-run
+    /// `layout()`; it only means the pass has to reach that child.
+    package func markSubtreeNeedsLayout() {
+        var node: View? = self
+        while let current = node, !current.subtreeLayoutNeedsUpdate {
+            current.subtreeLayoutNeedsUpdate = true
+            node = current.parentView
+        }
+    }
+
+    package func markSubtreeNeedsDisplay() {
+        var node: View? = self
+        while let current = node, !current.subtreeDisplayNeedsUpdate {
+            current.subtreeDisplayNeedsUpdate = true
+            node = current.parentView
+        }
     }
 
     open func setNeedsDisplay() {
@@ -392,6 +472,7 @@ open class View: Responder, Accessible, ~Sendable {
     open func setNeedsDisplay(_ rect: Rect) {
         _ = rect
         displayNeedsUpdate = true
+        parentView?.markSubtreeNeedsDisplay()
     }
 
     open func layout() {
@@ -410,17 +491,27 @@ open class View: Responder, Accessible, ~Sendable {
         _ = context
     }
 
+    /// Run layout over the dirty part of this subtree. Clean subtrees are
+    /// skipped outright: with a per-frame layout pass over a whole shell, walking
+    /// every view to discover that nothing changed is the dominant cost.
     public func layoutIfNeeded() {
+        guard layoutNeedsUpdate || subtreeLayoutNeedsUpdate else { return }
         if layoutNeedsUpdate {
-            layout()
             layoutNeedsUpdate = false
+            intrinsicContentSizeNeedsUpdate = false
+            layout()
         }
+        // Cleared before recursing: `layout()` places children, which re-marks
+        // this flag through their `frame` setters, and those children are exactly
+        // the ones the loop below is about to visit.
+        subtreeLayoutNeedsUpdate = false
         for child in childViews {
             child.layoutIfNeeded()
         }
     }
 
     public func displayIfNeeded() {
+        guard displayNeedsUpdate || subtreeDisplayNeedsUpdate else { return }
         if displayNeedsUpdate {
             let context = GraphicsContext()
             storedStyle.draw(in: context, bounds: bounds)
@@ -428,6 +519,7 @@ open class View: Responder, Accessible, ~Sendable {
             cachedRecording = context.recording
             displayNeedsUpdate = false
         }
+        subtreeDisplayNeedsUpdate = false
         for child in childViews {
             child.displayIfNeeded()
         }

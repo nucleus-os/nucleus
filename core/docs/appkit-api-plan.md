@@ -144,7 +144,7 @@ only by a hypothetical future client.
 | 6 | Retire the RN committer | **complete** |
 | 7 | Publication, and privilege as a module boundary | **complete** |
 | 8 | Event vocabulary and responder wiring | **partial** |
-| 9 | Layout: measure/arrange and flex | pending |
+| 9 | Layout: measure/arrange and flex | **complete** |
 | 10 | TextField and input-method foundation | pending |
 | 11 | ScrollView, the interaction capstone | pending |
 | 12 | TextView and multiline editing | pending |
@@ -507,7 +507,7 @@ the product target itself depends on `NucleusUI` alone, and the check enforces t
 product test should be able to verify what a view drew without reaching into the embedder tier.
 That seam should be designed when there is more product code to inform its shape.
 
-## Phase 8 — Event vocabulary and responder wiring — complete
+## Phase 8 — Event vocabulary and responder wiring — partial
 
 `Event` was four fields and three types; it is now an NSEvent-shaped record carrying modifier
 flags, click count, scroll deltas with a precise-device flag, key code, composed characters,
@@ -555,31 +555,68 @@ callbacks still need routing into it, and `ShellOverlayInputEvent.text` is threa
 populated — that requires carrying composed text through the compositor's wire `InputEvent`.
 Phase 10 needs both for text input and is where they belong.
 
-## Phase 9 — Layout: measure/arrange and flex
+## Phase 9 — Layout: measure/arrange and flex — complete
 
-`intrinsicContentSize` takes no container width, so a `StackView` cannot ask a `Label` "how
-tall at width 200?" — text wrapping cannot participate in layout. Noctalia's `Node`
-measure/arrange with `LayoutConstraints` is the production reference.
+`intrinsicContentSize` takes no container width, so a `StackView` could not ask a `Label` "how
+tall at width 200?" Text wrapping could not participate in layout at all. That question now has
+a place to live.
 
-- Two-phase measure/arrange: `measure(_ constraints:)` takes a proposed range, then `arrange`
-  assigns final geometry. `intrinsicContentSize` is the unconstrained case.
-- Add grow/shrink/basis, distribution, and cross-axis alignment to the native arrangement
-  model.
-- Drop `bounds.origin` from `StackView` child placement so arranged frames are child-local,
-  matching `hitTest` and every correct manual layout.
-- Stop `displayIfNeeded` and `layoutIfNeeded` from recursing into clean subtrees, and remove
-  dirty-state mutation from the `intrinsicContentSize` getter.
-- Add a layout scheduler rather than running layout incidentally during publication.
-- Use `NucleusShellProduct`'s first real bar/root views as the external-client acceptance test;
-  do not add shell-specific layout code to compensate for a missing general rule.
+**`LayoutConstraints` carries the proposal.** A size range on both axes, maxima allowed to be
+infinite. `measure(_ constraints:) -> Size` is the first phase and must not mutate geometry — a
+container measures the same child repeatedly while resolving flexible space. `arrange(in:)` is
+the second, assigning the final rect. `intrinsicContentSize` survives as the unconstrained case
+and the default implementation of `measure`, so views with width-independent sizes override
+nothing. `Label` overrides `measure` to lay its text out against `constraints.proposedWidth`,
+which is the entire motivation; `Button` does the same less its title inset, and `StackView`
+reports its own size by measuring its children.
 
-Files: `NucleusUI/{View,StackView,Geometry,ViewLayerPublisher}.swift`;
-`NucleusCompositorOverlay/ShellOverlay/{ShellOverlayNotificationView,ShellOverlayHotkeyView,ShellOverlayScene}.swift`;
-`shell/Sources/NucleusShellProduct/` bar and root views.
+**Flex lives on the child, distribution on the container.** `growFactor`, `shrinkFactor`, and
+`layoutBasis` are `View` properties, since which container a view sits in should not change how
+it expresses flexibility. `StackView.Distribution` mirrors `NSStackView`'s: `.fill` (the
+default, and the only one that honours the factors), `.fillEqually`, `.fillProportionally`,
+`.equalSpacing`. Shrink is weighted by measured size as well as factor, so a large child
+absorbs more of a deficit than a small one at the same factor.
 
-**Lands with:** the overlay's coordinate workaround and manual `layoutIfNeeded()` calls
-deleted, and the native shell laying out wrapped text and flexible bar regions with only
-NucleusUI constraints.
+**The coordinate defect is fixed, and it was real.** `StackView.layout()` placed children at
+`frame.origin + margins` — parent space — while `hitTest` rebases into child space on the way
+down. Every arranged subview of a stack not at the origin was therefore unhittable, by exactly
+the stack's own offset. Three tests pinned the wrong placement and were rewritten to expect
+child-local frames. The regression test the plan asked for exists in both tiers:
+`arrangedSubviewsAreHittable` in core, and `aBarItemIsHittableThroughNestedStacks` in the shell
+where the failure would actually have been felt.
+
+**Dirty tracking now has a subtree bit.** `layoutIfNeeded`/`displayIfNeeded` walked every view
+on every pass to discover that nothing had changed. `subtreeLayoutNeedsUpdate` and
+`subtreeDisplayNeedsUpdate` propagate up on invalidation, so a clean subtree costs one flag
+check. `setNeedsLayout` no longer dirties its ancestors' own `layout()` — a child moving does
+not mean its parent must rearrange, only that the pass has to reach that child.
+
+**Reading a size is no longer a mutation.** `intrinsicContentSize` cleared
+`intrinsicContentSizeNeedsUpdate` from inside its getter, so anything that merely *measured* a
+view silently marked it clean — and measuring is exactly what the new layout does, repeatedly.
+The flag is now cleared by the layout pass that consumed it. `StaticControlTests` asserted the
+old side effect and was rewritten to assert the behaviour instead.
+
+**`LayoutScheduler` replaces incidental layout.** The publisher used to call `layoutIfNeeded()`
+per view as it walked the tree to snapshot it, interleaving three jobs with incompatible
+orderings: a `layout()` writes descendant frames, so a top-down snapshot was reading geometry
+later nodes were still free to change. Layout now completes for all roots, then display, then
+snapshotting reads a settled tree. The ordering is the mechanism.
+
+Delivered in `NucleusUI/{LayoutConstraints,LayoutScheduler,View,StackView,Label,Button,
+ImageView,ViewLayerPublisher}.swift`, the overlay's `ShellOverlay{HotkeyView,MenuView,Scene}`,
+and `shell/Sources/NucleusShellProduct/ShellBarView.swift`.
+
+**Landed with:** the overlay's four manual `layoutIfNeeded()` calls deleted, and
+`ShellBarView`/`ShellNoticeView` as the external-client acceptance test — a bar whose trailing
+chrome tracks the edge through a `growFactor` spacer at any width, and a notice whose body text
+wraps and grows taller in a narrower column. Both are expressed in NucleusUI constraints alone,
+with no shell-specific placement rule.
+
+**One manual call was kept, deliberately.** `ShellOverlayScene.dismissNotification` still calls
+`notificationListView.layoutIfNeeded()` after resizing the notification window. The removal
+transition snapshots child frames synchronously at that moment, so this is a genuine
+settle-before-read barrier rather than the incidental layout the phase set out to remove.
 
 ## Phase 10 — TextField and input-method foundation
 
@@ -696,12 +733,13 @@ Tests assert **runtime behavior and contracts, never source-code shape** — no 
   and secondary-button rejection. The overlay menu behaves identically with `handleMenuKey`
   deleted. **Outstanding:** the shell's Wayland adapter and key repeat, and populating
   `ShellOverlayInputEvent.text` from `XkbKeyboard.keyGetText` through the wire `InputEvent`.
-- **Phase 9**: extend `LayoutTests.swift` with measure/arrange under constraints, flex
-  distribution, and text-wrap-participates-in-layout. **Add the missing test that would have
-  caught the coordinate bug: lay out a `StackView` at a non-zero origin and hit-test a point
-  inside an arranged subview.** No existing test does this, which is why the bug survives.
-  `LayoutTests.swift:27` (`verticalStackUsesIntrinsicSizesAndSpacing`) pins the buggy
-  placement — stack at `x:10` → first child at `x:10` — and must be rewritten to expect `x:0`.
+- **Phase 9** — done: `LayoutTests.swift` gained 16 tests covering measurement under
+  constraints, constraint inset, grow/shrink/basis, all four distributions, subtree dirty
+  skipping, and getter purity; `ShellBarViewTests` adds 6 out-of-package tests for flexible bar
+  regions, reflow on resize, nested hit testing, and wrapped text growing taller in a narrower
+  column. The coordinate bug is covered from both tiers. Three tests that pinned the parent-space
+  placement and one that pinned the impure getter were rewritten to assert the correct
+  behaviour.
 - **Phase 10**: editor-model tests cover UTF-8/UTF-16 mapping, grapheme and word movement,
   secure masking, selection, deletion, preedit replacement, and commit ordering. A shell
   client/server integration test covers text-input-v3 enable, preedit, commit, deletion, and
