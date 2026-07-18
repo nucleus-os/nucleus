@@ -21,7 +21,7 @@ package final class ViewLayerPublisher: ~Sendable {
         var shadow: Shadow?
         var layerKind: LayerKind
         var backdropMaterial: BackdropMaterial
-        var commands: [ViewLayerContentCommand]
+        var recording: PaintRecording
         var role: LayerRole
         var backdropGroup: BackdropGroup
         var actionPolicy: ActionPolicy
@@ -31,8 +31,6 @@ package final class ViewLayerPublisher: ~Sendable {
 
     private struct BackingLayerCache: ~Sendable {
         var backingLayer: Layer
-        var backdropLayer: Layer?
-        var contentLayer: Layer?
         var parentBackingLayerID: UInt64
         var frame: GeometryRect?
         var opacity: Double?
@@ -41,11 +39,10 @@ package final class ViewLayerPublisher: ~Sendable {
         var backdropFrame: GeometryRect?
         var backdropOpacity: Double?
         var backdropMaterial: BackdropMaterial?
-        var contentFrame: GeometryRect?
         var paintBackingLayerID: UInt64?
         var paintWidth: Float?
         var paintHeight: Float?
-        var paintCommands: [PaintCommand]
+        var paintRecording: PaintRecording
     }
 
     private struct BackingLayerUpdate: ~Sendable {
@@ -141,7 +138,7 @@ package final class ViewLayerPublisher: ~Sendable {
         }
         let hasSemanticLayer = view.backingLayer.descriptor.kind != .container
         let hasOwnContent = hasSemanticLayer ||
-            !content.commands.isEmpty ||
+            !content.recording.isEmpty ||
             content.shadow != nil ||
             presentation.role != .generic ||
             presentation.backdropGroup != .none ||
@@ -162,7 +159,7 @@ package final class ViewLayerPublisher: ~Sendable {
             shadow: content.shadow,
             layerKind: view.backingLayer.descriptor.kind,
             backdropMaterial: publicationBackdropMaterial,
-            commands: content.commands,
+            recording: content.recording,
             role: presentation.role,
             backdropGroup: presentation.backdropGroup,
             actionPolicy: presentation.actionPolicy,
@@ -206,17 +203,10 @@ package final class ViewLayerPublisher: ~Sendable {
                     transaction: &transaction,
                     didMutate: &didMutate
                 )
-                let usesBackdropLayer = try reconcileBackdrop(
-                    snapshot: snapshot,
-                    state: &state,
-                    transaction: &transaction,
-                    didMutate: &didMutate
-                )
                 try publishPaint(
                     snapshot: snapshot,
                     state: &state,
                     transaction: &transaction,
-                    usesBackdropLayer: usesBackdropLayer,
                     didMutate: &didMutate
                 )
                 backingLayerCache[snapshot.backingLayerID] = state
@@ -242,26 +232,14 @@ package final class ViewLayerPublisher: ~Sendable {
         snapshot: ViewLayerSnapshot,
         state: inout BackingLayerCache,
         transaction: inout LayerTransaction,
-        usesBackdropLayer: Bool,
         didMutate: inout Bool
     ) throws(LayerError) {
-        let paintCommands = snapshot.commands
-            .filter { $0.kind != .backdrop }
-            .map { layerPaintCommand($0) }
-        defer {
-            releaseTransientTextLayoutHandles(paintCommands)
-        }
+        let recording = snapshot.recording
         let paintWidth = snapshot.w
         let paintHeight = snapshot.h
 
         let paintLayer: Layer?
-        if paintCommands.isEmpty {
-            if let content = state.contentLayer {
-                try transaction.remove(content)
-                state.contentLayer = nil
-                didMutate = true
-            }
-            state.contentFrame = nil
+        if recording.isEmpty {
             if state.paintBackingLayerID == state.backingLayer.id.rawValue {
                 try transaction.setContent(.none, for: state.backingLayer)
                 didMutate = true
@@ -270,46 +248,10 @@ package final class ViewLayerPublisher: ~Sendable {
                 state.paintBackingLayerID = nil
                 state.paintWidth = nil
                 state.paintHeight = nil
-                state.paintCommands = []
+                state.paintRecording = PaintRecording()
             }
             paintLayer = nil
-        } else if usesBackdropLayer {
-            let hadContentLayer = state.contentLayer != nil
-            let content = try ensureContentLayer(state: state, transaction: &transaction)
-            state.contentLayer = content
-            if !hadContentLayer {
-                didMutate = true
-            }
-            if state.paintBackingLayerID == state.backingLayer.id.rawValue {
-                try transaction.setContent(.none, for: state.backingLayer)
-                state.paintBackingLayerID = nil
-                state.paintWidth = nil
-                state.paintHeight = nil
-                state.paintCommands = []
-                didMutate = true
-            }
-            let contentFrame = GeometryRect(x: 0, y: 0, width: Double(paintWidth), height: Double(paintHeight))
-            if state.contentFrame != contentFrame {
-                var properties = LayerPropertyUpdate.decomposedFrame(contentFrame)
-                properties.opacity = 1
-                try transaction.setProperties(properties, for: content)
-                state.contentFrame = contentFrame
-                didMutate = true
-            }
-            paintLayer = content
         } else {
-            if let content = state.contentLayer {
-                try transaction.remove(content)
-                state.contentLayer = nil
-                if state.paintBackingLayerID == content.id.rawValue {
-                    state.paintBackingLayerID = nil
-                    state.paintWidth = nil
-                    state.paintHeight = nil
-                    state.paintCommands = []
-                }
-                didMutate = true
-            }
-            state.contentFrame = nil
             paintLayer = state.backingLayer
         }
 
@@ -317,22 +259,25 @@ package final class ViewLayerPublisher: ~Sendable {
             state.paintBackingLayerID = nil
             state.paintWidth = nil
             state.paintHeight = nil
-            state.paintCommands = []
+            state.paintRecording = PaintRecording()
         }
+        // The recording diff is the re-registration gate. Recordings are pure
+        // data — no handles are minted while drawing — so an unchanged drawing
+        // compares equal and registers nothing.
         if let paintLayer, state.paintWidth != paintWidth ||
             state.paintHeight != paintHeight ||
-            state.paintCommands != paintCommands
+            state.paintRecording != recording
         {
-            try transaction.setPaintCommands(
-                paintCommands,
-                width: paintWidth,
-                height: paintHeight,
-                for: paintLayer
-            )
+            let registered = try PaintRegistration.register(
+                recording, width: paintWidth, height: paintHeight, in: context)
+            try transaction.setProperties(registered.update, for: paintLayer)
+            // Keep the registered content and any transient text handles alive
+            // until the update has been recorded into the transaction.
+            withExtendedLifetime(registered) {}
             state.paintBackingLayerID = paintLayer.id.rawValue
             state.paintWidth = paintWidth
             state.paintHeight = paintHeight
-            state.paintCommands = paintCommands
+            state.paintRecording = recording
             didMutate = true
         }
     }
@@ -383,57 +328,8 @@ package final class ViewLayerPublisher: ~Sendable {
         }
     }
 
-    /// Reconcile the dedicated backdrop sublayer: create + diff it when the snapshot
-    /// carries a backdrop command, or tear it down when it no longer does. Returns
-    /// whether a backdrop layer is in use (paint then composites into a separate
-    /// content layer rather than the backing layer). Mutates `state`/`didMutate`.
-    private func reconcileBackdrop(
-        snapshot: ViewLayerSnapshot,
-        state: inout BackingLayerCache,
-        transaction: inout LayerTransaction,
-        didMutate: inout Bool
-    ) throws(LayerError) -> Bool {
-        let backdropCommand = snapshot.commands.first(where: { $0.kind == .backdrop })
-        if let backdropCommand {
-            let hadBackdrop = state.backdropLayer != nil
-            let backdrop = try ensureBackdrop(
-                state: state,
-                command: backdropCommand,
-                transaction: &transaction
-            )
-            state.backdropLayer = backdrop
-            if !hadBackdrop {
-                didMutate = true
-            }
-            let backdropFrame = rect(backdropCommand)
-            let backdropOpacity = Double(backdropCommand.color.a)
-            let backdropMaterial = backdropCommand.backdropMaterial
-            if state.backdropFrame != backdropFrame ||
-                state.backdropOpacity != backdropOpacity ||
-                state.backdropMaterial != backdropMaterial
-            {
-                var properties = LayerPropertyUpdate.decomposedFrame(backdropFrame)
-                properties.opacity = backdropOpacity
-                properties.backdropMaterial = backdropMaterial
-                try transaction.setProperties(properties, for: backdrop)
-                state.backdropFrame = backdropFrame
-                state.backdropOpacity = backdropOpacity
-                state.backdropMaterial = backdropMaterial
-                didMutate = true
-            }
-        } else if let backdrop = state.backdropLayer {
-            try transaction.remove(backdrop)
-            state.backdropLayer = nil
-            state.backdropFrame = nil
-            state.backdropOpacity = nil
-            state.backdropMaterial = nil
-            didMutate = true
-        }
-        return backdropCommand != nil
-    }
-
-    /// Remove the backing layer (and its backdrop/content sublayers) and drop the
-    /// cache entry for every layer not present in the current snapshot set.
+    /// Remove the backing layer and drop the cache entry for every layer not
+    /// present in the current snapshot set.
     private func collectGarbage(
         seen: Set<UInt64>,
         transaction: inout LayerTransaction,
@@ -441,12 +337,6 @@ package final class ViewLayerPublisher: ~Sendable {
     ) throws(LayerError) {
         for id in Array(backingLayerCache.keys) where !seen.contains(id) {
             if let state = backingLayerCache[id] {
-                if let backdrop = state.backdropLayer {
-                    try transaction.remove(backdrop)
-                }
-                if let content = state.contentLayer {
-                    try transaction.remove(content)
-                }
                 try transaction.remove(state.backingLayer)
                 didMutate = true
             }
@@ -508,8 +398,6 @@ package final class ViewLayerPublisher: ~Sendable {
         ))
         let state = BackingLayerCache(
             backingLayer: backingLayer,
-            backdropLayer: nil,
-            contentLayer: nil,
             parentBackingLayerID: UInt64.max,
             frame: creationFrame,
             opacity: creationOpacity,
@@ -518,46 +406,13 @@ package final class ViewLayerPublisher: ~Sendable {
             backdropFrame: nil,
             backdropOpacity: nil,
             backdropMaterial: initialSemanticBackdropMaterial,
-            contentFrame: nil,
             paintBackingLayerID: nil,
             paintWidth: nil,
             paintHeight: nil,
-            paintCommands: []
+            paintRecording: PaintRecording()
         )
         backingLayerCache[snapshot.backingLayerID] = state
         return .init(state: state, created: true, targetFrame: targetFrame)
-    }
-
-    private func ensureBackdrop(
-        state: BackingLayerCache,
-        command: ViewLayerContentCommand,
-        transaction: inout LayerTransaction
-    ) throws(LayerError) -> Layer {
-        if let backdrop = state.backdropLayer {
-            return backdrop
-        }
-
-        let backdrop = transaction.createLayer(.init(
-            kind: .backdrop,
-            frame: rect(command),
-            opacity: Double(command.color.a),
-            backdropMaterial: command.backdropMaterial
-        ))
-        try transaction.insert(backdrop, into: state.backingLayer, at: 0)
-        return backdrop
-    }
-
-    private func ensureContentLayer(
-        state: BackingLayerCache,
-        transaction: inout LayerTransaction
-    ) throws(LayerError) -> Layer {
-        if let content = state.contentLayer {
-            return content
-        }
-
-        let content = transaction.createLayer()
-        try transaction.insert(content, into: state.backingLayer)
-        return content
     }
 
     private func layerProperties(
@@ -584,64 +439,4 @@ package final class ViewLayerPublisher: ~Sendable {
         }
         return properties
     }
-
-    private func rect(_ command: ViewLayerContentCommand) -> GeometryRect {
-        .init(
-            x: Double(command.x),
-            y: Double(command.y),
-            width: Double(command.w),
-            height: Double(command.h)
-        )
-    }
-
-    private func layerPaintCommand(_ command: ViewLayerContentCommand) -> PaintCommand {
-        let layoutHandle = command.kind == .textLayout ? makeTextLayoutHandle(command) : 0
-        return PaintCommand(
-            kind: layerPaintKind(command.kind),
-            x: command.x,
-            y: command.y,
-            w: command.w,
-            h: command.h,
-            radius: command.radius,
-            strokeWidth: command.strokeWidth,
-            fontSize: 0,
-            color: command.color.layersColor,
-            imageHandle: command.imageHandle,
-            textLayoutHandle: layoutHandle
-        )
-    }
-
-    private func layerPaintKind(_ kind: LayerContentCommandKind) -> PaintCommandKind {
-        switch kind {
-        case .rect:
-            .rect
-        case .roundedRect:
-            .roundedRect
-        case .image:
-            .image
-        case .line:
-            .line
-        case .textLayout:
-            .textLayout
-        case .backdrop:
-            .rect
-        }
-    }
-
-    private func releaseTransientTextLayoutHandles(_ commands: [PaintCommand]) {
-        for command in commands where command.kind == .textLayout && command.textLayoutHandle != 0 {
-            TextSystem.shared.releaseLayoutHandle(command.textLayoutHandle)
-        }
-    }
-
-    private func makeTextLayoutHandle(_ command: ViewLayerContentCommand) -> UInt64 {
-        guard let layout = command.textLayout else {
-            return 0
-        }
-        if let storageHandle = layout.storage?.retainedHandle(), storageHandle != 0 {
-            return storageHandle
-        }
-        return TextSystem.shared.makeLayoutHandle(for: layout)
-    }
-
 }

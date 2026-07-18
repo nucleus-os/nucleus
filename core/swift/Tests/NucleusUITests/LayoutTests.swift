@@ -12,27 +12,27 @@ import Testing
     }
 
     @Test func setNeedsLayoutAndLayoutIfNeeded() throws {
-        let view = try LayoutCountingView()
+        let view = LayoutCountingView()
 
         #expect(!view.needsLayout)
         view.setNeedsLayout()
         #expect(view.needsLayout)
 
-        try view.layoutIfNeeded()
+        view.layoutIfNeeded()
 
         #expect(!view.needsLayout)
         #expect(view.layoutCount == 1)
     }
 
     @Test func verticalStackUsesIntrinsicSizesAndSpacing() throws {
-        let stack = try StackView(axis: .vertical, spacing: 4, alignment: .fill)
-        let first = try Label("One")
-        let second = try Button(title: "Go")
+        let stack = StackView(axis: .vertical, spacing: 4, alignment: .fill)
+        let first = Label("One")
+        let second = Button(title: "Go")
 
         stack.frame = (Rect(x: 10, y: 20, width: 200, height: 300))
-        try stack.addArrangedSubview(first)
-        try stack.addArrangedSubview(second)
-        try stack.layoutIfNeeded()
+        stack.addArrangedSubview(first)
+        stack.addArrangedSubview(second)
+        stack.layoutIfNeeded()
 
         let firstHeight = first.intrinsicContentSize.height
         let secondHeight = second.intrinsicContentSize.height
@@ -41,14 +41,14 @@ import Testing
     }
 
     @Test func horizontalStackCentersChildrenOnCrossAxis() throws {
-        let stack = try StackView(axis: .horizontal, spacing: 10, alignment: .center)
-        let first = try Label("Hi")
-        let second = try Label("There")
+        let stack = StackView(axis: .horizontal, spacing: 10, alignment: .center)
+        let first = Label("Hi")
+        let second = Label("There")
 
         stack.frame = (Rect(x: 0, y: 0, width: 300, height: 100))
-        try stack.addArrangedSubview(first)
-        try stack.addArrangedSubview(second)
-        try stack.layoutIfNeeded()
+        stack.addArrangedSubview(first)
+        stack.addArrangedSubview(second)
+        stack.layoutIfNeeded()
 
         let firstSize = first.intrinsicContentSize
         let secondSize = second.intrinsicContentSize
@@ -75,8 +75,12 @@ import Testing
         #expect(layout.firstBaselineOffsetFromTop < layout.intrinsicSize.height)
         #expect(layout.lastBaselineOffsetFromBottom > 0)
 
-        let commands = layout.layerContentCommands(color: Color(1, 1, 1, 1))
-        let textCommand = try #require(commands.first)
+        let context = GraphicsContext()
+        context.fillColor = Color(1, 1, 1, 1)
+        context.draw(layout, in: Rect(
+            x: 0, y: 0,
+            width: layout.usedRect.size.width, height: layout.usedRect.size.height))
+        let textCommand = try #require(context.recording.commands.first)
         #expect(textCommand.kind == .textLayout)
         #expect(textCommand.y == 0)
         #expect(textCommand.h == Float(layout.intrinsicSize.height))
@@ -201,9 +205,15 @@ import Testing
         #expect(layout.textRuns.count == 2)
         #expect(layout.intrinsicSize.width > TextLayout.measureWidth("Nucleus", font: titleFont))
 
-        let command = try #require(layout.layerContentCommands(color: Color(1, 1, 1, 1)).first)
+        let context = GraphicsContext()
+        context.fillColor = Color(1, 1, 1, 1)
+        context.draw(layout, in: Rect(x: 0, y: 0, width: 100, height: 20))
+        let command = try #require(context.recording.commands.first)
         #expect(command.kind == .textLayout)
-        let commandLayout = try #require(command.textLayout)
+        // The handle is a one-based index into the recording's layouts, not a
+        // registry handle — nothing is minted while drawing.
+        #expect(command.textLayoutHandle == 1)
+        let commandLayout = try #require(context.recording.textLayouts.first)
         #expect(commandLayout.textRuns.count == 2)
         #expect(commandLayout.textRuns[0].font.weight == .semibold)
         #expect(commandLayout.textRuns[1].color == Color(0.72, 0.78, 0.86, 1))
@@ -250,7 +260,7 @@ import Testing
     }
 
     @Test func labelPlacesFramesFromBaselineMetrics() throws {
-        let label = try Label("Descenders gy")
+        let label = Label("Descenders gy")
         label.fontSize = 14
 
         label.placeBaseline(at: 30, x: 12, width: 140)
@@ -261,12 +271,12 @@ import Testing
     }
 
     @Test func intrinsicInvalidationMarksParentLayoutDirty() throws {
-        let stack = try StackView(axis: .vertical)
-        let button = try Button(title: "OK")
+        let stack = StackView(axis: .vertical)
+        let button = Button(title: "OK")
 
         stack.frame = (Rect(x: 0, y: 0, width: 200, height: 100))
-        try stack.addArrangedSubview(button)
-        try stack.layoutIfNeeded()
+        stack.addArrangedSubview(button)
+        stack.layoutIfNeeded()
         #expect(!stack.needsLayout)
 
         button.title = "Install Updates"
@@ -276,30 +286,30 @@ import Testing
     }
 
     @Test func stackFallsBackToExplicitFrameForNonIntrinsicChild() throws {
-        let stack = try StackView(axis: .vertical, spacing: 2, alignment: .leading)
-        let child = try View()
+        let stack = StackView(axis: .vertical, spacing: 2, alignment: .leading)
+        let child = View()
 
         stack.frame = (Rect(x: 5, y: 6, width: 100, height: 100))
         child.frame = (Rect(x: 0, y: 0, width: 44, height: 18))
-        try stack.addArrangedSubview(child)
-        try stack.layoutIfNeeded()
+        stack.addArrangedSubview(child)
+        stack.layoutIfNeeded()
 
         #expect(child.frame == Rect(x: 5, y: 6, width: 44, height: 18))
     }
 
     @Test func stackRespectsLayoutMarginsAndHiddenArrangedSubviews() throws {
-        let stack = try StackView(axis: .vertical, spacing: 3, alignment: .fill)
-        let first = try Label("One")
-        let hidden = try Label("Hidden")
-        let second = try Label("Two")
+        let stack = StackView(axis: .vertical, spacing: 3, alignment: .fill)
+        let first = Label("One")
+        let hidden = Label("Hidden")
+        let second = Label("Two")
 
         stack.frame = Rect(x: 10, y: 20, width: 120, height: 100)
         stack.layoutMargins = EdgeInsets(top: 4, left: 5, bottom: 6, right: 7)
         hidden.isHidden = true
-        try stack.addArrangedSubview(first)
-        try stack.addArrangedSubview(hidden)
-        try stack.addArrangedSubview(second)
-        try stack.layoutIfNeeded()
+        stack.addArrangedSubview(first)
+        stack.addArrangedSubview(hidden)
+        stack.addArrangedSubview(second)
+        stack.layoutIfNeeded()
 
         let firstHeight = first.intrinsicContentSize.height
         let secondHeight = second.intrinsicContentSize.height
@@ -309,20 +319,20 @@ import Testing
     }
 
     @Test func arrangedSubviewRemovalTransitionsSerializeExitThenReflow() throws {
-        let stack = try StackView(axis: .vertical, spacing: 2, alignment: .leading)
-        let first = try View()
-        let second = try View()
-        let third = try View()
+        let stack = StackView(axis: .vertical, spacing: 2, alignment: .leading)
+        let first = View()
+        let second = View()
+        let third = View()
         var removed: [Int] = []
 
         stack.frame = Rect(x: 0, y: 0, width: 100, height: 100)
         first.frame = Rect(x: 0, y: 0, width: 20, height: 10)
         second.frame = Rect(x: 0, y: 0, width: 20, height: 10)
         third.frame = Rect(x: 0, y: 0, width: 20, height: 10)
-        try stack.addArrangedSubview(first)
-        try stack.addArrangedSubview(second)
-        try stack.addArrangedSubview(third)
-        try stack.layoutIfNeeded()
+        stack.addArrangedSubview(first)
+        stack.addArrangedSubview(second)
+        stack.addArrangedSubview(third)
+        stack.layoutIfNeeded()
 
         let initialSecondY = second.frame.origin.y
         try stack.removeArrangedSubview(

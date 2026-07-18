@@ -37,8 +37,8 @@ deletes.
 the Skia Graphite bridges, `Vulkan`/`VulkanC`, `NucleusAppHostProtocols`,
 `NucleusAppHostBundle`, `Tracy`, `NucleusTextCxxBridge` with `skia_text_backend.cpp`
 (Skia text *rendering*), and `platform-android` (the Android render host — it depends only on
-the renderer, no React). Owns and provisions the **render native SDK**: Skia Graphite/Dawn
-and Vulkan (`build-skia`, `build-skia-android`).
+the renderer, no React). Owns and provisions the **render native SDK**: Skia Graphite over
+native Vulkan (`build-skia`, `build-skia-android`).
 
 **`react-native-nucleus` — the out-of-tree RN platform + app SDK.** `NucleusReactRuntime`,
 `NucleusReactRuntimeCxx`, `NucleusReactRuntimeHostCxx`, the `NucleusReactRuntimeCxxBridge`
@@ -173,7 +173,7 @@ exercised until the present-path relights. The 24 legacy `@main` fixtures remain
 
 ### Phase 1 — Split the native SDK along the render/RN line — done
 
-Divide the single provisioned SDK into a render SDK (Skia Graphite/Dawn, Vulkan) and an RN SDK
+Divide the single provisioned SDK into a render SDK (Skia Graphite, native Vulkan) and an RN SDK
 (Hermes, folly, ReactCommon/Fabric, glog, fmt, the host-cxx archive). The core locator
 provisions the render half; a second locator provisions the RN half. Every manifest's flags are
 re-pointed at whichever half they consume: the render/UI targets and the compositor take the

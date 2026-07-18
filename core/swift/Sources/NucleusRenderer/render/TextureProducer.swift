@@ -10,6 +10,7 @@
 
 import NucleusSkiaGraphiteBridge
 import NucleusRenderModel
+import NucleusTypes
 
 /// Per-frame counters of producer GPU work (a representative subset of the
 /// counting fields).
@@ -184,11 +185,13 @@ final class TextureProducer {
         layerId: UInt64,
         revision: UInt64,
         commands: [PaintDrawCommand],
+        payload: [UInt8],
         authoredWidth: Float,
         authoredHeight: Float,
         contentWidth: Int32,
         contentHeight: Int32,
-        resolveImage: (UInt64) -> nucleus.skia.Image?
+        resolveImage: (UInt64) -> nucleus.skia.Image?,
+        resolveEffect: (UInt64) -> nucleus.skia.RuntimeEffect?
     ) -> UInt64? {
         let width = max(1, contentWidth)
         let height = max(1, contentHeight)
@@ -199,9 +202,10 @@ final class TextureProducer {
             recorder: recorder, layerId: layerId, revision: revision,
             width: width, height: height, kind: .paint
         ) { canvas in
-            for command in commands {
-                drawPaintCommand(command, onto: canvas, scaleX: sx, scaleY: sy, resolveImage: resolveImage)
-            }
+            PaintRasterizer.draw(
+                commands: commands, payload: payload, onto: canvas,
+                scaleX: sx, scaleY: sy,
+                resolveImage: resolveImage, resolveEffect: resolveEffect)
         }
     }
 
@@ -226,71 +230,4 @@ final class TextureProducer {
         }
     }
 
-    private func paintColor(_ rgba: Float4) -> nucleus.skia.Color {
-        var color = nucleus.skia.Color()
-        color.r = rgba.0
-        color.g = rgba.1
-        color.b = rgba.2
-        color.a = rgba.3
-        return color
-    }
-
-    private func scaledRect(_ command: PaintDrawCommand, _ sx: Float, _ sy: Float) -> nucleus.skia.RectF {
-        var rect = nucleus.skia.RectF()
-        rect.x = command.x * sx
-        rect.y = command.y * sy
-        rect.width = command.w * sx
-        rect.height = command.h * sy
-        return rect
-    }
-
-    private func drawPaintCommand(
-        _ command: PaintDrawCommand,
-        onto canvas: nucleus.skia.Canvas,
-        scaleX sx: Float,
-        scaleY sy: Float,
-        resolveImage: (UInt64) -> nucleus.skia.Image?
-    ) {
-        var paint = nucleus.skia.Paint()
-        paint.color = paintColor(command.color)
-
-        switch command.kind {
-        case .rect:
-            canvas.drawRect(scaledRect(command, sx, sy), paint)
-        case .roundedRect:
-            let radius = max(0, command.radius) * min(sx, sy)
-            let radii = nucleus.skia.RRectRadii(
-                topLeft: radius, topRight: radius,
-                bottomRight: radius, bottomLeft: radius)
-            canvas.drawRRect(scaledRect(command, sx, sy), radii, paint)
-        case .line:
-            canvas.drawRect(lineRect(command, scaleX: sx, scaleY: sy), paint)
-        case .image:
-            guard command.imageHandle != 0, let image = resolveImage(command.imageHandle) else { break }
-            canvas.drawImageRect(image, nucleus.skia.RectF(), scaledRect(command, sx, sy), paint)
-        case .textLayout:
-            canvas.drawTextLayout(command.textLayoutHandle, scaledRect(command, sx, sy), command.color.3)
-        }
-    }
-
-    private func lineRect(_ command: PaintDrawCommand, scaleX sx: Float, scaleY sy: Float) -> nucleus.skia.RectF {
-        let x0 = command.x * sx
-        let y0 = command.y * sy
-        let x1 = (command.x + command.w) * sx
-        let y1 = (command.y + command.h) * sy
-        let stroke = max(1, command.strokeWidth * min(sx, sy))
-        var rect = nucleus.skia.RectF()
-        if abs(x1 - x0) >= abs(y1 - y0) {
-            rect.x = min(x0, x1)
-            rect.y = min(y0, y1) - stroke * 0.5
-            rect.width = max(stroke, abs(x1 - x0))
-            rect.height = stroke
-        } else {
-            rect.x = min(x0, x1) - stroke * 0.5
-            rect.y = min(y0, y1)
-            rect.width = stroke
-            rect.height = max(stroke, abs(y1 - y0))
-        }
-        return rect
-    }
 }

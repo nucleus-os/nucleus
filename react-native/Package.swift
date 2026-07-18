@@ -97,7 +97,7 @@ let rnPkg = rnSDK + "/include/react-native/packages/react-native"  // the RN tre
 let rnLibDir = rnSDK + "/lib/rn"                     // the GN/CMake-built RN archive set
 
 let skiaBridgeCxxFlags: [String] = [
-    "-std=c++20", "-DNDEBUG", "-DSK_GRAPHITE", "-DSK_DAWN", "-DSK_VULKAN",
+    "-std=c++20", "-DNDEBUG", "-DSK_GRAPHITE", "-DSK_VULKAN",
     "-DSK_GAMMA_APPLY_TO_A8", "-DSK_ALLOW_STATIC_GLOBAL_INITIALIZERS=1",
     "-I", skiaRoot,
     "-I", skiaRoot + "/src",
@@ -109,7 +109,7 @@ let skiaBridgeCxxFlags: [String] = [
 
 // Link flags for the GN/Ninja-built Skia archive set, from the native SDK
 // (lib/skia-graphite). The archives are mutually recursive → one --start-group; the
-// externals + Dawn are built from vendored source, then system libs
+// externals are built from vendored source, then system libs
 // (vulkan/fontconfig/freetype/z) and dl/pthread/m close it out. libc++ from the toolchain.
 let skiaLinkFlags: [String] = [
     "-L", skiaLibDir,
@@ -117,7 +117,7 @@ let skiaLinkFlags: [String] = [
     "-lskia", "-lskshaper", "-lskparagraph", "-lskunicode_core", "-lskunicode_icu",
     "-lsvg", "-lskcms", "-lskresources", "-lfreetype2", "-lharfbuzz", "-licu",
     "-lpng", "-ljpeg", "-ljpeg12", "-ljpeg16", "-lwebp", "-lwebp_sse41", "-lexpat",
-    "-lzlib", "-lwuffs", "-ldng_sdk", "-lpiex", "-ldawn_combined",
+    "-lzlib", "-lwuffs", "-ldng_sdk", "-lpiex",
     "-Xlinker", "--end-group",
     "-lvulkan", "-lfontconfig", "-lfreetype", "-lz", "-ldl", "-lpthread", "-lm",
 ]

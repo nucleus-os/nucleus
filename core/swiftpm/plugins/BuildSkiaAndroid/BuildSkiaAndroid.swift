@@ -4,9 +4,8 @@ import Foundation
 // Build-tool plugin: drive upstream Skia's GN + Ninja build cross-targeting the
 // Android NDK (arm64), producing the Vulkan-Graphite archive set the Android
 // Skia bridge + render core link. The Android analog of the host BuildSkia plugin
-// — same backend (native Vulkan Graphite, ContextFactory::MakeVulkan), minus Dawn
-// (the façade references no Dawn symbols) and fontconfig (Android has its own font
-// manager).
+// uses the same native Vulkan Graphite backend (ContextFactory::MakeVulkan), with
+// Android's platform font manager instead of fontconfig.
 //
 // Lands in a persistent in-repo dir (.skia-build/android-arm64, gitignored) so
 // gn-gen runs once and ninja stays incremental. The NDK is resolved from the

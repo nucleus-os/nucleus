@@ -8,25 +8,25 @@ import Testing
     // module.
 
     @Test func directFrameSetGet() throws {
-        let view = try View()
+        let view = View()
         view.frame = (Rect(x: 10, y: 20, width: 300, height: 200))
 
         #expect(view.frame == Rect(x: 10, y: 20, width: 300, height: 200))
     }
 
     @Test func frameWritesAreEager() throws {
-        let view = try View()
+        let view = View()
         view.frame = (Rect(x: 50, y: 60, width: 70, height: 80))
         // Eager: no commit / flush needed for the read to see the write.
         #expect(view.frame == Rect(x: 50, y: 60, width: 70, height: 80))
     }
 
     @Test func transactionAbortDoesNotRollBackViewState() throws {
-        let view = try View()
+        let view = View()
         view.frame = (Rect(x: 1, y: 2, width: 3, height: 4))
 
         do {
-            var tx = try Transaction()
+            var tx = Transaction()
             view.frame = (Rect(x: 100, y: 200, width: 300, height: 400))
             tx.abort()
         }
@@ -36,11 +36,11 @@ import Testing
     }
 
     @Test func viewPropertiesBatchIsEager() throws {
-        let view = try View()
+        let view = View()
         #expect(!view.isHidden)
 
-        var tx = try Transaction()
-        try view.setProperties(ViewProperties(
+        var tx = Transaction()
+        view.setProperties(ViewProperties(
             frame: Rect(x: 11, y: 12, width: 13, height: 14),
             isHidden: true
         ))
@@ -56,21 +56,21 @@ import Testing
     }
 
     @Test func directHiddenSetterUsesPropertyBatchPath() throws {
-        let view = try View()
+        let view = View()
 
         view.isHidden = (true)
         #expect(view.isHidden)
 
-        try view.setProperties(ViewProperties(frame: Rect(x: 1, y: 2, width: 3, height: 4), isHidden: false))
+        view.setProperties(ViewProperties(frame: Rect(x: 1, y: 2, width: 3, height: 4), isHidden: false))
         #expect(view.frame == Rect(x: 1, y: 2, width: 3, height: 4))
         #expect(!view.isHidden)
     }
 
     @Test func addSubviewIsEagerOnSwiftTree() throws {
-        let parent = try View()
-        let child = try View()
+        let parent = View()
+        let child = View()
 
-        try parent.addSubview(child)
+        parent.addSubview(child)
 
         // Mirrors NSView.addSubview: the tree reflects the change at the
         // call site, no commit required.
@@ -79,21 +79,21 @@ import Testing
     }
 
     @Test func removeFromSuperviewIsEagerOnSwiftTree() throws {
-        let parent = try View()
-        let child = try View()
-        try parent.addSubview(child)
+        let parent = View()
+        let child = View()
+        parent.addSubview(child)
 
-        try child.removeFromSuperview()
+        child.removeFromSuperview()
 
         #expect(parent.subviews.isEmpty)
         #expect(child.superview == nil)
     }
 
     @Test func setRootViewIsEagerOnWindow() throws {
-        let window = try Window()
-        let view = try View()
+        let window = Window()
+        let view = View()
 
-        try window.setRootView(view)
+        window.setRootView(view)
 
         #expect(window.root === view)
     }
@@ -102,8 +102,8 @@ import Testing
         // Two writes inside one Transaction land in a single FFI commit
         // when the transaction commits. Outside-transaction writes go to
         // the implicit ambient buffer; they're not flushed by Transaction.
-        let view = try View()
-        var tx = try Transaction()
+        let view = View()
+        var tx = Transaction()
         view.frame = (Rect(x: 1, y: 2, width: 3, height: 4))
         view.isHidden = (true)
         try tx.commit()
@@ -117,9 +117,9 @@ import Testing
         // Replacement for the old "abort leaves subview independent" pattern:
         // build a subtree without rooting it in any window, mutate it, then
         // attach the root once it's ready. AppKit-shaped.
-        let parent = try View()
-        let child = try View()
-        try parent.addSubview(child)
+        let parent = View()
+        let child = View()
+        parent.addSubview(child)
         #expect(child.superview === parent)
         #expect(parent.subviews.contains { $0 === child })
     }

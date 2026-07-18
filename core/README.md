@@ -12,9 +12,9 @@ tools/nucleus bootstrap core
 tools/nucleus build core
 ```
 
-This component owns Skia/Dawn synchronization, generation, and publication of
-the render SDK. Downstream components consume the stable SDK rather than
-reproducing those provisioning steps.
+This component owns Skia synchronization, generation, and publication of the
+native-Vulkan render SDK. Downstream components consume the stable SDK rather
+than reproducing those provisioning steps.
 
 ## Products
 
@@ -35,7 +35,7 @@ reproducing those provisioning steps.
 
 ## Native SDK
 
-The core component owns and provisions the **render SDK** (Skia Graphite, Dawn, Vulkan):
+The core component owns and provisions the **render SDK** (Skia Graphite over native Vulkan):
 
 ```
 ~/.cache/nucleus/nucleus-native-sdk/render/
@@ -52,16 +52,10 @@ Consuming components (compositor and React Native) read from this stable cache p
 swift package build-skia --allow-writing-to-package-directory
 ```
 
-Cross-compile for Android (native Vulkan Graphite, no Dawn):
+Cross-compile the same native Vulkan Graphite stack for Android:
 
 ```sh
 swift package build-skia-android --allow-writing-to-package-directory
-```
-
-Regenerate Dawn codegen after a Skia/Dawn bump:
-
-```sh
-swift package generate-dawn --allow-writing-to-package-directory
 ```
 
 ## Build
@@ -88,8 +82,8 @@ The package is C++-interop end to end. `swift build` of the libraries works with
 swift/Sources/          Swift library targets (NucleusTypes, NucleusLayers, …)
 swift/Tests/            Test targets (NucleusUITests, NucleusRendererTests, …)
 render-cxx/skia/        C++ text backend (skia_text_backend.cpp, TextRegistry.cpp)
-third-party/            Skia, Dawn, swift-system submodules + vendored deps
-swiftpm/plugins/        Command plugins (BuildSkia, BuildSkiaAndroid, GenerateDawn)
+third-party/            Skia, swift-system submodules + vendored deps
+swiftpm/plugins/        Command plugins (BuildSkia, BuildSkiaAndroid)
 swiftpm/cmodules/       C module maps for system library targets
 android/                Android platform integration
 platform-android/       Android host package

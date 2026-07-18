@@ -179,8 +179,4 @@ public final class VisualEffectView: View, ~Sendable {
     public override var properties: ViewProperties {
         ViewProperties(frame: frame, isHidden: isHidden, backdropMaterial: resolvedBackdropMaterial())
     }
-
-    package override func displayCommands(in dirtyRect: Rect) -> [ViewLayerContentCommand] {
-        []
-    }
 }

@@ -34,32 +34,107 @@ final class SwiftImageLifecycle: ImageLifecycle, @unchecked Sendable {
     }
 }
 
+// MARK: - Runtime effects
+
+/// `RuntimeEffectRegistrar` over `SwiftResourceHost.runtimeEffects`.
+/// Registration is by SkSL source (the renderer compiles lazily), so it is
+/// GPU-independent — the same posture as `SwiftImageRegistrar`.
+final class SwiftRuntimeEffectRegistrar: RuntimeEffectRegistrar {
+    func register(sksl: String) throws(RuntimeEffectRegistrationError) -> UInt64 {
+        guard !sksl.isEmpty else { throw RuntimeEffectRegistrationError.invalidArgument }
+        return SwiftResourceHost.shared.runtimeEffects.register(
+            RuntimeEffectSource(sksl: sksl))
+    }
+}
+
+/// `RuntimeEffectLifecycle` over `SwiftResourceHost.runtimeEffects`.
+final class SwiftRuntimeEffectLifecycle: RuntimeEffectLifecycle, @unchecked Sendable {
+    func retain(handle: UInt64) {
+        SwiftResourceHost.shared.runtimeEffects.retain(handle)
+    }
+    func release(handle: UInt64) {
+        SwiftResourceHost.shared.runtimeEffects.release(handle)
+    }
+}
+
 // MARK: - Paint content
 
+/// Translate the command vocabulary into the render model's. Exhaustive by
+/// construction: `NucleusRenderModel` resolves no dependencies, so it cannot
+/// share `NucleusTypes`' enums, and these switches carry no `default` — adding
+/// a kind or blend mode is a compile error at every site that must learn it.
+private func paintDrawCommandKind(_ kind: NucleusTypes.PaintCommandKind) -> PaintDrawCommandKind {
+    switch kind {
+    case .rect: .rect
+    case .roundedRect: .roundedRect
+    case .image: .image
+    case .path: .path
+    case .clipPath: .clipPath
+    case .save: .save
+    case .restore: .restore
+    case .textLayout: .textLayout
+    }
+}
+
+private func paintDrawShading(_ shading: NucleusTypes.PaintShading) -> PaintDrawShading {
+    switch shading {
+    case .color: .color
+    case .linearGradient: .linearGradient
+    case .radialGradient: .radialGradient
+    case .sweepGradient: .sweepGradient
+    case .effect: .effect
+    }
+}
+
+private func paintDrawBlendMode(_ blend: NucleusTypes.PaintBlendMode) -> PaintDrawBlendMode {
+    switch blend {
+    case .srcOver: .srcOver
+    case .src: .src
+    case .multiply: .multiply
+    case .screen: .screen
+    case .plus: .plus
+    case .overlay: .overlay
+    case .dstIn: .dstIn
+    case .dstOut: .dstOut
+    }
+}
+
 /// `PaintContentRegistrar` over `SwiftResourceHost.paintContents`. Decodes the
-/// wire command span into the Swift `PaintDrawCommand` vocabulary, dropping
-/// unknown discriminants.
+/// command span into the Swift `PaintDrawCommand` vocabulary. An unknown
+/// discriminant is no longer representable, so no draw can be silently dropped.
 final class SwiftPaintContentRegistrar: PaintContentRegistrar {
     func register(
         resourceHostHandle: UInt64,
         width: Float,
         height: Float,
-        commands: Span<NucleusTypes.PaintCommand>
+        commands: Span<NucleusTypes.PaintCommand>,
+        payload: Span<UInt8>
     ) throws(PaintContentRegistrationError) -> UInt64 {
         if resourceHostHandle == 0 { throw PaintContentRegistrationError.invalidHandle }
         var decoded: [PaintDrawCommand] = []
         decoded.reserveCapacity(commands.count)
         for i in 0..<commands.count {
             let c = commands[i]
-            guard let kind = paintDrawCommandKind(c.kind.rawValue) else { continue }
             decoded.append(PaintDrawCommand(
-                kind: kind, x: c.x, y: c.y, w: c.w, h: c.h,
+                kind: paintDrawCommandKind(c.kind),
+                x: c.x, y: c.y, w: c.w, h: c.h,
                 radius: c.radius, strokeWidth: c.strokeWidth, fontSize: c.fontSize,
                 color: (c.color.r, c.color.g, c.color.b, c.color.a),
-                imageHandle: c.imageHandle, textLayoutHandle: c.textLayoutHandle))
+                imageHandle: c.imageHandle, textLayoutHandle: c.textLayoutHandle,
+                effectHandle: c.effectHandle,
+                payloadOffset: c.payloadOffset, payloadLength: c.payloadLength,
+                stroke: c.flags.contains(.stroke),
+                antialias: c.flags.contains(.antialias),
+                evenOddFill: c.flags.contains(.evenOddFill),
+                shading: paintDrawShading(c.shading),
+                blend: paintDrawBlendMode(c.blend),
+                alpha: c.alpha, blurSigma: c.blurSigma, saturation: c.saturation))
         }
+        var payloadBytes = [UInt8]()
+        payloadBytes.reserveCapacity(payload.count)
+        for i in 0..<payload.count { payloadBytes.append(payload[i]) }
         return SwiftResourceHost.shared.paintContents.register(
-            decoded, width: width, height: height).raw
+            decoded, payload: payloadBytes, width: width, height: height).raw
     }
 }
 

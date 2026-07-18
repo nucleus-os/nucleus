@@ -3,10 +3,12 @@
 #include "NucleusSkiaGraphite/Graphite.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <atomic>
 #include <cstring>
 #include <mutex>
 #include <unordered_map>
+#include <vector>
 
 #include <vulkan/vulkan_core.h>
 
@@ -22,20 +24,24 @@
 #include "include/core/SkPath.h"
 #include "include/core/SkPathBuilder.h"
 #include "include/core/SkPixmap.h"
+#include "include/core/SkMatrix.h"
 #include "include/core/SkPoint.h"
 #include "include/core/SkRRect.h"
 #include "include/core/SkRect.h"
 #include "include/core/SkRefCnt.h"
+#include "include/core/SkTileMode.h"
 #include "include/core/SkSamplingOptions.h"
 #include "include/core/SkSize.h"
 #include "include/core/SkString.h"
 #include "include/core/SkSurface.h"
+#include "include/core/SkCanvas.h"
 #include "include/gpu/graphite/BackendSemaphore.h"
 #include "include/gpu/graphite/BackendTexture.h"
 #include "include/gpu/graphite/Image.h"
 #include "include/gpu/MutableTextureState.h"
 #include "include/gpu/vk/VulkanMutableTextureState.h"
 #include "include/effects/SkColorMatrix.h"
+#include "include/effects/SkGradient.h"
 #include "include/effects/SkImageFilters.h"
 #include "include/effects/SkRuntimeEffect.h"
 #include "include/private/SkTPin.h"
@@ -154,7 +160,62 @@ SkPaint toSkPaint(Paint paint) {
     if (paint.blurSigma > 0.0f) {
         sk.setImageFilter(SkImageFilters::Blur(paint.blurSigma, paint.blurSigma, nullptr));
     }
+    switch (paint.style) {
+        case PaintStyle::fill: sk.setStyle(SkPaint::kFill_Style); break;
+        case PaintStyle::stroke: sk.setStyle(SkPaint::kStroke_Style); break;
+        case PaintStyle::strokeAndFill: sk.setStyle(SkPaint::kStrokeAndFill_Style); break;
+    }
+    if (paint.style != PaintStyle::fill) {
+        sk.setStrokeWidth(paint.strokeWidth);
+        sk.setStrokeMiter(paint.miter);
+        switch (paint.strokeCap) {
+            case StrokeCap::butt: sk.setStrokeCap(SkPaint::kButt_Cap); break;
+            case StrokeCap::round: sk.setStrokeCap(SkPaint::kRound_Cap); break;
+            case StrokeCap::square: sk.setStrokeCap(SkPaint::kSquare_Cap); break;
+        }
+        switch (paint.strokeJoin) {
+            case StrokeJoin::miter: sk.setStrokeJoin(SkPaint::kMiter_Join); break;
+            case StrokeJoin::round: sk.setStrokeJoin(SkPaint::kRound_Join); break;
+            case StrokeJoin::bevel: sk.setStrokeJoin(SkPaint::kBevel_Join); break;
+        }
+    }
     return sk;
+}
+
+SkTileMode toSkTileMode(TileMode tile) {
+    switch (tile) {
+        case TileMode::clamp: return SkTileMode::kClamp;
+        case TileMode::repeatTile: return SkTileMode::kRepeat;
+        case TileMode::mirror: return SkTileMode::kMirror;
+        case TileMode::decal: return SkTileMode::kDecal;
+    }
+    return SkTileMode::kClamp;
+}
+
+/// Shared validation + color conversion for the three gradient factories.
+/// `stops` is optional; when supplied it must be one position per color, which
+/// is also what `SkGradient::Colors` requires (it silently drops a mismatched
+/// position span, so the check is enforced here where it can fail visibly).
+bool gradientColors(
+    const Color *colors, size_t count, std::vector<SkColor4f> &out) {
+    if (colors == nullptr || count < 2) return false;
+    out.reserve(count);
+    for (size_t i = 0; i < count; ++i) {
+        out.push_back(SkColor4f{colors[i].r, colors[i].g, colors[i].b, colors[i].a});
+    }
+    return true;
+}
+
+SkGradient makeSkGradient(
+    const std::vector<SkColor4f> &colors, const float *stops, size_t count, TileMode tile) {
+    SkSpan<const SkColor4f> colorSpan(colors.data(), colors.size());
+    if (stops != nullptr) {
+        return SkGradient(
+            SkGradient::Colors(colorSpan, SkSpan<const float>(stops, count), toSkTileMode(tile)),
+            SkGradient::Interpolation{});
+    }
+    return SkGradient(
+        SkGradient::Colors(colorSpan, toSkTileMode(tile)), SkGradient::Interpolation{});
 }
 
 }  // namespace
@@ -209,6 +270,14 @@ struct UploadTexture::Impl {
 
 struct Shader::Impl {
     sk_sp<SkShader> shader;
+};
+
+struct Path::Impl {
+    SkPath path;
+};
+
+struct RuntimeEffect::Impl {
+    sk_sp<SkRuntimeEffect> effect;
 };
 
 struct Recording::Impl {
@@ -267,52 +336,196 @@ Shader::Shader(std::shared_ptr<Impl> impl) : impl_(std::move(impl)) {}
 bool Shader::isValid() const { return impl_ && impl_->shader != nullptr; }
 Shader::Impl *Shader::raw() const { return impl_.get(); }
 
-Shader makeRuntimeShader(const char *sksl, const float *uniforms, size_t uniformFloatCount) {
-    if (sksl == nullptr) return Shader(nullptr);
-    auto result = SkRuntimeEffect::MakeForShader(SkString(sksl));
-    if (!result.effect) return Shader(nullptr);
-    sk_sp<SkRuntimeEffect> effect = result.effect;
-    sk_sp<SkData> uniformData;
-    if (uniformFloatCount > 0 && uniforms != nullptr) {
-        uniformData = SkData::MakeWithCopy(uniforms, uniformFloatCount * sizeof(float));
-    } else {
-        uniformData = SkData::MakeEmpty();
+// MARK: - Path
+
+Path::Path(std::shared_ptr<Impl> impl) : impl_(std::move(impl)) {}
+bool Path::isValid() const { return impl_ != nullptr; }
+Path::Impl *Path::raw() const { return impl_.get(); }
+
+Path makePath(
+    const uint8_t *verbs, size_t verbCount,
+    const float *points, size_t pointCount, bool evenOdd) {
+    if (verbs == nullptr || (points == nullptr && pointCount > 0)) return Path(nullptr);
+
+    SkPathBuilder builder;
+    builder.setFillType(evenOdd ? SkPathFillType::kEvenOdd : SkPathFillType::kWinding);
+
+    size_t f = 0;  // cursor into the flat float array
+    // Each verb consumes a fixed number of floats; running past the supplied
+    // points means the encoding is malformed, so fail rather than emit partial
+    // geometry that would silently render wrong.
+    auto take = [&](size_t floats) -> const float * {
+        if (f + floats > pointCount) return nullptr;
+        const float *p = points + f;
+        f += floats;
+        return p;
+    };
+
+    for (size_t i = 0; i < verbCount; ++i) {
+        switch (static_cast<PathVerb>(verbs[i])) {
+            case PathVerb::move: {
+                const float *p = take(2);
+                if (!p) return Path(nullptr);
+                builder.moveTo(p[0], p[1]);
+                break;
+            }
+            case PathVerb::line: {
+                const float *p = take(2);
+                if (!p) return Path(nullptr);
+                builder.lineTo(p[0], p[1]);
+                break;
+            }
+            case PathVerb::quad: {
+                const float *p = take(4);
+                if (!p) return Path(nullptr);
+                builder.quadTo(p[0], p[1], p[2], p[3]);
+                break;
+            }
+            case PathVerb::cubic: {
+                const float *p = take(6);
+                if (!p) return Path(nullptr);
+                builder.cubicTo(p[0], p[1], p[2], p[3], p[4], p[5]);
+                break;
+            }
+            case PathVerb::arcTo: {
+                const float *p = take(6);
+                if (!p) return Path(nullptr);
+                const SkRect oval = SkRect::MakeXYWH(p[0], p[1], p[2], p[3]);
+                // `arcTo` degenerates at a full sweep — it emits nothing, so a
+                // 360-degree arc would silently disappear. A full sweep is an
+                // oval, which is also what a caller means by it (a ring at 100%,
+                // a circle).
+                if (std::abs(p[5]) >= 360.0f) {
+                    builder.addOval(oval, p[5] < 0 ? SkPathDirection::kCCW
+                                                   : SkPathDirection::kCW);
+                } else {
+                    builder.arcTo(oval, p[4], p[5], /*forceMoveTo=*/false);
+                }
+                break;
+            }
+            case PathVerb::close:
+                builder.close();
+                break;
+            default:
+                return Path(nullptr);  // unknown verb: malformed encoding
+        }
     }
-    if (uniformData->size() != effect->uniformSize()) return Shader(nullptr);
+
+    auto impl = std::make_shared<Path::Impl>();
+    impl->path = builder.detach();
+    return Path(std::move(impl));
+}
+
+// MARK: - Gradients
+
+Shader makeLinearGradient(
+    float x0, float y0, float x1, float y1,
+    const Color *colors, const float *stops, size_t count, TileMode tile) {
+    std::vector<SkColor4f> cs;
+    if (!gradientColors(colors, count, cs)) return Shader(nullptr);
+    const SkPoint pts[2] = {{x0, y0}, {x1, y1}};
     auto impl = std::make_shared<Shader::Impl>();
-    impl->shader = effect->makeShader(std::move(uniformData), {});
+    impl->shader = SkShaders::LinearGradient(pts, makeSkGradient(cs, stops, count, tile));
     if (!impl->shader) return Shader(nullptr);
     return Shader(std::move(impl));
 }
 
-Shader makeRuntimeShaderWithImage(
-    const char *sksl, const float *uniforms, size_t uniformFloatCount, const Image &child) {
-    if (sksl == nullptr) return Shader(nullptr);
+Shader makeRadialGradient(
+    float centerX, float centerY, float radius,
+    const Color *colors, const float *stops, size_t count, TileMode tile) {
+    std::vector<SkColor4f> cs;
+    if (!gradientColors(colors, count, cs)) return Shader(nullptr);
+    if (!(radius > 0)) return Shader(nullptr);
+    auto impl = std::make_shared<Shader::Impl>();
+    impl->shader = SkShaders::RadialGradient(
+        SkPoint{centerX, centerY}, radius, makeSkGradient(cs, stops, count, tile));
+    if (!impl->shader) return Shader(nullptr);
+    return Shader(std::move(impl));
+}
+
+Shader makeSweepGradient(
+    float centerX, float centerY, float startAngle, float endAngle,
+    const Color *colors, const float *stops, size_t count, TileMode tile) {
+    std::vector<SkColor4f> cs;
+    if (!gradientColors(colors, count, cs)) return Shader(nullptr);
+    // SkShaders::SweepGradient returns null unless startAngle < endAngle.
+    if (!(startAngle < endAngle)) return Shader(nullptr);
+    auto impl = std::make_shared<Shader::Impl>();
+    impl->shader = SkShaders::SweepGradient(
+        SkPoint{centerX, centerY}, startAngle, endAngle,
+        makeSkGradient(cs, stops, count, tile));
+    if (!impl->shader) return Shader(nullptr);
+    return Shader(std::move(impl));
+}
+
+// MARK: - RuntimeEffect
+
+RuntimeEffect::RuntimeEffect(std::shared_ptr<Impl> impl) : impl_(std::move(impl)) {}
+bool RuntimeEffect::isValid() const { return impl_ && impl_->effect != nullptr; }
+RuntimeEffect::Impl *RuntimeEffect::raw() const { return impl_.get(); }
+
+RuntimeEffect makeRuntimeEffect(const char *sksl) {
+    if (sksl == nullptr) return RuntimeEffect(nullptr);
+    auto result = SkRuntimeEffect::MakeForShader(SkString(sksl));
+    if (!result.effect) return RuntimeEffect(nullptr);
+    auto impl = std::make_shared<RuntimeEffect::Impl>();
+    impl->effect = result.effect;
+    return RuntimeEffect(std::move(impl));
+}
+
+namespace {
+sk_sp<SkData> uniformDataFor(
+    const SkRuntimeEffect &effect, const float *uniforms, size_t uniformFloatCount) {
+    sk_sp<SkData> data;
+    if (uniformFloatCount > 0 && uniforms != nullptr) {
+        data = SkData::MakeWithCopy(uniforms, uniformFloatCount * sizeof(float));
+    } else {
+        data = SkData::MakeEmpty();
+    }
+    if (data->size() != effect.uniformSize()) return nullptr;
+    return data;
+}
+}  // namespace
+
+Shader RuntimeEffect::makeShader(const float *uniforms, size_t uniformFloatCount) const {
+    if (!isValid()) return Shader(nullptr);
+    sk_sp<SkData> data = uniformDataFor(*impl_->effect, uniforms, uniformFloatCount);
+    if (!data) return Shader(nullptr);
+    auto impl = std::make_shared<Shader::Impl>();
+    impl->shader = impl_->effect->makeShader(std::move(data), {});
+    if (!impl->shader) return Shader(nullptr);
+    return Shader(std::move(impl));
+}
+
+Shader RuntimeEffect::makeShaderWithImage(
+    const float *uniforms, size_t uniformFloatCount, const Image &child) const {
+    if (!isValid()) return Shader(nullptr);
     Image::Impl *childImpl = child.raw();
     if (childImpl == nullptr || childImpl->image == nullptr) return Shader(nullptr);
-
-    auto result = SkRuntimeEffect::MakeForShader(SkString(sksl));
-    if (!result.effect) return Shader(nullptr);
-    sk_sp<SkRuntimeEffect> effect = result.effect;
-    if (effect->children().size() != 1) return Shader(nullptr);
-
-    sk_sp<SkData> uniformData;
-    if (uniformFloatCount > 0 && uniforms != nullptr) {
-        uniformData = SkData::MakeWithCopy(uniforms, uniformFloatCount * sizeof(float));
-    } else {
-        uniformData = SkData::MakeEmpty();
-    }
-    if (uniformData->size() != effect->uniformSize()) return Shader(nullptr);
-
+    if (impl_->effect->children().size() != 1) return Shader(nullptr);
+    sk_sp<SkData> data = uniformDataFor(*impl_->effect, uniforms, uniformFloatCount);
+    if (!data) return Shader(nullptr);
     sk_sp<SkShader> childShader = childImpl->image->makeShader(
         SkTileMode::kClamp, SkTileMode::kClamp, SkSamplingOptions(SkFilterMode::kLinear));
     if (!childShader) return Shader(nullptr);
     SkRuntimeEffect::ChildPtr children[] = {SkRuntimeEffect::ChildPtr(childShader)};
-
     auto impl = std::make_shared<Shader::Impl>();
-    impl->shader = effect->makeShader(std::move(uniformData), SkSpan(children));
+    impl->shader = impl_->effect->makeShader(std::move(data), SkSpan(children));
     if (!impl->shader) return Shader(nullptr);
     return Shader(std::move(impl));
+}
+
+// Retained for `Backdrop.swift`, which compiles and binds in one step because
+// it holds no handle. Expressed through the split so there is one code path.
+Shader makeRuntimeShader(const char *sksl, const float *uniforms, size_t uniformFloatCount) {
+    return makeRuntimeEffect(sksl).makeShader(uniforms, uniformFloatCount);
+}
+
+// Retained for `Backdrop.swift`. Expressed through the compile/bind split so
+// there is one code path.
+Shader makeRuntimeShaderWithImage(
+    const char *sksl, const float *uniforms, size_t uniformFloatCount, const Image &child) {
+    return makeRuntimeEffect(sksl).makeShaderWithImage(uniforms, uniformFloatCount, child);
 }
 
 Image makeRasterImageRGBA(int32_t width, int32_t height, const uint8_t *pixels, size_t byteLength) {
@@ -493,6 +706,36 @@ void Canvas::drawShaderRect(RectF rect, const Shader &shader, Paint paint) const
         SkRect::MakeXYWH(rect.x, rect.y, rect.width, rect.height), sk);
 }
 
+void Canvas::drawPath(const Path &path, Paint paint) const {
+    if (!isValid()) return;
+    Path::Impl *p = path.raw();
+    if (p == nullptr) return;
+    impl_->canvas->drawPath(p->path, toSkPaint(paint));
+}
+
+void Canvas::drawPathWithShader(const Path &path, const Shader &shader, Paint paint) const {
+    if (!isValid()) return;
+    Path::Impl *p = path.raw();
+    Shader::Impl *sh = shader.raw();
+    if (p == nullptr || sh == nullptr || sh->shader == nullptr) return;
+    SkPaint sk = toSkPaint(paint);
+    sk.setShader(sh->shader);
+    impl_->canvas->drawPath(p->path, sk);
+}
+
+void Canvas::clipPath(const Path &path, bool antialias) const {
+    if (!isValid()) return;
+    Path::Impl *p = path.raw();
+    if (p == nullptr) return;
+    impl_->canvas->clipPath(p->path, SkClipOp::kIntersect, antialias);
+}
+
+void Canvas::concat(const float m[9]) const {
+    if (!isValid() || m == nullptr) return;
+    impl_->canvas->concat(
+        SkMatrix::MakeAll(m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7], m[8]));
+}
+
 extern "C" void nucleus_skia_set_text_layout_resolver(uintptr_t (*resolve)(uint64_t)) {
     g_textLayoutResolver = resolve;
 }
@@ -564,6 +807,26 @@ Image Surface::snapshotImage() const {
 }
 
 Surface::Impl *Surface::raw() const { return impl_.get(); }
+
+bool Surface::readPixelsRGBA(uint8_t *dst, size_t byteLength, int32_t rowBytes) const {
+    if (!isValid() || dst == nullptr) return false;
+    const SkImageInfo info = SkImageInfo::Make(
+        impl_->surface->width(), impl_->surface->height(),
+        kRGBA_8888_SkColorType, kPremul_SkAlphaType);
+    const size_t stride = rowBytes > 0 ? static_cast<size_t>(rowBytes) : info.minRowBytes();
+    if (byteLength < stride * static_cast<size_t>(info.height())) return false;
+    return impl_->surface->readPixels(info, dst, stride, 0, 0);
+}
+
+Surface makeRasterSurface(int32_t width, int32_t height) {
+    if (width <= 0 || height <= 0) return Surface(nullptr);
+    const SkImageInfo info = SkImageInfo::Make(
+        width, height, kRGBA_8888_SkColorType, kPremul_SkAlphaType);
+    auto impl = std::make_shared<Surface::Impl>();
+    impl->surface = SkSurfaces::Raster(info);
+    if (!impl->surface) return Surface(nullptr);
+    return Surface(std::move(impl));
+}
 
 // MARK: - Recording
 

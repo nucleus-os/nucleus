@@ -66,9 +66,6 @@ struct Orchestrator {
                 try context.run("third-party/sync-deps.sh", [], directory: core)
                 try context.run("git", ["submodule", "update", "--init", "--recursive", "core/third-party", "third-party/swift-java", "third-party/swift-java-jni-core"], directory: context.root)
             }))
-            stages.append(BootstrapStage(name: "dawn-generation", run: {
-                try context.run("swift", ["package", "generate-dawn", "--allow-writing-to-package-directory"], directory: core)
-            }))
             stages.append(BootstrapStage(name: "render-sdk", run: {
                 try context.run("swift", ["package", "build-skia", "--allow-writing-to-package-directory"], directory: core)
             }))

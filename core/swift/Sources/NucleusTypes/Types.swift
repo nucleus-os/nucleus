@@ -141,12 +141,46 @@ public enum LayerRole: Swift.UInt8, Swift.Sendable {
 }
 
 public enum PaintCommandKind: Swift.UInt32, Swift.Sendable {
-  case none = 0
-  case rect = 1
-  case roundedRect = 2
-  case image = 4
-  case line = 5
-  case textLayout = 6
+  case rect = 0
+  case roundedRect = 1
+  case image = 2
+  /// Arbitrary geometry, with verbs and points in the payload. Subsumes the
+  /// former `.line`, which was a second way to say the same thing.
+  case path = 3
+  case textLayout = 4
+  /// Intersect the clip with the payload's path. Scoped by `save`/`restore`;
+  /// the canvas is a state machine, so clipping cannot be baked into geometry
+  /// the way a transform can.
+  case clipPath = 5
+  case save = 6
+  case restore = 7
+}
+
+/// Source-over and the compositing modes the rasterizer's `Paint` already
+/// carries. Mirrors `nucleus::skia::BlendMode` one-for-one.
+public enum PaintBlendMode: Swift.UInt32, Swift.Sendable {
+  case srcOver = 0
+  case src = 1
+  case multiply = 2
+  case screen = 3
+  case plus = 4
+  case overlay = 5
+  case dstIn = 6
+  case dstOut = 7
+}
+
+/// Style/behavior bits on a paint command. `stroke` selects
+/// `SkPaint::kStroke_Style` — without it a `strokeWidth` renders as a fill,
+/// which is why borders paint solid today.
+public struct PaintCommandFlags: Swift.OptionSet, Swift.Sendable {
+  public var rawValue: Swift.UInt32
+  public init(rawValue: Swift.UInt32) { self.rawValue = rawValue }
+
+  public static let stroke = PaintCommandFlags(rawValue: 1 << 0)
+  public static let antialias = PaintCommandFlags(rawValue: 1 << 1)
+  public static let evenOddFill = PaintCommandFlags(rawValue: 1 << 2)
+
+  public static let `default`: PaintCommandFlags = [.antialias]
 }
 
 public enum TransitionKind: Swift.UInt32, Swift.Sendable {
@@ -1009,9 +1043,21 @@ public struct AnimationRemoveRecord: Swift.Equatable, Swift.Sendable {
   }
 }
 
+/// One paint draw command. Passed as a `Span` between Swift modules in the
+/// same process — there is no serialization and no second implementation, so
+/// `kind` is stored as the enum itself rather than a raw discriminant plus a
+/// lossy accessor.
+///
+/// Variable-length data (path verbs/points, gradient stops, effect uniforms)
+/// is not inlined here: it rides a parallel payload blob at
+/// `payloadOffset ..< payloadOffset + payloadLength`. That split is by
+/// *lifetime* — per-frame data goes in the blob, while stable expensive
+/// resources (images, text layouts, compiled SkSL) keep handle registrars.
 public struct PaintCommand: Swift.Equatable, Swift.Sendable {
-  public var _kind: Swift.UInt32
-  public var reserved: Swift.UInt32
+  public var kind: PaintCommandKind
+  public var flags: PaintCommandFlags
+  public var shading: PaintShading
+  public var blend: PaintBlendMode
   public var x: Swift.Float
   public var y: Swift.Float
   public var w: Swift.Float
@@ -1019,12 +1065,34 @@ public struct PaintCommand: Swift.Equatable, Swift.Sendable {
   public var radius: Swift.Float
   public var strokeWidth: Swift.Float
   public var fontSize: Swift.Float
+  public var alpha: Swift.Float
+  public var blurSigma: Swift.Float
+  public var saturation: Swift.Float
   public var color: NucleusTypes.Color
   public var imageHandle: Swift.UInt64
   public var textLayoutHandle: Swift.UInt64
-  public init(kind: PaintCommandKind = .none, reserved: Swift.UInt32 = Swift.UInt32(), x: Swift.Float = 0, y: Swift.Float = 0, w: Swift.Float = 0, h: Swift.Float = 0, radius: Swift.Float = 0, strokeWidth: Swift.Float = 0, fontSize: Swift.Float = 0, color: NucleusTypes.Color = NucleusTypes.Color(), imageHandle: Swift.UInt64 = Swift.UInt64(), textLayoutHandle: Swift.UInt64 = Swift.UInt64()) {
-    self._kind = kind.rawValue
-    self.reserved = reserved
+  public var effectHandle: Swift.UInt64
+  public var payloadOffset: Swift.UInt32
+  public var payloadLength: Swift.UInt32
+
+  public init(
+    kind: PaintCommandKind,
+    flags: PaintCommandFlags = .default,
+    shading: PaintShading = .color,
+    blend: PaintBlendMode = .srcOver,
+    x: Swift.Float = 0, y: Swift.Float = 0, w: Swift.Float = 0, h: Swift.Float = 0,
+    radius: Swift.Float = 0, strokeWidth: Swift.Float = 0, fontSize: Swift.Float = 0,
+    alpha: Swift.Float = 1, blurSigma: Swift.Float = 0, saturation: Swift.Float = 1,
+    color: NucleusTypes.Color = NucleusTypes.Color(r: 1, g: 1, b: 1, a: 1),
+    imageHandle: Swift.UInt64 = Swift.UInt64(),
+    textLayoutHandle: Swift.UInt64 = Swift.UInt64(),
+    effectHandle: Swift.UInt64 = Swift.UInt64(),
+    payloadOffset: Swift.UInt32 = 0, payloadLength: Swift.UInt32 = 0
+  ) {
+    self.kind = kind
+    self.flags = flags
+    self.shading = shading
+    self.blend = blend
     self.x = x
     self.y = y
     self.w = w
@@ -1032,15 +1100,19 @@ public struct PaintCommand: Swift.Equatable, Swift.Sendable {
     self.radius = radius
     self.strokeWidth = strokeWidth
     self.fontSize = fontSize
+    self.alpha = alpha
+    self.blurSigma = blurSigma
+    self.saturation = saturation
     self.color = color
     self.imageHandle = imageHandle
     self.textLayoutHandle = textLayoutHandle
-  }
-  public var kind: PaintCommandKind {
-    get { PaintCommandKind(rawValue: _kind) ?? .none }
-    set { _kind = newValue.rawValue }
+    self.effectHandle = effectHandle
+    self.payloadOffset = payloadOffset
+    self.payloadLength = payloadLength
   }
 }
+
+extension PaintCommandFlags: Swift.Equatable {}
 
 public struct FenceRecord: Swift.Equatable, Swift.Sendable {
   public var _kind: Swift.UInt32

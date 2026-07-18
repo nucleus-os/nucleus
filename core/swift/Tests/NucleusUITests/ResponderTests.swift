@@ -9,7 +9,7 @@ import Testing
 
         init(result: EventHandling = .notHandled) throws {
             self.result = result
-            try super.init()
+            super.init()
         }
 
         override func handleEvent(_ event: Event) -> EventHandling {
@@ -19,17 +19,17 @@ import Testing
     }
 
     @Test func hitTestReturnsDeepestFrontmostSubview() throws {
-        let root = try View()
-        let back = try View()
-        let front = try View()
+        let root = View()
+        let back = View()
+        let front = View()
 
         root.frame = (Rect(x: 0, y: 0, width: 100, height: 100))
         back.frame = (Rect(x: 10, y: 10, width: 80, height: 80))
         front.frame = (Rect(x: 20, y: 20, width: 20, height: 20))
-        try root.addSubview(back)
-        try root.addSubview(front)
+        root.addSubview(back)
+        root.addSubview(front)
 
-        let hit = try root.hitTest(Point(x: 25, y: 25))
+        let hit = root.hitTest(Point(x: 25, y: 25))
         #expect(hit === front)
     }
 
@@ -39,9 +39,9 @@ import Testing
 
         root.frame = (Rect(x: 0, y: 0, width: 100, height: 100))
         child.frame = (Rect(x: 0, y: 0, width: 50, height: 50))
-        try root.addSubview(child)
+        root.addSubview(child)
 
-        let result = try EventDispatcher.dispatch(Event(type: .pointerDown, location: Point(x: 10, y: 10)), from: root)
+        let result = EventDispatcher.dispatch(Event(type: .pointerDown, location: Point(x: 10, y: 10)), from: root)
 
         #expect(result == .handled)
         #expect(child.events.count == 1)
@@ -54,9 +54,9 @@ import Testing
 
         root.frame = (Rect(x: 0, y: 0, width: 100, height: 100))
         child.frame = (Rect(x: 0, y: 0, width: 50, height: 50))
-        try root.addSubview(child)
+        root.addSubview(child)
 
-        let result = try EventDispatcher.dispatch(Event(type: .pointerDown, location: Point(x: 10, y: 10)), from: root)
+        let result = EventDispatcher.dispatch(Event(type: .pointerDown, location: Point(x: 10, y: 10)), from: root)
 
         #expect(result == .handled)
         #expect(child.events.count == 1)
@@ -73,15 +73,15 @@ import Testing
             }
         }
 
-        let window = try Window(title: "Controller")
+        let window = Window(title: "Controller")
         let root = try TrackingView(result: .notHandled)
-        let controller = try HandlingViewController()
+        let controller = HandlingViewController()
 
         root.frame = Rect(x: 0, y: 0, width: 100, height: 100)
         controller.setView(root)
-        try window.setContentViewController(controller)
+        window.setContentViewController(controller)
 
-        let result = try window.dispatchEvent(Event(type: .pointerDown, location: Point(x: 10, y: 10)))
+        let result = window.dispatchEvent(Event(type: .pointerDown, location: Point(x: 10, y: 10)))
 
         #expect(result == .handled)
         #expect(root.events.count == 1)
@@ -89,17 +89,17 @@ import Testing
     }
 
     @Test func actionsBubbleThroughViewControllerResponder() throws {
-        let root = try View()
-        let controller = try ViewController()
+        let root = View()
+        let controller = ViewController()
         let action = ActionID(rawValue: 42)
         var performed = 0
 
         controller.setView(root)
-        try controller.setAction(action) { _ in
+        controller.setAction(action) { _ in
             performed += 1
         }
 
-        try root.performAction(action, event: Event(type: .action))
+        root.performAction(action, event: Event(type: .action))
 
         #expect(performed == 1)
     }
@@ -109,52 +109,52 @@ import Testing
 
         root.frame = (Rect(x: 0, y: 0, width: 100, height: 100))
 
-        let result = try EventDispatcher.dispatch(Event(type: .pointerDown, location: Point(x: 200, y: 200)), from: root)
+        let result = EventDispatcher.dispatch(Event(type: .pointerDown, location: Point(x: 200, y: 200)), from: root)
 
         #expect(result == .notHandled)
         #expect(root.events.count == 0)
     }
 
     @Test func windowDispatchStartsFromRootView() throws {
-        let window = try Window(title: "Events")
+        let window = Window(title: "Events")
         let root = try TrackingView(result: .handled)
 
         root.frame = (Rect(x: 0, y: 0, width: 100, height: 100))
-        try window.setRootView(root)
+        window.setRootView(root)
 
-        let result = try window.dispatchEvent(Event(type: .pointerDown, location: Point(x: 1, y: 1)))
+        let result = window.dispatchEvent(Event(type: .pointerDown, location: Point(x: 1, y: 1)))
 
         #expect(result == .handled)
         #expect(root.events.count == 1)
     }
 
     @Test func buttonPressUsesResponderActionPath() throws {
-        let button = try Button(title: "OK")
+        let button = Button(title: "OK")
         var pressed = 0
 
         button.frame = (Rect(x: 0, y: 0, width: 80, height: 30))
-        try button.onPress { sender in
+        button.onPress { sender in
             #expect(sender === button)
             pressed += 1
         }
 
-        let result = try EventDispatcher.dispatch(Event(type: .pointerUp, location: Point(x: 10, y: 10)), from: button)
+        let result = EventDispatcher.dispatch(Event(type: .pointerUp, location: Point(x: 10, y: 10)), from: button)
 
         #expect(result == .handled)
         #expect(pressed == 1)
     }
 
     @Test func disabledButtonDoesNotHandlePress() throws {
-        let button = try Button(title: "Disabled")
+        let button = Button(title: "Disabled")
         var pressed = false
 
         button.frame = (Rect(x: 0, y: 0, width: 80, height: 30))
-        try button.onPress { _ in
+        button.onPress { _ in
             pressed = true
         }
         button.isEnabled = false
 
-        let result = try EventDispatcher.dispatch(Event(type: .pointerUp, location: Point(x: 10, y: 10)), from: button)
+        let result = EventDispatcher.dispatch(Event(type: .pointerUp, location: Point(x: 10, y: 10)), from: button)
 
         #expect(result == .notHandled)
         #expect(!pressed)

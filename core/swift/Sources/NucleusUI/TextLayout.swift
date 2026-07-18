@@ -194,23 +194,10 @@ public struct TextLayout: Sendable, Equatable {
         return max(0, usedRect.size.height - lastLine.baselineY)
     }
 
-    @_spi(NucleusCompositor) public func layerContentCommands(color: Color, x: Float = 0, y: Float = 0) -> [ViewLayerContentCommand] {
-        guard !textRuns.isEmpty else {
-            return []
-        }
-        return [
-            ViewLayerContentCommand.textLayout(
-                x: x,
-                y: y,
-                width: Float(usedRect.size.width),
-                height: Float(usedRect.size.height),
-                color: color,
-                layout: applyingDefaultColor(color)
-            )
-        ]
-    }
+    /// Whether this layout has any text to paint.
+    public var isEmpty: Bool { textRuns.isEmpty }
 
-    private func applyingDefaultColor(_ color: Color) -> TextLayout {
+    package func applyingDefaultColor(_ color: Color) -> TextLayout {
         var copy = self
         let coloredRuns = textRuns.map { run in
             TextRun(text: run.text, font: run.font, color: run.color ?? color)

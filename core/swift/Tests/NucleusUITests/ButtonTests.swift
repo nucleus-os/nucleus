@@ -4,7 +4,7 @@ import Testing
 @MainActor
 @Suite struct ButtonTests {
     @Test func buttonKeepsSwiftSemanticTitle() throws {
-        let button = try Button(title: "Save")
+        let button = Button(title: "Save")
         #expect(button.title == "Save")
 
         button.title = "Save As"
@@ -12,20 +12,20 @@ import Testing
     }
 
     @Test func primaryActionFiresForButtonPress() throws {
-        let button = try Button(title: "OK")
+        let button = Button(title: "OK")
         var pressed = false
 
-        try button.onPress { sender in
+        button.onPress { sender in
             #expect(sender === button)
             pressed = true
         }
-        try button.performPress()
+        button.performPress()
 
         #expect(pressed)
     }
 
     @Test func buttonExposesGenericViewBehavior() throws {
-        let button = try Button(title: "Child")
+        let button = Button(title: "Child")
 
         button.frame = (Rect(x: 1, y: 2, width: 3, height: 4))
         #expect(button.frame == Rect(x: 1, y: 2, width: 3, height: 4))
@@ -34,11 +34,11 @@ import Testing
     @Test func buttonAsWindowRootReleasesWithWindow() throws {
         weak var weakButton: View?
         do {
-            let window = try Window(title: "Button Root")
-            let button = try Button(title: "Root")
+            let window = Window(title: "Button Root")
+            let button = Button(title: "Root")
             weakButton = button
 
-            try window.setRootView(button)
+            window.setRootView(button)
             #expect(weakButton != nil)
         }
 

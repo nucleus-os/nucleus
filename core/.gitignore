@@ -148,7 +148,6 @@ packages/react-native-nucleus-component/dist/
 /.build/
 .swiftpm/
 Tools/.build/
-/build_zig/
 
 # SwiftPM Phase-5 Skia GN/Ninja build output (plugin-driven, not committed)
 .skia-build/

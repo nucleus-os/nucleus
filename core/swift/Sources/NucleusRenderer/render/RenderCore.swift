@@ -386,6 +386,9 @@ public final class RenderCore {
         SwiftResourceHost.shared.images.onEvict = { [weak driver] handle in
             driver?.evictDecodedImage(handle)
         }
+        SwiftResourceHost.shared.runtimeEffects.onEvict = { [weak driver] handle in
+            driver?.evictCompiledEffect(handle)
+        }
     }
 
     public func createSurface(_ factory: VulkanSurfaceFactory) -> VulkanSurface? {

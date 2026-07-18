@@ -79,7 +79,7 @@ let skiaRoot = renderSDK + "/include/skia"          // the Skia source/header tr
 let skiaLibDir = renderSDK + "/lib/skia-graphite"   // the GN/Ninja-built archive set
 
 let skiaBridgeLinuxCxxFlags: [String] = [
-    "-std=c++20", "-DNDEBUG", "-DSK_GRAPHITE", "-DSK_DAWN", "-DSK_VULKAN",
+    "-std=c++20", "-DNDEBUG", "-DSK_GRAPHITE", "-DSK_VULKAN",
     "-DSK_GAMMA_APPLY_TO_A8", "-DSK_ALLOW_STATIC_GLOBAL_INITIALIZERS=1",
     "-I", skiaRoot,
     "-I", skiaRoot + "/src",
@@ -89,10 +89,8 @@ let skiaBridgeLinuxCxxFlags: [String] = [
     "-I", skiaRoot + "/third_party/externals/vulkan-headers/include",
 ]
 
-// Skia façade compile flags for Android: the same header search set as the host
-// bridge, minus SK_DAWN — the façade (Graphite.cpp) uses the native Vulkan
-// Graphite backend (ContextFactory::MakeVulkan), so Android Skia is built without
-// Dawn and the façade references no Dawn symbols.
+// Skia façade compile flags for Android: the same native Vulkan Graphite backend
+// (ContextFactory::MakeVulkan) as the host, with Android's platform font manager.
 let skiaBridgeAndroidCxxFlags: [String] = [
     "-std=c++20", "-DNDEBUG", "-DSK_GRAPHITE", "-DSK_VULKAN",
     "-DSK_GAMMA_APPLY_TO_A8", "-DSK_ALLOW_STATIC_GLOBAL_INITIALIZERS=1",
@@ -106,7 +104,7 @@ let skiaBridgeAndroidCxxFlags: [String] = [
 
 // Link flags for the GN/Ninja-built Skia archive set, from the native SDK
 // (lib/skia-graphite). The archives are mutually recursive → one --start-group; the
-// externals + Dawn are built from vendored source, then system libs
+// externals are built from vendored source, then system libs
 // (vulkan/fontconfig/freetype/z) and dl/pthread/m close it out. libc++ from the toolchain.
 let skiaLinkFlags: [String] = [
     "-L", skiaLibDir,
@@ -114,7 +112,7 @@ let skiaLinkFlags: [String] = [
     "-lskia", "-lskshaper", "-lskparagraph", "-lskunicode_core", "-lskunicode_icu",
     "-lsvg", "-lskcms", "-lskresources", "-lfreetype2", "-lharfbuzz", "-licu",
     "-lpng", "-ljpeg", "-ljpeg12", "-ljpeg16", "-lwebp", "-lwebp_sse41", "-lexpat",
-    "-lzlib", "-lwuffs", "-ldng_sdk", "-lpiex", "-ldawn_combined",
+    "-lzlib", "-lwuffs", "-ldng_sdk", "-lpiex",
     "-Xlinker", "--end-group",
     "-lvulkan", "-lfontconfig", "-lfreetype", "-lz", "-ldl", "-lpthread", "-lm",
 ]
@@ -254,24 +252,6 @@ let package = Package(
             dependencies: ["NucleusTypes", "NucleusAppHostProtocols", "NucleusLayers", "NucleusRenderModel"],
             path: "swift/Sources/NucleusAppHostBundle"
         ),
-        // ── Codegen tools (Swift, run as command plugins). (NucleusCompositorWaylandGen
-        // + its generate-wayland command plugin moved to compositor-core/ with the
-        // Wayland substrate — Phase 2.)
-        // Regenerates Dawn's vendored codegen by driving tools/regenerate-dawn.sh
-        // (Dawn's own Python generators). Run after a Skia/Dawn bump:
-        //   swift package generate-dawn --allow-writing-to-package-directory
-        .plugin(
-            name: "GenerateDawn",
-            capability: .command(
-                intent: .custom(
-                    verb: "generate-dawn",
-                    description: "Regenerate Dawn's vendored codegen (build_zig/generated/dawn_gen)"
-                ),
-                permissions: [.writeToPackageDirectory(reason: "Emit Dawn codegen into build_zig/generated/dawn_gen")]
-            ),
-            path: "swiftpm/plugins/GenerateDawn"
-        ),
-
         // (The generated Wayland C module NucleusCompositorWaylandC + NucleusCompositorWaylandCProtocols
         // moved to compositor-core/ with the Wayland substrate — Phase 2.)
 
@@ -301,7 +281,7 @@ let package = Package(
                 .unsafeFlags(skiaBridgeAndroidCxxFlags, .when(platforms: [.android])),
             ]
         ),
-        // Cross-compile the Android Skia archive set (Vulkan Graphite, no Dawn) — the
+        // Cross-compile the Android native Vulkan Graphite archive set — the
         // `build-skia-android` command plugin, provisioned out of band like build-skia.
         .plugin(
             name: "BuildSkiaAndroid",

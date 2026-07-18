@@ -1,0 +1,38 @@
+Subject: [PATCH] Guard X11 OSR menu positioning by backend support
+
+Wayland-only Linux builds do not link the X11 protocol implementation. Keep
+the OSR coordinate correction for X11 builds, but do not compile or link it
+when Ozone X11 support is disabled.
+
+diff --git a/cef/libcef/browser/native/menu_runner_views_aura.cc b/cef/libcef/browser/native/menu_runner_views_aura.cc
+--- a/cef/libcef/browser/native/menu_runner_views_aura.cc
++++ b/cef/libcef/browser/native/menu_runner_views_aura.cc
+@@ -12,8 +12,11 @@
+ #include "ui/gfx/geometry/point.h"
+ 
+ #if BUILDFLAG(IS_LINUX)
++#include "ui/base/ozone_buildflags.h"
++#if BUILDFLAG(SUPPORTS_OZONE_X11)
+ #include "ui/display/screen.h"
+ #include "ui/gfx/x/connection.h"
++#endif
+ #endif
+ 
+ CefMenuRunnerViewsAura::CefMenuRunnerViewsAura() = default;
+@@ -40,7 +43,8 @@ bool CefMenuRunnerViewsAura::RunContextMenu(
+   gfx::Point screen_point = browser->GetScreenPoint(
+       gfx::Point(params.x, params.y), /*want_dip_coords=*/true);
+ 
+ #if BUILDFLAG(IS_LINUX)
++#if BUILDFLAG(SUPPORTS_OZONE_X11)
+   if (browser->IsWindowless() && parent_widget) {
+     // On Linux/X11 with OSR, menus are displayed as top-level override-redirect
+     // windows parented to the root window (to avoid clipping). The menu system
+@@ -69,6 +73,7 @@ bool CefMenuRunnerViewsAura::RunContextMenu(
+     }
+   }
+ #endif
++#endif
+ 
+   menu_->RunMenuAt(widget, nullptr, gfx::Rect(screen_point, gfx::Size()),
+                    views::MenuAnchorPosition::kTopRight,

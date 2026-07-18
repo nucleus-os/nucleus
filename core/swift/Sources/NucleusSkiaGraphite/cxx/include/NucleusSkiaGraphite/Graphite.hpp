@@ -104,6 +104,24 @@ enum class BlendMode : int32_t {
 
 class Shader;
 
+enum class PaintStyle : int32_t {
+    fill = 0,
+    stroke = 1,
+    strokeAndFill = 2,
+};
+
+enum class StrokeCap : int32_t {
+    butt = 0,
+    round = 1,
+    square = 2,
+};
+
+enum class StrokeJoin : int32_t {
+    miter = 0,
+    round = 1,
+    bevel = 2,
+};
+
 /// Value-type draw parameters for the composite. POD + an optional `Shader`
 /// reference passed alongside the draw (kept out of the struct so it stays
 /// trivially copyable across the interop boundary). `blurSigma > 0` attaches a
@@ -116,6 +134,13 @@ struct Paint {
     bool antialias = true;
     float blurSigma = 0;  // > 0 → Gaussian blur image filter
     float saturation = 1; // != 1 → saturation color matrix
+    // Stroke parameters. `style` defaults to fill, which is why a command
+    // carrying only a `strokeWidth` used to paint solid.
+    PaintStyle style = PaintStyle::fill;
+    float strokeWidth = 0;
+    StrokeCap strokeCap = StrokeCap::butt;
+    StrokeJoin strokeJoin = StrokeJoin::miter;
+    float miter = 4;
 };
 
 class Recorder;
@@ -179,6 +204,95 @@ private:
     std::shared_ptr<Impl> impl_;
 };
 
+/// How a gradient extends past its defined span.
+enum class TileMode : int32_t {
+    clamp = 0,
+    repeatTile = 1,
+    mirror = 2,
+    decal = 3,
+};
+
+/// Build a gradient shader. `colors` and `stops` are parallel arrays of
+/// `count` entries; a null `stops` distributes the colors evenly. Returned
+/// invalid on a null/short array or `count < 2`.
+Shader makeLinearGradient(
+    float x0, float y0, float x1, float y1,
+    const Color *colors, const float *stops, size_t count, TileMode tile);
+Shader makeRadialGradient(
+    float centerX, float centerY, float radius,
+    const Color *colors, const float *stops, size_t count, TileMode tile);
+Shader makeSweepGradient(
+    float centerX, float centerY, float startAngle, float endAngle,
+    const Color *colors, const float *stops, size_t count, TileMode tile);
+
+/// A path verb. Each verb consumes a fixed number of points from the parallel
+/// point array: `move`/`line` one, `quad` two, `cubic` three, `close` none.
+/// `arcTo` consumes three — the oval's origin, the oval's size, and
+/// `(startAngle, sweepAngle)` in degrees. There is deliberately no `drawArc`
+/// facade call: an arc is a path verb, so a spinner or a countdown ring is a
+/// stroked path rather than a bespoke primitive.
+enum class PathVerb : uint8_t {
+    move = 0,
+    line = 1,
+    quad = 2,
+    cubic = 3,
+    arcTo = 4,
+    close = 5,
+};
+
+/// An immutable geometry path. Holds an `SkPath` privately; value-semantic and
+/// copyable for Swift, following the `Shader` pattern.
+class Path {
+public:
+    struct Impl;
+    explicit Path(std::shared_ptr<Impl> impl);
+    bool isValid() const;
+
+    // Internal: the canvas path-draw path reads the held SkPath.
+    Impl *raw() const;
+
+private:
+    std::shared_ptr<Impl> impl_;
+};
+
+/// Build a path from a verb array plus a flat point array (`pointCount` is a
+/// count of *floats*, two per point). `evenOdd` selects the even-odd fill type
+/// instead of winding. Returned invalid if the verbs consume more points than
+/// were supplied — a malformed encoding fails loudly rather than drawing
+/// partial geometry.
+Path makePath(
+    const uint8_t *verbs, size_t verbCount,
+    const float *points, size_t pointCount, bool evenOdd);
+
+/// A compiled SkSL program. Compilation is the expensive half of building a
+/// runtime-effect shader and does not depend on uniform values, so it is split
+/// out and cached behind a handle: uniforms change every frame, the program
+/// does not. Holds an `sk_sp<SkRuntimeEffect>` privately.
+class RuntimeEffect {
+public:
+    struct Impl;
+    explicit RuntimeEffect(std::shared_ptr<Impl> impl);
+    bool isValid() const;
+
+    /// Bind `uniformFloatCount` floats in declaration order and produce a
+    /// drawable shader. Invalid if the uniform byte size does not match.
+    Shader makeShader(const float *uniforms, size_t uniformFloatCount) const;
+
+    /// As `makeShader`, additionally binding `child` as the program's single
+    /// child shader (declared `uniform shader …;`).
+    Shader makeShaderWithImage(
+        const float *uniforms, size_t uniformFloatCount, const Image &child) const;
+
+    Impl *raw() const;
+
+private:
+    std::shared_ptr<Impl> impl_;
+};
+
+/// Compile an SkSL shader source. Returns an invalid effect if it fails to
+/// compile. Compilation is GPU-independent, so this is verifiable headless.
+RuntimeEffect makeRuntimeEffect(const char *sksl);
+
 /// Compile an SkSL shader source and bind `uniformFloatCount` float uniforms in
 /// declaration order. Returns an invalid shader if the source fails to compile or
 /// the uniform byte size does not match. Compilation is GPU-independent, so this
@@ -217,6 +331,12 @@ public:
     void saveLayerAlpha(RectF bounds, float alpha) const;
     void clipRect(RectF rect, bool antialias) const;
     void clipRRect(RectF rect, RRectRadii radii, bool antialias) const;
+    void clipPath(const Path &path, bool antialias) const;
+
+    // --- Transform ---
+    /// Concatenate a row-major 3x3 matrix. `translate`/`scale`/`rotate` are all
+    /// expressible through this, so the facade carries only the general form.
+    void concat(const float m[9]) const;
 
     // --- Draws (Paint-carrying) ---
     void drawRect(RectF rect, Paint paint) const;
@@ -230,6 +350,11 @@ public:
     void drawImageRect(const Image &image, RectF src, RectF dst, Paint paint) const;
     /// Fill `rect` with a runtime-effect shader (vibrancy), modulated by the paint.
     void drawShaderRect(RectF rect, const Shader &shader, Paint paint) const;
+    /// Fill or stroke `path` per the paint's style.
+    void drawPath(const Path &path, Paint paint) const;
+    /// Draw `path` with `shader` bound. Unifies gradients and SkSL effects —
+    /// both are "a Shader bound to a draw".
+    void drawPathWithShader(const Path &path, const Shader &shader, Paint paint) const;
     /// Paint the text-layout paragraph named by `handle` into `dst`. The render
     /// core resolves the handle to a borrowed `skia::textlayout::Paragraph*` via
     /// the resolver installed with `nucleus_skia_set_text_layout_resolver` and
@@ -284,6 +409,10 @@ public:
     int32_t height() const;
     Canvas getCanvas() const;
     Image snapshotImage() const;
+    /// Read the surface's pixels as tightly-packed (or `rowBytes`-strided)
+    /// RGBA8888 premultiplied. Valid for CPU raster surfaces; a GPU-backed
+    /// surface reads back through `GraphiteContext::readSurfaceRGBA` instead.
+    bool readPixelsRGBA(uint8_t *dst, size_t byteLength, int32_t rowBytes) const;
 
     // Internal: the context readback path reads the held SkSurface.
     Impl *raw() const;
@@ -291,6 +420,11 @@ public:
 private:
     std::shared_ptr<Impl> impl_;
 };
+
+/// Make a CPU raster render target. Needs no Graphite context or GPU, so the
+/// drawing façade — paths, strokes, gradients, blend modes — is verifiable
+/// headless, the same property `makeRuntimeShader` already has.
+Surface makeRasterSurface(int32_t width, int32_t height);
 
 /// An immutable recorded sequence of GPU work, produced by `Recorder::snap`.
 class Recording {

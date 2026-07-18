@@ -61,7 +61,7 @@ First-party dependencies use monorepo-relative paths. Independently released bin
 as `swift-wayland` remain pinned package dependencies.
 
 `bootstrap` delegates render-SDK provisioning to `../core`; the compositor does not
-encode Skia or Dawn build steps.
+encode Skia build steps.
 
 The lower-level commands remain available:
 

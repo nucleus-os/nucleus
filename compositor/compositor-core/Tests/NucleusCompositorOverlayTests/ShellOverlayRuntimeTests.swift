@@ -223,8 +223,8 @@ import Testing
         #expect(keyBaseline < row.keyLabel.frame.origin.y + row.keyLabel.frame.size.height)
 
         // The container itself paints no content; its separator is a filled rect.
-        #expect(scene.hotkeyView.layerContent.commands.isEmpty)
-        #expect(scene.hotkeyView.separatorView.layerContent.commands.first?.kind == .rect)
+        #expect(scene.hotkeyView.layerContent.recording.isEmpty)
+        #expect(scene.hotkeyView.separatorView.layerContent.recording.commands.first?.kind == .rect)
     }
 
     @Test func notificationLabelsUseTextLayoutHeights() throws {
@@ -251,9 +251,9 @@ import Testing
         #expect(notification.summaryLabel.frame.size.height > Double(notification.summaryLabel.fontSize))
         #expect(notification.bodyLabel.frame.size.height > Double(notification.bodyLabel.fontSize))
         #expect(notification.metrics.cardH >= notification.metrics.cardPad * 2 + notification.metrics.textHeight(hasBody: true))
-        #expect(notification.summaryLabel.layerContent.commands.first?.kind == .textLayout)
-        #expect(notification.summaryLabel.layerContent.commands.first?.h == Float(notification.summaryLabel.frame.size.height))
-        #expect(notification.bodyLabel.layerContent.commands.first?.h == Float(notification.bodyLabel.frame.size.height))
+        #expect(notification.summaryLabel.layerContent.recording.commands.first?.kind == .textLayout)
+        #expect(notification.summaryLabel.layerContent.recording.commands.first?.h == Float(notification.summaryLabel.frame.size.height))
+        #expect(notification.bodyLabel.layerContent.recording.commands.first?.h == Float(notification.bodyLabel.frame.size.height))
     }
 
     @Test func notificationBackdropRadiusMatchesShadowAcrossBackingScale() throws {

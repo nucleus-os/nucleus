@@ -115,7 +115,7 @@ let rnLinkFlags: [String] = [
 
 // Skia compile flags for the text backend + the Skia archive link set.
 let skiaBridgeCxxFlags: [String] = [
-    "-std=c++20", "-DNDEBUG", "-DSK_GRAPHITE", "-DSK_DAWN", "-DSK_VULKAN",
+    "-std=c++20", "-DNDEBUG", "-DSK_GRAPHITE", "-DSK_VULKAN",
     "-DSK_GAMMA_APPLY_TO_A8", "-DSK_ALLOW_STATIC_GLOBAL_INITIALIZERS=1",
     "-I", skiaRoot,
     "-I", skiaRoot + "/src",
@@ -130,7 +130,7 @@ let skiaLinkFlags: [String] = [
     "-lskia", "-lskshaper", "-lskparagraph", "-lskunicode_core", "-lskunicode_icu",
     "-lsvg", "-lskcms", "-lskresources", "-lfreetype2", "-lharfbuzz", "-licu",
     "-lpng", "-ljpeg", "-ljpeg12", "-ljpeg16", "-lwebp", "-lwebp_sse41", "-lexpat",
-    "-lzlib", "-lwuffs", "-ldng_sdk", "-lpiex", "-ldawn_combined",
+    "-lzlib", "-lwuffs", "-ldng_sdk", "-lpiex",
     "-Xlinker", "--end-group",
     "-lvulkan", "-lfontconfig", "-lfreetype", "-lz", "-ldl", "-lpthread", "-lm",
 ]
@@ -252,10 +252,26 @@ let package = Package(
         //    RN-produced layer tree to the render backend, and drives the frame loop off
         //    the wl_display fd. The composition root's brain. Native↔JS goes through the
         //    facade (emitDeviceEvent for the window list); no custom native-module C++ bridge.
+        // ── The native shell product: views, controllers, and product composition
+        //    for the Swift Noctalia port. This is the first out-of-package client
+        //    authoring against NucleusUI's public API, so its dependency list is the
+        //    boundary being proven — it must stay NucleusUI-only. No NucleusLayers,
+        //    no NucleusRenderer, no React Native: if product code ever needs one of
+        //    those, the missing capability belongs in NucleusUI instead.
+        .target(
+            name: "NucleusShellProduct",
+            dependencies: [
+                .product(name: "NucleusUI", package: "Nucleus"),
+            ],
+            path: "Sources/NucleusShellProduct",
+            swiftSettings: [.interoperabilityMode(.Cxx)]
+        ),
+
         .target(
             name: "NucleusShellRuntime",
             dependencies: [
                 "NucleusShellWayland", "NucleusShellRender", "NucleusShellSignalC",
+                "NucleusShellProduct",
                 .product(name: "NucleusReactRuntime", package: "NucleusReactNative"),
                 .product(name: "NucleusReactRuntimeCxx", package: "NucleusReactNative"),
                 .product(name: "NucleusRenderer", package: "Nucleus"),
@@ -274,6 +290,22 @@ let package = Package(
                 .unsafeFlags(vulkanHeadersInclude + vulkanWaylandFlag
                     + rnRuntimeBridgeModulemapFlag + rnRuntimeXccFlags),
             ]
+        ),
+
+        // The product target itself depends only on NucleusUI. Its *tests* also
+        // link the text backend and Skia, because NucleusUI's TextSystem
+        // resolves fonts through TextLayoutService at run time — a link
+        // requirement of the framework, not a product dependency.
+        .testTarget(
+            name: "NucleusShellProductTests",
+            dependencies: [
+                "NucleusShellProduct",
+                .product(name: "NucleusUI", package: "Nucleus"),
+                .product(name: "NucleusTextBackend", package: "Nucleus"),
+            ],
+            path: "Tests/NucleusShellProductTests",
+            swiftSettings: [.interoperabilityMode(.Cxx)],
+            linkerSettings: [.unsafeFlags(skiaLinkFlags)]
         ),
 
         // ── The shell executable. Hands control to NucleusShellRuntime; the final link

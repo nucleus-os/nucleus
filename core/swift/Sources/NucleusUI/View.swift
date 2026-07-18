@@ -16,8 +16,7 @@ open class View: Responder, Accessible, ~Sendable {
     package var intrinsicContentSizeNeedsUpdate: Bool
     package var layoutNeedsUpdate: Bool
     package var displayNeedsUpdate: Bool
-    package var dirtyDisplayRects: [Rect]
-    package var cachedLayerContentCommands: [ViewLayerContentCommand]
+    package var cachedRecording: PaintRecording
     package var storedStyle: ViewStyle
     package var storedAccessibilityProperties: AccessibilityProperties
     package var storedAccessibilityChildren: [any Accessible]?
@@ -31,8 +30,7 @@ open class View: Responder, Accessible, ~Sendable {
         self.intrinsicContentSizeNeedsUpdate = false
         self.layoutNeedsUpdate = false
         self.displayNeedsUpdate = true
-        self.dirtyDisplayRects = []
-        self.cachedLayerContentCommands = []
+        self.cachedRecording = PaintRecording()
         self.storedStyle = .none
         self.storedAccessibilityProperties = AccessibilityProperties()
         self.storedAccessibilityChildren = nil
@@ -48,8 +46,7 @@ open class View: Responder, Accessible, ~Sendable {
         self.intrinsicContentSizeNeedsUpdate = false
         self.layoutNeedsUpdate = false
         self.displayNeedsUpdate = true
-        self.dirtyDisplayRects = []
-        self.cachedLayerContentCommands = []
+        self.cachedRecording = PaintRecording()
         self.storedStyle = .none
         self.storedAccessibilityProperties = AccessibilityProperties()
         self.storedAccessibilityChildren = nil
@@ -261,11 +258,7 @@ open class View: Responder, Accessible, ~Sendable {
 
     @_spi(NucleusCompositor) public var layerContent: ViewLayerContent {
         ViewLayerContent(
-            commands: LayerContentBuilder.commands(
-                style: storedStyle,
-                bounds: bounds,
-                additional: cachedLayerContentCommands
-            ),
+            recording: cachedRecording,
             presentation: layerPresentation,
             shadow: shadow == .none ? nil : shadow
         )
@@ -393,19 +386,28 @@ open class View: Responder, Accessible, ~Sendable {
         setNeedsDisplay(bounds)
     }
 
+    /// Keeps AppKit's signature so callers are unaffected, but the rect only
+    /// marks the view dirty — see `draw(in:)` on why a subrect cannot be
+    /// honored here.
     open func setNeedsDisplay(_ rect: Rect) {
+        _ = rect
         displayNeedsUpdate = true
-        dirtyDisplayRects.append(rect)
     }
 
     open func layout() {
     }
 
-    open func draw(_ dirtyRect: Rect) {
-    }
-
-    package func displayCommands(in dirtyRect: Rect) -> [ViewLayerContentCommand] {
-        []
+    /// Draw this view's content. The framework paints `style` underneath
+    /// first, so an override adds to the styled background rather than
+    /// replacing it.
+    ///
+    /// There is no `dirtyRect`. Paint content registers a whole-canvas command
+    /// list and rasterizes into a fresh texture, so a subrect-only redraw would
+    /// produce a texture containing only that subrect — AppKit's contract
+    /// preserves the undrawn pixels, and this pipeline structurally cannot.
+    /// Partial repaint lands when a partial-texture-update path does.
+    open func draw(in context: GraphicsContext) {
+        _ = context
     }
 
     public func layoutIfNeeded() {
@@ -420,10 +422,10 @@ open class View: Responder, Accessible, ~Sendable {
 
     public func displayIfNeeded() {
         if displayNeedsUpdate {
-            let dirtyRect = dirtyDisplayRects.last ?? bounds
-            draw(dirtyRect)
-            cachedLayerContentCommands = displayCommands(in: dirtyRect)
-            dirtyDisplayRects.removeAll(keepingCapacity: true)
+            let context = GraphicsContext()
+            storedStyle.draw(in: context, bounds: bounds)
+            draw(in: context)
+            cachedRecording = context.recording
             displayNeedsUpdate = false
         }
         for child in childViews {

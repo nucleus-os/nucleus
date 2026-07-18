@@ -35,18 +35,23 @@ final class ReactParagraphView: ~Sendable {
         )
     }
 
-    func displayCommands(containerWidth: Double?) -> [ViewLayerContentCommand] {
+    /// Record this paragraph's drawing. Named for what it produces now; Phase 6
+    /// replaces it with a `View.draw(in:)` override on a real subclass.
+    @MainActor
+    func recordDisplay(containerWidth: Double?) -> PaintRecording {
         guard !textRuns.isEmpty else {
-            return []
+            return PaintRecording()
         }
         let layout = textLayout(containerWidth: containerWidth)
         let targetLineHeight = lineHeight ?? layout.usedRect.size.height
         let y = max(0, (targetLineHeight - layout.usedRect.size.height) * 0.5)
-        return layout.layerContentCommands(
-            color: fallbackColor,
-            x: 0,
-            y: Float(y)
-        )
+        let context = GraphicsContext()
+        context.fillColor = fallbackColor
+        context.draw(layout, in: Rect(
+            x: 0, y: y,
+            width: layout.usedRect.size.width,
+            height: layout.usedRect.size.height))
+        return context.recording
     }
 
     private func textLayout(containerWidth: Double?) -> TextLayout {

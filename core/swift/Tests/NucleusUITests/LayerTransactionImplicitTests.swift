@@ -61,7 +61,7 @@ import Testing
         let context = try Context(contextID: 6_401, commitSink: sink)
 
         try Application.withContext(context) {
-            let view = try View()
+            let view = View()
             try Transaction.animate {
                 view.frame = Rect(x: 1, y: 2, width: 30, height: 40)
             }
@@ -78,7 +78,7 @@ import Testing
         var completed = false
 
         let completion = try Application.withContext(context) {
-            let view = try View()
+            let view = View()
             return try Transaction.run(
                 in: context,
                 duration: 0.10,

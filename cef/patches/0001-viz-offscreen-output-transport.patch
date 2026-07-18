@@ -1,10 +1,19 @@
 Subject: [PATCH] Add direct Viz export and transparent backdrop composition
 
 diff --git a/components/viz/service/BUILD.gn b/components/viz/service/BUILD.gn
-index 3e9bec8..a0208dd 100644
+index 3e9bec8..590e04e 100644
 --- a/components/viz/service/BUILD.gn
 +++ b/components/viz/service/BUILD.gn
-@@ -151,6 +151,9 @@ viz_component("service") {
+@@ -54,6 +54,8 @@ static_library("viz_debugger") {
+
+ viz_component("service") {
+   sources = [
++    "//cef/libcef/browser/osr/software_output_device_proxy.cc",
++    "//cef/libcef/browser/osr/software_output_device_proxy.h",
+     "display/aggregated_frame.cc",
+     "display/aggregated_frame.h",
+     "display/bsp_tree.cc",
+@@ -151,6 +153,9 @@ viz_component("service") {
      "display_embedder/compositor_gpu_thread.h",
      "display_embedder/image_context_impl.cc",
      "display_embedder/image_context_impl.h",
@@ -14,7 +23,7 @@ index 3e9bec8..a0208dd 100644
      "display_embedder/output_presenter.h",
      "display_embedder/output_presenter_gl.cc",
      "display_embedder/output_presenter_gl.h",
-@@ -165,6 +168,8 @@ viz_component("service") {
+@@ -165,6 +170,8 @@ viz_component("service") {
      "display_embedder/skia_output_device_gl.h",
      "display_embedder/skia_output_device_offscreen.cc",
      "display_embedder/skia_output_device_offscreen.h",
@@ -23,14 +32,249 @@ index 3e9bec8..a0208dd 100644
      "display_embedder/skia_output_device_webview.cc",
      "display_embedder/skia_output_device_webview.h",
      "display_embedder/skia_output_surface_dependency.h",
-@@ -637,6 +642,7 @@ viz_source_set("unit_tests") {
+@@ -284,8 +291,6 @@ viz_component("service") {
+     "transitions/surface_animation_manager.h",
+     "transitions/transferable_resource_tracker.cc",
+     "transitions/transferable_resource_tracker.h",
+-    "//cef/libcef/browser/osr/software_output_device_proxy.cc",
+-    "//cef/libcef/browser/osr/software_output_device_proxy.h",
+   ]
+
+   defines = [ "VIZ_SERVICE_IMPLEMENTATION" ]
+@@ -636,6 +641,7 @@ viz_source_set("unit_tests") {
+     "display/viz_pixel_test.cc",
      "display/viz_pixel_test.h",
      "display_embedder/buffer_queue_unittest.cc",
-     "display_embedder/skia_output_device_buffer_queue_unittest.cc",
 +    "display_embedder/offscreen_output_queue_unittest.cc",
+     "display_embedder/skia_output_device_buffer_queue_unittest.cc",
      "display_embedder/skia_output_surface_impl_unittest.cc",
      "display_embedder/software_output_surface_unittest.cc",
-     "display_embedder/vsync_parameter_listener_unittest.cc",
+diff --git a/components/viz/service/display/output_surface.h b/components/viz/service/display/output_surface.h
+index be3dd93..20ce6ec 100644
+--- a/components/viz/service/display/output_surface.h
++++ b/components/viz/service/display/output_surface.h
+@@ -103,6 +103,11 @@ class VIZ_SERVICE_EXPORT OutputSurface {
+     bool supports_viewporter = false;
+     // OutputSurface's orientation mode.
+     OrientationMode orientation_mode = OrientationMode::kLogic;
++    // Whether backdrop-filtered layers on a transparent root consume the
++    // captured destination within their exact backdrop bounds before restore.
++    // This is for outputs that will be composited over an external backdrop;
++    // ordinary web rendering retains source-over composition.
++    bool backdrop_filters_replace_destination = false;
+ #if BUILDFLAG(IS_WIN)
+     // Whether this OutputSurface supports direct composition layers.
+     DCSupportLevel dc_support_level = DCSupportLevel::kNone;
+diff --git a/components/viz/service/display/renderer_pixeltest.cc b/components/viz/service/display/renderer_pixeltest.cc
+index cbd3ed6..1345cda 100644
+--- a/components/viz/service/display/renderer_pixeltest.cc
++++ b/components/viz/service/display/renderer_pixeltest.cc
+@@ -47,6 +47,7 @@
+ #include "components/viz/service/display/renderer_pixeltest_utils.h"
+ #include "components/viz/service/display/software_renderer.h"
+ #include "components/viz/service/display/viz_pixel_test.h"
++#include "components/viz/service/display_embedder/skia_output_surface_impl.h"
+ #include "components/viz/test/buildflags.h"
+ #include "components/viz/test/test_in_process_context_provider.h"
+ #include "components/viz/test/test_types.h"
+@@ -2086,7 +2087,14 @@ TEST_P(RendererPixelTest, RenderPassAndMaskForRoundedCornerMultiRadii) {
+ class RendererPixelTestWithBackdropFilter : public VizPixelTestWithParam {
+  protected:
+   void SetUp() override {
++    renderer_settings_.requires_alpha_channel = true;
+     VizPixelTestWithParam::SetUp();
++    if (!is_software_renderer()) {
++      static_cast<SkiaOutputSurfaceImpl*>(output_surface_.get())
++          ->SetCapabilitiesForTesting(
++              GetSurfaceOrigin(),
++              /*backdrop_filters_replace_destination=*/true);
++    }
+     filter_pass_layer_rect_ = gfx::Rect(device_viewport_size_);
+     filter_pass_layer_rect_.Inset(gfx::Insets::TLBR(14, 12, 18, 16));
+     backdrop_filter_bounds_ =
+@@ -2298,6 +2306,71 @@ TEST_P(RendererPixelTestWithBackdropFilter, InvertFilterWithMask) {
+                            cc::FuzzyPixelOffByOneComparator()));
+ }
+
++TEST_P(RendererPixelTestWithBackdropFilter,
++       TransparentRootConsumesOnlyBackdropBounds) {
++  if (is_software_renderer()) {
++    GTEST_SKIP() << "Backdrop replacement is an offscreen Skia output "
++                    "capability.";
++  }
++
++  const gfx::Rect viewport(device_viewport_size_);
++  const gfx::Rect filter_rect(0, 0, viewport.width() / 2, viewport.height());
++  const gfx::Transform identity;
++
++  auto filter_pass =
++      CreateTestRenderPass(AggregatedRenderPassId{2}, filter_rect, identity);
++  SharedQuadState* filter_shared_state = CreateTestSharedQuadState(
++      identity, filter_rect, filter_pass.get(), gfx::MaskFilterInfo());
++  auto* transparent =
++      filter_pass->CreateAndAppendDrawQuad<SolidColorDrawQuad>();
++  transparent->SetNew(filter_shared_state, filter_rect, filter_rect,
++                      SkColors::kTransparent, false);
++
++  auto root_pass =
++      CreateTestRootRenderPass(AggregatedRenderPassId{1}, viewport);
++  root_pass->has_transparent_background = true;
++
++  SharedQuadState* layer_shared_state = CreateTestSharedQuadState(
++      identity, filter_rect, root_pass.get(), gfx::MaskFilterInfo());
++  auto* filter_quad =
++      root_pass->CreateAndAppendDrawQuad<AggregatedRenderPassDrawQuad>();
++  filter_quad->SetNew(layer_shared_state, filter_rect, filter_rect,
++                      AggregatedRenderPassId{2}, ResourceId(0), gfx::RectF(),
++                      gfx::Size(),
++                      /*force_anti_aliasing_off=*/false);
++  cc::FilterOperations backdrop_filters;
++  backdrop_filters.Append(cc::FilterOperation::CreateOpacityFilter(0.5f));
++  filter_quad->SetFilters(
++      /*filters=*/{}, backdrop_filters,
++      SkPath::Rect(gfx::RectToSkRect(filter_rect)),
++      /*filters_scale=*/gfx::Vector2dF(1.0f, 1.0f),
++      /*filters_origin=*/gfx::PointF(),
++      /*backdrop_filter_quality=*/1.0f);
++
++  SharedQuadState* red_shared_state = CreateTestSharedQuadState(
++      identity, viewport, root_pass.get(), gfx::MaskFilterInfo());
++  auto* red = root_pass->CreateAndAppendDrawQuad<SolidColorDrawQuad>();
++  red->SetNew(red_shared_state, viewport, viewport, SkColors::kRed, false);
++
++  AggregatedRenderPassList pass_list;
++  pass_list.push_back(std::move(filter_pass));
++  pass_list.push_back(std::move(root_pass));
++
++  std::vector<SkColor> expected(viewport.width() * viewport.height());
++  for (int y = 0; y < viewport.height(); ++y) {
++    for (int x = 0; x < viewport.width(); ++x) {
++      expected[y * viewport.width() + x] = x < filter_rect.width()
++                                               ? SkColorSetARGB(128, 255, 0, 0)
++                                               : SkColors::kRed.toSkColor();
++    }
++  }
++
++  auto comparator = cc::FuzzyPixelComparator()
++                        .SetErrorPixelsPercentageLimit(100.f)
++                        .SetAbsErrorLimit(3);
++  EXPECT_TRUE(RunPixelTest(&pass_list, &expected, comparator));
++}
++
+ // Software renderer does not support anti-aliased edges.
+ TEST_P(GPURendererPixelTest, AntiAliasing) {
+   gfx::Rect rect(this->device_viewport_size_);
+diff --git a/components/viz/service/display/skia_renderer.cc b/components/viz/service/display/skia_renderer.cc
+index 1724881..43b0054 100644
+--- a/components/viz/service/display/skia_renderer.cc
++++ b/components/viz/service/display/skia_renderer.cc
+@@ -86,6 +86,7 @@
+ #include "third_party/skia/include/effects/SkShaderMaskFilter.h"
+ #include "third_party/skia/include/gpu/ganesh/GrBackendSurface.h"
+ #include "third_party/skia/include/gpu/ganesh/GrDirectContext.h"
++#include "third_party/skia/include/pathops/SkPathOps.h"
+ #include "third_party/skia/include/private/chromium/GrDeferredDisplayList.h"
+ #include "third_party/skia/modules/skcms/skcms.h"
+ #include "third_party/skia/src/core/SkCanvasPriv.h"
+@@ -857,6 +858,10 @@ struct SkiaRenderer::DrawRPDQParams {
+   // Backdrop border box for the render pass, to clip backdrop-filtered content
+   // (but not the rest of the RPDQ itself).
+   std::optional<SkPath> backdrop_filter_bounds;
++  // Exact local-coordinate region whose captured backdrop may be consumed for
++  // externally composited transparent output. Unlike filter_bounds, this
++  // never includes foreground-filter expansion.
++  std::optional<SkPath> backdrop_replacement_bounds;
+   // Original render pass's visible rect, which will be intersected with
+   // |backdrop_filter_bounds| to determine the extent of backdrop content.
+   // It is preserved here as the original DrawQuad's |visible_rect| may be
+@@ -907,6 +912,9 @@ struct SkiaRenderer::DrawRPDQParams {
+   // impacting the DrawQuad or regular filter output.
+   void ClearOutsideBackdropBounds(SkCanvas* canvas,
+                                   const DrawQuadParams* params) const;
++
++  std::optional<SkPath> BackdropReplacementPath(
++      const DrawQuadParams* params) const;
+ };
+
+ sk_sp<SkShader> SkiaRenderer::DrawRPDQParams::MaskShader::GetOrCreateSkShader(
+@@ -993,6 +1001,43 @@ void SkiaRenderer::DrawRPDQParams::ClearOutsideBackdropBounds(
+   }
+ }
+
++std::optional<SkPath> SkiaRenderer::DrawRPDQParams::BackdropReplacementPath(
++    const DrawQuadParams* params) const {
++  if (!backdrop_filter || !backdrop_replacement_bounds) {
++    return std::nullopt;
++  }
++
++  auto intersect = [](const SkPath& first,
++                      const SkPath& second) -> std::optional<SkPath> {
++    SkRect first_rect;
++    SkRect second_rect;
++    if (first.isRect(&first_rect) && second.isRect(&second_rect)) {
++      if (!first_rect.intersect(second_rect) || first_rect.isEmpty()) {
++        return std::nullopt;
++      }
++      return SkPath::Rect(first_rect);
++    }
++
++    SkPath result;
++    if (!Op(first, second, kIntersect_SkPathOp, &result) || result.isEmpty()) {
++      return std::nullopt;
++    }
++    return result;
++  };
++
++  std::optional<SkPath> replacement =
++      intersect(*backdrop_replacement_bounds, SkPath::Rect(rpdq_visible_rect));
++  if (!replacement || !params->draw_region) {
++    return replacement;
++  }
++
++  SkPath draw_region = params->draw_region_in_path();
++  if (bypass_geometry) {
++    draw_region = draw_region.makeTransform(bypass_geometry->transform);
++  }
++  return intersect(*replacement, draw_region);
++}
++
+ // A read lock based fence that is signaled after gpu commands are completed
+ // meaning the resource has been read.
+ // TODO(fangzhoug): Move this out of this file s.t. it can be referenced in
+@@ -1763,9 +1808,21 @@ void SkiaRenderer::PrepareCanvasForRPDQ(const DrawRPDQParams& rpdq_params,
+       gfx::RectFToSkRect(rpdq_params.bypass_geometry.has_value()
+                              ? rpdq_params.bypass_geometry->clip_rect
+                              : params->visible_rect);
+-  current_canvas_->saveLayer(SkCanvasPriv::ScaledBackdropLayer(
++  SkCanvas::SaveLayerRec layer_rec = SkCanvasPriv::ScaledBackdropLayer(
+       &bounds, &layer_paint, rpdq_params.backdrop_filter.get(),
+-      rpdq_params.backdrop_filter_quality, 0));
++      rpdq_params.backdrop_filter_quality, 0);
++  std::optional<SkPath> backdrop_replacement;
++  if (rpdq_params.backdrop_filter &&
++      output_surface_->capabilities().backdrop_filters_replace_destination &&
++      current_frame()->root_render_pass->has_transparent_background) {
++    backdrop_replacement = rpdq_params.BackdropReplacementPath(params);
++    if (backdrop_replacement) {
++      layer_rec.fBackdropReplacement = &*backdrop_replacement;
++      layer_rec.fBackdropReplacementAA =
++          params->aa_flags != SkCanvas::kNone_QuadAAFlags;
++    }
++  }
++  current_canvas_->saveLayer(layer_rec);
+
+   // If we have backdrop filtered content (and not transparent black like with
+   // regular render passes), we have to clear out the parts of the layer that
+@@ -3297,6 +3354,9 @@ SkiaRenderer::DrawRPDQParams SkiaRenderer::CalculateRPDQParams(
+     // with some pixel-moving filters, that may not remain the case and this
+     // ensures |filter_bounds| will contain all possible output.
+     rpdq_params.filter_bounds.join(bd_filter_extra_bounds);
++    rpdq_params.backdrop_replacement_bounds = backdrop_filter_bounds
++                                                  ? *backdrop_filter_bounds
++                                                  : SkPath::Rect(backdrop_rect);
+     rpdq_params.backdrop_filter_bounds = backdrop_filter_bounds;
+   }
+
 diff --git a/components/viz/service/display_embedder/offscreen_output_connection.h b/components/viz/service/display_embedder/offscreen_output_connection.h
 new file mode 100644
 index 0000000..59dcea1
@@ -79,7 +323,7 @@ index 0000000..59dcea1
 +#endif  // COMPONENTS_VIZ_SERVICE_DISPLAY_EMBEDDER_OFFSCREEN_OUTPUT_CONNECTION_H_
 diff --git a/components/viz/service/display_embedder/offscreen_output_queue.cc b/components/viz/service/display_embedder/offscreen_output_queue.cc
 new file mode 100644
-index 0000000..1b1b27c
+index 0000000..512250a
 --- /dev/null
 +++ b/components/viz/service/display_embedder/offscreen_output_queue.cc
 @@ -0,0 +1,130 @@
@@ -215,7 +459,7 @@ index 0000000..1b1b27c
 +}  // namespace viz
 diff --git a/components/viz/service/display_embedder/offscreen_output_queue.h b/components/viz/service/display_embedder/offscreen_output_queue.h
 new file mode 100644
-index 0000000..75ddb7b
+index 0000000..f10dcad
 --- /dev/null
 +++ b/components/viz/service/display_embedder/offscreen_output_queue.h
 @@ -0,0 +1,66 @@
@@ -374,13 +618,13 @@ index 027feba..efba1e9 100644
 --- a/components/viz/service/display_embedder/output_surface_provider.h
 +++ b/components/viz/service/display_embedder/output_surface_provider.h
 @@ -20,6 +20,7 @@ namespace viz {
- 
+
  struct DebugRendererSettings;
  class DisplayCompositorMemoryAndTaskController;
 +struct OffscreenOutputConnection;
  class RendererSettings;
  class OutputSurface;
- 
+
 @@ -43,7 +44,9 @@ class OutputSurfaceProvider {
        DisplayCompositorMemoryAndTaskController* gpu_dependency,
        const RendererSettings& renderer_settings,
@@ -389,7 +633,7 @@ index 027feba..efba1e9 100644
 +      bool use_proxy_output_device,
 +      std::unique_ptr<OffscreenOutputConnection>
 +          offscreen_output_connection) = 0;
- 
+
    virtual gpu::SharedImageManager* GetSharedImageManager() = 0;
    virtual gpu::SyncPointManager* GetSyncPointManager() = 0;
 diff --git a/components/viz/service/display_embedder/output_surface_provider_impl.cc b/components/viz/service/display_embedder/output_surface_provider_impl.cc
@@ -415,7 +659,7 @@ index 36fa9ab..2d6122c 100644
    if (surface_handle == gpu::kNullSurfaceHandle)
      return std::make_unique<OutputSurfaceUnified>();
  #endif
- 
+
    if (!gpu_compositing) {
 +    if (offscreen_output_connection) {
 +      return nullptr;
@@ -431,7 +675,7 @@ index 36fa9ab..2d6122c 100644
 +          gpu_dependency, renderer_settings, debug_settings,
 +          std::move(offscreen_output_connection));
      }
- 
+
  #if BUILDFLAG(IS_ANDROID)
 diff --git a/components/viz/service/display_embedder/output_surface_provider_impl.h b/components/viz/service/display_embedder/output_surface_provider_impl.h
 index 1ae39ed..0838589 100644
@@ -445,702 +689,15 @@ index 1ae39ed..0838589 100644
 +      bool use_proxy_output_device,
 +      std::unique_ptr<OffscreenOutputConnection>
 +          offscreen_output_connection) override;
- 
+
    gpu::SharedImageManager* GetSharedImageManager() override;
    gpu::SyncPointManager* GetSyncPointManager() override;
-diff --git a/components/viz/service/display_embedder/skia_output_device_offscreen_export.h b/components/viz/service/display_embedder/skia_output_device_offscreen_export.h
-new file mode 100644
-index 0000000..7e34bf4
---- /dev/null
-+++ b/components/viz/service/display_embedder/skia_output_device_offscreen_export.h
-@@ -0,0 +1,99 @@
-+// Copyright 2026 The Chromium Authors
-+// Use of this source code is governed by a BSD-style license that can be
-+// found in the LICENSE file.
-+
-+#ifndef COMPONENTS_VIZ_SERVICE_DISPLAY_EMBEDDER_SKIA_OUTPUT_DEVICE_OFFSCREEN_EXPORT_H_
-+#define COMPONENTS_VIZ_SERVICE_DISPLAY_EMBEDDER_SKIA_OUTPUT_DEVICE_OFFSCREEN_EXPORT_H_
-+
-+#include <array>
-+#include <deque>
-+#include <memory>
-+#include <optional>
-+
-+#include "components/viz/service/display_embedder/offscreen_output_queue.h"
-+#include "components/viz/service/display_embedder/skia_output_device.h"
-+#include "gpu/command_buffer/common/mailbox.h"
-+#include "gpu/command_buffer/service/memory_tracking.h"
-+#include "gpu/command_buffer/service/shared_context_state.h"
-+#include "gpu/command_buffer/service/shared_image/shared_image_representation.h"
-+#include "mojo/public/cpp/bindings/receiver.h"
-+#include "mojo/public/cpp/bindings/remote.h"
-+#include "services/viz/privileged/mojom/compositing/offscreen_output.mojom.h"
-+
-+namespace gpu {
-+class SharedImageFactory;
-+class SharedImageRepresentationFactory;
-+}  // namespace gpu
-+
-+namespace viz {
-+
-+struct OffscreenOutputConnection;
-+
-+// Exportable Vulkan/Ozone offscreen output. Its SharedImages remain borrowed
-+// by the external consumer until ReleaseFrame supplies a completion fence.
-+class SkiaOutputDeviceOffscreenExport final
-+    : public SkiaOutputDevice,
-+      public mojom::OffscreenOutput {
-+ public:
-+  SkiaOutputDeviceOffscreenExport(
-+      scoped_refptr<gpu::SharedContextState> context_state,
-+      scoped_refptr<gpu::MemoryTracker> memory_tracker,
-+      DidSwapBufferCompleteCallback did_swap_buffer_complete_callback,
-+      gpu::SharedImageFactory* shared_image_factory,
-+      gpu::SharedImageRepresentationFactory* representation_factory,
-+      std::unique_ptr<OffscreenOutputConnection> connection);
-+  ~SkiaOutputDeviceOffscreenExport() override;
-+
-+  bool Reshape(const ReshapeParams& params) override;
-+  void Present(const std::optional<gfx::Rect>& update_rect,
-+               BufferPresentedCallback feedback,
-+               OutputSurfaceFrame frame) override;
-+  void DiscardBackbuffer() override;
-+
-+ private:
-+  struct Slot {
-+    gpu::Mailbox mailbox;
-+    uint64_t resource_generation = 0;
-+    std::unique_ptr<gpu::SkiaImageRepresentation> skia;
-+    std::unique_ptr<gpu::OverlayImageRepresentation> overlay;
-+    std::unique_ptr<gpu::SkiaImageRepresentation::ScopedWriteAccess> write;
-+    std::unique_ptr<gpu::OverlayImageRepresentation::ScopedReadAccess> read;
-+    std::optional<OutputSurfaceFrame> frame;
-+    uint64_t published_token = 0;
-+    bool swap_released = false;
-+  };
-+
-+  SkSurface* BeginPaint(
-+      std::vector<GrBackendSemaphore>* end_semaphores) override;
-+  void EndPaint() override;
-+  void ReleaseFrame(uint64_t frame_token,
-+                    gfx::GpuFenceHandle release_fence) override;
-+
-+  bool AllocateSlot(size_t index);
-+  void DestroySlot(size_t index);
-+  void Shutdown();
-+  void ReportError(mojom::OffscreenOutputError error);
-+  void DrainReleasedSwaps();
-+
-+  static constexpr size_t kBufferCount = 4;
-+  scoped_refptr<gpu::SharedContextState> context_state_;
-+  const raw_ptr<gpu::SharedImageFactory> shared_image_factory_;
-+  const raw_ptr<gpu::SharedImageRepresentationFactory>
-+      representation_factory_;
-+  mojo::Remote<mojom::OffscreenOutputClient> client_;
-+  mojo::Receiver<mojom::OffscreenOutput> receiver_{this};
-+  OffscreenOutputQueue queue_{kBufferCount};
-+  std::array<Slot, kBufferCount> slots_;
-+  std::deque<uint64_t> swap_order_;
-+  std::optional<size_t> rendering_slot_;
-+  gfx::Size size_;
-+  gfx::ColorSpace color_space_;
-+  SharedImageFormat format_ = SinglePlaneFormat::kBGRA_8888;
-+  SkAlphaType alpha_type_ = kPremul_SkAlphaType;
-+  int sample_count_ = 1;
-+  bool failed_ = false;
-+};
-+
-+}  // namespace viz
-+
-+#endif  // COMPONENTS_VIZ_SERVICE_DISPLAY_EMBEDDER_SKIA_OUTPUT_DEVICE_OFFSCREEN_EXPORT_H_
-diff --git a/components/viz/service/display_embedder/skia_output_surface_impl.cc b/components/viz/service/display_embedder/skia_output_surface_impl.cc
-index 07e9bf5..efcc465 100644
---- a/components/viz/service/display_embedder/skia_output_surface_impl.cc
-+++ b/components/viz/service/display_embedder/skia_output_surface_impl.cc
-@@ -45,6 +45,7 @@
- #include "components/viz/service/display/overlay_candidate.h"
- #include "components/viz/service/display/render_pass_alpha_type.h"
- #include "components/viz/service/display_embedder/image_context_impl.h"
-+#include "components/viz/service/display_embedder/offscreen_output_connection.h"
- #include "components/viz/service/display_embedder/skia_output_surface_dependency.h"
- #include "components/viz/service/display_embedder/skia_output_surface_impl_on_gpu.h"
- #include "components/viz/service/display_embedder/skia_output_surface_shared_image_interface.h"
-@@ -313,12 +314,21 @@ std::unique_ptr<SkiaOutputSurface> SkiaOutputSurfaceImpl::Create(
-     DisplayCompositorMemoryAndTaskController* display_controller,
-     const RendererSettings& renderer_settings,
-     const DebugRendererSettings* debug_settings) {
-+  return Create(display_controller, renderer_settings, debug_settings, nullptr);
-+}
-+
-+// static
-+std::unique_ptr<SkiaOutputSurface> SkiaOutputSurfaceImpl::Create(
-+    DisplayCompositorMemoryAndTaskController* display_controller,
-+    const RendererSettings& renderer_settings,
-+    const DebugRendererSettings* debug_settings,
-+    std::unique_ptr<OffscreenOutputConnection> offscreen_output_connection) {
-   DCHECK(display_controller);
-   DCHECK(display_controller->skia_dependency());
-   DCHECK(display_controller->gpu_task_scheduler());
-   auto output_surface = std::make_unique<SkiaOutputSurfaceImpl>(
-       base::PassKey<SkiaOutputSurfaceImpl>(), display_controller,
--      renderer_settings, debug_settings);
-+      renderer_settings, debug_settings, std::move(offscreen_output_connection));
-   if (!output_surface->Initialize())
-     output_surface = nullptr;
-   return output_surface;
-@@ -328,8 +338,10 @@ SkiaOutputSurfaceImpl::SkiaOutputSurfaceImpl(
-     base::PassKey<SkiaOutputSurfaceImpl> /* pass_key */,
-     DisplayCompositorMemoryAndTaskController* display_controller,
-     const RendererSettings& renderer_settings,
--    const DebugRendererSettings* debug_settings)
-+    const DebugRendererSettings* debug_settings,
-+    std::unique_ptr<OffscreenOutputConnection> offscreen_output_connection)
-     : dependency_(display_controller->skia_dependency()),
-+      offscreen_output_connection_(std::move(offscreen_output_connection)),
-       renderer_settings_(renderer_settings),
-       debug_settings_(debug_settings),
-       display_compositor_controller_(display_controller),
-@@ -1064,10 +1076,13 @@ void SkiaOutputSurfaceImpl::SetFrameRate(
- #endif
- 
- void SkiaOutputSurfaceImpl::SetCapabilitiesForTesting(
--    gfx::SurfaceOrigin output_surface_origin) {
-+    gfx::SurfaceOrigin output_surface_origin,
-+    bool backdrop_filters_replace_destination) {
-   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-   DCHECK(impl_on_gpu_);
-   capabilities_.output_surface_origin = output_surface_origin;
-+  capabilities_.backdrop_filters_replace_destination =
-+      backdrop_filters_replace_destination;
-   auto callback =
-       base::BindOnce(&SkiaOutputSurfaceImplOnGpu::SetCapabilitiesForTesting,
-                      base::Unretained(impl_on_gpu_.get()), capabilities_);
-@@ -1149,7 +1164,8 @@ void SkiaOutputSurfaceImpl::InitializeOnGpuThread(bool* result) {
-       std::move(buffer_presented_callback), std::move(context_lost_callback),
-       std::move(schedule_gpu_task),
-       std::move(add_child_window_to_browser_callback),
--      std::move(release_overlays_callback));
-+      std::move(release_overlays_callback),
-+      std::move(offscreen_output_connection_));
-   if (!impl_on_gpu_) {
-     *result = false;
-     return;
-diff --git a/components/viz/service/display_embedder/skia_output_surface_impl.h b/components/viz/service/display_embedder/skia_output_surface_impl.h
-index 483ee06..465053a 100644
---- a/components/viz/service/display_embedder/skia_output_surface_impl.h
-+++ b/components/viz/service/display_embedder/skia_output_surface_impl.h
-@@ -65,6 +65,7 @@ class Recording;
- namespace viz {
- 
- class ImageContextImpl;
-+struct OffscreenOutputConnection;
- class SkiaOutputSurfaceDependency;
- class SkiaOutputSurfaceImplOnGpu;
- class SkiaOutputSurfaceSharedImageInterface;
-@@ -85,12 +86,18 @@ class VIZ_SERVICE_EXPORT SkiaOutputSurfaceImpl : public SkiaOutputSurface {
-       DisplayCompositorMemoryAndTaskController* display_controller,
-       const RendererSettings& renderer_settings,
-       const DebugRendererSettings* debug_settings);
-+  static std::unique_ptr<SkiaOutputSurface> Create(
-+      DisplayCompositorMemoryAndTaskController* display_controller,
-+      const RendererSettings& renderer_settings,
-+      const DebugRendererSettings* debug_settings,
-+      std::unique_ptr<OffscreenOutputConnection> offscreen_output_connection);
- 
-   SkiaOutputSurfaceImpl(
-       base::PassKey<SkiaOutputSurfaceImpl> pass_key,
-       DisplayCompositorMemoryAndTaskController* display_controller,
-       const RendererSettings& renderer_settings,
--      const DebugRendererSettings* debug_settings);
-+      const DebugRendererSettings* debug_settings,
-+      std::unique_ptr<OffscreenOutputConnection> offscreen_output_connection);
-   ~SkiaOutputSurfaceImpl() override;
- 
-   SkiaOutputSurfaceImpl(const SkiaOutputSurfaceImpl&) = delete;
-@@ -191,7 +198,9 @@ class VIZ_SERVICE_EXPORT SkiaOutputSurfaceImpl : public SkiaOutputSurface {
- 
-   // Set the fields of |capabilities_| and propagates to |impl_on_gpu_|. Should
-   // be called after BindToClient().
--  void SetCapabilitiesForTesting(gfx::SurfaceOrigin output_surface_origin);
-+  void SetCapabilitiesForTesting(
-+      gfx::SurfaceOrigin output_surface_origin,
-+      bool backdrop_filters_replace_destination = false);
- 
-   // Used in unit tests.
-   void ScheduleGpuTaskForTesting(
-@@ -291,6 +300,7 @@ class VIZ_SERVICE_EXPORT SkiaOutputSurfaceImpl : public SkiaOutputSurface {
- 
-   scoped_refptr<SkiaOutputSurfaceSharedImageInterface> shared_image_interface_;
-   raw_ptr<SkiaOutputSurfaceDependency> dependency_;
-+  std::unique_ptr<OffscreenOutputConnection> offscreen_output_connection_;
-   UpdateVSyncParametersCallback update_vsync_parameters_callback_;
- 
-   gfx::Size size_;
-diff --git a/components/viz/service/display_embedder/skia_output_surface_impl_on_gpu.cc b/components/viz/service/display_embedder/skia_output_surface_impl_on_gpu.cc
-index 6b89694..671f1c1 100644
---- a/components/viz/service/display_embedder/skia_output_surface_impl_on_gpu.cc
-+++ b/components/viz/service/display_embedder/skia_output_surface_impl_on_gpu.cc
-@@ -41,10 +41,12 @@
- #include "components/viz/service/display/output_surface_frame.h"
- #include "components/viz/service/display_embedder/image_context_impl.h"
- #include "components/viz/service/display_embedder/output_presenter_gl.h"
-+#include "components/viz/service/display_embedder/offscreen_output_connection.h"
- #include "components/viz/service/display_embedder/skia_output_device.h"
- #include "components/viz/service/display_embedder/skia_output_device_buffer_queue.h"
- #include "components/viz/service/display_embedder/skia_output_device_gl.h"
- #include "components/viz/service/display_embedder/skia_output_device_offscreen.h"
-+#include "components/viz/service/display_embedder/skia_output_device_offscreen_export.h"
- #include "components/viz/service/display_embedder/skia_output_device_webview.h"
- #include "components/viz/service/display_embedder/skia_output_surface_dependency.h"
- #include "components/viz/service/display_embedder/skia_output_surface_impl_on_gpu_debug_capture.h"
-@@ -269,7 +271,8 @@ std::unique_ptr<SkiaOutputSurfaceImplOnGpu> SkiaOutputSurfaceImplOnGpu::Create(
-     ContextLostCallback context_lost_callback,
-     ScheduleGpuTaskCallback schedule_gpu_task,
-     AddChildWindowToBrowserCallback add_child_window_to_browser_callback,
--    SkiaOutputDevice::ReleaseOverlaysCallback release_overlays_callback) {
-+    SkiaOutputDevice::ReleaseOverlaysCallback release_overlays_callback,
-+    std::unique_ptr<OffscreenOutputConnection> offscreen_output_connection) {
-   TRACE_EVENT0("viz", "SkiaOutputSurfaceImplOnGpu::Create");
- 
-   auto context_state = deps->GetSharedContextState();
-@@ -294,7 +297,8 @@ std::unique_ptr<SkiaOutputSurfaceImplOnGpu> SkiaOutputSurfaceImplOnGpu::Create(
-       std::move(buffer_presented_callback), std::move(context_lost_callback),
-       std::move(schedule_gpu_task),
-       std::move(add_child_window_to_browser_callback),
--      std::move(release_overlays_callback));
-+      std::move(release_overlays_callback),
-+      std::move(offscreen_output_connection));
-   if (!impl_on_gpu->Initialize()) {
-     return nullptr;
-   }
-@@ -313,7 +317,8 @@ SkiaOutputSurfaceImplOnGpu::SkiaOutputSurfaceImplOnGpu(
-     ContextLostCallback context_lost_callback,
-     ScheduleGpuTaskCallback schedule_gpu_task,
-     AddChildWindowToBrowserCallback add_child_window_to_browser_callback,
--    SkiaOutputDevice::ReleaseOverlaysCallback release_overlays_callback)
-+    SkiaOutputDevice::ReleaseOverlaysCallback release_overlays_callback,
-+    std::unique_ptr<OffscreenOutputConnection> offscreen_output_connection)
-     : dependency_(std::move(deps)),
-       shared_gpu_deps_(shared_gpu_deps),
-       feature_info_(std::move(feature_info)),
-@@ -326,6 +331,7 @@ SkiaOutputSurfaceImplOnGpu::SkiaOutputSurfaceImplOnGpu(
-               shared_gpu_deps_->memory_tracker())),
-       vulkan_context_provider_(dependency_->GetVulkanContextProvider()),
-       renderer_settings_(renderer_settings),
-+      offscreen_output_connection_(std::move(offscreen_output_connection)),
-       did_swap_buffer_complete_callback_(
-           std::move(did_swap_buffer_complete_callback)),
-       context_lost_callback_(std::move(context_lost_callback)),
-@@ -1970,6 +1976,14 @@ bool SkiaOutputSurfaceImplOnGpu::InitializeForGL() {
-   if (dependency_->IsOffscreen()) {
-+    if (offscreen_output_connection_) {
-+      output_device_ = std::make_unique<SkiaOutputDeviceOffscreenExport>(
-+          context_state_, shared_gpu_deps_->memory_tracker(),
-+          GetDidSwapBuffersCompleteCallback(), shared_image_factory_.get(),
-+          shared_image_representation_factory_.get(),
-+          std::move(offscreen_output_connection_));
-+      return true;
-+    }
-     output_device_ = std::make_unique<SkiaOutputDeviceOffscreen>(
-         context_state_, gfx::SurfaceOrigin::kTopLeft,
-         renderer_settings_.requires_alpha_channel,
-         shared_gpu_deps_->memory_tracker(),
-         GetDidSwapBuffersCompleteCallback());
-@@ -2059,8 +2073,16 @@ bool SkiaOutputSurfaceImplOnGpu::InitializeForGL() {
- #if BUILDFLAG(ENABLE_VULKAN)
- bool SkiaOutputSurfaceImplOnGpu::InitializeForVulkan() {
-   if (dependency_->IsOffscreen()) {
-+    if (offscreen_output_connection_) {
-+      output_device_ = std::make_unique<SkiaOutputDeviceOffscreenExport>(
-+          context_state_, shared_gpu_deps_->memory_tracker(),
-+          GetDidSwapBuffersCompleteCallback(), shared_image_factory_.get(),
-+          shared_image_representation_factory_.get(),
-+          std::move(offscreen_output_connection_));
-+      return true;
-+    }
-     output_device_ = std::make_unique<SkiaOutputDeviceOffscreen>(
-         context_state_, gfx::SurfaceOrigin::kBottomLeft,
-         renderer_settings_.requires_alpha_channel,
-         shared_gpu_deps_->memory_tracker(),
-         GetDidSwapBuffersCompleteCallback());
-diff --git a/components/viz/service/display_embedder/skia_output_surface_impl_on_gpu.h b/components/viz/service/display_embedder/skia_output_surface_impl_on_gpu.h
-index efaad72..ef6cd77 100644
---- a/components/viz/service/display_embedder/skia_output_surface_impl_on_gpu.h
-+++ b/components/viz/service/display_embedder/skia_output_surface_impl_on_gpu.h
-@@ -84,6 +84,8 @@ class PlatformWindowSurface;
- 
- namespace viz {
- 
-+struct OffscreenOutputConnection;
-+
- class AsyncReadResultHelper;
- class AsyncReadResultLock;
- class ImageContextImpl;
-@@ -124,7 +126,8 @@ class SkiaOutputSurfaceImplOnGpu
-       ContextLostCallback context_lost_callback,
-       ScheduleGpuTaskCallback schedule_gpu_task,
-       AddChildWindowToBrowserCallback parent_child_Window_to_browser_callback,
--      SkiaOutputDevice::ReleaseOverlaysCallback release_overlays_callback);
-+      SkiaOutputDevice::ReleaseOverlaysCallback release_overlays_callback,
-+      std::unique_ptr<OffscreenOutputConnection> offscreen_output_connection);
- 
-   SkiaOutputSurfaceImplOnGpu(
-       base::PassKey<SkiaOutputSurfaceImplOnGpu> pass_key,
-@@ -137,7 +140,8 @@ class SkiaOutputSurfaceImplOnGpu
-       ContextLostCallback context_lost_callback,
-       ScheduleGpuTaskCallback schedule_gpu_task,
-       AddChildWindowToBrowserCallback parent_child_window_to_browser_callback,
--      SkiaOutputDevice::ReleaseOverlaysCallback release_overlays_callback);
-+      SkiaOutputDevice::ReleaseOverlaysCallback release_overlays_callback,
-+      std::unique_ptr<OffscreenOutputConnection> offscreen_output_connection);
- 
-   SkiaOutputSurfaceImplOnGpu(const SkiaOutputSurfaceImplOnGpu&) = delete;
-   SkiaOutputSurfaceImplOnGpu& operator=(const SkiaOutputSurfaceImplOnGpu&) =
-@@ -501,6 +505,7 @@ class SkiaOutputSurfaceImplOnGpu
-       shared_image_representation_factory_;
-   const raw_ptr<VulkanContextProvider> vulkan_context_provider_;
-   const RendererSettings renderer_settings_;
-+  std::unique_ptr<OffscreenOutputConnection> offscreen_output_connection_;
- 
-   // Should only be run on the client thread with PostTaskToClientThread().
-   DidSwapBufferCompleteCallback did_swap_buffer_complete_callback_;
-diff --git a/components/viz/service/frame_sinks/frame_sink_manager_unittest.cc b/components/viz/service/frame_sinks/frame_sink_manager_unittest.cc
-index 81cb55e..b880584 100644
---- a/components/viz/service/frame_sinks/frame_sink_manager_unittest.cc
-+++ b/components/viz/service/frame_sinks/frame_sink_manager_unittest.cc
-@@ -29,6 +29,7 @@
- #include "components/viz/test/test_output_surface_provider.h"
- #include "mojo/public/cpp/bindings/associated_remote.h"
- #include "mojo/public/cpp/bindings/remote.h"
-+#include "services/viz/privileged/mojom/compositing/offscreen_output.mojom.h"
- #include "testing/gtest/include/gtest/gtest.h"
- #include "third_party/perfetto/include/perfetto/tracing/tracing.h"
- 
-@@ -293,6 +294,41 @@ TEST_F(FrameSinkManagerTest, CreateRootCompositorFrameSink) {
-   EXPECT_FALSE(CompositorFrameSinkExists(kFrameSinkIdRoot));
- }
- 
-+TEST_F(FrameSinkManagerTest, CreateRootWithPairedOffscreenOutputEndpoints) {
-+  RootCompositorFrameSinkData root_data;
-+  auto params = root_data.BuildParams(kFrameSinkIdRoot);
-+
-+  mojo::PendingRemote<mojom::OffscreenOutputClient> client;
-+  [[maybe_unused]] auto client_receiver =
-+      client.InitWithNewPipeAndPassReceiver();
-+  mojo::Remote<mojom::OffscreenOutput> output;
-+  params->offscreen_output_client = std::move(client);
-+  params->offscreen_output = output.BindNewPipeAndPassReceiver();
-+
-+  manager_->CreateRootCompositorFrameSink(std::move(params));
-+
-+  EXPECT_TRUE(CompositorFrameSinkExists(kFrameSinkIdRoot));
-+  EXPECT_TRUE(output_surface_provider_.last_output_had_offscreen_connection());
-+
-+  manager_->InvalidateFrameSinkId(kFrameSinkIdRoot, {});
-+  EXPECT_FALSE(CompositorFrameSinkExists(kFrameSinkIdRoot));
-+}
-+
-+TEST_F(FrameSinkManagerTest, RejectsUnpairedOffscreenOutputEndpoints) {
-+  RootCompositorFrameSinkData root_data;
-+  auto params = root_data.BuildParams(kFrameSinkIdRoot);
-+
-+  mojo::PendingRemote<mojom::OffscreenOutputClient> client;
-+  [[maybe_unused]] auto client_receiver =
-+      client.InitWithNewPipeAndPassReceiver();
-+  params->offscreen_output_client = std::move(client);
-+
-+  manager_->CreateRootCompositorFrameSink(std::move(params));
-+
-+  EXPECT_FALSE(CompositorFrameSinkExists(kFrameSinkIdRoot));
-+  EXPECT_FALSE(output_surface_provider_.last_output_had_offscreen_connection());
-+}
-+
- TEST_F(FrameSinkManagerTest, InputManagerCreation) {
-   const bool expected_creation =
-       input::InputUtils::IsTransferInputToVizSupported();
-diff --git a/components/viz/service/frame_sinks/root_compositor_frame_sink_impl.cc b/components/viz/service/frame_sinks/root_compositor_frame_sink_impl.cc
-index d65a498..b584bb5 100644
---- a/components/viz/service/frame_sinks/root_compositor_frame_sink_impl.cc
-+++ b/components/viz/service/frame_sinks/root_compositor_frame_sink_impl.cc
-@@ -25,6 +25,7 @@
- #include "components/viz/common/frame_sinks/begin_frame_source.h"
- #include "components/viz/service/display/display.h"
- #include "components/viz/service/display/output_surface.h"
-+#include "components/viz/service/display_embedder/offscreen_output_connection.h"
- #include "components/viz/service/display_embedder/output_surface_provider.h"
- #include "components/viz/service/display_embedder/vsync_parameter_listener.h"
- #include "components/viz/service/frame_sinks/frame_sink_manager_impl.h"
-@@ -129,10 +130,22 @@ RootCompositorFrameSinkImpl::Create(
-       std::move(params->display_client));
-   auto display_controller = output_surface_provider->CreateGpuDependency(
-       params->gpu_compositing, params->widget);
-+  std::unique_ptr<OffscreenOutputConnection> offscreen_output_connection;
-+  if (params->offscreen_output_client || params->offscreen_output) {
-+    if (!params->offscreen_output_client || !params->offscreen_output) {
-+      return nullptr;
-+    }
-+    offscreen_output_connection = std::make_unique<OffscreenOutputConnection>(
-+        std::move(params->offscreen_output_client),
-+        std::move(params->offscreen_output));
-+    if (!offscreen_output_connection->is_valid()) {
-+      return nullptr;
-+    }
-+  }
-   auto output_surface = output_surface_provider->CreateOutputSurface(
-       params->widget, params->gpu_compositing, display_client.get(),
-       display_controller.get(), params->renderer_settings, debug_settings,
--      params->use_proxy_output_device);
-+      params->use_proxy_output_device, std::move(offscreen_output_connection));
- 
-   // Creating output surface failed. The host can send a new request, possibly
-   // with a different compositing mode.
-diff --git a/components/viz/test/mock_display_client.h b/components/viz/test/mock_display_client.h
-index 21f696d..81134d0 100644
---- a/components/viz/test/mock_display_client.h
-+++ b/components/viz/test/mock_display_client.h
-@@ -29,12 +29,12 @@ class MockDisplayClient : public mojom::DisplayClient {
-   mojo::PendingRemote<mojom::DisplayClient> BindRemote();
- 
-   // mojom::DisplayClient implementation.
-+  MOCK_METHOD1(CreateLayeredWindowUpdater,
-+               void(mojo::PendingReceiver<mojom::LayeredWindowUpdater>));
- #if BUILDFLAG(IS_APPLE)
-   MOCK_METHOD1(OnDisplayReceivedCALayerParams, void(gfx::CALayerParams));
- #endif
- #if BUILDFLAG(IS_WIN)
--  MOCK_METHOD1(CreateLayeredWindowUpdater,
--               void(mojo::PendingReceiver<mojom::LayeredWindowUpdater>));
-   MOCK_METHOD1(AddChildWindowToBrowser, void(gpu::SurfaceHandle child_window));
- #endif
- #if BUILDFLAG(IS_ANDROID)
-diff --git a/components/viz/test/test_output_surface_provider.cc b/components/viz/test/test_output_surface_provider.cc
-index 4a1dbf7..9f69e56 100644
---- a/components/viz/test/test_output_surface_provider.cc
-+++ b/components/viz/test/test_output_surface_provider.cc
-@@ -6,6 +6,7 @@
- 
- #include "components/viz/service/display/display_compositor_memory_and_task_controller.h"
- #include "components/viz/service/display/software_output_device.h"
-+#include "components/viz/service/display_embedder/offscreen_output_connection.h"
- #include "components/viz/test/fake_output_surface.h"
- #include "components/viz/test/fake_skia_output_surface.h"
- 
-@@ -31,7 +32,10 @@ std::unique_ptr<OutputSurface> TestOutputSurfaceProvider::CreateOutputSurface(
-     DisplayCompositorMemoryAndTaskController* display_controller,
-     const RendererSettings& renderer_settings,
-     const DebugRendererSettings* debug_settings,
--    bool use_proxy_output_device) {
-+    bool use_proxy_output_device,
-+    std::unique_ptr<OffscreenOutputConnection> offscreen_output_connection) {
-+  last_output_had_offscreen_connection_ =
-+      offscreen_output_connection && offscreen_output_connection->is_valid();
-   if (gpu_compositing) {
-     return FakeSkiaOutputSurface::Create3d();
-   } else {
-diff --git a/components/viz/test/test_output_surface_provider.h b/components/viz/test/test_output_surface_provider.h
-index d9e96c4..932f050 100644
---- a/components/viz/test/test_output_surface_provider.h
-+++ b/components/viz/test/test_output_surface_provider.h
-@@ -33,10 +33,18 @@ class TestOutputSurfaceProvider : public OutputSurfaceProvider {
-       DisplayCompositorMemoryAndTaskController* display_controller,
-       const RendererSettings& renderer_settings,
-       const DebugRendererSettings* debug_settings,
--      bool use_proxy_output_device) override;
-+      bool use_proxy_output_device,
-+      std::unique_ptr<OffscreenOutputConnection>
-+          offscreen_output_connection) override;
-   gpu::SharedImageManager* GetSharedImageManager() override;
-   gpu::SyncPointManager* GetSyncPointManager() override;
-   gpu::Scheduler* GetGpuScheduler() override;
-+  bool last_output_had_offscreen_connection() const {
-+    return last_output_had_offscreen_connection_;
-+  }
-+
-+ private:
-+  bool last_output_had_offscreen_connection_ = false;
- };
- 
- }  // namespace viz
-diff --git a/content/browser/compositor/viz_process_transport_factory.cc b/content/browser/compositor/viz_process_transport_factory.cc
-index ef1b685..ed3ae7d 100644
---- a/content/browser/compositor/viz_process_transport_factory.cc
-+++ b/content/browser/compositor/viz_process_transport_factory.cc
-@@ -425,6 +425,16 @@ void VizProcessTransportFactory::OnEstablishedGpuChannel(
-         compositor->delegate()->CreateHostDisplayClient();
-     root_params->use_proxy_output_device =
-         compositor->delegate()->UseProxyOutputDevice();
-+    mojo::PendingRemote<viz::mojom::OffscreenOutputClient>
-+        offscreen_output_client;
-+    mojo::PendingReceiver<viz::mojom::OffscreenOutput> offscreen_output;
-+    if (compositor->delegate()->CreateOffscreenOutputEndpoints(
-+            &offscreen_output_client, &offscreen_output)) {
-+      CHECK(offscreen_output_client.is_valid());
-+      CHECK(offscreen_output.is_valid());
-+      root_params->offscreen_output_client = std::move(offscreen_output_client);
-+      root_params->offscreen_output = std::move(offscreen_output);
-+    }
-   } else {
-     compositor_data.display_client =
-         std::make_unique<HostDisplayClient>(compositor);
-diff --git a/services/viz/privileged/mojom/compositing/BUILD.gn b/services/viz/privileged/mojom/compositing/BUILD.gn
-index 28b52bb..6ece790 100644
---- a/services/viz/privileged/mojom/compositing/BUILD.gn
-+++ b/services/viz/privileged/mojom/compositing/BUILD.gn
-@@ -22,6 +22,7 @@ mojom("compositing") {
-     "frame_sink_video_capture.mojom",
-     "frame_sinks_metrics_recorder.mojom",  # test helpers
-     "layered_window_updater.mojom",
-+    "offscreen_output.mojom",
-     "overlay_strategy.mojom",
-     "renderer_settings.mojom",
-     "vsync_parameter_observer.mojom",
-diff --git a/services/viz/privileged/mojom/compositing/frame_sink_manager.mojom b/services/viz/privileged/mojom/compositing/frame_sink_manager.mojom
-index 364ed19..3889370 100644
---- a/services/viz/privileged/mojom/compositing/frame_sink_manager.mojom
-+++ b/services/viz/privileged/mojom/compositing/frame_sink_manager.mojom
-@@ -14,6 +14,7 @@ import "services/viz/privileged/mojom/compositing/features.mojom";
- import "services/viz/privileged/mojom/compositing/frame_sink_manager_test_api.mojom";
- import "services/viz/privileged/mojom/compositing/frame_sink_video_capture.mojom";
- import "services/viz/privileged/mojom/compositing/frame_sinks_metrics_recorder.mojom";
-+import "services/viz/privileged/mojom/compositing/offscreen_output.mojom";
- import "services/viz/privileged/mojom/compositing/renderer_settings.mojom";
- import "services/viz/public/mojom/compositing/compositor_frame_sink.mojom";
- import "services/viz/public/mojom/compositing/copy_output_request.mojom";
-@@ -69,5 +70,9 @@ struct RootCompositorFrameSinkParams {
- 
-    bool use_proxy_output_device = false;
-+  // Optional paired endpoints for an explicitly requested exportable
-+  // offscreen root. Both endpoints must either be valid or absent.
-+  pending_remote<OffscreenOutputClient>? offscreen_output_client;
-+  pending_receiver<OffscreenOutput>? offscreen_output;
- };
- 
- // The FrameSinkManager interface is a privileged interface that allows the
-diff --git a/services/viz/privileged/mojom/compositing/offscreen_output.mojom b/services/viz/privileged/mojom/compositing/offscreen_output.mojom
-new file mode 100644
-index 0000000..661ec44
---- /dev/null
-+++ b/services/viz/privileged/mojom/compositing/offscreen_output.mojom
-@@ -0,0 +1,73 @@
-+// Copyright 2026 The Chromium Authors
-+// Use of this source code is governed by a BSD-style license that can be
-+// found in the LICENSE file.
-+
-+module viz.mojom;
-+
-+import "mojo/public/mojom/base/time.mojom";
-+import "services/viz/public/mojom/compositing/shared_image_format.mojom";
-+import "skia/public/mojom/image_info.mojom";
-+import "ui/gfx/geometry/mojom/geometry.mojom";
-+import "ui/gfx/mojom/color_space.mojom";
-+import "ui/gfx/mojom/gpu_fence_handle.mojom";
-+import "ui/gfx/mojom/native_handle_types.mojom";
-+
-+// Canonical image origin used by an exported offscreen output frame.
-+enum OffscreenOutputOrigin {
-+  kTopLeft,
-+  kBottomLeft,
-+};
-+
-+// Fatal errors reported by an exportable offscreen output. The connection is
-+// closed after an error and callers must recreate the root compositor frame
-+// sink before requesting more frames.
-+enum OffscreenOutputError {
-+  kUnsupported,
-+  kAllocationFailed,
-+  kContextLost,
-+  kProtocolError,
-+};
-+
-+// A completed root-compositor output image borrowed by an external consumer.
-+// Every valid frame_token must be released exactly once through
-+// OffscreenOutput.ReleaseFrame before its backing can be reused.
-+struct OffscreenOutputFrame {
-+  uint64 generation;
-+  uint32 slot_index;
-+  uint64 content_serial;
-+  uint64 frame_token;
-+
-+  gfx.mojom.Size coded_size;
-+  gfx.mojom.Rect visible_rect;
-+  gfx.mojom.Rect damage_rect;
-+
-+  SharedImageFormat format;
-+  gfx.mojom.ColorSpace color_space;
-+  skia.mojom.AlphaType alpha_type;
-+  OffscreenOutputOrigin origin;
-+  // Vulkan queue family that owns the image at the external handoff.
-+  uint32 queue_family_index;
-+  // Vulkan layout guaranteed while ownership is external to Viz.
-+  uint32 image_layout;
-+
-+  // Owns duplicated native-pixmap plane descriptors for transfer to the
-+  // external consumer.
-+  gfx.mojom.NativePixmapHandle native_pixmap;
-+  gfx.mojom.GpuFenceHandle acquire_fence;
-+
-+  mojo_base.mojom.TimeTicks frame_time;
-+  uint64 swap_trace_id;
-+};
-+
-+// Implemented by the privileged browser-side consumer.
-+interface OffscreenOutputClient {
-+  OnFrameAvailable(OffscreenOutputFrame frame);
-+  OnOutputError(OffscreenOutputError error);
-+};
-+
-+// Implemented by Viz for an explicitly requested exportable offscreen root.
-+interface OffscreenOutput {
-+  // Returns the consumer-completion fence for frame_token. A null fence is not
-+  // permission to recycle the backing and is treated as a protocol error.
-+  ReleaseFrame(uint64 frame_token, gfx.mojom.GpuFenceHandle release_fence);
-+};
-diff --git a/ui/compositor/compositor.h b/ui/compositor/compositor.h
-index 57c128d..90acf18 100644
---- a/ui/compositor/compositor.h
-+++ b/ui/compositor/compositor.h
-@@ -39,9 +39,11 @@
- #include "components/viz/host/host_frame_sink_client.h"
- #include "components/viz/service/display/software_output_device.h"
- #include "mojo/public/cpp/bindings/associated_remote.h"
-+#include "mojo/public/cpp/bindings/pending_receiver.h"
- #include "mojo/public/cpp/bindings/pending_remote.h"
- #include "services/viz/privileged/mojom/compositing/display_private.mojom.h"
- #include "services/viz/privileged/mojom/compositing/external_begin_frame_controller.mojom.h"
-+#include "services/viz/privileged/mojom/compositing/offscreen_output.mojom.h"
- #include "services/viz/privileged/mojom/compositing/vsync_parameter_observer.mojom-forward.h"
- #include "third_party/skia/include/core/SkColor.h"
- #include "third_party/skia/include/core/SkM44.h"
-@@ -154,6 +156,15 @@ class COMPOSITOR_EXPORT CompositorDelegate {
-   virtual std::unique_ptr<viz::HostDisplayClient> CreateHostDisplayClient() = 0;
-   virtual bool UseProxyOutputDevice() = 0;
- 
-+  // Optionally creates the paired browser/Viz endpoints for an exportable
-+  // offscreen root. Ordinary compositors leave this disabled. Implementations
-+  // must initialize both endpoints before returning true.
-+  virtual bool CreateOffscreenOutputEndpoints(
-+      mojo::PendingRemote<viz::mojom::OffscreenOutputClient>* client,
-+      mojo::PendingReceiver<viz::mojom::OffscreenOutput>* output) {
-+    return false;
-+  }
-+
-  protected:
-   virtual ~CompositorDelegate() {}
- };
-@@ -409,6 +420,7 @@ class COMPOSITOR_EXPORT Compositor
-       bool force,
-       base::OnceCallback<void(const viz::BeginFrameAck&)> callback);
- #endif
-+  bool AbortPendingExternalBeginFrame();
- 
-   // Creates a CompositorMetricsTracker for tracking this Compositor.
-   CompositorMetricsTracker RequestNewCompositorMetricsTracker();
 diff --git a/components/viz/service/display_embedder/skia_output_device_offscreen_export.cc b/components/viz/service/display_embedder/skia_output_device_offscreen_export.cc
 new file mode 100644
-index 0000000000..d15e024209
+index 0000000..527390c
 --- /dev/null
 +++ b/components/viz/service/display_embedder/skia_output_device_offscreen_export.cc
-@@ -0,0 +1,318 @@
+@@ -0,0 +1,338 @@
 +// Copyright 2026 The Chromium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -1179,8 +736,7 @@ index 0000000000..d15e024209
 +  client_.Bind(std::move(connection->client));
 +  receiver_.Bind(std::move(connection->output));
 +  receiver_.set_disconnect_handler(base::BindOnce(
-+      &SkiaOutputDeviceOffscreenExport::Shutdown,
-+      base::Unretained(this)));
++      &SkiaOutputDeviceOffscreenExport::Shutdown, base::Unretained(this)));
 +
 +  capabilities_.uses_default_gl_framebuffer = false;
 +  capabilities_.output_surface_origin = gfx::SurfaceOrigin::kTopLeft;
@@ -1301,8 +857,19 @@ index 0000000000..d15e024209
 +    ReportError(mojom::OffscreenOutputError::kContextLost);
 +    return;
 +  }
++  const std::optional<gpu::ExternalVulkanImageState> external_state =
++      slot.read->GetExternalVulkanImageState();
++  if (!external_state || !external_state->IsValid()) {
++    ReportError(mojom::OffscreenOutputError::kUnsupported);
++    return;
++  }
 +  scoped_refptr<gfx::NativePixmap> pixmap = slot.read->GetNativePixmap();
 +  if (!pixmap) {
++    ReportError(mojom::OffscreenOutputError::kUnsupported);
++    return;
++  }
++  gfx::GpuFenceHandle acquire_fence = slot.read->TakeAcquireFence();
++  if (acquire_fence.is_null()) {
 +    ReportError(mojom::OffscreenOutputError::kUnsupported);
 +    return;
 +  }
@@ -1325,9 +892,10 @@ index 0000000000..d15e024209
 +  exported->alpha_type = alpha_type_;
 +  exported->origin = mojom::OffscreenOutputOrigin::kTopLeft;
 +  exported->queue_family_index = VK_QUEUE_FAMILY_EXTERNAL_KHR;
-+  exported->image_layout = VK_IMAGE_LAYOUT_GENERAL;
++  exported->producer_old_layout = external_state->old_layout;
++  exported->producer_new_layout = external_state->new_layout;
 +  exported->native_pixmap = pixmap->ExportHandle();
-+  exported->acquire_fence = slot.read->TakeAcquireFence();
++  exported->acquire_fence = std::move(acquire_fence);
 +  exported->frame_time = base::TimeTicks::Now();
 +  exported->swap_trace_id = slot.frame->data.swap_trace_id;
 +  client_->OnFrameAvailable(std::move(exported));
@@ -1352,6 +920,12 @@ index 0000000000..d15e024209
 +    ReportError(mojom::OffscreenOutputError::kProtocolError);
 +    return;
 +  }
++  if (!released->read->SetReleaseExternalVulkanImageState(
++          {.old_layout = VK_IMAGE_LAYOUT_GENERAL,
++           .new_layout = VK_IMAGE_LAYOUT_GENERAL})) {
++    ReportError(mojom::OffscreenOutputError::kProtocolError);
++    return;
++  }
 +  released->read->SetReleaseFence(std::move(release_fence));
 +  released->read.reset();
 +  released->swap_released = true;
@@ -1362,9 +936,9 @@ index 0000000000..d15e024209
 +  DestroySlot(index);
 +  Slot& slot = slots_[index];
 +  slot.mailbox = gpu::Mailbox::Generate();
-+  const gpu::SharedImageUsageSet usage =
-+      gpu::SHARED_IMAGE_USAGE_DISPLAY_READ |
-+      gpu::SHARED_IMAGE_USAGE_DISPLAY_WRITE | gpu::SHARED_IMAGE_USAGE_SCANOUT;
++  const gpu::SharedImageUsageSet usage = gpu::SHARED_IMAGE_USAGE_DISPLAY_READ |
++                                         gpu::SHARED_IMAGE_USAGE_DISPLAY_WRITE |
++                                         gpu::SHARED_IMAGE_USAGE_SCANOUT;
 +  if (!shared_image_factory_->CreateSharedImage(
 +          slot.mailbox,
 +          gpu::SharedImageInfo(format_, size_, color_space_,
@@ -1373,8 +947,12 @@ index 0000000000..d15e024209
 +          gpu::kNullSurfaceHandle, gfx::BufferUsage::SCANOUT)) {
 +    return false;
 +  }
-+  slot.skia = representation_factory_->ProduceSkia(
-+      slot.mailbox, context_state_, usage);
++  if (!context_state_->IsGraphiteDawnVulkan()) {
++    DestroySlot(index);
++    return false;
++  }
++  slot.skia =
++      representation_factory_->ProduceSkia(slot.mailbox, context_state_, usage);
 +  slot.overlay = representation_factory_->ProduceOverlay(slot.mailbox);
 +  if (!slot.skia || !slot.overlay) {
 +    DestroySlot(index);
@@ -1450,8 +1028,7 @@ index 0000000000..d15e024209
 +    found.swap_released = false;
 +    swap_order_.pop_front();
 +    FinishSwapBuffers(gfx::SwapCompletionResult(gfx::SwapResult::SWAP_ACK),
-+                      frame_size, std::move(frame),
-+                      gfx::Rect(size_));
++                      frame_size, std::move(frame), gfx::Rect(size_));
 +    if (found.resource_generation != queue_.generation()) {
 +      DestroySlot(*found_index);
 +    }
@@ -1459,238 +1036,1043 @@ index 0000000000..d15e024209
 +}
 +
 +}  // namespace viz
-diff --git a/components/viz/service/display/output_surface.h b/components/viz/service/display/output_surface.h
-index be3dd93ee6..20ce6ec05b 100644
---- a/components/viz/service/display/output_surface.h
-+++ b/components/viz/service/display/output_surface.h
-@@ -103,6 +103,11 @@ class VIZ_SERVICE_EXPORT OutputSurface {
-     bool supports_viewporter = false;
-     // OutputSurface's orientation mode.
-     OrientationMode orientation_mode = OrientationMode::kLogic;
-+    // Whether backdrop-filtered layers on a transparent root consume the
-+    // captured destination within their exact backdrop bounds before restore.
-+    // This is for outputs that will be composited over an external backdrop;
-+    // ordinary web rendering retains source-over composition.
-+    bool backdrop_filters_replace_destination = false;
- #if BUILDFLAG(IS_WIN)
-     // Whether this OutputSurface supports direct composition layers.
-     DCSupportLevel dc_support_level = DCSupportLevel::kNone;
-diff --git a/components/viz/service/display/renderer_pixeltest.cc b/components/viz/service/display/renderer_pixeltest.cc
-index cbd3ed6aa1..1345cda0dc 100644
---- a/components/viz/service/display/renderer_pixeltest.cc
-+++ b/components/viz/service/display/renderer_pixeltest.cc
-@@ -47,6 +47,7 @@
- #include "components/viz/service/display/renderer_pixeltest_utils.h"
- #include "components/viz/service/display/software_renderer.h"
- #include "components/viz/service/display/viz_pixel_test.h"
-+#include "components/viz/service/display_embedder/skia_output_surface_impl.h"
- #include "components/viz/test/buildflags.h"
- #include "components/viz/test/test_in_process_context_provider.h"
- #include "components/viz/test/test_types.h"
-@@ -2086,7 +2087,14 @@ TEST_P(RendererPixelTest, RenderPassAndMaskForRoundedCornerMultiRadii) {
- class RendererPixelTestWithBackdropFilter : public VizPixelTestWithParam {
-  protected:
-   void SetUp() override {
-+    renderer_settings_.requires_alpha_channel = true;
-     VizPixelTestWithParam::SetUp();
-+    if (!is_software_renderer()) {
-+      static_cast<SkiaOutputSurfaceImpl*>(output_surface_.get())
-+          ->SetCapabilitiesForTesting(
-+              GetSurfaceOrigin(),
-+              /*backdrop_filters_replace_destination=*/true);
-+    }
-     filter_pass_layer_rect_ = gfx::Rect(device_viewport_size_);
-     filter_pass_layer_rect_.Inset(gfx::Insets::TLBR(14, 12, 18, 16));
-     backdrop_filter_bounds_ =
-@@ -2298,6 +2306,71 @@ TEST_P(RendererPixelTestWithBackdropFilter, InvertFilterWithMask) {
-                            cc::FuzzyPixelOffByOneComparator()));
- }
- 
-+TEST_P(RendererPixelTestWithBackdropFilter,
-+       TransparentRootConsumesOnlyBackdropBounds) {
-+  if (is_software_renderer()) {
-+    GTEST_SKIP() << "Backdrop replacement is an offscreen Skia output "
-+                    "capability.";
-+  }
+diff --git a/components/viz/service/display_embedder/skia_output_device_offscreen_export.h b/components/viz/service/display_embedder/skia_output_device_offscreen_export.h
+new file mode 100644
+index 0000000..7e34bf4
+--- /dev/null
++++ b/components/viz/service/display_embedder/skia_output_device_offscreen_export.h
+@@ -0,0 +1,99 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
 +
-+  const gfx::Rect viewport(device_viewport_size_);
-+  const gfx::Rect filter_rect(0, 0, viewport.width() / 2, viewport.height());
-+  const gfx::Transform identity;
++#ifndef COMPONENTS_VIZ_SERVICE_DISPLAY_EMBEDDER_SKIA_OUTPUT_DEVICE_OFFSCREEN_EXPORT_H_
++#define COMPONENTS_VIZ_SERVICE_DISPLAY_EMBEDDER_SKIA_OUTPUT_DEVICE_OFFSCREEN_EXPORT_H_
 +
-+  auto filter_pass =
-+      CreateTestRenderPass(AggregatedRenderPassId{2}, filter_rect, identity);
-+  SharedQuadState* filter_shared_state = CreateTestSharedQuadState(
-+      identity, filter_rect, filter_pass.get(), gfx::MaskFilterInfo());
-+  auto* transparent =
-+      filter_pass->CreateAndAppendDrawQuad<SolidColorDrawQuad>();
-+  transparent->SetNew(filter_shared_state, filter_rect, filter_rect,
-+                      SkColors::kTransparent, false);
++#include <array>
++#include <deque>
++#include <memory>
++#include <optional>
 +
-+  auto root_pass =
-+      CreateTestRootRenderPass(AggregatedRenderPassId{1}, viewport);
-+  root_pass->has_transparent_background = true;
++#include "components/viz/service/display_embedder/offscreen_output_queue.h"
++#include "components/viz/service/display_embedder/skia_output_device.h"
++#include "gpu/command_buffer/common/mailbox.h"
++#include "gpu/command_buffer/service/memory_tracking.h"
++#include "gpu/command_buffer/service/shared_context_state.h"
++#include "gpu/command_buffer/service/shared_image/shared_image_representation.h"
++#include "mojo/public/cpp/bindings/receiver.h"
++#include "mojo/public/cpp/bindings/remote.h"
++#include "services/viz/privileged/mojom/compositing/offscreen_output.mojom.h"
 +
-+  SharedQuadState* layer_shared_state = CreateTestSharedQuadState(
-+      identity, filter_rect, root_pass.get(), gfx::MaskFilterInfo());
-+  auto* filter_quad =
-+      root_pass->CreateAndAppendDrawQuad<AggregatedRenderPassDrawQuad>();
-+  filter_quad->SetNew(layer_shared_state, filter_rect, filter_rect,
-+                      AggregatedRenderPassId{2}, ResourceId(0), gfx::RectF(),
-+                      gfx::Size(),
-+                      /*force_anti_aliasing_off=*/false);
-+  cc::FilterOperations backdrop_filters;
-+  backdrop_filters.Append(cc::FilterOperation::CreateOpacityFilter(0.5f));
-+  filter_quad->SetFilters(
-+      /*filters=*/{}, backdrop_filters,
-+      SkPath::Rect(gfx::RectToSkRect(filter_rect)),
-+      /*filters_scale=*/gfx::Vector2dF(1.0f, 1.0f),
-+      /*filters_origin=*/gfx::PointF(),
-+      /*backdrop_filter_quality=*/1.0f);
++namespace gpu {
++class SharedImageFactory;
++class SharedImageRepresentationFactory;
++}  // namespace gpu
 +
-+  SharedQuadState* red_shared_state = CreateTestSharedQuadState(
-+      identity, viewport, root_pass.get(), gfx::MaskFilterInfo());
-+  auto* red = root_pass->CreateAndAppendDrawQuad<SolidColorDrawQuad>();
-+  red->SetNew(red_shared_state, viewport, viewport, SkColors::kRed, false);
++namespace viz {
 +
-+  AggregatedRenderPassList pass_list;
-+  pass_list.push_back(std::move(filter_pass));
-+  pass_list.push_back(std::move(root_pass));
++struct OffscreenOutputConnection;
 +
-+  std::vector<SkColor> expected(viewport.width() * viewport.height());
-+  for (int y = 0; y < viewport.height(); ++y) {
-+    for (int x = 0; x < viewport.width(); ++x) {
-+      expected[y * viewport.width() + x] = x < filter_rect.width()
-+                                               ? SkColorSetARGB(128, 255, 0, 0)
-+                                               : SkColors::kRed.toSkColor();
-+    }
-+  }
++// Exportable Vulkan/Ozone offscreen output. Its SharedImages remain borrowed
++// by the external consumer until ReleaseFrame supplies a completion fence.
++class SkiaOutputDeviceOffscreenExport final
++    : public SkiaOutputDevice,
++      public mojom::OffscreenOutput {
++ public:
++  SkiaOutputDeviceOffscreenExport(
++      scoped_refptr<gpu::SharedContextState> context_state,
++      scoped_refptr<gpu::MemoryTracker> memory_tracker,
++      DidSwapBufferCompleteCallback did_swap_buffer_complete_callback,
++      gpu::SharedImageFactory* shared_image_factory,
++      gpu::SharedImageRepresentationFactory* representation_factory,
++      std::unique_ptr<OffscreenOutputConnection> connection);
++  ~SkiaOutputDeviceOffscreenExport() override;
 +
-+  auto comparator = cc::FuzzyPixelComparator()
-+                        .SetErrorPixelsPercentageLimit(100.f)
-+                        .SetAbsErrorLimit(3);
-+  EXPECT_TRUE(RunPixelTest(&pass_list, &expected, comparator));
-+}
++  bool Reshape(const ReshapeParams& params) override;
++  void Present(const std::optional<gfx::Rect>& update_rect,
++               BufferPresentedCallback feedback,
++               OutputSurfaceFrame frame) override;
++  void DiscardBackbuffer() override;
 +
- // Software renderer does not support anti-aliased edges.
- TEST_P(GPURendererPixelTest, AntiAliasing) {
-   gfx::Rect rect(this->device_viewport_size_);
-diff --git a/components/viz/service/display/skia_renderer.cc b/components/viz/service/display/skia_renderer.cc
-index 1724881830..43b0054e82 100644
---- a/components/viz/service/display/skia_renderer.cc
-+++ b/components/viz/service/display/skia_renderer.cc
-@@ -86,6 +86,7 @@
- #include "third_party/skia/include/effects/SkShaderMaskFilter.h"
- #include "third_party/skia/include/gpu/ganesh/GrBackendSurface.h"
- #include "third_party/skia/include/gpu/ganesh/GrDirectContext.h"
-+#include "third_party/skia/include/pathops/SkPathOps.h"
- #include "third_party/skia/include/private/chromium/GrDeferredDisplayList.h"
- #include "third_party/skia/modules/skcms/skcms.h"
- #include "third_party/skia/src/core/SkCanvasPriv.h"
-@@ -857,6 +858,10 @@ struct SkiaRenderer::DrawRPDQParams {
-   // Backdrop border box for the render pass, to clip backdrop-filtered content
-   // (but not the rest of the RPDQ itself).
-   std::optional<SkPath> backdrop_filter_bounds;
-+  // Exact local-coordinate region whose captured backdrop may be consumed for
-+  // externally composited transparent output. Unlike filter_bounds, this
-+  // never includes foreground-filter expansion.
-+  std::optional<SkPath> backdrop_replacement_bounds;
-   // Original render pass's visible rect, which will be intersected with
-   // |backdrop_filter_bounds| to determine the extent of backdrop content.
-   // It is preserved here as the original DrawQuad's |visible_rect| may be
-@@ -907,6 +912,9 @@ struct SkiaRenderer::DrawRPDQParams {
-   // impacting the DrawQuad or regular filter output.
-   void ClearOutsideBackdropBounds(SkCanvas* canvas,
-                                   const DrawQuadParams* params) const;
-+
-+  std::optional<SkPath> BackdropReplacementPath(
-+      const DrawQuadParams* params) const;
- };
- 
- sk_sp<SkShader> SkiaRenderer::DrawRPDQParams::MaskShader::GetOrCreateSkShader(
-@@ -993,6 +1001,43 @@ void SkiaRenderer::DrawRPDQParams::ClearOutsideBackdropBounds(
-   }
- }
- 
-+std::optional<SkPath> SkiaRenderer::DrawRPDQParams::BackdropReplacementPath(
-+    const DrawQuadParams* params) const {
-+  if (!backdrop_filter || !backdrop_replacement_bounds) {
-+    return std::nullopt;
-+  }
-+
-+  auto intersect = [](const SkPath& first,
-+                      const SkPath& second) -> std::optional<SkPath> {
-+    SkRect first_rect;
-+    SkRect second_rect;
-+    if (first.isRect(&first_rect) && second.isRect(&second_rect)) {
-+      if (!first_rect.intersect(second_rect) || first_rect.isEmpty()) {
-+        return std::nullopt;
-+      }
-+      return SkPath::Rect(first_rect);
-+    }
-+
-+    SkPath result;
-+    if (!Op(first, second, kIntersect_SkPathOp, &result) || result.isEmpty()) {
-+      return std::nullopt;
-+    }
-+    return result;
++ private:
++  struct Slot {
++    gpu::Mailbox mailbox;
++    uint64_t resource_generation = 0;
++    std::unique_ptr<gpu::SkiaImageRepresentation> skia;
++    std::unique_ptr<gpu::OverlayImageRepresentation> overlay;
++    std::unique_ptr<gpu::SkiaImageRepresentation::ScopedWriteAccess> write;
++    std::unique_ptr<gpu::OverlayImageRepresentation::ScopedReadAccess> read;
++    std::optional<OutputSurfaceFrame> frame;
++    uint64_t published_token = 0;
++    bool swap_released = false;
 +  };
 +
-+  std::optional<SkPath> replacement =
-+      intersect(*backdrop_replacement_bounds, SkPath::Rect(rpdq_visible_rect));
-+  if (!replacement || !params->draw_region) {
-+    return replacement;
-+  }
++  SkSurface* BeginPaint(
++      std::vector<GrBackendSemaphore>* end_semaphores) override;
++  void EndPaint() override;
++  void ReleaseFrame(uint64_t frame_token,
++                    gfx::GpuFenceHandle release_fence) override;
 +
-+  SkPath draw_region = params->draw_region_in_path();
-+  if (bypass_geometry) {
-+    draw_region = draw_region.makeTransform(bypass_geometry->transform);
-+  }
-+  return intersect(*replacement, draw_region);
++  bool AllocateSlot(size_t index);
++  void DestroySlot(size_t index);
++  void Shutdown();
++  void ReportError(mojom::OffscreenOutputError error);
++  void DrainReleasedSwaps();
++
++  static constexpr size_t kBufferCount = 4;
++  scoped_refptr<gpu::SharedContextState> context_state_;
++  const raw_ptr<gpu::SharedImageFactory> shared_image_factory_;
++  const raw_ptr<gpu::SharedImageRepresentationFactory>
++      representation_factory_;
++  mojo::Remote<mojom::OffscreenOutputClient> client_;
++  mojo::Receiver<mojom::OffscreenOutput> receiver_{this};
++  OffscreenOutputQueue queue_{kBufferCount};
++  std::array<Slot, kBufferCount> slots_;
++  std::deque<uint64_t> swap_order_;
++  std::optional<size_t> rendering_slot_;
++  gfx::Size size_;
++  gfx::ColorSpace color_space_;
++  SharedImageFormat format_ = SinglePlaneFormat::kBGRA_8888;
++  SkAlphaType alpha_type_ = kPremul_SkAlphaType;
++  int sample_count_ = 1;
++  bool failed_ = false;
++};
++
++}  // namespace viz
++
++#endif  // COMPONENTS_VIZ_SERVICE_DISPLAY_EMBEDDER_SKIA_OUTPUT_DEVICE_OFFSCREEN_EXPORT_H_
+diff --git a/components/viz/service/display_embedder/skia_output_surface_impl.cc b/components/viz/service/display_embedder/skia_output_surface_impl.cc
+index 07e9bf5..d13a8fa 100644
+--- a/components/viz/service/display_embedder/skia_output_surface_impl.cc
++++ b/components/viz/service/display_embedder/skia_output_surface_impl.cc
+@@ -45,6 +45,7 @@
+ #include "components/viz/service/display/overlay_candidate.h"
+ #include "components/viz/service/display/render_pass_alpha_type.h"
+ #include "components/viz/service/display_embedder/image_context_impl.h"
++#include "components/viz/service/display_embedder/offscreen_output_connection.h"
+ #include "components/viz/service/display_embedder/skia_output_surface_dependency.h"
+ #include "components/viz/service/display_embedder/skia_output_surface_impl_on_gpu.h"
+ #include "components/viz/service/display_embedder/skia_output_surface_shared_image_interface.h"
+@@ -313,12 +314,21 @@ std::unique_ptr<SkiaOutputSurface> SkiaOutputSurfaceImpl::Create(
+     DisplayCompositorMemoryAndTaskController* display_controller,
+     const RendererSettings& renderer_settings,
+     const DebugRendererSettings* debug_settings) {
++  return Create(display_controller, renderer_settings, debug_settings, nullptr);
 +}
 +
- // A read lock based fence that is signaled after gpu commands are completed
- // meaning the resource has been read.
- // TODO(fangzhoug): Move this out of this file s.t. it can be referenced in
-@@ -1763,9 +1808,21 @@ void SkiaRenderer::PrepareCanvasForRPDQ(const DrawRPDQParams& rpdq_params,
-       gfx::RectFToSkRect(rpdq_params.bypass_geometry.has_value()
-                              ? rpdq_params.bypass_geometry->clip_rect
-                              : params->visible_rect);
--  current_canvas_->saveLayer(SkCanvasPriv::ScaledBackdropLayer(
-+  SkCanvas::SaveLayerRec layer_rec = SkCanvasPriv::ScaledBackdropLayer(
-       &bounds, &layer_paint, rpdq_params.backdrop_filter.get(),
--      rpdq_params.backdrop_filter_quality, 0));
-+      rpdq_params.backdrop_filter_quality, 0);
-+  std::optional<SkPath> backdrop_replacement;
-+  if (rpdq_params.backdrop_filter &&
-+      output_surface_->capabilities().backdrop_filters_replace_destination &&
-+      current_frame()->root_render_pass->has_transparent_background) {
-+    backdrop_replacement = rpdq_params.BackdropReplacementPath(params);
-+    if (backdrop_replacement) {
-+      layer_rec.fBackdropReplacement = &*backdrop_replacement;
-+      layer_rec.fBackdropReplacementAA =
-+          params->aa_flags != SkCanvas::kNone_QuadAAFlags;
++// static
++std::unique_ptr<SkiaOutputSurface> SkiaOutputSurfaceImpl::Create(
++    DisplayCompositorMemoryAndTaskController* display_controller,
++    const RendererSettings& renderer_settings,
++    const DebugRendererSettings* debug_settings,
++    std::unique_ptr<OffscreenOutputConnection> offscreen_output_connection) {
+   DCHECK(display_controller);
+   DCHECK(display_controller->skia_dependency());
+   DCHECK(display_controller->gpu_task_scheduler());
+   auto output_surface = std::make_unique<SkiaOutputSurfaceImpl>(
+       base::PassKey<SkiaOutputSurfaceImpl>(), display_controller,
+-      renderer_settings, debug_settings);
++      renderer_settings, debug_settings, std::move(offscreen_output_connection));
+   if (!output_surface->Initialize())
+     output_surface = nullptr;
+   return output_surface;
+@@ -328,8 +338,10 @@ SkiaOutputSurfaceImpl::SkiaOutputSurfaceImpl(
+     base::PassKey<SkiaOutputSurfaceImpl> /* pass_key */,
+     DisplayCompositorMemoryAndTaskController* display_controller,
+     const RendererSettings& renderer_settings,
+-    const DebugRendererSettings* debug_settings)
++    const DebugRendererSettings* debug_settings,
++    std::unique_ptr<OffscreenOutputConnection> offscreen_output_connection)
+     : dependency_(display_controller->skia_dependency()),
++      offscreen_output_connection_(std::move(offscreen_output_connection)),
+       renderer_settings_(renderer_settings),
+       debug_settings_(debug_settings),
+       display_compositor_controller_(display_controller),
+@@ -1064,10 +1076,13 @@ void SkiaOutputSurfaceImpl::SetFrameRate(
+ #endif
+
+ void SkiaOutputSurfaceImpl::SetCapabilitiesForTesting(
+-    gfx::SurfaceOrigin output_surface_origin) {
++    gfx::SurfaceOrigin output_surface_origin,
++    bool backdrop_filters_replace_destination) {
+   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+   DCHECK(impl_on_gpu_);
+   capabilities_.output_surface_origin = output_surface_origin;
++  capabilities_.backdrop_filters_replace_destination =
++      backdrop_filters_replace_destination;
+   auto callback =
+       base::BindOnce(&SkiaOutputSurfaceImplOnGpu::SetCapabilitiesForTesting,
+                      base::Unretained(impl_on_gpu_.get()), capabilities_);
+@@ -1149,7 +1164,8 @@ void SkiaOutputSurfaceImpl::InitializeOnGpuThread(bool* result) {
+       std::move(buffer_presented_callback), std::move(context_lost_callback),
+       std::move(schedule_gpu_task),
+       std::move(add_child_window_to_browser_callback),
+-      std::move(release_overlays_callback));
++      std::move(release_overlays_callback),
++      std::move(offscreen_output_connection_));
+   if (!impl_on_gpu_) {
+     *result = false;
+     return;
+diff --git a/components/viz/service/display_embedder/skia_output_surface_impl.h b/components/viz/service/display_embedder/skia_output_surface_impl.h
+index 483ee06..a2bc9cc 100644
+--- a/components/viz/service/display_embedder/skia_output_surface_impl.h
++++ b/components/viz/service/display_embedder/skia_output_surface_impl.h
+@@ -65,6 +65,7 @@ class Recording;
+ namespace viz {
+
+ class ImageContextImpl;
++struct OffscreenOutputConnection;
+ class SkiaOutputSurfaceDependency;
+ class SkiaOutputSurfaceImplOnGpu;
+ class SkiaOutputSurfaceSharedImageInterface;
+@@ -85,12 +86,18 @@ class VIZ_SERVICE_EXPORT SkiaOutputSurfaceImpl : public SkiaOutputSurface {
+       DisplayCompositorMemoryAndTaskController* display_controller,
+       const RendererSettings& renderer_settings,
+       const DebugRendererSettings* debug_settings);
++  static std::unique_ptr<SkiaOutputSurface> Create(
++      DisplayCompositorMemoryAndTaskController* display_controller,
++      const RendererSettings& renderer_settings,
++      const DebugRendererSettings* debug_settings,
++      std::unique_ptr<OffscreenOutputConnection> offscreen_output_connection);
+
+   SkiaOutputSurfaceImpl(
+       base::PassKey<SkiaOutputSurfaceImpl> pass_key,
+       DisplayCompositorMemoryAndTaskController* display_controller,
+       const RendererSettings& renderer_settings,
+-      const DebugRendererSettings* debug_settings);
++      const DebugRendererSettings* debug_settings,
++      std::unique_ptr<OffscreenOutputConnection> offscreen_output_connection);
+   ~SkiaOutputSurfaceImpl() override;
+
+   SkiaOutputSurfaceImpl(const SkiaOutputSurfaceImpl&) = delete;
+@@ -191,7 +198,9 @@ class VIZ_SERVICE_EXPORT SkiaOutputSurfaceImpl : public SkiaOutputSurface {
+
+   // Set the fields of |capabilities_| and propagates to |impl_on_gpu_|. Should
+   // be called after BindToClient().
+-  void SetCapabilitiesForTesting(gfx::SurfaceOrigin output_surface_origin);
++  void SetCapabilitiesForTesting(
++      gfx::SurfaceOrigin output_surface_origin,
++      bool backdrop_filters_replace_destination = false);
+
+   // Used in unit tests.
+   void ScheduleGpuTaskForTesting(
+@@ -291,6 +300,7 @@ class VIZ_SERVICE_EXPORT SkiaOutputSurfaceImpl : public SkiaOutputSurface {
+
+   scoped_refptr<SkiaOutputSurfaceSharedImageInterface> shared_image_interface_;
+   raw_ptr<SkiaOutputSurfaceDependency> dependency_;
++  std::unique_ptr<OffscreenOutputConnection> offscreen_output_connection_;
+   UpdateVSyncParametersCallback update_vsync_parameters_callback_;
+
+   gfx::Size size_;
+diff --git a/components/viz/service/display_embedder/skia_output_surface_impl_on_gpu.cc b/components/viz/service/display_embedder/skia_output_surface_impl_on_gpu.cc
+index 6b89694..44747b0 100644
+--- a/components/viz/service/display_embedder/skia_output_surface_impl_on_gpu.cc
++++ b/components/viz/service/display_embedder/skia_output_surface_impl_on_gpu.cc
+@@ -40,11 +40,13 @@
+ #include "components/viz/service/debugger/viz_debugger.h"
+ #include "components/viz/service/display/output_surface_frame.h"
+ #include "components/viz/service/display_embedder/image_context_impl.h"
++#include "components/viz/service/display_embedder/offscreen_output_connection.h"
+ #include "components/viz/service/display_embedder/output_presenter_gl.h"
+ #include "components/viz/service/display_embedder/skia_output_device.h"
+ #include "components/viz/service/display_embedder/skia_output_device_buffer_queue.h"
+ #include "components/viz/service/display_embedder/skia_output_device_gl.h"
+ #include "components/viz/service/display_embedder/skia_output_device_offscreen.h"
++#include "components/viz/service/display_embedder/skia_output_device_offscreen_export.h"
+ #include "components/viz/service/display_embedder/skia_output_device_webview.h"
+ #include "components/viz/service/display_embedder/skia_output_surface_dependency.h"
+ #include "components/viz/service/display_embedder/skia_output_surface_impl_on_gpu_debug_capture.h"
+@@ -269,7 +271,8 @@ std::unique_ptr<SkiaOutputSurfaceImplOnGpu> SkiaOutputSurfaceImplOnGpu::Create(
+     ContextLostCallback context_lost_callback,
+     ScheduleGpuTaskCallback schedule_gpu_task,
+     AddChildWindowToBrowserCallback add_child_window_to_browser_callback,
+-    SkiaOutputDevice::ReleaseOverlaysCallback release_overlays_callback) {
++    SkiaOutputDevice::ReleaseOverlaysCallback release_overlays_callback,
++    std::unique_ptr<OffscreenOutputConnection> offscreen_output_connection) {
+   TRACE_EVENT0("viz", "SkiaOutputSurfaceImplOnGpu::Create");
+
+   auto context_state = deps->GetSharedContextState();
+@@ -294,7 +297,8 @@ std::unique_ptr<SkiaOutputSurfaceImplOnGpu> SkiaOutputSurfaceImplOnGpu::Create(
+       std::move(buffer_presented_callback), std::move(context_lost_callback),
+       std::move(schedule_gpu_task),
+       std::move(add_child_window_to_browser_callback),
+-      std::move(release_overlays_callback));
++      std::move(release_overlays_callback),
++      std::move(offscreen_output_connection));
+   if (!impl_on_gpu->Initialize()) {
+     return nullptr;
+   }
+@@ -313,7 +317,8 @@ SkiaOutputSurfaceImplOnGpu::SkiaOutputSurfaceImplOnGpu(
+     ContextLostCallback context_lost_callback,
+     ScheduleGpuTaskCallback schedule_gpu_task,
+     AddChildWindowToBrowserCallback add_child_window_to_browser_callback,
+-    SkiaOutputDevice::ReleaseOverlaysCallback release_overlays_callback)
++    SkiaOutputDevice::ReleaseOverlaysCallback release_overlays_callback,
++    std::unique_ptr<OffscreenOutputConnection> offscreen_output_connection)
+     : dependency_(std::move(deps)),
+       shared_gpu_deps_(shared_gpu_deps),
+       feature_info_(std::move(feature_info)),
+@@ -326,6 +331,7 @@ SkiaOutputSurfaceImplOnGpu::SkiaOutputSurfaceImplOnGpu(
+               shared_gpu_deps_->memory_tracker())),
+       vulkan_context_provider_(dependency_->GetVulkanContextProvider()),
+       renderer_settings_(renderer_settings),
++      offscreen_output_connection_(std::move(offscreen_output_connection)),
+       did_swap_buffer_complete_callback_(
+           std::move(did_swap_buffer_complete_callback)),
+       context_lost_callback_(std::move(context_lost_callback)),
+@@ -1969,6 +1975,10 @@ bool SkiaOutputSurfaceImplOnGpu::Initialize() {
+
+ bool SkiaOutputSurfaceImplOnGpu::InitializeForGL() {
+   if (dependency_->IsOffscreen()) {
++    if (offscreen_output_connection_) {
++      LOG(ERROR) << "Exportable offscreen output cannot use Ganesh/GL";
++      return false;
++    }
+     output_device_ = std::make_unique<SkiaOutputDeviceOffscreen>(
+         context_state_, gfx::SurfaceOrigin::kTopLeft,
+         renderer_settings_.requires_alpha_channel,
+@@ -2059,6 +2069,10 @@ bool SkiaOutputSurfaceImplOnGpu::InitializeForGL() {
+ #if BUILDFLAG(ENABLE_VULKAN)
+ bool SkiaOutputSurfaceImplOnGpu::InitializeForVulkan() {
+   if (dependency_->IsOffscreen()) {
++    if (offscreen_output_connection_) {
++      LOG(ERROR) << "Exportable offscreen output cannot use Ganesh/Vulkan";
++      return false;
++    }
+     output_device_ = std::make_unique<SkiaOutputDeviceOffscreen>(
+         context_state_, gfx::SurfaceOrigin::kBottomLeft,
+         renderer_settings_.requires_alpha_channel,
+@@ -2143,6 +2157,19 @@ bool SkiaOutputSurfaceImplOnGpu::InitializeForVulkan() {
+ bool SkiaOutputSurfaceImplOnGpu::InitializeForDawn() {
+ #if BUILDFLAG(SKIA_USE_DAWN)
+   if (dependency_->IsOffscreen()) {
++    if (offscreen_output_connection_) {
++      if (!context_state_->IsGraphiteDawnVulkan()) {
++        LOG(ERROR) << "Exportable offscreen output requires "
++                      "Graphite/Dawn/Vulkan";
++        return false;
++      }
++      output_device_ = std::make_unique<SkiaOutputDeviceOffscreenExport>(
++          context_state_, shared_gpu_deps_->memory_tracker(),
++          GetDidSwapBuffersCompleteCallback(), shared_image_factory_.get(),
++          shared_image_representation_factory_.get(),
++          std::move(offscreen_output_connection_));
++      return true;
++    }
+     output_device_ = std::make_unique<SkiaOutputDeviceOffscreen>(
+         context_state_, gfx::SurfaceOrigin::kBottomLeft,
+         renderer_settings_.requires_alpha_channel,
+diff --git a/components/viz/service/display_embedder/skia_output_surface_impl_on_gpu.h b/components/viz/service/display_embedder/skia_output_surface_impl_on_gpu.h
+index efaad72..ef6cd77 100644
+--- a/components/viz/service/display_embedder/skia_output_surface_impl_on_gpu.h
++++ b/components/viz/service/display_embedder/skia_output_surface_impl_on_gpu.h
+@@ -84,6 +84,8 @@ class PlatformWindowSurface;
+
+ namespace viz {
+
++struct OffscreenOutputConnection;
++
+ class AsyncReadResultHelper;
+ class AsyncReadResultLock;
+ class ImageContextImpl;
+@@ -124,7 +126,8 @@ class SkiaOutputSurfaceImplOnGpu
+       ContextLostCallback context_lost_callback,
+       ScheduleGpuTaskCallback schedule_gpu_task,
+       AddChildWindowToBrowserCallback parent_child_Window_to_browser_callback,
+-      SkiaOutputDevice::ReleaseOverlaysCallback release_overlays_callback);
++      SkiaOutputDevice::ReleaseOverlaysCallback release_overlays_callback,
++      std::unique_ptr<OffscreenOutputConnection> offscreen_output_connection);
+
+   SkiaOutputSurfaceImplOnGpu(
+       base::PassKey<SkiaOutputSurfaceImplOnGpu> pass_key,
+@@ -137,7 +140,8 @@ class SkiaOutputSurfaceImplOnGpu
+       ContextLostCallback context_lost_callback,
+       ScheduleGpuTaskCallback schedule_gpu_task,
+       AddChildWindowToBrowserCallback parent_child_window_to_browser_callback,
+-      SkiaOutputDevice::ReleaseOverlaysCallback release_overlays_callback);
++      SkiaOutputDevice::ReleaseOverlaysCallback release_overlays_callback,
++      std::unique_ptr<OffscreenOutputConnection> offscreen_output_connection);
+
+   SkiaOutputSurfaceImplOnGpu(const SkiaOutputSurfaceImplOnGpu&) = delete;
+   SkiaOutputSurfaceImplOnGpu& operator=(const SkiaOutputSurfaceImplOnGpu&) =
+@@ -501,6 +505,7 @@ class SkiaOutputSurfaceImplOnGpu
+       shared_image_representation_factory_;
+   const raw_ptr<VulkanContextProvider> vulkan_context_provider_;
+   const RendererSettings renderer_settings_;
++  std::unique_ptr<OffscreenOutputConnection> offscreen_output_connection_;
+
+   // Should only be run on the client thread with PostTaskToClientThread().
+   DidSwapBufferCompleteCallback did_swap_buffer_complete_callback_;
+diff --git a/components/viz/service/frame_sinks/frame_sink_manager_unittest.cc b/components/viz/service/frame_sinks/frame_sink_manager_unittest.cc
+index 81cb55e..b880584 100644
+--- a/components/viz/service/frame_sinks/frame_sink_manager_unittest.cc
++++ b/components/viz/service/frame_sinks/frame_sink_manager_unittest.cc
+@@ -29,6 +29,7 @@
+ #include "components/viz/test/test_output_surface_provider.h"
+ #include "mojo/public/cpp/bindings/associated_remote.h"
+ #include "mojo/public/cpp/bindings/remote.h"
++#include "services/viz/privileged/mojom/compositing/offscreen_output.mojom.h"
+ #include "testing/gtest/include/gtest/gtest.h"
+ #include "third_party/perfetto/include/perfetto/tracing/tracing.h"
+
+@@ -293,6 +294,41 @@ TEST_F(FrameSinkManagerTest, CreateRootCompositorFrameSink) {
+   EXPECT_FALSE(CompositorFrameSinkExists(kFrameSinkIdRoot));
+ }
+
++TEST_F(FrameSinkManagerTest, CreateRootWithPairedOffscreenOutputEndpoints) {
++  RootCompositorFrameSinkData root_data;
++  auto params = root_data.BuildParams(kFrameSinkIdRoot);
++
++  mojo::PendingRemote<mojom::OffscreenOutputClient> client;
++  [[maybe_unused]] auto client_receiver =
++      client.InitWithNewPipeAndPassReceiver();
++  mojo::Remote<mojom::OffscreenOutput> output;
++  params->offscreen_output_client = std::move(client);
++  params->offscreen_output = output.BindNewPipeAndPassReceiver();
++
++  manager_->CreateRootCompositorFrameSink(std::move(params));
++
++  EXPECT_TRUE(CompositorFrameSinkExists(kFrameSinkIdRoot));
++  EXPECT_TRUE(output_surface_provider_.last_output_had_offscreen_connection());
++
++  manager_->InvalidateFrameSinkId(kFrameSinkIdRoot, {});
++  EXPECT_FALSE(CompositorFrameSinkExists(kFrameSinkIdRoot));
++}
++
++TEST_F(FrameSinkManagerTest, RejectsUnpairedOffscreenOutputEndpoints) {
++  RootCompositorFrameSinkData root_data;
++  auto params = root_data.BuildParams(kFrameSinkIdRoot);
++
++  mojo::PendingRemote<mojom::OffscreenOutputClient> client;
++  [[maybe_unused]] auto client_receiver =
++      client.InitWithNewPipeAndPassReceiver();
++  params->offscreen_output_client = std::move(client);
++
++  manager_->CreateRootCompositorFrameSink(std::move(params));
++
++  EXPECT_FALSE(CompositorFrameSinkExists(kFrameSinkIdRoot));
++  EXPECT_FALSE(output_surface_provider_.last_output_had_offscreen_connection());
++}
++
+ TEST_F(FrameSinkManagerTest, InputManagerCreation) {
+   const bool expected_creation =
+       input::InputUtils::IsTransferInputToVizSupported();
+diff --git a/components/viz/service/frame_sinks/root_compositor_frame_sink_impl.cc b/components/viz/service/frame_sinks/root_compositor_frame_sink_impl.cc
+index d65a498..b584bb5 100644
+--- a/components/viz/service/frame_sinks/root_compositor_frame_sink_impl.cc
++++ b/components/viz/service/frame_sinks/root_compositor_frame_sink_impl.cc
+@@ -25,6 +25,7 @@
+ #include "components/viz/common/frame_sinks/begin_frame_source.h"
+ #include "components/viz/service/display/display.h"
+ #include "components/viz/service/display/output_surface.h"
++#include "components/viz/service/display_embedder/offscreen_output_connection.h"
+ #include "components/viz/service/display_embedder/output_surface_provider.h"
+ #include "components/viz/service/display_embedder/vsync_parameter_listener.h"
+ #include "components/viz/service/frame_sinks/frame_sink_manager_impl.h"
+@@ -129,10 +130,22 @@ RootCompositorFrameSinkImpl::Create(
+       std::move(params->display_client));
+   auto display_controller = output_surface_provider->CreateGpuDependency(
+       params->gpu_compositing, params->widget);
++  std::unique_ptr<OffscreenOutputConnection> offscreen_output_connection;
++  if (params->offscreen_output_client || params->offscreen_output) {
++    if (!params->offscreen_output_client || !params->offscreen_output) {
++      return nullptr;
++    }
++    offscreen_output_connection = std::make_unique<OffscreenOutputConnection>(
++        std::move(params->offscreen_output_client),
++        std::move(params->offscreen_output));
++    if (!offscreen_output_connection->is_valid()) {
++      return nullptr;
 +    }
 +  }
-+  current_canvas_->saveLayer(layer_rec);
- 
-   // If we have backdrop filtered content (and not transparent black like with
-   // regular render passes), we have to clear out the parts of the layer that
-@@ -3297,6 +3354,9 @@ SkiaRenderer::DrawRPDQParams SkiaRenderer::CalculateRPDQParams(
-     // with some pixel-moving filters, that may not remain the case and this
-     // ensures |filter_bounds| will contain all possible output.
-     rpdq_params.filter_bounds.join(bd_filter_extra_bounds);
-+    rpdq_params.backdrop_replacement_bounds = backdrop_filter_bounds
-+                                                  ? *backdrop_filter_bounds
-+                                                  : SkPath::Rect(backdrop_rect);
-     rpdq_params.backdrop_filter_bounds = backdrop_filter_bounds;
+   auto output_surface = output_surface_provider->CreateOutputSurface(
+       params->widget, params->gpu_compositing, display_client.get(),
+       display_controller.get(), params->renderer_settings, debug_settings,
+-      params->use_proxy_output_device);
++      params->use_proxy_output_device, std::move(offscreen_output_connection));
+
+   // Creating output surface failed. The host can send a new request, possibly
+   // with a different compositing mode.
+diff --git a/components/viz/test/mock_display_client.h b/components/viz/test/mock_display_client.h
+index 21f696d..81134d0 100644
+--- a/components/viz/test/mock_display_client.h
++++ b/components/viz/test/mock_display_client.h
+@@ -29,12 +29,12 @@ class MockDisplayClient : public mojom::DisplayClient {
+   mojo::PendingRemote<mojom::DisplayClient> BindRemote();
+
+   // mojom::DisplayClient implementation.
++  MOCK_METHOD1(CreateLayeredWindowUpdater,
++               void(mojo::PendingReceiver<mojom::LayeredWindowUpdater>));
+ #if BUILDFLAG(IS_APPLE)
+   MOCK_METHOD1(OnDisplayReceivedCALayerParams, void(gfx::CALayerParams));
+ #endif
+ #if BUILDFLAG(IS_WIN)
+-  MOCK_METHOD1(CreateLayeredWindowUpdater,
+-               void(mojo::PendingReceiver<mojom::LayeredWindowUpdater>));
+   MOCK_METHOD1(AddChildWindowToBrowser, void(gpu::SurfaceHandle child_window));
+ #endif
+ #if BUILDFLAG(IS_ANDROID)
+diff --git a/components/viz/test/test_output_surface_provider.cc b/components/viz/test/test_output_surface_provider.cc
+index 4a1dbf7..9f69e56 100644
+--- a/components/viz/test/test_output_surface_provider.cc
++++ b/components/viz/test/test_output_surface_provider.cc
+@@ -6,6 +6,7 @@
+
+ #include "components/viz/service/display/display_compositor_memory_and_task_controller.h"
+ #include "components/viz/service/display/software_output_device.h"
++#include "components/viz/service/display_embedder/offscreen_output_connection.h"
+ #include "components/viz/test/fake_output_surface.h"
+ #include "components/viz/test/fake_skia_output_surface.h"
+
+@@ -31,7 +32,10 @@ std::unique_ptr<OutputSurface> TestOutputSurfaceProvider::CreateOutputSurface(
+     DisplayCompositorMemoryAndTaskController* display_controller,
+     const RendererSettings& renderer_settings,
+     const DebugRendererSettings* debug_settings,
+-    bool use_proxy_output_device) {
++    bool use_proxy_output_device,
++    std::unique_ptr<OffscreenOutputConnection> offscreen_output_connection) {
++  last_output_had_offscreen_connection_ =
++      offscreen_output_connection && offscreen_output_connection->is_valid();
+   if (gpu_compositing) {
+     return FakeSkiaOutputSurface::Create3d();
+   } else {
+diff --git a/components/viz/test/test_output_surface_provider.h b/components/viz/test/test_output_surface_provider.h
+index e784943..7605100 100644
+--- a/components/viz/test/test_output_surface_provider.h
++++ b/components/viz/test/test_output_surface_provider.h
+@@ -33,10 +33,18 @@ class TestOutputSurfaceProvider : public OutputSurfaceProvider {
+       DisplayCompositorMemoryAndTaskController* display_controller,
+       const RendererSettings& renderer_settings,
+       const DebugRendererSettings* debug_settings,
+-      bool use_proxy_output_device) override;
++      bool use_proxy_output_device,
++      std::unique_ptr<OffscreenOutputConnection>
++          offscreen_output_connection) override;
+   gpu::SharedImageManager* GetSharedImageManager() override;
+   gpu::SyncPointManager* GetSyncPointManager() override;
+   gpu::Scheduler* GetGpuScheduler() override;
++  bool last_output_had_offscreen_connection() const {
++    return last_output_had_offscreen_connection_;
++  }
++
++ private:
++  bool last_output_had_offscreen_connection_ = false;
+ };
+
+ }  // namespace viz
+diff --git a/content/browser/compositor/viz_process_transport_factory.cc b/content/browser/compositor/viz_process_transport_factory.cc
+index ef1b685..ed3ae7d 100644
+--- a/content/browser/compositor/viz_process_transport_factory.cc
++++ b/content/browser/compositor/viz_process_transport_factory.cc
+@@ -425,6 +425,16 @@ void VizProcessTransportFactory::OnEstablishedGpuChannel(
+         compositor->delegate()->CreateHostDisplayClient();
+     root_params->use_proxy_output_device =
+         compositor->delegate()->UseProxyOutputDevice();
++    mojo::PendingRemote<viz::mojom::OffscreenOutputClient>
++        offscreen_output_client;
++    mojo::PendingReceiver<viz::mojom::OffscreenOutput> offscreen_output;
++    if (compositor->delegate()->CreateOffscreenOutputEndpoints(
++            &offscreen_output_client, &offscreen_output)) {
++      CHECK(offscreen_output_client.is_valid());
++      CHECK(offscreen_output.is_valid());
++      root_params->offscreen_output_client = std::move(offscreen_output_client);
++      root_params->offscreen_output = std::move(offscreen_output);
++    }
+   } else {
+     compositor_data.display_client =
+         std::make_unique<HostDisplayClient>(compositor);
+diff --git a/gpu/command_buffer/service/shared_image/compound_image_backing.cc b/gpu/command_buffer/service/shared_image/compound_image_backing.cc
+index efc6932..5a61726 100644
+--- a/gpu/command_buffer/service/shared_image/compound_image_backing.cc
++++ b/gpu/command_buffer/service/shared_image/compound_image_backing.cc
+@@ -562,6 +562,17 @@ class WrappedOverlayCompoundImageRepresentation
+   GetAHardwareBufferFenceSync() final {
+     return wrapped_->GetAHardwareBufferFenceSync();
    }
- 
++#elif BUILDFLAG(IS_OZONE)
++#if BUILDFLAG(ENABLE_VULKAN)
++  std::optional<ExternalVulkanImageState> GetExternalVulkanImageState()
++      const final {
++    return wrapped_->GetExternalVulkanImageState();
++  }
++  bool SetReleaseExternalVulkanImageState(
++      ExternalVulkanImageState release_state) final {
++    return wrapped_->SetReleaseExternalVulkanImageState(release_state);
++  }
++#endif  // BUILDFLAG(ENABLE_VULKAN)
+ #elif BUILDFLAG(IS_WIN)
+   std::optional<gl::DCLayerOverlayImage> GetDCLayerOverlayImage() final {
+     return wrapped_->GetDCLayerOverlayImage();
+diff --git a/gpu/command_buffer/service/shared_image/dawn_ozone_image_representation.cc b/gpu/command_buffer/service/shared_image/dawn_ozone_image_representation.cc
+index 89313c5..209b98d 100644
+--- a/gpu/command_buffer/service/shared_image/dawn_ozone_image_representation.cc
++++ b/gpu/command_buffer/service/shared_image/dawn_ozone_image_representation.cc
+@@ -88,10 +88,30 @@ wgpu::Texture DawnOzoneImageRepresentation::BeginAccess(
+   begin_access_desc.initialized = IsCleared();
+
+   wgpu::SharedTextureMemoryVkImageLayoutBeginState begin_layout{};
+-
+-  // TODO(crbug.com/330385376): Track layouts correctly.
+-  begin_layout.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+-  begin_layout.newLayout = VK_IMAGE_LAYOUT_UNDEFINED;
++  std::optional<ExternalVulkanImageState> external_state =
++      ozone_backing()->TakeExternalVulkanImageState();
++  if (external_state) {
++    if (!external_state->IsValid()) {
++      LOG(ERROR) << "Invalid external Vulkan layout state";
++      ozone_backing()->EndAccess(
++          is_readonly_, OzoneImageBacking::AccessStream::kWebGPU,
++          fences.empty() ? gfx::GpuFenceHandle() : std::move(fences[0]));
++      return nullptr;
++    }
++    begin_layout.oldLayout = external_state->old_layout;
++    begin_layout.newLayout = external_state->new_layout;
++  } else if (IsCleared()) {
++    LOG(ERROR) << "Initialized shared image has no external Vulkan layout "
++                  "state";
++    ozone_backing()->EndAccess(
++        is_readonly_, OzoneImageBacking::AccessStream::kWebGPU,
++        fences.empty() ? gfx::GpuFenceHandle() : std::move(fences[0]));
++    return nullptr;
++  } else {
++    // The first access may discard the uninitialized contents.
++    begin_layout.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
++    begin_layout.newLayout = VK_IMAGE_LAYOUT_UNDEFINED;
++  }
+   begin_access_desc.nextInChain = &begin_layout;
+
+   // If the semaphore from BeginWrite is valid then pass it to
+@@ -181,6 +201,10 @@ wgpu::Texture DawnOzoneImageRepresentation::BeginAccess(
+     ozone_backing()->EndAccess(
+         is_readonly_, OzoneImageBacking::AccessStream::kWebGPU,
+         fences.empty() ? gfx::GpuFenceHandle() : std::move(fences[0]));
++    if (external_state &&
++        !ozone_backing()->SetExternalVulkanImageState(*external_state)) {
++      LOG(ERROR) << "Failed to restore external Vulkan layout state";
++    }
+
+     // Set `texture_` to nullptr to signal failure to BeginScopedAccess(),
+     // which will itself then return nullptr to signal failure to the client.
+@@ -200,6 +224,9 @@ void DawnOzoneImageRepresentation::EndAccess() {
+
+   if (!shared_texture_memory_.EndAccess(texture_, &end_access_desc)) {
+     LOG(ERROR) << "Failed to end access for DawnOzoneImageRepresentation";
++    ozone_backing()->EndAccess(is_readonly_,
++                               OzoneImageBacking::AccessStream::kWebGPU,
++                               gfx::GpuFenceHandle());
+     texture_.Destroy();
+     texture_ = nullptr;
+     return;
+@@ -209,6 +236,14 @@ void DawnOzoneImageRepresentation::EndAccess() {
+     SetCleared();
+   }
+
++  const ExternalVulkanImageState external_state{
++      .old_layout = static_cast<VkImageLayout>(end_layout.oldLayout),
++      .new_layout = static_cast<VkImageLayout>(end_layout.newLayout),
++  };
++  if (!ozone_backing()->SetExternalVulkanImageState(external_state)) {
++    LOG(ERROR) << "Dawn returned invalid external Vulkan layout state";
++  }
++
+   CHECK(end_access_desc.fenceCount == end_access_desc.signaledValueCount);
+
+   // Note: Dawn may export zero fences if there were no begin fences,
+diff --git a/gpu/command_buffer/service/shared_image/ozone_image_backing.cc b/gpu/command_buffer/service/shared_image/ozone_image_backing.cc
+index 906a8f8..a63084f 100644
+--- a/gpu/command_buffer/service/shared_image/ozone_image_backing.cc
++++ b/gpu/command_buffer/service/shared_image/ozone_image_backing.cc
+@@ -107,6 +107,18 @@ class OzoneImageBacking::OverlayOzoneImageRepresentation
+     ozone_backing->EndAccess(/*readonly=*/true, AccessStream::kOverlay,
+                              std::move(release_fence));
+   }
++#if BUILDFLAG(ENABLE_VULKAN)
++  std::optional<ExternalVulkanImageState> GetExternalVulkanImageState()
++      const override {
++    return static_cast<OzoneImageBacking*>(backing())
++        ->GetExternalVulkanImageState();
++  }
++  bool SetReleaseExternalVulkanImageState(
++      ExternalVulkanImageState release_state) override {
++    return static_cast<OzoneImageBacking*>(backing())
++        ->SetExternalVulkanImageState(release_state);
++  }
++#endif  // BUILDFLAG(ENABLE_VULKAN)
+ };
+
+ SharedImageBackingType OzoneImageBacking::GetType() const {
+@@ -419,8 +431,12 @@ OzoneImageBacking::OzoneImageBacking(
+       (used_by_skia && context_state_->gr_context_type() == GrContextType::kGL);
+   bool used_by_vulkan = used_by_skia && context_state_->gr_context_type() ==
+                                             GrContextType::kVulkan;
+-  bool used_by_webgpu = usage.HasAny(SHARED_IMAGE_USAGE_WEBGPU_READ |
+-                                     SHARED_IMAGE_USAGE_WEBGPU_WRITE);
++  bool used_by_webgpu =
++      usage.HasAny(SHARED_IMAGE_USAGE_WEBGPU_READ |
++                   SHARED_IMAGE_USAGE_WEBGPU_WRITE) ||
++      // Graphite reaches this backing through Dawn even when the SharedImage
++      // does not advertise a WebGPU client usage.
++      (used_by_skia && context_state_->IsGraphiteDawn());
+   write_streams_count_ = 0;
+   if (used_by_gl) {
+     write_streams_count_++;  // gl can write
+@@ -761,6 +777,27 @@ void OzoneImageBacking::EndAccess(bool readonly,
+   }
+ }
+
++#if BUILDFLAG(ENABLE_VULKAN)
++std::optional<ExternalVulkanImageState>
++OzoneImageBacking::GetExternalVulkanImageState() const {
++  return external_vulkan_state_;
++}
++
++bool OzoneImageBacking::SetExternalVulkanImageState(
++    ExternalVulkanImageState state) {
++  if (!state.IsValid()) {
++    return false;
++  }
++  external_vulkan_state_ = state;
++  return true;
++}
++
++std::optional<ExternalVulkanImageState>
++OzoneImageBacking::TakeExternalVulkanImageState() {
++  return std::exchange(external_vulkan_state_, std::nullopt);
++}
++#endif  // BUILDFLAG(ENABLE_VULKAN)
++
+ void OzoneImageBacking::OnGLContextLost(gl::GLContext* context) {
+   OnGLContextLostOrDestroy(context, /*mark_context_lost=*/true);
+ }
+diff --git a/gpu/command_buffer/service/shared_image/ozone_image_backing.h b/gpu/command_buffer/service/shared_image/ozone_image_backing.h
+index 43dd62c..313d1dc 100644
+--- a/gpu/command_buffer/service/shared_image/ozone_image_backing.h
++++ b/gpu/command_buffer/service/shared_image/ozone_image_backing.h
+@@ -116,6 +116,10 @@ class GPU_GLES2_EXPORT OzoneImageBacking final
+                            FindsCompatibleContextAndReusesTexture);
+   FRIEND_TEST_ALL_PREFIXES(OzoneImageBackingFactoryTest,
+                            CorrectlyDestroysAndMarksContextLost);
++#if BUILDFLAG(ENABLE_VULKAN)
++  FRIEND_TEST_ALL_PREFIXES(OzoneImageBackingFactoryTest,
++                           TracksExternalVulkanImageState);
++#endif
+
+   void FlushAndSubmitIfNecessary(
+       std::vector<GrBackendSemaphore> signal_semaphores,
+@@ -129,6 +133,12 @@ class GPU_GLES2_EXPORT OzoneImageBacking final
+                  AccessStream access_stream,
+                  gfx::GpuFenceHandle fence);
+
++#if BUILDFLAG(ENABLE_VULKAN)
++  std::optional<ExternalVulkanImageState> GetExternalVulkanImageState() const;
++  bool SetExternalVulkanImageState(ExternalVulkanImageState state);
++  std::optional<ExternalVulkanImageState> TakeExternalVulkanImageState();
++#endif
++
+   scoped_refptr<OzoneImageGLTexturesHolder> RetainGLTexturePerContextCache();
+
+   // gl::GLContext::GLContextObserver:
+@@ -165,6 +175,9 @@ class GPU_GLES2_EXPORT OzoneImageBacking final
+   gfx::GpuFenceHandle write_fence_;
+   base::flat_map<AccessStream, gfx::GpuFenceHandle> read_fences_;
+   AccessStream last_write_stream_;
++#if BUILDFLAG(ENABLE_VULKAN)
++  std::optional<ExternalVulkanImageState> external_vulkan_state_;
++#endif
+   scoped_refptr<SharedContextState> context_state_;
+   const GpuDriverBugWorkarounds workarounds_;
+   const bool imported_from_exo_ = false;
+diff --git a/gpu/command_buffer/service/shared_image/ozone_image_backing_factory_unittest.cc b/gpu/command_buffer/service/shared_image/ozone_image_backing_factory_unittest.cc
+index eb934ef..5ef1c9b 100644
+--- a/gpu/command_buffer/service/shared_image/ozone_image_backing_factory_unittest.cc
++++ b/gpu/command_buffer/service/shared_image/ozone_image_backing_factory_unittest.cc
+@@ -13,6 +13,7 @@
+ #include "gpu/command_buffer/service/shared_image/shared_image_manager.h"
+ #include "gpu/command_buffer/service/shared_image/shared_image_test_base.h"
+ #include "gpu/config/gpu_finch_features.h"
++#include "gpu/vulkan/buildflags.h"
+ #include "testing/gmock/include/gmock/gmock.h"
+ #include "testing/gtest/include/gtest/gtest.h"
+ #include "ui/gl/gl_context.h"
+@@ -80,6 +81,45 @@ class OzoneImageBackingFactoryTest : public SharedImageTestBase {
+   std::unique_ptr<OzoneImageBackingFactory> backing_factory_;
+ };
+
++#if BUILDFLAG(ENABLE_VULKAN)
++TEST_F(OzoneImageBackingFactoryTest, TracksExternalVulkanImageState) {
++  const Mailbox mailbox = Mailbox::Generate();
++  auto backing = backing_factory_->CreateSharedImage(
++      mailbox,
++      {viz::SinglePlaneFormat::kRGBA_8888,
++       {100, 100},
++       gfx::ColorSpace::CreateSRGB(),
++       kTopLeft_GrSurfaceOrigin,
++       kPremul_SkAlphaType,
++       SHARED_IMAGE_USAGE_DISPLAY_WRITE | SHARED_IMAGE_USAGE_SCANOUT,
++       "ExternalVulkanImageStateTest"},
++      gpu::kNullSurfaceHandle, false);
++  ASSERT_TRUE(backing);
++
++  auto* ozone_backing = static_cast<OzoneImageBacking*>(backing.get());
++  EXPECT_FALSE(ozone_backing->GetExternalVulkanImageState());
++  EXPECT_FALSE(ozone_backing->SetExternalVulkanImageState(
++      {.old_layout = VK_IMAGE_LAYOUT_UNDEFINED,
++       .new_layout = VK_IMAGE_LAYOUT_GENERAL}));
++
++  const ExternalVulkanImageState producer_state{
++      .old_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
++      .new_layout = VK_IMAGE_LAYOUT_GENERAL,
++  };
++  ASSERT_TRUE(ozone_backing->SetExternalVulkanImageState(producer_state));
++  EXPECT_EQ(ozone_backing->GetExternalVulkanImageState(), producer_state);
++  EXPECT_EQ(ozone_backing->TakeExternalVulkanImageState(), producer_state);
++  EXPECT_FALSE(ozone_backing->GetExternalVulkanImageState());
++
++  const ExternalVulkanImageState consumer_state{
++      .old_layout = VK_IMAGE_LAYOUT_GENERAL,
++      .new_layout = VK_IMAGE_LAYOUT_GENERAL,
++  };
++  ASSERT_TRUE(ozone_backing->SetExternalVulkanImageState(consumer_state));
++  EXPECT_EQ(ozone_backing->TakeExternalVulkanImageState(), consumer_state);
++}
++#endif  // BUILDFLAG(ENABLE_VULKAN)
++
+ TEST_F(OzoneImageBackingFactoryTest, UsesCacheForTextureHolders) {
+   if (!IsEglImageSupported()) {
+     GTEST_SKIP();
+diff --git a/gpu/command_buffer/service/shared_image/shared_image_representation.cc b/gpu/command_buffer/service/shared_image/shared_image_representation.cc
+index 692b0cb..4be9acb 100644
+--- a/gpu/command_buffer/service/shared_image/shared_image_representation.cc
++++ b/gpu/command_buffer/service/shared_image/shared_image_representation.cc
+@@ -923,6 +923,17 @@ OverlayImageRepresentation::GetAHardwareBufferFenceSync() {
+ scoped_refptr<gfx::NativePixmap> OverlayImageRepresentation::GetNativePixmap() {
+   return backing()->GetNativePixmap();
+ }
++#if BUILDFLAG(ENABLE_VULKAN)
++std::optional<ExternalVulkanImageState>
++OverlayImageRepresentation::GetExternalVulkanImageState() const {
++  return std::nullopt;
++}
++
++bool OverlayImageRepresentation::SetReleaseExternalVulkanImageState(
++    ExternalVulkanImageState /*release_state*/) {
++  return false;
++}
++#endif  // BUILDFLAG(ENABLE_VULKAN)
+ #elif BUILDFLAG(IS_WIN)
+ std::optional<gl::DCLayerOverlayImage>
+ OverlayImageRepresentation::GetDCLayerOverlayImage() {
+diff --git a/gpu/command_buffer/service/shared_image/shared_image_representation.h b/gpu/command_buffer/service/shared_image/shared_image_representation.h
+index b38ee31..6a8b517 100644
+--- a/gpu/command_buffer/service/shared_image/shared_image_representation.h
++++ b/gpu/command_buffer/service/shared_image/shared_image_representation.h
+@@ -9,6 +9,7 @@
+ #include <dawn/webgpu_cpp.h>
+
+ #include <memory>
++#include <optional>
+
+ #include "base/functional/callback.h"
+ #include "base/memory/raw_ptr.h"
+@@ -79,6 +80,25 @@ namespace gpu {
+ class SharedImageManager;
+ class TextureBase;
+
++#if BUILDFLAG(ENABLE_VULKAN)
++// The exact layout transition used by one side of an external Vulkan
++// queue-family ownership transfer. The importing side must use the same pair
++// in its matching ownership-acquire barrier.
++struct GPU_GLES2_EXPORT ExternalVulkanImageState {
++  VkImageLayout old_layout = VK_IMAGE_LAYOUT_UNDEFINED;
++  VkImageLayout new_layout = VK_IMAGE_LAYOUT_UNDEFINED;
++
++  bool IsValid() const {
++    return old_layout != VK_IMAGE_LAYOUT_UNDEFINED &&
++           old_layout != VK_IMAGE_LAYOUT_PREINITIALIZED &&
++           new_layout != VK_IMAGE_LAYOUT_UNDEFINED &&
++           new_layout != VK_IMAGE_LAYOUT_PREINITIALIZED;
++  }
++
++  bool operator==(const ExternalVulkanImageState&) const = default;
++};
++#endif  // BUILDFLAG(ENABLE_VULKAN)
++
+ namespace gles2 {
+ class Texture;
+ class TexturePassthrough;
+@@ -983,6 +1003,17 @@ class GPU_GLES2_EXPORT OverlayImageRepresentation
+     scoped_refptr<gfx::NativePixmap> GetNativePixmap() {
+       return representation()->GetNativePixmap();
+     }
++#if BUILDFLAG(ENABLE_VULKAN)
++    std::optional<ExternalVulkanImageState> GetExternalVulkanImageState()
++        const {
++      return representation()->GetExternalVulkanImageState();
++    }
++    bool SetReleaseExternalVulkanImageState(
++        ExternalVulkanImageState release_state) {
++      return representation()->SetReleaseExternalVulkanImageState(
++          release_state);
++    }
++#endif  // BUILDFLAG(ENABLE_VULKAN)
+ #elif BUILDFLAG(IS_WIN)
+     std::optional<gl::DCLayerOverlayImage> GetDCLayerOverlayImage() {
+       return representation()->GetDCLayerOverlayImage();
+@@ -1037,6 +1068,12 @@ class GPU_GLES2_EXPORT OverlayImageRepresentation
+   GetAHardwareBufferFenceSync();
+ #elif BUILDFLAG(IS_OZONE)
+   scoped_refptr<gfx::NativePixmap> GetNativePixmap();
++#if BUILDFLAG(ENABLE_VULKAN)
++  virtual std::optional<ExternalVulkanImageState> GetExternalVulkanImageState()
++      const;
++  virtual bool SetReleaseExternalVulkanImageState(
++      ExternalVulkanImageState release_state);
++#endif  // BUILDFLAG(ENABLE_VULKAN)
+ #elif BUILDFLAG(IS_WIN)
+   virtual std::optional<gl::DCLayerOverlayImage> GetDCLayerOverlayImage();
+ #elif BUILDFLAG(IS_APPLE)
+diff --git a/gpu/command_buffer/service/shared_image/skia_vk_ozone_image_representation.cc b/gpu/command_buffer/service/shared_image/skia_vk_ozone_image_representation.cc
+index bdba5ea..f0fbada 100644
+--- a/gpu/command_buffer/service/shared_image/skia_vk_ozone_image_representation.cc
++++ b/gpu/command_buffer/service/shared_image/skia_vk_ozone_image_representation.cc
+@@ -289,8 +289,15 @@ SkiaVkOzoneImageRepresentation::GetEndAccessState() {
+     }
+     DCHECK_NE(queue_family_index, VK_QUEUE_FAMILY_IGNORED);
+
++    // The dedicated offscreen-export backing crosses a process/device
++    // boundary. Give that contract a fixed layout instead of preserving an
++    // implementation-dependent current layout that the consumer cannot know.
++    const VkImageLayout end_layout =
++        ozone_backing()->debug_label() == "OffscreenOutputExport"
++            ? VK_IMAGE_LAYOUT_GENERAL
++            : VK_IMAGE_LAYOUT_UNDEFINED;
+     return std::make_unique<skgpu::MutableTextureState>(
+-        skgpu::MutableTextureStates::MakeVulkan(VK_IMAGE_LAYOUT_UNDEFINED,
++        skgpu::MutableTextureStates::MakeVulkan(end_layout,
+                                                 queue_family_index));
+   }
+   return nullptr;
+diff --git a/services/viz/privileged/mojom/compositing/BUILD.gn b/services/viz/privileged/mojom/compositing/BUILD.gn
+index 28b52bb..6ece790 100644
+--- a/services/viz/privileged/mojom/compositing/BUILD.gn
++++ b/services/viz/privileged/mojom/compositing/BUILD.gn
+@@ -22,6 +22,7 @@ mojom("compositing") {
+     "frame_sink_video_capture.mojom",
+     "frame_sinks_metrics_recorder.mojom",  # test helpers
+     "layered_window_updater.mojom",
++    "offscreen_output.mojom",
+     "overlay_strategy.mojom",
+     "renderer_settings.mojom",
+     "vsync_parameter_observer.mojom",
+diff --git a/services/viz/privileged/mojom/compositing/frame_sink_manager.mojom b/services/viz/privileged/mojom/compositing/frame_sink_manager.mojom
+index 96ebaf1..3ff3188 100644
+--- a/services/viz/privileged/mojom/compositing/frame_sink_manager.mojom
++++ b/services/viz/privileged/mojom/compositing/frame_sink_manager.mojom
+@@ -14,6 +14,7 @@ import "services/viz/privileged/mojom/compositing/features.mojom";
+ import "services/viz/privileged/mojom/compositing/frame_sink_manager_test_api.mojom";
+ import "services/viz/privileged/mojom/compositing/frame_sink_video_capture.mojom";
+ import "services/viz/privileged/mojom/compositing/frame_sinks_metrics_recorder.mojom";
++import "services/viz/privileged/mojom/compositing/offscreen_output.mojom";
+ import "services/viz/privileged/mojom/compositing/renderer_settings.mojom";
+ import "services/viz/public/mojom/compositing/compositor_frame_sink.mojom";
+ import "services/viz/public/mojom/compositing/copy_output_request.mojom";
+@@ -68,6 +69,10 @@ struct RootCompositorFrameSinkParams {
+       external_begin_frame_controller_client;
+
+    bool use_proxy_output_device = false;
++  // Optional paired endpoints for an explicitly requested exportable
++  // offscreen root. Both endpoints must either be valid or absent.
++  pending_remote<OffscreenOutputClient>? offscreen_output_client;
++  pending_receiver<OffscreenOutput>? offscreen_output;
+ };
+
+ // The FrameSinkManager interface is a privileged interface that allows the
+diff --git a/services/viz/privileged/mojom/compositing/offscreen_output.mojom b/services/viz/privileged/mojom/compositing/offscreen_output.mojom
+new file mode 100644
+index 0000000..9fb1818
+--- /dev/null
++++ b/services/viz/privileged/mojom/compositing/offscreen_output.mojom
+@@ -0,0 +1,74 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++module viz.mojom;
++
++import "mojo/public/mojom/base/time.mojom";
++import "services/viz/public/mojom/compositing/shared_image_format.mojom";
++import "skia/public/mojom/image_info.mojom";
++import "ui/gfx/geometry/mojom/geometry.mojom";
++import "ui/gfx/mojom/color_space.mojom";
++import "ui/gfx/mojom/gpu_fence_handle.mojom";
++import "ui/gfx/mojom/native_handle_types.mojom";
++
++// Canonical image origin used by an exported offscreen output frame.
++enum OffscreenOutputOrigin {
++  kTopLeft,
++  kBottomLeft,
++};
++
++// Fatal errors reported by an exportable offscreen output. The connection is
++// closed after an error and callers must recreate the root compositor frame
++// sink before requesting more frames.
++enum OffscreenOutputError {
++  kUnsupported,
++  kAllocationFailed,
++  kContextLost,
++  kProtocolError,
++};
++
++// A completed root-compositor output image borrowed by an external consumer.
++// Every valid frame_token must be released exactly once through
++// OffscreenOutput.ReleaseFrame before its backing can be reused.
++struct OffscreenOutputFrame {
++  uint64 generation;
++  uint32 slot_index;
++  uint64 content_serial;
++  uint64 frame_token;
++
++  gfx.mojom.Size coded_size;
++  gfx.mojom.Rect visible_rect;
++  gfx.mojom.Rect damage_rect;
++
++  SharedImageFormat format;
++  gfx.mojom.ColorSpace color_space;
++  skia.mojom.AlphaType alpha_type;
++  OffscreenOutputOrigin origin;
++  // Vulkan queue family that owns the image at the external handoff.
++  uint32 queue_family_index;
++  // Exact layout pair used by Viz's external ownership-release barrier.
++  uint32 producer_old_layout;
++  uint32 producer_new_layout;
++
++  // Owns duplicated native-pixmap plane descriptors for transfer to the
++  // external consumer.
++  gfx.mojom.NativePixmapHandle native_pixmap;
++  gfx.mojom.GpuFenceHandle acquire_fence;
++
++  mojo_base.mojom.TimeTicks frame_time;
++  uint64 swap_trace_id;
++};
++
++// Implemented by the privileged browser-side consumer.
++interface OffscreenOutputClient {
++  OnFrameAvailable(OffscreenOutputFrame frame);
++  OnOutputError(OffscreenOutputError error);
++};
++
++// Implemented by Viz for an explicitly requested exportable offscreen root.
++interface OffscreenOutput {
++  // Returns the consumer-completion fence for frame_token. A null fence is not
++  // permission to recycle the backing and is treated as a protocol error.
++  ReleaseFrame(uint64 frame_token, gfx.mojom.GpuFenceHandle release_fence);
++};
 diff --git a/skia/BUILD.gn b/skia/BUILD.gn
-index 8f1417a941..27f82f355c 100644
+index 8f1417a..27f82f3 100644
 --- a/skia/BUILD.gn
 +++ b/skia/BUILD.gn
 @@ -1216,6 +1216,7 @@ source_set("test_fonts") {
- 
+
  test("skia_unittests") {
    sources = [
 +    "ext/backdrop_replacement_unittest.cc",
@@ -1699,7 +2081,7 @@ index 8f1417a941..27f82f355c 100644
      "ext/geometry_unittest.cc",
 diff --git a/skia/ext/backdrop_replacement_unittest.cc b/skia/ext/backdrop_replacement_unittest.cc
 new file mode 100644
-index 0000000000..acdbad7024
+index 0000000..acdbad7
 --- /dev/null
 +++ b/skia/ext/backdrop_replacement_unittest.cc
 @@ -0,0 +1,83 @@
@@ -1793,7 +2175,7 @@ index 7fa802f..07f9c9f 100644
 @@ -812,6 +812,17 @@ public:
           */
          const SkColorSpace* fColorSpace = nullptr;
- 
+
 +        /**
 +         * If not null, the prior device is cleared within this local-coordinate path immediately
 +         * before the backdrop-initialized layer is restored. This lets an externally composited
@@ -1807,7 +2189,7 @@ index 7fa802f..07f9c9f 100644
 +
          /** preserves LCD text, creates with prior layer contents */
          SaveLayerFlags fSaveLayerFlags = 0;
- 
+
 @@ -2452,8 +2463,10 @@ private:
          sk_sp<SkDevice>                                fDevice;
          skia_private::STArray<1, sk_sp<SkImageFilter>> fImageFilters;
@@ -1816,7 +2198,7 @@ index 7fa802f..07f9c9f 100644
          bool                                           fIsCoverage;
          bool                                           fDiscard;
 +        bool                                           fBackdropReplacementAA;
- 
+
          // If true, the layer image is sized to include a 1px buffer that remains transparent
          // to allow for faster linear filtering under complex transforms.
 @@ -2462,8 +2475,11 @@ private:
@@ -1829,7 +2211,7 @@ index 7fa802f..07f9c9f 100644
                bool includesPadding);
 +        ~Layer();
      };
- 
+
      // Encapsulate state needed to restore from saveBehind()
 @@ -2501,6 +2517,8 @@ private:
          void newLayer(sk_sp<SkDevice> layerDevice,
@@ -1839,7 +2221,7 @@ index 7fa802f..07f9c9f 100644
 +                      bool backdropReplacementAA,
                        bool layerIsCoverage,
                        bool includesPadding);
- 
+
 diff --git a/third_party/skia/src/core/SkCanvas.cpp b/third_party/skia/src/core/SkCanvas.cpp
 index 2c6eb43..881e4d9 100644
 --- a/third_party/skia/src/core/SkCanvas.cpp
@@ -1868,7 +2250,7 @@ index 2c6eb43..881e4d9 100644
      // can be used as-is to draw the result of the filter to the dst device.
      SkASSERT(!fPaint.getImageFilter());
  }
- 
+
 +SkCanvas::Layer::~Layer() = default;
 +
  SkCanvas::BackImage::BackImage(sk_sp<SkSpecialImage> img, SkIPoint loc)
@@ -1894,7 +2276,7 @@ index 2c6eb43..881e4d9 100644
 @@ -1085,7 +1098,14 @@ void SkCanvas::internalSaveLayer(const SaveLayerRec& rec,
                                             rec.fBackdropTileMode);
      }
- 
+
 -    fMCRec->newLayer(std::move(newDevice), filters, restorePaint, coverageOnly, paddedLayer);
 +    SkASSERT(!rec.fBackdropReplacement || rec.fBackdrop);
 +    fMCRec->newLayer(std::move(newDevice),
@@ -1906,7 +2288,7 @@ index 2c6eb43..881e4d9 100644
 +                     paddedLayer);
      fQuickRejectBounds = this->computeDeviceClipBounds();
  }
- 
+
 @@ -1176,6 +1196,12 @@ void SkCanvas::internalRestore() {
          // internalSaveLayer and internalRestore.
          if (this->predrawNotify()) {
@@ -1931,7 +2313,7 @@ index db48e29..34354d6 100644
 +    SAVELAYERREC_HAS_BACKDROP_REPLACEMENT = 1 << 9,
 +    SAVELAYERREC_BACKDROP_REPLACEMENT_AA  = 1 << 10,
  };
- 
+
  enum SaveBehindFlatFlags {
 diff --git a/third_party/skia/src/core/SkPicturePlayback.cpp b/third_party/skia/src/core/SkPicturePlayback.cpp
 index f415d74..af39d5a 100644
@@ -1948,7 +2330,7 @@ index f415d74..af39d5a 100644
 +                        flatFlags & SAVELAYERREC_BACKDROP_REPLACEMENT_AA;
 +            }
              BREAK_ON_READ_ERROR(reader);
- 
+
              canvas->saveLayer(rec);
 diff --git a/third_party/skia/src/core/SkPicturePriv.h b/third_party/skia/src/core/SkPicturePriv.h
 index 844fa08..9eab8d1 100644
@@ -1959,7 +2341,7 @@ index 844fa08..9eab8d1 100644
      // v108: Serialize stable keys of runtime effects
      // v109: Extend SkWorkingColorSpaceShader to have alpha type + output control
 +    // v110: SaveLayer supports replacing a captured backdrop path on restore
- 
+
      enum Version {
          kPictureShaderFilterParam_Version   = 82,
 @@ -157,6 +158,7 @@ public:
@@ -1967,7 +2349,7 @@ index 844fa08..9eab8d1 100644
          kSerializeStableKeys                = 108,
          kWorkingColorSpaceOutput            = 109,
 +        kSaveLayerBackdropReplacement       = 110,
- 
+
          // Only SKPs within the min/current picture version range (inclusive) can be read.
          //
 @@ -181,7 +183,7 @@ public:
@@ -1978,7 +2360,7 @@ index 844fa08..9eab8d1 100644
 +        kCurrent_Version = kSaveLayerBackdropReplacement
      };
  };
- 
+
 diff --git a/third_party/skia/src/core/SkPictureRecord.cpp b/third_party/skia/src/core/SkPictureRecord.cpp
 index 1f69c0d..bf2a19e 100644
 --- a/third_party/skia/src/core/SkPictureRecord.cpp
@@ -1994,7 +2376,7 @@ index 1f69c0d..bf2a19e 100644
 +            flatFlags |= SAVELAYERREC_BACKDROP_REPLACEMENT_AA;
 +        }
 +    }
- 
+
      const size_t initialOffset = this->addDraw(SAVE_LAYER_SAVELAYERREC, &size);
      this->addInt(flatFlags);
 @@ -174,6 +181,9 @@ void SkPictureRecord::recordSaveLayer(const SaveLayerRec& rec) {
@@ -2006,7 +2388,7 @@ index 1f69c0d..bf2a19e 100644
 +    }
      this->validate(initialOffset, size);
  }
- 
+
 diff --git a/third_party/skia/src/core/SkRecordCanvas.cpp b/third_party/skia/src/core/SkRecordCanvas.cpp
 index b6f13ad..bc859d9 100644
 --- a/third_party/skia/src/core/SkRecordCanvas.cpp
@@ -2052,30 +2434,9 @@ index 86d11d4..02f4aa2 100644
 +    rec.fBackdropReplacementAA = r.backdropReplacementAA;
 +    fCanvas->saveLayer(rec);
 +}
- 
+
  template <> void Draw::draw(const SaveBehind& r) {
      SkCanvasPriv::SaveBehind(fCanvas, r.subset);
-diff --git a/gpu/command_buffer/service/shared_image/skia_vk_ozone_image_representation.cc b/gpu/command_buffer/service/shared_image/skia_vk_ozone_image_representation.cc
-index 55429ba..d8abfbc 100644
---- a/gpu/command_buffer/service/shared_image/skia_vk_ozone_image_representation.cc
-+++ b/gpu/command_buffer/service/shared_image/skia_vk_ozone_image_representation.cc
-@@ -286,8 +286,15 @@ SkiaVkOzoneImageRepresentation::GetEndAccessState() {
-     }
-     DCHECK_NE(queue_family_index, VK_QUEUE_FAMILY_IGNORED);
- 
-+    // The dedicated offscreen-export backing crosses a process/device
-+    // boundary. Give that contract a fixed layout instead of preserving an
-+    // implementation-dependent current layout that the consumer cannot know.
-+    const VkImageLayout end_layout =
-+        ozone_backing()->debug_label() == "OffscreenOutputExport"
-+            ? VK_IMAGE_LAYOUT_GENERAL
-+            : VK_IMAGE_LAYOUT_UNDEFINED;
-     return std::make_unique<skgpu::MutableTextureState>(
--        skgpu::MutableTextureStates::MakeVulkan(VK_IMAGE_LAYOUT_UNDEFINED,
-+        skgpu::MutableTextureStates::MakeVulkan(end_layout,
-                                                 queue_family_index));
-   }
-   return nullptr;
 diff --git a/third_party/skia/src/core/SkRecords.h b/third_party/skia/src/core/SkRecords.h
 index 5d5e65d..da07f01 100644
 --- a/third_party/skia/src/core/SkRecords.h
@@ -2089,3 +2450,43 @@ index 5d5e65d..da07f01 100644
         SkCanvas::SaveLayerFlags saveLayerFlags;
         SkScalar backdropScale;
         SkTileMode backdropTileMode;
+diff --git a/ui/compositor/compositor.h b/ui/compositor/compositor.h
+index 57c128d..f15810d 100644
+--- a/ui/compositor/compositor.h
++++ b/ui/compositor/compositor.h
+@@ -39,9 +39,11 @@
+ #include "components/viz/host/host_frame_sink_client.h"
+ #include "components/viz/service/display/software_output_device.h"
+ #include "mojo/public/cpp/bindings/associated_remote.h"
++#include "mojo/public/cpp/bindings/pending_receiver.h"
+ #include "mojo/public/cpp/bindings/pending_remote.h"
+ #include "services/viz/privileged/mojom/compositing/display_private.mojom.h"
+ #include "services/viz/privileged/mojom/compositing/external_begin_frame_controller.mojom.h"
++#include "services/viz/privileged/mojom/compositing/offscreen_output.mojom.h"
+ #include "services/viz/privileged/mojom/compositing/vsync_parameter_observer.mojom-forward.h"
+ #include "third_party/skia/include/core/SkColor.h"
+ #include "third_party/skia/include/core/SkM44.h"
+@@ -154,6 +156,15 @@ class COMPOSITOR_EXPORT CompositorDelegate {
+   virtual std::unique_ptr<viz::HostDisplayClient> CreateHostDisplayClient() = 0;
+   virtual bool UseProxyOutputDevice() = 0;
+
++  // Optionally creates the paired browser/Viz endpoints for an exportable
++  // offscreen root. Ordinary compositors leave this disabled. Implementations
++  // must initialize both endpoints before returning true.
++  virtual bool CreateOffscreenOutputEndpoints(
++      mojo::PendingRemote<viz::mojom::OffscreenOutputClient>* client,
++      mojo::PendingReceiver<viz::mojom::OffscreenOutput>* output) {
++    return false;
++  }
++
+  protected:
+   virtual ~CompositorDelegate() {}
+ };
+@@ -398,6 +409,7 @@ class COMPOSITOR_EXPORT Compositor
+       bool force,
+       base::OnceCallback<void(const viz::BeginFrameAck&)> callback);
+ #endif
++  bool AbortPendingExternalBeginFrame();
+
+   // Creates a CompositorMetricsTracker for tracking this Compositor.
+   CompositorMetricsTracker RequestNewCompositorMetricsTracker();

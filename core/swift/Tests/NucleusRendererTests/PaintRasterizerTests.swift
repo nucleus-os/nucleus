@@ -1,0 +1,319 @@
+import Testing
+@testable import NucleusRenderer
+import NucleusSkiaGraphiteBridge
+import NucleusRenderModel
+import NucleusTypes
+
+/// Pixel coverage for the decode half of the paint pipeline.
+///
+/// The encoder (`PaintPayload.append`, driven by `GraphicsContext`) and the
+/// Skia façade are each tested on their own. This is the seam between them —
+/// payload decode, point scaling, and shading construction — where the two
+/// sides can disagree without anything crashing: a transposed index yields a
+/// plausible wrong picture, and a producer test that only checks for a non-nil
+/// texture handle would still pass.
+///
+/// Runs on a CPU raster surface, so no GPU or Graphite recorder is involved.
+@Suite struct PaintRasterizerTests {
+    // MARK: - Harness
+
+    private func render(
+        width: Int32, height: Int32,
+        commands: [PaintDrawCommand],
+        payload: [UInt8],
+        scaleX: Float = 1, scaleY: Float = 1,
+        resolveEffect: @escaping (UInt64) -> nucleus.skia.RuntimeEffect? = { _ in nil }
+    ) -> [UInt8] {
+        let surface = nucleus.skia.makeRasterSurface(width, height)
+        guard surface.isValid() else { return [] }
+        let canvas = surface.getCanvas()
+        var clear = nucleus.skia.Color()
+        clear.r = 0; clear.g = 0; clear.b = 0; clear.a = 1
+        canvas.clear(clear)
+
+        PaintRasterizer.draw(
+            commands: commands, payload: payload, onto: canvas,
+            scaleX: scaleX, scaleY: scaleY,
+            resolveImage: { _ in nil }, resolveEffect: resolveEffect)
+
+        var pixels = [UInt8](repeating: 0, count: Int(width * height) * 4)
+        let ok = pixels.withUnsafeMutableBufferPointer { buf in
+            surface.readPixelsRGBA(buf.baseAddress, buf.count, Int32(width * 4))
+        }
+        return ok ? pixels : []
+    }
+
+    private func pixel(
+        _ pixels: [UInt8], _ x: Int, _ y: Int, width: Int
+    ) -> (UInt8, UInt8, UInt8, UInt8) {
+        let i = (y * width + x) * 4
+        return (pixels[i], pixels[i + 1], pixels[i + 2], pixels[i + 3])
+    }
+
+    /// Encode one path command the way `GraphicsContext` does.
+    private func pathCommand(
+        verbs: [PaintPathVerb],
+        points: [Float],
+        into payload: inout [UInt8],
+        stroke: Bool = false,
+        strokeWidth: Float = 0,
+        shading: PaintDrawShading = .color,
+        scalars: [Float] = [],
+        colors: [Color] = [],
+        effectHandle: UInt64 = 0,
+        color: Float4 = (1, 1, 1, 1)
+    ) -> PaintDrawCommand {
+        let slice = PaintPayload.append(
+            to: &payload, verbs: verbs, points: points, scalars: scalars, colors: colors)
+        return PaintDrawCommand(
+            kind: .path, x: 0, y: 0, w: 0, h: 0,
+            strokeWidth: strokeWidth, color: color,
+            effectHandle: effectHandle,
+            payloadOffset: slice.offset, payloadLength: slice.length,
+            stroke: stroke, antialias: false, shading: shading)
+    }
+
+    private func rectPath(_ x: Float, _ y: Float, _ w: Float, _ h: Float)
+        -> ([PaintPathVerb], [Float]) {
+        ([.move, .line, .line, .line, .close],
+         [x, y, x + w, y, x + w, y + h, x, y + h])
+    }
+
+    // MARK: - Geometry
+
+    @Test func aFilledPathPaintsWhereItWasAuthored() {
+        var payload: [UInt8] = []
+        let (verbs, points) = rectPath(10, 10, 20, 20)
+        let command = pathCommand(verbs: verbs, points: points, into: &payload)
+
+        let pixels = render(width: 40, height: 40, commands: [command], payload: payload)
+        #expect(!pixels.isEmpty)
+        #expect(pixel(pixels, 20, 20, width: 40).0 > 200, "inside is painted")
+        #expect(pixel(pixels, 2, 2, width: 40).0 == 0, "outside is not")
+    }
+
+    /// Points are authored in layer-local units and scaled into raster space.
+    /// A geometry that lands correctly at 1x but not at 2x means the scale is
+    /// being applied to the wrong floats.
+    @Test func geometryScalesIntoRasterSpace() {
+        var payload: [UInt8] = []
+        let (verbs, points) = rectPath(5, 5, 10, 10)
+        let command = pathCommand(verbs: verbs, points: points, into: &payload)
+
+        let pixels = render(
+            width: 40, height: 40, commands: [command], payload: payload,
+            scaleX: 2, scaleY: 2)
+        #expect(!pixels.isEmpty)
+        // Authored 5..15 → raster 10..30.
+        #expect(pixel(pixels, 20, 20, width: 40).0 > 200, "scaled interior is painted")
+        #expect(pixel(pixels, 12, 12, width: 40).0 > 200, "scaled near-corner is painted")
+        #expect(pixel(pixels, 6, 6, width: 40).0 == 0, "unscaled position is not painted")
+    }
+
+    /// An arc verb packs (origin, size, startAngle, sweepAngle). The first four
+    /// floats scale; the two angles must not. Scaling the angles would rotate
+    /// and resize the sweep — which reads as "the ring is wrong" rather than as
+    /// a failure.
+    @Test func arcAnglesAreNotScaledWithGeometry() {
+        // A full circle: sweeping 360° is scale-invariant in *shape*, so if the
+        // angles were scaled the sweep would no longer close the circle.
+        var payload: [UInt8] = []
+        // move (2 floats) + arc (6: oval origin, oval size, start, sweep).
+        let command = pathCommand(
+            verbs: [.move, .arc],
+            points: [10, 10, /* oval */ 10, 10, 20, 20, /* angles */ 0, 360],
+            into: &payload)
+
+        let pixels = render(
+            width: 80, height: 80, commands: [command], payload: payload,
+            scaleX: 2, scaleY: 2)
+        #expect(!pixels.isEmpty)
+        // Authored oval 10..30 → raster 20..60; its centre is painted.
+        #expect(pixel(pixels, 40, 40, width: 80).0 > 200, "the full circle is filled")
+        #expect(pixel(pixels, 4, 4, width: 80).0 == 0, "nothing outside the oval")
+    }
+
+    /// Regression: Skia's `arcTo` emits nothing at a full sweep, so a
+    /// 360-degree arc silently disappeared. That is not an edge case — it is
+    /// `Path.addEllipse` (every dot indicator) and a progress ring at 100%.
+    /// The facade now converts a full sweep to an oval.
+    @Test func aFullSweepArcRendersRatherThanVanishing() {
+        for sweep in [Float(360), -360, 540] {
+            var payload: [UInt8] = []
+            let command = pathCommand(
+                verbs: [.arc], points: [10, 10, 20, 20, 0, sweep], into: &payload)
+            let pixels = render(
+                width: 40, height: 40, commands: [command], payload: payload)
+            #expect(!pixels.isEmpty)
+            #expect(
+                pixel(pixels, 20, 20, width: 40).0 > 200,
+                "a \(sweep)-degree sweep must render")
+        }
+    }
+
+    /// A partial sweep still goes through `arcTo` and must not be filled like a
+    /// closed shape.
+    @Test func aPartialSweepArcIsNotAFullOval() {
+        var payload: [UInt8] = []
+        let command = pathCommand(
+            verbs: [.arc], points: [10, 10, 20, 20, 0, 180],
+            into: &payload, stroke: true, strokeWidth: 2)
+        let pixels = render(width: 40, height: 40, commands: [command], payload: payload)
+        #expect(!pixels.isEmpty)
+        #expect(pixel(pixels, 20, 14, width: 40).0 == 0, "the unswept half stays clear")
+    }
+
+    @Test func aStrokedPathLeavesItsInteriorUnpainted() {
+        var payload: [UInt8] = []
+        let (verbs, points) = rectPath(10, 10, 20, 20)
+        let command = pathCommand(
+            verbs: verbs, points: points, into: &payload,
+            stroke: true, strokeWidth: 2)
+
+        let pixels = render(width: 40, height: 40, commands: [command], payload: payload)
+        #expect(!pixels.isEmpty)
+        #expect(pixel(pixels, 20, 10, width: 40).0 > 200, "the edge is stroked")
+        #expect(pixel(pixels, 20, 20, width: 40).0 == 0, "the interior stays clear")
+    }
+
+    // MARK: - Shading
+
+    /// Gradient parameters are split across payload regions: geometry and stops
+    /// in the scalar region, colors in the color region. If the decoder read
+    /// the stop offset wrong, the ramp would run the wrong way or not at all.
+    @Test func aLinearGradientRampsAlongItsAuthoredAxis() {
+        var payload: [UInt8] = []
+        let (verbs, points) = rectPath(0, 0, 40, 40)
+        let command = pathCommand(
+            verbs: verbs, points: points, into: &payload,
+            shading: .linearGradient,
+            scalars: [0, 0, 40, 0, 0, 1],  // from (0,0) to (40,0), stops at 0 and 1
+            colors: [Color(r: 0, g: 0, b: 0, a: 1), Color(r: 1, g: 1, b: 1, a: 1)])
+
+        let pixels = render(width: 40, height: 40, commands: [command], payload: payload)
+        #expect(!pixels.isEmpty)
+        let left = pixel(pixels, 1, 20, width: 40).0
+        let right = pixel(pixels, 38, 20, width: 40).0
+        #expect(right > left, "the ramp runs along the authored axis")
+        #expect(right > 200 && left < 60, "the ramp spans its full range")
+    }
+
+    /// Gradient geometry lives in the same authored space as the path, so it
+    /// has to scale with it. A gradient that did not scale would compress into
+    /// a corner of a scaled shape.
+    @Test func gradientGeometryScalesWithTheGeometry() {
+        var payload: [UInt8] = []
+        let (verbs, points) = rectPath(0, 0, 20, 20)
+        let command = pathCommand(
+            verbs: verbs, points: points, into: &payload,
+            shading: .linearGradient,
+            scalars: [0, 0, 20, 0, 0, 1],
+            colors: [Color(r: 0, g: 0, b: 0, a: 1), Color(r: 1, g: 1, b: 1, a: 1)])
+
+        let pixels = render(
+            width: 40, height: 40, commands: [command], payload: payload,
+            scaleX: 2, scaleY: 2)
+        #expect(!pixels.isEmpty)
+        // The ramp must still span the full scaled width, not stop halfway.
+        #expect(pixel(pixels, 38, 20, width: 40).0 > 200, "the ramp reaches the far edge")
+    }
+
+    @Test func aRuntimeEffectShadesThePath() {
+        let effect = nucleus.skia.makeRuntimeEffect(
+            "half4 main(float2 p) { return half4(1, 0, 0, 1); }")
+        #expect(effect.isValid())
+
+        var payload: [UInt8] = []
+        let (verbs, points) = rectPath(0, 0, 20, 20)
+        let command = pathCommand(
+            verbs: verbs, points: points, into: &payload,
+            shading: .effect, effectHandle: 7)
+
+        let pixels = render(
+            width: 20, height: 20, commands: [command], payload: payload,
+            resolveEffect: { $0 == 7 ? effect : nil })
+        #expect(!pixels.isEmpty)
+        let p = pixel(pixels, 10, 10, width: 20)
+        #expect(p.0 > 200 && p.1 < 50, "the effect painted red")
+    }
+
+    // MARK: - Clip and state
+
+    @Test func clipPathConstrainsLaterCommands() {
+        var payload: [UInt8] = []
+        let (clipVerbs, clipPoints) = rectPath(0, 0, 20, 40)
+        let clipSlice = PaintPayload.append(
+            to: &payload, verbs: clipVerbs, points: clipPoints)
+        let clip = PaintDrawCommand(
+            kind: .clipPath, x: 0, y: 0, w: 0, h: 0,
+            payloadOffset: clipSlice.offset, payloadLength: clipSlice.length,
+            antialias: false)
+
+        let (fillVerbs, fillPoints) = rectPath(0, 0, 40, 40)
+        let fill = pathCommand(verbs: fillVerbs, points: fillPoints, into: &payload)
+
+        let pixels = render(
+            width: 40, height: 40, commands: [clip, fill], payload: payload)
+        #expect(!pixels.isEmpty)
+        #expect(pixel(pixels, 10, 20, width: 40).0 > 200, "inside the clip paints")
+        #expect(pixel(pixels, 30, 20, width: 40).0 == 0, "outside the clip does not")
+    }
+
+    /// `save`/`restore` scope a clip. Without the restore the second fill would
+    /// still be clipped — which is what an unbalanced stack looks like.
+    @Test func restoreUndoesAClip() {
+        var payload: [UInt8] = []
+        let save = PaintDrawCommand(kind: .save, x: 0, y: 0, w: 0, h: 0)
+
+        let (clipVerbs, clipPoints) = rectPath(0, 0, 20, 40)
+        let clipSlice = PaintPayload.append(
+            to: &payload, verbs: clipVerbs, points: clipPoints)
+        let clip = PaintDrawCommand(
+            kind: .clipPath, x: 0, y: 0, w: 0, h: 0,
+            payloadOffset: clipSlice.offset, payloadLength: clipSlice.length,
+            antialias: false)
+
+        let restore = PaintDrawCommand(kind: .restore, x: 0, y: 0, w: 0, h: 0)
+        let (fillVerbs, fillPoints) = rectPath(0, 0, 40, 40)
+        let fill = pathCommand(verbs: fillVerbs, points: fillPoints, into: &payload)
+
+        let pixels = render(
+            width: 40, height: 40,
+            commands: [save, clip, restore, fill], payload: payload)
+        #expect(!pixels.isEmpty)
+        #expect(
+            pixel(pixels, 30, 20, width: 40).0 > 200,
+            "after restore the clip no longer applies")
+    }
+
+    // MARK: - Malformed input
+
+    /// A payload slice that does not decode must drop that draw, not paint
+    /// arbitrary geometry from misread bytes. The surrounding commands still
+    /// draw.
+    @Test func anUndecodableCommandIsDroppedWithoutAffectingOthers() {
+        var payload: [UInt8] = []
+        let (verbs, points) = rectPath(0, 0, 40, 40)
+        let good = pathCommand(verbs: verbs, points: points, into: &payload)
+
+        // Length past the end of the blob.
+        let bad = PaintDrawCommand(
+            kind: .path, x: 0, y: 0, w: 0, h: 0,
+            payloadOffset: 0, payloadLength: UInt32(payload.count + 64))
+
+        let pixels = render(
+            width: 40, height: 40, commands: [bad, good], payload: payload)
+        #expect(!pixels.isEmpty)
+        #expect(pixel(pixels, 20, 20, width: 40).0 > 200, "the valid command still drew")
+    }
+
+    @Test func aCommandWhoseVerbsOverConsumePointsIsDropped() {
+        var payload: [UInt8] = []
+        // Two verbs need four floats; supply two.
+        let command = pathCommand(verbs: [.move, .line], points: [0, 0], into: &payload)
+
+        let pixels = render(width: 20, height: 20, commands: [command], payload: payload)
+        #expect(!pixels.isEmpty)
+        #expect(pixel(pixels, 10, 10, width: 20).0 == 0, "nothing was drawn")
+    }
+}

@@ -205,26 +205,8 @@ extension ContentSample {
     }
 }
 
-// MARK: - PaintCommand ↔ NucleusTypes.PaintCommand
-
-extension PaintCommand {
-    package var wireValue: NucleusTypes.PaintCommand {
-        NucleusTypes.PaintCommand(
-            kind: kind,
-            reserved: 0,
-            x: x,
-            y: y,
-            w: w,
-            h: h,
-            radius: radius,
-            strokeWidth: strokeWidth,
-            fontSize: fontSize,
-            color: color,
-            imageHandle: imageHandle,
-            textLayoutHandle: textLayoutHandle,
-        )
-    }
-}
+// `PaintCommand` is `NucleusTypes.PaintCommand` itself (see PaintCommand.swift);
+// no adapter.
 
 // `AnimationCurve` is `NucleusTypes.AnimationCurve` itself (see Animation.swift).
 

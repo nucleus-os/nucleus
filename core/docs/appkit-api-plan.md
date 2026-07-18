@@ -27,8 +27,24 @@ The forcing function is Noctalia, a shipping 339k-LOC C++ Wayland shell that alr
 the Nucleus render SDK, shares the Clang/libc++ ABI contract, uses Nucleus SkParagraph for
 text, and renders Vulkan 1.4/Graphite. Its `src/ui` is *already* AppKit-shaped — retained
 class tree, imperative construction, measure/arrange, hit testing, dirty propagation — with
-~40 controls proven in production. It is both the best available spec for what this API must
-contain and the acceptance test for whether it is real.
+~40 controls proven in production. It is the best available behavioral specification for what
+this API must contain; the native Swift shell port is the production acceptance client that
+proves whether the API is real.
+
+The first production consumer is a native Swift port of Noctalia built directly with these
+APIs. React Native is not the target view hierarchy for that port and is not on its completion
+path. The existing RN runtime remains a build client and integration fixture; Phase 6 keeps it
+coherent when the old paint vocabulary is deleted. Any later migration of selected native
+shell surfaces to React Native is a separate post-parity decision made against the completed
+Swift product.
+
+The port grows inside the existing `shell/` SwiftPM package; it is not a new package. Phase 5
+creates a `NucleusShellProduct` target for native views, controllers, and product composition.
+That target imports public `NucleusUI` and app-facing shell models, but not `NucleusLayers`,
+`NucleusRenderer`, or React Native. `NucleusShellRuntime` remains the privileged Wayland/render
+host, and the `NucleusShell` executable remains a thin bootstrap. This module boundary is what
+“out-of-module” means below: the production client lives outside package `Nucleus`, even though
+both packages remain in one workspace.
 
 The gap is not "missing controls". Controls are the cheap, well-specified part. Four
 structural blockers:
@@ -46,17 +62,29 @@ structural blockers:
 
 **The renderer is far ahead of the API.** `nucleus::skia::Canvas` already has
 `drawShaderRect`, and `makeRuntimeShader(sksl, uniforms, count)` already compiles SkSL —
-`Backdrop.swift:58` uses it for vibrancy. `drawShaderRect` has **zero Swift call sites**.
-`Paint` already carries `blend`/`blurSigma`/`saturation`, but `drawPaintCommand`
-(`TextureProducer.swift:255`) sets **only** `paint.color`. The capability exists; the wire
-cannot express it.
+`Backdrop.swift:58` uses it for vibrancy. `Paint` already carries
+`blend`/`blurSigma`/`saturation`, but `drawPaintCommand` sets **only** `paint.color`. The
+capability exists; the wire cannot express it.
+
+> **Resolved in Phases 2–5.** The POD carries the full style set, `drawPaintCommand`
+> populates all of it, and paths, gradients, strokes, and compiled SkSL are reachable,
+> pixel-tested, and now *emitted* — `GraphicsContext` is the authoring surface and
+> `NucleusShellProduct` is the client using it.
 
 **The leak is already visible.** `NucleusReactRuntimeCxx` is the real out-of-module
 content-emitting client, and it cannot override `displayCommands`, so
 `ReactLayerContentCommitter.swift` reaches around the pipeline via `@_spi backingLayer` +
 raw `NucleusLayers.PaintContent`, duplicating `ViewLayerPublisher`'s lowering including a
 copied `paintKind` switch (`:58`). It exists *only* because `displayCommands` is `package`.
-Retiring it is the acceptance test for the drawing work.
+Retiring that duplication is Phase 6's repository-coherence gate. The drawing work is accepted
+by the native `NucleusShellProduct` client authoring and rendering real shell views through the
+public API.
+
+> **Traced before Phase 2; the framing was incomplete.** RN does not use
+> `ViewLayerPublisher` at all — it builds its own layer tree and registers paint per
+> component. The committer duplicated *lowering* (deleted in Phase 5, when RN moved onto the
+> shared seam) and carries RN's only *paint-registration* path (now `PaintRegistration`).
+> What is left for Phase 6 is the mount-architecture change, not the duplication.
 
 **The paint path has never had a client that could catch its bugs.** Two verified latent
 defects, both unobservable today for the same reason:
@@ -67,19 +95,29 @@ defects, both unobservable today for the same reason:
   `5 < 10` → nil. Every other `layout()` in the tree places children at `x: 0`
   (`ShellOverlayMenuView.swift:253, :334`), using only `bounds.size`. `StackView` is the only
   code in the tree that consumes `bounds.origin`, and it is simply wrong.
-- **Borders render as fills.** `styleCommands` (`ViewStyle.swift:58`) emits `strokeWidth`;
+- **Borders render as fills.** `styleCommands` (`ViewStyle.swift:66`) emits `strokeWidth`;
   `drawPaintCommand` never sets `paint.style`, and Skia defaults to fill. Zero production
   blast radius — `Border` is set only in `ViewTests.swift:124, :532`, which assert the
   *command*, never pixels.
+
+  > **Closed end to end.** Phase 3 made the rasterizer honor a stroke request; Phase 5's
+  > `ViewStyle.draw(in:bounds:)` requests it. Guarded by a command-level assertion that the
+  > border carries `.stroke` while the background does not, and by pixel tests on the
+  > stroked rounded rect — including a negative one proving a stroke *width* alone does not
+  > stroke.
 
 Neither is caught because the overlay does its own hit testing and never sets a border. That
 is the thesis of this work: the API is untested because it has no demanding client.
 
 The compositor overlay overrides `layout()` six times and nothing else — no `draw`, no
 `displayCommands`, no command construction. Making `displayCommands` public is a
-**zero-source-change** for it. It proves the *publication* API (Phase 11), not drawing.
+**zero-source-change** for it. It proves the *publication* API (Phase 7), not drawing.
 
-Each phase lands with a concrete deletion as its proof, so nothing is ever half-wired.
+Phases 2–4 are deliberate pipeline groundwork: they make the renderer capability complete and
+headless-testable before the authoring client arrives. Starting with Phase 5, each restructuring
+lands with a concrete deletion and each newly exposed capability lands with a real native client
+and behavioral coverage. No surface added from Phase 5 onward remains half-wired or justified
+only by a hypothetical future client.
 
 ---
 
@@ -89,16 +127,30 @@ Each phase lands with a concrete deletion as its proof, so nothing is ever half-
 |---|---|---|
 | 0 | Render-SDK link contract | **complete** |
 | 1 | The error contract | **complete** |
-| 2 | Widen the paint POD, delete the wire fiction | pending |
-| 3 | Skia facade and rasterizer | pending |
-| 4 | RuntimeEffectRegistrar | pending |
-| 5 | GraphicsContext and the vocabulary collapse | pending |
+| 2 | Widen the paint POD, delete the wire fiction | **complete** |
+| 3 | Skia facade and rasterizer | **complete** |
+| 4 | RuntimeEffectRegistrar | **complete** |
+| 5 | GraphicsContext and the vocabulary collapse | **complete** |
 | 6 | Retire the RN committer | pending |
-| 7 | Event vocabulary and responder wiring | pending |
-| 8 | Layout: measure/arrange and flex | pending |
-| 9 | ScrollView, the capstone | pending |
-| 10 | IME and text editing | pending |
-| 11 | Publication and hosted-surface de-SPI | pending |
+| 7 | Publication and native shell hosting | pending |
+| 8 | Event vocabulary and responder wiring | pending |
+| 9 | Layout: measure/arrange and flex | pending |
+| 10 | TextField and input-method foundation | pending |
+| 11 | ScrollView, the interaction capstone | pending |
+| 12 | TextView and multiline editing | pending |
+
+### Where this stands
+
+Phases 0–5 built the pipeline and the API on top of it. Drawing is now reachable by a client:
+`NucleusShellProduct` in `shell/` authors real shell chrome — paths, arcs, gradients, strokes,
+caps — against public `NucleusUI` alone, and its tests are the out-of-package authoring proof.
+
+Both carry-forward constraints are discharged. `PaintRegistration` is the tree-independent seam
+Phase 6 needs, and React Native already consumes it. Borders stroke end to end.
+
+The remaining phases are additive rather than structural: publication (7), input (8), layout (9),
+and then the text/scroll/editing stack (10–12). Each lands with a real native client, per the
+principle above.
 
 ## Phase 0 — Render-SDK link contract — complete
 
@@ -155,303 +207,400 @@ site throws. `shell` required zero source changes. `ActionTests` rewritten to th
 
 **Landed with:** every `try` at an overlay construction site deleted.
 
-## Phase 2 — Widen the paint POD, delete the wire fiction
+## Phase 2 — Widen the paint POD, delete the wire fiction — complete
 
-There is no wire. `NucleusTypes/Types.swift` is hand-maintained with no IDL or codegen;
-`PaintCommand` is passed as a `Span` between Swift modules **in the same process**. No
-serialization, no versioning, no second implementation. "Wire-stable discriminants"
-(`RenderPaintContent.swift:13`) describes an ABI that was never load-bearing.
+The premise held, and more strongly than the plan claimed. `nucleus_paint_command`,
+`nucleus_paint_command_kind`, and `artifact_store` appear **nowhere in the tree except the
+comments that reference them** — no C header, no second implementation, no generator over
+`Types.swift`. `PaintCommand` is a `Span` passed between Swift modules in one process. The
+"wire-stable discriminants" constraint was preserving compatibility with something that no
+longer exists.
 
-- **Widen `NucleusTypes.PaintCommand`**: drop `reserved`; add `payloadOffset: UInt32`,
-  `payloadLength: UInt32`, `effectHandle: UInt64`, `_blend: UInt32`, `_flags: UInt32`
-  (fill/stroke, antialias, even-odd), `alpha`, `blurSigma`, `saturation: Float`.
-- **Renumber `PaintCommandKind` densely.** Delete the `0`/`3` gaps and `.none`.
-- **Delete the silent-drop policy.** `paintDrawCommandKind(_:) -> PaintDrawCommandKind?`
-  returning nil and `continue`-ing (`SwiftResourceHostConformers.swift:54`) is
-  wire-versioning for a wire that doesn't exist. In-process, an unknown discriminant is a
-  programmer error currently manifesting as a silently missing draw. Make the decode an
-  **exhaustive switch with no `default`**, so the compiler forces every downstream update.
-  Highest-leverage change here.
-- `PaintContentRegistrar.register` takes a parallel payload blob alongside the command span.
-  The recorded unit is a `PaintRecording`: `(commands, payload, retained: [AnyObject])`, the
-  side table keeping text layouts / images / effects alive across registration.
-  `withWireCommands` (`Content.swift:196`) becomes `withWireRecording`.
+- **`PaintCommandKind` renumbered densely** (`rect` 0 … `textLayout` 4). The `0`/`3` gaps and
+  `.none` are gone.
+- **`PaintCommand` widened**: `reserved` deleted; `kind` is now the **stored enum** rather
+  than a `_kind: UInt32` plus a `?? .none` accessor that could silently coerce a bad value.
+  Added `flags` (`stroke`/`antialias`/`evenOddFill`), `blend`, `alpha`, `blurSigma`,
+  `saturation`, `effectHandle`, `payloadOffset`, `payloadLength`.
+- **`NucleusLayers.PaintCommand` collapsed to a typealias.** Beyond the plan as written, but
+  squarely its intent: the domain struct was a field-for-field copy whose `.wireValue` was a
+  pure identity map. It is now `NucleusTypes.PaintCommand` itself — the same treatment `Color`
+  and `PaintCommandKind` already had in that exact file. The identity bridge is deleted and
+  `withWireCommands` maps nothing, so the widened fields were added once instead of twice.
+  This removes one of the four near-identical structs Phase 5 was scheduled to collapse.
+- **The silent-drop policy is gone.** `paintDrawCommandKind(_:) -> PaintDrawCommandKind?` is
+  deleted. Translation is two exhaustive switches with no `default`, so an added kind or
+  blend mode is a compile error at every site that must learn it.
+- **`PaintDrawCommand` widened to match**, and its hand-written `==` — hand-written only
+  because `Float4` is a tuple — now covers **every** stored property. This is the
+  re-registration gate; a field omitted there makes two visually different commands compare
+  equal and silently drops the repaint.
+- `PaintDrawBlendMode` is duplicated into `NucleusRenderModel` rather than imported, because
+  that module deliberately resolves no dependencies (`core/Package.swift:244-247`) — the same
+  posture `PaintDrawCommandKind` already had toward `PaintCommandKind`.
 
-**Encoding rationale — split by lifetime, not by data type.** Per-frame variable-length data
-(path verbs/points, gradient stops, uniform values) rides the payload blob at
-`offset+length`. Stable expensive resources (images, text layouts, SkSL programs) get handle
-registrars. `ImageRegistrar` works because a path is a stable identity, decoded lazily,
-shared, refcounted. A path built inside `draw(in:)` has none of those: no identity, used
-once, dies with the command list — handle-minting it means thousands of retain/release
-round-trips per frame. SkSL is the opposite: 15 stable assets, expensive compilation, reused
-every frame, so it gets a real registrar while its *uniforms* ride the blob.
+**Phase 1 residue swept.** Phase 1 verified only NucleusUI and the overlay; `NucleusApp`,
+`react-native`, `shell`, and the test targets were never rebuilt against the new signatures.
+Cleared 2 warnings in `NucleusApp/WindowGroup.swift`, 7 in `NucleusReactRuntimeCxx`
+(including a `do`/`catch` around `addSubview` that had been swallowing an error and was by
+then unreachable), 1 in `NucleusShellRuntime/ShellHost.swift`, and 219 across the NucleusUI
+test targets.
 
-Files: `NucleusTypes/Types.swift` (`:143`, `:1012`),
-`NucleusRenderModel/RenderPaintContent.swift`, `NucleusAppHostProtocols/HostProtocols.swift`,
-`NucleusAppHostBundle/SwiftResourceHostConformers.swift`,
-`NucleusLayers/{Content,PaintCommand,DirectBridge,Host}.swift`.
+`RenderPaintContentTests`' discriminant-mapping assertions were deleted — they pinned the
+exact fiction being removed. Replaced with two behavioral tests: one varying every field of
+`PaintDrawCommand` in turn to prove each participates in equality, and one pinning that
+commands differing only in payload slice are unequal.
 
-**Lands with:** the silent-drop `guard let … else { continue }` deleted. Nothing new is
-drawable; every existing draw still works.
+**Landed with:** the silent-drop `guard let … else { continue }` deleted, plus the
+`NucleusLayers.PaintCommand` duplicate and its identity bridge. Nothing new is drawable;
+every existing draw still works.
 
-## Phase 3 — Skia facade and rasterizer
+## Phase 3 — Skia facade and rasterizer — complete
 
-To `NucleusSkiaGraphite/cxx/include/NucleusSkiaGraphite/Graphite.hpp` + `Graphite.cpp`:
+Added to `Graphite.hpp`/`Graphite.cpp`:
 
-- **`class Path`** (Impl-holding facade, the existing `Shader` pattern), built POD-in:
-  `Path makePath(const uint8_t* verbs, size_t, const float* points, size_t, bool evenOdd)`.
-- `Canvas::drawPath(const Path&, Paint)`, `Canvas::clipPath(const Path&, bool antialias)`.
-- **No `drawArc`.** Add an `arcTo` verb to the path vocabulary (`SkPath::arcTo` exists).
-  Spinner and countdown ring become *a stroked path with an arc verb* — one primitive, one
-  switch case, rather than a bespoke facade call and a fifth enum arm each.
-- **`Paint` gains** `style` (fill/stroke), `strokeWidth`, `strokeCap`, `strokeJoin`, `miter`.
-  This fixes borders-render-as-fills.
-- `Canvas::concat(const float m[9])` (SkMatrix row-major). `translate`/`scale`/`rotate` are
-  just concat.
-- **Gradients as `Shader` factories** returning the existing `Shader` type:
-  `makeLinearGradient`, `makeRadialGradient`, `makeSweepGradient`.
-- `Canvas::drawPathWithShader(const Path&, const Shader&, Paint)` — unifies gradients and
-  SkSL: both are "a Shader bound to a draw". `drawShaderRect` stays for its sole caller,
-  `Backdrop.swift:58`.
-- Blend/blur/saturation need **zero facade work** — they become reachable the moment
-  `drawPaintCommand` populates them.
+- **`class Path`** (Impl-holding facade, the existing `Shader` pattern), built POD-in via
+  `makePath(verbs, verbCount, points, pointCount, evenOdd)`. A verb array that runs past the
+  supplied points returns an invalid path rather than partial geometry — a malformed encoding
+  fails visibly instead of rendering wrong.
+- `Canvas::drawPath`, `clipPath`, `drawPathWithShader`, and `concat(const float m[9])`.
+- **No `drawArc`.** `arcTo` is a path verb consuming the oval rect plus start/sweep angles, so
+  a spinner or countdown ring is a stroked path — one primitive, one switch case.
+- **`Paint` gained** `style`, `strokeWidth`, `strokeCap`, `strokeJoin`, `miter`. This is the
+  fix for borders-render-as-fills.
+- **Gradients as `Shader` factories** — `makeLinearGradient`, `makeRadialGradient`,
+  `makeSweepGradient`. Note this Skia carries the newer `SkGradient`/`SkShaders::` API, not
+  `SkGradientShader`; the factories build an `SkGradient::Colors` span. `makeSweepGradient`
+  rejects an inverted angle range up front, because `SkShaders::SweepGradient` returns null
+  there and would otherwise surface as a silently missing draw.
 
-`TextureProducer` (already `.interoperabilityMode(.Cxx)`) decodes the payload slice and calls
-`makePath`. `NucleusRenderModel` stores `payload: [UInt8]` and never interprets it, so its
-zero-dependency invariant (`core/Package.swift:247`) holds by construction — the identical
-posture `makeRuntimeShader` already has.
+**`TextureProducer` now populates the whole paint.** `drawPaintCommand` set only
+`paint.color`; it now carries alpha, blend, blur, saturation, antialias, stroke style, and
+stroke width. Everything Phase 2 widened is consumed here — the capability existed in the
+rasterizer all along and was being dropped at the last step.
 
-No SkPath caching initially: `producePaintCommands` only re-runs when the paint handle
-changes, and the texture is already cached by `(layerId, revision)`. A speculative LRU is
-complexity bought without measurement.
+**`makeRasterSurface` added, beyond the plan as written.** `makeOffscreenSurface` hangs off
+the Graphite context and so needs a GPU; without a CPU raster target none of this drawing
+work could be pixel-tested at all, which would have broken the GPU-free-to-test invariant
+exactly where it matters most. `Surface::readPixelsRGBA` reads it back, mirroring
+`Image::readPixelsRGBA`.
 
-Files: `Graphite.hpp`, `Graphite.cpp`, `NucleusRenderer/render/TextureProducer.swift`.
+**Landed with:** `lineRect` deleted. `.line` synthesized an axis-aligned rect sized to the
+stroke width and could express neither a diagonal nor a cap nor a join; it is now a real
+stroked two-point path.
 
-**Lands with:** `lineRect` (`TextureProducer.swift:276`) deleted — `.line` exists only to
-fake strokes. The renderer can now draw everything; nothing upstream emits it yet.
+11 pixel tests in `NucleusSkiaGraphiteTests`, run headless against the full static Skia
+archive set. The load-bearing one is `strokedPathLeavesItsInteriorUnpainted`: it asserts the
+edge *is* painted and the interior is *not*, so it cannot pass by reading back an empty
+buffer, and it fails if `style` ever defaults back to fill. That is new coverage — nothing in
+the tree had ever rendered a border.
 
-## Phase 4 — RuntimeEffectRegistrar
+## Phase 4 — RuntimeEffectRegistrar — complete
 
-Reach the SkSL capability that already exists. Compile-on-first-use behind a handle via
-`makeRuntimeShader`; a `RuntimeEffectStore` mirroring `PaintContentStore`; a `RuntimeEffect`
-handle type mirroring `ImageHandle`. Lands before the API so `GraphicsContext` vends it on
-day one.
+**The plan's approach did not work, and the reason is structural.** It called for
+compile-on-first-use "via `makeRuntimeShader`", but that call compiles the SkSL *and* binds
+uniforms in one step, returning a `Shader`. Uniforms ride the per-frame payload blob and
+change every frame; the program does not. Routing through `makeRuntimeShader` would have
+recompiled every SkSL program on every draw — precisely the cost the registrar exists to
+avoid — while looking like it was caching.
 
-Files: `NucleusAppHostProtocols/HostProtocols.swift`, `NucleusRenderModel/`,
-`NucleusAppHostBundle/SwiftResourceHostConformers.swift`, `NucleusRenderer/`,
-`NucleusLayers/Content.swift`.
+So the facade gained a compile/bind split first:
 
-## Phase 5 — GraphicsContext and the vocabulary collapse
+- **`class RuntimeEffect`** wrapping `sk_sp<SkRuntimeEffect>`, built by
+  `makeRuntimeEffect(sksl)`, vending `makeShader(uniforms, count)` and
+  `makeShaderWithImage(...)`.
+- `makeRuntimeShader` and `makeRuntimeShaderWithImage` are retained for `Backdrop.swift`
+  (which holds no handle) but are now expressed through the split, so there is one code path.
 
-Four near-identical structs exist — `ViewLayerContentCommand`, `NucleusLayers.PaintCommand`,
-`NucleusTypes.PaintCommand`, `PaintDrawCommand` — with three mapping switches between them,
-two duplicated across packages. That is the disease; the payload was the symptom. Collapse to
-two: `NucleusTypes.PaintCommand` + payload (the registrar POD) and
-`NucleusRenderModel.PaintDrawCommand` (the decoded stored form). **7 switches → 1 decode
-switch.**
+On that foundation, mirroring the image pipeline exactly:
 
-**API.** `GraphicsContext` is a `@MainActor final class`, non-Sendable — AppKit's
-`NSGraphicsContext` is a class, and `inout struct` would tax every helper signature for
-nothing.
+- **`RuntimeEffectStore`** in `NucleusRenderModel`, holding SkSL *source* — not a compiled
+  object — so registration stays GPU-independent and works headless, the same posture
+  `ImageStore` has. Deduped by source: the shell's effect set is small and fixed but
+  registered repeatedly as views come and go, so identical programs must share one handle.
+- `RuntimeEffectRegistrar` / `RuntimeEffectLifecycle` in `NucleusAppHostProtocols`, their
+  `Swift…` conformers in `NucleusAppHostBundle`, and slots in `Host`, `LifecycleHost`,
+  `NucleusAppHostBundle`, and `installStubHost()`.
+- **`RuntimeEffect`** in `NucleusLayers` — a refcounted handle mirroring `PaintContent`.
+- `FrameDriver.compiledEffects`, a compiled-program cache keyed by handle, evicted through
+  `RuntimeEffectStore.onEvict` exactly as `decodedImages` is evicted through
+  `ImageStore.onEvict`. Handles are monotonic and never reused, so without eviction a
+  compiled program would persist until shutdown.
 
-```
-open func draw(in context: GraphicsContext) throws(UIError)
-```
+9 tests: 4 on the store (dedupe bumping the refcount, eviction firing once on the last
+release, no handle reuse after eviction) and 5 headless facade tests (one compiled program
+binding two different uniform sets, invalid SkSL rejected, mismatched uniform size rejected
+rather than binding garbage, and an effect painting through `drawPathWithShader`).
 
-Surface mirrors CoreGraphics: `saveGState`/`restoreGState`/`withGraphicsState {}`;
-`translateBy`/`scaleBy`/`rotateBy`/`concatenate`; `beginPath`/`move(to:)`/`addLine(to:)`/
-`addCurve`/`addQuadCurve`/`addArc`/`closePath`; `fillPath`/`strokePath`/`clip(to:)`;
-`fillColor`/`strokeColor`/`lineWidth`/`lineCap`/`lineJoin`/`blendMode`/`alpha`;
-`drawLinearGradient`/`drawRadialGradient`; and `fill(_ path: Path, with: Shading)` where
-`Shading` is `.color | .linearGradient | .radialGradient | .sweepGradient |
-.effect(RuntimeEffect, uniforms:)` — the SkSL escape hatch is a first-class `Shading` case. A
-public `Path` value type mirrors `CGPath`.
+## Phase 5 — GraphicsContext and the vocabulary collapse — complete
+
+**A prerequisite surfaced first: the payload blob had never been plumbed.** Phase 2 added
+`payloadOffset`/`payloadLength` to both PODs, but `PaintContentRegistrar.register` still took
+only a command span, `PaintContentStore.Content` held no bytes, and the rasterizer had nothing
+to read — the offsets pointed into a blob that did not exist. Paths could not render until
+that transport landed, so it went in first: the registrar, the store, `PaintContent.register`,
+`LayerTransaction.setPaintCommands`, and `FrameDriver` all carry payload now.
+
+**The format lives in `NucleusTypes.PaintPayload`.** Encoder and decoder are one file because
+they are one format, and both `NucleusUI` and `NucleusRenderer` already depend on
+`NucleusTypes`, so neither side can drift without that file changing. A slice is
+self-describing (four region counts, then verbs/points/scalars/colors) and the decoder rejects
+out-of-range slices, inconsistent region sizes, unknown verbs, and verbs that over-consume
+points — a malformed payload becomes a dropped draw rather than geometry built from misread
+bytes.
+
+**Vocabulary.** `.path` replaces `.line`, which was a second way to say the same thing;
+`.clipPath`/`.save`/`.restore` were added because a clip is canvas state that must be replayed
+and cannot be baked into geometry the way a transform can. `PaintCommand` gained `shading`.
+
+**API.** `GraphicsContext` is a `@MainActor final class`, wholly non-throwing, with the
+CoreGraphics-shaped surface the plan specified. A public `Path` value type mirrors `CGPath`,
+including an implicit `move` so a stray `addLine` cannot emit points no verb consumes. A new
+`AffineTransform` is applied to geometry *as it is recorded*, so commands carry no matrix.
+`Shading` makes the SkSL escape hatch a peer of the gradients.
+
+**The recording mints nothing, which resolves the phase's flagged hardest risk.** The plan
+warned that `makeTextLayoutHandle` falls back to minting a fresh transient handle, so arrays
+containing text never compare equal and the view re-registers on every publish. Rather than
+work around it, `PaintRecording.textLayouts` holds the layouts and `textLayoutHandle` carries a
+**one-based index into that array** while recording; `PaintRegistration` resolves indices to
+registry handles at registration time and releases transients when the returned value dies. Two
+recordings of the same text are therefore equal, and the diff suppresses the re-registration.
+`Label`'s layout cache no longer papers over anything.
+
+**The shared seam.** `PaintRegistration.register(_:width:height:in:)` performs the one lowering,
+registers the content, and returns an owning `RegisteredPaint` carrying the
+`LayerPropertyUpdate` and holding content plus transient text handles alive until the caller has
+applied it. It has no tree walk and no backing-layer dependency. `ViewLayerPublisher.publishPaint`
+now delegates to it, and it is host-facing SPI — `NucleusShellProduct` sees `GraphicsContext` and
+never a recording, layer, registrar, or commit sink.
 
 **Deletions.** `draw(_ dirtyRect:)`, `displayCommands(in:)`, `LayerContentBuilder`,
-`ViewLayerContentCommand`, `LayerContentCommandKind`, `NucleusLayers.PaintCommand`,
-`layerPaintCommand`, `layerPaintKind`, `PaintCommand.wireValue`,
-`TextLayout.layerContentCommands`. `styleCommands` becomes `ViewStyle.draw(in:bounds:)`,
-invoked by `displayIfNeeded` *before* `draw(in:)` so style still under-paints subclass
-content. Text drawing becomes `GraphicsContext.draw(_ layout: TextLayout, in: Rect)` — plain
-`public`, a headline developer surface rather than SPI.
+`ViewLayerContentCommand`, `LayerContentCommandKind`, `layerPaintCommand`, `layerPaintKind`,
+`TextLayout.layerContentCommands`, `dirtyDisplayRects`, and the whole verified-dead backdrop
+path — `reconcileBackdrop`, `ensureBackdrop`, `ensureContentLayer`, `usesBackdropLayer`, and the
+`contentLayer`/`contentFrame` cache fields that could then never be non-nil. `styleCommands`
+became `ViewStyle.draw(in:bounds:)`. A tree-wide grep confirms none of these names survives.
 
-**The `@_spi`-vs-`open` collision resolves by deletion.** `ViewLayerContentCommand` ceases to
-exist, so no SPI type appears at the override point. `GraphicsContext`, `Path`,
-`RuntimeEffect` are plain `public`; `draw(in:)` is plain `open`. `View.layerContent` stays
-`@_spi` — it is publication plumbing, not a developer surface — with `commands` retyped to
-`recording`.
+**Borders stroke.** `ViewStyle.draw` now sets the stroke flag, closing the emitting half of the
+defect Phase 3 half-fixed. **This defect is now closed end to end.**
 
-**`.backdrop` is verified dead — delete, don't preserve.** `VisualEffectView.swift:132` and
-`ViewLayerPublisher.swift:541` both construct a **`LayerDescriptor`** (`LayerKind.backdrop`),
-a different enum. Nothing anywhere constructs a `ViewLayerContentCommand` with
-`kind == .backdrop`, so `reconcileBackdrop`'s scan (`:396`) never matches. Dead with it:
-`ensureBackdrop`, `usesBackdropLayer` (always false), and therefore the entire
-`else if usesBackdropLayer` branch at `:276` — `ensureContentLayer`, `state.contentLayer`,
-`state.contentFrame` — plus both `.filter { $0.kind != .backdrop }` no-ops.
+**React Native moved onto the seam in this phase, not Phase 6.** Phase 5 deletes the vocabulary
+RN was using, and every phase must land green, so the committer now calls `PaintRegistration`
+and `ReactParagraphView` records through a `GraphicsContext`. That deletes the duplicated
+lowering, the duplicated `paintKind` switch, and the transient-handle minting. What remains for
+Phase 6 is the mount-architecture work it actually describes: collapsing `ReactParagraphView`
+and its sibling plain `View` into one `View` subclass overriding `draw(in:)`, and deleting the
+committer file.
 
-**`dirtyRect` cannot be honored, so delete it.** `PaintContent.register` registers a
-whole-canvas list and `producePaintCommands` rasterizes the whole canvas into a *fresh*
-texture. There is no partial-texture-update path. A subrect-only redraw would yield a texture
-containing only the subrect — un-dirty pixels are gone, not preserved. AppKit's contract
-preserves them; ours structurally cannot, and the proof it is already fiction is that all
-four in-tree overrides ignore the parameter and rebuild from `bounds`. `dirtyDisplayRects`
-and the parameter are deleted. `setNeedsDisplay(_ rect:)` keeps its AppKit signature (callers
-unaffected) but the rect only marks the view dirty. Partial repaint lands when a
-partial-texture-update path lands, not faked at the API.
+**The production client.** `NucleusShellProduct` was added to `shell/` depending on `NucleusUI`
+alone — the dependency list *is* the boundary being proven. Its first view, `StatusPillView`,
+draws a rounded pill with gradient or flat fill, a hairline outline, and a dot or swept-arc
+progress ring: real shell chrome, exercising paths, arcs, gradients, strokes, and caps through
+the public API only.
 
-**Migrating the four overrides.** `Label` → `context.draw(textLayout(containerWidth:), in:)`,
-layout cache untouched. `Button` → the `.close` glyph's two rects become one stroked path
-with a round cap. `ImageView` → `context.draw(image, in: bounds, cornerRadius:)`.
-`VisualEffectView` returns `[]` today, so the override is simply **deleted** — its backdrop is
-a `LayerDescriptor` concern, untouched. It is the easiest migration, not the hardest.
-
-Files: new `NucleusUI/{GraphicsContext,Path}.swift`;
-`NucleusUI/{View,ViewLayerContent,ViewStyle,ViewLayerPublisher,TextLayout,Label,Button,ImageView,VisualEffectView}.swift`.
-One phase — the type deletion and the four overrides cannot compile apart.
-
-**Lands with:** `ViewTests.swift:119`
-(`semanticViewStyleFeedsLayerContentWithoutPublicDrawCommands`) rewritten against the
-recording. Its stance — style paints without the subclass drawing — is preserved and still
-worth pinning. The `lastDirtyRect` assertion at `:116` is deleted with the parameter.
+**Verification.** All five packages build with zero warnings attributable to the phase; 164 core
+tests, 284 compositor tests, and 7 out-of-package shell-product tests pass. New coverage:
+10 payload-codec tests (round trip, append-does-not-move-earlier-slices, and every rejection
+path), 6 registration tests, and 2 stroked-rounded-rect pixel tests. The registration tests pin
+what nothing previously could — that an unchanged view and, critically, unchanged *text* do not
+re-register, while a changed drawing does; they assert the first publish *does* register, so
+they cannot pass by never registering at all.
 
 ## Phase 6 — Retire the RN committer
 
-`ReactLayerContentCommitter.swift` deleted in full. `ReactParagraphView` becomes a real
-`View` subclass overriding `draw(in:)`, publishing through the normal `ViewLayerPublisher`
-path. That deletes the duplicated `paintKind` switch (`:58`), duplicated `paintCommand`
-(`:41`), duplicated transient-handle minting (`:79`), the direct `PaintContent.register`, and
-the `appendAmbient`/`backingLayer` SPI use — restoring the NucleusUI-is-the-front-door
-invariant. This is the largest structural payoff of the drawing work and is a goal, not a
-side effect.
+This phase is repository coherence, not a commitment to build the native shell in React
+Native. New shell product UI remains native Swift.
 
-**Gate this phase on tracing RN's actual publish path.** The committer calls
-`view.displayIfNeeded()` then commits directly, which implies RN may not run
-`ViewLayerPublisher` for these views. If so this is a mount-architecture change, not a
-deletion. It is the one place where "delete the duplicate" may not be mechanical.
+**The gate has been run, and it resolved against the plan's original framing.** RN does not
+use `ViewLayerPublisher` — the only reference in the tree is `WindowLayerPublisher.swift:11`,
+inside core. RN builds its own layer tree in `HostSurfaceAttachment.swift:90-103`
+(`LayerTransaction.createExisting` for root and each component, `insert` into the parent,
+`flushImplicit`) and commits paint per component through `commitDisplayContentIfNeeded()`
+(`MountConsumer.swift:426, :480`). This is a mount-architecture change, not a deletion.
 
-`ReactComponentViews.swift:38 displayCommands(containerWidth:)` is a plain method on a
-non-View wrapper — rename to avoid confusion, otherwise untouched.
+The committer duplicated two separable things, and **the first is already gone.** Phase 5
+deleted the vocabulary RN was lowering into, and every phase lands green, so RN moved onto the
+shared seam in that phase rather than this one:
 
-## Phase 7 — Event vocabulary and responder wiring
+1. **Lowering** — `paintKind`, `paintCommand`, and transient text-layout handle minting were
+   deleted in Phase 5. `ReactParagraphView` records through a `GraphicsContext`.
+2. **Paint registration** — the committer now calls `PaintRegistration`, the same unit
+   `ViewLayerPublisher` uses. It retains only RN's own layer-binding step
+   (`backingLayer.apply` → `appendAmbient`), which exists because RN builds its own layer tree.
+
+**What remains is the mount-architecture change.** `ReactParagraphView`
+(`ReactComponentViews.swift:6`) is a standalone `~Sendable` text holder, not a `View` subclass;
+`ReactParagraphComponentView` owns both a plain `View` and a `ReactParagraphView` beside it
+(`MountConsumer.swift:451-455`). Collapse those two objects into one `View` subclass overriding
+`draw(in:)`, then delete `ReactLayerContentCommitter.swift` in full by folding its layer-binding
+step into the component view.
+
+**Lands with:** the committer file deleted and the `appendAmbient`/`backingLayer` SPI use gone,
+with RN authoring against `draw(in:)` like any other client — restoring the
+NucleusUI-is-the-front-door invariant.
+
+## Phase 7 — Publication and native shell hosting
+
+The `NucleusShellProduct` target established in Phase 5 now becomes a hosted, publishable
+NucleusUI application without turning renderer plumbing into public UI API.
+
+Today the publication seam is split inconsistently. `WindowScenePublicationContext`,
+`WindowScene.publish(hostedSurfaces:)`, `HostedSurface`, `HostedSurfaceRegistry`,
+`PublishedScene`, and `HostedVisualContent` are SPI or package-scoped even where a native
+application must describe and publish its own windows. At the same time, raw `CommitSink` and
+`Layer` types are implementation details that do not belong in the product-authoring surface.
+
+- Make the window, scene, hosted-surface, and published-content operations needed by a native
+  application plain public NucleusUI API.
+- Keep commit-sink installation, raw layers, render-resource registration, and compositor
+  placement privileged to the platform host.
+- Give the shell host one stable construction seam that installs its render context and returns
+  public NucleusUI scenes/windows to product code; do not publish `NucleusLayers` types merely
+  to remove an SPI annotation.
+- Preserve the same seam for the compositor overlay without making compositor-only roles part
+  of the ordinary application API.
+
+`HostedSurface` is not the synchronized external-image path: it publishes a root layer for a
+host to place and does not bind dynamic image content. `ContentKind.external` and
+`IOSurfaceContent.bind(id:)` are sufficient only after a resource is safely registered under
+that identity. CEF's rotating DMA-BUF frames additionally require producer waits, exact frame
+identity, queue-family/layout ownership, Graphite completion, and consumer release. That
+specialized render-host contract belongs to the shell migration's CEF phase, not this generic
+publication API.
+
+Files:
+`NucleusUI/{WindowScene,WindowScenePublicationContext,HostedSurface,PublishedVisualContent}.swift`;
+`NucleusApp/`, `NucleusAppHostBundle/`; `NucleusCompositorOverlay/ShellOverlay/*`;
+`NucleusShellRuntime/ShellHost.swift`.
+
+**Lands with:** `NucleusShellProduct` constructing and publishing its native view hierarchy
+through public NucleusUI types while raw layer and commit-sink access remains confined to
+`NucleusShellRuntime` host installation code.
+
+## Phase 8 — Event vocabulary and responder wiring
 
 The narrow waist is `Action.swift` — 29 lines. Everything above it is already AppKit-shaped
 and everything below it is built but unreachable.
 
 `WireEventKind` (`compositor-core/Sources/NucleusCompositorServerTypes/ServerTypes.swift:16`)
 is NSEvent in all but name — 24 cases including `leftMouseDown`, `mouseMoved`, `keyDown`,
-`flagsChanged`, `scrollWheel`, the touch set. `WireEventRecord` (`:314`) is CGEvent-shaped
-(`kind, flags, timestampNs, x, y, data0…data3`). `EventFlagBit` (`InputXkb.swift:13`) mirrors
-CGEventFlags bit positions exactly. NucleusUI discards all of it:
-`ShellOverlayTypes.swift:94` narrows 6 kinds to 2 and drops keycode and modifiers.
+`flagsChanged`, `scrollWheel`, and touch. `WireEventRecord` (`:314`) is CGEvent-shaped
+(`kind, flags, timestampNs, x, y, data0…data3`). NucleusUI discards most of it, while the
+out-of-process shell needs the same normalized vocabulary from Wayland client callbacks.
 
-`core/` deliberately resolves no compositor dependency, so NucleusUI does **not** import
-`WireEventKind`. Both converge on AppKit as the shared reference; the compositor's adapter
-translates.
+`core/` deliberately resolves no compositor or shell dependency. NucleusUI defines the
+platform-neutral event; compositor and shell adapters translate into it.
 
-- `Event` becomes a tagged record mirroring `WireEventRecord`'s shape: kind, modifier flags,
-  location, timestamp, plus per-kind payload (button, clickCount, scrollDeltaX/Y, keyCode,
-  characters).
-- `EventType` grows the NSEvent-shaped set: pointer down/up/moved/dragged/entered/exited,
-  scrollWheel, keyDown/keyUp, flagsChanged.
-- **Wire `firstResponder` and `isKeyWindow`.** Both are dead code today — assigned at
-  `Window.swift:155` and `WindowScene.swift:80`, read by nothing outside tests. Keyboard
-  events route key-window → first responder; pointer events keep hit-testing. Add
-  `becomeFirstResponder`/`resignFirstResponder`/`acceptsFirstResponder`.
-- Add pointer capture (implicit grab) to `Responder`.
-- `Control` gains pointer-exit/drag-cancel — today the press latch clears on any `pointerUp`
-  regardless of location.
-- **Characters have no producer anywhere.** `XkbKeyboard.keyGetOneSym` returns a keysym only;
-  no `xkb_state_key_get_utf8`, no compose state. Add both to feed `event.characters`.
-- Add a key-repeat timer for NucleusUI views. The only repeat today is
-  `wl_keyboard_send_repeat_info(25, 600)` (`WlSeat.swift:443`), delegated to Wayland clients —
-  NucleusUI views are not Wayland clients and have no repeat at all.
+- `Event` becomes a tagged record carrying kind, modifier flags, location, timestamp, button,
+  click count, scroll deltas, key code, characters, and touch payload as applicable.
+- `EventType` grows pointer down/up/moved/dragged/entered/exited, scroll wheel, key
+  down/up, flags changed, and touch events.
+- Wire `firstResponder` and `isKeyWindow`. Keyboard events route key-window → first
+  responder; pointer events hit-test and then traverse the responder chain.
+- Add `becomeFirstResponder`, `resignFirstResponder`, `acceptsFirstResponder`, and explicit
+  pointer capture.
+- `Control` gains pointer-exit and drag-cancel behavior.
+- Produce characters with XKB UTF-8 and compose state instead of reducing keyboard input to a
+  keysym.
+- Add key repeat at the NucleusUI host boundary.
+- Add both adapters now: compositor wire events → NucleusUI events, and shell Wayland
+  keyboard/pointer/touch callbacks → NucleusUI events.
 
 Files: `NucleusUI/{Action,Responder,Control,Window,WindowScene}.swift`;
 `NucleusCompositorOverlay/ShellOverlay/{ShellOverlayTypes,ShellOverlayScene}.swift`;
-`compositor-core/.../InputXkb.swift`.
+`compositor-core/.../InputXkb.swift`; `NucleusShellWayland/`; `NucleusShellRuntime/`.
 
-**Lands with:** `ShellOverlayScene.handleMenuKey` (`:433-473`, a raw switch over hardcoded
-evdev integers driving `moveHighlight` directly), `capturedPointerButtons` (`:564-576`), and
-the `button != 272` left-click filter (`:552`) all deleted. Menu keyboard nav becomes a
-first-responder implementation. Right-click and middle-click reach views for the first time.
+**Lands with:** the overlay's raw menu-key switch, private pointer-button capture, and
+left-click-only filter deleted; the native shell routes real pointer, keyboard, modifier, and
+scroll input through the same responder semantics.
 
-## Phase 8 — Layout: measure/arrange and flex
+## Phase 9 — Layout: measure/arrange and flex
 
 `intrinsicContentSize` takes no container width, so a `StackView` cannot ask a `Label` "how
-tall at width 200?" — text wrapping cannot participate in layout at all. Noctalia's `Node`
-measure/arrange with `LayoutConstraints` is the reference.
+tall at width 200?" — text wrapping cannot participate in layout. Noctalia's `Node`
+measure/arrange with `LayoutConstraints` is the production reference.
 
-- Two-phase measure/arrange: `measure(_ constraints:)` taking a proposed size, then
-  `arrange`. `intrinsicContentSize` becomes the degenerate no-constraint case.
-- Flex (grow/shrink/basis, distribution, cross-axis alignment) in the arrangement model.
-- **Fix the coordinate-space bug** (see Context): drop `bounds.origin` from `StackView`'s
-  arithmetic so children are placed child-local, matching `hitTest` and every manual
-  `layout()`.
-- Fix `displayIfNeeded`/`layoutIfNeeded` recursing into all children unconditionally (O(tree)
-  per publish regardless of dirty state), and `intrinsicContentSize` being a getter that
-  clears its own dirty flag as a side effect (`View.swift:377`).
-- Add a layout scheduler. Today there is none — layout runs inside
-  `ViewLayerPublisher.appendViewTree` (`:122-123`) during publication, which is why the
-  overlay force-calls `layoutIfNeeded()` in four places to read frames before publish.
+- Two-phase measure/arrange: `measure(_ constraints:)` takes a proposed range, then `arrange`
+  assigns final geometry. `intrinsicContentSize` is the unconstrained case.
+- Add grow/shrink/basis, distribution, and cross-axis alignment to the native arrangement
+  model.
+- Drop `bounds.origin` from `StackView` child placement so arranged frames are child-local,
+  matching `hitTest` and every correct manual layout.
+- Stop `displayIfNeeded` and `layoutIfNeeded` from recursing into clean subtrees, and remove
+  dirty-state mutation from the `intrinsicContentSize` getter.
+- Add a layout scheduler rather than running layout incidentally during publication.
+- Use `NucleusShellProduct`'s first real bar/root views as the external-client acceptance test;
+  do not add shell-specific layout code to compensate for a missing general rule.
 
 Files: `NucleusUI/{View,StackView,Geometry,ViewLayerPublisher}.swift`;
-`NucleusCompositorOverlay/ShellOverlay/{ShellOverlayNotificationView,ShellOverlayHotkeyView,ShellOverlayScene}.swift`.
+`NucleusCompositorOverlay/ShellOverlay/{ShellOverlayNotificationView,ShellOverlayHotkeyView,ShellOverlayScene}.swift`;
+`shell/Sources/NucleusShellProduct/` bar and root views.
 
-**Lands with:** `ShellOverlayNotificationListView`'s `layout()` override
-(`ShellOverlayNotificationView.swift:218`, which exists solely to work around the coordinate
-bug) and the overlay's four manual `layoutIfNeeded()` calls deleted.
+**Lands with:** the overlay's coordinate workaround and manual `layoutIfNeeded()` calls
+deleted, and the native shell laying out wrapped text and flexible bar regions with only
+NucleusUI constraints.
 
-## Phase 9 — ScrollView, the capstone
+## Phase 10 — TextField and input-method foundation
 
-The one primitive that fails if any of Phases 5, 7, or 8 is wrong: clipping
-(GraphicsContext), `scrollWheel` (events), content sizing (measure/arrange).
-`AnimationKeyPath` already reserves `scrollOffsetX`/`scrollOffsetY` (`Types.swift:26-27`), so
-the render model anticipates it.
+Secure credential entry is required before the native shell can prove its lock-screen path,
+so single-line editing lands before scrolling and multiline editing.
 
-Scroll physics — rubber-band, inertia, fling — is real work beyond the API surface and is the
-substance of this phase. Closes the roadmap's "native scroll physics" moat.
+The text substrate already exposes glyph positions, selection rectangles, caret affinity,
+grapheme boundaries, and bidi geometry. Build one editor model on it:
 
-Files: new `NucleusUI/ScrollView.swift`; `NucleusUI/{View,Responder}.swift`.
+- UTF-8/UTF-16 mapping, selection, caret movement, affinity, deletion, insertion, password
+  masking, undo grouping, and composition state.
+- Native `TextField` with pointer selection, keyboard navigation, focus, caret animation,
+  horizontal reveal, placeholder, and secure-entry behavior.
+- A platform-neutral input-method client seam owned by NucleusUI/app-host protocols.
+- Shell-side `zwp_text_input_v3` client integration: enable/disable, surrounding text, content
+  type and purpose, cursor rectangle, preedit, commit, deletion, and done serials.
+- Nucleus Compositor server-side `zwp_text_input_v3` binding so the same out-of-process shell
+  path works there.
+- Secure fields never expose credentials to logs, clipboard, persistence, accessibility
+  values, or optional higher-level runtimes.
 
-## Phase 10 — IME and text editing
+Files: new `NucleusUI/{TextEditorModel,TextField}.swift`; `NucleusUI/TextSystem.swift`;
+`NucleusAppHostProtocols/`; `NucleusShellWayland/`; `NucleusShellRuntime/`;
+`compositor-core/` text-input binding.
 
-Closes the roadmap's "native IME + Nucleus text editing/selection" moat. The substrate
-already exists and is unconsumed: `TextSystem` has `glyphPosition(at:)`,
-`selectionRects(forUTF16Range:)`, `caretForOffset(_:affinity:)`, grapheme breaks, bidi.
+**Lands with:** the native shell lock surface accepting composed text through the Wayland
+input method without a JavaScript runtime.
 
-- `TextField` and `TextView` on that substrate, with selection, caret affinity, and editing.
-  `TextView` builds on Phase 9's ScrollView.
-- Bind `ZwpTextInputV3` server-side — the bindings are generated and sitting unused in
-  `swift-wayland/Sources/WaylandServerDispatch/`; nothing binds them.
-- Preedit/composition, candidate handling, and the `text_input_client.h`-equivalent seam.
+## Phase 11 — ScrollView, the interaction capstone
 
-Files: new `NucleusUI/{TextField,TextView}.swift`; `compositor-core/.../` text-input binding;
-`NucleusUI/TextSystem.swift`.
+This phase fails if drawing, events, or layout are incomplete: it requires clipping from
+GraphicsContext, wheel and drag input from the responder system, constrained content sizing,
+pointer capture, presentation-driven animation, and damage scheduling.
 
-## Phase 11 — Publication and hosted-surface de-SPI
+- Implement viewport and document views, content size, offset, insets, clipping, and
+  scroll-to-visible.
+- Add wheel, touchpad, drag, fling, deceleration, rubber-band, and cancellation behavior.
+- Drive motion from presentation time rather than a fixed timer.
+- Define nested scrolling and responder handoff without shell-specific gesture arbitration.
+- Use the native shell's first control-center page as the production acceptance client.
 
-The overlay's entire SPI dependency: `WindowScenePublicationContext` (`init(commitSink:)`,
-`withSemanticContext`, `makeWindowScene`, `makeHostedSurfaceRegistry`), `CommitSink`, `Layer`,
-`WindowScene.publish(hostedSurfaces:)`, `attachHostedSurface(_:using:)`,
-`attachHostedSurfaces(_:where:using:)`, `HostedSurface`, `HostedSurfaceRegistry`,
-`PublishedScene`, `HostedVisualContent`.
+`AnimationKeyPath` already reserves `scrollOffsetX`/`scrollOffsetY`, so the render model
+anticipates the primitive.
 
-Promote that to public, keeping SPI only for what is genuinely compositor-privileged.
-`HostedSurface.rootView`/`role`/`level`/`frame`/`init` are `package` while the registry
-around them is SPI — half-opaque either way.
+Files: new `NucleusUI/ScrollView.swift`; `NucleusUI/{View,Responder}.swift`;
+`shell/Sources/NucleusShellProduct/` control-center panel.
 
-`HostedSurface` is **not** the external-texture path despite appearing to be: it publishes a
-`rootLayerID` for the compositor to place and never binds content. External textures
-(CEF/dmabuf) go through `ContentKind.external` → `IOSurfaceContent.bind(id:)`
-(`Content.swift:180`, already public) → `importDmaBufImage` → `Recorder.wrapBackendImage`.
-Already the least-gated content route; needs nothing here.
+## Phase 12 — TextView and multiline editing
 
-Files:
-`NucleusUI/{WindowScene,WindowScenePublicationContext,HostedSurface,PublishedVisualContent}.swift`;
-`NucleusCompositorOverlay/ShellOverlay/*`, `NucleusCompositorOverlayScene/Runtime.swift`.
+Build multiline editing on the Phase 10 editor model and Phase 11 ScrollView rather than
+creating a second text engine.
 
-**Lands with:** `NucleusCompositorOverlay` and `NucleusShellRuntime/ShellHost.swift`
-importing `NucleusUI` with no `@_spi(NucleusCompositor)`.
+- Add `TextView` with wrapping, multiline selection, vertical caret movement, page movement,
+  drag selection, autoscroll, and scroll-to-caret.
+- Complete preedit and candidate geometry across wrapped bidi lines.
+- Keep selection/caret geometry derived from the existing TextSystem and retain one offset
+  mapping for field and view.
+- Use a real native shell settings or editor surface as the acceptance client.
+
+Files: new `NucleusUI/TextView.swift`; `NucleusUI/{TextEditorModel,TextSystem}.swift`;
+`shell/Sources/NucleusShellProduct/` settings or editor surface.
 
 ---
 
@@ -469,51 +618,78 @@ Tests assert **runtime behavior and contracts, never source-code shape** — no 
 - **Phase 0** — done: all five packages build; the compositor suite runs.
 - **Phase 1** — done: NucleusUI builds with zero warnings on a forced full recompile; 96
   tests in 12 suites pass; 18 overlay tests pass.
-- **Phases 2–4**: existing rendering is unchanged — these phases add capability without
-  emitting it. The exhaustive-switch conversion is verified by the compiler.
-- **Phase 5**: an out-of-module `View` subclass (a fixture target outside package `Nucleus`)
-  draws paths, gradients, and an SkSL effect and produces the expected command stream. Pixel
-  coverage goes through the live Graphite offscreen path — `NucleusSkiaGraphiteTests` already
-  links the full static Skia archive set and runs real Skia ops. **Add a stroked-border pixel
-  test**: nothing renders a border today, so this is new coverage, not a regression check.
-- **Phase 5, hardest risk**: the `[PaintCommand] ==` diff in `publishPaint` is the real
-  re-registration gate, and **payload must participate in equality** — two different paths at
-  the same `offset+length` would otherwise compare equal and silently drop the repaint.
-  Worse, `makeTextLayoutHandle` (`ViewLayerPublisher.swift:635`) prefers a stable
-  `layout.storage?.retainedHandle()` and falls back to minting a fresh transient handle; on
-  the fallback the arrays never compare equal and the view re-registers **every publish**.
-  `Label` papers over this by caching its layout. **No existing test would catch a regression
-  here** — add one that counts registrations through the stub registrar.
-- **Phase 6**: gated on tracing RN's publish path first.
-- **Phase 7**: dispatch tests for key routing (key-window → first responder), scroll, pointer
-  enter/exit, drag-cancel, capture — extending `ResponderTests.swift`. The overlay menu's
-  keyboard nav is the end-to-end proof: identical behavior with `handleMenuKey` deleted.
-- **Phase 8**: extend `LayoutTests.swift` with measure/arrange under constraints, flex
+- **Phase 2** — done: all five packages build with no warnings attributable to the phase; 129
+  core tests and 284 compositor tests pass. The exhaustive-switch conversion is verified by
+  the compiler. Existing rendering is unchanged — the phase adds capability without emitting
+  it.
+- **Phase 3** — done: 11 headless pixel tests cover stroke-vs-fill, path encoding rejection,
+  arc verbs, gradients, `concat`, and `clipPath`; all other suites stay green.
+- **Phase 4** — done: store semantics (dedupe, refcount, eviction) and the facade
+  compile/bind split are covered headless; all other suites stay green.
+- **Phase 5** — done: `StatusPillView` in `shell`'s `NucleusShellProduct` target (outside
+  package `Nucleus`) draws paths, arcs, gradients, and strokes through the public API; 7 tests
+  there are the out-of-package authoring proof. Pixel coverage runs through `makeRasterSurface`
+  on CPU raster, so it stays headless. The stroked-rounded-rect pixel tests cover the shape
+  `ViewStyle` actually emits for a border, paired with a negative test proving a stroke *width*
+  alone does not stroke — the style is what matters.
+- **Phase 5, registration seam**: invoke `PaintRegistration` directly outside
+  `ViewLayerPublisher` to prove empty-recording clearing and registered/transient-handle
+  lifetime through update application. Separately count stub-registrar calls through the
+  publisher: an unchanged recording must not register again, while a payload change must.
+- **Phase 5, hardest risk** — resolved structurally rather than worked around. Recordings mint
+  no handles: text is referenced by index and resolved at registration, so equal drawings
+  compare equal. `PaintRegistrationTests` counts registrations through a counting registrar and
+  pins that an unchanged view, and unchanged text specifically, re-register nothing while a
+  changed drawing does.
+- **Phase 6**: RN already registers through the shared seam as of Phase 5, so the remaining gate
+  is that collapsing the paragraph component into one `View` subclass keeps producing the same
+  registered content. Assert through the stub registrar, not through pixels.
+- **Phase 7**: `NucleusShellProduct` creates and publishes its scene through public NucleusUI
+  authoring types. `NucleusShellRuntime` retains privileged host installation without exposing
+  raw layers or commit sinks to product code.
+- **Phase 8**: dispatch tests for key routing (key-window → first responder), scroll, pointer
+  enter/exit, drag-cancel, and capture. The overlay menu behaves identically with
+  `handleMenuKey` deleted, and the shell adapter routes the same event vocabulary into a
+  native window.
+- **Phase 9**: extend `LayoutTests.swift` with measure/arrange under constraints, flex
   distribution, and text-wrap-participates-in-layout. **Add the missing test that would have
   caught the coordinate bug: lay out a `StackView` at a non-zero origin and hit-test a point
   inside an arranged subview.** No existing test does this, which is why the bug survives.
   `LayoutTests.swift:27` (`verticalStackUsesIntrinsicSizesAndSpacing`) pins the buggy
   placement — stack at `x:10` → first child at `x:10` — and must be rewritten to expect `x:0`.
-- **Phase 9**: scroll offset, clipping, wheel routing, and physics settling, headless.
-- **Phase 10**: caret/selection/preedit against the existing `TextSystem` behavior tests.
-- **Phase 11**: `NucleusCompositorOverlay` builds with a plain `import NucleusUI`;
-  `compositor-core/Tests/NucleusCompositorOverlayTests` passes unchanged.
+- **Phase 10**: editor-model tests cover UTF-8/UTF-16 mapping, grapheme and word movement,
+  secure masking, selection, deletion, preedit replacement, and commit ordering. A shell
+  client/server integration test covers text-input-v3 enable, preedit, commit, deletion, and
+  done serials without exposing the secure value.
+- **Phase 11**: scroll offset, clipping, wheel/drag routing, nested handoff, cancellation, and
+  physics settling are headless and deterministic under a supplied presentation clock.
+- **Phase 12**: multiline caret movement, wrapped bidi selection, preedit geometry,
+  autoscroll, and scroll-to-caret reuse the Phase 10 editor behavior rather than duplicating
+  offset logic.
 
-**End-to-end, on hardware.** Run `nucleus-compositor` and exercise the shell overlay: menus
-(keyboard nav, right-click, submenus), notifications (stack transitions, close button), and
-the hotkey HUD. This is the only path exercising publication → Graphite → Vulkan → scanout
-with real input. This is the user-owned validation step; a goal is complete when every
-agent-runnable gate passes and only this remains.
+**End-to-end, on hardware.** Run the native shell under niri and exercise its first bar,
+lock, and panel surfaces with real pointer, keyboard, input-method, scrolling, publication,
+Graphite, Vulkan, and Wayland presentation. Run the compositor overlay checks under
+Nucleus Compositor for the same shared NucleusUI semantics. This is the user-owned
+validation step; a goal is complete when every agent-runnable gate passes and only this
+remains.
 
 ## Risks
 
-- **RN's publish path (Phase 6)** — the one place "delete the duplicate" may be an
-  architecture change. Trace before committing to the phase.
-- **Text-layout handle stability (Phase 5)** — a silent, untested degradation to per-publish
-  re-registration for every text view. Add registration-counting coverage.
-- **Payload-offset determinism (Phase 5)** — the `==` gate depends on the recorder being
-  deterministic and append-only.
-- **Scroll physics (Phase 9)** and **IME (Phase 10)** are the two phases whose substance is
-  genuinely novel work rather than mechanical restructuring.
+- **RN's publish path (Phase 6)** — traced and confirmed: RN bypasses `ViewLayerPublisher`
+  entirely and owns its own layer-tree construction. The registration seam it needed landed in
+  Phase 5 and RN already consumes it, so the remaining risk is confined to the mount-architecture
+  change: collapsing the paragraph component's two objects into one `View` subclass.
+- **Text-layout handle stability** — retired. Handles are no longer minted while recording, so
+  the failure mode does not exist; registration-counting coverage guards the regression.
+- **Payload-offset determinism** — discharged. `PaintPayload.append` is append-only, and a test
+  pins that appending a later slice does not move an earlier one.
+- **Borders render as fills** — closed end to end in Phase 5. The rasterizer honors the stroke
+  and `ViewStyle` requests it.
+- **Rendering changed for the first time in Phase 5**, so "nothing changed" is no longer an
+  available gate for any later phase. Coverage from here on has to be positive.
+- **Input methods (Phase 10)**, **scroll physics (Phase 11)**, and **multiline editing
+  (Phase 12)** are the phases whose substance is genuinely novel work rather than mechanical
+  restructuring.
 - **Zero risk to the overlay** for all drawing phases, verified: `compositor/` and `shell/`
   never reference `ViewLayerContentCommand` or `LayerContentCommandKind`.

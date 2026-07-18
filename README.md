@@ -48,7 +48,7 @@ Nucleus is one monorepo containing independently buildable Swift packages:
 │                         nucleus                           │
 │                                                           │
 │  NucleusTypes · NucleusLayers · NucleusRenderModel        │
-│  NucleusRenderer (Skia Graphite + Dawn + Vulkan)          │
+│  NucleusRenderer (Skia Graphite + native Vulkan)          │
 │  NucleusTextBackend · NucleusUI · NucleusApp              │
 │  NucleusRenderHost · NucleusAppHostProtocols              │
 │  NucleusSkiaGraphiteBridge · native SDK tooling           │
@@ -61,7 +61,7 @@ Nucleus is one monorepo containing independently buildable Swift packages:
 - **The compositor links zero React.** It provides the Wayland server, DRM/KMS scanout, window management, and a shell overlay built with NucleusUI — but React Native is not part of it.
 - **The shell is out-of-process.** `nucleus-shell` is a normal Wayland client connected over `WAYLAND_DISPLAY`. The compositor and shell meet only at runtime over standard protocols — each is swappable independently.
 - **The React Native platform remains an architectural boundary.** `react-native/` owns Fabric/Hermes/folly and the Swift runtime bridge, while living in the same atomic source-control unit.
-- **Shared native SDKs.** The `render` SDK (Skia Graphite + Dawn + Vulkan) and the `rn` SDK (Hermes + ReactCommon + folly) are provisioned into `~/.cache/nucleus/nucleus-native-sdk/` by the root Swift bootstrap stage graph. All components consume from this stable cache path, decoupling build artifacts from any single source directory.
+- **Shared native SDKs.** The `render` SDK (Skia Graphite + native Vulkan) and the `rn` SDK (Hermes + ReactCommon + folly) are provisioned into `~/.cache/nucleus/nucleus-native-sdk/` by the root Swift bootstrap stage graph. All components consume from this stable cache path, decoupling build artifacts from any single source directory.
 
 ## Supporting components
 

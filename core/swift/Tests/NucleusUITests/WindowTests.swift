@@ -13,7 +13,7 @@ import Testing
 
         init(loadedView: View) throws {
             self.loadedView = loadedView
-            try super.init()
+            super.init()
         }
 
         override func loadView() {
@@ -30,15 +30,15 @@ import Testing
     }
 
     @Test func windowSetTitleStoresUTF8() throws {
-        let window = try Window(title: "Initial")
+        let window = Window(title: "Initial")
         #expect(window.title == "Initial")
 
-        try window.setTitle("Résumé 🚀")
+        window.setTitle("Résumé 🚀")
         #expect(window.title == "Résumé 🚀")
     }
 
     @Test func windowStoresRoleLevelAndHitTestingParticipation() throws {
-        let window = try Window(
+        let window = Window(
             title: "Notifications",
             role: .notification,
             level: .overlay,
@@ -59,14 +59,14 @@ import Testing
     }
 
     @Test func contentViewControllerOwnsWindowContentLifecycle() throws {
-        let window = try Window(
+        let window = Window(
             title: "Overlay",
             frame: Rect(x: 10, y: 20, width: 320, height: 180)
         )
-        let view = try View()
+        let view = View()
         let controller = try TrackingViewController(loadedView: view)
 
-        try window.setContentViewController(controller)
+        window.setContentViewController(controller)
 
         #expect(window.contentView === view)
         #expect(window.root === view)
@@ -75,7 +75,7 @@ import Testing
         #expect(controller.didLoadCount == 1)
         #expect(view.nextResponder === controller)
 
-        try window.orderFront()
+        window.orderFront()
         window.makeKey()
 
         #expect(window.isVisible)
@@ -89,13 +89,13 @@ import Testing
     }
 
     @Test func windowFrameIsTheContentFrameAuthority() throws {
-        let window = try Window(title: "Sized", frame: Rect(x: 4, y: 5, width: 120, height: 90))
-        let view = try View()
+        let window = Window(title: "Sized", frame: Rect(x: 4, y: 5, width: 120, height: 90))
+        let view = View()
 
-        try window.setContentView(view)
+        window.setContentView(view)
         #expect(view.frame == Rect(x: 4, y: 5, width: 120, height: 90))
 
-        try window.setFrame(Rect(x: 20, y: 30, width: 400, height: 300))
+        window.setFrame(Rect(x: 20, y: 30, width: 400, height: 300))
         #expect(window.frame == Rect(x: 20, y: 30, width: 400, height: 300))
         #expect(view.frame == window.frame)
         #expect(view.needsDisplay)
@@ -103,18 +103,18 @@ import Testing
 
     @Test func windowSceneOwnsOrderingVisibilityAndKeyWindow() throws {
         let visualContext = try Context(id: ContextID(rawValue: 810), commitSink: InMemoryCommitSink())
-        let normal = try Window(title: "Normal", frame: Rect(x: 0, y: 0, width: 100, height: 100))
-        let overlay = try Window(
+        let normal = Window(title: "Normal", frame: Rect(x: 0, y: 0, width: 100, height: 100))
+        let overlay = Window(
             title: "Overlay",
             frame: Rect(x: 0, y: 0, width: 100, height: 100),
             level: .overlay
         )
-        try normal.setContentView(try View())
-        try overlay.setContentView(try View())
+        normal.setContentView(View())
+        overlay.setContentView(View())
         let scene = WindowScene(windows: [overlay, normal], visualContext: visualContext)
 
-        try normal.orderFront()
-        try overlay.orderFront()
+        normal.orderFront()
+        overlay.orderFront()
         normal.makeKey()
 
         #expect(scene.windows.map(\.title) == ["Normal", "Overlay"])
@@ -122,7 +122,7 @@ import Testing
         #expect(normal.isKeyWindow)
         #expect(overlay.isVisible)
 
-        let hit = try #require(try scene.hitTestWindow(at: Point(x: 10, y: 10)))
+        let hit = try #require(scene.hitTestWindow(at: Point(x: 10, y: 10)))
         #expect(hit === overlay)
 
         overlay.orderOut()
@@ -130,7 +130,7 @@ import Testing
     }
 
     @Test func titledWindowAllocatesTitlebarOnInit() throws {
-        let window = try Window(
+        let window = Window(
             title: "Titled",
             frame: Rect(x: 0, y: 0, width: 800, height: 600),
             styleMask: [.titled, .closable, .resizable]
@@ -140,12 +140,12 @@ import Testing
     }
 
     @Test func untitledWindowHasNilTitlebar() throws {
-        let window = try Window(title: "No chrome", frame: Rect(x: 0, y: 0, width: 100, height: 100))
+        let window = Window(title: "No chrome", frame: Rect(x: 0, y: 0, width: 100, height: 100))
         #expect(window.titlebar == nil)
     }
 
     @Test func togglingTitledStyleAllocatesAndClearsTitlebar() throws {
-        let window = try Window(title: "Toggle", frame: Rect(x: 0, y: 0, width: 100, height: 100))
+        let window = Window(title: "Toggle", frame: Rect(x: 0, y: 0, width: 100, height: 100))
         #expect(window.titlebar == nil)
 
         window.styleMask = [.titled]
@@ -164,7 +164,7 @@ import Testing
     }
 
     @Test func togglingNonTitledStyleBitsDoesNotReplaceTitlebar() throws {
-        let window = try Window(
+        let window = Window(
             title: "Resize",
             frame: Rect(x: 0, y: 0, width: 100, height: 100),
             styleMask: [.titled]
@@ -175,7 +175,7 @@ import Testing
     }
 
     @Test func titlebarStateOverrideWritesThroughToLayer() throws {
-        let window = try Window(
+        let window = Window(
             title: "Stateful",
             frame: Rect(x: 0, y: 0, width: 100, height: 100),
             styleMask: [.titled]

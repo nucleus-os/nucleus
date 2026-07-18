@@ -155,7 +155,7 @@ public final class ShellHost {
         do {
             // The bar's root View (minted into the pushed render context); the RN surface
             // mounts into it, and its backing-layer tree commits through the context's sink.
-            let rootView = try View()
+            let rootView = View()
             let host = try NucleusReactRuntime.Host()
             try host.installFabricRuntime()
             let surfaceID = 1

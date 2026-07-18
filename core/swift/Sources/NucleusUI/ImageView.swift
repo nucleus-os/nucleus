@@ -49,12 +49,13 @@ public final class ImageView: View, ~Sendable {
         return image == nil ? .zero : imageSize
     }
 
-    package override func displayCommands(in dirtyRect: Rect) -> [ViewLayerContentCommand] {
-        guard let image else {
-            return []
-        }
-        return [
-            LayerContentBuilder.image(image, bounds: bounds, fallbackSize: imageSize, cornerRadius: Float(cornerRadius)),
-        ]
+    public override func draw(in context: GraphicsContext) {
+        guard let image else { return }
+        let width = bounds.size.width > 0 ? bounds.size.width : imageSize.width
+        let height = bounds.size.height > 0 ? bounds.size.height : imageSize.height
+        context.draw(
+            image,
+            in: Rect(x: 0, y: 0, width: width, height: height),
+            cornerRadius: cornerRadius)
     }
 }

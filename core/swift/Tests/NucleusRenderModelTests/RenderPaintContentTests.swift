@@ -22,7 +22,7 @@ import Testing
 
         // --- a second registration gets a distinct handle ---
         let h2 = store.register(
-            [PaintDrawCommand(kind: .line, x: 0, y: 0, w: 10, h: 0, strokeWidth: 2)],
+            [PaintDrawCommand(kind: .path, x: 0, y: 0, w: 10, h: 0, strokeWidth: 2, stroke: true)],
             width: 10, height: 10)
         #expect(h2.raw != h.raw, "distinct-handle")
         #expect(store.count == 2, "second-count")
@@ -39,12 +39,58 @@ import Testing
         store.release(PaintContentHandle(raw: 9999))
         #expect(store.count == 1, "unknown-release-noop")
 
-        // --- wire discriminant mapping (reserved 0/3 drop) ---
-        #expect(paintDrawCommandKind(1) == .rect, "wire-rect")
-        #expect(paintDrawCommandKind(2) == .roundedRect, "wire-rounded")
-        #expect(paintDrawCommandKind(4) == .image, "wire-image")
-        #expect(paintDrawCommandKind(5) == .line, "wire-line")
-        #expect(paintDrawCommandKind(6) == .textLayout, "wire-text")
-        #expect(paintDrawCommandKind(0) == nil && paintDrawCommandKind(3) == nil, "wire-reserved-drop")
+    }
+
+    /// `==` is the re-registration gate: `publishPaint` diffs command arrays and
+    /// skips re-registering when they compare equal. A stored property missing
+    /// from the hand-written `==` makes two visually different commands compare
+    /// equal, and the repaint is silently dropped. Vary each field in turn.
+    @Test func everyPaintDrawCommandFieldParticipatesInEquality() {
+        let base = PaintDrawCommand(kind: .rect, x: 1, y: 2, w: 3, h: 4)
+
+        var mutations: [(String, PaintDrawCommand)] = []
+        func vary(_ name: String, _ mutate: (inout PaintDrawCommand) -> Void) {
+            var copy = base
+            mutate(&copy)
+            mutations.append((name, copy))
+        }
+
+        vary("kind") { $0.kind = .roundedRect }
+        vary("x") { $0.x = 99 }
+        vary("y") { $0.y = 99 }
+        vary("w") { $0.w = 99 }
+        vary("h") { $0.h = 99 }
+        vary("radius") { $0.radius = 99 }
+        vary("strokeWidth") { $0.strokeWidth = 99 }
+        vary("fontSize") { $0.fontSize = 99 }
+        vary("color") { $0.color = (0, 0, 0, 1) }
+        vary("imageHandle") { $0.imageHandle = 99 }
+        vary("textLayoutHandle") { $0.textLayoutHandle = 99 }
+        vary("effectHandle") { $0.effectHandle = 99 }
+        vary("payloadOffset") { $0.payloadOffset = 99 }
+        vary("payloadLength") { $0.payloadLength = 99 }
+        vary("stroke") { $0.stroke = true }
+        vary("antialias") { $0.antialias = false }
+        vary("evenOddFill") { $0.evenOddFill = true }
+        vary("shading") { $0.shading = .linearGradient }
+        vary("blend") { $0.blend = .multiply }
+        vary("alpha") { $0.alpha = 0.5 }
+        vary("blurSigma") { $0.blurSigma = 99 }
+        vary("saturation") { $0.saturation = 99 }
+
+        for (name, mutated) in mutations {
+            #expect(mutated != base, "\(name) must participate in equality")
+        }
+    }
+
+    /// Two commands differing only in which slice of the payload blob they
+    /// reference must not compare equal — the case that would otherwise drop a
+    /// repaint when a view redraws a different path at the same size.
+    @Test func distinctPayloadSlicesAreNotEqual() {
+        let a = PaintDrawCommand(
+            kind: .rect, x: 0, y: 0, w: 10, h: 10, payloadOffset: 0, payloadLength: 16)
+        let b = PaintDrawCommand(
+            kind: .rect, x: 0, y: 0, w: 10, h: 10, payloadOffset: 16, payloadLength: 16)
+        #expect(a != b, "distinct payload slices")
     }
 }

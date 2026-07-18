@@ -41,12 +41,10 @@ Nucleus is a monorepo built with Swift 6.4 through SwiftPM.
 A fresh clone is provisioned by `tools/nucleus bootstrap` (see the render-SDK provisioning
 above); it runs the steps below and builds. Run individually only when iterating.
 
-Skia third-party deps synced once, plus Dawn's vendored codegen (regenerate after a Skia
-bump):
+Skia third-party dependencies are synced once:
 
 ```sh
-third-party/sync-deps.sh                    # submodules + skia git-sync-deps + dawn patches
-swift package generate-dawn --allow-writing-to-package-directory
+third-party/sync-deps.sh                    # submodules + skia git-sync-deps
 ```
 
 The React Native FBReactNativeSpec codegen (`generate-rn-spec`) and the RN native builds

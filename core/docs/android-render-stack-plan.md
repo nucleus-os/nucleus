@@ -42,7 +42,7 @@ The render runtime compiles + links for Android and records a Vulkan frame into 
 
 ## Phase 4 — Skia Graphite on Android — build done (brought forward)
 
-Pulled ahead of Phase 3 because `NucleusRenderer` hard-depends on the Skia façade and cannot cross-compile without it. The `BuildSkiaAndroid` build-tool plugin drives Skia's GN/Ninja cross-targeting the NDK (arm64, `ndk_api=24`) into `.skia-build/android-arm64` — the same native **Vulkan Graphite** backend as the host (`ContextFactory::MakeVulkan`), minus Dawn (the façade references no Dawn symbols) and fontconfig (Android has its own font manager). The single `NucleusSkiaGraphiteBridge` target compiles `Graphite.cpp` with Android-specific flags (no `SK_DAWN`) when cross-compiling.
+Pulled ahead of Phase 3 because `NucleusRenderer` hard-depends on the Skia façade and cannot cross-compile without it. The `BuildSkiaAndroid` build-tool plugin drives Skia's GN/Ninja cross-targeting the NDK (arm64, `ndk_api=24`) into `.skia-build/android-arm64` — the same native **Vulkan Graphite** backend as the host (`ContextFactory::MakeVulkan`), with Android's platform font manager instead of fontconfig. The single `NucleusSkiaGraphiteBridge` target compiles `Graphite.cpp` against that shared Vulkan-only contract when cross-compiling.
 
 ### Exit condition
 

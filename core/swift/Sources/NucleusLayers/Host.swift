@@ -17,6 +17,7 @@ import Synchronization
 public struct Host: Sendable {
     public let imageRegistrar: any ImageRegistrar
     public let paintContentRegistrar: any PaintContentRegistrar
+    public let runtimeEffectRegistrar: any RuntimeEffectRegistrar
     public let iosurfaceBinder: any IOSurfaceBinder
     public let contextIDAllocator: any ContextIDAllocator
     public let displayLinkSource: any DisplayLinkSource
@@ -25,6 +26,7 @@ public struct Host: Sendable {
     public init(
         imageRegistrar: any ImageRegistrar,
         paintContentRegistrar: any PaintContentRegistrar,
+        runtimeEffectRegistrar: any RuntimeEffectRegistrar,
         iosurfaceBinder: any IOSurfaceBinder,
         contextIDAllocator: any ContextIDAllocator,
         displayLinkSource: any DisplayLinkSource,
@@ -32,6 +34,7 @@ public struct Host: Sendable {
     ) {
         self.imageRegistrar = imageRegistrar
         self.paintContentRegistrar = paintContentRegistrar
+        self.runtimeEffectRegistrar = runtimeEffectRegistrar
         self.iosurfaceBinder = iosurfaceBinder
         self.contextIDAllocator = contextIDAllocator
         self.displayLinkSource = displayLinkSource
@@ -42,6 +45,7 @@ public struct Host: Sendable {
 public struct LifecycleHost: Sendable {
     public let imageLifecycle: any ImageLifecycle
     public let paintContentLifecycle: any PaintContentLifecycle
+    public let runtimeEffectLifecycle: any RuntimeEffectLifecycle
     public let snapshotLifecycle: any SnapshotLifecycle
     public let iosurfaceLifecycle: any IOSurfaceLifecycle
     public let contextIDAllocator: any ContextIDAllocator
@@ -49,12 +53,14 @@ public struct LifecycleHost: Sendable {
     public init(
         imageLifecycle: any ImageLifecycle,
         paintContentLifecycle: any PaintContentLifecycle,
+        runtimeEffectLifecycle: any RuntimeEffectLifecycle,
         snapshotLifecycle: any SnapshotLifecycle,
         iosurfaceLifecycle: any IOSurfaceLifecycle,
         contextIDAllocator: any ContextIDAllocator
     ) {
         self.imageLifecycle = imageLifecycle
         self.paintContentLifecycle = paintContentLifecycle
+        self.runtimeEffectLifecycle = runtimeEffectLifecycle
         self.snapshotLifecycle = snapshotLifecycle
         self.iosurfaceLifecycle = iosurfaceLifecycle
         self.contextIDAllocator = contextIDAllocator
@@ -136,8 +142,16 @@ private final class StubPaintContentRegistrar: PaintContentRegistrar {
         resourceHostHandle: UInt64,
         width: Float,
         height: Float,
-        commands: Span<NucleusTypes.PaintCommand>
+        commands: Span<NucleusTypes.PaintCommand>,
+        payload: Span<UInt8>
     ) throws(PaintContentRegistrationError) -> UInt64 {
+        return StubHost.nextHandleValue()
+    }
+}
+
+private final class StubRuntimeEffectRegistrar: RuntimeEffectRegistrar {
+    func register(sksl: String) throws(RuntimeEffectRegistrationError) -> UInt64 {
+        guard !sksl.isEmpty else { throw RuntimeEffectRegistrationError.invalidArgument }
         return StubHost.nextHandleValue()
     }
 }
@@ -176,6 +190,11 @@ private final class StubImageLifecycle: ImageLifecycle {
     func release(resourceHostHandle: UInt64, handle: UInt64) {}
 }
 
+private final class StubRuntimeEffectLifecycle: RuntimeEffectLifecycle {
+    func retain(handle: UInt64) {}
+    func release(handle: UInt64) {}
+}
+
 private final class StubPaintContentLifecycle: PaintContentLifecycle {
     func retain(resourceHostHandle: UInt64, handle: UInt64) {}
     func release(resourceHostHandle: UInt64, handle: UInt64) {}
@@ -200,6 +219,7 @@ public func installStubHost() {
     installHost(Host(
         imageRegistrar: StubImageRegistrar(),
         paintContentRegistrar: StubPaintContentRegistrar(),
+        runtimeEffectRegistrar: StubRuntimeEffectRegistrar(),
         iosurfaceBinder: StubIOSurfaceBinder(),
         contextIDAllocator: StubContextIDAllocator(),
         displayLinkSource: StubDisplayLinkSource(),
@@ -208,6 +228,7 @@ public func installStubHost() {
     installLifecycleHost(LifecycleHost(
         imageLifecycle: StubImageLifecycle(),
         paintContentLifecycle: StubPaintContentLifecycle(),
+        runtimeEffectLifecycle: StubRuntimeEffectLifecycle(),
         snapshotLifecycle: StubSnapshotLifecycle(),
         iosurfaceLifecycle: StubIOSurfaceLifecycle(),
         contextIDAllocator: StubContextIDAllocator()

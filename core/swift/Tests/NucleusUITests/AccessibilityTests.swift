@@ -4,7 +4,7 @@ import Testing
 @MainActor
 @Suite struct AccessibilityTests {
     @Test func viewAccessibilityDefaultsAreEnumerable() throws {
-        let view = try View()
+        let view = View()
 
         #expect(!view.isAccessibilityElement)
         #expect(view.accessibilityLabel == nil)
@@ -17,7 +17,7 @@ import Testing
     }
 
     @Test func viewAccessibilityIndividualSettersUpdateProperties() throws {
-        let view = try View()
+        let view = View()
 
         view.isAccessibilityElement = true
         view.accessibilityLabel = "Continue"
@@ -37,7 +37,7 @@ import Testing
     }
 
     @Test func viewAccessibilityBatchSetterUpdatesIndividualAccessors() throws {
-        let view = try View()
+        let view = View()
 
         view.accessibilityProperties = AccessibilityProperties(
             isElement: true,
@@ -57,10 +57,10 @@ import Testing
     }
 
     @Test func accessibilityChildrenAreExplicitAndNotInherited() throws {
-        let parent = try View()
-        let child = try View()
+        let parent = View()
+        let child = View()
 
-        try parent.addSubview(child)
+        parent.addSubview(child)
         parent.accessibilityChildren = [child]
 
         #expect(parent.accessibilityChildren?.count == 1)
@@ -69,7 +69,7 @@ import Testing
     }
 
     @Test func buttonUsesBaseAccessibilitySurface() throws {
-        let button = try Button(title: "Install")
+        let button = Button(title: "Install")
 
         button.accessibilityProperties = AccessibilityProperties(
             isElement: true,

@@ -7,7 +7,9 @@ public struct NucleusAppHostBundle {
     public let imageLifecycle: any ImageLifecycle
     public let displayLinkSource: any DisplayLinkSource
     public let paintContentRegistrar: any PaintContentRegistrar
+    public let runtimeEffectRegistrar: any RuntimeEffectRegistrar
     public let paintContentLifecycle: any PaintContentLifecycle
+    public let runtimeEffectLifecycle: any RuntimeEffectLifecycle
     public let snapshotLifecycle: any SnapshotLifecycle
     public let iosurfaceBinder: any IOSurfaceBinder
     public let iosurfaceLifecycle: any IOSurfaceLifecycle
@@ -19,7 +21,9 @@ public struct NucleusAppHostBundle {
         imageLifecycle: any ImageLifecycle,
         displayLinkSource: any DisplayLinkSource,
         paintContentRegistrar: any PaintContentRegistrar,
+        runtimeEffectRegistrar: any RuntimeEffectRegistrar,
         paintContentLifecycle: any PaintContentLifecycle,
+        runtimeEffectLifecycle: any RuntimeEffectLifecycle,
         snapshotLifecycle: any SnapshotLifecycle,
         iosurfaceBinder: any IOSurfaceBinder,
         iosurfaceLifecycle: any IOSurfaceLifecycle,
@@ -30,7 +34,9 @@ public struct NucleusAppHostBundle {
         self.imageLifecycle = imageLifecycle
         self.displayLinkSource = displayLinkSource
         self.paintContentRegistrar = paintContentRegistrar
+        self.runtimeEffectRegistrar = runtimeEffectRegistrar
         self.paintContentLifecycle = paintContentLifecycle
+        self.runtimeEffectLifecycle = runtimeEffectLifecycle
         self.snapshotLifecycle = snapshotLifecycle
         self.iosurfaceBinder = iosurfaceBinder
         self.iosurfaceLifecycle = iosurfaceLifecycle
@@ -43,7 +49,9 @@ public struct NucleusAppHostBundle {
         imageLifecycle: any ImageLifecycle,
         displayLinkSource: any DisplayLinkSource,
         paintContentRegistrar: any PaintContentRegistrar,
+        runtimeEffectRegistrar: any RuntimeEffectRegistrar,
         paintContentLifecycle: any PaintContentLifecycle,
+        runtimeEffectLifecycle: any RuntimeEffectLifecycle,
         snapshotLifecycle: any SnapshotLifecycle,
         iosurfaceBinder: any IOSurfaceBinder,
         iosurfaceLifecycle: any IOSurfaceLifecycle,
@@ -55,7 +63,9 @@ public struct NucleusAppHostBundle {
             imageLifecycle: imageLifecycle,
             displayLinkSource: displayLinkSource,
             paintContentRegistrar: paintContentRegistrar,
+            runtimeEffectRegistrar: runtimeEffectRegistrar,
             paintContentLifecycle: paintContentLifecycle,
+            runtimeEffectLifecycle: runtimeEffectLifecycle,
             snapshotLifecycle: snapshotLifecycle,
             iosurfaceBinder: iosurfaceBinder,
             iosurfaceLifecycle: iosurfaceLifecycle,
@@ -84,7 +94,9 @@ public func nucleus_app_host_bundle_install_production() -> UInt8 {
         imageLifecycle: SwiftImageLifecycle(),
         displayLinkSource: SwiftDisplayLinkSource(),
         paintContentRegistrar: SwiftPaintContentRegistrar(),
+        runtimeEffectRegistrar: SwiftRuntimeEffectRegistrar(),
         paintContentLifecycle: SwiftPaintContentLifecycle(),
+        runtimeEffectLifecycle: SwiftRuntimeEffectLifecycle(),
         snapshotLifecycle: SwiftSnapshotLifecycle(),
         iosurfaceBinder: SwiftIOSurfaceBinder(),
         iosurfaceLifecycle: SwiftIOSurfaceLifecycle(),
@@ -95,6 +107,7 @@ public func nucleus_app_host_bundle_install_production() -> UInt8 {
     installHost(Host(
         imageRegistrar: bundle.imageRegistrar,
         paintContentRegistrar: bundle.paintContentRegistrar,
+        runtimeEffectRegistrar: bundle.runtimeEffectRegistrar,
         iosurfaceBinder: bundle.iosurfaceBinder,
         contextIDAllocator: bundle.contextIDAllocator,
         displayLinkSource: bundle.displayLinkSource,
@@ -104,6 +117,7 @@ public func nucleus_app_host_bundle_install_production() -> UInt8 {
     installLifecycleHost(LifecycleHost(
         imageLifecycle: bundle.imageLifecycle,
         paintContentLifecycle: bundle.paintContentLifecycle,
+        runtimeEffectLifecycle: bundle.runtimeEffectLifecycle,
         snapshotLifecycle: bundle.snapshotLifecycle,
         iosurfaceLifecycle: bundle.iosurfaceLifecycle,
         contextIDAllocator: bundle.contextIDAllocator

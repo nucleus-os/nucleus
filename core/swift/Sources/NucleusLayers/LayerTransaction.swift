@@ -236,12 +236,13 @@ public struct LayerTransaction: ~Copyable, ~Sendable {
 
     public mutating func setPaintCommands(
         _ commands: [PaintCommand],
+        payload: [UInt8] = [],
         width: Float,
         height: Float,
         for layer: Layer
     ) throws(LayerError) {
         let content = try PaintContent.register(
-            commands, width: width, height: height, in: context)
+            commands, payload: payload, width: width, height: height, in: context)
         try setContent(LayerContent(content), for: layer)
         withExtendedLifetime(content) {}
     }

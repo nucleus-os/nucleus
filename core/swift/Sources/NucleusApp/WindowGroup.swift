@@ -27,12 +27,12 @@ public struct WindowGroup<Content: View>: Scene, _PrimitiveScene {
         // `App.main()`), so the root view and window mint their layers in the host's
         // context — committed transactions flow to the host's renderer.
         let root = try makeContent()
-        let window = try Window(
+        let window = Window(
             title: title,
             role: .application,
             level: .normal,
             styleMask: [.titled, .closable, .resizable])
-        try window.setContentView(root)
+        window.setContentView(root)
         host.present(WindowScene(windows: [window]))
     }
 }

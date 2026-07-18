@@ -1,10 +1,168 @@
-Subject: [PATCH] Allow CEF to pin Chromium's Vulkan device
+Subject: [PATCH] Pin Chromium's Vulkan producers to the requested DRM device
 
+diff --git a/gpu/command_buffer/service/dawn_context_provider.cc b/gpu/command_buffer/service/dawn_context_provider.cc
+index 04af08a..84a45dc 100644
+--- a/gpu/command_buffer/service/dawn_context_provider.cc
++++ b/gpu/command_buffer/service/dawn_context_provider.cc
+@@ -2,13 +2,22 @@
+ // Use of this source code is governed by a BSD-style license that can be
+ // found in the LICENSE file.
+
+ #include "gpu/command_buffer/service/dawn_context_provider.h"
+
++#include <algorithm>
+ #include <memory>
++#include <optional>
++#include <string>
++#include <string_view>
+ #include <vector>
+
++#if defined(__linux__)
++#include <sys/stat.h>
++#include <sys/sysmacros.h>
++#endif
++
+ #include "base/check_op.h"
+ #include "base/command_line.h"
+ #include "base/compiler_specific.h"
+ #include "base/dcheck_is_on.h"
+ #include "base/debug/crash_logging.h"
+@@ -67,10 +76,54 @@
+ #endif
+
+ namespace gpu {
+ namespace {
+
++#if BUILDFLAG(IS_LINUX)
++struct DrmRenderNode {
++  std::string path;
++  uint32_t major = 0;
++  uint32_t minor = 0;
++};
++
++bool GetRequestedDrmRenderNode(std::optional<DrmRenderNode>* node) {
++  const base::CommandLine* command_line =
++      base::CommandLine::ForCurrentProcess();
++  if (!command_line->HasSwitch("render-node-override")) {
++    node->reset();
++    return true;
++  }
++
++  DrmRenderNode requested{
++      .path = command_line->GetSwitchValueASCII("render-node-override"),
++  };
++  struct stat node_stat{};
++  if (requested.path.empty() || stat(requested.path.c_str(), &node_stat) != 0 ||
++      !S_ISCHR(node_stat.st_mode)) {
++    LOG(ERROR) << "Invalid DRM render node override: " << requested.path;
++    return false;
++  }
++  requested.major = major(node_stat.st_rdev);
++  requested.minor = minor(node_stat.st_rdev);
++  *node = std::move(requested);
++  return true;
++}
++
++bool DawnAdapterMatchesDrmRenderNode(wgpu::Adapter adapter,
++                                     const DrmRenderNode& node) {
++  if (!adapter.HasFeature(wgpu::FeatureName::AdapterPropertiesDrm)) {
++    return false;
++  }
++  wgpu::AdapterPropertiesDrm drm_properties;
++  wgpu::AdapterInfo adapter_info;
++  adapter_info.nextInChain = &drm_properties;
++  return adapter.GetInfo(&adapter_info) == wgpu::Status::Success &&
++         drm_properties.hasRender && drm_properties.renderMajor == node.major &&
++         drm_properties.renderMinor == node.minor;
++}
++#endif  // BUILDFLAG(IS_LINUX)
++
+ // Used as a flag to test dawn initialization failure.
+ BASE_FEATURE(kForceDawnInitializeFailure, base::FEATURE_DISABLED_BY_DEFAULT);
+
+ // Controls if ShaderF16 Dawn feature is enabled for Graphite.
+ BASE_FEATURE(kSkiaGraphiteF16, base::FEATURE_DISABLED_BY_DEFAULT);
+@@ -298,13 +351,16 @@ std::vector<wgpu::FeatureName> GetRequiredFeatures(
+       // The following features are always supported by the the Metal backend on
+       // the Mac versions on which Chrome runs.
+       wgpu::FeatureName::SharedTextureMemoryIOSurface,
+       wgpu::FeatureName::SharedFenceMTLSharedEvent,
+
+-      // The following features are always supported when running on the Vulkan
+-      // backend on Android.
++      // Vulkan external-memory features used by platform SharedImage
++      // backings. Unsupported optional features are skipped below.
+       wgpu::FeatureName::SharedTextureMemoryAHardwareBuffer,
++#if BUILDFLAG(IS_LINUX)
++      wgpu::FeatureName::SharedTextureMemoryDmaBuf,
++#endif
+       wgpu::FeatureName::SharedFenceSyncFD,
+       wgpu::FeatureName::RenderPassRenderArea,
+       wgpu::FeatureName::OpaqueYCbCrAndroidForExternalTexture,
+
+       // The following features are always supported by the the D3D backends.
+@@ -933,11 +989,54 @@ bool DawnSharedContext::Initialize(
+     LogInitFailure("No adapters found.",
+                    /*generate_crash_report=*/!BUILDFLAG(IS_ANDROID),
+                    backend_type, force_fallback_adapter);
+     return false;
+   }
++#if BUILDFLAG(IS_LINUX)
++  std::optional<DrmRenderNode> requested_render_node;
++  if (!GetRequestedDrmRenderNode(&requested_render_node)) {
++    LogInitFailure("Invalid DRM render node override.",
++                   /*generate_crash_report=*/false, backend_type,
++                   force_fallback_adapter);
++    return false;
++  }
++  if (requested_render_node && backend_type != wgpu::BackendType::Vulkan) {
++    LogInitFailure(
++        "A DRM render node was requested for a non-Vulkan Dawn "
++        "backend.",
++        /*generate_crash_report=*/false, backend_type, force_fallback_adapter);
++    return false;
++  }
++  if (requested_render_node) {
++    auto selected = std::ranges::find_if(
++        adapters,
++        [&requested_render_node](const dawn::native::Adapter& native) {
++          return DawnAdapterMatchesDrmRenderNode(wgpu::Adapter(native.Get()),
++                                                 *requested_render_node);
++        });
++    if (selected == adapters.end()) {
++      LogInitFailure(
++          "No Dawn Vulkan adapter matched the requested DRM render "
++          "node.",
++          /*generate_crash_report=*/false, backend_type,
++          force_fallback_adapter);
++      return false;
++    }
++    adapter_ = wgpu::Adapter(selected->Get());
++
++    wgpu::AdapterInfo adapter_info;
++    CHECK_EQ(adapter_.GetInfo(&adapter_info), wgpu::Status::Success);
++    LOG(INFO) << "Skia backend: Graphite/Dawn/Vulkan; Dawn adapter: "
++              << std::string_view(adapter_info.device.data,
++                                  adapter_info.device.length)
++              << "; DRM render node: " << requested_render_node->path;
++  } else {
++    adapter_ = wgpu::Adapter(adapters[0].Get());
++  }
++#else
+   adapter_ = wgpu::Adapter(adapters[0].Get());
++#endif
+
+   if (!validate_adapter_fn(backend_type, adapter_)) {
+     LogInitFailure("Validate adapter failed.",
+                    /*generate_crash_report=*/!BUILDFLAG(IS_ANDROID),
+                    backend_type, force_fallback_adapter);
 diff --git a/gpu/vulkan/vulkan_device_queue.cc b/gpu/vulkan/vulkan_device_queue.cc
-index 2021a3827c..ca47656103 100644
+index 2021a38..ca47656 100644
 --- a/gpu/vulkan/vulkan_device_queue.cc
 +++ b/gpu/vulkan/vulkan_device_queue.cc
-@@ -12,9 +12,11 @@
+@@ -10,13 +10,15 @@
+ #include <cstring>
+ #include <unordered_set>
  #include <utility>
  #include <vector>
 
@@ -16,7 +174,11 @@ index 2021a3827c..ca47656103 100644
  #include "base/strings/stringprintf.h"
  #include "base/task/single_thread_task_runner.h"
  #include "base/trace_event/memory_dump_manager.h"
-@@ -105,6 +107,26 @@ bool VulkanDeviceQueue::Initialize(
+ #include "base/trace_event/process_memory_dump.h"
+ #include "build/build_config.h"
+@@ -103,10 +105,30 @@ bool VulkanDeviceQueue::Initialize(
+   if (VK_NULL_HANDLE == vk_instance_)
+     return false;
 
    const VulkanInfo& info = instance_->vulkan_info();
 
@@ -43,7 +205,11 @@ index 2021a3827c..ca47656103 100644
    VkResult result = VK_SUCCESS;
 
    VkQueueFlags queue_flags = 0;
-@@ -136,6 +158,23 @@ bool VulkanDeviceQueue::Initialize(
+   if (options & DeviceQueueOption::GRAPHICS_QUEUE_FLAG) {
+     queue_flags |= VK_QUEUE_GRAPHICS_BIT;
+@@ -134,10 +156,27 @@ bool VulkanDeviceQueue::Initialize(
+   int queue_index = -1;
+   int device_score = -1;
    for (size_t i = 0; i < info.physical_devices.size(); ++i) {
      const auto& device_info = info.physical_devices[i];
      const auto& device_properties = device_info.properties;
@@ -67,11 +233,15 @@ index 2021a3827c..ca47656103 100644
      if (device_properties.apiVersion < info.used_api_version)
        continue;
 
+       // In dual-CPU cases, we cannot detect the active GPU correctly on Linux,
+       // so don't select GPU device based on the |gpu_info|.
 diff --git a/ui/gl/gl_display.cc b/ui/gl/gl_display.cc
-index 376561c053..d027710802 100644
+index 376561c..4f0084b 100644
 --- a/ui/gl/gl_display.cc
 +++ b/ui/gl/gl_display.cc
-@@ -67,5 +67,33 @@ EGLDisplay GetPlatformANGLEDisplay(
+@@ -65,10 +65,38 @@ EGLDisplay GetPlatformANGLEDisplay(
+     const std::vector<std::string>& disabled_features,
+     const std::vector<EGLAttrib>& extra_display_attribs) {
    TRACE_EVENT("gpu,startup", "gl_display::GetPlatformANGLEDisplay");
    std::vector<EGLAttrib> display_attribs(extra_display_attribs);
 
@@ -105,3 +275,6 @@ index 376561c053..d027710802 100644
 +
    display_attribs.push_back(EGL_PLATFORM_ANGLE_TYPE_ANGLE);
    display_attribs.push_back(static_cast<EGLAttrib>(platform_type));
+
+   if (platform_type == EGL_PLATFORM_ANGLE_TYPE_D3D11_ANGLE) {
+     base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();

@@ -10,21 +10,47 @@
 
 // MARK: - Draw-command vocabulary
 
-/// What a paint draw command paints. Wire-stable discriminants matching the
-/// layers ABI (`nucleus_paint_command_kind`): the gaps (0, 3) are unused on
-/// the wire.
+/// What a paint draw command paints. Densely numbered: the discriminants are
+/// not stable across anything, because nothing serializes them.
 public enum PaintDrawCommandKind: UInt32, Sendable {
-    case rect = 1
-    case roundedRect = 2
-    case image = 4
-    case line = 5
-    case textLayout = 6
+    case rect = 0
+    case roundedRect = 1
+    case image = 2
+    case path = 3
+    case textLayout = 4
+    case clipPath = 5
+    case save = 6
+    case restore = 7
+}
+
+/// Mirrors `NucleusTypes.PaintShading`; duplicated rather than imported
+/// because this module deliberately resolves no dependencies.
+public enum PaintDrawShading: UInt32, Sendable {
+    case color = 0
+    case linearGradient = 1
+    case radialGradient = 2
+    case sweepGradient = 3
+    case effect = 4
+}
+
+/// Compositing mode for a draw command. Mirrors `NucleusTypes.PaintBlendMode`
+/// and `nucleus::skia::BlendMode`; duplicated rather than imported because
+/// this module deliberately resolves no dependencies.
+public enum PaintDrawBlendMode: UInt32, Sendable {
+    case srcOver = 0
+    case src = 1
+    case multiply = 2
+    case screen = 3
+    case plus = 4
+    case overlay = 5
+    case dstIn = 6
+    case dstOut = 7
 }
 
 /// One resolved paint draw command. Geometry + style + resource handles; the
 /// renderer maps `imageHandle`/`textLayoutHandle` to its image / text-layout
-/// registries at rasterization time. Mirrors `artifact_store.PaintCommand`
-/// (and the wire `nucleus_paint_command`).
+/// registries at rasterization time. This is the decoded stored form of
+/// `NucleusTypes.PaintCommand`.
 public struct PaintDrawCommand: Equatable, Sendable {
     public var kind: PaintDrawCommandKind
     public var x: Float
@@ -38,13 +64,33 @@ public struct PaintDrawCommand: Equatable, Sendable {
     public var color: Float4
     public var imageHandle: UInt64
     public var textLayoutHandle: UInt64
+    /// Handle into the compiled-SkSL registry, or 0. Consumed from Phase 4.
+    public var effectHandle: UInt64
+    /// Slice of the recording's payload blob holding this command's
+    /// variable-length data (path verbs/points, gradient stops, uniforms).
+    public var payloadOffset: UInt32
+    public var payloadLength: UInt32
+    public var stroke: Bool
+    public var antialias: Bool
+    public var evenOddFill: Bool
+    public var shading: PaintDrawShading
+    public var blend: PaintDrawBlendMode
+    public var alpha: Float
+    public var blurSigma: Float
+    public var saturation: Float
 
     public init(
         kind: PaintDrawCommandKind,
         x: Float, y: Float, w: Float, h: Float,
         radius: Float = 0, strokeWidth: Float = 0, fontSize: Float = 0,
         color: Float4 = (1, 1, 1, 1),
-        imageHandle: UInt64 = 0, textLayoutHandle: UInt64 = 0
+        imageHandle: UInt64 = 0, textLayoutHandle: UInt64 = 0,
+        effectHandle: UInt64 = 0,
+        payloadOffset: UInt32 = 0, payloadLength: UInt32 = 0,
+        stroke: Bool = false, antialias: Bool = true, evenOddFill: Bool = false,
+        shading: PaintDrawShading = .color,
+        blend: PaintDrawBlendMode = .srcOver,
+        alpha: Float = 1, blurSigma: Float = 0, saturation: Float = 1
     ) {
         self.kind = kind
         self.x = x
@@ -57,22 +103,43 @@ public struct PaintDrawCommand: Equatable, Sendable {
         self.color = color
         self.imageHandle = imageHandle
         self.textLayoutHandle = textLayoutHandle
+        self.effectHandle = effectHandle
+        self.payloadOffset = payloadOffset
+        self.payloadLength = payloadLength
+        self.stroke = stroke
+        self.antialias = antialias
+        self.evenOddFill = evenOddFill
+        self.shading = shading
+        self.blend = blend
+        self.alpha = alpha
+        self.blurSigma = blurSigma
+        self.saturation = saturation
     }
 
+    /// Hand-written only because `Float4` is a tuple and so not `Equatable`.
+    /// **Every stored property must appear here.** This comparison is the
+    /// re-registration gate: a field omitted here makes two visually different
+    /// commands compare equal, and the repaint is silently dropped.
     public static func == (lhs: PaintDrawCommand, rhs: PaintDrawCommand) -> Bool {
         lhs.kind == rhs.kind && lhs.x == rhs.x && lhs.y == rhs.y &&
             lhs.w == rhs.w && lhs.h == rhs.h && lhs.radius == rhs.radius &&
             lhs.strokeWidth == rhs.strokeWidth && lhs.fontSize == rhs.fontSize &&
             float4Equal(lhs.color, rhs.color) &&
-            lhs.imageHandle == rhs.imageHandle && lhs.textLayoutHandle == rhs.textLayoutHandle
+            lhs.imageHandle == rhs.imageHandle && lhs.textLayoutHandle == rhs.textLayoutHandle &&
+            lhs.effectHandle == rhs.effectHandle &&
+            lhs.payloadOffset == rhs.payloadOffset && lhs.payloadLength == rhs.payloadLength &&
+            lhs.stroke == rhs.stroke && lhs.antialias == rhs.antialias &&
+            lhs.evenOddFill == rhs.evenOddFill && lhs.shading == rhs.shading &&
+            lhs.blend == rhs.blend &&
+            lhs.alpha == rhs.alpha && lhs.blurSigma == rhs.blurSigma &&
+            lhs.saturation == rhs.saturation
     }
 }
 
-/// Map a wire discriminant to a draw-command kind, dropping unknown/unsupported
-/// values (the wire reserves 0 and 3). Mirrors `paintCommandKind`.
-public func paintDrawCommandKind(_ raw: UInt32) -> PaintDrawCommandKind? {
-    PaintDrawCommandKind(rawValue: raw)
-}
+// `paintDrawCommandKind(_:)` is gone. It mapped a raw discriminant to a kind
+// and returned nil for unknown values, which callers turned into a silently
+// dropped draw. In-process an unknown kind is a programmer error, so the
+// decode is now an exhaustive switch over the enum with no `default`.
 
 // MARK: - Store
 
@@ -81,11 +148,18 @@ public func paintDrawCommandKind(_ raw: UInt32) -> PaintDrawCommandKind? {
 public final class PaintContentStore: @unchecked Sendable {
     public struct Content: Sendable {
         public var commands: [PaintDrawCommand]
+        /// Variable-length data the commands index into via
+        /// `payloadOffset`/`payloadLength`. Opaque to this store.
+        public var payload: [UInt8]
         public var width: Float
         public var height: Float
 
-        public init(commands: [PaintDrawCommand], width: Float, height: Float) {
+        public init(
+            commands: [PaintDrawCommand], payload: [UInt8] = [],
+            width: Float, height: Float
+        ) {
             self.commands = commands
+            self.payload = payload
             self.width = width
             self.height = height
         }
@@ -116,11 +190,14 @@ public final class PaintContentStore: @unchecked Sendable {
     /// `registerCommands`.
     @discardableResult
     public func register(
-        _ commands: [PaintDrawCommand], width: Float, height: Float
+        _ commands: [PaintDrawCommand], payload: [UInt8] = [],
+        width: Float, height: Float
     ) -> PaintContentHandle {
         let handle = allocHandle()
         entries[handle] = Entry(
-            content: Content(commands: commands, width: width, height: height), refs: 1)
+            content: Content(
+                commands: commands, payload: payload, width: width, height: height),
+            refs: 1)
         return handle
     }
 

@@ -61,41 +61,32 @@ public final class Button: Control, ~Sendable {
         )
     }
 
-    package override func displayCommands(in dirtyRect: Rect) -> [ViewLayerContentCommand] {
+    public override func draw(in context: GraphicsContext) {
         switch glyph {
         case .none:
-            guard !title.isEmpty else {
-                return []
-            }
+            guard !title.isEmpty else { return }
             let layout = titleTextLayout(containerWidth: Double(frame.size.width))
-            let y = Float(max(0, (frame.size.height - layout.usedRect.size.height) * 0.5))
-            return layout.layerContentCommands(color: foregroundColor, y: y)
+            let y = max(0, (frame.size.height - layout.usedRect.size.height) * 0.5)
+            context.fillColor = foregroundColor
+            context.draw(layout, in: Rect(
+                x: 0, y: y,
+                width: layout.usedRect.size.width,
+                height: layout.usedRect.size.height))
         case .close:
-            let width = Float(frame.size.width)
-            let height = Float(frame.size.height)
-            let extent = max(0, min(width, height) * 0.5)
-            let centerX = width * 0.5
-            let centerY = height * 0.5
-            return [
-                .init(
-                    kind: .line,
-                    x: centerX - extent,
-                    y: centerY - extent,
-                    w: centerX + extent,
-                    h: centerY + extent,
-                    strokeWidth: 1.5,
-                    color: foregroundColor
-                ),
-                .init(
-                    kind: .line,
-                    x: centerX + extent,
-                    y: centerY - extent,
-                    w: centerX - extent,
-                    h: centerY + extent,
-                    strokeWidth: 1.5,
-                    color: foregroundColor
-                ),
-            ]
+            // One stroked path with a round cap, rather than two rects faking
+            // strokes. The rects could not express the cap at all.
+            let extent = max(0, min(frame.size.width, frame.size.height) * 0.5)
+            let centerX = frame.size.width * 0.5
+            let centerY = frame.size.height * 0.5
+            var path = Path()
+            path.move(to: Point(x: centerX - extent, y: centerY - extent))
+            path.addLine(to: Point(x: centerX + extent, y: centerY + extent))
+            path.move(to: Point(x: centerX + extent, y: centerY - extent))
+            path.addLine(to: Point(x: centerX - extent, y: centerY + extent))
+            context.strokeColor = foregroundColor
+            context.lineWidth = 1.5
+            context.lineCap = .round
+            context.stroke(path)
         }
     }
 

@@ -109,6 +109,10 @@ final class FrameDriver {
     private var previousLayerSnapshots: [UInt64: [UInt64: LayerFrameSnapshot]] = [:]
     private var submittedLayerSnapshots: [UInt64: [UInt64: LayerFrameSnapshot]] = [:]
     private var decodedImages: [UInt64: nucleus.skia.Image] = [:]
+    /// Compiled SkSL programs keyed by runtime-effect handle. Compilation is
+    /// the expensive half and is uniform-independent, so it is cached here
+    /// while uniforms are re-bound per draw.
+    private var compiledEffects: [UInt64: nucleus.skia.RuntimeEffect] = [:]
     private var recording = false
     private var uploadsStaged = false
     private(set) var sawCallbackWhileRecording = false
@@ -156,6 +160,7 @@ final class FrameDriver {
         }
         registry.clear()
         decodedImages.removeAll()
+        compiledEffects.removeAll()
         accumulators.removeAll()
     }
 
@@ -165,6 +170,28 @@ final class FrameDriver {
         guard image.isValid() else { return nil }
         decodedImages[handle] = image
         return image
+    }
+
+    /// Resolve a paint command's effect handle to a compiled program, compiling
+    /// and caching on first use. Mirrors `resolvePaintImage`.
+    func resolvePaintEffect(_ handle: UInt64) -> nucleus.skia.RuntimeEffect? {
+        guard let source = SwiftResourceHost.shared.runtimeEffects.source(handle) else { return nil }
+        return compiledEffect(handle: handle, source: source)
+    }
+
+    func compiledEffect(handle: UInt64, source: RuntimeEffectSource) -> nucleus.skia.RuntimeEffect? {
+        if let existing = compiledEffects[handle], existing.isValid() { return existing }
+        let effect = nucleus.skia.makeRuntimeEffect(source.sksl)
+        guard effect.isValid() else { return nil }
+        compiledEffects[handle] = effect
+        return effect
+    }
+
+    /// Drop a compiled-program cache entry when its source is released from the
+    /// effect store (driven by `RuntimeEffectStore.onEvict`). No-op for an
+    /// unknown handle.
+    func evictCompiledEffect(_ handle: UInt64) {
+        compiledEffects[handle] = nil
     }
 
     /// Drop a decoded-image cache entry when its source is released from the image
@@ -289,11 +316,13 @@ final class FrameDriver {
                 layerId: quad.layerId,
                 revision: handle.raw,
                 commands: content.commands,
+                payload: content.payload,
                 authoredWidth: content.width,
                 authoredHeight: content.height,
                 contentWidth: pixelExtent(content.width * Float(target.fractionalScale)),
                 contentHeight: pixelExtent(content.height * Float(target.fractionalScale)),
-                resolveImage: resolvePaintImage)
+                resolveImage: resolvePaintImage,
+                resolveEffect: resolvePaintEffect)
             if let produced, let image = registry.resolve(produced) {
                 resolved[handle.raw] = image
             }

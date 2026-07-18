@@ -1,3 +1,8 @@
+#if canImport(Glibc)
+import Glibc
+#else
+import Darwin
+#endif
 import NucleusTypes
 
 public struct Point: Equatable, Sendable {
@@ -83,5 +88,84 @@ public struct EdgeInsets: Equatable, Sendable {
         self.left = left
         self.bottom = bottom
         self.right = right
+    }
+}
+
+/// A 2D affine transform, row-major `[a b tx; c d ty; 0 0 1]`. Mirrors
+/// `CGAffineTransform`. `GraphicsContext` applies it to geometry as it records,
+/// so the paint commands themselves carry no matrix.
+public struct AffineTransform: Equatable, Sendable {
+    public var a: Double
+    public var b: Double
+    public var c: Double
+    public var d: Double
+    public var tx: Double
+    public var ty: Double
+
+    public init(
+        a: Double = 1, b: Double = 0, c: Double = 0,
+        d: Double = 1, tx: Double = 0, ty: Double = 0
+    ) {
+        self.a = a
+        self.b = b
+        self.c = c
+        self.d = d
+        self.tx = tx
+        self.ty = ty
+    }
+
+    public static let identity = AffineTransform()
+
+    public var isIdentity: Bool { self == .identity }
+
+    public static func translation(x: Double, y: Double) -> AffineTransform {
+        AffineTransform(tx: x, ty: y)
+    }
+
+    public static func scale(x: Double, y: Double) -> AffineTransform {
+        AffineTransform(a: x, d: y)
+    }
+
+    public static func rotation(degrees: Double) -> AffineTransform {
+        let radians = degrees * .pi / 180
+        let s = sin(radians), c = cos(radians)
+        return AffineTransform(a: c, b: s, c: -s, d: c)
+    }
+
+    public func apply(_ point: Point) -> Point {
+        Point(x: a * point.x + c * point.y + tx, y: b * point.x + d * point.y + ty)
+    }
+
+    /// `self` applied after `other` — i.e. `other` is the outer transform, so
+    /// successive `translateBy`/`scaleBy` calls compose in call order.
+    public func concatenating(_ other: AffineTransform) -> AffineTransform {
+        AffineTransform(
+            a: other.a * a + other.b * c,
+            b: other.a * b + other.b * d,
+            c: other.c * a + other.d * c,
+            d: other.c * b + other.d * d,
+            tx: other.tx * a + other.ty * c + tx,
+            ty: other.tx * b + other.ty * d + ty)
+    }
+
+    public func translated(x: Double, y: Double) -> AffineTransform {
+        AffineTransform.translation(x: x, y: y).concatenating(self)
+    }
+
+    public func scaled(x: Double, y: Double) -> AffineTransform {
+        AffineTransform.scale(x: x, y: y).concatenating(self)
+    }
+
+    public func rotated(degrees: Double) -> AffineTransform {
+        AffineTransform.rotation(degrees: degrees).concatenating(self)
+    }
+
+    /// A single representative scale factor, for values that are scalars rather
+    /// than points — stroke width, corner radius, gradient radius. Exact under
+    /// uniform scale; the geometric mean under anisotropic scale, which is the
+    /// same compromise CoreGraphics makes.
+    public var approximateScale: Double {
+        let determinant = abs(a * d - b * c)
+        return determinant > 0 ? determinant.squareRoot() : 1
     }
 }

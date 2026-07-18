@@ -3,6 +3,7 @@ import VulkanC
 import Vulkan
 import NucleusSkiaGraphiteBridge
 import NucleusRenderModel
+import NucleusTypes
 @testable import NucleusRenderer
 
 // Converted from TextureProducerFixture (Phase 10b.4d): ProducerWorkStats
@@ -115,10 +116,17 @@ import NucleusRenderModel
             _ = producer.drainStats()
             _ = sh
 
+            // A path command's geometry rides the payload blob.
+            var linePayload: [UInt8] = []
+            PaintPayload.append(
+                to: &linePayload, verbs: [.move, .line], points: [0, 17, 24, 17])
+
             let paintCommands = [
                 PaintDrawCommand(kind: .rect, x: 0, y: 0, w: 24, h: 18, color: (1, 0, 0, 1)),
                 PaintDrawCommand(kind: .roundedRect, x: 4, y: 4, w: 12, h: 8, radius: 3, color: (0, 1, 0, 0.8)),
-                PaintDrawCommand(kind: .line, x: 0, y: 17, w: 24, h: 0, strokeWidth: 2, color: (0, 0, 1, 1)),
+                PaintDrawCommand(
+                    kind: .path, x: 0, y: 17, w: 24, h: 0, strokeWidth: 2, color: (0, 0, 1, 1),
+                    payloadOffset: 0, payloadLength: UInt32(linePayload.count), stroke: true),
                 PaintDrawCommand(kind: .image, x: 2, y: 2, w: 8, h: 8, imageHandle: 77),
                 PaintDrawCommand(kind: .textLayout, x: 1, y: 1, w: 20, h: 10, color: (1, 1, 1, 1), textLayoutHandle: 123),
             ]
@@ -127,19 +135,19 @@ import NucleusRenderModel
             }
             let paintHandle = producer.producePaintCommands(
                 recorder: recorder, layerId: 12, revision: 1,
-                commands: paintCommands, authoredWidth: 24, authoredHeight: 18,
-                contentWidth: 48, contentHeight: 36
-            ) { handle in
-                handle == 77 ? paintImage : nil
-            }
+                commands: paintCommands, payload: linePayload,
+                authoredWidth: 24, authoredHeight: 18,
+                contentWidth: 48, contentHeight: 36,
+                resolveImage: { handle in handle == 77 ? paintImage : nil },
+                resolveEffect: { _ in nil })
             _ = producer.drainStats()
             let paintHandle2 = producer.producePaintCommands(
                 recorder: recorder, layerId: 12, revision: 1,
-                commands: paintCommands, authoredWidth: 24, authoredHeight: 18,
-                contentWidth: 48, contentHeight: 36
-            ) { handle in
-                handle == 77 ? paintImage : nil
-            }
+                commands: paintCommands, payload: linePayload,
+                authoredWidth: 24, authoredHeight: 18,
+                contentWidth: 48, contentHeight: 36,
+                resolveImage: { handle in handle == 77 ? paintImage : nil },
+                resolveEffect: { _ in nil })
             _ = paintHandle
             _ = paintHandle2
             _ = producer.drainStats()

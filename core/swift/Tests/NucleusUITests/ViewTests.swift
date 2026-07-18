@@ -23,22 +23,20 @@ import Testing
 
     final class DrawingProbeView: View {
         var drawCount = 0
-        var lastDirtyRect: Rect?
 
-        override func draw(_ dirtyRect: Rect) {
+        override func draw(in context: GraphicsContext) {
             drawCount += 1
-            lastDirtyRect = dirtyRect
         }
     }
 
     @Test func windowDeinitReleasesRoot() throws {
         weak var weakRoot: View?
         do {
-            let window = try Window(title: "Root Owner")
-            let root = try View()
+            let window = Window(title: "Root Owner")
+            let root = View()
             weakRoot = root
 
-            try window.setRootView(root)
+            window.setRootView(root)
             #expect(weakRoot != nil)
         }
 
@@ -49,12 +47,12 @@ import Testing
         weak var weakParent: View?
         weak var weakChild: View?
         do {
-            let parent = try View()
-            let child = try View()
+            let parent = View()
+            let child = View()
             weakParent = parent
             weakChild = child
 
-            try parent.addSubview(child)
+            parent.addSubview(child)
             #expect(weakParent != nil)
             #expect(weakChild != nil)
         }
@@ -64,46 +62,46 @@ import Testing
     }
 
     @Test func removeFromSuperviewDetachesChild() throws {
-        let parent = try View()
-        let child = try View()
+        let parent = View()
+        let child = View()
 
-        try parent.addSubview(child)
-        try child.removeFromSuperview()
+        parent.addSubview(child)
+        child.removeFromSuperview()
 
         #expect(child.superview == nil)
         #expect(parent.subviews.isEmpty)
     }
 
     @Test func attachedViewTransferMovesSwiftOwnership() throws {
-        let window = try Window(title: "Owner")
-        let root = try View()
-        let child = try View()
+        let window = Window(title: "Owner")
+        let root = View()
+        let child = View()
 
-        try window.setRootView(root)
-        try root.addSubview(child)
+        window.setRootView(root)
+        root.addSubview(child)
 
         #expect(root.subviews.contains { $0 === child })
         #expect(window.root === root)
     }
 
     @Test func setFrameInvalidatesLayout() throws {
-        let view = try LayoutProbeView()
+        let view = LayoutProbeView()
         #expect(!view.needsLayout)
 
         view.frame = (Rect(x: 10, y: 20, width: 30, height: 40))
         #expect(view.needsLayout)
 
-        try view.layoutIfNeeded()
+        view.layoutIfNeeded()
         #expect(view.layoutCount == 1)
         #expect(!view.needsLayout)
     }
 
     @Test func displayInvalidationIsSeparateFromLayout() throws {
-        let view = try DrawingProbeView()
+        let view = DrawingProbeView()
         #expect(view.needsDisplay)
         #expect(!view.needsLayout)
 
-        try view.displayIfNeeded()
+        view.displayIfNeeded()
         #expect(view.drawCount == 1)
         #expect(!view.needsDisplay)
 
@@ -111,30 +109,34 @@ import Testing
         #expect(view.needsDisplay)
         #expect(!view.needsLayout)
 
-        try view.displayIfNeeded()
+        view.displayIfNeeded()
         #expect(view.drawCount == 2)
-        #expect(view.lastDirtyRect == Rect(x: 2, y: 3, width: 4, height: 5))
     }
 
     @Test func semanticViewStyleFeedsLayerContentWithoutPublicDrawCommands() throws {
-        let view = try DrawingProbeView()
+        let view = DrawingProbeView()
         view.frame = Rect(x: 0, y: 0, width: 40, height: 20)
         view.backgroundColor = Color(0.1, 0.2, 0.3, 0.4)
         view.cornerRadius = 6
         view.border = Border(width: 2, color: Color(1, 1, 1, 0.5))
 
-        try view.displayIfNeeded()
+        view.displayIfNeeded()
 
-        let commands = view.layerContent.commands
+        // The subclass draws nothing, so everything here comes from the style:
+        // a rounded background and a stroked border. The border must request a
+        // stroke — carrying only a strokeWidth made Skia fill it.
+        let commands = view.layerContent.recording.commands
         #expect(commands.count == 2)
         #expect(commands[0].kind == .roundedRect)
         #expect(commands[0].w == 40)
         #expect(commands[0].h == 20)
+        #expect(!commands[0].flags.contains(.stroke), "background fills")
         #expect(commands[1].strokeWidth == 2)
+        #expect(commands[1].flags.contains(.stroke), "border strokes")
     }
 
     @Test func viewLayerPublicationMetadataFeedsRenderContent() throws {
-        let view = try View()
+        let view = View()
         let creation = Rect(x: 10, y: 20, width: 30, height: 40)
         view.layerPresentation = ViewLayerPresentation(
             role: .notification,
@@ -158,13 +160,13 @@ import Testing
         let semanticContext = try Context(id: ContextID(rawValue: 710), commitSink: InMemoryCommitSink())
         let visualSink = InMemoryCommitSink()
         let visualContext = try Context(id: ContextID(rawValue: 711), commitSink: visualSink)
-        let root = try Application.withContext(semanticContext) {
-            let root = try View()
+        let root = Application.withContext(semanticContext) {
+            let root = View()
             root.frame = Rect(x: 0, y: 0, width: 200, height: 100)
 
-            let label = try Label("Reusable publisher")
+            let label = Label("Reusable publisher")
             label.frame = Rect(x: 12, y: 16, width: 120, height: 24)
-            try root.addSubview(label)
+            root.addSubview(label)
             return root
         }
         let label = try #require(root.subviews.first as? Label)
@@ -187,8 +189,8 @@ import Testing
         let semanticContext = try Context(id: ContextID(rawValue: 726), commitSink: InMemoryCommitSink())
         let visualSink = InMemoryCommitSink()
         let visualContext = try Context(id: ContextID(rawValue: 727), commitSink: visualSink)
-        let root = try Application.withContext(semanticContext) {
-            let root = try View()
+        let root = Application.withContext(semanticContext) {
+            let root = View()
             root.frame = Rect(x: 0, y: 0, width: 160, height: 64)
             root.layerPresentation = ViewLayerPresentation(
                 role: .notification,
@@ -220,23 +222,23 @@ import Testing
         let semanticContext = try Context(id: ContextID(rawValue: 712), commitSink: InMemoryCommitSink())
         let visualSink = InMemoryCommitSink()
         let visualContext = try Context(id: ContextID(rawValue: 713), commitSink: visualSink)
-        let windows = try Application.withContext(semanticContext) {
-            let visible = try Window(title: "Visible")
-            let visibleRoot = try Label("Visible root")
+        let windows = Application.withContext(semanticContext) {
+            let visible = Window(title: "Visible")
+            let visibleRoot = Label("Visible root")
             visibleRoot.frame = Rect(x: 0, y: 0, width: 100, height: 20)
-            try visible.setContentView(visibleRoot)
-            try visible.orderFront()
+            visible.setContentView(visibleRoot)
+            visible.orderFront()
 
-            let filtered = try Window(title: "Filtered")
-            let filteredRoot = try Label("Filtered root")
+            let filtered = Window(title: "Filtered")
+            let filteredRoot = Label("Filtered root")
             filteredRoot.frame = Rect(x: 0, y: 24, width: 100, height: 20)
-            try filtered.setContentView(filteredRoot)
-            try filtered.orderFront()
+            filtered.setContentView(filteredRoot)
+            filtered.orderFront()
 
-            let hidden = try Window(title: "Hidden")
-            let hiddenRoot = try Label("Hidden root")
+            let hidden = Window(title: "Hidden")
+            let hiddenRoot = Label("Hidden root")
             hiddenRoot.frame = Rect(x: 0, y: 48, width: 100, height: 20)
-            try hidden.setContentView(hiddenRoot)
+            hidden.setContentView(hiddenRoot)
 
             return (visible: visible, filtered: filtered, hidden: hidden)
         }
@@ -261,28 +263,28 @@ import Testing
         let semanticContext = try Context(id: ContextID(rawValue: 714), commitSink: InMemoryCommitSink())
         let visualSink = InMemoryCommitSink()
         let visualContext = try Context(id: ContextID(rawValue: 715), commitSink: visualSink)
-        let windows = try Application.withContext(semanticContext) {
-            let back = try Window(title: "Back")
-            let backRoot = try Label("Back")
+        let windows = Application.withContext(semanticContext) {
+            let back = Window(title: "Back")
+            let backRoot = Label("Back")
             backRoot.frame = Rect(x: 0, y: 0, width: 100, height: 40)
-            try back.setContentView(backRoot)
-            try back.orderFront()
+            back.setContentView(backRoot)
+            back.orderFront()
 
-            let front = try Window(title: "Front")
-            let frontRoot = try Label("Front")
+            let front = Window(title: "Front")
+            let frontRoot = Label("Front")
             frontRoot.frame = Rect(x: 0, y: 0, width: 100, height: 40)
-            try front.setContentView(frontRoot)
-            try front.orderFront()
+            front.setContentView(frontRoot)
+            front.orderFront()
 
             return (back: back, front: front)
         }
         let scene = WindowScene(windows: [windows.back, windows.front], visualContext: visualContext)
 
-        let hit = try #require(try scene.hitTest(at: Point(x: 10, y: 10)))
+        let hit = try #require(scene.hitTest(at: Point(x: 10, y: 10)))
         #expect(hit.window === windows.front)
 
         windows.front.orderOut()
-        let revealedHit = try #require(try scene.hitTest(at: Point(x: 10, y: 10)))
+        let revealedHit = try #require(scene.hitTest(at: Point(x: 10, y: 10)))
         #expect(revealedHit.window === windows.back)
 
         let published = try scene.publish { $0.title == "Back" }
@@ -294,18 +296,18 @@ import Testing
         let semanticContext = try Context(id: ContextID(rawValue: 716), commitSink: InMemoryCommitSink())
         let visualSink = InMemoryCommitSink()
         let visualContext = try Context(id: ContextID(rawValue: 717), commitSink: visualSink)
-        let windows = try Application.withContext(semanticContext) {
-            let window = try Window(title: "Native")
-            let root = try Label("Native root")
+        let windows = Application.withContext(semanticContext) {
+            let window = Window(title: "Native")
+            let root = Label("Native root")
             root.frame = Rect(x: 0, y: 0, width: 100, height: 20)
-            try window.setContentView(root)
-            try window.orderFront()
+            window.setContentView(root)
+            window.orderFront()
 
-            let notification = try Window(title: "Notification", role: .notification, level: .overlay)
-            let notificationRoot = try Label("Notification root")
+            let notification = Window(title: "Notification", role: .notification, level: .overlay)
+            let notificationRoot = Label("Notification root")
             notificationRoot.frame = Rect(x: 0, y: 24, width: 100, height: 20)
-            try notification.setContentView(notificationRoot)
-            try notification.orderFront()
+            notification.setContentView(notificationRoot)
+            notification.orderFront()
             return (window, notification)
         }
         let scene = WindowScene(windows: [windows.0, windows.1], visualContext: visualContext)
@@ -330,7 +332,7 @@ import Testing
         let visualSink = InMemoryCommitSink()
         let visualContext = try Context(id: ContextID(rawValue: 720), commitSink: visualSink)
         let scene = WindowScene(visualContext: visualContext)
-        let surface = try HostedSurface(
+        let surface = HostedSurface(
             surfaceID: 11,
             context: visualContext,
             frame: Rect(x: 0, y: 0, width: 100, height: 80)
@@ -357,8 +359,8 @@ import Testing
         let visualContext = try Context(id: ContextID(rawValue: 721), commitSink: visualSink)
         let scene = WindowScene(visualContext: visualContext)
         let registry = HostedSurfaceRegistry<String>(context: visualContext)
-        let dock = try registry.surface(for: "dock")
-        let menuBar = try registry.surface(for: "menubar")
+        let dock = registry.surface(for: "dock")
+        let menuBar = registry.surface(for: "menubar")
         var attachedIDs: [Int] = []
 
         let didAttach = try scene.attachHostedSurfaces(registry.surfaces) { surface in
@@ -377,7 +379,7 @@ import Testing
     @Test func hostedSurfaceOwnsGenericRootLifecycleAndFrameUpdates() throws {
         let visualSink = InMemoryCommitSink()
         let visualContext = try Context(id: ContextID(rawValue: 718), commitSink: visualSink)
-        let surface = try HostedSurface(
+        let surface = HostedSurface(
             surfaceID: 9,
             context: visualContext,
             frame: Rect(x: 0, y: 0, width: 100, height: 80)
@@ -418,9 +420,9 @@ import Testing
         let visualContext = try Context(id: ContextID(rawValue: 719), commitSink: visualSink)
         let registry = HostedSurfaceRegistry<String>(context: visualContext)
 
-        let dock = try registry.surface(for: "dock", frame: Rect(x: 0, y: 0, width: 100, height: 40))
-        let menuBar = try registry.surface(for: "menubar")
-        let repeatedDock = try registry.surface(for: "dock")
+        let dock = registry.surface(for: "dock", frame: Rect(x: 0, y: 0, width: 100, height: 40))
+        let menuBar = registry.surface(for: "menubar")
+        let repeatedDock = registry.surface(for: "dock")
 
         #expect(dock === repeatedDock)
         #expect(dock.surfaceID == 1)
@@ -452,7 +454,7 @@ import Testing
     }
 
     @Test func visualEffectViewStoresAppKitConfiguration() throws {
-        let effect = try VisualEffectView(
+        let effect = VisualEffectView(
             material: .hudWindow,
             blendingMode: .withinWindow,
             state: .inactive,
@@ -484,13 +486,13 @@ import Testing
         let semanticContext = try Context(id: ContextID(rawValue: 720), commitSink: InMemoryCommitSink())
         let visualSink = InMemoryCommitSink()
         let visualContext = try Context(id: ContextID(rawValue: 721), commitSink: visualSink)
-        let root = try Application.withContext(semanticContext) {
-            let root = try View()
+        let root = Application.withContext(semanticContext) {
+            let root = View()
             root.frame = Rect(x: 0, y: 0, width: 200, height: 100)
 
-            let effect = try VisualEffectView(material: .popover, cornerRadius: 18)
+            let effect = VisualEffectView(material: .popover, cornerRadius: 18)
             effect.frame = Rect(x: 8, y: 10, width: 120, height: 44)
-            try root.addSubview(effect)
+            root.addSubview(effect)
             return root
         }
         let effect = try #require(root.subviews.first as? VisualEffectView)
@@ -524,22 +526,22 @@ import Testing
         let semanticContext = try Context(id: ContextID(rawValue: 722), commitSink: InMemoryCommitSink())
         let visualSink = InMemoryCommitSink()
         let visualContext = try Context(id: ContextID(rawValue: 723), commitSink: visualSink)
-        let root = try Application.withContext(semanticContext) {
-            let root = try View()
+        let root = Application.withContext(semanticContext) {
+            let root = View()
             root.frame = Rect(x: 10, y: 20, width: 200, height: 100)
             root.backgroundColor = Color(0.1, 0.2, 0.3, 0.4)
             root.cornerRadius = 12
             root.border = Border(width: 2, color: Color(1, 1, 1, 0.5))
             root.shadow = Shadow(offsetY: 6, blurRadius: 20, cornerRadius: 12, opacity: 0.35)
 
-            let effect = try VisualEffectView(material: .popover, cornerRadius: 18)
+            let effect = VisualEffectView(material: .popover, cornerRadius: 18)
             effect.frame = Rect(x: 8, y: 10, width: 120, height: 44)
             effect.cornerRadius = 18
-            try root.addSubview(effect)
+            root.addSubview(effect)
 
-            let label = try Label("Point space")
+            let label = Label("Point space")
             label.frame = Rect(x: 12, y: 16, width: 140, height: 24)
-            try root.addSubview(label)
+            root.addSubview(label)
             return root
         }
         let effect = try #require(root.subviews.first as? VisualEffectView)
@@ -574,8 +576,8 @@ import Testing
         let semanticContext = try Context(id: ContextID(rawValue: 724), commitSink: InMemoryCommitSink())
         let visualSink = InMemoryCommitSink()
         let visualContext = try Context(id: ContextID(rawValue: 725), commitSink: visualSink)
-        let root = try Application.withContext(semanticContext) {
-            let root = try View()
+        let root = Application.withContext(semanticContext) {
+            let root = View()
             root.frame = Rect(x: 0, y: 0, width: 120, height: 40)
             root.backgroundColor = Color(0.1, 0.2, 0.3, 1)
             root.shadow = Shadow(offsetY: 4, blurRadius: 10, cornerRadius: 6, opacity: 0.4)

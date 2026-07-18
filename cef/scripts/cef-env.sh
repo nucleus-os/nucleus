@@ -28,7 +28,10 @@ export NUCLEUS_CEF_CHROMIUM_VERSION="${NUCLEUS_CEF_CHROMIUM_VERSION:-151.0.7922.
 # configuration already avoids PartitionAlloc-as-malloc for client
 # compatibility; keep the allocator shim and BackupRefPtr support explicitly
 # disabled as well so the embedding libc++ process retains one malloc ABI.
-export NUCLEUS_CEF_GN_DEFINES_BASE="proprietary_codecs=true ffmpeg_branding=Chrome use_dbus=true is_official_build=true symbol_level=0 dcheck_always_on=false enable_expensive_dchecks=false chrome_pgo_phase=2 use_thin_lto=true thin_lto_enable_optimizations=true use_mold=false use_lld=true use_allocator_shim=false enable_backup_ref_ptr_support=false treat_warnings_as_errors=false"
+# Noctalia runs only on Wayland and owns the actual wl_surface used for
+# presentation. Build Chromium's Ozone Wayland backend without the unused X11
+# window-system backend or fallback.
+export NUCLEUS_CEF_GN_DEFINES_BASE="proprietary_codecs=true ffmpeg_branding=Chrome use_dbus=true is_official_build=true symbol_level=0 dcheck_always_on=false enable_expensive_dchecks=false chrome_pgo_phase=2 use_thin_lto=true thin_lto_enable_optimizations=true use_mold=false use_lld=true use_allocator_shim=false enable_backup_ref_ptr_support=false treat_warnings_as_errors=false ozone_platform=wayland ozone_platform_wayland=true ozone_platform_x11=false"
 # Appended verbatim for narrow build experiments.
 export NUCLEUS_CEF_GN_EXTRA="${NUCLEUS_CEF_GN_EXTRA:-}"
 

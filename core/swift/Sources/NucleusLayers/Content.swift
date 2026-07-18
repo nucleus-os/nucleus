@@ -91,16 +91,18 @@ public final class PaintContent: @unchecked Sendable {
 
     @MainActor
     public static func register(
-        _ commands: [PaintCommand], width: Float, height: Float, in context: Context
+        _ commands: [PaintCommand], payload: [UInt8] = [],
+        width: Float, height: Float, in context: Context
     ) throws(LayerError) -> PaintContent {
         try register(
-            commands, width: width, height: height,
+            commands, payload: payload, width: width, height: height,
             resourceHostHandle: context.commitSink.resourceHostHandle)
     }
 
     @MainActor
     public static func register(
-        _ commands: [PaintCommand], width: Float, height: Float,
+        _ commands: [PaintCommand], payload: [UInt8] = [],
+        width: Float, height: Float,
         resourceHostHandle: UInt64
     ) throws(LayerError) -> PaintContent {
         guard let registrar = currentHost()?.paintContentRegistrar else {
@@ -108,13 +110,14 @@ public final class PaintContent: @unchecked Sendable {
         }
         var handle: UInt64 = 0
         var error: LayerError?
-        withWireCommands(commands) { commandSpan in
+        withWireRecording(commands, payload) { commandSpan, payloadSpan in
             do {
                 handle = try registrar.register(
                     resourceHostHandle: resourceHostHandle,
                     width: width,
                     height: height,
-                    commands: commandSpan
+                    commands: commandSpan,
+                    payload: payloadSpan
                 )
             } catch let err as PaintContentRegistrationError {
                 error = paintContentLayerError(from: err)
@@ -193,12 +196,13 @@ public final class IOSurfaceContent: @unchecked Sendable {
     }
 }
 
-package func withWireCommands<T>(
+/// Borrow a recording's command and payload arrays for the duration of the
+/// synchronous `body` call; the host registrar reads both in place. No element
+/// mapping: `PaintCommand` *is* `NucleusTypes.PaintCommand`.
+package func withWireRecording<T>(
     _ commands: [PaintCommand],
-    _ body: (Span<NucleusTypes.PaintCommand>) -> T
+    _ payload: [UInt8],
+    _ body: (Span<NucleusTypes.PaintCommand>, Span<UInt8>) -> T
 ) -> T {
-    let cCommands = commands.map(\.wireValue)
-    // `cCommands.span` borrows the wire-command array for the duration of
-    // the synchronous `body` call; the host registrar reads it in place.
-    return body(cCommands.span)
+    body(commands.span, payload.span)
 }

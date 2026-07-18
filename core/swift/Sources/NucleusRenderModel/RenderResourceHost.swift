@@ -24,6 +24,10 @@ public final class SwiftResourceHost: @unchecked Sendable {
     /// the renderer at frame time.
     public let images = ImageStore()
 
+    /// Registered SkSL program sources (refcounted), compiled by the renderer
+    /// at frame time.
+    public let runtimeEffects = RuntimeEffectStore()
+
     /// Resident implicit-action templates (the layers curve set). Replaced
     /// wholesale by the implicit-action registrar.
     public var implicitActions = ImplicitActionTable()

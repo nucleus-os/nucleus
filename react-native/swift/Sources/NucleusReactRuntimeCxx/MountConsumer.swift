@@ -282,11 +282,7 @@ public final class MountConsumer: MountingObserverHandler, Sendable {
                   let parent = registry.component(for: event.parentTag) else {
                 return
             }
-            do {
-                try parent.view.addSubview(child.view)
-            } catch {
-                return
-            }
+            parent.view.addSubview(child.view)
             child.apply(event)
         case .update:
             if let child = registry.component(for: event.newTag),
@@ -295,7 +291,7 @@ public final class MountConsumer: MountingObserverHandler, Sendable {
             }
         case .remove:
             if let child = registry.component(for: event.oldTag) {
-                try? child.view.removeFromSuperview()
+                child.view.removeFromSuperview()
             }
         case .delete:
             registry.unregister(tag: event.oldTag)
@@ -474,10 +470,10 @@ public final class ReactParagraphComponentView: ReactBaseComponentView {
 
     public override func commitDisplayContentIfNeeded() throws {
         let frame = view.frame
-        let commands = paragraphView.displayCommands(
+        let recording = paragraphView.recordDisplay(
             containerWidth: frame.size.width > 0 ? frame.size.width : nil
         )
-        try ReactLayerContentCommitter.commit(commands: commands, for: view)
+        try ReactLayerContentCommitter.commit(recording: recording, for: view)
     }
 }
 
@@ -493,7 +489,7 @@ public enum ReactComponentViewFactory {
                 tag: event.tag,
                 componentName: event.componentName,
                 nativeID: event.nativeID,
-                imageView: try ImageView()
+                imageView: ImageView()
             )
         }
         if event.isTextContentComponent {
@@ -501,7 +497,7 @@ public enum ReactComponentViewFactory {
                 tag: event.tag,
                 componentName: event.componentName,
                 nativeID: event.nativeID,
-                view: try View(),
+                view: View(),
                 paragraphView: ReactParagraphView()
             )
         }
@@ -509,7 +505,7 @@ public enum ReactComponentViewFactory {
             tag: event.tag,
             componentName: event.componentName,
             nativeID: event.nativeID,
-            view: try View()
+            view: View()
         )
     }
 }

@@ -50,7 +50,7 @@ public final class Label: View, ~Sendable {
     public var textColor: Color {
         didSet {
             // The cached layout carries the run color, so a color change must rebuild
-            // it (metrics are unaffected, but displayCommands would otherwise re-color
+            // it (metrics are unaffected, but drawing would otherwise re-color
             // and drop the paragraph storage).
             if textColor != oldValue { invalidateLayoutCache() }
             setNeedsDisplay()
@@ -100,15 +100,21 @@ public final class Label: View, ~Sendable {
         )
     }
 
-    package override func displayCommands(in dirtyRect: Rect) -> [ViewLayerContentCommand] {
-        textLayout(containerWidth: Double(frame.size.width)).layerContentCommands(color: textColor)
+    public override func draw(in context: GraphicsContext) {
+        let layout = textLayout(containerWidth: Double(frame.size.width))
+        guard !layout.isEmpty else { return }
+        context.fillColor = textColor
+        context.draw(layout, in: Rect(
+            x: 0, y: 0,
+            width: layout.usedRect.size.width,
+            height: layout.usedRect.size.height))
     }
 
     /// Text layouts are expensive (each runs a full Skia paragraph measurement), and a
     /// single label lays out its text several times per pass — intrinsicContentSize,
-    /// the baseline getters, and displayCommands. Cache one layout per containerWidth
+    /// the baseline getters, and draw(in:). Cache one layout per containerWidth
     /// (the only per-call variable); the run color is the current textColor, so the
-    /// metrics reads (color-independent) and layerContentCommands (color matches, so
+    /// metrics reads (color-independent) and drawing (color matches, so
     /// its paragraph storage is preserved) both reuse the same measured layout. Any
     /// layout- or color-affecting property change clears the cache.
     private var layoutCache: [Double?: TextLayout] = [:]
