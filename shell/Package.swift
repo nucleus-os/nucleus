@@ -295,6 +295,27 @@ let package = Package(
             path: "Sources/NucleusShellPamC",
             pkgConfig: "pam"
         ),
+        // ── D-Bus, client side. Every shell service worth having — UPower,
+        //    BlueZ, NetworkManager, MPRIS, logind, the tray — is a bus peer, so
+        //    this seam is the substrate under all of them.
+        .systemLibrary(
+            name: "NucleusShellDBusC",
+            path: "Sources/NucleusShellDBusC",
+            pkgConfig: "libsystemd"
+        ),
+        .target(
+            name: "NucleusShellDBus",
+            dependencies: ["NucleusShellDBusC"],
+            path: "Sources/NucleusShellDBus",
+            swiftSettings: [.interoperabilityMode(.Cxx)]
+        ),
+        .testTarget(
+            name: "NucleusShellDBusTests",
+            dependencies: ["NucleusShellDBus"],
+            path: "Tests/NucleusShellDBusTests",
+            swiftSettings: [.interoperabilityMode(.Cxx)]
+        ),
+
         // The wire format alone, with no dependencies, so the helper links
         // almost nothing: a smaller image spawns faster and gives a crashing PAM
         // module less to reach.
