@@ -459,6 +459,36 @@ public struct TextEditorModel: Equatable, Sendable {
         return true
     }
 
+    /// Take the contents as a scrubable buffer and clear the model.
+    ///
+    /// The exit path for a credential: after this the byte copy is the
+    /// authoritative one and the model holds nothing. Undo history goes too,
+    /// since it would otherwise still hold what was typed.
+    ///
+    /// The model's `String` storage is overwritten in place first. That is
+    /// best-effort and deliberately not claimed as more: if the buffer was
+    /// uniquely referenced the bytes really are overwritten, but Swift may have
+    /// copied the string anywhere, and small strings live inline in the struct.
+    /// The guarantee lives in `SecureBytes`, not here.
+    public mutating func takeSecureBytes() -> SecureBytes {
+        let bytes = SecureBytes(utf8: text)
+        secureEraseStorage()
+        discardUndoHistory()
+        selection = TextSelection(caretAt: 0)
+        markedRange = nil
+        return bytes
+    }
+
+    /// Overwrite the text storage in place, then empty it.
+    private mutating func secureEraseStorage() {
+        guard !text.isEmpty else { return }
+        // Same length, so a uniquely-referenced buffer is overwritten rather
+        // than reallocated.
+        text.replaceSubrange(text.startIndex..<text.endIndex,
+                             with: String(repeating: "\u{0}", count: text.count))
+        text = ""
+    }
+
     /// Drop the undo and redo history outright.
     ///
     /// Clearing a secure field's text is not enough on its own: the previous

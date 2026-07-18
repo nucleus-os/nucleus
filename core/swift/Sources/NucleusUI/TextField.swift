@@ -133,6 +133,18 @@ open class TextField: Control, TextInputClient, ~Sendable {
         model.discardUndoHistory()
     }
 
+    /// Take the field's contents as a scrubable buffer and empty the field.
+    ///
+    /// How a credential leaves a secure field. The value never becomes a
+    /// `String` that outlives the call, which a `stringValue` read would.
+    public func takeSecureCredential() -> SecureBytes {
+        let bytes = model.takeSecureBytes()
+        invalidateTextLayout()
+        notifyInputMethodOfStateChange()
+        onChange?(self)
+        return bytes
+    }
+
     public func setSelectedRange(_ range: Range<Int>) {
         model.setSelection(TextSelection(anchor: range.lowerBound, head: range.upperBound))
         afterSelectionChange()

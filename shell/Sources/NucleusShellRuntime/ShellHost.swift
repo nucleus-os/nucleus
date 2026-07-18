@@ -7,6 +7,7 @@ import NucleusRenderHost
 import NucleusAppHostBundle
 import NucleusShellWayland
 import NucleusShellInput
+import NucleusShellAuth
 import NucleusShellRender
 import NucleusShellSignalC
 import Foundation
@@ -65,6 +66,7 @@ public final class ShellHost {
     /// compositor is deliberately fail-closed and a lock the shell cannot
     /// release would strand the session.
     public private(set) var lockController: ShellLockController?
+    private var authenticator: PamAuthenticator?
 
     fileprivate var toplevels: ForeignToplevelManager?
     private var running = false
@@ -154,8 +156,15 @@ public final class ShellHost {
         self.seat = seat
         let router = ShellInputRouter(scene: scene, seat: seat)
         inputRouter = router
-        lockController = ShellLockController(
+        // PAM runs in a helper process, never in this address space: a module
+        // that crashes or calls `exit()` would otherwise take the locker with it,
+        // and a dead locker leaves the session blank and locked for good.
+        let authenticator = PamAuthenticator()
+        self.authenticator = authenticator
+        let controller = ShellLockController(
             client: client, engine: engine, scene: scene, inputRouter: router)
+        controller.authenticator = authenticator
+        lockController = controller
     }
 
     // MARK: - Bar surface
@@ -291,6 +300,16 @@ public final class ShellHost {
             if let untilRepeatNs = inputRouter?.nanosecondsUntilNextRepeat(nowNs: nowNs) {
                 timeoutMs = min(timeoutMs, Int32(untilRepeatNs / 1_000_000))
             }
+
+            // An authentication attempt in flight adds its pipe to the wait, so
+            // the verdict arrives as soon as the helper answers rather than at
+            // the next frame — and the lock screen keeps drawing meanwhile.
+            let authFD = authenticator?.pendingFD
+            pollfds.removeSubrange(2...)
+            if let authFD {
+                pollfds.append(pollfd(fd: authFD, events: Int16(POLLIN), revents: 0))
+            }
+
             let ready = poll(&pollfds, nfds_t(pollfds.count), timeoutMs)
             if ready < 0 {
                 if errno == EINTR { continue }
@@ -304,6 +323,11 @@ public final class ShellHost {
                 _ = nucleus_shell_consume_exit_signal(exitSignalFD)
                 break
             }
+            if ready > 0, authFD != nil, pollfds.count > 2,
+               pollfds[2].revents & Int16(POLLIN | POLLHUP) != 0 {
+                authenticator?.drainPendingAttempt()
+            }
+
             // Emit any key repeats that came due while polling.
             inputRouter?.advanceKeyRepeat(nowNs: monotonicNowNs())
 

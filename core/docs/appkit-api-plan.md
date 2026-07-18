@@ -701,9 +701,40 @@ screen. The lock takes a disjoint region, and `ShellRenderEngine.placeSurface` e
 surface-local, so every hit test missed by the window's origin until `ShellInputRouter` learned to
 rebase through the registered window.
 
-**Outstanding: a real authenticator, and hardware validation.** No PAM backend is written, so the
-lock is presently unusable by design rather than by accident — `canLock` is false. Nothing in this
-has been seen on a display.
+**PAM runs in a helper process, never in the shell's address space.** PAM `dlopen`s whatever
+modules the system administrator configured; they allocate, spawn threads, and are entirely
+capable of crashing or calling `exit()`. In the locker's own process any of that kills the locker,
+and a dead locker leaves the compositor holding a permanently blank fail-closed session. In a
+helper the worst case is a failed attempt.
+
+`posix_spawn` of a separate executable rather than a bare `fork()`: after a fork in a
+multithreaded process the child may only call async-signal-safe functions, and PAM goes well past
+that. The shell holds a Vulkan device and a JavaScript runtime's threads, so a fresh image is the
+honest way to get a single-threaded process to run PAM in. The helper links only PAM and the wire
+format — `NucleusShellAuthWire` exists with no dependencies for exactly that reason.
+
+The verdict arrives on a pipe the existing event loop polls, so the lock screen keeps drawing and
+accepting keys while a deliberately slow check runs. Three things are treated as failure rather
+than success: a truncated response, a non-zero exit status, and a helper killed by a signal. The
+exit status is checked even when the pipe said `accepted`.
+
+`pam_acct_mgmt` tolerates `PAM_AUTHINFO_UNAVAIL`, following Noctalia's reference implementation:
+an unprivileged locker cannot read `/etc/shadow` for the account stack, and `pam_authenticate` has
+already proved identity. Treating that answer as failure would reject the correct password on most
+systems.
+
+**The credential no longer travels as a `String`.** A Swift `String` cannot be scrubbed — its
+storage is copy-on-write, small values live inline, and the compiler may copy it anywhere — so
+`LockAuthenticator` takes `SecureBytes`, a heap buffer zeroed with `explicit_bzero` on release.
+`TextField.takeSecureCredential()` is how a credential leaves a field: it empties the field and
+its undo history in one step and returns the bytes. The editor model's `String` storage is
+overwritten in place first, which is documented as best-effort rather than claimed as a guarantee;
+the guarantee lives in `SecureBytes`.
+
+**Outstanding: hardware validation.** Nothing in this has been seen on a display, and no real
+authentication has been attempted — the helper's round-trip test proves the process starts, speaks
+the protocol, and fails closed on a malformed request, but a genuine PAM stack and a live password
+are needed for the rest.
 
 **Outstanding: the compositor's server-side `zwp_text_input_v3` binding.** Deliberately not
 half-built. Server-side text-input exists to serve *clients*, and it has nothing to serve them

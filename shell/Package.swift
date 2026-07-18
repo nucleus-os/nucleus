@@ -288,6 +288,40 @@ let package = Package(
         //    vocabulary and NucleusUI's event vocabulary meet. Its own target so
         //    the translation is testable without linking React Native, Vulkan, or
         //    the render backend — none of which a keycode mapping needs.
+        // ── Authentication. The wire format and the client live here; the PAM
+        //    modules themselves are only ever loaded by the helper executable.
+        .systemLibrary(
+            name: "NucleusShellPamC",
+            path: "Sources/NucleusShellPamC",
+            pkgConfig: "pam"
+        ),
+        // The wire format alone, with no dependencies, so the helper links
+        // almost nothing: a smaller image spawns faster and gives a crashing PAM
+        // module less to reach.
+        .target(
+            name: "NucleusShellAuthWire",
+            path: "Sources/NucleusShellAuthWire"
+        ),
+        .target(
+            name: "NucleusShellAuth",
+            dependencies: [
+                "NucleusShellAuthWire",
+                "NucleusShellProduct",
+                .product(name: "NucleusUI", package: "Nucleus"),
+            ],
+            path: "Sources/NucleusShellAuth",
+            swiftSettings: [.interoperabilityMode(.Cxx)]
+        ),
+        // A separate process so a crashing or exiting PAM module costs a child,
+        // not the locker — a dead locker leaves the session blank and locked.
+        .executableTarget(
+            name: "NucleusShellPamHelper",
+            dependencies: ["NucleusShellAuthWire", "NucleusShellPamC"],
+            path: "Sources/NucleusShellPamHelper",
+            swiftSettings: [.interoperabilityMode(.Cxx)],
+            linkerSettings: [.unsafeFlags(["-lpam"])]
+        ),
+
         .target(
             name: "NucleusShellInput",
             dependencies: [
@@ -304,6 +338,9 @@ let package = Package(
             name: "NucleusShellInputTests",
             dependencies: [
                 "NucleusShellInput",
+                "NucleusShellAuthWire",
+                // The helper binary itself, so the round-trip test has one to run.
+                "NucleusShellPamHelper",
                 .product(name: "NucleusUI", package: "Nucleus"),
                 .product(name: "NucleusTextBackend", package: "Nucleus"),
             ],
@@ -316,7 +353,7 @@ let package = Package(
             name: "NucleusShellRuntime",
             dependencies: [
                 "NucleusShellWayland", "NucleusShellRender", "NucleusShellSignalC",
-                "NucleusShellProduct", "NucleusShellInput",
+                "NucleusShellProduct", "NucleusShellInput", "NucleusShellAuth",
                 .product(name: "NucleusReactRuntime", package: "NucleusReactNative"),
                 .product(name: "NucleusReactRuntimeCxx", package: "NucleusReactNative"),
                 .product(name: "NucleusRenderer", package: "Nucleus"),

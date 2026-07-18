@@ -14,9 +14,13 @@ import NucleusUI
         var pending: ((LockAuthenticationOutcome) -> Void)?
 
         func authenticate(
-            password: String, completion: @escaping (LockAuthenticationOutcome) -> Void
+            password: SecureBytes, completion: @escaping (LockAuthenticationOutcome) -> Void
         ) {
-            attempts.append(password)
+            // Recorded as text only so the tests can assert what was submitted;
+            // a real authenticator never turns the bytes back into a String.
+            attempts.append(password.withUnsafeBytes {
+                String(decoding: $0, as: UTF8.self)
+            })
             pending = completion
         }
 

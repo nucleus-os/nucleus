@@ -16,13 +16,19 @@ public enum LockAuthenticationOutcome: Sendable, Equatable {
 /// Verifies a password. Implemented outside this package — PAM, a keyring, a
 /// test stub — so the lock UI never links an authentication backend.
 ///
-/// The password is passed as a `String` and the implementation must not retain,
-/// log, or forward it. Verification is asynchronous because every real backend
-/// is, and because a synchronous one would block the frame loop during the
-/// deliberate delay that rate-limits guessing.
+/// The credential arrives as `SecureBytes` rather than a `String` because a
+/// `String` cannot be scrubbed: its storage is copy-on-write, small values live
+/// inline, and the compiler may copy it anywhere. An implementation must not
+/// copy the bytes into anything longer-lived than the call.
+///
+/// Verification is asynchronous because every real backend is, and because a
+/// synchronous one would freeze the lock screen for the duration of a
+/// deliberately slow check.
 @MainActor
 public protocol LockAuthenticator: AnyObject {
-    func authenticate(password: String, completion: @escaping (LockAuthenticationOutcome) -> Void)
+    func authenticate(
+        password: SecureBytes,
+        completion: @escaping (LockAuthenticationOutcome) -> Void)
 }
 
 /// The session lock screen: a prompt, a secure password field, and a status line.
@@ -111,9 +117,11 @@ public final class LockScreenView: View {
             return
         }
 
-        let password = passwordField.stringValue
+        // Taking the credential empties the field and its undo history in one
+        // step, so nothing recoverable is left behind while the check runs.
+        let password = passwordField.takeSecureCredential()
         guard !password.isEmpty else { return }
-        clearPassword()
+        passwordField.discardUndoHistory()
 
         isAuthenticating = true
         statusLabel.text = ""

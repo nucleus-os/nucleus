@@ -1,0 +1,8 @@
+// NucleusShellPamC: importer façade over Linux-PAM for the authentication
+// helper. Only the helper links this — the shell proper never loads a PAM
+// module into its own address space, which is the whole point of the helper
+// existing.
+module NucleusShellPamC {
+    header "NucleusShellPamC.h"
+    export *
+}
