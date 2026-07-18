@@ -1607,7 +1607,7 @@ diff --git a/gpu/command_buffer/service/shared_image/dawn_ozone_image_representa
 index 89313c5..209b98d 100644
 --- a/gpu/command_buffer/service/shared_image/dawn_ozone_image_representation.cc
 +++ b/gpu/command_buffer/service/shared_image/dawn_ozone_image_representation.cc
-@@ -88,10 +88,30 @@ wgpu::Texture DawnOzoneImageRepresentation::BeginAccess(
+@@ -88,10 +88,25 @@ wgpu::Texture DawnOzoneImageRepresentation::BeginAccess(
    begin_access_desc.initialized = IsCleared();
 
    wgpu::SharedTextureMemoryVkImageLayoutBeginState begin_layout{};
@@ -1627,15 +1627,10 @@ index 89313c5..209b98d 100644
 +    }
 +    begin_layout.oldLayout = external_state->old_layout;
 +    begin_layout.newLayout = external_state->new_layout;
-+  } else if (IsCleared()) {
-+    LOG(ERROR) << "Initialized shared image has no external Vulkan layout "
-+                  "state";
-+    ozone_backing()->EndAccess(
-+        is_readonly_, OzoneImageBacking::AccessStream::kWebGPU,
-+        fences.empty() ? gfx::GpuFenceHandle() : std::move(fences[0]));
-+    return nullptr;
 +  } else {
-+    // The first access may discard the uninitialized contents.
++    // Chromium does not yet track layouts for every Ozone access path.
++    // Preserve the existing discard transition when no tracked state exists;
++    // exported offscreen images must provide state before publication.
 +    begin_layout.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 +    begin_layout.newLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 +  }

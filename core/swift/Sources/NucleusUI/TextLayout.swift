@@ -101,7 +101,7 @@ public struct TextLayout: Sendable, Equatable {
     public var usedRect: Rect
     public var lines: [TextLayoutLine]
     public var didExceedMaximumLineCount: Bool
-    @_spi(NucleusCompositor) public var storage: TextLayoutStorage?
+    package var storage: TextLayoutStorage?
 
     public init(
         text: String,

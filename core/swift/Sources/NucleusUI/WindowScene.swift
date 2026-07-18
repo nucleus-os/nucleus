@@ -84,63 +84,25 @@ public final class WindowScene: ~Sendable {
         window.setKey(true)
     }
 
-    package func ensureRootAttached() throws(UIError) -> Layer {
+    /// The scene's root layer, created and attached on first use. An embedder
+    /// attaching its own content parents it here.
+    @_spi(NucleusCompositor) public func ensureRootAttached() throws(UIError) -> Layer {
         try publisher.ensureRootAttached()
     }
 
-    package func attachHostedSurface<Result>(
-        _ surface: HostedSurface,
-        using attach: (View, Int, Layer) throws -> Result
-    ) throws -> Result {
-        try attachHostedSurface(surface) { rootView, surfaceID, parentLayer, _ in
-            try attach(rootView, surfaceID, parentLayer)
-        }
-    }
-
-    @_spi(NucleusCompositor) public func attachHostedSurface<Result>(
-        _ surface: HostedSurface,
-        using attach: (View, Int, Layer, UInt32) throws -> Result
-    ) throws -> Result {
-        let parentLayer = try ensureRootAttached()
-        let index = hostedSurfaceInsertionIndex(for: surface)
-        let result = try attach(surface.rootView, surface.surfaceID, parentLayer, index)
-        surface.markCommittedContent()
-        surface.beginCommittedFrameUpdates()
-        return result
-    }
-
-    @discardableResult
-    package func attachHostedSurfaces(
-        _ surfaces: [HostedSurface],
-        where shouldAttach: (HostedSurface) -> Bool,
-        using attach: (View, Int, Layer) throws -> Void
-    ) throws -> Bool {
-        try attachHostedSurfaces(surfaces, where: shouldAttach) { rootView, surfaceID, parentLayer, _ in
-            try attach(rootView, surfaceID, parentLayer)
-        }
-    }
-
-    @discardableResult
-    @_spi(NucleusCompositor) public func attachHostedSurfaces(
-        _ surfaces: [HostedSurface],
-        where shouldAttach: (HostedSurface) -> Bool,
-        using attach: (View, Int, Layer, UInt32) throws -> Void
-    ) throws -> Bool {
-        var didAttach = false
-        var parentLayer: Layer?
-        var attachedAtLevel: [WindowLevel: UInt32] = [:]
-        for surface in surfaces where shouldAttach(surface) {
-            let resolvedParent = try parentLayer ?? ensureRootAttached()
-            parentLayer = resolvedParent
-            let baseIndex = hostedSurfaceInsertionIndex(for: surface)
-            let levelOffset = attachedAtLevel[surface.level] ?? 0
-            try attach(surface.rootView, surface.surfaceID, resolvedParent, baseIndex + levelOffset)
-            attachedAtLevel[surface.level] = levelOffset + 1
-            surface.markCommittedContent()
-            surface.beginCommittedFrameUpdates()
-            didAttach = true
-        }
-        return didAttach
+    /// The sublayer index at which embedder-owned content at `level` should be
+    /// inserted under the scene's root, so it lands above the scene's own
+    /// windows at or below that level.
+    ///
+    /// The scene answers *where*; the embedder does the attaching, because what
+    /// it is attaching is its own concept.
+    @_spi(NucleusCompositor) public func insertionIndex(forLevel level: WindowLevel) -> UInt32 {
+        let precedingWindowCount = windowsForDisplay().filter { window in
+            window.isVisible &&
+                window.root != nil &&
+                window.level.rawValue <= level.rawValue
+        }.count
+        return UInt32(precedingWindowCount)
     }
 
     package func publish() throws(UIError) -> PublishedScene {
@@ -164,13 +126,17 @@ public final class WindowScene: ~Sendable {
     }
 
     package func publish(
-        hostedSurfaces: [HostedVisualContent]
+        placing placements: [ScenePlacement]
     ) throws(UIError) -> PublishedScene {
-        try publish(hostedSurfaces: hostedSurfaces) { _ in true }
+        try publish(placing: placements) { _ in true }
     }
 
+    /// Publish this scene's windows interleaved with embedder-owned content by
+    /// window level. The scene does not know what a placement *is* — only where
+    /// it sorts — which is what keeps compositor concepts like hosted client
+    /// surfaces out of the UI framework.
     @_spi(NucleusCompositor) public func publish(
-        hostedSurfaces: [HostedVisualContent],
+        placing placements: [ScenePlacement],
         includes windowIncluded: @MainActor (Window) -> Bool
     ) throws(UIError) -> PublishedScene {
         let displayWindows = windowsForDisplay().filter { window in
@@ -181,20 +147,19 @@ public final class WindowScene: ~Sendable {
         let windowRecords = zip(displayWindows, windowContent).enumerated().map { index, pair in
             PublicationRecord(level: pair.0.level, sequence: index * 2, content: pair.1)
         }
-        let visibleHostedSurfaces = hostedSurfaces.filter(\.visible)
-        let hostedRecords = visibleHostedSurfaces.enumerated().map { index, surface in
+        let placedRecords = placements.filter(\.visible).enumerated().map { index, placement in
             PublicationRecord(
-                level: surface.level,
+                level: placement.level,
                 sequence: index * 2 + 1,
-                content: PublishedVisualContent.hostedSurface(
-                    id: surface.id,
-                    rootLayerID: surface.rootLayerID,
+                content: PublishedVisualContent(
+                    id: placement.id,
+                    rootLayerID: placement.rootLayerID,
                     orderIndex: 0,
-                    visible: surface.visible
+                    visible: placement.visible
                 )
             )
         }
-        let ordered = (windowRecords + hostedRecords).sorted { lhs, rhs in
+        let ordered = (windowRecords + placedRecords).sorted { lhs, rhs in
             if lhs.level.rawValue != rhs.level.rawValue {
                 return lhs.level.rawValue < rhs.level.rawValue
             }
@@ -233,12 +198,4 @@ public final class WindowScene: ~Sendable {
         }.map(\.element)
     }
 
-    private func hostedSurfaceInsertionIndex(for surface: HostedSurface) -> UInt32 {
-        let precedingWindowCount = windowsForDisplay().filter { window in
-            window.isVisible &&
-                window.root != nil &&
-                window.level.rawValue <= surface.level.rawValue
-        }.count
-        return UInt32(precedingWindowCount)
-    }
 }

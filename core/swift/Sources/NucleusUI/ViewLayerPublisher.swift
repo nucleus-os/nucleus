@@ -99,7 +99,7 @@ package final class ViewLayerPublisher: ~Sendable {
         try publish(snapshots: snapshots)
         let visualRoots = snapshots.filter { $0.parentBackingLayerID == 0 }
         return visualRoots.enumerated().map { index, snapshot in
-            PublishedVisualContent.viewLayer(
+            PublishedVisualContent(
                 id: snapshot.backingLayerID,
                 rootLayerID: snapshot.backingLayerID,
                 orderIndex: UInt32(index)

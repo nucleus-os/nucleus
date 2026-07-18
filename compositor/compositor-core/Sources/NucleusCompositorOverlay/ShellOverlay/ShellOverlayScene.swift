@@ -91,7 +91,7 @@ public final class ShellOverlayScene: ~Sendable {
         using attach: (View, Int, Layer, UInt32) throws -> Result
     ) throws -> Result {
         let surface = try hostedSurface(for: id)
-        return try windowScene.attachHostedSurface(surface, using: attach)
+        return try hostedSurfaceRegistry.attach(surface, in: windowScene, using: attach)
     }
 
     @discardableResult
@@ -99,7 +99,8 @@ public final class ShellOverlayScene: ~Sendable {
         where shouldAttach: (HostedSurface) -> Bool,
         using attach: (View, Int, Layer, UInt32) throws -> Void
     ) throws -> Bool {
-        try windowScene.attachHostedSurfaces(hostedSurfaces, where: shouldAttach, using: attach)
+        try hostedSurfaceRegistry.attachAll(
+            hostedSurfaces, in: windowScene, where: shouldAttach, using: attach)
     }
 
     package func hostedSurfaceID(for id: HostedSurfaceID) -> Int? {
@@ -139,7 +140,7 @@ public final class ShellOverlayScene: ~Sendable {
         self.clockNs = nowNs
         let publicationContext = try WindowScenePublicationContext(commitSink: commitSink)
         self.publicationContext = publicationContext
-        self.hostedSurfaceRegistry = publicationContext.makeHostedSurfaceRegistry()
+        self.hostedSurfaceRegistry = HostedSurfaceRegistry(context: publicationContext.visualContext)
         let notificationListView = publicationContext.withSemanticContext {
             ShellOverlayNotificationListView()
         }
@@ -584,7 +585,7 @@ public final class ShellOverlayScene: ~Sendable {
             let publishedScene: PublishedScene
             do {
                 publishedScene = try windowScene.publish(
-                    hostedSurfaces: hostedSurfaceRegistry.visualContent()
+                    placing: hostedSurfaceRegistry.placements()
                 ) { window in
                     switch window.role {
                     case .notification, .statusOverlay:

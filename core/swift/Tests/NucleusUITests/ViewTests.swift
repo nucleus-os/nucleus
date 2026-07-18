@@ -174,7 +174,6 @@ import Testing
 
         let published = try publisher.publish(roots: [root])
         #expect(published.map(\.rootLayerID) == [root.backingLayer.id.rawValue])
-        #expect(published.allSatisfy { $0.kind == .viewLayer })
 
         let transaction = try #require(visualSink.transactions.first)
         let createdLayerIDs = Set(transaction.created.map(\.0))
@@ -251,7 +250,6 @@ import Testing
         }
 
         #expect(published.map(\.rootLayerID) == [try #require(windows.visible.root).backingLayer.id.rawValue])
-        #expect(published.allSatisfy { $0.kind == .viewLayer })
         let transaction = try #require(visualSink.transactions.first)
         let createdLayerIDs = Set(transaction.created.map(\.0))
         #expect(createdLayerIDs.contains(try #require(windows.visible.root).backingLayer.id))
@@ -289,10 +287,9 @@ import Testing
 
         let published = try scene.publish { $0.title == "Back" }
         #expect(published.visualContent.map(\.rootLayerID) == [try #require(windows.back.root).backingLayer.id.rawValue])
-        #expect(published.visualContent.allSatisfy { $0.kind == .viewLayer })
     }
 
-    @Test func windowSceneOrdersHostedVisualContentByWindowLevel() throws {
+    @Test func windowSceneInterleavesEmbedderPlacementsByWindowLevel() throws {
         let semanticContext = try Context(id: ContextID(rawValue: 716), commitSink: InMemoryCommitSink())
         let visualSink = InMemoryCommitSink()
         let visualContext = try Context(id: ContextID(rawValue: 717), commitSink: visualSink)
@@ -313,144 +310,21 @@ import Testing
         let scene = WindowScene(windows: [windows.0, windows.1], visualContext: visualContext)
 
         let published = try scene.publish(
-            hostedSurfaces: [
-                HostedVisualContent(id: 40, rootLayerID: 400, role: .shellChrome, level: .shellChrome),
-                HostedVisualContent(id: 41, rootLayerID: 401, visible: false),
+            placing: [
+                ScenePlacement(id: 40, rootLayerID: 400, level: .shellChrome),
+                ScenePlacement(id: 41, rootLayerID: 401, visible: false),
             ]
         )
 
-        #expect(published.visualContent.map(\.kind) == [.viewLayer, .hostedSurface, .viewLayer])
+        // The id sequence states the interleaving directly: the placement sorts
+        // between the two windows by level, and the invisible one is dropped.
+        // A content-kind discriminant would say the same thing less precisely.
         #expect(published.visualContent.map(\.orderIndex) == [0, 1, 2])
         #expect(published.visualContent.map(\.id) == [
             try #require(windows.0.root).backingLayer.id.rawValue,
             40,
             try #require(windows.1.root).backingLayer.id.rawValue,
         ])
-    }
-
-    @Test func windowSceneAttachesHostedSurfaceThroughSceneRoot() throws {
-        let visualSink = InMemoryCommitSink()
-        let visualContext = try Context(id: ContextID(rawValue: 720), commitSink: visualSink)
-        let scene = WindowScene(visualContext: visualContext)
-        let surface = HostedSurface(
-            surfaceID: 11,
-            context: visualContext,
-            frame: Rect(x: 0, y: 0, width: 100, height: 80)
-        )
-
-        let attachedSurfaceID = try scene.attachHostedSurface(surface) { rootView, surfaceID, parentLayer in
-            #expect(rootView === surface.rootView)
-            #expect(surfaceID == 11)
-            #expect(parentLayer.context === visualContext)
-            return surfaceID
-        }
-
-        #expect(attachedSurfaceID == 11)
-        #expect(surface.hasCommittedContent)
-        #expect(surface.commitsFrameUpdates)
-        let rootInsertTransaction = try #require(visualSink.transactions.first)
-        #expect(rootInsertTransaction.inserted.contains {
-            $0.parent == nil
-        })
-    }
-
-    @Test func windowSceneBatchAttachesHostedSurfacesThroughOneSceneRoot() throws {
-        let visualSink = InMemoryCommitSink()
-        let visualContext = try Context(id: ContextID(rawValue: 721), commitSink: visualSink)
-        let scene = WindowScene(visualContext: visualContext)
-        let registry = HostedSurfaceRegistry<String>(context: visualContext)
-        let dock = registry.surface(for: "dock")
-        let menuBar = registry.surface(for: "menubar")
-        var attachedIDs: [Int] = []
-
-        let didAttach = try scene.attachHostedSurfaces(registry.surfaces) { surface in
-            surface === dock
-        } using: { _, surfaceID, _ in
-            attachedIDs.append(surfaceID)
-        }
-
-        #expect(didAttach)
-        #expect(attachedIDs == [dock.surfaceID])
-        #expect(dock.hasCommittedContent)
-        #expect(!menuBar.hasCommittedContent)
-        #expect(visualSink.transactions.count == 1)
-    }
-
-    @Test func hostedSurfaceOwnsGenericRootLifecycleAndFrameUpdates() throws {
-        let visualSink = InMemoryCommitSink()
-        let visualContext = try Context(id: ContextID(rawValue: 718), commitSink: visualSink)
-        let surface = HostedSurface(
-            surfaceID: 9,
-            context: visualContext,
-            frame: Rect(x: 0, y: 0, width: 100, height: 80)
-        )
-
-        #expect(surface.surfaceID == 9)
-        #expect(surface.frame == Rect(x: 0, y: 0, width: 100, height: 80))
-        #expect(surface.rootView.backingLayer.frame == GeometryRect(x: 0, y: 0, width: 100, height: 80))
-        #expect(!surface.hasCommittedContent)
-        #expect(!surface.commitsFrameUpdates)
-
-        surface.markCommittedContent()
-        surface.beginCommittedFrameUpdates()
-        surface.updateFrame(Rect(x: 0, y: 0, width: 320, height: 200))
-
-        try LayerTransaction.flushImplicit(in: visualContext)
-        #expect(surface.hasCommittedContent)
-        #expect(surface.commitsFrameUpdates)
-        #expect(surface.frame == Rect(x: 0, y: 0, width: 320, height: 200))
-        #expect(visualSink.transactions.contains { transaction in
-            transaction.propertyUpdates.contains {
-                $0.layer == surface.rootView.backingLayer.id &&
-                    $0.properties.position == GeometryPoint(x: 0, y: 0) &&
-                    $0.properties.bounds == GeometrySize(width: 320, height: 200)
-            }
-        })
-
-        try surface.detach()
-        #expect(!surface.hasCommittedContent)
-        #expect(!surface.commitsFrameUpdates)
-        #expect(visualSink.transactions.contains { transaction in
-            transaction.removed.contains(surface.rootView.backingLayer.id)
-        })
-    }
-
-    @Test func hostedSurfaceRegistryOwnsStableIDsOrderingAndVisualContent() throws {
-        let visualSink = InMemoryCommitSink()
-        let visualContext = try Context(id: ContextID(rawValue: 719), commitSink: visualSink)
-        let registry = HostedSurfaceRegistry<String>(context: visualContext)
-
-        let dock = registry.surface(for: "dock", frame: Rect(x: 0, y: 0, width: 100, height: 40))
-        let menuBar = registry.surface(for: "menubar")
-        let repeatedDock = registry.surface(for: "dock")
-
-        #expect(dock === repeatedDock)
-        #expect(dock.surfaceID == 1)
-        #expect(menuBar.surfaceID == 2)
-        #expect(registry.surfaceID(for: "dock") == 1)
-        #expect(registry.surfaces.map(\.surfaceID) == [1, 2])
-
-        dock.markCommittedContent()
-        menuBar.markCommittedContent()
-        registry.updateFrame(Rect(x: 0, y: 0, width: 320, height: 200))
-
-        let visualContent = registry.visualContent()
-        #expect(visualContent.map(\.id) == [1, 2])
-        #expect(visualContent.map(\.rootLayerID) == [
-            dock.rootView.backingLayer.id.rawValue,
-            menuBar.rootView.backingLayer.id.rawValue,
-        ])
-        #expect(visualContent.allSatisfy { $0.visible })
-        #expect(dock.frame == Rect(x: 0, y: 0, width: 320, height: 200))
-        #expect(menuBar.frame == Rect(x: 0, y: 0, width: 320, height: 200))
-
-        try registry.detachSurface("dock")
-        #expect(registry.surfaceID(for: "dock") == nil)
-        #expect(registry.surfaces.map(\.surfaceID) == [2])
-        #expect(registry.visualContent().map(\.id) == [2])
-        #expect(visualSink.transactions.contains { transaction in
-            transaction.removed.contains(dock.rootView.backingLayer.id)
-        })
     }
 
     @Test func visualEffectViewStoresAppKitConfiguration() throws {

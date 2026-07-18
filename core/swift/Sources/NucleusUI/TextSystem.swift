@@ -107,7 +107,7 @@ public struct TextLayoutResult: Sendable, Equatable {
     }
 }
 
-@_spi(NucleusCompositor) public final class TextLayoutStorage: @unchecked Sendable {
+package final class TextLayoutStorage: @unchecked Sendable {
     package let handle: UInt64
 
     package init(handle: UInt64) {
@@ -120,7 +120,7 @@ public struct TextLayoutResult: Sendable, Equatable {
         }
     }
 
-    @_spi(NucleusCompositor) public func retainedHandle() -> UInt64 {
+    package func retainedHandle() -> UInt64 {
         guard handle != 0 else {
             return 0
         }
@@ -524,7 +524,7 @@ public struct TextSystem: Sendable, Equatable {
         return handle
     }
 
-    @_spi(NucleusCompositor) public func makeLayoutHandle(for layout: TextLayout, scale: Float = 1) -> UInt64 {
+    package func makeLayoutHandle(for layout: TextLayout, scale: Float = 1) -> UInt64 {
         makeLayoutHandle(
             AttributedText(runs: layout.textRuns),
             containerWidth: layout.containerWidth,

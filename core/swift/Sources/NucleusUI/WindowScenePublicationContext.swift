@@ -6,7 +6,10 @@ import NucleusLayers
 @MainActor
 @_spi(NucleusCompositor) public final class WindowScenePublicationContext: ~Sendable {
     package let semanticContext: Context
-    package let visualContext: Context
+    /// The context embedder-owned content is minted into, so an embedder can
+    /// build its own scene-attached objects (the compositor's hosted surfaces)
+    /// in the same context as this scene's layers.
+    @_spi(NucleusCompositor) public let visualContext: Context
 
     @_spi(NucleusCompositor) public init(
         visualContextID: ContextID = .shellOverlay,
@@ -28,11 +31,5 @@ import NucleusLayers
 
     @_spi(NucleusCompositor) public func makeWindowScene(windows: [Window]) -> WindowScene {
         WindowScene(windows: windows, visualContext: visualContext)
-    }
-
-    @_spi(NucleusCompositor) public func makeHostedSurfaceRegistry<Identifier: Hashable>(
-        firstSurfaceID: Int = 1
-    ) -> HostedSurfaceRegistry<Identifier> {
-        HostedSurfaceRegistry(context: visualContext, firstSurfaceID: firstSurfaceID)
     }
 }

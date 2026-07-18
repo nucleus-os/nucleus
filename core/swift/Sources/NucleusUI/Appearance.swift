@@ -50,7 +50,7 @@ public struct Color: Sendable, Equatable {
         self.init(color.r, color.g, color.b, color.a)
     }
 
-    @_spi(NucleusCompositor) public var layersColor: NucleusLayers.Color {
+    package var layersColor: NucleusLayers.Color {
         .init(r, g, b, a)
     }
 

@@ -5,15 +5,20 @@
 Across every phase boundary the following must hold:
 
 1. **NucleusUI is the front door.** A client authors against `NucleusUI` alone.
-   `NucleusLayers` is not re-exported and is not a client dependency.
-2. **NucleusUI is GPU-free to test.** `Application.defaultContext` uses
+   `NucleusLayers` is not re-exported and is not a client dependency — through the public API
+   *or* any privileged one.
+2. **Privilege is a module boundary, not an annotation.** What a client may reach is decided by
+   what it names in `Package.swift`, which the build graph enforces and a reader can review.
+   `@_spi` marks API that is *unstable*, never API that is *privileged*; it grants all-or-nothing
+   access per group and any client can simply write the import.
+3. **NucleusUI is GPU-free to test.** `Application.defaultContext` uses
    `InMemoryCommitSink`; `installStubHost()` supplies stub registrars. Every phase is
    unit-testable with no compositor and no GPU.
-3. **`throws` marks an actionable runtime failure, never ceremony and never control flow.**
+4. **`throws` marks an actionable runtime failure, never ceremony and never control flow.**
    Host-contract violations are preconditions.
-4. **One representation per concept.** No parallel command vocabularies, no duplicated
+5. **One representation per concept.** No parallel command vocabularies, no duplicated
    lowering switches, no compatibility shims for a replaced API.
-5. **`Float` at the paint-command boundary, `Double` on the geometry plane.**
+6. **`Float` at the paint-command boundary, `Double` on the geometry plane.**
 
 ## Context
 
@@ -132,7 +137,7 @@ only by a hypothetical future client.
 | 4 | RuntimeEffectRegistrar | **complete** |
 | 5 | GraphicsContext and the vocabulary collapse | **complete** |
 | 6 | Retire the RN committer | **complete** |
-| 7 | Publication and native shell hosting | pending |
+| 7 | Publication, and privilege as a module boundary | pending |
 | 8 | Event vocabulary and responder wiring | pending |
 | 9 | Layout: measure/arrange and flex | pending |
 | 10 | TextField and input-method foundation | pending |
@@ -440,26 +445,127 @@ leans on clipping, so the recording should be self-balancing before anything dep
 **Landed with:** the committer file deleted and the last `appendAmbient`/`backingLayer` use
 confined to one shared binding step; 5 graphics-state tests; all suites green.
 
-## Phase 7 — Publication and native shell hosting
+## Phase 7 — Publication, and privilege as a module boundary
 
-The `NucleusShellProduct` target established in Phase 5 now becomes a hosted, publishable
-NucleusUI application without turning renderer plumbing into public UI API.
+`NucleusShellProduct` becomes a hosted, publishable NucleusUI application. The reason this is
+one phase rather than two is that "what a product may reach" and "how that limit is enforced"
+are the same decision, and the current answer to the second half does not hold.
 
-Today the publication seam is split inconsistently. `WindowScenePublicationContext`,
-`WindowScene.publish(hostedSurfaces:)`, `HostedSurface`, `HostedSurfaceRegistry`,
-`PublishedScene`, and `HostedVisualContent` are SPI or package-scoped even where a native
-application must describe and publish its own windows. At the same time, raw `CommitSink` and
-`Layer` types are implementation details that do not belong in the product-authoring surface.
+**The enforcement mechanism is wrong today.** `NucleusUI` carries 47 `@_spi` declarations under
+a single group, `NucleusCompositor`, consumed by three different clients — the compositor
+overlay, the shell runtime, and the React Native runtime. Two of those are not the compositor.
+Three consequences follow:
 
-- Make the window, scene, hosted-surface, and published-content operations needed by a native
-  application plain public NucleusUI API.
-- Keep commit-sink installation, raw layers, render-resource registration, and compositor
-  placement privileged to the platform host.
-- Give the shell host one stable construction seam that installs its render context and returns
-  public NucleusUI scenes/windows to product code; do not publish `NucleusLayers` types merely
-  to remove an SPI annotation.
-- Preserve the same seam for the compositor overlay without making compositor-only roles part
-  of the ordinary application API.
+1. **SPI is all-or-nothing per group.** React Native needs `PaintRegistration`,
+   `layerContent.recording`, and `backingLayer`; the import that grants those grants all 47,
+   including `CommitSink`, `Layer`, `WindowScenePublicationContext`, and the hosted-surface
+   registry. Partial access is not expressible.
+2. **`NucleusUI` re-exports `Layer` and `CommitSink` as SPI typealiases.** State invariant 1 —
+   `NucleusLayers` is not re-exported and is not a client dependency — holds for the public API
+   and silently does not for the privileged one.
+3. **SPI is a speed bump, not enforcement.** Any client can write the import. A module boundary
+   is enforced by the build graph and is reviewable in `Package.swift`. Phase 5 proved this in
+   this repository: `NucleusShellProduct`'s dependency list *is* the boundary being proven, and
+   it held. The same boundary drawn with SPI would have proven nothing.
+
+The cost is not hypothetical. Phase 5 widened SPI to make the shell-product tests compile; those
+tests then asserted on command counts rather than pixels, which is why they passed over an arc
+bug that rendered every dot indicator as nothing. Privileged access handed to product tests
+produced the appearance of coverage.
+
+**Three tiers, expressed as modules.**
+
+- **Product API** — `NucleusUI`, `NucleusApp`. Application authors, including the shell port.
+  Ends this phase with **zero `@_spi` declarations**. Everything public here is intended for
+  product code, and `NucleusLayers` types appear in no signature.
+- **Embedder API** — a new `NucleusUIEmbedder` product. Code that embeds a NucleusUI scene into
+  a platform and feeds it a surface, input, and a frame clock: the compositor, the shell
+  runtime, the React Native runtime. Plain `public`. It lives inside the `Nucleus` package, so
+  it reaches `NucleusUI`'s internals through **`package` access**, which core already configures
+  (`-package-name core`) and which is precisely what that feature exists for. It vends scene
+  publication, paint registration, and render-context installation.
+- **SDK internals** — `NucleusLayers`, `NucleusRenderer`, `NucleusAppHostBundle`. Reachable from
+  the embedder tier and the render stack; never named in a product-tier signature.
+
+"Embedder" is the term of art for this role (Flutter, V8) and names the relationship precisely.
+It also avoids a collision: `NucleusAppHostProtocols`/`NucleusAppHostBundle` are the *resource
+provision* seam — registrars the host process supplies **downward** to the render stack — while
+this tier is scene control **into** NucleusUI. `NucleusUIHost` sitting beside `NucleusAppHostBundle`
+would need explaining every time. Those existing names are defensible and are not renamed here;
+if they are ever touched for another reason, `NucleusRenderResources` describes them better.
+
+`@_spi` is then reserved for what it is actually good at: API intended to ship but not yet
+committed to as stable. Not privileged — *unstable*.
+
+**The compositor overlay is two things, and splits along a line that already exists.**
+Measured: `ShellOverlayScene.swift` holds 29 of the overlay's 31 privileged uses in 719 lines;
+the menu, notification, hotkey, controller, and shadow files hold **zero** across 1,059 lines,
+while importing SPI anyway. That is the speed-bump argument proving itself in this repository —
+the import is free, so it was applied blanket-wise and nobody noticed. The UI files become an
+ordinary product-tier target; the scene becomes the compositor's embedder, exactly as Phase 5
+split `NucleusShellProduct` from `NucleusShellRuntime`.
+
+**Hosted surfaces are compositor vocabulary and leave `NucleusUI`.** `HostedSurface` has exactly
+one consumer — the overlay. Neither the shell runtime nor React Native uses it. It describes a
+Wayland client's surface placed inside the compositor's scene, and it lives in the universal UI
+framework only because the publication code happened to.
+
+Publication does not need the concept. `publish(hostedSurfaces:)` consumes exactly `level`,
+`id`, `rootLayerID`, and `visible` from each entry: it sorts by `(level, sequence)`, interleaves
+with windows, and assigns `orderIndex`. So publication takes a generic placement record —
+a foreign layer root to interleave with the scene's windows by level:
+
+```
+ScenePlacement { id, rootLayerID, level, visible }
+```
+
+and `HostedSurface` — `rootView`, `role`, `frame`, `commitsFrameUpdates`, `detach()`, and its
+registry — moves wholesale into the compositor package, which maps its surfaces to
+`ScenePlacement` values when publishing.
+
+The generic form is **strictly smaller**, because two members are already dead:
+
+- **`HostedVisualContent.role`** is written from `surface.role` and read by nothing — not by
+  `publish()`, not by the compositor. It moves with `HostedSurface` and stops crossing the
+  boundary at all.
+- **`PublishedVisualContentKind`** (`.viewLayer` / `.hostedSurface`) is written by two factory
+  methods and read by **zero production code**; its only readers are four `ViewTests`
+  assertions. The discriminant exists mainly to make one interleaving test expressible, and
+  that test states its intent better as an assertion on the resulting id sequence.
+
+Both are deleted, along with `HostedVisualContent` itself. `PublishedVisualContent` keeps
+`(id, rootLayerID, orderIndex, visible)`. Deleting the discriminant is safe rather than risky:
+the compositor created every hosted surface and holds the registry, so if it ever needs to know
+whether an id is a client surface, it already does — core telling it is a redundant
+representation, and re-adding a discriminant later is cheap.
+
+**Sequence.**
+
+First, split the single `NucleusCompositor` group into honest names by consumer. This is
+mechanical and it is a diagnostic: the resulting groupings say what the embedder tier must
+contain, rather than that shape being guessed up front. Anything only one consumer needs is a
+candidate for staying private to it — the overlay's five zero-privilege files should fall out
+here as needing nothing at all.
+
+Then narrow publication to `ScenePlacement`, delete `PublishedVisualContentKind` and
+`HostedVisualContent`, and move `HostedSurface` and its registry into the compositor package.
+Publication shrinks before it moves, so the embedder tier is built around the smaller surface
+rather than inheriting the larger one.
+
+Then stand up `NucleusUIEmbedder` and move the remaining embedder slice into it, deleting SPI
+annotations as each declaration lands behind the module boundary instead:
+`WindowScenePublicationContext`, `PublishedScene`, `PaintRegistration`, `PaintRecording`, and
+the `Layer`/`CommitSink` typealiases. The window, scene, and view operations a product needs
+become plain public `NucleusUI`.
+
+Then split the overlay into its product and embedder halves, and repoint all three consumers at
+`NucleusUIEmbedder`. No target outside the embedder tier imports `NucleusUI` with an SPI
+annotation.
+
+**Product tests test through the product API.** `NucleusShellProductTests` currently reads
+recordings through SPI. Asserting on a recording is a hosting concern; a product test should
+observe rendered output or public view state. Where a product test genuinely cannot observe
+something, that is a missing product-tier seam, not a reason to grant privilege.
 
 `HostedSurface` is not the synchronized external-image path: it publishes a root layer for a
 host to place and does not bind dynamic image content. `ContentKind.external` and
@@ -469,14 +575,18 @@ identity, queue-family/layout ownership, Graphite completion, and consumer relea
 specialized render-host contract belongs to the shell migration's CEF phase, not this generic
 publication API.
 
-Files:
-`NucleusUI/{WindowScene,WindowScenePublicationContext,HostedSurface,PublishedVisualContent}.swift`;
-`NucleusApp/`, `NucleusAppHostBundle/`; `NucleusCompositorOverlay/ShellOverlay/*`;
-`NucleusShellRuntime/ShellHost.swift`.
+Files: new `core/swift/Sources/NucleusUIEmbedder/`; `core/Package.swift`;
+`NucleusUI/{WindowScene,WindowScenePublicationContext,HostedSurface,PublishedVisualContent,GraphicsContext,PaintRegistration,View}.swift`;
+`NucleusApp/`; `shell/Package.swift`, `NucleusShellRuntime/ShellHost.swift`,
+`shell/Tests/NucleusShellProductTests/`; `compositor/compositor-core/Package.swift` and a new
+overlay product target alongside `NucleusCompositorOverlay/ShellOverlay/*`;
+`react-native/Package.swift`, `NucleusReactRuntimeCxx/ReactLayerBinding.swift`.
 
 **Lands with:** `NucleusShellProduct` constructing and publishing its native view hierarchy
-through public NucleusUI types while raw layer and commit-sink access remains confined to
-`NucleusShellRuntime` host installation code.
+through plain public `NucleusUI`, with no SPI import anywhere in the shell product target or its
+tests; no `@_spi` declaration left in `NucleusUI`; `HostedSurface`, `HostedVisualContent`, and
+`PublishedVisualContentKind` gone from core; and raw layer, commit-sink, and registration access
+reachable only by targets that name `NucleusUIEmbedder` in `Package.swift`.
 
 ## Phase 8 — Event vocabulary and responder wiring
 
@@ -643,9 +753,12 @@ Tests assert **runtime behavior and contracts, never source-code shape** — no 
   changed drawing does.
 - **Phase 6** — done: RN builds and the whole tree stays green with the committer deleted;
   graphics-state balancing is covered by 5 tests.
-- **Phase 7**: `NucleusShellProduct` creates and publishes its scene through public NucleusUI
-  authoring types. `NucleusShellRuntime` retains privileged host installation without exposing
-  raw layers or commit sinks to product code.
+- **Phase 7**: `NucleusShellProduct` creates and publishes its scene through plain public
+  `NucleusUI`. The mechanical gates are that `NucleusUI` contains no `@_spi` declaration, that no
+  target outside the embedder tier imports `NucleusUI` with an SPI annotation, and that removing
+  `NucleusUIEmbedder` from a product target's dependencies fails to build. Publication ordering
+  is asserted through the resulting id sequence rather than a content-kind discriminant. Product
+  tests observe rendered output or public view state rather than recordings.
 - **Phase 8**: dispatch tests for key routing (key-window → first responder), scroll, pointer
   enter/exit, drag-cancel, and capture. The overlay menu behaves identically with
   `handleMenuKey` deleted, and the shell adapter routes the same event vocabulary into a
@@ -674,6 +787,10 @@ validation step; a goal is complete when every agent-runnable gate passes and on
 remains.
 
 ## Risks
+
+- **The tier split is the last cheap moment (Phase 7).** Every consumer added before it is a
+  consumer to repoint afterwards, and the shell port is about to become the largest one. Doing
+  it after the port grows means moving a boundary that product code already depends on.
 
 - **RN's publish path** — retired. RN authors through `draw(in:)` and registers through the
   shared seam; only layer binding remains RN-specific, because RN builds its own layer tree.
