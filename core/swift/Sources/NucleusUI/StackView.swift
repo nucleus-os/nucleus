@@ -130,6 +130,20 @@ open class StackView: View, ~Sendable {
         setNeedsLayout()
     }
 
+    /// Replace the arranged set, keeping views that appear in both. Order comes
+    /// from `views`, so a reordered body reorders the stack without detaching
+    /// and re-adding the views that merely moved.
+    package func replaceArrangedSubviews(with views: [View]) {
+        for existing in arranged where !views.contains(where: { $0 === existing }) {
+            existing.removeFromSuperview()
+        }
+        for view in views where !arranged.contains(where: { $0 === view }) {
+            addSubview(view)
+        }
+        arranged = views
+        setNeedsLayout()
+    }
+
     public func removeArrangedSubview(_ view: View) {
         arranged.removeAll { $0 === view }
         view.removeFromSuperview()

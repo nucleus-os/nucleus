@@ -28,7 +28,7 @@ index ae04ae3..242f30f 100644
 
    deps = [
 diff --git a/cef/include/cef_browser.h b/cef/include/cef_browser.h
-index 1831ac2..99aedbe 100644
+index 1831ac2..fbddd01 100644
 --- a/cef/include/cef_browser.h
 +++ b/cef/include/cef_browser.h
 @@ -52,6 +52,22 @@
@@ -83,12 +83,12 @@ index 1831ac2..99aedbe 100644
 +  ///
 +  /// Set a release fence for the accelerated paint frame identified by
 +  /// |transport_epoch| and |capture_counter|. This method is only supported on
-+  /// Linux with windowless
-+  /// rendering. It may be called during or after OnAcceleratedPaint, but must
-+  /// be called on the CEF UI thread before CEF's bounded release timeout. CEF
-+  /// duplicates |fd| before returning, and the caller retains ownership of
-+  /// |fd|. The frame capture buffer will not be recycled until the fence
-+  /// signals.
++  /// Linux with windowless rendering. It may be called during or after
++  /// OnAcceleratedPaint and must be called exactly once for every frame with a
++  /// non-zero transport epoch. CEF duplicates |fd| before returning, and the
++  /// caller retains ownership of |fd|. The frame capture buffer will not be
++  /// recycled until the fence signals. A client that does not consume a frame
++  /// may use the frame's acquire fence as its release fence.
 +  ///
 +  /*--cef()--*/
 +  virtual void SetAcceleratedPaintReleaseFence(uint64_t transport_epoch,
@@ -98,6 +98,28 @@ index 1831ac2..99aedbe 100644
    ///
    /// Send a key event to the browser.
    ///
+diff --git a/cef/include/cef_render_handler.h b/cef/include/cef_render_handler.h
+index e5ac8987e..03cc6acfd 100644
+--- a/cef/include/cef_render_handler.h
++++ b/cef/include/cef_render_handler.h
+@@ -160,11 +160,12 @@ class CefRenderHandler : public virtual CefBaseRefCounted {
+   ///
+   /// The underlying implementation uses a pool to deliver frames. As a result,
+   /// the handle may differ every frame depending on how many frames are
+-  /// in-progress. The handle's resource cannot be cached and cannot be accessed
+-  /// outside of this callback. It should be reopened each time this callback is
+-  /// executed and the contents should be copied to a texture owned by the
+-  /// client application. The contents of |info| will be released back to the
+-  /// pool after this callback returns.
++  /// in-progress. For frames with a non-zero transport epoch, the handle's
++  /// resource remains borrowed until
++  /// CefBrowserHost::SetAcceleratedPaintReleaseFence is called. The client may
++  /// retain an imported view of the resource until that call, but must not
++  /// access it afterward. Other accelerated frames are valid only for this
++  /// callback and should be copied to a client-owned texture before returning.
+   ///
+   /*--cef()--*/
+   virtual void OnAcceleratedPaint(CefRefPtr<CefBrowser> browser,
 diff --git a/cef/include/internal/cef_types.h b/cef/include/internal/cef_types.h
 index 7e00f3d..69391f3 100644
 --- a/cef/include/internal/cef_types.h
@@ -610,10 +632,10 @@ index 0000000..2dc6882
 +  EXPECT_EQ(args.interval, base::Nanoseconds(kIntervalNs));
 +}
 diff --git a/cef/libcef/browser/osr/render_widget_host_view_osr.cc b/cef/libcef/browser/osr/render_widget_host_view_osr.cc
-index 501889ac8..9fdf0871d 100644
+index 501889ac8..63d6a5b41 100644
 --- a/cef/libcef/browser/osr/render_widget_host_view_osr.cc
 +++ b/cef/libcef/browser/osr/render_widget_host_view_osr.cc
-@@ -57,6 +57,12 @@
+@@ -57,6 +57,52 @@
  #include "ui/gfx/geometry/size_conversions.h"
  #include "ui/touch_selection/touch_selection_controller.h"
  
@@ -625,6 +647,46 @@ index 501889ac8..9fdf0871d 100644
 +
  namespace {
  
++#if BUILDFLAG(IS_LINUX)
++// Owns the producer fence for a borrowed offscreen-output frame until the
++// frame is either delivered to the embedder or returned to Viz unconsumed.
++// Every published token must have exactly one of those dispositions.
++class ScopedOffscreenFrameDisposition {
++ public:
++  ScopedOffscreenFrameDisposition(
++      mojo::Remote<viz::mojom::OffscreenOutput>* output,
++      uint64_t frame_token,
++      gfx::GpuFenceHandle acquire_fence)
++      : output_(output),
++        frame_token_(frame_token),
++        acquire_fence_(std::move(acquire_fence)) {
++    CHECK(output_);
++    CHECK(frame_token_);
++    CHECK(!acquire_fence_.is_null());
++  }
++
++  ScopedOffscreenFrameDisposition(const ScopedOffscreenFrameDisposition&) =
++      delete;
++  ScopedOffscreenFrameDisposition& operator=(
++      const ScopedOffscreenFrameDisposition&) = delete;
++
++  ~ScopedOffscreenFrameDisposition() {
++    if (!delivered_ && output_->is_bound()) {
++      (*output_)->ReleaseFrame(frame_token_, std::move(acquire_fence_));
++    }
++  }
++
++  int acquire_fence_fd() const { return acquire_fence_.Peek(); }
++  void MarkDelivered() { delivered_ = true; }
++
++ private:
++  const raw_ptr<mojo::Remote<viz::mojom::OffscreenOutput>> output_;
++  const uint64_t frame_token_;
++  gfx::GpuFenceHandle acquire_fence_;
++  bool delivered_ = false;
++};
++#endif
++
  // The maximum number of damage rects to cache for outstanding frame requests
 @@ -235,11 +241,6 @@ CefRenderWidgetHostViewOSR::CefRenderWidgetHostViewOSR(
    delegated_frame_host_client_ =
@@ -754,7 +816,7 @@ index 501889ac8..9fdf0871d 100644
  }
  
  void CefRenderWidgetHostViewOSR::OnRenderFrameMetadataChangedAfterActivation(
-@@ -1073,6 +1100,122 @@ bool CefRenderWidgetHostViewOSR::UseProxyOutputDevice() {
+@@ -1073,6 +1140,126 @@ bool CefRenderWidgetHostViewOSR::UseProxyOutputDevice() {
    return true;
  }
  
@@ -781,6 +843,8 @@ index 501889ac8..9fdf0871d 100644
 +#if BUILDFLAG(IS_LINUX)
 +  CHECK(frame);
 +  CHECK(frame->native_pixmap.planes.size() <= kAcceleratedPaintMaxPlanes);
++  ScopedOffscreenFrameDisposition disposition(
++      &offscreen_output_, frame->frame_token, std::move(frame->acquire_fence));
 +
 +  cef_accelerated_paint_info_common_t extra = {
 +      sizeof(cef_accelerated_paint_info_common_t)};
@@ -811,7 +875,7 @@ index 501889ac8..9fdf0871d 100644
 +  paint_info.extra = extra;
 +  paint_info.plane_count = frame->native_pixmap.planes.size();
 +  paint_info.modifier = frame->native_pixmap.modifier;
-+  paint_info.acquire_fence_fd = frame->acquire_fence.Peek();
++  paint_info.acquire_fence_fd = disposition.acquire_fence_fd();
 +  paint_info.format = frame->format == viz::SinglePlaneFormat::kRGBA_8888
 +                          ? CEF_COLOR_TYPE_RGBA_8888
 +                          : CEF_COLOR_TYPE_BGRA_8888;
@@ -823,7 +887,9 @@ index 501889ac8..9fdf0871d 100644
 +    cef_plane.size = plane.size;
 +    cef_plane.fd = plane.fd.get();
 +  }
-+  OnAcceleratedPaint(frame->damage_rect, frame->coded_size, paint_info);
++  if (OnAcceleratedPaint(frame->damage_rect, frame->coded_size, paint_info)) {
++    disposition.MarkDelivered();
++  }
 +#endif
 +}
 +
@@ -984,8 +1050,34 @@ index 501889ac8..9fdf0871d 100644
  }
  
  void CefRenderWidgetHostViewOSR::SendKeyEvent(
+@@ -1643,7 +1876,7 @@ void CefRenderWidgetHostViewOSR::OnPaint(const gfx::Rect& damage_rect,
+   }
+ }
+ 
+-void CefRenderWidgetHostViewOSR::OnAcceleratedPaint(
++bool CefRenderWidgetHostViewOSR::OnAcceleratedPaint(
+     const gfx::Rect& damage_rect,
+     const gfx::Size& pixel_size,
+     const CefAcceleratedPaintInfo& info) {
+@@ -1651,7 +1884,7 @@ void CefRenderWidgetHostViewOSR::OnAcceleratedPaint(
+ 
+   // Workaround for https://github.com/chromiumembedded/cef/issues/2817
+   if (!is_showing_) {
+-    return;
++    return false;
+   }
+ 
+   CefRefPtr<CefRenderHandler> handler =
+@@ -1678,6 +1911,7 @@ void CefRenderWidgetHostViewOSR::OnAcceleratedPaint(
+       ReleaseResizeHold();
+     }
+   }
++  return true;
+ }
+ 
+ ui::Layer* CefRenderWidgetHostViewOSR::GetRootLayer() const {
 diff --git a/cef/libcef/browser/osr/render_widget_host_view_osr.h b/cef/libcef/browser/osr/render_widget_host_view_osr.h
-index 89ac6b7fe..7bbe9039b 100644
+index 89ac6b7fe..5144ec6dd 100644
 --- a/cef/libcef/browser/osr/render_widget_host_view_osr.h
 +++ b/cef/libcef/browser/osr/render_widget_host_view_osr.h
 @@ -18,6 +18,7 @@
@@ -1058,6 +1150,15 @@ index 89ac6b7fe..7bbe9039b 100644
    void SendKeyEvent(const input::NativeWebKeyboardEvent& event);
    void SendMouseEvent(const blink::WebMouseEvent& event);
    void SendMouseWheelEvent(const blink::WebMouseWheelEvent& event);
+@@ -260,7 +284,7 @@ class CefRenderWidgetHostViewOSR
+   void OnPaint(const gfx::Rect& damage_rect,
+                const gfx::Size& pixel_size,
+                const void* pixels);
+-  void OnAcceleratedPaint(const gfx::Rect& damage_rect,
++  bool OnAcceleratedPaint(const gfx::Rect& damage_rect,
+                           const gfx::Size& pixel_size,
+                           const CefAcceleratedPaintInfo& info);
+ 
 @@ -337,7 +361,9 @@ class CefRenderWidgetHostViewOSR
    void CancelWidget();
  

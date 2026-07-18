@@ -146,8 +146,15 @@ only by a hypothetical future client.
 | 8 | Event vocabulary and responder wiring | **complete** |
 | 9 | Layout: measure/arrange and flex | **complete** |
 | 10 | TextField and input-method foundation | **partial** |
-| 11 | ScrollView, the interaction capstone | pending |
-| 12 | TextView and multiline editing | pending |
+| 11 | ScrollView, the interaction capstone | superseded |
+| 12 | TextView and multiline editing | superseded |
+
+Phases 11 and 12 are superseded by `ui-authoring-model.md`, which sequences the remaining work
+from the production reference's actual inventory rather than from this plan's original guess.
+ScrollView moves behind the view builder and the control kit, because it is cheaper to build once
+the authoring layer it lives in exists; virtualized list and grid land with it, which this plan
+did not account for. TextView is dropped from the sequence until something needs it — nothing in
+the reference's twenty-five surfaces edits multiline text.
 
 ### Where this stands
 

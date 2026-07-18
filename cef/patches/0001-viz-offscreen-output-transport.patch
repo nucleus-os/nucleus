@@ -1190,7 +1190,33 @@ index 07e9bf5..d13a8fa 100644
        renderer_settings_(renderer_settings),
        debug_settings_(debug_settings),
        display_compositor_controller_(display_controller),
-@@ -1064,10 +1076,13 @@ void SkiaOutputSurfaceImpl::SetFrameRate(
+@@ -574,7 +586,11 @@ void SkiaOutputSurfaceImpl::MakePromiseSkImage(
+     return;
+ 
+   auto format = image_context->format();
+-  if (format.is_single_plane() || format.PrefersExternalSampler()) {
++  const bool use_graphite_external_sampler =
++      graphite_recorder_ && gpu::GraphiteDawnUsesExternalSampler(format);
++  if (format.is_single_plane() ||
++      (format.PrefersExternalSampler() && !graphite_recorder_) ||
++      use_graphite_external_sampler) {
+     MakePromiseSkImageSinglePlane(image_context_impl, /*mipmapped=*/false,
+                                   force_rgbx);
+   } else {
+@@ -661,9 +677,9 @@ void SkiaOutputSurfaceImpl::MakePromiseSkImageMultiPlane(
+   if (graphite_recorder_) {
+     // This function is for per-plane sampling and is never used in conjunction
+     // with YCbCr sampling. In particular, on Android SharedImages used with
+-    // YCbCr sampling always have RGBA format and on ChromeOS such SharedImages
+-    // will have PrefersExternalSampler() set to true. Both of these cases are
+-    // handled by MakePromiseSkImageSinglePlane().
++    // YCbCr sampling always have RGBA format. On platforms where
++    // Graphite-Dawn has no native YCbCr descriptor, images marked as preferring
++    // an external sampler intentionally take this per-plane path instead.
+     // TODO(blundell): Hoist this CHECK up to apply universally for Ganesh as
+     // well as Graphite.
+     CHECK(!image_context->ycbcr_info());
+@@ -1064,10 +1080,13 @@ void SkiaOutputSurfaceImpl::SetFrameRate(
  #endif
 
  void SkiaOutputSurfaceImpl::SetCapabilitiesForTesting(
@@ -1205,7 +1231,7 @@ index 07e9bf5..d13a8fa 100644
    auto callback =
        base::BindOnce(&SkiaOutputSurfaceImplOnGpu::SetCapabilitiesForTesting,
                       base::Unretained(impl_on_gpu_.get()), capabilities_);
-@@ -1149,7 +1164,8 @@ void SkiaOutputSurfaceImpl::InitializeOnGpuThread(bool* result) {
+@@ -1149,7 +1168,8 @@ void SkiaOutputSurfaceImpl::InitializeOnGpuThread(bool* result) {
        std::move(buffer_presented_callback), std::move(context_lost_callback),
        std::move(schedule_gpu_task),
        std::move(add_child_window_to_browser_callback),
@@ -1645,7 +1671,7 @@ index 89313c57f0..de51a9cd59 100644
    is_readonly_ =
        (usage & kWriteUsage) == 0 && (internal_usage & kWriteUsage) == 0;
    if (is_readonly_ && !IsCleared()) {
-@@ -77,21 +75,42 @@ wgpu::Texture DawnOzoneImageRepresentation::BeginAccess(
+@@ -77,21 +75,51 @@ wgpu::Texture DawnOzoneImageRepresentation::BeginAccess(
      return nullptr;
    }
  
@@ -1685,18 +1711,27 @@ index 89313c57f0..de51a9cd59 100644
 +    begin_layout.newLayout = external_state->new_layout;
 +  } else {
 +    if (begin_access_desc.initialized) {
-+      LOG(ERROR) << "Initialized Ozone image has no Vulkan ownership state";
-+      backing_access_.reset();
-+      return nullptr;
++      if (ozone_backing()->has_vulkan_ownership_history_) {
++        LOG(ERROR) << "Initialized Ozone image lost its Vulkan ownership state";
++        backing_access_.reset();
++        return nullptr;
++      }
++      // A DMA-BUF can enter the backing with valid pixels before it has ever
++      // had a Vulkan owner (for example, a decoded video frame). Preserve that
++      // first external payload in GENERAL; every subsequent Vulkan handoff
++      // must use the exact state returned by the previous owner.
++      begin_layout.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
++      begin_layout.newLayout = VK_IMAGE_LAYOUT_GENERAL;
++    } else {
++      // An uncleared first write may discard the previous contents.
++      begin_layout.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
++      begin_layout.newLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 +    }
-+    // An uncleared first write may discard the previous contents.
-+    begin_layout.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-+    begin_layout.newLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 +  }
    begin_access_desc.nextInChain = &begin_layout;
  
    // If the semaphore from BeginWrite is valid then pass it to
-@@ -176,17 +195,13 @@ wgpu::Texture DawnOzoneImageRepresentation::BeginAccess(
+@@ -176,17 +204,13 @@ wgpu::Texture DawnOzoneImageRepresentation::BeginAccess(
    texture_ = shared_texture_memory_.CreateTexture(&texture_descriptor);
    if (!shared_texture_memory_.BeginAccess(texture_, &begin_access_desc)) {
      LOG(ERROR) << "Failed to begin access for shared image.";
@@ -1718,7 +1753,7 @@ index 89313c57f0..de51a9cd59 100644
    return texture_;
  }
  
-@@ -200,6 +215,8 @@ void DawnOzoneImageRepresentation::EndAccess() {
+@@ -200,6 +224,8 @@ void DawnOzoneImageRepresentation::EndAccess() {
  
    if (!shared_texture_memory_.EndAccess(texture_, &end_access_desc)) {
      LOG(ERROR) << "Failed to end access for DawnOzoneImageRepresentation";
@@ -1727,7 +1762,7 @@ index 89313c57f0..de51a9cd59 100644
      texture_.Destroy();
      texture_ = nullptr;
      return;
-@@ -209,6 +226,11 @@ void DawnOzoneImageRepresentation::EndAccess() {
+@@ -209,6 +235,11 @@ void DawnOzoneImageRepresentation::EndAccess() {
      SetCleared();
    }
  
@@ -1739,7 +1774,7 @@ index 89313c57f0..de51a9cd59 100644
    CHECK(end_access_desc.fenceCount == end_access_desc.signaledValueCount);
  
    // Note: Dawn may export zero fences if there were no begin fences,
-@@ -238,8 +260,10 @@ void DawnOzoneImageRepresentation::EndAccess() {
+@@ -238,8 +269,10 @@ void DawnOzoneImageRepresentation::EndAccess() {
      fence.Adopt(std::move(fd_handle_merged));
    }
  
@@ -1852,7 +1887,7 @@ index 906a8f8078..628b1a1ae1 100644
    for (auto& [context, holder] : per_context_cached_textures_holders_) {
      context->RemoveObserver(this);
      // We only need to remove textures here. If the context was lost or
-@@ -650,22 +693,160 @@ void OzoneImageBacking::FlushAndSubmitIfNecessary(
+@@ -650,22 +693,161 @@ void OzoneImageBacking::FlushAndSubmitIfNecessary(
    }
  }
  
@@ -1969,6 +2004,7 @@ index 906a8f8078..628b1a1ae1 100644
 +  }
 +
 +  backing_->external_vulkan_state_ = release_state;
++  backing_->has_vulkan_ownership_history_ = true;
 +  backing_->vulkan_ownership_in_progress_ = false;
 +  backing_->EndAccessInternal(readonly_, access_stream_, std::move(fence));
 +  consumed_vulkan_state_.reset();
@@ -2019,7 +2055,7 @@ index 906a8f8078..628b1a1ae1 100644
      }
  
      if (readonly) {
-@@ -674,16 +855,23 @@ bool OzoneImageBacking::BeginAccess(bool readonly,
+@@ -674,16 +856,23 @@ bool OzoneImageBacking::BeginAccess(bool readonly,
        is_write_in_progress_ = true;
      }
    }
@@ -2045,7 +2081,7 @@ index 906a8f8078..628b1a1ae1 100644
      }
      read_fences_.clear();
    }
-@@ -694,9 +882,10 @@ bool OzoneImageBacking::BeginAccess(bool readonly,
+@@ -694,9 +883,10 @@ bool OzoneImageBacking::BeginAccess(bool readonly,
      // For write access we expect new `write_fence_` so we can move the
      // old fence here.
      if (!readonly) {
@@ -2058,7 +2094,7 @@ index 906a8f8078..628b1a1ae1 100644
      }
    }
  
-@@ -708,12 +897,14 @@ bool OzoneImageBacking::BeginAccess(bool readonly,
+@@ -708,12 +898,14 @@ bool OzoneImageBacking::BeginAccess(bool readonly,
      // For write access we expect new `write_fence_` so we can move the old
      // fence here.
      if (!readonly) {
@@ -2075,7 +2111,7 @@ index 906a8f8078..628b1a1ae1 100644
    if (readonly) {
      // Optimization for single write streams. Normally we need a read fence to
      // wait before write on a write stream. But if it single write stream, we
-@@ -733,12 +924,18 @@ bool OzoneImageBacking::BeginAccess(bool readonly,
+@@ -733,12 +925,18 @@ bool OzoneImageBacking::BeginAccess(bool readonly,
      need_end_fence = true;
    }
  
@@ -2098,7 +2134,7 @@ index 906a8f8078..628b1a1ae1 100644
    // Track reads and writes if not being used for concurrent read/writes.
    if (!usage().Has(SHARED_IMAGE_USAGE_CONCURRENT_READ_WRITE)) {
      if (readonly) {
-@@ -761,6 +958,67 @@ void OzoneImageBacking::EndAccess(bool readonly,
+@@ -761,6 +959,67 @@ void OzoneImageBacking::EndAccess(bool readonly,
    }
  }
  
@@ -2320,12 +2356,13 @@ index 43dd62cfc2..92c2322a97 100644
    int write_streams_count_;
  
    scoped_refptr<gfx::NativePixmap> pixmap_;
-@@ -165,6 +261,10 @@ class GPU_GLES2_EXPORT OzoneImageBacking final
+@@ -165,6 +261,11 @@ class GPU_GLES2_EXPORT OzoneImageBacking final
    gfx::GpuFenceHandle write_fence_;
    base::flat_map<AccessStream, gfx::GpuFenceHandle> read_fences_;
    AccessStream last_write_stream_;
 +#if BUILDFLAG(ENABLE_VULKAN)
 +  std::optional<ExternalVulkanImageState> external_vulkan_state_;
++  bool has_vulkan_ownership_history_ = false;
 +  bool vulkan_ownership_in_progress_ = false;
 +#endif
    scoped_refptr<SharedContextState> context_state_;
@@ -2588,6 +2625,15 @@ diff --git a/gpu/command_buffer/service/shared_image/shared_image_representation
 index 692b0cbf85..d2850697d8 100644
 --- a/gpu/command_buffer/service/shared_image/shared_image_representation.cc
 +++ b/gpu/command_buffer/service/shared_image/shared_image_representation.cc
+@@ -749,7 +749,7 @@ SkiaGraphiteImageRepresentation::ScopedGraphiteReadAccess::CreateSkImage(
+       CreateGraphiteSkImageReleaseProc(texture_release_proc, release_context,
+                                        graphite_texture_holders_);
+ 
+-  if (format.is_single_plane() || format.PrefersExternalSampler()) {
++  if (format.is_single_plane() || GraphiteDawnUsesExternalSampler(format)) {
+     CHECK_EQ(static_cast<int>(graphite_texture_holders_.size()), 1);
+     auto alpha_type = representation()->alpha_type();
+     auto color_type = format.PrefersExternalSampler()
 @@ -923,6 +923,18 @@ OverlayImageRepresentation::GetAHardwareBufferFenceSync() {
  scoped_refptr<gfx::NativePixmap> OverlayImageRepresentation::GetNativePixmap() {
    return backing()->GetNativePixmap();
@@ -2770,7 +2816,7 @@ index bdba5ea5ac..4fbe3f9f4f 100644
  
    return promise_textures_;
  }
-@@ -195,32 +209,122 @@ bool SkiaVkOzoneImageRepresentation::BeginAccess(
+@@ -195,32 +209,131 @@ bool SkiaVkOzoneImageRepresentation::BeginAccess(
    DCHECK(begin_semaphores);
    DCHECK(end_access_semaphore_ == VK_NULL_HANDLE);
  
@@ -2815,11 +2861,20 @@ index bdba5ea5ac..4fbe3f9f4f 100644
 +      return false;
 +    }
 +    if (!external_state && IsCleared()) {
-+      LOG(ERROR) << "Initialized Ozone image has no Vulkan ownership state";
-+      backing_access_.reset();
-+      explicit_vulkan_access_ = false;
-+      external_queue_family_ = VK_QUEUE_FAMILY_IGNORED;
-+      return false;
++      if (ozone_backing()->has_vulkan_ownership_history_) {
++        LOG(ERROR) << "Initialized Ozone image lost its Vulkan ownership state";
++        backing_access_.reset();
++        explicit_vulkan_access_ = false;
++        external_queue_family_ = VK_QUEUE_FAMILY_IGNORED;
++        return false;
++      }
++      // Preserve an initialized native pixmap on its first Vulkan acquire.
++      // Once Vulkan has owned it, EndVulkan() records the exact state and this
++      // bootstrap path is no longer permitted.
++      external_state = ExternalVulkanImageState{
++          .old_layout = VK_IMAGE_LAYOUT_GENERAL,
++          .new_layout = VK_IMAGE_LAYOUT_GENERAL,
++          .external_queue_family = external_queue_family_};
 +    }
 +  }
 +
@@ -2902,7 +2957,7 @@ index bdba5ea5ac..4fbe3f9f4f 100644
        return false;
      }
  
-@@ -239,12 +343,31 @@ void SkiaVkOzoneImageRepresentation::EndAccess(bool readonly) {
+@@ -239,12 +352,31 @@ void SkiaVkOzoneImageRepresentation::EndAccess(bool readonly) {
      SemaphoreHandle semaphore_handle = vk_implementation()->GetSemaphoreHandle(
          vk_device(), end_access_semaphore_);
      fence = std::move(semaphore_handle).ToGpuFenceHandle();
@@ -2937,7 +2992,7 @@ index bdba5ea5ac..4fbe3f9f4f 100644
    std::vector<VkSemaphore> semaphores = std::move(begin_access_semaphores_);
    begin_access_semaphores_.clear();
    if (end_access_semaphore_ != VK_NULL_HANDLE) {
-@@ -258,12 +381,20 @@ void SkiaVkOzoneImageRepresentation::EndAccess(bool readonly) {
+@@ -258,12 +390,20 @@ void SkiaVkOzoneImageRepresentation::EndAccess(bool readonly) {
      fence_helper->EnqueueSemaphoresCleanupForSubmittedWork(
          std::move(semaphores));
    }
@@ -2960,7 +3015,7 @@ index bdba5ea5ac..4fbe3f9f4f 100644
    // `kSingleDeviceUsage` defines the set of usages for which only the Vulkan
    // device from SharedContextState is used. If the SI has any usages outside
    // this set (e.g., if it has any GLES2 usage), then it will be accessed
-@@ -284,16 +415,45 @@ SkiaVkOzoneImageRepresentation::GetEndAccessState() {
+@@ -284,16 +424,45 @@ SkiaVkOzoneImageRepresentation::GetEndAccessState() {
      // All VkImages must be allocated for the same queue family.
      for (const auto& vulkan_image : vulkan_images_) {
        if (vulkan_image->queue_family_index() != queue_family_index) {
@@ -3012,6 +3067,170 @@ index bdba5ea5ac..4fbe3f9f4f 100644
  }
  
  }  // namespace gpu
+diff --git a/components/viz/service/display_embedder/image_context_impl.cc b/components/viz/service/display_embedder/image_context_impl.cc
+index ff04ee7695..789856ccdb 100644
+--- a/components/viz/service/display_embedder/image_context_impl.cc
++++ b/components/viz/service/display_embedder/image_context_impl.cc
+@@ -206,7 +206,9 @@ void ImageContextImpl::CreateFallbackImage(
+     TRACE_EVENT_END("viz", "result", CreateFallbackImageResultToString(result));
+   };
+ 
+-  if (format().PrefersExternalSampler()) {
++  if (format().PrefersExternalSampler() &&
++      (!context_state->graphite_shared_context() ||
++       gpu::GraphiteDawnUsesExternalSampler(format()))) {
+     // Skia can't allocate a fallback texture since the original texture was
+     // externally allocated.
+     result = CreateFallbackImageResult::kFailedPrefersExternalSampler;
+@@ -441,9 +443,13 @@ bool ImageContextImpl::BeginAccessIfNecessaryInternal(
+     return false;
+   }
+ 
+-  // Only one promise texture for external sampler case.
+-  int num_planes =
+-      format().PrefersExternalSampler() ? 1 : format().NumberOfPlanes();
++  // Only one promise texture when Graphite-Dawn can actually consume the
++  // platform's native external-sampler representation.
++  const bool use_external_sampler =
++      format().PrefersExternalSampler() &&
++      (!context_state->graphite_shared_context() ||
++       gpu::GraphiteDawnUsesExternalSampler(format()));
++  int num_planes = use_external_sampler ? 1 : format().NumberOfPlanes();
+   if (context_state->graphite_shared_context()) {
+ #if BUILDFLAG(IS_ANDROID) && BUILDFLAG(SKIA_USE_DAWN)
+     // In the case of video decoding, it is possible for there to be a mismatch
+diff --git a/gpu/BUILD.gn b/gpu/BUILD.gn
+index 396b0a3ff9..4a5ff76543 100644
+--- a/gpu/BUILD.gn
++++ b/gpu/BUILD.gn
+@@ -330,6 +330,9 @@ test("gl_tests") {
+     }
+     deps += [ "//ui/ozone" ]
+     sources += [ "command_buffer/service/shared_image/ozone_image_backing_factory_unittest.cc" ]
++    if (is_linux && skia_use_dawn) {
++      sources += [ "command_buffer/service/shared_image/graphite_dawn_multiplanar_unittest.cc" ]
++    }
+   }
+ 
+   if (enable_vulkan) {
+diff --git a/gpu/command_buffer/service/shared_image/graphite_dawn_multiplanar_unittest.cc b/gpu/command_buffer/service/shared_image/graphite_dawn_multiplanar_unittest.cc
+new file mode 100644
+index 0000000000..1a148bf8d3
+--- /dev/null
++++ b/gpu/command_buffer/service/shared_image/graphite_dawn_multiplanar_unittest.cc
+@@ -0,0 +1,40 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "gpu/command_buffer/service/shared_image/shared_image_format_service_utils.h"
++
++#include "components/viz/common/resources/shared_image_format.h"
++#include "testing/gtest/include/gtest/gtest.h"
++#include "third_party/skia/include/gpu/graphite/dawn/DawnGraphiteTypes.h"
++
++namespace gpu {
++
++TEST(GraphiteDawnMultiplanarTest, SamplesExternalNv12PerPlaneOnLinux) {
++  auto format = viz::SharedImageFormat(viz::MultiPlaneFormat::kNV12);
++  format.SetPrefersExternalSampler();
++
++  EXPECT_FALSE(GraphiteDawnUsesExternalSampler(format));
++
++  skgpu::graphite::DawnTextureInfo plane0 = DawnBackendTextureInfo(
++      format, /*readonly=*/true, /*is_yuv_plane=*/true, /*plane_index=*/0,
++      /*array_slice=*/0, /*mipmapped=*/false,
++      /*scanout_dcomp_surface=*/false,
++      /*supports_multiplanar_rendering=*/false,
++      /*supports_multiplanar_copy=*/false);
++  skgpu::graphite::DawnTextureInfo plane1 = DawnBackendTextureInfo(
++      format, /*readonly=*/true, /*is_yuv_plane=*/true, /*plane_index=*/1,
++      /*array_slice=*/0, /*mipmapped=*/false,
++      /*scanout_dcomp_surface=*/false,
++      /*supports_multiplanar_rendering=*/false,
++      /*supports_multiplanar_copy=*/false);
++
++  EXPECT_EQ(plane0.fFormat, wgpu::TextureFormat::R8BG8Biplanar420Unorm);
++  EXPECT_EQ(plane0.fViewFormat, wgpu::TextureFormat::R8Unorm);
++  EXPECT_EQ(plane0.fAspect, wgpu::TextureAspect::Plane0Only);
++  EXPECT_EQ(plane1.fFormat, wgpu::TextureFormat::R8BG8Biplanar420Unorm);
++  EXPECT_EQ(plane1.fViewFormat, wgpu::TextureFormat::RG8Unorm);
++  EXPECT_EQ(plane1.fAspect, wgpu::TextureAspect::Plane1Only);
++}
++
++}  // namespace gpu
+diff --git a/gpu/command_buffer/service/shared_image/shared_image_format_service_utils.cc b/gpu/command_buffer/service/shared_image/shared_image_format_service_utils.cc
+index 4e612e52be..7dcbbd0f05 100644
+--- a/gpu/command_buffer/service/shared_image/shared_image_format_service_utils.cc
++++ b/gpu/command_buffer/service/shared_image/shared_image_format_service_utils.cc
+@@ -320,6 +320,17 @@ SkColorType ToClosestSkColorTypeExternalSampler(viz::SharedImageFormat format) {
+   }
+ }
+ 
++bool GraphiteDawnUsesExternalSampler(viz::SharedImageFormat format) {
++#if BUILDFLAG(IS_ANDROID)
++  return format.PrefersExternalSampler();
++#else
++  // Dawn's Linux DMA-BUF import supports plane views for multiplanar formats,
++  // but Chromium does not provide the native YCbCr descriptor required to
++  // sample the whole image through one texture view.
++  return false;
++#endif
++}
++
+ GLFormatCaps::GLFormatCaps(const gles2::FeatureInfo* feature_info)
+     : angle_rgbx_internal_format_(
+           feature_info->feature_flags().angle_rgbx_internal_format),
+@@ -699,7 +710,7 @@ skgpu::graphite::TextureInfo GraphitePromiseTextureInfo(
+   skgpu::graphite::DawnTextureInfo dawn_texture_info;
+   dawn_texture_info.fSampleCount = skgpu::graphite::SampleCount::k1;
+ 
+-  if (ycbcr_info || format.PrefersExternalSampler()) {
++  if (ycbcr_info || GraphiteDawnUsesExternalSampler(format)) {
+     dawn_texture_info.fFormat = wgpu::TextureFormat::OpaqueYCbCrAndroid;
+     dawn_texture_info.fViewFormat = wgpu::TextureFormat::OpaqueYCbCrAndroid;
+   } else {
+@@ -775,7 +786,7 @@ skgpu::graphite::DawnTextureInfo DawnBackendTextureInfo(
+   skgpu::graphite::DawnTextureInfo dawn_texture_info;
+   dawn_texture_info.fSampleCount = skgpu::graphite::SampleCount::k1;
+ 
+-  if (format.PrefersExternalSampler()) {
++  if (GraphiteDawnUsesExternalSampler(format)) {
+     dawn_texture_info.fFormat = wgpu::TextureFormat::OpaqueYCbCrAndroid;
+     dawn_texture_info.fViewFormat = wgpu::TextureFormat::OpaqueYCbCrAndroid;
+     dawn_texture_info.fAspect = wgpu::TextureAspect::All;
+diff --git a/gpu/command_buffer/service/shared_image/shared_image_format_service_utils.h b/gpu/command_buffer/service/shared_image/shared_image_format_service_utils.h
+index 9178ff129e..57ebac8f05 100644
+--- a/gpu/command_buffer/service/shared_image/shared_image_format_service_utils.h
++++ b/gpu/command_buffer/service/shared_image/shared_image_format_service_utils.h
+@@ -73,6 +73,13 @@ GPU_GLES2_EXPORT SkYUVAInfo::Subsampling ToSkYUVASubsampling(
+ GPU_GLES2_EXPORT SkColorType
+ ToClosestSkColorTypeExternalSampler(viz::SharedImageFormat format);
+ 
++// Graphite-Dawn can consume external-sampler multiplanar images as a single
++// YCbCr texture only on platforms where Chromium supplies the required native
++// YCbCr descriptor. Other platforms must expose one Dawn texture view per
++// plane and let Skia perform the YUV conversion.
++GPU_GLES2_EXPORT bool GraphiteDawnUsesExternalSampler(
++    viz::SharedImageFormat format);
++
+ // Holds capabilities and provides accessors for getting appropriate GL formats
+ // for shared images.
+ class GPU_GLES2_EXPORT GLFormatCaps {
+diff --git a/gpu/command_buffer/service/shared_image/skia_graphite_dawn_image_representation.cc b/gpu/command_buffer/service/shared_image/skia_graphite_dawn_image_representation.cc
+index deaa073354..829ce2c905 100644
+--- a/gpu/command_buffer/service/shared_image/skia_graphite_dawn_image_representation.cc
++++ b/gpu/command_buffer/service/shared_image/skia_graphite_dawn_image_representation.cc
+@@ -97,7 +97,8 @@ SkiaGraphiteDawnImageRepresentation::CreateBackendTextureHolders(
+       SupportsMultiplanarRendering(context_state_.get());
+   const bool supports_multiplanar_copy =
+       SupportsMultiplanarCopy(context_state_.get());
+-  if (format().is_multi_plane() && !format().PrefersExternalSampler()) {
++  if (format().is_multi_plane() &&
++      !GraphiteDawnUsesExternalSampler(format())) {
+     CHECK(format() == viz::MultiPlaneFormat::kP010 ||
+           format() == viz::MultiPlaneFormat::kP210 ||
+           format() == viz::MultiPlaneFormat::kP410 ||
 diff --git a/services/viz/privileged/mojom/compositing/BUILD.gn b/services/viz/privileged/mojom/compositing/BUILD.gn
 index 28b52bb..6ece790 100644
 --- a/services/viz/privileged/mojom/compositing/BUILD.gn
