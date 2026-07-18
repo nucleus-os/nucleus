@@ -392,8 +392,11 @@ public protocol CompositorShellPolicy: AnyObject {
     func dismissHotkey()
     func overlayActive() -> Bool
     func overlaySceneMenuVisible() -> Bool
+    /// Whether the overlay wants keyboard input routed to it — an open menu, or
+    /// a focused text field in the overlay's own scene.
+    func overlaySceneWantsKeyboard() -> Bool
     func overlayPointer(x: Float, y: Float, kind: UInt32, button: UInt32, timestampNs: UInt64) -> UInt64
-    func overlayKey(keycode: UInt32, modifiers: UInt32, kind: UInt32, timestampNs: UInt64) -> UInt64
+    func overlayKey(keycode: UInt32, modifiers: UInt32, text: String?, kind: UInt32, timestampNs: UInt64) -> UInt64
     func overlaySceneShowWindowMenu(windowID: UInt64, x: Double, y: Double, capabilities: UInt32)
 }
 

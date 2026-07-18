@@ -21,6 +21,11 @@ enum EventFlagBit {
 
 @MainActor
 final class XkbKeyboard {
+    /// XKB keycodes are evdev keycodes plus 8. Named rather than spelled `+ 8`
+    /// at each call site, because getting it wrong silently yields the wrong
+    /// character rather than an error.
+    static let evdevKeycodeOffset: UInt32 = 8
+
     private let context: OpaquePointer
     private let keymap: OpaquePointer
     private let state: OpaquePointer
@@ -94,7 +99,8 @@ final class XkbKeyboard {
             if pressed { pressedKeysLow |= mask } else { pressedKeysLow &= ~mask }
         }
         // xkb keycodes are evdev + 8.
-        _ = xkb_state_update_key(state, evdevKeycode + 8, pressed ? XKB_KEY_DOWN : XKB_KEY_UP)
+        _ = xkb_state_update_key(
+            state, evdevKeycode + Self.evdevKeycodeOffset, pressed ? XKB_KEY_DOWN : XKB_KEY_UP)
     }
 
     func updateMask(depressed: UInt32, latched: UInt32, locked: UInt32, group: UInt32) {

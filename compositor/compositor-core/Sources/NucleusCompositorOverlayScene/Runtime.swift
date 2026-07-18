@@ -159,6 +159,7 @@ public protocol OverlaySceneHost: AnyObject {
     func showWindowMenu(windowID: UInt64, x: Double, y: Double, capabilities: UInt32)
     func dismissMenu()
     func menuVisible() -> Bool
+    func wantsKeyboard() -> Bool
 }
 
 @MainActor
@@ -230,6 +231,13 @@ private final class OverlaySceneRuntimeHost: OverlaySceneHost {
         }
         return shellOverlayController.scene.menuVisible
     }
+
+    func wantsKeyboard() -> Bool {
+        guard let shellOverlayController = ensureShellOverlayController() else {
+            return false
+        }
+        return shellOverlayController.scene.wantsKeyboard
+    }
 }
 
 /// The process-wide overlay-scene runtime host. The reactor boundary installs this
@@ -249,6 +257,10 @@ public enum OverlaySceneRuntime {
 
 @MainActor public func nucleus_compositor_overlay_scene_menu_visible() -> Bool {
     overlaySceneRuntimeHost.menuVisible()
+}
+
+@MainActor public func nucleus_compositor_overlay_scene_wants_keyboard() -> Bool {
+    overlaySceneRuntimeHost.wantsKeyboard()
 }
 
 @MainActor public func nucleus_compositor_overlay_scene_show_window_menu(

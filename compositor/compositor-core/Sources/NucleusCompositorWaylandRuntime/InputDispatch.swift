@@ -404,12 +404,22 @@ final class InputDispatch {
         let keycode = UInt32(truncatingIfNeeded: event.data0)
         let pressed = event.kind == .keyDown
 
-        // An open window menu holds the keyboard grab: route keys into the overlay
-        // (Escape / arrows / Return) and consume every key so the client stays frozen.
-        // Suppressed while locked — the lock screen owns the keyboard, and a window
-        // menu must not be drivable behind it.
-        if !lockActive(), NucleusCompositorServer.shared.shellPolicy?.overlaySceneMenuVisible() ?? false {
-            _ = dispatchOverlayKey(keycode: keycode, modifiers: 0, kind: pressed ? 5 : 6, timestampNs: event.timestampNs)
+        // The overlay holds the keyboard grab whenever it wants keys — an open
+        // window menu, or a focused text field in its own scene. Every key is
+        // consumed so the client below stays frozen. Suppressed while locked:
+        // the lock screen owns the keyboard, and overlay UI must not be drivable
+        // behind it.
+        if !lockActive(), NucleusCompositorServer.shared.shellPolicy?.overlaySceneWantsKeyboard() ?? false {
+            // Composed text, not a keycode-derived guess: XKB accounts for the
+            // layout, dead keys, and compose sequences that a keycode cannot.
+            // Press only — a release commits nothing.
+            let text = pressed ? xkb.keyGetText(xkbKeycode: keycode + XkbKeyboard.evdevKeycodeOffset) : nil
+            _ = dispatchOverlayKey(
+                keycode: keycode,
+                modifiers: UInt32(truncatingIfNeeded: event.flags),
+                text: text,
+                kind: pressed ? 5 : 6,
+                timestampNs: event.timestampNs)
             return .consumed
         }
 
@@ -805,9 +815,12 @@ final class InputDispatch {
         return bits
     }
 
-    private func dispatchOverlayKey(keycode: UInt32, modifiers: UInt32, kind: UInt32, timestampNs: UInt64) -> UInt32 {
+    private func dispatchOverlayKey(
+        keycode: UInt32, modifiers: UInt32, text: String?, kind: UInt32, timestampNs: UInt64
+    ) -> UInt32 {
         let result = NucleusCompositorServer.shared.shellPolicy?.overlayKey(
-            keycode: keycode, modifiers: modifiers, kind: kind, timestampNs: timestampNs) ?? 0
+            keycode: keycode, modifiers: modifiers, text: text,
+            kind: kind, timestampNs: timestampNs) ?? 0
         let bits = UInt32(truncatingIfNeeded: result)
         applyOverlayResult(bits: bits)
         return bits

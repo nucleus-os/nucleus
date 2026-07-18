@@ -164,13 +164,14 @@ public final class BezelService: BezelHost {
 @MainActor public func nucleus_compositor_shell_overlay_key(
     _ keycode: UInt32,
     _ modifiers: UInt32,
+    _ text: String?,
     _ kind: UInt32,
     _ timestampNs: UInt64
 ) -> UInt64 {
     guard let inputKind = NucleusCompositorOverlayTypes.InputKind(rawValue: kind) else { return 0 }
     let result = BezelService.shared.dispatchInput(.init(
         kind: inputKind, button: 0, x: 0, y: 0, scrollX: 0, scrollY: 0,
-        keycode: keycode, modifiers: modifiers, timestampNs: timestampNs
+        keycode: keycode, modifiers: modifiers, text: text, timestampNs: timestampNs
     ))
     return packedOverlayResult(result)
 }

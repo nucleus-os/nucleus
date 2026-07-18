@@ -76,6 +76,11 @@ open class Window: Responder, ~Sendable {
     /// `makeFirstResponder(_:)` so both sides get their lifecycle callbacks.
     public private(set) var firstResponder: Responder?
 
+    /// Routes composed text between this window's focused text client and the
+    /// platform's input method. Per-window because focus is per-window; an
+    /// embedder installs one adapter on each window it hosts.
+    public let textInputContext = TextInputContext()
+
     public init(
         title: String = "",
         frame: Rect = .zero,

@@ -53,7 +53,10 @@ public final class ShellOverlayScene: ~Sendable {
     private var menuStickyArmed: Bool = false
     private let hostedSurfaceRegistry: HostedSurfaceRegistry<HostedSurfaceID>
     private let notificationClosed: @MainActor (UInt32, UInt32) -> Void
-    private let windowScene: WindowScene
+    /// `package` rather than `private` so the package's tests can install a
+    /// window and observe what dispatch actually delivers. Consistent with
+    /// `menuVisible`, `hotkeyView`, and the rest of this type's test surface.
+    package let windowScene: WindowScene
     private let clockNs: @MainActor () -> UInt64
 
     package var notifications: [ShellOverlayNotificationInfo] {
@@ -460,7 +463,16 @@ public final class ShellOverlayScene: ~Sendable {
         handler?(actionID)
     }
 
+    private var heldKey: HeldKey?
+
     package var menuVisible: Bool { !menuLevels.isEmpty }
+
+    /// Whether keys should be routed here rather than to the focused Wayland
+    /// client. True for an open menu, and for a focused responder in the
+    /// overlay's own scene — a text field cannot receive input otherwise.
+    package var wantsKeyboard: Bool {
+        !menuLevels.isEmpty || windowScene.keyWindow?.firstResponder != nil
+    }
 
     /// Place a panel so it stays on the output: anchored at `anchor`, shifted up or
     /// left as needed to keep it fully visible (a submenu clamped left lands over its
@@ -472,8 +484,89 @@ public final class ShellOverlayScene: ~Sendable {
         return Rect(x: x, y: y, width: size.width, height: size.height)
     }
 
+    // MARK: - Key repeat
+
+    /// The key currently held down, and when its next repeat is due. The
+    /// compositor advertises 600 ms then 25/sec to Wayland clients
+    /// (`wl_keyboard.repeat_info`); overlay UI has to implement the same thing
+    /// itself, since it never receives that event.
+    private struct HeldKey {
+        var event: Event
+        var keycode: UInt32
+        var nextRepeatNs: UInt64
+    }
+
+    private static let keyRepeatDelayNs: UInt64 = 600_000_000
+    private static let keyRepeatIntervalNs: UInt64 = 40_000_000
+
+    /// Whether holding this key should repeat. Navigation and deletion repeat,
+    /// as does anything that produced text; Escape and Return do not, because
+    /// repeating them would fire an action many times from one press.
+    private func isRepeatable(_ event: Event) -> Bool {
+        switch event.keyCode {
+        case .leftArrow, .rightArrow, .upArrow, .downArrow,
+             .delete, .forwardDelete, .pageUp, .pageDown:
+            return true
+        case .escape, .return, .tab:
+            return false
+        default:
+            return !(event.characters ?? "").isEmpty
+        }
+    }
+
+    private func noteKeyState(_ event: ShellOverlayInputEvent, nucleon: Event?) {
+        switch event.kind {
+        case .keyDown:
+            guard let nucleon, isRepeatable(nucleon) else {
+                heldKey = nil
+                return
+            }
+            heldKey = HeldKey(
+                event: nucleon,
+                keycode: event.keycode,
+                nextRepeatNs: clockNs() &+ Self.keyRepeatDelayNs)
+        case .keyUp:
+            // Only the held key's own release stops the repeat; releasing some
+            // other key while this one is still down must not.
+            if heldKey?.keycode == event.keycode { heldKey = nil }
+        default:
+            break
+        }
+    }
+
+    /// Emit any repeats now due. Returns whether anything was dispatched, so the
+    /// caller knows a frame is wanted.
+    @discardableResult
+    package func advanceKeyRepeat(nowNs: UInt64) -> Bool {
+        guard var held = heldKey else { return false }
+        guard nowNs >= held.nextRepeatNs else { return false }
+        var dispatched = false
+        // Catch up rather than emitting one per frame, so a stalled frame does
+        // not silently swallow repeats. Bounded so a long stall cannot flood.
+        var emitted = 0
+        while nowNs >= held.nextRepeatNs, emitted < 8 {
+            var repeatEvent = held.event
+            repeatEvent.isARepeat = true
+            repeatEvent.timestampNanoseconds = held.nextRepeatNs
+            _ = windowScene.dispatchEvent(repeatEvent)
+            held.nextRepeatNs &+= Self.keyRepeatIntervalNs
+            emitted += 1
+            dispatched = true
+        }
+        if emitted == 8 {
+            // Resynchronize after a stall instead of staying permanently behind.
+            held.nextRepeatNs = nowNs &+ Self.keyRepeatIntervalNs
+        }
+        heldKey = held
+        return dispatched
+    }
+
+    /// Whether a key is being held, so the host knows to keep scheduling frames.
+    package var keyRepeatActive: Bool { heldKey != nil }
+
     package func dispatchInput(_ event: ShellOverlayInputEvent) -> ShellOverlayInputResult {
         let pointEvent = frame.map { event.convertedFromBackingPixels($0.backingScaleFactor) } ?? event
+        noteKeyState(pointEvent, nucleon: pointEvent.nucleonEvent)
         let cursor = cursor(for: pointEvent.location)
         if !menuLevels.isEmpty {
             let location = pointEvent.location
@@ -567,6 +660,7 @@ public final class ShellOverlayScene: ~Sendable {
                 return nil
             }
             let nowNs = clockNs()
+            advanceKeyRepeat(nowNs: nowNs)
             expireNotifications(nowNs: nowNs)
             do {
                 try notificationListView.advanceArrangedSubviewTransitions(nowNs: nowNs)

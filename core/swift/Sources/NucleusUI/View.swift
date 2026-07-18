@@ -341,6 +341,18 @@ open class View: Responder, Accessible, ~Sendable {
         parentView
     }
 
+    /// The window this view is installed in, found by walking up the view tree.
+    /// `parentWindow` is only set on a window's root view, so a nested view has
+    /// to climb. Mirrors `NSView.window`.
+    public var window: Window? {
+        var node: View? = self
+        while let current = node {
+            if let window = current.parentWindow { return window }
+            node = current.parentView
+        }
+        return nil
+    }
+
     public var subviews: [View] {
         childViews
     }

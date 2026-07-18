@@ -152,8 +152,12 @@ public struct InputEvent: Swift.Equatable, Swift.Sendable {
   public var scrollY: Swift.Float
   public var keycode: Swift.UInt32
   public var modifiers: Swift.UInt32
+  /// Composed text for a key event, as produced by the compositor's XKB state.
+  /// Carried alongside `keycode` rather than derived from it: a keycode cannot
+  /// account for layout, dead keys, or compose sequences.
+  public var text: Swift.String?
   public var timestampNs: Swift.UInt64
-  public init(kind: InputKind = .pointerMove, button: Swift.UInt32 = Swift.UInt32(), x: Swift.Float = 0, y: Swift.Float = 0, scrollX: Swift.Float = 0, scrollY: Swift.Float = 0, keycode: Swift.UInt32 = Swift.UInt32(), modifiers: Swift.UInt32 = Swift.UInt32(), timestampNs: Swift.UInt64 = Swift.UInt64()) {
+  public init(kind: InputKind = .pointerMove, button: Swift.UInt32 = Swift.UInt32(), x: Swift.Float = 0, y: Swift.Float = 0, scrollX: Swift.Float = 0, scrollY: Swift.Float = 0, keycode: Swift.UInt32 = Swift.UInt32(), modifiers: Swift.UInt32 = Swift.UInt32(), text: Swift.String? = nil, timestampNs: Swift.UInt64 = Swift.UInt64()) {
     self._kind = kind.rawValue
     self.button = button
     self.x = x
@@ -162,6 +166,7 @@ public struct InputEvent: Swift.Equatable, Swift.Sendable {
     self.scrollY = scrollY
     self.keycode = keycode
     self.modifiers = modifiers
+    self.text = text
     self.timestampNs = timestampNs
   }
   public var kind: InputKind {

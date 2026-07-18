@@ -30,11 +30,14 @@ extension ShellPolicyService: CompositorShellPolicy {
     public func dismissHotkey() { nucleus_compositor_shell_dismiss_hotkey() }
     public func overlayActive() -> Bool { nucleus_compositor_shell_overlay_active() }
     public func overlaySceneMenuVisible() -> Bool { nucleus_compositor_overlay_scene_menu_visible() }
+    public func overlaySceneWantsKeyboard() -> Bool { nucleus_compositor_overlay_scene_wants_keyboard() }
     public func overlayPointer(x: Float, y: Float, kind: UInt32, button: UInt32, timestampNs: UInt64) -> UInt64 {
         nucleus_compositor_shell_overlay_pointer(x, y, kind, button, timestampNs)
     }
-    public func overlayKey(keycode: UInt32, modifiers: UInt32, kind: UInt32, timestampNs: UInt64) -> UInt64 {
-        nucleus_compositor_shell_overlay_key(keycode, modifiers, kind, timestampNs)
+    public func overlayKey(
+        keycode: UInt32, modifiers: UInt32, text: String?, kind: UInt32, timestampNs: UInt64
+    ) -> UInt64 {
+        nucleus_compositor_shell_overlay_key(keycode, modifiers, text, kind, timestampNs)
     }
     public func overlaySceneShowWindowMenu(windowID: UInt64, x: Double, y: Double, capabilities: UInt32) {
         nucleus_compositor_overlay_scene_show_window_menu(windowID, x, y, capabilities)

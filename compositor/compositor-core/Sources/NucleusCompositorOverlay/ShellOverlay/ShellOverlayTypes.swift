@@ -84,7 +84,7 @@ public struct ShellOverlayInputEvent: Sendable, Equatable {
         scrollY = event.scrollY
         keycode = event.keycode
         modifiers = event.modifiers
-        text = nil
+        text = event.text
         timestampNanoseconds = event.timestampNs
     }
 
