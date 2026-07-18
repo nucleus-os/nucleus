@@ -80,10 +80,12 @@ public final class LockScreenView: View {
         statusLabel.font = .systemFont(ofSize: 12)
         statusLabel.textColor = Color(0.95, 0.55, 0.55, 1)
 
-        column.addArrangedSubview(promptLabel)
-        column.addArrangedSubview(passwordField)
-        column.addArrangedSubview(statusLabel)
-        addSubview(column)
+        column.setArrangedBody {
+            promptLabel
+            passwordField
+            statusLabel
+        }
+        setBody { column }
     }
 
     /// The field takes focus so typing lands somewhere without a click — there

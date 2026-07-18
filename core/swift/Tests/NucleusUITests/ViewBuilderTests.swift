@@ -30,7 +30,8 @@ import NucleusUI
         inner.setBody { leaf }
         root.setBody { inner }
 
-        #expect(root.subviews == [inner].map { $0 })
+        #expect(root.subviews.count == 1)
+        #expect(root.subviews[0] === inner)
         #expect(inner.subviews[0] === leaf)
     }
 
