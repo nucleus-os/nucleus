@@ -28,7 +28,7 @@ process.
 
 ## Goal
 
-Ship a branded `nucleus-browser` executable that:
+Ship a functional `nucleus-browser` executable that:
 
 - runs natively on Wayland;
 - renders Chromium UI and web content through Graphite/Dawn/Vulkan;
@@ -45,6 +45,12 @@ Ship a branded `nucleus-browser` executable that:
 Nucleus Browser is also the on-screen reference client for the patched
 Graphite/Dawn/Vulkan Chromium stack. It does not replace Noctalia's embedded CEF
 panel and does not share CEF's offscreen buffer protocol.
+
+Visual and product branding is deliberately deferred until after the browser
+runtime passes its architectural and functional acceptance gates. Custom
+icons, product strings, visual identity, and branding-resource replacement are
+low-priority polish. They do not block renderer, Wayland, media, sandbox,
+profile, packaging, or performance work.
 
 ## Why the browser needs a new presentation path
 
@@ -254,10 +260,13 @@ The final implementation is divided by existing Chromium subsystem ownership.
 
 ### Product and packaging
 
-- `chrome/app/` branding resources
-- `chrome/common/chrome_constants.*`
 - `chrome/installer/linux/`
 - workspace `chromium/` build and packaging scripts
+
+Functional product identity may also require narrow changes in
+`chrome/common/chrome_constants.*`, but custom strings and resources under
+`chrome/app/` belong to the deferred branding phase rather than the browser
+runtime implementation.
 
 Exact file additions can follow upstream source movement at the pinned Chromium
 revision, but subsystem ownership and API direction do not change.
@@ -596,16 +605,14 @@ Phase 7 lands with tests for:
 - sRGB, Display P3, and HDR metadata propagation;
 - video decode on the same adapter as presentation.
 
-### Phase 8 — Create the Nucleus Browser product
+### Phase 8 — Create the functional Nucleus Browser product
 
 Turn the working `chrome` target into the Nucleus Browser product.
 
 The product lands with:
 
 - executable name `nucleus-browser`;
-- application name “Nucleus Browser”;
-- Wayland desktop ID and `.desktop` file;
-- Nucleus icons and Chromium-license-compliant branding resources;
+- a stable Wayland desktop ID and functional `.desktop` file;
 - a private profile root at `~/.config/nucleus-browser`;
 - a private cache root at `~/.cache/nucleus-browser`;
 - browser, GPU, renderer, utility, crash handler, and sandbox helper artifacts;
@@ -616,6 +623,13 @@ The product lands with:
 - Widevine discovery and CDM manifest packaging;
 - persistent cookies, storage, service workers, HTTP cache, shader cache, and
   Dawn pipeline cache.
+
+Phase 8 may retain legally usable upstream or placeholder visual resources and
+generic product strings. It does not spend time replacing icons, polishing
+product naming, theming Chromium UI, or completing a visual identity. The
+desktop ID and profile paths are established now because portals, application
+association, process behavior, and state isolation depend on them; they are
+functional identifiers rather than a branding milestone.
 
 Graphite/Dawn/Vulkan/Wayland is the product default in source. Users do not need
 launch flags to select it. A single diagnostic page records the active renderer,
@@ -687,6 +701,25 @@ After these gates pass, Nucleus Browser becomes the authoritative on-screen
 Graphite/Dawn/Vulkan Chromium client. The direct-Dawn-Wayland-WSI experiment,
 in-process-GPU probes, runtime renderer-selection flags, redundant diagnostics,
 and any temporary software paths are removed.
+
+### Phase 10 — Apply final branding and product polish
+
+This phase is deferred and low priority. Begin it only after Phase 9 establishes
+the browser as the authoritative, accepted on-screen Chromium client.
+
+The phase may then add:
+
+- final application display name and user-facing product strings;
+- Nucleus icons at every required Chromium and Linux desktop size;
+- Chromium-license- and trademark-compliant branding resources;
+- final About/version presentation;
+- optional UI color, theme, and visual-identity polish;
+- packaging artwork and other non-functional presentation assets.
+
+Branding must not change the established executable name, desktop ID, profile
+roots, sandbox layout, renderer selection, or runtime behavior. Branding
+review is not part of the rendering, Wayland, media, synchronization,
+performance, or browser-authority acceptance gates.
 
 ## Patch-stack result
 
