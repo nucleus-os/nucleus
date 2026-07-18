@@ -1,7 +1,7 @@
 Subject: [PATCH] Integrate direct DMA-BUF output with CEF OSR scheduling
 
 diff --git a/cef/BUILD.gn b/cef/BUILD.gn
-index ae04ae3bb..242f30fbc 100644
+index ae04ae3..242f30f 100644
 --- a/cef/BUILD.gn
 +++ b/cef/BUILD.gn
 @@ -411,11 +411,14 @@ source_set("libcef_static_unittested") {
@@ -28,7 +28,7 @@ index ae04ae3bb..242f30fbc 100644
  
    deps = [
 diff --git a/cef/include/cef_browser.h b/cef/include/cef_browser.h
-index 1831ac202..d04bd36bb 100644
+index 1831ac2..d386622 100644
 --- a/cef/include/cef_browser.h
 +++ b/cef/include/cef_browser.h
 @@ -52,6 +52,22 @@
@@ -54,7 +54,7 @@ index 1831ac202..d04bd36bb 100644
  ///
  /// Class used to represent a browser. When used in the browser process the
  /// methods of this class may be called on any thread unless otherwise indicated
-@@ -744,6 +760,32 @@ class CefBrowserHost : public virtual CefBaseRefCounted {
+@@ -744,6 +760,43 @@ class CefBrowserHost : public virtual CefBaseRefCounted {
    /*--cef()--*/
    virtual void SendExternalBeginFrame() = 0;
  
@@ -72,8 +72,18 @@ index 1831ac202..d04bd36bb 100644
 +      CefRefPtr<CefExternalBeginFrameCallback> callback) = 0;
 +
 +  ///
++  /// Abort any outstanding external BeginFrame in place. The accepted frame's
++  /// callback will still run exactly once with no damage. This method must be
++  /// called on the CEF UI thread for a windowless browser with external
++  /// BeginFrame control enabled.
++  ///
++  /*--cef()--*/
++  virtual bool AbortPendingExternalBeginFrame() = 0;
++
++  ///
 +  /// Set a release fence for the accelerated paint frame identified by
-+  /// |capture_counter|. This method is only supported on Linux with windowless
++  /// |transport_epoch| and |capture_counter|. This method is only supported on
++  /// Linux with windowless
 +  /// rendering. It may be called during or after OnAcceleratedPaint, but must
 +  /// be called on the CEF UI thread before CEF's bounded release timeout. CEF
 +  /// duplicates |fd| before returning, and the caller retains ownership of
@@ -81,14 +91,15 @@ index 1831ac202..d04bd36bb 100644
 +  /// signals.
 +  ///
 +  /*--cef()--*/
-+  virtual void SetAcceleratedPaintReleaseFence(int64_t capture_counter,
++  virtual void SetAcceleratedPaintReleaseFence(uint64_t transport_epoch,
++                                               int64_t capture_counter,
 +                                               int fd) = 0;
 +
    ///
    /// Send a key event to the browser.
    ///
 diff --git a/cef/include/internal/cef_types.h b/cef/include/internal/cef_types.h
-index 7e00f3d6f..69391f3db 100644
+index 7e00f3d..69391f3 100644
 --- a/cef/include/internal/cef_types.h
 +++ b/cef/include/internal/cef_types.h
 @@ -1915,6 +1915,29 @@ typedef enum {
@@ -122,7 +133,7 @@ index 7e00f3d6f..69391f3db 100644
  /// Screen information used when window rendering is disabled. This structure is
  /// passed as a parameter to CefRenderHandler::GetScreenInfo and should be
 diff --git a/cef/include/internal/cef_types_linux.h b/cef/include/internal/cef_types_linux.h
-index 16b5c2f58..5b325a50d 100644
+index 16b5c2f..5b325a5 100644
 --- a/cef/include/internal/cef_types_linux.h
 +++ b/cef/include/internal/cef_types_linux.h
 @@ -209,6 +209,13 @@ typedef struct _cef_accelerated_paint_info_t {
@@ -139,8 +150,49 @@ index 16b5c2f58..5b325a50d 100644
  } cef_accelerated_paint_info_t;
  
  #ifdef __cplusplus
+diff --git a/cef/include/internal/cef_types_osr.h b/cef/include/internal/cef_types_osr.h
+index b556a0c..be7e141 100644
+--- a/cef/include/internal/cef_types_osr.h
++++ b/cef/include/internal/cef_types_osr.h
+@@ -91,6 +91,36 @@ typedef struct _cef_accelerated_paint_info_common_t {
+   ///
+   uint64_t capture_counter;
+ 
++  ///
++  /// Output generation of an exported offscreen frame.
++  ///
++  uint64_t output_generation;
++
++  ///
++  /// Identity of the browser/Viz offscreen output transport.
++  ///
++  uint64_t transport_epoch;
++
++  ///
++  /// Buffer slot containing an exported offscreen frame.
++  ///
++  uint32_t output_slot;
++
++  ///
++  /// Monotonic content serial represented by an exported offscreen frame.
++  ///
++  uint64_t content_serial;
++
++  ///
++  /// Vulkan image layout guaranteed at producer/consumer handoff.
++  ///
++  uint32_t image_layout;
++
++  ///
++  /// Vulkan queue family that owns the image at producer/consumer handoff.
++  ///
++  uint32_t queue_family_index;
++
+   ///
+   /// Optional flag of capture_update_rect
+   ///
 diff --git a/cef/include/internal/cef_types_wrappers.h b/cef/include/internal/cef_types_wrappers.h
-index 9aaca31ab..22cb16b32 100644
+index 9aaca31..512a5ca 100644
 --- a/cef/include/internal/cef_types_wrappers.h
 +++ b/cef/include/internal/cef_types_wrappers.h
 @@ -322,6 +322,21 @@ inline bool operator!=(const CefDraggableRegion& a,
@@ -166,10 +218,10 @@ index 9aaca31ab..22cb16b32 100644
  /// Class representing the virtual screen information for use when window
  /// rendering is disabled.
 diff --git a/cef/libcef/browser/alloy/alloy_browser_host_impl.cc b/cef/libcef/browser/alloy/alloy_browser_host_impl.cc
-index b10a9fd42..a23775e92 100644
+index b10a9fd..94d7ec1 100644
 --- a/cef/libcef/browser/alloy/alloy_browser_host_impl.cc
 +++ b/cef/libcef/browser/alloy/alloy_browser_host_impl.cc
-@@ -409,6 +409,33 @@ void AlloyBrowserHostImpl::SendExternalBeginFrame() {
+@@ -409,6 +409,45 @@ void AlloyBrowserHostImpl::SendExternalBeginFrame() {
    }
  }
  
@@ -186,7 +238,18 @@ index b10a9fd42..a23775e92 100644
 +         platform_delegate_->SendExternalBeginFrameWithTiming(args, callback);
 +}
 +
++bool AlloyBrowserHostImpl::AbortPendingExternalBeginFrame() {
++  if (!IsWindowless() || !CEF_CURRENTLY_ON_UIT()) {
++    DCHECK(false) << "Aborting an external BeginFrame requires "
++                     "windowless rendering on the CEF UI thread";
++    return false;
++  }
++  return platform_delegate_ &&
++         platform_delegate_->AbortPendingExternalBeginFrame();
++}
++
 +void AlloyBrowserHostImpl::SetAcceleratedPaintReleaseFence(
++    uint64_t transport_epoch,
 +    int64_t capture_counter,
 +    int fd) {
 +  if (!IsWindowless() || !CEF_CURRENTLY_ON_UIT()) {
@@ -196,7 +259,8 @@ index b10a9fd42..a23775e92 100644
 +  }
 +
 +  if (platform_delegate_) {
-+    platform_delegate_->SetAcceleratedPaintReleaseFence(capture_counter, fd);
++    platform_delegate_->SetAcceleratedPaintReleaseFence(
++        transport_epoch, capture_counter, fd);
 +  }
 +}
 +
@@ -204,26 +268,28 @@ index b10a9fd42..a23775e92 100644
    if (!IsWindowless()) {
      DCHECK(false) << "Window rendering is not disabled";
 diff --git a/cef/libcef/browser/alloy/alloy_browser_host_impl.h b/cef/libcef/browser/alloy/alloy_browser_host_impl.h
-index 705fb3411..90275473e 100644
+index 705fb34..868cf3c 100644
 --- a/cef/libcef/browser/alloy/alloy_browser_host_impl.h
 +++ b/cef/libcef/browser/alloy/alloy_browser_host_impl.h
-@@ -87,6 +87,11 @@ class AlloyBrowserHostImpl : public CefBrowserHostBase,
+@@ -87,6 +87,13 @@ class AlloyBrowserHostImpl : public CefBrowserHostBase,
    void WasHidden(bool hidden) override;
    void Invalidate(PaintElementType type) override;
    void SendExternalBeginFrame() override;
 +  bool SendExternalBeginFrameWithTiming(
 +      const CefExternalBeginFrameArgs& args,
 +      CefRefPtr<CefExternalBeginFrameCallback> callback) override;
-+  void SetAcceleratedPaintReleaseFence(int64_t capture_counter,
++  bool AbortPendingExternalBeginFrame() override;
++  void SetAcceleratedPaintReleaseFence(uint64_t transport_epoch,
++                                       int64_t capture_counter,
 +                                       int fd) override;
    void SendTouchEvent(const CefTouchEvent& event) override;
    void SendCaptureLostEvent() override;
    int GetWindowlessFrameRate() override;
 diff --git a/cef/libcef/browser/browser_platform_delegate.cc b/cef/libcef/browser/browser_platform_delegate.cc
-index 167b2af62..2c4e628c1 100644
+index 167b2af..ab1ffc8 100644
 --- a/cef/libcef/browser/browser_platform_delegate.cc
 +++ b/cef/libcef/browser/browser_platform_delegate.cc
-@@ -404,6 +404,19 @@ void CefBrowserPlatformDelegate::SendExternalBeginFrame() {
+@@ -404,6 +404,25 @@ void CefBrowserPlatformDelegate::SendExternalBeginFrame() {
    DCHECK(false);
  }
  
@@ -234,7 +300,13 @@ index 167b2af62..2c4e628c1 100644
 +  return false;
 +}
 +
++bool CefBrowserPlatformDelegate::AbortPendingExternalBeginFrame() {
++  DCHECK(false);
++  return false;
++}
++
 +void CefBrowserPlatformDelegate::SetAcceleratedPaintReleaseFence(
++    uint64_t transport_epoch,
 +    int64_t capture_counter,
 +    int fd) {
 +  DCHECK(false);
@@ -244,10 +316,10 @@ index 167b2af62..2c4e628c1 100644
    DCHECK(false);
  }
 diff --git a/cef/libcef/browser/browser_platform_delegate.h b/cef/libcef/browser/browser_platform_delegate.h
-index 698913fc8..bbf156584 100644
+index 698913f..e44fad0 100644
 --- a/cef/libcef/browser/browser_platform_delegate.h
 +++ b/cef/libcef/browser/browser_platform_delegate.h
-@@ -315,6 +315,15 @@ class CefBrowserPlatformDelegate {
+@@ -315,6 +315,19 @@ class CefBrowserPlatformDelegate {
    // Send the external begin frame message. Only used with windowless rendering.
    virtual void SendExternalBeginFrame();
  
@@ -257,17 +329,21 @@ index 698913fc8..bbf156584 100644
 +      const CefExternalBeginFrameArgs& args,
 +      CefRefPtr<CefExternalBeginFrameCallback> callback);
 +
++  virtual bool AbortPendingExternalBeginFrame();
++
 +  // Delay recycling the accelerated paint buffer until |fd| signals.
-+  virtual void SetAcceleratedPaintReleaseFence(int64_t capture_counter, int fd);
++  virtual void SetAcceleratedPaintReleaseFence(uint64_t transport_epoch,
++                                               int64_t capture_counter,
++                                               int fd);
 +
    // Set the windowless frame rate. Only used with windowless rendering.
    virtual void SetWindowlessFrameRate(int frame_rate);
  
 diff --git a/cef/libcef/browser/chrome/chrome_browser_host_impl.cc b/cef/libcef/browser/chrome/chrome_browser_host_impl.cc
-index fd0128f64..39fa9f253 100644
+index fd0128f..bc0ba85 100644
 --- a/cef/libcef/browser/chrome/chrome_browser_host_impl.cc
 +++ b/cef/libcef/browser/chrome/chrome_browser_host_impl.cc
-@@ -247,6 +247,19 @@ void ChromeBrowserHostImpl::SendExternalBeginFrame() {
+@@ -247,6 +247,25 @@ void ChromeBrowserHostImpl::SendExternalBeginFrame() {
    NOTIMPLEMENTED();
  }
  
@@ -278,7 +354,13 @@ index fd0128f64..39fa9f253 100644
 +  return false;
 +}
 +
++bool ChromeBrowserHostImpl::AbortPendingExternalBeginFrame() {
++  NOTIMPLEMENTED();
++  return false;
++}
++
 +void ChromeBrowserHostImpl::SetAcceleratedPaintReleaseFence(
++    uint64_t transport_epoch,
 +    int64_t capture_counter,
 +    int fd) {
 +  NOTIMPLEMENTED();
@@ -288,26 +370,28 @@ index fd0128f64..39fa9f253 100644
    NOTIMPLEMENTED();
  }
 diff --git a/cef/libcef/browser/chrome/chrome_browser_host_impl.h b/cef/libcef/browser/chrome/chrome_browser_host_impl.h
-index 98e7dde38..2e7a94cad 100644
+index 98e7dde..2e63dc4 100644
 --- a/cef/libcef/browser/chrome/chrome_browser_host_impl.h
 +++ b/cef/libcef/browser/chrome/chrome_browser_host_impl.h
-@@ -81,6 +81,11 @@ class ChromeBrowserHostImpl : public CefBrowserHostBase {
+@@ -81,6 +81,13 @@ class ChromeBrowserHostImpl : public CefBrowserHostBase {
    void WasHidden(bool hidden) override;
    void Invalidate(PaintElementType type) override;
    void SendExternalBeginFrame() override;
 +  bool SendExternalBeginFrameWithTiming(
 +      const CefExternalBeginFrameArgs& args,
 +      CefRefPtr<CefExternalBeginFrameCallback> callback) override;
-+  void SetAcceleratedPaintReleaseFence(int64_t capture_counter,
++  bool AbortPendingExternalBeginFrame() override;
++  void SetAcceleratedPaintReleaseFence(uint64_t transport_epoch,
++                                       int64_t capture_counter,
 +                                       int fd) override;
    void SendTouchEvent(const CefTouchEvent& event) override;
    void SendCaptureLostEvent() override;
    int GetWindowlessFrameRate() override;
 diff --git a/cef/libcef/browser/osr/browser_platform_delegate_osr.cc b/cef/libcef/browser/osr/browser_platform_delegate_osr.cc
-index 44e49530f..7abacefd4 100644
+index 44e4953..dc65e2b 100644
 --- a/cef/libcef/browser/osr/browser_platform_delegate_osr.cc
 +++ b/cef/libcef/browser/osr/browser_platform_delegate_osr.cc
-@@ -265,6 +265,22 @@ void CefBrowserPlatformDelegateOsr::SendExternalBeginFrame() {
+@@ -265,6 +265,29 @@ void CefBrowserPlatformDelegateOsr::SendExternalBeginFrame() {
    }
  }
  
@@ -318,12 +402,19 @@ index 44e49530f..7abacefd4 100644
 +  return view && view->SendExternalBeginFrameWithTiming(args, callback);
 +}
 +
++bool CefBrowserPlatformDelegateOsr::AbortPendingExternalBeginFrame() {
++  CefRenderWidgetHostViewOSR* view = GetOSRHostView();
++  return view && view->AbortPendingExternalBeginFrame();
++}
++
 +void CefBrowserPlatformDelegateOsr::SetAcceleratedPaintReleaseFence(
++    uint64_t transport_epoch,
 +    int64_t capture_counter,
 +    int fd) {
 +  CefRenderWidgetHostViewOSR* view = GetOSRHostView();
 +  if (view) {
-+    view->SetAcceleratedPaintReleaseFence(capture_counter, fd);
++    view->SetAcceleratedPaintReleaseFence(
++        transport_epoch, capture_counter, fd);
 +  }
 +}
 +
@@ -331,24 +422,26 @@ index 44e49530f..7abacefd4 100644
    CefRenderWidgetHostViewOSR* view = GetOSRHostView();
    if (view) {
 diff --git a/cef/libcef/browser/osr/browser_platform_delegate_osr.h b/cef/libcef/browser/osr/browser_platform_delegate_osr.h
-index cdc84ed35..577916def 100644
+index cdc84ed..b36927b 100644
 --- a/cef/libcef/browser/osr/browser_platform_delegate_osr.h
 +++ b/cef/libcef/browser/osr/browser_platform_delegate_osr.h
-@@ -59,6 +59,11 @@ class CefBrowserPlatformDelegateOsr
+@@ -59,6 +59,13 @@ class CefBrowserPlatformDelegateOsr
    void NotifyScreenInfoChanged() override;
    void Invalidate(cef_paint_element_type_t type) override;
    void SendExternalBeginFrame() override;
 +  bool SendExternalBeginFrameWithTiming(
 +      const CefExternalBeginFrameArgs& args,
 +      CefRefPtr<CefExternalBeginFrameCallback> callback) override;
-+  void SetAcceleratedPaintReleaseFence(int64_t capture_counter,
++  bool AbortPendingExternalBeginFrame() override;
++  void SetAcceleratedPaintReleaseFence(uint64_t transport_epoch,
++                                       int64_t capture_counter,
 +                                       int fd) override;
    void SetWindowlessFrameRate(int frame_rate) override;
    void ImeSetComposition(const CefString& text,
                           const std::vector<CefCompositionUnderline>& underlines,
 diff --git a/cef/libcef/browser/osr/external_begin_frame_state.cc b/cef/libcef/browser/osr/external_begin_frame_state.cc
 new file mode 100644
-index 000000000..e86dffea3
+index 0000000..e86dffe
 --- /dev/null
 +++ b/cef/libcef/browser/osr/external_begin_frame_state.cc
 @@ -0,0 +1,42 @@
@@ -396,7 +489,7 @@ index 000000000..e86dffea3
 +}
 diff --git a/cef/libcef/browser/osr/external_begin_frame_state.h b/cef/libcef/browser/osr/external_begin_frame_state.h
 new file mode 100644
-index 000000000..4ea022a48
+index 0000000..4ea022a
 --- /dev/null
 +++ b/cef/libcef/browser/osr/external_begin_frame_state.h
 @@ -0,0 +1,34 @@
@@ -436,7 +529,7 @@ index 000000000..4ea022a48
 +#endif  // CEF_LIBCEF_BROWSER_OSR_EXTERNAL_BEGIN_FRAME_STATE_H_
 diff --git a/cef/libcef/browser/osr/external_begin_frame_state_unittest.cc b/cef/libcef/browser/osr/external_begin_frame_state_unittest.cc
 new file mode 100644
-index 000000000..2dc688205
+index 0000000..2dc6882
 --- /dev/null
 +++ b/cef/libcef/browser/osr/external_begin_frame_state_unittest.cc
 @@ -0,0 +1,69 @@
@@ -510,7 +603,7 @@ index 000000000..2dc688205
 +  EXPECT_EQ(args.interval, base::Nanoseconds(kIntervalNs));
 +}
 diff --git a/cef/libcef/browser/osr/render_widget_host_view_osr.cc b/cef/libcef/browser/osr/render_widget_host_view_osr.cc
-index 501889ac8..6ada58bf9 100644
+index 501889a..dd0824c 100644
 --- a/cef/libcef/browser/osr/render_widget_host_view_osr.cc
 +++ b/cef/libcef/browser/osr/render_widget_host_view_osr.cc
 @@ -57,6 +57,12 @@
@@ -526,7 +619,18 @@ index 501889ac8..6ada58bf9 100644
  namespace {
  
  // The maximum number of damage rects to cache for outstanding frame requests
-@@ -417,12 +423,17 @@ void CefRenderWidgetHostViewOSR::ShowWithVisibility(
+@@ -290,6 +296,10 @@ CefRenderWidgetHostViewOSR::CefRenderWidgetHostViewOSR(
+ }
+ 
+ CefRenderWidgetHostViewOSR::~CefRenderWidgetHostViewOSR() {
++  ++external_begin_frame_generation_;
++  if (begin_frame_state_.pending()) {
++    begin_frame_state_.Complete(false);
++  }
+   ReleaseCompositor();
+   root_layer_.reset(nullptr);
+ 
+@@ -417,12 +427,17 @@ void CefRenderWidgetHostViewOSR::ShowWithVisibility(
  
    if (!content::GpuDataManagerImpl::GetInstance()->IsGpuCompositingDisabled()) {
      // Start generating frames when we're visible and at the correct size.
@@ -550,11 +654,17 @@ index 501889ac8..6ada58bf9 100644
      }
    }
  }
-@@ -1017,10 +1028,10 @@ void CefRenderWidgetHostViewOSR::DidNavigate() {
+@@ -1016,11 +1031,16 @@ void CefRenderWidgetHostViewOSR::DidNavigate() {
+ }
  
  void CefRenderWidgetHostViewOSR::OnFrameComplete(
++    uint64_t controller_generation,
      const viz::BeginFrameAck& ack) {
 -  DCHECK(begin_frame_pending_);
++  if (controller_generation != external_begin_frame_generation_ ||
++      !begin_frame_state_.pending()) {
++    return;
++  }
 +  DCHECK(begin_frame_state_.pending());
    DCHECK_EQ(begin_frame_source_.source_id(), ack.frame_id.source_id);
    DCHECK_EQ(begin_frame_number_, ack.frame_id.sequence_number);
@@ -563,7 +673,7 @@ index 501889ac8..6ada58bf9 100644
  }
  
  void CefRenderWidgetHostViewOSR::OnRenderFrameMetadataChangedAfterActivation(
-@@ -1073,6 +1084,74 @@ bool CefRenderWidgetHostViewOSR::UseProxyOutputDevice() {
+@@ -1073,6 +1093,81 @@ bool CefRenderWidgetHostViewOSR::UseProxyOutputDevice() {
    return true;
  }
  
@@ -576,6 +686,7 @@ index 501889ac8..6ada58bf9 100644
 +  }
 +  offscreen_output_client_receiver_.reset();
 +  offscreen_output_.reset();
++  ++offscreen_output_epoch_;
 +  *client = offscreen_output_client_receiver_.BindNewPipeAndPassRemote();
 +  *output = offscreen_output_.BindNewPipeAndPassReceiver();
 +  return true;
@@ -600,6 +711,12 @@ index 501889ac8..6ada58bf9 100644
 +  extra.content_rect = extra.visible_rect;
 +  extra.has_capture_counter = true;
 +  extra.capture_counter = frame->frame_token;
++  extra.transport_epoch = offscreen_output_epoch_;
++  extra.output_generation = frame->generation;
++  extra.output_slot = frame->slot_index;
++  extra.content_serial = frame->content_serial;
++  extra.image_layout = frame->image_layout;
++  extra.queue_family_index = frame->queue_family_index;
 +  extra.has_capture_update_rect = true;
 +  extra.capture_update_rect = {
 +      frame->damage_rect.x(), frame->damage_rect.y(),
@@ -638,7 +755,7 @@ index 501889ac8..6ada58bf9 100644
  bool CefRenderWidgetHostViewOSR::InstallTransparency() {
    if (background_color_ == SK_ColorTRANSPARENT) {
      SetBackgroundColor(background_color_);
-@@ -1173,21 +1252,37 @@ void CefRenderWidgetHostViewOSR::Invalidate(
+@@ -1173,21 +1268,37 @@ void CefRenderWidgetHostViewOSR::Invalidate(
  }
  
  void CefRenderWidgetHostViewOSR::SendExternalBeginFrame() {
@@ -662,16 +779,16 @@ index 501889ac8..6ada58bf9 100644
 +  return SendExternalBeginFrameInternal(args.deadline_delta_ns,
 +                                        args.interval_ns, callback);
 +}
-+
+ 
+-  base::TimeTicks frame_time = base::TimeTicks::Now();
+-  base::TimeTicks deadline = base::TimeTicks();
+-  base::TimeDelta interval = viz::BeginFrameArgs::DefaultInterval();
 +bool CefRenderWidgetHostViewOSR::SendExternalBeginFrameInternal(
 +    int64_t deadline_delta_ns,
 +    int64_t interval_ns,
 +    CefRefPtr<CefExternalBeginFrameCallback> callback) {
 +  DCHECK(external_begin_frame_enabled_);
- 
--  base::TimeTicks frame_time = base::TimeTicks::Now();
--  base::TimeTicks deadline = base::TimeTicks();
--  base::TimeDelta interval = viz::BeginFrameArgs::DefaultInterval();
++
 +  if (!compositor_ || !begin_frame_state_.Begin(callback)) {
 +    return false;
 +  }
@@ -687,7 +804,7 @@ index 501889ac8..6ada58bf9 100644
  
    DCHECK(begin_frame_args.IsValid());
  
-@@ -1195,18 +1290,36 @@ void CefRenderWidgetHostViewOSR::SendExternalBeginFrame() {
+@@ -1195,18 +1306,49 @@ void CefRenderWidgetHostViewOSR::SendExternalBeginFrame() {
      render_widget_host_->ProgressFlingIfNeeded(frame_time);
    }
  
@@ -702,20 +819,33 @@ index 501889ac8..6ada58bf9 100644
 +  compositor_->IssueExternalBeginFrame(
 +      begin_frame_args, /* force= */ true,
 +      base::BindOnce(&CefRenderWidgetHostViewOSR::OnFrameComplete,
-+                     weak_ptr_factory_.GetWeakPtr()));
++                     weak_ptr_factory_.GetWeakPtr(),
++                     external_begin_frame_generation_));
  
    if (!IsPopupWidget() && popup_host_view_) {
 -    popup_host_view_->SendExternalBeginFrame();
 +    popup_host_view_->SendExternalBeginFrameInternal(
 +        deadline_delta_ns, interval_ns, nullptr);
-   }
++  }
 +  return true;
 +}
 +
++bool CefRenderWidgetHostViewOSR::AbortPendingExternalBeginFrame() {
++  if (!compositor_ || !external_begin_frame_enabled_ ||
++      !begin_frame_state_.pending()) {
++    return false;
++  }
++  return compositor_->AbortPendingExternalBeginFrame();
++}
++
 +void CefRenderWidgetHostViewOSR::SetAcceleratedPaintReleaseFence(
++    uint64_t transport_epoch,
 +    int64_t capture_counter,
 +    int fd) {
 +#if BUILDFLAG(IS_LINUX)
++  if (transport_epoch != offscreen_output_epoch_) {
++    return;
++  }
 +  if (offscreen_output_.is_bound()) {
 +    base::ScopedFD duplicated_fd(HANDLE_EINTR(dup(fd)));
 +    if (!duplicated_fd.is_valid()) {
@@ -727,14 +857,14 @@ index 501889ac8..6ada58bf9 100644
 +    offscreen_output_->ReleaseFrame(capture_counter,
 +                                    std::move(release_fence));
 +    return;
-+  }
+   }
 +#endif
 +  LOG(ERROR) << "Accelerated paint release without an offscreen output";
  }
  
  void CefRenderWidgetHostViewOSR::SendKeyEvent(
 diff --git a/cef/libcef/browser/osr/render_widget_host_view_osr.h b/cef/libcef/browser/osr/render_widget_host_view_osr.h
-index 89ac6b7fe..44ca64416 100644
+index 89ac6b7..b65bc28 100644
 --- a/cef/libcef/browser/osr/render_widget_host_view_osr.h
 +++ b/cef/libcef/browser/osr/render_widget_host_view_osr.h
 @@ -18,6 +18,7 @@
@@ -765,10 +895,13 @@ index 89ac6b7fe..44ca64416 100644
   public:
    CefRenderWidgetHostViewOSR(SkColor background_color,
                               bool use_shared_texture,
-@@ -213,6 +218,10 @@ class CefRenderWidgetHostViewOSR
+@@ -212,7 +217,12 @@ class CefRenderWidgetHostViewOSR
+       blink::RecordContentToVisibleTimeRequest visible_time_request) override;
    void CancelSuccessfulPresentationTimeRequestForHostAndDelegate() override;
  
-   void OnFrameComplete(const viz::BeginFrameAck& ack);
+-  void OnFrameComplete(const viz::BeginFrameAck& ack);
++  void OnFrameComplete(uint64_t controller_generation,
++                       const viz::BeginFrameAck& ack);
 +  bool SendExternalBeginFrameInternal(
 +      int64_t deadline_delta_ns,
 +      int64_t interval_ns,
@@ -776,7 +909,7 @@ index 89ac6b7fe..44ca64416 100644
  
    // RenderFrameMetadataProvider::Observer implementation.
    void OnRenderFrameMetadataChangedBeforeActivation(
-@@ -226,6 +235,14 @@ class CefRenderWidgetHostViewOSR
+@@ -226,6 +236,14 @@ class CefRenderWidgetHostViewOSR
    // ui::CompositorDelegate implementation.
    std::unique_ptr<viz::HostDisplayClient> CreateHostDisplayClient() override;
    bool UseProxyOutputDevice() override;
@@ -791,33 +924,427 @@ index 89ac6b7fe..44ca64416 100644
  
    // TextInputManager::Observer implementation.
    void OnUpdateTextInputStateCalled(
-@@ -248,6 +265,10 @@ class CefRenderWidgetHostViewOSR
+@@ -248,6 +266,13 @@ class CefRenderWidgetHostViewOSR
    void OnScreenInfoChanged();
    void Invalidate(CefBrowserHost::PaintElementType type);
    void SendExternalBeginFrame();
 +  bool SendExternalBeginFrameWithTiming(
 +      const CefExternalBeginFrameArgs& args,
 +      CefRefPtr<CefExternalBeginFrameCallback> callback);
-+  void SetAcceleratedPaintReleaseFence(int64_t capture_counter, int fd);
++  bool AbortPendingExternalBeginFrame();
++  void SetAcceleratedPaintReleaseFence(uint64_t transport_epoch,
++                                       int64_t capture_counter,
++                                       int fd);
    void SendKeyEvent(const input::NativeWebKeyboardEvent& event);
    void SendMouseEvent(const blink::WebMouseEvent& event);
    void SendMouseWheelEvent(const blink::WebMouseWheelEvent& event);
-@@ -408,7 +429,7 @@ class CefRenderWidgetHostViewOSR
+@@ -408,7 +433,8 @@ class CefRenderWidgetHostViewOSR
    // Provides |source_id| for BeginFrameArgs that we create.
    viz::StubBeginFrameSource begin_frame_source_;
    uint64_t begin_frame_number_ = viz::BeginFrameArgs::kStartingFrameNumber;
 -  bool begin_frame_pending_ = false;
++  uint64_t external_begin_frame_generation_ = 1;
 +  CefExternalBeginFrameState begin_frame_state_;
  
    bool use_shared_texture_ = false;
    bool sync_frame_rate_ = false;
-@@ -417,6 +438,9 @@ class CefRenderWidgetHostViewOSR
+@@ -417,6 +443,10 @@ class CefRenderWidgetHostViewOSR
  
    raw_ptr<CefHostDisplayClientOSR> host_display_client_ = nullptr;
    std::unique_ptr<CefVideoConsumerOSR> video_consumer_;
 +  mojo::Receiver<viz::mojom::OffscreenOutputClient>
 +      offscreen_output_client_receiver_{this};
 +  mojo::Remote<viz::mojom::OffscreenOutput> offscreen_output_;
++  uint64_t offscreen_output_epoch_ = 0;
  
    bool hold_resize_ = false;
    bool pending_resize_ = false;
+diff --git a/components/viz/common/frame_sinks/begin_frame_source.cc b/components/viz/common/frame_sinks/begin_frame_source.cc
+index 94992ba032..e0250c4dc4 100644
+--- a/components/viz/common/frame_sinks/begin_frame_source.cc
++++ b/components/viz/common/frame_sinks/begin_frame_source.cc
+@@ -562,7 +562,12 @@ void ExternalBeginFrameSource::RemoveObserver(BeginFrameObserver* obs) {
+ }
+ 
+ void ExternalBeginFrameSource::OnGpuNoLongerBusy() {
+-  OnBeginFrame(pending_begin_frame_args_);
++  if (pending_begin_frame_args_.IsValid())
++    OnBeginFrame(pending_begin_frame_args_);
++  pending_begin_frame_args_ = BeginFrameArgs();
++}
++
++void ExternalBeginFrameSource::CancelPendingBeginFrame() {
+   pending_begin_frame_args_ = BeginFrameArgs();
+ }
+ 
+diff --git a/components/viz/common/frame_sinks/begin_frame_source.h b/components/viz/common/frame_sinks/begin_frame_source.h
+index a0e654463c..5c78592b22 100644
+--- a/components/viz/common/frame_sinks/begin_frame_source.h
++++ b/components/viz/common/frame_sinks/begin_frame_source.h
+@@ -502,6 +502,11 @@ class VIZ_COMMON_EXPORT ExternalBeginFrameSource : public BeginFrameSource {
+   // BeginFrameArgs is valid.
+   virtual BeginFrameArgs GetMissedBeginFrameArgs(BeginFrameObserver* obs);
+ 
++  // Discards a BeginFrame that was deferred while the GPU was busy. Owners
++  // with an acknowledged request protocol call this when that request is
++  // explicitly aborted, so the retired frame cannot be delivered later.
++  void CancelPendingBeginFrame();
++
+   BeginFrameArgs last_begin_frame_args_;
+   base::flat_set<raw_ptr<BeginFrameObserver, CtnExperimental>> observers_;
+   raw_ptr<ExternalBeginFrameSourceClient> client_;
+diff --git a/components/viz/service/frame_sinks/external_begin_frame_source_mojo.cc b/components/viz/service/frame_sinks/external_begin_frame_source_mojo.cc
+index 7a1a432..3786a78 100644
+--- a/components/viz/service/frame_sinks/external_begin_frame_source_mojo.cc
++++ b/components/viz/service/frame_sinks/external_begin_frame_source_mojo.cc
+@@ -6,6 +6,7 @@
+ 
+ #include <utility>
+ 
++#include "base/functional/bind.h"
+ #include "components/viz/service/frame_sinks/frame_sink_manager_impl.h"
+ #include "mojo/public/cpp/bindings/message.h"
+ 
+@@ -22,10 +23,14 @@ ExternalBeginFrameSourceMojo::ExternalBeginFrameSourceMojo(
+       frame_sink_manager_(frame_sink_manager),
+       receiver_(this, std::move(controller_receiver)),
+       remote_client_(std::move(controller_client_remote)) {
++  receiver_.set_disconnect_handler(base::BindOnce(
++      &ExternalBeginFrameSourceMojo::AbortPendingFrame,
++      base::Unretained(this)));
+   frame_sink_manager_->AddObserver(this);
+ }
+ 
+ ExternalBeginFrameSourceMojo::~ExternalBeginFrameSourceMojo() {
++  AbortPendingFrame();
+   frame_sink_manager_->RemoveObserver(this);
+   CHECK(!display_);
+ }
+@@ -39,6 +44,7 @@ void ExternalBeginFrameSourceMojo::IssueExternalBeginFrame(
+     return;
+   }
+   original_source_id_ = args.frame_id.source_id;
++  pending_frame_args_ = args;
+ 
+   OnBeginFrame(args);
+ 
+@@ -79,6 +85,9 @@ void ExternalBeginFrameSourceMojo::OnFrameSinkDidBeginFrame(
+     const FrameSinkId& sink_id,
+     const BeginFrameArgs& args) {
+-  if (!original_source_id_ || args.frame_id.source_id != *original_source_id_) {
++  if (!original_source_id_ || !pending_frame_callback_ ||
++      args.frame_id.source_id != *original_source_id_ ||
++      !pending_frame_args_ ||
++      args.frame_id != pending_frame_args_->frame_id) {
+     return;
+   }
+   pending_frame_sinks_.insert(sink_id);
+@@ -88,6 +97,9 @@ void ExternalBeginFrameSourceMojo::OnFrameSinkDidFinishFrame(
+     const FrameSinkId& sink_id,
+     const BeginFrameArgs& args) {
+-  if (!original_source_id_ || args.frame_id.source_id != *original_source_id_) {
++  if (!original_source_id_ || !pending_frame_callback_ ||
++      args.frame_id.source_id != *original_source_id_ ||
++      !pending_frame_args_ ||
++      args.frame_id != pending_frame_args_->frame_id) {
+     return;
+   }
+   pending_frame_sinks_.erase(sink_id);
+@@ -102,57 +114,87 @@ void ExternalBeginFrameSourceMojo::MaybeProduceFrameCallback() {
+     return;
+ 
+   if (pending_ack_) {
+-    DispatchFrameCallback(*pending_ack_);
+-    pending_ack_.reset();
++    CompletePendingFrame(*pending_ack_);
+     return;
+   }
+   // If there aren't pending surfaces and the root frame is not missing,
+   // the display scheduler is likely to produce proper frame, so let it do
+   // its work. Otherwise, fire the pending frame callback early.
+   if (!display_->IsRootFrameMissing() &&
+-      !display_->HasPendingSurfaces(last_begin_frame_args_)) {
++      !display_->HasPendingSurfaces(*pending_frame_args_)) {
+     return;
+   }
+ 
+   // All frame sinks are done with frame, yet the root frame is still missing,
+   // the display won't draw, so resolve callback now.
+-  BeginFrameAck nak(last_begin_frame_args_.frame_id.source_id,
+-                    last_begin_frame_args_.frame_id.sequence_number,
++  BeginFrameAck nak(pending_frame_args_->frame_id.source_id,
++                    pending_frame_args_->frame_id.sequence_number,
+                     /*has_damage=*/false);
+-  DispatchFrameCallback(nak);
++  CompletePendingFrame(nak);
+ }
+ 
+-void ExternalBeginFrameSourceMojo::DispatchFrameCallback(
++void ExternalBeginFrameSourceMojo::CompletePendingFrame(
+     const BeginFrameAck& ack) {
++  CHECK(pending_frame_callback_);
++  CHECK(pending_frame_args_);
++  CHECK(ack.frame_id == pending_frame_args_->frame_id);
++
+   // If there are pending copy output requests that have not been fulfilled,
+   // cancel them, as they won't be served till the next frame. This prevents
+   // the client for waiting for them indefinitely.
+-  frame_sink_manager_->DiscardPendingCopyOfOutputRequests(this);
++  // The source is registered with the frame-sink manager as part of attaching
++  // it to a Display. A transaction may also be aborted before that attachment
++  // (or in tests), in which case there cannot be copy requests rooted at this
++  // source and the manager has no source-to-root mapping to traverse.
++  if (display_) {
++    frame_sink_manager_->DiscardPendingCopyOfOutputRequests(this);
++  }
+   // Prevent missing begin frames from being sent to sinks that came late,
+   // as this may result in two overlapping frames being sent, which is not
+   // supported with full pipeline mode.
++  CancelPendingBeginFrame();
+   last_begin_frame_args_ = BeginFrameArgs();
+-  std::move(pending_frame_callback_).Run(ack);
++  pending_frame_sinks_.clear();
++  pending_ack_.reset();
++  pending_frame_args_.reset();
++  original_source_id_.reset();
++  auto callback = std::move(pending_frame_callback_);
++  std::move(callback).Run(ack);
+ }
+ 
+ void ExternalBeginFrameSourceMojo::OnDisplayDidFinishFrame(
+     const BeginFrameAck& ack) {
+-  if (!pending_frame_callback_)
++  if (!pending_frame_callback_ ||
++      !pending_frame_args_ ||
++      ack.frame_id != pending_frame_args_->frame_id) {
+     return;
++  }
+   if (!pending_frame_sinks_.empty()) {
+     CHECK(!pending_ack_);
+     pending_ack_ = ack;
+     return;
+   }
+-  DispatchFrameCallback(ack);
++  CompletePendingFrame(ack);
+ }
+ 
+ void ExternalBeginFrameSourceMojo::OnDisplayDestroyed() {
++  AbortPendingFrame();
+   // As part of destruction, we are automatically removed as a display
+   // observer. No need to call RemoveObserver.
+   display_ = nullptr;
+ }
+ 
++void ExternalBeginFrameSourceMojo::AbortPendingFrame() {
++  if (!pending_frame_callback_) {
++    return;
++  }
++  CHECK(pending_frame_args_);
++  BeginFrameAck nak(pending_frame_args_->frame_id.source_id,
++                    pending_frame_args_->frame_id.sequence_number,
++                    /*has_damage=*/false);
++  CompletePendingFrame(nak);
++}
++
+ void ExternalBeginFrameSourceMojo::SetDisplay(Display* display) {
+   if (display_)
+     display_->RemoveObserver(this);
+diff --git a/components/viz/service/frame_sinks/external_begin_frame_source_mojo.h b/components/viz/service/frame_sinks/external_begin_frame_source_mojo.h
+index 2ef761709c..8e7aceeaa3 100644
+--- a/components/viz/service/frame_sinks/external_begin_frame_source_mojo.h
++++ b/components/viz/service/frame_sinks/external_begin_frame_source_mojo.h
+@@ -81,6 +81,7 @@ class VIZ_SERVICE_EXPORT ExternalBeginFrameSourceMojo
+                                  const BeginFrameArgs& args) override;
+ 
+   void MaybeProduceFrameCallback();
+-  void DispatchFrameCallback(const BeginFrameAck& ack);
++  void CompletePendingFrame(const BeginFrameAck& ack);
++  void AbortPendingFrame() override;
+ 
+   const raw_ptr<FrameSinkManagerImpl> frame_sink_manager_;
+@@ -100,6 +101,10 @@ class VIZ_SERVICE_EXPORT ExternalBeginFrameSourceMojo
+   // This is only set after an external begin frame has actually been issued.
+   std::optional<uint64_t> original_source_id_;
+ 
++  // Immutable identity of the accepted Mojo transaction. This must not be
++  // inferred from ExternalBeginFrameSource::last_begin_frame_args_, which is
++  // not updated while delivery is deferred by GPU-busy throttling.
++  std::optional<BeginFrameArgs> pending_frame_args_;
+   base::flat_set<FrameSinkId> pending_frame_sinks_;
+   std::optional<BeginFrameAck> pending_ack_;
+   raw_ptr<Display> display_ = nullptr;
+diff --git a/components/viz/service/frame_sinks/external_begin_frame_source_mojo_unittest.cc b/components/viz/service/frame_sinks/external_begin_frame_source_mojo_unittest.cc
+index 76f5e6d..57fde6a 100644
+--- a/components/viz/service/frame_sinks/external_begin_frame_source_mojo_unittest.cc
++++ b/components/viz/service/frame_sinks/external_begin_frame_source_mojo_unittest.cc
+@@ -41,6 +41,10 @@ class ExternalBeginFrameSourceMojoTest : public testing::Test {
+     frame_sink_manager_.DidFinishFrame(kFrameSinkId, args);
+   }
+ 
++  FrameSinkManagerImpl& frame_sink_manager_for_testing() {
++    return frame_sink_manager_;
++  }
++
+  private:
+   FrameSinkManagerImpl frame_sink_manager_{
+       FrameSinkManagerImpl::InitParams(/*output_surface_provider=*/nullptr)};
+@@ -75,5 +79,96 @@ TEST_F(ExternalBeginFrameSourceMojoTest,
+   EXPECT_TRUE(source->pending_frame_sinks_for_testing().contains(kFrameSinkId));
+ }
+ 
++TEST_F(ExternalBeginFrameSourceMojoTest,
++       DestructionCompletesPendingFrameWithoutDamage) {
++  auto source = CreateSource();
++  const BeginFrameArgs args = CreateBeginFrameArgsWithSourceId(123);
++  bool completed = false;
++  source->IssueExternalBeginFrame(
++      args, /*force=*/false,
++      base::BindOnce(
++          [](bool* completed, const BeginFrameAck& ack) {
++            EXPECT_FALSE(ack.has_damage);
++            *completed = true;
++          },
++          &completed));
++
++  source.reset();
++
++  EXPECT_TRUE(completed);
++}
++
++TEST_F(ExternalBeginFrameSourceMojoTest,
++       ExplicitAbortCompletesPendingFrameWithoutDamage) {
++  mojo::AssociatedRemote<mojom::ExternalBeginFrameController> controller;
++  auto source = std::make_unique<ExternalBeginFrameSourceMojo>(
++      &frame_sink_manager_for_testing(),
++      controller.BindNewEndpointAndPassDedicatedReceiver(),
++      mojo::NullAssociatedRemote(), BeginFrameSource::kNotRestartableId);
++  const BeginFrameArgs args = CreateBeginFrameArgsWithSourceId(124);
++  bool completed = false;
++  source->IssueExternalBeginFrame(
++      args, /*force=*/false,
++      base::BindOnce(
++          [](bool* completed, const BeginFrameAck& ack) {
++            EXPECT_FALSE(ack.has_damage);
++            *completed = true;
++          },
++          &completed));
++
++  controller->AbortPendingFrame();
++  controller.FlushForTesting();
++
++  EXPECT_TRUE(completed);
++}
++
++TEST_F(ExternalBeginFrameSourceMojoTest,
++       GpuBusyAbortReturnsOriginalFrameIdAcrossMojo) {
++  mojo::AssociatedRemote<mojom::ExternalBeginFrameController> controller;
++  auto source = std::make_unique<ExternalBeginFrameSourceMojo>(
++      &frame_sink_manager_for_testing(),
++      controller.BindNewEndpointAndPassDedicatedReceiver(),
++      mojo::NullAssociatedRemote(), BeginFrameSource::kNotRestartableId);
++  source->SetIsGpuBusy(true);
++
++  // GPU-busy throttling allows the first frame through and defers the next.
++  const BeginFrameArgs first_args =
++      CreateBeginFrameArgsWithSourceId(/*source_id=*/125);
++  std::optional<BeginFrameAck> first_ack;
++  controller->IssueExternalBeginFrame(
++      first_args, /*force=*/false,
++      base::BindOnce(
++          [](std::optional<BeginFrameAck>* result, const BeginFrameAck& ack) {
++            *result = ack;
++          },
++          &first_ack));
++  controller.FlushForTesting();
++  controller->AbortPendingFrame();
++  controller.FlushForTesting();
++  ASSERT_TRUE(first_ack);
++  EXPECT_EQ(first_ack->frame_id, first_args.frame_id);
++
++  const BeginFrameArgs deferred_args = CreateBeginFrameArgsForTesting(
++      BEGINFRAME_FROM_HERE, /*source_id=*/125, /*sequence_number=*/2);
++  std::optional<BeginFrameAck> deferred_ack;
++  controller->IssueExternalBeginFrame(
++      deferred_args, /*force=*/false,
++      base::BindOnce(
++          [](std::optional<BeginFrameAck>* result, const BeginFrameAck& ack) {
++            *result = ack;
++          },
++          &deferred_ack));
++  controller.FlushForTesting();
++  controller->AbortPendingFrame();
++  controller.FlushForTesting();
++
++  ASSERT_TRUE(deferred_ack);
++  EXPECT_EQ(deferred_ack->frame_id, deferred_args.frame_id);
++  EXPECT_FALSE(deferred_ack->has_damage);
++
++  // Releasing GPU throttling must not deliver the aborted deferred frame.
++  source->SetIsGpuBusy(false);
++}
++
+ }  // namespace
+ }  // namespace viz
+diff --git a/services/viz/privileged/mojom/compositing/external_begin_frame_controller.mojom b/services/viz/privileged/mojom/compositing/external_begin_frame_controller.mojom
+index 7c87fe6..e0b7f8d 100644
+--- a/services/viz/privileged/mojom/compositing/external_begin_frame_controller.mojom
++++ b/services/viz/privileged/mojom/compositing/external_begin_frame_controller.mojom
+@@ -22,6 +22,12 @@ interface ExternalBeginFrameController {
+   IssueExternalBeginFrame(BeginFrameArgs args, bool force)
+       => (BeginFrameAck ack);
+ 
++  // Resolve the currently pending frame without damage. This preserves the
++  // controller, display and output transport while guaranteeing that the
++  // IssueExternalBeginFrame callback terminates exactly once.
++  [EnableIfNot=is_ios]
++  AbortPendingFrame();
++
+   // Issue a begin frame to the compositor. This is only used on iOS where begin
+   // frames originate in the browser process due to sandbox restrictions and we
+   // don't care about BeginFrameAcks for frame throttling unlike headless.
+diff --git a/ui/compositor/compositor.cc b/ui/compositor/compositor.cc
+index ef68ef2..1d9ee91 100644
+--- a/ui/compositor/compositor.cc
++++ b/ui/compositor/compositor.cc
+@@ -70,6 +70,7 @@
+ #include "ui/gfx/scoped_animation_duration_scale_mode.h"
+ #include "ui/gfx/switches.h"
+ #include "ui/gl/gl_switches.h"
++#include "mojo/public/cpp/bindings/callback_helpers.h"
+ 
+ #if BUILDFLAG(IS_WIN)
+ #include "base/time/time.h"
+@@ -784,6 +785,11 @@ void Compositor::IssueExternalBeginFrame(
+     const viz::BeginFrameArgs& args,
+     bool force,
+     base::OnceCallback<void(const viz::BeginFrameAck&)> callback) {
++  callback = mojo::WrapCallbackWithDefaultInvokeIfNotRun(
++      std::move(callback),
++      viz::BeginFrameAck(args.frame_id.source_id,
++                         args.frame_id.sequence_number,
++                         /*has_damage=*/false));
+   if (!external_begin_frame_controller_) {
+     // IssueExternalBeginFrame() shouldn't be called again before the previous
+     // begin frame is acknowledged.
+@@ -796,6 +802,21 @@ void Compositor::IssueExternalBeginFrame(
+ }
+ #endif
+ 
++bool Compositor::AbortPendingExternalBeginFrame() {
++  DCHECK(use_external_begin_frame_control());
++  if (pending_begin_frame_args_) {
++    // Destroying the wrapped callback completes it with the original frame
++    // identity supplied by IssueExternalBeginFrame().
++    pending_begin_frame_args_.reset();
++    return true;
++  }
++  if (external_begin_frame_controller_) {
++    external_begin_frame_controller_->AbortPendingFrame();
++    return true;
++  }
++  return false;
++}
++
+ CompositorMetricsTracker Compositor::RequestNewCompositorMetricsTracker() {
+   return CompositorMetricsTracker(next_compositor_metrics_tracker_id_++,
+                                   weak_ptr_factory_.GetWeakPtr());
