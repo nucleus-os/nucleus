@@ -43,7 +43,7 @@ export default function LogBoxOverlay(): React.Node {
 
 const styles = StyleSheet.create({
   overlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     zIndex: 9999,
   },
 });

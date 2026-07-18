@@ -80,6 +80,12 @@ struct Orchestrator {
                 try provisionBoost(in: rn)
                 try context.run("corepack", ["yarn", "--cwd", "third-party/react-native", "install", "--frozen-lockfile"], directory: rn)
             }))
+            stages.append(BootstrapStage(name: "rn-types", run: {
+                // React Native's default JS API is the Strict TypeScript API; the
+                // strict `types_generated/` surface ships only in the npm tarball,
+                // so consuming the package from source requires generating it here.
+                try context.run("corepack", ["yarn", "--cwd", "third-party/react-native", "build-types"], directory: rn)
+            }))
             stages.append(BootstrapStage(name: "rn-codegen", run: {
                 try context.run("swift", ["package", "generate-rn-spec", "--allow-writing-to-package-directory"], directory: rn)
             }))

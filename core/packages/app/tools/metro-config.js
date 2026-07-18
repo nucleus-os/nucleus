@@ -89,7 +89,7 @@ function makeMetroConfig(appRoot) {
     },
     serializer: {
       getModulesRunBeforeMainModule: () => [
-        resolveFrom('react-native/Libraries/Core/InitializeCore', appRoot),
+        resolveFrom('react-native/setup-env', appRoot),
       ],
     },
   });

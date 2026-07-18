@@ -147,7 +147,7 @@ const styles = StyleSheet.create({
     zIndex: 1,
   },
   backdropLayer: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     zIndex: 0,
   },
 });

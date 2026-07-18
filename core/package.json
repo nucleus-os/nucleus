@@ -58,7 +58,7 @@
     "metro": "^0.84.3",
     "prettier": "^3.7.4",
     "react": "19.2.3",
-    "react-native": "file:./third-party/react-native/packages/react-native",
+    "react-native": "file:../react-native/third-party/react-native/packages/react-native",
     "tsx": "^4.21.0",
     "typescript": "^5.9.0"
   }

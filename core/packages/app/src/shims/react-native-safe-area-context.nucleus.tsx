@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, type ViewProps } from 'react-native';
+import { View, type HostInstance, type ViewProps } from 'react-native';
 
 export type EdgeInsets = {
   top: number;
@@ -25,7 +25,7 @@ export const SafeAreaProvider = ({
   children?: React.ReactNode;
 }) => <>{children}</>;
 
-export const SafeAreaView = React.forwardRef<View, ViewProps>(
+export const SafeAreaView = React.forwardRef<HostInstance, ViewProps>(
   ({ children, ...props }, ref) => {
     return (
       <View ref={ref} {...props}>
