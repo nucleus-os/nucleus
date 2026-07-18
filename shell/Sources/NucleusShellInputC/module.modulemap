@@ -1,0 +1,8 @@
+// NucleusShellInputC: importer façade over libxkbcommon for the shell's client
+// side. The compositor compiles a keymap from rules; a Wayland *client* receives
+// one over `wl_keyboard.keymap` as an fd and compiles it from that string, so
+// this façade exists for the same library but a different entry point.
+module NucleusShellInputC {
+    header "NucleusShellInputC.h"
+    export *
+}

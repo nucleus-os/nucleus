@@ -93,6 +93,9 @@ func pkgConfig(_ args: [String]) -> [String] {
 
 // Wayland *client* + xkb (the client keyboard map for input on shell surfaces).
 let waylandClientLinkFlags = pkgConfig(["--libs", "wayland-client", "xkbcommon"])
+// The client xkb façade #includes <xkbcommon/xkbcommon.h>; its include dir must be
+// on the importer path for every target that imports NucleusShellInputC.
+let xkbClientCcFlags = pkgConfig(["--cflags", "xkbcommon"]).flatMap { ["-Xcc", $0] }
 
 // The React Native runtime, linked statically into the shell (mirrors the compositor's
 // pre-Phase-5 link): the fabric + support libs + Hermes, one --start-group. ICU is a
@@ -214,9 +217,18 @@ let package = Package(
         ),
         // ── The Swift Wayland client: connection, registry, and the layer-shell /
         //    foreign-toplevel / session-lock / screencopy client drivers.
+        // The client-side xkb façade: a Wayland client compiles the keymap the
+        // compositor hands it over `wl_keyboard.keymap`, rather than building one
+        // from rules the way the compositor's own input stack does.
+        .systemLibrary(
+            name: "NucleusShellInputC",
+            path: "Sources/NucleusShellInputC",
+            pkgConfig: "xkbcommon"
+        ),
         .target(
             name: "NucleusShellWayland",
             dependencies: [
+                "NucleusShellInputC",
                 .product(name: "WaylandClientC", package: "swift-wayland"),
                 .product(name: "WaylandClientDispatch", package: "swift-wayland"),
                 .product(name: "WaylandClient", package: "swift-wayland"),
@@ -224,7 +236,12 @@ let package = Package(
                 .product(name: "NucleusTypes", package: "Nucleus"),
             ],
             path: "Sources/NucleusShellWayland",
-            swiftSettings: [.interoperabilityMode(.Cxx)]
+            swiftSettings: [
+                .interoperabilityMode(.Cxx),
+                // NucleusShellInputC #includes <xkbcommon/xkbcommon.h>, so its
+                // include dir has to be on the clang importer path here.
+                .unsafeFlags(xkbClientCcFlags),
+            ]
         ),
 
         // ── The client render backend: a VK_KHR_wayland_surface Vulkan swapchain that
@@ -267,11 +284,37 @@ let package = Package(
             swiftSettings: [.interoperabilityMode(.Cxx)]
         ),
 
+        // ── The input adapter: the single place the shell's Wayland input
+        //    vocabulary and NucleusUI's event vocabulary meet. Its own target so
+        //    the translation is testable without linking React Native, Vulkan, or
+        //    the render backend — none of which a keycode mapping needs.
+        .target(
+            name: "NucleusShellInput",
+            dependencies: [
+                "NucleusShellWayland",
+                .product(name: "NucleusUI", package: "Nucleus"),
+            ],
+            path: "Sources/NucleusShellInput",
+            swiftSettings: [.interoperabilityMode(.Cxx)]
+        ),
+
+        .testTarget(
+            name: "NucleusShellInputTests",
+            dependencies: [
+                "NucleusShellInput",
+                .product(name: "NucleusUI", package: "Nucleus"),
+                .product(name: "NucleusTextBackend", package: "Nucleus"),
+            ],
+            path: "Tests/NucleusShellInputTests",
+            swiftSettings: [.interoperabilityMode(.Cxx)],
+            linkerSettings: [.unsafeFlags(skiaLinkFlags + waylandClientLinkFlags)]
+        ),
+
         .target(
             name: "NucleusShellRuntime",
             dependencies: [
                 "NucleusShellWayland", "NucleusShellRender", "NucleusShellSignalC",
-                "NucleusShellProduct",
+                "NucleusShellProduct", "NucleusShellInput",
                 .product(name: "NucleusReactRuntime", package: "NucleusReactNative"),
                 .product(name: "NucleusReactRuntimeCxx", package: "NucleusReactNative"),
                 .product(name: "NucleusRenderer", package: "Nucleus"),

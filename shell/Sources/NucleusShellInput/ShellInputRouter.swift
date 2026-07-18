@@ -1,0 +1,186 @@
+import NucleusShellWayland
+import NucleusUI
+
+/// Translates the shell's Wayland input records into NucleusUI events and
+/// dispatches them into a scene.
+///
+/// The shell's counterpart to the compositor's overlay adapter, and the same
+/// tier split: `NucleusShellWayland` speaks evdev and knows nothing about the UI
+/// framework, `NucleusUI` speaks platform-neutral codes and knows nothing about
+/// Wayland, and this type is the only place the two vocabularies meet.
+@MainActor
+public final class ShellInputRouter: ShellSeatDelegate {
+    private let scene: WindowScene
+    /// Optional so the router can exist before — or without — a live seat. A
+    /// seat comes from a real Wayland connection; the translation and routing do
+    /// not depend on having one.
+    private let seat: ShellSeat?
+    /// Surfaces the router owns, mapped to the window each one presents. Events
+    /// for anything else are ignored rather than misrouted.
+    private var windowsBySurface: [UInt: Window] = [:]
+
+    /// The most recent pointer position, so a button event — which carries no
+    /// coordinates of its own in `wl_pointer` — lands where the pointer is.
+    private var pointerLocation = Point(x: 0, y: 0)
+
+    public init(scene: WindowScene, seat: ShellSeat?) {
+        self.scene = scene
+        self.seat = seat
+        seat?.delegate = self
+    }
+
+    /// Associate a `wl_surface` with the window that draws it.
+    public func register(window: Window, forSurface surfaceID: UInt) {
+        windowsBySurface[surfaceID] = window
+    }
+
+    public func unregister(surfaceID: UInt) {
+        windowsBySurface.removeValue(forKey: surfaceID)
+    }
+
+    /// Emit any key repeats now due. Driven from the host's event loop, which
+    /// folds `nanosecondsUntilNextRepeat` into its poll timeout so repeats are
+    /// not quantized to the frame rate.
+    public func advanceKeyRepeat(nowNs: UInt64) {
+        seat?.advanceKeyRepeat(nowNs: nowNs)
+    }
+
+    public func nanosecondsUntilNextRepeat(nowNs: UInt64) -> UInt64? {
+        seat?.nanosecondsUntilNextRepeat(nowNs: nowNs)
+    }
+
+    // MARK: - ShellSeatDelegate
+
+    public func seat(_ seat: ShellSeat, didProduce event: ShellInputEvent) {
+        deliver(event)
+    }
+
+    /// Route one input record. The delegate callback funnels here, and so does
+    /// anything driving the router without a live seat.
+    public func deliver(_ event: ShellInputEvent) {
+        switch event.kind {
+        case .keyboardEnter:
+            // Keyboard focus arriving at a surface makes its window the key
+            // window; without this no first responder would ever receive keys.
+            if let window = windowsBySurface[event.surface] {
+                scene.makeKey(window)
+            }
+        case .keyboardLeave:
+            scene.resignKey()
+        case .pointerLeave:
+            // Nothing is under the pointer any more, so any tracked view must be
+            // told it was exited.
+            _ = scene.dispatchEvent(Event(
+                type: .pointerExited,
+                location: pointerLocation,
+                timestampNanoseconds: event.timestampNanoseconds))
+        default:
+            if let nucleon = ShellInputRouter.nucleonEvent(event, lastLocation: pointerLocation) {
+                if nucleon.isPointerEvent { pointerLocation = nucleon.location }
+                _ = scene.dispatchEvent(nucleon)
+            }
+        }
+    }
+
+    // MARK: - Translation
+
+    /// Map one Wayland record onto a framework event, or `nil` when it carries
+    /// nothing the framework models.
+    static func nucleonEvent(
+        _ event: ShellInputEvent, lastLocation: Point
+    ) -> Event? {
+        let modifiers = modifierFlags(event.modifiers)
+        // Button events carry no coordinates of their own in `wl_pointer`; the
+        // seat fills in the last motion position before emitting, so this is
+        // already correct for every pointer kind.
+        let location = Point(x: event.x, y: event.y)
+
+        switch event.kind {
+        case .pointerEnter:
+            return Event(
+                type: .pointerEntered, modifierFlags: modifiers, location: location,
+                timestampNanoseconds: event.timestampNanoseconds)
+        case .pointerMotion:
+            return Event(
+                type: .pointerMoved, modifierFlags: modifiers, location: location,
+                timestampNanoseconds: event.timestampNanoseconds)
+        case .pointerButtonDown:
+            return Event(
+                type: .pointerDown, modifierFlags: modifiers, location: location,
+                timestampNanoseconds: event.timestampNanoseconds,
+                button: pointerButton(event.button), clickCount: 1)
+        case .pointerButtonUp:
+            return Event(
+                type: .pointerUp, modifierFlags: modifiers, location: location,
+                timestampNanoseconds: event.timestampNanoseconds,
+                button: pointerButton(event.button), clickCount: 1)
+        case .pointerAxis:
+            return Event(
+                type: .scrollWheel, modifierFlags: modifiers, location: location,
+                timestampNanoseconds: event.timestampNanoseconds,
+                scrollDeltaX: event.scrollX, scrollDeltaY: event.scrollY,
+                hasPreciseScrollingDeltas: event.hasPreciseScrolling)
+        case .keyDown, .keyUp:
+            return Event(
+                type: event.kind == .keyDown ? .keyDown : .keyUp,
+                modifierFlags: modifiers,
+                location: lastLocation,
+                timestampNanoseconds: event.timestampNanoseconds,
+                keyCode: keyCode(event.keycode),
+                characters: event.text,
+                isARepeat: event.isRepeat)
+        case .pointerLeave, .keyboardEnter, .keyboardLeave:
+            return nil
+        }
+    }
+
+    static func modifierFlags(_ state: ShellModifierState) -> EventModifierFlags {
+        var flags: EventModifierFlags = []
+        if state.shift { flags.insert(.shift) }
+        if state.control { flags.insert(.control) }
+        if state.alt { flags.insert(.option) }
+        if state.logo { flags.insert(.command) }
+        if state.capsLock { flags.insert(.capsLock) }
+        return flags
+    }
+
+    /// evdev button codes. `BTN_LEFT` is 272 and the rest follow it.
+    static func pointerButton(_ code: UInt32) -> PointerButton {
+        switch code {
+        case 272: return .left
+        case 273: return .right
+        case 274: return .middle
+        case 275: return .back
+        case 276: return .forward
+        default: return PointerButton(rawValue: code)
+        }
+    }
+
+    /// evdev key codes onto the framework's platform-neutral space.
+    ///
+    /// Duplicated from the compositor's overlay adapter, which maps the same
+    /// table for its own scene. Both are Linux Wayland processes reading evdev,
+    /// but they share no package below `core/`, and `core/` cannot hold the table
+    /// without adopting a platform's numbering — the very thing `KeyCode` exists
+    /// to avoid. Unifying it needs a shared platform package that does not exist
+    /// yet.
+    static func keyCode(_ code: UInt32) -> KeyCode {
+        switch code {
+        case 1: return .escape
+        case 14: return .delete
+        case 15: return .tab
+        case 28, 96: return .return
+        case 57: return .space
+        case 102: return .home
+        case 103: return .upArrow
+        case 105: return .leftArrow
+        case 106: return .rightArrow
+        case 107: return .end
+        case 108: return .downArrow
+        case 104: return .pageUp
+        case 109: return .pageDown
+        case 111: return .forwardDelete
+        default: return KeyCode(rawValue: code)
+        }
+    }
+}

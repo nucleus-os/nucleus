@@ -6,6 +6,7 @@ import NucleusRenderModel
 import NucleusRenderHost
 import NucleusAppHostBundle
 import NucleusShellWayland
+import NucleusShellInput
 import NucleusShellRender
 import NucleusShellSignalC
 import Foundation
@@ -47,6 +48,17 @@ public final class ShellHost {
     // layer tree commits through the context's sink.
     private var renderContext: Context?
     private var barRootView: View?
+
+    /// The seat and the scene its input is routed into.
+    ///
+    /// Constructed here so input exists for the whole process lifetime, but no
+    /// window is registered by default: the bar is a React Native surface with
+    /// its own touch handling, so routing NucleusUI events into it would mean two
+    /// input paths over one tree. A native surface owner calls
+    /// `inputRouter.register(window:forSurface:)` to opt in.
+    private var seat: ShellSeat?
+    public private(set) var inputScene: WindowScene?
+    public private(set) var inputRouter: ShellInputRouter?
 
     fileprivate var toplevels: ForeignToplevelManager?
     private var running = false
@@ -95,10 +107,13 @@ public final class ShellHost {
         //    await the facade host-command seam; see pushWindowsToJS.)
         setupForeignToplevel()
 
-        // 4. The bar layer-shell surface. Its first configure builds the swapchain + boots RN.
+        // 4. The seat: pointer and keyboard, translated into framework events.
+        setupInput()
+
+        // 5. The bar layer-shell surface. Its first configure builds the swapchain + boots RN.
         createBarSurface()
 
-        // 5. The event loop: wl_display fd + a frame timer.
+        // 6. The event loop: wl_display fd + a frame timer.
         running = true
         loop()
     }
@@ -117,6 +132,21 @@ public final class ShellHost {
         } catch {
             writeErr("shell: failed to build render context: \(error)")
         }
+    }
+
+    // MARK: - Input
+
+    private func setupInput() {
+        let scene = WindowScene(windows: [])
+        let seat = ShellSeat(client: client)
+        if seat == nil {
+            // A seatless session (no input devices) is legitimate; the shell
+            // still renders.
+            writeErr("shell: no wl_seat available; running without input")
+        }
+        inputScene = scene
+        self.seat = seat
+        inputRouter = ShellInputRouter(scene: scene, seat: seat)
     }
 
     // MARK: - Bar surface
@@ -244,8 +274,15 @@ public final class ShellHost {
         ]
         while running {
             client.flush()
-            // Wake on Wayland events or the frame deadline (~16.6ms for 60Hz pacing).
-            let ready = poll(&pollfds, nfds_t(pollfds.count), 16)
+            // Wake on Wayland events or the frame deadline (~16.6ms for 60Hz
+            // pacing), or sooner if a key repeat is due before then — repeats
+            // must not be quantized to the frame rate.
+            let nowNs = monotonicNowNs()
+            var timeoutMs: Int32 = 16
+            if let untilRepeatNs = inputRouter?.nanosecondsUntilNextRepeat(nowNs: nowNs) {
+                timeoutMs = min(timeoutMs, Int32(untilRepeatNs / 1_000_000))
+            }
+            let ready = poll(&pollfds, nfds_t(pollfds.count), timeoutMs)
             if ready < 0 {
                 if errno == EINTR { continue }
                 writeErr("nucleus-shell: poll failed: \(String(cString: strerror(errno)))")
@@ -258,6 +295,9 @@ public final class ShellHost {
                 _ = nucleus_shell_consume_exit_signal(exitSignalFD)
                 break
             }
+            // Emit any key repeats that came due while polling.
+            inputRouter?.advanceKeyRepeat(nowNs: monotonicNowNs())
+
             // Drain the RN JS queue so mounted mutations land before rendering.
             if let host = rnHost {
                 do {

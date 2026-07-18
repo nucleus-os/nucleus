@@ -90,6 +90,19 @@ public final class WindowScene: ~Sendable {
         window.setKey(true)
     }
 
+    /// Give up key status entirely, leaving the scene with no key window.
+    ///
+    /// The counterpart to `makeKey`. Keyboard focus genuinely leaves a scene —
+    /// `wl_keyboard.leave` for a client, a compositor handing the seat
+    /// elsewhere — and without this the scene would keep routing keys to a
+    /// window that no longer has focus. Any pointer capture is released too: the
+    /// press that took it can no longer be completed.
+    public func resignKey() {
+        keyWindow?.setKey(false)
+        keyWindow = nil
+        releasePointerCapture()
+    }
+
     /// The scene's root layer, created and attached on first use. An embedder
     /// attaching its own content parents it here.
     package func ensureRootAttached() throws(UIError) -> Layer {
