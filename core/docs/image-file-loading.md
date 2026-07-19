@@ -1,0 +1,130 @@
+# Image File Loading
+
+**Invariant: an image is a paint command referencing a refcounted source handle, and
+decode is a renderer-side cache keyed by that handle plus the size it is drawn at.**
+
+An image is not layer content. `LayerContent` is `.none`/`.paint`/`.external`/`.snapshot`,
+mirrored across three definitions and a wire format; adding an `.image` case would be
+four edits to say something `PaintCommand(kind: .image)` already says. Images stay
+inside `.paint` layers, and everything below extends the paint path rather than the
+layer model.
+
+## What already exists
+
+The pipeline is whole, and this is the correction that resizes this work:
+
+- `ImageStore` (`NucleusRenderModel/RenderImageStore.swift`) refcounts `ImageSource`
+  (path + max bounds), dedupes by `"WxH:path"`, and evicts through `onEvict`.
+- `SwiftImageRegistrar` implements the `ImageRegistrar` protocol seam; the host bundle
+  installs it.
+- `FrameDriver.decodedImage(handle:source:)` decodes lazily at rasterization through
+  `nucleus.skia.makeEncodedImageFromFile`, caching by handle.
+- `PaintRasterizer` draws `.image` commands; `GraphicsContext.draw(_:in:cornerRadius:)`
+  emits them; `ImageView` consumes them.
+- Skia is built and linked with `libpng`, `libjpeg-turbo`, `libwebp`, `wuffs` (GIF), and
+  `skia_enable_svg = true`. `-lsvg` is already on the link line.
+
+**PNG, JPEG, WebP, and BMP decode and draw today.** The gap was never "add a decoder."
+
+## What is actually missing
+
+Four things, and they are independent of each other:
+
+1. **No producer in the shell tier.** The only caller of `ImageRegistrar.register` is
+   `ReactImageComponentView`. A `View`-tier consumer cannot obtain an `ImageHandle`
+   at all — `ImageView.image` is settable and unfillable.
+2. **`maxWidth`/`maxHeight` are dead.** They are stored, and deduped on, and then
+   ignored: `decodedImage` calls `DeferredFromEncodedData` with no bounds, so a 4K
+   wallpaper and a 22px tray icon decode identically. The cache key promises a
+   downscale that never happens.
+3. **SVG is linked but never called.** No `SkSVGDOM` include, no façade.
+4. **Decode is synchronous on the render thread.** There is no task queue, no thread
+   pool, and no off-main work infrastructure anywhere in `core/swift/Sources`. A
+   first-paint wallpaper decode blocks a frame.
+
+## Scope, from the reference
+
+The reference needs PNG, JPEG, WebP, BMP, GIF-still, ICO, SVG at arbitrary target size,
+`data:` URI decode, raw-buffer upload with stride and channel order, sRGB-correct
+downscale, and threaded decode with main-thread upload.
+
+Three things it needs that are *not* image decode, and do not land here: WebP encode
+(thumbnail disk cache), PNG encode (avatar write-back), and an HTTP client (MPRIS
+artwork). Artwork resolution produces a local file path; the network layer is a service,
+and it belongs beside the other bar services.
+
+**Animated GIF is deferred to first-frame.** It is real — `desktop_sticker_widget` uses
+it — but it is one optional widget, the reference ships a first-frame fallback for every
+failure mode it has, and its own implementation caps at 512 frames / 96 MiB and uploads
+one texture per frame. `DeferredFromEncodedData` already yields frame zero, so the
+deferral costs nothing structurally and the widget renders a static sticker until it
+lands.
+
+## Phase 1 — honour the decode bounds
+
+`decodedImage` starts respecting `ImageSource.maxWidth`/`maxHeight`. Decode goes through
+a new `makeEncodedImageFromFile(path, maxWidth, maxHeight)` façade in `Graphite.cpp`
+beside the existing one, using `SkCodec`'s scaled-decode dimensions where the codec
+offers them and a resize otherwise.
+
+The resize is sRGB-correct. Averaging sRGB-encoded bytes directly darkens and muddies a
+downscaled icon, which is exactly the case this exists to serve.
+
+This phase alone makes the existing dedupe key honest, and it is the one change that
+improves what already ships.
+
+## Phase 2 — the producer seam
+
+`NucleusUI` gains the ability to name an image file. The registrar protocol is already
+the right seam and is already installed, so this is a `View`-tier façade over it plus
+handle lifetime tied to the view.
+
+`ImageView` gains `contentMode` (`.stretch`/`.cover`/`.contain`, matching the reference's
+`FitMode`) and a tint, since the reference recolours bitmap app icons against the palette.
+`imageSize` stops being caller-supplied: an image knows its own size, and requiring the
+caller to restate it is a defect waiting to happen.
+
+## Phase 3 — SVG
+
+`makeSvgImageFromFile(path, width, height)` in `Graphite.cpp` via `SkSVGDOM`, rasterizing
+at the requested size with aspect preserved. Build work is one include path added to the
+Linux and Android cxx flags; the library is already linked.
+
+Format detection sniffs the first 256 bytes for `<svg` rather than trusting the
+extension, because icon themes ship mislabelled files.
+
+SVG is where decode bounds stop being an optimization and become correctness — a vector
+has no natural size, so `maxWidth`/`maxHeight` *are* the size. Phase 1 lands first for
+that reason.
+
+## Phase 4 — raw buffers and `data:` URIs
+
+Notifications carry pixels over D-Bus, not paths: width, height, row stride, alpha flag,
+and channel order across RGBA/BGRA/ARGB/RGB/BGR. `ImageStore` currently keys on a path,
+so a raw source needs a second `ImageSource` kind and a content-hash dedupe key.
+`TextureRegistry.uploadShm` is the upload path, and it already takes premultiplied RGBA8888.
+
+`data:` URIs decode to bytes and land in the same raw path.
+
+ICO is hand-rolled here rather than left to Skia, matching the reference: Skia's BMP
+codec forces alpha to `0xFF` on 32bpp, so a tray icon decoded through it loses its
+transparency.
+
+## Phase 5 — asynchronous decode
+
+The last phase, and the only one that adds infrastructure rather than capability.
+
+Decode moves to a worker off the render thread; completion wakes the frame loop, and
+upload stays on the render thread because `TextureRegistry` and `FrameDriver.decodedImages`
+are unsynchronized plain classes owned by it. `ImageStore` is `@unchecked Sendable` while
+being internally unsynchronized on a single-thread assertion, so registration from a
+decode thread is a data race as written and the store gets a real lock as part of this
+phase.
+
+Until it lands, a view showing an undecoded image draws nothing for a frame rather than
+blocking one. That is the correct interim behaviour and it is also the steady-state
+behaviour afterwards.
+
+`GuillotineAllocator`/`TextureAtlas` already exist in `TextureRegistry.swift`, used only
+by paint and decoration nodes. Small icons are the case atlasing was built for, and
+routing them through it happens alongside this phase.
