@@ -28,7 +28,7 @@ The pipeline is whole, and this is the correction that resizes this work:
 
 ## What is actually missing
 
-Four things, and they are independent of each other:
+Four things, independent of each other. All four are now closed.
 
 1. ~~**No producer in the shell tier.**~~ *Fixed in phase 2.* The only caller of
    `ImageRegistrar.register` was `ReactImageComponentView`; a `View`-tier consumer could
@@ -37,9 +37,9 @@ Four things, and they are independent of each other:
    deduped on, and then ignored, so a 4K wallpaper and a 22px tray icon decoded
    identically.
 3. ~~**SVG is linked but never called.**~~ *Fixed in phase 3.*
-4. **Decode is synchronous on the render thread.** There is no task queue, no thread
-   pool, and no off-main work infrastructure anywhere in `core/swift/Sources`. A
-   first-paint wallpaper decode blocks a frame.
+4. ~~**Decode is synchronous on the render thread.**~~ *Fixed in phase 5.* There was no
+   task queue, no thread pool, and no off-main work infrastructure anywhere in
+   `core/swift/Sources`, so a first-paint wallpaper decode blocked a frame.
 
 ## Scope, from the reference
 
@@ -226,21 +226,59 @@ everything else.
 No `viewDidChangeEffectiveAppearance` override was needed for that: the base class already
 repaints on an appearance change, and the override I first wrote only restated it.
 
-## Phase 5 — asynchronous decode
+## Phase 5 — asynchronous decode — **complete**
 
-The last phase, and the only one that adds infrastructure rather than capability.
+The only phase that adds infrastructure rather than capability. `ImageDecodeQueue` is the
+first background thread in the render core, and it is deliberately bare: a worker, a
+mutex, and a condition variable. The work is one long CPU job per item with no ordering
+between items, which is the shape that wants a queue rather than a scheduler — and there
+was no existing threading infrastructure to reuse, because there was none at all.
 
-Decode moves to a worker off the render thread; completion wakes the frame loop, and
-upload stays on the render thread because `TextureRegistry` and `FrameDriver.decodedImages`
-are unsynchronized plain classes owned by it. `ImageStore` is `@unchecked Sendable` while
-being internally unsynchronized on a single-thread assertion, so registration from a
-decode thread is a data race as written and the store gets a real lock as part of this
-phase.
+**Decode happens on the worker; nothing else does.** `TextureRegistry` and the driver's
+decoded-image cache are unsynchronized and owned by the render thread, so the worker only
+ever produces an immutable image. Completions are adopted at the top of `renderFrame`,
+which is the single point the cache is written — that is what keeps leaving it
+unsynchronized correct rather than merely lucky.
 
-Until it lands, a view showing an undecoded image draws nothing for a frame rather than
-blocking one. That is the correct interim behaviour and it is also the steady-state
-behaviour afterwards.
+A `DecodedImageResult` carries the Skia image itself, not a pixel array. A raster
+`SkImage` is immutable once made and its refcount is atomic, so passing one between
+threads is sound; the alternative costs two full-resolution copies of every wallpaper, one
+to read the pixels out and one to rebuild the image.
 
-`GuillotineAllocator`/`TextureAtlas` already exist in `TextureRegistry.swift`, used only
-by paint and decoration nodes. Small icons are the case atlasing was built for, and
-routing them through it happens alongside this phase.
+**`ImageStore` did not need a lock, against the plan.** The store is read on the render
+thread and the resulting `ImageSource` — a `Sendable` value — is copied into the request at
+submit time. The worker never touches the store. The plan assumed a shared-store design
+that the actual seam does not have.
+
+Three behaviours that keep this from being subtly wrong:
+
+- **A pending handle is refused re-submission.** A decode in flight draws nothing, so the
+  caller asks again on every subsequent frame; without this the queue fills with
+  duplicates of the same work.
+- **Eviction cancels, and cancellation drops the result on arrival.** A decode already
+  running cannot be stopped. Dropping matters more than stopping: the handle may be
+  re-registered against a different source, and delivering the stale image would draw the
+  wrong picture.
+- **Completion notifies.** Nothing else schedules a frame when a decode lands — the scene
+  did not change, the image simply arrived — so without the callback the result waits for
+  an unrelated repaint. The compositor wires this to its frame request.
+
+Shutdown joins the workers rather than only signalling them, because they decode against a
+Graphite context that must outlive them. If a thread cannot be spawned at all, `submit`
+refuses and the caller decodes inline, which is exactly the behaviour that existed before
+this phase.
+
+Atlasing small icons through the existing `GuillotineAllocator`/`TextureAtlas` did **not**
+land here. It is a memory optimization with no correctness content, it is unmeasured, and
+bundling it into the phase that introduces threading would have made both harder to reason
+about. It stays available for when there is a measurement to justify it.
+
+## What remains
+
+Nothing in this plan. The image pipeline handles files, in-memory blobs, and raw buffers;
+decodes PNG, JPEG, WebP, BMP, ICO, GIF-still and SVG; honours bounds with sRGB-correct
+downscaling; tints and desaturates; and decodes off the render thread.
+
+Two deliberate deferrals stand, both recorded above with their reasoning: **animated GIF**
+renders its first frame, and **image atlasing** awaits a measurement. Neither blocks the
+port.

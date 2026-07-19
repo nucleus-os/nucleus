@@ -267,8 +267,12 @@ they are sequenced in `image-file-loading.md`. Animated GIF defers to first-fram
 optional widget in the reference, which already ships a first-frame fallback for its every failure
 mode.
 
-Bounded decode lands first and is complete; the producer seam, SVG, raw D-Bus buffers, and
-asynchronous decode follow.
+**Complete.** Bounded decode with sRGB-correct downscaling, the `ImageResource` producer
+seam and `ImageView` fit modes, SVG rasterization, raw D-Bus buffers with stride and
+channel order, `data:` URIs, image tint, and a decode queue off the render thread. Two
+deliberate deferrals: animated GIF renders its first frame, and icon atlasing awaits a
+measurement. ICO needed no hand-rolled decoder — Skia's preserves alpha here, unlike the
+BMP path the reference works around.
 
 **Phase 10 — Scroll and list fidelity.** High-resolution wheel and detent accumulation, variable
 row heights with a height cache, and keyed adapter identity.

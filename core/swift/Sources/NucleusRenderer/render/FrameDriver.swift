@@ -109,6 +109,8 @@ final class FrameDriver {
     private var previousLayerSnapshots: [UInt64: [UInt64: LayerFrameSnapshot]] = [:]
     private var submittedLayerSnapshots: [UInt64: [UInt64: LayerFrameSnapshot]] = [:]
     private var decodedImages: [UInt64: nucleus.skia.Image] = [:]
+    /// Decodes off the render thread; results are adopted at the top of a frame.
+    let decodeQueue = ImageDecodeQueue()
     /// Compiled SkSL programs keyed by runtime-effect handle. Compilation is
     /// the expensive half and is uniform-independent, so it is cached here
     /// while uniforms are re-bound per draw.
@@ -158,13 +160,19 @@ final class FrameDriver {
             _ = uploadRecorder.snapRecording()
             uploadsStaged = false
         }
+        decodeQueue.shutdown()
         registry.clear()
         decodedImages.removeAll()
         compiledEffects.removeAll()
         accumulators.removeAll()
     }
 
-    /// Decode (once) the image behind a handle, at most its source's bounds.
+    /// The image behind a handle, if it has been decoded.
+    ///
+    /// Decoding is asynchronous, so this returns nil until the result arrives —
+    /// a missing image draws nothing for a frame or two rather than blocking the
+    /// frame that asked for it. A first-paint wallpaper decode is tens of
+    /// milliseconds and would otherwise be a visible hitch.
     ///
     /// The bounds are the handle's identity, not a hint: `ImageStore` dedupes on
     /// `"WxH:path"`, so two handles for one path at different bounds are two
@@ -172,29 +180,26 @@ final class FrameDriver {
     func decodedImage(handle: UInt64, source: ImageSource) -> nucleus.skia.Image? {
         if let existing = decodedImages[handle], existing.isValid() { return existing }
 
-        let maxWidth = Int32(clamping: source.maxWidth)
-        let maxHeight = Int32(clamping: source.maxHeight)
-        let image: nucleus.skia.Image
-        switch source.content {
-        case .file(let path):
-            image = nucleus.skia.makeEncodedImageFromFile(path, maxWidth, maxHeight)
-        case .encoded(let bytes):
-            image = bytes.withUnsafeBufferPointer {
-                nucleus.skia.makeEncodedImageFromMemory(
-                    $0.baseAddress, $0.count, maxWidth, maxHeight)
-            }
-        case .raw(let buffer):
-            // Raw pixels are already decoded — there is nothing to decode, only a
-            // layout to normalize. Bounds do not apply: the sender chose the size.
-            guard let rgba = buffer.normalizedRGBA() else { return nil }
-            image = rgba.withUnsafeBufferPointer {
-                nucleus.skia.makeRasterImageRGBA(
-                    Int32(buffer.width), Int32(buffer.height), $0.baseAddress, $0.count)
-            }
+        // Without a worker there is nothing to wait for, so decode inline — the
+        // behaviour before the queue existed, and the behaviour if a thread
+        // could not be spawned.
+        guard decodeQueue.hasWorkers else {
+            let image = ImageDecodeQueue.decode(source)
+            guard image.isValid() else { return nil }
+            decodedImages[handle] = image
+            return image
         }
-        guard image.isValid() else { return nil }
-        decodedImages[handle] = image
-        return image
+
+        decodeQueue.submit(handle: handle, source: source)
+        return nil
+    }
+
+    /// Adopt everything decoded since the last frame. Called at the top of a
+    /// frame, which is the only point the cache may be written.
+    func drainDecodedImages() {
+        for result in decodeQueue.drain() {
+            decodedImages[result.handle] = result.image
+        }
     }
 
     /// Resolve a paint command's effect handle to a compiled program, compiling
@@ -224,6 +229,10 @@ final class FrameDriver {
     /// outlive its source. No-op for an unknown handle.
     func evictDecodedImage(_ handle: UInt64) {
         decodedImages[handle] = nil
+        // A decode already in flight for this handle is now for a source that no
+        // longer exists, and the handle may be re-registered — delivering the
+        // stale result would draw the wrong picture.
+        decodeQueue.cancel(handle: handle)
     }
 
     /// Reclaim producer cache textures for layers no longer in the retained tree.
@@ -421,6 +430,10 @@ final class FrameDriver {
         let clock = ContinuousClock()
         let totalStart = clock.now
         var phaseStart = totalStart
+        // Adopt finished decodes before anything reads the cache. This is the one
+        // point in the frame where the decoded-image cache may be written, which
+        // is what keeps it safe to leave unsynchronized.
+        drainDecodedImages()
         let plan = PresentationWalk.buildFramePlan(
             tree: tree, target: target, frame: frame, lockContexts: lockContexts)
         let referencedSurfaceIDs = Self.referencedClientSurfaceIDs(plan)
