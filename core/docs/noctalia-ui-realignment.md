@@ -274,19 +274,27 @@ deliberate deferrals: animated GIF renders its first frame, and icon atlasing aw
 measurement. ICO needed no hand-rolled decoder — Skia's preserves alpha here, unlike the
 BMP path the reference works around.
 
-**Phase 10 — Scroll and list fidelity.** High-resolution wheel and detent accumulation, variable
-row heights with a height cache, and keyed adapter identity.
+**Phases 10 onward are superseded by `bar-first-port-order.md`.**
 
-**Phase 11 — The control kit.** The full set the reference defines, now authored against roles and
-tabbable: toggle, slider, range slider, checkbox, radio, select, segmented, stepper, progress,
-spinner, separator, collapsible, and the pickers.
+They were written to close gaps against AppKit and against the reference's whole widget library. A
+second audit of both sides says that is breadth without a consumer. Three findings moved the order:
 
-**Phase 12 — Menus, lifted.** Generalize the compositor overlay's menu into NucleusUI.
+*The control kit was mis-scoped.* Toggle, slider, select, stepper and the pickers are the settings
+and control-center vocabulary, and those two subsystems are 40,574 lines — 15% of the reference —
+that a working bar does not need. A minimal bar needs nine foundation controls and we already have
+seven; the gap is a separator, a spacer, and a progress bar.
 
-**Phase 13 — The remaining bar services.** PipeWire, NetworkManager, BlueZ, StatusNotifierItem,
-logind, backlight and gamma, each with its widget.
+*Configuration and IPC were missing from the order entirely.* ~443 typed schema fields with
+hot-reload, and a Unix socket with 91 commands. A bar with a hardcoded widget list and no control
+surface is a demo rather than the product.
 
-**Phase 14 — The bar, natively.** The sum of everything above.
+*Five defects want clearing first.* `View.transform` is ignored by hit testing and coordinate
+conversion; `GraphicsContext.rotateBy` silently degrades non-path draws to axis-aligned boxes;
+`lineCap`/`lineJoin` are dead public state; `fadeOut` writes the property it is animating; `KeyCode`
+has no letters or digits, so no shortcut is expressible.
+
+Menus still get lifted out of the compositor overlay, but as part of the tray widget that consumes
+DBusMenu rather than speculatively ahead of it.
 
 ## What this does not change
 
