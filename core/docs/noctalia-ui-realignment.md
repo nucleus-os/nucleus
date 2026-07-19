@@ -197,8 +197,30 @@ narrowing search keeps the selection near where it was.
 focused or reached at all. `Control` now takes focus while enabled, as `NSControl` does. Nothing
 caught this earlier because no test asked a button for focus.
 
-**Phase 8 — Animation at the view tier, and reduce-motion.** Exposing what the layers tier already
-does, plus the global motion switch and cancel-by-owner.
+**Phase 8 — Animation at the view tier, and reduce-motion — complete.** `View.animate(_:from:to:
+timing:)` reaches the bezier and spring curves the layers tier already had, through the same
+privileged import `View` uses for everything else.
+
+`AnimatableProperty` is deliberately **narrower than "any property"** — eight scalars the render
+tier interpolates on its own thread. Offering more would produce properties that silently snap
+instead of animating, which is worse than not offering them. `AnimationTiming` carries the
+reference's three durations as conventions, because a shell whose panels and toggles animate at
+unrelated speeds reads as unfinished.
+
+`Motion` is a single global switch rather than a per-call flag: reduce-motion is an accessibility
+preference, and honouring it only where a caller remembered to check would honour it nowhere. With
+motion off an animation is **skipped, not shortened** — the property takes its final value at once,
+and `animate` returns `false` so a caller knows to assign it. `speed` refuses zero or negative
+values rather than dividing durations into nonsense.
+
+`fadeIn` unhides *before* animating, because a hidden layer does not composite and the fade would
+otherwise run invisibly and pop at the end. Neither fade takes a completion callback: there is no
+completion signal at this tier, and guessing would leave views either flashing back or vanishing
+early. The caller hides or removes on its own schedule.
+
+Cancel-by-owner from the reference is not carried over — animations are per-layer here, and
+removing by property on the view that owns it covers the same ground without a second identity
+scheme.
 
 **Phase 9 — Glyphs, then icon themes, then files.** A glyph view and a name→codepoint registry over
 a bundled icon font first, since it covers most of the iconography and the font stack largely
