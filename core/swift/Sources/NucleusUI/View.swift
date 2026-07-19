@@ -135,6 +135,9 @@ open class View: Responder, Accessible, ~Sendable {
             )
             backingLayer.apply(update)
             LayerTransaction.appendAmbient(.properties(layer: backingLayer.id, update), in: backingLayer.context)
+            // The bounds clip is expressed in this view's size, so a resize
+            // moves it.
+            if clipsToBounds { applyBoundsClip() }
             setNeedsLayout()
             setNeedsDisplay()
         }
@@ -159,15 +162,73 @@ open class View: Responder, Accessible, ~Sendable {
         }
     }
 
+    /// This view's own coordinate system, mirroring `NSView.bounds`.
+    ///
+    /// The size is the frame's size — a view's size is its frame's, and `bounds`
+    /// reports it rather than owning it. The *origin* is this view's alone: it
+    /// translates between these coordinates and the view's contents, so a view
+    /// with `bounds.origin == (0, 40)` shows its contents shifted up by forty
+    /// points without any child's `frame` changing.
+    ///
+    /// That separation is the point. `arrange(in:)` rewrites child frames on
+    /// every layout pass, so a scroll offset stored there would be destroyed and
+    /// have to be re-applied by every container forever. Layout never writes
+    /// `bounds.origin`, and so stays unaware that scrolling exists.
     public var bounds: Rect {
-        get { Rect(x: 0, y: 0, width: frame.size.width, height: frame.size.height) }
+        get {
+            Rect(
+                x: boundsOrigin.x, y: boundsOrigin.y,
+                width: frame.size.width, height: frame.size.height)
+        }
         set {
-            let update = LayerPropertyUpdate(bounds: GeometrySize(width: newValue.size.width, height: newValue.size.height))
+            // Size is the frame's to own; assigning it here would contradict
+            // layout on the next pass. Only the origin is stored.
+            boundsOrigin = newValue.origin
+        }
+    }
+
+    /// The bounds origin, stored. Assigning it moves this view's contents
+    /// without touching a single child frame or re-recording any drawing: the
+    /// children's layers are placed relative to it, so a scroll is one property
+    /// update rather than one per child.
+    public var boundsOrigin: Point = .zero {
+        didSet {
+            guard boundsOrigin != oldValue else { return }
+            let update = LayerPropertyUpdate(
+                scrollOffset: GeometryPoint(x: boundsOrigin.x, y: boundsOrigin.y))
             backingLayer.apply(update)
-            LayerTransaction.appendAmbient(.properties(layer: backingLayer.id, update), in: backingLayer.context)
-            setNeedsLayout()
+            LayerTransaction.appendAmbient(
+                .properties(layer: backingLayer.id, update), in: backingLayer.context)
+            // Placement changes; recordings do not. Children are positioned
+            // relative to this origin, so their own drawing is untouched.
             setNeedsDisplay()
         }
+    }
+
+    /// Whether this view clips its contents to its bounds.
+    ///
+    /// Mirrors `NSView.clipsToBounds`. Hit testing respects it as well as
+    /// drawing: a child scrolled out of sight must not receive a click, and this
+    /// is what makes it out of sight.
+    public var clipsToBounds: Bool = false {
+        didSet {
+            guard clipsToBounds != oldValue else { return }
+            applyBoundsClip()
+        }
+    }
+
+    /// Push the bounds clip to the layer. A zero-sized clip rect is the render
+    /// model's spelling of "no clip", which is what an unclipped view wants and
+    /// also what a zero-sized view would produce anyway.
+    private func applyBoundsClip() {
+        let size = clipsToBounds ? frame.size : .zero
+        let update = LayerPropertyUpdate(
+            clip: ClipOp(
+                rectX: 0, rectY: 0,
+                rectW: Float(size.width), rectH: Float(size.height)))
+        backingLayer.apply(update)
+        LayerTransaction.appendAmbient(
+            .properties(layer: backingLayer.id, update), in: backingLayer.context)
     }
 
     public var transform: Transform {
@@ -549,18 +610,77 @@ open class View: Responder, Accessible, ~Sendable {
     /// This is single-tree dispatch with no pointer capture. `WindowScene`
     /// dispatch adds capture and enter/exit tracking, which need scene-wide
     /// state; a view alone cannot know the pointer left it for a sibling.
+    /// Convert `point` from `view`'s coordinate system into this view's.
+    /// A `nil` view means window coordinates. Mirrors `NSView.convert(_:from:)`.
+    ///
+    /// Both sides route through the window, and the terms for any shared
+    /// ancestor cancel, so this is also correct for two views in a tree that has
+    /// no window yet.
+    public func convert(_ point: Point, from view: View?) -> Point {
+        convertFromWindowSpace(view?.convertToWindowSpace(point) ?? point)
+    }
+
+    /// Convert `point` from this view's coordinate system into `view`'s.
+    /// A `nil` view means window coordinates.
+    public func convert(_ point: Point, to view: View?) -> Point {
+        view?.convert(point, from: self) ?? convertToWindowSpace(point)
+    }
+
+    public func convert(_ rect: Rect, from view: View?) -> Rect {
+        Rect(origin: convert(rect.origin, from: view), size: rect.size)
+    }
+
+    public func convert(_ rect: Rect, to view: View?) -> Rect {
+        Rect(origin: convert(rect.origin, to: view), size: rect.size)
+    }
+
+    /// Up the tree: undo this view's scroll, then step out through its frame.
+    /// The inverse of the rebase `hitTest` performs on the way down, and the
+    /// single definition of the coordinate system.
+    private func convertToWindowSpace(_ point: Point) -> Point {
+        var result = point
+        var node: View? = self
+        while let current = node {
+            result = Point(
+                x: result.x - current.boundsOrigin.x + current.frame.origin.x,
+                y: result.y - current.boundsOrigin.y + current.frame.origin.y)
+            node = current.parentView
+        }
+        return result
+    }
+
+    private func convertFromWindowSpace(_ point: Point) -> Point {
+        var chain: [View] = []
+        var node: View? = self
+        while let current = node {
+            chain.append(current)
+            node = current.parentView
+        }
+        var result = point
+        for current in chain.reversed() {
+            result = Point(
+                x: result.x - current.frame.origin.x + current.boundsOrigin.x,
+                y: result.y - current.frame.origin.y + current.boundsOrigin.y)
+        }
+        return result
+    }
+
+    /// Hit-test `event.location` and deliver to the view found, then up its
+    /// responder chain.
+    ///
+    /// `event.location` is in *this view's parent's* coordinates, matching
+    /// `hitTest`. The delivered event carries the location in the target's own
+    /// coordinates.
     @discardableResult
     public func dispatchEvent(_ event: Event) -> EventHandling {
         guard let target = hitTest(event.location) else { return .notHandled }
-        var origin = Point(x: 0, y: 0)
-        var node: View? = target
-        while let current = node, current !== self {
-            origin = Point(
-                x: origin.x + current.frame.origin.x,
-                y: origin.y + current.frame.origin.y)
-            node = current.parentView
-        }
-        return target.deliverEvent(event.offsetting(by: origin))
+        // Into this view's own coordinates first, since the incoming location is
+        // in its parent's; `convert(_:from:)` then speaks view-to-view.
+        let localInSelf = Point(
+            x: event.location.x - frame.origin.x + boundsOrigin.x,
+            y: event.location.y - frame.origin.y + boundsOrigin.y)
+        let local = target.convert(localInSelf, from: self)
+        return target.deliverEvent(event.relocated(to: local))
     }
 
     open func hitTest(_ point: Point) -> View? {
@@ -573,10 +693,20 @@ open class View: Responder, Accessible, ~Sendable {
             return nil
         }
 
+        // Into this view's own coordinates: past the frame origin, then past the
+        // bounds origin, which is where a scrolled view's contents actually sit.
         let localPoint = Point(
-            x: point.x - ownFrame.origin.x,
-            y: point.y - ownFrame.origin.y
+            x: point.x - ownFrame.origin.x + boundsOrigin.x,
+            y: point.y - ownFrame.origin.y + boundsOrigin.y
         )
+
+        // A clipping view hides whatever falls outside it, and something hidden
+        // must not be clickable. Checked after the rebase, because the clip is
+        // this view's bounds and `localPoint` is now in them.
+        if clipsToBounds && !bounds.contains(localPoint) {
+            return self
+        }
+
         for child in childViews.reversed() {
             if let hit = child.hitTest(localPoint) {
                 return hit

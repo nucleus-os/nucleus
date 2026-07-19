@@ -50,6 +50,19 @@ func layerLocalMatrix(_ layer: Layer) -> M44 {
         height: bounds.h)
 }
 
+/// The matrix children compose against: the layer's own world matrix, shifted
+/// by its scroll offset.
+///
+/// The offset applies to children and not to the layer's own content, borders,
+/// or shadow — a scrolling view's frame and chrome stay put while what it
+/// contains moves. This is the one place scrolling exists in the renderer: a
+/// scroll is a property update on one layer, and no descendant re-records.
+func layerContentMatrix(_ worldMatrix: M44, _ layer: Layer) -> M44 {
+    let scroll = layer.model.properties.scrollOffset
+    guard scroll.x != 0 || scroll.y != 0 else { return worldMatrix }
+    return worldMatrix.concat(M44.translate(-scroll.x, -scroll.y, 0))
+}
+
 /// Map a layer's local bounds-rect into world logical space. Mirrors
 /// `mappedLogicalRect`.
 func mappedLogicalRect(_ worldMatrix: M44, _ bounds: Bounds) -> LogicalRect {

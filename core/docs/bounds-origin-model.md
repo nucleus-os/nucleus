@@ -44,6 +44,17 @@ own backing layer, so a bounds origin is applied by offsetting child layer place
 translating a shared canvas. A scroll is therefore a property update on one layer's children, and
 the scrolled views neither redraw nor re-record.
 
+## Status
+
+Phases 1 through 4 are complete. Phase 5 is Port 3's, and lands with the tracking work.
+
+The discovery that shaped Phase 4: `scrollOffset` **already existed** on `LayerPropertyUpdate`,
+and was already carried through the layer model, the wire types, the lowering, and the render
+model's `RenderTransactionApply` — and was then consumed by nothing. `layerLocalMatrix` reads
+position, anchor, and transform, and the walk passed each layer's world matrix to its children
+untouched. The field was inert end to end. Honouring it turned out to be one helper and one line at
+the recursion, rather than the new layer property the phase anticipated.
+
 ## Phase 1 — `bounds` becomes storage
 
 The origin is stored on the view. The getter returns it with the frame's size; the setter writes
@@ -54,6 +65,10 @@ reports it rather than owning it.
 Changing the origin invalidates layout and display of the *subtree placement*, not the subtree's
 recordings. The recordings are unchanged by definition; that is the point of the model.
 
+Landed as `boundsOrigin`, with `bounds` composing it against the frame's size. `clipsToBounds`
+landed here too rather than in Phase 3, because the frame setter has to re-push the clip rect when
+the view resizes and that is the same code path.
+
 ## Phase 2 — Conversion becomes API
 
 `convert(_ point: Point, from view: View?)` and its `to:` counterpart, plus the `Rect` overloads,
@@ -62,6 +77,12 @@ matching `NSView`. A `nil` argument means window coordinates.
 The walk accounts for both terms: descending into a child subtracts the child's `frame.origin` and
 adds the parent's `bounds.origin`. This is the single definition of the coordinate system, and the
 two open-coded walks are deleted in favour of it.
+
+Rewriting dispatch in terms of the conversion API exposed a second defect. `hitTest` takes its
+point in the *parent's* coordinates, and the old dispatch walk accumulated frame origins from the
+target up to but **not including** `self` — so it never subtracted `self.frame.origin`. Dispatching
+on a view whose own frame origin was non-zero delivered a location off by exactly that origin. It
+went unnoticed because dispatch is usually rooted at a content view sitting at the origin.
 
 ## Phase 3 — Hit testing and dispatch adopt it
 

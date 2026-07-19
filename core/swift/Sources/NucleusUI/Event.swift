@@ -182,4 +182,13 @@ public struct Event: Sendable, Equatable {
         copy.location = Point(x: location.x - origin.x, y: location.y - origin.y)
         return copy
     }
+
+    /// The same event at an already-converted location. Dispatch converts
+    /// through the view tree rather than by accumulating offsets, so it has the
+    /// final point in hand and nothing left to subtract.
+    public func relocated(to point: Point) -> Event {
+        var copy = self
+        copy.location = point
+        return copy
+    }
 }

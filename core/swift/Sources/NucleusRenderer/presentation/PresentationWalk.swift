@@ -109,8 +109,11 @@ enum PresentationWalk {
             emitContent(input, vibrancyStack, target, plan)
         }
 
+        // Children compose against the scrolled matrix; this layer's own
+        // content, drawn above, does not.
+        let childMatrix = layerContentMatrix(input.worldMatrix, layer)
         for childId in layer.children {
-            walk(tree, childId, input.worldMatrix, input.combinedOpacity, input.clip, childStack, target, plan, &contextStack, lockContexts)
+            walk(tree, childId, childMatrix, input.combinedOpacity, input.clip, childStack, target, plan, &contextStack, lockContexts)
         }
     }
 
