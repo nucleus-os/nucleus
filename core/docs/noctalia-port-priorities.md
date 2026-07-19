@@ -101,7 +101,7 @@ tooltip and tracking gap, and the popup layer — each of which is currently a g
 | — | The bounds-origin model | **complete** |
 | 3 | Tracking, cursors, and tooltips | **complete** |
 | 4 | The popup layer | **complete** |
-| 5 | Scrolling | pending |
+| 5 | Scrolling | **complete** |
 | 6 | The control kit | pending |
 | 7 | The remaining bar services | pending |
 | 8 | The bar, natively | pending |
@@ -202,9 +202,25 @@ Phase 3's tooltip seam now has a renderer, and the battery widget has the panel 
 The widget reports its click and hands over an anchor rather than presenting anything: it has no
 scene, and one that reached for a scene could not be tested by assignment.
 
-**Phase 5 — Scrolling.** `ScrollView`, a scrollbar, and virtualized list and grid, on the
-bounds-origin model that landed before Phase 3. This lands after the popup layer because a panel is
-the first thing that will overflow.
+**Phase 5 — Scrolling — complete.** `ScrollView` is a clip view, a document view, and indicators.
+`ClipView` does one thing: it clips, and its `bounds.origin` *is* the scroll position. There is no
+separate offset field kept in step with one, which is the payoff of the bounds-origin model — a
+scroll is one assignment and the document neither moves nor redraws.
+
+A wheel scroll that cannot move reports itself unhandled, so a nested scroll view at its end passes
+the wheel to its parent instead of swallowing it. Discrete wheels report notches and are scaled by
+`lineScrollDistance`; a trackpad already reports a distance and is not scaled again.
+
+Virtualization lives in `ListView` rather than in `ScrollView`, for the reason AppKit puts it in
+`NSTableView`: it needs to know the rows are uniform. Rows are recycled, so ten thousand entries
+hold about a dozen views — which is what makes the launcher and the notification history
+affordable.
+
+`ListView` overrides `hitTest` so a click on a row lands on the *list*. That is `NSTableView`'s
+model, and here it is also forced: an event that climbed the responder chain from a row would
+arrive carrying the row's coordinates, and the row lookup would read a point in the wrong space and
+select the wrong row. A `Control` inside a row is the exception and keeps its click, because a row
+with a button in it must still have a working button.
 
 **Phase 6 — The control kit.** `Toggle`, `Slider`, `Checkbox`, `RadioButton`, `Select`,
 `Segmented`, `Stepper`, `ProgressBar`, `Spinner`, `Separator`. Deliberately here rather than
