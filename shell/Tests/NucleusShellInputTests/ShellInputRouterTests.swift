@@ -70,15 +70,49 @@ import NucleusShellWayland
         #expect(event.location == Point(x: 5, y: 6))
     }
 
-    @Test func axisEventsCarryTheirDeltasAndPrecisionFlag() throws {
+    @Test func axisEventsCarryTheirDeltasAndSource() throws {
         var wayland = pointerEvent(.pointerAxis)
         wayland.scrollY = -3.5
-        wayland.hasPreciseScrolling = true
+        wayland.scrollSource = 1  // WL_POINTER_AXIS_SOURCE_FINGER
 
         let event = try #require(translate(wayland))
         #expect(event.type == .scrollWheel)
         #expect(event.scrollDeltaY == -3.5)
+        #expect(event.scrollSource == .finger)
         #expect(event.hasPreciseScrollingDeltas)
+    }
+
+    /// High-resolution wheel travel arrives on `axis_value120` and nowhere else,
+    /// so a free-spinning wheel's sub-notch movement depends on it surviving
+    /// translation.
+    @Test func axisEventsCarryTheirDetents() throws {
+        var wayland = pointerEvent(.pointerAxis)
+        wayland.scrollSource = 0  // wheel
+        wayland.scrollDetentsY = 0.25
+
+        let event = try #require(translate(wayland))
+        #expect(event.scrollDetentsY == 0.25)
+        #expect(event.scrollSource == .wheel)
+        #expect(!event.hasPreciseScrollingDeltas)
+    }
+
+    /// `axis_stop` is the end of a gesture. There is no momentum phase behind
+    /// it — the compositor synthesizes no inertia — so a view that wants
+    /// kinetic scrolling starts it here.
+    @Test func axisStopMarksTheEndOfAGesture() throws {
+        var wayland = pointerEvent(.pointerAxis)
+        wayland.isScrollEnd = true
+
+        let event = try #require(translate(wayland))
+        #expect(event.isScrollEnd)
+    }
+
+    @Test func everyAxisSourceMaps() {
+        #expect(ShellInputRouter.scrollSource(0) == .wheel)
+        #expect(ShellInputRouter.scrollSource(1) == .finger)
+        #expect(ShellInputRouter.scrollSource(2) == .continuous)
+        #expect(ShellInputRouter.scrollSource(3) == .wheelTilt)
+        #expect(ShellInputRouter.scrollSource(99) == .unknown)
     }
 
     // MARK: - Keyboard

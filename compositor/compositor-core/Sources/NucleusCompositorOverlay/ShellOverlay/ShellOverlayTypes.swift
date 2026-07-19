@@ -125,7 +125,7 @@ public struct ShellOverlayInputEvent: Sendable, Equatable {
                 type: .scrollWheel, modifierFlags: modifiers, location: location,
                 timestampNanoseconds: timestampNanoseconds,
                 scrollDeltaX: Double(scrollX), scrollDeltaY: Double(scrollY),
-                hasPreciseScrollingDeltas: true)
+                scrollSource: .finger)
         case .keyDown:
             return Event(
                 type: .keyDown, modifierFlags: modifiers, location: location,

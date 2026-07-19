@@ -224,7 +224,7 @@ import NucleusUI
 
         let handled = scene.dispatchEvent(Event(
             type: .scrollWheel, location: Point(x: 10, y: 10),
-            scrollDeltaY: -3, hasPreciseScrollingDeltas: true))
+            scrollDeltaY: -3, scrollSource: .finger))
         #expect(handled == .handled)
         #expect(target.received.contains(.scrollWheel))
     }

@@ -108,7 +108,7 @@ import NucleusUI
         let scroll = makeScrollView()
         scroll.dispatchEvent(Event(
             type: .scrollWheel, location: Point(x: 10, y: 10),
-            scrollDeltaY: 17, hasPreciseScrollingDeltas: true))
+            scrollDeltaY: 17, scrollSource: .finger))
         #expect(scroll.contentOffset.y == 17)
     }
 

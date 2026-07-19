@@ -44,9 +44,14 @@ public struct ShellInputEvent: Sendable, Equatable {
     public var y: Double = 0
     public var scrollX: Double = 0
     public var scrollY: Double = 0
-    /// Whether the scroll came from a continuous device rather than a detented
-    /// wheel — `wl_pointer.axis_source`.
-    public var hasPreciseScrolling: Bool = false
+    /// What produced the scroll — `wl_pointer.axis_source`, carried through as
+    /// the protocol's own value and mapped once at the framework boundary.
+    public var scrollSource: UInt32 = 0
+    /// Scroll in wheel detents from `axis_value120`, 120 units to a notch.
+    public var scrollDetentsX: Double = 0
+    public var scrollDetentsY: Double = 0
+    /// `axis_stop`: the finger lifted.
+    public var isScrollEnd: Bool = false
     public var button: UInt32 = 0
     public var keycode: UInt32 = 0
     public var modifiers: ShellModifierState = ShellModifierState()
@@ -111,7 +116,7 @@ public final class ShellSeat {
     private var keyboardSurface: UInt = 0
     private var lastPointerX: Double = 0
     private var lastPointerY: Double = 0
-    private var pendingPreciseScroll = false
+    private var pendingAxisSource: UInt32 = 0
 
     /// The held key awaiting repeat, and when its next repeat is due.
     private var heldKeycode: UInt32?
@@ -357,11 +362,15 @@ public final class ShellSeat {
 
     var pointerPosition: (x: Double, y: Double) { (lastPointerX, lastPointerY) }
 
-    func notePreciseScroll(_ precise: Bool) {
-        pendingPreciseScroll = precise
+    func noteAxisSource(_ source: UInt32) {
+        pendingAxisSource = source
     }
 
-    var isPreciseScroll: Bool { pendingPreciseScroll }
+    var currentAxisSource: UInt32 { pendingAxisSource }
+
+    /// Detents accumulate across `axis_value120` and are consumed by the `axis`
+    /// event they belong to; the compositor sends both for one wheel movement.
+    var pendingAxisDetents: (x: Double, y: Double) = (0, 0)
 
     func handleKey(keycode: UInt32, pressed: Bool) {
         var event = makeEvent(pressed ? .keyDown : .keyUp)
@@ -503,7 +512,10 @@ final class ShellPointerListener: WlPointerEvents {
             } else {
                 event.scrollX = value
             }
-            event.hasPreciseScrolling = seat.isPreciseScroll
+            event.scrollSource = seat.currentAxisSource
+            event.scrollDetentsX = seat.pendingAxisDetents.x
+            event.scrollDetentsY = seat.pendingAxisDetents.y
+            seat.pendingAxisDetents = (0, 0)
             seat.emit(event)
         }
     }
@@ -513,16 +525,41 @@ final class ShellPointerListener: WlPointerEvents {
     nonisolated func axisSource(_ proxy: OpaquePointer, axis_source: UInt32) {
         MainActor.assumeIsolated {
             // A finger or continuous source scrolls smoothly; a wheel is detented.
-            let continuous =
-                axis_source == UInt32(WL_POINTER_AXIS_SOURCE_FINGER.rawValue)
-                || axis_source == UInt32(WL_POINTER_AXIS_SOURCE_CONTINUOUS.rawValue)
-            seat.notePreciseScroll(continuous)
+            seat.noteAxisSource(axis_source)
         }
     }
 
-    nonisolated func axisStop(_ proxy: OpaquePointer, time: UInt32, axis: UInt32) {}
+    /// The finger lifted. There is no momentum phase to follow — the compositor
+    /// does not synthesize inertia, so a view wanting kinetic scrolling starts
+    /// it from here.
+    nonisolated func axisStop(_ proxy: OpaquePointer, time: UInt32, axis: UInt32) {
+        MainActor.assumeIsolated {
+            var event = seat.makeEvent(.pointerAxis)
+            event.surface = seat.currentPointerSurface
+            event.x = seat.pointerPosition.x
+            event.y = seat.pointerPosition.y
+            event.scrollSource = seat.currentAxisSource
+            event.isScrollEnd = true
+            seat.emit(event)
+        }
+    }
+
+    /// Superseded by `axis_value120` since `wl_pointer` v8, and ignored here:
+    /// a compositor sending both would otherwise have the notch counted twice.
     nonisolated func axisDiscrete(_ proxy: OpaquePointer, axis: UInt32, discrete: Int32) {}
-    nonisolated func axisValue120(_ proxy: OpaquePointer, axis: UInt32, value120: Int32) {}
+
+    /// High-resolution wheel travel: 120 units to a detent. This is the only
+    /// place a free-spinning wheel's sub-notch movement is reported.
+    nonisolated func axisValue120(_ proxy: OpaquePointer, axis: UInt32, value120: Int32) {
+        MainActor.assumeIsolated {
+            let detents = Double(value120) / 120
+            if axis == UInt32(WL_POINTER_AXIS_VERTICAL_SCROLL.rawValue) {
+                seat.pendingAxisDetents.y = detents
+            } else {
+                seat.pendingAxisDetents.x = detents
+            }
+        }
+    }
     nonisolated func axisRelativeDirection(
         _ proxy: OpaquePointer, axis: UInt32, direction: UInt32
     ) {}

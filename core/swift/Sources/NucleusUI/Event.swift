@@ -223,6 +223,18 @@ public enum EventType: Int32, Sendable {
 /// crosses the adapter boundary as data and is compared, copied, and defaulted
 /// constantly; an enum would make every adapter a switch and every field access
 /// a pattern match.
+/// What produced a scroll event. Mirrors `wl_pointer.axis_source`, which is
+/// where the information comes from.
+public enum ScrollSource: UInt8, Sendable, Equatable, CaseIterable {
+    /// Unreported. Treated as a wheel, since that is the conservative guess: a
+    /// detented view stepping once is better than a smooth view jumping.
+    case unknown
+    case wheel
+    case finger
+    case continuous
+    case wheelTilt
+}
+
 public struct Event: Sendable, Equatable {
     public var type: EventType
     public var modifierFlags: EventModifierFlags
@@ -239,10 +251,32 @@ public struct Event: Sendable, Equatable {
     // Scrolling
     public var scrollDeltaX: Double
     public var scrollDeltaY: Double
-    /// Whether the scroll came from a device with continuous deltas (a
-    /// touchpad) rather than discrete detents (a wheel). Momentum and
-    /// rubber-banding behave differently for each.
-    public var hasPreciseScrollingDeltas: Bool
+    /// What produced the scroll. A wheel is detented; a finger or a continuous
+    /// source is smooth, and the difference decides whether a view should snap
+    /// or track.
+    public var scrollSource: ScrollSource
+    /// Scroll expressed in wheel detents, when the device reports them.
+    ///
+    /// A high-resolution wheel sends fractions of a detent — `wl_pointer`'s
+    /// `axis_value120` is 120 units per notch — so a free-spinning wheel moves
+    /// smoothly while a ratcheted one still lands on whole notches. Zero when
+    /// the device reports no detents at all, which is the touchpad case.
+    public var scrollDetentsX: Double
+    public var scrollDetentsY: Double
+    /// The end of a scroll gesture: the finger lifted.
+    ///
+    /// Wayland delivers this as `axis_stop`. There is no momentum *phase* to go
+    /// with it — unlike AppKit, the compositor does not synthesize inertia, so a
+    /// view that wants kinetic scrolling starts it here from the recent
+    /// velocity.
+    public var isScrollEnd: Bool
+
+    /// Whether the scroll came from a device with continuous deltas rather than
+    /// discrete detents. Derived from the source, which is the thing the
+    /// platform actually reports.
+    public var hasPreciseScrollingDeltas: Bool {
+        scrollSource == .finger || scrollSource == .continuous
+    }
 
     // Keyboard
     public var keyCode: KeyCode
@@ -266,7 +300,10 @@ public struct Event: Sendable, Equatable {
         clickCount: Int = 0,
         scrollDeltaX: Double = 0,
         scrollDeltaY: Double = 0,
-        hasPreciseScrollingDeltas: Bool = false,
+        scrollSource: ScrollSource = .unknown,
+        scrollDetentsX: Double = 0,
+        scrollDetentsY: Double = 0,
+        isScrollEnd: Bool = false,
         keyCode: KeyCode = .unknown,
         characters: String? = nil,
         isARepeat: Bool = false,
@@ -280,7 +317,10 @@ public struct Event: Sendable, Equatable {
         self.clickCount = clickCount
         self.scrollDeltaX = scrollDeltaX
         self.scrollDeltaY = scrollDeltaY
-        self.hasPreciseScrollingDeltas = hasPreciseScrollingDeltas
+        self.scrollSource = scrollSource
+        self.scrollDetentsX = scrollDetentsX
+        self.scrollDetentsY = scrollDetentsY
+        self.isScrollEnd = isScrollEnd
         self.keyCode = keyCode
         self.characters = characters
         self.isARepeat = isARepeat

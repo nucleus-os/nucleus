@@ -153,12 +153,13 @@ open class ScrollView: View {
     open override func handleEvent(_ event: Event) -> EventHandling {
         guard event.type == .scrollWheel else { return .notHandled }
 
-        // A discrete wheel reports notches, not distances, so a line's worth of
-        // travel is this view's to decide. A trackpad already reports distance.
-        let scale = event.hasPreciseScrollingDeltas ? 1 : lineScrollDistance
+        // A wheel reports notches, so a line's worth of travel is this view's to
+        // decide; a high-resolution wheel reports fractions of one and scrolls
+        // smoothly for free. A touchpad reports distance and is used as given.
+        let distance = event.scrollDistance(lineHeight: lineScrollDistance)
         let proposed = Point(
-            x: contentOffset.x + event.scrollDeltaX * scale,
-            y: contentOffset.y + event.scrollDeltaY * scale)
+            x: contentOffset.x + distance.x,
+            y: contentOffset.y + distance.y)
 
         let before = contentOffset
         contentOffset = proposed

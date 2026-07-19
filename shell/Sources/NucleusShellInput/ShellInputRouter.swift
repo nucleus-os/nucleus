@@ -135,7 +135,10 @@ public final class ShellInputRouter: ShellSeatDelegate {
                 type: .scrollWheel, modifierFlags: modifiers, location: location,
                 timestampNanoseconds: event.timestampNanoseconds,
                 scrollDeltaX: event.scrollX, scrollDeltaY: event.scrollY,
-                hasPreciseScrollingDeltas: event.hasPreciseScrolling)
+                scrollSource: scrollSource(event.scrollSource),
+                scrollDetentsX: event.scrollDetentsX,
+                scrollDetentsY: event.scrollDetentsY,
+                isScrollEnd: event.isScrollEnd)
         case .keyDown, .keyUp:
             return Event(
                 type: event.kind == .keyDown ? .keyDown : .keyUp,
@@ -183,5 +186,16 @@ public final class ShellInputRouter: ShellSeatDelegate {
     /// copy of the mapping.
     static func keyCode(_ code: UInt32) -> KeyCode {
         KeyCode(linuxEvdevCode: code)
+    }
+
+    /// `wl_pointer.axis_source` onto the framework's own vocabulary.
+    static func scrollSource(_ source: UInt32) -> ScrollSource {
+        switch source {
+        case 0: .wheel
+        case 1: .finger
+        case 2: .continuous
+        case 3: .wheelTilt
+        default: .unknown
+        }
     }
 }
