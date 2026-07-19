@@ -46,6 +46,17 @@ public struct BatteryLevel: Sendable, Equatable {
 public final class BatteryWidget: View {
     public private(set) var level: BatteryLevel = .absent
 
+    /// Called when the widget is clicked, with the anchor its panel should open
+    /// against. The widget does not present the panel itself: it has no scene,
+    /// and a widget that reached for one would be a widget that could not be
+    /// tested by assignment.
+    public var onActivate: ((BatteryWidget, Rect) -> Void)?
+
+    /// The panel this widget's click opens, built from the current reading.
+    public func makePanel() -> BatteryPanel {
+        BatteryPanel(level: level)
+    }
+
     public var showsPercentage: Bool = true {
         didSet { if showsPercentage != oldValue { applyLevel() } }
     }
@@ -87,6 +98,17 @@ public final class BatteryWidget: View {
             cursor: .pointingHand,
             toolTipProvider: { [weak self] in self?.accessibilityDescription })
         applyLevel()
+    }
+
+    public override func handleEvent(_ event: Event) -> EventHandling {
+        guard event.type == .pointerDown, event.button == .left,
+              level.isPresent else {
+            return .notHandled
+        }
+        // The anchor is the widget itself, so the panel stays put while the
+        // pointer moves inside it.
+        onActivate?(self, bounds)
+        return .handled
     }
 
     /// Take a new reading. The whole update path: assign, invalidate, done.

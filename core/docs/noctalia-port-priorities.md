@@ -100,7 +100,7 @@ tooltip and tracking gap, and the popup layer — each of which is currently a g
 | 2 | UPower, and the battery widget | **complete** |
 | — | The bounds-origin model | **complete** |
 | 3 | Tracking, cursors, and tooltips | **complete** |
-| 4 | The popup layer | pending |
+| 4 | The popup layer | **complete** |
 | 5 | Scrolling | pending |
 | 6 | The control kit | pending |
 | 7 | The remaining bar services | pending |
@@ -178,9 +178,29 @@ the protocol's meet — the same seam the battery widget and UPower already sit 
 The battery widget now has the hover backing, pointing-hand cursor, and live tooltip the phase
 existed to give it.
 
-**Phase 4 — The popup layer.** Popover chrome, anchoring, dismissal, and the window level a menu
-occupies, in NucleusUI rather than the compositor overlay. The battery widget opens a panel; every
-menu and dropdown needs the same thing.
+**Phase 4 — The popup layer — complete.** A `Popover` is a `Window` with an anchor and a dismissal
+policy, rather than a parallel mechanism. The scene already orders, hit-tests, and routes events to
+windows; inventing a second thing would mean teaching two mechanisms about levels and focus.
+
+Placement is a pure function, separate from every view and window, because it is the part most
+likely to be wrong at a screen edge and the hardest to reproduce by hand. Three rules in order: sit
+on the preferred edge; flip to the opposite one if it overflows *and* the opposite has more room —
+flipping into a worse position helps nobody; then slide along the perpendicular axis, since being
+off-centre beats running off the screen. An oversize popup pins to its near margin so its leading
+content stays reachable.
+
+Popovers are a **stack**, and dismissal cascades upward: a submenu whose parent has gone is orphaned
+chrome nothing can close.
+
+Dismissal runs before delivery, so a click that closes a menu does not also press what was
+underneath it. The exception is the passive policy a tooltip uses, which dismisses without
+consuming — a tooltip describes what is under the pointer, so the click it cancels must still reach
+it. Movement is deliberately *not* a dismissal: hover tracking already retires a tooltip when the
+pointer leaves its area, and dismissing on any motion would kill it on the first jitter.
+
+Phase 3's tooltip seam now has a renderer, and the battery widget has the panel its click opens.
+The widget reports its click and hands over an anchor rather than presenting anything: it has no
+scene, and one that reached for a scene could not be tested by assignment.
 
 **Phase 5 — Scrolling.** `ScrollView`, a scrollbar, and virtualized list and grid, on the
 bounds-origin model that landed before Phase 3. This lands after the popup layer because a panel is

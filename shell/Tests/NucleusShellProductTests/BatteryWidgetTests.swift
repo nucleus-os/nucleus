@@ -156,6 +156,60 @@ import NucleusTypes
         #expect(area.resolvedToolTip() == "Battery 20%, charging")
     }
 
+    // MARK: - The panel
+
+    /// The widget reports its click rather than presenting anything: it has no
+    /// scene, and one that reached for a scene could not be tested by
+    /// assignment.
+    @Test func clickingReportsAnAnchor() {
+        let widget = makeWidget(BatteryLevel(fraction: 0.5))
+        // The anchor is compared inside the closure: `Rect` is ambiguous in this
+        // file (NucleusTypes declares one too), so the types stay inferred.
+        var anchorWasBounds = false
+        var activations = 0
+        widget.onActivate = { widget, rect in
+            activations += 1
+            anchorWasBounds = (rect == widget.bounds)
+        }
+
+        widget.dispatchEvent(Event(type: .pointerDown, location: Point(x: 5, y: 5)))
+        #expect(activations == 1)
+        #expect(anchorWasBounds, "anchored to the widget, not the pointer")
+    }
+
+    /// An absent battery has nothing to explain, so it does not open a panel.
+    @Test func anAbsentBatteryDoesNotActivate() {
+        let widget = makeWidget(.absent)
+        var activated = false
+        widget.onActivate = { _, _ in activated = true }
+
+        widget.dispatchEvent(Event(type: .pointerDown, location: Point(x: 5, y: 5)))
+        #expect(!activated)
+    }
+
+    @Test func thePanelSpellsOutTheReading() {
+        let widget = makeWidget(
+            BatteryLevel(fraction: 0.4, secondsRemaining: 5400))
+        let panel = widget.makePanel()
+        #expect(panel.headlineText == "40%")
+        #expect(panel.detailText == "1 hr 30 min remaining")
+    }
+
+    @Test func aChargingPanelSaysSoAndCountsUp() {
+        let widget = makeWidget(
+            BatteryLevel(fraction: 0.4, isCharging: true, secondsRemaining: 1800))
+        let panel = widget.makePanel()
+        #expect(panel.headlineText == "40% — charging")
+        #expect(panel.detailText == "30 min until full")
+    }
+
+    /// UPower reports no estimate for the first minute or so after a state
+    /// change. "0 min remaining" there would be a lie rather than a blank.
+    @Test func anUnknownEstimateShowsNoDetail() {
+        let widget = makeWidget(BatteryLevel(fraction: 0.4))
+        #expect(widget.makePanel().detailText.isEmpty)
+    }
+
     // MARK: - Accessibility
 
     /// A drawn cell says nothing to an assistive technology, and a bare "73%"

@@ -234,6 +234,10 @@ public final class WindowScene: ~Sendable {
     /// the pressed view keeps reaching it.
     @discardableResult
     public func dispatchEvent(_ event: Event) -> EventHandling {
+        // Dismissal comes first: a click that closes a menu must not also press
+        // whatever was underneath it.
+        if applyPopoverDismissal(event) { return .handled }
+
         if event.isKeyEvent {
             guard let keyWindow else { return .notHandled }
             return keyWindow.deliverKeyEvent(event)
@@ -285,6 +289,89 @@ public final class WindowScene: ~Sendable {
         _ = view.deliverEvent(enter)
     }
 
+    // MARK: - Popovers
+
+    /// Open popovers, oldest first. A stack rather than one slot: a menu opens a
+    /// submenu, and dismissing the parent has to take the child with it.
+    public private(set) var popovers: [Popover] = []
+
+    /// The area popovers are placed within — the display, in scene coordinates.
+    /// Set by the host once the output geometry is known.
+    public var displayBounds: Rect = .zero {
+        didSet {
+            guard displayBounds != oldValue else { return }
+            for popover in popovers { popover.place(in: displayBounds) }
+        }
+    }
+
+    /// Show a popover, placing it against its anchor and ordering it in.
+    public func present(_ popover: Popover) {
+        popover.place(in: displayBounds)
+        popovers.append(popover)
+        addWindow(popover.window)
+        popover.window.orderFront()
+    }
+
+    /// Dismiss `popover` and everything opened on top of it.
+    ///
+    /// The cascade is the point: a submenu whose parent has gone is orphaned
+    /// chrome that nothing can dismiss.
+    public func dismiss(_ popover: Popover) {
+        guard let index = popovers.firstIndex(where: { $0 === popover }) else { return }
+        for victim in popovers[index...].reversed() {
+            victim.window.orderOut()
+            _ = removeWindow(victim.window)
+            victim.onDismiss?()
+        }
+        popovers.removeSubrange(index...)
+    }
+
+    public func dismissAllPopovers() {
+        guard let first = popovers.first else { return }
+        dismiss(first)
+    }
+
+    /// Apply the dismissal policies to an event. Returns whether the event was
+    /// consumed by a dismissal, in which case it must not also reach a view: a
+    /// click that closes a menu should not press whatever was underneath it.
+    private func applyPopoverDismissal(_ event: Event) -> Bool {
+        guard !popovers.isEmpty else { return false }
+
+        if event.type == .keyDown && event.keyCode == .escape {
+            if let target = popovers.last(where: {
+                $0.dismissal.contains(.escapeKey)
+            }) {
+                dismiss(target)
+                return true
+            }
+        }
+
+        guard event.type == .pointerDown else { return false }
+
+        // Passive dismissals first, and they never consume: a tooltip describes
+        // what is under the pointer, so the click it cancels must still reach
+        // it. Movement is *not* a dismissal — hover tracking already retires a
+        // tooltip when the pointer leaves its area, and dismissing on any motion
+        // would kill it on the first jitter.
+        for target in popovers where target.dismissal.contains(.anyClickPassively) {
+            dismiss(target)
+        }
+
+        let inside = hitTest(at: event.location).map { hit in
+            popovers.contains { $0.window === hit.window }
+        } ?? false
+        guard !inside else { return false }
+
+        if let target = popovers.first(where: {
+            $0.dismissal.contains(.outsideClick)
+        }) {
+            dismiss(target)
+            return true
+        }
+
+        return false
+    }
+
     // MARK: - Hover, cursor, and tooltips
 
     /// Recompute the hover state for the pointer's current position.
@@ -313,6 +400,7 @@ public final class WindowScene: ~Sendable {
             hoverBeganAtNanoseconds = event.timestampNanoseconds
             if toolTipShown {
                 toolTipShown = false
+                hideToolTip()
                 onToolTipChange?(nil, .zero)
             }
         }
@@ -361,7 +449,45 @@ public final class WindowScene: ~Sendable {
         guard now &- hoverBeganAtNanoseconds >= toolTipDelayNanoseconds else { return }
         guard let text = area.resolvedToolTip(), !text.isEmpty else { return }
         toolTipShown = true
-        onToolTipChange?(text, toolTipAnchor(for: area))
+        let anchor = toolTipAnchor(for: area)
+        showToolTip(text, at: anchor)
+        onToolTipChange?(text, anchor)
+    }
+
+    /// Whether the scene draws tooltips itself. A host that renders its own
+    /// tooltip chrome turns this off and works from `onToolTipChange`.
+    public var drawsToolTips = true
+
+    private var toolTipPopover: Popover?
+
+    private func showToolTip(_ text: String, at anchor: Rect) {
+        guard drawsToolTips else { return }
+        hideToolTip()
+
+        let label = Label(text)
+        label.font = .systemFont(ofSize: 12)
+        label.textColor = Color(0.94, 0.95, 0.98, 1)
+        label.frame = Rect(origin: .zero, size: label.intrinsicContentSize)
+
+        // A tooltip is dismissed by movement and nothing else: it is not
+        // focusable, it takes no clicks, and it must never sit between the
+        // pointer and the thing it describes.
+        let popover = Popover.withChrome(
+            content: label, anchor: anchor, preferring: .below,
+            dismissal: .anyClickPassively,
+            padding: EdgeInsets(top: 5, left: 8, bottom: 5, right: 8),
+            level: .criticalOverlay)
+        popover.window.participatesInHitTesting = false
+        // However it goes away — click, area change, or the host — the scene
+        // must stop holding a dismissed popover.
+        popover.onDismiss = { [weak self] in self?.toolTipPopover = nil }
+        toolTipPopover = popover
+        present(popover)
+    }
+
+    private func hideToolTip() {
+        if let existing = toolTipPopover { dismiss(existing) }
+        toolTipPopover = nil
     }
 
     /// The anchor a tooltip positions against: the tracked area in scene

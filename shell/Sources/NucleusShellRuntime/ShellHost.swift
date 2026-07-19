@@ -257,6 +257,17 @@ public final class ShellHost {
     private func onBarConfigured(width: Int32, height: Int32) {
         let scale = Double(client.outputs.values.first?.scale ?? 1)
         guard let surface = barSurface else { return }
+
+        // Popovers place themselves inside the display, so the scene needs the
+        // output's logical size. The bar's own configure is the first point at
+        // which it is known; a popover opened before this would resolve inside a
+        // zero rect.
+        if let output = client.outputs.values.first, output.logicalWidth > 0 {
+            inputScene?.displayBounds = Rect(
+                x: 0, y: 0,
+                width: Double(output.logicalWidth),
+                height: Double(output.logicalHeight))
+        }
         if let id = barOutputID {
             engine.resizeSurface(id, width: width, height: height, scale: scale)
         } else if let id = engine.addSurface(waylandSurface: surface.wlSurface,

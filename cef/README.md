@@ -49,6 +49,9 @@ upstream capture modes remain unchanged.
 Chromium/CEF patches live directly under `patches/`. Changes to Dawn live under
 `patches/dawn/` because Dawn is a separate gclient Git checkout. The build
 script applies and refreshes both stacks in their owning repositories.
+The NVIDIA VA-API driver's matching Vulkan disjoint-plane layout change lives
+under `patches/nvidia-vaapi-driver/`; it applies to the separately pinned
+driver checkout before that private module is built and installed.
 
 ## Version pinning
 
