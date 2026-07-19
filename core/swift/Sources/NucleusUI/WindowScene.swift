@@ -295,6 +295,21 @@ public final class WindowScene: ~Sendable {
     /// submenu, and dismissing the parent has to take the child with it.
     public private(set) var popovers: [Popover] = []
 
+    /// The palette every window in this scene paints under, unless a view
+    /// overrides it.
+    ///
+    /// Assigning retheme the whole scene: each root is notified, and any view
+    /// resolving `ColorSpec`s in `draw` repaints with the new colours without
+    /// being rebuilt.
+    public var palette: Palette = .dark {
+        didSet {
+            guard palette != oldValue else { return }
+            for window in windows {
+                window.root?.notifyEffectiveAppearanceChanged()
+            }
+        }
+    }
+
     /// The area popovers are placed within — the display, in scene coordinates.
     /// Set by the host once the output geometry is known.
     public var displayBounds: Rect = .zero {

@@ -61,19 +61,21 @@ public final class BatteryWidget: View {
         didSet { if showsPercentage != oldValue { applyLevel() } }
     }
 
-    /// Below this fraction the cell draws in `warningColor`.
+    /// Below this fraction the cell draws in `warningTint`.
     public var warningThreshold: Double = 0.2 {
         didSet { if warningThreshold != oldValue { setNeedsDisplay() } }
     }
 
-    public var tintColor: Color = Color(0.90, 0.93, 0.97, 1) {
-        didSet { if tintColor != oldValue { refreshColors() } }
+    /// Colours are stored as *intent* and resolved at paint time, so a retheme
+    /// repaints the widget without rebuilding it.
+    public var tint: ColorSpec = .role(.onSurface) {
+        didSet { if tint != oldValue { refreshColors() } }
     }
-    public var warningColor: Color = Color(0.95, 0.45, 0.40, 1) {
-        didSet { if warningColor != oldValue { setNeedsDisplay() } }
+    public var warningTint: ColorSpec = .role(.error) {
+        didSet { if warningTint != oldValue { setNeedsDisplay() } }
     }
-    public var chargingColor: Color = Color(0.45, 0.85, 0.55, 1) {
-        didSet { if chargingColor != oldValue { setNeedsDisplay() } }
+    public var chargingTint: ColorSpec = .role(.primary) {
+        didSet { if chargingTint != oldValue { setNeedsDisplay() } }
     }
 
     public let percentageLabel: Label
@@ -88,7 +90,6 @@ public final class BatteryWidget: View {
         percentageLabel = Label("")
         super.init()
         percentageLabel.font = .systemFont(ofSize: 11)
-        percentageLabel.textColor = tintColor
         accessibilityRole = .staticText
         setBody { percentageLabel }
         // The tooltip is a provider rather than a string: it must describe the
@@ -128,9 +129,17 @@ public final class BatteryWidget: View {
         setNeedsDisplay()
     }
 
+    /// The label's colour is derived, so it is re-resolved here as well as on
+    /// every retheme — which is exactly the case
+    /// `viewDidChangeEffectiveAppearance` exists for.
     private func refreshColors() {
-        percentageLabel.textColor = tintColor
+        percentageLabel.textColor = resolve(tint)
         setNeedsDisplay()
+    }
+
+    public override func viewDidChangeEffectiveAppearance() {
+        refreshColors()
+        super.viewDidChangeEffectiveAppearance()
     }
 
     /// Spoken description, and the tooltip text. A drawn cell says nothing to an
@@ -190,7 +199,7 @@ public final class BatteryWidget: View {
             backing.addRoundedRect(
                 Rect(x: -4, y: 0, width: bounds.size.width + 8, height: bounds.size.height),
                 radius: 4)
-            context.fillColor = tintColor.opacity(0.12)
+            context.fillColor = resolve(.role(.hover))
             context.fill(backing)
         }
 
@@ -206,7 +215,7 @@ public final class BatteryWidget: View {
             Rect(x: 0.5, y: top + 0.5,
                  width: body.size.width - 1, height: body.size.height - 1),
             radius: 2.5)
-        context.strokeColor = tintColor.opacity(0.75)
+        context.strokeColor = resolve(tint.opacity(0.75))
         context.lineWidth = 1
         context.stroke(outline)
 
@@ -219,7 +228,7 @@ public final class BatteryWidget: View {
                 width: BatteryWidget.terminalWidth,
                 height: BatteryWidget.terminalHeight),
             radius: 1)
-        context.fillColor = tintColor.opacity(0.75)
+        context.fillColor = resolve(tint.opacity(0.75))
         context.fill(terminal)
 
         if let charge = chargeFillRect() {
@@ -253,8 +262,8 @@ public final class BatteryWidget: View {
     }
 
     private var fillColor: Color {
-        if level.isCharging { return chargingColor }
-        return level.fraction <= warningThreshold ? warningColor : tintColor
+        if level.isCharging { return resolve(chargingTint) }
+        return resolve(level.fraction <= warningThreshold ? warningTint : tint)
     }
 
     /// A bolt over the cell while charging, so the state reads without relying
@@ -274,8 +283,10 @@ public final class BatteryWidget: View {
         bolt.addLine(to: Point(x: midX, y: midY - height * 0.15))
         bolt.close()
 
-        // Drawn in the background colour so it reads as cut out of the fill.
-        context.fillColor = Color(0.05, 0.06, 0.09, 1)
+        // Drawn in the surface colour so it reads as cut out of the fill —
+        // which means it follows a retheme rather than staying near-black on a
+        // light palette.
+        context.fillColor = resolve(.role(.surface))
         context.fill(bolt)
     }
 }

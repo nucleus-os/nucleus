@@ -156,6 +156,31 @@ import NucleusTypes
         #expect(area.resolvedToolTip() == "Battery 20%, charging")
     }
 
+    // MARK: - Theming
+
+    /// The widget stores colour intent and resolves it at paint time, so a
+    /// retheme repaints it without rebuilding it. This is the property the
+    /// palette model exists for.
+    @Test func rethemingChangesWhatTheWidgetPaints() {
+        let widget = makeWidget(BatteryLevel(fraction: 0.5))
+        widget.palette = .dark
+        let dark = widget.percentageLabel.textColor
+
+        widget.palette = .light
+        #expect(widget.percentageLabel.textColor != dark)
+        #expect(widget.needsDisplay, "and it repaints")
+    }
+
+    /// A widget on a light palette must not draw its charging bolt in a
+    /// near-black that was picked for a dark one.
+    @Test func derivedColoursFollowThePalette() {
+        let widget = makeWidget(BatteryLevel(fraction: 0.5))
+        widget.palette = .light
+        #expect(widget.resolve(.role(.surface)) == Palette.light.surface)
+        #expect(widget.percentageLabel.textColor
+                == widget.resolve(.role(.onSurface)))
+    }
+
     // MARK: - The panel
 
     /// The widget reports its click rather than presenting anything: it has no

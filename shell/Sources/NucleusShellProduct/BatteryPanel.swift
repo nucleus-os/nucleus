@@ -22,16 +22,22 @@ public final class BatteryPanel: View {
         super.init()
 
         headline.font = .systemFont(ofSize: 15)
-        headline.textColor = Color(0.94, 0.95, 0.98, 1)
+        headline.textColor = resolve(.role(.onSurface))
         detail.font = .systemFont(ofSize: 12)
         // Dimmer than the headline: it is context, not the answer.
-        detail.textColor = Color(0.94, 0.95, 0.98, 0.65)
+        detail.textColor = resolve(.role(.onSurfaceVariant))
 
         setBody {
             headline
             detail
         }
         apply()
+    }
+
+    public override func viewDidChangeEffectiveAppearance() {
+        headline.textColor = resolve(.role(.onSurface))
+        detail.textColor = resolve(.role(.onSurfaceVariant))
+        super.viewDidChangeEffectiveAppearance()
     }
 
     public func update(_ level: BatteryLevel) {

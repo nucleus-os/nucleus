@@ -71,23 +71,43 @@ public enum SemanticColor: Sendable, Equatable {
     case accent
     case accentLabel
 
-    public func resolve(in appearance: Appearance) -> Color {
-        switch (self, appearance) {
-        case (.label, .dark):            Color(1.0, 1.0, 1.0, 0.92)
-        case (.secondaryLabel, .dark):   Color(0.90, 0.93, 0.96, 0.70)
-        case (.tertiaryLabel, .dark):    Color(1.0, 1.0, 1.0, 0.52)
-        case (.quaternaryLabel, .dark):  Color(1.0, 1.0, 1.0, 0.14)
-        case (.separator, .dark):        Color(1.0, 1.0, 1.0, 0.14)
-        case (.accent, .dark):           Color(0.44, 0.96, 0.82, 0.82)
-        case (.accentLabel, .dark):      Color(0.72, 0.84, 1.0, 0.96)
-        case (.label, .light):           Color(0.05, 0.05, 0.08, 0.92)
-        case (.secondaryLabel, .light):  Color(0.10, 0.10, 0.15, 0.70)
-        case (.tertiaryLabel, .light):   Color(0.05, 0.05, 0.08, 0.52)
-        case (.quaternaryLabel, .light): Color(0.05, 0.05, 0.08, 0.14)
-        case (.separator, .light):       Color(0.05, 0.05, 0.08, 0.14)
-        case (.accent, .light):          Color(0.18, 0.55, 0.45, 0.95)
-        case (.accentLabel, .light):     Color(0.20, 0.40, 0.85, 0.96)
+    /// The role and alpha this semantic colour stands for.
+    ///
+    /// `SemanticColor` is AppKit's vocabulary and stays, but it is now a *view*
+    /// onto the palette rather than a parallel colour system: a themed palette
+    /// retints every existing `SemanticColor` call site for free, and the two
+    /// can no longer drift apart.
+    ///
+    /// The label ramp is `onSurface` at descending alpha, which is what the
+    /// hardcoded values already were — 0.92, 0.70, 0.52, 0.14 — expressed as
+    /// intent rather than as constants.
+    public var spec: ColorSpec {
+        switch self {
+        case .label:            return .role(.onSurface)
+        case .secondaryLabel:   return .role(.onSurfaceVariant)
+        case .tertiaryLabel:    return ColorSpec(role: .onSurface, alpha: 0.56)
+        case .quaternaryLabel:  return ColorSpec(role: .onSurface, alpha: 0.15)
+        case .separator:        return .role(.outline)
+        // Full strength, deliberately. The old values were 0.82 in dark and
+        // 0.95 in light — one multiplier cannot serve both, and an accent's
+        // strength is the theme's business rather than a constant here. A
+        // palette wanting a muted accent gives `primary` that alpha.
+        case .accent:           return .role(.primary)
+        case .accentLabel:      return .role(.secondary)
         }
+    }
+
+    public func resolve(in palette: Palette) -> Color {
+        spec.resolve(in: palette)
+    }
+
+    /// Resolve against an appearance's standard palette.
+    ///
+    /// Kept so call sites that only know a light/dark appearance still work, but
+    /// it cannot see a themed palette — prefer `View.resolve(_:)`, which
+    /// resolves against the palette the view actually paints under.
+    public func resolve(in appearance: Appearance) -> Color {
+        spec.resolve(in: Palette.standard(for: appearance))
     }
 }
 

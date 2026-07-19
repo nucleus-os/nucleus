@@ -473,7 +473,63 @@ open class View: Responder, Accessible, ~Sendable {
     /// Per-view appearance override. `nil` (the default) means inherit from
     /// the nearest ancestor that specifies one, falling back to
     /// `Appearance.systemDefault`. Mirrors `NSView.appearance`.
-    public var appearance: Appearance?
+    public var appearance: Appearance? {
+        didSet {
+            guard appearance != oldValue else { return }
+            notifyEffectiveAppearanceChanged()
+        }
+    }
+
+    /// Per-view palette override. `nil` inherits from the nearest ancestor that
+    /// specifies one, then from the scene, then from the appearance's standard
+    /// palette.
+    ///
+    /// Scoped rather than global. The reference keeps one process-wide palette
+    /// and a global signal; scoping it means a preview swatch, or a surface that
+    /// must stay legible against arbitrary wallpaper, can differ without
+    /// pretending the whole shell retheme.
+    public var palette: Palette? {
+        didSet {
+            guard palette != oldValue else { return }
+            notifyEffectiveAppearanceChanged()
+        }
+    }
+
+    /// The palette this view paints under.
+    public var effectivePalette: Palette {
+        var current: View? = self
+        while let view = current {
+            if let palette = view.palette { return palette }
+            current = view.parentView
+        }
+        if let scenePalette = parentWindow?.windowScene?.palette { return scenePalette }
+        return Palette.standard(for: effectiveAppearance)
+    }
+
+    /// Resolve a spec against this view's palette. The call every `draw`
+    /// makes — a view stores intent and resolves at paint time, which is what
+    /// lets a retheme change the picture without touching the tree.
+    public func resolve(_ spec: ColorSpec) -> Color {
+        spec.resolve(in: effectivePalette)
+    }
+
+    /// Called when the appearance or palette this view paints under changes.
+    ///
+    /// Mirrors `NSView.viewDidChangeEffectiveAppearance`. Overriding is for
+    /// views holding *derived* state — a resolved colour cached on a sublayer.
+    /// A view that resolves its specs in `draw` needs only the default repaint.
+    open func viewDidChangeEffectiveAppearance() {
+        setNeedsDisplay()
+    }
+
+    /// Notify this view and its subtree. Stops at any descendant that overrides
+    /// the changed value, since nothing below it is affected.
+    func notifyEffectiveAppearanceChanged() {
+        viewDidChangeEffectiveAppearance()
+        for child in childViews where child.palette == nil && child.appearance == nil {
+            child.notifyEffectiveAppearanceChanged()
+        }
+    }
 
     /// The appearance this view actually paints under. Walks the parent
     /// chain to the nearest non-nil `appearance`, falling back to

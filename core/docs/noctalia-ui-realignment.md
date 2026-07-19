@@ -141,9 +141,34 @@ throughput figure updates while it is open. Ours computes once at display time.
 
 Sequenced so nothing is built against a model that is about to change.
 
-**Phase 6 — The palette and the theming model.** Roles, `ColorSpec`, a palette that can be
-replaced at runtime, and the invalidation path that repaints a tree when it is. `SemanticColor`
-resolves through it rather than beside it. Everything visual afterwards is authored against roles.
+**Phase 6 — The palette and the theming model — complete.** Sixteen `ColorRole`s under the
+reference's own tokens, a `Palette` of sixteen colours, and `ColorSpec` — role-or-literal with an
+alpha multiplier. `View.resolve(_:)` resolves against `effectivePalette`.
+
+The palette is **scoped, not global.** It inherits view → ancestors → scene → the appearance's
+standard palette, mirroring how `appearance` already worked. The reference keeps one process-wide
+palette and one global signal; scoping means a preview swatch or a surface that must stay legible
+over arbitrary wallpaper can differ without pretending the whole shell rethemed.
+
+`viewDidChangeEffectiveAppearance` is the repaint path, and the walk **stops at any descendant that
+overrides** the changed value — nothing below it paints differently, so repainting it would be
+waste. This also fixed a latent bug of the same family: assigning `appearance` previously
+invalidated nothing at all.
+
+`SemanticColor` survives as a *view onto* the palette rather than a parallel system, so every
+existing call site retints for free and the two cannot drift. The label ramp turned out to be one
+role at descending alpha — 0.92, 0.70, 0.52, 0.14 — which is now expressed as intent rather than as
+constants. Two mappings could not round-trip: `accent` was 0.82 alpha in dark and 0.95 in light, and
+one multiplier cannot serve both, so accents resolve at full role strength and a palette wanting a
+muted accent gives `primary` that alpha.
+
+`Color.lerp` is exact at its endpoints. `a + (b - a) * 1` is not `b` in binary floating point, and a
+finished cross-fade landing a rounding error from its target palette would never compare equal to
+it.
+
+The battery widget and its panel are migrated, and are the proof: 19 core tests plus two in the
+shell assert that a retheme changes what they paint without rebuilding them. Its charging bolt was
+drawing in a hardcoded near-black chosen for a dark palette, and now follows `surface`.
 
 **Phase 7 — Focus traversal.** Tab order, focus keys stable across rebuilds, subtree exclusion,
 directional and roving list navigation. Lands before the control kit, because a control that cannot
