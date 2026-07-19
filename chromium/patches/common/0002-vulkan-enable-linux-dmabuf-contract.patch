@@ -1,5 +1,6 @@
 Subject: [PATCH] Enable the Linux Vulkan DMA-BUF contract
 
+# Shared Chromium Vulkan/DMA-BUF patch.
 diff --git a/third_party/angle/src/libANGLE/renderer/vulkan/vk_renderer.cpp b/third_party/angle/src/libANGLE/renderer/vulkan/vk_renderer.cpp
 index 5067f32..957b47f 100644
 --- a/third_party/angle/src/libANGLE/renderer/vulkan/vk_renderer.cpp

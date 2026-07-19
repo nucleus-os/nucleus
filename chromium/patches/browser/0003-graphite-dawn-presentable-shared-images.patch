@@ -1,0 +1,160 @@
+diff --git a/gpu/command_buffer/service/BUILD.gn b/gpu/command_buffer/service/BUILD.gn
+index 6ae0b6d..dff8cb9 100644
+--- a/gpu/command_buffer/service/BUILD.gn
++++ b/gpu/command_buffer/service/BUILD.gn
+@@ -557,7 +557,7 @@ target(link_target_type, "gles2_sources") {
+     ]
+     deps += [ "//third_party/dawn/src/dawn:cpp" ]
+ 
+-    if (is_chromeos) {
++    if (is_chromeos || is_linux) {
+       sources += [
+         "drm_modifiers_filter_dawn.cc",
+         "drm_modifiers_filter_dawn.h",
+diff --git a/gpu/command_buffer/service/drm_modifiers_filter_dawn.cc b/gpu/command_buffer/service/drm_modifiers_filter_dawn.cc
+index f51ce10216..d41b338a5f 100644
+--- a/gpu/command_buffer/service/drm_modifiers_filter_dawn.cc
++++ b/gpu/command_buffer/service/drm_modifiers_filter_dawn.cc
+@@ -6,7 +6,6 @@
+ 
+ #include <algorithm>
+ 
+-#include "base/check.h"
+ #include "base/containers/fixed_flat_set.h"
+ #include "base/containers/flat_map.h"
+ #include "components/viz/common/resources/shared_image_format_utils.h"
+@@ -91,7 +90,6 @@ DrmModifiersFilterDawn::~DrmModifiersFilterDawn() = default;
+     viz::SharedImageFormat format,
+     const std::vector<uint64_t>& modifiers) {
+-  CHECK(viz::HasEquivalentBufferFormat(format));
+   const auto& modifier_set = modifier_map_.at(format);
+ 
+   std::vector<uint64_t> intersection;
+   for (const auto& modifier : modifiers) {
+diff --git a/gpu/command_buffer/service/shared_image/ozone_image_backing_factory.cc b/gpu/command_buffer/service/shared_image/ozone_image_backing_factory.cc
+index dfa3858..36886fc 100644
+--- a/gpu/command_buffer/service/shared_image/ozone_image_backing_factory.cc
++++ b/gpu/command_buffer/service/shared_image/ozone_image_backing_factory.cc
+@@ -140,8 +140,10 @@ OzoneImageBackingFactory::CreateSharedImageInternal(
+   scoped_refptr<gfx::NativePixmap> pixmap = surface_factory->CreateNativePixmap(
+       surface_handle, device_queue, size, format,
+       buffer_usage.value_or(GetBufferUsage(si_info.usage)));
+-  // Fallback to GPU_READ if cannot create pixmap with SCANOUT
+-  if (!pixmap) {
++  // A scanout SharedImage must remain presentable. Reallocating it as GPU_READ
++  // would defer the failure until overlay scheduling and silently break the
++  // zero-copy buffer contract.
++  if (!pixmap && !si_info.usage.Has(SHARED_IMAGE_USAGE_SCANOUT)) {
+     pixmap = surface_factory->CreateNativePixmap(
+         surface_handle, device_queue, size, format, gfx::BufferUsage::GPU_READ);
+   }
+@@ -257,8 +259,10 @@ bool OzoneImageBackingFactory::IsSupported(
+       SHARED_IMAGE_USAGE_DISPLAY_READ | SHARED_IMAGE_USAGE_DISPLAY_WRITE);
+   bool used_by_vulkan =
+       used_by_skia && gr_context_type == GrContextType::kVulkan;
+-  bool used_by_webgpu = usage.HasAny(SHARED_IMAGE_USAGE_WEBGPU_READ |
+-                                     SHARED_IMAGE_USAGE_WEBGPU_WRITE);
++  bool used_by_webgpu =
++      usage.HasAny(SHARED_IMAGE_USAGE_WEBGPU_READ |
++                   SHARED_IMAGE_USAGE_WEBGPU_WRITE) ||
++      (used_by_skia && gr_context_type == GrContextType::kGraphiteDawn);
+   bool used_by_gl = (HasGLES2ReadOrWriteUsage(usage)) ||
+                     (used_by_skia && gr_context_type == GrContextType::kGL);
+   if (used_by_vulkan && !CanImportNativePixmapToVulkan()) {
+@@ -369,33 +373,28 @@ bool OzoneImageBackingFactory::CanVulkanSynchronizeGpuFence() {
+ }
+ 
+ bool OzoneImageBackingFactory::CanImportNativePixmapToWebGPU() {
+-#if BUILDFLAG(IS_CHROMEOS)
+-  // Safe to always return true here, as it's not possible to create a WebGPU
+-  // adapter that doesn't support importing native pixmaps:
+-  // https://source.chromium.org/chromium/chromium/src/+/main:gpu/command_buffer/service/webgpu_decoder_impl.cc;drc=daed597d580d450d36578c0cc53b4f72d3b507da;l=1291
+-  // TODO(crbug.com/40855765): To check it without vk_context_provider.
++#if BUILDFLAG(IS_LINUX)
++  auto* dawn_context = shared_context_state_->dawn_context_provider();
++  return dawn_context &&
++         dawn_context->backend_type() == wgpu::BackendType::Vulkan &&
++         dawn_context->SupportsFeature(
++             wgpu::FeatureName::SharedTextureMemoryDmaBuf);
++#elif BUILDFLAG(IS_CHROMEOS)
+   return true;
+ #else
+-  // Disable all WebGPU ozone usage for non-Chromeos Ozone (Fuchsia, Linux).
+-  // WebGPU on non-ChromeOS will now go through the ExternalVkImageBacking. Long
+-  // term we will return to using the ozone backing on devices that have sync
+-  // fences.
+-  // TODO(crbug.com/330385376): Support dynamic switching of fence types in
+-  // dawn and runtime extension testing.
+-  // This testing in runtime can be done where graphite is enabled by checking
+-  // against features in the 'dawn_context_provider' in the
+-  // 'shared_context_state_'.
+   return false;
+ #endif
+ }
+ 
+ bool OzoneImageBackingFactory::CanWebGPUSynchronizeGpuFence() {
+-#if BUILDFLAG(IS_CHROMEOS)
+-  // Dawn always use sync files on ChromeOS so it's safe to unconditionally
+-  // return true here.
++#if BUILDFLAG(IS_LINUX)
++  auto* dawn_context = shared_context_state_->dawn_context_provider();
++  return dawn_context &&
++         dawn_context->backend_type() == wgpu::BackendType::Vulkan &&
++         dawn_context->SupportsFeature(wgpu::FeatureName::SharedFenceSyncFD);
++#elif BUILDFLAG(IS_CHROMEOS)
+   return true;
+ #else
+-  // TODO: somehow check if Dawn is using sync files.
+   return false;
+ #endif
+ }
+diff --git a/gpu/ipc/service/gpu_init.cc b/gpu/ipc/service/gpu_init.cc
+index 7f10f54..797a45e 100644
+--- a/gpu/ipc/service/gpu_init.cc
++++ b/gpu/ipc/service/gpu_init.cc
+@@ -107,7 +107,7 @@
+ #include "third_party/dawn/include/dawn/webgpu_cpp.h"  // nogncheck
+ #endif
+ 
+-#if BUILDFLAG(SKIA_USE_DAWN) && BUILDFLAG(IS_CHROMEOS)
++#if BUILDFLAG(SKIA_USE_DAWN) && (BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_LINUX))
+ #include "gpu/command_buffer/service/drm_modifiers_filter_dawn.h"
+ #endif
+ 
+@@ -972,11 +972,19 @@ bool GpuInit::InitializeAndStartSandbox(base::CommandLine* command_line,
+   [[maybe_unused]] auto* factory =
+       ui::OzonePlatform::GetInstance()->GetSurfaceFactoryOzone();
+   bool filter_set = false;
++#if BUILDFLAG(SKIA_USE_DAWN) && (BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_LINUX))
++  if (dawn_context_provider_ &&
++      gpu_preferences_.gr_context_type == GrContextType::kGraphiteDawn &&
++      factory->SupportsDrmModifiersFilter()) {
++    factory->SetDrmModifiersFilter(std::make_unique<DrmModifiersFilterDawn>(
++        dawn_context_provider_->GetDevice().GetAdapter()));
++    filter_set = true;
++  }
++#endif
+ #if BUILDFLAG(ENABLE_VULKAN)
+   if (gpu_feature_info_.status_values[GPU_FEATURE_TYPE_VULKAN] ==
+           kGpuFeatureStatusEnabled &&
+-      factory->SupportsDrmModifiersFilter()) {
+-    CHECK(!filter_set);
++      factory->SupportsDrmModifiersFilter() && !filter_set) {
+     DCHECK(vulkan_implementation_ &&
+            vulkan_implementation_->GetVulkanInstance() &&
+            vulkan_implementation_->GetVulkanInstance()->vk_instance() !=
+@@ -986,14 +994,6 @@ bool GpuInit::InitializeAndStartSandbox(base::CommandLine* command_line,
+     filter_set = true;
+   }
+ #endif  // BUILDFLAG(ENABLE_VULKAN)
+-#if BUILDFLAG(SKIA_USE_DAWN) && BUILDFLAG(IS_CHROMEOS)
+-  if (dawn_context_provider_ && factory->SupportsDrmModifiersFilter()) {
+-    CHECK(!filter_set);
+-    factory->SetDrmModifiersFilter(std::make_unique<DrmModifiersFilterDawn>(
+-        dawn_context_provider_->GetDevice().GetAdapter()));
+-    filter_set = true;
+-  }
+-#endif  // BUILDFLAG(SKIA_USE_DAWN) && BUILDFLAG(IS_CHROMEOS)
+ #endif  // BUILDFLAG(IS_OZONE)
+ 
+   RecordUMA();

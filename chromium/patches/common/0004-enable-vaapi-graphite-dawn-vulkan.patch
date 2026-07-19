@@ -1,3 +1,4 @@
+# Shared Chromium Graphite/Dawn/Vulkan media patch.
 diff --git a/media/mojo/services/gpu_mojo_media_client_linux.cc b/media/mojo/services/gpu_mojo_media_client_linux.cc
 index 1ef7f513cd883..d552fc018adcd 100644
 --- a/media/mojo/services/gpu_mojo_media_client_linux.cc

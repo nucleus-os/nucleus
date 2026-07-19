@@ -1,0 +1,2078 @@
+diff --git a/ui/ozone/BUILD.gn b/ui/ozone/BUILD.gn
+index 0bd2b4e..5aa6f97 100644
+--- a/ui/ozone/BUILD.gn
++++ b/ui/ozone/BUILD.gn
+@@ -98,6 +98,8 @@ component("ozone_base") {
+     "public/overlay_surface.h",
+     "public/overlay_surface_candidate.cc",
+     "public/overlay_surface_candidate.h",
++    "public/ozone_presenter.cc",
++    "public/ozone_presenter.h",
+     "public/platform_clipboard.h",
+     "public/platform_gl_egl_utility.cc",
+     "public/platform_gl_egl_utility.h",
+diff --git a/ui/ozone/platform/wayland/BUILD.gn b/ui/ozone/platform/wayland/BUILD.gn
+index 8e2d305..655fcd5 100644
+--- a/ui/ozone/platform/wayland/BUILD.gn
++++ b/ui/ozone/platform/wayland/BUILD.gn
+@@ -342,6 +342,8 @@ source_set("wayland") {
+       "gpu/gbm_pixmap_wayland.h",
+       "gpu/gbm_surfaceless_wayland.cc",
+       "gpu/gbm_surfaceless_wayland.h",
++      "gpu/wayland_buffer_queue_presenter.cc",
++      "gpu/wayland_buffer_queue_presenter.h",
+     ]
+ 
+     deps += [
+diff --git a/ui/ozone/platform/wayland/gpu/gbm_pixmap_wayland.cc b/ui/ozone/platform/wayland/gpu/gbm_pixmap_wayland.cc
+index 0f6c17b..137f373 100644
+--- a/ui/ozone/platform/wayland/gpu/gbm_pixmap_wayland.cc
++++ b/ui/ozone/platform/wayland/gpu/gbm_pixmap_wayland.cc
+@@ -23,8 +23,8 @@
+ #include "ui/gfx/linux/gbm_device.h"
+ #include "ui/gfx/linux/gbm_util.h"
+ #include "ui/gfx/native_pixmap_handle.h"
+-#include "ui/ozone/platform/wayland/gpu/gbm_surfaceless_wayland.h"
+ #include "ui/ozone/platform/wayland/gpu/wayland_buffer_manager_gpu.h"
++#include "ui/ozone/platform/wayland/gpu/wayland_buffer_queue_presenter.h"
+ #include "ui/ozone/public/native_pixmap_usage_utils.h"
+ #include "ui/ozone/public/ozone_platform.h"
+ 
+@@ -201,17 +201,16 @@ bool GbmPixmapWayland::ScheduleOverlayPlane(
+   auto* surface = buffer_manager_->GetSurface(widget);
+   // This must never be hit.
+   DCHECK(surface);
+-  GbmSurfacelessWayland* surfaceless =
+-      static_cast<GbmSurfacelessWayland*>(surface);
+-  DCHECK(surfaceless);
++  auto* presenter = static_cast<WaylandBufferQueuePresenter*>(surface);
++  DCHECK(presenter);
+ 
+   DCHECK(acquire_fences.empty() || acquire_fences.size() == 1u);
+-  surfaceless->QueueWaylandOverlayConfig(
++  presenter->QueueWaylandOverlayConfig(
+       {overlay_plane_data,
+        acquire_fences.empty()
+            ? nullptr
+            : std::make_unique<gfx::GpuFence>(std::move(acquire_fences[0])),
+-       buffer_id_, surfaceless->surface_scale_factor()});
++       buffer_id_, presenter->surface_scale_factor()});
+   return true;
+ }
+ 
+diff --git a/ui/ozone/platform/wayland/gpu/gbm_surfaceless_wayland.cc b/ui/ozone/platform/wayland/gpu/gbm_surfaceless_wayland.cc
+index b234334..efc3f6c 100644
+--- a/ui/ozone/platform/wayland/gpu/gbm_surfaceless_wayland.cc
++++ b/ui/ozone/platform/wayland/gpu/gbm_surfaceless_wayland.cc
+@@ -4,236 +4,51 @@
+ 
+ #include "ui/ozone/platform/wayland/gpu/gbm_surfaceless_wayland.h"
+ 
+-#include <algorithm>
+-#include <cmath>
+-#include <cstdint>
+ #include <memory>
+ #include <utility>
+ 
+-#include "base/check.h"
+-#include "base/functional/bind.h"
+-#include "base/task/thread_pool.h"
+-#include "base/trace_event/trace_event.h"
+-#include "base/trace_event/typed_macros.h"
+-#include "ui/gfx/gpu_fence.h"
+-#include "ui/gfx/gpu_fence_handle.h"
+-#include "ui/gfx/swap_result.h"
+ #include "ui/gl/gl_bindings.h"
+-#include "ui/gl/gl_display.h"
+-#include "ui/ozone/common/egl_util.h"
+ #include "ui/ozone/platform/wayland/gpu/wayland_buffer_manager_gpu.h"
+-#include "ui/ozone/platform/wayland/mojom/wayland_overlay_config.mojom.h"
++#include "ui/ozone/platform/wayland/gpu/wayland_buffer_queue_presenter.h"
+ 
+ namespace ui {
+ 
+-namespace {
+-
+-// A test run showed only 9 inflight solid color buffers at the same time. Thus,
+-// allow to store max 12 buffers (including some margin) of solid color buffers
+-// and remove the rest.
+-static constexpr size_t kMaxSolidColorBuffers = 12;
+-
+-void WaitForGpuFences(std::vector<std::unique_ptr<gfx::GpuFence>> fences) {
+-  for (auto& fence : fences)
+-    fence->Wait();
+-}
+-
+-}  // namespace
+-
+-GbmSurfacelessWayland::SolidColorBufferHolder::SolidColorBufferHolder() =
+-    default;
+-GbmSurfacelessWayland::SolidColorBufferHolder::~SolidColorBufferHolder() =
+-    default;
+-
+-BufferId
+-GbmSurfacelessWayland::SolidColorBufferHolder::GetOrCreateSolidColorBuffer(
+-    SkColor4f color,
+-    WaylandBufferManagerGpu* buffer_manager) {
+-  BufferId next_buffer_id = 0;
+-
+-  // First try for an existing buffer.
+-  auto it = std::ranges::find(available_solid_color_buffers_, color,
+-                              &SolidColorBuffer::color);
+-  if (it != available_solid_color_buffers_.end()) {
+-    // This is a prefect color match so use this directly.
+-    next_buffer_id = it->buffer_id;
+-    inflight_solid_color_buffers_.emplace_back(std::move(*it));
+-    available_solid_color_buffers_.erase(it);
+-  } else {
+-    // Worst case allocate a new buffer. This definitely will occur on
+-    // startup.
+-    next_buffer_id = buffer_manager->AllocateBufferID();
+-    // Create wl_buffer on the browser side.
+-    CHECK(buffer_manager->supports_single_pixel_buffer());
+-    buffer_manager->CreateSinglePixelBuffer(color, next_buffer_id);
+-
+-    // Allocate a backing structure that will be used to figure out if such
+-    // buffer has already existed.
+-    inflight_solid_color_buffers_.emplace_back(
+-        SolidColorBuffer(color, next_buffer_id));
+-  }
+-  DCHECK_GT(next_buffer_id, 0u);
+-  return next_buffer_id;
+-}
+-
+-void GbmSurfacelessWayland::SolidColorBufferHolder::OnSubmission(
+-    BufferId buffer_id,
+-    WaylandBufferManagerGpu* buffer_manager) {
+-  // Solid color buffers do not require on submission as skia doesn't track
+-  // them. Instead, they are tracked by GbmSurfacelessWayland. In the future,
+-  // when SharedImageFactory allows to create non-backed shared images, this
+-  // should be removed from here.
+-  auto it = std::ranges::find(inflight_solid_color_buffers_, buffer_id,
+-                              &SolidColorBuffer::buffer_id);
+-  if (it != inflight_solid_color_buffers_.end()) {
+-    available_solid_color_buffers_.emplace_back(std::move(*it));
+-    inflight_solid_color_buffers_.erase(it);
+-    // Keep track of the number of created buffers and erase the least used
+-    // ones until the maximum number of available solid color buffer.
+-    while (available_solid_color_buffers_.size() > kMaxSolidColorBuffers) {
+-      buffer_manager->DestroyBuffer(
+-          available_solid_color_buffers_.begin()->buffer_id);
+-      available_solid_color_buffers_.erase(
+-          available_solid_color_buffers_.begin());
+-    }
+-  }
+-}
+-
+-void GbmSurfacelessWayland::SolidColorBufferHolder::EraseBuffers(
+-    WaylandBufferManagerGpu* buffer_manager) {
+-  for (const auto& buffer : available_solid_color_buffers_)
+-    buffer_manager->DestroyBuffer(buffer.buffer_id);
+-  available_solid_color_buffers_.clear();
+-}
+-
+ GbmSurfacelessWayland::GbmSurfacelessWayland(
+-    gl::GLDisplayEGL* display,
++    gl::GLDisplayEGL* /*display*/,
+     WaylandBufferManagerGpu* buffer_manager,
+     gfx::AcceleratedWidget widget)
+     : buffer_manager_(buffer_manager),
+-      widget_(widget),
+-      solid_color_buffers_holder_(std::make_unique<SolidColorBufferHolder>()),
+-      display_(display),
+-      weak_factory_(this) {
+-  buffer_manager_->RegisterSurface(widget_, this);
+-  unsubmitted_frames_.push_back(
+-      std::make_unique<PendingFrame>(next_frame_id()));
+-}
++      presenter_(std::make_unique<WaylandBufferQueuePresenter>(buffer_manager,
++                                                               widget)) {}
+ 
+-void GbmSurfacelessWayland::QueueWaylandOverlayConfig(
+-    wl::WaylandOverlayConfig config) {
+-  auto* frame = unsubmitted_frames_.back().get();
+-  DCHECK(frame);
+-  TRACE_EVENT("wayland", "GbmSurfacelessWayland::QueueWaylandOverlayConfig",
+-              "frame_id", frame->frame_id, "buffer_id", config.buffer_id);
+-  frame->configs.emplace_back(std::move(config));
+-}
++GbmSurfacelessWayland::~GbmSurfacelessWayland() = default;
+ 
+ bool GbmSurfacelessWayland::ScheduleOverlayPlane(
+     gl::OverlayImage image,
+     std::unique_ptr<gfx::GpuFence> gpu_fence,
+     const gfx::OverlayPlaneData& overlay_plane_data) {
+-  auto* frame = unsubmitted_frames_.back().get();
+-  // There are multiple scheduling submissions for the same frame. If the
+-  // previous schedule failed, there is no reason to continue.
+-  if (!frame->schedule_planes_succeeded)
+-    return false;
+-
+-  // Solid color overlays are non-backed. Thus, queue them directly.
+-  // TODO(msisov): reconsider this once Linux Wayland compositors also support
+-  // creation of non-backed solid color wl_buffers.
+-  if (!image) {
+-    // Only solid color overlays can be non-backed.
+-    if (!overlay_plane_data.is_solid_color) {
+-      LOG(ERROR) << "Missing buffer for overlay that is not solid color.";
+-      frame->schedule_planes_succeeded = false;
+-      return false;
+-    }
+-    DCHECK(!gpu_fence);
+-
+-    BufferId buf_id = solid_color_buffers_holder_->GetOrCreateSolidColorBuffer(
+-        overlay_plane_data.color.value(), buffer_manager_);
+-    // Invalid buffer id.
+-    if (buf_id == 0) {
+-      frame->schedule_planes_succeeded = false;
+-      return false;
+-    }
+-    frame->in_flight_color_buffers.push_back(buf_id);
+-    QueueWaylandOverlayConfig(
+-        {overlay_plane_data, nullptr, buf_id, surface_scale_factor()});
+-  } else {
+-    std::vector<gfx::GpuFence> acquire_fences;
+-    if (gpu_fence &&
+-        (buffer_manager_->supports_acquire_fence() || use_egl_fence_sync_)) {
+-      acquire_fences.push_back(std::move(*gpu_fence));
+-    }
+-
+-    frame->schedule_planes_succeeded = image->ScheduleOverlayPlane(
+-        widget_, overlay_plane_data, std::move(acquire_fences), {});
+-  }
+-  return frame->schedule_planes_succeeded;
++  return presenter_->ScheduleOverlayPlane(
++      std::move(image), std::move(gpu_fence), overlay_plane_data);
+ }
++
+ void GbmSurfacelessWayland::Present(SwapCompletionCallback completion_callback,
+                                     PresentationCallback presentation_callback,
+                                     gfx::FrameData data) {
+-  TRACE_EVENT0("wayland", "GbmSurfacelessWayland::Present");
+-  // If last swap failed, don't try to schedule new ones.
+-  if (!last_swap_buffers_result_) {
+-    std::move(completion_callback)
+-        .Run(gfx::SwapCompletionResult(gfx::SwapResult::SWAP_FAILED));
+-    // Notify the caller, the buffer is never presented on a screen.
+-    std::move(presentation_callback).Run(gfx::PresentationFeedback::Failure());
+-    return;
+-  }
+-
+   if (!no_gl_flush_for_tests_ && !buffer_manager_->supports_acquire_fence()) {
+     glFlush();
+   }
+-
+-  PendingFrame* frame = unsubmitted_frames_.back().get();
+-  frame->completion_callback = std::move(completion_callback);
+-  frame->presentation_callback = std::move(presentation_callback);
+-  frame->data = data;
+-
+-  unsubmitted_frames_.push_back(
+-      std::make_unique<PendingFrame>(next_frame_id()));
+-  unsubmitted_frames_.back()->configs.reserve(frame->configs.size());
+-  // If Wayland server supports acquire_fences, they should be shipped with
+-  // buffers. Otherwise, we will wait for fences.
+-  if (buffer_manager_->supports_acquire_fence() || !use_egl_fence_sync_ ||
+-      !frame->schedule_planes_succeeded) {
+-    frame->ready = true;
+-    MaybeSubmitFrames();
+-    return;
+-  }
+-
+-  base::OnceClosure fence_wait_task;
+-  std::vector<std::unique_ptr<gfx::GpuFence>> fences;
+-  for (auto& config : frame->configs) {
+-    if (!config.access_fence_handle.is_null()) {
+-      fences.push_back(std::make_unique<gfx::GpuFence>(
+-          std::move(config.access_fence_handle)));
+-      config.access_fence_handle = gfx::GpuFenceHandle();
+-    }
+-  }
+-
+-  fence_wait_task = base::BindOnce(&WaitForGpuFences, std::move(fences));
+-
+-  base::OnceClosure fence_retired_callback =
+-      base::BindOnce(&GbmSurfacelessWayland::FenceRetired,
+-                     weak_factory_.GetWeakPtr(), frame->frame_id);
+-
+-  base::ThreadPool::PostTaskAndReply(
+-      FROM_HERE,
+-      {base::MayBlock(), base::TaskShutdownBehavior::CONTINUE_ON_SHUTDOWN},
+-      std::move(fence_wait_task), std::move(fence_retired_callback));
++  presenter_->Present(std::move(completion_callback),
++                      std::move(presentation_callback), std::move(data));
+ }
+ 
+ void GbmSurfacelessWayland::SetRelyOnImplicitSync() {
+-  use_egl_fence_sync_ = false;
++  presenter_->SetRelyOnImplicitSync();
+ }
+ 
+ bool GbmSurfacelessWayland::SupportsPlaneGpuFences() const {
++  // Preserve the legacy contract: when the compositor cannot consume an
++  // acquire fence, the delegated presenter retires it on a worker before
++  // committing the frame.
+   return true;
+ }
+ 
+@@ -242,143 +57,18 @@ bool GbmSurfacelessWayland::SupportsOverridePlatformSize() const {
+ }
+ 
+ bool GbmSurfacelessWayland::SupportsViewporter() const {
+-  return buffer_manager_->supports_viewporter();
++  return presenter_->SupportsViewporter();
+ }
+ 
+ bool GbmSurfacelessWayland::Resize(const gfx::Size& size,
+                                    float scale_factor,
+                                    const gfx::ColorSpace& color_space,
+                                    bool has_alpha) {
+-  surface_scale_factor_ = scale_factor;
+-
+-  // Remove all the buffers.
+-  solid_color_buffers_holder_->EraseBuffers(buffer_manager_);
+-
+-  return true;
+-}
+-
+-GbmSurfacelessWayland::~GbmSurfacelessWayland() {
+-  buffer_manager_->UnregisterSurface(widget_);
+-}
+-
+-GbmSurfacelessWayland::PendingFrame::PendingFrame(uint32_t frame_id)
+-    : frame_id(frame_id) {}
+-
+-GbmSurfacelessWayland::PendingFrame::~PendingFrame() = default;
+-
+-void GbmSurfacelessWayland::MaybeSubmitFrames() {
+-  while (!unsubmitted_frames_.empty() && unsubmitted_frames_.front()->ready) {
+-    auto submitted_frame = std::move(unsubmitted_frames_.front());
+-    unsubmitted_frames_.pop_front();
+-
+-    if (!submitted_frame->schedule_planes_succeeded) {
+-      last_swap_buffers_result_ = false;
+-
+-      std::move(submitted_frame->completion_callback)
+-          .Run(gfx::SwapCompletionResult(gfx::SwapResult::SWAP_FAILED));
+-      // Notify the caller, the buffer is never presented on a screen.
+-      std::move(submitted_frame->presentation_callback)
+-          .Run(gfx::PresentationFeedback::Failure());
+-
+-      submitted_frame.reset();
+-      return;
+-    }
+-
+-    buffer_manager_->CommitOverlays(widget_, submitted_frame->frame_id,
+-                                    submitted_frame->data,
+-                                    std::move(submitted_frame->configs));
+-    submitted_frames_.push_back(std::move(submitted_frame));
+-  }
+-}
+-
+-// Note: This O(1) lookup relies on frame IDs being monotonically increasing
+-// and contiguous within unsubmitted_frames_. The unsigned 32-bit math correctly
+-// handles UINT32_MAX wrap-around as long as the queue size is smaller than
+-// 2^32.
+-void GbmSurfacelessWayland::FenceRetired(uint32_t frame_id) {
+-  if (unsubmitted_frames_.empty()) {
+-    return;
+-  }
+-
+-  uint32_t first_frame_id = unsubmitted_frames_.front()->frame_id;
+-  uint32_t index = frame_id - first_frame_id;
+-  if (index < unsubmitted_frames_.size()) {
+-    auto& frame = unsubmitted_frames_[index];
+-    DCHECK_EQ(frame->frame_id, frame_id);
+-    // If the frame doesn't have a completion callback yet, it means it hasn't
+-    // been presented yet (it's the sentinel frame at the back).
+-    if (!frame->completion_callback) {
+-      return;
+-    }
+-    frame->ready = true;
+-    MaybeSubmitFrames();
+-  }
++  return presenter_->Resize(size, scale_factor, color_space, has_alpha);
+ }
+ 
+ void GbmSurfacelessWayland::SetNoGLFlushForTests() {
+   no_gl_flush_for_tests_ = true;
+ }
+ 
+-void GbmSurfacelessWayland::OnSubmission(uint32_t frame_id,
+-                                         const gfx::SwapResult& swap_result,
+-                                         gfx::GpuFenceHandle release_fence) {
+-  // If the frame_id is stale, the gpu process just recovered from a crash so
+-  // this frame_id can be ignored.
+-  if (submitted_frames_.empty() ||
+-      submitted_frames_.front()->frame_id != frame_id) {
+-    return;
+-  }
+-
+-  auto submitted_frame = std::move(submitted_frames_.front());
+-
+-  TRACE_EVENT("wayland", "GbmSurfacelessWayland::OnSubmission", "frame_id",
+-              submitted_frame->frame_id);
+-
+-  submitted_frames_.pop_front();
+-  for (auto& buf : submitted_frame->in_flight_color_buffers) {
+-    // Let the holder mark this buffer as free to reuse.
+-    solid_color_buffers_holder_->OnSubmission(buf, buffer_manager_);
+-  }
+-  submitted_frame->in_flight_color_buffers.clear();
+-
+-  // Check if the fence has retired.
+-  if (!release_fence.is_null()) {
+-    base::TimeTicks ticks;
+-    auto status =
+-        gfx::GpuFence::GetStatusChangeTime(release_fence.Peek(), &ticks);
+-    if (status == gfx::GpuFence::kSignaled)
+-      release_fence = {};
+-  }
+-
+-  std::move(submitted_frame->completion_callback)
+-      .Run(gfx::SwapCompletionResult(swap_result, std::move(release_fence)));
+-
+-  pending_presentation_frames_.push_back(std::move(submitted_frame));
+-
+-  if (swap_result != gfx::SwapResult::SWAP_ACK &&
+-      swap_result != gfx::SwapResult::SWAP_NAK_RECREATE_BUFFERS) {
+-    last_swap_buffers_result_ = false;
+-    return;
+-  }
+-
+-  MaybeSubmitFrames();
+-}
+-
+-void GbmSurfacelessWayland::OnPresentation(
+-    uint32_t frame_id,
+-    const gfx::PresentationFeedback& feedback) {
+-  if (pending_presentation_frames_.empty() ||
+-      pending_presentation_frames_.front()->frame_id != frame_id) {
+-    return;
+-  }
+-
+-  std::move(pending_presentation_frames_.front()->presentation_callback)
+-      .Run(feedback);
+-  pending_presentation_frames_.pop_front();
+-}
+-
+-EGLDisplay GbmSurfacelessWayland::GetEGLDisplay() {
+-  return display_->GetDisplay();
+-}
+-
+ }  // namespace ui
+diff --git a/ui/ozone/platform/wayland/gpu/gbm_surfaceless_wayland.h b/ui/ozone/platform/wayland/gpu/gbm_surfaceless_wayland.h
+index 020329d..2d64bce 100644
+--- a/ui/ozone/platform/wayland/gpu/gbm_surfaceless_wayland.h
++++ b/ui/ozone/platform/wayland/gpu/gbm_surfaceless_wayland.h
+@@ -5,21 +5,11 @@
+ #ifndef UI_OZONE_PLATFORM_WAYLAND_GPU_GBM_SURFACELESS_WAYLAND_H_
+ #define UI_OZONE_PLATFORM_WAYLAND_GPU_GBM_SURFACELESS_WAYLAND_H_
+ 
+-#include <EGL/egl.h>
+-#include <EGL/eglext.h>
+-
+ #include <memory>
+-#include <vector>
+ 
+-#include "base/containers/circular_deque.h"
+ #include "base/gtest_prod_util.h"
+ #include "base/memory/raw_ptr.h"
+-#include "base/memory/weak_ptr.h"
+-#include "ui/gfx/native_ui_types.h"
+ #include "ui/gl/presenter.h"
+-#include "ui/ozone/platform/wayland/common/wayland_overlay_config.h"
+-#include "ui/ozone/platform/wayland/gpu/wayland_surface_gpu.h"
+-#include "ui/ozone/public/swap_completion_callback.h"
+ 
+ namespace gl {
+ class GLDisplayEGL;
+@@ -28,14 +18,12 @@ class GLDisplayEGL;
+ namespace ui {
+ 
+ class WaylandBufferManagerGpu;
++class WaylandBufferQueuePresenter;
+ 
+-using BufferId = uint32_t;
+-
+-// A GLSurface for Wayland Ozone platform that uses surfaceless drawing. Drawing
+-// and displaying happens directly through NativePixmap buffers. CC would call
+-// into SurfaceFactoryOzone to allocate the buffers and then call
+-// ScheduleOverlayPlane(..) to schedule the buffer for presentation.
+-class GbmSurfacelessWayland : public gl::Presenter, public WaylandSurfaceGpu {
++// Legacy GL adapter for Wayland surfaceless presentation. The rendering-API
++// independent frame queue and Wayland transaction state live in
++// WaylandBufferQueuePresenter.
++class GbmSurfacelessWayland : public gl::Presenter {
+  public:
+   GbmSurfacelessWayland(gl::GLDisplayEGL* display,
+                         WaylandBufferManagerGpu* buffer_manager,
+@@ -44,10 +32,6 @@ class GbmSurfacelessWayland : public gl::Presenter, public WaylandSurfaceGpu {
+   GbmSurfacelessWayland(const GbmSurfacelessWayland&) = delete;
+   GbmSurfacelessWayland& operator=(const GbmSurfacelessWayland&) = delete;
+ 
+-  float surface_scale_factor() const { return surface_scale_factor_; }
+-
+-  void QueueWaylandOverlayConfig(wl::WaylandOverlayConfig config);
+-
+   // gl::Presenter:
+   bool ScheduleOverlayPlane(
+       gl::OverlayImage image,
+@@ -65,8 +49,6 @@ class GbmSurfacelessWayland : public gl::Presenter, public WaylandSurfaceGpu {
+               const gfx::ColorSpace& color_space,
+               bool has_alpha) override;
+ 
+-  BufferId GetOrCreateSolidColorBuffer(SkColor4f color, const gfx::Size& size);
+-
+  private:
+   FRIEND_TEST_ALL_PREFIXES(WaylandSurfaceFactoryTest,
+                            GbmSurfacelessWaylandCheckOrderOfCallbacksTest);
+@@ -77,117 +59,14 @@ class GbmSurfacelessWayland : public gl::Presenter, public WaylandSurfaceGpu {
+   FRIEND_TEST_ALL_PREFIXES(WaylandSurfaceFactoryCompositorV3,
+                            SurfaceDamageTest);
+ 
+-  // Holds solid color buffers.
+-  class SolidColorBufferHolder {
+-   public:
+-    SolidColorBufferHolder();
+-    ~SolidColorBufferHolder();
+-
+-    BufferId GetOrCreateSolidColorBuffer(
+-        SkColor4f color,
+-        WaylandBufferManagerGpu* buffer_manager);
+-
+-    void OnSubmission(BufferId buffer_id,
+-                      WaylandBufferManagerGpu* buffer_manager);
+-    void EraseBuffers(WaylandBufferManagerGpu* buffer_manager);
+-
+-   private:
+-    // Gpu-size holder for the solid color buffers. These are not backed by
+-    // anything and stored on the gpu side for convenience so that WBHM doesn't
+-    // become more complex.
+-    struct SolidColorBuffer {
+-      SolidColorBuffer(const SkColor4f& color, BufferId buffer_id)
+-          : color(color), buffer_id(buffer_id) {}
+-      SolidColorBuffer(SolidColorBuffer&& buffer) = default;
+-      SolidColorBuffer& operator=(SolidColorBuffer&& buffer) = default;
+-      ~SolidColorBuffer() = default;
+-
+-      // Color of the buffer.
+-      SkColor4f color = SkColors::kWhite;
+-      // The buffer id that is mapped with the buffer id created on the browser
+-      // side.
+-      BufferId buffer_id = 0;
+-    };
+-
+-    std::vector<SolidColorBuffer> inflight_solid_color_buffers_;
+-    std::vector<SolidColorBuffer> available_solid_color_buffers_;
+-  };
+-
+   ~GbmSurfacelessWayland() override;
+ 
+-  // WaylandSurfaceGpu overrides:
+-  void OnSubmission(uint32_t frame_id,
+-                    const gfx::SwapResult& swap_result,
+-                    gfx::GpuFenceHandle release_fence) override;
+-  void OnPresentation(uint32_t frame_id,
+-                      const gfx::PresentationFeedback& feedback) override;
+-
+-  EGLDisplay GetEGLDisplay();
+-
+-  // PendingFrame here is a post-SkiaRenderer struct that contains overlays +
+-  // primary plane informations. It is a "compositor frame" on AcceleratedWidget
+-  // level. This information gets into browser process and overlays are
+-  // translated to be attached to WaylandSurfaces of the AcceleratedWidget.
+-  // TODO(fangzhoug): This should be changed to support Vulkan.
+-  struct PendingFrame {
+-    explicit PendingFrame(uint32_t frame_id);
+-    ~PendingFrame();
+-
+-    // Unique identifier of the frame within this AcceleratedWidget.
+-    uint32_t frame_id;
+-
+-    bool ready = false;
+-
+-    SwapCompletionCallback completion_callback;
+-    PresentationCallback presentation_callback;
+-    gfx::FrameData data;
+-
+-    // Says if scheduling succeeded.
+-    bool schedule_planes_succeeded = true;
+-
+-    std::vector<BufferId> in_flight_color_buffers;
+-    // Contains |buffer_id|s to gl::GLSurfaceOverlay, used for committing
+-    // overlays and wait for OnSubmission's.
+-    std::vector<wl::WaylandOverlayConfig> configs;
+-  };
+-
+-  void MaybeSubmitFrames();
+-
+-  void FenceRetired(uint32_t frame_id);
+-
+-  // Sets a flag that skips glFlush step in unittests.
++  // Prevents a real GL flush in tests that do not create a GL context.
+   void SetNoGLFlushForTests();
+ 
+   const raw_ptr<WaylandBufferManagerGpu> buffer_manager_;
+-
+-  // The native surface. Deleting this is allowed to free the EGLNativeWindow.
+-  gfx::AcceleratedWidget widget_;
+-
+-  // PendingFrames that are waiting to be submitted. They can be either ready,
+-  // waiting for gpu fences, or still scheduling overlays.
+-  base::circular_deque<std::unique_ptr<PendingFrame>> unsubmitted_frames_;
+-
+-  // PendingFrames that are submitted, pending OnSubmission() calls.
+-  base::circular_deque<std::unique_ptr<PendingFrame>> submitted_frames_;
+-
+-  // PendingFrames that have received OnSubmission(), pending OnPresentation()
+-  // calls.
+-  base::circular_deque<std::unique_ptr<PendingFrame>>
+-      pending_presentation_frames_;
+-  bool last_swap_buffers_result_ = true;
+-  bool use_egl_fence_sync_ = true;
+-
++  std::unique_ptr<WaylandBufferQueuePresenter> presenter_;
+   bool no_gl_flush_for_tests_ = false;
+-
+-  // Scale factor of the current surface.
+-  float surface_scale_factor_ = 1.f;
+-
+-  // Holds gpu side reference (buffer_ids) for solid color wl_buffers.
+-  std::unique_ptr<SolidColorBufferHolder> solid_color_buffers_holder_;
+-
+-  const raw_ptr<gl::GLDisplayEGL> display_;
+-
+-  base::WeakPtrFactory<GbmSurfacelessWayland> weak_factory_;
+ };
+ 
+ }  // namespace ui
+diff --git a/ui/ozone/platform/wayland/gpu/gl_surface_wayland.cc b/ui/ozone/platform/wayland/gpu/gl_surface_wayland.cc
+index 1b1a6ad..ababe14 100644
+--- a/ui/ozone/platform/wayland/gpu/gl_surface_wayland.cc
++++ b/ui/ozone/platform/wayland/gpu/gl_surface_wayland.cc
+@@ -82,8 +82,8 @@ EGLConfig GLSurfaceWayland::GetConfig() {
+ // state setter calls in the functions below, where a cached and ceiled scale
+ // factor is used. Ideally surface information should be set using the standard
+ // WaylandFrameManager::ApplySurfaceConfigure flow, i.e: whose entry point is
+-// WaylandBufferManager::CommitOverlays. Which is done in GbmSurfacelessWayland,
+-// for example.
++// WaylandBufferManager::CommitOverlays. The surfaceless presenter path owns
++// that transaction, for example.
+ 
+ gfx::SwapResult GLSurfaceWayland::SwapBuffers(PresentationCallback callback,
+                                               gfx::FrameData data) {
+diff --git a/ui/ozone/platform/wayland/gpu/wayland_buffer_manager_gpu.cc b/ui/ozone/platform/wayland/gpu/wayland_buffer_manager_gpu.cc
+index c553d65..79c190f 100644
+--- a/ui/ozone/platform/wayland/gpu/wayland_buffer_manager_gpu.cc
++++ b/ui/ozone/platform/wayland/gpu/wayland_buffer_manager_gpu.cc
+@@ -9,6 +9,7 @@
+ #include <algorithm>
+ #include <utility>
+ 
++#include "base/check.h"
+ #include "base/functional/bind.h"
+ #include "base/process/process.h"
+ #include "base/task/current_thread.h"
+@@ -21,7 +22,6 @@
+ #include "ui/gfx/linux/drm_util_linux.h"
+ #include "ui/gfx/overlay_priority_hint.h"
+ #include "ui/gl/gl_bindings.h"
+-#include "ui/gl/gl_surface_egl.h"
+ #include "ui/ozone/platform/wayland/common/wayland_overlay_config.h"
+ #include "ui/ozone/platform/wayland/gpu/wayland_surface_gpu.h"
+ #include "ui/ozone/public/overlay_plane.h"
+@@ -80,6 +80,7 @@ void WaylandBufferManagerGpu::Initialize(
+     bool supports_dma_buf,
+     bool supports_viewporter,
+     bool supports_acquire_fence,
++    bool supports_explicit_sync,
+     bool supports_overlays,
+     bool supports_single_pixel_buffer) {
+   DCHECK_CALLED_ON_VALID_SEQUENCE(gpu_sequence_checker_);
+@@ -89,8 +90,10 @@ void WaylandBufferManagerGpu::Initialize(
+     gpu_thread_runner_ = base::SingleThreadTaskRunner::GetCurrentDefault();
+ 
+   supported_formats_with_modifiers_ = shared_image_formats_with_modifiers;
++  CHECK(!supports_explicit_sync || supports_acquire_fence);
+   supports_viewporter_ = supports_viewporter;
+   supports_acquire_fence_ = supports_acquire_fence;
++  supports_explicit_sync_ = supports_explicit_sync;
+   supports_dmabuf_ = supports_dma_buf;
+   supports_overlays_ = supports_overlays;
+   supports_single_pixel_buffer_ = supports_single_pixel_buffer;
+@@ -324,11 +327,9 @@ void WaylandBufferManagerGpu::DestroyBuffer(uint32_t buffer_id) {
+ 
+ #if defined(WAYLAND_GBM)
+ GbmDevice* WaylandBufferManagerGpu::GetGbmDevice() {
+-  // Wayland won't support wl_drm or zwp_linux_dmabuf without this extension.
+-  if (!supports_dmabuf_ || (!gl::GLSurfaceEGL::GetGLDisplayEGL()
+-                                 ->ext->b_EGL_EXT_image_dma_buf_import &&
+-                            !use_fake_gbm_device_for_test_)) {
+-    supports_dmabuf_ = false;
++  // GBM allocation and Wayland DMA-BUF presentation do not require EGL.
++  // Rendering backends are responsible for validating their own import path.
++  if (!supports_dmabuf_) {
+     return nullptr;
+   }
+ 
+@@ -374,6 +375,11 @@ uint32_t WaylandBufferManagerGpu::AllocateBufferID() {
+   return ++next_buffer_id_ ? next_buffer_id_ : ++next_buffer_id_;
+ }
+ 
++uint32_t WaylandBufferManagerGpu::AllocateFrameID() {
++  base::AutoLock scoped_lock(lock_);
++  return ++next_frame_id_ ? next_frame_id_ : ++next_frame_id_;
++}
++
+ bool WaylandBufferManagerGpu::SupportsFormat(
+     viz::SharedImageFormat format) const {
+   return supported_formats_with_modifiers_.contains(format);
+@@ -448,6 +454,13 @@ void WaylandBufferManagerGpu::HandlePresentationOnOriginThread(
+   }
+ }
+ 
++void WaylandBufferManagerGpu::HandleDisconnectOnOriginThread(
++    gfx::AcceleratedWidget widget) {
++  if (auto* surface = GetSurface(widget)) {
++    surface->OnBufferManagerDisconnected();
++  }
++}
++
+ #if defined(WAYLAND_GBM)
+ void WaylandBufferManagerGpu::OpenAndStoreDrmRenderNodeFd(
+     const base::FilePath& drm_node_path) {
+@@ -488,6 +501,17 @@ void WaylandBufferManagerGpu::MaybeCreateGbmDevice() {
+ void WaylandBufferManagerGpu::OnHostDisconnected() {
+   DCHECK_CALLED_ON_VALID_SEQUENCE(gpu_sequence_checker_);
+ 
++  for (const auto& [widget, runner] : commit_thread_runners_) {
++    runner->PostTask(
++        FROM_HERE,
++        base::BindOnce(
++            &WaylandBufferManagerGpu::HandleDisconnectOnOriginThread,
++            base::Unretained(this), widget));
++  }
++  pending_tasks_.clear();
++  supports_acquire_fence_ = false;
++  supports_explicit_sync_ = false;
++
+   // WaylandBufferManagerHost may bind host again after an error. See
+   // WaylandBufferManagerHost::BindInterface for more details.
+   remote_host_.reset();
+diff --git a/ui/ozone/platform/wayland/gpu/wayland_buffer_manager_gpu.h b/ui/ozone/platform/wayland/gpu/wayland_buffer_manager_gpu.h
+index 06adee3..f4b7415 100644
+--- a/ui/ozone/platform/wayland/gpu/wayland_buffer_manager_gpu.h
++++ b/ui/ozone/platform/wayland/gpu/wayland_buffer_manager_gpu.h
+@@ -66,6 +66,7 @@ class WaylandBufferManagerGpu : public ozone::mojom::WaylandBufferManagerGpu {
+       bool supports_dma_buf,
+       bool supports_viewporter,
+       bool supports_acquire_fence,
++      bool supports_explicit_sync,
+       bool supports_overlays,
+       bool supports_single_pixel_buffer) override;
+ 
+@@ -158,6 +159,7 @@ class WaylandBufferManagerGpu : public ozone::mojom::WaylandBufferManagerGpu {
+   gl::EGLDisplayPlatform GetNativeDisplay();
+ 
+   bool supports_acquire_fence() const { return supports_acquire_fence_; }
++  bool supports_explicit_sync() const { return supports_explicit_sync_; }
+   bool supports_viewporter() const { return supports_viewporter_; }
+   bool supports_overlays() const { return supports_overlays_; }
+   bool supports_single_pixel_buffer() const {
+@@ -181,6 +183,11 @@ class WaylandBufferManagerGpu : public ozone::mojom::WaylandBufferManagerGpu {
+   // Allocates a unique buffer ID.
+   uint32_t AllocateBufferID();
+ 
++  // Allocates a process-wide frame ID. Keeping the sequence on the manager
++  // prevents a delayed response for a destroyed surface from aliasing the
++  // first frame of a replacement surface for the same widget.
++  uint32_t AllocateFrameID();
++
+   // Returns if a format is supported by current Wayland implementation.
+   bool SupportsFormat(viz::SharedImageFormat format) const;
+ 
+@@ -190,6 +197,16 @@ class WaylandBufferManagerGpu : public ozone::mojom::WaylandBufferManagerGpu {
+                            GbmSurfacelessWaylandCommitOverlaysCallbacksTest);
+   FRIEND_TEST_ALL_PREFIXES(WaylandSurfaceFactoryTest,
+                            GbmSurfacelessWaylandGroupOnSubmissionCallbacksTest);
++  FRIEND_TEST_ALL_PREFIXES(WaylandSurfaceFactoryTest,
++                           OzonePresenterFailsIncompleteFrameAtomically);
++  FRIEND_TEST_ALL_PREFIXES(WaylandSurfaceFactoryTest,
++                           OzonePresenterTeardownResolvesCallbacks);
++  FRIEND_TEST_ALL_PREFIXES(WaylandSurfaceFactoryTest,
++                           OzonePresenterRejectsStaleSurfaceResponse);
++  FRIEND_TEST_ALL_PREFIXES(WaylandSurfaceFactoryTest,
++                           OzonePresenterRequiresLinuxDrmSyncobj);
++  FRIEND_TEST_ALL_PREFIXES(WaylandSurfaceFactoryTest,
++                           OzonePresenterDisconnectResolvesCallbacks);
+   FRIEND_TEST_ALL_PREFIXES(WaylandSurfaceFactoryCompositorV3,
+                            SurfaceDamageTest);
+   FRIEND_TEST_ALL_PREFIXES(WaylandBufferManagerTest,
+@@ -216,6 +233,7 @@ class WaylandBufferManagerGpu : public ozone::mojom::WaylandBufferManagerGpu {
+   void HandlePresentationOnOriginThread(
+       gfx::AcceleratedWidget widget,
+       const std::vector<wl::WaylandPresentationInfo>& presentation_infos);
++  void HandleDisconnectOnOriginThread(gfx::AcceleratedWidget widget);
+ 
+   void OnHostDisconnected();
+ 
+@@ -270,6 +288,9 @@ class WaylandBufferManagerGpu : public ozone::mojom::WaylandBufferManagerGpu {
+   // Whether Wayland server allows buffer submission with acquire fence.
+   bool supports_acquire_fence_ = false;
+ 
++  // Whether acquire and release fences use linux-drm-syncobj-v1.
++  bool supports_explicit_sync_ = false;
++
+   // Whether Wayland server implements wp_viewporter extension to support
+   // cropping and scaling buffers.
+   bool supports_viewporter_ = false;
+@@ -333,6 +354,9 @@ class WaylandBufferManagerGpu : public ozone::mojom::WaylandBufferManagerGpu {
+   // Keeps track of the next unique buffer ID.
+   uint32_t next_buffer_id_ = 0;
+ 
++  // Keeps track of the next unique frame ID across all registered surfaces.
++  uint32_t next_frame_id_ = 0;
++
+   // The tasks that are blocked on a remote_host pipe becoming bound.
+   std::vector<base::OnceClosure> pending_tasks_;
+ 
+diff --git a/ui/ozone/platform/wayland/gpu/wayland_buffer_queue_presenter.cc b/ui/ozone/platform/wayland/gpu/wayland_buffer_queue_presenter.cc
+new file mode 100644
+index 0000000..b4610a1
+--- /dev/null
++++ b/ui/ozone/platform/wayland/gpu/wayland_buffer_queue_presenter.cc
+@@ -0,0 +1,426 @@
++// Copyright 2018 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "ui/ozone/platform/wayland/gpu/wayland_buffer_queue_presenter.h"
++
++#include <algorithm>
++#include <cstdint>
++#include <memory>
++#include <utility>
++
++#include "base/check.h"
++#include "base/functional/bind.h"
++#include "base/logging.h"
++#include "base/task/thread_pool.h"
++#include "base/trace_event/trace_event.h"
++#include "ui/gfx/gpu_fence.h"
++#include "ui/gfx/gpu_fence_handle.h"
++#include "ui/gfx/swap_result.h"
++#include "ui/ozone/platform/wayland/gpu/wayland_buffer_manager_gpu.h"
++#include "ui/ozone/platform/wayland/mojom/wayland_overlay_config.mojom.h"
++
++namespace ui {
++
++namespace {
++
++// A test run showed only 9 inflight solid color buffers at the same time. Thus,
++// allow to store max 12 buffers (including some margin) of solid color buffers
++// and remove the rest.
++static constexpr size_t kMaxSolidColorBuffers = 12;
++
++void WaitForGpuFences(std::vector<std::unique_ptr<gfx::GpuFence>> fences) {
++  for (auto& fence : fences) {
++    fence->Wait();
++  }
++}
++
++}  // namespace
++
++WaylandBufferQueuePresenter::SolidColorBufferHolder::SolidColorBufferHolder() =
++    default;
++WaylandBufferQueuePresenter::SolidColorBufferHolder::~SolidColorBufferHolder() =
++    default;
++
++BufferId WaylandBufferQueuePresenter::SolidColorBufferHolder::
++    GetOrCreateSolidColorBuffer(SkColor4f color,
++                                WaylandBufferManagerGpu* buffer_manager) {
++  BufferId next_buffer_id = 0;
++
++  // First try for an existing buffer.
++  auto it = std::ranges::find(available_solid_color_buffers_, color,
++                              &SolidColorBuffer::color);
++  if (it != available_solid_color_buffers_.end()) {
++    // This is a prefect color match so use this directly.
++    next_buffer_id = it->buffer_id;
++    inflight_solid_color_buffers_.emplace_back(std::move(*it));
++    available_solid_color_buffers_.erase(it);
++  } else {
++    // Worst case allocate a new buffer. This definitely will occur on
++    // startup.
++    next_buffer_id = buffer_manager->AllocateBufferID();
++    // Create wl_buffer on the browser side.
++    CHECK(buffer_manager->supports_single_pixel_buffer());
++    buffer_manager->CreateSinglePixelBuffer(color, next_buffer_id);
++
++    // Allocate a backing structure that will be used to figure out if such
++    // buffer has already existed.
++    inflight_solid_color_buffers_.emplace_back(
++        SolidColorBuffer(color, next_buffer_id));
++  }
++  DCHECK_GT(next_buffer_id, 0u);
++  return next_buffer_id;
++}
++
++void WaylandBufferQueuePresenter::SolidColorBufferHolder::OnSubmission(
++    BufferId buffer_id,
++    WaylandBufferManagerGpu* buffer_manager) {
++  // Solid color buffers do not require on submission as Skia doesn't track
++  // them. Instead, they are tracked by WaylandBufferQueuePresenter. In the
++  // future, when SharedImageFactory allows non-backed shared images, this
++  // should be removed from here.
++  auto it = std::ranges::find(inflight_solid_color_buffers_, buffer_id,
++                              &SolidColorBuffer::buffer_id);
++  if (it != inflight_solid_color_buffers_.end()) {
++    available_solid_color_buffers_.emplace_back(std::move(*it));
++    inflight_solid_color_buffers_.erase(it);
++    // Keep track of the number of created buffers and erase the least used
++    // ones until the maximum number of available solid color buffer.
++    while (available_solid_color_buffers_.size() > kMaxSolidColorBuffers) {
++      buffer_manager->DestroyBuffer(
++          available_solid_color_buffers_.begin()->buffer_id);
++      available_solid_color_buffers_.erase(
++          available_solid_color_buffers_.begin());
++    }
++  }
++}
++
++void WaylandBufferQueuePresenter::SolidColorBufferHolder::EraseAvailableBuffers(
++    WaylandBufferManagerGpu* buffer_manager) {
++  for (const auto& buffer : available_solid_color_buffers_) {
++    buffer_manager->DestroyBuffer(buffer.buffer_id);
++  }
++  available_solid_color_buffers_.clear();
++}
++
++void WaylandBufferQueuePresenter::SolidColorBufferHolder::DestroyAllBuffers(
++    WaylandBufferManagerGpu* buffer_manager) {
++  EraseAvailableBuffers(buffer_manager);
++  for (const auto& buffer : inflight_solid_color_buffers_) {
++    buffer_manager->DestroyBuffer(buffer.buffer_id);
++  }
++  inflight_solid_color_buffers_.clear();
++}
++
++WaylandBufferQueuePresenter::WaylandBufferQueuePresenter(
++    WaylandBufferManagerGpu* buffer_manager,
++    gfx::AcceleratedWidget widget)
++    : buffer_manager_(buffer_manager),
++      widget_(widget),
++      solid_color_buffers_holder_(std::make_unique<SolidColorBufferHolder>()),
++      weak_factory_(this) {
++  buffer_manager_->RegisterSurface(widget_, this);
++  unsubmitted_frames_.push_back(
++      std::make_unique<PendingFrame>(buffer_manager_->AllocateFrameID()));
++}
++
++void WaylandBufferQueuePresenter::QueueWaylandOverlayConfig(
++    wl::WaylandOverlayConfig config) {
++  auto* frame = unsubmitted_frames_.back().get();
++  DCHECK(frame);
++  TRACE_EVENT("wayland",
++              "WaylandBufferQueuePresenter::QueueWaylandOverlayConfig",
++              "frame_id", frame->frame_id, "buffer_id", config.buffer_id);
++  frame->configs.emplace_back(std::move(config));
++}
++
++bool WaylandBufferQueuePresenter::ScheduleOverlayPlane(
++    scoped_refptr<gfx::NativePixmap> image,
++    std::unique_ptr<gfx::GpuFence> acquire_fence,
++    const gfx::OverlayPlaneData& overlay_plane_data) {
++  auto* frame = unsubmitted_frames_.back().get();
++  // There are multiple scheduling submissions for the same frame. If the
++  // previous schedule failed, there is no reason to continue.
++  if (!frame->schedule_planes_succeeded) {
++    return false;
++  }
++
++  // Solid color overlays are non-backed. Thus, queue them directly.
++  // TODO(msisov): reconsider this once Linux Wayland compositors also support
++  // creation of non-backed solid color wl_buffers.
++  if (!image) {
++    // Only solid color overlays can be non-backed.
++    if (!overlay_plane_data.is_solid_color) {
++      LOG(ERROR) << "Missing buffer for overlay that is not solid color.";
++      frame->schedule_planes_succeeded = false;
++      return false;
++    }
++    DCHECK(!acquire_fence);
++
++    BufferId buf_id = solid_color_buffers_holder_->GetOrCreateSolidColorBuffer(
++        overlay_plane_data.color.value(), buffer_manager_);
++    // Invalid buffer id.
++    if (buf_id == 0) {
++      frame->schedule_planes_succeeded = false;
++      return false;
++    }
++    frame->in_flight_color_buffers.push_back(buf_id);
++    QueueWaylandOverlayConfig(
++        {overlay_plane_data, nullptr, buf_id, surface_scale_factor()});
++  } else {
++    std::vector<gfx::GpuFence> acquire_fences;
++    if (acquire_fence && (buffer_manager_->supports_acquire_fence() ||
++                          wait_for_unsupported_acquire_fences_)) {
++      acquire_fences.push_back(std::move(*acquire_fence));
++    }
++
++    frame->schedule_planes_succeeded = image->ScheduleOverlayPlane(
++        widget_, overlay_plane_data, std::move(acquire_fences), {});
++  }
++  return frame->schedule_planes_succeeded;
++}
++
++void WaylandBufferQueuePresenter::Present(
++    SwapCompletionCallback completion_callback,
++    PresentationCallback presentation_callback,
++    gfx::FrameData data) {
++  TRACE_EVENT0("wayland", "WaylandBufferQueuePresenter::Present");
++  // If last swap failed, don't try to schedule new ones.
++  if (!last_swap_buffers_result_) {
++    PendingFrame* discarded_frame = unsubmitted_frames_.back().get();
++    RecycleSolidColorBuffers(discarded_frame);
++    discarded_frame->configs.clear();
++    std::move(completion_callback)
++        .Run(gfx::SwapCompletionResult(gfx::SwapResult::SWAP_FAILED));
++    // Notify the caller, the buffer is never presented on a screen.
++    std::move(presentation_callback).Run(gfx::PresentationFeedback::Failure());
++    return;
++  }
++
++  PendingFrame* frame = unsubmitted_frames_.back().get();
++  frame->completion_callback = std::move(completion_callback);
++  frame->presentation_callback = std::move(presentation_callback);
++  frame->data = data;
++
++  unsubmitted_frames_.push_back(
++      std::make_unique<PendingFrame>(buffer_manager_->AllocateFrameID()));
++  unsubmitted_frames_.back()->configs.reserve(frame->configs.size());
++  // If Wayland server supports acquire_fences, they should be shipped with
++  // buffers. Otherwise, we will wait for fences.
++  if (buffer_manager_->supports_acquire_fence() ||
++      !wait_for_unsupported_acquire_fences_ ||
++      !frame->schedule_planes_succeeded) {
++    frame->ready = true;
++    MaybeSubmitFrames();
++    return;
++  }
++
++  base::OnceClosure fence_wait_task;
++  std::vector<std::unique_ptr<gfx::GpuFence>> fences;
++  for (auto& config : frame->configs) {
++    if (!config.access_fence_handle.is_null()) {
++      fences.push_back(std::make_unique<gfx::GpuFence>(
++          std::move(config.access_fence_handle)));
++      config.access_fence_handle = gfx::GpuFenceHandle();
++    }
++  }
++
++  fence_wait_task = base::BindOnce(&WaitForGpuFences, std::move(fences));
++
++  base::OnceClosure fence_retired_callback =
++      base::BindOnce(&WaylandBufferQueuePresenter::FenceRetired,
++                     weak_factory_.GetWeakPtr(), frame->frame_id);
++
++  base::ThreadPool::PostTaskAndReply(
++      FROM_HERE,
++      {base::MayBlock(), base::TaskShutdownBehavior::CONTINUE_ON_SHUTDOWN},
++      std::move(fence_wait_task), std::move(fence_retired_callback));
++}
++
++void WaylandBufferQueuePresenter::SetRelyOnImplicitSync() {
++  wait_for_unsupported_acquire_fences_ = false;
++}
++
++bool WaylandBufferQueuePresenter::SupportsPlaneGpuFences() const {
++  return buffer_manager_->supports_acquire_fence();
++}
++
++bool WaylandBufferQueuePresenter::SupportsViewporter() const {
++  return buffer_manager_->supports_viewporter();
++}
++
++bool WaylandBufferQueuePresenter::Resize(const gfx::Size& size,
++                                         float scale_factor,
++                                         const gfx::ColorSpace& color_space,
++                                         bool has_alpha) {
++  surface_scale_factor_ = scale_factor;
++
++  // Remove all the buffers.
++  solid_color_buffers_holder_->EraseAvailableBuffers(buffer_manager_);
++
++  return true;
++}
++
++WaylandBufferQueuePresenter::~WaylandBufferQueuePresenter() {
++  weak_factory_.InvalidateWeakPtrs();
++  buffer_manager_->UnregisterSurface(widget_);
++  FailPendingFrames();
++  solid_color_buffers_holder_->DestroyAllBuffers(buffer_manager_);
++}
++
++WaylandBufferQueuePresenter::PendingFrame::PendingFrame(uint32_t frame_id)
++    : frame_id(frame_id) {}
++
++WaylandBufferQueuePresenter::PendingFrame::~PendingFrame() = default;
++
++void WaylandBufferQueuePresenter::MaybeSubmitFrames() {
++  while (!unsubmitted_frames_.empty() && unsubmitted_frames_.front()->ready) {
++    auto submitted_frame = std::move(unsubmitted_frames_.front());
++    unsubmitted_frames_.pop_front();
++
++    if (!submitted_frame->schedule_planes_succeeded) {
++      RecycleSolidColorBuffers(submitted_frame.get());
++
++      std::move(submitted_frame->completion_callback)
++          .Run(gfx::SwapCompletionResult(gfx::SwapResult::SWAP_FAILED));
++      // Notify the caller, the buffer is never presented on a screen.
++      std::move(submitted_frame->presentation_callback)
++          .Run(gfx::PresentationFeedback::Failure());
++
++      submitted_frame.reset();
++      EnterFailedState();
++      return;
++    }
++
++    buffer_manager_->CommitOverlays(widget_, submitted_frame->frame_id,
++                                    submitted_frame->data,
++                                    std::move(submitted_frame->configs));
++    submitted_frames_.push_back(std::move(submitted_frame));
++  }
++}
++
++void WaylandBufferQueuePresenter::RecycleSolidColorBuffers(
++    PendingFrame* frame) {
++  for (BufferId buffer : frame->in_flight_color_buffers) {
++    solid_color_buffers_holder_->OnSubmission(buffer, buffer_manager_);
++  }
++  frame->in_flight_color_buffers.clear();
++}
++
++void WaylandBufferQueuePresenter::FenceRetired(uint32_t frame_id) {
++  auto frame_it =
++      std::ranges::find(unsubmitted_frames_, frame_id,
++                        [](const std::unique_ptr<PendingFrame>& frame) {
++                          return frame->frame_id;
++                        });
++  if (frame_it == unsubmitted_frames_.end()) {
++    return;
++  }
++
++  // If the frame doesn't have a completion callback yet, it is the sentinel
++  // frame that is still collecting overlay planes.
++  if (!(*frame_it)->completion_callback) {
++    return;
++  }
++  (*frame_it)->ready = true;
++  MaybeSubmitFrames();
++}
++
++void WaylandBufferQueuePresenter::OnSubmission(
++    uint32_t frame_id,
++    const gfx::SwapResult& swap_result,
++    gfx::GpuFenceHandle release_fence) {
++  // Ignore a response that does not belong to the oldest submitted frame.
++  if (submitted_frames_.empty() ||
++      submitted_frames_.front()->frame_id != frame_id) {
++    return;
++  }
++
++  auto submitted_frame = std::move(submitted_frames_.front());
++
++  TRACE_EVENT("wayland", "WaylandBufferQueuePresenter::OnSubmission",
++              "frame_id", submitted_frame->frame_id);
++
++  submitted_frames_.pop_front();
++  RecycleSolidColorBuffers(submitted_frame.get());
++
++  // Check if the fence has retired.
++  if (!release_fence.is_null()) {
++    base::TimeTicks ticks;
++    auto status =
++        gfx::GpuFence::GetStatusChangeTime(release_fence.Peek(), &ticks);
++    if (status == gfx::GpuFence::kSignaled) {
++      release_fence = {};
++    }
++  }
++
++  std::move(submitted_frame->completion_callback)
++      .Run(gfx::SwapCompletionResult(swap_result, std::move(release_fence)));
++
++  pending_presentation_frames_.push_back(std::move(submitted_frame));
++
++  if (swap_result != gfx::SwapResult::SWAP_ACK &&
++      swap_result != gfx::SwapResult::SWAP_NAK_RECREATE_BUFFERS) {
++    EnterFailedState();
++    return;
++  }
++
++  MaybeSubmitFrames();
++}
++
++void WaylandBufferQueuePresenter::OnPresentation(
++    uint32_t frame_id,
++    const gfx::PresentationFeedback& feedback) {
++  if (pending_presentation_frames_.empty() ||
++      pending_presentation_frames_.front()->frame_id != frame_id) {
++    return;
++  }
++
++  std::move(pending_presentation_frames_.front()->presentation_callback)
++      .Run(feedback);
++  pending_presentation_frames_.pop_front();
++}
++
++void WaylandBufferQueuePresenter::OnBufferManagerDisconnected() {
++  EnterFailedState();
++}
++
++void WaylandBufferQueuePresenter::EnterFailedState() {
++  last_swap_buffers_result_ = false;
++  FailPendingFrames();
++  unsubmitted_frames_.push_back(
++      std::make_unique<PendingFrame>(buffer_manager_->AllocateFrameID()));
++}
++
++void WaylandBufferQueuePresenter::FailPendingFrames() {
++  auto fail_frame = [this](std::unique_ptr<PendingFrame> frame,
++                           bool completion_pending) {
++    RecycleSolidColorBuffers(frame.get());
++    if (completion_pending && frame->completion_callback) {
++      std::move(frame->completion_callback)
++          .Run(gfx::SwapCompletionResult(gfx::SwapResult::SWAP_FAILED));
++    }
++    if (frame->presentation_callback) {
++      std::move(frame->presentation_callback)
++          .Run(gfx::PresentationFeedback::Failure());
++    }
++  };
++
++  while (!unsubmitted_frames_.empty()) {
++    auto frame = std::move(unsubmitted_frames_.front());
++    unsubmitted_frames_.pop_front();
++    fail_frame(std::move(frame), true);
++  }
++  while (!submitted_frames_.empty()) {
++    auto frame = std::move(submitted_frames_.front());
++    submitted_frames_.pop_front();
++    fail_frame(std::move(frame), true);
++  }
++  while (!pending_presentation_frames_.empty()) {
++    auto frame = std::move(pending_presentation_frames_.front());
++    pending_presentation_frames_.pop_front();
++    fail_frame(std::move(frame), false);
++  }
++}
++
++}  // namespace ui
+diff --git a/ui/ozone/platform/wayland/gpu/wayland_buffer_queue_presenter.h b/ui/ozone/platform/wayland/gpu/wayland_buffer_queue_presenter.h
+new file mode 100644
+index 0000000..6e33b7f
+--- /dev/null
++++ b/ui/ozone/platform/wayland/gpu/wayland_buffer_queue_presenter.h
+@@ -0,0 +1,177 @@
++// Copyright 2018 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef UI_OZONE_PLATFORM_WAYLAND_GPU_WAYLAND_BUFFER_QUEUE_PRESENTER_H_
++#define UI_OZONE_PLATFORM_WAYLAND_GPU_WAYLAND_BUFFER_QUEUE_PRESENTER_H_
++
++#include <memory>
++#include <vector>
++
++#include "base/containers/circular_deque.h"
++#include "base/gtest_prod_util.h"
++#include "base/memory/raw_ptr.h"
++#include "base/memory/weak_ptr.h"
++#include "third_party/skia/include/core/SkColor.h"
++#include "ui/gfx/native_ui_types.h"
++#include "ui/ozone/platform/wayland/common/wayland_overlay_config.h"
++#include "ui/ozone/platform/wayland/gpu/wayland_surface_gpu.h"
++#include "ui/ozone/public/ozone_presenter.h"
++
++namespace ui {
++
++class WaylandBufferManagerGpu;
++
++using BufferId = uint32_t;
++
++// Rendering-API-independent Wayland presentation of native pixmap planes. This
++// class owns the frame queue and browser-process Wayland transaction protocol;
++// rendering backends provide only native pixmaps and explicit acquire fences.
++class WaylandBufferQueuePresenter : public OzonePresenter,
++                                    public WaylandSurfaceGpu {
++ public:
++  WaylandBufferQueuePresenter(WaylandBufferManagerGpu* buffer_manager,
++                              gfx::AcceleratedWidget widget);
++
++  WaylandBufferQueuePresenter(const WaylandBufferQueuePresenter&) = delete;
++  WaylandBufferQueuePresenter& operator=(const WaylandBufferQueuePresenter&) =
++      delete;
++
++  ~WaylandBufferQueuePresenter() override;
++
++  float surface_scale_factor() const { return surface_scale_factor_; }
++
++  void QueueWaylandOverlayConfig(wl::WaylandOverlayConfig config);
++
++  // OzonePresenter:
++  bool ScheduleOverlayPlane(
++      scoped_refptr<gfx::NativePixmap> image,
++      std::unique_ptr<gfx::GpuFence> acquire_fence,
++      const gfx::OverlayPlaneData& overlay_plane_data) override;
++  void Present(SwapCompletionCallback completion_callback,
++               PresentationCallback presentation_callback,
++               gfx::FrameData data) override;
++  bool SupportsPlaneGpuFences() const override;
++  bool SupportsViewporter() const override;
++  bool Resize(const gfx::Size& size,
++              float scale_factor,
++              const gfx::ColorSpace& color_space,
++              bool has_alpha) override;
++
++  // Legacy GL configurations may explicitly select implicit synchronization
++  // when the compositor cannot consume acquire fences. The native Ozone path
++  // never calls this method.
++  void SetRelyOnImplicitSync();
++
++ private:
++  FRIEND_TEST_ALL_PREFIXES(WaylandSurfaceFactoryTest,
++                           OzonePresenterRejectsStaleSurfaceResponse);
++
++  // Holds solid color buffers.
++  class SolidColorBufferHolder {
++   public:
++    SolidColorBufferHolder();
++    ~SolidColorBufferHolder();
++
++    BufferId GetOrCreateSolidColorBuffer(
++        SkColor4f color,
++        WaylandBufferManagerGpu* buffer_manager);
++
++    void OnSubmission(BufferId buffer_id,
++                      WaylandBufferManagerGpu* buffer_manager);
++    void EraseAvailableBuffers(WaylandBufferManagerGpu* buffer_manager);
++    void DestroyAllBuffers(WaylandBufferManagerGpu* buffer_manager);
++
++   private:
++    // Gpu-size holder for the solid color buffers. These are not backed by
++    // anything and stored on the gpu side for convenience so that WBHM doesn't
++    // become more complex.
++    struct SolidColorBuffer {
++      SolidColorBuffer(const SkColor4f& color, BufferId buffer_id)
++          : color(color), buffer_id(buffer_id) {}
++      SolidColorBuffer(SolidColorBuffer&& buffer) = default;
++      SolidColorBuffer& operator=(SolidColorBuffer&& buffer) = default;
++      ~SolidColorBuffer() = default;
++
++      // Color of the buffer.
++      SkColor4f color = SkColors::kWhite;
++      // The buffer id that is mapped with the buffer id created on the browser
++      // side.
++      BufferId buffer_id = 0;
++    };
++
++    std::vector<SolidColorBuffer> inflight_solid_color_buffers_;
++    std::vector<SolidColorBuffer> available_solid_color_buffers_;
++  };
++
++  // WaylandSurfaceGpu overrides:
++  void OnSubmission(uint32_t frame_id,
++                    const gfx::SwapResult& swap_result,
++                    gfx::GpuFenceHandle release_fence) override;
++  void OnPresentation(uint32_t frame_id,
++                      const gfx::PresentationFeedback& feedback) override;
++  void OnBufferManagerDisconnected() override;
++
++  // PendingFrame here is a post-SkiaRenderer struct that contains overlays +
++  // primary plane information. It is a compositor frame at the
++  // AcceleratedWidget level. The browser process translates its configs into
++  // Wayland surface attachments.
++  struct PendingFrame {
++    explicit PendingFrame(uint32_t frame_id);
++    ~PendingFrame();
++
++    // Unique identifier of the frame within this AcceleratedWidget.
++    uint32_t frame_id;
++
++    bool ready = false;
++
++    SwapCompletionCallback completion_callback;
++    PresentationCallback presentation_callback;
++    gfx::FrameData data;
++
++    // Says if scheduling succeeded.
++    bool schedule_planes_succeeded = true;
++
++    std::vector<BufferId> in_flight_color_buffers;
++    // Contains the buffer IDs and plane state committed atomically for this
++    // frame.
++    std::vector<wl::WaylandOverlayConfig> configs;
++  };
++
++  void MaybeSubmitFrames();
++  void RecycleSolidColorBuffers(PendingFrame* frame);
++
++  void FenceRetired(uint32_t frame_id);
++  void EnterFailedState();
++  void FailPendingFrames();
++
++  const raw_ptr<WaylandBufferManagerGpu> buffer_manager_;
++
++  // The platform window presented by this queue.
++  gfx::AcceleratedWidget widget_;
++
++  // PendingFrames that are waiting to be submitted. They can be either ready,
++  // waiting for gpu fences, or still scheduling overlays.
++  base::circular_deque<std::unique_ptr<PendingFrame>> unsubmitted_frames_;
++
++  // PendingFrames that are submitted, pending OnSubmission() calls.
++  base::circular_deque<std::unique_ptr<PendingFrame>> submitted_frames_;
++
++  // PendingFrames that have received OnSubmission(), pending OnPresentation()
++  // calls.
++  base::circular_deque<std::unique_ptr<PendingFrame>>
++      pending_presentation_frames_;
++  bool last_swap_buffers_result_ = true;
++  bool wait_for_unsupported_acquire_fences_ = true;
++  // Scale factor of the current surface.
++  float surface_scale_factor_ = 1.f;
++
++  // Holds gpu side reference (buffer_ids) for solid color wl_buffers.
++  std::unique_ptr<SolidColorBufferHolder> solid_color_buffers_holder_;
++
++  base::WeakPtrFactory<WaylandBufferQueuePresenter> weak_factory_;
++};
++
++}  // namespace ui
++
++#endif  // UI_OZONE_PLATFORM_WAYLAND_GPU_WAYLAND_BUFFER_QUEUE_PRESENTER_H_
+diff --git a/ui/ozone/platform/wayland/gpu/wayland_overlay_manager_unittest.cc b/ui/ozone/platform/wayland/gpu/wayland_overlay_manager_unittest.cc
+index 34beb2f..11054d6 100644
+--- a/ui/ozone/platform/wayland/gpu/wayland_overlay_manager_unittest.cc
++++ b/ui/ozone/platform/wayland/gpu/wayland_overlay_manager_unittest.cc
+@@ -60,6 +60,7 @@ class WaylandOverlayManagerTest : public WaylandTest {
+                                     /*supports_dma_buf=*/false,
+                                     /*supports_viewporter=*/true,
+                                     /*supports_acquire_fence=*/false,
++                                    /*supports_explicit_sync=*/false,
+                                     /*supports_overlays=*/true,
+                                     /*supports_single_pixel_buffer=*/true);
+ 
+diff --git a/ui/ozone/platform/wayland/gpu/wayland_surface_factory.cc b/ui/ozone/platform/wayland/gpu/wayland_surface_factory.cc
+index 2605b0e..1e1b6ca 100644
+--- a/ui/ozone/platform/wayland/gpu/wayland_surface_factory.cc
++++ b/ui/ozone/platform/wayland/gpu/wayland_surface_factory.cc
+@@ -6,6 +6,7 @@
+ 
+ #include <memory>
+ 
++#include "base/logging.h"
+ #include "base/memory/ptr_util.h"
+ #include "base/memory/raw_ptr.h"
+ #include "components/viz/common/resources/shared_image_format_utils.h"
+@@ -33,6 +34,7 @@
+ #include "ui/gfx/linux/gbm_device.h"  // nogncheck
+ #include "ui/ozone/platform/wayland/gpu/gbm_pixmap_wayland.h"
+ #include "ui/ozone/platform/wayland/gpu/gbm_surfaceless_wayland.h"
++#include "ui/ozone/platform/wayland/gpu/wayland_buffer_queue_presenter.h"
+ #include "ui/ozone/public/ozone_platform.h"
+ #endif  // WAYLAND_GBM
+ 
+@@ -214,6 +216,23 @@ WaylandSurfaceFactory::WaylandSurfaceFactory(
+ 
+ WaylandSurfaceFactory::~WaylandSurfaceFactory() = default;
+ 
++std::unique_ptr<OzonePresenter> WaylandSurfaceFactory::CreateOzonePresenter(
++    gfx::AcceleratedWidget widget) {
++#if defined(WAYLAND_GBM)
++  if (!buffer_manager_->GetGbmDevice()) {
++    LOG(ERROR) << "Native Wayland presentation requires GBM DMA-BUF support.";
++    return nullptr;
++  }
++  if (!buffer_manager_->supports_explicit_sync()) {
++    LOG(ERROR) << "Native Wayland presentation requires "
++                  "linux-drm-syncobj-v1.";
++    return nullptr;
++  }
++  return std::make_unique<WaylandBufferQueuePresenter>(buffer_manager_, widget);
++#endif
++  return nullptr;
++}
++
+ std::unique_ptr<SurfaceOzoneCanvas>
+ WaylandSurfaceFactory::CreateCanvasForWidget(gfx::AcceleratedWidget widget) {
+   return std::make_unique<WaylandCanvasSurface>(buffer_manager_, widget);
+@@ -246,9 +265,8 @@ GLOzone* WaylandSurfaceFactory::GetGLOzone(
+ std::unique_ptr<gpu::VulkanImplementation>
+ WaylandSurfaceFactory::CreateVulkanImplementation(bool use_swiftshader,
+                                                   bool allow_protected_memory) {
+-  LOG_IF(ERROR, !use_swiftshader)
+-      << "'--ozone-platform=wayland' is not compatible with Vulkan. "
+-         "Consider switching to '--ozone-platform=x11' or disabling Vulkan";
++  // Window presentation is owned by Ozone's native-pixmap presenter. Vulkan
++  // remains available to ANGLE, Dawn, and other non-WSI clients.
+   return std::make_unique<VulkanImplementationWayland>(use_swiftshader);
+ }
+ #endif
+diff --git a/ui/ozone/platform/wayland/gpu/wayland_surface_factory.h b/ui/ozone/platform/wayland/gpu/wayland_surface_factory.h
+index 95d34bf..e845b50 100644
+--- a/ui/ozone/platform/wayland/gpu/wayland_surface_factory.h
++++ b/ui/ozone/platform/wayland/gpu/wayland_surface_factory.h
+@@ -38,6 +38,8 @@ class WaylandSurfaceFactory : public SurfaceFactoryOzone {
+       bool use_swiftshader,
+       bool allow_protected_memory) override;
+ #endif
++  std::unique_ptr<OzonePresenter> CreateOzonePresenter(
++      gfx::AcceleratedWidget widget) override;
+   std::unique_ptr<SurfaceOzoneCanvas> CreateCanvasForWidget(
+       gfx::AcceleratedWidget widget) override;
+   scoped_refptr<gfx::NativePixmap> CreateNativePixmap(
+diff --git a/ui/ozone/platform/wayland/gpu/wayland_surface_factory_unittest.cc b/ui/ozone/platform/wayland/gpu/wayland_surface_factory_unittest.cc
+index 3d7c6f2..9846dc8 100644
+--- a/ui/ozone/platform/wayland/gpu/wayland_surface_factory_unittest.cc
++++ b/ui/ozone/platform/wayland/gpu/wayland_surface_factory_unittest.cc
+@@ -31,6 +31,7 @@
+ #include "ui/gl/gl_utils.h"
+ #include "ui/ozone/platform/wayland/gpu/gbm_surfaceless_wayland.h"
+ #include "ui/ozone/platform/wayland/gpu/wayland_buffer_manager_gpu.h"
++#include "ui/ozone/platform/wayland/gpu/wayland_buffer_queue_presenter.h"
+ #include "ui/ozone/platform/wayland/host/wayland_buffer_manager_host.h"
+ #include "ui/ozone/platform/wayland/host/wayland_subsurface.h"
+ #include "ui/ozone/platform/wayland/host/wayland_window.h"
+@@ -39,6 +40,7 @@
+ #include "ui/ozone/platform/wayland/test/test_wayland_server_thread.h"
+ #include "ui/ozone/platform/wayland/test/test_zwp_linux_buffer_params.h"
+ #include "ui/ozone/platform/wayland/test/wayland_test.h"
++#include "ui/ozone/public/ozone_presenter.h"
+ #include "ui/ozone/public/surface_ozone_canvas.h"
+ #include "ui/ozone/test/mock_platform_window_delegate.h"
+ 
+@@ -204,6 +206,7 @@ class WaylandSurfaceFactoryTest : public WaylandTest {
+                                     /*supports_dma_buf=*/false,
+                                     /*supports_viewporter=*/true,
+                                     /*supports_acquire_fence=*/false,
++                                    /*supports_explicit_sync=*/false,
+                                     /*supports_overlays=*/true,
+                                     /*supports_single_pixel_buffer=*/true);
+ 
+@@ -247,6 +250,176 @@ class WaylandSurfaceFactoryTest : public WaylandTest {
+   uint32_t surface_id_ = 0;
+ };
+ 
++TEST_P(WaylandSurfaceFactoryTest,
++       OzonePresenterFailsIncompleteFrameAtomically) {
++  buffer_manager_gpu_->use_fake_gbm_device_for_test_ = true;
++  buffer_manager_gpu_->gbm_device_ = std::make_unique<MockGbmDevice>();
++  buffer_manager_gpu_->supports_dmabuf_ = true;
++  buffer_manager_gpu_->supports_acquire_fence_ = true;
++  buffer_manager_gpu_->supports_explicit_sync_ = true;
++
++  auto presenter = surface_factory()->CreateOzonePresenter(widget_);
++  ASSERT_TRUE(presenter);
++
++  gfx::OverlayPlaneData plane;
++  EXPECT_FALSE(presenter->ScheduleOverlayPlane(
++      /*image=*/nullptr, /*acquire_fence=*/nullptr, plane));
++
++  int completion_count = 0;
++  int presentation_count = 0;
++  presenter->Present(
++      base::BindOnce(
++          [](int* count, gfx::SwapCompletionResult result) {
++            ++*count;
++            EXPECT_EQ(result.swap_result, gfx::SwapResult::SWAP_FAILED);
++          },
++          &completion_count),
++      base::BindOnce(
++          [](int* count, const gfx::PresentationFeedback& feedback) {
++            ++*count;
++            EXPECT_TRUE(feedback.failed());
++          },
++          &presentation_count),
++      gfx::FrameData());
++
++  EXPECT_EQ(completion_count, 1);
++  EXPECT_EQ(presentation_count, 1);
++}
++
++TEST_P(WaylandSurfaceFactoryTest, OzonePresenterTeardownResolvesCallbacks) {
++  buffer_manager_gpu_->use_fake_gbm_device_for_test_ = true;
++  buffer_manager_gpu_->gbm_device_ = std::make_unique<MockGbmDevice>();
++  buffer_manager_gpu_->supports_dmabuf_ = true;
++  buffer_manager_gpu_->supports_acquire_fence_ = true;
++  buffer_manager_gpu_->supports_explicit_sync_ = true;
++
++  auto presenter = surface_factory()->CreateOzonePresenter(widget_);
++  ASSERT_TRUE(presenter);
++
++  int completion_count = 0;
++  int presentation_count = 0;
++  presenter->Present(
++      base::BindOnce(
++          [](int* count, gfx::SwapCompletionResult result) {
++            ++*count;
++            EXPECT_EQ(result.swap_result, gfx::SwapResult::SWAP_FAILED);
++          },
++          &completion_count),
++      base::BindOnce(
++          [](int* count, const gfx::PresentationFeedback& feedback) {
++            ++*count;
++            EXPECT_TRUE(feedback.failed());
++          },
++          &presentation_count),
++      gfx::FrameData());
++
++  presenter.reset();
++  EXPECT_EQ(completion_count, 1);
++  EXPECT_EQ(presentation_count, 1);
++
++  base::RunLoop().RunUntilIdle();
++  EXPECT_EQ(completion_count, 1);
++  EXPECT_EQ(presentation_count, 1);
++}
++
++TEST_P(WaylandSurfaceFactoryTest,
++       OzonePresenterRejectsStaleSurfaceResponse) {
++  buffer_manager_gpu_->use_fake_gbm_device_for_test_ = true;
++  buffer_manager_gpu_->gbm_device_ = std::make_unique<MockGbmDevice>();
++  buffer_manager_gpu_->supports_dmabuf_ = true;
++  buffer_manager_gpu_->supports_acquire_fence_ = true;
++  buffer_manager_gpu_->supports_explicit_sync_ = true;
++
++  auto first = surface_factory()->CreateOzonePresenter(widget_);
++  ASSERT_TRUE(first);
++  auto* first_wayland =
++      static_cast<WaylandBufferQueuePresenter*>(first.get());
++
++  int first_completion_count = 0;
++  first->Present(
++      base::BindOnce(
++          [](int* count, gfx::SwapCompletionResult) { ++*count; },
++          &first_completion_count),
++      base::DoNothing(), gfx::FrameData());
++  ASSERT_EQ(first_wayland->submitted_frames_.size(), 1u);
++  const uint32_t stale_frame_id =
++      first_wayland->submitted_frames_.front()->frame_id;
++  first.reset();
++  EXPECT_EQ(first_completion_count, 1);
++
++  auto replacement = surface_factory()->CreateOzonePresenter(widget_);
++  ASSERT_TRUE(replacement);
++  auto* replacement_wayland =
++      static_cast<WaylandBufferQueuePresenter*>(replacement.get());
++
++  int replacement_completion_count = 0;
++  replacement->Present(
++      base::BindOnce(
++          [](int* count, gfx::SwapCompletionResult) { ++*count; },
++          &replacement_completion_count),
++      base::DoNothing(), gfx::FrameData());
++  ASSERT_EQ(replacement_wayland->submitted_frames_.size(), 1u);
++  EXPECT_NE(replacement_wayland->submitted_frames_.front()->frame_id,
++            stale_frame_id);
++
++  replacement_wayland->OnSubmission(
++      stale_frame_id, gfx::SwapResult::SWAP_ACK, gfx::GpuFenceHandle());
++  EXPECT_EQ(replacement_completion_count, 0);
++
++  replacement.reset();
++  EXPECT_EQ(replacement_completion_count, 1);
++}
++
++TEST_P(WaylandSurfaceFactoryTest,
++       OzonePresenterRequiresLinuxDrmSyncobj) {
++  buffer_manager_gpu_->use_fake_gbm_device_for_test_ = true;
++  buffer_manager_gpu_->gbm_device_ = std::make_unique<MockGbmDevice>();
++  buffer_manager_gpu_->supports_dmabuf_ = true;
++  buffer_manager_gpu_->supports_acquire_fence_ = true;
++  buffer_manager_gpu_->supports_explicit_sync_ = false;
++
++  EXPECT_FALSE(surface_factory()->CreateOzonePresenter(widget_));
++}
++
++TEST_P(WaylandSurfaceFactoryTest,
++       OzonePresenterDisconnectResolvesCallbacks) {
++  buffer_manager_gpu_->use_fake_gbm_device_for_test_ = true;
++  buffer_manager_gpu_->gbm_device_ = std::make_unique<MockGbmDevice>();
++  buffer_manager_gpu_->supports_dmabuf_ = true;
++  buffer_manager_gpu_->supports_acquire_fence_ = true;
++  buffer_manager_gpu_->supports_explicit_sync_ = true;
++
++  auto presenter = surface_factory()->CreateOzonePresenter(widget_);
++  ASSERT_TRUE(presenter);
++  base::RunLoop().RunUntilIdle();
++
++  int completion_count = 0;
++  int presentation_count = 0;
++  presenter->Present(
++      base::BindOnce(
++          [](int* count, gfx::SwapCompletionResult result) {
++            ++*count;
++            EXPECT_EQ(result.swap_result, gfx::SwapResult::SWAP_FAILED);
++          },
++          &completion_count),
++      base::BindOnce(
++          [](int* count, const gfx::PresentationFeedback& feedback) {
++            ++*count;
++            EXPECT_TRUE(feedback.failed());
++          },
++          &presentation_count),
++      gfx::FrameData());
++
++  buffer_manager_gpu_->OnHostDisconnected();
++  base::RunLoop().RunUntilIdle();
++  EXPECT_EQ(completion_count, 1);
++  EXPECT_EQ(presentation_count, 1);
++
++  presenter.reset();
++  EXPECT_EQ(completion_count, 1);
++  EXPECT_EQ(presentation_count, 1);
++}
++
+ TEST_P(WaylandSurfaceFactoryTest,
+        GbmSurfacelessWaylandCommitOverlaysCallbacksTest) {
+   if (!connection_->ShouldUseOverlayDelegation()) {
+diff --git a/ui/ozone/platform/wayland/gpu/wayland_surface_gpu.h b/ui/ozone/platform/wayland/gpu/wayland_surface_gpu.h
+index c574d45..956804e 100644
+--- a/ui/ozone/platform/wayland/gpu/wayland_surface_gpu.h
++++ b/ui/ozone/platform/wayland/gpu/wayland_surface_gpu.h
+@@ -38,6 +38,11 @@ class WaylandSurfaceGpu {
+   virtual void OnPresentation(uint32_t frame_id,
+                               const gfx::PresentationFeedback& feedback) = 0;
+ 
++  // Signals that the browser-process Wayland host disappeared. Presenters
++  // with queued callbacks must terminate them; legacy surfaces may wait for
++  // their normal GPU-process recreation.
++  virtual void OnBufferManagerDisconnected() {}
++
+   uint32_t next_frame_id() { return ++frame_id_; }
+ 
+  private:
+diff --git a/ui/ozone/platform/wayland/host/wayland_buffer_manager_connector.cc b/ui/ozone/platform/wayland/host/wayland_buffer_manager_connector.cc
+index 7309b92..d58d49d 100644
+--- a/ui/ozone/platform/wayland/host/wayland_buffer_manager_connector.cc
++++ b/ui/ozone/platform/wayland/host/wayland_buffer_manager_connector.cc
+@@ -66,6 +66,7 @@ void WaylandBufferManagerConnector::OnGpuServiceLaunched(
+       std::move(pending_remote), shared_image_formats_with_modifiers,
+       supports_dma_buf, buffer_manager_host_->SupportsViewporter(),
+       buffer_manager_host_->SupportsAcquireFence(),
++      buffer_manager_host_->SupportsExplicitSync(),
+       buffer_manager_host_->SupportsOverlays(),
+       buffer_manager_host_->SupportsSinglePixelBuffer());
+ }
+diff --git a/ui/ozone/platform/wayland/host/wayland_buffer_manager_host.cc b/ui/ozone/platform/wayland/host/wayland_buffer_manager_host.cc
+index c676771..15e101f 100644
+--- a/ui/ozone/platform/wayland/host/wayland_buffer_manager_host.cc
++++ b/ui/ozone/platform/wayland/host/wayland_buffer_manager_host.cc
+@@ -108,6 +108,10 @@ bool WaylandBufferManagerHost::SupportsAcquireFence() const {
+          connection_->UseImplicitSyncInterop();
+ }
+ 
++bool WaylandBufferManagerHost::SupportsExplicitSync() const {
++  return connection_->SupportsExplicitSync();
++}
++
+ bool WaylandBufferManagerHost::SupportsViewporter() const {
+   return !!connection_->viewporter();
+ }
+diff --git a/ui/ozone/platform/wayland/host/wayland_buffer_manager_host.h b/ui/ozone/platform/wayland/host/wayland_buffer_manager_host.h
+index ac4a5a0..ad5afe6 100644
+--- a/ui/ozone/platform/wayland/host/wayland_buffer_manager_host.h
++++ b/ui/ozone/platform/wayland/host/wayland_buffer_manager_host.h
+@@ -70,6 +70,7 @@ class WaylandBufferManagerHost : public ozone::mojom::WaylandBufferManagerHost {
+ 
+   bool SupportsDmabuf() const;
+   bool SupportsAcquireFence() const;
++  bool SupportsExplicitSync() const;
+   bool SupportsViewporter() const;
+   bool SupportsOverlays() const;
+   bool SupportsSinglePixelBuffer() const;
+diff --git a/ui/ozone/platform/wayland/host/wayland_frame_manager_unittest.cc b/ui/ozone/platform/wayland/host/wayland_frame_manager_unittest.cc
+index 6670d1e..5194ca7 100644
+--- a/ui/ozone/platform/wayland/host/wayland_frame_manager_unittest.cc
++++ b/ui/ozone/platform/wayland/host/wayland_frame_manager_unittest.cc
+@@ -62,6 +62,7 @@ class WaylandFrameManagerTest : public WaylandTestSimple {
+                                     /*supports_dma_buf=*/false,
+                                     /*supports_viewporter=*/true,
+                                     /*supports_acquire_fence=*/false,
++                                    /*supports_explicit_sync=*/false,
+                                     /*supports_overlays=*/true,
+                                     /*supports_single_pixel_buffer=*/true);
+   }
+diff --git a/ui/ozone/platform/wayland/host/wayland_surface_unittest.cc b/ui/ozone/platform/wayland/host/wayland_surface_unittest.cc
+index 37d7460..f73ad42 100644
+--- a/ui/ozone/platform/wayland/host/wayland_surface_unittest.cc
++++ b/ui/ozone/platform/wayland/host/wayland_surface_unittest.cc
+@@ -126,6 +126,7 @@ class WaylandSurfaceExplicitSyncTest : public WaylandTestSimple {
+                                     /*supports_dma_buf=*/false,
+                                     /*supports_viewporter=*/true,
+                                     /*supports_acquire_fence=*/false,
++                                    /*supports_explicit_sync=*/false,
+                                     /*supports_overlays=*/true,
+                                     /*supports_single_pixel_buffer=*/true);
+   }
+diff --git a/ui/ozone/platform/wayland/host/wayland_window_unittest.cc b/ui/ozone/platform/wayland/host/wayland_window_unittest.cc
+index 6d13da6..c39f189 100644
+--- a/ui/ozone/platform/wayland/host/wayland_window_unittest.cc
++++ b/ui/ozone/platform/wayland/host/wayland_window_unittest.cc
+@@ -419,6 +419,7 @@ class WaylandWindowTest : public WaylandTest {
+                                     /*supports_dma_buf=*/false,
+                                     /*supports_viewporter=*/true,
+                                     /*supports_acquire_fence=*/false,
++                                    /*supports_explicit_sync=*/false,
+                                     /*supports_overlays=*/true,
+                                     /*supports_single_pixel_buffer=*/true);
+ 
+@@ -3759,6 +3760,7 @@ TEST_P(WaylandWindowTest, ReattachesBackgroundOnShow) {
+                                   /*supports_dma_buf=*/false,
+                                   /*supports_viewporter=*/true,
+                                   /*supports_acquire_fence=*/false,
++                                  /*supports_explicit_sync=*/false,
+                                   /*supports_overlays=*/true,
+                                   /*supports_single_pixel_buffer=*/true);
+ 
+@@ -4393,6 +4395,7 @@ TEST_P(WaylandWindowTest, NoDuplicateViewporterRequests) {
+                                   /*supports_dma_buf=*/false,
+                                   /*supports_viewporter=*/true,
+                                   /*supports_acquire_fence=*/false,
++                                  /*supports_explicit_sync=*/false,
+                                   /*supports_overlays=*/true,
+                                   /*supports_single_pixel_buffer=*/true);
+ 
+diff --git a/ui/ozone/platform/wayland/mojom/wayland_buffer_manager.mojom b/ui/ozone/platform/wayland/mojom/wayland_buffer_manager.mojom
+index f36644a..49f9f6f 100644
+--- a/ui/ozone/platform/wayland/mojom/wayland_buffer_manager.mojom
++++ b/ui/ozone/platform/wayland/mojom/wayland_buffer_manager.mojom
+@@ -107,6 +107,9 @@ interface WaylandBufferManagerGpu {
+   // `supports_acquire_fence` indicates whether acquire fences can be submitted
+   // with buffers for wayland servers to wait on before accessing buffer
+   // contents.
++  // `supports_explicit_sync` indicates that acquire and release fences are
++  // backed by the compositor's linux-drm-syncobj-v1 protocol rather than the
++  // DMA-BUF implicit-sync interop compatibility path.
+   // `supports_overlays` indicates whether overlays should be used with this
+   // Wayland compositor.
+   Initialize(pending_remote<WaylandBufferManagerHost> remote_host,
+@@ -115,6 +118,7 @@ interface WaylandBufferManagerGpu {
+              bool supports_dma_buf,
+              bool supports_viewporter,
+              bool supports_acquire_fence,
++             bool supports_explicit_sync,
+              bool supports_overlays,
+              bool supports_single_pixel_buffer);
+ 
+diff --git a/ui/ozone/platform/wayland/wayland_buffer_manager_unittest.cc b/ui/ozone/platform/wayland/wayland_buffer_manager_unittest.cc
+index 79f7c96..cf59778 100644
+--- a/ui/ozone/platform/wayland/wayland_buffer_manager_unittest.cc
++++ b/ui/ozone/platform/wayland/wayland_buffer_manager_unittest.cc
+@@ -131,6 +131,7 @@ class WaylandBufferManagerTest : public WaylandTest {
+                                     /*supports_dma_buf=*/false,
+                                     /*supports_viewporter=*/true,
+                                     /*supports_acquire_fence=*/false,
++                                    /*supports_explicit_sync=*/false,
+                                     /*supports_overlays=*/true,
+                                     /*supports_single_pixel_buffer=*/true);
+     surface_id_ = window_->root_surface()->get_surface_id();
+@@ -213,6 +214,7 @@ class WaylandBufferManagerTest : public WaylandTest {
+                     /*supports_dma_buf=*/false,
+                     /*supports_viewporter=*/true,
+                     /*supports_acquire_fence=*/false,
++                    /*supports_explicit_sync=*/false,
+                     /*supports_overlays=*/true,
+                     /*supports_single_pixel_buffer=*/true);
+                 surface_factory_->SetBufferManagerForTesting(
+@@ -2472,6 +2474,7 @@ TEST_P(WaylandBufferManagerTest,
+                                   /*supports_dma_buf=*/false,
+                                   /*supports_viewporter=*/true,
+                                   /*supports_acquire_fence=*/false,
++                                  /*supports_explicit_sync=*/false,
+                                   /*supports_overlays=*/true,
+                                   /*supports_single_pixel_buffer=*/true);
+ 
+@@ -2596,6 +2599,7 @@ TEST_P(WaylandBufferManagerTest, HidesSubsurfacesOnChannelDestroyed) {
+                                   /*supports_dma_buf=*/false,
+                                   /*supports_viewporter=*/true,
+                                   /*supports_acquire_fence=*/false,
++                                  /*supports_explicit_sync=*/false,
+                                   /*supports_overlays=*/true,
+                                   /*supports_single_pixel_buffer=*/true);
+ 
+@@ -2843,6 +2847,7 @@ TEST_P(WaylandBufferManagerTest, ExecutesTasksAfterInitialization) {
+                                   /*supports_dma_buf=*/false,
+                                   /*supports_viewporter=*/true,
+                                   /*supports_acquire_fence=*/false,
++                                  /*supports_explicit_sync=*/false,
+                                   /*supports_overlays=*/true,
+                                   /*supports_single_pixel_buffer=*/true);
+ 
+diff --git a/ui/ozone/public/ozone_presenter.cc b/ui/ozone/public/ozone_presenter.cc
+new file mode 100644
+index 0000000..74bd78b
+--- /dev/null
++++ b/ui/ozone/public/ozone_presenter.cc
+@@ -0,0 +1,12 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "ui/ozone/public/ozone_presenter.h"
++
++namespace ui {
++
++OzonePresenter::OzonePresenter() = default;
++OzonePresenter::~OzonePresenter() = default;
++
++}  // namespace ui
+diff --git a/ui/ozone/public/ozone_presenter.h b/ui/ozone/public/ozone_presenter.h
+new file mode 100644
+index 0000000..775f6a4
+--- /dev/null
++++ b/ui/ozone/public/ozone_presenter.h
+@@ -0,0 +1,65 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef UI_OZONE_PUBLIC_OZONE_PRESENTER_H_
++#define UI_OZONE_PUBLIC_OZONE_PRESENTER_H_
++
++#include <memory>
++
++#include "base/component_export.h"
++#include "base/functional/callback.h"
++#include "base/memory/scoped_refptr.h"
++#include "ui/gfx/frame_data.h"
++#include "ui/gfx/native_pixmap.h"
++#include "ui/gfx/presentation_feedback.h"
++#include "ui/gfx/swap_result.h"
++
++namespace gfx {
++class ColorSpace;
++class GpuFence;
++class Size;
++struct OverlayPlaneData;
++}  // namespace gfx
++
++namespace ui {
++
++// Accelerated, rendering-API-independent presentation for an Ozone platform
++// window. Rendering backends schedule native pixmaps and explicit acquire
++// fences; the platform owns submission and presentation feedback.
++class COMPONENT_EXPORT(OZONE_BASE) OzonePresenter {
++ public:
++  using SwapCompletionCallback =
++      base::OnceCallback<void(gfx::SwapCompletionResult)>;
++  using PresentationCallback =
++      base::OnceCallback<void(const gfx::PresentationFeedback&)>;
++
++  OzonePresenter(const OzonePresenter&) = delete;
++  OzonePresenter& operator=(const OzonePresenter&) = delete;
++
++  virtual ~OzonePresenter();
++
++  virtual bool Resize(const gfx::Size& pixel_size,
++                      float scale_factor,
++                      const gfx::ColorSpace& color_space,
++                      bool has_alpha) = 0;
++
++  virtual bool ScheduleOverlayPlane(
++      scoped_refptr<gfx::NativePixmap> image,
++      std::unique_ptr<gfx::GpuFence> acquire_fence,
++      const gfx::OverlayPlaneData& plane) = 0;
++
++  virtual void Present(SwapCompletionCallback completion,
++                       PresentationCallback presentation,
++                       gfx::FrameData frame_data) = 0;
++
++  virtual bool SupportsViewporter() const = 0;
++  virtual bool SupportsPlaneGpuFences() const = 0;
++
++ protected:
++  OzonePresenter();
++};
++
++}  // namespace ui
++
++#endif  // UI_OZONE_PUBLIC_OZONE_PRESENTER_H_
+diff --git a/ui/ozone/public/surface_factory_ozone.cc b/ui/ozone/public/surface_factory_ozone.cc
+index cb2055b..9ce91b6 100644
+--- a/ui/ozone/public/surface_factory_ozone.cc
++++ b/ui/ozone/public/surface_factory_ozone.cc
+@@ -15,6 +15,7 @@
+ #include "ui/gfx/native_pixmap.h"
+ #include "ui/gl/gl_implementation.h"
+ #include "ui/ozone/public/overlay_surface.h"
++#include "ui/ozone/public/ozone_presenter.h"
+ #include "ui/ozone/public/platform_window_surface.h"
+ #include "ui/ozone/public/surface_ozone_canvas.h"
+ 
+@@ -68,6 +69,11 @@ SurfaceFactoryOzone::CreatePlatformWindowSurface(
+   return nullptr;
+ }
+ 
++std::unique_ptr<OzonePresenter> SurfaceFactoryOzone::CreateOzonePresenter(
++    gfx::AcceleratedWidget widget) {
++  return nullptr;
++}
++
+ std::unique_ptr<OverlaySurface> SurfaceFactoryOzone::CreateOverlaySurface(
+     gfx::AcceleratedWidget widget) {
+   return nullptr;
+diff --git a/ui/ozone/public/surface_factory_ozone.h b/ui/ozone/public/surface_factory_ozone.h
+index 6a2b4bb..dd04688 100644
+--- a/ui/ozone/public/surface_factory_ozone.h
++++ b/ui/ozone/public/surface_factory_ozone.h
+@@ -40,24 +40,23 @@ class VulkanDeviceQueue;
+ namespace ui {
+ 
+ class SurfaceOzoneCanvas;
++class OzonePresenter;
+ class OverlaySurface;
+ class PlatformWindowSurface;
+ 
+ // The Ozone interface allows external implementations to hook into Chromium to
+-// provide a system specific implementation. The Ozone interface supports two
+-// drawing modes: 1) accelerated drawing using GL and 2) software drawing
+-// through Skia.
++// provide a system specific implementation. The Ozone interface supports
++// accelerated drawing through a rendering-API-independent native presenter or
++// the legacy GL path, and software drawing through Skia.
+ //
+-// If you want to paint on a window with ozone, you need to create a GLSurface
+-// or SurfaceOzoneCanvas for that window. The platform can support software, GL,
+-// or both for painting on the window. The following functionality is specific
+-// to the drawing mode and may not have any meaningful implementation in the
+-// other mode. An implementation must provide functionality for at least one
+-// mode.
++// If you want to paint on a window with Ozone, create an OzonePresenter,
++// GLSurface, or SurfaceOzoneCanvas for that window. The platform can support
++// one or more of those modes.
+ //
+-// 1) Accelerated Drawing (GL path):
++// 1) Accelerated Drawing:
+ //
+-// The following functions are specific to GL:
++// The rendering-API-independent path uses CreateOzonePresenter. The following
++// functions are specific to legacy GL:
+ //  - GetAllowedGLImplementations
+ //  - GetGLOzone (along with the associated GLOzone)
+ //
+@@ -116,6 +115,12 @@ class COMPONENT_EXPORT(OZONE_BASE) SurfaceFactoryOzone {
+   virtual std::unique_ptr<PlatformWindowSurface> CreatePlatformWindowSurface(
+       gfx::AcceleratedWidget window);
+ 
++  // Creates an accelerated, rendering-API-independent presenter for a platform
++  // window. Returns null when the platform has no native-pixmap presentation
++  // path.
++  virtual std::unique_ptr<OzonePresenter> CreateOzonePresenter(
++      gfx::AcceleratedWidget window);
++
+   // Creates an overlay surface for a platform window.
+   virtual std::unique_ptr<OverlaySurface> CreateOverlaySurface(
+       gfx::AcceleratedWidget window);

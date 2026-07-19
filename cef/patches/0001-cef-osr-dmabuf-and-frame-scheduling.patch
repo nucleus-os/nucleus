@@ -1,5 +1,6 @@
 Subject: [PATCH] Integrate direct DMA-BUF output with CEF OSR scheduling
 
+# CEF product patch.
 diff --git a/cef/BUILD.gn b/cef/BUILD.gn
 index ae04ae3..242f30f 100644
 --- a/cef/BUILD.gn

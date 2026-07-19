@@ -12,6 +12,7 @@
 set -euo pipefail
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$script_dir/scripts/cef-env.sh"
+source "$script_dir/../chromium/scripts/patch-stack.sh"
 
 # ---------------------------------------------------------------------------
 # Flags
@@ -21,6 +22,7 @@ package_only=0
 skip_deps=0
 run_install_build_deps=0
 no_update=0
+prepare_only=0
 
 usage() {
   cat <<EOF
@@ -35,6 +37,7 @@ Options:
   --package-only         Skip build; just (re)package the last build's distrib.
   --no-update            Reuse the current checkout, apply project patches,
                          then rebuild and package it.
+  --prepare-only         Sync and apply CEF patches without building or packaging.
   --skip-deps            Do not clone/update depot_tools (assume present).
   --install-build-deps   Run Chromium's install-build-deps.sh (needs sudo) after
                          the first sync. Do this once on a fresh host.
@@ -54,6 +57,7 @@ while [[ $# -gt 0 ]]; do
     --force-clean) force_clean=1 ;;
     --package-only) package_only=1 ;;
     --no-update) no_update=1 ;;
+    --prepare-only) prepare_only=1 ;;
     --skip-deps) skip_deps=1 ;;
     --install-build-deps) run_install_build_deps=1 ;;
     -h|--help) usage; exit 0 ;;
@@ -196,84 +200,32 @@ ensure_v8_builtins_pgo_profiles() {
   echo "-- V8 builtins PGO profile ready"
 }
 
-reverse_patch_stack() {
-  local repository="$1"
-  local patch_dir="$2"
-  local applied_patch_dir="$3"
-  local stack_name="$4"
-  local patch_file
-  local patches=("$patch_dir"/*.patch)
-  local applied_patches=("$applied_patch_dir"/*.patch)
-  local patch_index
-  if ! git -C "$repository" rev-parse --git-dir >/dev/null 2>&1; then
-    return
-  fi
-
-  # Keep a generated copy of the exact applied stack so renamed, merged, or
-  # deleted patches can still be reversed on the next run.
-  if [[ ! -d "$applied_patch_dir" ]]; then
-    applied_patches=("${patches[@]}")
-  fi
-  for ((patch_index=${#applied_patches[@]} - 1; patch_index >= 0; patch_index--)); do
-    patch_file="${applied_patches[$patch_index]}"
-    if [[ ! -f "$patch_file" ]]; then
-      continue
-    fi
-    if git -C "$repository" apply --reverse --check "$patch_file" >/dev/null 2>&1; then
-      echo "-- refreshing $stack_name patch: $(basename "$patch_file")"
-      git -C "$repository" apply --reverse "$patch_file"
-    fi
-  done
-}
-
-apply_patch_stack() {
-  local repository="$1"
-  local patch_dir="$2"
-  local applied_patch_dir="$3"
-  local stack_name="$4"
-  local patch_file
-  local patches=("$patch_dir"/*.patch)
-
-  if ! git -C "$repository" rev-parse --git-dir >/dev/null 2>&1; then
-    echo "!! $stack_name checkout is missing: $repository" >&2
-    exit 1
-  fi
-
-  for patch_file in "${patches[@]}"; do
-    if [[ ! -f "$patch_file" ]]; then
-      continue
-    fi
-    if git -C "$repository" apply --check "$patch_file"; then
-      echo "-- applying $stack_name patch: $(basename "$patch_file")"
-      git -C "$repository" apply "$patch_file"
-    else
-      echo "!! $stack_name source patch no longer applies: $patch_file" >&2
-      exit 1
-    fi
-  done
-
-  rm -rf "$applied_patch_dir"
-  mkdir -p "$applied_patch_dir"
-  for patch_file in "${patches[@]}"; do
-    if [[ -f "$patch_file" ]]; then
-      cp "$patch_file" "$applied_patch_dir/"
-    fi
-  done
-}
-
 reverse_nucleus_cef_patches() {
   local chromium_root="$NUCLEUS_CEF_SRC_ROOT/chromium/src"
 
+  # A browser preparation adds one product layer to this shared source tree.
+  # Remove it first so CEF refreshes against its unchanged source contract.
+  nucleus_reverse_patch_stack \
+    "$chromium_root" \
+    "$script_dir/../chromium/patches/browser" \
+    "$NUCLEUS_CEF_SRC_ROOT/.nucleus-applied-browser-patches" \
+    "Nucleus Browser"
+
   # Remove project changes before CEF updates its own Chromium patch stack.
   # Several Chromium files intentionally overlap CEF's patches.
-  reverse_patch_stack \
+  nucleus_reverse_patch_stack \
     "$chromium_root" \
     "$script_dir/patches" \
     "$NUCLEUS_CEF_SRC_ROOT/.nucleus-applied-patches" \
     "Chromium/CEF"
-  reverse_patch_stack \
+  nucleus_reverse_patch_stack \
+    "$chromium_root" \
+    "$script_dir/../chromium/patches/common" \
+    "$NUCLEUS_CEF_SRC_ROOT/.nucleus-applied-common-patches" \
+    "Chromium common"
+  nucleus_reverse_patch_stack \
     "$chromium_root/third_party/dawn" \
-    "$script_dir/patches/dawn" \
+    "$script_dir/../chromium/patches/dawn" \
     "$NUCLEUS_CEF_SRC_ROOT/.nucleus-applied-dawn-patches" \
     "Dawn"
 }
@@ -283,14 +235,19 @@ apply_nucleus_cef_patches() {
   local applied_patch_dir="$NUCLEUS_CEF_SRC_ROOT/.nucleus-applied-patches"
   local generated_api_patch="9999-generated-cef-api-hashes.patch"
 
-  apply_patch_stack \
+  nucleus_apply_patch_stack \
+    "$chromium_root" \
+    "$script_dir/../chromium/patches/common" \
+    "$NUCLEUS_CEF_SRC_ROOT/.nucleus-applied-common-patches" \
+    "Chromium common"
+  nucleus_apply_patch_stack \
     "$chromium_root" \
     "$script_dir/patches" \
     "$applied_patch_dir" \
     "Chromium/CEF"
-  apply_patch_stack \
+  nucleus_apply_patch_stack \
     "$chromium_root/third_party/dawn" \
-    "$script_dir/patches/dawn" \
+    "$script_dir/../chromium/patches/dawn" \
     "$NUCLEUS_CEF_SRC_ROOT/.nucleus-applied-dawn-patches" \
     "Dawn"
 
@@ -365,6 +322,13 @@ if [[ $package_only -eq 0 ]]; then
   )
 
   apply_nucleus_cef_patches
+
+  if [[ $prepare_only -eq 1 ]]; then
+    echo
+    echo "== CEF source prepared =="
+    echo "source: $chromium_root"
+    exit 0
+  fi
 
   # Regenerate Ninja after applying our BUILD.gn changes, then build directly.
   # A second automate-git.py build pass would rerun CEF's patch hook over our

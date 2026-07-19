@@ -4,6 +4,7 @@ Wayland-only Linux builds do not link the X11 protocol implementation. Keep
 the OSR coordinate correction for X11 builds, but do not compile or link it
 when Ozone X11 support is disabled.
 
+# CEF product patch.
 diff --git a/cef/libcef/browser/native/menu_runner_views_aura.cc b/cef/libcef/browser/native/menu_runner_views_aura.cc
 --- a/cef/libcef/browser/native/menu_runner_views_aura.cc
 +++ b/cef/libcef/browser/native/menu_runner_views_aura.cc

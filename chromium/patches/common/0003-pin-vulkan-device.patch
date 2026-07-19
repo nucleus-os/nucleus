@@ -1,5 +1,6 @@
 Subject: [PATCH] Pin Chromium's Vulkan producers to the requested DRM device
 
+# Shared Chromium GPU-selection patch.
 diff --git a/gpu/command_buffer/service/dawn_context_provider.cc b/gpu/command_buffer/service/dawn_context_provider.cc
 index 04af08a..84a45dc 100644
 --- a/gpu/command_buffer/service/dawn_context_provider.cc

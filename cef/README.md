@@ -46,12 +46,16 @@ pass directly, so the production path does not create a video capturer or
 perform its full-surface capture blit. Ordinary Chromium compositors and
 upstream capture modes remain unchanged.
 
-Chromium/CEF patches live directly under `patches/`. Changes to Dawn live under
-`patches/dawn/` because Dawn is a separate gclient Git checkout. The build
-script applies and refreshes both stacks in their owning repositories.
-The NVIDIA VA-API driver's matching Vulkan disjoint-plane layout change lives
-under `patches/nvidia-vaapi-driver/`; it applies to the separately pinned
-driver checkout before that private module is built and installed.
+CEF-only patches live directly under `patches/`. Shared Chromium and Dawn
+changes live under `../chromium/patches/`, alongside the Nucleus Browser
+product layer and shared build entry point. CEF preparation reverses any
+browser-only layer before refreshing its own patches, so both products reuse
+one checkout without sharing mutable GN output directories.
+
+The NVIDIA VA-API driver's matching packed image export is maintained in the
+pinned `maddythewisp/nvidia-vaapi-driver` fork. CUDA maps the packed plane
+arrays without its dedicated-image flag; Dawn independently uses a dedicated
+Vulkan allocation when the queried external-memory contract requires it.
 
 ## Version pinning
 
@@ -70,6 +74,18 @@ changing its branch number. Bump the commit and Chromium version together in
 always ship the wrapper and headers built with its own `libcef.so`.
 
 ## Building
+
+The workspace-level entry point is preferred because it also owns the
+standalone Nucleus Browser product layer:
+
+```sh
+chromium/build.sh cef
+chromium/build.sh browser
+chromium/build.sh all
+```
+
+`cef/build.sh` remains the CEF product primitive used by that entry point. It
+is still useful directly for CEF-only packaging and recovery operations.
 
 Once, on a fresh host, install Chromium's build dependencies (large; needs
 sudo). Run one sync first so the checkout exists, then install deps:

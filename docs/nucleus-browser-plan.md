@@ -271,13 +271,48 @@ runtime implementation.
 Exact file additions can follow upstream source movement at the pinned Chromium
 revision, but subsystem ownership and API direction do not change.
 
+## Current implementation status
+
+As of 2026-07-19, the shared substrate and the first browser source slices are
+persisted in the workspace:
+
+- `chromium/build.sh` is the single product entry point for CEF, Nucleus
+  Browser, or both;
+- both products reuse CEF's pinned Chromium checkout, depot_tools, downloaded
+  dependencies, PGO profiles, Dawn checkout, and compiler cache;
+- CEF and the standalone browser retain separate GN outputs because their
+  allocator and process-boundary contracts are intentionally different;
+- Chromium-wide patches live in `chromium/patches/common/`, nested Dawn work in
+  `chromium/patches/dawn/`, CEF-only behavior in `cef/patches/`, and the
+  browser presenter work in `chromium/patches/browser/`;
+- switching products reverses the exact previously applied product layer
+  before applying the requested layer, so browser development cannot leak
+  into a CEF build;
+- the browser layer preserves the backend-neutral Wayland presenter, the Ozone
+  Viz adapter, and the initial Graphite/Dawn presentable-SharedImage hookup;
+- the complete browser patch stack applies to the pinned source, and GN
+  generation succeeds in its independent official/PGO/ThinLTO output;
+- the focused Ozone, Wayland, and Viz targets compile in that output;
+- five Wayland presenter prerequisite/lifecycle tests and four GL-independent
+  Viz adapter tests pass. The Viz adapter has a narrow test executable so these
+  API-neutral tests do not depend on the full Viz suite's GL bootstrap or
+  reintroduce SwiftShader into the native-only browser build.
+
+This is development groundwork, not browser runtime acceptance. The initial
+Phase 1 and Phase 2 slices now have compile and focused-test coverage, but their
+remaining fence/plane cases and Phases 3–9 still need to complete, integrate,
+package, and accept the real on-screen product. The proven CEF distribution
+and Noctalia runtime remain authoritative while that work proceeds.
+
 ## Sequential implementation
 
 ### Phase 0 — Establish the shared Chromium substrate
 
-Move the Chromium/CEF source-build ownership from the product-specific `cef/`
-name to `chromium/`. The directory owns one pinned Chromium/CEF checkout, one
-patch stack, and two product output directories.
+Put shared Chromium source-build orchestration under `chromium/`, while
+retaining `cef/` as the CEF-specific build and packaging component.
+`automate-git.py` remains the authoritative provisioner for one pinned
+CEF/Chromium checkout. The shared orchestration owns layered patch selection
+and two product output directories.
 
 The two output directories are necessary rather than configurable build
 profiles. Embedded CEF must retain the allocator settings required at the
@@ -306,8 +341,10 @@ Noctalia's process. The Nucleus Browser output does not inherit those CEF
 overrides: it uses Chromium's official standalone allocator shim,
 PartitionAlloc integration, and BackupRefPtr configuration. Both outputs
 hard-enable the existing Graphite, Dawn, Vulkan, and DMA-BUF build requirements
-and retain ThinLTO. Expensive DCHECKs and debug validation stay out of release
-artifacts.
+and retain ThinLTO. Chromium's and ANGLE's SwiftShader targets are disabled;
+native Vulkan is mandatory. Expensive DCHECKs stay out of release artifacts,
+while validation-layer support remains buildable for explicit acceptance runs
+and is disabled during ordinary runtime.
 
 One build entry point generates and builds both fixed outputs. It does not
 offer product profiles or a matrix of feature switches. The outputs share the
@@ -332,8 +369,8 @@ Phase 0 lands with:
 
 - one reproducible command producing optimized CEF and Nucleus Browser
   outputs;
-- a stock Chromium window that starts far enough to demonstrate the current
-  missing Wayland/Dawn presentation path;
+- an independently generated Chromium browser output ready for the focused
+  presenter implementation and test phases;
 - unchanged CEF distribution contents and Noctalia compatibility;
 - no second Chromium checkout and no duplicated dependency downloads.
 

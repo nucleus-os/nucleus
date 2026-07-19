@@ -1,5 +1,6 @@
 Subject: [PATCH] Add direct Viz export and transparent backdrop composition
 
+# Shared Chromium Graphite/Viz patch.
 diff --git a/components/viz/service/BUILD.gn b/components/viz/service/BUILD.gn
 index 3e9bec8..590e04e 100644
 --- a/components/viz/service/BUILD.gn
