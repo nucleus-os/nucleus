@@ -45,8 +45,7 @@ Four things, independent of each other. All four are now closed.
 
 The reference needs PNG, JPEG, WebP, BMP, GIF-still, ICO, SVG at arbitrary target size,
 `data:` URI decode, raw-buffer upload with stride and channel order, sRGB-correct
-downscale, and threaded decode with main-thread upload. All of it is in place except the
-last, which is phase 5.
+downscale, and threaded decode. All of it is in place.
 
 Three things it needs that are *not* image decode, and do not land here: WebP encode
 (thumbnail disk cache), PNG encode (avatar write-back), and an HTTP client (MPRIS
