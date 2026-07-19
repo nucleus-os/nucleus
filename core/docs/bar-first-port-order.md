@@ -37,43 +37,65 @@ distributed-style by each service. Neither is optional: config is how a bar is c
 and IPC is how everything is bound to keys and scripted. A bar with a hardcoded widget list
 is a demo, not the product.
 
-## Defects to clear first
+## Phase 1 — clear the defects — **complete**
 
-These are not gaps, they are wrong behaviour in shipped code. Each is small, and each is a
-trap for anything built on top of it.
+Five pieces of wrong behaviour in shipped code, cleared before anything is built on
+top of them. Two were worse than the audit described and one was milder.
 
-`View.transform` publishes to the backing layer, but `hitTest` and both window-space
-conversions apply only `frame.origin` and `boundsOrigin`. A scaled or rotated view draws
-transformed and hit-tests untransformed. `convert(_ rect:)` passes `size` through unchanged
-and so cannot represent a scaled rect at all. Either transforms participate in hit testing
-and conversion, or `transform` stops being public — the current state is the one option
-that silently misleads.
+**The key code space was open, and keys collided.** This was the serious one, and the
+audit understated it: it reported "no letters or digits", but the real fault was that
+unmapped platform codes passed through as raw values while the named constants were
+numbered from 1. Ordinary evdev codes landed on them — the "1" key (evdev 2) compared
+equal to `.return`, "2" to `.tab`, "9" to `.leftArrow`, "q" to `.pageUp`. `TextField`
+switches on `keyCode` before inserting text, so **typing a digit submitted the field or
+moved the caret instead of typing**, including in the lock screen's password field.
 
-`GraphicsContext.rotateBy` degrades every non-path draw to an axis-aligned bounding box:
-`setGeometry` transforms two corners and keeps `min`/`abs` extents. Rotated images, text,
-and rect fills render unrotated at the wrong size, while paths rotate correctly. The
-asymmetry is invisible until something rotates.
+`KeyCode` is now closed: letters, digits, punctuation and function keys are named, and
+anything unmapped is `.unknown`. Text arrives through `Event.characters`, which is what a
+view should insert; `keyCode` answers which key, never what it produced. The evdev table
+moved into `KeyCode(linuxEvdevCode:)`. It had been duplicated in the shell's input router
+and the compositor's overlay, on the reasoning that `core/` should not adopt a platform's
+numbering — but the duplication is what broke it, since both copies fell through to raw
+values. Naming the platform in the API keeps the numbering framework-owned with one copy
+of the table.
 
-`lineCap` and `lineJoin` are public settable state that nothing ever reads.
+**Transforms now participate in hit testing and conversion.** The step between a view and
+its parent was open-coded in four places — `hitTest`, both window-space walks, and
+`dispatchEvent` — and none applied `transform`. There is one definition now, which is also
+why they were able to drift. It applies the transform about the anchor point, matching
+what the renderer composes (`translate(position) · pivot · transform · unpivot`) with the
+layer default anchor of (0.5, 0.5), so a view scales about its own centre.
 
-`fadeOut` assigns `alphaValue = 0` on the animated path as well as the reduce-motion path,
-publishing a property update on the same keypath the compositor is animating.
+Hit testing maps into local coordinates *first* and then tests `bounds`; testing the frame
+in the parent's space tests an axis-aligned box that a rotated view does not occupy. A
+transform that collapses the plane has no preimage, so such a view is hittable nowhere
+rather than everywhere across its frame. Rectangle conversion maps all four corners and
+takes their bounding box.
 
-`KeyCode` has seventeen members — arrows, escape, return, tab, space, delete, home/end/page.
-No letters, digits, or function keys, so no shortcut is expressible. This blocks the
-launcher and any keybinding, and it blocks IPC's usefulness less than it looks (IPC is
-driven by the compositor's own keybinds), but it blocks in-shell shortcuts entirely.
+**Rotation reaches non-path draws.** `setGeometry` folded the transform into the geometry
+as an axis-aligned bounding box. The scope was narrower than reported: `fill(rect)` is
+encoded as a path whose points are transformed individually, so rect *fills* rotated
+correctly all along. The broken commands were text, images, and the package background and
+border fast paths — which is where every view's background is drawn. A command that
+rotates or skews now states geometry in its own space and carries the matrix; translation
+and scale still fold in, keeping the common case a plain rect. Scalars follow geometry: a
+carried matrix scales radius and stroke width itself, so the recorder stops pre-scaling
+them.
 
-## Phase 1 — clear the defects
+**Stroke caps and joins are encoded.** They were public settable state that nothing read,
+so a caller could ask for a rounded stroke and get a butt-capped one with no indication the
+request was dropped. They ride the command flags — absent bits mean butt and miter, so the
+defaults cost nothing — and only strokes carry them, since a fill has no ends or corners.
 
-The five above. `transform` participating in hit testing and coordinate conversion is the
-only one with design content: the honest fix is to carry the transform through
-`convert`/`hitTest` as a real matrix, because a shell animates scale on hover and will hit-
-test mid-animation.
+**`fadeOut` was milder than reported.** It read as a race with the animation, but an
+animation installs a *presentation override* that the compositor shows while it runs and
+commits to the model on completion. Moving the model first is the Core Animation order and
+the correct one; leaving it behind would be the bug, since `alphaValue` is the view tier's
+authoritative value. The guard was redundant, not wrong, and is gone.
 
-`KeyCode` grows to cover letters, digits, and function keys as part of this phase, since
-every later phase that wants a shortcut needs it and widening an enum late means touching
-every switch over it.
+`KeyCode` widened here as planned, and `Transform` gained a rotation factory matching
+`AffineTransform`'s sign convention — a disagreement there stays invisible until something
+rotates and hit-tests the other way.
 
 ## Phase 2 — scroll fidelity
 
