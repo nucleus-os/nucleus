@@ -162,18 +162,46 @@ two behaviours would only make it harder to see.
 
 `AccessibilityRole` gained `progressIndicator`.
 
-## Phase 4 — the widget framework
+## Phase 4 — the widget framework — **complete**
 
-The reference's `Widget` base class is the good news of the whole audit: `create()`,
-`doLayout`, `doUpdate`, `onPointerEvent`, `onFrameTick`/`needsFrameTick`, plus callbacks for
-update, redraw, frame tick, and panel toggle. Everything else on it is styling state. That
-contract ports directly.
+`BarWidget` is a `View`. The reference's `Widget` is `create` / `doLayout` / `doUpdate` /
+`onPointerEvent` / `onFrameTick`, and three of those five are already `View`'s job here —
+construction, layout, and events — so what a widget adds is the two that are not: `refresh`
+to pull from whatever it displays, and an opt-in per-frame tick.
 
-Alongside it: the three-section layout (start/center/end, named along the main axis so a
-vertical bar works), the capsule grouping that merges consecutive capsule widgets into runs,
-and the hover underlay — a layer between background and content clip that hosts hover pills
-so they neither affect layout nor clip at section boundaries. That last detail is the kind
-of thing that is invisible until it is missing and then looks broken.
+**Ticking is opt-in and false by default.** A bar of a dozen widgets each polling per frame
+is a bar that never lets the compositor idle, so `wantsFrameTick` gates it and only the
+widgets that asked are called. The bar reports whether *any* widget wants a tick, so an
+idle bar stays idle.
+
+A widget never presents its own panel. It has no scene and could not be tested by
+assignment if it did, so it reports that it was activated — with its frame in *bar*
+coordinates, so whatever opens can anchor under it — and the bar decides what that means.
+
+**The centre section is centred on the bar, not on the space left over.** Flexible spacers
+on either side only centre when the two ends happen to be the same width, so a clock drifts
+the moment a tray icon appears. That is the thing every status bar gets wrong, and it is
+why the sections are placed rather than flexed. Sections are named along the main axis —
+start, center, end — because the same bar runs vertically down a screen edge and "left"
+would then be a lie.
+
+**Chrome is drawn behind the widgets and outside their layout.** A hover highlight drawn by
+a widget would either take part in the layout — moving its neighbours when the pointer
+arrives — or clip at the section's edge. The underlay is a backdrop that no widget can
+affect and that never takes a hit, since a click there belongs to the widget above it.
+
+Capsules group *adjacent* widgets: a widget declining one breaks the run rather than
+putting a hole in it, and a hidden widget splits it rather than leaving a pill drawn around
+nothing.
+
+`ShellBarView` is gone, replaced by `BarView`. Its two-section leading/trailing arrangement
+was the older shape and had no runtime consumer; `ShellNoticeView` moved out intact, since
+what it tests — wrapped text participating in layout — has nothing to do with the bar.
+`BatteryWidget` became a `BarWidget` and lost its own hover backing, which the bar now
+draws in the layer where it cannot clip.
+
+`Rect` gained `union` and `insetBy`, both standard `CGRect` operations that the chrome
+needed and core lacked.
 
 ## Phase 5 — configuration
 

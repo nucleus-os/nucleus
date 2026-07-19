@@ -51,6 +51,41 @@ public struct Rect: Equatable, Sendable {
 
     public static let zero = Rect(x: 0, y: 0, width: 0, height: 0)
 
+    /// Shrink by `dx` horizontally and `dy` vertically, from both sides.
+    /// Negative values grow it, which is how a highlight is drawn *around*
+    /// something.
+    ///
+    /// A rectangle inset past its own size collapses to zero rather than
+    /// inverting: a negative width is not a rectangle, and every consumer here
+    /// would have to check for one.
+    public func insetBy(dx: Double, dy: Double) -> Rect {
+        let width = max(0, size.width - dx * 2)
+        let height = max(0, size.height - dy * 2)
+        return Rect(
+            x: origin.x + (size.width - width) / 2,
+            y: origin.y + (size.height - height) / 2,
+            width: width, height: height)
+    }
+
+    /// Inset equally on every side.
+    public func insetBy(_ amount: Double) -> Rect {
+        insetBy(dx: amount, dy: amount)
+    }
+
+    /// The smallest rectangle containing both.
+    ///
+    /// An empty rectangle is ignored rather than included — a zero-size rect at
+    /// the origin would otherwise drag every union back to it.
+    public func union(_ other: Rect) -> Rect {
+        if size.width <= 0 && size.height <= 0 { return other }
+        if other.size.width <= 0 && other.size.height <= 0 { return self }
+        let minX = min(origin.x, other.origin.x)
+        let minY = min(origin.y, other.origin.y)
+        let maxX = max(origin.x + size.width, other.origin.x + other.size.width)
+        let maxY = max(origin.y + size.height, other.origin.y + other.size.height)
+        return Rect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+    }
+
     /// The four corners, clockwise from the origin. A rectangle under a rotation
     /// is a quadrilateral, and its corners are what survive the mapping.
     public var corners: [Point] {

@@ -43,7 +43,7 @@ public struct BatteryLevel: Sendable, Equatable {
 /// everything after that is property assignment on retained views. There is no
 /// tree, no diff, and no re-description.
 @MainActor
-public final class BatteryWidget: View {
+public final class BatteryWidget: BarWidget {
     public private(set) var level: BatteryLevel = .absent
 
     /// Called when the widget is clicked, with the anchor its panel should open
@@ -193,15 +193,9 @@ public final class BatteryWidget: View {
     public override func draw(in context: GraphicsContext) {
         guard level.isPresent else { return }
 
-        // A hover backing, so the widget reads as a target before it is clicked.
-        if isHovered {
-            var backing = Path()
-            backing.addRoundedRect(
-                Rect(x: -4, y: 0, width: bounds.size.width + 8, height: bounds.size.height),
-                radius: 4)
-            context.fillColor = resolve(.role(.hover))
-            context.fill(backing)
-        }
+        // The hover backing belongs to the bar, which draws it in a layer
+        // behind every widget: drawing it here would clip at the widget's own
+        // bounds and could not extend across a capsule run.
 
         let top = (bounds.size.height - BatteryWidget.cellHeight) / 2
         let body = Rect(
