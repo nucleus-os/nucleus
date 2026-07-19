@@ -238,8 +238,25 @@ An unresolvable name renders **nothing**, not a placeholder: a shell showing a w
 than one showing a gap, because the gap is visibly a bug. Aliases exist because icon sets rename
 things between releases and a widget naming a retired icon should keep working.
 
-*Icon themes — pending.* XDG icon-theme resolution, size-aware and cached, for third-party
-application icons in the taskbar, dock, and tray.
+*Icon themes — complete.* `IconThemeResolver` resolves an XDG icon name to a file, for third-party
+application icons in the taskbar, dock, and tray. It lives in the shell tier, not the UI kit: it is
+filesystem policy, and NucleusUI has no business knowing about `XDG_DATA_DIRS`.
+
+Size selection is the substance. Scalable SVG wins outright since it is exact at any size; among
+bitmaps the **smallest at or above the target** wins, so a rescale is always a gentle downscale
+rather than a 512px icon crushed into a bar slot; and only if nothing is big enough does it take the
+largest below. Extensions go SVG, PNG, XPM.
+
+Directory layout is read by walking rather than by parsing `index.theme`. Both
+`<theme>/<size>/<category>` and `<theme>/<category>/<size>` appear in the wild, and reading sizes
+off directory names handles both without an INI parser — `48x48` and `48` parse, `apps` and
+`symbolic` deliberately do not, which is how categories are told from sizes.
+
+Misses are cached as misses. A taskbar that rebuilds often would otherwise re-walk the filesystem
+for every icon known to be absent, which is the expensive case rather than the cheap one. A
+generation counter lets a holder of resolved paths notice staleness without a callback. An absolute
+path is used directly, since applications set icon fields to full paths often enough that treating
+one as a theme name would fail for no reason.
 
 *Files — pending.* SVG through Skia's SVG module, raster, animated GIF, and the async texture
 cache. This is where the missing `ImageHandle` producer lands.
