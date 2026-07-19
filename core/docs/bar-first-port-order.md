@@ -97,17 +97,39 @@ authoritative value. The guard was redundant, not wrong, and is gone.
 `AffineTransform`'s sign convention — a disagreement there stays invisible until something
 rotates and hit-tests the other way.
 
-## Phase 2 — scroll fidelity
+## Phase 2 — scroll and list fidelity — **complete**
 
-High-resolution wheel deltas (`axisValue120`) and detent accumulation, so a free-spinning
-touchpad and a ratcheted wheel behave the same. `Event` already carries
-`hasPreciseScrollingDeltas`; it does not carry phase or momentum, and its own doc comment
-claims behaviour that nothing implements. Phase and momentum land here alongside the
-detent accumulator.
+`axis_value120` and `axis_stop` were arriving from the compositor and being discarded —
+empty handlers in the seat — so a free-spinning wheel's sub-notch movement had nowhere to
+land and every wheel event snapped a whole line.
 
-Variable row heights with a height cache in `ListView`, and keyed adapter identity, land
-with this phase — the clipboard panel, notification history, and launcher all need lists
-whose rows differ in height, and all three are near-term.
+Events carry the source, the detents, and the end of a gesture.
+`hasPreciseScrollingDeltas` became *derived* from the source rather than stored: the
+source is what the platform reports and the boolean was a lossy reading of it.
+
+**Scrolling has two consumers that want different things**, and conflating them is what
+makes shell widgets feel wrong. Content wants raw distance, so a list tracks a touchpad
+exactly. Discrete stepping — volume, workspace cycling — wants notches that mean the same
+thing whether they came from a ratcheted wheel, a high-resolution one, or a touchpad.
+`ScrollDetentAccumulator` is the second: it accrues fractions, resets on reversal so a
+direction change is not eaten by a stale remainder, and caps wheels at one step per event
+so a compositor scaling the delta cannot turn one felt notch into several.
+
+**There is no momentum phase, against the plan.** Wayland has no equivalent of AppKit's
+`momentumPhase` — the compositor synthesizes no inertia. What it delivers is `axis_stop`,
+so kinetic scrolling is the client's to start from the end of a gesture. Modelling a phase
+we are never sent would have been inventing a contract.
+
+`ListView` measures rows when asked to. Uniform rows keep the arithmetic path and stay
+free — an index is a division and a ten-thousand-row list allocates no table. A height
+provider builds one prefix-sum pass and every lookup becomes a binary search, because
+scanning would make scrolling cost the length of the list. Negative heights clamp to zero
+rather than being trusted, since a decreasing offset would break the search.
+
+**Rows follow their item, not their slot.** `rowKey` gives an item its identity, and a
+view already showing that item is reused *as it stands* rather than reconfigured. Without
+it, inserting at the top hands every visible row's view to a different item along with
+whatever it was holding — a pressed state, a caret, an in-flight animation.
 
 ## Phase 3 — the three missing bar primitives
 

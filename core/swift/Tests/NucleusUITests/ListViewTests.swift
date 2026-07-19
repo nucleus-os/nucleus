@@ -1,0 +1,184 @@
+import Testing
+@testable import NucleusUI
+
+
+/// Variable row heights, and rows that follow their item rather than their slot.
+@MainActor
+@Suite struct ListViewVariableHeightTests {
+    /// Heights cycling 20 / 40 / 60, so an index is not derivable by division.
+    private func makeList(rowCount: Int = 30) -> ListView {
+        let list = ListView()
+        list.frame = Rect(x: 0, y: 0, width: 200, height: 100)
+        list.overscan = 0
+        list.makeRow = { View() }
+        list.rowHeightProvider = { index in Double(20 + (index % 3) * 20) }
+        list.setRowCount(rowCount)
+        list.layoutIfNeeded()
+        return list
+    }
+
+    // MARK: - Geometry
+
+    @Test func rowsStackAtTheirOwnHeights() {
+        let list = makeList()
+        #expect(list.height(forRow: 0) == 20)
+        #expect(list.height(forRow: 1) == 40)
+        #expect(list.height(forRow: 2) == 60)
+
+        #expect(list.offset(forRow: 0) == 0)
+        #expect(list.offset(forRow: 1) == 20)
+        #expect(list.offset(forRow: 2) == 60)
+        #expect(list.offset(forRow: 3) == 120, "one full 20/40/60 cycle")
+    }
+
+    @Test func theContentHeightIsTheSumOfTheRows() {
+        let list = makeList(rowCount: 3)
+        #expect(list.contentHeight == 120)
+    }
+
+    /// The lookup a scroll performs on every frame. Division cannot answer it
+    /// once heights vary.
+    @Test func aPointResolvesToTheRowContainingIt() {
+        let list = makeList()
+        #expect(list.rowIndex(at: Point(x: 0, y: 0)) == 0)
+        #expect(list.rowIndex(at: Point(x: 0, y: 19)) == 0)
+        #expect(list.rowIndex(at: Point(x: 0, y: 20)) == 1, "the boundary belongs to the next row")
+        #expect(list.rowIndex(at: Point(x: 0, y: 59)) == 1)
+        #expect(list.rowIndex(at: Point(x: 0, y: 60)) == 2)
+        #expect(list.rowIndex(at: Point(x: 0, y: 119)) == 2)
+    }
+
+    @Test func aPointPastTheEndResolvesToNothing() {
+        let list = makeList(rowCount: 3)
+        #expect(list.rowIndex(at: Point(x: 0, y: 120)) == nil)
+        #expect(list.rowIndex(at: Point(x: 0, y: -1)) == nil)
+    }
+
+    /// The visible range must cover the viewport exactly — too few rows leaves a
+    /// gap, and the count cannot be derived from a single height any more.
+    @Test func theVisibleRangeCoversTheViewport() {
+        let list = makeList()
+        // 100pt of viewport from the top covers rows 0 (20), 1 (40), 2 (60)
+        // partially — three rows.
+        let range = list.visibleRowRange()
+        #expect(range.lowerBound == 0)
+        #expect(range.upperBound == 3)
+    }
+
+    @Test func scrollingMovesTheVisibleRange() {
+        let list = makeList()
+        list.contentOffset = Point(x: 0, y: 120)  // exactly row 3
+        let range = list.visibleRowRange()
+        #expect(range.lowerBound == 3)
+        #expect(range.contains(4))
+    }
+
+    @Test func rowsAreLaidOutAtTheirMeasuredPositions() {
+        let list = makeList()
+        list.layoutIfNeeded()
+        // Only the rows on screen exist, and each sits at its own offset.
+        #expect(list.materializedRowCount == 3)
+    }
+
+    /// A height that changed without the count changing.
+    @Test func invalidatingRemeasures() {
+        let list = makeList(rowCount: 3)
+        #expect(list.contentHeight == 120)
+
+        list.rowHeightProvider = { _ in 10 }
+        #expect(list.contentHeight == 30)
+        #expect(list.offset(forRow: 2) == 20)
+    }
+
+    /// Dropping the provider returns to the arithmetic path rather than leaving
+    /// a stale table behind.
+    @Test func clearingTheProviderReturnsToUniformRows() {
+        let list = makeList(rowCount: 4)
+        list.rowHeight = 25
+        list.rowHeightProvider = nil
+        #expect(list.contentHeight == 100)
+        #expect(list.offset(forRow: 2) == 50)
+        #expect(list.rowIndex(at: Point(x: 0, y: 60)) == 2)
+    }
+
+    /// A zero-height row would break the search's assumption that offsets
+    /// increase, so a negative one is clamped rather than trusted.
+    @Test func negativeHeightsAreClamped() {
+        let list = ListView()
+        list.frame = Rect(x: 0, y: 0, width: 100, height: 100)
+        list.makeRow = { View() }
+        list.rowHeightProvider = { index in index == 1 ? -50 : 20 }
+        list.setRowCount(3)
+        #expect(list.contentHeight == 40)
+        #expect(list.height(forRow: 1) == 0)
+    }
+
+    // MARK: - Keyed identity
+
+    /// A view follows its item. Without this, inserting at the top hands every
+    /// visible row's view to a different item, taking whatever state it held.
+    @Test func aRowViewFollowsItsItem() {
+        var items = ["a", "b", "c", "d"]
+        let list = ListView()
+        list.frame = Rect(x: 0, y: 0, width: 100, height: 200)
+        list.rowHeight = 20
+        list.overscan = 0
+        list.makeRow = { View() }
+        list.rowKey = { index in items[index] }
+        var configured: [String] = []
+        list.configureRow = { _, index in configured.append(items[index]) }
+        list.setRowCount(items.count)
+        list.layoutIfNeeded()
+
+        let viewForB = list.rowView(at: 1)
+        #expect(viewForB != nil)
+        configured.removeAll()
+
+        // Insert at the top: every item shifts down one slot.
+        items.insert("z", at: 0)
+        list.setRowCount(items.count)
+        list.layoutIfNeeded()
+
+        #expect(list.rowView(at: 2) === viewForB, "b's view moved with b")
+        #expect(configured == ["z"], "only the new item was configured")
+    }
+
+    /// Without keys the old behaviour stands: a view belongs to its position.
+    @Test func withoutKeysRowsBelongToPositions() {
+        var items = ["a", "b", "c"]
+        let list = ListView()
+        list.frame = Rect(x: 0, y: 0, width: 100, height: 200)
+        list.rowHeight = 20
+        list.overscan = 0
+        list.makeRow = { View() }
+        var configuredCount = 0
+        list.configureRow = { _, _ in configuredCount += 1 }
+        list.setRowCount(items.count)
+        list.layoutIfNeeded()
+
+        configuredCount = 0
+        items.insert("z", at: 0)
+        list.setRowCount(items.count)
+        list.layoutIfNeeded()
+        #expect(configuredCount == items.count, "every row is reconfigured")
+    }
+
+    /// An item that disappeared must not keep its view alive under its key.
+    @Test func aVanishedItemDoesNotRetainItsView() {
+        var items = ["a", "b", "c"]
+        let list = ListView()
+        list.frame = Rect(x: 0, y: 0, width: 100, height: 200)
+        list.rowHeight = 20
+        list.overscan = 0
+        list.makeRow = { View() }
+        list.rowKey = { index in items[index] }
+        list.configureRow = { _, _ in }
+        list.setRowCount(items.count)
+        list.layoutIfNeeded()
+
+        items = ["a"]
+        list.setRowCount(1)
+        list.layoutIfNeeded()
+        #expect(list.materializedRowCount == 1)
+    }
+}
