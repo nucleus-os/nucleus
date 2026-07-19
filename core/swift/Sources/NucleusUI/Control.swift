@@ -16,6 +16,19 @@ open class Control: View, ~Sendable {
         self.isHighlighted = false
         self.isPressed = false
         super.init()
+        // Every control is hoverable. A control that had to be asked to track
+        // the pointer would be a control most callers forgot to ask.
+        addTracking()
+    }
+
+    /// A disabled control is not hovered, whatever the pointer is doing — the
+    /// hover state exists to signal "this responds", and a disabled one does not.
+    open override func hoverStateDidChange() {
+        if isHovered && !isEnabled {
+            isHovered = false
+            return
+        }
+        super.hoverStateDidChange()
     }
 
     public func onPrimaryAction(_ handler: @escaping (Control) -> Void) {

@@ -80,6 +80,12 @@ public final class BatteryWidget: View {
         percentageLabel.textColor = tintColor
         accessibilityRole = .staticText
         setBody { percentageLabel }
+        // The tooltip is a provider rather than a string: it must describe the
+        // reading at the moment the pointer rests, not the one that happened to
+        // be current when the widget was built.
+        addTracking(
+            cursor: .pointingHand,
+            toolTipProvider: { [weak self] in self?.accessibilityDescription })
         applyLevel()
     }
 
@@ -105,9 +111,10 @@ public final class BatteryWidget: View {
         setNeedsDisplay()
     }
 
-    /// Spoken description. A drawn cell says nothing to an assistive technology
-    /// on its own, and "73%" alone does not say 73% of what.
-    private var accessibilityDescription: String {
+    /// Spoken description, and the tooltip text. A drawn cell says nothing to an
+    /// assistive technology on its own, and "73%" alone does not say 73% of
+    /// what — which is exactly what a tooltip has to answer too.
+    var accessibilityDescription: String {
         guard level.isPresent else { return "No battery" }
         if level.isCharging { return "Battery \(level.percentageText), charging" }
         guard let seconds = level.secondsRemaining else {
@@ -154,6 +161,17 @@ public final class BatteryWidget: View {
 
     public override func draw(in context: GraphicsContext) {
         guard level.isPresent else { return }
+
+        // A hover backing, so the widget reads as a target before it is clicked.
+        if isHovered {
+            var backing = Path()
+            backing.addRoundedRect(
+                Rect(x: -4, y: 0, width: bounds.size.width + 8, height: bounds.size.height),
+                radius: 4)
+            context.fillColor = tintColor.opacity(0.12)
+            context.fill(backing)
+        }
+
         let top = (bounds.size.height - BatteryWidget.cellHeight) / 2
         let body = Rect(
             x: 0, y: top,

@@ -98,8 +98,8 @@ tooltip and tracking gap, and the popup layer — each of which is currently a g
 |---|---|---|
 | 1 | The D-Bus client seam | **complete** |
 | 2 | UPower, and the battery widget | **complete** |
-| — | The bounds-origin model | pending, blocks 3 |
-| 3 | Tracking, cursors, and tooltips | pending |
+| — | The bounds-origin model | **complete** |
+| 3 | Tracking, cursors, and tooltips | **complete** |
 | 4 | The popup layer | pending |
 | 5 | Scrolling | pending |
 | 6 | The control kit | pending |
@@ -153,11 +153,30 @@ Twenty-three tests. One of them asserted on `PaintCommand.w` for a path fill, wh
 path geometry lives in the payload blob. The fill rectangle is now computed separately, which is
 the part worth testing, and `draw` fills it.
 
-**Phase 3 — Tracking, cursors, and tooltips.** Confirmed by Phase 2: the battery widget has a
-hover state and a click target with nowhere to put either. NucleusUI has whole-view enter/exit at
-the scene, and no cursor, no tooltip, and no hover state on `Control`. Tracking areas producing enter/exit at the view level, a cursor
-region model, and tooltips with a content provider — the reference's shape, since it is the one a
-bar actually uses.
+**Phase 3 — Tracking, cursors, and tooltips — complete.** `TrackingArea` carries a rect, a cursor,
+and a tooltip, which is the reference's `InputArea` shape because that is the one a bar uses. The
+rect is in bounds coordinates, which is why the bounds-origin model landed first.
+
+Three decisions are worth keeping. A `nil` rect tracks the whole view however it is later resized,
+so a widget does not have to re-set a rect from `layout()` — and that is the overwhelmingly common
+case. Hover is a **chain** rather than a single view: a widget stays hovered while the pointer is
+over the label inside it, and one that lit up only when the pointer missed its own text would be
+useless. The tooltip is a *provider*, called at display time, because the interesting tooltips are
+live — a battery's estimate, a network's throughput.
+
+Tooltip timing needs no clock inside NucleusUI. `Event` already carries a monotonic timestamp, so
+the scene records when the pointer arrived and the host asks `updateToolTip(atNanoseconds:)` each
+frame. A tooltip has to appear while the pointer is *not* moving, so it cannot be event-driven;
+driving it from the frame loop is what makes it work without a timer.
+
+Cursors reach the compositor. `wp_cursor_shape_manager_v1` was already vendored and its client
+bindings already generated, so the shell binds the global, creates a device per pointer, and quotes
+the `wl_pointer.enter` serial in `set_shape`. A compositor without the protocol leaves the cursor
+alone rather than failing. `ShellHost.cursorShape(for:)` is the one place NucleusUI's vocabulary and
+the protocol's meet — the same seam the battery widget and UPower already sit either side of.
+
+The battery widget now has the hover backing, pointing-hand cursor, and live tooltip the phase
+existed to give it.
 
 **Phase 4 — The popup layer.** Popover chrome, anchoring, dismissal, and the window level a menu
 occupies, in NucleusUI rather than the compositor overlay. The battery widget opens a panel; every

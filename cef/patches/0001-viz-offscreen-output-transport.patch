@@ -1662,16 +1662,25 @@ diff --git a/gpu/command_buffer/service/shared_image/dawn_ozone_image_representa
 index 89313c57f0..de51a9cd59 100644
 --- a/gpu/command_buffer/service/shared_image/dawn_ozone_image_representation.cc
 +++ b/gpu/command_buffer/service/shared_image/dawn_ozone_image_representation.cc
-@@ -66,8 +66,6 @@ wgpu::Texture DawnOzoneImageRepresentation::BeginAccess(
-          pixmap_->GetNumberOfPlanes() == 1)
-       << "Disjoint Multi-plane importing is not supported.";
+@@ -57,17 +57,6 @@ wgpu::Texture DawnOzoneImageRepresentation::BeginAccess(
+     return nullptr;
+   }
  
+-  // For multi-planar formats, Mesa is yet to support to allocate and bind
+-  // vkmemory for each plane respectively.
+-  // https://gitlab.freedesktop.org/mesa/mesa/-/blob/main/src/intel/vulkan/anv_formats.c#L765
+-  // For now we assume all plane handles are same, and we don't use the
+-  // VK_IMAGE_CREATE_DISJOINT_BIT when creating the vkimage for the pixmap.
+-  DCHECK(pixmap_->SupportsZeroCopyWebGPUImport() ||
+-         pixmap_->GetNumberOfPlanes() == 1)
+-      << "Disjoint Multi-plane importing is not supported.";
+-
 -  std::vector<gfx::GpuFenceHandle> fences;
 -  bool need_end_fence;
    is_readonly_ =
        (usage & kWriteUsage) == 0 && (internal_usage & kWriteUsage) == 0;
    if (is_readonly_ && !IsCleared()) {
-@@ -77,21 +75,51 @@ wgpu::Texture DawnOzoneImageRepresentation::BeginAccess(
+@@ -77,21 +66,51 @@ wgpu::Texture DawnOzoneImageRepresentation::BeginAccess(
      return nullptr;
    }
  
@@ -1731,7 +1740,24 @@ index 89313c57f0..de51a9cd59 100644
    begin_access_desc.nextInChain = &begin_layout;
  
    // If the semaphore from BeginWrite is valid then pass it to
-@@ -176,17 +204,13 @@ wgpu::Texture DawnOzoneImageRepresentation::BeginAccess(
+@@ -150,15 +169,10 @@ wgpu::Texture DawnOzoneImageRepresentation::BeginAccess(
+   std::vector<wgpu::SharedTextureMemoryDmaBufPlane> planes(
+       pixmap_->GetNumberOfPlanes());
+   dmaBufDesc.planeCount = pixmap_->GetNumberOfPlanes();
+-  // We assume the pixmap is not disjoint (VK_IMAGE_CREATE_DISJOINT_BIT). All
+-  // planes will have the the same fd but different pitch/offsets. This will not
+-  // actually be reflected in the fds for each plane due to duping of the same
+-  // fd elsewhere. This is why we cannot (d)check for this condition.
+-  const int fd_for_all_planes = pixmap_->GetDmaBufFd(0);
+   for (uint32_t plane_idx = 0; plane_idx < dmaBufDesc.planeCount; ++plane_idx) {
+     // Dawn is not an ownership transfer. Dawn will internally duplicate fds as
+     // necessary.
+-    planes[plane_idx].fd = fd_for_all_planes;
++    planes[plane_idx].fd = pixmap_->GetDmaBufFd(plane_idx);
+     planes[plane_idx].stride = pixmap_->GetDmaBufPitch(plane_idx);
+     planes[plane_idx].offset = pixmap_->GetDmaBufOffset(plane_idx);
+   }
+@@ -176,17 +190,13 @@ wgpu::Texture DawnOzoneImageRepresentation::BeginAccess(
    texture_ = shared_texture_memory_.CreateTexture(&texture_descriptor);
    if (!shared_texture_memory_.BeginAccess(texture_, &begin_access_desc)) {
      LOG(ERROR) << "Failed to begin access for shared image.";
@@ -1753,7 +1779,7 @@ index 89313c57f0..de51a9cd59 100644
    return texture_;
  }
  
-@@ -200,6 +224,8 @@ void DawnOzoneImageRepresentation::EndAccess() {
+@@ -200,6 +210,8 @@ void DawnOzoneImageRepresentation::EndAccess() {
  
    if (!shared_texture_memory_.EndAccess(texture_, &end_access_desc)) {
      LOG(ERROR) << "Failed to end access for DawnOzoneImageRepresentation";
@@ -1762,7 +1788,7 @@ index 89313c57f0..de51a9cd59 100644
      texture_.Destroy();
      texture_ = nullptr;
      return;
-@@ -209,6 +235,11 @@ void DawnOzoneImageRepresentation::EndAccess() {
+@@ -209,6 +221,11 @@ void DawnOzoneImageRepresentation::EndAccess() {
      SetCleared();
    }
  
@@ -1774,7 +1800,7 @@ index 89313c57f0..de51a9cd59 100644
    CHECK(end_access_desc.fenceCount == end_access_desc.signaledValueCount);
  
    // Note: Dawn may export zero fences if there were no begin fences,
-@@ -238,8 +269,10 @@ void DawnOzoneImageRepresentation::EndAccess() {
+@@ -238,8 +255,10 @@ void DawnOzoneImageRepresentation::EndAccess() {
      fence.Adopt(std::move(fd_handle_merged));
    }
  

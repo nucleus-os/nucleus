@@ -96,6 +96,16 @@ public final class ShellSeat {
     private var xkbKeymap: OpaquePointer?
     private var xkbState: OpaquePointer?
 
+    /// `wp_cursor_shape_device_v1` for this seat's pointer, when the compositor
+    /// offers the protocol. Absent is normal: a compositor without it simply
+    /// keeps whatever cursor it was already showing.
+    private var cursorShapeDevice: OpaquePointer?
+    /// The serial of the last `wl_pointer.enter`. `set_shape` must quote it —
+    /// the compositor rejects a cursor request that does not name the enter that
+    /// gave this client the pointer.
+    private var pointerEnterSerial: UInt32 = 0
+    private var currentCursor: ShellCursorShape = .default_
+
     private var modifiers = ShellModifierState()
     private var pointerSurface: UInt = 0
     private var keyboardSurface: UInt = 0
@@ -108,11 +118,22 @@ public final class ShellSeat {
     private var heldEvent: ShellInputEvent?
     private var nextRepeatNs: UInt64 = 0
 
+    /// The cursor-shape manager, captured at bring-up. `nil` when the compositor
+    /// does not offer the protocol, which the cursor path treats as "leave the
+    /// cursor alone" rather than as an error.
+    private let cursorShapeManager: OpaquePointer?
+
     public init?(client: ShellWaylandClient) {
         guard let seat = client.proxy(.seat) else { return nil }
         self.seat = seat
+        cursorShapeManager = client.proxy(.cursorShape)
         xkbContext = xkb_context_new(XKB_CONTEXT_NO_FLAGS)
         WlSeatClient.addListener(seat, owner: self)
+    }
+
+    private func bindCursorShapeDevice(for pointer: OpaquePointer) {
+        guard let manager = cursorShapeManager else { return }
+        cursorShapeDevice = wp_cursor_shape_manager_v1_get_pointer(manager, pointer)
     }
 
     // `isolated deinit`: the xkb handles are @MainActor-confined state, so the
@@ -262,11 +283,19 @@ public final class ShellSeat {
             pointer = wl_seat_get_pointer(seat)
             let listener = ShellPointerListener(seat: self)
             pointerListener = listener
-            if let pointer { _ = WlPointerClient.addListener(pointer, owner: listener) }
+            if let pointer {
+                _ = WlPointerClient.addListener(pointer, owner: listener)
+                bindCursorShapeDevice(for: pointer)
+            }
         } else if !hasPointer, let existing = pointer {
+            if let device = cursorShapeDevice {
+                wp_cursor_shape_device_v1_destroy(device)
+                cursorShapeDevice = nil
+            }
             wl_pointer_release(existing)
             pointer = nil
             pointerListener = nil
+            pointerEnterSerial = 0
         }
     }
 
@@ -290,6 +319,28 @@ public final class ShellSeat {
     /// it before hopping onto the actor anyway.
     func notePointerSurface(_ surfaceID: UInt) {
         pointerSurface = surfaceID
+    }
+
+    func notePointerEnterSerial(_ serial: UInt32) {
+        pointerEnterSerial = serial
+        // A fresh enter resets the compositor's idea of the cursor, so the shape
+        // has to be re-asserted rather than assumed to have survived.
+        let wanted = currentCursor
+        currentCursor = .default_
+        setCursor(wanted)
+    }
+
+    /// Ask the compositor for a cursor shape.
+    ///
+    /// Silently does nothing when the compositor does not offer
+    /// `wp_cursor_shape_manager_v1`: a missing cursor is a cosmetic degradation,
+    /// not a failure worth propagating to a widget that only wanted a hand
+    /// pointer.
+    public func setCursor(_ shape: ShellCursorShape) {
+        guard shape != currentCursor else { return }
+        currentCursor = shape
+        guard let device = cursorShapeDevice, pointerEnterSerial != 0 else { return }
+        wp_cursor_shape_device_v1_set_shape(device, pointerEnterSerial, shape.rawValue)
     }
 
     func noteKeyboardSurface(_ surfaceID: UInt) {
@@ -392,6 +443,7 @@ final class ShellPointerListener: WlPointerEvents {
         let surfaceID = surface.map { UInt(bitPattern: $0) } ?? 0
         MainActor.assumeIsolated {
             seat.notePointerSurface(surfaceID)
+            seat.notePointerEnterSerial(serial)
             seat.notePointerPosition(x: surface_x, y: surface_y)
             var event = seat.makeEvent(.pointerEnter)
             event.surface = seat.currentPointerSurface

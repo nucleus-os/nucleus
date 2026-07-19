@@ -26,6 +26,33 @@ public final class WindowScene: ~Sendable {
     /// The view the pointer is currently over, for enter/exit.
     private weak var trackedView: View?
 
+    /// Views currently marked hovered, outermost first. Held strongly for the
+    /// duration of a hover so an exit always reaches what was entered, even if
+    /// the tree drops the view meanwhile.
+    private var hoveredViews: [View] = []
+
+    /// The tracking area under the pointer, and when the pointer arrived on it.
+    private var activeTrackingArea: TrackingArea?
+    private var hoverBeganAtNanoseconds: UInt64 = 0
+    private var toolTipShown = false
+
+    /// How long the pointer must rest before a tooltip appears.
+    public var toolTipDelayNanoseconds: UInt64 = 500_000_000
+
+    /// The cursor the current hover resolves to. The shell reads this and hands
+    /// it to the compositor; NucleusUI owns the decision, not the pixels.
+    public private(set) var cursor: Cursor = .arrow
+
+    /// Called when `cursor` changes, so a host can push it without polling.
+    public var onCursorChange: ((Cursor) -> Void)?
+
+    /// Called when a tooltip should appear or disappear. `nil` hides.
+    ///
+    /// The point is in scene coordinates: the anchor the tooltip positions
+    /// against, which is the tracked area's frame rather than the pointer, so a
+    /// tooltip does not jitter as the pointer moves within a widget.
+    public var onToolTipChange: ((String?, Rect) -> Void)?
+
     public init(
         windows: [Window] = []
     ) {
@@ -214,14 +241,17 @@ public final class WindowScene: ~Sendable {
 
         if let capture = pointerCapture {
             let local = convert(event.location, toViewIn: capture)
-            let delivered = capture.view.deliverEvent(event.offsetting(by: local.origin))
+            let delivered = capture.view.deliverEvent(event.relocated(to: local))
             if event.type == .pointerUp { releasePointerCapture() }
             return delivered
         }
 
-        guard let hit = hitTest(at: event.location) else { return .notHandled }
-        let local = convert(event.location, toViewIn: hit)
-        let localEvent = event.offsetting(by: local.origin)
+        guard let hit = hitTest(at: event.location) else {
+            // Nothing under the pointer: whatever was hovered no longer is.
+            updateHover(nil, event: event)
+            return .notHandled
+        }
+        let localEvent = event.relocated(to: convert(event.location, toViewIn: hit))
 
         // A press captures, so the release and any intervening drags reach the
         // same view even if the pointer has moved off it. Without this a
@@ -231,6 +261,7 @@ public final class WindowScene: ~Sendable {
             pointerCapture = hit
         }
         updateTrackedView(hit.view, event: localEvent)
+        updateHover(hit, event: event)
         return hit.view.deliverEvent(localEvent)
     }
 
@@ -254,18 +285,122 @@ public final class WindowScene: ~Sendable {
         _ = view.deliverEvent(enter)
     }
 
-    /// The origin of `hit`'s view in scene coordinates, so a scene-space
-    /// location can be rebased into that view.
-    private func convert(_ point: Point, toViewIn hit: WindowHitTestResult) -> Rect {
-        var originX = hit.window.frame.origin.x
-        var originY = hit.window.frame.origin.y
+    // MARK: - Hover, cursor, and tooltips
+
+    /// Recompute the hover state for the pointer's current position.
+    ///
+    /// Hover is a *chain*, not a single view: a widget stays hovered while the
+    /// pointer is over the label inside it, because both have tracking areas
+    /// containing the point. A bar widget that lit up only when the pointer
+    /// missed its own text would be useless.
+    private func updateHover(_ hit: WindowHitTestResult?, event: Event) {
+        let chain = hit.map { hoverChain(for: $0, at: event.location) } ?? []
+        let entered = chain.map(\.view)
+
+        for view in hoveredViews where !entered.contains(where: { $0 === view }) {
+            view.isHovered = false
+        }
+        for view in entered where !view.isHovered {
+            view.isHovered = true
+        }
+        hoveredViews = entered
+
+        // The innermost area wins: it is the most specific thing under the
+        // pointer.
+        let area = chain.last?.area
+        if area !== activeTrackingArea {
+            activeTrackingArea = area
+            hoverBeganAtNanoseconds = event.timestampNanoseconds
+            if toolTipShown {
+                toolTipShown = false
+                onToolTipChange?(nil, .zero)
+            }
+        }
+
+        updateCursor(chain)
+    }
+
+    /// Views from outermost to innermost whose tracking areas contain the
+    /// pointer, paired with the area that matched.
+    private func hoverChain(
+        for hit: WindowHitTestResult, at scenePoint: Point
+    ) -> [(view: View, area: TrackingArea)] {
+        let inWindow = Point(
+            x: scenePoint.x - hit.window.frame.origin.x,
+            y: scenePoint.y - hit.window.frame.origin.y)
+
+        var result: [(view: View, area: TrackingArea)] = []
         var node: View? = hit.view
-        while let current = node, current !== hit.window.root {
-            originX += current.frame.origin.x
-            originY += current.frame.origin.y
+        while let current = node {
+            let local = current.convert(inWindow, from: nil)
+            if let area = current.trackingArea(at: local) {
+                result.append((current, area))
+            }
             node = current.parentView
         }
-        return Rect(x: originX, y: originY, width: 0, height: 0)
+        return result.reversed()
+    }
+
+    /// The cursor is the innermost area that names one; an area with no cursor
+    /// inherits rather than resetting to the arrow.
+    private func updateCursor(_ chain: [(view: View, area: TrackingArea)]) {
+        let resolved = chain.reversed().compactMap(\.area.cursor).first ?? .arrow
+        guard resolved != cursor else { return }
+        cursor = resolved
+        onCursorChange?(resolved)
+    }
+
+    /// Advance the tooltip timer. A host calls this each frame with the current
+    /// time; a tooltip must appear while the pointer is *not* moving, so it
+    /// cannot be driven by events alone.
+    ///
+    /// Idempotent — calling it repeatedly after a tooltip has appeared does
+    /// nothing.
+    public func updateToolTip(atNanoseconds now: UInt64) {
+        guard !toolTipShown, let area = activeTrackingArea else { return }
+        guard now &- hoverBeganAtNanoseconds >= toolTipDelayNanoseconds else { return }
+        guard let text = area.resolvedToolTip(), !text.isEmpty else { return }
+        toolTipShown = true
+        onToolTipChange?(text, toolTipAnchor(for: area))
+    }
+
+    /// The anchor a tooltip positions against: the tracked area in scene
+    /// coordinates. Anchoring to the area rather than to the pointer keeps a
+    /// tooltip still while the pointer moves inside the widget.
+    private func toolTipAnchor(for area: TrackingArea) -> Rect {
+        guard let owner = area.owner, let window = window(containing: owner) else {
+            return .zero
+        }
+        let local = area.rect ?? owner.bounds
+        let inWindow = owner.convert(local, to: nil)
+        return Rect(
+            x: inWindow.origin.x + window.frame.origin.x,
+            y: inWindow.origin.y + window.frame.origin.y,
+            width: inWindow.size.width,
+            height: inWindow.size.height)
+    }
+
+    private func window(containing view: View) -> Window? {
+        var node: View? = view
+        while let current = node {
+            if let window = windows.first(where: { $0.root === current }) { return window }
+            node = current.parentView
+        }
+        return nil
+    }
+
+    /// Rebase a scene-space location into `hit`'s view.
+    ///
+    /// Scene space is window space offset by the window's frame, and from there
+    /// `View.convert` is the single definition of the coordinate system — which
+    /// is why this no longer walks frame origins by hand: that walk ignored
+    /// `boundsOrigin`, so a click inside a scrolled view landed at the wrong
+    /// place.
+    private func convert(_ point: Point, toViewIn hit: WindowHitTestResult) -> Point {
+        let inWindow = Point(
+            x: point.x - hit.window.frame.origin.x,
+            y: point.y - hit.window.frame.origin.y)
+        return hit.view.convert(inWindow, from: nil)
     }
 
     public func hitTest(at point: Point) -> WindowHitTestResult? {

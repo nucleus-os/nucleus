@@ -135,6 +135,27 @@ import NucleusTypes
         #expect(widget.percentageLabel.isHidden)
     }
 
+    // MARK: - Tracking
+
+    /// The widget is a hover target with a cursor and a live tooltip — the gap
+    /// that motivated the tracking work.
+    @Test func theWidgetTracksThePointer() throws {
+        let widget = makeWidget(BatteryLevel(fraction: 0.5))
+        let area = try #require(widget.trackingAreas.first)
+        #expect(area.cursor == .pointingHand)
+    }
+
+    /// The tooltip is a provider, so it describes the reading at the moment the
+    /// pointer rests rather than the one current when the widget was built.
+    @Test func theToolTipReflectsTheCurrentReading() throws {
+        let widget = makeWidget(BatteryLevel(fraction: 0.5))
+        let area = try #require(widget.trackingAreas.first)
+        #expect(area.resolvedToolTip() == "Battery 50%")
+
+        widget.update(BatteryLevel(fraction: 0.2, isCharging: true))
+        #expect(area.resolvedToolTip() == "Battery 20%, charging")
+    }
+
     // MARK: - Accessibility
 
     /// A drawn cell says nothing to an assistive technology, and a bare "73%"

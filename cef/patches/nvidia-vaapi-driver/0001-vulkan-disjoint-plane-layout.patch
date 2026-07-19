@@ -1,0 +1,115 @@
+diff --git a/src/direct/direct-export-buf.c b/src/direct/direct-export-buf.c
+index 5b46717..450b544 100644
+--- a/src/direct/direct-export-buf.c
++++ b/src/direct/direct-export-buf.c
+@@ -386,12 +386,10 @@ static void pruneDetachedBackingImagesToLimits(NVDriver *drv) {
+     pthread_mutex_unlock(&drv->imagesMutex);
+ }
+ 
+-// Allocate a multi-plane YUV backing image as one dma-buf object per plane, all sharing a
+-// single (max-across-planes) block-linear modifier. This satisfies Chromium's requirement
+-// that every plane report the same DRM modifier while keeping each plane at offset 0 of its
+-// own object, so per-plane importers (mpv/GStreamer/ffmpeg) detile the chroma plane
+-// correctly -- unlike the single-buffer layout, where chroma sits at a non-zero offset
+-// inside a shared tiled buffer and those importers mis-detile it.
++// Allocate a multi-plane YUV backing image as one dma-buf object per plane. Every plane
++// uses the same image-wide block-linear modifier, as required by Vulkan disjoint
++// multi-planar images, while each memory object starts at offset zero. This avoids the
++// packed layout's non-zero tiled chroma offset.
+ static BackingImage *direct_allocateBackingImage_perPlane(NVDriver *drv, NVSurface *surface) {
+     NVDriverImage driverImages[3] = { 0 };
+     BackingImage *backingImage = calloc(1, sizeof(BackingImage));
+@@ -409,13 +407,11 @@ static BackingImage *direct_allocateBackingImage_perPlane(NVDriver *drv, NVSurfa
+     backingImage->format = nvFormatForSurface(surface);
+     const NVFormatInfo *fmtInfo = &formatsInfo[backingImage->format];
+ 
+-    // Reuse the layout purely to obtain each plane's block height and pitch/aligned
+-    // size; the packed offsets it returns are ignored (each plane is offset 0 in its
+-    // own buffer). Pass unifyBlockHeight=false: each plane is its own dma-buf object
+-    // with its own modifier, so it keeps its natural per-plane block height and
+-    // matches what the decoder produced (see calculate_unified_image_layout).
++    // Reuse the packed-layout calculation to give every memory plane the same
++    // modifier. The packed offsets are ignored because each plane has its own
++    // object and begins at offset zero.
+     calculate_unified_image_layout(&drv->driverContext, driverImages, surface->width, surface->height,
+-                                   fmtInfo->bppc, fmtInfo->numPlanes, fmtInfo->plane, false);
++                                   fmtInfo->bppc, fmtInfo->numPlanes, fmtInfo->plane, true);
+     LOG_DEBUG("Allocating per-plane BackingImage: %p %ux%u", backingImage, surface->width, surface->height);
+ 
+     for (uint32_t i = 0; i < fmtInfo->numPlanes; i++) {
+@@ -441,18 +437,14 @@ static BackingImage *direct_allocateBackingImage_perPlane(NVDriver *drv, NVSurfa
+         backingImage->fds[i] = drmFd;
+         cacheBackingImageFdStat(backingImage, (int) i);
+ 
+-        // Create the array at the plane's natural height. Each plane is its own object
+-        // carrying its own modifier, and calculate_unified_image_layout (called with
+-        // unifyBlockHeight=false) already advertised each plane's per-plane block height.
+-        // Handing CUDA the natural height makes it derive that same per-plane block, so
+-        // the array tiling matches the modifier. (Rounding up to the shared max block --
+-        // as the single-buffer path must -- would instead make CUDA pick the larger block
+-        // and disagree with the per-plane modifier -> the importer detiles wrong -> green
+-        // chroma, e.g. NV12 chroma at a 256x144 coded height.)
++        // CUDA derives block-linear tiling from the array height. Use the
++        // modifier-aligned height so every plane agrees with the shared modifier.
++        const uint32_t alignedHeight = driverImages[i].pitch != 0 ?
++            driverImages[i].memorySize / driverImages[i].pitch : driverImages[i].height;
+         CUDA_EXTERNAL_MEMORY_MIPMAPPED_ARRAY_DESC mipmapArrayDesc = {
+             .arrayDesc = {
+                 .Width = driverImages[i].width,
+-                .Height = driverImages[i].height,
++                .Height = alignedHeight,
+                 .Depth = 0,
+                 .Format = fmtInfo->bppc == 1 ? CU_AD_FORMAT_UNSIGNED_INT8 : CU_AD_FORMAT_UNSIGNED_INT16,
+                 .NumChannels = fmtInfo->plane[i].channelCount,
+@@ -604,20 +596,10 @@ fail:
+ }
+ 
+ static BackingImage *direct_allocateBackingImage(NVDriver *drv, NVSurface *surface) {
+-    // Multi-plane YUV surfaces must be exported as a single buffer holding every
+-    // plane at an offset, so all planes share one DRM modifier. Chromium's
+-    // vaapi_wrapper enforces one-modifier-per-buffer, so a per-plane export (a
+-    // distinct modifier per fd) trips its CHECK and aborts the GPU process.
+-    // Single-plane / packed surfaces (e.g. RGB) have nothing to unify and use the
+-    // straightforward per-plane allocator below.
++    // Multi-plane YUV surfaces default to a disjoint image: one dma-buf object per
++    // memory plane, one shared modifier, and offset zero in every object. The packed
++    // single-object path remains available only for comparison.
+     if (!isRgbSurfaceFourcc((uint32_t) surface->fourcc)) {
+-        // Multi-plane YUV: give every plane one shared block-linear modifier (required by
+-        // Chromium's one-modifier-per-buffer rule) but put each plane in its OWN dma-buf
+-        // object at offset 0. Packing the planes into a single buffer (chroma at a non-zero
+-        // offset) is imported fine by Chromium's multi-plane path but mis-detiled by
+-        // per-plane importers (mpv/GStreamer/ffmpeg), which import each layer as a
+-        // standalone dma-buf and can't handle a tiled plane starting at a byte offset. The
+-        // single-buffer layout is kept behind NVD_SINGLE_BUFFER for comparison/fallback.
+         if (nvdSingleBufferForced()) {
+             return direct_allocateBackingImage_single(drv, surface);
+         }
+diff --git a/src/direct/nv-driver.c b/src/direct/nv-driver.c
+index 658a2d2..6c3c535 100644
+--- a/src/direct/nv-driver.c
++++ b/src/direct/nv-driver.c
+@@ -616,18 +616,11 @@ uint32_t calculate_unified_image_layout(const NVDriverContext *context, NVDriver
+      const uint32_t log2GobsPerBlockX = 0;
+      const uint32_t log2GobsPerBlockZ = 0;
+ 
+-     // Each plane's natural block height comes from its own (subsampled) height. How
+-     // we use it depends on how the planes get exported:
+-     //   - Packed into one shared buffer (single-buffer export): every plane must
+-     //     advertise the same DRM modifier, so unify to the largest block height.
+-     //     Over-aligning a short plane wastes a little memory but is harmless;
+-     //     under-aligning would corrupt it.
+-     //   - One dma-buf object per plane (multi-object export): each plane carries its
+-     //     own modifier, so keep the exact per-plane value and match what the decoder
+-     //     actually produces. A small chroma plane (e.g. a 168x96 video, whose chroma
+-     //     is short enough to need a smaller block than luma) is tiled by NVDEC with
+-     //     its own block height; forcing it to luma's larger block makes the importer
+-     //     detile it wrong -> green chroma.
++     // Each plane's natural block height comes from its own subsampled height. A
++     // multi-planar Vulkan image has one image-wide DRM modifier even when its memory
++     // planes are bound disjointly, so callers importing one image must request a
++     // unified block height. Independent single-plane consumers may keep each plane's
++     // natural value.
+      uint32_t perPlaneLog2Y[3] = { 0 };
+      for (uint32_t i = 0; i < numPlanes; i++) {
+          const uint32_t planeHeight = height >> planes[i].ss.y;

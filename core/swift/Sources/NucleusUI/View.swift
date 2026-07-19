@@ -351,6 +351,58 @@ open class View: Responder, Accessible, ~Sendable {
         set { storedAccessibilityProperties.label = newValue }
     }
 
+    // MARK: - Tracking
+
+    /// This view's tracking areas, in the order added.
+    public private(set) var trackingAreas: [TrackingArea] = []
+
+    /// Whether the pointer is currently inside one of this view's tracking
+    /// areas. Maintained by the scene, which is the only thing that can know the
+    /// pointer left for a sibling.
+    public internal(set) var isHovered: Bool = false {
+        didSet {
+            guard isHovered != oldValue else { return }
+            hoverStateDidChange()
+        }
+    }
+
+    /// Called when `isHovered` flips. The hook a view overrides to restyle,
+    /// rather than watching enter/exit events.
+    open func hoverStateDidChange() {
+        setNeedsDisplay()
+    }
+
+    public func addTrackingArea(_ area: TrackingArea) {
+        area.attach(to: self)
+        trackingAreas.append(area)
+    }
+
+    public func removeTrackingArea(_ area: TrackingArea) {
+        trackingAreas.removeAll { $0 === area }
+        if trackingAreas.isEmpty { isHovered = false }
+    }
+
+    /// Add a whole-bounds tracking area, the common case. Returns it so a caller
+    /// that wants to adjust or remove it later can hold on.
+    @discardableResult
+    public func addTracking(
+        cursor: Cursor? = nil,
+        toolTip: String? = nil,
+        toolTipProvider: (() -> String?)? = nil
+    ) -> TrackingArea {
+        let area = TrackingArea(
+            cursor: cursor, toolTip: toolTip, toolTipProvider: toolTipProvider)
+        addTrackingArea(area)
+        return area
+    }
+
+    /// The frontmost tracking area containing `point`, in this view's bounds
+    /// coordinates. Later areas win, matching subview order: the most recently
+    /// added is the most specific.
+    public func trackingArea(at point: Point) -> TrackingArea? {
+        trackingAreas.last { $0.contains(point, in: self) }
+    }
+
     public var accessibilityHint: String? {
         get { storedAccessibilityProperties.hint }
         set { storedAccessibilityProperties.hint = newValue }

@@ -169,6 +169,12 @@ public final class ShellHost {
         }
         inputScene = scene
         self.seat = seat
+        // Where the two cursor vocabularies meet. NucleusUI decides *which*
+        // cursor from the tracking areas under the pointer; the seat asks the
+        // compositor for it. Neither layer knows the other's spelling.
+        scene.onCursorChange = { [weak seat] cursor in
+            seat?.setCursor(ShellHost.cursorShape(for: cursor))
+        }
         let router = ShellInputRouter(scene: scene, seat: seat)
         inputRouter = router
         // PAM runs in a helper process, never in this address space: a module
@@ -180,6 +186,29 @@ public final class ShellHost {
             client: client, engine: engine, scene: scene, inputRouter: router)
         controller.authenticator = authenticator
         lockController = controller
+    }
+
+    /// NucleusUI's cursor vocabulary onto the protocol's.
+    ///
+    /// Total rather than optional: every `Cursor` NucleusUI can resolve has a
+    /// `wp_cursor_shape_device_v1` counterpart, so there is no "unmappable"
+    /// case to decide a fallback for.
+    static func cursorShape(for cursor: Cursor) -> ShellCursorShape {
+        switch cursor {
+        case .arrow: return .default_
+        case .pointingHand: return .pointer
+        case .text: return .text
+        case .crosshair: return .crosshair
+        case .notAllowed: return .notAllowed
+        case .grab: return .grab
+        case .grabbing: return .grabbing
+        case .resizeLeftRight: return .ewResize
+        case .resizeUpDown: return .nsResize
+        case .resizeNorthWestSouthEast: return .nwseResize
+        case .resizeNorthEastSouthWest: return .neswResize
+        case .wait: return .wait
+        case .help: return .help
+        }
     }
 
     // MARK: - Services
@@ -390,6 +419,11 @@ public final class ShellHost {
 
             // Emit any key repeats that came due while polling.
             inputRouter?.advanceKeyRepeat(nowNs: monotonicNowNs())
+
+            // A tooltip appears while the pointer is *still*, so it cannot be
+            // driven by events — the frame loop is what notices the pointer has
+            // rested long enough.
+            inputScene?.updateToolTip(atNanoseconds: monotonicNowNs())
 
             // Drain the RN JS queue so mounted mutations land before rendering.
             if let host = rnHost {
