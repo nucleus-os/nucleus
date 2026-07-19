@@ -51,6 +51,16 @@ decision at every draw call. Ten controls built now are ten controls rewritten w
 model lands. The theming model has to come first for the same reason the bounds-origin model came
 before tracking areas.
 
+**But it scopes tightly, which is the good news.** Only *colour* is data-driven in the reference.
+Font sizes, spacing, radii, control heights, border widths, and animation durations are all
+compile-time constants in a `Style` namespace — 11/13/14/16/20 for text, 4/8/12/16 for spacing,
+3/6/9/12 for radii. Exactly two runtime knobs escape: a corner-radius scale and a
+button-borders toggle, each with its own change signal. Font *family* is runtime; font *size* is
+not.
+
+So this phase is a palette, a role-or-literal colour spec, and a repaint path. It is not a design-token
+system, and chasing one would be building something the reference deliberately does not have.
+
 ## Focus traversal is missing, and was never listed
 
 The reference has a complete keyboard-focus system: `tabStop`, `tabFocusKey` (a string identity so
@@ -82,15 +92,32 @@ runs, and ellipsize modes; we have text layout with glyph positions, selection r
 an editor model with undo coalescing and word navigation. Their `MarkdownView` is the one piece we
 lack, and notifications need it.
 
-## Icons are glyphs, not bitmaps
+## Icons are three unrelated systems, not one
 
-This reframes the image gap. The reference's primary icon path is an **icon font**: a `Glyph`
-control, a `GlyphNode`, a `GlyphRegistry`, and a dedicated single-glyph renderer that bypasses
-paragraph layout. Bitmaps are the minority case — wallpaper, custom images, tray icons, album art.
+This reframes the image gap, and it is bigger than "add a decoder".
 
-We have no `ImageHandle` producer at all: `GraphicsContext.draw(_ image:in:)` and `ImageView` both
-exist, and nothing in the Swift tree can construct a handle to hand them. But the first thing to
-build is glyph rendering, which our font and text stack can largely serve, not a PNG decoder.
+**Font glyphs are the primary path.** A `Glyph` control, a `GlyphNode`, and a single-glyph renderer
+that bypasses paragraph layout entirely. The catalog is Tabler Icons, bundled as a TTF plus a JSON
+name→codepoint map, so most shell iconography is a *named string* resolved to a codepoint and
+tinted by a colour role — free recolouring, free scaling, no texture.
+
+**XDG icon-theme lookup is separate**, and needed by anything showing a third-party application:
+the taskbar, the dock, the tray, the launcher. Size-aware — prefers scalable SVG, and among bitmaps
+takes the smallest theme size at or above the target rather than crushing a 1024px PNG. Cached,
+with a generation counter and a poll source watching for theme changes at runtime.
+
+**File loading is a third path**: SVG rasterized at target size through Skia's own SVG module,
+`data:` URIs with base64 and MIME sniffing, raster through stb, and animated GIF with disposal
+compositing and memory caps. Behind it sit an async texture cache and a thumbnail service, loading
+off the UI thread with a ready callback.
+
+Their `Image` control also takes an **external texture handle** directly, which is the same shape as
+our `ImageHandle` — so our seam is right and only its producers are missing. There is also
+app-icon colorization: recolouring a third-party icon toward the palette.
+
+We have no `ImageHandle` producer at all. Glyphs come first because they cover most of the
+iconography and our font stack largely serves them; XDG theme lookup comes second because the
+taskbar and tray cannot work without it; general file loading and animation come last.
 
 ## Smaller divergences that matter
 
@@ -125,8 +152,11 @@ be tabbed to is half a control.
 **Phase 8 — Animation at the view tier, and reduce-motion.** Exposing what the layers tier already
 does, plus the global motion switch and cancel-by-owner.
 
-**Phase 9 — Glyphs and images.** An icon-font glyph view and registry first; an `ImageHandle`
-producer second, for wallpaper, tray, and album art.
+**Phase 9 — Glyphs, then icon themes, then files.** A glyph view and a name→codepoint registry over
+a bundled icon font first, since it covers most of the iconography and the font stack largely
+serves it. XDG icon-theme resolution second, size-aware and cached, because the taskbar, dock, and
+tray cannot work without it. General file loading — SVG through Skia's SVG module, raster, animated
+GIF — and the async texture cache last.
 
 **Phase 10 — Scroll and list fidelity.** High-resolution wheel and detent accumulation, variable
 row heights with a height cache, and keyed adapter identity.
