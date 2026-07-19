@@ -30,13 +30,12 @@ The pipeline is whole, and this is the correction that resizes this work:
 
 Four things, and they are independent of each other:
 
-1. **No producer in the shell tier.** The only caller of `ImageRegistrar.register` is
-   `ReactImageComponentView`. A `View`-tier consumer cannot obtain an `ImageHandle`
-   at all — `ImageView.image` is settable and unfillable.
-2. **`maxWidth`/`maxHeight` are dead.** They are stored, and deduped on, and then
-   ignored: `decodedImage` calls `DeferredFromEncodedData` with no bounds, so a 4K
-   wallpaper and a 22px tray icon decode identically. The cache key promises a
-   downscale that never happens.
+1. ~~**No producer in the shell tier.**~~ *Fixed in phase 2.* The only caller of
+   `ImageRegistrar.register` was `ReactImageComponentView`; a `View`-tier consumer could
+   not obtain an `ImageHandle` at all.
+2. ~~**`maxWidth`/`maxHeight` are dead.**~~ *Fixed in phase 1.* They were stored, and
+   deduped on, and then ignored, so a 4K wallpaper and a 22px tray icon decoded
+   identically.
 3. **SVG is linked but never called.** No `SkSVGDOM` include, no façade.
 4. **Decode is synchronous on the render thread.** There is no task queue, no thread
    pool, and no off-main work infrastructure anywhere in `core/swift/Sources`. A
@@ -107,16 +106,43 @@ the interesting inputs are pixel patterns chosen to make a resampling defect vis
 a checked-in binary would hide what it contains. The checkerboard assertion is the one
 that would catch a regression to a naive resample.
 
-## Phase 2 — the producer seam
+## Phase 2 — the producer seam — **complete**
 
-`NucleusUI` gains the ability to name an image file. The registrar protocol is already
-the right seam and is already installed, so this is a `View`-tier façade over it plus
-handle lifetime tied to the view.
+`ImageResource` owns one registration for as long as it lives. Registration hands back a
+handle at refcount one, so something must own that reference and drop it; making that
+something an object whose lifetime *is* the registration's means a view releases by
+forgetting. `ImageView.resource` and `sourcePath` both build on it, and assigning over
+either drops the previous registration.
 
-`ImageView` gains `contentMode` (`.stretch`/`.cover`/`.contain`, matching the reference's
-`FitMode`) and a tint, since the reference recolours bitmap app icons against the palette.
-`imageSize` stops being caller-supplied: an image knows its own size, and requiring the
-caller to restate it is a defect waiting to happen.
+Registration is refused without a resource host rather than performed and leaked. The
+handle comes from the view's own `backingLayer.context.commitSink`, so a view registers
+against the host it will actually draw through.
+
+**`ImageView` registers at its layout size**, deferring until it has one and repeating
+when the size it needs changes — the decode bounds are part of a registration's identity,
+so a view that grew is a different decode rather than an upscale of the old one.
+Re-arranging at the same size is the common case and does not churn the registration.
+
+`contentMode` is `.stretch`/`.contain`/`.cover`, the reference's `FitMode`. The frame stays
+authoritative: layout decides how big an image is and the mode decides what happens to the
+pixels inside that decision. `cover` clips, because it overflows by construction.
+
+**`imageSize` stays caller-supplied, against the original plan.** The intent was to have an
+image know its own size, but nothing on this side of the seam has seen the pixels —
+decode happens in the renderer, and registration is deliberately GPU-independent so it
+works headless. The alternatives were parsing image headers in the UI tier, which
+duplicates what Skia already knows, or blocking on a decode, which defeats the point of
+lazy registration. So the aspect-preserving modes fall back to filling the frame when no
+size is stated, which is the only honest thing to do without a ratio. The reference
+survives this comfortably: it sizes every image from layout and never from file content.
+Phase 5 can report a real size back once decode is asynchronous and has somewhere to
+report *to*.
+
+**Tint is deferred.** The reference recolours bitmap app icons against the palette with a
+CPU desaturate-and-bake, keeping the undecorated source so it can re-bake on a theme
+change. `GraphicsContext.draw(image:)` has no tint parameter, so this needs a paint-command
+change rather than a view-tier one, and it lands with the raw-buffer work in phase 4 where
+pixel-level handling already belongs.
 
 ## Phase 3 — SVG
 

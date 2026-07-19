@@ -225,7 +225,7 @@ let package = Package(
         // compiles without prebuilt staging.
         .target(
             name: "NucleusUI",
-            dependencies: ["NucleusTypes", "NucleusLayers", .product(name: "Tracy", package: "swift-tracy"), "NucleusTextCxxBridge"],
+            dependencies: ["NucleusTypes", "NucleusLayers", "NucleusAppHostProtocols", .product(name: "Tracy", package: "swift-tracy"), "NucleusTextCxxBridge"],
             path: "swift/Sources/NucleusUI",
             swiftSettings: [.interoperabilityMode(.Cxx)]
         ),

@@ -277,4 +277,17 @@ extension ImageView {
         imageSize = size
         return self
     }
+
+    /// Show an image file, decoded to fit this view once it has a size.
+    @discardableResult
+    public func source(_ path: String?) -> Self {
+        sourcePath = path
+        return self
+    }
+
+    @discardableResult
+    public func contentMode(_ mode: ImageContentMode) -> Self {
+        contentMode = mode
+        return self
+    }
 }
