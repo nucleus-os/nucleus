@@ -51,6 +51,17 @@ public struct Rect: Equatable, Sendable {
 
     public static let zero = Rect(x: 0, y: 0, width: 0, height: 0)
 
+    /// The four corners, clockwise from the origin. A rectangle under a rotation
+    /// is a quadrilateral, and its corners are what survive the mapping.
+    public var corners: [Point] {
+        [
+            origin,
+            Point(x: origin.x + size.width, y: origin.y),
+            Point(x: origin.x + size.width, y: origin.y + size.height),
+            Point(x: origin.x, y: origin.y + size.height),
+        ]
+    }
+
     public init(x: Double, y: Double, width: Double, height: Double) {
         self.origin = Point(x: x, y: y)
         self.size = Size(width: width, height: height)

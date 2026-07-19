@@ -1,3 +1,4 @@
+import Foundation
 import NucleusLayers
 
 /// Column-major 4x4 transform used by public view APIs. The layers
@@ -35,6 +36,21 @@ public struct Transform: Sendable, Equatable {
         return t
     }
 
+    /// A rotation about the Z axis, in the plane the UI lives in.
+    ///
+    /// Matches `AffineTransform.rotation` so the two agree about which way is
+    /// positive — a disagreement there is invisible until something rotates and
+    /// hit-tests in opposite directions.
+    public static func rotation(radians: Double) -> Transform {
+        let c = cos(radians), s = sin(radians)
+        var t = identity
+        t.m00 = c
+        t.m01 = s
+        t.m10 = -s
+        t.m11 = c
+        return t
+    }
+
     public static func scale(x: Double, y: Double, z: Double = 1) -> Transform {
         var t = identity
         t.m00 = x
@@ -59,5 +75,40 @@ public struct Transform: Sendable, Equatable {
             m20: m20, m21: m21, m22: m22, m23: m23,
             m30: m30, m31: m31, m32: m32, m33: m33
         )
+    }
+}
+
+extension Transform {
+    /// The 2D affine part, as a point mapping.
+    ///
+    /// A `Transform` is a full 4x4 like `CATransform3D`, but hit testing and
+    /// coordinate conversion are 2D questions. Rows and columns beyond the
+    /// affine 2D block are ignored: a perspective or depth transform hit-tests
+    /// as its flattened shadow, which is wrong in the same way `CALayer`'s
+    /// `hitTest` is wrong for perspective, and for the same reason — the
+    /// alternative is an unprojection with no obvious answer at z ≠ 0.
+    public var affine2D: AffineTransform {
+        AffineTransform(a: m00, b: m01, c: m10, d: m11, tx: m30, ty: m31)
+    }
+}
+
+extension AffineTransform {
+    /// The inverse, or `nil` when the transform collapses a dimension.
+    ///
+    /// A zero-determinant transform maps the plane onto a line or a point, and
+    /// nothing on the far side maps back — a view scaled to zero is not hittable
+    /// anywhere rather than hittable everywhere, which is what a fudged inverse
+    /// would produce.
+    public func inverted() -> AffineTransform? {
+        let determinant = a * d - b * c
+        guard abs(determinant) > 1e-12 else { return nil }
+        let inverseDeterminant = 1 / determinant
+        return AffineTransform(
+            a: d * inverseDeterminant,
+            b: -b * inverseDeterminant,
+            c: -c * inverseDeterminant,
+            d: a * inverseDeterminant,
+            tx: (c * ty - d * tx) * inverseDeterminant,
+            ty: (b * tx - a * ty) * inverseDeterminant)
     }
 }

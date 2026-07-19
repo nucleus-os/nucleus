@@ -756,24 +756,93 @@ open class View: Responder, Accessible, ~Sendable {
         view?.convert(point, from: self) ?? convertToWindowSpace(point)
     }
 
+    /// Convert a rectangle, as the bounding box of its converted corners.
+    ///
+    /// All four corners, not the origin and the size: under a rotation or a
+    /// scale a rectangle does not map to a rectangle of the same size, and
+    /// passing the size through unchanged — which this used to do — cannot
+    /// express either.
     public func convert(_ rect: Rect, from view: View?) -> Rect {
-        Rect(origin: convert(rect.origin, from: view), size: rect.size)
+        View.boundingBox(rect.corners.map { convert($0, from: view) })
     }
 
     public func convert(_ rect: Rect, to view: View?) -> Rect {
-        Rect(origin: convert(rect.origin, to: view), size: rect.size)
+        View.boundingBox(rect.corners.map { convert($0, to: view) })
     }
 
-    /// Up the tree: undo this view's scroll, then step out through its frame.
-    /// The inverse of the rebase `hitTest` performs on the way down, and the
-    /// single definition of the coordinate system.
+    static func boundingBox(_ points: [Point]) -> Rect {
+        guard let first = points.first else { return .zero }
+        var minX = first.x, maxX = first.x
+        var minY = first.y, maxY = first.y
+        for point in points.dropFirst() {
+            minX = min(minX, point.x); maxX = max(maxX, point.x)
+            minY = min(minY, point.y); maxY = max(maxY, point.y)
+        }
+        return Rect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+    }
+
+    /// A point in this view's own coordinates, from its parent's.
+    ///
+    /// **The single definition of the step between a view and its parent.** It
+    /// used to be open-coded in four places — `hitTest`, both window-space
+    /// walks, and `dispatchEvent` — and they drifted: none of them applied
+    /// `transform`, so a scaled or rotated view drew transformed and hit-tested
+    /// untransformed.
+    ///
+    /// The transform is applied about the anchor point, matching the renderer,
+    /// which composes `translate(position) · pivot · transform · unpivot`. The
+    /// anchor is the layer default of (0.5, 0.5), so a view scales about its
+    /// own centre — the Core Animation convention, and the one the compositor
+    /// is already using to draw.
+    func convertFromParent(_ point: Point) -> Point {
+        let ownFrame = frame
+        var local = Point(x: point.x - ownFrame.origin.x, y: point.y - ownFrame.origin.y)
+
+        if let inverse = transformAboutAnchor()?.inverted() {
+            local = inverse.apply(local)
+        }
+        return Point(x: local.x + boundsOrigin.x, y: local.y + boundsOrigin.y)
+    }
+
+    /// A point in this view's parent's coordinates, from its own. The exact
+    /// inverse of `convertFromParent`.
+    func convertToParent(_ point: Point) -> Point {
+        var local = Point(x: point.x - boundsOrigin.x, y: point.y - boundsOrigin.y)
+        if let transform = transformAboutAnchor() {
+            local = transform.apply(local)
+        }
+        let ownFrame = frame
+        return Point(x: local.x + ownFrame.origin.x, y: local.y + ownFrame.origin.y)
+    }
+
+    /// This view's transform, expressed about its anchor point rather than its
+    /// origin. `nil` when there is nothing to apply, which is the common case
+    /// and skips the work entirely.
+    private func transformAboutAnchor() -> AffineTransform? {
+        let transform = storedTransform
+        guard transform != .identity else { return nil }
+
+        let affine = transform.affine2D
+        let size = frame.size
+        let anchorX = size.width * View.anchorPoint.x
+        let anchorY = size.height * View.anchorPoint.y
+        // `concatenating(other)` is "self after other", so this reads
+        // right-to-left: move the anchor to the origin, transform, move it back.
+        return AffineTransform.translation(x: anchorX, y: anchorY)
+            .concatenating(affine)
+            .concatenating(AffineTransform.translation(x: -anchorX, y: -anchorY))
+    }
+
+    /// The anchor every view transforms about. Fixed rather than per-view: the
+    /// layer model's default, and nothing has yet needed to vary it.
+    static let anchorPoint = Point(x: 0.5, y: 0.5)
+
+    /// Up the tree, one `convertToParent` per level.
     private func convertToWindowSpace(_ point: Point) -> Point {
         var result = point
         var node: View? = self
         while let current = node {
-            result = Point(
-                x: result.x - current.boundsOrigin.x + current.frame.origin.x,
-                y: result.y - current.boundsOrigin.y + current.frame.origin.y)
+            result = current.convertToParent(result)
             node = current.parentView
         }
         return result
@@ -788,9 +857,7 @@ open class View: Responder, Accessible, ~Sendable {
         }
         var result = point
         for current in chain.reversed() {
-            result = Point(
-                x: result.x - current.frame.origin.x + current.boundsOrigin.x,
-                y: result.y - current.frame.origin.y + current.boundsOrigin.y)
+            result = current.convertFromParent(result)
         }
         return result
     }
@@ -806,9 +873,7 @@ open class View: Responder, Accessible, ~Sendable {
         guard let target = hitTest(event.location) else { return .notHandled }
         // Into this view's own coordinates first, since the incoming location is
         // in its parent's; `convert(_:from:)` then speaks view-to-view.
-        let localInSelf = Point(
-            x: event.location.x - frame.origin.x + boundsOrigin.x,
-            y: event.location.y - frame.origin.y + boundsOrigin.y)
+        let localInSelf = convertFromParent(event.location)
         let local = target.convert(localInSelf, from: self)
         return target.deliverEvent(event.relocated(to: local))
     }
@@ -818,23 +883,20 @@ open class View: Responder, Accessible, ~Sendable {
             return nil
         }
 
-        let ownFrame = frame
-        guard ownFrame.contains(point) else {
+        // A transform that collapses the plane has no preimage. The view is
+        // drawn as nothing, so nothing hits it — whereas falling back to the
+        // untransformed mapping would make an invisible view swallow input
+        // across its whole frame.
+        if let transform = transformAboutAnchor(), transform.inverted() == nil {
             return nil
         }
 
-        // Into this view's own coordinates: past the frame origin, then past the
-        // bounds origin, which is where a scrolled view's contents actually sit.
-        let localPoint = Point(
-            x: point.x - ownFrame.origin.x + boundsOrigin.x,
-            y: point.y - ownFrame.origin.y + boundsOrigin.y
-        )
-
-        // A clipping view hides whatever falls outside it, and something hidden
-        // must not be clickable. Checked after the rebase, because the clip is
-        // this view's bounds and `localPoint` is now in them.
-        if clipsToBounds && !bounds.contains(localPoint) {
-            return self
+        // Map into this view's own coordinates *first*, then test. Testing the
+        // frame in the parent's space would be testing an axis-aligned box that
+        // a rotated view does not occupy.
+        let localPoint = convertFromParent(point)
+        guard bounds.contains(localPoint) else {
+            return nil
         }
 
         for child in childViews.reversed() {
