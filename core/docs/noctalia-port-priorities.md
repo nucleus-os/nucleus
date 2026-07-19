@@ -73,13 +73,10 @@ clip view's `bounds.origin`, and its coordinate conversion, hit testing, and dra
 for that. `bounds-origin-model.md` adopts that model and lands it before Phase 3, because tracking
 rectangles written against a zero-origin assumption would all need revisiting.
 
-**What is missing, ranked by what the port needs.** Scrolling and its clip view, with
-virtualization that AppKit puts in `NSTableView` rather than `NSScrollView`. Menus and popovers as
-NucleusUI types — they exist only inside the compositor overlay today, so no product view can
-raise one. Tracking areas, cursor rectangles, and tooltips: the reference's `InputArea` carries a
-tooltip provider, a refresh interval, placement, and anchor insets, which is a real feature and
-has no counterpart here. A pasteboard and drag-and-drop, which the clipboard surface needs.
-Gesture recognizers.
+**What is missing — superseded.** This ranking was made from our side alone and got two entries
+wrong: the reference has no drag-and-drop framework and no gesture recognizers, so both were on the
+list only because AppKit has them. It also missed the two largest gaps, which are the theming model
+and keyboard focus traversal. See `noctalia-ui-realignment.md`.
 
 ## The reprioritization
 
@@ -102,9 +99,12 @@ tooltip and tracking gap, and the popup layer — each of which is currently a g
 | 3 | Tracking, cursors, and tooltips | **complete** |
 | 4 | The popup layer | **complete** |
 | 5 | Scrolling | **complete** |
-| 6 | The control kit | pending |
-| 7 | The remaining bar services | pending |
-| 8 | The bar, natively | pending |
+| 6+ | **Superseded — see `noctalia-ui-realignment.md`** | |
+
+Phases 6 through 8 were rewritten after auditing the reference's UI layer directly rather than
+inferring it from our side. The revised sequence — theming, focus traversal, animation exposure,
+glyphs, scroll fidelity, control kit, menus, services, bar — lives in
+`noctalia-ui-realignment.md`.
 
 ## Phases
 
