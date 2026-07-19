@@ -132,10 +132,14 @@ extension View {
     /// this does not, because there is no completion callback at this tier and
     /// guessing would leave views either flashing back or vanishing early.
     public func fadeOut(timing: AnimationTiming = .standard) {
-        guard animate(.opacity, from: alphaValue, to: 0, timing: timing) else {
-            alphaValue = 0
-            return
-        }
+        // Model first, then the animation — the Core Animation order, and for the
+        // same reason. An animation installs a *presentation override* that the
+        // compositor shows while it runs, so moving the model value immediately
+        // is not a race with it. Leaving the model behind would be the bug:
+        // `alphaValue` is the view tier's authoritative value, and a later write
+        // that included opacity would push the stale one back out.
+        let start = alphaValue
         alphaValue = 0
+        animate(.opacity, from: start, to: 0, timing: timing)
     }
 }

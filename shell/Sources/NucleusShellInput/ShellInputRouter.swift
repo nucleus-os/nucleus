@@ -172,31 +172,16 @@ public final class ShellInputRouter: ShellSeatDelegate {
         }
     }
 
-    /// evdev key codes onto the framework's platform-neutral space.
+    /// evdev key codes onto the framework's own key space.
     ///
-    /// Duplicated from the compositor's overlay adapter, which maps the same
-    /// table for its own scene. Both are Linux Wayland processes reading evdev,
-    /// but they share no package below `core/`, and `core/` cannot hold the table
-    /// without adopting a platform's numbering — the very thing `KeyCode` exists
-    /// to avoid. Unifying it needs a shared platform package that does not exist
-    /// yet.
+    /// The table lives in `KeyCode(linuxEvdevCode:)`. It used to be duplicated
+    /// here and in the compositor's overlay adapter, on the reasoning that
+    /// `core/` should not adopt a platform's numbering — but the duplication is
+    /// what broke it: both copies passed unmapped codes through as raw values,
+    /// which collided with the low-numbered named constants. Naming the platform
+    /// in the API keeps the numbering framework-owned while there is only one
+    /// copy of the mapping.
     static func keyCode(_ code: UInt32) -> KeyCode {
-        switch code {
-        case 1: return .escape
-        case 14: return .delete
-        case 15: return .tab
-        case 28, 96: return .return
-        case 57: return .space
-        case 102: return .home
-        case 103: return .upArrow
-        case 105: return .leftArrow
-        case 106: return .rightArrow
-        case 107: return .end
-        case 108: return .downArrow
-        case 104: return .pageUp
-        case 109: return .pageDown
-        case 111: return .forwardDelete
-        default: return KeyCode(rawValue: code)
-        }
+        KeyCode(linuxEvdevCode: code)
     }
 }

@@ -151,28 +151,11 @@ public struct ShellOverlayInputEvent: Sendable, Equatable {
         }
     }
 
-    /// evdev `KEY_*` codes to platform-neutral key codes. Only the keys the
-    /// framework names are mapped; anything else keeps its platform value so a
-    /// client that knows better can still read it, but must not assume a
-    /// meaning the framework has not defined.
+    /// evdev `KEY_*` codes to the framework's own key space. Unmapped codes
+    /// become `.unknown` rather than keeping their platform value — passing raw
+    /// codes through made them collide with the named constants.
     static func nucleonKeyCode(_ code: UInt32) -> KeyCode {
-        switch code {
-        case 1: .escape
-        case 14: .delete        // KEY_BACKSPACE
-        case 15: .tab
-        case 28, 96: .return    // KEY_ENTER, KEY_KPENTER
-        case 57: .space
-        case 102: .home
-        case 103: .upArrow
-        case 104: .pageUp
-        case 105: .leftArrow
-        case 106: .rightArrow
-        case 107: .end
-        case 108: .downArrow
-        case 109: .pageDown
-        case 111: .forwardDelete
-        default: KeyCode(rawValue: code)
-        }
+        KeyCode(linuxEvdevCode: code)
     }
 
     /// The compositor packs modifier state as XKB-style bits; `EventFlagBit`
