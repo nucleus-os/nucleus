@@ -269,12 +269,25 @@ public final class GraphicsContext {
         append(command)
     }
 
-    public func draw(_ image: ImageHandle, in rect: Rect, cornerRadius: Double = 0) {
+    /// Draw an image.
+    ///
+    /// - Parameter tint: recolours the image by its alpha, keeping its shape and
+    ///   discarding its colour. This is how a symbolic icon follows the palette.
+    ///   `nil` draws the image's own colours.
+    /// - Parameter saturation: `1` is untouched, `0` fully grey. Combined with a
+    ///   tint it desaturates first, which is how a full-colour app icon is
+    ///   recoloured without flattening it to a silhouette.
+    public func draw(
+        _ image: ImageHandle, in rect: Rect, cornerRadius: Double = 0,
+        tint: Color? = nil, saturation: Double = 1
+    ) {
         var command = PaintCommand(kind: .image)
-        applyStyle(&command, color: state.fillColor)
+        applyStyle(&command, color: tint ?? state.fillColor)
         setGeometry(&command, rect)
         command.radius = Float(max(0, cornerRadius) * state.transform.approximateScale)
         command.imageHandle = image.id
+        command.saturation = Float(saturation)
+        if tint != nil { command.flags.insert(.tintImage) }
         append(command)
     }
 

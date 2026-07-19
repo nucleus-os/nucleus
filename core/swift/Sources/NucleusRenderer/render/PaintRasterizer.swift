@@ -101,6 +101,7 @@ static func skiaPaint(
     paint.blend = skiaBlendMode(command.blend)
     paint.blurSigma = command.blurSigma * min(sx, sy)
     paint.saturation = command.saturation
+    paint.tintsImage = command.tintsImage
     paint.style = command.stroke ? .stroke : .fill
     paint.strokeWidth = command.strokeWidth * min(sx, sy)
     return paint

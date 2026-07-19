@@ -67,6 +67,21 @@ public final class ImageView: View, ~Sendable {
         didSet { if contentMode != oldValue { setNeedsDisplay() } }
     }
 
+    /// Recolour the image by its alpha, keeping shape and dropping colour.
+    ///
+    /// A spec rather than a colour, so a tinted icon follows a retheme like
+    /// everything else. `nil` draws the image's own colours.
+    public var tint: ColorSpec? {
+        didSet { if tint != oldValue { setNeedsDisplay() } }
+    }
+
+    /// `1` leaves colour alone, `0` is fully grey. Applied before any tint, so a
+    /// full-colour app icon can be desaturated and recoloured rather than
+    /// flattened to a silhouette.
+    public var saturation: Double = 1 {
+        didSet { if saturation != oldValue { setNeedsDisplay() } }
+    }
+
     /// The registration backing `image`, when this view owns one.
     ///
     /// Assigning replaces `image` and drops the previous registration — which is
@@ -78,7 +93,10 @@ public final class ImageView: View, ~Sendable {
         }
     }
 
-    /// The file this view shows, decoded to fit the view.
+    /// What this view shows: a file path, or a `data:` URI.
+    ///
+    /// Both because callers get icon strings from applications and desktop
+    /// entries and cannot know which they hold.
     ///
     /// Registration is deferred until the view has a size, and repeats when the
     /// size it needs changes — the decode bounds are part of a registration's
@@ -125,7 +143,7 @@ public final class ImageView: View, ~Sendable {
             return
         }
         resource = ImageResource(
-            path: sourcePath,
+            source: sourcePath,
             decodeSize: needed,
             resourceHostHandle: backingLayer.context.commitSink.resourceHostHandle)
     }
@@ -162,14 +180,19 @@ public final class ImageView: View, ~Sendable {
         let destination = destinationRect()
         guard destination.size.width > 0, destination.size.height > 0 else { return }
 
+        let resolvedTint = tint.map { resolve($0) }
         if contentMode == .cover {
             // Cover overflows the frame by construction, so the frame must clip.
             context.saveGState()
             context.clip(to: Rect(origin: .zero, size: bounds.size))
-            context.draw(image, in: destination, cornerRadius: cornerRadius)
+            context.draw(
+                image, in: destination, cornerRadius: cornerRadius,
+                tint: resolvedTint, saturation: saturation)
             context.restoreGState()
             return
         }
-        context.draw(image, in: destination, cornerRadius: cornerRadius)
+        context.draw(
+            image, in: destination, cornerRadius: cornerRadius,
+            tint: resolvedTint, saturation: saturation)
     }
 }

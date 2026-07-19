@@ -35,6 +35,22 @@ public enum DisplayLinkError: Error, Sendable, Equatable {
 @MainActor
 public protocol ImageRegistrar: AnyObject {
     func register(path: String, maxWidth: UInt32, maxHeight: UInt32) throws(ImageRegistrationError) -> UInt64
+
+    /// Register encoded bytes already in memory — a `data:` URI, or any blob
+    /// with no path to point at.
+    func register(
+        encoded: Span<UInt8>, maxWidth: UInt32, maxHeight: UInt32
+    ) throws(ImageRegistrationError) -> UInt64
+
+    /// Register decoded pixels, as notifications deliver them over D-Bus.
+    ///
+    /// `rowStride` is separate from `width` because senders pad rows, and
+    /// `channelOrder` because they disagree about byte order. Both are the
+    /// sender's to state, not ours to assume.
+    func register(
+        pixels: Span<UInt8>, width: UInt32, height: UInt32, rowStride: UInt32,
+        channelOrder: UInt8, isPremultiplied: Bool
+    ) throws(ImageRegistrationError) -> UInt64
 }
 
 @MainActor

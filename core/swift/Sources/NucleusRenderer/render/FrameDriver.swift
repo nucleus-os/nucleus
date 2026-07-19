@@ -171,8 +171,27 @@ final class FrameDriver {
     /// distinct decodes and must stay that way.
     func decodedImage(handle: UInt64, source: ImageSource) -> nucleus.skia.Image? {
         if let existing = decodedImages[handle], existing.isValid() { return existing }
-        let image = nucleus.skia.makeEncodedImageFromFile(
-            source.path, Int32(clamping: source.maxWidth), Int32(clamping: source.maxHeight))
+
+        let maxWidth = Int32(clamping: source.maxWidth)
+        let maxHeight = Int32(clamping: source.maxHeight)
+        let image: nucleus.skia.Image
+        switch source.content {
+        case .file(let path):
+            image = nucleus.skia.makeEncodedImageFromFile(path, maxWidth, maxHeight)
+        case .encoded(let bytes):
+            image = bytes.withUnsafeBufferPointer {
+                nucleus.skia.makeEncodedImageFromMemory(
+                    $0.baseAddress, $0.count, maxWidth, maxHeight)
+            }
+        case .raw(let buffer):
+            // Raw pixels are already decoded — there is nothing to decode, only a
+            // layout to normalize. Bounds do not apply: the sender chose the size.
+            guard let rgba = buffer.normalizedRGBA() else { return nil }
+            image = rgba.withUnsafeBufferPointer {
+                nucleus.skia.makeRasterImageRGBA(
+                    Int32(buffer.width), Int32(buffer.height), $0.baseAddress, $0.count)
+            }
+        }
         guard image.isValid() else { return nil }
         decodedImages[handle] = image
         return image

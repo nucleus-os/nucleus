@@ -53,6 +53,81 @@ public final class ImageResource {
         self.resourceHostHandle = resourceHostHandle
     }
 
+    /// Register an image given by a path *or* a `data:` URI.
+    ///
+    /// Callers receive icon strings from applications and desktop entries and
+    /// cannot know which they hold, so deciding here means no caller has to.
+    public convenience init?(
+        source: String, decodeSize: Size = .zero, resourceHostHandle: UInt64
+    ) {
+        if let uri = DataURI.parse(source) {
+            self.init(
+                encoded: uri.bytes, decodeSize: decodeSize,
+                resourceHostHandle: resourceHostHandle)
+        } else {
+            self.init(
+                path: source, decodeSize: decodeSize,
+                resourceHostHandle: resourceHostHandle)
+        }
+    }
+
+    /// Register encoded bytes already in memory.
+    public init?(encoded bytes: [UInt8], decodeSize: Size = .zero, resourceHostHandle: UInt64) {
+        guard !bytes.isEmpty, resourceHostHandle != 0 else { return nil }
+        guard let registrar = currentHost()?.imageRegistrar else { return nil }
+
+        let raw: UInt64
+        do {
+            raw = try bytes.withUnsafeBufferPointer { pointer in
+                try registrar.register(
+                    encoded: Span(_unsafeElements: pointer),
+                    maxWidth: ImageResource.pixelBound(decodeSize.width),
+                    maxHeight: ImageResource.pixelBound(decodeSize.height))
+            }
+        } catch {
+            return nil
+        }
+        guard raw != 0 else { return nil }
+
+        self.handle = ImageHandle(id: raw)
+        self.path = ""
+        self.decodeSize = decodeSize
+        self.resourceHostHandle = resourceHostHandle
+    }
+
+    /// Register decoded pixels, as notifications deliver them over D-Bus.
+    ///
+    /// Decode bounds do not apply: the sender already chose the size, and there
+    /// is nothing left to decode.
+    public init?(
+        pixels: [UInt8], width: Int, height: Int, rowStride: Int? = nil,
+        order: PixelChannelOrder, isPremultiplied: Bool = false,
+        resourceHostHandle: UInt64
+    ) {
+        guard !pixels.isEmpty, width > 0, height > 0, resourceHostHandle != 0 else { return nil }
+        guard let registrar = currentHost()?.imageRegistrar else { return nil }
+
+        let stride = rowStride ?? (width * order.sourceBytesPerPixel)
+        let raw: UInt64
+        do {
+            raw = try pixels.withUnsafeBufferPointer { pointer in
+                try registrar.register(
+                    pixels: Span(_unsafeElements: pointer),
+                    width: UInt32(width), height: UInt32(height),
+                    rowStride: UInt32(stride), channelOrder: order.rawValue,
+                    isPremultiplied: isPremultiplied)
+            }
+        } catch {
+            return nil
+        }
+        guard raw != 0 else { return nil }
+
+        self.handle = ImageHandle(id: raw)
+        self.path = ""
+        self.decodeSize = Size(width: Double(width), height: Double(height))
+        self.resourceHostHandle = resourceHostHandle
+    }
+
     /// A non-integral or non-positive size is unbounded. Rounding up rather than
     /// down keeps a half-pixel layout from decoding one pixel short and
     /// upscaling to cover the gap.

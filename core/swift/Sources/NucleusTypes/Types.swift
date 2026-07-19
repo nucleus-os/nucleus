@@ -179,6 +179,8 @@ public struct PaintCommandFlags: Swift.OptionSet, Swift.Sendable {
   public static let stroke = PaintCommandFlags(rawValue: 1 << 0)
   public static let antialias = PaintCommandFlags(rawValue: 1 << 1)
   public static let evenOddFill = PaintCommandFlags(rawValue: 1 << 2)
+  /// Recolour an image draw by its alpha, keeping shape and dropping colour.
+  public static let tintImage = PaintCommandFlags(rawValue: 1 << 3)
 
   public static let `default`: PaintCommandFlags = [.antialias]
 }

@@ -73,6 +73,9 @@ public struct PaintDrawCommand: Equatable, Sendable {
     public var stroke: Bool
     public var antialias: Bool
     public var evenOddFill: Bool
+    /// Recolour an image draw by its alpha. Meaningless on a shape, which
+    /// already paints in `color`.
+    public var tintsImage: Bool
     public var shading: PaintDrawShading
     public var blend: PaintDrawBlendMode
     public var alpha: Float
@@ -88,6 +91,7 @@ public struct PaintDrawCommand: Equatable, Sendable {
         effectHandle: UInt64 = 0,
         payloadOffset: UInt32 = 0, payloadLength: UInt32 = 0,
         stroke: Bool = false, antialias: Bool = true, evenOddFill: Bool = false,
+        tintsImage: Bool = false,
         shading: PaintDrawShading = .color,
         blend: PaintDrawBlendMode = .srcOver,
         alpha: Float = 1, blurSigma: Float = 0, saturation: Float = 1
@@ -109,6 +113,7 @@ public struct PaintDrawCommand: Equatable, Sendable {
         self.stroke = stroke
         self.antialias = antialias
         self.evenOddFill = evenOddFill
+        self.tintsImage = tintsImage
         self.shading = shading
         self.blend = blend
         self.alpha = alpha
@@ -129,7 +134,8 @@ public struct PaintDrawCommand: Equatable, Sendable {
             lhs.effectHandle == rhs.effectHandle &&
             lhs.payloadOffset == rhs.payloadOffset && lhs.payloadLength == rhs.payloadLength &&
             lhs.stroke == rhs.stroke && lhs.antialias == rhs.antialias &&
-            lhs.evenOddFill == rhs.evenOddFill && lhs.shading == rhs.shading &&
+            lhs.evenOddFill == rhs.evenOddFill && lhs.tintsImage == rhs.tintsImage &&
+            lhs.shading == rhs.shading &&
             lhs.blend == rhs.blend &&
             lhs.alpha == rhs.alpha && lhs.blurSigma == rhs.blurSigma &&
             lhs.saturation == rhs.saturation

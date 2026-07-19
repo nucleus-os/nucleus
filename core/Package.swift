@@ -256,6 +256,7 @@ let package = Package(
         // only module sources and globs cleanly (no explicit source list).
         .target(
             name: "NucleusRenderModel",
+            dependencies: ["NucleusAppHostProtocols"],
             path: "swift/Sources/NucleusRenderModel"
         ),
         // Host-side bundle: ties the shared types + host protocols to the layers/render

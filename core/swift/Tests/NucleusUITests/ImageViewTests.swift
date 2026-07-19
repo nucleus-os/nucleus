@@ -189,3 +189,60 @@ private func withHostedContext<T>(_ body: () throws -> T) rethrows -> T {
         }
     }
 }
+
+/// Image tint: recolouring by alpha, and desaturation.
+@MainActor
+@Suite struct ImageTintTests {
+    private func makeView() -> ImageView {
+        let view = ImageView(image: ImageHandle(id: 1), imageSize: Size(width: 10, height: 10))
+        view.frame = Rect(x: 0, y: 0, width: 10, height: 10)
+        return view
+    }
+
+    @Test func aTintIsAbsentByDefault() {
+        #expect(makeView().tint == nil)
+        #expect(makeView().saturation == 1)
+    }
+
+    @Test func settingATintRepaints() {
+        let view = makeView()
+        view.displayIfNeeded()
+        view.tint = .role(.primary)
+        #expect(view.needsDisplay)
+    }
+
+    @Test func anIdenticalTintIsNotAChange() {
+        let view = makeView()
+        view.tint = .role(.primary)
+        view.displayIfNeeded()
+        view.tint = .role(.primary)
+        #expect(!view.needsDisplay)
+    }
+
+    @Test func changingSaturationRepaints() {
+        let view = makeView()
+        view.displayIfNeeded()
+        view.saturation = 0
+        #expect(view.needsDisplay)
+    }
+
+    /// The tint is a spec, so a tinted icon follows a retheme like everything
+    /// else. No override is needed for this — the base repaints on an appearance
+    /// change already, and adding one would only restate it.
+    @Test func rethemingRepaintsATintedImage() {
+        let view = makeView()
+        view.tint = .role(.primary)
+        view.palette = .dark
+        view.displayIfNeeded()
+
+        view.palette = .light
+        #expect(view.needsDisplay)
+    }
+
+    @Test func theTintResolvesAgainstThePalette() {
+        let view = makeView()
+        view.tint = .role(.primary)
+        view.palette = .light
+        #expect(view.resolve(view.tint!) == Palette.light.primary)
+    }
+}

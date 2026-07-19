@@ -216,6 +216,107 @@ import NucleusSkiaGraphiteBridge
         #expect(out[3] == 0, "fully transparent in must stay fully transparent out")
     }
 
+    // MARK: - In-memory bytes
+
+    /// A `data:` URI holds exactly what a file holds, so it must decode exactly
+    /// the same way — same formats, same bounds, same everything.
+    @Test func encodedBytesDecodeLikeAFile() {
+        let png = Self.encodePNG(
+            width: 8, height: 8, rgba: Self.solid(width: 8, height: 8, 30, 60, 90))
+        let bytes = [UInt8](png)
+        let image = bytes.withUnsafeBufferPointer {
+            nucleus.skia.makeEncodedImageFromMemory($0.baseAddress, $0.count, 0, 0)
+        }
+        #expect(image.isValid())
+        #expect(image.width() == 8)
+        #expect(image.height() == 8)
+    }
+
+    @Test func encodedBytesHonourBounds() {
+        let png = Self.encodePNG(
+            width: 64, height: 64, rgba: Self.solid(width: 64, height: 64, 1, 2, 3))
+        let bytes = [UInt8](png)
+        let image = bytes.withUnsafeBufferPointer {
+            nucleus.skia.makeEncodedImageFromMemory($0.baseAddress, $0.count, 16, 16)
+        }
+        #expect(image.width() == 16)
+    }
+
+    @Test func emptyBytesDecodeToNothing() {
+        let empty: [UInt8] = []
+        let image = empty.withUnsafeBufferPointer {
+            nucleus.skia.makeEncodedImageFromMemory($0.baseAddress, $0.count, 0, 0)
+        }
+        #expect(!image.isValid())
+    }
+
+    // MARK: - ICO
+
+    /// Tray icons are ICO, and they are mostly transparent.
+    ///
+    /// The reference hand-rolls an ICO decoder because Skia's BMP codec forces
+    /// alpha to 0xFF on 32bpp images. That is *not* true of Skia's ICO path here,
+    /// which is why no hand-rolled decoder exists in this tree — so this test
+    /// exists to notice if that ever stops being true.
+    @Test func icoPreservesPerPixelAlpha() {
+        let fixture = IcoFixture(alphas: [0, 64, 255, 128])
+        let image = nucleus.skia.makeEncodedImageFromFile(fixture.path, 0, 0)
+        #expect(image.isValid())
+        #expect(image.width() == 2)
+
+        var px = [UInt8](repeating: 0, count: 2 * 2 * 4)
+        let read = px.withUnsafeMutableBufferPointer {
+            image.readPixelsRGBA($0.baseAddress, $0.count, 2 * 4)
+        }
+        #expect(read)
+        #expect([px[3], px[7], px[11], px[15]] == [0, 64, 255, 128],
+                "every alpha survives; all-255 would mean the BMP path flattened them")
+    }
+
+    /// A 2x2 32bpp ICO with per-pixel alpha, written by hand — the format is
+    /// simple enough to state outright, and a checked-in binary would hide the
+    /// one property under test.
+    private final class IcoFixture {
+        let path: String
+
+        /// - Parameter alphas: top-left, top-right, bottom-left, bottom-right.
+        init(alphas: [UInt8]) {
+            path = "\(NSTemporaryDirectory())nucleus-ico-"
+                + "\(UInt32.random(in: 0...UInt32.max)).ico"
+
+            var dib = Data()
+            func u32(_ v: UInt32) { withUnsafeBytes(of: v.littleEndian) { dib.append(contentsOf: $0) } }
+            func u16(_ v: UInt16) { withUnsafeBytes(of: v.littleEndian) { dib.append(contentsOf: $0) } }
+            func i32(_ v: Int32) { withUnsafeBytes(of: v.littleEndian) { dib.append(contentsOf: $0) } }
+
+            // BITMAPINFOHEADER: height is doubled to cover the (unused) AND mask.
+            u32(40); i32(2); i32(4); u16(1); u16(32)
+            u32(0); u32(16); i32(0); i32(0); u32(0); u32(0)
+
+            // BGRA pixels, bottom-up: the last row is written first.
+            let rows: [[UInt8]] = [[alphas[2], alphas[3]], [alphas[0], alphas[1]]]
+            for row in rows {
+                for alpha in row {
+                    dib.append(contentsOf: [255, 255, 255, alpha])
+                }
+            }
+            dib.append(contentsOf: [0, 0, 0, 0])  // AND mask
+
+            var ico = Data()
+            func h16(_ v: UInt16) { withUnsafeBytes(of: v.littleEndian) { ico.append(contentsOf: $0) } }
+            func h32(_ v: UInt32) { withUnsafeBytes(of: v.littleEndian) { ico.append(contentsOf: $0) } }
+            h16(0); h16(1); h16(1)                      // reserved, type=icon, count
+            ico.append(contentsOf: [2, 2, 0, 0])        // width, height, palette, reserved
+            h16(1); h16(32)                             // planes, bit depth
+            h32(UInt32(dib.count)); h32(22)             // size, offset
+            ico.append(dib)
+
+            try? ico.write(to: URL(fileURLWithPath: path))
+        }
+
+        deinit { try? FileManager.default.removeItem(atPath: path) }
+    }
+
     // MARK: - Failure
 
     @Test func aMissingFileDecodesToNothing() {

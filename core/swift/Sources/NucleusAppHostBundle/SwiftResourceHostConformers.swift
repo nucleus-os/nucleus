@@ -20,6 +20,35 @@ final class SwiftImageRegistrar: ImageRegistrar {
         return SwiftResourceHost.shared.images.register(
             ImageSource(path: path, maxWidth: maxWidth, maxHeight: maxHeight))
     }
+
+    func register(
+        encoded: Span<UInt8>, maxWidth: UInt32, maxHeight: UInt32
+    ) throws(ImageRegistrationError) -> UInt64 {
+        guard !encoded.isEmpty else { throw ImageRegistrationError.invalidArgument }
+        var bytes = [UInt8](repeating: 0, count: encoded.count)
+        for i in 0..<encoded.count { bytes[i] = encoded[i] }
+        return SwiftResourceHost.shared.images.register(
+            ImageSource(content: .encoded(bytes: bytes), maxWidth: maxWidth, maxHeight: maxHeight))
+    }
+
+    func register(
+        pixels: Span<UInt8>, width: UInt32, height: UInt32, rowStride: UInt32,
+        channelOrder: UInt8, isPremultiplied: Bool
+    ) throws(ImageRegistrationError) -> UInt64 {
+        guard !pixels.isEmpty, width > 0, height > 0,
+              let order = PixelChannelOrder(rawValue: channelOrder)
+        else { throw ImageRegistrationError.invalidArgument }
+
+        var bytes = [UInt8](repeating: 0, count: pixels.count)
+        for i in 0..<pixels.count { bytes[i] = pixels[i] }
+        let buffer = RawPixelBuffer(
+            width: Int(width), height: Int(height), rowStride: Int(rowStride),
+            order: order, isPremultiplied: isPremultiplied, pixels: bytes)
+        // Reject a buffer that does not describe itself consistently here, rather
+        // than registering a handle that can only ever fail to draw.
+        guard buffer.isWellFormed else { throw ImageRegistrationError.invalidArgument }
+        return SwiftResourceHost.shared.images.register(ImageSource(content: .raw(buffer)))
+    }
 }
 
 /// `ImageLifecycle` over `SwiftResourceHost.images`.
@@ -126,6 +155,7 @@ final class SwiftPaintContentRegistrar: PaintContentRegistrar {
                 stroke: c.flags.contains(.stroke),
                 antialias: c.flags.contains(.antialias),
                 evenOddFill: c.flags.contains(.evenOddFill),
+                tintsImage: c.flags.contains(.tintImage),
                 shading: paintDrawShading(c.shading),
                 blend: paintDrawBlendMode(c.blend),
                 alpha: c.alpha, blurSigma: c.blurSigma, saturation: c.saturation))

@@ -134,6 +134,9 @@ struct Paint {
     bool antialias = true;
     float blurSigma = 0;  // > 0 → Gaussian blur image filter
     float saturation = 1; // != 1 → saturation color matrix
+    // Recolour an image by its alpha, preserving shape and dropping colour.
+    // Applies to image draws; a shape already paints in `color`.
+    bool tintsImage = false;
     // Stroke parameters. `style` defaults to fill, which is why a command
     // carrying only a `strokeWidth` used to paint solid.
     PaintStyle style = PaintStyle::fill;
@@ -387,6 +390,12 @@ Image makeRasterImageRGBA(int32_t width, int32_t height, const uint8_t *pixels, 
 /// Aspect ratio is preserved — the bound is a box the result fits inside, not
 /// the result's size.
 Image makeEncodedImageFromFile(const char *path, int32_t maxWidth, int32_t maxHeight);
+
+/// Decode encoded image bytes already in memory — a `data:` URI, or any blob
+/// with no path to point at. Same formats, same bounds behaviour, same SVG
+/// detection as the file entry point.
+Image makeEncodedImageFromMemory(
+    const uint8_t *bytes, size_t byteLength, int32_t maxWidth, int32_t maxHeight);
 
 /// A borrowed Vulkan image to wrap as a Graphite-sampleable `Image` (an imported
 /// client DMA-BUF or a compositor render texture). The façade never owns the

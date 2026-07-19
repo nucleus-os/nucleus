@@ -45,7 +45,8 @@ Four things, and they are independent of each other:
 
 The reference needs PNG, JPEG, WebP, BMP, GIF-still, ICO, SVG at arbitrary target size,
 `data:` URI decode, raw-buffer upload with stride and channel order, sRGB-correct
-downscale, and threaded decode with main-thread upload.
+downscale, and threaded decode with main-thread upload. All of it is in place except the
+last, which is phase 5.
 
 Three things it needs that are *not* image decode, and do not land here: WebP encode
 (thumbnail disk cache), PNG encode (avatar write-back), and an HTTP client (MPRIS
@@ -181,18 +182,49 @@ render tier — text elsewhere goes through the separate text backend.
 
 Rasters are cleared transparent, not opaque: an icon is a shape over whatever is behind it.
 
-## Phase 4 — raw buffers and `data:` URIs
+## Phase 4 — raw buffers, `data:` URIs, and tint — **complete**
 
-Notifications carry pixels over D-Bus, not paths: width, height, row stride, alpha flag,
-and channel order across RGBA/BGRA/ARGB/RGB/BGR. `ImageStore` currently keys on a path,
-so a raw source needs a second `ImageSource` kind and a content-hash dedupe key.
-`TextureRegistry.uploadShm` is the upload path, and it already takes premultiplied RGBA8888.
+`ImageSource` grew from a path into an `ImageContent` of three cases — `.file`,
+`.encoded`, `.raw` — because a `data:` URI and a D-Bus pixel buffer are neither files nor
+each other. Dedupe keys off content: a path directly, and an FNV-1a hash otherwise, since
+raw pixels have no name and a notification re-sending an unchanged icon on every update
+would otherwise register a fresh decode each time.
 
-`data:` URIs decode to bytes and land in the same raw path.
+`PixelChannelOrder` lives in `NucleusAppHostProtocols`, not the render tier: both sides of
+the seam speak it, and putting it in the renderer would force every producer to depend on
+the renderer merely to name a byte order.
 
-ICO is hand-rolled here rather than left to Skia, matching the reference: Skia's BMP
-codec forces alpha to `0xFF` on 32bpp, so a tray icon decoded through it loses its
-transparency.
+Two details in `RawPixelBuffer` are worth stating because getting either wrong fails
+quietly rather than loudly. **Stride is separate from width** — senders pad rows, and
+assuming `width * bytesPerPixel` skews every row after the first into a diagonal smear.
+And the last row is allowed to omit its padding, because senders routinely truncate there
+and rejecting them would reject valid buffers. **Premultiplication rounds** rather than
+truncating; truncating loses half a level on every channel of every pixel, which reads as
+a uniform darkening of anything semi-transparent. The D-Bus spec sends straight alpha and
+the GPU wants premultiplied, so the conversion is not optional.
+
+Raw pixels go to `makeRasterImageRGBA` rather than `TextureRegistry.uploadShm`. The plan
+named the upload path, but the decode seam wants an image and that façade already
+produces one directly; routing through the registry would allocate a texture handle
+nothing asked for.
+
+**ICO is *not* hand-rolled, against the plan.** The reference hand-rolls a decoder because
+Skia's BMP codec forces alpha to `0xFF` on 32bpp. A probe against Skia's ICO path here
+showed per-pixel alpha surviving exactly — `[0, 64, 255, 128]` in, the same out. So the
+decoder is unnecessary, and what landed instead is a test that will notice if that ever
+stops being true. This is the second time this plan assumed the reference's workaround was
+also ours; it was worth thirty seconds to check.
+
+**Tint** completes the piece deferred from phase 2. It needed no new plumbing: the paint
+command already carried `color` and `saturation`, and saturation already lowered to a
+colour filter that applies to images. A tint is one flag bit plus a `kSrcIn` blend filter
+composed *after* the saturation matrix, so desaturate-then-tint reads in that order — which
+is exactly the reference's app-icon bake, expressed as a filter rather than a CPU pass over
+the pixels. `ImageView.tint` is a `ColorSpec`, so a tinted icon follows a retheme like
+everything else.
+
+No `viewDidChangeEffectiveAppearance` override was needed for that: the base class already
+repaints on an appearance change, and the override I first wrote only restated it.
 
 ## Phase 5 — asynchronous decode
 

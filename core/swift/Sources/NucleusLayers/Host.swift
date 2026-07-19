@@ -135,6 +135,19 @@ private final class StubImageRegistrar: ImageRegistrar {
     func register(path: String, maxWidth: UInt32, maxHeight: UInt32) throws(ImageRegistrationError) -> UInt64 {
         return StubHost.nextHandleValue()
     }
+
+    func register(
+        encoded: Span<UInt8>, maxWidth: UInt32, maxHeight: UInt32
+    ) throws(ImageRegistrationError) -> UInt64 {
+        return StubHost.nextHandleValue()
+    }
+
+    func register(
+        pixels: Span<UInt8>, width: UInt32, height: UInt32, rowStride: UInt32,
+        channelOrder: UInt8, isPremultiplied: Bool
+    ) throws(ImageRegistrationError) -> UInt64 {
+        return StubHost.nextHandleValue()
+    }
 }
 
 private final class StubPaintContentRegistrar: PaintContentRegistrar {

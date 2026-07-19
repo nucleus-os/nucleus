@@ -1,22 +1,72 @@
-// Phase 10c.3 cutover — the GPU-independent Swift image store.
+// The GPU-independent Swift image store.
 //
-// The layers `ImageRegistrar` registers an image by FILE PATH (+ a max decode
-// size), not by pixels or a decoded Skia object — so the store is GPU-independent:
-// it holds the path + bounds + a refcount keyed by an opaque handle, and the
-// renderer decodes/uploads the file lazily at rasterization time (when a paint
-// `.image` command references the handle). This keeps image registration working
-// in a headless bring-up where no Graphite recorder exists.
+// The layers `ImageRegistrar` registers an image by *description* — a file path,
+// encoded bytes, or raw pixels — never by a decoded Skia object. So the store
+// stays GPU-independent: it holds the description plus a refcount keyed by an
+// opaque handle, and the renderer decodes/uploads lazily at rasterization time
+// (when a paint `.image` command references the handle). Registration therefore
+// works in a headless bring-up where no Graphite recorder exists.
 
-/// A registered image source: the file to decode and the max decode bounds.
+/// Where an image's bytes come from.
+public enum ImageContent: Equatable, Sendable {
+    /// A file to decode. The overwhelmingly common case.
+    case file(path: String)
+    /// Encoded bytes already in memory — a `data:` URI, or anything else that
+    /// arrives as a blob with no path to point at.
+    case encoded(bytes: [UInt8])
+    /// Decoded pixels, as notifications deliver them over D-Bus.
+    case raw(RawPixelBuffer)
+}
+
+/// A registered image source: what to draw, and the bounds to decode within.
 public struct ImageSource: Equatable, Sendable {
-    public var path: String
+    public var content: ImageContent
     public var maxWidth: UInt32
     public var maxHeight: UInt32
 
-    public init(path: String, maxWidth: UInt32, maxHeight: UInt32) {
-        self.path = path
+    public init(content: ImageContent, maxWidth: UInt32 = 0, maxHeight: UInt32 = 0) {
+        self.content = content
         self.maxWidth = maxWidth
         self.maxHeight = maxHeight
+    }
+
+    public init(path: String, maxWidth: UInt32, maxHeight: UInt32) {
+        self.init(content: .file(path: path), maxWidth: maxWidth, maxHeight: maxHeight)
+    }
+
+    /// The file path, when this source is one. Nil for in-memory sources.
+    public var path: String? {
+        if case .file(let path) = content { return path }
+        return nil
+    }
+
+    /// The key two registrations must share to be the same registration.
+    ///
+    /// Bounds are part of it because they are part of what gets decoded. Content
+    /// contributes a path directly, and a hash otherwise — raw pixels have no
+    /// name, and a notification re-sending an unchanged icon on every update
+    /// would otherwise register a fresh decode each time.
+    var dedupeKey: String {
+        let contentKey: String
+        switch content {
+        case .file(let path):
+            contentKey = "f:\(path)"
+        case .encoded(let bytes):
+            contentKey = "e:\(bytes.count):\(ImageSource.hash(bytes))"
+        case .raw(let buffer):
+            contentKey = "r:\(buffer.contentHash())"
+        }
+        return "\(maxWidth)x\(maxHeight):\(contentKey)"
+    }
+
+    /// FNV-1a, matching `RawPixelBuffer.contentHash`.
+    static func hash(_ bytes: [UInt8]) -> UInt64 {
+        var hash: UInt64 = 0xcbf2_9ce4_8422_2325
+        for byte in bytes {
+            hash ^= UInt64(byte)
+            hash &*= 0x0000_0100_0000_01B3
+        }
+        return hash
     }
 }
 
@@ -47,7 +97,7 @@ public final class ImageStore: @unchecked Sendable {
     public var count: Int { entries.count }
 
     private func key(_ source: ImageSource) -> String {
-        "\(source.maxWidth)x\(source.maxHeight):\(source.path)"
+        source.dedupeKey
     }
 
     private func allocHandle() -> UInt64 {

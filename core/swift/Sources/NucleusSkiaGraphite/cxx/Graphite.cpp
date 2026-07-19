@@ -164,11 +164,23 @@ SkPaint toSkPaint(Paint paint) {
     sk.setAlphaf(SkTPin(paint.color.a * paint.alpha, 0.0f, 1.0f));
     sk.setBlendMode(toSkBlendMode(paint.blend));
     sk.setAntiAlias(paint.antialias);
+    sk_sp<SkColorFilter> colorFilter;
     if (paint.saturation != 1.0f) {
         SkColorMatrix m;
         m.setSaturation(paint.saturation);
-        sk.setColorFilter(SkColorFilters::Matrix(m));
+        colorFilter = SkColorFilters::Matrix(m);
     }
+    if (paint.tintsImage) {
+        // kSrcIn keeps the source alpha and replaces the colour, which recolours
+        // a glyph-like icon by its shape. Composed *after* any saturation so a
+        // desaturate-then-tint reads in that order rather than the reverse.
+        sk_sp<SkColorFilter> tint = SkColorFilters::Blend(
+            SkColor4f{paint.color.r, paint.color.g, paint.color.b, paint.color.a},
+            nullptr, SkBlendMode::kSrcIn);
+        colorFilter = colorFilter ? tint->makeComposed(std::move(colorFilter))
+                                  : std::move(tint);
+    }
+    if (colorFilter) sk.setColorFilter(std::move(colorFilter));
     if (paint.blurSigma > 0.0f) {
         sk.setImageFilter(SkImageFilters::Blur(paint.blurSigma, paint.blurSigma, nullptr));
     }
@@ -734,9 +746,12 @@ Image rasterizeSvg(const sk_sp<SkData> &data, int32_t maxWidth, int32_t maxHeigh
 
 }  // namespace
 
-Image makeEncodedImageFromFile(const char *path, int32_t maxWidth, int32_t maxHeight) {
-    if (path == nullptr || path[0] == '\0') return Image(nullptr);
-    sk_sp<SkData> data = SkData::MakeFromFileName(path);
+namespace {
+
+// The shared body of every encoded decode, whether the bytes came from a file or
+// from memory. A `data:` URI holds exactly what a file holds, so it must decode
+// exactly the same way.
+Image decodeEncodedData(sk_sp<SkData> data, int32_t maxWidth, int32_t maxHeight) {
     if (!data) return Image(nullptr);
 
     // SVG has its own path: there is nothing to decode, only something to draw,
@@ -792,6 +807,20 @@ Image makeEncodedImageFromFile(const char *path, int32_t maxWidth, int32_t maxHe
     // A failed resample is a memory failure, not a decode failure — the
     // correctly-decoded oversized image beats showing nothing.
     return wrapImage(resized ? std::move(resized) : std::move(image));
+}
+
+}  // namespace
+
+Image makeEncodedImageFromFile(const char *path, int32_t maxWidth, int32_t maxHeight) {
+    if (path == nullptr || path[0] == '\0') return Image(nullptr);
+    return decodeEncodedData(SkData::MakeFromFileName(path), maxWidth, maxHeight);
+}
+
+Image makeEncodedImageFromMemory(
+    const uint8_t *bytes, size_t byteLength, int32_t maxWidth, int32_t maxHeight) {
+    if (bytes == nullptr || byteLength == 0) return Image(nullptr);
+    return decodeEncodedData(
+        SkData::MakeWithCopy(bytes, byteLength), maxWidth, maxHeight);
 }
 
 // MARK: - Canvas

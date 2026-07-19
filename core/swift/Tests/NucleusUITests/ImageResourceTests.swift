@@ -23,12 +23,38 @@ import NucleusLayers
         var returnsZero = false
         private var next: UInt64 = 1
 
+        /// Encoded and raw registrations, recorded as byte counts and geometry —
+        /// enough to tell them apart without restating the pixels.
+        var encodedByteCounts: [Int] = []
+        var rawGeometry: [(width: UInt32, height: UInt32, stride: UInt32, order: UInt8)] = []
+
         func register(path: String, maxWidth: UInt32, maxHeight: UInt32)
             throws(ImageRegistrationError) -> UInt64
         {
             if let failsWith { throw failsWith }
             registrations.append(
                 Registration(path: path, maxWidth: maxWidth, maxHeight: maxHeight))
+            if returnsZero { return 0 }
+            defer { next += 1 }
+            return next
+        }
+
+        func register(encoded: Span<UInt8>, maxWidth: UInt32, maxHeight: UInt32)
+            throws(ImageRegistrationError) -> UInt64
+        {
+            if let failsWith { throw failsWith }
+            encodedByteCounts.append(encoded.count)
+            if returnsZero { return 0 }
+            defer { next += 1 }
+            return next
+        }
+
+        func register(
+            pixels: Span<UInt8>, width: UInt32, height: UInt32, rowStride: UInt32,
+            channelOrder: UInt8, isPremultiplied: Bool
+        ) throws(ImageRegistrationError) -> UInt64 {
+            if let failsWith { throw failsWith }
+            rawGeometry.append((width, height, rowStride, channelOrder))
             if returnsZero { return 0 }
             defer { next += 1 }
             return next
@@ -143,6 +169,90 @@ import NucleusLayers
         withRecordingHost { registrar in
             registrar.returnsZero = true
             #expect(ImageResource(path: "/a.png", resourceHostHandle: 1) == nil)
+        }
+    }
+
+    // MARK: - In-memory sources
+
+    @Test func encodedBytesRegister() {
+        withRecordingHost { registrar in
+            let resource = ImageResource(
+                encoded: [1, 2, 3, 4], decodeSize: Size(width: 16, height: 16),
+                resourceHostHandle: 1)
+            #expect(resource != nil)
+            #expect(registrar.encodedByteCounts == [4])
+        }
+    }
+
+    @Test func emptyEncodedBytesRegisterNothing() {
+        withRecordingHost { registrar in
+            #expect(ImageResource(encoded: [], resourceHostHandle: 1) == nil)
+            #expect(registrar.encodedByteCounts.isEmpty)
+        }
+    }
+
+    /// The sender's geometry travels intact; a stride guessed from the width
+    /// would skew every row after the first.
+    @Test func rawPixelsRegisterWithTheirGeometry() {
+        withRecordingHost { registrar in
+            let resource = ImageResource(
+                pixels: [UInt8](repeating: 0, count: 2 * 12), width: 2, height: 2,
+                rowStride: 12, order: .bgra, resourceHostHandle: 1)
+            #expect(resource != nil)
+            #expect(registrar.rawGeometry.count == 1)
+            #expect(registrar.rawGeometry.first?.width == 2)
+            #expect(registrar.rawGeometry.first?.stride == 12)
+            #expect(registrar.rawGeometry.first?.order == PixelChannelOrder.bgra.rawValue)
+        }
+    }
+
+    /// Omitting the stride means the rows are packed, which is the common case.
+    @Test func anOmittedStrideIsDerivedFromTheWidth() {
+        withRecordingHost { registrar in
+            _ = ImageResource(
+                pixels: [UInt8](repeating: 0, count: 16), width: 2, height: 2,
+                order: .rgba, resourceHostHandle: 1)
+            #expect(registrar.rawGeometry.first?.stride == 8)
+        }
+    }
+
+    /// Raw pixels are already decoded, so the resource's size is the sender's.
+    @Test func rawPixelsCarryTheirOwnSize() {
+        withRecordingHost { _ in
+            let resource = ImageResource(
+                pixels: [UInt8](repeating: 0, count: 16), width: 2, height: 2,
+                order: .rgba, resourceHostHandle: 1)
+            #expect(resource?.decodeSize == Size(width: 2, height: 2))
+        }
+    }
+
+    // MARK: - Source strings
+
+    /// Callers get icon strings from applications and cannot know which kind they
+    /// hold, so one entry point decides.
+    @Test func aSourceStringRoutesByKind() {
+        withRecordingHost { registrar in
+            _ = ImageResource(source: "/icons/app.png", resourceHostHandle: 1)
+            #expect(registrar.registrations.count == 1)
+            #expect(registrar.encodedByteCounts.isEmpty)
+
+            _ = ImageResource(source: "data:image/png;base64,SGkh", resourceHostHandle: 1)
+            #expect(registrar.registrations.count == 1, "not registered as a path")
+            #expect(registrar.encodedByteCounts == [3])
+        }
+    }
+
+    /// A string that fails to parse as a data URI falls through to the path
+    /// branch. It will not resolve to a file, which is the correct outcome — the
+    /// alternative is deciding here that it *was* meant as a URI and failing
+    /// with a more confident error than the evidence supports.
+    @Test func anUnparseableDataURIFallsThroughToThePath() {
+        withRecordingHost { registrar in
+            let resource = ImageResource(
+                source: "data:;base64,not valid!!", resourceHostHandle: 1)
+            #expect(resource != nil)
+            #expect(registrar.registrations.count == 1)
+            #expect(registrar.encodedByteCounts.isEmpty)
         }
     }
 
