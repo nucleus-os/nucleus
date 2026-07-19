@@ -222,11 +222,27 @@ Cancel-by-owner from the reference is not carried over — animations are per-la
 removing by property on the view that owns it covers the same ground without a second identity
 scheme.
 
-**Phase 9 — Glyphs, then icon themes, then files.** A glyph view and a name→codepoint registry over
-a bundled icon font first, since it covers most of the iconography and the font stack largely
-serves it. XDG icon-theme resolution second, size-aware and cached, because the taskbar, dock, and
-tray cannot work without it. General file loading — SVG through Skia's SVG module, raster, animated
-GIF — and the async texture cache last.
+**Phase 9 — Glyphs, then icon themes, then files.** Three sub-steps, landing separately.
+
+*Glyphs — complete.* `GlyphCatalog` maps names onto codepoints; `GlyphView` renders one through the
+existing text stack, since `Font` already takes a family name. That is the whole trick: an icon is
+text, so it recolours and rescales for free and needs no texture.
+
+The font is **injected, not bundled.** Which icon font a shell ships is a licensing and asset-size
+decision belonging to the shell, and a widget kit that hardcoded one would force it on every
+consumer. `GlyphCatalog.shared` is a single default rather than an inherited environment — a shell
+ships one icon font, and threading a catalog through every widget would be ceremony for a value
+that never varies.
+
+An unresolvable name renders **nothing**, not a placeholder: a shell showing a wrong icon is worse
+than one showing a gap, because the gap is visibly a bug. Aliases exist because icon sets rename
+things between releases and a widget naming a retired icon should keep working.
+
+*Icon themes — pending.* XDG icon-theme resolution, size-aware and cached, for third-party
+application icons in the taskbar, dock, and tray.
+
+*Files — pending.* SVG through Skia's SVG module, raster, animated GIF, and the async texture
+cache. This is where the missing `ImageHandle` producer lands.
 
 **Phase 10 — Scroll and list fidelity.** High-resolution wheel and detent accumulation, variable
 row heights with a height cache, and keyed adapter identity.
