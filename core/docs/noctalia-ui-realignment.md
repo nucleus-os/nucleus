@@ -258,8 +258,17 @@ generation counter lets a holder of resolved paths notice staleness without a ca
 path is used directly, since applications set icon fields to full paths often enough that treating
 one as a theme name would fail for no reason.
 
-*Files — pending.* SVG through Skia's SVG module, raster, animated GIF, and the async texture
-cache. This is where the missing `ImageHandle` producer lands.
+*Files — in progress, and smaller than this plan assumed.* Investigation found the pipeline already
+whole: `ImageStore` refcounts sources, `FrameDriver` decodes lazily, `PaintRasterizer` draws, and
+Skia ships built and linked with png/jpeg/webp/wuffs and `skia_enable_svg`. PNG, JPEG, WebP and BMP
+decode today. The real gaps are four unrelated things — no shell-tier producer of an `ImageHandle`,
+dead decode bounds, SVG linked but never called, and synchronous decode on the render thread — and
+they are sequenced in `image-file-loading.md`. Animated GIF defers to first-frame: it is one
+optional widget in the reference, which already ships a first-frame fallback for its every failure
+mode.
+
+Bounded decode lands first and is complete; the producer seam, SVG, raw D-Bus buffers, and
+asynchronous decode follow.
 
 **Phase 10 — Scroll and list fidelity.** High-resolution wheel and detent accumulation, variable
 row heights with a height cache, and keyed adapter identity.

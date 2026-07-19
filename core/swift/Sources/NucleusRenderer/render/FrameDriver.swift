@@ -164,9 +164,15 @@ final class FrameDriver {
         accumulators.removeAll()
     }
 
+    /// Decode (once) the image behind a handle, at most its source's bounds.
+    ///
+    /// The bounds are the handle's identity, not a hint: `ImageStore` dedupes on
+    /// `"WxH:path"`, so two handles for one path at different bounds are two
+    /// distinct decodes and must stay that way.
     func decodedImage(handle: UInt64, source: ImageSource) -> nucleus.skia.Image? {
         if let existing = decodedImages[handle], existing.isValid() { return existing }
-        let image = nucleus.skia.makeEncodedImageFromFile(source.path)
+        let image = nucleus.skia.makeEncodedImageFromFile(
+            source.path, Int32(clamping: source.maxWidth), Int32(clamping: source.maxHeight))
         guard image.isValid() else { return nil }
         decodedImages[handle] = image
         return image

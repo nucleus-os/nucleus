@@ -376,9 +376,17 @@ private:
 /// Returned invalid on a size/argument error.
 Image makeRasterImageRGBA(int32_t width, int32_t height, const uint8_t *pixels, size_t byteLength);
 
-/// Decode an encoded image file into an SkImage. Returned invalid on missing,
-/// unreadable, or unsupported files.
-Image makeEncodedImageFromFile(const char *path);
+/// Decode an encoded image file into an SkImage, at most `maxWidth` x
+/// `maxHeight`. Returned invalid on missing, unreadable, or unsupported files.
+///
+/// A zero bound means unbounded on that axis, which decodes deferred (Skia
+/// decodes on first draw) exactly as an unbounded decode always has. A bounded
+/// decode is eager, because the whole point is to never hold the full-size
+/// pixels: a 4K wallpaper and a 22px tray icon must not cost the same.
+///
+/// Aspect ratio is preserved — the bound is a box the result fits inside, not
+/// the result's size.
+Image makeEncodedImageFromFile(const char *path, int32_t maxWidth, int32_t maxHeight);
 
 /// A borrowed Vulkan image to wrap as a Graphite-sampleable `Image` (an imported
 /// client DMA-BUF or a compositor render texture). The façade never owns the

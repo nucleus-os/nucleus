@@ -6,6 +6,7 @@
 #include <cmath>
 #include <atomic>
 #include <cstring>
+#include <memory>
 #include <mutex>
 #include <unordered_map>
 #include <vector>
@@ -14,9 +15,13 @@
 
 #include "modules/skparagraph/include/Paragraph.h"
 
+#include "include/codec/SkCodec.h"
+
+#include "include/core/SkBitmap.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkColor.h"
 #include "include/core/SkColorFilter.h"
+#include "include/core/SkColorSpace.h"
 #include "include/core/SkData.h"
 #include "include/core/SkImage.h"
 #include "include/core/SkImageInfo.h"
@@ -538,14 +543,138 @@ Image makeRasterImageRGBA(int32_t width, int32_t height, const uint8_t *pixels, 
     return Image(std::move(impl));
 }
 
-Image makeEncodedImageFromFile(const char *path) {
+namespace {
+
+Image wrapImage(sk_sp<SkImage> image) {
+    if (!image) return Image(nullptr);
+    auto impl = std::make_shared<Image::Impl>();
+    impl->image = std::move(image);
+    return Image(std::move(impl));
+}
+
+// Decode target: RGBA8888, and explicitly sRGB.
+//
+// The colour space must be stated rather than inherited. An untagged file (most
+// PNGs, every icon theme) decodes with a null colour space, which Skia reads as
+// "unmanaged" and skips conversion for — silently defeating the linear
+// downscale below. Untagged means sRGB, so say so.
+SkImageInfo decodeInfo(const SkCodec &codec, int32_t width, int32_t height) {
+    return codec.getInfo()
+        .makeWH(width, height)
+        .makeColorType(kRGBA_8888_SkColorType)
+        .makeColorSpace(SkColorSpace::MakeSRGB());
+}
+
+// Resample an image to `info`'s size through a raster surface.
+//
+// A surface draw rather than `SkImage::scalePixels`, because scalePixels does
+// not colour-manage: handed an sRGB source and a linear destination it moves the
+// values across unconverted, which defeats the whole point of the halving below.
+sk_sp<SkImage> resampleThroughSurface(const sk_sp<SkImage> &source, const SkImageInfo &info) {
+    sk_sp<SkSurface> surface = SkSurfaces::Raster(info);
+    if (!surface) return nullptr;
+    SkPaint paint;
+    paint.setBlendMode(SkBlendMode::kSrc);
+    surface->getCanvas()->drawImageRect(
+        source, SkRect::MakeIWH(info.width(), info.height()),
+        SkSamplingOptions(SkFilterMode::kLinear), &paint);
+    return surface->makeImageSnapshot();
+}
+
+// Downscale in *linear* space, by repeated halving.
+//
+// Two independent things are being got right here. Image bytes are sRGB-encoded,
+// so averaging them directly darkens and muddies the result — most visibly on
+// exactly the small icons this path exists to serve. And a single large
+// downscale step aliases badly: a linear or cubic filter reads a fixed handful
+// of taps regardless of the ratio, so shrinking 64x in one step samples a few
+// source pixels and discards the rest. Halving until the last step is within 2x
+// means every source pixel contributes to the result.
+sk_sp<SkImage> linearDownscale(const sk_sp<SkImage> &source, int32_t width, int32_t height) {
+    SkImageInfo linearInfo = SkImageInfo::Make(
+        source->width(), source->height(), kRGBA_F16_SkColorType, kPremul_SkAlphaType,
+        SkColorSpace::MakeSRGBLinear());
+
+    // Convert to linear *first*, at full size and with no resampling.
+    //
+    // This step is the whole trick, and it is not optional: Skia filters in the
+    // source image's colour space and converts to the destination's afterwards.
+    // A linear destination therefore buys nothing on its own — the averaging has
+    // already happened in sRGB by the time the conversion runs. Only a source
+    // that is already linear makes the filtering linear.
+    sk_sp<SkImage> current = resampleThroughSurface(source, linearInfo);
+    if (!current) return nullptr;
+
+    while (current->width() / 2 > width || current->height() / 2 > height) {
+        int32_t nextWidth = std::max(width, current->width() / 2);
+        int32_t nextHeight = std::max(height, current->height() / 2);
+        current = resampleThroughSurface(current, linearInfo.makeWH(nextWidth, nextHeight));
+        if (!current) return nullptr;
+    }
+
+    // The final step lands on the target size and encodes back to sRGB.
+    return resampleThroughSurface(
+        current,
+        SkImageInfo::Make(width, height, kRGBA_8888_SkColorType, kPremul_SkAlphaType,
+                          SkColorSpace::MakeSRGB()));
+}
+
+}  // namespace
+
+Image makeEncodedImageFromFile(const char *path, int32_t maxWidth, int32_t maxHeight) {
     if (path == nullptr || path[0] == '\0') return Image(nullptr);
     sk_sp<SkData> data = SkData::MakeFromFileName(path);
     if (!data) return Image(nullptr);
-    auto impl = std::make_shared<Image::Impl>();
-    impl->image = SkImages::DeferredFromEncodedData(std::move(data));
-    if (!impl->image) return Image(nullptr);
-    return Image(std::move(impl));
+
+    // Unbounded stays deferred: nothing is known about the draw size, so there
+    // is nothing to decide and no reason to decode before the first draw.
+    if (maxWidth <= 0 || maxHeight <= 0) {
+        return wrapImage(SkImages::DeferredFromEncodedData(std::move(data)));
+    }
+
+    std::unique_ptr<SkCodec> codec = SkCodec::MakeFromData(std::move(data));
+    if (!codec) return Image(nullptr);
+
+    SkISize full = codec->dimensions();
+    if (full.isEmpty()) return Image(nullptr);
+    float scale = std::min(static_cast<float>(maxWidth) / static_cast<float>(full.width()),
+                           static_cast<float>(maxHeight) / static_cast<float>(full.height()));
+
+    // Already inside the box. Enlarging to fill it would burn memory to blur.
+    if (scale >= 1.0f) {
+        SkBitmap bitmap;
+        if (!bitmap.tryAllocPixels(decodeInfo(*codec, full.width(), full.height()))) {
+            return Image(nullptr);
+        }
+        if (codec->getPixels(bitmap.pixmap()) != SkCodec::kSuccess) return Image(nullptr);
+        bitmap.setImmutable();
+        return wrapImage(SkImages::RasterFromBitmap(bitmap));
+    }
+
+    // Ask the codec what it can decode natively — JPEG scales during the DCT,
+    // which is both faster and better than decoding full and resampling. The
+    // answer is never smaller than asked for, so a resample may still follow.
+    SkISize decoded = codec->getScaledDimensions(scale);
+    SkBitmap bitmap;
+    if (!bitmap.tryAllocPixels(decodeInfo(*codec, decoded.width(), decoded.height()))) {
+        return Image(nullptr);
+    }
+    if (codec->getPixels(bitmap.pixmap()) != SkCodec::kSuccess) return Image(nullptr);
+    bitmap.setImmutable();
+
+    sk_sp<SkImage> image = SkImages::RasterFromBitmap(bitmap);
+    if (!image) return Image(nullptr);
+
+    int32_t targetWidth = std::max(1, static_cast<int32_t>(std::lround(full.width() * scale)));
+    int32_t targetHeight = std::max(1, static_cast<int32_t>(std::lround(full.height() * scale)));
+    if (decoded.width() <= targetWidth && decoded.height() <= targetHeight) {
+        return wrapImage(std::move(image));
+    }
+
+    sk_sp<SkImage> resized = linearDownscale(image, targetWidth, targetHeight);
+    // A failed resample is a memory failure, not a decode failure — the
+    // correctly-decoded oversized image beats showing nothing.
+    return wrapImage(resized ? std::move(resized) : std::move(image));
 }
 
 // MARK: - Canvas

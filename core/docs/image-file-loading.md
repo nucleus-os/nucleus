@@ -60,18 +60,52 @@ one texture per frame. `DeferredFromEncodedData` already yields frame zero, so t
 deferral costs nothing structurally and the widget renders a static sticker until it
 lands.
 
-## Phase 1 — honour the decode bounds
+## Phase 1 — honour the decode bounds — **complete**
 
-`decodedImage` starts respecting `ImageSource.maxWidth`/`maxHeight`. Decode goes through
-a new `makeEncodedImageFromFile(path, maxWidth, maxHeight)` façade in `Graphite.cpp`
-beside the existing one, using `SkCodec`'s scaled-decode dimensions where the codec
-offers them and a resize otherwise.
+`makeEncodedImageFromFile` gained `maxWidth`/`maxHeight`, and `FrameDriver.decodedImage`
+passes the source's bounds through. The dedupe key is honest now: two handles for one
+path at different bounds are two decodes that differ.
 
-The resize is sRGB-correct. Averaging sRGB-encoded bytes directly darkens and muddies a
-downscaled icon, which is exactly the case this exists to serve.
+A zero bound stays deferred, decoding on first draw exactly as before — nothing is known
+about the draw size, so there is nothing to decide. A bounded decode is eager, because
+the entire point is never to hold the full-size pixels. Aspect ratio is preserved and an
+image already inside the box is never enlarged.
 
-This phase alone makes the existing dedupe key honest, and it is the one change that
-improves what already ships.
+`SkCodec::getScaledDimensions` does the work where the codec can — JPEG scales during the
+DCT, which is faster and better than decoding full and resampling. It never returns
+smaller than asked, so a resample may still follow.
+
+**Downscaling happens in linear space, by repeated halving.** Two separate defects are
+being avoided, and both are visible on exactly the small icons this serves:
+
+- Image bytes are sRGB-encoded, so averaging them directly darkens and muddies the
+  result. A black-and-white checkerboard collapses to 128 rather than the correct 188.
+- A single large downscale step aliases badly. A linear or cubic filter reads a fixed
+  handful of taps regardless of ratio, so shrinking 64× in one step samples a few source
+  pixels and discards the rest. Halving until the last step is within 2× means every
+  source pixel contributes.
+
+Two findings worth keeping, both of which cost a debugging cycle:
+
+**Skia filters in the source image's colour space and converts to the destination's
+afterwards.** A linear destination therefore buys nothing on its own — the averaging has
+already happened in sRGB by the time the conversion runs. The source must be converted to
+linear first, at full size, as its own step. This is the load-bearing line in
+`linearDownscale` and it looks redundant until you know why it is there.
+
+**The decode target must state sRGB rather than inherit it.** An untagged file — most
+PNGs, every icon theme — decodes with a null colour space, which Skia reads as "unmanaged"
+and skips conversion for, silently defeating the above. Untagged means sRGB, so it is
+said explicitly.
+
+`SkImage::scalePixels` is not used, because it does not colour-manage at all: handed an
+sRGB source and a linear destination it moves the values across unconverted. Resampling
+goes through a raster surface draw instead.
+
+Tests encode their own PNGs (`EncodedImageDecodeTests`) rather than shipping fixtures —
+the interesting inputs are pixel patterns chosen to make a resampling defect visible, and
+a checked-in binary would hide what it contains. The checkerboard assertion is the one
+that would catch a regression to a naive resample.
 
 ## Phase 2 — the producer seam
 
