@@ -67,10 +67,11 @@ policies. "AppKit-like" is true of the object model, not of the layout engine.
 
 Actions are closures rather than target/selector pairs, which is the only sane Swift answer.
 
-**One divergence is a latent problem.** `bounds` exposes size only, with a zero origin. AppKit
-implements scrolling by moving a clip view's `bounds.origin`, and its coordinate conversion,
-hit testing, and drawing all account for that. Scrolling here will need an equivalent, and it
-should be decided before `ScrollView` rather than during it.
+**One divergence is a latent problem, now decided.** `bounds` exposes size only, with a zero
+origin, and its setter silently drops what it is given. AppKit implements scrolling by moving a
+clip view's `bounds.origin`, and its coordinate conversion, hit testing, and drawing all account
+for that. `bounds-origin-model.md` adopts that model and lands it before Phase 3, because tracking
+rectangles written against a zero-origin assumption would all need revisiting.
 
 **What is missing, ranked by what the port needs.** Scrolling and its clip view, with
 virtualization that AppKit puts in `NSTableView` rather than `NSScrollView`. Menus and popovers as
@@ -97,6 +98,7 @@ tooltip and tracking gap, and the popup layer — each of which is currently a g
 |---|---|---|
 | 1 | The D-Bus client seam | **complete** |
 | 2 | UPower, and the battery widget | **complete** |
+| — | The bounds-origin model | pending, blocks 3 |
 | 3 | Tracking, cursors, and tooltips | pending |
 | 4 | The popup layer | pending |
 | 5 | Scrolling | pending |
@@ -161,9 +163,9 @@ bar actually uses.
 occupies, in NucleusUI rather than the compositor overlay. The battery widget opens a panel; every
 menu and dropdown needs the same thing.
 
-**Phase 5 — Scrolling.** A bounds-origin model decided first, then `ScrollView`, a scrollbar, and
-virtualized list and grid. This lands after the popup layer because a panel is the first thing
-that will overflow.
+**Phase 5 — Scrolling.** `ScrollView`, a scrollbar, and virtualized list and grid, on the
+bounds-origin model that landed before Phase 3. This lands after the popup layer because a panel is
+the first thing that will overflow.
 
 **Phase 6 — The control kit.** `Toggle`, `Slider`, `Checkbox`, `RadioButton`, `Select`,
 `Segmented`, `Stepper`, `ProgressBar`, `Spinner`, `Separator`. Deliberately here rather than

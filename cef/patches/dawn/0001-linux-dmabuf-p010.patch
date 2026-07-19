@@ -1,0 +1,47 @@
+diff --git a/src/dawn/native/vulkan/SharedTextureMemoryVk.cpp b/src/dawn/native/vulkan/SharedTextureMemoryVk.cpp
+index eec5e3a7c..d7dcfdf5a 100644
+--- a/src/dawn/native/vulkan/SharedTextureMemoryVk.cpp
++++ b/src/dawn/native/vulkan/SharedTextureMemoryVk.cpp
+@@ -83,6 +83,8 @@ constexpr auto kDrmFormatABGR2101010 =
+ constexpr auto kDrmFormatABGR16161616F =
+     DrmFourccCode('A', 'B', '4', 'H'); /* [63:0] A:B:G:R 16:16:16:16 little endian */
+ constexpr auto kDrmFormatNV12 = DrmFourccCode('N', 'V', '1', '2'); /* 2x2 subsampled Cr:Cb plane */
++constexpr auto kDrmFormatP010 =
++    DrmFourccCode('P', '0', '1', '0'); /* 2x2 subsampled Cr:Cb 10-bit plane */
+ 
+ ResultOrError<wgpu::TextureFormat> FormatFromDrmFormat(uint32_t drmFormat) {
+     switch (drmFormat) {
+@@ -102,6 +104,8 @@ ResultOrError<wgpu::TextureFormat> FormatFromDrmFormat(uint32_t drmFormat) {
+             return wgpu::TextureFormat::RGBA16Float;
+         case kDrmFormatNV12:
+             return wgpu::TextureFormat::R8BG8Biplanar420Unorm;
++        case kDrmFormatP010:
++            return wgpu::TextureFormat::R10X6BG10X6Biplanar420Unorm;
+         default:
+             return DAWN_VALIDATION_ERROR("Unsupported drm format %x.", drmFormat);
+     }
+diff --git a/src/dawn/native/vulkan/PhysicalDeviceVk.cpp b/src/dawn/native/vulkan/PhysicalDeviceVk.cpp
+index a96eae987..20bd6aa50 100644
+--- a/src/dawn/native/vulkan/PhysicalDeviceVk.cpp
++++ b/src/dawn/native/vulkan/PhysicalDeviceVk.cpp
+@@ -472,6 +472,20 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
+         EnableFeature(Feature::MultiPlanarFormatExtendedUsages);
+     }
+ 
++    VkFormatProperties p010Properties;
++    mVulkanInstance->GetFunctions().GetPhysicalDeviceFormatProperties(
++        mVkPhysicalDevice, VK_FORMAT_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16,
++        &p010Properties);
++    constexpr auto kRequiredP010Features =
++        static_cast<VkFormatFeatureFlags>(VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT |
++                                          VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT |
++                                          VK_FORMAT_FEATURE_TRANSFER_SRC_BIT |
++                                          VK_FORMAT_FEATURE_TRANSFER_DST_BIT);
++    if (unorm16FormatsFilterabilitySupported &&
++        IsSubset(kRequiredP010Features, p010Properties.optimalTilingFeatures)) {
++        EnableFeature(Feature::MultiPlanarFormatP010);
++    }
++
+     EnableFeature(Feature::TransientAttachments);
+     EnableFeature(Feature::AdapterPropertiesVk);
+     EnableFeature(Feature::DawnLoadResolveTexture);

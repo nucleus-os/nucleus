@@ -3115,10 +3115,10 @@ index 396b0a3ff9..4a5ff76543 100644
    if (enable_vulkan) {
 diff --git a/gpu/command_buffer/service/shared_image/graphite_dawn_multiplanar_unittest.cc b/gpu/command_buffer/service/shared_image/graphite_dawn_multiplanar_unittest.cc
 new file mode 100644
-index 0000000000..1a148bf8d3
+index 0000000000..3cb37d31ec
 --- /dev/null
 +++ b/gpu/command_buffer/service/shared_image/graphite_dawn_multiplanar_unittest.cc
-@@ -0,0 +1,40 @@
+@@ -0,0 +1,69 @@
 +// Copyright 2026 The Chromium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -3155,6 +3155,35 @@ index 0000000000..1a148bf8d3
 +  EXPECT_EQ(plane0.fAspect, wgpu::TextureAspect::Plane0Only);
 +  EXPECT_EQ(plane1.fFormat, wgpu::TextureFormat::R8BG8Biplanar420Unorm);
 +  EXPECT_EQ(plane1.fViewFormat, wgpu::TextureFormat::RG8Unorm);
++  EXPECT_EQ(plane1.fAspect, wgpu::TextureAspect::Plane1Only);
++}
++
++TEST(GraphiteDawnMultiplanarTest, SamplesExternalP010PerPlaneOnLinux) {
++  auto format = viz::SharedImageFormat(viz::MultiPlaneFormat::kP010);
++  format.SetPrefersExternalSampler();
++
++  EXPECT_FALSE(GraphiteDawnUsesExternalSampler(format));
++
++  skgpu::graphite::DawnTextureInfo plane0 = DawnBackendTextureInfo(
++      format, /*readonly=*/true, /*is_yuv_plane=*/true, /*plane_index=*/0,
++      /*array_slice=*/0, /*mipmapped=*/false,
++      /*scanout_dcomp_surface=*/false,
++      /*supports_multiplanar_rendering=*/false,
++      /*supports_multiplanar_copy=*/false);
++  skgpu::graphite::DawnTextureInfo plane1 = DawnBackendTextureInfo(
++      format, /*readonly=*/true, /*is_yuv_plane=*/true, /*plane_index=*/1,
++      /*array_slice=*/0, /*mipmapped=*/false,
++      /*scanout_dcomp_surface=*/false,
++      /*supports_multiplanar_rendering=*/false,
++      /*supports_multiplanar_copy=*/false);
++
++  EXPECT_EQ(plane0.fFormat,
++            wgpu::TextureFormat::R10X6BG10X6Biplanar420Unorm);
++  EXPECT_EQ(plane0.fViewFormat, wgpu::TextureFormat::R16Unorm);
++  EXPECT_EQ(plane0.fAspect, wgpu::TextureAspect::Plane0Only);
++  EXPECT_EQ(plane1.fFormat,
++            wgpu::TextureFormat::R10X6BG10X6Biplanar420Unorm);
++  EXPECT_EQ(plane1.fViewFormat, wgpu::TextureFormat::RG16Unorm);
 +  EXPECT_EQ(plane1.fAspect, wgpu::TextureAspect::Plane1Only);
 +}
 +

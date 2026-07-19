@@ -46,6 +46,10 @@ pass directly, so the production path does not create a video capturer or
 perform its full-surface capture blit. Ordinary Chromium compositors and
 upstream capture modes remain unchanged.
 
+Chromium/CEF patches live directly under `patches/`. Changes to Dawn live under
+`patches/dawn/` because Dawn is a separate gclient Git checkout. The build
+script applies and refreshes both stacks in their owning repositories.
+
 ## Version pinning
 
 CEF adopted Chromium's branch numbering, so the CEF release branch equals the

@@ -196,22 +196,21 @@ ensure_v8_builtins_pgo_profiles() {
   echo "-- V8 builtins PGO profile ready"
 }
 
-reverse_nucleus_cef_patches() {
-  local chromium_root="$NUCLEUS_CEF_SRC_ROOT/chromium/src"
-  local applied_patch_dir="$NUCLEUS_CEF_SRC_ROOT/.nucleus-applied-patches"
+reverse_patch_stack() {
+  local repository="$1"
+  local patch_dir="$2"
+  local applied_patch_dir="$3"
+  local stack_name="$4"
   local patch_file
-  local patches=("$script_dir"/patches/*.patch)
+  local patches=("$patch_dir"/*.patch)
   local applied_patches=("$applied_patch_dir"/*.patch)
   local patch_index
-  if [[ ! -d "$chromium_root/.git" ]]; then
+  if ! git -C "$repository" rev-parse --git-dir >/dev/null 2>&1; then
     return
   fi
 
-  # Remove our previous stack before CEF updates its own Chromium patch stack.
-  # Several files are intentionally touched by both, so updating upstream first
-  # makes CEF mistake our still-applied changes for a failed upstream patch.
   # Keep a generated copy of the exact applied stack so renamed, merged, or
-  # deleted project patches can still be reversed on the next run.
+  # deleted patches can still be reversed on the next run.
   if [[ ! -d "$applied_patch_dir" ]]; then
     applied_patches=("${patches[@]}")
   fi
@@ -220,21 +219,23 @@ reverse_nucleus_cef_patches() {
     if [[ ! -f "$patch_file" ]]; then
       continue
     fi
-    if git -C "$chromium_root" apply --reverse --check "$patch_file" >/dev/null 2>&1; then
-      echo "-- refreshing patch: $(basename "$patch_file")"
-      git -C "$chromium_root" apply --reverse "$patch_file"
+    if git -C "$repository" apply --reverse --check "$patch_file" >/dev/null 2>&1; then
+      echo "-- refreshing $stack_name patch: $(basename "$patch_file")"
+      git -C "$repository" apply --reverse "$patch_file"
     fi
   done
 }
 
-apply_nucleus_cef_patches() {
-  local chromium_root="$NUCLEUS_CEF_SRC_ROOT/chromium/src"
-  local applied_patch_dir="$NUCLEUS_CEF_SRC_ROOT/.nucleus-applied-patches"
-  local generated_api_patch="9999-generated-cef-api-hashes.patch"
+apply_patch_stack() {
+  local repository="$1"
+  local patch_dir="$2"
+  local applied_patch_dir="$3"
+  local stack_name="$4"
   local patch_file
-  local patches=("$script_dir"/patches/*.patch)
-  if [[ ! -d "$chromium_root/.git" ]]; then
-    echo "!! Chromium checkout is missing: $chromium_root" >&2
+  local patches=("$patch_dir"/*.patch)
+
+  if ! git -C "$repository" rev-parse --git-dir >/dev/null 2>&1; then
+    echo "!! $stack_name checkout is missing: $repository" >&2
     exit 1
   fi
 
@@ -242,14 +243,56 @@ apply_nucleus_cef_patches() {
     if [[ ! -f "$patch_file" ]]; then
       continue
     fi
-    if git -C "$chromium_root" apply --check "$patch_file"; then
-      echo "-- applying patch: $(basename "$patch_file")"
-      git -C "$chromium_root" apply "$patch_file"
+    if git -C "$repository" apply --check "$patch_file"; then
+      echo "-- applying $stack_name patch: $(basename "$patch_file")"
+      git -C "$repository" apply "$patch_file"
     else
-      echo "!! CEF source patch no longer applies: $patch_file" >&2
+      echo "!! $stack_name source patch no longer applies: $patch_file" >&2
       exit 1
     fi
   done
+
+  rm -rf "$applied_patch_dir"
+  mkdir -p "$applied_patch_dir"
+  for patch_file in "${patches[@]}"; do
+    if [[ -f "$patch_file" ]]; then
+      cp "$patch_file" "$applied_patch_dir/"
+    fi
+  done
+}
+
+reverse_nucleus_cef_patches() {
+  local chromium_root="$NUCLEUS_CEF_SRC_ROOT/chromium/src"
+
+  # Remove project changes before CEF updates its own Chromium patch stack.
+  # Several Chromium files intentionally overlap CEF's patches.
+  reverse_patch_stack \
+    "$chromium_root" \
+    "$script_dir/patches" \
+    "$NUCLEUS_CEF_SRC_ROOT/.nucleus-applied-patches" \
+    "Chromium/CEF"
+  reverse_patch_stack \
+    "$chromium_root/third_party/dawn" \
+    "$script_dir/patches/dawn" \
+    "$NUCLEUS_CEF_SRC_ROOT/.nucleus-applied-dawn-patches" \
+    "Dawn"
+}
+
+apply_nucleus_cef_patches() {
+  local chromium_root="$NUCLEUS_CEF_SRC_ROOT/chromium/src"
+  local applied_patch_dir="$NUCLEUS_CEF_SRC_ROOT/.nucleus-applied-patches"
+  local generated_api_patch="9999-generated-cef-api-hashes.patch"
+
+  apply_patch_stack \
+    "$chromium_root" \
+    "$script_dir/patches" \
+    "$applied_patch_dir" \
+    "Chromium/CEF"
+  apply_patch_stack \
+    "$chromium_root/third_party/dawn" \
+    "$script_dir/patches/dawn" \
+    "$NUCLEUS_CEF_SRC_ROOT/.nucleus-applied-dawn-patches" \
+    "Dawn"
 
   # Public API patches must reach both sides of CEF's generated C/C++ bridge
   # before libcef is compiled. Packaging also runs the translator, but that is
@@ -270,11 +313,6 @@ apply_nucleus_cef_patches() {
     python3 tools/version_manager.py -c --force-update
   )
 
-  rm -rf "$applied_patch_dir"
-  mkdir -p "$applied_patch_dir"
-  for patch_file in "${patches[@]}"; do
-    cp "$patch_file" "$applied_patch_dir/"
-  done
   git -C "$chromium_root/cef" diff \
     --src-prefix=a/cef/ --dst-prefix=b/cef/ -- cef_api_versions.json \
     >"$applied_patch_dir/$generated_api_patch"

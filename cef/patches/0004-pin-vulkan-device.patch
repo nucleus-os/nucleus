@@ -82,7 +82,12 @@ index 04af08a..84a45dc 100644
 
  // Controls if ShaderF16 Dawn feature is enabled for Graphite.
  BASE_FEATURE(kSkiaGraphiteF16, base::FEATURE_DISABLED_BY_DEFAULT);
-@@ -298,13 +351,16 @@ std::vector<wgpu::FeatureName> GetRequiredFeatures(
+@@ -295,17 +348,21 @@ std::vector<wgpu::FeatureName> GetRequiredFeatures(
+       wgpu::FeatureName::MultiPlanarFormatNv12a,
+       wgpu::FeatureName::MultiPlanarRenderTargets,
+       wgpu::FeatureName::Unorm16TextureFormats,
++      wgpu::FeatureName::Unorm16FormatsForExternalTexture,
+
        // The following features are always supported by the the Metal backend on
        // the Mac versions on which Chrome runs.
        wgpu::FeatureName::SharedTextureMemoryIOSurface,
