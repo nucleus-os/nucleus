@@ -36,7 +36,7 @@ Four things, and they are independent of each other:
 2. ~~**`maxWidth`/`maxHeight` are dead.**~~ *Fixed in phase 1.* They were stored, and
    deduped on, and then ignored, so a 4K wallpaper and a 22px tray icon decoded
    identically.
-3. **SVG is linked but never called.** No `SkSVGDOM` include, no façade.
+3. ~~**SVG is linked but never called.**~~ *Fixed in phase 3.*
 4. **Decode is synchronous on the render thread.** There is no task queue, no thread
    pool, and no off-main work infrastructure anywhere in `core/swift/Sources`. A
    first-paint wallpaper decode blocks a frame.
@@ -144,18 +144,42 @@ change. `GraphicsContext.draw(image:)` has no tint parameter, so this needs a pa
 change rather than a view-tier one, and it lands with the raw-buffer work in phase 4 where
 pixel-level handling already belongs.
 
-## Phase 3 — SVG
+## Phase 3 — SVG — **complete**
 
-`makeSvgImageFromFile(path, width, height)` in `Graphite.cpp` via `SkSVGDOM`, rasterizing
-at the requested size with aspect preserved. Build work is one include path added to the
-Linux and Android cxx flags; the library is already linked.
+Rasterization happens behind the *same* entry point as every other image file, rather
+than a second façade. A caller does not know or care whether a path is vector — the
+resolver hands back whatever the icon theme had — so dispatch belongs where the bytes
+are, not in every caller. `FrameDriver` needed no change at all.
 
-Format detection sniffs the first 256 bytes for `<svg` rather than trusting the
-extension, because icon themes ship mislabelled files.
+Detection is by content: the first 256 bytes are searched for `<svg`. Extensions lie
+often enough that a name-based decision renders a blank icon for no visible reason. The
+window is searched rather than prefix-tested, because an XML declaration, doctype, or
+exporter comment routinely precedes the root element. Matching is case-sensitive, since
+XML is — `<SVG>` is not a valid root, and claiming it is would only produce a
+parse failure one step later.
 
-SVG is where decode bounds stop being an optimization and become correctness — a vector
-has no natural size, so `maxWidth`/`maxHeight` *are* the size. Phase 1 lands first for
-that reason.
+Build work turned out to be *zero*: `-I skiaRoot` already covers `modules/svg/include`,
+and `-lsvg` was already linked. No new include paths.
+
+Sizing has three cases. Absolute root dimensions give an intrinsic size, and bounds fit
+that aspect ratio inside the box exactly as they would for a bitmap. Relative units
+("100%") resolve against whatever viewport they are handed, so the bounds are the whole
+answer. A document with neither gets `kDefaultSvgRasterSize` — a vector has no natural
+size, and something must be chosen.
+
+**The load-bearing detail, found by a failing test:** a document sized in absolute units
+has a *fixed* viewport, and `setContainerSize` cannot move it. Scaling the canvas is the
+only thing that scales the drawing. Setting the container size alone renders at 1:1 and
+crops to the surface — which looks perfectly correct for any art that fills its own
+viewport, and silently wrong for everything else. The first version had this bug and the
+red-square fixture passed anyway; only an off-centre shape exposed it.
+
+A fontconfig `SkFontMgr` is wired in for `<text>` nodes. Without one Skia renders SVG text
+as nothing, silently. Most icons are pure shapes, but a logo or a wallpaper is exactly
+where text appears, and fontconfig was already linked. This is the only `SkFontMgr` in the
+render tier — text elsewhere goes through the separate text backend.
+
+Rasters are cleared transparent, not opaque: an icon is a shape over whatever is behind it.
 
 ## Phase 4 — raw buffers and `data:` URIs
 

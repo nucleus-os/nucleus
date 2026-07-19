@@ -17,6 +17,13 @@
 
 #include "include/codec/SkCodec.h"
 
+#include "modules/svg/include/SkSVGDOM.h"
+#include "modules/svg/include/SkSVGSVG.h"
+#include "include/ports/SkFontMgr_fontconfig.h"
+#include "include/ports/SkFontScanner_FreeType.h"
+#include "include/core/SkFontMgr.h"
+#include "include/core/SkStream.h"
+
 #include "include/core/SkBitmap.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkColor.h"
@@ -621,10 +628,120 @@ sk_sp<SkImage> linearDownscale(const sk_sp<SkImage> &source, int32_t width, int3
 
 }  // namespace
 
+namespace {
+
+// SVG is identified by content, not by extension. Icon themes ship `.svg` files
+// that are really PNGs and `.png` files that are really SVGs often enough that
+// trusting the name produces a blank icon for no visible reason. The reference
+// sniffs the same way and for the same reason.
+bool looksLikeSvg(const sk_sp<SkData> &data) {
+    constexpr size_t kSniffBytes = 256;
+    const char *bytes = reinterpret_cast<const char *>(data->bytes());
+    size_t length = std::min(data->size(), kSniffBytes);
+    // An XML declaration, a doctype, or a comment can precede the root element,
+    // so search the window rather than testing the prefix.
+    for (size_t i = 0; i + 4 <= length; ++i) {
+        if (bytes[i] == '<' && (bytes[i + 1] == 's' || bytes[i + 1] == 'S') &&
+            (bytes[i + 2] == 'v' || bytes[i + 2] == 'V') &&
+            (bytes[i + 3] == 'g' || bytes[i + 3] == 'G')) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// One system font manager, for <text> inside SVG documents. Without it Skia
+// renders SVG text as nothing at all, silently. Most icons are pure shapes, but
+// a logo or a wallpaper is exactly where text shows up, and fontconfig is
+// already linked.
+sk_sp<SkFontMgr> svgFontManager() {
+    static sk_sp<SkFontMgr> manager =
+        SkFontMgr_New_FontConfig(nullptr, SkFontScanner_Make_FreeType());
+    return manager;
+}
+
+// A vector has no natural size, so an unbounded SVG needs *a* raster size and
+// there is no correct one to pick. This is the size used when the document
+// declares no absolute dimensions and the caller asked for no bounds.
+constexpr int32_t kDefaultSvgRasterSize = 512;
+
+// Rasterize an SVG at the size it will be drawn.
+//
+// This is where decode bounds stop being an optimization and become
+// correctness: rasterizing at the wrong size and rescaling throws away the one
+// advantage a vector has.
+Image rasterizeSvg(const sk_sp<SkData> &data, int32_t maxWidth, int32_t maxHeight) {
+    auto stream = SkMemoryStream::Make(data);
+    sk_sp<SkSVGDOM> dom = SkSVGDOM::Builder()
+                              .setFontManager(svgFontManager())
+                              .make(*stream);
+    if (!dom) return Image(nullptr);
+
+    // The document's own size, when it states one in absolute units. Relative
+    // units ("100%") resolve to zero here, which is the document saying it will
+    // take whatever it is given.
+    SkSize intrinsic = dom->containerSize();
+
+    float width = 0;
+    float height = 0;
+    if (maxWidth > 0 && maxHeight > 0) {
+        if (intrinsic.width() > 0 && intrinsic.height() > 0) {
+            // Fit the document's aspect ratio inside the box, matching how a
+            // bitmap of the same shape would be bounded.
+            float scale = std::min(static_cast<float>(maxWidth) / intrinsic.width(),
+                                   static_cast<float>(maxHeight) / intrinsic.height());
+            width = intrinsic.width() * scale;
+            height = intrinsic.height() * scale;
+        } else {
+            width = static_cast<float>(maxWidth);
+            height = static_cast<float>(maxHeight);
+        }
+    } else if (intrinsic.width() > 0 && intrinsic.height() > 0) {
+        width = intrinsic.width();
+        height = intrinsic.height();
+    } else {
+        width = kDefaultSvgRasterSize;
+        height = kDefaultSvgRasterSize;
+    }
+
+    int32_t pixelWidth = std::max(1, static_cast<int32_t>(std::lround(width)));
+    int32_t pixelHeight = std::max(1, static_cast<int32_t>(std::lround(height)));
+
+    SkImageInfo info = SkImageInfo::Make(pixelWidth, pixelHeight, kRGBA_8888_SkColorType,
+                                         kPremul_SkAlphaType, SkColorSpace::MakeSRGB());
+    sk_sp<SkSurface> surface = SkSurfaces::Raster(info);
+    if (!surface) return Image(nullptr);
+    // Transparent, not opaque: an icon is a shape on whatever is behind it.
+    surface->getCanvas()->clear(SK_ColorTRANSPARENT);
+
+    if (intrinsic.width() > 0 && intrinsic.height() > 0) {
+        // A document sized in absolute units has a fixed viewport, and
+        // `setContainerSize` cannot move it — so scaling the canvas is the only
+        // thing that scales the drawing. Setting the container size alone
+        // renders the document at 1:1 and crops it to the surface, which looks
+        // right for any art that happens to fill its viewport and wrong for
+        // everything else.
+        surface->getCanvas()->scale(width / intrinsic.width(), height / intrinsic.height());
+        dom->setContainerSize(intrinsic);
+    } else {
+        // Relative units resolve against whatever viewport they are given, so
+        // here the container size is the whole mechanism.
+        dom->setContainerSize(SkSize::Make(width, height));
+    }
+    dom->render(surface->getCanvas());
+    return wrapImage(surface->makeImageSnapshot());
+}
+
+}  // namespace
+
 Image makeEncodedImageFromFile(const char *path, int32_t maxWidth, int32_t maxHeight) {
     if (path == nullptr || path[0] == '\0') return Image(nullptr);
     sk_sp<SkData> data = SkData::MakeFromFileName(path);
     if (!data) return Image(nullptr);
+
+    // SVG has its own path: there is nothing to decode, only something to draw,
+    // and it must be drawn at the size it will be shown.
+    if (looksLikeSvg(data)) return rasterizeSvg(data, maxWidth, maxHeight);
 
     // Unbounded stays deferred: nothing is known about the draw size, so there
     // is nothing to decide and no reason to decode before the first draw.
