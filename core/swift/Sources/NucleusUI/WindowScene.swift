@@ -240,6 +240,10 @@ public final class WindowScene: ~Sendable {
 
         if event.isKeyEvent {
             guard let keyWindow else { return .notHandled }
+            // Tab moves focus before anything sees it. A focused text field
+            // would otherwise insert a tab character and focus would never
+            // leave it.
+            if keyWindow.handleFocusTraversal(event) == .handled { return .handled }
             return keyWindow.deliverKeyEvent(event)
         }
 

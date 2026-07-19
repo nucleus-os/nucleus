@@ -170,9 +170,32 @@ The battery widget and its panel are migrated, and are the proof: 19 core tests 
 shell assert that a retheme changes what they paint without rebuilding them. Its charging bolt was
 drawing in a hardcoded near-black chosen for a dark palette, and now follows `surface`.
 
-**Phase 7 — Focus traversal.** Tab order, focus keys stable across rebuilds, subtree exclusion,
-directional and roving list navigation. Lands before the control kit, because a control that cannot
-be tabbed to is half a control.
+**Phase 7 — Focus traversal — complete.** Tab order is **derived from tree position**, not authored.
+AppKit's key-view loop is an explicit linked list per window (`nextKeyView`), which is wrong for a
+tree rebuilt from a body closure: every rebuild would have to re-thread the loop, and a builder that
+forgot would silently strand a control. The reference derives it too.
+
+`isTabStop` is separate from `acceptsFirstResponder`, because a list row that takes focus on click
+should not be a tab stop between the search field and the buttons. `excludesSubtreeFromTabOrder` is
+one flag on a container, so a collapsed section leaves the order as a unit and rejoins as a unit.
+Disabled controls are skipped — tabbing to something that cannot be acted on is a dead end.
+
+`focusKey` is what makes focus survive a rebuild: focus is otherwise a reference to a view that a
+rebuild replaces, so typing in a search field that rebuilds its results would drop focus on every
+keystroke.
+
+Tab is intercepted at the scene **before the responder chain**. A focused text field would otherwise
+insert a tab character and focus would never leave it.
+
+`RovingFocus` gives a list one tab stop and arrow-key movement inside it — a launcher with two
+hundred results must not be two hundred tab stops. It does not wrap by default: arrowing past the
+last result onto the first is disorienting. Shrinking the count clamps rather than resets, so a
+narrowing search keeps the selection near where it was.
+
+**The phase found a real defect.** `Control` never declared `acceptsFirstResponder`, and only
+`TextField` overrode it — so every control except the text field was keyboard-inert, unable to be
+focused or reached at all. `Control` now takes focus while enabled, as `NSControl` does. Nothing
+caught this earlier because no test asked a button for focus.
 
 **Phase 8 — Animation at the view tier, and reduce-motion.** Exposing what the layers tier already
 does, plus the global motion switch and cancel-by-owner.

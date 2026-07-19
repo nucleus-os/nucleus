@@ -351,6 +351,28 @@ open class View: Responder, Accessible, ~Sendable {
         set { storedAccessibilityProperties.label = newValue }
     }
 
+    // MARK: - Focus traversal
+
+    /// Backs `isTabStop`. `nil` means "follow `acceptsFirstResponder`", so a
+    /// control is in the tab order without being told to be, and a view that
+    /// opts out stays opted out even if it later accepts first responder.
+    var explicitTabStop: Bool?
+
+    /// Exclude this view and everything under it from the tab order.
+    ///
+    /// One flag on a container rather than a flag on each descendant: a hidden
+    /// panel, a collapsed section, or a disabled group leaves the order as a
+    /// unit and rejoins it as a unit.
+    public var excludesSubtreeFromTabOrder: Bool = false
+
+    /// A stable identity for focus, surviving a subtree rebuild.
+    ///
+    /// Without this, focus is a reference to a view that a rebuild replaces —
+    /// so typing in a search field that rebuilds its results would drop focus on
+    /// every keystroke. With it, focus is restored by name to whatever view now
+    /// occupies that role.
+    public var focusKey: String?
+
     // MARK: - Tracking
 
     /// This view's tracking areas, in the order added.

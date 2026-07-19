@@ -11,6 +11,13 @@ open class Control: View, ~Sendable {
     public private(set) var isHighlighted: Bool
     public private(set) var isPressed: Bool
 
+    /// A control takes keyboard focus while it is enabled.
+    ///
+    /// Previously only `TextField` declared this, so no button could be focused
+    /// or reached by tab — every control but one was keyboard-inert. `NSControl`
+    /// has the same rule.
+    open override var acceptsFirstResponder: Bool { isEnabled }
+
     public override init() {
         self.isEnabled = true
         self.isHighlighted = false
