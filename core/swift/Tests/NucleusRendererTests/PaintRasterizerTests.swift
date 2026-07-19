@@ -317,3 +317,105 @@ import NucleusTypes
         #expect(pixel(pixels, 10, 10, width: 20).0 == 0, "nothing was drawn")
     }
 }
+
+/// Stroke caps and joins.
+///
+/// These were settable state on `GraphicsContext` that nothing encoded, so every
+/// stroke painted butt-capped and miter-joined whatever the caller asked for.
+/// Pixels are the only honest test: a cap is a few pixels past the end of a
+/// line, and nothing short of drawing shows whether they are there.
+@Suite struct StrokeCapJoinTests {
+    private func render(
+        _ commands: [PaintDrawCommand], payload: [UInt8], size: Int32 = 40
+    ) -> [UInt8] {
+        let surface = nucleus.skia.makeRasterSurface(size, size)
+        guard surface.isValid() else { return [] }
+        let canvas = surface.getCanvas()
+        var clear = nucleus.skia.Color()
+        clear.r = 0; clear.g = 0; clear.b = 0; clear.a = 1
+        canvas.clear(clear)
+        PaintRasterizer.draw(
+            commands: commands, payload: payload, onto: canvas, scaleX: 1, scaleY: 1,
+            resolveImage: { _ in nil }, resolveEffect: { _ in nil })
+
+        var pixels = [UInt8](repeating: 0, count: Int(size * size) * 4)
+        let ok = pixels.withUnsafeMutableBufferPointer {
+            surface.readPixelsRGBA($0.baseAddress, $0.count, size * 4)
+        }
+        return ok ? pixels : []
+    }
+
+    private func red(_ pixels: [UInt8], _ x: Int, _ y: Int, size: Int = 40) -> UInt8 {
+        pixels[(y * size + x) * 4]
+    }
+
+    /// A horizontal line from x=10 to x=30 at y=20, stroked 8 wide.
+    private func line(
+        into payload: inout [UInt8],
+        cap: PaintDrawStrokeCap = .butt,
+        join: PaintDrawStrokeJoin = .miter
+    ) -> PaintDrawCommand {
+        let slice = PaintPayload.append(
+            to: &payload, verbs: [.move, .line], points: [10, 20, 30, 20],
+            scalars: [], colors: [])
+        return PaintDrawCommand(
+            kind: .path, x: 0, y: 0, w: 0, h: 0,
+            strokeWidth: 8, color: (1, 1, 1, 1),
+            payloadOffset: slice.offset, payloadLength: slice.length,
+            stroke: true, antialias: false,
+            strokeCap: cap, strokeJoin: join)
+    }
+
+    /// The default: the stroke stops dead at the endpoint.
+    @Test func aButtCapEndsAtTheEndpoint() {
+        var payload: [UInt8] = []
+        let pixels = render([line(into: &payload)], payload: payload)
+        #expect(!pixels.isEmpty)
+        #expect(red(pixels, 20, 20) > 200, "the line is drawn")
+        #expect(red(pixels, 32, 20) == 0, "nothing past the endpoint")
+    }
+
+    /// A square cap extends by half the stroke width — 4px here, so x=32 is
+    /// inside it and x=36 is not.
+    @Test func aSquareCapExtendsPastTheEndpoint() {
+        var payload: [UInt8] = []
+        let pixels = render([line(into: &payload, cap: .square)], payload: payload)
+        #expect(red(pixels, 32, 20) > 200, "the cap covers past the endpoint")
+        #expect(red(pixels, 36, 20) == 0, "but only by half the stroke width")
+    }
+
+    /// A round cap also extends, but curves — so it covers the centre line past
+    /// the endpoint while leaving the corner of that extension empty.
+    @Test func aRoundCapIsRoundedRatherThanSquare() {
+        var payload: [UInt8] = []
+        let pixels = render([line(into: &payload, cap: .round)], payload: payload)
+        #expect(red(pixels, 32, 20) > 200, "covered along the centre")
+        #expect(red(pixels, 33, 17) == 0, "the corner a square cap would fill is empty")
+    }
+
+    /// The corner treatment of a bent stroke. A mitered corner comes to a point
+    /// past the join; a bevelled one is cut off, so the outermost corner pixel
+    /// distinguishes them.
+    @Test func joinsDifferAtACorner() {
+        func corner(_ join: PaintDrawStrokeJoin) -> [UInt8] {
+            var payload: [UInt8] = []
+            let slice = PaintPayload.append(
+                to: &payload, verbs: [.move, .line, .line],
+                points: [10, 30, 20, 10, 30, 30], scalars: [], colors: [])
+            let command = PaintDrawCommand(
+                kind: .path, x: 0, y: 0, w: 0, h: 0,
+                strokeWidth: 8, color: (1, 1, 1, 1),
+                payloadOffset: slice.offset, payloadLength: slice.length,
+                stroke: true, antialias: false,
+                strokeCap: .butt, strokeJoin: join)
+            return render([command], payload: payload)
+        }
+
+        let mitered = corner(.miter)
+        let bevelled = corner(.bevel)
+        #expect(!mitered.isEmpty && !bevelled.isEmpty)
+        // The apex sits above the join; a miter fills it and a bevel does not.
+        #expect(red(mitered, 20, 6) > 200, "the miter comes to a point")
+        #expect(red(bevelled, 20, 6) == 0, "the bevel is cut off")
+    }
+}

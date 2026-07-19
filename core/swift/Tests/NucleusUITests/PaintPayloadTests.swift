@@ -164,3 +164,59 @@ import NucleusTypes
         #expect(context.fillColor == Color(1, 0, 0, 1))
     }
 }
+
+/// Stroke style reaching the command.
+///
+/// `lineCap` and `lineJoin` were public settable state that nothing encoded, so
+/// a caller could ask for a rounded stroke and get a butt-capped one with no
+/// indication anything had been ignored. The rasterizer's half is covered by
+/// pixels in `StrokeCapJoinTests`; this is the producer's half.
+@MainActor
+@Suite struct StrokeStyleEncodingTests {
+    private func strokedCommand(
+        cap: LineCap, join: LineJoin
+    ) -> NucleusTypes.PaintCommand? {
+        let graphics = GraphicsContext()
+        graphics.lineWidth = 4
+        graphics.lineCap = cap
+        graphics.lineJoin = join
+        var path = Path()
+        path.move(to: Point(x: 0, y: 0))
+        path.addLine(to: Point(x: 10, y: 10))
+        graphics.stroke(path)
+        return graphics.recording.commands.first
+    }
+
+    @Test func theDefaultsCarryNoBits() {
+        let command = strokedCommand(cap: .butt, join: .miter)
+        #expect(command?.flags.contains(.capRound) == false)
+        #expect(command?.flags.contains(.capSquare) == false)
+        #expect(command?.flags.contains(.joinRound) == false)
+        #expect(command?.flags.contains(.joinBevel) == false)
+    }
+
+    @Test func eachCapEncodesDistinctly() {
+        #expect(strokedCommand(cap: .round, join: .miter)?.flags.contains(.capRound) == true)
+        #expect(strokedCommand(cap: .square, join: .miter)?.flags.contains(.capSquare) == true)
+        // A cap must not imply the other one.
+        #expect(strokedCommand(cap: .round, join: .miter)?.flags.contains(.capSquare) == false)
+    }
+
+    @Test func eachJoinEncodesDistinctly() {
+        #expect(strokedCommand(cap: .butt, join: .round)?.flags.contains(.joinRound) == true)
+        #expect(strokedCommand(cap: .butt, join: .bevel)?.flags.contains(.joinBevel) == true)
+        #expect(strokedCommand(cap: .butt, join: .round)?.flags.contains(.joinBevel) == false)
+    }
+
+    /// A fill has no ends and no corners to treat, so it must not claim to.
+    @Test func aFillCarriesNoStrokeStyle() {
+        let graphics = GraphicsContext()
+        graphics.lineCap = .round
+        graphics.lineJoin = .bevel
+        graphics.fill(Rect(x: 0, y: 0, width: 10, height: 10))
+
+        let command = graphics.recording.commands.first
+        #expect(command?.flags.contains(.capRound) == false)
+        #expect(command?.flags.contains(.joinBevel) == false)
+    }
+}

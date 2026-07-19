@@ -222,6 +222,7 @@ public final class GraphicsContext {
         var command = PaintCommand(kind: .path, flags: pathFlags(path, stroke: true))
         applyStyle(&command, color: fillColorFor(shading, fallback: state.strokeColor))
         command.strokeWidth = Float(state.lineWidth * state.transform.approximateScale)
+        applyStrokeStyle(&command)
         encode(path: path, shading: shading, into: &command)
         append(command)
     }
@@ -333,6 +334,22 @@ public final class GraphicsContext {
         command.blend = wireBlend(state.blendMode)
         if state.antialias { command.flags.insert(.antialias) }
         else { command.flags.remove(.antialias) }
+    }
+
+    /// Carry the cap and join into the command. Only meaningful on a stroke, so
+    /// only strokes call it — a filled command with these bits set would be
+    /// describing something it does not do.
+    private func applyStrokeStyle(_ command: inout PaintCommand) {
+        switch state.lineCap {
+        case .butt: break
+        case .round: command.flags.insert(.capRound)
+        case .square: command.flags.insert(.capSquare)
+        }
+        switch state.lineJoin {
+        case .miter: break
+        case .round: command.flags.insert(.joinRound)
+        case .bevel: command.flags.insert(.joinBevel)
+        }
     }
 
     private func setGeometry(_ command: inout PaintCommand, _ rect: Rect) {

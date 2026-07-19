@@ -182,6 +182,13 @@ public struct PaintCommandFlags: Swift.OptionSet, Swift.Sendable {
   /// Recolour an image draw by its alpha, keeping shape and dropping colour.
   public static let tintImage = PaintCommandFlags(rawValue: 1 << 3)
 
+  /// Stroke cap and join. Absent bits mean the defaults — butt and miter —
+  /// which is why neither needs a bit of its own.
+  public static let capRound = PaintCommandFlags(rawValue: 1 << 4)
+  public static let capSquare = PaintCommandFlags(rawValue: 1 << 5)
+  public static let joinRound = PaintCommandFlags(rawValue: 1 << 6)
+  public static let joinBevel = PaintCommandFlags(rawValue: 1 << 7)
+
   public static let `default`: PaintCommandFlags = [.antialias]
 }
 

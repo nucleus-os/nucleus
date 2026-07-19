@@ -103,6 +103,16 @@ static func skiaPaint(
     paint.saturation = command.saturation
     paint.tintsImage = command.tintsImage
     paint.style = command.stroke ? .stroke : .fill
+    paint.strokeCap = switch command.strokeCap {
+    case .butt: .butt
+    case .round: .round
+    case .square: .square
+    }
+    paint.strokeJoin = switch command.strokeJoin {
+    case .miter: .miter
+    case .round: .round
+    case .bevel: .bevel
+    }
     paint.strokeWidth = command.strokeWidth * min(sx, sy)
     return paint
 }

@@ -156,6 +156,10 @@ final class SwiftPaintContentRegistrar: PaintContentRegistrar {
                 antialias: c.flags.contains(.antialias),
                 evenOddFill: c.flags.contains(.evenOddFill),
                 tintsImage: c.flags.contains(.tintImage),
+                strokeCap: c.flags.contains(.capRound) ? .round
+                    : (c.flags.contains(.capSquare) ? .square : .butt),
+                strokeJoin: c.flags.contains(.joinRound) ? .round
+                    : (c.flags.contains(.joinBevel) ? .bevel : .miter),
                 shading: paintDrawShading(c.shading),
                 blend: paintDrawBlendMode(c.blend),
                 alpha: c.alpha, blurSigma: c.blurSigma, saturation: c.saturation))
