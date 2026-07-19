@@ -14,6 +14,7 @@ public enum AccessibilityRole: String, Sendable, Equatable {
     case button
     case image
     case link
+    case progressIndicator
     case staticText
     case textField
     case window

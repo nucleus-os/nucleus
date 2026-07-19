@@ -291,3 +291,55 @@ extension ImageView {
         return self
     }
 }
+
+extension Separator {
+    @discardableResult
+    public func orientation(_ orientation: Separator.Orientation) -> Self {
+        self.orientation = orientation
+        return self
+    }
+
+    @discardableResult
+    public func thickness(_ thickness: Double) -> Self {
+        self.thickness = thickness
+        return self
+    }
+
+    @discardableResult
+    public func spacing(_ spacing: Double) -> Self {
+        self.spacing = spacing
+        return self
+    }
+
+    @discardableResult
+    public func color(_ color: ColorSpec) -> Self {
+        self.color = color
+        return self
+    }
+}
+
+extension ProgressBar {
+    @discardableResult
+    public func progress(_ progress: Double) -> Self {
+        self.progress = progress
+        return self
+    }
+
+    @discardableResult
+    public func orientation(_ orientation: ProgressBar.Orientation) -> Self {
+        self.orientation = orientation
+        return self
+    }
+
+    @discardableResult
+    public func fillColor(_ color: ColorSpec) -> Self {
+        self.fillColor = color
+        return self
+    }
+
+    @discardableResult
+    public func trackColor(_ color: ColorSpec) -> Self {
+        self.trackColor = color
+        return self
+    }
+}

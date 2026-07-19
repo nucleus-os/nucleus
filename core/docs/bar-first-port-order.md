@@ -131,10 +131,36 @@ view already showing that item is reused *as it stands* rather than reconfigured
 it, inserting at the top hands every visible row's view to a different item along with
 whatever it was holding — a pressed state, a caret, an in-flight animation.
 
-## Phase 3 — the three missing bar primitives
+## Phase 3 — the three missing bar primitives — **complete**
 
-`Separator`, `Spacer`, and `ProgressBar`. In the reference these are 147, trivial, and 131
-lines respectively. They complete the foundation set the bar composes from.
+`Spacer`, `Separator`, and `ProgressBar`, which complete the foundation set the bar
+composes from.
+
+**`Spacer`** is flexible empty space. A stack's `Distribution` spaces items apart only
+uniformly; a spacer expresses the uneven case — the bar's three sections pushed to their
+edges — as an ordinary arranged view, the same way `NSStackView` and flexbox do. It both
+grows *and* shrinks: slack is the first thing that should give when a stack is over-full,
+because a spacer shrinking is invisible and a label shrinking is not.
+
+**`Separator` infers its orientation from the stack it sits in.** A rule divides the items
+a stack arranged, so it lies across that axis — horizontal inside a column, vertical inside
+a row. That is what the caller means every time, and stating it per use site is a chance to
+state it wrong in a way that stays invisible until the layout changes direction. `spacing`
+belongs to the separator rather than the stack, because a rule wants more room around it
+than the items it divides want from each other.
+
+**`ProgressBar`'s fill is a full-size bar behind a moving clip**, which is the one detail
+worth taking from the reference verbatim. Drawing the fill at the fraction's width squares
+off its trailing end, so a rounded bar at 5% shows a stub rather than the rounded cap it
+has at 100%. Clipping a full-size copy keeps both ends exactly the track's shape at every
+value. It carries the reference's three orientations, including the centred one for values
+that are a deviation rather than an amount.
+
+Out-of-range progress clamps, and anything non-finite reads as empty — one rule rather than
+clamping infinity to full and NaN to empty, since a caller producing either has a bug and
+two behaviours would only make it harder to see.
+
+`AccessibilityRole` gained `progressIndicator`.
 
 ## Phase 4 — the widget framework
 
