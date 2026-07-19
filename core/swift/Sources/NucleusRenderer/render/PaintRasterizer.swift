@@ -58,26 +58,51 @@ static func drawPaintCommand(
     resolveImage: (UInt64) -> nucleus.skia.Image?,
     resolveEffect: (UInt64) -> nucleus.skia.RuntimeEffect?
 ) {
-    let paint = skiaPaint(command, scaleX: sx, scaleY: sy)
+    // A command that rotates or skews states its geometry in its own space and
+    // carries the matrix. Concatenating it — after the device scale, so the two
+    // compose in the right order — is what makes a rotated image or glyph run
+    // land rotated instead of as an upright bounding box.
+    if let transform = command.transform {
+        canvas.save()
+        var matrix: [Float] = [
+            transform.a * sx, transform.c * sx, transform.tx * sx,
+            transform.b * sy, transform.d * sy, transform.ty * sy,
+            0, 0, 1,
+        ]
+        matrix.withUnsafeBufferPointer { canvas.concat($0.baseAddress) }
+    }
+    defer { if command.transform != nil { canvas.restore() } }
+
+    // With a carried transform the canvas is already in the command's space, so
+    // geometry and radii are used as authored rather than pre-scaled.
+    let deviceScaleX = command.transform == nil ? sx : 1
+    let deviceScaleY = command.transform == nil ? sy : 1
+    // Stroke width and blur follow the same rule as geometry: the carried
+    // matrix already scales them, so pre-scaling as well would apply it twice.
+    let paint = skiaPaint(command, scaleX: deviceScaleX, scaleY: deviceScaleY)
 
     switch command.kind {
     case .rect:
-        canvas.drawRect(scaledRect(command, sx, sy), paint)
+        canvas.drawRect(scaledRect(command, deviceScaleX, deviceScaleY), paint)
     case .roundedRect:
-        let radius = max(0, command.radius) * min(sx, sy)
+        let radius = max(0, command.radius) * min(deviceScaleX, deviceScaleY)
         let radii = nucleus.skia.RRectRadii(
             topLeft: radius, topRight: radius,
             bottomRight: radius, bottomLeft: radius)
-        canvas.drawRRect(scaledRect(command, sx, sy), radii, paint)
+        canvas.drawRRect(scaledRect(command, deviceScaleX, deviceScaleY), radii, paint)
     case .path:
         drawPathCommand(
             command, payload: payload, onto: canvas, paint: paint,
             scaleX: sx, scaleY: sy, resolveEffect: resolveEffect)
     case .image:
         guard command.imageHandle != 0, let image = resolveImage(command.imageHandle) else { break }
-        canvas.drawImageRect(image, nucleus.skia.RectF(), scaledRect(command, sx, sy), paint)
+        canvas.drawImageRect(
+            image, nucleus.skia.RectF(),
+            scaledRect(command, deviceScaleX, deviceScaleY), paint)
     case .textLayout:
-        canvas.drawTextLayout(command.textLayoutHandle, scaledRect(command, sx, sy), command.color.3)
+        canvas.drawTextLayout(
+            command.textLayoutHandle,
+            scaledRect(command, deviceScaleX, deviceScaleY), command.color.3)
     case .clipPath:
         guard let path = decodePath(command, payload: payload, scaleX: sx, scaleY: sy) else { break }
         canvas.clipPath(path, command.antialias)

@@ -189,6 +189,12 @@ public struct PaintCommandFlags: Swift.OptionSet, Swift.Sendable {
   public static let joinRound = PaintCommandFlags(rawValue: 1 << 6)
   public static let joinBevel = PaintCommandFlags(rawValue: 1 << 7)
 
+  /// The command carries its own transform, and its geometry is stated in the
+  /// space that transform maps from. Only set when the recorded transform
+  /// rotates or skews — a translation or a scale is folded into the geometry,
+  /// which keeps the common case a plain rect.
+  public static let hasTransform = PaintCommandFlags(rawValue: 1 << 8)
+
   public static let `default`: PaintCommandFlags = [.antialias]
 }
 
@@ -1083,6 +1089,14 @@ public struct PaintCommand: Swift.Equatable, Swift.Sendable {
   public var effectHandle: Swift.UInt64
   public var payloadOffset: Swift.UInt32
   public var payloadLength: Swift.UInt32
+  /// An affine transform (a, b, c, d, tx, ty), meaningful only with
+  /// `.hasTransform`. Identity otherwise, and ignored.
+  public var transformA: Swift.Float
+  public var transformB: Swift.Float
+  public var transformC: Swift.Float
+  public var transformD: Swift.Float
+  public var transformTX: Swift.Float
+  public var transformTY: Swift.Float
 
   public init(
     kind: PaintCommandKind,
@@ -1096,7 +1110,10 @@ public struct PaintCommand: Swift.Equatable, Swift.Sendable {
     imageHandle: Swift.UInt64 = Swift.UInt64(),
     textLayoutHandle: Swift.UInt64 = Swift.UInt64(),
     effectHandle: Swift.UInt64 = Swift.UInt64(),
-    payloadOffset: Swift.UInt32 = 0, payloadLength: Swift.UInt32 = 0
+    payloadOffset: Swift.UInt32 = 0, payloadLength: Swift.UInt32 = 0,
+    transformA: Swift.Float = 1, transformB: Swift.Float = 0,
+    transformC: Swift.Float = 0, transformD: Swift.Float = 1,
+    transformTX: Swift.Float = 0, transformTY: Swift.Float = 0
   ) {
     self.kind = kind
     self.flags = flags
@@ -1118,6 +1135,12 @@ public struct PaintCommand: Swift.Equatable, Swift.Sendable {
     self.effectHandle = effectHandle
     self.payloadOffset = payloadOffset
     self.payloadLength = payloadLength
+    self.transformA = transformA
+    self.transformB = transformB
+    self.transformC = transformC
+    self.transformD = transformD
+    self.transformTX = transformTX
+    self.transformTY = transformTY
   }
 }
 

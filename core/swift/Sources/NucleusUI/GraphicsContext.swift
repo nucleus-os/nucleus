@@ -221,7 +221,7 @@ public final class GraphicsContext {
         guard !path.isEmpty else { return }
         var command = PaintCommand(kind: .path, flags: pathFlags(path, stroke: true))
         applyStyle(&command, color: fillColorFor(shading, fallback: state.strokeColor))
-        command.strokeWidth = Float(state.lineWidth * state.transform.approximateScale)
+        command.strokeWidth = Float(state.lineWidth * scalarScale)
         applyStrokeStyle(&command)
         encode(path: path, shading: shading, into: &command)
         append(command)
@@ -285,7 +285,7 @@ public final class GraphicsContext {
         var command = PaintCommand(kind: .image)
         applyStyle(&command, color: tint ?? state.fillColor)
         setGeometry(&command, rect)
-        command.radius = Float(max(0, cornerRadius) * state.transform.approximateScale)
+        command.radius = Float(max(0, cornerRadius) * scalarScale)
         command.imageHandle = image.id
         command.saturation = Float(saturation)
         if tint != nil { command.flags.insert(.tintImage) }
@@ -299,7 +299,7 @@ public final class GraphicsContext {
         var command = PaintCommand(kind: cornerRadius > 0 ? .roundedRect : .rect)
         applyStyle(&command, color: color)
         setGeometry(&command, rect)
-        command.radius = Float(cornerRadius * state.transform.approximateScale)
+        command.radius = Float(cornerRadius * scalarScale)
         append(command)
     }
 
@@ -310,8 +310,8 @@ public final class GraphicsContext {
         applyStyle(&command, color: color)
         command.flags.insert(.stroke)
         setGeometry(&command, rect)
-        command.radius = Float(cornerRadius * state.transform.approximateScale)
-        command.strokeWidth = Float(width * state.transform.approximateScale)
+        command.radius = Float(cornerRadius * scalarScale)
+        command.strokeWidth = Float(width * scalarScale)
         append(command)
     }
 
@@ -352,14 +352,51 @@ public final class GraphicsContext {
         }
     }
 
+    /// Whether the current transform does something a rectangle cannot absorb.
+    ///
+    /// A translation or a scale maps a rectangle to a rectangle, so it folds
+    /// into the geometry and the command stays a plain rect. Rotation and skew
+    /// do not — folding those in leaves an axis-aligned bounding box, which is
+    /// what this used to do to every image, glyph run, and rect fill under a
+    /// `rotateBy`: drawn upright, at the wrong size, with no indication that
+    /// the rotation had been dropped.
+    private var transformNeedsCarrying: Bool {
+        state.transform.b != 0 || state.transform.c != 0
+    }
+
     private func setGeometry(_ command: inout PaintCommand, _ rect: Rect) {
-        let origin = state.transform.apply(Point(x: rect.origin.x, y: rect.origin.y))
-        let far = state.transform.apply(Point(
-            x: rect.origin.x + rect.size.width, y: rect.origin.y + rect.size.height))
-        command.x = Float(min(origin.x, far.x))
-        command.y = Float(min(origin.y, far.y))
-        command.w = Float(abs(far.x - origin.x))
-        command.h = Float(abs(far.y - origin.y))
+        guard transformNeedsCarrying else {
+            let origin = state.transform.apply(Point(x: rect.origin.x, y: rect.origin.y))
+            let far = state.transform.apply(Point(
+                x: rect.origin.x + rect.size.width, y: rect.origin.y + rect.size.height))
+            command.x = Float(min(origin.x, far.x))
+            command.y = Float(min(origin.y, far.y))
+            command.w = Float(abs(far.x - origin.x))
+            command.h = Float(abs(far.y - origin.y))
+            return
+        }
+
+        // Geometry stays in local space and the transform rides along; the
+        // rasterizer concatenates it. Scalars that would otherwise be
+        // pre-scaled (radius, stroke width) stay local too — the matrix scales
+        // them, and pre-scaling as well would apply it twice.
+        command.x = Float(rect.origin.x)
+        command.y = Float(rect.origin.y)
+        command.w = Float(rect.size.width)
+        command.h = Float(rect.size.height)
+        command.flags.insert(.hasTransform)
+        command.transformA = Float(state.transform.a)
+        command.transformB = Float(state.transform.b)
+        command.transformC = Float(state.transform.c)
+        command.transformD = Float(state.transform.d)
+        command.transformTX = Float(state.transform.tx)
+        command.transformTY = Float(state.transform.ty)
+    }
+
+    /// The factor to pre-scale a local scalar by. One when the command carries
+    /// its own transform, since the matrix already does it.
+    private var scalarScale: Double {
+        transformNeedsCarrying ? 1 : state.transform.approximateScale
     }
 
     private func fillColorFor(_ shading: Shading, fallback: Color? = nil) -> Color {

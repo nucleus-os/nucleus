@@ -36,6 +36,25 @@ public enum PaintDrawShading: UInt32, Sendable {
 /// Compositing mode for a draw command. Mirrors `NucleusTypes.PaintBlendMode`
 /// and `nucleus::skia::BlendMode`; duplicated rather than imported because
 /// this module deliberately resolves no dependencies.
+/// An affine transform carried by a paint command.
+public struct PaintDrawTransform: Equatable, Sendable {
+    public var a: Float
+    public var b: Float
+    public var c: Float
+    public var d: Float
+    public var tx: Float
+    public var ty: Float
+
+    public init(a: Float, b: Float, c: Float, d: Float, tx: Float, ty: Float) {
+        self.a = a
+        self.b = b
+        self.c = c
+        self.d = d
+        self.tx = tx
+        self.ty = ty
+    }
+}
+
 /// Stroke end and corner treatment. Mirrors Skia, and CoreGraphics before it.
 public enum PaintDrawStrokeCap: UInt8, Sendable, Equatable {
     case butt, round, square
@@ -87,6 +106,11 @@ public struct PaintDrawCommand: Equatable, Sendable {
     public var tintsImage: Bool
     public var strokeCap: PaintDrawStrokeCap
     public var strokeJoin: PaintDrawStrokeJoin
+    /// The command's own transform, when it has one. Its geometry is then
+    /// stated in the space this maps *from*; without it, geometry is already in
+    /// the destination space. Only rotation and skew need this — a translation
+    /// or scale folds into the geometry.
+    public var transform: PaintDrawTransform?
     public var shading: PaintDrawShading
     public var blend: PaintDrawBlendMode
     public var alpha: Float
@@ -105,6 +129,7 @@ public struct PaintDrawCommand: Equatable, Sendable {
         tintsImage: Bool = false,
         strokeCap: PaintDrawStrokeCap = .butt,
         strokeJoin: PaintDrawStrokeJoin = .miter,
+        transform: PaintDrawTransform? = nil,
         shading: PaintDrawShading = .color,
         blend: PaintDrawBlendMode = .srcOver,
         alpha: Float = 1, blurSigma: Float = 0, saturation: Float = 1
@@ -129,6 +154,7 @@ public struct PaintDrawCommand: Equatable, Sendable {
         self.tintsImage = tintsImage
         self.strokeCap = strokeCap
         self.strokeJoin = strokeJoin
+        self.transform = transform
         self.shading = shading
         self.blend = blend
         self.alpha = alpha
@@ -151,6 +177,7 @@ public struct PaintDrawCommand: Equatable, Sendable {
             lhs.stroke == rhs.stroke && lhs.antialias == rhs.antialias &&
             lhs.evenOddFill == rhs.evenOddFill && lhs.tintsImage == rhs.tintsImage &&
             lhs.strokeCap == rhs.strokeCap && lhs.strokeJoin == rhs.strokeJoin &&
+            lhs.transform == rhs.transform &&
             lhs.shading == rhs.shading &&
             lhs.blend == rhs.blend &&
             lhs.alpha == rhs.alpha && lhs.blurSigma == rhs.blurSigma &&

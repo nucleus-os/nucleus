@@ -419,3 +419,107 @@ import NucleusTypes
         #expect(red(bevelled, 20, 6) == 0, "the bevel is cut off")
     }
 }
+
+/// Rotated draws.
+///
+/// A command whose transform rotates or skews states geometry in its own space
+/// and carries the matrix. Before that, the recorder folded the transform into
+/// the geometry by taking an axis-aligned bounding box — so a rotated image,
+/// glyph run, or background box drew upright at the wrong size, and nothing
+/// indicated the rotation had been dropped.
+@Suite struct RotatedDrawTests {
+    private func render(_ commands: [PaintDrawCommand], size: Int32 = 40) -> [UInt8] {
+        let surface = nucleus.skia.makeRasterSurface(size, size)
+        guard surface.isValid() else { return [] }
+        let canvas = surface.getCanvas()
+        var clear = nucleus.skia.Color()
+        clear.r = 0; clear.g = 0; clear.b = 0; clear.a = 1
+        canvas.clear(clear)
+        PaintRasterizer.draw(
+            commands: commands, payload: [], onto: canvas, scaleX: 1, scaleY: 1,
+            resolveImage: { _ in nil }, resolveEffect: { _ in nil })
+
+        var pixels = [UInt8](repeating: 0, count: Int(size * size) * 4)
+        let ok = pixels.withUnsafeMutableBufferPointer {
+            surface.readPixelsRGBA($0.baseAddress, $0.count, size * 4)
+        }
+        return ok ? pixels : []
+    }
+
+    private func red(_ pixels: [UInt8], _ x: Int, _ y: Int, size: Int = 40) -> UInt8 {
+        pixels[(y * size + x) * 4]
+    }
+
+    /// A 45°-rotated square about the canvas centre. Its corners land on the
+    /// axes and its edges pull away from the diagonals — a diamond. An
+    /// axis-aligned box cannot produce that, which is what makes this decisive.
+    private func rotatedSquare() -> PaintDrawCommand {
+        let angle = Double.pi / 4
+        let (c, s) = (Float(cos(angle)), Float(sin(angle)))
+        // Rotate about (20, 20): translate out, rotate, translate back.
+        return PaintDrawCommand(
+            kind: .rect, x: -10, y: -10, w: 20, h: 20,
+            color: (1, 1, 1, 1), antialias: false,
+            transform: PaintDrawTransform(
+                a: c, b: s, c: -s, d: c, tx: 20, ty: 20))
+    }
+
+    @Test func aRotatedRectDrawsRotated() {
+        let pixels = render([rotatedSquare()])
+        #expect(!pixels.isEmpty)
+        #expect(red(pixels, 20, 20) > 200, "the centre is covered either way")
+        // A 20x20 square rotated 45° has a half-diagonal of ~14, so it reaches
+        // further along the axes than its unrotated half-width of 10.
+        #expect(red(pixels, 20, 8) > 200, "the corner reaches up the axis")
+        // ...and pulls in along the diagonals, where an upright square would be
+        // solid.
+        #expect(red(pixels, 12, 12) == 0, "the diagonal is outside the diamond")
+    }
+
+    /// The same geometry with no transform: an upright square, inverted at
+    /// exactly the two probe points above. This is the picture the old encoder
+    /// produced for a rotated draw.
+    @Test func anUnrotatedRectIsTheOppositePicture() {
+        let command = PaintDrawCommand(
+            kind: .rect, x: 10, y: 10, w: 20, h: 20,
+            color: (1, 1, 1, 1), antialias: false)
+        let pixels = render([command])
+        #expect(red(pixels, 20, 8) == 0, "an upright square does not reach here")
+        #expect(red(pixels, 12, 12) > 200, "and is solid on the diagonal")
+    }
+
+    /// The transform must not leak into whatever is drawn next — it is scoped to
+    /// its own command.
+    @Test func aCarriedTransformDoesNotLeak() {
+        let after = PaintDrawCommand(
+            kind: .rect, x: 0, y: 0, w: 6, h: 6,
+            color: (1, 1, 1, 1), antialias: false)
+        let pixels = render([rotatedSquare(), after])
+        #expect(red(pixels, 2, 2) > 200, "the second command drew at the origin")
+    }
+
+    /// Device scale composes with the carried matrix rather than replacing it.
+    @Test func deviceScaleStillApplies() {
+        let surface = nucleus.skia.makeRasterSurface(40, 40)
+        let canvas = surface.getCanvas()
+        var clear = nucleus.skia.Color()
+        clear.r = 0; clear.g = 0; clear.b = 0; clear.a = 1
+        canvas.clear(clear)
+        // An unrotated-but-carried transform: identity linear part, translation
+        // only, so the effect of the device scale is readable on its own.
+        let command = PaintDrawCommand(
+            kind: .rect, x: 0, y: 0, w: 5, h: 5,
+            color: (1, 1, 1, 1), antialias: false,
+            transform: PaintDrawTransform(a: 1, b: 0.0001, c: 0, d: 1, tx: 0, ty: 0))
+        PaintRasterizer.draw(
+            commands: [command], payload: [], onto: canvas, scaleX: 2, scaleY: 2,
+            resolveImage: { _ in nil }, resolveEffect: { _ in nil })
+
+        var pixels = [UInt8](repeating: 0, count: 40 * 40 * 4)
+        _ = pixels.withUnsafeMutableBufferPointer {
+            surface.readPixelsRGBA($0.baseAddress, $0.count, 40 * 4)
+        }
+        #expect(red(pixels, 8, 8) > 200, "a 5px square at 2x covers 10px")
+        #expect(red(pixels, 12, 12) == 0, "and no further")
+    }
+}

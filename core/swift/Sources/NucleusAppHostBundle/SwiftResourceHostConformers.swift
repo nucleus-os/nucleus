@@ -160,6 +160,11 @@ final class SwiftPaintContentRegistrar: PaintContentRegistrar {
                     : (c.flags.contains(.capSquare) ? .square : .butt),
                 strokeJoin: c.flags.contains(.joinRound) ? .round
                     : (c.flags.contains(.joinBevel) ? .bevel : .miter),
+                transform: c.flags.contains(.hasTransform)
+                    ? PaintDrawTransform(
+                        a: c.transformA, b: c.transformB, c: c.transformC,
+                        d: c.transformD, tx: c.transformTX, ty: c.transformTY)
+                    : nil,
                 shading: paintDrawShading(c.shading),
                 blend: paintDrawBlendMode(c.blend),
                 alpha: c.alpha, blurSigma: c.blurSigma, saturation: c.saturation))

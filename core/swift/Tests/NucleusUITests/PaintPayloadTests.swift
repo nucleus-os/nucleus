@@ -220,3 +220,87 @@ import NucleusTypes
         #expect(command?.flags.contains(.joinBevel) == false)
     }
 }
+
+/// What the recorder does with the current transform.
+@MainActor
+@Suite struct TransformEncodingTests {
+    private func imageCommand(
+        _ configure: (GraphicsContext) -> Void
+    ) -> NucleusTypes.PaintCommand? {
+        let graphics = GraphicsContext()
+        configure(graphics)
+        graphics.draw(ImageHandle(id: 1), in: Rect(x: 0, y: 0, width: 10, height: 20))
+        return graphics.recording.commands.first
+    }
+
+    /// A translation or a scale maps a rectangle to a rectangle, so it folds
+    /// into the geometry and the command stays a plain rect.
+    @Test func translationAndScaleFoldIntoTheGeometry() {
+        let translated = imageCommand { $0.translateBy(x: 5, y: 7) }
+        #expect(translated?.flags.contains(.hasTransform) == false)
+        #expect(translated?.x == 5)
+        #expect(translated?.y == 7)
+
+        let scaled = imageCommand { $0.scaleBy(x: 2, y: 3) }
+        #expect(scaled?.flags.contains(.hasTransform) == false)
+        #expect(scaled?.w == 20)
+        #expect(scaled?.h == 60)
+    }
+
+    /// Rotation does not. Folding it in leaves an axis-aligned bounding box,
+    /// which is the defect: the image drew upright at the wrong size.
+    @Test func rotationIsCarriedRatherThanFolded() {
+        let command = imageCommand { $0.rotateBy(degrees: 45) }
+        #expect(command?.flags.contains(.hasTransform) == true)
+        // Geometry stays as authored, in the space the matrix maps from.
+        #expect(command?.x == 0)
+        #expect(command?.y == 0)
+        #expect(command?.w == 10)
+        #expect(command?.h == 20)
+        // The matrix is a real rotation: the off-diagonal terms are non-zero.
+        #expect(abs((command?.transformB ?? 0)) > 0.5)
+        #expect(abs((command?.transformC ?? 0)) > 0.5)
+    }
+
+    /// A carried transform scales the scalars itself, so the recorder must not
+    /// pre-scale them as well.
+    @Test func carriedTransformsDoNotPreScaleScalars() {
+        let graphics = GraphicsContext()
+        graphics.scaleBy(x: 4, y: 4)
+        graphics.rotateBy(degrees: 30)
+        graphics.draw(
+            ImageHandle(id: 1), in: Rect(x: 0, y: 0, width: 10, height: 10),
+            cornerRadius: 3)
+
+        let command = graphics.recording.commands.first
+        #expect(command?.flags.contains(.hasTransform) == true)
+        #expect(command?.radius == 3, "local radius; the matrix carries the 4x")
+    }
+
+    /// Without a carried transform the scalars *are* pre-scaled, which is the
+    /// behaviour the fast path depends on.
+    @Test func foldedTransformsStillPreScaleScalars() {
+        let graphics = GraphicsContext()
+        graphics.scaleBy(x: 4, y: 4)
+        graphics.draw(
+            ImageHandle(id: 1), in: Rect(x: 0, y: 0, width: 10, height: 10),
+            cornerRadius: 3)
+
+        let command = graphics.recording.commands.first
+        #expect(command?.flags.contains(.hasTransform) == false)
+        #expect(command?.radius == 12)
+    }
+
+    /// Rect fills are encoded as paths, whose points are transformed
+    /// individually — so they rotated correctly all along and must keep doing so
+    /// without carrying a matrix.
+    @Test func rectFillsRemainPathsAndNeedNoMatrix() {
+        let graphics = GraphicsContext()
+        graphics.rotateBy(degrees: 45)
+        graphics.fill(Rect(x: 0, y: 0, width: 10, height: 10))
+
+        let command = graphics.recording.commands.first
+        #expect(command?.kind == .path)
+        #expect(command?.flags.contains(.hasTransform) == false)
+    }
+}
