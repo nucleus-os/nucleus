@@ -6,7 +6,7 @@ source "$script_dir/scripts/chromium-env.sh"
 
 prefix="${PREFIX:-$HOME/.local}"
 runtime_dir="$prefix/lib/nucleus-browser"
-private_vaapi_dir="${NUCLEUS_NVIDIA_VAAPI_DIR:-$HOME/.local/lib/noctalia/vaapi/nvidia/current/lib/dri}"
+private_vaapi_dir="${NUCLEUS_NVIDIA_VAAPI_DIR:-$HOME/.local/lib/nvidia-vaapi-driver/current/lib/dri}"
 missing=0
 
 check_required() {
@@ -26,6 +26,24 @@ report_file() {
   else
     printf 'absent  %s\n' "$path"
   fi
+}
+
+user_namespace_sandbox_works() {
+  command -v unshare >/dev/null 2>&1 &&
+    unshare --user --map-root-user -- true >/dev/null 2>&1
+}
+
+setuid_sandbox_is_valid() {
+  local path="$1"
+  [[ -f "$path" ]] &&
+    [[ "$(stat -c '%u:%g:%a' "$path" 2>/dev/null)" == "0:0:4755" ]]
+}
+
+setuid_sandbox_directory_is_valid() {
+  local path="$1"
+  [[ -d "$path" ]] &&
+    [[ ! -L "$path" ]] &&
+    [[ "$(stat -c '%u:%g:%a' "$path" 2>/dev/null)" == "0:0:755" ]]
 }
 
 echo "Nucleus Browser diagnostics"
@@ -66,19 +84,35 @@ else
   echo "NVIDIA kernel driver: absent; system VA-API discovery applies"
 fi
 
-if [[ -e "$runtime_dir/chrome-sandbox" ]]; then
-  stat -c 'sandbox helper: %A %U:%G %n' "$runtime_dir/chrome-sandbox"
-else
-  userns_enabled=1
-  if [[ -r /proc/sys/kernel/unprivileged_userns_clone ]]; then
-    userns_enabled="$(< /proc/sys/kernel/unprivileged_userns_clone)"
-  fi
-  if [[ "$userns_enabled" == 1 ]]; then
-    echo "sandbox helper: user-namespace mode"
+runtime_sandbox="$runtime_dir/chrome-sandbox"
+system_sandbox_dir="/usr/local/libexec/nucleus-browser"
+system_sandbox="$system_sandbox_dir/chrome-sandbox"
+if [[ -e "$runtime_sandbox" ]]; then
+  if setuid_sandbox_is_valid "$runtime_sandbox" &&
+     setuid_sandbox_directory_is_valid "$runtime_dir"; then
+    stat -c 'sandbox helper: %A %U:%G %n' "$runtime_sandbox"
   else
-    echo "missing usable Chromium sandbox (user namespaces are disabled)"
+    stat -c 'invalid sandbox helper: %A %U:%G %n' "$runtime_sandbox"
+    echo "adjacent helper requires a root-owned mode-0755 runtime directory"
     missing=$((missing + 1))
   fi
+elif [[ -e "$system_sandbox" ]]; then
+  if setuid_sandbox_is_valid "$system_sandbox" &&
+     setuid_sandbox_directory_is_valid "$system_sandbox_dir"; then
+    stat -c 'sandbox helper: %A %U:%G %n' "$system_sandbox"
+  elif user_namespace_sandbox_works; then
+    stat -c 'ignored invalid sandbox helper: %A %U:%G %n' "$system_sandbox"
+    echo "sandbox: user-namespace mode (runtime probe succeeded)"
+  else
+    stat -c 'invalid sandbox helper: %A %U:%G %n' "$system_sandbox"
+    echo "system helper requires a root-owned mode-0755 directory"
+    missing=$((missing + 1))
+  fi
+elif user_namespace_sandbox_works; then
+  echo "sandbox helper: user-namespace mode (runtime probe succeeded)"
+else
+  echo "missing usable Chromium sandbox (user-namespace probe failed)"
+  missing=$((missing + 1))
 fi
 
 echo

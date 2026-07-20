@@ -15,6 +15,24 @@ if [[ -z "${WAYLAND_DISPLAY:-}" ]]; then
   exit 1
 fi
 
+user_namespace_sandbox_works() {
+  command -v unshare >/dev/null 2>&1 &&
+    unshare --user --map-root-user -- true >/dev/null 2>&1
+}
+
+setuid_sandbox_is_valid() {
+  local path="$1"
+  [[ -f "$path" ]] &&
+    [[ "$(stat -c '%u:%g:%a' "$path" 2>/dev/null)" == "0:0:4755" ]]
+}
+
+setuid_sandbox_directory_is_valid() {
+  local path="$1"
+  [[ -d "$path" ]] &&
+    [[ ! -L "$path" ]] &&
+    [[ "$(stat -c '%u:%g:%a' "$path" 2>/dev/null)" == "0:0:755" ]]
+}
+
 # Keep the product identity outside Chromium's string/resource machinery. The
 # desktop filename becomes the native Wayland app ID, while the profile and
 # cache remain independent from both stock Chromium and Noctalia's CEF profile.
@@ -24,11 +42,51 @@ config_root="${XDG_CONFIG_HOME:-$HOME/.config}/nucleus-browser"
 cache_root="${XDG_CACHE_HOME:-$HOME/.cache}/nucleus-browser"
 export LD_LIBRARY_PATH="$runtime_dir${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 
+for argument in "$@"; do
+  case "$argument" in
+    --no-sandbox|--no-sandbox=*|\
+    --disable-gpu-sandbox|--disable-gpu-sandbox=*|\
+    --disable-namespace-sandbox|--disable-namespace-sandbox=*|\
+    --disable-seccomp-filter-sandbox|--disable-seccomp-filter-sandbox=*|\
+    --disable-setuid-sandbox|--disable-setuid-sandbox=*|\
+    --no-zygote-sandbox|--no-zygote-sandbox=*)
+      echo "Nucleus Browser does not support disabling Chromium's process sandbox: $argument" >&2
+      exit 2
+      ;;
+  esac
+done
+
+# Ubuntu's AppArmor policy can deny unprivileged user namespaces even when the
+# user-namespace sysctl reports that they are enabled. The installer places
+# Chromium's root-owned helper here only when an actual namespace probe fails.
+system_sandbox="/usr/local/libexec/nucleus-browser/chrome-sandbox"
+system_sandbox_dir="$(dirname -- "$system_sandbox")"
+runtime_sandbox="$runtime_dir/chrome-sandbox"
+unset CHROME_DEVEL_SANDBOX
+if [[ -e "$runtime_sandbox" ]]; then
+  if ! setuid_sandbox_is_valid "$runtime_sandbox" ||
+     ! setuid_sandbox_directory_is_valid "$runtime_dir"; then
+    echo "Nucleus Browser sandbox helper has invalid ownership or mode: $runtime_sandbox" >&2
+    exit 1
+  fi
+elif [[ -e "$system_sandbox" ]]; then
+  if setuid_sandbox_is_valid "$system_sandbox" &&
+     setuid_sandbox_directory_is_valid "$system_sandbox_dir"; then
+    export CHROME_DEVEL_SANDBOX="$system_sandbox"
+  fi
+fi
+if [[ ! -e "$runtime_sandbox" ]] &&
+   [[ -z "${CHROME_DEVEL_SANDBOX:-}" ]] &&
+   ! user_namespace_sandbox_works; then
+  echo "Nucleus Browser has no usable process sandbox; rerun chromium/install-browser.sh" >&2
+  exit 1
+fi
+
 # Make the privately deployed NVIDIA VA-API module available without selecting
 # it in the browser process. Chromium translates this private path into libva's
 # environment only for a GPU child whose compositor-selected DRM render node is
 # NVIDIA. Intel and AMD main devices retain normal system-driver discovery.
-private_vaapi_dir="${NUCLEUS_NVIDIA_VAAPI_DIR:-$HOME/.local/lib/noctalia/vaapi/nvidia/current/lib/dri}"
+private_vaapi_dir="${NUCLEUS_NVIDIA_VAAPI_DIR:-$HOME/.local/lib/nvidia-vaapi-driver/current/lib/dri}"
 export CHROMIUM_NVIDIA_VAAPI_DRIVER_PATH="$private_vaapi_dir"
 if [[ ! -f "$private_vaapi_dir/nvidia_drv_video.so" ]] &&
    [[ -e /proc/driver/nvidia/version ]]; then

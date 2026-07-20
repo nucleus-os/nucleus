@@ -297,8 +297,8 @@ apply_nucleus_cef_patches() {
     --src-prefix=a/cef/ --dst-prefix=b/cef/ -- cef_api_versions.json \
     >"$applied_patch_dir/$generated_api_patch"
   if [[ ! -s "$applied_patch_dir/$generated_api_patch" ]]; then
-    echo "!! CEF API hash regeneration produced no patch" >&2
-    exit 1
+    echo "-- CEF API hashes already match the regenerated headers"
+    rm -f "$applied_patch_dir/$generated_api_patch"
   fi
 }
 

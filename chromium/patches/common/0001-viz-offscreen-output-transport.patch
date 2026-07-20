@@ -1873,7 +1873,7 @@ index 89313c57f0..21dc869105 100644
      return;
    }
  
-@@ -209,6 +241,11 @@ void DawnOzoneImageRepresentation::EndAccess() {
+@@ -209,6 +241,14 @@ void DawnOzoneImageRepresentation::EndAccess() {
      SetCleared();
    }
  
@@ -1881,11 +1881,14 @@ index 89313c57f0..21dc869105 100644
 +      .old_layout = static_cast<VkImageLayout>(end_layout.oldLayout),
 +      .new_layout = static_cast<VkImageLayout>(end_layout.newLayout),
 +      .external_queue_family = VK_QUEUE_FAMILY_EXTERNAL_KHR};
++  const bool access_was_unused =
++      end_layout.oldLayout == VK_IMAGE_LAYOUT_UNDEFINED &&
++      end_layout.newLayout == VK_IMAGE_LAYOUT_UNDEFINED;
 +
    CHECK(end_access_desc.fenceCount == end_access_desc.signaledValueCount);
  
    // Note: Dawn may export zero fences if there were no begin fences,
-@@ -225,21 +262,35 @@ void DawnOzoneImageRepresentation::EndAccess() {
+@@ -225,21 +265,47 @@ void DawnOzoneImageRepresentation::EndAccess() {
      // Dawn will close its FD when `end_access_desc` falls out of scope, and
      // so it is necessary to dup() it to give OzoneImageBacking an FD that it
      // can own.
@@ -1919,7 +1922,19 @@ index 89313c57f0..21dc869105 100644
  
 -  ozone_backing()->EndAccess(
 -      is_readonly_, OzoneImageBacking::AccessStream::kWebGPU, std::move(fence));
-+  if (!backing_access_->EndVulkan(std::move(fence), external_state)) {
++  bool access_completed = false;
++  if (access_was_unused) {
++    // Dawn deliberately leaves the Vulkan layout state unset when the
++    // WGPUTexture never reached its queue. No ownership transfer occurred,
++    // so restore the exact state consumed at BeginAccess. Any fences here
++    // are the acquire fences re-exported by Dawn, not new GPU work.
++    access_completed =
++        backing_access_->EndVulkanWithoutGpuUse(std::move(fence));
++  } else {
++    access_completed =
++        backing_access_->EndVulkan(std::move(fence), external_state);
++  }
++  if (!access_completed) {
 +    LOG(ERROR) << "Dawn returned invalid external Vulkan ownership state";
 +  }
 +  backing_access_.reset();
@@ -2026,7 +2041,7 @@ index 906a8f8078..628b1a1ae1 100644
    for (auto& [context, holder] : per_context_cached_textures_holders_) {
      context->RemoveObserver(this);
      // We only need to remove textures here. If the context was lost or
-@@ -650,22 +693,161 @@ void OzoneImageBacking::FlushAndSubmitIfNecessary(
+@@ -650,22 +693,197 @@ void OzoneImageBacking::FlushAndSubmitIfNecessary(
    }
  }
  
@@ -2135,9 +2150,24 @@ index 906a8f8078..628b1a1ae1 100644
 +    ExternalVulkanImageState release_state) {
 +  CHECK(!finished_);
 +  CHECK(acquire_committed_);
-+  if (!took_vulkan_state_ || !release_state.IsValid() ||
-+      (needs_end_fence() && fence.is_null())) {
-+    LOG(ERROR) << "Explicit Vulkan ownership access returned invalid state";
++  const bool release_state_valid = release_state.IsValid();
++  const bool release_fence_required = needs_end_fence();
++  const bool release_fence_present = !fence.is_null();
++  if (!took_vulkan_state_ || !release_state_valid ||
++      (release_fence_required && !release_fence_present)) {
++    LOG(ERROR) << "Explicit Vulkan ownership access returned invalid state"
++               << " label=" << backing_->debug_label()
++               << " stream=" << static_cast<int>(access_stream_)
++               << " readonly=" << readonly_
++               << " took_state=" << took_vulkan_state_
++               << " base_fence_required=" << need_end_fence_
++               << " fence_required=" << release_fence_required
++               << " fence_present=" << release_fence_present
++               << " state_valid=" << release_state_valid
++               << " old_layout=" << release_state.old_layout
++               << " new_layout=" << release_state.new_layout
++               << " external_queue_family="
++               << release_state.external_queue_family;
 +    InvalidateAfterAcquire();
 +    return false;
 +  }
@@ -2147,6 +2177,27 @@ index 906a8f8078..628b1a1ae1 100644
 +  backing_->vulkan_ownership_in_progress_ = false;
 +  backing_->EndAccessInternal(readonly_, access_stream_, std::move(fence));
 +  consumed_vulkan_state_.reset();
++  finished_ = true;
++  return true;
++}
++
++bool OzoneImageBacking::ScopedAccess::EndVulkanWithoutGpuUse(
++    gfx::GpuFenceHandle fence) {
++  CHECK(!finished_);
++  CHECK(acquire_committed_);
++  if (!took_vulkan_state_) {
++    LOG(ERROR) << "Unused Vulkan access did not consume ownership state";
++    InvalidateAfterAcquire();
++    return false;
++  }
++
++  // Dawn did not submit an acquire, use, or release for this texture. Restore
++  // the ownership state that was removed transactionally at BeginAccess.
++  // Dawn re-exports any imported acquire fences in `fence`, so normal backing
++  // synchronization still carries those dependencies forward.
++  backing_->external_vulkan_state_ = std::move(consumed_vulkan_state_);
++  backing_->vulkan_ownership_in_progress_ = false;
++  backing_->EndAccessInternal(readonly_, access_stream_, std::move(fence));
 +  finished_ = true;
 +  return true;
 +}
@@ -2194,7 +2245,7 @@ index 906a8f8078..628b1a1ae1 100644
      }
  
      if (readonly) {
-@@ -674,16 +856,23 @@ bool OzoneImageBacking::BeginAccess(bool readonly,
+@@ -674,16 +877,23 @@ bool OzoneImageBacking::BeginAccess(bool readonly,
        is_write_in_progress_ = true;
      }
    }
@@ -2220,7 +2271,7 @@ index 906a8f8078..628b1a1ae1 100644
      }
      read_fences_.clear();
    }
-@@ -694,9 +883,10 @@ bool OzoneImageBacking::BeginAccess(bool readonly,
+@@ -694,9 +904,10 @@ bool OzoneImageBacking::BeginAccess(bool readonly,
      // For write access we expect new `write_fence_` so we can move the
      // old fence here.
      if (!readonly) {
@@ -2233,7 +2284,7 @@ index 906a8f8078..628b1a1ae1 100644
      }
    }
  
-@@ -708,12 +898,14 @@ bool OzoneImageBacking::BeginAccess(bool readonly,
+@@ -708,12 +919,14 @@ bool OzoneImageBacking::BeginAccess(bool readonly,
      // For write access we expect new `write_fence_` so we can move the old
      // fence here.
      if (!readonly) {
@@ -2250,7 +2301,7 @@ index 906a8f8078..628b1a1ae1 100644
    if (readonly) {
      // Optimization for single write streams. Normally we need a read fence to
      // wait before write on a write stream. But if it single write stream, we
-@@ -733,12 +925,18 @@ bool OzoneImageBacking::BeginAccess(bool readonly,
+@@ -733,12 +946,18 @@ bool OzoneImageBacking::BeginAccess(bool readonly,
      need_end_fence = true;
    }
  
@@ -2273,7 +2324,7 @@ index 906a8f8078..628b1a1ae1 100644
    // Track reads and writes if not being used for concurrent read/writes.
    if (!usage().Has(SHARED_IMAGE_USAGE_CONCURRENT_READ_WRITE)) {
      if (readonly) {
-@@ -761,6 +959,67 @@ void OzoneImageBacking::EndAccess(bool readonly,
+@@ -761,6 +980,67 @@ void OzoneImageBacking::EndAccess(bool readonly,
    }
  }
  
@@ -2362,7 +2413,7 @@ index 43dd62cfc2..92c2322a97 100644
  #include "gpu/config/gpu_driver_bug_workarounds.h"
  #include "gpu/gpu_gles2_export.h"
  #include "ui/gfx/buffer_types.h"
-@@ -63,6 +66,86 @@ class GPU_GLES2_EXPORT OzoneImageBacking final
+@@ -63,6 +66,91 @@ class GPU_GLES2_EXPORT OzoneImageBacking final
  
    enum class AccessStream { kGL, kVulkan, kWebGPU, kOverlay, kLast };
  
@@ -2407,6 +2458,11 @@ index 43dd62cfc2..92c2322a97 100644
 +    // exact transfer that the next owner must match.
 +    bool EndVulkan(gfx::GpuFenceHandle fence,
 +                   ExternalVulkanImageState release_state);
++
++    // Completes an explicit Vulkan access for which the backend submitted no
++    // GPU work. Since no queue-family transfer occurred, the consumed state
++    // remains authoritative and is restored unchanged.
++    bool EndVulkanWithoutGpuUse(gfx::GpuFenceHandle fence);
 +#endif
 +
 +    // Valid only before CommitAcquire(). Restores all synchronization and
@@ -2449,13 +2505,15 @@ index 43dd62cfc2..92c2322a97 100644
   protected:
    std::unique_ptr<DawnImageRepresentation> ProduceDawn(
        SharedImageManager* manager,
-@@ -116,18 +199,30 @@ class GPU_GLES2_EXPORT OzoneImageBacking final
+@@ -116,18 +204,32 @@ class GPU_GLES2_EXPORT OzoneImageBacking final
                             FindsCompatibleContextAndReusesTexture);
    FRIEND_TEST_ALL_PREFIXES(OzoneImageBackingFactoryTest,
                             CorrectlyDestroysAndMarksContextLost);
 +#if BUILDFLAG(ENABLE_VULKAN)
 +  FRIEND_TEST_ALL_PREFIXES(OzoneImageBackingFactoryTest,
 +                           ScopedVulkanStateRoundTrip);
++  FRIEND_TEST_ALL_PREFIXES(OzoneImageBackingFactoryTest,
++                           ScopedVulkanUnusedAccessRestoresState);
 +  FRIEND_TEST_ALL_PREFIXES(OzoneImageBackingFactoryTest,
 +                           ScopedAccessAbortRestoresState);
 +  FRIEND_TEST_ALL_PREFIXES(OzoneImageBackingFactoryTest,
@@ -2487,7 +2545,7 @@ index 43dd62cfc2..92c2322a97 100644
  
    scoped_refptr<OzoneImageGLTexturesHolder> RetainGLTexturePerContextCache();
  
-@@ -150,6 +245,7 @@ class GPU_GLES2_EXPORT OzoneImageBacking final
+@@ -150,6 +252,7 @@ class GPU_GLES2_EXPORT OzoneImageBacking final
  
    uint32_t reads_in_progress_ = 0;
    bool is_write_in_progress_ = false;
@@ -2495,7 +2553,7 @@ index 43dd62cfc2..92c2322a97 100644
    int write_streams_count_;
  
    scoped_refptr<gfx::NativePixmap> pixmap_;
-@@ -165,6 +261,11 @@ class GPU_GLES2_EXPORT OzoneImageBacking final
+@@ -165,6 +268,11 @@ class GPU_GLES2_EXPORT OzoneImageBacking final
    gfx::GpuFenceHandle write_fence_;
    base::flat_map<AccessStream, gfx::GpuFenceHandle> read_fences_;
    AccessStream last_write_stream_;
@@ -2546,7 +2604,7 @@ index eb934ef534..acb2717162 100644
  }  // namespace
  
  class OzoneImageBackingFactoryTest : public SharedImageTestBase {
-@@ -80,6 +94,213 @@ class OzoneImageBackingFactoryTest : public SharedImageTestBase {
+@@ -80,6 +94,253 @@ class OzoneImageBackingFactoryTest : public SharedImageTestBase {
    std::unique_ptr<OzoneImageBackingFactory> backing_factory_;
  };
  
@@ -2601,6 +2659,46 @@ index eb934ef534..acb2717162 100644
 +  EXPECT_EQ(ozone_backing->external_vulkan_state_, consumer_state);
 +  EXPECT_EQ(ozone_backing->active_accesses_, 0u);
 +  EXPECT_FALSE(ozone_backing->vulkan_ownership_in_progress_);
++}
++
++TEST_F(OzoneImageBackingFactoryTest,
++       ScopedVulkanUnusedAccessRestoresState) {
++  const Mailbox mailbox = Mailbox::Generate();
++  auto backing = backing_factory_->CreateSharedImage(
++      mailbox,
++      {viz::SinglePlaneFormat::kRGBA_8888,
++       {100, 100},
++       gfx::ColorSpace::CreateSRGB(),
++       kTopLeft_GrSurfaceOrigin,
++       kPremul_SkAlphaType,
++       SHARED_IMAGE_USAGE_DISPLAY_READ | SHARED_IMAGE_USAGE_SCANOUT |
++           SHARED_IMAGE_USAGE_WEBGPU_READ,
++       "ExternalVulkanUnusedAccessTest"},
++      gpu::kNullSurfaceHandle, false);
++  ASSERT_TRUE(backing);
++
++  auto* ozone_backing = static_cast<OzoneImageBacking*>(backing.get());
++  const ExternalVulkanImageState state{
++      .old_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
++      .new_layout = VK_IMAGE_LAYOUT_GENERAL,
++      .external_queue_family = VK_QUEUE_FAMILY_EXTERNAL_KHR,
++  };
++  ozone_backing->external_vulkan_state_ = state;
++
++  auto access = ozone_backing->BeginAccess(
++      /*readonly=*/true, OzoneImageBacking::AccessStream::kWebGPU);
++  ASSERT_TRUE(access);
++  EXPECT_TRUE(access->TakeBeginFences().empty());
++  std::optional<ExternalVulkanImageState> acquired_state;
++  EXPECT_TRUE(access->TakeExternalVulkanImageState(&acquired_state));
++  EXPECT_EQ(acquired_state, state);
++  access->CommitAcquire();
++
++  EXPECT_TRUE(access->EndVulkanWithoutGpuUse(gfx::GpuFenceHandle()));
++  EXPECT_EQ(ozone_backing->external_vulkan_state_, state);
++  EXPECT_EQ(ozone_backing->active_accesses_, 0u);
++  EXPECT_FALSE(ozone_backing->vulkan_ownership_in_progress_);
++  EXPECT_FALSE(context_state_->context_lost());
 +}
 +
 +TEST_F(OzoneImageBackingFactoryTest, ScopedAccessAbortRestoresState) {

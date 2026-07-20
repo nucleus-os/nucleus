@@ -91,6 +91,14 @@ chromium/install-browser.sh
 chromium/diagnose-browser.sh
 ```
 
+The installer tests whether an unprivileged user namespace can actually be
+created; it does not infer sandbox availability from a sysctl. On systems such
+as Ubuntu with AppArmor user-namespace restrictions, it uses `sudo` only to
+install Chromium's root-owned mode-4755 helper at
+`/usr/local/libexec/nucleus-browser/chrome-sandbox`. The user-owned browser
+runtime and profile remain under the selected prefix. The launcher rejects
+command-line switches that disable Chromium's process sandboxes.
+
 The external product identity is intentionally narrow: the launcher, desktop
 entry/application ID, runtime directory, and independent profile/cache roots
 use Nucleus Browser. Chromium's generated icon remains in use until a dedicated
@@ -98,10 +106,11 @@ icon exists, and the engine keeps upstream Chromium strings, internal pages,
 resources, and `is_chrome_branded=false`.
 
 The launcher adds no renderer-selection flags. Graphite/Dawn/Vulkan and native
-Wayland are source/build invariants. It reuses the private NVIDIA VA-API driver
-already deployed for CEF. The launcher only publishes that module's private
-path, which is inherited through Chromium's zygote. Before driver loading and
-sandbox entry, the GPU child selects it only when Wayland's
+Wayland are source/build invariants. It uses the package-owned private NVIDIA
+VA-API driver at
+`~/.local/lib/nvidia-vaapi-driver/current/lib/dri`. The launcher publishes
+that module's path, which is inherited through Chromium's zygote. Before
+driver loading and sandbox entry, the GPU child selects it only when Wayland's
 compositor-selected DRM node is NVIDIA. Intel and AMD main devices keep normal
 system-driver discovery, and the launcher never guesses or hard-codes
 `NVD_DRM_DEVICE`. The browser process also retains the file descriptor from

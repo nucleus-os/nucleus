@@ -1,0 +1,98 @@
+diff --git a/components/crash/core/app/BUILD.gn b/components/crash/core/app/BUILD.gn
+index b25d2303fd..46fcb2e31d 100644
+--- a/components/crash/core/app/BUILD.gn
++++ b/components/crash/core/app/BUILD.gn
+@@ -79,6 +79,7 @@ static_library("app") {
+     "//base",
+     "//build:branding_buildflags",
+     "//build:chromeos_buildflags",
++    "//cef/libcef/features:buildflags",
+     "//components/crash/core/common:crash_key",
+     "//content/public/common:content_descriptors",
+     "//third_party/crashpad/crashpad/client",
+diff --git a/components/crash/core/app/crashpad_linux.cc b/components/crash/core/app/crashpad_linux.cc
+index 68914d9114..fbdf9e3a69 100644
+--- a/components/crash/core/app/crashpad_linux.cc
++++ b/components/crash/core/app/crashpad_linux.cc
+@@ -20,10 +20,13 @@
+ #include "base/system/sys_info.h"
+ #include "build/branding_buildflags.h"
+ #include "build/chromeos_buildflags.h"
++#include "cef/libcef/features/features.h"
+ #include "components/crash/core/app/crash_reporter_client.h"
+ #include "components/crash/core/app/crash_switches.h"
+ #include "content/public/common/content_descriptors.h"
++#if BUILDFLAG(ENABLE_CEF)
+ #include "content/public/common/content_paths.h"
++#endif
+ #include "sandbox/linux/services/namespace_sandbox.h"
+ #include "third_party/crashpad/crashpad/client/crashpad_client.h"
+ #include "third_party/crashpad/crashpad/client/crashpad_info.h"
+@@ -166,10 +169,18 @@ bool PlatformCrashpadInitialization(
+     crash_reporter_client->GetCrashDumpLocation(database_path);
+     crash_reporter_client->GetCrashMetricsLocation(&metrics_path);
+ 
+-    // Use the same main (default) or subprocess helper exe.
+     base::FilePath handler_path;
++#if BUILDFLAG(ENABLE_CEF)
++    // CEF embeds the crash handler in its main or subprocess helper.
+     base::PathService::Get(content::CHILD_PROCESS_EXE, &handler_path);
+     DCHECK(!handler_path.empty());
++#else
++    // Standalone Chromium ships and launches a dedicated crash handler.
++    if (!base::PathService::Get(base::DIR_EXE, &handler_path)) {
++      return false;
++    }
++    handler_path = handler_path.Append("chrome_crashpad_handler");
++#endif
+ 
+     // When --use-cros-crash-reporter is set (below), the handler passes dumps
+     // to ChromeOS's /sbin/crash_reporter which in turn passes the dump to
+@@ -185,8 +196,13 @@ bool PlatformCrashpadInitialization(
+     crash_reporter_client->GetProductInfo(&product_info);
+ 
+     std::map<std::string, std::string> annotations;
++#if BUILDFLAG(ENABLE_CEF)
+     annotations["product"] = product_info.product_name;
+     annotations["version"] = product_info.version;
++#else
++    annotations["prod"] = product_info.product_name;
++    annotations["ver"] = product_info.version;
++#endif
+ 
+ #if BUILDFLAG(GOOGLE_CHROME_BRANDING)
+     // Empty means stable.
+@@ -203,6 +219,7 @@ bool PlatformCrashpadInitialization(
+       annotations["channel"] = product_info.channel;
+     }
+ 
++#if BUILDFLAG(ENABLE_CEF)
+ #if defined(ARCH_CPU_ARM_FAMILY)
+ #if defined(ARCH_CPU_32_BITS)
+     const char* platform = "linuxarm";
+@@ -217,6 +234,9 @@ bool PlatformCrashpadInitialization(
+ #endif
+ #endif  // defined(ARCH_CPU_ARM_FAMILY)
+     annotations["platform"] = platform;
++#else
++    annotations["plat"] = std::string("Linux");
++#endif
+ 
+ #if BUILDFLAG(IS_CHROMEOS_DEVICE)
+     // Chromium OS: save board and builder path for 'tast symbolize'.
+@@ -253,11 +273,12 @@ bool PlatformCrashpadInitialization(
+     }
+ #endif
+ 
+-    // Since we're using the same main or subprocess helper exe we must specify
+-    // the process type.
++#if BUILDFLAG(ENABLE_CEF)
++    // The embedded CEF handler needs an explicit process type and any
++    // embedder-provided arguments.
+     arguments.push_back(std::string("--type=") + switches::kCrashpadHandler);
+-
+     crash_reporter_client->GetCrashOptionalArguments(&arguments);
++#endif
+ 
+     CHECK(client.StartHandler(handler_path, *database_path, metrics_path, url,
+                               annotations, arguments, false, false,

@@ -16,7 +16,7 @@ index 6ae0b6dd00..dff8cb9cbb 100644
          "drm_modifiers_filter_dawn.cc",
          "drm_modifiers_filter_dawn.h",
 diff --git a/gpu/command_buffer/service/drm_modifiers_filter_dawn.cc b/gpu/command_buffer/service/drm_modifiers_filter_dawn.cc
-index f51ce10216..50fff2874f 100644
+index f51ce10216..f1f73d8a2c 100644
 --- a/gpu/command_buffer/service/drm_modifiers_filter_dawn.cc
 +++ b/gpu/command_buffer/service/drm_modifiers_filter_dawn.cc
 @@ -6,7 +6,6 @@
@@ -27,6 +27,28 @@ index f51ce10216..50fff2874f 100644
  #include "base/containers/fixed_flat_set.h"
  #include "base/containers/flat_map.h"
  #include "components/viz/common/resources/shared_image_format_utils.h"
+@@ -36,16 +35,18 @@ GetDawnModifierMap(wgpu::Adapter adapter) {
+   base::flat_map<viz::SharedImageFormat, std::vector<uint64_t>> modifier_map;
+ 
+   for (auto si_format : ui::kDrmSharedImageFormats) {
+-    auto wgpu_format = ToDawnFormat(si_format);
+-    if (wgpu_format == wgpu::TextureFormat::Undefined) {
++    // The DRM list also contains GBM formats that Dawn cannot import. Use the
++    // non-fatal conversion contract while discovering adapter capabilities.
++    auto wgpu_format = MaybeToDawnFormat(si_format);
++    if (!wgpu_format) {
+       modifier_map.emplace(si_format, std::vector<uint64_t>());
+       continue;
+     }
+ 
+     wgpu::DawnDrmFormatCapabilities drmCapabilities;
+     wgpu::DawnFormatCapabilities formatCapabilities;
+     formatCapabilities.nextInChain = &drmCapabilities;
+-    adapter.GetFormatCapabilities(wgpu_format, &formatCapabilities);
++    adapter.GetFormatCapabilities(*wgpu_format, &formatCapabilities);
+ 
+     if (!drmCapabilities.properties || !drmCapabilities.propertiesCount) {
+       modifier_map.emplace(si_format, std::vector<uint64_t>());
 @@ -91,8 +90,11 @@ DrmModifiersFilterDawn::~DrmModifiersFilterDawn() = default;
  std::vector<uint64_t> DrmModifiersFilterDawn::Filter(
      viz::SharedImageFormat format,
@@ -41,6 +63,63 @@ index f51ce10216..50fff2874f 100644
  
    std::vector<uint64_t> intersection;
    for (const auto& modifier : modifiers) {
+diff --git a/gpu/command_buffer/service/shared_image/shared_image_format_service_utils.cc b/gpu/command_buffer/service/shared_image/shared_image_format_service_utils.cc
+index 87d49dc987..8f99a0ae42 100644
+--- a/gpu/command_buffer/service/shared_image/shared_image_format_service_utils.cc
++++ b/gpu/command_buffer/service/shared_image/shared_image_format_service_utils.cc
+@@ -548,7 +548,8 @@ DXGI_FORMAT ToDXGIFormat(viz::SharedImageFormat format) {
+ }
+ #endif  // BUILDFLAG(IS_WIN)
+ 
+-wgpu::TextureFormat ToDawnFormat(viz::SharedImageFormat format) {
++std::optional<wgpu::TextureFormat> MaybeToDawnFormat(
++    viz::SharedImageFormat format) {
+   if (format == viz::SinglePlaneFormat::kRGBA_8888 ||
+       format == viz::SinglePlaneFormat::kRGBX_8888) {
+     return wgpu::TextureFormat::RGBA8Unorm;
+@@ -589,6 +590,14 @@ wgpu::TextureFormat ToDawnFormat(viz::SharedImageFormat format) {
+   } else if (format == viz::MultiPlaneFormat::kP410) {
+     return wgpu::TextureFormat::R10X6BG10X6Biplanar444Unorm;
+   }
++
++  return std::nullopt;
++}
++
++wgpu::TextureFormat ToDawnFormat(viz::SharedImageFormat format) {
++  if (auto dawn_format = MaybeToDawnFormat(format)) {
++    return *dawn_format;
++  }
+ 
+   NOTREACHED() << "Unsupported format: " << format.ToString();
+ }
+diff --git a/gpu/command_buffer/service/shared_image/shared_image_format_service_utils.h b/gpu/command_buffer/service/shared_image/shared_image_format_service_utils.h
+index 625a3b82ab..4feb9d130c 100644
+--- a/gpu/command_buffer/service/shared_image/shared_image_format_service_utils.h
++++ b/gpu/command_buffer/service/shared_image/shared_image_format_service_utils.h
+@@ -5,6 +5,8 @@
+ #ifndef GPU_COMMAND_BUFFER_SERVICE_SHARED_IMAGE_SHARED_IMAGE_FORMAT_SERVICE_UTILS_H_
+ #define GPU_COMMAND_BUFFER_SERVICE_SHARED_IMAGE_SHARED_IMAGE_FORMAT_SERVICE_UTILS_H_
+ 
++#include <optional>
++
+ #include "build/build_config.h"
+ #include "components/viz/common/resources/shared_image_format.h"
+ #include "gpu/command_buffer/common/gl2_types.h"
+@@ -145,8 +147,12 @@ GPU_GLES2_EXPORT DXGI_FORMAT ToDXGIFormat(viz::SharedImageFormat format);
+ #endif  // BUILDFLAG(IS_WIN)
+ 
+-// Following functions return the appropriate Dawn format for a
+-// SharedImageFormat. Returns wgpu::TextureFormat format for given `format`.
++// Returns the appropriate Dawn format when `format` has a Dawn equivalent,
++// or nullopt otherwise.
++GPU_GLES2_EXPORT std::optional<wgpu::TextureFormat> MaybeToDawnFormat(
++    viz::SharedImageFormat format);
++// Returns the appropriate Dawn format for `format`, which must have a Dawn
++// equivalent.
+ // Note that this will return a multi-planar Dawn format for multi-planar
+ // SharedImageFormat.
+ GPU_GLES2_EXPORT wgpu::TextureFormat ToDawnFormat(
+     viz::SharedImageFormat format);
 diff --git a/gpu/command_buffer/service/shared_image/ozone_image_backing_factory.cc b/gpu/command_buffer/service/shared_image/ozone_image_backing_factory.cc
 index dfa3858f21..36886fc134 100644
 --- a/gpu/command_buffer/service/shared_image/ozone_image_backing_factory.cc

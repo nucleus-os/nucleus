@@ -8,13 +8,30 @@ prefix="${PREFIX:-$HOME/.local}"
 out_dir="${CHROMIUM_BROWSER_OUT}"
 widevine_dir="${NUCLEUS_WIDEVINE_DIR:-}"
 
+find_product_icon() {
+  local size="$1"
+  local candidate
+  for candidate in \
+    "$out_dir/product_logo_${size}.png" \
+    "$NUCLEUS_CHROMIUM_SRC_ROOT/chrome/app/theme/chromium/linux/product_logo_${size}.png" \
+    "$NUCLEUS_CHROMIUM_SRC_ROOT/chrome/app/theme/default_100_percent/chromium/linux/product_logo_${size}.png" \
+    "$NUCLEUS_CHROMIUM_SRC_ROOT/chrome/app/theme/chromium/product_logo_${size}.png"; do
+    if [[ -f "$candidate" ]]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+  return 1
+}
+
 usage() {
   cat <<'EOF'
 Usage: chromium/install-browser.sh [--prefix DIR] [--out-dir DIR] [--widevine-dir DIR]
 
 Stages the completed Chromium output under a relocatable private runtime,
-installs the launcher and desktop entry, and configures either the
-setuid sandbox (when run as root) or Chromium's user-namespace sandbox.
+installs the launcher and desktop entry, and configures a usable Chromium
+sandbox. When the kernel denies an actual unprivileged user-namespace probe,
+the installer uses sudo for only the root-owned setuid helper.
 
 Options:
   --prefix DIR   Install prefix. Default: $PREFIX or ~/.local
@@ -23,6 +40,24 @@ Options:
                  Existing WidevineCdm directory to stage. When omitted, use
                  the build output or an installed Google Chrome CDM.
 EOF
+}
+
+user_namespace_sandbox_works() {
+  command -v unshare >/dev/null 2>&1 &&
+    unshare --user --map-root-user -- true >/dev/null 2>&1
+}
+
+setuid_sandbox_is_valid() {
+  local path="$1"
+  [[ -f "$path" ]] &&
+    [[ "$(stat -c '%u:%g:%a' "$path" 2>/dev/null)" == "0:0:4755" ]]
+}
+
+setuid_sandbox_directory_is_valid() {
+  local path="$1"
+  [[ -d "$path" ]] &&
+    [[ ! -L "$path" ]] &&
+    [[ "$(stat -c '%u:%g:%a' "$path" 2>/dev/null)" == "0:0:755" ]]
 }
 
 while [[ $# -gt 0 ]]; do
@@ -56,8 +91,9 @@ if [[ ! -x "$out_dir/chrome" ]]; then
   echo "Chromium has not been built: $out_dir/chrome is missing" >&2
   exit 1
 fi
-if [[ ! -f "$out_dir/product_logo_128.png" ]]; then
-  echo "required Chromium application icon is missing: $out_dir/product_logo_128.png" >&2
+if ! application_icon="$(find_product_icon 128)" &&
+   ! application_icon="$(find_product_icon 48)"; then
+  echo "required Chromium application icon is missing from the build output and source theme" >&2
   exit 1
 fi
 
@@ -66,7 +102,7 @@ prepared="$prefix/lib/.nucleus-browser.$$.prepared"
 previous="$prefix/lib/.nucleus-browser.$$.previous"
 trap 'rm -rf "$prepared" "$previous"' EXIT
 rm -rf "$prepared"
-mkdir -p "$prepared"
+install -d -m 0755 "$prepared"
 
 install_required() {
   local source="$out_dir/$1"
@@ -146,20 +182,43 @@ if [[ -z "$widevine_dir" ]] ||
 fi
 cp -a "$widevine_dir" "$prepared/WidevineCdm"
 
+system_sandbox_dir="/usr/local/libexec/nucleus-browser"
+system_sandbox="$system_sandbox_dir/chrome-sandbox"
 if [[ $EUID -eq 0 ]]; then
   if [[ ! -x "$out_dir/chrome_sandbox" ]]; then
     echo "setuid sandbox artifact is missing: $out_dir/chrome_sandbox" >&2
     exit 1
   fi
-  install -o root -g root -m 4755 "$out_dir/chrome_sandbox" \
+  install -o root -g root -m 0755 "$out_dir/chrome_sandbox" \
     "$prepared/chrome-sandbox"
-else
-  userns_enabled=1
-  if [[ -r /proc/sys/kernel/unprivileged_userns_clone ]]; then
-    userns_enabled="$(< /proc/sys/kernel/unprivileged_userns_clone)"
+  chmod 4755 "$prepared/chrome-sandbox"
+elif ! user_namespace_sandbox_works; then
+  if [[ ! -x "$out_dir/chrome_sandbox" ]]; then
+    echo "setuid sandbox artifact is missing: $out_dir/chrome_sandbox" >&2
+    exit 1
   fi
-  if [[ "$userns_enabled" != 1 ]]; then
-    echo "unprivileged user namespaces are disabled; rerun as root to install the setuid sandbox" >&2
+  if setuid_sandbox_directory_is_valid "$system_sandbox_dir" &&
+     setuid_sandbox_is_valid "$system_sandbox" &&
+     cmp -s "$out_dir/chrome_sandbox" "$system_sandbox"; then
+    echo "Installed setuid sandbox is already current."
+  else
+    if ! command -v sudo >/dev/null 2>&1; then
+      echo "unprivileged user namespaces are unavailable and sudo is missing" >&2
+      echo "install $out_dir/chrome_sandbox as root:root mode 4755 at $system_sandbox" >&2
+      exit 1
+    fi
+    echo "Unprivileged user namespaces are unavailable; installing the setuid sandbox."
+    sudo install -d -o root -g root -m 0755 "$system_sandbox_dir"
+    if ! setuid_sandbox_directory_is_valid "$system_sandbox_dir"; then
+      echo "setuid sandbox directory is not securely installed: $system_sandbox_dir" >&2
+      exit 1
+    fi
+    sudo install -o root -g root -m 0755 \
+      "$out_dir/chrome_sandbox" "$system_sandbox"
+    sudo chmod 4755 "$system_sandbox"
+  fi
+  if ! setuid_sandbox_is_valid "$system_sandbox"; then
+    echo "setuid sandbox installation is invalid: $system_sandbox" >&2
     exit 1
   fi
 fi
@@ -182,10 +241,10 @@ install -D -m 0644 \
   "$script_dir/share/applications/dev.nucleus.Browser.desktop" \
   "$prefix/share/applications/dev.nucleus.Browser.desktop"
 for size in 16 22 24 32 48 64 128 256; do
-  if [[ -f "$out_dir/product_logo_${size}.png" ]]; then
+  if icon_source="$(find_product_icon "$size")"; then
     # The external product name is Nucleus Browser, but until a dedicated icon
-    # exists it intentionally uses Chromium's generated application icon.
-    install -D -m 0644 "$out_dir/product_logo_${size}.png" \
+    # exists it intentionally uses Chromium's application icon.
+    install -D -m 0644 "$icon_source" \
       "$prefix/share/icons/hicolor/${size}x${size}/apps/dev.nucleus.Browser.png"
   fi
 done
