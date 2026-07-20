@@ -1,3 +1,7 @@
+Subject: [PATCH] Complete Graphite Dawn Ozone SharedImage support
+
+# Shared Chromium support for Graphite/Dawn rendering, DRM-modifier filtering,
+# selected-GPU VA-API setup, and presentable Ozone SharedImages.
 diff --git a/gpu/command_buffer/service/BUILD.gn b/gpu/command_buffer/service/BUILD.gn
 index 6ae0b6dd00..dff8cb9cbb 100644
 --- a/gpu/command_buffer/service/BUILD.gn
@@ -115,10 +119,44 @@ index dfa3858f21..36886fc134 100644
  #endif
  }
 diff --git a/gpu/ipc/service/gpu_init.cc b/gpu/ipc/service/gpu_init.cc
-index 7f10f5469f..797a45ec4e 100644
+index 7f10f5469f..13a2da510b 100644
 --- a/gpu/ipc/service/gpu_init.cc
 +++ b/gpu/ipc/service/gpu_init.cc
-@@ -107,7 +107,7 @@
+@@ -9,11 +9,16 @@
+ #include <optional>
+ #include <string>
+ 
++#if defined(__linux__)
++#include <sys/stat.h>
++#include <sys/sysmacros.h>
++#endif
++
+ #include "base/android/android_info.h"
+ #include "base/base_paths.h"
+ #include "base/command_line.h"
+ #include "base/debug/dump_without_crashing.h"
+ #include "base/files/file_path.h"
+ #include "base/logging.h"
+ #include "base/memory/raw_ptr.h"
+ #include "base/metrics/field_trial_params.h"
+@@ -22,6 +28,8 @@
+ #include "base/strings/pattern.h"
+ #include "base/strings/string_number_conversions.h"
+ #include "base/strings/string_split.h"
++#include "base/strings/string_util.h"
++#include "base/strings/stringprintf.h"
+ #include "base/threading/scoped_blocking_call.h"
+ #include "base/trace_event/trace_event.h"
+ #include "build/build_config.h"
+@@ -62,6 +70,7 @@
+ #endif
+ #include "ui/ozone/public/drm_modifiers_filter.h"
+ #include "ui/ozone/public/ozone_platform.h"
++#include "ui/ozone/public/ozone_switches.h"
+ #include "ui/ozone/public/surface_factory_ozone.h"
+ #endif
+ 
+@@ -107,13 +115,67 @@
  #include "third_party/dawn/include/dawn/webgpu_cpp.h"  // nogncheck
  #endif
  
@@ -127,7 +165,79 @@ index 7f10f5469f..797a45ec4e 100644
  #include "gpu/command_buffer/service/drm_modifiers_filter_dawn.h"
  #endif
  
-@@ -972,11 +972,19 @@ bool GpuInit::InitializeAndStartSandbox(base::CommandLine* command_line,
+ namespace gpu {
+ 
+ namespace {
++#if BUILDFLAG(IS_LINUX) && BUILDFLAG(IS_OZONE)
++bool ConfigureNvidiaVaapiForSelectedRenderNode(
++    const base::CommandLine& command_line) {
++  const char* private_driver_path =
++      std::getenv("CHROMIUM_NVIDIA_VAAPI_DRIVER_PATH");
++  if (!private_driver_path || !*private_driver_path) {
++    return true;
++  }
++
++  const base::FilePath render_node =
++      command_line.GetSwitchValuePath(switches::kRenderNodeOverride);
++  struct stat node_stat{};
++  if (render_node.empty() ||
++      stat(render_node.value().c_str(), &node_stat) != 0 ||
++      !S_ISCHR(node_stat.st_mode)) {
++    LOG(ERROR) << "Cannot identify the compositor-selected DRM render node";
++    return false;
++  }
++
++  const base::FilePath vendor_path(
++      base::StringPrintf("/sys/dev/char/%u:%u/device/vendor",
++                         major(node_stat.st_rdev), minor(node_stat.st_rdev)));
++  std::string vendor;
++  if (!base::ReadFileToString(vendor_path, &vendor)) {
++    LOG(ERROR) << "Cannot read the compositor-selected GPU vendor";
++    return false;
++  }
++  if (!base::EqualsCaseInsensitiveASCII(
++          base::TrimWhitespaceASCII(vendor, base::TRIM_ALL), "0x10de")) {
++    return true;
++  }
++
++  const base::FilePath driver_directory(private_driver_path);
++  const base::FilePath driver_module =
++      driver_directory.Append("nvidia_drv_video.so");
++  struct stat driver_stat{};
++  if (stat(driver_module.value().c_str(), &driver_stat) != 0 ||
++      !S_ISREG(driver_stat.st_mode)) {
++    LOG(ERROR) << "The compositor-selected NVIDIA GPU requires the packaged "
++                  "VA-API driver at "
++               << driver_module.value();
++    return false;
++  }
++
++  if (setenv("LIBVA_DRIVER_NAME", "nvidia", /*overwrite=*/1) != 0 ||
++      setenv("LIBVA_DRIVERS_PATH", private_driver_path, /*overwrite=*/1) != 0 ||
++      setenv("NVD_BACKEND", "direct", /*overwrite=*/1) != 0) {
++    PLOG(ERROR) << "Failed to configure the NVIDIA VA-API driver";
++    return false;
++  }
++  return true;
++}
++#endif  // BUILDFLAG(IS_LINUX) && BUILDFLAG(IS_OZONE)
++
+ bool CollectGraphicsInfo(GPUInfo* gpu_info) {
+   DCHECK(gpu_info);
+   TRACE_EVENT("gpu,startup", "Collect Graphics Info");
+@@ -369,6 +428,11 @@ GpuInit::~GpuInit() {
+ bool GpuInit::InitializeAndStartSandbox(base::CommandLine* command_line,
+                                         const GpuPreferences& gpu_preferences) {
+   TRACE_EVENT("gpu,startup", "gpu::GpuInit::InitializeAndStartSandbox");
++#if BUILDFLAG(IS_LINUX) && BUILDFLAG(IS_OZONE)
++  if (!ConfigureNvidiaVaapiForSelectedRenderNode(*command_line)) {
++    return false;
++  }
++#endif
+ #if BUILDFLAG(IS_CHROMEOS)
+   LOG(WARNING) << "Starting gpu initialization.";
+ #endif  //  BUILDFLAG(IS_CHROMEOS)
+@@ -972,11 +1036,19 @@ bool GpuInit::InitializeAndStartSandbox(base::CommandLine* command_line,
    [[maybe_unused]] auto* factory =
        ui::OzonePlatform::GetInstance()->GetSurfaceFactoryOzone();
    bool filter_set = false;
@@ -149,7 +259,7 @@ index 7f10f5469f..797a45ec4e 100644
      DCHECK(vulkan_implementation_ &&
             vulkan_implementation_->GetVulkanInstance() &&
             vulkan_implementation_->GetVulkanInstance()->vk_instance() !=
-@@ -986,14 +994,6 @@ bool GpuInit::InitializeAndStartSandbox(base::CommandLine* command_line,
+@@ -986,14 +1050,10 @@ bool GpuInit::InitializeAndStartSandbox(base::CommandLine* command_line,
      filter_set = true;
    }
  #endif  // BUILDFLAG(ENABLE_VULKAN)
@@ -161,6 +271,10 @@ index 7f10f5469f..797a45ec4e 100644
 -    filter_set = true;
 -  }
 -#endif  // BUILDFLAG(SKIA_USE_DAWN) && BUILDFLAG(IS_CHROMEOS)
++  CHECK(!base::CommandLine::ForCurrentProcess()->HasSwitch(
++            switches::kRequireSkiaGraphiteDawnVulkan) ||
++        filter_set)
++      << "Graphite/Dawn/Vulkan requires a Dawn DRM-modifier filter";
  #endif  // BUILDFLAG(IS_OZONE)
  
    RecordUMA();

@@ -25,10 +25,24 @@ index 8e2d305163..655fcd55db 100644
  
      deps += [
 diff --git a/ui/ozone/platform/wayland/gpu/gbm_pixmap_wayland.cc b/ui/ozone/platform/wayland/gpu/gbm_pixmap_wayland.cc
-index 0f6c17b2f5..137f3739a3 100644
+index 0f6c17b2f5..8806e84a39 100644
 --- a/ui/ozone/platform/wayland/gpu/gbm_pixmap_wayland.cc
 +++ b/ui/ozone/platform/wayland/gpu/gbm_pixmap_wayland.cc
-@@ -23,8 +23,8 @@
+@@ -10,12 +10,13 @@
+ 
+ #include <memory>
+ 
++#include "base/command_line.h"
+ #include "base/containers/flat_set.h"
+ #include "base/files/platform_file.h"
+ #include "base/logging.h"
+ #include "base/no_destructor.h"
+ #include "base/posix/eintr_wrapper.h"
+ #include "base/trace_event/trace_event.h"
+ #include "ui/gfx/buffer_usage_util.h"
+ #include "ui/gfx/geometry/size_conversions.h"
+ #include "ui/gfx/linux/drm_util_linux.h"
+@@ -23,8 +25,8 @@
  #include "ui/gfx/linux/gbm_device.h"
  #include "ui/gfx/linux/gbm_util.h"
  #include "ui/gfx/native_pixmap_handle.h"
@@ -38,7 +52,38 @@ index 0f6c17b2f5..137f3739a3 100644
  #include "ui/ozone/public/native_pixmap_usage_utils.h"
  #include "ui/ozone/public/ozone_platform.h"
  
-@@ -201,17 +201,16 @@ bool GbmPixmapWayland::ScheduleOverlayPlane(
+@@ -59,10 +61,20 @@ bool GbmPixmapWayland::InitializeBuffer(
+   const uint32_t fourcc_format = GetFourCCFormatFromSharedImageFormat(format);
+   const uint32_t gbm_flags = ui::NativePixmapUsageToGbmFlags(usage);
+   auto modifiers = buffer_manager_->GetModifiersForFormat(format);
++  const bool require_explicit_modifier =
++      usage.Has(NativePixmapUsage::kScanout) &&
++      base::CommandLine::ForCurrentProcess()->HasSwitch(
++          "require-skia-graphite-dawn-vulkan");
+ 
+   // Create buffer object without format modifiers unless they are explicitly
+   // advertised by the Wayland compositor, via linux-dmabuf protocol.
+   if (modifiers.empty()) {
++    if (require_explicit_modifier) {
++      LOG(ERROR) << "Graphite/Dawn/Vulkan has no explicit shared DRM modifier "
++                    "for format="
++                 << format.ToString();
++      return false;
++    }
+     gbm_bo_ = gbm_device->CreateBuffer(fourcc_format, size, gbm_flags);
+   } else {
+     // When buffer |usage| implies on GBM_BO_USE_LINEAR, pass in
+@@ -86,7 +97,8 @@ bool GbmPixmapWayland::InitializeBuffer(
+     // rendering, while wlroots would announce MOD_LINEAR and MOD_INVALID).
+     // In such cases gbm_bo allocation may fail, where we should fallback to
+     // creation without modifiers, and leave the choices to driver.
+-    if (!gbm_bo_ && buffer_manager_->AllowsImplicitModifierForFormat(format)) {
++    if (!gbm_bo_ && !require_explicit_modifier &&
++        buffer_manager_->AllowsImplicitModifierForFormat(format)) {
+       gbm_bo_ = gbm_device->CreateBuffer(fourcc_format, size, gbm_flags);
+     }
+   }
+@@ -201,17 +213,16 @@ bool GbmPixmapWayland::ScheduleOverlayPlane(
    auto* surface = buffer_manager_->GetSurface(widget);
    // This must never be hit.
    DCHECK(surface);
@@ -844,7 +889,7 @@ new file mode 100644
 index 0000000000..880e4815f4
 --- /dev/null
 +++ b/ui/ozone/platform/wayland/gpu/wayland_buffer_queue_presenter.cc
-@@ -0,0 +1,458 @@
+@@ -0,0 +1,464 @@
 +// Copyright 2018 The Chromium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -990,6 +1035,12 @@ index 0000000000..880e4815f4
 +    scoped_refptr<gfx::NativePixmap> image,
 +    std::unique_ptr<gfx::GpuFence> acquire_fence,
 +    const gfx::OverlayPlaneData& overlay_plane_data) {
++  // A presenter failure is terminal. Refuse ownership of any additional
++  // images or fences so callers can unwind their access immediately.
++  if (!last_swap_buffers_result_) {
++    return false;
++  }
++
 +  auto* frame = unsubmitted_frames_.back().get();
 +  // There are multiple scheduling submissions for the same frame. If the
 +  // previous schedule failed, there is no reason to continue.

@@ -1,4 +1,4 @@
-# Nucleus Browser
+# Nucleus Browser Workstream
 
 ## Project invariant
 
@@ -46,20 +46,21 @@ Nucleus Browser is also the on-screen reference client for the patched
 Graphite/Dawn/Vulkan Chromium stack. It does not replace Noctalia's embedded CEF
 panel and does not share CEF's offscreen buffer protocol.
 
-Visual and product branding is deliberately deferred until after the browser
-runtime passes its architectural and functional acceptance gates. Custom
-icons, product strings, visual identity, and branding-resource replacement are
-low-priority polish. They do not block renderer, Wayland, media, sandbox,
-profile, packaging, or performance work.
+The external application is named Nucleus Browser. This identity is limited to
+the launcher, desktop entry/application ID, install paths, and independent
+profile/cache roots. Chromium's generated icon remains the application icon
+until a dedicated Nucleus Browser icon exists. The engine remains an unbranded
+Chromium build (`is_chrome_branded=false`) with upstream internal-page strings,
+resources, terminology, and browser UI.
 
 ## Why the browser needs a new presentation path
 
-The current patches are sufficient for CEF's offscreen rendering path:
+The original CEF patches were sufficient only for CEF's offscreen rendering path:
 Graphite/Dawn/Vulkan renders into an exportable DMA-BUF ring, CEF publishes
-those buffers, and Noctalia imports them. They are not sufficient for a normal
-Chromium window.
+those buffers, and Noctalia imports them. The browser patches described below
+add the distinct on-screen path required by a normal Chromium window.
 
-Chromium's current Linux `InitializeForDawn()` path supports offscreen output
+Upstream Chromium's Linux `InitializeForDawn()` path supports offscreen output
 and an X11 fallback. The Wayland-only case reaches `NOTREACHED()`. The adjacent
 source TODO describes creating a Vulkan swapchain, but direct swapchain
 presentation is not the correct Linux/Wayland architecture for Chromium:
@@ -95,7 +96,7 @@ overlay usages. Dawn renders directly into that image.
 `SkiaOutputDeviceBufferQueue` remains the buffer-queue owner. Its `BeginPaint()`
 and `EndPaint()` methods are intentionally unreachable because Viz renders the
 root render pass through SharedImages and schedules that pass as the root
-overlay. Nucleus Browser does not add a second surface-backed Dawn output
+overlay. Chromium browser does not add a second surface-backed Dawn output
 device and does not use `SkiaOutputDeviceDawn` with a direct Wayland
 `wgpu::Surface`.
 
@@ -198,11 +199,18 @@ device to a Vulkan physical-device UUID and requires Dawn, native Vulkan,
 ANGLE's Vulkan backend, video decode, and DMA-BUF allocation to use the same
 adapter.
 
-The existing CEF-specific `cef-vulkan-device-uuid` child-process switch becomes
-an internal Chromium-wide GPU-selection value with a backend-neutral name. It
-is populated by browser-process Ozone discovery and propagated through
-Chromium's normal child command line. It is not a user-selectable compatibility
-mode.
+The shared `vulkan-device-uuid` child-process switch is an internal
+Chromium-wide GPU-selection value. CEF supplies it from Noctalia's application
+device; the standalone browser can select directly from Ozone's compositor
+render node. Both values propagate through Chromium's normal child command
+line. Neither is a user-selectable compatibility mode.
+
+The browser process retains the file descriptor supplied with Wayland's
+DMA-BUF `main_device` feedback and uses that exact node for
+linux-drm-syncobj ioctls. It does not initialize explicit synchronization from
+`DrmRenderNodePathFinder` before compositor feedback, because that heuristic
+can select a different device on hybrid-GPU systems even when Dawn and GBM are
+correctly pinned.
 
 ANGLE remains available only where Chromium needs its Vulkan implementation for
 WebGL or media interop. It is not the Viz compositor renderer. The browser's
@@ -210,7 +218,7 @@ compositor is Graphite/Dawn/Vulkan.
 
 ### Hardware video decode
 
-Nucleus Browser reuses the VA-API, SharedImage, and Dawn Vulkan contract already
+Chromium browser reuses the VA-API, SharedImage, and Dawn Vulkan contract already
 proven by Noctalia's CEF runtime. This is shared Chromium infrastructure, not a
 CEF OSR feature:
 
@@ -244,12 +252,33 @@ strides, modifiers, and allocation size. Dawn:
   the external-memory properties;
 - supports both 8-bit NV12 and 10-bit P010 sampling.
 
-The browser launcher resolves the private driver's current revision, sets
-`LIBVA_DRIVER_NAME=nvidia`, `LIBVA_DRIVERS_PATH`, and `NVD_BACKEND=direct`, and
-derives `NVD_DRM_DEVICE` from the compositor-selected render node. A hard-coded
-render node or CUDA index is not permitted. The driver's DRM-to-CUDA PCI
+This is not based on the obsolete assumption that CUDA cannot export DMA-BUF
+memory, nor does it copy decoded frames through system memory. CUDA can export
+eligible CUDA-owned allocations, but the public NVDEC API does not directly
+export its traditional mapped output surfaces as DMA-BUFs. The private NVIDIA
+driver therefore performs one GPU-to-GPU copy from the mapped NVDEC surface
+into its packed, DMA-BUF-exportable block-linear allocation. Chromium, Dawn,
+Graphite, and Wayland then share that same allocation without another video
+copy. End-to-end “zero-copy decode” would require a documented way to make an
+NVDEC output allocation directly DMA-BUF-exportable; it is not claimed by this
+plan.
+
+The browser launcher only publishes the location of the installed private
+NVIDIA driver. That private path is inherited through Chromium's zygote. At the
+start of GPU-child initialization, before driver loading or sandbox entry,
+Chromium identifies the vendor of Wayland's compositor-selected render node.
+Only an NVIDIA GPU child receives `LIBVA_DRIVER_NAME=nvidia`,
+`LIBVA_DRIVERS_PATH`, and `NVD_BACKEND=direct`; Intel and AMD GPU children
+retain normal system-driver discovery. Chromium opens that same render node and
+supplies its DRM file descriptor to libva, so the launcher does not guess a
+node, set `NVD_DRM_DEVICE`, or select a CUDA index. The driver's DRM-to-CUDA PCI
 matching, Dawn adapter, ANGLE adapter, GBM allocation, and Wayland
 `main_device` must identify the same physical GPU.
+
+The GPU child also verifies that the selected private directory contains
+`nvidia_drv_video.so` before sandbox entry. An NVIDIA main device cannot
+silently fall through to a distribution module, while Intel and AMD retain
+Chromium's normal VA-API driver checks and system discovery.
 
 Decoder completion, Dawn access, overlay access, and compositor release are
 one explicit fence chain. A decoded surface cannot return to VA-API while Dawn
@@ -321,18 +350,17 @@ The final implementation is divided by existing Chromium subsystem ownership.
 - `chrome/installer/linux/`
 - workspace `chromium/` build and packaging scripts
 
-Functional product identity may also require narrow changes in
-`chrome/common/chrome_constants.*`, but custom strings and resources under
-`chrome/app/` belong to the deferred branding phase rather than the browser
-runtime implementation.
+No source-level product-identity fork is needed. The packaging layer supplies
+the narrow external Nucleus Browser identity while installing Chromium's
+generated icon and internal resources unchanged.
 
 Exact file additions can follow upstream source movement at the pinned Chromium
 revision, but subsystem ownership and API direction do not change.
 
 ## Current implementation status
 
-As of 2026-07-19, the shared substrate and the first browser source slices are
-persisted in the workspace:
+As of 2026-07-19, all planned source, patch-stack, product, packaging, and
+source-level test coding is persisted in the workspace:
 
 - `chromium/build.sh` is the single product entry point for CEF, Nucleus
   Browser, or both;
@@ -343,21 +371,38 @@ persisted in the workspace:
 - Chromium-wide patches live in `chromium/patches/common/`, nested Dawn work in
   `chromium/patches/dawn/`, CEF-only behavior in `cef/patches/`, and the
   browser presenter work in `chromium/patches/browser/`;
-- switching products reverses the exact previously applied product layer
-  before applying the requested layer, so browser development cannot leak
-  into a CEF build;
-- the browser layer preserves the backend-neutral Wayland presenter, the Ozone
-  Viz adapter, and the initial Graphite/Dawn presentable-SharedImage hookup;
-- shared Chromium and Dawn patches preserve the working Graphite/Dawn/Vulkan
-  VA-API path, packed NV12/P010 import, plane-layout validation, and
+- every output is generated from the same cumulative common, CEF, browser, and
+  Dawn source patch stack; subsystem ownership limits which targets consume an
+  API without creating divergent source revisions;
+- the browser GN output sets `enable_cef=false`, and a CEF-owned guard excludes
+  the upstream OSR software proxy from that output without removing CEF patches
+  from the shared revision;
+- the browser layer contains only the backend-neutral Wayland presenter, Ozone
+  Viz adapter, explicit-sync requirement, lifecycle failure handling, and
+  on-screen `InitializeForDawn()` path;
+- shared Chromium and Dawn patches contain the Graphite/Dawn Ozone SharedImage
+  allocation and DRM-modifier path together with the working Vulkan VA-API
+  path, packed NV12/P010 import, plane-layout validation, and
   dedicated-allocation handling already accepted in Noctalia's CEF runtime;
-- the complete browser patch stack applies to the pinned source, and GN
-  generation succeeds in its independent official/PGO/ThinLTO output;
-- the focused Ozone, Wayland, and Viz targets compile in that output;
-- five Wayland presenter prerequisite/lifecycle tests and four GL-independent
-  Viz adapter tests pass. The Viz adapter has a narrow test executable so these
-  API-neutral tests do not depend on the full Viz suite's GL bootstrap or
-  reintroduce SwiftShader into the native-only browser build.
+- Graphite/Dawn/Vulkan is established in the Linux product command line before
+  GPU-process launch, incompatible user overrides are rejected, renderer
+  fallback modes are empty, and SwiftShader is absent from the build and
+  installed runtime;
+- the Wayland compositor's DMA-BUF `main_device` pins Dawn, native Vulkan,
+  ANGLE/Vulkan, GBM allocation, and VA-API to one physical GPU for the lifetime
+  of a browser GPU epoch;
+- the native presenter advertises 565, 4444, 8-bit, 10-bit, and F16 Skia
+  formats and carries buffer color space, HDR metadata, damage, scale, crop,
+  transform, and presentation feedback through Chromium's existing Wayland
+  transaction;
+- source-level tests cover presenter prerequisites and teardown, callback
+  exactly-once behavior, stale responses, atomic scheduling failures,
+  access-commit rollback/idempotence, color capabilities, strict renderer
+  selection, and Graphite sampling of external NV12/P010 planes;
+- `chromium/install-browser.sh`, the external-only Nucleus Browser launcher and
+  desktop identity, and `chromium/diagnose-browser.sh` are ready to consume the
+  final optimized browser output. They retain Chromium's generated icon and
+  internal branding.
 
 The niri fork now wires Smithay's existing
 `wp_linux_drm_syncobj_manager_v1` implementation into its TTY backend. It
@@ -371,14 +416,15 @@ that niri revision, restarting the compositor session, and verifying the global
 is advertised on the active DRM device.
 
 This remains a hard compositor prerequisite, not a reason to add an
-implicit-sync or CPU-waiting fallback to Nucleus Browser. The browser must
+implicit-sync or CPU-waiting fallback to Chromium browser. The browser must
 continue to fail with a named diagnostic when the protocol is absent.
 
-This is development groundwork, not browser runtime acceptance. The initial
-Phase 1 and Phase 2 slices now have compile and focused-test coverage, but their
-remaining fence/plane cases and Phases 3–9 still need to complete, integrate,
-package, and accept the real on-screen product. The proven CEF distribution
-and Noctalia runtime remain authoritative while that work proceeds.
+This is coding completion, not runtime acceptance. Earlier presenter slices had
+focused compile/test evidence, but the final cumulative patch revision has
+deliberately not been regenerated or built during this completion pass. One
+final optimized build, focused test run, install, validation run, and live
+acceptance pass remain; those are verification of the code below, not
+additional implementation phases.
 
 ## Sequential implementation
 
@@ -413,7 +459,7 @@ ozone_platform_x11=false
 
 The CEF output retains `use_allocator_shim=false` and
 `enable_backup_ref_ptr_support=false` because `libcef.so` is embedded in
-Noctalia's process. The Nucleus Browser output does not inherit those CEF
+Noctalia's process. The Chromium browser output does not inherit those CEF
 overrides: it uses Chromium's official standalone allocator shim,
 PartitionAlloc integration, and BackupRefPtr configuration. Both outputs
 hard-enable the existing Graphite, Dawn, Vulkan, and DMA-BUF build requirements
@@ -422,12 +468,16 @@ native Vulkan is mandatory. Expensive DCHECKs stay out of release artifacts,
 while validation-layer support remains buildable for explicit acceptance runs
 and is disabled during ordinary runtime.
 
-One build entry point generates and builds both fixed outputs. It does not
+One build entry point applies the complete cumulative source stack, then
+generates and builds both fixed outputs. It does not
 offer product profiles or a matrix of feature switches. The outputs share the
 source checkout, patch application, depot tools, downloaded dependencies, PGO
 profiles, and compiler cache, but not GN object files whose compile-time
-contracts differ. CEF packaging and Nucleus Browser packaging consume their
-respective outputs.
+contracts differ. CEF packaging and Chromium browser packaging consume their
+respective outputs. The browser output sets `enable_cef=false`: both products
+still compile from the same cumulatively patched source revision, while
+CEF-only behavior and OSR proxy sources remain absent from the standalone
+browser binary.
 
 The private NVIDIA VA-API driver is not another Chromium build product.
 Chromium and CEF share its pinned runtime contract and deployment convention,
@@ -448,7 +498,7 @@ CEF patch, while the buffer presenter remains entirely generic.
 
 Phase 0 lands with:
 
-- one reproducible command producing optimized CEF and Nucleus Browser
+- one reproducible command producing optimized CEF and Chromium browser
   outputs;
 - an independently generated Chromium browser output ready for the focused
   presenter implementation and test phases;
@@ -471,7 +521,7 @@ only by an explicit acquire fence or a scheduling failure.
 `GbmSurfacelessWayland` delegates to the extracted presenter and supplies only
 the legacy EGL-specific behavior required by existing non-Nucleus builds. This
 keeps upstream GL behavior on the shared state machine without making it part
-of Nucleus Browser.
+of Chromium browser.
 
 The Wayland presenter explicitly defines:
 
@@ -514,7 +564,7 @@ of requiring a `gl::Presenter` for every accelerated Linux output. The Wayland
 implementation is selected independently of GL initialization.
 
 The existing `OutputPresenterGL` keeps non-Ozone platform responsibilities.
-Nucleus Browser's Wayland path instantiates only `OutputPresenterOzone`.
+Chromium browser's Wayland path instantiates only `OutputPresenterOzone`.
 
 Phase 2 lands with:
 
@@ -589,7 +639,7 @@ CreateOzonePresenter()
 This is deliberately not the `SkiaOutputDeviceDawn` WSI path. Dawn supplies the
 Graphite renderer and SharedImage access; Ozone supplies window presentation.
 
-For Nucleus Browser, initialization requires:
+For Chromium browser, initialization requires:
 
 - Graphite selected as Skia's renderer;
 - Dawn selected as Graphite's backend;
@@ -599,12 +649,15 @@ For Nucleus Browser, initialization requires:
 - compositor DMA-BUF feedback;
 - explicit synchronization.
 
-The X11 fallback, Ganesh paths, GL compositor path, SwiftShader compositor, and
-software output device are not compiled into the Nucleus Browser product.
-Renderer initialization failure exits with a named diagnostic containing the
-failed requirement.
+The X11 Ozone backend and SwiftShader are not built. Chromium still contains
+upstream Ganesh/GL/software implementation code used by other targets and
+tests, and ANGLE's Vulkan frontend libraries retain their historical EGL/GLES
+names for WebGL compatibility. The product command line and GPU-mode logic make
+those implementations unreachable as browser compositor fallbacks. Renderer
+initialization failure exits with a named diagnostic containing the failed
+requirement.
 
-Phase 4 lands with a real Nucleus Browser window that renders:
+Phase 4 lands with a real Chromium browser window that renders:
 
 - opaque Chromium UI;
 - transparent content;
@@ -711,8 +764,8 @@ The selected identity is propagated to:
 - ANGLE's Vulkan physical-device selection;
 - GBM allocation;
 - video decode/encode interop;
-- the private NVIDIA VA-API driver's `NVD_DRM_DEVICE` and DRM-to-CUDA PCI
-  selection;
+- the DRM file descriptor supplied to the private NVIDIA VA-API driver and its
+  DRM-to-CUDA PCI selection;
 - SharedImage import/export validation.
 
 Startup rejects split-GPU configurations that cannot import and present without
@@ -728,11 +781,13 @@ Color management then carries:
 - correct sRGB transfer behavior;
 - premultiplied-alpha semantics.
 
-Phase 7 lands with tests for:
+Phase 7 completes the source contract. The final hardware acceptance pass
+exercises:
 
 - matching and mismatching Vulkan UUIDs;
 - hybrid-GPU systems;
-- compositor `main_device` changes;
+- startup selection after a compositor `main_device` change and browser-process
+  restart;
 - BGRA/RGBA channel order;
 - sRGB, Display P3, and HDR metadata propagation;
 - video decode on the same adapter as presentation;
@@ -741,14 +796,14 @@ Phase 7 lands with tests for:
 
 ### Phase 8 — Create the functional Nucleus Browser product
 
-Turn the working `chrome` target into the Nucleus Browser product.
+Turn the working `chrome` target into Nucleus Browser.
 
 The product lands with:
 
 - executable name `nucleus-browser`;
-- a stable Wayland desktop ID and functional `.desktop` file;
-- a private profile root at `~/.config/nucleus-browser`;
-- a private cache root at `~/.cache/nucleus-browser`;
+- Wayland desktop ID and desktop filename `dev.nucleus.Browser`;
+- profile root at `~/.config/nucleus-browser`;
+- cache root at `~/.cache/nucleus-browser`;
 - browser, GPU, renderer, utility, crash handler, and sandbox helper artifacts;
 - an installed SUID or user-namespace sandbox configuration;
 - portal-native file chooser, notifications, screen capture, and secret-store
@@ -758,29 +813,33 @@ The product lands with:
 - persistent cookies, storage, service workers, HTTP cache, shader cache, and
   Dawn pipeline cache.
 
-On NVIDIA systems, the installed launcher discovers the revisioned private
-VA-API module, selects it without replacing the system driver, and passes the
-compositor-selected render node through `NVD_DRM_DEVICE`. Missing or invalid
-private-driver state produces a named hardware-video diagnostic. The package
-records the expected driver revision and deployment instructions but does not
-silently install over a distribution-owned `nvidia_drv_video.so`.
+The installed launcher discovers the private VA-API module without selecting a
+GPU. Its private path survives Chromium's zygote boundary, and the GPU child
+selects the module before sandbox entry only after Wayland's `main_device`
+resolves to NVIDIA. It then opens that render node and supplies its DRM file
+descriptor to libva. The launcher never guesses a node or sets
+`NVD_DRM_DEVICE`. Missing private-driver state produces a named hardware-video
+warning when the NVIDIA kernel driver is present and is reported by the
+diagnostic script. The browser package never installs over a
+distribution-owned `nvidia_drv_video.so`. Intel and AMD main devices retain
+normal system VA-API discovery, including on hybrid-GPU systems where an
+NVIDIA kernel module is also loaded.
 
-Phase 8 may retain legally usable upstream or placeholder visual resources and
-generic product strings. It does not spend time replacing icons, polishing
-product naming, theming Chromium UI, or completing a visual identity. The
-desktop ID and profile paths are established now because portals, application
-association, process behavior, and state isolation depend on them; they are
-functional identifiers rather than a branding milestone.
+Phase 8 names the installed desktop application Nucleus Browser while retaining
+Chromium's generated icon. It does not fork Chromium's internal strings,
+internal pages, visual resources, or browser UI. `CHROME_DESKTOP` supplies the
+desktop filename and native Wayland app ID at launch, so no product-name patch
+is added to Chromium source.
 
 Graphite/Dawn/Vulkan/Wayland is the product default in source. Users do not need
-launch flags to select it. A single diagnostic page records the active renderer,
-adapter UUID, DRM node, buffer formats/modifiers, explicit-sync protocol, and
-presentation feedback. It reports facts; it does not negotiate alternate
-backends.
+launch flags to select it. The installed diagnostic script verifies static
+runtime prerequisites, while Chromium's upstream `chrome://gpu` and
+`chrome://media-internals` pages report live renderer, adapter, and media
+facts. Diagnostics report facts; they do not negotiate alternate backends.
 
 Phase 8 lands with:
 
-- independent Nucleus Browser and Noctalia CEF profiles;
+- the Nucleus Browser profile remains independent from Noctalia's CEF profile;
 - working sign-in persistence;
 - browser history, downloads, clipboard, IME, accessibility, password storage,
   audio, media keys, and screen capture;
@@ -795,7 +854,8 @@ Run the complete acceptance matrix against release and validation builds.
 
 - the optimized build produces both CEF and Nucleus Browser;
 - official-build optimization, PGO, V8 builtins PGO, and ThinLTO remain active;
-- the browser contains no X11 Ozone platform and no GL/Ganesh compositor path;
+- the browser contains no X11 Ozone platform or SwiftShader and cannot select a
+  GL/Ganesh/software compositor fallback;
 - the installed runtime finds all resources, locales, sandbox, codecs, and
   Widevine files through relative product paths.
 
@@ -821,8 +881,9 @@ Run the complete acceptance matrix against release and validation builds.
 
 - Apple Music signs in, navigates, animates, and plays AAC continuously;
 - Widevine playback succeeds;
-- H.264, HEVC, VP9, and AV1 exercise every profile supported by the installed
-  VA-API driver, including encrypted variants where the CDM permits them;
+- H.264, HEVC, VP9, and AV1 exercise every supported 4:2:0 profile whose
+  negotiated decoded output is NV12 or P010, including encrypted variants
+  where the CDM permits them;
 - both NV12 and P010 decoded outputs import and render correctly;
 - WebGL reports ANGLE Vulkan on the selected adapter;
 - WebGPU reports Dawn Vulkan on the same adapter;
@@ -850,28 +911,18 @@ Run the complete acceptance matrix against release and validation builds.
   change color.
 
 After these gates pass, Nucleus Browser becomes the authoritative on-screen
-Graphite/Dawn/Vulkan Chromium client. The direct-Dawn-Wayland-WSI experiment,
-in-process-GPU probes, runtime renderer-selection flags, redundant diagnostics,
-and any temporary software paths are removed.
+Graphite/Dawn/Vulkan Chromium client. The production tree contains no
+direct-Dawn-Wayland-WSI experiment, in-process-GPU probe, launcher renderer
+flags, or temporary software path.
 
-### Phase 10 — Apply final branding and product polish
+### Product identity
 
-This phase is deferred and low priority. Begin it only after Phase 9 establishes
-the browser as the authoritative, accepted on-screen Chromium client.
-
-The phase may then add:
-
-- final application display name and user-facing product strings;
-- Nucleus icons at every required Chromium and Linux desktop size;
-- Chromium-license- and trademark-compliant branding resources;
-- final About/version presentation;
-- optional UI color, theme, and visual-identity polish;
-- packaging artwork and other non-functional presentation assets.
-
-Branding must not change the established executable name, desktop ID, profile
-roots, sandbox layout, renderer selection, or runtime behavior. Branding
-review is not part of the rendering, Wayland, media, synchronization,
-performance, or browser-authority acceptance gates.
+Nucleus Browser is an external packaging identity, not a fork of Chromium's
+branding machinery. Its GN configuration explicitly sets
+`is_chrome_branded=false`. The launcher, desktop entry, Wayland app ID,
+installation paths, profile, and cache use Nucleus Browser names. Chromium's
+generated application icon is installed unchanged, and Chromium's internal
+strings, resources, pages, and terminology remain upstream.
 
 ## Patch-stack result
 
@@ -887,10 +938,11 @@ The final patch stack has three architectural layers:
    CEF callbacks, external BeginFrame scheduling, device scale, and OSR input
    behavior.
 
-Generic source files contain no “CEF” or “Noctalia” terminology. The CEF patch
-does not own generic Ozone presentation code. The browser does not compile CEF
-OSR classes. Patch files are consolidated so neighboring edits in a source file
-belong to one patch.
+Reusable common, browser, and Dawn patches contain no “CEF” or “Noctalia”
+terminology. CEF-owned guards in Chromium files remain in the CEF layer; that
+layer does not own generic Ozone presentation code. With `enable_cef=false`,
+the browser does not compile CEF OSR classes. Patch files are consolidated so
+neighboring edits in a source file belong to one patch.
 
 ## Explicit non-goals
 
@@ -900,8 +952,12 @@ belong to one patch.
 - Using `wgpu::SurfaceSourceWaylandSurface` for Chromium's production window.
 - Running Chromium with `--in-process-gpu`.
 - Supporting X11 or XWayland.
-- Retaining GL, Ganesh, SwiftShader, or software-compositor fallbacks.
+- Retaining GL, Ganesh, SwiftShader, or software rendering as Viz compositor
+  fallbacks. ANGLE's Vulkan implementation remains available for WebGL.
 - Adding a second VMA allocator or Volk.
+- Advertising a zero-copy hardware-video path for 4:2:2 or 4:4:4 decoded
+  surfaces before Chromium, Dawn, Vulkan, and the installed VA-API driver share
+  a tested format contract beyond NV12/P010.
 - Replacing Chromium's browser UI with Swift or React Native.
 - Building an auto-updater before the browser runtime is accepted.
 - Sharing a profile directory with Noctalia's CEF instance.
@@ -914,4 +970,5 @@ renders every Chromium and web-content surface through
 Graphite/Dawn/Vulkan-backed DMA-BUFs, presents them through the browser-process
 Ozone Wayland connection with explicit synchronization, and passes the release,
 validation, media, multi-monitor, 120 Hz, and long-running Apple Music gates
-without X11, GL, Ganesh, CEF OSR, CPU copies, or renderer fallbacks.
+without X11, a GL/Ganesh/software compositor fallback, CEF OSR, CPU copies, or
+renderer fallback.

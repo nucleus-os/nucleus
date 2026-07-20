@@ -5,16 +5,7 @@ diff --git a/components/viz/service/BUILD.gn b/components/viz/service/BUILD.gn
 index 3e9bec8..590e04e 100644
 --- a/components/viz/service/BUILD.gn
 +++ b/components/viz/service/BUILD.gn
-@@ -54,6 +54,8 @@ static_library("viz_debugger") {
-
- viz_component("service") {
-   sources = [
-+    "//cef/libcef/browser/osr/software_output_device_proxy.cc",
-+    "//cef/libcef/browser/osr/software_output_device_proxy.h",
-     "display/aggregated_frame.cc",
-     "display/aggregated_frame.h",
-     "display/bsp_tree.cc",
-@@ -151,6 +153,9 @@ viz_component("service") {
+@@ -151,6 +151,9 @@ viz_component("service") {
      "display_embedder/compositor_gpu_thread.h",
      "display_embedder/image_context_impl.cc",
      "display_embedder/image_context_impl.h",
@@ -24,7 +15,7 @@ index 3e9bec8..590e04e 100644
      "display_embedder/output_presenter.h",
      "display_embedder/output_presenter_gl.cc",
      "display_embedder/output_presenter_gl.h",
-@@ -165,6 +170,8 @@ viz_component("service") {
+@@ -165,6 +168,8 @@ viz_component("service") {
      "display_embedder/skia_output_device_gl.h",
      "display_embedder/skia_output_device_offscreen.cc",
      "display_embedder/skia_output_device_offscreen.h",
@@ -33,15 +24,6 @@ index 3e9bec8..590e04e 100644
      "display_embedder/skia_output_device_webview.cc",
      "display_embedder/skia_output_device_webview.h",
      "display_embedder/skia_output_surface_dependency.h",
-@@ -284,8 +291,6 @@ viz_component("service") {
-     "transitions/surface_animation_manager.h",
-     "transitions/transferable_resource_tracker.cc",
-     "transitions/transferable_resource_tracker.h",
--    "//cef/libcef/browser/osr/software_output_device_proxy.cc",
--    "//cef/libcef/browser/osr/software_output_device_proxy.h",
-   ]
-
-   defines = [ "VIZ_SERVICE_IMPLEMENTATION" ]
 @@ -636,6 +641,7 @@ viz_source_set("unit_tests") {
      "display/viz_pixel_test.cc",
      "display/viz_pixel_test.h",
@@ -1704,10 +1686,27 @@ index 81612003ac..f5d07c4c04 100644
      // When CompoundImageBacking wraps a single backing, use the client's global
      // Mailbox GUID instead of sub-backing GUID. This ensures correct effective
 diff --git a/gpu/command_buffer/service/shared_image/dawn_ozone_image_representation.cc b/gpu/command_buffer/service/shared_image/dawn_ozone_image_representation.cc
-index 89313c57f0..de51a9cd59 100644
+index 89313c57f0..21dc869105 100644
 --- a/gpu/command_buffer/service/shared_image/dawn_ozone_image_representation.cc
 +++ b/gpu/command_buffer/service/shared_image/dawn_ozone_image_representation.cc
-@@ -57,17 +57,6 @@ wgpu::Texture DawnOzoneImageRepresentation::BeginAccess(
+@@ -4,6 +4,8 @@
+ 
+ #include "gpu/command_buffer/service/shared_image/dawn_ozone_image_representation.h"
+ 
++#include <optional>
++
+ #include <dawn/native/VulkanBackend.h>
+ #include <sync/sync.h>
+ #include <vulkan/vulkan.h>
+@@ -11,6 +11,7 @@
+ #include "base/logging.h"
+ #include "base/memory/ref_counted.h"
+ #include "base/memory/scoped_refptr.h"
++#include "base/posix/eintr_wrapper.h"
+ #include "gpu/command_buffer/service/memory_tracking.h"
+ #include "gpu/command_buffer/service/shared_image/ozone_image_backing.h"
+ #include "gpu/command_buffer/service/shared_image/shared_image_backing.h"
+@@ -57,17 +58,6 @@ wgpu::Texture DawnOzoneImageRepresentation::BeginAccess(
      return nullptr;
    }
  
@@ -1725,7 +1724,7 @@ index 89313c57f0..de51a9cd59 100644
    is_readonly_ =
        (usage & kWriteUsage) == 0 && (internal_usage & kWriteUsage) == 0;
    if (is_readonly_ && !IsCleared()) {
-@@ -77,21 +66,51 @@ wgpu::Texture DawnOzoneImageRepresentation::BeginAccess(
+@@ -77,21 +67,51 @@ wgpu::Texture DawnOzoneImageRepresentation::BeginAccess(
      return nullptr;
    }
  
@@ -1785,7 +1784,19 @@ index 89313c57f0..de51a9cd59 100644
    begin_access_desc.nextInChain = &begin_layout;
  
    // If the semaphore from BeginWrite is valid then pass it to
-@@ -150,15 +169,10 @@ wgpu::Texture DawnOzoneImageRepresentation::BeginAccess(
+@@ -112,6 +132,11 @@ wgpu::Texture DawnOzoneImageRepresentation::BeginAccess(
+       wgpu::SharedFenceDescriptor fence_desc;
+       fence_desc.nextInChain = &sync_fd_desc;
+       shared_fences[i] = device_.ImportSharedFence(&fence_desc);
++      if (!shared_fences[i]) {
++        LOG(ERROR) << "Failed to import a shared-image acquire fence";
++        backing_access_.reset();
++        return nullptr;
++      }
+       // Pass 1 as the signaled value for the binary semaphore
+       // (Dawn's SharedTextureMemoryVk verifies that this is the value passed).
+       const uint64_t kSignaledValue = 1;
+@@ -150,15 +175,10 @@ wgpu::Texture DawnOzoneImageRepresentation::BeginAccess(
    std::vector<wgpu::SharedTextureMemoryDmaBufPlane> planes(
        pixmap_->GetNumberOfPlanes());
    dmaBufDesc.planeCount = pixmap_->GetNumberOfPlanes();
@@ -1802,8 +1813,23 @@ index 89313c57f0..de51a9cd59 100644
      planes[plane_idx].stride = pixmap_->GetDmaBufPitch(plane_idx);
      planes[plane_idx].offset = pixmap_->GetDmaBufOffset(plane_idx);
    }
-@@ -176,17 +190,13 @@ wgpu::Texture DawnOzoneImageRepresentation::BeginAccess(
+@@ -171,22 +191,28 @@ wgpu::Texture DawnOzoneImageRepresentation::BeginAccess(
+ 
+   if (!shared_texture_memory_) {
+     shared_texture_memory_ = device_.ImportSharedTextureMemory(&desc);
++    if (!shared_texture_memory_) {
++      LOG(ERROR) << "Failed to import shared-image DMA-BUF memory";
++      backing_access_.reset();
++      return nullptr;
++    }
+   }
+ 
    texture_ = shared_texture_memory_.CreateTexture(&texture_descriptor);
++  if (!texture_) {
++    LOG(ERROR) << "Failed to create a texture from shared-image DMA-BUF memory";
++    backing_access_.reset();
++    return nullptr;
++  }
    if (!shared_texture_memory_.BeginAccess(texture_, &begin_access_desc)) {
      LOG(ERROR) << "Failed to begin access for shared image.";
 -    // End the access on the backing and restore its fence, as Dawn did not
@@ -1824,16 +1850,30 @@ index 89313c57f0..de51a9cd59 100644
    return texture_;
  }
  
-@@ -200,6 +210,8 @@ void DawnOzoneImageRepresentation::EndAccess() {
+@@ -194,14 +220,20 @@ void DawnOzoneImageRepresentation::EndAccess() {
+   if (!texture_) {
+     return;
+   }
++  auto invalidate_access = [this]() {
++    backing_access_->InvalidateAfterAcquire();
++    backing_access_.reset();
++    texture_.Destroy();
++    texture_ = nullptr;
++  };
++
+   wgpu::SharedTextureMemoryEndAccessState end_access_desc = {};
+   wgpu::SharedTextureMemoryVkImageLayoutEndState end_layout{};
+   end_access_desc.nextInChain = &end_layout;
  
    if (!shared_texture_memory_.EndAccess(texture_, &end_access_desc)) {
      LOG(ERROR) << "Failed to end access for DawnOzoneImageRepresentation";
-+    backing_access_->InvalidateAfterAcquire();
-+    backing_access_.reset();
-     texture_.Destroy();
-     texture_ = nullptr;
+-    texture_.Destroy();
+-    texture_ = nullptr;
++    invalidate_access();
      return;
-@@ -209,6 +221,11 @@ void DawnOzoneImageRepresentation::EndAccess() {
+   }
+ 
+@@ -209,6 +241,11 @@ void DawnOzoneImageRepresentation::EndAccess() {
      SetCleared();
    }
  
@@ -1845,7 +1885,35 @@ index 89313c57f0..de51a9cd59 100644
    CHECK(end_access_desc.fenceCount == end_access_desc.signaledValueCount);
  
    // Note: Dawn may export zero fences if there were no begin fences,
-@@ -238,8 +255,10 @@ void DawnOzoneImageRepresentation::EndAccess() {
+@@ -225,21 +262,35 @@ void DawnOzoneImageRepresentation::EndAccess() {
+     // Dawn will close its FD when `end_access_desc` falls out of scope, and
+     // so it is necessary to dup() it to give OzoneImageBacking an FD that it
+     // can own.
+-    base::ScopedFD fd_handle_merged(dup(sync_fd_export_info.handle));
++    base::ScopedFD fd_handle_merged(
++        HANDLE_EINTR(dup(sync_fd_export_info.handle)));
++    if (!fd_handle_merged.is_valid()) {
++      LOG(ERROR) << "Failed to duplicate Dawn's shared-image release fence";
++      invalidate_access();
++      return;
++    }
+     for (size_t i = 1; i < end_access_desc.fenceCount; i++) {
+       auto& additional_fence = UNSAFE_TODO(end_access_desc.fences[i]);
+       additional_fence.ExportInfo(&export_info);
+       // The 'sync_merge' returns a new handle that is unowned. Wrap in scope
+       // to ensure ownership.
+-      fd_handle_merged = base::ScopedFD(
+-          sync_merge("", fd_handle_merged.get(), sync_fd_export_info.handle));
++      base::ScopedFD merged(HANDLE_EINTR(
++          sync_merge("", fd_handle_merged.get(), sync_fd_export_info.handle)));
++      if (!merged.is_valid()) {
++        LOG(ERROR) << "Failed to merge Dawn's shared-image release fences";
++        invalidate_access();
++        return;
++      }
++      fd_handle_merged = std::move(merged);
+     }
+     // Avoid fence handle 'dup' by moving the scope.
      fence.Adopt(std::move(fd_handle_merged));
    }
  
@@ -2782,19 +2850,39 @@ index b38ee31b44..2057e1cce2 100644
  #elif BUILDFLAG(IS_WIN)
      std::optional<gl::DCLayerOverlayImage> GetDCLayerOverlayImage() {
        return representation()->GetDCLayerOverlayImage();
-@@ -999,7 +1032,10 @@ class GPU_GLES2_EXPORT OverlayImageRepresentation
+@@ -999,7 +1032,22 @@ class GPU_GLES2_EXPORT OverlayImageRepresentation
      }
  #endif
  
 -    gfx::GpuFenceHandle TakeAcquireFence() { return std::move(acquire_fence_); }
-+    gfx::GpuFenceHandle TakeAcquireFence() {
++    gfx::GpuFenceHandle CloneAcquireFence() const {
++      return acquire_fence_.Clone();
++    }
++    void CommitReadAccess() {
++      if (read_access_committed_) {
++        return;
++      }
 +      representation()->CommitReadAccess();
-+      return std::move(acquire_fence_);
++      acquire_fence_ = gfx::GpuFenceHandle();
++      read_access_committed_ = true;
++    }
++    gfx::GpuFenceHandle TakeAcquireFence() {
++      gfx::GpuFenceHandle fence = std::move(acquire_fence_);
++      CommitReadAccess();
++      return fence;
 +    }
      void SetReleaseFence(gfx::GpuFenceHandle release_fence) {
        // Note: We overwrite previous fence. In case if window manager uses fence
        // for each frame we schedule overlay and the same image is scheduled for
-@@ -1024,6 +1060,7 @@ class GPU_GLES2_EXPORT OverlayImageRepresentation
+@@ -1011,6 +1059,7 @@ class GPU_GLES2_EXPORT OverlayImageRepresentation
+    private:
+     gfx::GpuFenceHandle acquire_fence_;
+     gfx::GpuFenceHandle release_fence_;
++    bool read_access_committed_ = false;
+   };
+ 
+   std::unique_ptr<ScopedReadAccess> BeginScopedReadAccess();
+@@ -1024,6 +1073,7 @@ class GPU_GLES2_EXPORT OverlayImageRepresentation
    // SharedImage is ready to be displayed. This fence is fired when the gpu
    // has finished writing.
    virtual bool BeginReadAccess(gfx::GpuFenceHandle& acquire_fence) = 0;
@@ -2802,7 +2890,7 @@ index b38ee31b44..2057e1cce2 100644
  
    // |release_fence| is a fence that will be signaled when the image can be
    // safely re-used. Note, on some platforms window manager doesn't support
-@@ -1037,6 +1074,12 @@ class GPU_GLES2_EXPORT OverlayImageRepresentation
+@@ -1037,6 +1087,12 @@ class GPU_GLES2_EXPORT OverlayImageRepresentation
    GetAHardwareBufferFenceSync();
  #elif BUILDFLAG(IS_OZONE)
    scoped_refptr<gfx::NativePixmap> GetNativePixmap();

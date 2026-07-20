@@ -47,10 +47,12 @@ perform its full-surface capture blit. Ordinary Chromium compositors and
 upstream capture modes remain unchanged.
 
 CEF-only patches live directly under `patches/`. Shared Chromium and Dawn
-changes live under `../chromium/patches/`, alongside the Nucleus Browser
-product layer and shared build entry point. CEF preparation reverses any
-browser-only layer before refreshing its own patches, so both products reuse
-one checkout without sharing mutable GN output directories.
+changes live under `../chromium/patches/`, alongside the standalone Chromium
+browser layer and shared build entry point. Every preparation produces one
+cumulative patched source tree for both products, while each product retains
+its own immutable GN output directory. A CEF-owned follow-up patch gates the
+upstream OSR software proxy on `enable_cef`, so the browser can set
+`enable_cef=false` without carrying CEF-only source into its binary.
 
 The NVIDIA VA-API driver's matching packed image export is maintained in the
 pinned `maddythewisp/nvidia-vaapi-driver` fork. CUDA maps the packed plane
@@ -76,7 +78,7 @@ always ship the wrapper and headers built with its own `libcef.so`.
 ## Building
 
 The workspace-level entry point is preferred because it also owns the
-standalone Nucleus Browser product layer:
+standalone Chromium browser layer:
 
 ```sh
 chromium/build.sh cef

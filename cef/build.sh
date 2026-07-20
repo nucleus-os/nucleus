@@ -203,13 +203,15 @@ ensure_v8_builtins_pgo_profiles() {
 reverse_nucleus_cef_patches() {
   local chromium_root="$NUCLEUS_CEF_SRC_ROOT/chromium/src"
 
-  # A browser preparation adds one product layer to this shared source tree.
-  # Remove it first so CEF refreshes against its unchanged source contract.
+  # Every output is generated from one cumulative patched source tree. Reverse
+  # the exact previously applied stack only while refreshing the upstream CEF
+  # configuration, then restore all shared and product-facing source changes
+  # before generating either GN output.
   nucleus_reverse_patch_stack \
     "$chromium_root" \
     "$script_dir/../chromium/patches/browser" \
     "$NUCLEUS_CEF_SRC_ROOT/.nucleus-applied-browser-patches" \
-    "Nucleus Browser"
+    "Chromium browser"
 
   # Remove project changes before CEF updates its own Chromium patch stack.
   # Several Chromium files intentionally overlap CEF's patches.
@@ -245,6 +247,11 @@ apply_nucleus_cef_patches() {
     "$script_dir/patches" \
     "$applied_patch_dir" \
     "Chromium/CEF"
+  nucleus_apply_patch_stack \
+    "$chromium_root" \
+    "$script_dir/../chromium/patches/browser" \
+    "$NUCLEUS_CEF_SRC_ROOT/.nucleus-applied-browser-patches" \
+    "Chromium browser presentation"
   nucleus_apply_patch_stack \
     "$chromium_root/third_party/dawn" \
     "$script_dir/../chromium/patches/dawn" \

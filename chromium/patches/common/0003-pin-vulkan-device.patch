@@ -1,23 +1,42 @@
-Subject: [PATCH] Pin Chromium's Vulkan producers to the requested DRM device
+Subject: [PATCH] Pin Chromium GPU producers and syncobj to the Wayland device
 
-# Shared Chromium GPU-selection patch.
+# Shared Chromium GPU-selection patch. Wayland's DMA-BUF main_device selects
+# Dawn, native Vulkan, ANGLE, GBM, VA-API, and browser-process syncobj ioctls.
+diff --git a/content/browser/gpu/gpu_process_host.cc b/content/browser/gpu/gpu_process_host.cc
+index 9805811..041a318 100644
+--- a/content/browser/gpu/gpu_process_host.cc
++++ b/content/browser/gpu/gpu_process_host.cc
+@@ -284,6 +284,7 @@ static const char* const kSwitchNames[] = {
+     switches::kEnableWebGLDraftExtensions,
+     switches::kEnableSkiaGraphite,
+     switches::kEnableSkiaGraphitePrecompilation,
++    switches::kRequireSkiaGraphiteDawnVulkan,
+     switches::kDoubleBufferCompositing,
+     switches::kHeadless,
+     switches::kEnableLowEndDeviceMode,
+@@ -299,6 +299,7 @@ static const char* const kSwitchNames[] = {
+     switches::kTestGLLib,
+     switches::kUseFakeMjpegDecodeAccelerator,
+     switches::kUseGpuInTests,
++    switches::kVulkanDeviceUuid,
+     switches::kWebViewDrawFunctorUsesVulkan,
+     switches::kSuppressPerformanceLogs,
+ #if BUILDFLAG(IS_MAC)
 diff --git a/gpu/command_buffer/service/dawn_context_provider.cc b/gpu/command_buffer/service/dawn_context_provider.cc
-index 04af08a..84a45dc 100644
+index 04af08a..cf2573b 100644
 --- a/gpu/command_buffer/service/dawn_context_provider.cc
 +++ b/gpu/command_buffer/service/dawn_context_provider.cc
-@@ -2,13 +2,22 @@
- // Use of this source code is governed by a BSD-style license that can be
- // found in the LICENSE file.
-
+@@ -4,9 +4,18 @@
+ 
  #include "gpu/command_buffer/service/dawn_context_provider.h"
-
+ 
 +#include <algorithm>
  #include <memory>
 +#include <optional>
 +#include <string>
 +#include <string_view>
  #include <vector>
-
+ 
 +#if defined(__linux__)
 +#include <sys/stat.h>
 +#include <sys/sysmacros.h>
@@ -26,14 +45,10 @@ index 04af08a..84a45dc 100644
  #include "base/check_op.h"
  #include "base/command_line.h"
  #include "base/compiler_specific.h"
- #include "base/dcheck_is_on.h"
- #include "base/debug/crash_logging.h"
-@@ -67,10 +76,54 @@
- #endif
-
+@@ -69,6 +78,50 @@
  namespace gpu {
  namespace {
-
+ 
 +#if BUILDFLAG(IS_LINUX)
 +struct DrmRenderNode {
 +  std::string path;
@@ -80,20 +95,18 @@ index 04af08a..84a45dc 100644
 +
  // Used as a flag to test dawn initialization failure.
  BASE_FEATURE(kForceDawnInitializeFailure, base::FEATURE_DISABLED_BY_DEFAULT);
-
- // Controls if ShaderF16 Dawn feature is enabled for Graphite.
- BASE_FEATURE(kSkiaGraphiteF16, base::FEATURE_DISABLED_BY_DEFAULT);
-@@ -295,17 +348,21 @@ std::vector<wgpu::FeatureName> GetRequiredFeatures(
+ 
+@@ -294,15 +347,19 @@ std::vector<wgpu::FeatureName> GetRequiredFeatures(
        wgpu::FeatureName::MultiPlanarFormatNv12a,
        wgpu::FeatureName::MultiPlanarRenderTargets,
        wgpu::FeatureName::Unorm16TextureFormats,
 +      wgpu::FeatureName::Unorm16FormatsForExternalTexture,
-
+ 
        // The following features are always supported by the the Metal backend on
        // the Mac versions on which Chrome runs.
        wgpu::FeatureName::SharedTextureMemoryIOSurface,
        wgpu::FeatureName::SharedFenceMTLSharedEvent,
-
+ 
 -      // The following features are always supported when running on the Vulkan
 -      // backend on Android.
 +      // Vulkan external-memory features used by platform SharedImage
@@ -105,11 +118,7 @@ index 04af08a..84a45dc 100644
        wgpu::FeatureName::SharedFenceSyncFD,
        wgpu::FeatureName::RenderPassRenderArea,
        wgpu::FeatureName::OpaqueYCbCrAndroidForExternalTexture,
-
-       // The following features are always supported by the the D3D backends.
-@@ -933,11 +989,54 @@ bool DawnSharedContext::Initialize(
-     LogInitFailure("No adapters found.",
-                    /*generate_crash_report=*/!BUILDFLAG(IS_ANDROID),
+@@ -935,7 +992,75 @@ bool DawnSharedContext::Initialize(
                     backend_type, force_fallback_adapter);
      return false;
    }
@@ -154,24 +163,49 @@ index 04af08a..84a45dc 100644
 +  } else {
 +    adapter_ = wgpu::Adapter(adapters[0].Get());
 +  }
++
++  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
++          switches::kRequireSkiaGraphiteDawnVulkan)) {
++    if (!requested_render_node) {
++      LogInitFailure(
++          "Graphite/Dawn/Vulkan requires the compositor DRM render node.",
++          /*generate_crash_report=*/false, backend_type,
++          force_fallback_adapter);
++      return false;
++    }
++    constexpr wgpu::FeatureName kRequiredLinuxExternalFeatures[] = {
++        wgpu::FeatureName::SharedTextureMemoryDmaBuf,
++        wgpu::FeatureName::SharedFenceSyncFD,
++    };
++    for (wgpu::FeatureName feature : kRequiredLinuxExternalFeatures) {
++      if (!adapter_.HasFeature(feature)) {
++        LogInitFailure(
++            "The compositor-selected Dawn adapter lacks required Linux "
++            "DMA-BUF or sync-fd support.",
++            /*generate_crash_report=*/false, backend_type,
++            force_fallback_adapter);
++        return false;
++      }
++    }
++  }
 +#else
    adapter_ = wgpu::Adapter(adapters[0].Get());
 +#endif
-
+ 
    if (!validate_adapter_fn(backend_type, adapter_)) {
      LogInitFailure("Validate adapter failed.",
-                    /*generate_crash_report=*/!BUILDFLAG(IS_ANDROID),
-                    backend_type, force_fallback_adapter);
 diff --git a/gpu/vulkan/vulkan_device_queue.cc b/gpu/vulkan/vulkan_device_queue.cc
-index 2021a38..ca47656 100644
+index 2021a38..e2e2892 100644
 --- a/gpu/vulkan/vulkan_device_queue.cc
 +++ b/gpu/vulkan/vulkan_device_queue.cc
-@@ -10,13 +10,15 @@
- #include <cstring>
- #include <unordered_set>
+@@ -12,9 +12,15 @@
  #include <utility>
  #include <vector>
-
+ 
++#if defined(__linux__)
++#include <sys/stat.h>
++#endif
++
 +#include "base/command_line.h"
  #include "base/compiler_specific.h"
  #include "base/feature_list.h"
@@ -180,46 +214,61 @@ index 2021a38..ca47656 100644
  #include "base/strings/stringprintf.h"
  #include "base/task/single_thread_task_runner.h"
  #include "base/trace_event/memory_dump_manager.h"
- #include "base/trace_event/process_memory_dump.h"
- #include "build/build_config.h"
-@@ -103,10 +105,30 @@ bool VulkanDeviceQueue::Initialize(
-   if (VK_NULL_HANDLE == vk_instance_)
-     return false;
-
+@@ -28,6 +34,7 @@
+ #include "gpu/vulkan/vulkan_info.h"
+ #include "gpu/vulkan/vulkan_util.h"
+ #include "ui/gl/gl_angle_util_vulkan.h"
++#include "ui/gl/gl_switches.h"
+ 
+ namespace gpu {
+ namespace {
+@@ -105,6 +112,37 @@ bool VulkanDeviceQueue::Initialize(
+ 
    const VulkanInfo& info = instance_->vulkan_info();
-
+ 
 +  std::vector<uint8_t> preferred_device_uuid;
++  uint64_t preferred_drm_device_id = 0;
 +#if BUILDFLAG(IS_LINUX)
-+  std::string preferred_device_uuid_string;
 +  const base::CommandLine* command_line =
 +      base::CommandLine::ForCurrentProcess();
-+  if (command_line->HasSwitch("cef-vulkan-device-uuid")) {
-+    preferred_device_uuid_string =
-+        command_line->GetSwitchValueASCII("cef-vulkan-device-uuid");
++  const std::string preferred_device_uuid_string =
++      command_line->GetSwitchValueASCII(switches::kVulkanDeviceUuid);
++  if (!preferred_device_uuid_string.empty() &&
++      (!base::HexStringToBytes(preferred_device_uuid_string,
++                              &preferred_device_uuid) ||
++       preferred_device_uuid.size() != VK_UUID_SIZE)) {
++    LOG(ERROR) << "Invalid Vulkan device UUID; expected exactly "
++                  "32 hexadecimal digits";
++    return false;
 +  }
-+  if (!preferred_device_uuid_string.empty()) {
-+    if (!base::HexStringToBytes(preferred_device_uuid_string,
-+                                &preferred_device_uuid) ||
-+        preferred_device_uuid.size() != VK_UUID_SIZE) {
-+      LOG(ERROR) << "Invalid CEF Vulkan device UUID; expected exactly "
-+                    "32 hexadecimal digits";
++
++  const std::string preferred_render_node =
++      command_line->GetSwitchValueASCII("render-node-override");
++  if (!preferred_render_node.empty()) {
++    struct stat node_stat {};
++    if (stat(preferred_render_node.c_str(), &node_stat) != 0 ||
++        !S_ISCHR(node_stat.st_mode)) {
++      LOG(ERROR) << "Invalid DRM render node: " << preferred_render_node;
 +      return false;
 +    }
++    static_assert(sizeof(node_stat.st_rdev) <=
++                  sizeof(preferred_drm_device_id));
++    preferred_drm_device_id = node_stat.st_rdev;
 +  }
 +#endif
 +
    VkResult result = VK_SUCCESS;
-
+ 
    VkQueueFlags queue_flags = 0;
-   if (options & DeviceQueueOption::GRAPHICS_QUEUE_FLAG) {
-     queue_flags |= VK_QUEUE_GRAPHICS_BIT;
-@@ -134,10 +156,27 @@ bool VulkanDeviceQueue::Initialize(
-   int queue_index = -1;
-   int device_score = -1;
+@@ -136,6 +174,26 @@ bool VulkanDeviceQueue::Initialize(
    for (size_t i = 0; i < info.physical_devices.size(); ++i) {
      const auto& device_info = info.physical_devices[i];
      const auto& device_properties = device_info.properties;
 +#if BUILDFLAG(IS_LINUX)
++    if (preferred_drm_device_id &&
++        device_info.drm_device_id != preferred_drm_device_id) {
++      continue;
++    }
 +    if (!preferred_device_uuid.empty()) {
 +      VkPhysicalDeviceIDProperties id_properties = {
 +          .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ID_PROPERTIES,
@@ -230,57 +279,587 @@ index 2021a38..ca47656 100644
 +      };
 +      vkGetPhysicalDeviceProperties2(device_info.device, &properties2);
 +      if (std::memcmp(id_properties.deviceUUID,
-+                      preferred_device_uuid.data(),
-+                      VK_UUID_SIZE) != 0) {
++                      preferred_device_uuid.data(), VK_UUID_SIZE) != 0) {
 +        continue;
 +      }
 +    }
 +#endif
      if (device_properties.apiVersion < info.used_api_version)
        continue;
-
-       // In dual-CPU cases, we cannot detect the active GPU correctly on Linux,
-       // so don't select GPU device based on the |gpu_info|.
+ 
+@@ -193,7 +251,8 @@ bool VulkanDeviceQueue::Initialize(
+   }
+ 
+   if (device_index == -1) {
+-    DLOG(ERROR) << "Cannot find capable device.";
++    LOG(ERROR) << "Cannot find a capable Vulkan device matching the requested "
++                  "DRM render node and UUID.";
+     return false;
+   }
+ 
+diff --git a/gpu/vulkan/vulkan_instance.cc b/gpu/vulkan/vulkan_instance.cc
+index 1d77458..26658cc 100644
+--- a/gpu/vulkan/vulkan_instance.cc
++++ b/gpu/vulkan/vulkan_instance.cc
+@@ -18,7 +18,7 @@
+ #include "ui/gl/gl_angle_util_vulkan.h"
+ #include "ui/gl/gl_switches.h"
+ 
+-#if BUILDFLAG(IS_CHROMEOS)
++#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
+ #include <sys/sysmacros.h>
+ #endif
+ 
+@@ -458,7 +458,7 @@ bool VulkanInstance::CollectDeviceInfo(VkPhysicalDevice physical_device) {
+       };
+       vkGetPhysicalDeviceProperties2(device, &properties2);
+ 
+-#if BUILDFLAG(IS_CHROMEOS)
++#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
+       if (has_drm_extension &&
+           (drm_properties.hasRender || drm_properties.hasPrimary)) {
+         static_assert(sizeof(dev_t) <= sizeof(info.drm_device_id),
+diff --git a/third_party/angle/include/EGL/eglext_angle.h b/third_party/angle/include/EGL/eglext_angle.h
+index 3d80b97..03fac5b 100644
+--- a/third_party/angle/include/EGL/eglext_angle.h
++++ b/third_party/angle/include/EGL/eglext_angle.h
+@@ -115,6 +115,12 @@
+ #define EGL_PLATFORM_ANGLE_VULKAN_DRIVER_ID_ANGLE 0x34F2
+ #endif /* EGL_ANGLE_platform_angle_vulkan_device_uuid */
+ 
++#ifndef EGL_ANGLE_platform_angle_drm_render_node
++#define EGL_ANGLE_platform_angle_drm_render_node 1
++#define EGL_PLATFORM_ANGLE_DRM_RENDER_NODE_MAJOR_ANGLE 0x34F9
++#define EGL_PLATFORM_ANGLE_DRM_RENDER_NODE_MINOR_ANGLE 0x34FA
++#endif /* EGL_ANGLE_platform_angle_drm_render_node */
++
+ #ifndef EGL_ANGLE_platform_angle_metal
+ #define EGL_ANGLE_platform_angle_metal 1
+ #define EGL_PLATFORM_ANGLE_TYPE_METAL_ANGLE 0x3489
+diff --git a/third_party/angle/src/libANGLE/Display.cpp b/third_party/angle/src/libANGLE/Display.cpp
+index e9821e5..47e7318 100644
+--- a/third_party/angle/src/libANGLE/Display.cpp
++++ b/third_party/angle/src/libANGLE/Display.cpp
+@@ -184,6 +184,8 @@ struct ANGLEPlatformDisplay
+                          EGLAttrib platformANGLEType,
+                          EGLAttrib deviceIdHigh,
+                          EGLAttrib deviceIdLow,
++                         EGLAttrib drmRenderNodeMajor,
++                         EGLAttrib drmRenderNodeMinor,
+                          EGLAttrib displayKey,
+                          EGLAttrib nativePlatformType,
+                          EGLAttrib enabledFeatureOverrides,
+@@ -194,6 +196,8 @@ struct ANGLEPlatformDisplay
+           platformANGLEType(platformANGLEType),
+           deviceIdHigh(deviceIdHigh),
+           deviceIdLow(deviceIdLow),
++          drmRenderNodeMajor(drmRenderNodeMajor),
++          drmRenderNodeMinor(drmRenderNodeMinor),
+           displayKey(displayKey),
+           nativePlatformType(nativePlatformType),
+           disableAllNonOverriddenFeatures(static_cast<bool>(disableAllNonOverriddenFeatures))
+@@ -207,8 +211,10 @@ struct ANGLEPlatformDisplay
+     auto tie() const
+     {
+         return std::tie(nativeDisplayType, powerPreference, platformANGLEType, deviceIdHigh,
+-                        deviceIdLow, displayKey, nativePlatformType, enabledFeatureOverridesHash,
+-                        disabledFeatureOverridesHash, disableAllNonOverriddenFeatures);
++                        deviceIdLow, drmRenderNodeMajor, drmRenderNodeMinor, displayKey,
++                        nativePlatformType, enabledFeatureOverridesHash,
++                        disabledFeatureOverridesHash,
++                        disableAllNonOverriddenFeatures);
+     }
+ 
+     EGLNativeDisplayType nativeDisplayType{EGL_DEFAULT_DISPLAY};
+@@ -216,6 +222,8 @@ struct ANGLEPlatformDisplay
+     EGLAttrib platformANGLEType{EGL_PLATFORM_ANGLE_TYPE_DEFAULT_ANGLE};
+     EGLAttrib deviceIdHigh{0};
+     EGLAttrib deviceIdLow{0};
++    EGLAttrib drmRenderNodeMajor{0};
++    EGLAttrib drmRenderNodeMinor{0};
+     EGLAttrib displayKey{0};
+     EGLAttrib nativePlatformType{0};
+     size_t enabledFeatureOverridesHash;
+@@ -827,6 +835,10 @@ Display *Display::GetDisplayFromNativeDisplay(EGLenum platform,
+         updatedAttribMap.get(EGL_PLATFORM_ANGLE_TYPE_ANGLE, EGL_PLATFORM_ANGLE_TYPE_DEFAULT_ANGLE);
+     const EGLAttrib deviceIdHigh = updatedAttribMap.get(EGL_PLATFORM_ANGLE_DEVICE_ID_HIGH_ANGLE, 0);
+     const EGLAttrib deviceIdLow  = updatedAttribMap.get(EGL_PLATFORM_ANGLE_DEVICE_ID_LOW_ANGLE, 0);
++    const EGLAttrib drmRenderNodeMajor =
++        updatedAttribMap.get(EGL_PLATFORM_ANGLE_DRM_RENDER_NODE_MAJOR_ANGLE, 0);
++    const EGLAttrib drmRenderNodeMinor =
++        updatedAttribMap.get(EGL_PLATFORM_ANGLE_DRM_RENDER_NODE_MINOR_ANGLE, 0);
+     const EGLAttrib displayKey   = updatedAttribMap.get(EGL_PLATFORM_ANGLE_DISPLAY_KEY_ANGLE, 0);
+     const EGLAttrib enabledFeatureOverrides =
+         updatedAttribMap.get(EGL_FEATURE_OVERRIDES_ENABLED_ANGLE, 0);
+@@ -836,9 +848,9 @@ Display *Display::GetDisplayFromNativeDisplay(EGLenum platform,
+         updatedAttribMap.get(EGL_FEATURE_ALL_DISABLED_ANGLE, 0);
+     const EGLAttrib nativePlatformType = GetPlatformTypeFromAttribs(platform, updatedAttribMap);
+     const ANGLEPlatformDisplay combinedDisplayKey(
+-        nativeDisplay, powerPreference, platformANGLEType, deviceIdHigh, deviceIdLow, displayKey,
+-        nativePlatformType, enabledFeatureOverrides, disabledFeatureOverrides,
+-        disableAllNonOverriddenFeatures);
++        nativeDisplay, powerPreference, platformANGLEType, deviceIdHigh, deviceIdLow,
++        drmRenderNodeMajor, drmRenderNodeMinor, displayKey, nativePlatformType,
++        enabledFeatureOverrides, disabledFeatureOverrides, disableAllNonOverriddenFeatures);
+ 
+     {
+         std::lock_guard<angle::SimpleMutex> lock(*ANGLEPlatformDisplayMapMutex());
+@@ -1010,6 +1022,10 @@ Display::~Display()
+                                   EGL_PLATFORM_ANGLE_TYPE_DEFAULT_ANGLE),
+                 mAttributeMap.get(EGL_PLATFORM_ANGLE_DEVICE_ID_HIGH_ANGLE, 0),
+                 mAttributeMap.get(EGL_PLATFORM_ANGLE_DEVICE_ID_LOW_ANGLE, 0),
++                mAttributeMap.get(EGL_PLATFORM_ANGLE_DRM_RENDER_NODE_MAJOR_ANGLE,
++                                  0),
++                mAttributeMap.get(EGL_PLATFORM_ANGLE_DRM_RENDER_NODE_MINOR_ANGLE,
++                                  0),
+                 mAttributeMap.get(EGL_PLATFORM_ANGLE_DISPLAY_KEY_ANGLE, 0),
+                 GetPlatformTypeFromAttribs(mPlatform, mAttributeMap),
+                 mAttributeMap.get(EGL_FEATURE_OVERRIDES_ENABLED_ANGLE, 0),
+diff --git a/third_party/angle/src/libANGLE/renderer/vulkan/CLPlatformVk.cpp b/third_party/angle/src/libANGLE/renderer/vulkan/CLPlatformVk.cpp
+index 8a4d164..5075f95 100644
+--- a/third_party/angle/src/libANGLE/renderer/vulkan/CLPlatformVk.cpp
++++ b/third_party/angle/src/libANGLE/renderer/vulkan/CLPlatformVk.cpp
+@@ -52,8 +52,9 @@ angle::Result CLPlatformVk::initBackendRenderer()
+     featureOverrides.disabled.push_back("verifyPipelineCacheInBlobCache");
+ 
+     ANGLE_TRY(mRenderer->initialize(this, this, angle::vk::ICD::Default, 0, 0, nullptr, nullptr,
+-                                    static_cast<VkDriverId>(0), kUseDebugLayers, getWSIExtension(),
+-                                    getWSILayer(), getWindowSystem(), featureOverrides));
++                                    static_cast<VkDriverId>(0), 0, 0, kUseDebugLayers,
++                                    getWSIExtension(), getWSILayer(), getWindowSystem(),
++                                    featureOverrides));
+ 
+     return angle::Result::Continue;
+ }
+diff --git a/third_party/angle/src/libANGLE/renderer/vulkan/DisplayVk.cpp b/third_party/angle/src/libANGLE/renderer/vulkan/DisplayVk.cpp
+index 49a9351..bc42352 100644
+--- a/third_party/angle/src/libANGLE/renderer/vulkan/DisplayVk.cpp
++++ b/third_party/angle/src/libANGLE/renderer/vulkan/DisplayVk.cpp
+@@ -178,12 +178,17 @@ egl::Error DisplayVk::initialize(egl::Display *display)
+         attribs.get(EGL_PLATFORM_ANGLE_VULKAN_DEVICE_UUID_ANGLE, 0));
+     const uint8_t *preferredDriverUuid = reinterpret_cast<const uint8_t *>(
+         attribs.get(EGL_PLATFORM_ANGLE_VULKAN_DRIVER_UUID_ANGLE, 0));
++    const uint32_t preferredDrmRenderNodeMajor = static_cast<uint32_t>(
++        attribs.get(EGL_PLATFORM_ANGLE_DRM_RENDER_NODE_MAJOR_ANGLE, 0));
++    const uint32_t preferredDrmRenderNodeMinor = static_cast<uint32_t>(
++        attribs.get(EGL_PLATFORM_ANGLE_DRM_RENDER_NODE_MINOR_ANGLE, 0));
+     const VkDriverId preferredDriverId =
+         static_cast<VkDriverId>(attribs.get(EGL_PLATFORM_ANGLE_VULKAN_DRIVER_ID_ANGLE, 0));
+ 
+     angle::Result result = mRenderer->initialize(
+         this, this, desiredICD, preferredVendorId, preferredDeviceId, preferredDeviceUuid,
+-        preferredDriverUuid, preferredDriverId, useDebugLayers, getWSIExtension(), getWSILayer(),
++        preferredDriverUuid, preferredDriverId, preferredDrmRenderNodeMajor,
++        preferredDrmRenderNodeMinor, useDebugLayers, getWSIExtension(), getWSILayer(),
+         getWindowSystem(), mState.featureOverrides);
+     ANGLE_TRY(angle::ToEGL(result, EGL_NOT_INITIALIZED));
+ 
+diff --git a/third_party/angle/src/libANGLE/renderer/vulkan/vk_renderer.cpp b/third_party/angle/src/libANGLE/renderer/vulkan/vk_renderer.cpp
+index 9b2e271..63e170e 100644
+--- a/third_party/angle/src/libANGLE/renderer/vulkan/vk_renderer.cpp
++++ b/third_party/angle/src/libANGLE/renderer/vulkan/vk_renderer.cpp
+@@ -18,6 +18,8 @@
+ #include "libANGLE/renderer/vulkan/vk_utils.h"
+ 
+ #include <EGL/eglext.h>
++#include <algorithm>
++#include <cstring>
+ #include <fstream>
+ 
+ #include "common/debug.h"
+@@ -2449,6 +2451,8 @@ angle::Result Renderer::initialize(vk::ErrorContext *context,
+                                    const uint8_t *preferredDeviceUuid,
+                                    const uint8_t *preferredDriverUuid,
+                                    VkDriverId preferredDriverId,
++                                   uint32_t preferredDrmRenderNodeMajor,
++                                   uint32_t preferredDrmRenderNodeMinor,
+                                    UseDebugLayers useDebugLayers,
+                                    const char *wsiExtension,
+                                    const char *wsiLayer,
+@@ -2675,6 +2679,38 @@ angle::Result Renderer::initialize(vk::ErrorContext *context,
+     std::vector<VkPhysicalDevice> physicalDevices(physicalDeviceCount);
+     ANGLE_VK_TRY(context, vkEnumeratePhysicalDevices(mInstance, &physicalDeviceCount,
+                                                      physicalDevices.data()));
++    if (preferredDrmRenderNodeMajor != 0 || preferredDrmRenderNodeMinor != 0)
++    {
++        std::erase_if(physicalDevices, [&](VkPhysicalDevice physicalDevice) {
++            uint32_t extensionCount = 0;
++            if (vkEnumerateDeviceExtensionProperties(physicalDevice, nullptr, &extensionCount,
++                                                     nullptr) != VK_SUCCESS)
++            {
++                return true;
++            }
++            std::vector<VkExtensionProperties> extensions(extensionCount);
++            if (vkEnumerateDeviceExtensionProperties(physicalDevice, nullptr, &extensionCount,
++                                                     extensions.data()) != VK_SUCCESS ||
++                std::none_of(extensions.begin(), extensions.end(), [](const auto &extension) {
++                    return strcmp(extension.extensionName,
++                                  VK_EXT_PHYSICAL_DEVICE_DRM_EXTENSION_NAME) == 0;
++                }))
++            {
++                return true;
++            }
++
++            VkPhysicalDeviceDrmPropertiesEXT drmProperties = {};
++            drmProperties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRM_PROPERTIES_EXT;
++            VkPhysicalDeviceProperties2 properties = {};
++            properties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
++            properties.pNext = &drmProperties;
++            vkGetPhysicalDeviceProperties2(physicalDevice, &properties);
++            return !drmProperties.hasRender ||
++                   drmProperties.renderMajor != preferredDrmRenderNodeMajor ||
++                   drmProperties.renderMinor != preferredDrmRenderNodeMinor;
++        });
++        ANGLE_VK_CHECK(context, !physicalDevices.empty(), VK_ERROR_INITIALIZATION_FAILED);
++    }
+     ChoosePhysicalDevice(vkGetPhysicalDeviceProperties2, physicalDevices, mEnabledICD,
+                          preferredVendorId, preferredDeviceId, preferredDeviceUuid,
+                          preferredDriverUuid, preferredDriverId, &mPhysicalDevice,
+diff --git a/third_party/angle/src/libANGLE/renderer/vulkan/vk_renderer.h b/third_party/angle/src/libANGLE/renderer/vulkan/vk_renderer.h
+index 9f0e601..2131ca0 100644
+--- a/third_party/angle/src/libANGLE/renderer/vulkan/vk_renderer.h
++++ b/third_party/angle/src/libANGLE/renderer/vulkan/vk_renderer.h
+@@ -149,6 +149,8 @@ class Renderer : angle::NonCopyable
+                              const uint8_t *preferredDeviceUuid,
+                              const uint8_t *preferredDriverUuid,
+                              VkDriverId preferredDriverId,
++                             uint32_t preferredDrmRenderNodeMajor,
++                             uint32_t preferredDrmRenderNodeMinor,
+                              UseDebugLayers useDebugLayers,
+                              const char *wsiExtension,
+                              const char *wsiLayer,
+diff --git a/third_party/angle/src/libANGLE/validationEGL.cpp b/third_party/angle/src/libANGLE/validationEGL.cpp
+index cae8541..d745a9e 100644
+--- a/third_party/angle/src/libANGLE/validationEGL.cpp
++++ b/third_party/angle/src/libANGLE/validationEGL.cpp
+@@ -696,7 +696,9 @@ bool ValidateGetPlatformDisplayCommon(const ValidationContext *val,
+         bool presentPathSpecified    = false;
+         bool luidSpecified           = false;
+         bool deviceIdSpecified       = false;
+-        bool vkDeviceUuidSpecified   = false;
++        bool vkDeviceSelectionSpecified = false;
++        bool drmRenderNodeMajorSpecified = false;
++        bool drmRenderNodeMinorSpecified = false;
+ 
+         Optional<EGLAttrib> majorVersion;
+         Optional<EGLAttrib> minorVersion;
+@@ -867,7 +869,15 @@ bool ValidateGetPlatformDisplayCommon(const ValidationContext *val,
+                 case EGL_PLATFORM_ANGLE_VULKAN_DEVICE_UUID_ANGLE:
+                 case EGL_PLATFORM_ANGLE_VULKAN_DRIVER_UUID_ANGLE:
+                 case EGL_PLATFORM_ANGLE_VULKAN_DRIVER_ID_ANGLE:
+-                    vkDeviceUuidSpecified = true;
++                    vkDeviceSelectionSpecified = true;
++                    break;
++                case EGL_PLATFORM_ANGLE_DRM_RENDER_NODE_MAJOR_ANGLE:
++                    vkDeviceSelectionSpecified = true;
++                    drmRenderNodeMajorSpecified = true;
++                    break;
++                case EGL_PLATFORM_ANGLE_DRM_RENDER_NODE_MINOR_ANGLE:
++                    vkDeviceSelectionSpecified = true;
++                    drmRenderNodeMinorSpecified = true;
+                     break;
+ 
+                 case EGL_PLATFORM_ANGLE_DEVICE_CONTEXT_VOLATILE_CGL_ANGLE:
+@@ -1031,7 +1041,7 @@ bool ValidateGetPlatformDisplayCommon(const ValidationContext *val,
+             }
+         }
+ 
+-        if (vkDeviceUuidSpecified)
++        if (vkDeviceSelectionSpecified)
+         {
+             if (platformType != EGL_PLATFORM_ANGLE_TYPE_VULKAN_ANGLE)
+             {
+@@ -1044,6 +1054,13 @@ bool ValidateGetPlatformDisplayCommon(const ValidationContext *val,
+                 return false;
+             }
+         }
++        if (drmRenderNodeMajorSpecified != drmRenderNodeMinorSpecified)
++        {
++            val->setError(
++                EGL_BAD_ATTRIBUTE,
++                "ANGLE DRM render-node major and minor attributes must be specified together.");
++            return false;
++        }
+ 
+         if (deviceIdSpecified)
+         {
 diff --git a/ui/gl/gl_display.cc b/ui/gl/gl_display.cc
-index 376561c..4f0084b 100644
+index 376561c..da47f9e 100644
 --- a/ui/gl/gl_display.cc
 +++ b/ui/gl/gl_display.cc
-@@ -65,10 +65,38 @@ EGLDisplay GetPlatformANGLEDisplay(
-     const std::vector<std::string>& disabled_features,
-     const std::vector<EGLAttrib>& extra_display_attribs) {
+@@ -8,6 +8,11 @@
+ #include <type_traits>
+ #include <vector>
+ 
++#if defined(__linux__)
++#include <sys/stat.h>
++#include <sys/sysmacros.h>
++#endif
++
+ #include "base/command_line.h"
+ #include "base/debug/crash_logging.h"
+ #include "base/export_template.h"
+@@ -67,6 +72,52 @@ EGLDisplay GetPlatformANGLEDisplay(
    TRACE_EVENT("gpu,startup", "gl_display::GetPlatformANGLEDisplay");
    std::vector<EGLAttrib> display_attribs(extra_display_attribs);
-
+ 
 +  const base::CommandLine* process_command_line =
 +      base::CommandLine::ForCurrentProcess();
-+  const bool has_cef_uuid =
-+      process_command_line->HasSwitch("cef-vulkan-device-uuid");
 +  if (platform_type == EGL_PLATFORM_ANGLE_TYPE_VULKAN_ANGLE &&
-+      has_cef_uuid) {
++      process_command_line->HasSwitch(switches::kVulkanDeviceUuid)) {
 +    static const std::vector<uint8_t>* const preferred_uuid = [] {
 +      auto* value = new std::vector<uint8_t>();
 +      const base::CommandLine* command_line =
 +          base::CommandLine::ForCurrentProcess();
-+      std::string uuid;
-+      if (command_line->HasSwitch("cef-vulkan-device-uuid")) {
-+        uuid = command_line->GetSwitchValueASCII("cef-vulkan-device-uuid");
-+      }
-+      if (!base::HexStringToBytes(uuid, value) ||
-+          value->size() != 16U) {
-+        LOG(ERROR) << "Invalid CEF Vulkan device UUID; expected exactly "
++      const std::string uuid =
++          command_line->GetSwitchValueASCII(switches::kVulkanDeviceUuid);
++      if (!base::HexStringToBytes(uuid, value) || value->size() != 16U) {
++        LOG(ERROR) << "Invalid Vulkan device UUID; expected exactly "
 +                      "32 hexadecimal digits";
 +        value->clear();
 +      }
 +      return value;
 +    }();
-+    if (preferred_uuid->size() != 16U)
++    if (preferred_uuid->size() != 16U) {
 +      return EGL_NO_DISPLAY;
++    }
 +    display_attribs.push_back(EGL_PLATFORM_ANGLE_VULKAN_DEVICE_UUID_ANGLE);
-+    display_attribs.push_back(reinterpret_cast<EGLAttrib>(preferred_uuid->data()));
++    display_attribs.push_back(
++        reinterpret_cast<EGLAttrib>(preferred_uuid->data()));
 +  }
++
++#if BUILDFLAG(IS_LINUX)
++  if (platform_type == EGL_PLATFORM_ANGLE_TYPE_VULKAN_ANGLE) {
++    const std::string render_node =
++        process_command_line->GetSwitchValueASCII("render-node-override");
++    if (!render_node.empty()) {
++      struct stat node_stat {};
++      if (stat(render_node.c_str(), &node_stat) != 0 ||
++          !S_ISCHR(node_stat.st_mode)) {
++        LOG(ERROR) << "Invalid DRM render node for ANGLE: " << render_node;
++        return EGL_NO_DISPLAY;
++      }
++      display_attribs.push_back(
++          EGL_PLATFORM_ANGLE_DRM_RENDER_NODE_MAJOR_ANGLE);
++      display_attribs.push_back(major(node_stat.st_rdev));
++      display_attribs.push_back(
++          EGL_PLATFORM_ANGLE_DRM_RENDER_NODE_MINOR_ANGLE);
++      display_attribs.push_back(minor(node_stat.st_rdev));
++    }
++  }
++#endif
 +
    display_attribs.push_back(EGL_PLATFORM_ANGLE_TYPE_ANGLE);
    display_attribs.push_back(static_cast<EGLAttrib>(platform_type));
-
-   if (platform_type == EGL_PLATFORM_ANGLE_TYPE_D3D11_ANGLE) {
-     base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
+ 
+diff --git a/ui/gl/gl_switches.cc b/ui/gl/gl_switches.cc
+index 9c25c01..8aaeb29 100644
+--- a/ui/gl/gl_switches.cc
++++ b/ui/gl/gl_switches.cc
+@@ -89,6 +89,7 @@ const char kEnableGPUServiceTracing[]       = "enable-gpu-service-tracing";
+ //  gl: Desktop GL renderer, ES2 and ES3.
+ //  gles: GLES renderer, ES2 and ES3.
+ const char kUseANGLE[]                      = "use-angle";
++const char kVulkanDeviceUuid[]              = "vulkan-device-uuid";
+ 
+ #if BUILDFLAG(USE_STATIC_ANGLE)
+ // Use ANGLE shared libraries even if ANGLE is built as a static library.
+diff --git a/ui/gl/gl_switches.h b/ui/gl/gl_switches.h
+index e649972..1ad5dd7 100644
+--- a/ui/gl/gl_switches.h
++++ b/ui/gl/gl_switches.h
+@@ -65,6 +65,9 @@ GL_EXPORT extern const char kEnableGPUServiceTracing[];
+ GL_EXPORT extern const char kGpuNoContextLost[];
+ 
+ GL_EXPORT extern const char kUseANGLE[];
++// Pins Vulkan consumers to one physical device UUID. This is an internal
++// process-selection value propagated to GPU children, not a renderer fallback.
++GL_EXPORT extern const char kVulkanDeviceUuid[];
+ #if BUILDFLAG(USE_STATIC_ANGLE)
+ GL_EXPORT extern const char kUseDynamicAngle[];
+ #endif
+diff --git a/ui/ozone/platform/wayland/host/wayland_connection.cc b/ui/ozone/platform/wayland/host/wayland_connection.cc
+index 4c44eaeebe..dff00e8d57 100644
+--- a/ui/ozone/platform/wayland/host/wayland_connection.cc
++++ b/ui/ozone/platform/wayland/host/wayland_connection.cc
+@@ -7,6 +7,8 @@
+ #include <content-type-v1-client-protocol.h>
+ #include <extended-drag-unstable-v1-client-protocol.h>
+ #include <presentation-time-client-protocol.h>
++#include <sys/stat.h>
++#include <unistd.h>
+ #include <xdg-shell-client-protocol.h>
+ 
+ #include <cstdint>
+@@ -17,6 +19,7 @@
+ #include "base/functional/bind.h"
+ #include "base/logging.h"
+ #include "base/metrics/histogram_functions.h"
++#include "base/posix/eintr_wrapper.h"
+ #include "base/strings/string_util.h"
+ #include "base/system/sys_info.h"
+ #include "base/trace_event/trace_event.h"
+@@ -30,6 +33,7 @@
+ #include "ui/gfx/linux/scoped_gbm_device.h"
+ #include "ui/ozone/common/features.h"
+ #include "ui/ozone/platform/wayland/common/wayland_util.h"
++#include "ui/ozone/platform/wayland/host/drm_syncobj_ioctl_wrapper.h"
+ #include "ui/ozone/platform/wayland/host/fractional_scale_manager.h"
+ #include "ui/ozone/platform/wayland/host/gtk_primary_selection_device_manager.h"
+ #include "ui/ozone/platform/wayland/host/org_kde_kwin_appmenu.h"
+@@ -253,6 +257,11 @@ bool WaylandConnection::Initialize(bool use_threaded_polling) {
+   }
+ 
+   buffer_manager_host_ = std::make_unique<WaylandBufferManagerHost>(this);
++  if (compositor_drm_render_node_fd_.is_valid()) {
++    buffer_manager_host_->SetDrmSyncobjWrapper(
++        std::make_unique<DrmSyncobjIoctlWrapper>(
++            std::move(compositor_drm_render_node_fd_)));
++  }
+ 
+   if (!compositor_) {
+     LOG(ERROR) << "No wl_compositor object";
+@@ -792,17 +801,45 @@ struct wl_registry* WaylandConnection::GetRegistry() {
+ 
+ void WaylandConnection::SetRenderNodePath(base::ScopedFD& drm_fd,
+                                           const char* render_node_path) {
+-  if (!base::CommandLine::ForCurrentProcess()->HasSwitch(
+-          switches::kRenderNodeOverride)) {
+-    TRACE_EVENT("wayland", "scoped attempt of gbm_create_device");
+-    if (drm_fd.is_valid()) {
+-      ScopedGbmDevice gbm_device(gbm_create_device(drm_fd.get()));
+-      if (gbm_device) {
+-        base::CommandLine::ForCurrentProcess()->AppendSwitchASCII(
+-            switches::kRenderNodeOverride, render_node_path);
+-      }
+-    }
+-  }
++  struct stat compositor_stat{};
++  CHECK(drm_fd.is_valid() && fstat(drm_fd.get(), &compositor_stat) == 0 &&
++        S_ISCHR(compositor_stat.st_mode))
++      << "Invalid compositor DRM render node";
++  const uint64_t compositor_device_id = compositor_stat.st_rdev;
++  if (compositor_drm_device_id_) {
++    CHECK_EQ(compositor_drm_device_id_, compositor_device_id)
++        << "Wayland main_device changed during the browser GPU epoch";
++    return;
++  }
++
++  CHECK(!buffer_manager_host_)
++      << "Initial Wayland main_device arrived after buffer-manager "
++         "initialization";
++  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
++  TRACE_EVENT("wayland", "scoped attempt of gbm_create_device");
++  ScopedGbmDevice gbm_device(gbm_create_device(drm_fd.get()));
++  CHECK(gbm_device) << "Cannot create a GBM device for Wayland main_device";
++
++  if (command_line->HasSwitch(switches::kRenderNodeOverride)) {
++    const base::FilePath requested =
++        command_line->GetSwitchValuePath(switches::kRenderNodeOverride);
++    struct stat requested_stat{};
++    CHECK(!requested.empty() &&
++          stat(requested.value().c_str(), &requested_stat) == 0 &&
++          S_ISCHR(requested_stat.st_mode))
++        << "Invalid DRM render-node selection";
++    CHECK_EQ(requested_stat.st_rdev, compositor_stat.st_rdev)
++        << "Requested DRM render node does not match Wayland dma-buf "
++           "feedback";
++  } else {
++    command_line->AppendSwitchASCII(switches::kRenderNodeOverride,
++                                    render_node_path);
++  }
++
++  compositor_drm_render_node_fd_.reset(HANDLE_EINTR(dup(drm_fd.get())));
++  PCHECK(compositor_drm_render_node_fd_.is_valid())
++      << "Cannot retain the Wayland compositor's DRM render node";
++  compositor_drm_device_id_ = compositor_device_id;
+ }
+ 
+ }  // namespace ui
+diff --git a/ui/ozone/platform/wayland/host/wayland_connection.h b/ui/ozone/platform/wayland/host/wayland_connection.h
+index 241a1e5ae9..ec789234b7 100644
+--- a/ui/ozone/platform/wayland/host/wayland_connection.h
++++ b/ui/ozone/platform/wayland/host/wayland_connection.h
+@@ -7,12 +7,14 @@
+ 
+ #include <time.h>
+ 
++#include <cstdint>
+ #include <memory>
+ #include <ostream>
+ #include <string>
+ #include <vector>
+ 
+ #include "base/containers/flat_map.h"
++#include "base/files/scoped_file.h"
+ #include "base/memory/raw_ptr.h"
+ #include "base/time/time.h"
+ #include "ui/gl/gl_display.h"
+@@ -452,6 +453,11 @@ class WaylandConnection {
+       zwp_relative_pointer_manager_;
+   std::unique_ptr<WaylandZwpPointerGestures> zwp_pointer_gestures_;
+   std::unique_ptr<WaylandSeat> seat_;
++  // Opened from the compositor's DMA-BUF main_device feedback. The browser
++  // process uses this exact node for linux-drm-syncobj ioctls instead of a
++  // separately guessed DRM device.
++  base::ScopedFD compositor_drm_render_node_fd_;
++  uint64_t compositor_drm_device_id_ = 0;
+   std::unique_ptr<WaylandBufferManagerHost> buffer_manager_host_;
+   std::unique_ptr<XdgActivation> xdg_activation_;
+   std::unique_ptr<XdgForeignWrapper> xdg_foreign_;
+diff --git a/ui/ozone/platform/wayland/ozone_platform_wayland.cc b/ui/ozone/platform/wayland/ozone_platform_wayland.cc
+--- a/ui/ozone/platform/wayland/ozone_platform_wayland.cc
++++ b/ui/ozone/platform/wayland/ozone_platform_wayland.cc
+@@ -10,7 +10,6 @@
+ #include <vector>
+ 
+ #include "base/command_line.h"
+-#include "base/files/scoped_file.h"
+ #include "base/functional/bind.h"
+ #include "base/logging.h"
+ #include "base/memory/ptr_util.h"
+@@ -34,13 +33,11 @@
+ #include "ui/gfx/native_ui_types.h"
+ #include "ui/ozone/common/base_keyboard_hook.h"
+ #include "ui/ozone/common/features.h"
+-#include "ui/ozone/platform/wayland/common/drm_render_node_handle.h"
+ #include "ui/ozone/platform/wayland/common/wayland_util.h"
+ #include "ui/ozone/platform/wayland/gpu/wayland_buffer_manager_gpu.h"
+ #include "ui/ozone/platform/wayland/gpu/wayland_gl_egl_utility.h"
+ #include "ui/ozone/platform/wayland/gpu/wayland_overlay_manager.h"
+ #include "ui/ozone/platform/wayland/gpu/wayland_surface_factory.h"
+-#include "ui/ozone/platform/wayland/host/drm_syncobj_ioctl_wrapper.h"
+ #include "ui/ozone/platform/wayland/host/linux_ui_delegate_wayland.h"
+ #include "ui/ozone/platform/wayland/host/wayland_buffer_manager_connector.h"
+ #include "ui/ozone/platform/wayland/host/wayland_buffer_manager_host.h"
+@@ -270,15 +267,8 @@ class OzonePlatformWayland : public OzonePlatform,
+     // event.
+     bool use_threaded_polling = args.single_process;
+ 
+-    base::ScopedFD drm_render_node_fd;
+ #if defined(WAYLAND_GBM)
+-    DrmRenderNodeHandle drm_render_node;
+     base::FilePath drm_node_path = path_finder_.GetDrmRenderNodePath();
+-    if (drm_node_path.empty() || !drm_render_node.Initialize(drm_node_path)) {
+-      LOG(WARNING) << "Failed to initialize drm render node handle.";
+-    } else {
+-      drm_render_node_fd = drm_render_node.PassFD();
+-    }
+     if (use_threaded_polling) {
+       // If gbm is used, wl_egl is not used so threaded polling is not required.
+       use_threaded_polling = drm_node_path.empty();
+@@ -289,12 +279,6 @@ class OzonePlatformWayland : public OzonePlatform,
+       return false;
+     }
+ 
+-    if (drm_render_node_fd.is_valid()) {
+-      connection_->buffer_manager_host()->SetDrmSyncobjWrapper(
+-          std::make_unique<DrmSyncobjIoctlWrapper>(
+-              std::move(drm_render_node_fd)));
+-    }
+-
+     buffer_manager_connector_ = std::make_unique<WaylandBufferManagerConnector>(
+         connection_.get(), connection_->buffer_manager_host());
+     cursor_factory_ = std::make_unique<WaylandCursorFactory>(connection_.get());
+   }
+ }

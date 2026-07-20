@@ -1,6 +1,85 @@
-# Shared Chromium Graphite/Dawn/Vulkan media patch.
+diff --git a/media/base/media_switches.cc b/media/base/media_switches.cc
+index 85da1c6e98..1408210d19 100644
+--- a/media/base/media_switches.cc
++++ b/media/base/media_switches.cc
+@@ -815,14 +815,12 @@ BASE_FEATURE(kAcceleratedVideoEncodeLinux,
+ BASE_FEATURE(kVaapiIgnoreDriverChecks, base::FEATURE_DISABLED_BY_DEFAULT);
+ #endif  // BUILDFLAG(IS_LINUX)
+ 
+-// NVIDIA VA-API drivers do not support Chromium and can sometimes cause
+-// crashes, disable VA-API on NVIDIA GPUs by default. See crbug.com/1492880.
+-// NVIDIA has been considering possibly supporting for an improved driver for
+-// hardware acceleration for ARM64 linux devices, so we have separated out the
+-// feature flag on that architecture.
++// NVIDIA VA-API decoding requires an explicitly supported driver. The Linux
++// package supplies a compatible direct-backend driver and enables this path;
++// other platforms retain Chromium's conservative default.
+ BASE_FEATURE(kVaapiOnNvidiaGPUs,
+-#if defined(ARCH_CPU_ARM64) && BUILDFLAG(IS_LINUX)
+-             base::FEATURE_DISABLED_BY_DEFAULT
++#if BUILDFLAG(IS_LINUX)
++             base::FEATURE_ENABLED_BY_DEFAULT
+ #else
+              base::FEATURE_DISABLED_BY_DEFAULT
+ #endif
+diff --git a/media/mojo/services/gpu_mojo_media_client.cc b/media/mojo/services/gpu_mojo_media_client.cc
+index ded9c564c3..8d9ba35109 100644
+--- a/media/mojo/services/gpu_mojo_media_client.cc
++++ b/media/mojo/services/gpu_mojo_media_client.cc
+@@ -5,8 +5,10 @@
+ #include "media/mojo/services/gpu_mojo_media_client.h"
+ 
+ #include <optional>
++#include <string>
+ #include <utility>
+ 
++#include "base/command_line.h"
+ #include "base/feature_list.h"
+ #include "base/functional/bind.h"
+ #include "base/memory/ptr_util.h"
+@@ -15,6 +17,7 @@
+ #include "base/task/sequenced_task_runner.h"
+ #include "base/task/single_thread_task_runner.h"
+ #include "build/build_config.h"
++#include "gpu/config/gpu_switches.h"
+ #include "gpu/ipc/service/gpu_channel.h"
+ #include "media/base/audio_decoder.h"
+ #include "media/base/audio_encoder.h"
+@@ -54,6 +57,18 @@ gpu::CommandBufferStub* GetCommandBufferStub(
+   return stub;
+ }
+ 
++bool IsVulkanRenderingContext(const gpu::GpuPreferences& gpu_preferences) {
++  if (gpu_preferences.gr_context_type !=
++      gpu::GrContextType::kGraphiteDawn) {
++    return gpu_preferences.gr_context_type == gpu::GrContextType::kVulkan;
++  }
++
++  const std::string dawn_backend =
++      base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
++          switches::kSkiaGraphiteDawnBackend);
++  return dawn_backend == switches::kSkiaGraphiteDawnBackendVulkan;
++}
++
+ bool IsAcceleratedDecodingDisabled(
+     const gpu::GpuPreferences& gpu_preferences,
+     const gpu::GpuFeatureInfo& gpu_feature_info) {
+@@ -61,9 +76,10 @@ bool IsAcceleratedDecodingDisabled(
+          gpu_feature_info.status_values
+                  [gpu::GPU_FEATURE_TYPE_ACCELERATED_VIDEO_DECODE] !=
+              gpu::kGpuFeatureStatusEnabled ||
+-         // For some reason the GpuPreferences and GpuFeatureInfo may not be
+-         // up to date in this case.
+-         gl::GetGLImplementation() == gl::kGLImplementationDisabled;
++         // This legacy consistency check is only meaningful for GL rendering.
++         // Vulkan-backed Graphite does not require a live GL implementation.
++         (!IsVulkanRenderingContext(gpu_preferences) &&
++          gl::GetGLImplementation() == gl::kGLImplementationDisabled);
+ }
+ 
+ }  // namespace
 diff --git a/media/mojo/services/gpu_mojo_media_client_linux.cc b/media/mojo/services/gpu_mojo_media_client_linux.cc
-index 1ef7f513cd883..d552fc018adcd 100644
+index 24ae25336d..5f831a18c0 100644
 --- a/media/mojo/services/gpu_mojo_media_client_linux.cc
 +++ b/media/mojo/services/gpu_mojo_media_client_linux.cc
 @@ -5,10 +5,13 @@
@@ -42,7 +121,7 @@ index 1ef7f513cd883..d552fc018adcd 100644
  VideoDecoderType GetPreferredLinuxDecoderImplementation() {
    // VaapiVideoDecoder flag is required for VaapiVideoDecoder.
    if (!base::FeatureList::IsEnabled(kAcceleratedVideoDecodeLinux)) {
-@@ -51,7 +72,7 @@ std::vector<Fourcc> GetPreferredRenderableFourccs(
+@@ -51,7 +72,15 @@ std::vector<Fourcc> GetPreferredRenderableFourccs(
    std::vector<Fourcc> renderable_fourccs;
  #if BUILDFLAG(ENABLE_VULKAN)
    // Support for zero-copy NV12/P010 textures preferentially.
@@ -50,8 +129,16 @@ index 1ef7f513cd883..d552fc018adcd 100644
 +  if (IsVulkanRenderingContext(gpu_preferences)) {
      renderable_fourccs.emplace_back(Fourcc::NV12);
      renderable_fourccs.emplace_back(Fourcc::P010);
++    if (IsGraphiteDawnVulkanContext(gpu_preferences) &&
++        base::CommandLine::ForCurrentProcess()->HasSwitch(
++            switches::kRequireSkiaGraphiteDawnVulkan)) {
++      // The required renderer imports decoded YUV allocations directly.
++      // Do not advertise the one-copy ARGB conversion path as a silent media
++      // fallback when native multiplanar import is unavailable.
++      return renderable_fourccs;
++    }
    } else
-@@ -118,7 +139,7 @@ VideoDecoderType GetActualPlatformDecoderImplementation(
+@@ -118,7 +147,7 @@ VideoDecoderType GetActualPlatformDecoderImplementation(
          }
        }
  #if BUILDFLAG(ENABLE_VULKAN)
@@ -60,115 +147,17 @@ index 1ef7f513cd883..d552fc018adcd 100644
          return VideoDecoderType::kUnknown;
        }
        if (!base::FeatureList::IsEnabled(features::kVulkanFromANGLE)) {
-@@ -128,6 +149,19 @@ VideoDecoderType GetActualPlatformDecoderImplementation(
+@@ -127,6 +156,13 @@ VideoDecoderType GetActualPlatformDecoderImplementation(
        if (!base::FeatureList::IsEnabled(features::kDefaultANGLEVulkan)) {
          return VideoDecoderType::kUnknown;
        }
 +      // Graphite-Dawn owns its Vulkan instance instead of Chromium's native
 +      // Vulkan implementation, so it does not populate GPUInfo::vulkan_info.
-+      // Require both NVIDIA VA-API opt-ins before accepting that explicit
-+      // configuration.
++      // Its Vulkan adapter and VA-API render node are selected and validated
++      // independently, making the native-Vulkan GPUInfo check inapplicable.
 +      if (IsGraphiteDawnVulkanContext(gpu_preferences)) {
-+        constexpr int kNvidia = 0x10de;
-+        if (gpu_info.gpu.vendor_id == kNvidia &&
-+            base::FeatureList::IsEnabled(kVaapiOnNvidiaGPUs) &&
-+            base::FeatureList::IsEnabled(kVaapiIgnoreDriverChecks)) {
-+          return VideoDecoderType::kVaapi;
-+        }
-+        return VideoDecoderType::kUnknown;
++        return VideoDecoderType::kVaapi;
 +      }
        // If Vulkan is active, check Vulkan info if VaapiVideoDecoder is allowed.
        if (!gpu_info.vulkan_info.has_value()) {
          return VideoDecoderType::kUnknown;
-diff --git a/media/mojo/services/gpu_mojo_media_client.cc b/media/mojo/services/gpu_mojo_media_client.cc
-index 81db907f5a25d..1505213973f22 100644
---- a/media/mojo/services/gpu_mojo_media_client.cc
-+++ b/media/mojo/services/gpu_mojo_media_client.cc
-@@ -5,16 +5,19 @@
- #include "media/mojo/services/gpu_mojo_media_client.h"
- 
- #include <optional>
-+#include <string>
- #include <utility>
- 
-+#include "base/command_line.h"
- #include "base/feature_list.h"
- #include "base/functional/bind.h"
- #include "base/memory/ptr_util.h"
- #include "base/metrics/histogram_functions.h"
- #include "base/notimplemented.h"
- #include "base/task/sequenced_task_runner.h"
- #include "base/task/single_thread_task_runner.h"
- #include "build/build_config.h"
-+#include "gpu/config/gpu_switches.h"
- #include "gpu/ipc/service/gpu_channel.h"
- #include "media/base/audio_decoder.h"
- #include "media/base/audio_encoder.h"
-@@ -52,6 +55,18 @@ gpu::CommandBufferStub* GetCommandBufferStub(
-   return stub;
- }
- 
-+bool IsVulkanRenderingContext(const gpu::GpuPreferences& gpu_preferences) {
-+  if (gpu_preferences.gr_context_type !=
-+      gpu::GrContextType::kGraphiteDawn) {
-+    return gpu_preferences.gr_context_type == gpu::GrContextType::kVulkan;
-+  }
-+
-+  const std::string dawn_backend =
-+      base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
-+          switches::kSkiaGraphiteDawnBackend);
-+  return dawn_backend == switches::kSkiaGraphiteDawnBackendVulkan;
-+}
-+
- bool IsAcceleratedDecodingDisabled(
-     const gpu::GpuPreferences& gpu_preferences,
-     const gpu::GpuFeatureInfo& gpu_feature_info) {
-@@ -60,9 +75,10 @@ bool IsAcceleratedDecodingDisabled(
-          gpu_feature_info.status_values
-                  [gpu::GPU_FEATURE_TYPE_ACCELERATED_VIDEO_DECODE] !=
-              gpu::kGpuFeatureStatusEnabled ||
--         // For some reason the GpuPreferences and GpuFeatureInfo may not be
--         // up to date in this case.
--         gl::GetGLImplementation() == gl::kGLImplementationDisabled;
-+         // This legacy consistency check is only meaningful for GL rendering.
-+         // Vulkan-backed Graphite does not require a live GL implementation.
-+         (!IsVulkanRenderingContext(gpu_preferences) &&
-+          gl::GetGLImplementation() == gl::kGLImplementationDisabled);
- }
- 
- }  // namespace
-diff --git a/media/gpu/chromeos/video_decoder_pipeline.cc b/media/gpu/chromeos/video_decoder_pipeline.cc
-index ea82e61878b3f..9a7a547310301 100644
---- a/media/gpu/chromeos/video_decoder_pipeline.cc
-+++ b/media/gpu/chromeos/video_decoder_pipeline.cc
-@@ -11,6 +11,7 @@
- #include <vector>
- 
- #include "base/functional/bind.h"
- #include "base/functional/callback_helpers.h"
-+#include "base/logging.h"
- #include "base/memory/ptr_util.h"
- #include "base/metrics/histogram_functions.h"
-@@ -615,6 +616,22 @@ void VideoDecoderPipeline::Initialize(const VideoDecoderConfig& config,
-     return;
-   }
-   if (!IsVideoDecoderConfigSupported(supported_configs.value(), config)) {
-+    LOG(ERROR) << "Platform video decoder rejected requested config: "
-+               << config.AsHumanReadableString()
-+               << ", decoder_type=" << static_cast<int>(GetDecoderType())
-+               << ", disable_h264="
-+               << gpu_workarounds_.disable_accelerated_h264_decode
-+               << ", supported_config_count="
-+               << supported_configs->size();
-+    for (const auto& supported : supported_configs.value()) {
-+      LOG(ERROR) << "Platform video decoder supported range: profiles="
-+                 << static_cast<int>(supported.profile_min) << "-"
-+                 << static_cast<int>(supported.profile_max)
-+                 << ", coded_size=" << supported.coded_size_min.ToString()
-+                 << "-" << supported.coded_size_max.ToString()
-+                 << ", allow_encrypted=" << supported.allow_encrypted
-+                 << ", require_encrypted=" << supported.require_encrypted;
-+    }
-     VLOGF(1) << "Video configuration is not supported: "
-              << config.AsHumanReadableString();
-     MEDIA_LOG(INFO, media_log_) << "Video configuration is not supported: "

@@ -1,0 +1,72 @@
+Subject: [PATCH] Gate the CEF OSR software proxy behind ENABLE_CEF
+
+diff --git a/components/viz/service/BUILD.gn b/components/viz/service/BUILD.gn
+index 590e04e..776a296 100644
+--- a/components/viz/service/BUILD.gn
++++ b/components/viz/service/BUILD.gn
+@@ -4,6 +4,9 @@
+ 
+ import("//build/config/ozone.gni")
+ import("//build/config/ui.gni")
++
++# Keep CEF's OSR-only source additions out of ordinary Chromium outputs.
++import("//cef/libcef/features/features.gni")
+ import("//components/viz/viz.gni")
+ import("//components/vrp_flags/features.gni")
+ import("//gpu/vulkan/features.gni")
+@@ -289,9 +291,14 @@ viz_component("service") {
+     "transitions/transferable_resource_tracker.cc",
+     "transitions/transferable_resource_tracker.h",
+-    "//cef/libcef/browser/osr/software_output_device_proxy.cc",
+-    "//cef/libcef/browser/osr/software_output_device_proxy.h",
+   ]
+ 
++  if (enable_cef) {
++    sources += [
++      "//cef/libcef/browser/osr/software_output_device_proxy.cc",
++      "//cef/libcef/browser/osr/software_output_device_proxy.h",
++    ]
++  }
++
+   defines = [ "VIZ_SERVICE_IMPLEMENTATION" ]
+ 
+   configs = [
+@@ -310,4 +317,5 @@ viz_component("service") {
+     "//cc/animation",
+     "//cc/base",
+     "//cc/paint",
++    "//cef/libcef/features:buildflags",
+     "//components/crash/core/common:crash_key",
+diff --git a/components/viz/service/display_embedder/output_surface_provider_impl.cc b/components/viz/service/display_embedder/output_surface_provider_impl.cc
+index 5ccb1c0..86d3686 100644
+--- a/components/viz/service/display_embedder/output_surface_provider_impl.cc
++++ b/components/viz/service/display_embedder/output_surface_provider_impl.cc
+@@ -18,7 +18,10 @@
+ #include "build/build_config.h"
+ #include "build/chromecast_buildflags.h"
+ #include "cc/base/switches.h"
++#include "cef/libcef/features/features.h"
++#if BUILDFLAG(ENABLE_CEF)
+ #include "cef/libcef/browser/osr/software_output_device_proxy.h"
++#endif
+ #include "components/viz/common/display/renderer_settings.h"
+ #include "components/viz/common/features.h"
+ #include "components/viz/common/frame_sinks/begin_frame_source.h"
+@@ -158,6 +161,7 @@ OutputSurfaceProviderImpl::CreateSoftwareOutputDeviceForPlatform(
+   if (headless_)
+     return std::make_unique<SoftwareOutputDevice>();
+ 
++#if BUILDFLAG(ENABLE_CEF)
+   if (use_proxy_output_device) {
+     DCHECK(display_client);
+     mojo::PendingRemote<mojom::LayeredWindowUpdater> layered_window_updater;
+@@ -166,6 +170,9 @@ OutputSurfaceProviderImpl::CreateSoftwareOutputDeviceForPlatform(
+     return std::make_unique<SoftwareOutputDeviceProxy>(
+         std::move(layered_window_updater));
+   }
++#else
++  CHECK(!use_proxy_output_device);
++#endif
+ 
+ #if BUILDFLAG(IS_WIN)
+   HWND child_hwnd;

@@ -1,7 +1,7 @@
 Subject: [PATCH] Make Graphite Dawn Vulkan a fatal renderer contract
 
-Nucleus products have one compositor renderer. Allow the GPU process to restart
-on that renderer, but never downgrade to Ganesh, GL, or software compositing.
+The patched Linux products have one compositor renderer. Allow the GPU process
+to restart on that renderer, but never downgrade to Ganesh, GL, or software compositing.
 Initialization failure and exhaustion of Chromium's normal GPU crash budget
 terminate the browser with a named renderer-contract failure.
 
@@ -118,17 +118,6 @@ diff --git a/content/browser/gpu/gpu_data_manager_impl_private_unittest.cc b/con
  // On Mac-ARM graphite should fallback to Swiftshader immediately. On other
  // platforms graphite should fallback to Ganesh/GL.
  TEST_F(GpuDataManagerImplPrivateTest, FallbackFromGraphite) {
-diff --git a/content/browser/gpu/gpu_process_host.cc b/content/browser/gpu/gpu_process_host.cc
---- a/content/browser/gpu/gpu_process_host.cc
-+++ b/content/browser/gpu/gpu_process_host.cc
-@@ -284,6 +284,7 @@ static const char* const kSwitchNames[] = {
-     switches::kEnableWebGLDraftExtensions,
-     switches::kEnableSkiaGraphite,
-     switches::kEnableSkiaGraphitePrecompilation,
-+    switches::kRequireSkiaGraphiteDawnVulkan,
-     switches::kDoubleBufferCompositing,
-     switches::kHeadless,
-     switches::kEnableLowEndDeviceMode,
 diff --git a/gpu/command_buffer/service/service_utils.cc b/gpu/command_buffer/service/service_utils.cc
 --- a/gpu/command_buffer/service/service_utils.cc
 +++ b/gpu/command_buffer/service/service_utils.cc

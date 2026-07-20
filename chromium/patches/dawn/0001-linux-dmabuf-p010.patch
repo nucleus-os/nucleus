@@ -1,21 +1,18 @@
 # Shared Dawn Vulkan DMA-BUF/P010 patch.
 diff --git a/src/dawn/native/vulkan/PhysicalDeviceVk.cpp b/src/dawn/native/vulkan/PhysicalDeviceVk.cpp
-index a96eae987..20bd6aa50 100644
+index a96eae987..bebc96d60 100644
 --- a/src/dawn/native/vulkan/PhysicalDeviceVk.cpp
 +++ b/src/dawn/native/vulkan/PhysicalDeviceVk.cpp
-@@ -472,6 +472,20 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
+@@ -472,6 +472,17 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
          EnableFeature(Feature::MultiPlanarFormatExtendedUsages);
      }
 
 +    VkFormatProperties p010Properties;
 +    mVulkanInstance->GetFunctions().GetPhysicalDeviceFormatProperties(
-+        mVkPhysicalDevice, VK_FORMAT_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16,
-+        &p010Properties);
-+    constexpr auto kRequiredP010Features =
-+        static_cast<VkFormatFeatureFlags>(VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT |
-+                                          VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT |
-+                                          VK_FORMAT_FEATURE_TRANSFER_SRC_BIT |
-+                                          VK_FORMAT_FEATURE_TRANSFER_DST_BIT);
++        mVkPhysicalDevice, VK_FORMAT_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16, &p010Properties);
++    constexpr auto kRequiredP010Features = static_cast<VkFormatFeatureFlags>(
++        VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT | VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT |
++        VK_FORMAT_FEATURE_TRANSFER_SRC_BIT | VK_FORMAT_FEATURE_TRANSFER_DST_BIT);
 +    if (unorm16FormatsFilterabilitySupported &&
 +        IsSubset(kRequiredP010Features, p010Properties.optimalTilingFeatures)) {
 +        EnableFeature(Feature::MultiPlanarFormatP010);

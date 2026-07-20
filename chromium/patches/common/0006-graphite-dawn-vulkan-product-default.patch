@@ -9,7 +9,16 @@ diff --git a/chrome/app/chrome_main_delegate.cc b/chrome/app/chrome_main_delegat
  #include "pdf/buildflags.h"
  #include "printing/buildflags/buildflags.h"
  #include "services/tracing/public/cpp/stack_sampling/tracing_sampler_profiler.h"
-@@ -1068,6 +1069,19 @@ std::optional<int> ChromeMainDelegate::BasicStartupComplete() {
+@@ -102,6 +103,8 @@
+ #include "ui/base/resource/resource_bundle.h"
+ #include "ui/base/resource/scoped_startup_resource_bundle.h"
+ #include "ui/base/ui_base_switches.h"
++#include "ui/gl/gl_switches.h"
++#include "ui/ozone/public/ozone_switches.h"
+ 
+ #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS) || \
+     BUILDFLAG(IS_MAC)
+@@ -1068,6 +1071,54 @@ std::optional<int> ChromeMainDelegate::BasicStartupComplete() {
    ash::BootTimesRecorder::Get()->SaveChromeMainStats();
  #endif
  
@@ -17,10 +26,45 @@ diff --git a/chrome/app/chrome_main_delegate.cc b/chrome/app/chrome_main_delegat
 +  base::CommandLine* product_command_line =
 +      base::CommandLine::ForCurrentProcess();
 +  if (!product_command_line->HasSwitch(switches::kProcessType)) {
++    CHECK(!product_command_line->HasSwitch(switches::kDisableGpu))
++        << "This Chromium build requires GPU acceleration";
++    CHECK(!product_command_line->HasSwitch(switches::kDisableGpuCompositing))
++        << "This Chromium build requires GPU compositing";
++    CHECK(!product_command_line->HasSwitch(switches::kDisableSkiaGraphite))
++        << "This Chromium build requires Skia Graphite";
++    CHECK(!product_command_line->HasSwitch(switches::kOzonePlatform) ||
++          product_command_line->GetSwitchValueASCII(
++              switches::kOzonePlatform) == "wayland")
++        << "This Chromium build requires native Wayland";
++    CHECK(!product_command_line->HasSwitch(switches::kUseGL) ||
++          product_command_line->GetSwitchValueASCII(switches::kUseGL) ==
++              gl::kGLImplementationANGLEName)
++        << "This Chromium build permits only ANGLE for GL API compatibility";
++    CHECK(!product_command_line->HasSwitch(switches::kUseANGLE) ||
++          product_command_line->GetSwitchValueASCII(switches::kUseANGLE) ==
++              gl::kANGLEImplementationVulkanName)
++        << "This Chromium build requires ANGLE's Vulkan backend";
++    CHECK(!product_command_line->HasSwitch(
++              switches::kSkiaGraphiteDawnBackend) ||
++          product_command_line->GetSwitchValueASCII(
++              switches::kSkiaGraphiteDawnBackend) ==
++              switches::kSkiaGraphiteDawnBackendVulkan)
++        << "This Chromium build requires Dawn's Vulkan backend";
++    if (!product_command_line->HasSwitch(switches::kOzonePlatform)) {
++      product_command_line->AppendSwitchASCII(switches::kOzonePlatform,
++                                               "wayland");
++    }
++    if (!product_command_line->HasSwitch(switches::kUseANGLE)) {
++      product_command_line->AppendSwitchASCII(
++          switches::kUseANGLE, gl::kANGLEImplementationVulkanName);
++    }
 +    product_command_line->AppendSwitch(switches::kEnableSkiaGraphite);
-+    product_command_line->AppendSwitchASCII(
-+        switches::kSkiaGraphiteDawnBackend,
-+        switches::kSkiaGraphiteDawnBackendVulkan);
++    if (!product_command_line->HasSwitch(
++            switches::kSkiaGraphiteDawnBackend)) {
++      product_command_line->AppendSwitchASCII(
++          switches::kSkiaGraphiteDawnBackend,
++          switches::kSkiaGraphiteDawnBackendVulkan);
++    }
 +    product_command_line->AppendSwitch(
 +        switches::kRequireSkiaGraphiteDawnVulkan);
 +  }
@@ -56,9 +100,9 @@ index 0273624365..e2db1d8082 100644
    // device would already be using Ganesh/Vulkan.
    return IsUsingVulkan();
 +#elif BUILDFLAG(IS_LINUX)
-+  // Nucleus Browser's Linux compositor is Graphite on Dawn Vulkan. Runtime
-+  // adapter and external-memory validation determine whether startup can
-+  // continue; Linux is not gated on the legacy Ganesh/Vulkan feature.
++  // The required Linux compositor is Graphite on Dawn Vulkan. Runtime adapter
++  // and external-memory validation determine whether startup can continue;
++  // Linux is not gated on the legacy Ganesh/Vulkan feature.
 +  return true;
  #elif BUILDFLAG(IS_WIN) && defined(ARCH_CPU_ARM64)
    // Graphite on Windows ARM requires further research.
@@ -81,6 +125,20 @@ index 9c25c013ab..486a6ff946 100644
  
  // Track current program's shaders at glUseProgram() call for crash report
  // purpose. Only effective on Windows because the attached shaders may only
+@@ -281,7 +286,12 @@ BASE_FEATURE(kTrackCurrentShaders, base::FEATURE_DISABLED_BY_DEFAULT);
+ 
+ // Enable sharing Vulkan device queue with ANGLE's Vulkan backend.
+ BASE_FEATURE(kVulkanFromANGLE,
+-             base::FEATURE_DISABLED_BY_DEFAULT);
++#if BUILDFLAG(IS_LINUX)
++             base::FEATURE_ENABLED_BY_DEFAULT
++#else
++             base::FEATURE_DISABLED_BY_DEFAULT
++#endif
++);
+ 
+ // Enable skipping the Vulkan blocklist.
+ BASE_FEATURE(kSkipVulkanBlocklist,
 diff --git a/ui/gl/init/gl_display_initializer.cc b/ui/gl/init/gl_display_initializer.cc
 index 940e8741f1..26f86e2263 100644
 --- a/ui/gl/init/gl_display_initializer.cc
@@ -90,9 +148,9 @@ index 940e8741f1..26f86e2263 100644
    if (supports_angle_vulkan && use_angle_default && default_angle_vulkan) {
      AddInitDisplay(init_displays, ANGLE_VULKAN);
 +#if BUILDFLAG(IS_LINUX)
-+    // Nucleus Browser uses ANGLE's Vulkan backend for WebGL and interop. Do
-+    // not append OpenGL/GLES alternatives that would silently split the
-+    // browser across incompatible GPU APIs after Vulkan initialization fails.
++    // Use ANGLE's Vulkan backend for WebGL and interop. Do not append
++    // OpenGL/GLES alternatives that would silently split the browser across
++    // incompatible GPU APIs after Vulkan initialization fails.
 +    return;
 +#endif
    }

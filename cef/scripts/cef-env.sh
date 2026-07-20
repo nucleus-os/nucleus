@@ -31,7 +31,7 @@ export NUCLEUS_CEF_CHROMIUM_VERSION="${NUCLEUS_CEF_CHROMIUM_VERSION:-151.0.7922.
 # Noctalia runs only on Wayland and owns the actual wl_surface used for
 # presentation. Build Chromium's Ozone Wayland backend without the unused X11
 # window-system backend or fallback.
-export NUCLEUS_CEF_GN_DEFINES_BASE="proprietary_codecs=true ffmpeg_branding=Chrome use_dbus=true is_official_build=true symbol_level=0 dcheck_always_on=false enable_expensive_dchecks=false chrome_pgo_phase=2 use_thin_lto=true thin_lto_enable_optimizations=true use_mold=false use_lld=true use_allocator_shim=false enable_backup_ref_ptr_support=false treat_warnings_as_errors=false ozone_platform=wayland ozone_platform_wayland=true ozone_platform_x11=false"
+export NUCLEUS_CEF_GN_DEFINES_BASE="proprietary_codecs=true ffmpeg_branding=Chrome use_dbus=true is_official_build=true symbol_level=0 dcheck_always_on=false enable_expensive_dchecks=false chrome_pgo_phase=2 use_thin_lto=true thin_lto_enable_optimizations=true use_mold=false use_lld=true cc_wrapper=ccache use_allocator_shim=false enable_backup_ref_ptr_support=false enable_swiftshader=false enable_swiftshader_vulkan=false angle_enable_swiftshader=false treat_warnings_as_errors=false ozone_platform=wayland ozone_platform_wayland=true ozone_platform_x11=false"
 # Appended verbatim for narrow build experiments.
 export NUCLEUS_CEF_GN_EXTRA="${NUCLEUS_CEF_GN_EXTRA:-}"
 
@@ -52,6 +52,9 @@ export NUCLEUS_CEF_JOBS="${NUCLEUS_CEF_JOBS:-$(nproc)}"
 
 # ccache — shared with the rest of the workspace's native builds.
 export CCACHE_DIR="${CCACHE_DIR:-$HOME/.cache/ccache}"
+# Normalize source paths so identical translation units can be reused between
+# the CEF and standalone-browser GN outputs when their compile flags match.
+export CCACHE_BASEDIR="${CCACHE_BASEDIR:-$NUCLEUS_CEF_SRC_ROOT/chromium/src}"
 
 nucleus_cef_automate_url() {
   echo "https://raw.githubusercontent.com/chromiumembedded/cef/refs/heads/${NUCLEUS_CEF_BRANCH}/tools/automate/automate-git.py"

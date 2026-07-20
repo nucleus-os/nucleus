@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+launcher_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+prefix="$(cd -- "$launcher_dir/.." && pwd)"
+runtime_dir="$prefix/lib/nucleus-browser"
+browser="$runtime_dir/nucleus-browser-bin"
+
+if [[ ! -x "$browser" ]]; then
+  echo "Nucleus Browser runtime is incomplete: $browser is missing" >&2
+  exit 1
+fi
+if [[ -z "${WAYLAND_DISPLAY:-}" ]]; then
+  echo "Nucleus Browser requires a native Wayland session" >&2
+  exit 1
+fi
+
+# Keep the product identity outside Chromium's string/resource machinery. The
+# desktop filename becomes the native Wayland app ID, while the profile and
+# cache remain independent from both stock Chromium and Noctalia's CEF profile.
+export CHROME_DESKTOP=dev.nucleus.Browser.desktop
+export CHROME_WRAPPER="$prefix/bin/nucleus-browser"
+config_root="${XDG_CONFIG_HOME:-$HOME/.config}/nucleus-browser"
+cache_root="${XDG_CACHE_HOME:-$HOME/.cache}/nucleus-browser"
+export LD_LIBRARY_PATH="$runtime_dir${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+
+# Make the privately deployed NVIDIA VA-API module available without selecting
+# it in the browser process. Chromium translates this private path into libva's
+# environment only for a GPU child whose compositor-selected DRM render node is
+# NVIDIA. Intel and AMD main devices retain normal system-driver discovery.
+private_vaapi_dir="${NUCLEUS_NVIDIA_VAAPI_DIR:-$HOME/.local/lib/noctalia/vaapi/nvidia/current/lib/dri}"
+export CHROMIUM_NVIDIA_VAAPI_DRIVER_PATH="$private_vaapi_dir"
+if [[ ! -f "$private_vaapi_dir/nvidia_drv_video.so" ]] &&
+   [[ -e /proc/driver/nvidia/version ]]; then
+  echo "Nucleus Browser: NVIDIA hardware video driver is missing: $private_vaapi_dir/nvidia_drv_video.so" >&2
+fi
+
+exec "$browser" \
+  --user-data-dir="$config_root" \
+  --disk-cache-dir="$cache_root" \
+  "$@"
