@@ -1,5 +1,5 @@
 diff --git a/gpu/command_buffer/service/BUILD.gn b/gpu/command_buffer/service/BUILD.gn
-index 6ae0b6d..dff8cb9 100644
+index 6ae0b6dd00..dff8cb9cbb 100644
 --- a/gpu/command_buffer/service/BUILD.gn
 +++ b/gpu/command_buffer/service/BUILD.gn
 @@ -557,7 +557,7 @@ target(link_target_type, "gles2_sources") {
@@ -12,7 +12,7 @@ index 6ae0b6d..dff8cb9 100644
          "drm_modifiers_filter_dawn.cc",
          "drm_modifiers_filter_dawn.h",
 diff --git a/gpu/command_buffer/service/drm_modifiers_filter_dawn.cc b/gpu/command_buffer/service/drm_modifiers_filter_dawn.cc
-index f51ce10216..d41b338a5f 100644
+index f51ce10216..50fff2874f 100644
 --- a/gpu/command_buffer/service/drm_modifiers_filter_dawn.cc
 +++ b/gpu/command_buffer/service/drm_modifiers_filter_dawn.cc
 @@ -6,7 +6,6 @@
@@ -23,16 +23,22 @@ index f51ce10216..d41b338a5f 100644
  #include "base/containers/fixed_flat_set.h"
  #include "base/containers/flat_map.h"
  #include "components/viz/common/resources/shared_image_format_utils.h"
-@@ -91,7 +90,6 @@ DrmModifiersFilterDawn::~DrmModifiersFilterDawn() = default;
+@@ -91,8 +90,11 @@ DrmModifiersFilterDawn::~DrmModifiersFilterDawn() = default;
+ std::vector<uint64_t> DrmModifiersFilterDawn::Filter(
      viz::SharedImageFormat format,
      const std::vector<uint64_t>& modifiers) {
 -  CHECK(viz::HasEquivalentBufferFormat(format));
-   const auto& modifier_set = modifier_map_.at(format);
+-  const auto& modifier_set = modifier_map_.at(format);
++  const auto modifier_set_it = modifier_map_.find(format);
++  if (modifier_set_it == modifier_map_.end()) {
++    return {};
++  }
++  const auto& modifier_set = modifier_set_it->second;
  
    std::vector<uint64_t> intersection;
    for (const auto& modifier : modifiers) {
 diff --git a/gpu/command_buffer/service/shared_image/ozone_image_backing_factory.cc b/gpu/command_buffer/service/shared_image/ozone_image_backing_factory.cc
-index dfa3858..36886fc 100644
+index dfa3858f21..36886fc134 100644
 --- a/gpu/command_buffer/service/shared_image/ozone_image_backing_factory.cc
 +++ b/gpu/command_buffer/service/shared_image/ozone_image_backing_factory.cc
 @@ -140,8 +140,10 @@ OzoneImageBackingFactory::CreateSharedImageInternal(
@@ -109,7 +115,7 @@ index dfa3858..36886fc 100644
  #endif
  }
 diff --git a/gpu/ipc/service/gpu_init.cc b/gpu/ipc/service/gpu_init.cc
-index 7f10f54..797a45e 100644
+index 7f10f5469f..797a45ec4e 100644
 --- a/gpu/ipc/service/gpu_init.cc
 +++ b/gpu/ipc/service/gpu_init.cc
 @@ -107,7 +107,7 @@

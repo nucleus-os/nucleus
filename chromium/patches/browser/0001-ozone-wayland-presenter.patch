@@ -1,5 +1,5 @@
 diff --git a/ui/ozone/BUILD.gn b/ui/ozone/BUILD.gn
-index 0bd2b4e..5aa6f97 100644
+index 0bd2b4e80e..5aa6f97234 100644
 --- a/ui/ozone/BUILD.gn
 +++ b/ui/ozone/BUILD.gn
 @@ -98,6 +98,8 @@ component("ozone_base") {
@@ -12,7 +12,7 @@ index 0bd2b4e..5aa6f97 100644
      "public/platform_gl_egl_utility.cc",
      "public/platform_gl_egl_utility.h",
 diff --git a/ui/ozone/platform/wayland/BUILD.gn b/ui/ozone/platform/wayland/BUILD.gn
-index 8e2d305..655fcd5 100644
+index 8e2d305163..655fcd55db 100644
 --- a/ui/ozone/platform/wayland/BUILD.gn
 +++ b/ui/ozone/platform/wayland/BUILD.gn
 @@ -342,6 +342,8 @@ source_set("wayland") {
@@ -25,7 +25,7 @@ index 8e2d305..655fcd5 100644
  
      deps += [
 diff --git a/ui/ozone/platform/wayland/gpu/gbm_pixmap_wayland.cc b/ui/ozone/platform/wayland/gpu/gbm_pixmap_wayland.cc
-index 0f6c17b..137f373 100644
+index 0f6c17b2f5..137f3739a3 100644
 --- a/ui/ozone/platform/wayland/gpu/gbm_pixmap_wayland.cc
 +++ b/ui/ozone/platform/wayland/gpu/gbm_pixmap_wayland.cc
 @@ -23,8 +23,8 @@
@@ -61,7 +61,7 @@ index 0f6c17b..137f373 100644
  }
  
 diff --git a/ui/ozone/platform/wayland/gpu/gbm_surfaceless_wayland.cc b/ui/ozone/platform/wayland/gpu/gbm_surfaceless_wayland.cc
-index b234334..efc3f6c 100644
+index b234334f90..efc3f6ccbc 100644
 --- a/ui/ozone/platform/wayland/gpu/gbm_surfaceless_wayland.cc
 +++ b/ui/ozone/platform/wayland/gpu/gbm_surfaceless_wayland.cc
 @@ -4,236 +4,51 @@
@@ -462,7 +462,7 @@ index b234334..efc3f6c 100644
 -
  }  // namespace ui
 diff --git a/ui/ozone/platform/wayland/gpu/gbm_surfaceless_wayland.h b/ui/ozone/platform/wayland/gpu/gbm_surfaceless_wayland.h
-index 020329d..2d64bce 100644
+index 020329d2c3..2d64bce3cc 100644
 --- a/ui/ozone/platform/wayland/gpu/gbm_surfaceless_wayland.h
 +++ b/ui/ozone/platform/wayland/gpu/gbm_surfaceless_wayland.h
 @@ -5,21 +5,11 @@
@@ -648,7 +648,7 @@ index 020329d..2d64bce 100644
  
  }  // namespace ui
 diff --git a/ui/ozone/platform/wayland/gpu/gl_surface_wayland.cc b/ui/ozone/platform/wayland/gpu/gl_surface_wayland.cc
-index 1b1a6ad..ababe14 100644
+index 1b1a6ad2e8..ababe14779 100644
 --- a/ui/ozone/platform/wayland/gpu/gl_surface_wayland.cc
 +++ b/ui/ozone/platform/wayland/gpu/gl_surface_wayland.cc
 @@ -82,8 +82,8 @@ EGLConfig GLSurfaceWayland::GetConfig() {
@@ -663,7 +663,7 @@ index 1b1a6ad..ababe14 100644
  gfx::SwapResult GLSurfaceWayland::SwapBuffers(PresentationCallback callback,
                                                gfx::FrameData data) {
 diff --git a/ui/ozone/platform/wayland/gpu/wayland_buffer_manager_gpu.cc b/ui/ozone/platform/wayland/gpu/wayland_buffer_manager_gpu.cc
-index c553d65..79c190f 100644
+index c553d6503a..79c190f75b 100644
 --- a/ui/ozone/platform/wayland/gpu/wayland_buffer_manager_gpu.cc
 +++ b/ui/ozone/platform/wayland/gpu/wayland_buffer_manager_gpu.cc
 @@ -9,6 +9,7 @@
@@ -761,7 +761,7 @@ index c553d65..79c190f 100644
    // WaylandBufferManagerHost::BindInterface for more details.
    remote_host_.reset();
 diff --git a/ui/ozone/platform/wayland/gpu/wayland_buffer_manager_gpu.h b/ui/ozone/platform/wayland/gpu/wayland_buffer_manager_gpu.h
-index 06adee3..f4b7415 100644
+index 06adee311a..7da065bdf9 100644
 --- a/ui/ozone/platform/wayland/gpu/wayland_buffer_manager_gpu.h
 +++ b/ui/ozone/platform/wayland/gpu/wayland_buffer_manager_gpu.h
 @@ -66,6 +66,7 @@ class WaylandBufferManagerGpu : public ozone::mojom::WaylandBufferManagerGpu {
@@ -792,7 +792,7 @@ index 06adee3..f4b7415 100644
    // Returns if a format is supported by current Wayland implementation.
    bool SupportsFormat(viz::SharedImageFormat format) const;
  
-@@ -190,6 +197,16 @@ class WaylandBufferManagerGpu : public ozone::mojom::WaylandBufferManagerGpu {
+@@ -190,6 +197,18 @@ class WaylandBufferManagerGpu : public ozone::mojom::WaylandBufferManagerGpu {
                             GbmSurfacelessWaylandCommitOverlaysCallbacksTest);
    FRIEND_TEST_ALL_PREFIXES(WaylandSurfaceFactoryTest,
                             GbmSurfacelessWaylandGroupOnSubmissionCallbacksTest);
@@ -806,10 +806,12 @@ index 06adee3..f4b7415 100644
 +                           OzonePresenterRequiresLinuxDrmSyncobj);
 +  FRIEND_TEST_ALL_PREFIXES(WaylandSurfaceFactoryTest,
 +                           OzonePresenterDisconnectResolvesCallbacks);
++  FRIEND_TEST_ALL_PREFIXES(WaylandSurfaceFactoryTest,
++                           OzonePresenterCallbacksMayDestroyPresenter);
    FRIEND_TEST_ALL_PREFIXES(WaylandSurfaceFactoryCompositorV3,
                             SurfaceDamageTest);
    FRIEND_TEST_ALL_PREFIXES(WaylandBufferManagerTest,
-@@ -216,6 +233,7 @@ class WaylandBufferManagerGpu : public ozone::mojom::WaylandBufferManagerGpu {
+@@ -216,6 +235,7 @@ class WaylandBufferManagerGpu : public ozone::mojom::WaylandBufferManagerGpu {
    void HandlePresentationOnOriginThread(
        gfx::AcceleratedWidget widget,
        const std::vector<wl::WaylandPresentationInfo>& presentation_infos);
@@ -817,7 +819,7 @@ index 06adee3..f4b7415 100644
  
    void OnHostDisconnected();
  
-@@ -270,6 +288,9 @@ class WaylandBufferManagerGpu : public ozone::mojom::WaylandBufferManagerGpu {
+@@ -270,6 +290,9 @@ class WaylandBufferManagerGpu : public ozone::mojom::WaylandBufferManagerGpu {
    // Whether Wayland server allows buffer submission with acquire fence.
    bool supports_acquire_fence_ = false;
  
@@ -827,7 +829,7 @@ index 06adee3..f4b7415 100644
    // Whether Wayland server implements wp_viewporter extension to support
    // cropping and scaling buffers.
    bool supports_viewporter_ = false;
-@@ -333,6 +354,9 @@ class WaylandBufferManagerGpu : public ozone::mojom::WaylandBufferManagerGpu {
+@@ -333,6 +356,9 @@ class WaylandBufferManagerGpu : public ozone::mojom::WaylandBufferManagerGpu {
    // Keeps track of the next unique buffer ID.
    uint32_t next_buffer_id_ = 0;
  
@@ -839,10 +841,10 @@ index 06adee3..f4b7415 100644
  
 diff --git a/ui/ozone/platform/wayland/gpu/wayland_buffer_queue_presenter.cc b/ui/ozone/platform/wayland/gpu/wayland_buffer_queue_presenter.cc
 new file mode 100644
-index 0000000..b4610a1
+index 0000000000..880e4815f4
 --- /dev/null
 +++ b/ui/ozone/platform/wayland/gpu/wayland_buffer_queue_presenter.cc
-@@ -0,0 +1,426 @@
+@@ -0,0 +1,458 @@
 +// Copyright 2018 The Chromium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -873,6 +875,11 @@ index 0000000..b4610a1
 +// allow to store max 12 buffers (including some margin) of solid color buffers
 +// and remove the rest.
 +static constexpr size_t kMaxSolidColorBuffers = 12;
++
++struct FailedFrameCallbacks {
++  OzonePresenter::SwapCompletionCallback completion;
++  OzonePresenter::PresentationCallback presentation;
++};
 +
 +void WaitForGpuFences(std::vector<std::unique_ptr<gfx::GpuFence>> fences) {
 +  for (auto& fence : fences) {
@@ -1109,7 +1116,7 @@ index 0000000..b4610a1
 +WaylandBufferQueuePresenter::~WaylandBufferQueuePresenter() {
 +  weak_factory_.InvalidateWeakPtrs();
 +  buffer_manager_->UnregisterSurface(widget_);
-+  FailPendingFrames();
++  FailPendingFrames(/*install_sentinel=*/false);
 +  solid_color_buffers_holder_->DestroyAllBuffers(buffer_manager_);
 +}
 +
@@ -1124,15 +1131,11 @@ index 0000000..b4610a1
 +    unsubmitted_frames_.pop_front();
 +
 +    if (!submitted_frame->schedule_planes_succeeded) {
-+      RecycleSolidColorBuffers(submitted_frame.get());
-+
-+      std::move(submitted_frame->completion_callback)
-+          .Run(gfx::SwapCompletionResult(gfx::SwapResult::SWAP_FAILED));
-+      // Notify the caller, the buffer is never presented on a screen.
-+      std::move(submitted_frame->presentation_callback)
-+          .Run(gfx::PresentationFeedback::Failure());
-+
-+      submitted_frame.reset();
++      // Put the failed frame back at the head so EnterFailedState() can detach
++      // all callbacks and install its terminal sentinel before invoking any
++      // client code. A completion callback is allowed to synchronously destroy
++      // this presenter.
++      unsubmitted_frames_.push_front(std::move(submitted_frame));
 +      EnterFailedState();
 +      return;
 +    }
@@ -1199,10 +1202,18 @@ index 0000000..b4610a1
 +    }
 +  }
 +
-+  std::move(submitted_frame->completion_callback)
-+      .Run(gfx::SwapCompletionResult(swap_result, std::move(release_fence)));
-+
 +  pending_presentation_frames_.push_back(std::move(submitted_frame));
++
++  auto& pending_frame = pending_presentation_frames_.back();
++  SwapCompletionCallback completion_callback =
++      std::move(pending_frame->completion_callback);
++  base::WeakPtr<WaylandBufferQueuePresenter> weak_this =
++      weak_factory_.GetWeakPtr();
++  std::move(completion_callback)
++      .Run(gfx::SwapCompletionResult(swap_result, std::move(release_fence)));
++  if (!weak_this) {
++    return;
++  }
 +
 +  if (swap_result != gfx::SwapResult::SWAP_ACK &&
 +      swap_result != gfx::SwapResult::SWAP_NAK_RECREATE_BUFFERS) {
@@ -1221,9 +1232,10 @@ index 0000000..b4610a1
 +    return;
 +  }
 +
-+  std::move(pending_presentation_frames_.front()->presentation_callback)
-+      .Run(feedback);
++  PresentationCallback presentation_callback =
++      std::move(pending_presentation_frames_.front()->presentation_callback);
 +  pending_presentation_frames_.pop_front();
++  std::move(presentation_callback).Run(feedback);
 +}
 +
 +void WaylandBufferQueuePresenter::OnBufferManagerDisconnected() {
@@ -1232,46 +1244,68 @@ index 0000000..b4610a1
 +
 +void WaylandBufferQueuePresenter::EnterFailedState() {
 +  last_swap_buffers_result_ = false;
-+  FailPendingFrames();
-+  unsubmitted_frames_.push_back(
-+      std::make_unique<PendingFrame>(buffer_manager_->AllocateFrameID()));
++  FailPendingFrames(/*install_sentinel=*/true);
 +}
 +
-+void WaylandBufferQueuePresenter::FailPendingFrames() {
-+  auto fail_frame = [this](std::unique_ptr<PendingFrame> frame,
-+                           bool completion_pending) {
++void WaylandBufferQueuePresenter::FailPendingFrames(bool install_sentinel) {
++  std::vector<FailedFrameCallbacks> failed_callbacks;
++
++  auto detach_frame = [this, &failed_callbacks](
++                          std::unique_ptr<PendingFrame> frame,
++                          bool completion_pending) {
 +    RecycleSolidColorBuffers(frame.get());
-+    if (completion_pending && frame->completion_callback) {
-+      std::move(frame->completion_callback)
-+          .Run(gfx::SwapCompletionResult(gfx::SwapResult::SWAP_FAILED));
++    FailedFrameCallbacks callbacks;
++    if (completion_pending) {
++      callbacks.completion = std::move(frame->completion_callback);
 +    }
-+    if (frame->presentation_callback) {
-+      std::move(frame->presentation_callback)
-+          .Run(gfx::PresentationFeedback::Failure());
++    callbacks.presentation = std::move(frame->presentation_callback);
++    if (callbacks.completion || callbacks.presentation) {
++      failed_callbacks.push_back(std::move(callbacks));
 +    }
 +  };
 +
-+  while (!unsubmitted_frames_.empty()) {
-+    auto frame = std::move(unsubmitted_frames_.front());
-+    unsubmitted_frames_.pop_front();
-+    fail_frame(std::move(frame), true);
++  // Preserve frame order across the three lifecycle queues: a frame awaiting
++  // presentation is older than one awaiting submission, which is older than a
++  // frame whose acquire fence has not retired yet.
++  while (!pending_presentation_frames_.empty()) {
++    auto frame = std::move(pending_presentation_frames_.front());
++    pending_presentation_frames_.pop_front();
++    detach_frame(std::move(frame), /*completion_pending=*/false);
 +  }
 +  while (!submitted_frames_.empty()) {
 +    auto frame = std::move(submitted_frames_.front());
 +    submitted_frames_.pop_front();
-+    fail_frame(std::move(frame), true);
++    detach_frame(std::move(frame), /*completion_pending=*/true);
 +  }
-+  while (!pending_presentation_frames_.empty()) {
-+    auto frame = std::move(pending_presentation_frames_.front());
-+    pending_presentation_frames_.pop_front();
-+    fail_frame(std::move(frame), false);
++  while (!unsubmitted_frames_.empty()) {
++    auto frame = std::move(unsubmitted_frames_.front());
++    unsubmitted_frames_.pop_front();
++    detach_frame(std::move(frame), /*completion_pending=*/true);
++  }
++
++  if (install_sentinel) {
++    unsubmitted_frames_.push_back(
++        std::make_unique<PendingFrame>(buffer_manager_->AllocateFrameID()));
++  }
++
++  // Do not access any presenter member after this point. Either callback may
++  // synchronously destroy the presenter and its owner.
++  for (auto& callbacks : failed_callbacks) {
++    if (callbacks.completion) {
++      std::move(callbacks.completion)
++          .Run(gfx::SwapCompletionResult(gfx::SwapResult::SWAP_FAILED));
++    }
++    if (callbacks.presentation) {
++      std::move(callbacks.presentation)
++          .Run(gfx::PresentationFeedback::Failure());
++    }
 +  }
 +}
 +
 +}  // namespace ui
 diff --git a/ui/ozone/platform/wayland/gpu/wayland_buffer_queue_presenter.h b/ui/ozone/platform/wayland/gpu/wayland_buffer_queue_presenter.h
 new file mode 100644
-index 0000000..6e33b7f
+index 0000000000..cc0b6375d4
 --- /dev/null
 +++ b/ui/ozone/platform/wayland/gpu/wayland_buffer_queue_presenter.h
 @@ -0,0 +1,177 @@
@@ -1420,7 +1454,7 @@ index 0000000..6e33b7f
 +
 +  void FenceRetired(uint32_t frame_id);
 +  void EnterFailedState();
-+  void FailPendingFrames();
++  void FailPendingFrames(bool install_sentinel);
 +
 +  const raw_ptr<WaylandBufferManagerGpu> buffer_manager_;
 +
@@ -1453,7 +1487,7 @@ index 0000000..6e33b7f
 +
 +#endif  // UI_OZONE_PLATFORM_WAYLAND_GPU_WAYLAND_BUFFER_QUEUE_PRESENTER_H_
 diff --git a/ui/ozone/platform/wayland/gpu/wayland_overlay_manager_unittest.cc b/ui/ozone/platform/wayland/gpu/wayland_overlay_manager_unittest.cc
-index 34beb2f..11054d6 100644
+index 34beb2f3b1..11054d6cb5 100644
 --- a/ui/ozone/platform/wayland/gpu/wayland_overlay_manager_unittest.cc
 +++ b/ui/ozone/platform/wayland/gpu/wayland_overlay_manager_unittest.cc
 @@ -60,6 +60,7 @@ class WaylandOverlayManagerTest : public WaylandTest {
@@ -1465,7 +1499,7 @@ index 34beb2f..11054d6 100644
                                      /*supports_single_pixel_buffer=*/true);
  
 diff --git a/ui/ozone/platform/wayland/gpu/wayland_surface_factory.cc b/ui/ozone/platform/wayland/gpu/wayland_surface_factory.cc
-index 2605b0e..1e1b6ca 100644
+index 2605b0e267..1e1b6ca76e 100644
 --- a/ui/ozone/platform/wayland/gpu/wayland_surface_factory.cc
 +++ b/ui/ozone/platform/wayland/gpu/wayland_surface_factory.cc
 @@ -6,6 +6,7 @@
@@ -1521,7 +1555,7 @@ index 2605b0e..1e1b6ca 100644
  }
  #endif
 diff --git a/ui/ozone/platform/wayland/gpu/wayland_surface_factory.h b/ui/ozone/platform/wayland/gpu/wayland_surface_factory.h
-index 95d34bf..e845b50 100644
+index 95d34bf8e1..e845b502cc 100644
 --- a/ui/ozone/platform/wayland/gpu/wayland_surface_factory.h
 +++ b/ui/ozone/platform/wayland/gpu/wayland_surface_factory.h
 @@ -38,6 +38,8 @@ class WaylandSurfaceFactory : public SurfaceFactoryOzone {
@@ -1534,7 +1568,7 @@ index 95d34bf..e845b50 100644
        gfx::AcceleratedWidget widget) override;
    scoped_refptr<gfx::NativePixmap> CreateNativePixmap(
 diff --git a/ui/ozone/platform/wayland/gpu/wayland_surface_factory_unittest.cc b/ui/ozone/platform/wayland/gpu/wayland_surface_factory_unittest.cc
-index 3d7c6f2..9846dc8 100644
+index 3d7c6f2dab..589b5333ff 100644
 --- a/ui/ozone/platform/wayland/gpu/wayland_surface_factory_unittest.cc
 +++ b/ui/ozone/platform/wayland/gpu/wayland_surface_factory_unittest.cc
 @@ -31,6 +31,7 @@
@@ -1561,7 +1595,7 @@ index 3d7c6f2..9846dc8 100644
                                      /*supports_overlays=*/true,
                                      /*supports_single_pixel_buffer=*/true);
  
-@@ -247,6 +250,176 @@ class WaylandSurfaceFactoryTest : public WaylandTest {
+@@ -247,6 +250,248 @@ class WaylandSurfaceFactoryTest : public WaylandTest {
    uint32_t surface_id_ = 0;
  };
  
@@ -1633,6 +1667,78 @@ index 3d7c6f2..9846dc8 100644
 +  EXPECT_EQ(presentation_count, 1);
 +
 +  base::RunLoop().RunUntilIdle();
++  EXPECT_EQ(completion_count, 1);
++  EXPECT_EQ(presentation_count, 1);
++}
++
++TEST_P(WaylandSurfaceFactoryTest, OzonePresenterCallbacksMayDestroyPresenter) {
++  buffer_manager_gpu_->use_fake_gbm_device_for_test_ = true;
++  buffer_manager_gpu_->gbm_device_ = std::make_unique<MockGbmDevice>();
++  buffer_manager_gpu_->supports_dmabuf_ = true;
++  buffer_manager_gpu_->supports_acquire_fence_ = true;
++  buffer_manager_gpu_->supports_explicit_sync_ = true;
++
++  auto presenter = surface_factory()->CreateOzonePresenter(widget_);
++  ASSERT_TRUE(presenter);
++
++  gfx::OverlayPlaneData plane;
++  EXPECT_FALSE(presenter->ScheduleOverlayPlane(
++      /*image=*/nullptr, /*acquire_fence=*/nullptr, plane));
++
++  int completion_count = 0;
++  int presentation_count = 0;
++  presenter->Present(
++      base::BindOnce(
++          [](std::unique_ptr<OzonePresenter>* presenter, int* count,
++             gfx::SwapCompletionResult result) {
++            ++*count;
++            EXPECT_EQ(result.swap_result, gfx::SwapResult::SWAP_FAILED);
++            presenter->reset();
++          },
++          &presenter, &completion_count),
++      base::BindOnce(
++          [](int* count, const gfx::PresentationFeedback& feedback) {
++            ++*count;
++            EXPECT_TRUE(feedback.failed());
++          },
++          &presentation_count),
++      gfx::FrameData());
++
++  EXPECT_FALSE(presenter);
++  EXPECT_EQ(completion_count, 1);
++  EXPECT_EQ(presentation_count, 1);
++
++  presenter = surface_factory()->CreateOzonePresenter(widget_);
++  ASSERT_TRUE(presenter);
++  auto* wayland_presenter =
++      static_cast<WaylandBufferQueuePresenter*>(presenter.get());
++
++  completion_count = 0;
++  presentation_count = 0;
++  presenter->Present(
++      base::BindOnce(
++          [](std::unique_ptr<OzonePresenter>* presenter, int* count,
++             gfx::SwapCompletionResult result) {
++            ++*count;
++            EXPECT_EQ(result.swap_result, gfx::SwapResult::SWAP_ACK);
++            presenter->reset();
++          },
++          &presenter, &completion_count),
++      base::BindOnce(
++          [](int* count, const gfx::PresentationFeedback& feedback) {
++            ++*count;
++            EXPECT_TRUE(feedback.failed());
++          },
++          &presentation_count),
++      gfx::FrameData());
++
++  ASSERT_EQ(wayland_presenter->submitted_frames_.size(), 1u);
++  const uint32_t submitted_frame_id =
++      wayland_presenter->submitted_frames_.front()->frame_id;
++  wayland_presenter->OnSubmission(
++      submitted_frame_id, gfx::SwapResult::SWAP_ACK, gfx::GpuFenceHandle());
++
++  EXPECT_FALSE(presenter);
 +  EXPECT_EQ(completion_count, 1);
 +  EXPECT_EQ(presentation_count, 1);
 +}
@@ -1739,7 +1845,7 @@ index 3d7c6f2..9846dc8 100644
         GbmSurfacelessWaylandCommitOverlaysCallbacksTest) {
    if (!connection_->ShouldUseOverlayDelegation()) {
 diff --git a/ui/ozone/platform/wayland/gpu/wayland_surface_gpu.h b/ui/ozone/platform/wayland/gpu/wayland_surface_gpu.h
-index c574d45..956804e 100644
+index c574d45607..956804e1d5 100644
 --- a/ui/ozone/platform/wayland/gpu/wayland_surface_gpu.h
 +++ b/ui/ozone/platform/wayland/gpu/wayland_surface_gpu.h
 @@ -38,6 +38,11 @@ class WaylandSurfaceGpu {
@@ -1755,7 +1861,7 @@ index c574d45..956804e 100644
  
   private:
 diff --git a/ui/ozone/platform/wayland/host/wayland_buffer_manager_connector.cc b/ui/ozone/platform/wayland/host/wayland_buffer_manager_connector.cc
-index 7309b92..d58d49d 100644
+index 7309b9236f..d58d49d1c3 100644
 --- a/ui/ozone/platform/wayland/host/wayland_buffer_manager_connector.cc
 +++ b/ui/ozone/platform/wayland/host/wayland_buffer_manager_connector.cc
 @@ -66,6 +66,7 @@ void WaylandBufferManagerConnector::OnGpuServiceLaunched(
@@ -1767,7 +1873,7 @@ index 7309b92..d58d49d 100644
        buffer_manager_host_->SupportsSinglePixelBuffer());
  }
 diff --git a/ui/ozone/platform/wayland/host/wayland_buffer_manager_host.cc b/ui/ozone/platform/wayland/host/wayland_buffer_manager_host.cc
-index c676771..15e101f 100644
+index c67677137c..15e101f3fb 100644
 --- a/ui/ozone/platform/wayland/host/wayland_buffer_manager_host.cc
 +++ b/ui/ozone/platform/wayland/host/wayland_buffer_manager_host.cc
 @@ -108,6 +108,10 @@ bool WaylandBufferManagerHost::SupportsAcquireFence() const {
@@ -1782,7 +1888,7 @@ index c676771..15e101f 100644
    return !!connection_->viewporter();
  }
 diff --git a/ui/ozone/platform/wayland/host/wayland_buffer_manager_host.h b/ui/ozone/platform/wayland/host/wayland_buffer_manager_host.h
-index ac4a5a0..ad5afe6 100644
+index ac4a5a0360..ad5afe6719 100644
 --- a/ui/ozone/platform/wayland/host/wayland_buffer_manager_host.h
 +++ b/ui/ozone/platform/wayland/host/wayland_buffer_manager_host.h
 @@ -70,6 +70,7 @@ class WaylandBufferManagerHost : public ozone::mojom::WaylandBufferManagerHost {
@@ -1794,7 +1900,7 @@ index ac4a5a0..ad5afe6 100644
    bool SupportsOverlays() const;
    bool SupportsSinglePixelBuffer() const;
 diff --git a/ui/ozone/platform/wayland/host/wayland_frame_manager_unittest.cc b/ui/ozone/platform/wayland/host/wayland_frame_manager_unittest.cc
-index 6670d1e..5194ca7 100644
+index 6670d1e326..5194ca7bff 100644
 --- a/ui/ozone/platform/wayland/host/wayland_frame_manager_unittest.cc
 +++ b/ui/ozone/platform/wayland/host/wayland_frame_manager_unittest.cc
 @@ -62,6 +62,7 @@ class WaylandFrameManagerTest : public WaylandTestSimple {
@@ -1806,7 +1912,7 @@ index 6670d1e..5194ca7 100644
                                      /*supports_single_pixel_buffer=*/true);
    }
 diff --git a/ui/ozone/platform/wayland/host/wayland_surface_unittest.cc b/ui/ozone/platform/wayland/host/wayland_surface_unittest.cc
-index 37d7460..f73ad42 100644
+index 37d7460320..f73ad425f9 100644
 --- a/ui/ozone/platform/wayland/host/wayland_surface_unittest.cc
 +++ b/ui/ozone/platform/wayland/host/wayland_surface_unittest.cc
 @@ -126,6 +126,7 @@ class WaylandSurfaceExplicitSyncTest : public WaylandTestSimple {
@@ -1818,7 +1924,7 @@ index 37d7460..f73ad42 100644
                                      /*supports_single_pixel_buffer=*/true);
    }
 diff --git a/ui/ozone/platform/wayland/host/wayland_window_unittest.cc b/ui/ozone/platform/wayland/host/wayland_window_unittest.cc
-index 6d13da6..c39f189 100644
+index 6d13da6521..c39f189f3f 100644
 --- a/ui/ozone/platform/wayland/host/wayland_window_unittest.cc
 +++ b/ui/ozone/platform/wayland/host/wayland_window_unittest.cc
 @@ -419,6 +419,7 @@ class WaylandWindowTest : public WaylandTest {
@@ -1846,7 +1952,7 @@ index 6d13da6..c39f189 100644
                                    /*supports_single_pixel_buffer=*/true);
  
 diff --git a/ui/ozone/platform/wayland/mojom/wayland_buffer_manager.mojom b/ui/ozone/platform/wayland/mojom/wayland_buffer_manager.mojom
-index f36644a..49f9f6f 100644
+index f36644a10b..49f9f6f4d1 100644
 --- a/ui/ozone/platform/wayland/mojom/wayland_buffer_manager.mojom
 +++ b/ui/ozone/platform/wayland/mojom/wayland_buffer_manager.mojom
 @@ -107,6 +107,9 @@ interface WaylandBufferManagerGpu {
@@ -1868,7 +1974,7 @@ index f36644a..49f9f6f 100644
               bool supports_single_pixel_buffer);
  
 diff --git a/ui/ozone/platform/wayland/wayland_buffer_manager_unittest.cc b/ui/ozone/platform/wayland/wayland_buffer_manager_unittest.cc
-index 79f7c96..cf59778 100644
+index 79f7c964b2..cf59778efd 100644
 --- a/ui/ozone/platform/wayland/wayland_buffer_manager_unittest.cc
 +++ b/ui/ozone/platform/wayland/wayland_buffer_manager_unittest.cc
 @@ -131,6 +131,7 @@ class WaylandBufferManagerTest : public WaylandTest {
@@ -1913,7 +2019,7 @@ index 79f7c96..cf59778 100644
  
 diff --git a/ui/ozone/public/ozone_presenter.cc b/ui/ozone/public/ozone_presenter.cc
 new file mode 100644
-index 0000000..74bd78b
+index 0000000000..74bd78b46c
 --- /dev/null
 +++ b/ui/ozone/public/ozone_presenter.cc
 @@ -0,0 +1,12 @@
@@ -1931,7 +2037,7 @@ index 0000000..74bd78b
 +}  // namespace ui
 diff --git a/ui/ozone/public/ozone_presenter.h b/ui/ozone/public/ozone_presenter.h
 new file mode 100644
-index 0000000..775f6a4
+index 0000000000..775f6a4e24
 --- /dev/null
 +++ b/ui/ozone/public/ozone_presenter.h
 @@ -0,0 +1,65 @@
@@ -2001,7 +2107,7 @@ index 0000000..775f6a4
 +
 +#endif  // UI_OZONE_PUBLIC_OZONE_PRESENTER_H_
 diff --git a/ui/ozone/public/surface_factory_ozone.cc b/ui/ozone/public/surface_factory_ozone.cc
-index cb2055b..9ce91b6 100644
+index cb2055ba44..9ce91b6fc4 100644
 --- a/ui/ozone/public/surface_factory_ozone.cc
 +++ b/ui/ozone/public/surface_factory_ozone.cc
 @@ -15,6 +15,7 @@
@@ -2025,7 +2131,7 @@ index cb2055b..9ce91b6 100644
      gfx::AcceleratedWidget widget) {
    return nullptr;
 diff --git a/ui/ozone/public/surface_factory_ozone.h b/ui/ozone/public/surface_factory_ozone.h
-index 6a2b4bb..dd04688 100644
+index 6a2b4bb35a..dd04688cdf 100644
 --- a/ui/ozone/public/surface_factory_ozone.h
 +++ b/ui/ozone/public/surface_factory_ozone.h
 @@ -40,24 +40,23 @@ class VulkanDeviceQueue;

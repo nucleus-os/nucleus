@@ -1,0 +1,229 @@
+Subject: [PATCH] Make Graphite Dawn Vulkan a fatal renderer contract
+
+Nucleus products have one compositor renderer. Allow the GPU process to restart
+on that renderer, but never downgrade to Ganesh, GL, or software compositing.
+Initialization failure and exhaustion of Chromium's normal GPU crash budget
+terminate the browser with a named renderer-contract failure.
+
+diff --git a/content/browser/gpu/gpu_data_manager_impl_private.cc b/content/browser/gpu/gpu_data_manager_impl_private.cc
+--- a/content/browser/gpu/gpu_data_manager_impl_private.cc
++++ b/content/browser/gpu/gpu_data_manager_impl_private.cc
+@@ -504,6 +504,27 @@ void GpuDataManagerImplPrivate::StartUmaTimer() {
+ }
+ 
+ void GpuDataManagerImplPrivate::InitializeGpuModes() {
++  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
++  if (command_line->HasSwitch(
++          switches::kRequireSkiaGraphiteDawnVulkan)) {
++    CHECK(!command_line->HasSwitch(switches::kDisableGpu))
++        << "Graphite/Dawn/Vulkan is required but GPU acceleration is disabled";
++    CHECK(!command_line->HasSwitch(switches::kDisableGpuCompositing))
++        << "Graphite/Dawn/Vulkan is required but GPU compositing is disabled";
++    CHECK(!command_line->HasSwitch(switches::kDisableSkiaGraphite))
++        << "Graphite/Dawn/Vulkan is required but Graphite is disabled";
++    CHECK(features::IsSkiaGraphiteEnabled(command_line))
++        << "Graphite/Dawn/Vulkan is required but Graphite is unavailable";
++    CHECK_EQ(command_line->GetSwitchValueASCII(
++                 switches::kSkiaGraphiteDawnBackend),
++             switches::kSkiaGraphiteDawnBackendVulkan)
++        << "Graphite/Dawn/Vulkan is required but Dawn is not configured for "
++           "Vulkan";
++
++    gpu_mode_ = gpu::GpuMode::HARDWARE_GRAPHITE;
++    return;
++  }
++
+   DCHECK_EQ(gpu::GpuMode::UNKNOWN, gpu_mode_);
+   // Android and Chrome OS can't switch to software compositing. If the GPU
+   // process initialization fails or GPU process is too unstable then crash the
+@@ -520,7 +541,6 @@ void GpuDataManagerImplPrivate::InitializeGpuModes() {
+   }
+ #endif  // !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_CHROMEOS)
+ 
+-  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
+   if (command_line->HasSwitch(switches::kDisableGpu)) {
+ 
+ #if (BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_CAST_ANDROID)) || \
+@@ -1368,6 +1388,15 @@ void GpuDataManagerImplPrivate::UpdateGpuPreferences(
+ 
+   gpu_preferences->fallback_gr_context_types.clear();
+ 
++  if (command_line->HasSwitch(
++          switches::kRequireSkiaGraphiteDawnVulkan)) {
++    CHECK_EQ(gpu_mode_, gpu::GpuMode::HARDWARE_GRAPHITE);
++    CHECK_EQ(gpu_preferences->gr_context_type,
++             gpu::GrContextType::kGraphiteDawn);
++    CHECK(fallback_modes_.empty());
++    return;
++  }
++
+   if (gpu_mode_ == gpu::GpuMode::HARDWARE_GRAPHITE &&
+       features::IsUsingVulkan()) {
+     // We add kVulkan to fallback types for the GPU process to fall back from
+@@ -1676,6 +1705,12 @@ gpu::GpuMode GpuDataManagerImplPrivate::GetGpuMode() const {
+ }
+ 
+ void GpuDataManagerImplPrivate::FallBackToNextGpuMode() {
++  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
++          switches::kRequireSkiaGraphiteDawnVulkan)) {
++    LOG(FATAL) << "Required Graphite/Dawn/Vulkan renderer failed to initialize; "
++                  "renderer fallback is forbidden";
++  }
++
+   if (fallback_modes_.empty()) {
+ #if BUILDFLAG(IS_ANDROID)
+     FatalGpuProcessLaunchFailureOnBackground();
+@@ -1691,6 +1726,12 @@ void GpuDataManagerImplPrivate::FallBackToNextGpuMode() {
+ }
+ 
+ void GpuDataManagerImplPrivate::FallBackToNextGpuModeDueToCrash() {
++  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
++          switches::kRequireSkiaGraphiteDawnVulkan)) {
++    LOG(FATAL) << "Required Graphite/Dawn/Vulkan renderer exceeded the GPU "
++                  "process crash limit; renderer fallback is forbidden";
++  }
++
+   FallBackToNextGpuMode();
+ 
+   // If we fell back to sofware GL due to crashes and it is disabled with a
+diff --git a/content/browser/gpu/gpu_data_manager_impl_private_unittest.cc b/content/browser/gpu/gpu_data_manager_impl_private_unittest.cc
+--- a/content/browser/gpu/gpu_data_manager_impl_private_unittest.cc
++++ b/content/browser/gpu/gpu_data_manager_impl_private_unittest.cc
+@@ -464,6 +464,28 @@ TEST_F(GpuDataManagerImplPrivateTest, GpuStartsWithGraphiteFeatureFlag) {
+   EXPECT_EQ(gpu::GpuMode::HARDWARE_GRAPHITE, manager->GetGpuMode());
+ }
+ 
++TEST_F(GpuDataManagerImplPrivateTest,
++       RequiredGraphiteDawnVulkanHasNoFallback) {
++  base::test::ScopedCommandLine scoped_command_line;
++  base::CommandLine* command_line =
++      scoped_command_line.GetProcessCommandLine();
++  command_line->AppendSwitch(switches::kEnableSkiaGraphite);
++  command_line->AppendSwitchASCII(switches::kSkiaGraphiteDawnBackend,
++                                  switches::kSkiaGraphiteDawnBackendVulkan);
++  command_line->AppendSwitch(
++      switches::kRequireSkiaGraphiteDawnVulkan);
++
++  ScopedGpuDataManagerImplPrivate manager;
++  EXPECT_EQ(gpu::GpuMode::HARDWARE_GRAPHITE, manager->GetGpuMode());
++  EXPECT_FALSE(manager->CanFallback());
++
++  gpu::GpuPreferences preferences;
++  manager->UpdateGpuPreferences(&preferences, GPU_PROCESS_KIND_SANDBOXED);
++  EXPECT_EQ(preferences.gr_context_type,
++            gpu::GrContextType::kGraphiteDawn);
++  EXPECT_TRUE(preferences.fallback_gr_context_types.empty());
++}
++
+ // On Mac-ARM graphite should fallback to Swiftshader immediately. On other
+ // platforms graphite should fallback to Ganesh/GL.
+ TEST_F(GpuDataManagerImplPrivateTest, FallbackFromGraphite) {
+diff --git a/content/browser/gpu/gpu_process_host.cc b/content/browser/gpu/gpu_process_host.cc
+--- a/content/browser/gpu/gpu_process_host.cc
++++ b/content/browser/gpu/gpu_process_host.cc
+@@ -284,6 +284,7 @@ static const char* const kSwitchNames[] = {
+     switches::kEnableWebGLDraftExtensions,
+     switches::kEnableSkiaGraphite,
+     switches::kEnableSkiaGraphitePrecompilation,
++    switches::kRequireSkiaGraphiteDawnVulkan,
+     switches::kDoubleBufferCompositing,
+     switches::kHeadless,
+     switches::kEnableLowEndDeviceMode,
+diff --git a/gpu/command_buffer/service/service_utils.cc b/gpu/command_buffer/service/service_utils.cc
+--- a/gpu/command_buffer/service/service_utils.cc
++++ b/gpu/command_buffer/service/service_utils.cc
+@@ -308,9 +308,15 @@ GpuPreferences ParseGpuPreferences(const base::CommandLine* command_line) {
+     gpu_preferences.disabled_dawn_features_list = base::SplitString(
+         command_line->GetSwitchValueASCII(switches::kDisableDawnFeatures), ",",
+         base::KEEP_WHITESPACE, base::SPLIT_WANT_ALL);
+   }
+   gpu_preferences.gr_context_type = ParseDefaultGrContextType(command_line);
+-  if (gpu_preferences.gr_context_type == GrContextType::kGraphiteDawn ||
++  if (command_line->HasSwitch(
++          switches::kRequireSkiaGraphiteDawnVulkan)) {
++    CHECK_EQ(gpu_preferences.gr_context_type,
++             GrContextType::kGraphiteDawn);
++    gpu_preferences.fallback_gr_context_types.clear();
++  } else if (gpu_preferences.gr_context_type ==
++                 GrContextType::kGraphiteDawn ||
+       gpu_preferences.gr_context_type == GrContextType::kVulkan) {
+     // Set the default fallback type to GL so that the tests can fall back to GL
+     // without GpuDataManagerImplPrivate.
+@@ -332,6 +338,25 @@ GpuPreferences ParseGpuPreferences(const base::CommandLine* command_line) {
+ }
+ 
+ GrContextType ParseDefaultGrContextType(const base::CommandLine* command_line) {
++  if (command_line->HasSwitch(
++          switches::kRequireSkiaGraphiteDawnVulkan)) {
++#if BUILDFLAG(SKIA_USE_DAWN)
++    CHECK(!command_line->HasSwitch(switches::kDisableSkiaGraphite))
++        << "Graphite/Dawn/Vulkan is required but Graphite is disabled";
++    CHECK(features::IsSkiaGraphiteEnabled(command_line))
++        << "Graphite/Dawn/Vulkan is required but Graphite is unavailable";
++    CHECK_EQ(command_line->GetSwitchValueASCII(
++                 switches::kSkiaGraphiteDawnBackend),
++             switches::kSkiaGraphiteDawnBackendVulkan)
++        << "Graphite/Dawn/Vulkan is required but Dawn is not configured for "
++           "Vulkan";
++    return GrContextType::kGraphiteDawn;
++#else
++    LOG(FATAL) << "Graphite/Dawn/Vulkan is required but this build has no "
++                  "Dawn-backed Graphite support";
++#endif
++  }
++
+ #if BUILDFLAG(SKIA_USE_DAWN)
+   if (base::FeatureList::IsEnabled(features::kLateGraphiteFeatureCheck)) {
+     // With late check, only the disable flag gates Graphite; the full
+diff --git a/gpu/command_buffer/service/service_utils_unittest.cc b/gpu/command_buffer/service/service_utils_unittest.cc
+--- a/gpu/command_buffer/service/service_utils_unittest.cc
++++ b/gpu/command_buffer/service/service_utils_unittest.cc
+@@ -129,5 +129,23 @@ TEST(ServiceUtilsTest, ParseGpuPreferencesIgnoreGpuBlocklist) {
+   }
+ }
+ 
++TEST(ServiceUtilsTest, RequiredGraphiteDawnVulkanHasNoFallback) {
++  base::test::ScopedFeatureList feature_list;
++  feature_list.InitWithFeatures(
++      /*enabled_features=*/{features::kSkiaGraphite},
++      /*disabled_features=*/{});
++  base::CommandLine command_line(base::CommandLine::NO_PROGRAM);
++  command_line.AppendSwitch(switches::kEnableSkiaGraphite);
++  command_line.AppendSwitchASCII(switches::kSkiaGraphiteDawnBackend,
++                                 switches::kSkiaGraphiteDawnBackendVulkan);
++  command_line.AppendSwitch(
++      switches::kRequireSkiaGraphiteDawnVulkan);
++
++  GpuPreferences preferences = gles2::ParseGpuPreferences(&command_line);
++
++  EXPECT_EQ(preferences.gr_context_type, GrContextType::kGraphiteDawn);
++  EXPECT_TRUE(preferences.fallback_gr_context_types.empty());
++}
++
+ }  // namespace
+ }  // namespace gpu
+diff --git a/gpu/config/gpu_switches.cc b/gpu/config/gpu_switches.cc
+--- a/gpu/config/gpu_switches.cc
++++ b/gpu/config/gpu_switches.cc
+@@ -149,6 +149,10 @@ const char kSkiaGraphiteDawnBackendOpenGLES[] = "opengles";
+ const char kSkiaGraphiteDawnBackendSwiftshader[] = "swiftshader";
+ const char kSkiaGraphiteDawnBackendVulkan[] = "vulkan";
+ 
++// Require Graphite on Dawn's Vulkan backend and forbid renderer fallback.
++const char kRequireSkiaGraphiteDawnVulkan[] =
++    "require-skia-graphite-dawn-vulkan";
++
+ // Force disabling/enabling Skia Graphite. Disabling will take precedence over
+ // enabling if both are specified.
+ const char kDisableSkiaGraphite[] = "disable-skia-graphite";
+diff --git a/gpu/config/gpu_switches.h b/gpu/config/gpu_switches.h
+--- a/gpu/config/gpu_switches.h
++++ b/gpu/config/gpu_switches.h
+@@ -52,6 +52,7 @@ GPU_CONFIG_EXPORT extern const char kSkiaGraphiteDawnBackendMetal[];
+ GPU_CONFIG_EXPORT extern const char kSkiaGraphiteDawnBackendOpenGLES[];
+ GPU_CONFIG_EXPORT extern const char kSkiaGraphiteDawnBackendSwiftshader[];
+ GPU_CONFIG_EXPORT extern const char kSkiaGraphiteDawnBackendVulkan[];
++GPU_CONFIG_EXPORT extern const char kRequireSkiaGraphiteDawnVulkan[];
+ GPU_CONFIG_EXPORT extern const char kDisableSkiaGraphite[];
+ GPU_CONFIG_EXPORT extern const char kEnableSkiaGraphite[];
+ GPU_CONFIG_EXPORT extern const char kDisableSkiaGraphitePrecompilation[];

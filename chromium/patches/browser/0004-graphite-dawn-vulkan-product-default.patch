@@ -1,0 +1,115 @@
+diff --git a/chrome/app/chrome_main_delegate.cc b/chrome/app/chrome_main_delegate.cc
+--- a/chrome/app/chrome_main_delegate.cc
++++ b/chrome/app/chrome_main_delegate.cc
+@@ -94,6 +94,7 @@
+ #include "extensions/buildflags/buildflags.h"
++#include "gpu/config/gpu_switches.h"
+ #include "net/http/http_cache.h"
+ #include "net/url_request/url_request.h"
+ #include "pdf/buildflags.h"
+ #include "printing/buildflags/buildflags.h"
+ #include "services/tracing/public/cpp/stack_sampling/tracing_sampler_profiler.h"
+@@ -1068,6 +1069,19 @@ std::optional<int> ChromeMainDelegate::BasicStartupComplete() {
+   ash::BootTimesRecorder::Get()->SaveChromeMainStats();
+ #endif
+ 
++#if BUILDFLAG(IS_LINUX)
++  base::CommandLine* product_command_line =
++      base::CommandLine::ForCurrentProcess();
++  if (!product_command_line->HasSwitch(switches::kProcessType)) {
++    product_command_line->AppendSwitch(switches::kEnableSkiaGraphite);
++    product_command_line->AppendSwitchASCII(
++        switches::kSkiaGraphiteDawnBackend,
++        switches::kSkiaGraphiteDawnBackendVulkan);
++    product_command_line->AppendSwitch(
++        switches::kRequireSkiaGraphiteDawnVulkan);
++  }
++#endif
++
+   const base::CommandLine& command_line =
+       *base::CommandLine::ForCurrentProcess();
+ 
+diff --git a/gpu/config/gpu_finch_features.cc b/gpu/config/gpu_finch_features.cc
+index 0273624365..e2db1d8082 100644
+--- a/gpu/config/gpu_finch_features.cc
++++ b/gpu/config/gpu_finch_features.cc
+@@ -369,7 +369,7 @@ const base::FeatureParam<std::string> kDrDcBlockListByAndroidBuildFP{
+ // --disable-skia-graphite which take precedence over the feature flag, and the
+ // Dawn backend can be overridden with the --skia-graphite-dawn-backend flag.
+ BASE_FEATURE(kSkiaGraphite,
+-#if BUILDFLAG(IS_APPLE)
++#if BUILDFLAG(IS_APPLE) || BUILDFLAG(IS_LINUX)
+              base::FEATURE_ENABLED_BY_DEFAULT
+ #else
+              base::FEATURE_DISABLED_BY_DEFAULT
+@@ -419,7 +419,7 @@ BASE_FEATURE(kSkiaGraphitePrecompilation, base::FEATURE_DISABLED_BY_DEFAULT);
+ // Whether to use PersistentCache for Skia Graphite's pipeline cache.
+ BASE_FEATURE(kSkiaGraphiteUsePersistentCache,
+              "SkiaGraphiteUsePersistentCache",
+-#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_WIN)
++#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_WIN) || BUILDFLAG(IS_LINUX)
+              base::FEATURE_ENABLED_BY_DEFAULT
+ #else
+              base::FEATURE_DISABLED_BY_DEFAULT
+@@ -598,6 +598,11 @@ bool IsSkiaGraphiteSupportedByDevice(const base::CommandLine* command_line) {
+   // Graphite on ChromeOS uses the Dawn Vulkan backend. Only enable Graphite if
+   // device would already be using Ganesh/Vulkan.
+   return IsUsingVulkan();
++#elif BUILDFLAG(IS_LINUX)
++  // Nucleus Browser's Linux compositor is Graphite on Dawn Vulkan. Runtime
++  // adapter and external-memory validation determine whether startup can
++  // continue; Linux is not gated on the legacy Ganesh/Vulkan feature.
++  return true;
+ #elif BUILDFLAG(IS_WIN) && defined(ARCH_CPU_ARM64)
+   // Graphite on Windows ARM requires further research.
+   return false;
+diff --git a/ui/gl/gl_switches.cc b/ui/gl/gl_switches.cc
+index 9c25c013ab..486a6ff946 100644
+--- a/ui/gl/gl_switches.cc
++++ b/ui/gl/gl_switches.cc
+@@ -272,7 +272,12 @@ BASE_FEATURE(kDefaultANGLEMetal, base::FEATURE_ENABLED_BY_DEFAULT);
+ 
+ // Default to using ANGLE's Vulkan backend.
+ BASE_FEATURE(kDefaultANGLEVulkan,
+-             base::FEATURE_DISABLED_BY_DEFAULT);
++#if BUILDFLAG(IS_LINUX)
++             base::FEATURE_ENABLED_BY_DEFAULT
++#else
++             base::FEATURE_DISABLED_BY_DEFAULT
++#endif
++);
+ 
+ // Track current program's shaders at glUseProgram() call for crash report
+ // purpose. Only effective on Windows because the attached shaders may only
+diff --git a/ui/gl/init/gl_display_initializer.cc b/ui/gl/init/gl_display_initializer.cc
+index 940e8741f1..26f86e2263 100644
+--- a/ui/gl/init/gl_display_initializer.cc
++++ b/ui/gl/init/gl_display_initializer.cc
+@@ -82,6 +82,12 @@ void GetEGLInitDisplays(bool supports_angle,
+ 
+   if (supports_angle_vulkan && use_angle_default && default_angle_vulkan) {
+     AddInitDisplay(init_displays, ANGLE_VULKAN);
++#if BUILDFLAG(IS_LINUX)
++    // Nucleus Browser uses ANGLE's Vulkan backend for WebGL and interop. Do
++    // not append OpenGL/GLES alternatives that would silently split the
++    // browser across incompatible GPU APIs after Vulkan initialization fails.
++    return;
++#endif
+   }
+ 
+   if (supports_angle_d3d) {
+diff --git a/ui/gl/test/egl_initialization_displays_unittest.cc b/ui/gl/test/egl_initialization_displays_unittest.cc
+index d716d46ab5..e0df597bd3 100644
+--- a/ui/gl/test/egl_initialization_displays_unittest.cc
++++ b/ui/gl/test/egl_initialization_displays_unittest.cc
+@@ -57,6 +57,10 @@ TEST(EGLInitializationDisplaysTest, DefaultRenderers) {
+                                          true, command_line.get(),
+                                          &default_no_flag_displays);
+   EXPECT_FALSE(default_no_flag_displays.empty());
++#if BUILDFLAG(IS_LINUX)
++  EXPECT_EQ(default_no_flag_displays,
++            std::vector<gl::DisplayType>({gl::ANGLE_VULKAN}));
++#endif
+ 
+   // Default with --use-angle flag
+   command_line->AppendSwitchASCII(switches::kUseANGLE,

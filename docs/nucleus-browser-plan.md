@@ -208,6 +208,54 @@ ANGLE remains available only where Chromium needs its Vulkan implementation for
 WebGL or media interop. It is not the Viz compositor renderer. The browser's
 compositor is Graphite/Dawn/Vulkan.
 
+### Hardware video decode
+
+Nucleus Browser reuses the VA-API, SharedImage, and Dawn Vulkan contract already
+proven by Noctalia's CEF runtime. This is shared Chromium infrastructure, not a
+CEF OSR feature:
+
+```text
+compressed web video
+  → Chromium VA-API decoder
+  → native-pixmap VideoFrame in NV12 or P010
+  → OzoneImageBacking
+  → Dawn Vulkan SharedTextureMemory DMA-BUF import
+  → Graphite composition or Wayland overlay promotion
+```
+
+The decoded image and the root presentation image are distinct allocations.
+Decoded NV12/P010 images remain multiplanar YUV SharedImages. If Viz promotes a
+decoded image, the Ozone presenter transfers that image and its acquire fence
+to Wayland directly. If promotion is rejected, Graphite samples the same
+decoded image into the BGRA/RGBA root render pass. Rejection of promotion must
+not cause CPU readback, software color conversion, an intermediate ARGB video
+copy, or a change of decoder.
+
+For NVIDIA, the supported driver is the pinned
+`maddythewisp/nvidia-vaapi-driver` fork installed privately rather than over a
+distribution-owned module. Its direct backend exports all NV12/P010 plane
+descriptors from one packed DMA-BUF allocation, with exact per-plane offsets,
+strides, modifiers, and allocation size. Dawn:
+
+- verifies that every plane descriptor refers to that same allocation;
+- creates the matching DRM-modifier Vulkan image;
+- validates the reported plane layouts against Vulkan's queried layouts;
+- imports the allocation once and uses a dedicated allocation when required by
+  the external-memory properties;
+- supports both 8-bit NV12 and 10-bit P010 sampling.
+
+The browser launcher resolves the private driver's current revision, sets
+`LIBVA_DRIVER_NAME=nvidia`, `LIBVA_DRIVERS_PATH`, and `NVD_BACKEND=direct`, and
+derives `NVD_DRM_DEVICE` from the compositor-selected render node. A hard-coded
+render node or CUDA index is not permitted. The driver's DRM-to-CUDA PCI
+matching, Dawn adapter, ANGLE adapter, GBM allocation, and Wayland
+`main_device` must identify the same physical GPU.
+
+Decoder completion, Dawn access, overlay access, and compositor release are
+one explicit fence chain. A decoded surface cannot return to VA-API while Dawn
+or the compositor can still read it. No browser, Viz, media, or GPU main thread
+blocks on that chain.
+
 ## Source ownership
 
 The final implementation is divided by existing Chromium subsystem ownership.
@@ -248,6 +296,16 @@ The final implementation is divided by existing Chromium subsystem ownership.
 - `gpu/command_buffer/service/webgpu_decoder_impl.*`
 - `third_party/dawn/src/dawn/native/vulkan/*` only where upstream Dawn lacks
   the required DMA-BUF or sync-file contract
+
+### Media and decoded SharedImages
+
+- `media/mojo/services/gpu_mojo_media_client*.cc`
+- `media/gpu/chromeos/video_decoder_pipeline.cc`
+- `gpu/command_buffer/service/shared_image/ozone_image_backing.*`
+- `gpu/command_buffer/service/shared_image/dawn_image_representation.*`
+- `third_party/dawn/src/dawn/native/vulkan/SharedTextureMemoryVk.cpp`
+- `third_party/dawn/src/dawn/native/vulkan/PhysicalDeviceVk.cpp`
+- the separately versioned `maddythewisp/nvidia-vaapi-driver` fork
 
 ### Device selection and Vulkan setup
 
@@ -290,6 +348,9 @@ persisted in the workspace:
   into a CEF build;
 - the browser layer preserves the backend-neutral Wayland presenter, the Ozone
   Viz adapter, and the initial Graphite/Dawn presentable-SharedImage hookup;
+- shared Chromium and Dawn patches preserve the working Graphite/Dawn/Vulkan
+  VA-API path, packed NV12/P010 import, plane-layout validation, and
+  dedicated-allocation handling already accepted in Noctalia's CEF runtime;
 - the complete browser patch stack applies to the pinned source, and GN
   generation succeeds in its independent official/PGO/ThinLTO output;
 - the focused Ozone, Wayland, and Viz targets compile in that output;
@@ -297,6 +358,21 @@ persisted in the workspace:
   Viz adapter tests pass. The Viz adapter has a narrow test executable so these
   API-neutral tests do not depend on the full Viz suite's GL bootstrap or
   reintroduce SwiftShader into the native-only browser build.
+
+The niri fork now wires Smithay's existing
+`wp_linux_drm_syncobj_manager_v1` implementation into its TTY backend. It
+advertises the global only when the primary GPU supports syncobj eventfd,
+prefers the explicit acquire-point blocker over implicit DMA-BUF readiness in
+both ordinary and mapped-toplevel commit paths, lets Smithay signal the release
+point when the buffer is dropped, and invalidates the global and imported
+timelines if the primary renderer disappears. The integration compiles against
+niri's pinned Smithay fork. Local on-screen acceptance still requires building
+that niri revision, restarting the compositor session, and verifying the global
+is advertised on the active DRM device.
+
+This remains a hard compositor prerequisite, not a reason to add an
+implicit-sync or CPU-waiting fallback to Nucleus Browser. The browser must
+continue to fail with a named diagnostic when the protocol is absent.
 
 This is development groundwork, not browser runtime acceptance. The initial
 Phase 1 and Phase 2 slices now have compile and focused-test coverage, but their
@@ -352,6 +428,11 @@ source checkout, patch application, depot tools, downloaded dependencies, PGO
 profiles, and compiler cache, but not GN object files whose compile-time
 contracts differ. CEF packaging and Nucleus Browser packaging consume their
 respective outputs.
+
+The private NVIDIA VA-API driver is not another Chromium build product.
+Chromium and CEF share its pinned runtime contract and deployment convention,
+while the driver remains independently buildable, installable, and
+rollbackable under a revisioned private prefix.
 
 Patch ownership is reorganized by subsystem:
 
@@ -487,7 +568,12 @@ Phase 3 lands with:
 - correct transparent and opaque pixel output;
 - reuse only after a returned release fence;
 - no per-frame image allocation in steady state;
-- no Skia readback or transfer image.
+- no Skia readback or transfer image;
+- zero-copy Dawn import of packed NV12 and P010 VA-API surfaces;
+- exact validation of every decoded plane's object identity, offset, stride,
+  modifier, and Vulkan subresource layout;
+- dedicated external-memory allocation when Vulkan reports it as required;
+- decoder-surface reuse only after Graphite or overlay access releases it.
 
 ### Phase 4 — Wire the on-screen Graphite/Dawn Wayland path
 
@@ -597,6 +683,11 @@ root plane. If a candidate cannot be promoted, Viz composites it into the root
 Graphite render pass; this is Chromium's normal composition decision, not a
 renderer fallback.
 
+Both outcomes retain the hardware-decoded NV12/P010 SharedImage. Overlay
+rejection must not convert the frame through CPU memory or a persistent ARGB
+intermediate. The compositor-visible result must preserve the decoded frame's
+color space, bit depth, crop, transform, and protected-content constraints.
+
 Phase 6 lands with:
 
 - exact presentation feedback at 60, 120, and variable refresh rates;
@@ -604,7 +695,9 @@ Phase 6 lands with:
 - no visual discontinuity during resize or output migration;
 - correct menus and transient windows on native Wayland;
 - accelerated video overlays where the compositor accepts them;
-- lossless rejection of overlay promotion with Graphite root composition.
+- lossless rejection of overlay promotion with Graphite root composition;
+- stable hardware-decoded video while promotion eligibility changes between
+  consecutive frames.
 
 ### Phase 7 — Unify GPU and color selection
 
@@ -618,6 +711,8 @@ The selected identity is propagated to:
 - ANGLE's Vulkan physical-device selection;
 - GBM allocation;
 - video decode/encode interop;
+- the private NVIDIA VA-API driver's `NVD_DRM_DEVICE` and DRM-to-CUDA PCI
+  selection;
 - SharedImage import/export validation.
 
 Startup rejects split-GPU configurations that cannot import and present without
@@ -640,7 +735,9 @@ Phase 7 lands with tests for:
 - compositor `main_device` changes;
 - BGRA/RGBA channel order;
 - sRGB, Display P3, and HDR metadata propagation;
-- video decode on the same adapter as presentation.
+- video decode on the same adapter as presentation;
+- failure instead of cross-device decode/import when the selected VA-API,
+  CUDA, Dawn, and Wayland devices disagree.
 
 ### Phase 8 — Create the functional Nucleus Browser product
 
@@ -660,6 +757,13 @@ The product lands with:
 - Widevine discovery and CDM manifest packaging;
 - persistent cookies, storage, service workers, HTTP cache, shader cache, and
   Dawn pipeline cache.
+
+On NVIDIA systems, the installed launcher discovers the revisioned private
+VA-API module, selects it without replacing the system driver, and passes the
+compositor-selected render node through `NVD_DRM_DEVICE`. Missing or invalid
+private-driver state produces a named hardware-video diagnostic. The package
+records the expected driver revision and deployment instructions but does not
+silently install over a distribution-owned `nvidia_drv_video.so`.
 
 Phase 8 may retain legally usable upstream or placeholder visual resources and
 generic product strings. It does not spend time replacing icons, polishing
@@ -717,10 +821,18 @@ Run the complete acceptance matrix against release and validation builds.
 
 - Apple Music signs in, navigates, animates, and plays AAC continuously;
 - Widevine playback succeeds;
-- H.264/MP4 playback succeeds;
+- H.264, HEVC, VP9, and AV1 exercise every profile supported by the installed
+  VA-API driver, including encrypted variants where the CDM permits them;
+- both NV12 and P010 decoded outputs import and render correctly;
 - WebGL reports ANGLE Vulkan on the selected adapter;
 - WebGPU reports Dawn Vulkan on the same adapter;
-- hardware video decode shares resources without a CPU copy.
+- hardware video decode shares resources without a CPU copy;
+- forced overlay rejection preserves hardware decode and uses Graphite root
+  composition without an ARGB staging frame;
+- accepted overlay promotion returns its compositor release fence before the
+  decode surface is reused;
+- decoder, SharedImage, Dawn, and presenter teardown release all frames and
+  file descriptors exactly once.
 
 #### Performance and stability
 
@@ -731,6 +843,9 @@ Run the complete acceptance matrix against release and validation builds.
 - frame pacing follows Wayland presentation and frame callbacks;
 - browser/GPU CPU time, GPU time, queue-to-visible latency, memory, FD count,
   and shader-cache behavior remain stable during long animated sessions;
+- VA-API decode remains active, GPU video-engine utilization is observable,
+  and CPU usage does not regress to software decode during navigation,
+  fullscreen changes, overlay eligibility changes, or stream switches;
 - continuous animated Apple Music artwork does not flash, tear, stall, or
   change color.
 

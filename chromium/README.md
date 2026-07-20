@@ -19,8 +19,11 @@ They do not share a GN output directory. CEF embeds `libcef.so` into Noctalia
 and therefore disables Chromium's allocator shim and BackupRefPtr support.
 Nucleus Browser is a standalone multi-process Chromium product and retains
 Chromium's complete PartitionAlloc configuration.
-The browser output disables Chromium and ANGLE SwiftShader construction; native
-Vulkan capability is a startup requirement, not a software-rendering fallback.
+Both products require Graphite on Dawn's Vulkan backend. Chromium may restart a
+failed GPU process within its normal crash budget, but every restart uses that
+same renderer. Initialization failure or exhaustion of the crash budget is a
+named fatal error; Ganesh, GL, and software compositing are not recovery paths.
+The browser output also disables Chromium and ANGLE SwiftShader construction.
 
 Patch ownership is explicit:
 

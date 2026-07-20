@@ -1,8 +1,8 @@
 diff --git a/components/viz/service/BUILD.gn b/components/viz/service/BUILD.gn
-index 590e04e..2a28980 100644
+index b03cd1aea2..c1280d305b 100644
 --- a/components/viz/service/BUILD.gn
 +++ b/components/viz/service/BUILD.gn
-@@ -10,6 +10,7 @@ import("//components/vrp_flags/features.gni")
+@@ -9,6 +9,7 @@ import("//components/vrp_flags/features.gni")
  import("//gpu/vulkan/features.gni")
  import("//media/gpu/args.gni")
  import("//skia/features.gni")
@@ -10,7 +10,7 @@ index 590e04e..2a28980 100644
  import("//testing/libfuzzer/fuzzer_test.gni")
  import("//third_party/jni_zero/jni_zero.gni")
  
-@@ -481,6 +481,8 @@ viz_component("service") {
+@@ -474,6 +475,8 @@ viz_component("service") {
        "display/overlay_processor_delegated_support.h",
        "display/overlay_processor_ozone.cc",
        "display/overlay_processor_ozone.h",
@@ -19,7 +19,7 @@ index 590e04e..2a28980 100644
        "display_embedder/software_output_device_ozone.cc",
        "display_embedder/software_output_device_ozone.h",
      ]
-@@ -744,6 +746,7 @@ viz_source_set("unit_tests") {
+@@ -736,6 +739,7 @@ viz_source_set("unit_tests") {
        "display/overlay_combination_cache_unittest.cc",
        "display/overlay_processor_ozone_unittest.cc",
        "display/overlay_unittest.cc",
@@ -27,7 +27,7 @@ index 590e04e..2a28980 100644
        "display_embedder/software_output_device_ozone_unittest.cc",
      ]
      deps += [
-@@ -806,6 +810,24 @@ viz_source_set("unit_tests") {
+@@ -797,6 +801,24 @@ viz_source_set("unit_tests") {
    }
  }
  
@@ -54,10 +54,10 @@ index 590e04e..2a28980 100644
    sources = [
 diff --git a/components/viz/service/display_embedder/output_presenter_ozone.cc b/components/viz/service/display_embedder/output_presenter_ozone.cc
 new file mode 100644
-index 0000000..4f5ea65
+index 0000000000..b01a4fcca2
 --- /dev/null
 +++ b/components/viz/service/display_embedder/output_presenter_ozone.cc
-@@ -0,0 +1,112 @@
+@@ -0,0 +1,122 @@
 +// Copyright 2026 The Chromium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -138,6 +138,16 @@ index 0000000..4f5ea65
 +    ScopedOverlayAccess* access) {
 +  scoped_refptr<gfx::NativePixmap> native_pixmap =
 +      access ? access->GetNativePixmap() : nullptr;
++  if (!native_pixmap && !overlay_plane_candidate.is_solid_color &&
++      !overlay_plane_candidate.is_root_render_pass) {
++    // Overlay candidates are scheduled speculatively. A video overlay may
++    // disappear or lose its backing between candidate selection and access;
++    // skip that plane without poisoning the root frame. A missing root pixmap
++    // remains fatal and is forwarded so the platform presenter rejects the
++    // incomplete frame atomically.
++    return;
++  }
++
 +  gfx::OverlayPlaneData plane(
 +      overlay_plane_candidate.plane_z_order, overlay_plane_candidate.transform,
 +      overlay_plane_candidate.display_rect, overlay_plane_candidate.uv_rect,
@@ -172,7 +182,7 @@ index 0000000..4f5ea65
 +}  // namespace viz
 diff --git a/components/viz/service/display_embedder/output_presenter_ozone.h b/components/viz/service/display_embedder/output_presenter_ozone.h
 new file mode 100644
-index 0000000..b97fe3a
+index 0000000000..b97fe3a7c8
 --- /dev/null
 +++ b/components/viz/service/display_embedder/output_presenter_ozone.h
 @@ -0,0 +1,46 @@
@@ -224,10 +234,10 @@ index 0000000..b97fe3a
 +#endif  // COMPONENTS_VIZ_SERVICE_DISPLAY_EMBEDDER_OUTPUT_PRESENTER_OZONE_H_
 diff --git a/components/viz/service/display_embedder/output_presenter_ozone_unittest.cc b/components/viz/service/display_embedder/output_presenter_ozone_unittest.cc
 new file mode 100644
-index 0000000..a37d2f3
+index 0000000000..17f53a9c2c
 --- /dev/null
 +++ b/components/viz/service/display_embedder/output_presenter_ozone_unittest.cc
-@@ -0,0 +1,173 @@
+@@ -0,0 +1,186 @@
 +// Copyright 2026 The Chromium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -399,10 +409,23 @@ index 0000000..a37d2f3
 +  EXPECT_FALSE(platform_presenter_ptr->scheduled_plane.is_solid_color);
 +}
 +
++TEST(OutputPresenterOzoneTest, MissingTransientOverlayPixmapIsSkipped) {
++  auto platform_presenter = std::make_unique<FakeOzonePresenter>();
++  auto* platform_presenter_ptr = platform_presenter.get();
++  OutputPresenterOzone presenter(std::move(platform_presenter));
++  OverlayCandidate candidate;
++  candidate.is_root_render_pass = false;
++  candidate.is_solid_color = false;
++
++  presenter.ScheduleOverlayPlane(candidate, nullptr);
++
++  EXPECT_EQ(platform_presenter_ptr->schedule_count, 0);
++}
++
 +}  // namespace
 +}  // namespace viz
 diff --git a/components/viz/service/display_embedder/skia_output_surface_dependency.h b/components/viz/service/display_embedder/skia_output_surface_dependency.h
-index 5ae09af..dce1cf2 100644
+index 5ae09afc3a..dce1cf2ef2 100644
 --- a/components/viz/service/display_embedder/skia_output_surface_dependency.h
 +++ b/components/viz/service/display_embedder/skia_output_surface_dependency.h
 @@ -24,7 +24,7 @@ class GURL;
@@ -436,7 +459,7 @@ index 5ae09af..dce1cf2 100644
    virtual scoped_refptr<gl::GLSurface> CreateGLSurface(
        gl::GLSurfaceFormat format) = 0;
 diff --git a/components/viz/service/display_embedder/skia_output_surface_dependency_impl.cc b/components/viz/service/display_embedder/skia_output_surface_dependency_impl.cc
-index 18b7501..604ebfd 100644
+index 18b7501ccf..3c98b660a5 100644
 --- a/components/viz/service/display_embedder/skia_output_surface_dependency_impl.cc
 +++ b/components/viz/service/display_embedder/skia_output_surface_dependency_impl.cc
 @@ -21,6 +21,12 @@
@@ -452,7 +475,7 @@ index 18b7501..604ebfd 100644
  namespace viz {
  
  SkiaOutputSurfaceDependencyImpl::SkiaOutputSurfaceDependencyImpl(
-@@ -99,6 +104,16 @@ gpu::SurfaceHandle SkiaOutputSurfaceDependencyImpl::GetSurfaceHandle() {
+@@ -99,6 +105,16 @@ gpu::SurfaceHandle SkiaOutputSurfaceDependencyImpl::GetSurfaceHandle() {
    return surface_handle_;
  }
  
@@ -470,7 +493,7 @@ index 18b7501..604ebfd 100644
  SkiaOutputSurfaceDependencyImpl::CreatePresenter() {
    DCHECK(!IsOffscreen());
 diff --git a/components/viz/service/display_embedder/skia_output_surface_dependency_impl.h b/components/viz/service/display_embedder/skia_output_surface_dependency_impl.h
-index b3e743e..1d50c57 100644
+index b3e743ec76..1d50c57883 100644
 --- a/components/viz/service/display_embedder/skia_output_surface_dependency_impl.h
 +++ b/components/viz/service/display_embedder/skia_output_surface_dependency_impl.h
 @@ -45,6 +45,9 @@ class VIZ_SERVICE_EXPORT SkiaOutputSurfaceDependencyImpl
@@ -484,10 +507,10 @@ index b3e743e..1d50c57 100644
        gl::GLSurfaceFormat format) override;
    scoped_refptr<gl::Presenter> CreatePresenter() override;
 diff --git a/components/viz/service/display_embedder/skia_output_surface_impl_on_gpu.cc b/components/viz/service/display_embedder/skia_output_surface_impl_on_gpu.cc
-index 44747b0..3539f31 100644
+index 6b896949d9..2a674c0f28 100644
 --- a/components/viz/service/display_embedder/skia_output_surface_impl_on_gpu.cc
 +++ b/components/viz/service/display_embedder/skia_output_surface_impl_on_gpu.cc
-@@ -120,6 +120,8 @@
+@@ -118,6 +118,8 @@
  #endif
  
  #if BUILDFLAG(IS_OZONE)
@@ -496,7 +519,7 @@ index 44747b0..3539f31 100644
  #include "ui/ozone/public/ozone_platform.h"
  #include "ui/ozone/public/platform_window_surface.h"
  #include "ui/ozone/public/surface_factory_ozone.h"
-@@ -2178,6 +2179,28 @@ bool SkiaOutputSurfaceImplOnGpu::InitializeForDawn() {
+@@ -2151,6 +2153,34 @@ bool SkiaOutputSurfaceImplOnGpu::InitializeForDawn() {
      return true;
    }
  
@@ -508,7 +531,7 @@ index 44747b0..3539f31 100644
 +    auto* dawn_context = context_state_->dawn_context_provider();
 +    if (!dawn_context ||
 +        dawn_context->backend_type() != wgpu::BackendType::Vulkan) {
-+      LOG(ERROR) << "Native Wayland Graphite presentation requires Dawn's "
++      LOG(FATAL) << "Native Wayland Graphite presentation requires Dawn's "
 +                    "Vulkan backend.";
 +      return false;
 +    }
@@ -520,6 +543,12 @@ index 44747b0..3539f31 100644
 +        GetReleaseOverlaysCallback());
 +    return true;
 +  }
++#endif
++
++#if BUILDFLAG(IS_LINUX)
++  LOG(FATAL) << "Native Linux Graphite presentation requires a Wayland "
++                "Ozone presenter with explicit synchronization.";
++  return false;
 +#endif
 +
  #if BUILDFLAG(SUPPORTS_OZONE_X11)

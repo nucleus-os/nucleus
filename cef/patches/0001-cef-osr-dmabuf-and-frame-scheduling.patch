@@ -633,10 +633,10 @@ index 0000000..2dc6882
 +  EXPECT_EQ(args.interval, base::Nanoseconds(kIntervalNs));
 +}
 diff --git a/cef/libcef/browser/osr/render_widget_host_view_osr.cc b/cef/libcef/browser/osr/render_widget_host_view_osr.cc
-index 501889ac8..63d6a5b41 100644
+index 501889ac8..078528241 100644
 --- a/cef/libcef/browser/osr/render_widget_host_view_osr.cc
 +++ b/cef/libcef/browser/osr/render_widget_host_view_osr.cc
-@@ -57,6 +57,52 @@
+@@ -57,8 +57,54 @@
  #include "ui/gfx/geometry/size_conversions.h"
  #include "ui/touch_selection/touch_selection_controller.h"
  
@@ -689,7 +689,9 @@ index 501889ac8..63d6a5b41 100644
 +#endif
 +
  // The maximum number of damage rects to cache for outstanding frame requests
-@@ -235,11 +241,6 @@ CefRenderWidgetHostViewOSR::CefRenderWidgetHostViewOSR(
+ // (for OnAcceleratedPaint).
+ const size_t kMaxDamageRects = 10;
+@@ -235,11 +281,6 @@ CefRenderWidgetHostViewOSR::CefRenderWidgetHostViewOSR(
    delegated_frame_host_client_ =
        std::make_unique<CefDelegatedFrameHostClient>(this);
  
@@ -701,7 +703,7 @@ index 501889ac8..63d6a5b41 100644
    root_layer_ = std::make_unique<ui::Layer>(ui::LAYER_SOLID_COLOR);
  
    // Opacity of SOLID_COLOR layer is determined by the color's alpha channel.
-@@ -247,24 +248,7 @@ CefRenderWidgetHostViewOSR::CefRenderWidgetHostViewOSR(
+@@ -247,24 +288,7 @@ CefRenderWidgetHostViewOSR::CefRenderWidgetHostViewOSR(
  
    external_begin_frame_enabled_ = use_external_begin_frame;
  
@@ -727,7 +729,7 @@ index 501889ac8..63d6a5b41 100644
  
    cursor_manager_ = std::make_unique<input::CursorManager>(this);
  
-@@ -290,6 +274,10 @@ CefRenderWidgetHostViewOSR::CefRenderWidgetHostViewOSR(
+@@ -290,6 +314,10 @@ CefRenderWidgetHostViewOSR::CefRenderWidgetHostViewOSR(
  }
  
  CefRenderWidgetHostViewOSR::~CefRenderWidgetHostViewOSR() {
@@ -738,7 +740,7 @@ index 501889ac8..63d6a5b41 100644
    ReleaseCompositor();
    root_layer_.reset(nullptr);
  
-@@ -303,6 +291,35 @@ CefRenderWidgetHostViewOSR::~CefRenderWidgetHostViewOSR() {
+@@ -303,6 +331,35 @@ CefRenderWidgetHostViewOSR::~CefRenderWidgetHostViewOSR() {
    }
  }
  
@@ -774,7 +776,7 @@ index 501889ac8..63d6a5b41 100644
  void CefRenderWidgetHostViewOSR::ReleaseCompositor() {
    if (!compositor_) {
      return;  // already released
-@@ -417,12 +434,17 @@ void CefRenderWidgetHostViewOSR::ShowWithVisibility(
+@@ -417,12 +474,17 @@ void CefRenderWidgetHostViewOSR::ShowWithVisibility(
  
    if (!content::GpuDataManagerImpl::GetInstance()->IsGpuCompositingDisabled()) {
      // Start generating frames when we're visible and at the correct size.
@@ -798,7 +800,7 @@ index 501889ac8..63d6a5b41 100644
      }
    }
  }
-@@ -1016,11 +1038,16 @@ void CefRenderWidgetHostViewOSR::DidNavigate() {
+@@ -1016,11 +1078,16 @@ void CefRenderWidgetHostViewOSR::DidNavigate() {
  }
  
  void CefRenderWidgetHostViewOSR::OnFrameComplete(
@@ -817,7 +819,7 @@ index 501889ac8..63d6a5b41 100644
  }
  
  void CefRenderWidgetHostViewOSR::OnRenderFrameMetadataChangedAfterActivation(
-@@ -1073,6 +1140,126 @@ bool CefRenderWidgetHostViewOSR::UseProxyOutputDevice() {
+@@ -1073,6 +1140,131 @@ bool CefRenderWidgetHostViewOSR::UseProxyOutputDevice() {
    return true;
  }
  
@@ -888,7 +890,12 @@ index 501889ac8..63d6a5b41 100644
 +    cef_plane.size = plane.size;
 +    cef_plane.fd = plane.fd.get();
 +  }
-+  if (OnAcceleratedPaint(frame->damage_rect, frame->coded_size, paint_info)) {
++  const bool delivered =
++      OnAcceleratedPaint(frame->damage_rect, frame->coded_size, paint_info);
++  if (offscreen_output_.is_bound()) {
++    offscreen_output_->AcknowledgeFrame(frame->frame_token);
++  }
++  if (delivered) {
 +    disposition.MarkDelivered();
 +  }
 +#endif
@@ -944,7 +951,7 @@ index 501889ac8..63d6a5b41 100644
  bool CefRenderWidgetHostViewOSR::InstallTransparency() {
    if (background_color_ == SK_ColorTRANSPARENT) {
      SetBackgroundColor(background_color_);
-@@ -1173,21 +1316,37 @@ void CefRenderWidgetHostViewOSR::Invalidate(
+@@ -1173,21 +1365,37 @@ void CefRenderWidgetHostViewOSR::Invalidate(
  }
  
  void CefRenderWidgetHostViewOSR::SendExternalBeginFrame() {
@@ -993,7 +1000,7 @@ index 501889ac8..63d6a5b41 100644
  
    DCHECK(begin_frame_args.IsValid());
  
-@@ -1195,18 +1354,48 @@ void CefRenderWidgetHostViewOSR::SendExternalBeginFrame() {
+@@ -1195,18 +1403,48 @@ void CefRenderWidgetHostViewOSR::SendExternalBeginFrame() {
      render_widget_host_->ProgressFlingIfNeeded(frame_time);
    }
  
@@ -1015,7 +1022,7 @@ index 501889ac8..63d6a5b41 100644
 -    popup_host_view_->SendExternalBeginFrame();
 +    popup_host_view_->SendExternalBeginFrameInternal(deadline_delta_ns,
 +                                                     interval_ns, nullptr);
-   }
++  }
 +  return true;
 +}
 +
@@ -1034,7 +1041,7 @@ index 501889ac8..63d6a5b41 100644
 +#if BUILDFLAG(IS_LINUX)
 +  if (transport_epoch != offscreen_output_epoch_) {
 +    return;
-+  }
+   }
 +  if (offscreen_output_.is_bound()) {
 +    base::ScopedFD duplicated_fd(HANDLE_EINTR(dup(fd)));
 +    if (!duplicated_fd.is_valid()) {
@@ -1051,7 +1058,7 @@ index 501889ac8..63d6a5b41 100644
  }
  
  void CefRenderWidgetHostViewOSR::SendKeyEvent(
-@@ -1643,7 +1876,7 @@ void CefRenderWidgetHostViewOSR::OnPaint(const gfx::Rect& damage_rect,
+@@ -1643,7 +1881,7 @@ void CefRenderWidgetHostViewOSR::OnPaint(const gfx::Rect& damage_rect,
    }
  }
  
@@ -1060,7 +1067,7 @@ index 501889ac8..63d6a5b41 100644
      const gfx::Rect& damage_rect,
      const gfx::Size& pixel_size,
      const CefAcceleratedPaintInfo& info) {
-@@ -1651,7 +1884,7 @@ void CefRenderWidgetHostViewOSR::OnAcceleratedPaint(
+@@ -1651,7 +1889,7 @@ void CefRenderWidgetHostViewOSR::OnAcceleratedPaint(
  
    // Workaround for https://github.com/chromiumembedded/cef/issues/2817
    if (!is_showing_) {
@@ -1069,7 +1076,7 @@ index 501889ac8..63d6a5b41 100644
    }
  
    CefRefPtr<CefRenderHandler> handler =
-@@ -1678,6 +1911,7 @@ void CefRenderWidgetHostViewOSR::OnAcceleratedPaint(
+@@ -1678,6 +1916,7 @@ void CefRenderWidgetHostViewOSR::OnAcceleratedPaint(
        ReleaseResizeHold();
      }
    }

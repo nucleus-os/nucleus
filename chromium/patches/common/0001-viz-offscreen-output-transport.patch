@@ -695,10 +695,10 @@ index 1ae39ed..0838589 100644
    gpu::SyncPointManager* GetSyncPointManager() override;
 diff --git a/components/viz/service/display_embedder/skia_output_device_offscreen_export.cc b/components/viz/service/display_embedder/skia_output_device_offscreen_export.cc
 new file mode 100644
-index 0000000000..8112114d0d
+index 0000000000..7dce8be42c
 --- /dev/null
 +++ b/components/viz/service/display_embedder/skia_output_device_offscreen_export.cc
-@@ -0,0 +1,342 @@
+@@ -0,0 +1,382 @@
 +// Copyright 2026 The Chromium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -905,6 +905,27 @@ index 0000000000..8112114d0d
 +  client_->OnFrameAvailable(std::move(exported));
 +}
 +
++void SkiaOutputDeviceOffscreenExport::AcknowledgeFrame(
++    uint64_t frame_token) {
++  if (failed_) {
++    return;
++  }
++  Slot* acknowledged = nullptr;
++  for (Slot& slot : slots_) {
++    if (slot.frame && slot.published_token == frame_token &&
++        !slot.swap_acknowledged) {
++      acknowledged = &slot;
++      break;
++    }
++  }
++  if (!acknowledged) {
++    ReportError(mojom::OffscreenOutputError::kProtocolError);
++    return;
++  }
++  acknowledged->swap_acknowledged = true;
++  DrainAcknowledgedSwaps();
++}
++
 +void SkiaOutputDeviceOffscreenExport::ReleaseFrame(
 +    uint64_t frame_token,
 +    gfx::GpuFenceHandle release_fence) {
@@ -914,8 +935,8 @@ index 0000000000..8112114d0d
 +  }
 +  Slot* released = nullptr;
 +  for (Slot& slot : slots_) {
-+    if (slot.frame && slot.published_token == frame_token &&
-+        !slot.swap_released) {
++    if (slot.published_token == frame_token && slot.read &&
++        !slot.consumer_released) {
 +      released = &slot;
 +      break;
 +    }
@@ -933,8 +954,10 @@ index 0000000000..8112114d0d
 +  }
 +  released->read->SetReleaseFence(std::move(release_fence));
 +  released->read.reset();
-+  released->swap_released = true;
-+  DrainReleasedSwaps();
++  released->consumer_released = true;
++  if (released->swap_completed) {
++    RecycleReleasedSlot(released - slots_.data());
++  }
 +}
 +
 +bool SkiaOutputDeviceOffscreenExport::AllocateSlot(size_t index) {
@@ -1007,13 +1030,32 @@ index 0000000000..8112114d0d
 +  Shutdown();
 +}
 +
-+void SkiaOutputDeviceOffscreenExport::DrainReleasedSwaps() {
++void SkiaOutputDeviceOffscreenExport::RecycleReleasedSlot(size_t index) {
++  Slot& slot = slots_[index];
++  CHECK(slot.swap_completed);
++  CHECK(slot.consumer_released);
++  CHECK(slot.published_token);
++  if (queue_.Release(slot.published_token) != index) {
++    ReportError(mojom::OffscreenOutputError::kProtocolError);
++    return;
++  }
++  slot.published_token = 0;
++  slot.swap_acknowledged = false;
++  slot.swap_completed = false;
++  slot.consumer_released = false;
++  if (slot.resource_generation != queue_.generation()) {
++    DestroySlot(index);
++  }
++}
++
++void SkiaOutputDeviceOffscreenExport::DrainAcknowledgedSwaps() {
 +  while (!swap_order_.empty()) {
 +    const uint64_t token = swap_order_.front();
 +    std::optional<size_t> found_index;
 +    for (size_t i = 0; i < slots_.size(); ++i) {
 +      Slot& slot = slots_[i];
-+      if (slot.frame && slot.published_token == token && slot.swap_released) {
++      if (slot.frame && slot.published_token == token &&
++          slot.swap_acknowledged) {
 +        found_index = i;
 +        break;
 +      }
@@ -1022,20 +1064,18 @@ index 0000000000..8112114d0d
 +      break;
 +    }
 +    Slot& found = slots_[*found_index];
-+    if (queue_.Release(token) != found_index) {
-+      ReportError(mojom::OffscreenOutputError::kProtocolError);
-+      return;
-+    }
 +    OutputSurfaceFrame frame = std::move(*found.frame);
 +    const gfx::Size frame_size = frame.size;
 +    found.frame.reset();
-+    found.published_token = 0;
-+    found.swap_released = false;
 +    swap_order_.pop_front();
++    found.swap_completed = true;
 +    FinishSwapBuffers(gfx::SwapCompletionResult(gfx::SwapResult::SWAP_ACK),
 +                      frame_size, std::move(frame), gfx::Rect(size_));
-+    if (found.resource_generation != queue_.generation()) {
-+      DestroySlot(*found_index);
++    if (found.consumer_released) {
++      RecycleReleasedSlot(*found_index);
++      if (failed_) {
++        return;
++      }
 +    }
 +  }
 +}
@@ -1043,10 +1083,10 @@ index 0000000000..8112114d0d
 +}  // namespace viz
 diff --git a/components/viz/service/display_embedder/skia_output_device_offscreen_export.h b/components/viz/service/display_embedder/skia_output_device_offscreen_export.h
 new file mode 100644
-index 0000000000..60f4c419f6
+index 0000000000..223fbce272
 --- /dev/null
 +++ b/components/viz/service/display_embedder/skia_output_device_offscreen_export.h
-@@ -0,0 +1,97 @@
+@@ -0,0 +1,101 @@
 +// Copyright 2026 The Chromium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -1108,20 +1148,24 @@ index 0000000000..60f4c419f6
 +    std::unique_ptr<gpu::OverlayImageRepresentation::ScopedReadAccess> read;
 +    std::optional<OutputSurfaceFrame> frame;
 +    uint64_t published_token = 0;
-+    bool swap_released = false;
++    bool swap_acknowledged = false;
++    bool swap_completed = false;
++    bool consumer_released = false;
 +  };
 +
 +  SkSurface* BeginPaint(
 +      std::vector<GrBackendSemaphore>* end_semaphores) override;
 +  void EndPaint() override;
++  void AcknowledgeFrame(uint64_t frame_token) override;
 +  void ReleaseFrame(uint64_t frame_token,
 +                    gfx::GpuFenceHandle release_fence) override;
 +
 +  bool AllocateSlot(size_t index);
 +  void DestroySlot(size_t index);
++  void RecycleReleasedSlot(size_t index);
 +  void Shutdown();
 +  void ReportError(mojom::OffscreenOutputError error);
-+  void DrainReleasedSwaps();
++  void DrainAcknowledgedSwaps();
 +
 +  static constexpr size_t kBufferCount = 4;
 +  scoped_refptr<gpu::SharedContextState> context_state_;
@@ -1354,7 +1398,7 @@ index 6b89694..44747b0 100644
  bool SkiaOutputSurfaceImplOnGpu::InitializeForGL() {
    if (dependency_->IsOffscreen()) {
 +    if (offscreen_output_connection_) {
-+      LOG(ERROR) << "Exportable offscreen output cannot use Ganesh/GL";
++      LOG(FATAL) << "Exportable offscreen output cannot use Ganesh/GL";
 +      return false;
 +    }
      output_device_ = std::make_unique<SkiaOutputDeviceOffscreen>(
@@ -1365,7 +1409,7 @@ index 6b89694..44747b0 100644
  bool SkiaOutputSurfaceImplOnGpu::InitializeForVulkan() {
    if (dependency_->IsOffscreen()) {
 +    if (offscreen_output_connection_) {
-+      LOG(ERROR) << "Exportable offscreen output cannot use Ganesh/Vulkan";
++      LOG(FATAL) << "Exportable offscreen output cannot use Ganesh/Vulkan";
 +      return false;
 +    }
      output_device_ = std::make_unique<SkiaOutputDeviceOffscreen>(
@@ -1377,7 +1421,7 @@ index 6b89694..44747b0 100644
    if (dependency_->IsOffscreen()) {
 +    if (offscreen_output_connection_) {
 +      if (!context_state_->IsGraphiteDawnVulkan()) {
-+        LOG(ERROR) << "Exportable offscreen output requires "
++        LOG(FATAL) << "Exportable offscreen output requires "
 +                      "Graphite/Dawn/Vulkan";
 +        return false;
 +      }
@@ -3324,10 +3368,10 @@ index 96ebaf1..3ff3188 100644
  // The FrameSinkManager interface is a privileged interface that allows the
 diff --git a/services/viz/privileged/mojom/compositing/offscreen_output.mojom b/services/viz/privileged/mojom/compositing/offscreen_output.mojom
 new file mode 100644
-index 0000000000..82f59cf868
+index 0000000000..8df2a31868
 --- /dev/null
 +++ b/services/viz/privileged/mojom/compositing/offscreen_output.mojom
-@@ -0,0 +1,75 @@
+@@ -0,0 +1,82 @@
 +// Copyright 2026 The Chromium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -3360,8 +3404,10 @@ index 0000000000..82f59cf868
 +};
 +
 +// A completed root-compositor output image borrowed by an external consumer.
-+// Every valid frame_token must be released exactly once through
-+// OffscreenOutput.ReleaseFrame before its backing can be reused.
++// Every valid frame_token must be acknowledged after browser-side dispatch and
++// released exactly once before its backing can be reused. Acknowledgement and
++// release are deliberately separate: the browser can finish a Viz swap while
++// the external consumer continues displaying the immutable backing.
 +struct OffscreenOutputFrame {
 +  uint64 generation;
 +  uint32 slot_index;
@@ -3399,6 +3445,11 @@ index 0000000000..82f59cf868
 +
 +// Implemented by Viz for an explicitly requested exportable offscreen root.
 +interface OffscreenOutput {
++  // Acknowledges that the browser process finished dispatching frame_token to
++  // the external consumer. This completes Viz's swap-pacing transaction but
++  // does not permit the backing to be reused.
++  AcknowledgeFrame(uint64 frame_token);
++
 +  // Returns the consumer-completion fence for frame_token. A null fence is not
 +  // permission to recycle the backing and is treated as a protocol error.
 +  ReleaseFrame(uint64 frame_token, gfx.mojom.GpuFenceHandle release_fence);
