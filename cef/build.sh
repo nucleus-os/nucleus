@@ -23,6 +23,7 @@ skip_deps=0
 run_install_build_deps=0
 no_update=0
 prepare_only=0
+build_only=0
 
 usage() {
   cat <<EOF
@@ -38,6 +39,7 @@ Options:
   --no-update            Reuse the current checkout, apply project patches,
                          then rebuild and package it.
   --prepare-only         Sync and apply CEF patches without building or packaging.
+  --build-only           Build and package an already-prepared source tree.
   --skip-deps            Do not clone/update depot_tools (assume present).
   --install-build-deps   Run Chromium's install-build-deps.sh (needs sudo) after
                          the first sync. Do this once on a fresh host.
@@ -58,6 +60,7 @@ while [[ $# -gt 0 ]]; do
     --package-only) package_only=1 ;;
     --no-update) no_update=1 ;;
     --prepare-only) prepare_only=1 ;;
+    --build-only) build_only=1 ;;
     --skip-deps) skip_deps=1 ;;
     --install-build-deps) run_install_build_deps=1 ;;
     -h|--help) usage; exit 0 ;;
@@ -65,6 +68,15 @@ while [[ $# -gt 0 ]]; do
   esac
   shift
 done
+
+if ((package_only + prepare_only + build_only > 1)); then
+  echo "--package-only, --prepare-only, and --build-only are mutually exclusive" >&2
+  exit 2
+fi
+if [[ $build_only -eq 1 && ($force_clean -eq 1 || $no_update -eq 1 || $run_install_build_deps -eq 1) ]]; then
+  echo "--build-only cannot be combined with source-preparation options" >&2
+  exit 2
+fi
 
 # ---------------------------------------------------------------------------
 # Preconditions
@@ -120,9 +132,13 @@ export DEPOT_TOOLS_UPDATE=0
 # automate-git.py (fetched fresh from the pinned branch)
 # ---------------------------------------------------------------------------
 automate="$NUCLEUS_CEF_SRC_ROOT/automate-git.py"
-if [[ $package_only -eq 0 ]]; then
+if [[ $package_only -eq 0 && $build_only -eq 0 ]]; then
   echo "-- fetching automate-git.py for branch $NUCLEUS_CEF_BRANCH"
   curl -fsSL "$(nucleus_cef_automate_url)" -o "$automate"
+elif [[ $build_only -eq 1 && ! -f "$automate" ]]; then
+  echo "!! prepared automate-git.py is missing: $automate" >&2
+  echo "   Run cef/build.sh --prepare-only first." >&2
+  exit 1
 fi
 
 # ---------------------------------------------------------------------------
@@ -298,43 +314,50 @@ if [[ $package_only -eq 0 ]]; then
     --build-target=cefsimple  # pulls in libcef + wrapper without cefclient's extra deps
   )
 
-  reverse_nucleus_cef_patches
-
-  if [[ $no_update -eq 0 ]]; then
-    # Force regenerate .gclient so an existing non-PGO checkout adopts
-    # checkout_pgo_profiles=true through automate-git instead of a manual edit
-    # to generated configuration.
-    sync_args=("${automate_common[@]}" --force-config --no-build --no-distrib)
-    if [[ -n "$NUCLEUS_CEF_CHECKOUT" ]]; then
-      sync_args+=("--checkout=$NUCLEUS_CEF_CHECKOUT")
-    fi
-    if [[ $force_clean -eq 1 ]]; then
-      sync_args+=(--force-clean)
-    fi
-    echo "-- automate-git.py ${sync_args[*]}"
-    python3 "$automate" "${sync_args[@]}"
-  fi
-
-  ensure_linux_pgo_profile
-  ensure_v8_builtins_pgo_profiles
-
-  # Run CEF's own patch/configuration hook while the Chromium tree contains
-  # only upstream changes. Our patches deliberately overlap a few of CEF's
-  # patches, so automate-git.py cannot safely run this hook after they land.
   chromium_root="$NUCLEUS_CEF_SRC_ROOT/chromium/src"
-  echo "-- generating upstream CEF build configuration"
-  (
-    cd "$chromium_root/cef"
-    python3 tools/gclient_hook.py
-  )
 
-  apply_nucleus_cef_patches
+  if [[ $build_only -eq 0 ]]; then
+    reverse_nucleus_cef_patches
 
-  if [[ $prepare_only -eq 1 ]]; then
-    echo
-    echo "== CEF source prepared =="
-    echo "source: $chromium_root"
-    exit 0
+    if [[ $no_update -eq 0 ]]; then
+      # Force regenerate .gclient so an existing non-PGO checkout adopts
+      # checkout_pgo_profiles=true through automate-git instead of a manual edit
+      # to generated configuration.
+      sync_args=("${automate_common[@]}" --force-config --no-build --no-distrib)
+      if [[ -n "$NUCLEUS_CEF_CHECKOUT" ]]; then
+        sync_args+=("--checkout=$NUCLEUS_CEF_CHECKOUT")
+      fi
+      if [[ $force_clean -eq 1 ]]; then
+        sync_args+=(--force-clean)
+      fi
+      echo "-- automate-git.py ${sync_args[*]}"
+      python3 "$automate" "${sync_args[@]}"
+    fi
+
+    ensure_linux_pgo_profile
+    ensure_v8_builtins_pgo_profiles
+
+    # Run CEF's own patch/configuration hook while the Chromium tree contains
+    # only upstream changes. Our patches deliberately overlap a few of CEF's
+    # patches, so automate-git.py cannot safely run this hook after they land.
+    echo "-- generating upstream CEF build configuration"
+    (
+      cd "$chromium_root/cef"
+      python3 tools/gclient_hook.py
+    )
+
+    apply_nucleus_cef_patches
+
+    if [[ $prepare_only -eq 1 ]]; then
+      echo
+      echo "== CEF source prepared =="
+      echo "source: $chromium_root"
+      exit 0
+    fi
+  elif [[ ! -f "$chromium_root/out/Release_GN_x64/args.gn" ]]; then
+    echo "!! prepared CEF GN output is missing under $chromium_root" >&2
+    echo "   Run cef/build.sh --prepare-only first." >&2
+    exit 1
   fi
 
   # Regenerate Ninja after applying our BUILD.gn changes, then build directly.

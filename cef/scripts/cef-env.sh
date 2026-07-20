@@ -27,7 +27,8 @@ export NUCLEUS_CEF_CHROMIUM_VERSION="${NUCLEUS_CEF_CHROMIUM_VERSION:-151.0.7922.
 # Production CEF is an official optimized build. CEF's Linux official
 # configuration already avoids PartitionAlloc-as-malloc for client
 # compatibility; keep the allocator shim and BackupRefPtr support explicitly
-# disabled as well so the embedding libc++ process retains one malloc ABI.
+# disabled as well so the embedding process retains system malloc as its sole
+# process allocator.
 # Noctalia runs only on Wayland and owns the actual wl_surface used for
 # presentation. Build Chromium's Ozone Wayland backend without the unused X11
 # window-system backend or fallback.

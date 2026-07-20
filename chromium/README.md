@@ -13,6 +13,12 @@ chromium/build.sh browser
 chromium/build.sh all
 ```
 
+`all` performs the source sync, patching, CEF translation, and API-hash work
+once, then builds the two independent GN outputs concurrently. It splits
+`NUCLEUS_CEF_JOBS` between the two Ninja processes instead of giving each the
+full host CPU count. CEF distribution packaging remains attached to the CEF
+side and publishes atomically as before.
+
 Both products reuse the pinned CEF/Chromium source checkout, depot_tools,
 downloaded dependencies, PGO profiles, Dawn checkout, and a source-normalized
 ccache. Matching translation units can therefore be reused across the two GN

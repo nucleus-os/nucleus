@@ -105,6 +105,12 @@ cef/build.sh --force-clean   # wipe the Chromium checkout and re-sync first
 cef/build.sh --package-only  # re-package the last build without rebuilding
 ```
 
+The shared Chromium orchestrator uses `cef/build.sh --prepare-only` followed by
+`cef/build.sh --build-only` so CEF and the standalone browser can compile in
+parallel only after all shared-source mutation has finished. These modes are
+also useful for resuming an interrupted compile without repeating checkout and
+patch preparation.
+
 Packaging primitive regression test:
 
 ```sh

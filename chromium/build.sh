@@ -61,6 +61,15 @@ build_cef() {
   "$workspace_root/cef/build.sh" "${args[@]}"
 }
 
+prepare_source() {
+  local args=("${cef_args[@]}" --prepare-only)
+  "$workspace_root/cef/build.sh" "${args[@]}"
+}
+
+build_prepared_cef() {
+  "$workspace_root/cef/build.sh" --build-only --skip-deps
+}
+
 build_browser() {
   local prepare_source="${1:-1}"
   if [[ "$prepare_source" == 1 ]]; then
@@ -107,10 +116,62 @@ case "$product" in
     build_browser
     ;;
   all)
-    build_cef
-    # CEF has already synchronized and applied the complete cumulative source
-    # stack. Reuse it directly for the browser output; do not repeat CEF's
-    # source refresh, translator, or API-hash work.
-    build_browser 0
+    prepare_source
+    if [[ $prepare_only -eq 1 ]]; then
+      exit 0
+    fi
+
+    if [[ ! "$NUCLEUS_CEF_JOBS" =~ ^[1-9][0-9]*$ ]]; then
+      echo "NUCLEUS_CEF_JOBS must be a positive integer: $NUCLEUS_CEF_JOBS" >&2
+      exit 2
+    fi
+
+    # Source preparation is the only mutating shared stage. Once it completes,
+    # the two products generate and build independent GN outputs concurrently.
+    # Split the configured CPU budget so two Ninja processes do not each assume
+    # they own the whole machine.
+    cef_jobs=$((NUCLEUS_CEF_JOBS / 2))
+    browser_jobs=$((NUCLEUS_CEF_JOBS - cef_jobs))
+    if [[ $cef_jobs -lt 1 ]]; then
+      cef_jobs=1
+    fi
+    if [[ $browser_jobs -lt 1 ]]; then
+      browser_jobs=1
+    fi
+
+    echo "-- building CEF and Nucleus Browser concurrently"
+    echo "   CEF jobs:     $cef_jobs"
+    echo "   browser jobs: $browser_jobs"
+
+    (
+      NUCLEUS_CEF_JOBS="$cef_jobs" build_prepared_cef
+    ) &
+    cef_pid=$!
+    (
+      NUCLEUS_CEF_JOBS="$browser_jobs" build_browser 0
+    ) &
+    browser_pid=$!
+
+    cef_status=0
+    browser_status=0
+    for _ in 1 2; do
+      completed_pid=
+      completed_status=0
+      wait -n -p completed_pid || completed_status=$?
+      if [[ "$completed_pid" == "$cef_pid" ]]; then
+        cef_status=$completed_status
+        echo "-- CEF build exited with status $cef_status"
+      elif [[ "$completed_pid" == "$browser_pid" ]]; then
+        browser_status=$completed_status
+        echo "-- Nucleus Browser build exited with status $browser_status"
+      else
+        echo "parallel Chromium build lost track of child process $completed_pid" >&2
+        exit 1
+      fi
+    done
+    if [[ $cef_status -ne 0 || $browser_status -ne 0 ]]; then
+      echo "parallel Chromium build failed: CEF=$cef_status browser=$browser_status" >&2
+      exit 1
+    fi
     ;;
 esac

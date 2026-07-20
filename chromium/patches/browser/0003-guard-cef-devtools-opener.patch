@@ -1,0 +1,41 @@
+diff --git a/chrome/browser/devtools/devtools_window.cc b/chrome/browser/devtools/devtools_window.cc
+--- a/chrome/browser/devtools/devtools_window.cc
++++ b/chrome/browser/devtools/devtools_window.cc
+@@ -2056,10 +2056,12 @@ void DevToolsWindow::CreateDevToolsBrowser() {
+   }
+ 
++#if BUILDFLAG(ENABLE_CEF)
+   auto* inspected_web_contents = GetInspectedWebContents();
+   BrowserWindowInterface* opener = nullptr;
+   if (inspected_web_contents) {
+     opener = GlobalBrowserCollection::GetInstance()->FindBrowserWithTab(inspected_web_contents);
+   }
++#endif
+   auto devtools_contents = OwnedMainWebContents::TakeWebContents(
+       std::move(owned_main_web_contents_));
+ 
+@@ -2072,6 +2074,8 @@ void DevToolsWindow::CreateDevToolsBrowser() {
+   if (!browser_) {
+     auto create_params = Browser::CreateParams::CreateForDevTools(profile_);
++#if BUILDFLAG(ENABLE_CEF)
+     create_params.opener = opener;
++#endif
+ 
+     browser_ = Browser::Create(std::move(create_params));
+     browser_->GetTabStripModel()->AddWebContents(
+diff --git a/chrome/browser/ui/browser_window/internal/browser_window_features.cc b/chrome/browser/ui/browser_window/internal/browser_window_features.cc
+--- a/chrome/browser/ui/browser_window/internal/browser_window_features.cc
++++ b/chrome/browser/ui/browser_window/internal/browser_window_features.cc
+@@ -240,10 +240,12 @@ BrowserWindowFeatures::~BrowserWindowFeatures() = default;
+ 
+ // static
+ bool BrowserWindowFeatures::IsNormalBrowser(const Browser* browser) {
++#if BUILDFLAG(ENABLE_CEF)
+   // CEF normal browsers have TYPE_POPUP.
+   if (browser->is_type_popup() && browser->cef_delegate()) {
+     return true;
+   }
++#endif
+   return browser->is_type_normal();
+ }
+ 
