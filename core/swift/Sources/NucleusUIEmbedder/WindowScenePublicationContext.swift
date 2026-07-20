@@ -9,7 +9,7 @@ import NucleusUI
 
 @MainActor
 public final class WindowScenePublicationContext: ~Sendable {
-    public let semanticContext: Context
+    public let semanticContext: UIContext
     /// The context embedder-owned content is minted into, so an embedder can
     /// build its own scene-attached objects (the compositor's hosted surfaces)
     /// in the same context as this scene's layers.
@@ -20,8 +20,10 @@ public final class WindowScenePublicationContext: ~Sendable {
         commitSink: any CommitSink
     ) throws(UIError) {
         do {
-            self.semanticContext = try Context(id: .root, commitSink: InMemoryCommitSink())
-            self.visualContext = try Context(id: visualContextID, commitSink: commitSink)
+            let visualContext = try Context(id: visualContextID, commitSink: commitSink)
+            self.visualContext = visualContext
+            self.semanticContext = UIContext(
+                resourceHostHandle: visualContext.commitSink.resourceHostHandle)
         } catch let error {
             throw UIError.invalidArgument(detail: String(describing: error))
         }
@@ -30,10 +32,17 @@ public final class WindowScenePublicationContext: ~Sendable {
     public func withSemanticContext<T>(
         _ body: () throws -> T
     ) rethrows -> T {
-        try Application.withContext(semanticContext, body)
+        try Application.withContexts(
+            uiContext: semanticContext,
+            visualContext: visualContext,
+            body
+        )
     }
 
     public func makeWindowScene(windows: [Window]) -> WindowScene {
-        WindowScene(windows: windows, visualContext: visualContext)
+        WindowScene(
+            windows: windows,
+            uiContext: semanticContext,
+            visualContext: visualContext)
     }
 }

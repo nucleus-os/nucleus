@@ -26,6 +26,173 @@ import NucleusRenderModel
         #expect(sink.store.hasPendingDamage)
     }
 
+    @Test @MainActor func animationCompletionWaitsForTerminalPresentation() throws {
+        let store = RetainedTreeStore()
+        let sink = RenderCommitSink(store: store)
+        let context = try NucleusLayers.Context(
+            id: ContextID(rawValue: 902),
+            commitSink: sink
+        )
+        var creation = NucleusLayers.LayerTransaction(context: context)
+        let layer = creation.createLayer(.init(opacity: 1))
+        try creation.insert(layer)
+        try creation.commit()
+        store.markPresented()
+
+        var outcomes: [PresentationCompletionResult] = []
+        let token = PresentationCompletionCenter.register {
+            outcomes.append($0)
+        }
+        var transaction = NucleusLayers.LayerTransaction(
+            context: context,
+            predictedPresentationNanoseconds: 1_000_000_000,
+            targetPresentationNanoseconds: 1_000_000_000
+        )
+        try transaction.setProperties(
+            .init(opacity: 0),
+            for: layer
+        )
+        try transaction.add(
+            .scalar(
+                keyPath: .opacity,
+                from: 1,
+                to: 0,
+                duration: 1,
+                curve: .linear,
+                id: 55,
+                completionToken: token.rawValue
+            ),
+            to: layer
+        )
+        try transaction.commit()
+
+        #expect(store.hasActiveAnimations)
+        #expect(store.snapshot().get(layer.id.rawValue)?.effectiveOpacity() == 1)
+        #expect(outcomes.isEmpty)
+        _ = store.tick(presentTimeNs: 1_500_000_000)
+        let midpoint =
+            store.snapshot().get(layer.id.rawValue)?.effectiveOpacity() ?? -1
+        #expect(abs(midpoint - 0.5) < 0.001)
+        store.markPresented()
+        #expect(outcomes.isEmpty, "an in-flight sample is not terminal")
+
+        _ = store.tick(presentTimeNs: 2_000_000_000)
+        #expect(outcomes.isEmpty, "terminal evaluation still awaits presentation")
+        store.markPresented()
+        #expect(outcomes == [.completed])
+        store.markPresented()
+        #expect(outcomes == [.completed], "completion is exactly once")
+    }
+
+    @Test @MainActor func replacementAndRemovalReportDistinctOutcomes() throws {
+        let store = RetainedTreeStore()
+        let sink = RenderCommitSink(store: store)
+        let context = try NucleusLayers.Context(
+            id: ContextID(rawValue: 903),
+            commitSink: sink
+        )
+        var creation = NucleusLayers.LayerTransaction(context: context)
+        let layer = creation.createLayer()
+        try creation.insert(layer)
+        try creation.commit()
+        store.markPresented()
+
+        var firstOutcome: PresentationCompletionResult?
+        let firstToken = PresentationCompletionCenter.register {
+            firstOutcome = $0
+        }
+        var first = NucleusLayers.LayerTransaction(
+            context: context,
+            targetPresentationNanoseconds: 1_000_000_000
+        )
+        try first.add(.scalar(
+            keyPath: .opacity,
+            from: 0,
+            to: 1,
+            duration: 1,
+            id: 1,
+            completionToken: firstToken.rawValue
+        ), to: layer)
+        try first.commit()
+
+        var secondOutcome: PresentationCompletionResult?
+        let secondToken = PresentationCompletionCenter.register {
+            secondOutcome = $0
+        }
+        var replacement = NucleusLayers.LayerTransaction(
+            context: context,
+            targetPresentationNanoseconds: 1_100_000_000
+        )
+        try replacement.add(.scalar(
+            keyPath: .opacity,
+            from: 0,
+            to: 0.5,
+            duration: 1,
+            id: 2,
+            completionToken: secondToken.rawValue
+        ), to: layer)
+        try replacement.commit()
+        #expect(firstOutcome == nil)
+        store.markPresented()
+        #expect(firstOutcome == .superseded)
+
+        var removal = NucleusLayers.LayerTransaction(context: context)
+        try removal.removeAnimation(for: .opacity, from: layer)
+        try removal.commit()
+        #expect(secondOutcome == nil)
+        store.markPresented()
+        #expect(secondOutcome == .cancelled)
+    }
+
+    @Test @MainActor func defaultActionExpandsAtTheAuthoredMutation() throws {
+        var table = ImplicitActionTable()
+        table.replace([
+            ImplicitActionRow(
+                role: .notification,
+                keyPath: .opacity,
+                kind: .scalar,
+                duration: 1,
+                c1x: 0,
+                c1y: 0,
+                c2x: 1,
+                c2y: 1
+            ),
+        ])
+        let store = RetainedTreeStore(implicitActionTable: table)
+        let sink = RenderCommitSink(store: store)
+        let context = try NucleusLayers.Context(
+            id: ContextID(rawValue: 904),
+            commitSink: sink
+        )
+        var creation = NucleusLayers.LayerTransaction(context: context)
+        let layer = creation.createLayer(.init(
+            role: .notification,
+            opacity: 1
+        ))
+        try creation.insert(layer)
+        try creation.commit()
+        store.markPresented()
+
+        var animated = NucleusLayers.LayerTransaction(
+            context: context,
+            targetPresentationNanoseconds: 1_000_000_000
+        )
+        try animated.setProperties(
+            .init(opacity: 0, actionPolicy: .default),
+            for: layer
+        )
+        try animated.commit()
+
+        #expect(store.hasActiveAnimations)
+        #expect(store.snapshot().get(layer.id.rawValue)?.model.properties.opacity == 0)
+        #expect(store.snapshot().get(layer.id.rawValue)?.effectiveOpacity() == 1)
+
+        _ = store.tick(presentTimeNs: 1_500_000_000)
+        let midpoint =
+            store.snapshot().get(layer.id.rawValue)?.effectiveOpacity() ?? -1
+        #expect(abs(midpoint - 0.5) < 0.001)
+    }
+
     @Test @MainActor func layersToRenderFeed() throws {
         // The shell-overlay context so the .none/.default material role derives
         // .shellOverlay (matching the host's context-derived path).

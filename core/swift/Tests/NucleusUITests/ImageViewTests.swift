@@ -32,7 +32,7 @@ private func withHostedContext<T>(_ body: () throws -> T) rethrows -> T {
 
 /// `ImageView` fit modes and source registration.
 @MainActor
-@Suite struct ImageViewTests {
+@Suite(.uiContext) struct ImageViewTests {
     private func makeView(image: Size, frame: Size) -> ImageView {
         let view = ImageView(image: ImageHandle(id: 1), imageSize: image)
         view.frame = Rect(origin: .zero, size: frame)
@@ -192,7 +192,7 @@ private func withHostedContext<T>(_ body: () throws -> T) rethrows -> T {
 
 /// Image tint: recolouring by alpha, and desaturation.
 @MainActor
-@Suite struct ImageTintTests {
+@Suite(.uiContext) struct ImageTintTests {
     private func makeView() -> ImageView {
         let view = ImageView(image: ImageHandle(id: 1), imageSize: Size(width: 10, height: 10))
         view.frame = Rect(x: 0, y: 0, width: 10, height: 10)

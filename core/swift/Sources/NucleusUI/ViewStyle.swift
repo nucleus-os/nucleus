@@ -3,7 +3,7 @@ public struct Border: Sendable, Equatable {
     public var color: Color
 
     public init(width: Float = 0, color: Color = Color(0, 0, 0, 0)) {
-        self.width = max(0, width)
+        self.width = width.isFinite ? max(0, width) : 0
         self.color = color
     }
 
@@ -21,7 +21,7 @@ public struct ViewStyle: Sendable, Equatable {
         border: Border = .none
     ) {
         self.backgroundColor = backgroundColor
-        self.cornerRadius = max(0, cornerRadius)
+        self.cornerRadius = cornerRadius.isFinite ? max(0, cornerRadius) : 0
         self.border = border
     }
 

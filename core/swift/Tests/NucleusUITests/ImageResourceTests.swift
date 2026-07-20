@@ -6,7 +6,7 @@ import NucleusLayers
 /// The producer seam: naming an image file from the view tier, and owning the
 /// registration that results.
 @MainActor
-@Suite struct ImageResourceTests {
+@Suite(.uiContext) struct ImageResourceTests {
     // MARK: - Recording host
 
     /// Records what was registered, so the lifetime contract is observable

@@ -1,4 +1,5 @@
 import NucleusShellRuntime
+import NucleusTextBackend
 #if canImport(Glibc)
 import Glibc
 #endif
@@ -12,6 +13,7 @@ import Glibc
 
 @MainActor
 func main() -> Int32 {
+    SkiaTextLayoutBackend.installIfNeeded()
     let bundlePath: String = {
         if let env = getenv("NUCLEUS_SHELL_BUNDLE") { return String(cString: env) }
         return "/usr/share/nucleus-shell/bundles/bar.hbc"

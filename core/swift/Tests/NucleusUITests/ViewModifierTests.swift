@@ -6,7 +6,7 @@ import NucleusUI
 /// these tests mostly check that setting through a modifier and setting the
 /// property directly are indistinguishable.
 @MainActor
-@Suite struct ViewModifierTests {
+@Suite(.uiContext) struct ViewModifierTests {
     // MARK: - Sugar, not a second API
 
     /// The property is always reachable directly. A modifier that did something

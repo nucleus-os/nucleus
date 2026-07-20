@@ -4,7 +4,11 @@ import Testing
 /// Icon glyphs. Icons are font glyphs rather than bitmaps, so an icon
 /// recolours and rescales for free and costs a codepoint rather than a decode.
 @MainActor
-@Suite struct GlyphTests {
+@Suite(.uiContext) struct GlyphTests {
+    init() {
+        installTestTextBackend()
+    }
+
     private func makeCatalog() -> GlyphCatalog {
         let catalog = GlyphCatalog(fontFamily: "TestIcons")
         catalog.register("battery", "\u{e900}")

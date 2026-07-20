@@ -68,7 +68,7 @@ public struct TextEditorModel: Equatable, Sendable {
 
     /// Masks `displayText` and suppresses every path that would let the contents
     /// escape — see `isCopyable`, `accessibilityValue`, and `description`.
-    public var isSecure: Bool
+    public private(set) var isSecure: Bool
 
     /// Rejects insertions that would take the text past this many UTF-16 units.
     /// `nil` means unlimited.
@@ -107,6 +107,22 @@ public struct TextEditorModel: Equatable, Sendable {
         self.compositionUndoRecorded = false
     }
 
+    /// Change secure-entry policy and destroy state that could recover text
+    /// from before the transition.
+    ///
+    /// Enabling security abandons provisional composition before clearing undo
+    /// and redo. Disabling also clears history because entries created while
+    /// secure must never become recoverable after the field becomes ordinary.
+    public mutating func setSecure(_ secure: Bool) {
+        guard secure != isSecure else { return }
+        if markedRange != nil {
+            unmarkText()
+        }
+        isSecure = secure
+        markedRange = nil
+        discardUndoHistory()
+    }
+
     // MARK: - Offsets
 
     public var utf16Count: Int { text.utf16.count }
@@ -128,24 +144,40 @@ public struct TextEditorModel: Equatable, Sendable {
 
     public func utf16Offset(forUTF8 offset: Int) -> Int {
         let clamped = min(max(0, offset), text.utf8.count)
-        guard let index = text.utf8.index(
+        guard var index = text.utf8.index(
             text.utf8.startIndex, offsetBy: clamped, limitedBy: text.utf8.endIndex)
         else { return utf16Count }
         // A UTF-8 offset landing mid-scalar has no UTF-16 equivalent; round down
         // to the enclosing scalar boundary rather than inventing one.
-        let scalarAligned = index.samePosition(in: text.unicodeScalars)
-            ?? text.unicodeScalars.index(before: text.unicodeScalars.index(after: index))
-        return text.utf16.distance(from: text.utf16.startIndex, to: scalarAligned)
+        while true {
+            if let scalarAligned = index.samePosition(
+                in: text.unicodeScalars)
+            {
+                return text.utf16.distance(
+                    from: text.utf16.startIndex,
+                    to: scalarAligned)
+            }
+            guard index > text.utf8.startIndex else { return 0 }
+            index = text.utf8.index(before: index)
+        }
     }
 
     private func index(atUTF16 offset: Int) -> String.Index? {
         let clamped = min(max(0, offset), utf16Count)
-        guard let index = text.utf16.index(
+        guard var index = text.utf16.index(
             text.utf16.startIndex, offsetBy: clamped, limitedBy: text.utf16.endIndex)
         else { return nil }
         // Offsets from a layout can land between surrogates; snap to a real
         // String.Index rather than trapping.
-        return index.samePosition(in: text) ?? text.index(before: index)
+        while true {
+            if let aligned = index.samePosition(in: text) {
+                return aligned
+            }
+            guard index > text.utf16.startIndex else {
+                return text.startIndex
+            }
+            index = text.utf16.index(before: index)
+        }
     }
 
     private func range(forUTF16 range: Range<Int>) -> Range<String.Index> {
@@ -430,6 +462,14 @@ public struct TextEditorModel: Equatable, Sendable {
     public func copyableSelection() -> String? {
         guard isCopyable, !selection.isCollapsed else { return nil }
         return String(text[range(forUTF16: selection.range)])
+    }
+
+    /// Remove the selection as one undoable edit.
+    @discardableResult
+    public mutating func deleteSelection() -> Bool {
+        guard !selection.isCollapsed else { return false }
+        replace(range: selection.range, with: "")
+        return true
     }
 
     public var canUndo: Bool { !undoStack.isEmpty }

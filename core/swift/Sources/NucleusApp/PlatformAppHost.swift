@@ -20,21 +20,63 @@ import Android
 import Darwin
 #endif
 
-/// The backend an app runs on. A platform host owns the rendering context (a real
-/// `CommitSink` into its render path) and the frame loop; `NucleusApp` materializes the
-/// app's `Scene`s into that context and hands off. One conformer is installed per
-/// process via `NucleusAppRuntime.installHost` before `App.main()` runs.
+public struct SceneID: RawRepresentable, Hashable, Sendable {
+    public let rawValue: UInt64
+
+    public init(rawValue: UInt64) {
+        precondition(rawValue != 0, "SceneID.zero is reserved")
+        self.rawValue = rawValue
+    }
+}
+
+public enum SceneActivationPolicy: Sendable, Equatable {
+    case automatic
+    case nonactivating
+}
+
+/// Typed portable request made before a scene is built. A Wayland host maps the
+/// role to its surface protocol while retaining anchors, exclusive zones,
+/// keyboard interactivity, and configure/ack state entirely in its adapter.
+public struct ScenePresentationRequest: Sendable, Equatable {
+    public var id: SceneID
+    public var title: String
+    public var role: WindowRole
+    public var activationPolicy: SceneActivationPolicy
+
+    public init(
+        id: SceneID,
+        title: String,
+        role: WindowRole,
+        activationPolicy: SceneActivationPolicy
+    ) {
+        self.id = id
+        self.title = title
+        self.role = role
+        self.activationPolicy = activationPolicy
+    }
+}
+
+public enum PlatformAppHostError: Error, Sendable, Equatable {
+    case contextUnavailable(String)
+    case presentationFailed(String)
+}
+
+/// The backend an app runs on. A platform host owns each scene's rendering
+/// context, its protocol surface, activation, teardown, and the frame loop.
 @MainActor
 public protocol PlatformAppHost: AnyObject {
-    /// The root rendering context the app's window/view tree is built in — backed by the
-    /// host's real `CommitSink`, so committed layer transactions flow to the host's
-    /// renderer. `App.main()` pushes this as the current context while it materializes.
-    func appContext() -> Context
+    /// Return the real visual context for one typed scene request.
+    func makeContext(
+        for request: ScenePresentationRequest
+    ) throws(PlatformAppHostError) -> Context
 
-    /// Mount one materialized window scene. Called once per leaf `Scene` (a `WindowGroup`)
-    /// during materialization; the host adopts the scene into its surface/output model and
-    /// renders it on its own loop.
-    func present(_ scene: WindowScene)
+    /// Adopt one retained scene. The host transitions it through activation
+    /// states and eventually calls `disconnect()` before destroying its
+    /// protocol surface and visual context.
+    func present(
+        _ scene: WindowScene,
+        request: ScenePresentationRequest
+    ) throws(PlatformAppHostError)
 
     /// Hand control to the host. Blocks on the host's runloop for a host that owns the
     /// process (a standalone app host), or returns immediately for a host whose loop is
@@ -55,25 +97,21 @@ public enum NucleusAppRuntime {
         installedHost = host
     }
 
-    /// The `App.main()` launch sequence: resolve the host (falling back to an in-memory
-    /// host when no backend is linked), construct the app, materialize its scenes into the
-    /// host's context, then hand off. The app is built here so it never crosses an
-    /// isolation boundary. The context is current only for the duration of materialization
-    /// — the scene graph retains it afterward, and the host drives frames off the
-    /// committed tree.
+    /// The `App.main()` launch sequence. A production launch requires an
+    /// installed host; tests and tools opt into `InMemoryAppHost` explicitly.
     @MainActor
     static func launch<A: App>(_ appType: A.Type) {
-        let host = installedHost ?? InMemoryAppHost()
-        let context = host.appContext()
-        // Build the scene description (deferred content closures — no views yet), then
-        // materialize it with the host's context current so the view tree mints its layers
-        // there. Imperative push/pop rather than the `withContext` closure form: the
-        // closure would capture the non-`Sendable` scene/host and trip region isolation.
-        let scene = A().body
-        Application.pushContext(context)
-        defer { Application.popContext() }
+        guard let host = installedHost else {
+            writeStderr(
+                "NucleusApp: no PlatformAppHost installed; refusing to build "
+                + "an unpresented application scene.\n")
+            return
+        }
+        let app = A()
+        let scene = app.body
+        let materializer = SceneMaterializer(host: host)
         do {
-            try scene._materialize(into: host)
+            try scene._materialize(using: materializer)
         } catch {
             writeStderr("NucleusApp: failed to build the app scene: \(error)\n")
             return
@@ -82,34 +120,79 @@ public enum NucleusAppRuntime {
     }
 }
 
-/// The fallback host when no platform backend is installed. It builds the scene graph
-/// into an in-memory context — so tooling and tests can exercise an `App` without a
-/// renderer — and reports that nothing is being driven. A real app links a backend and
-/// installs its host; this never renders.
+/// Explicit in-memory host for tests and scene-description tools.
 @MainActor
-final class InMemoryAppHost: PlatformAppHost {
-    private let context: Context
-    private(set) var presentedScenes: [WindowScene] = []
+public final class InMemoryAppHost: PlatformAppHost {
+    public private(set) var presentedScenes:
+        [(request: ScenePresentationRequest, scene: WindowScene)] = []
 
-    init() {
+    public init() {}
+
+    public func makeContext(
+        for request: ScenePresentationRequest
+    ) throws(PlatformAppHostError) -> Context {
         do {
-            context = try Context(commitSink: InMemoryCommitSink())
+            return try Context(
+                id: ContextID(rawValue: UInt32(truncatingIfNeeded: request.id.rawValue)),
+                commitSink: InMemoryCommitSink())
         } catch {
-            preconditionFailure("in-memory app context must be constructible: \(error)")
+            throw .contextUnavailable(String(describing: error))
         }
     }
 
-    func appContext() -> Context { context }
-
-    func present(_ scene: WindowScene) {
-        presentedScenes.append(scene)
+    public func present(
+        _ scene: WindowScene,
+        request: ScenePresentationRequest
+    ) throws(PlatformAppHostError) {
+        presentedScenes.append((request, scene))
     }
 
-    func run() {
-        writeStderr(
-            "NucleusApp: no PlatformAppHost installed — built \(presentedScenes.count) "
-            + "scene(s) into an in-memory context with no render loop. Link a platform "
-            + "backend and register it via NucleusAppRuntime.installHost.\n")
+    public func run() {}
+}
+
+@MainActor
+final class SceneMaterializer {
+    private let host: any PlatformAppHost
+    private var nextSceneID: UInt64 = 1
+
+    init(host: any PlatformAppHost) {
+        self.host = host
+    }
+
+    func present<Content: View>(
+        title: String,
+        role: WindowRole,
+        activationPolicy: SceneActivationPolicy,
+        makeContent: () throws -> Content
+    ) throws {
+        let request = ScenePresentationRequest(
+            id: SceneID(rawValue: nextSceneID),
+            title: title,
+            role: role,
+            activationPolicy: activationPolicy)
+        nextSceneID &+= 1
+        precondition(nextSceneID != 0, "scene identity exhausted")
+
+        let visualContext = try host.makeContext(for: request)
+        let uiContext = UIContext(
+            resourceHostHandle: visualContext.commitSink.resourceHostHandle)
+        let scene = try Application.withContexts(
+            uiContext: uiContext,
+            visualContext: visualContext
+        ) {
+            let root = try makeContent()
+            let window = Window(
+                title: title,
+                role: role,
+                level: .normal,
+                styleMask: [.titled, .closable, .resizable])
+            window.setContentView(root)
+            return WindowScene(
+                windows: [window],
+                uiContext: uiContext,
+                visualContext: visualContext)
+        }
+        try host.present(scene, request: request)
     }
 }
 

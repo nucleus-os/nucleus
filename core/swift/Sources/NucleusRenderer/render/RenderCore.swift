@@ -18,6 +18,7 @@
 import NucleusSkiaGraphiteBridge
 import VulkanC
 import Vulkan
+import Tracy
 
 private final class ClientAcquireSemaphore {
     let semaphore: VkSemaphore
@@ -244,6 +245,13 @@ public final class RenderCore {
     /// Set through `setLockComposition` by the composition root each frame from the
     /// authoritative window model.
     public private(set) var lockComposition: [UInt64: Set<ContextID>]?
+    /// The retained layer contexts each presentation target is allowed to walk.
+    ///
+    /// A compositor output defaults to the compositor context. Standalone
+    /// clients explicitly associate their own scene context with each
+    /// swapchain surface, which prevents unrelated surface roots from leaking
+    /// into one another merely because they share a render store.
+    private var outputRootContexts: [UInt64: [ContextID]] = [:]
 
     /// Set when `lockComposition` last changed and a forced redraw has not yet
     /// presented. A lock beginning need not damage the retained tree (non-lock windows
@@ -381,14 +389,6 @@ public final class RenderCore {
         self.store = RetainedTreeStore.shared
         self.instanceLifetime = instanceLifetime
         self.deviceBox = consume device
-        // Evict the decoded-image cache entry when its source is released from the
-        // shared store. Weak so the process-global store does not retain the driver.
-        SwiftResourceHost.shared.images.onEvict = { [weak driver] handle in
-            driver?.evictDecodedImage(handle)
-        }
-        SwiftResourceHost.shared.runtimeEffects.onEvict = { [weak driver] handle in
-            driver?.evictCompiledEffect(handle)
-        }
     }
 
     public func createSurface(_ factory: VulkanSurfaceFactory) -> VulkanSurface? {
@@ -420,10 +420,28 @@ public final class RenderCore {
         outputPresentationLedger.attach(outputID)
     }
 
+    /// Associate a presentation surface with the retained scene contexts it
+    /// presents. Context order is visual back-to-front order.
+    ///
+    /// Passing an empty list intentionally presents no retained roots. Callers
+    /// that do not install an association retain compositor-output behavior.
+    public func setOutputRootContexts(
+        outputID: UInt64,
+        contextIDs: [UInt32]
+    ) {
+        var seen = Set<ContextID>()
+        outputRootContexts[outputID] = contextIDs.compactMap { rawValue in
+            let id = ContextID(raw: rawValue)
+            return rawValue != 0 && seen.insert(id).inserted ? id : nil
+        }
+        outputsNeedingInitialFrame.insert(outputID)
+    }
+
     /// Drop an output's geometry (the backend detached it) and its persistent GPU
     /// accumulator, so a removed output leaks neither.
     public func detachOutputGeometry(outputID: UInt64) {
         outputTargets[outputID] = nil
+        outputRootContexts[outputID] = nil
         outputsNeedingInitialFrame.remove(outputID)
         outputPresentationLedger.detach(outputID)
         frameDriver?.dropAccumulator(output: outputID)
@@ -450,6 +468,12 @@ public final class RenderCore {
         lastFrameRenderStarted = renderStarted
         lastFrameAcquiredSurfaceIDs.removeAll(keepingCapacity: true)
         guard let driver = frameDriver, let renderTarget = outputTargets[outputID] else { return false }
+        for handle in SwiftResourceHost.shared.images.takeEvictedHandles() {
+            driver.evictDecodedImage(handle)
+        }
+        for handle in SwiftResourceHost.shared.runtimeEffects.takeEvictedHandles() {
+            driver.evictCompiledEffect(handle)
+        }
         frameSerial &+= 1
         let frame = FrameInfo(
             outputId: outputID, width: UInt32(target.width), height: UInt32(target.height),
@@ -488,11 +512,13 @@ public final class RenderCore {
         // to its allowed lock-surface contexts (empty/absent → fully blanked). nil is
         // the normal, unrestricted composition.
         let lockContexts: Set<ContextID>? = lockComposition.map { $0[outputID] ?? [] }
+        let rootContexts = outputRootContexts[outputID] ?? [compositorContextId]
         let result = driver.renderFrame(
             tree: tree, target: renderTarget, frame: frame, scanout: surface,
             present: present,
             drmSubmit: drmSubmit,
             acquireWaitSemaphores: pendingClientAcquireSemaphores.mapValues(\.semaphore),
+            rootContexts: rootContexts,
             lockContexts: lockContexts,
             resolvePaintContent: { SwiftResourceHost.shared.paintContents.content($0) },
             resolvePaintImage: { handle in
@@ -518,6 +544,41 @@ public final class RenderCore {
         telemetry.damageRectCount = UInt64(result.damageRectCount)
         telemetry.damagePixelCount = result.damagePixelCount
         telemetry.fullDamage = result.fullDamage
+        let producerStats = driver.takeProducerWorkStats()
+        telemetry.paintRepaintCount = producerStats.paintRepaint
+        telemetry.partialPaintRepaintCount = producerStats.paintPartialRepaint
+        telemetry.fullPaintRepaintCount = producerStats.paintFullRepaint
+        telemetry.shadowRepaintCount = producerStats.shadowRepaint
+        telemetry.producerDrawCount = producerStats.drawQuad
+        telemetry.producerTexturePassCount = producerStats.texturePass
+        telemetry.producerInvalidationCount = producerStats.invalidate
+        Trace.plot(
+            "swift.nucleus.renderer.paint_repaints",
+            producerStats.paintRepaint)
+        Trace.plot(
+            "swift.nucleus.renderer.paint_partial_repaints",
+            producerStats.paintPartialRepaint)
+        Trace.plot(
+            "swift.nucleus.renderer.paint_full_repaints",
+            producerStats.paintFullRepaint)
+        Trace.plot(
+            "swift.nucleus.renderer.shadow_repaints",
+            producerStats.shadowRepaint)
+        Trace.plot(
+            "swift.nucleus.renderer.producer_draws",
+            producerStats.drawQuad)
+        Trace.plot(
+            "swift.nucleus.renderer.texture_passes",
+            producerStats.texturePass)
+        Trace.plot(
+            "swift.nucleus.renderer.producer_invalidations",
+            producerStats.invalidate)
+        Trace.plot(
+            "swift.nucleus.renderer.damage_regions",
+            telemetry.damageRectCount)
+        Trace.plot(
+            "swift.nucleus.renderer.damage_pixels",
+            telemetry.damagePixelCount)
         telemetry.clientCommitToRenderNs = changed.map {
             elapsedNanoseconds($0, renderStarted)
         }

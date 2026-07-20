@@ -28,7 +28,7 @@ import Testing
             let batches = q.consumeReadyBatches()
             #expect(batches.count == 1, "ungrouped-one-batch")
             if case .single(let f) = batches[0] { #expect(f.transaction.contextId == ctx, "ungrouped-context") }
-            else { #expect(false, "ungrouped-is-single") }
+            else { Issue.record("ungrouped-is-single") }
         }
 
         // Grouped frames held until close, then drained in group_seq order, and
@@ -52,9 +52,9 @@ import Testing
                 #expect(g.meta.groupId == 7 && g.txns.count == 2, "grouped-group-meta")
                 #expect(g.txns[0].transaction.groupSeq == 1 && g.txns[1].transaction.groupSeq == 2,
                       "grouped-seq-order")
-            } else { #expect(false, "grouped-first-is-group") }
+            } else { Issue.record("grouped-first-is-group") }
             if case .single(let f) = after[1] { #expect(f.transaction.contextId == c1, "grouped-single-follows") }
-            else { #expect(false, "grouped-second-is-single") }
+            else { Issue.record("grouped-second-is-single") }
         }
 
         // Zero-participant close drops the pending group entirely.
@@ -80,7 +80,7 @@ import Testing
             if case .group(let g) = batches[0] {
                 #expect(g.meta.transition.map { equivalentTransitionMetadata($0, metadata) } == true,
                       "metadata-carried")
-            } else { #expect(false, "metadata-is-group") }
+            } else { Issue.record("metadata-is-group") }
         }
 
         // Context ids beyond the legacy fixed slot range are accepted.

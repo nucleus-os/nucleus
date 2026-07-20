@@ -2,7 +2,7 @@
 import Testing
 
 @MainActor
-@Suite struct ResponderTests {
+@Suite(.uiContext) struct ResponderTests {
     final class TrackingView: View {
         var events: [Event] = []
         var result: EventHandling
@@ -179,7 +179,7 @@ import Testing
         let window = Window(title: "Tracking")
         window.setContentView(root)
         window.orderFront()
-        let scene = WindowScene(windows: [window])
+        let scene = WindowScene(inMemoryWindows: [window])
 
         _ = scene.dispatchEvent(Event(type: .pointerDown, location: Point(x: 10, y: 10)))
         #expect(button.isPressed)

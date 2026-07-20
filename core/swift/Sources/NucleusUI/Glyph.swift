@@ -112,6 +112,19 @@ public final class GlyphView: View {
 
     private var layoutCache: TextLayout?
 
+    public override var environmentDependencies: UIEnvironmentChanges {
+        super.environmentDependencies.union(.textScale)
+    }
+
+    public override func environmentDidChange(
+        _ changes: UIEnvironmentChanges
+    ) {
+        if changes.contains(.textScale) {
+            refresh()
+        }
+        super.environmentDidChange(changes)
+    }
+
     private func refresh() {
         layoutCache = nil
         invalidateIntrinsicContentSize()
@@ -127,6 +140,7 @@ public final class GlyphView: View {
 
         let font = Font(descriptor: FontDescriptor(
             familyName: family, pointSize: pointSize))
+            .scaled(by: uiContext.environment.textScale)
         let layout = TextLayout(
             runs: [TextRun(text: String(character), font: font, color: nil)],
             containerWidth: nil,

@@ -80,7 +80,9 @@ public struct LayerTransaction: ~Copyable, ~Sendable {
         transitions: [TransitionRecord] = []
     ) {
         self.context = context
-        self.transactionID = transactionID
+        self.transactionID = transactionID == 0
+            ? context.nextTransactionID()
+            : transactionID
         if groupID == 0, let activeGroup = context.activeGroup {
             self.groupID = activeGroup.id
             self.groupSequence = activeGroup.allocateSequence()
@@ -95,6 +97,11 @@ public struct LayerTransaction: ~Copyable, ~Sendable {
         self.transitions = transitions
         self.mutations = []
         self.completed = false
+    }
+
+    deinit {
+        // Pending journals own no committed renderer state. Destroying this
+        // single-consumption value drops the journal and is the abort path.
     }
 
     /// Adds a per-field hold on `layer.field`. Subsequent property writes
@@ -264,7 +271,7 @@ public struct LayerTransaction: ~Copyable, ~Sendable {
     }
 
     /// Discards the pending FFI-side commit. Local Swift state is **not**
-    /// rolled back — mirrors `CATransaction`, where calling `commit` /
+    /// rolled back — corresponds to `CATransaction`, where calling `commit` /
     /// abandoning the transaction does not undo property writes already
     /// made on the layer model. Once you set `position`, it stays set.
     public mutating func abort() {

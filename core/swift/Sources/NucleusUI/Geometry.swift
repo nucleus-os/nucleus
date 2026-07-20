@@ -16,6 +16,9 @@ public struct Point: Equatable, Sendable {
         self.y = y
     }
 
+    /// Whether both coordinates can safely cross the rendering boundary.
+    public var isFinite: Bool { x.isFinite && y.isFinite }
+
     package init(wireValue: NucleusTypes.Point) {
         self.init(x: wireValue.x, y: wireValue.y)
     }
@@ -36,6 +39,9 @@ public struct Size: Equatable, Sendable {
         self.height = height
     }
 
+    /// Whether both dimensions can safely cross the rendering boundary.
+    public var isFinite: Bool { width.isFinite && height.isFinite }
+
     package init(wireValue: NucleusTypes.Size) {
         self.init(width: wireValue.width, height: wireValue.height)
     }
@@ -50,6 +56,14 @@ public struct Rect: Equatable, Sendable {
     public var size: Size
 
     public static let zero = Rect(x: 0, y: 0, width: 0, height: 0)
+
+    /// Nucleus treats a rectangle with either nonpositive dimension as empty.
+    /// Negative dimensions are not implicitly standardized: accepting both
+    /// conventions at different call sites makes bounds and damage ambiguous.
+    public var isEmpty: Bool { size.width <= 0 || size.height <= 0 }
+
+    /// Whether every component can safely cross the rendering boundary.
+    public var isFinite: Bool { origin.isFinite && size.isFinite }
 
     /// Shrink by `dx` horizontally and `dy` vertically, from both sides.
     /// Negative values grow it, which is how a highlight is drawn *around*
@@ -77,8 +91,11 @@ public struct Rect: Equatable, Sendable {
     /// An empty rectangle is ignored rather than included — a zero-size rect at
     /// the origin would otherwise drag every union back to it.
     public func union(_ other: Rect) -> Rect {
-        if size.width <= 0 && size.height <= 0 { return other }
-        if other.size.width <= 0 && other.size.height <= 0 { return self }
+        let selfIsEmpty = !isFinite || isEmpty
+        let otherIsEmpty = !other.isFinite || other.isEmpty
+        if selfIsEmpty && otherIsEmpty { return .zero }
+        if selfIsEmpty { return other }
+        if otherIsEmpty { return self }
         let minX = min(origin.x, other.origin.x)
         let minY = min(origin.y, other.origin.y)
         let maxX = max(origin.x + size.width, other.origin.x + other.size.width)
@@ -116,7 +133,8 @@ public struct Rect: Equatable, Sendable {
     }
 
     public func contains(_ point: Point) -> Bool {
-        point.x >= origin.x &&
+        isFinite && !isEmpty && point.isFinite &&
+            point.x >= origin.x &&
             point.y >= origin.y &&
             point.x < origin.x + size.width &&
             point.y < origin.y + size.height
@@ -139,9 +157,12 @@ public struct EdgeInsets: Equatable, Sendable {
     }
 }
 
-/// A 2D affine transform, row-major `[a b tx; c d ty; 0 0 1]`. Mirrors
-/// `CGAffineTransform`. `GraphicsContext` applies it to geometry as it records,
-/// so the paint commands themselves carry no matrix.
+/// A 2D affine transform, row-major `[a c tx; b d ty; 0 0 1]`, using the same
+/// six scalar vocabulary as `CGAffineTransform`.
+///
+/// `GraphicsContext` records geometry in local coordinates and carries this
+/// complete transform on each paint operation. The renderer applies it once,
+/// after the backing-pixel scale.
 public struct AffineTransform: Equatable, Sendable {
     public var a: Double
     public var b: Double
@@ -165,6 +186,10 @@ public struct AffineTransform: Equatable, Sendable {
     public static let identity = AffineTransform()
 
     public var isIdentity: Bool { self == .identity }
+    public var isFinite: Bool {
+        a.isFinite && b.isFinite && c.isFinite && d.isFinite &&
+            tx.isFinite && ty.isFinite
+    }
 
     public static func translation(x: Double, y: Double) -> AffineTransform {
         AffineTransform(tx: x, ty: y)
@@ -208,12 +233,4 @@ public struct AffineTransform: Equatable, Sendable {
         AffineTransform.rotation(degrees: degrees).concatenating(self)
     }
 
-    /// A single representative scale factor, for values that are scalars rather
-    /// than points — stroke width, corner radius, gradient radius. Exact under
-    /// uniform scale; the geometric mean under anisotropic scale, which is the
-    /// same compromise CoreGraphics makes.
-    public var approximateScale: Double {
-        let determinant = abs(a * d - b * c)
-        return determinant > 0 ? determinant.squareRoot() : 1
-    }
 }

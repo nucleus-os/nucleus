@@ -26,15 +26,20 @@ public struct ViewLayerPresentation: Sendable, Equatable {
 
 package struct ViewLayerContent: Sendable, Equatable {
     package var recording: PaintRecording
+    /// Layer-local logical damage associated with `recording`. `nil` means the
+    /// complete recording bounds changed.
+    package var damage: Rect?
     package var presentation: ViewLayerPresentation
     package var shadow: Shadow?
 
     package init(
         recording: PaintRecording = PaintRecording(),
+        damage: Rect? = nil,
         presentation: ViewLayerPresentation = .default,
         shadow: Shadow? = nil
     ) {
         self.recording = recording
+        self.damage = damage
         self.presentation = presentation
         self.shadow = shadow
     }

@@ -66,6 +66,7 @@ public enum ShellOverlayCursor: UInt32, Sendable {
 public struct ShellOverlayInputEvent: Sendable, Equatable {
     public var kind: ShellOverlayInputKind
     public var button: UInt32
+    public var activeButtons: PointerButtonMask
     public var location: Point
     public var scrollX: Float
     public var scrollY: Float
@@ -79,6 +80,7 @@ public struct ShellOverlayInputEvent: Sendable, Equatable {
     public init(_ event: NucleusCompositorOverlayTypes.InputEvent) {
         kind = ShellOverlayInputKind(rawValue: event.kind.rawValue) ?? .pointerMove
         button = event.button
+        activeButtons = []
         location = Point(x: Double(event.x), y: Double(event.y))
         scrollX = event.scrollX
         scrollY = event.scrollY
@@ -110,22 +112,33 @@ public struct ShellOverlayInputEvent: Sendable, Equatable {
             return Event(
                 type: .pointerDown, modifierFlags: modifiers, location: location,
                 timestampNanoseconds: timestampNanoseconds,
-                button: Self.nucleonButton(button), clickCount: 1)
+                button: Self.nucleonButton(button),
+                activeButtons: activeButtons,
+                pointerTool: .mouse,
+                clickCount: 1)
         case .pointerUp:
             return Event(
                 type: .pointerUp, modifierFlags: modifiers, location: location,
                 timestampNanoseconds: timestampNanoseconds,
-                button: Self.nucleonButton(button), clickCount: 1)
+                button: Self.nucleonButton(button),
+                activeButtons: activeButtons,
+                pointerTool: .mouse,
+                clickCount: 1)
         case .pointerMove:
             return Event(
-                type: .pointerMoved, modifierFlags: modifiers, location: location,
-                timestampNanoseconds: timestampNanoseconds)
+                type: activeButtons.isEmpty ? .pointerMoved : .pointerDragged,
+                modifierFlags: modifiers,
+                location: location,
+                timestampNanoseconds: timestampNanoseconds,
+                activeButtons: activeButtons,
+                pointerTool: .mouse)
         case .scroll:
             return Event(
                 type: .scrollWheel, modifierFlags: modifiers, location: location,
                 timestampNanoseconds: timestampNanoseconds,
                 scrollDeltaX: Double(scrollX), scrollDeltaY: Double(scrollY),
-                scrollSource: .finger)
+                scrollSource: .finger,
+                scrollPhase: .changed)
         case .keyDown:
             return Event(
                 type: .keyDown, modifierFlags: modifiers, location: location,

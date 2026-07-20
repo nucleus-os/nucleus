@@ -2,7 +2,7 @@ import Testing
 @testable import NucleusUI
 
 /// `data:` URIs, which applications put in icon fields where a path is expected.
-@Suite struct DataURITests {
+@Suite(.uiContext) struct DataURITests {
     @Test func aBase64URIDecodesToItsBytes() {
         // "Hi!" — short enough to check by hand.
         let uri = DataURI.parse("data:image/png;base64,SGkh")

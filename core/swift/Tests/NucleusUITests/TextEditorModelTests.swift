@@ -4,7 +4,7 @@ import NucleusUI
 /// The editing contract, tested without a view or a window. The model is a
 /// value type precisely so this is possible.
 @MainActor
-@Suite struct TextEditorModelTests {
+@Suite(.uiContext) struct TextEditorModelTests {
     // MARK: - Index spaces
 
     /// UTF-16 is the model's index space and UTF-8 is the input method's. Text
@@ -39,6 +39,14 @@ import NucleusUI
         #expect(model.utf8Offset(forUTF16: 99) == 3)
         #expect(model.utf16Offset(forUTF8: -5) == 0)
         #expect(model.alignedOffset(99) == 3)
+    }
+
+    @Test func offsetsInsideTheFirstMultibyteCharacterRoundToStart() {
+        let model = TextEditorModel(text: "😀a")
+        #expect(model.alignedOffset(1) == 0)
+        #expect(model.utf16Offset(forUTF8: 1) == 0)
+        #expect(model.utf16Offset(forUTF8: 2) == 0)
+        #expect(model.utf16Offset(forUTF8: 3) == 0)
     }
 
     // MARK: - Caret movement
@@ -317,6 +325,21 @@ import NucleusUI
         let model = TextEditorModel(text: "hunter2", isSecure: true)
         #expect(!model.description.contains("hunter2"))
         #expect(!"\(model)".contains("hunter2"))
+    }
+
+    @Test func enablingSecureModeDestroysUndoAndCompositionHistory() {
+        var model = TextEditorModel(text: "ordinary")
+        model.insert("-secret")
+        model.setMarkedText(" provisional")
+
+        model.setSecure(true)
+
+        #expect(model.isSecure)
+        #expect(!model.hasMarkedText)
+        #expect(!model.canUndo)
+        #expect(!model.canRedo)
+        #expect(model.surroundingText() == nil)
+        #expect(model.copyableSelection() == nil)
     }
 
     @Test func anOrdinarySelectionIsCopyable() {

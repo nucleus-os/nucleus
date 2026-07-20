@@ -479,7 +479,6 @@ let package = Package(
                 .product(name: "NucleusTypes", package: "Nucleus"),
                 .product(name: "NucleusAppHostProtocols", package: "Nucleus"),
                 .product(name: "Tracy", package: "swift-tracy"),
-                .product(name: "NucleusTextCxxBridge", package: "Nucleus"),
             ],
             path: "swift/Sources/NucleusReactRuntime",
             exclude: ["cxx"],

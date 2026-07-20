@@ -2,24 +2,45 @@ import NucleusLayers
 
 public enum Application {
     @MainActor
-    package static let defaultContext: Context = {
-        // Fallback for code that reads `currentContext` before any real
-        // context is pushed. `InMemoryCommitSink` captures transactions
-        // without forwarding to a host, so `NucleusUI` doesn't pull the render
-        // host.
-        do {
-            return try Context(id: .root, commitSink: InMemoryCommitSink())
-        } catch {
-            preconditionFailure("root in-memory NucleusUI context must be constructible: \(error)")
+    private static var nextInMemoryContextID: UInt32 = 0xf000_0000
+
+    private struct Scope: @unchecked Sendable {
+        var uiContext: UIContext
+    }
+
+    /// Construction context follows the task instead of living on a
+    /// process-wide push/pop stack. The references remain main-actor confined;
+    /// `@unchecked Sendable` only permits task-local propagation of the holder.
+    @TaskLocal
+    private static var constructionScope: Scope?
+
+    @MainActor
+    package static var currentUIContext: UIContext {
+        guard let uiContext = constructionScope?.uiContext else {
+            preconditionFailure(
+                "semantic UI construction requires an explicit UIContext; "
+                    + "use UIContext.construct { ... } or a host-owned scene "
+                    + "construction scope"
+            )
         }
-    }()
+        return uiContext
+    }
 
     @MainActor
-    private static var contextStack: [Context] = []
-
-    @MainActor
-    package static var currentContext: Context {
-        contextStack.last ?? defaultContext
+    package static func makeInMemoryVisualContext() -> Context {
+        let id = nextInMemoryContextID
+        nextInMemoryContextID &+= 1
+        precondition(
+            nextInMemoryContextID != 0,
+            "in-memory visual context identity exhausted")
+        do {
+            return try Context(
+                id: ContextID(rawValue: id),
+                commitSink: InMemoryCommitSink())
+        } catch {
+            preconditionFailure(
+                "in-memory visual context must be constructible: \(error)")
+        }
     }
 
     @MainActor
@@ -27,24 +48,51 @@ public enum Application {
         _ context: Context,
         _ body: () throws -> T
     ) rethrows -> T {
-        pushContext(context)
-        defer { popContext() }
-        return try body()
-    }
-
-    /// Imperative counterpart to `withContext` for callers that cannot express their
-    /// context scope as a single closure — chiefly an app entry (`NucleusApp`) that
-    /// materializes a scene graph capturing non-`Sendable` state the closure form would
-    /// flag under region isolation. Push before materializing, `popContext()` after
-    /// (pair them with `defer`). Main-actor state, like `withContext`.
-    @MainActor
-    package static func pushContext(_ context: Context) {
-        contextStack.append(context)
+        let uiContext = UIContext(resourceHostHandle: context.commitSink.resourceHostHandle)
+        return try withContexts(
+            uiContext: uiContext,
+            visualContext: context,
+            body
+        )
     }
 
     @MainActor
-    package static func popContext() {
-        _ = contextStack.popLast()
+    package static func withContexts<T>(
+        uiContext: UIContext,
+        visualContext: Context,
+        _ body: () throws -> T
+    ) rethrows -> T {
+        precondition(
+            uiContext.resourceHostHandle == 0
+                || uiContext.resourceHostHandle
+                    == visualContext.commitSink.resourceHostHandle,
+            "UIContext and visual Context belong to different resource hosts")
+        return try $constructionScope.withValue(
+            Scope(uiContext: uiContext),
+            operation: body
+        )
+    }
+
+    @MainActor
+    package static func withUIContext<T>(
+        _ uiContext: UIContext,
+        _ body: () throws -> T
+    ) rethrows -> T {
+        try $constructionScope.withValue(
+            Scope(uiContext: uiContext),
+            operation: body
+        )
+    }
+
+    @MainActor
+    package static func withUIContext<T>(
+        _ uiContext: UIContext,
+        _ body: nonisolated(nonsending) () async throws -> T
+    ) async rethrows -> T {
+        try await $constructionScope.withValue(
+            Scope(uiContext: uiContext),
+            operation: body
+        )
     }
 
     public static func run(_ body: () throws(UIError) -> Void) throws(UIError) {

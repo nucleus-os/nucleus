@@ -78,6 +78,10 @@ public final class Separator: View, ~Sendable {
             : Size(width: across, height: 0)
     }
 
+    public override var environmentDependencies: UIEnvironmentChanges {
+        super.environmentDependencies
+    }
+
     public override func draw(in context: GraphicsContext) {
         let size = bounds.size
         guard size.width > 0, size.height > 0, thickness > 0 else { return }

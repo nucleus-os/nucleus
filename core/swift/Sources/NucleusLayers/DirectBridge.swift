@@ -73,7 +73,8 @@ extension LayerPropertyUpdate {
             (content != nil ? NucleusTypes.layerPropertyContent : 0) |
             (backdropGroupID != nil ? NucleusTypes.layerPropertyBackdropGroup : 0) |
             (contentSample != nil ? NucleusTypes.layerPropertyContentSample : 0) |
-            (backgroundEffect != nil ? NucleusTypes.layerPropertyBackgroundEffect : 0)
+            (backgroundEffect != nil ? NucleusTypes.layerPropertyBackgroundEffect : 0) |
+            (contentDamage != nil ? NucleusTypes.layerPropertyContentDamage : 0)
         return NucleusTypes.LayerPropertyUpdate(
             mask: mask,
             opacity: opacity ?? 1,
@@ -102,6 +103,7 @@ extension LayerPropertyUpdate {
             content: (content ?? .none).wireValue,
             contentSample: (contentSample ?? ContentSample()).wireValue,
             backgroundEffectRegions: (backgroundEffectRegions ?? BackgroundEffectRegions()).wireValue,
+            contentDamage: contentDamage ?? .zero,
         )
     }
 
@@ -126,6 +128,7 @@ extension LayerPropertyUpdate {
             borderBottom: (c.mask & NucleusTypes.layerPropertyBorderBottom) != 0 ? c.borderBottom : nil,
             borderLeft: (c.mask & NucleusTypes.layerPropertyBorderLeft) != 0 ? c.borderLeft : nil,
             content: (c.mask & NucleusTypes.layerPropertyContent) != 0 ? LayerContent(wireValue: c.content) : nil,
+            contentDamage: (c.mask & NucleusTypes.layerPropertyContentDamage) != 0 ? c.contentDamage : nil,
             contentSample: (c.mask & NucleusTypes.layerPropertyContentSample) != 0 ? ContentSample(wireValue: c.contentSample) : nil,
             backgroundEffect: (c.mask & NucleusTypes.layerPropertyBackgroundEffect) != 0 ? c.backgroundEffect : nil,
             backgroundEffectRegions: (c.mask & NucleusTypes.layerPropertyBackgroundEffect) != 0 ? BackgroundEffectRegions(wireValue: c.backgroundEffectRegions) : nil,
@@ -238,6 +241,7 @@ extension Animation {
         NucleusTypes.AnimationRecord(
             nodeId: layerID.rawValue,
             animationId: id,
+            completionToken: completionToken,
             keyPath: keyPath,
             reserved: 0,
             duration: duration,

@@ -61,7 +61,8 @@ import NucleusTypes
         scalars: [Float] = [],
         colors: [Color] = [],
         effectHandle: UInt64 = 0,
-        color: Float4 = (1, 1, 1, 1)
+        color: Float4 = (1, 1, 1, 1),
+        transform: PaintDrawTransform? = nil
     ) -> PaintDrawCommand {
         let slice = PaintPayload.append(
             to: &payload, verbs: verbs, points: points, scalars: scalars, colors: colors)
@@ -70,7 +71,8 @@ import NucleusTypes
             strokeWidth: strokeWidth, color: color,
             effectHandle: effectHandle,
             payloadOffset: slice.offset, payloadLength: slice.length,
-            stroke: stroke, antialias: false, shading: shading)
+            stroke: stroke, antialias: false,
+            transform: transform, shading: shading)
     }
 
     private func rectPath(_ x: Float, _ y: Float, _ w: Float, _ h: Float)
@@ -176,6 +178,73 @@ import NucleusTypes
         #expect(pixel(pixels, 20, 20, width: 40).0 == 0, "the interior stays clear")
     }
 
+    @Test func aCommandTransformAndBackingScaleApplyExactlyOnce() {
+        var payload: [UInt8] = []
+        let (verbs, points) = rectPath(0, 0, 10, 10)
+        let command = pathCommand(
+            verbs: verbs, points: points, into: &payload,
+            transform: PaintDrawTransform(
+                a: 2, b: 0, c: 0, d: 1, tx: 5, ty: 3))
+
+        let pixels = render(
+            width: 64, height: 32, commands: [command], payload: payload,
+            scaleX: 2, scaleY: 2)
+        // local 0...10 -> command x 5...25 -> backing x 10...50.
+        #expect(pixel(pixels, 12, 8, width: 64).0 > 200)
+        #expect(pixel(pixels, 48, 20, width: 64).0 > 200)
+        #expect(pixel(pixels, 6, 8, width: 64).0 == 0)
+        #expect(pixel(pixels, 54, 8, width: 64).0 == 0)
+    }
+
+    @Test func anisotropicScaleTransformsAStrokeAsAnOutline() {
+        var payload: [UInt8] = []
+        let command = pathCommand(
+            verbs: [.move, .line],
+            points: [10, 5, 10, 25],
+            into: &payload,
+            stroke: true, strokeWidth: 4,
+            transform: PaintDrawTransform(
+                a: 3, b: 0, c: 0, d: 1, tx: 0, ty: 0))
+
+        let pixels = render(width: 64, height: 32, commands: [command], payload: payload)
+        #expect(pixel(pixels, 25, 15, width: 64).0 > 200, "x scale widens the outline")
+        #expect(pixel(pixels, 22, 15, width: 64).0 == 0, "outline has a finite edge")
+        #expect(pixel(pixels, 30, 3, width: 64).0 == 0, "y width is not also tripled")
+    }
+
+    @Test func reflectionMapsGeometryWithoutStandardizingItAway() {
+        var payload: [UInt8] = []
+        let (verbs, points) = rectPath(5, 5, 10, 10)
+        let command = pathCommand(
+            verbs: verbs, points: points, into: &payload,
+            transform: PaintDrawTransform(
+                a: -1, b: 0, c: 0, d: 1, tx: 30, ty: 0))
+
+        let pixels = render(width: 40, height: 24, commands: [command], payload: payload)
+        #expect(pixel(pixels, 16, 10, width: 40).0 > 200)
+        #expect(pixel(pixels, 24, 10, width: 40).0 > 200)
+        #expect(pixel(pixels, 8, 10, width: 40).0 == 0)
+    }
+
+    @Test func aCollapsedTransformProducesNoVisibleStroke() {
+        var payload: [UInt8] = []
+        let command = pathCommand(
+            verbs: [.move, .line],
+            points: [5, 5, 25, 25],
+            into: &payload,
+            stroke: true, strokeWidth: 10,
+            transform: PaintDrawTransform(
+                a: 0, b: 0, c: 0, d: 0, tx: 20, ty: 20))
+
+        let pixels = render(width: 40, height: 40, commands: [command], payload: payload)
+        #expect(!pixels.isEmpty)
+        for y in 0..<40 {
+            for x in 0..<40 {
+                #expect(pixel(pixels, x, y, width: 40).0 == 0)
+            }
+        }
+    }
+
     // MARK: - Shading
 
     /// Gradient parameters are split across payload regions: geometry and stops
@@ -218,6 +287,27 @@ import NucleusTypes
         #expect(pixel(pixels, 38, 20, width: 40).0 > 200, "the ramp reaches the far edge")
     }
 
+    @Test func radialGradientBecomesAnEllipseUnderAnisotropicTransform() {
+        var payload: [UInt8] = []
+        let command = pathCommand(
+            verbs: [.move, .arc, .close],
+            points: [20, 10, 0, 0, 20, 20, 0, 360],
+            into: &payload,
+            shading: .radialGradient,
+            scalars: [10, 10, 10, 0, 1],
+            colors: [
+                Color(r: 1, g: 1, b: 1, a: 1),
+                Color(r: 0, g: 0, b: 0, a: 1),
+            ],
+            transform: PaintDrawTransform(
+                a: 2, b: 0, c: 0, d: 1, tx: 0, ty: 0))
+
+        let pixels = render(width: 40, height: 20, commands: [command], payload: payload)
+        #expect(pixel(pixels, 20, 10, width: 40).0 > 220, "center stays bright")
+        #expect(pixel(pixels, 36, 10, width: 40).0 < 80, "x radius becomes 20")
+        #expect(pixel(pixels, 20, 18, width: 40).0 < 80, "y radius remains 10")
+    }
+
     @Test func aRuntimeEffectShadesThePath() {
         let effect = nucleus.skia.makeRuntimeEffect(
             "half4 main(float2 p) { return half4(1, 0, 0, 1); }")
@@ -257,6 +347,44 @@ import NucleusTypes
         #expect(!pixels.isEmpty)
         #expect(pixel(pixels, 10, 20, width: 40).0 > 200, "inside the clip paints")
         #expect(pixel(pixels, 30, 20, width: 40).0 == 0, "outside the clip does not")
+    }
+
+    @Test func aTransformedClipPersistsForLaterCommands() {
+        var payload: [UInt8] = []
+        let (clipVerbs, clipPoints) = rectPath(0, 0, 10, 40)
+        let clipSlice = PaintPayload.append(
+            to: &payload, verbs: clipVerbs, points: clipPoints)
+        let clip = PaintDrawCommand(
+            kind: .clipPath, x: 0, y: 0, w: 0, h: 0,
+            payloadOffset: clipSlice.offset, payloadLength: clipSlice.length,
+            antialias: false,
+            transform: PaintDrawTransform(
+                a: 1, b: 0, c: 0, d: 1, tx: 10, ty: 0))
+
+        let (fillVerbs, fillPoints) = rectPath(0, 0, 40, 40)
+        let fill = pathCommand(verbs: fillVerbs, points: fillPoints, into: &payload)
+        let pixels = render(
+            width: 40, height: 40, commands: [clip, fill], payload: payload)
+        #expect(pixel(pixels, 15, 20, width: 40).0 > 200)
+        #expect(pixel(pixels, 5, 20, width: 40).0 == 0)
+        #expect(pixel(pixels, 25, 20, width: 40).0 == 0)
+    }
+
+    @Test func anEmptyPathProducesAnEmptyClip() {
+        var payload: [UInt8] = []
+        let clipSlice = PaintPayload.append(to: &payload)
+        let clip = PaintDrawCommand(
+            kind: .clipPath, x: 0, y: 0, w: 0, h: 0,
+            payloadOffset: clipSlice.offset, payloadLength: clipSlice.length,
+            antialias: false,
+            transform: PaintDrawTransform(
+                a: 1, b: 0, c: 0, d: 1, tx: 0, ty: 0))
+        let (fillVerbs, fillPoints) = rectPath(0, 0, 40, 40)
+        let fill = pathCommand(verbs: fillVerbs, points: fillPoints, into: &payload)
+
+        let pixels = render(
+            width: 40, height: 40, commands: [clip, fill], payload: payload)
+        #expect(pixel(pixels, 20, 20, width: 40).0 == 0)
     }
 
     /// `save`/`restore` scope a clip. Without the restore the second fill would

@@ -16,10 +16,15 @@ public struct PopoverDismissal: OptionSet, Sendable {
     public static let standard: PopoverDismissal = [.outsideClick, .escapeKey]
 }
 
+public enum PopoverFocusBehavior: Sendable, Equatable {
+    case nonactivating
+    case key
+}
+
 /// A transient surface anchored to a rect: a menu, a dropdown, a panel opened
 /// from a bar widget, a tooltip.
 ///
-/// Mirrors `NSPopover` in role rather than in API — it is a `Window` with an
+/// Corresponds to `NSPopover` in role rather than in API — it is a `Window` with an
 /// anchor and a dismissal policy, because the scene already knows how to order,
 /// hit-test, and route events to windows. Inventing a parallel mechanism for
 /// popups would mean teaching two things about levels and focus.
@@ -37,6 +42,7 @@ public final class Popover {
     }
 
     public var dismissal: PopoverDismissal
+    public let focusBehavior: PopoverFocusBehavior
 
     /// Where the popover actually landed. A caller drawing an arrow needs the
     /// edge, which is not always the preferred one.
@@ -58,6 +64,7 @@ public final class Popover {
         anchor: Rect,
         preferring edge: PopupEdge = .below,
         dismissal: PopoverDismissal = .standard,
+        focusBehavior: PopoverFocusBehavior = .nonactivating,
         level: WindowLevel = .overlay
     ) {
         let size = content.frame.size == .zero
@@ -67,12 +74,13 @@ public final class Popover {
         self.anchor = anchor
         self.preferredEdge = edge
         self.dismissal = dismissal
+        self.focusBehavior = focusBehavior
         self.placement = PopupPlacement(
             frame: Rect(origin: .zero, size: size), edge: edge)
 
         window = Window(
             title: "", frame: Rect(origin: .zero, size: size),
-            role: .statusOverlay, level: level)
+            role: .popup, level: level)
         content.frame = Rect(origin: .zero, size: size)
         window.setContentView(content)
     }
@@ -86,6 +94,7 @@ public final class Popover {
         anchor: Rect,
         preferring edge: PopupEdge = .below,
         dismissal: PopoverDismissal = .standard,
+        focusBehavior: PopoverFocusBehavior = .nonactivating,
         padding: EdgeInsets = EdgeInsets(top: 8, left: 10, bottom: 8, right: 10),
         level: WindowLevel = .overlay
     ) -> Popover {
@@ -108,7 +117,9 @@ public final class Popover {
 
         return Popover(
             content: backing, anchor: anchor, preferring: edge,
-            dismissal: dismissal, level: level)
+            dismissal: dismissal,
+            focusBehavior: focusBehavior,
+            level: level)
     }
 
     private func reposition() {

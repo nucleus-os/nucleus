@@ -282,7 +282,6 @@ let package = Package(
                 .product(name: "NucleusLayers", package: "Nucleus"),
                 .product(name: "NucleusRenderModel", package: "Nucleus"),
                 .product(name: "Tracy", package: "swift-tracy"),
-                .product(name: "NucleusTextCxxBridge", package: "Nucleus"),
             ],
             path: "Sources/NucleusCompositorWaylandRuntime",
             exclude: ["README.md"],

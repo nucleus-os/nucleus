@@ -114,7 +114,9 @@ public final class ImageView: View, ~Sendable {
         self.image = image
         self.imageSize = imageSize
         super.init()
+        isAccessibilityElement = true
         accessibilityRole = .image
+        accessibilityTraits.insert(.image)
     }
 
     public convenience init(path: String, imageSize: Size = .zero) {
@@ -145,7 +147,7 @@ public final class ImageView: View, ~Sendable {
         resource = ImageResource(
             source: sourcePath,
             decodeSize: needed,
-            resourceHostHandle: backingLayer.context.commitSink.resourceHostHandle)
+            resourceHostHandle: uiContext.resourceHostHandle)
     }
 
     /// Where the image lands inside `bounds`, given the mode.

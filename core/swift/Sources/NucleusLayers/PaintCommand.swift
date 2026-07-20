@@ -19,7 +19,7 @@ extension NucleusTypes.Color {
         self.init(r: r, g: g, b: b, a: a)
     }
 
-    /// Returns this color with its alpha replaced. Mirrors
+    /// Returns this color with its alpha replaced. Corresponds to
     /// `NSColor.withAlphaComponent`. Used to derive faded variants of a
     /// semantic color (e.g. an accent fill at 0.22 alpha for a status pill)
     /// without introducing per-variant tokens.

@@ -5,8 +5,12 @@
 /// same path — there is no second editing implementation for composed text.
 @MainActor
 open class TextField: Control, TextInputClient, ~Sendable {
-    /// The edited text. Setting it replaces the contents and collapses the caret
-    /// to the end, as `NSTextField.stringValue` does.
+    /// The edited text in cleartext, even when `isSecure` is true.
+    ///
+    /// Setting it replaces the contents and collapses the caret to the end, as
+    /// `NSTextField.stringValue` does. Credential consumers should prefer
+    /// `takeSecureCredential()` so the value leaves as scrubable storage rather
+    /// than another Swift `String` copy.
     public var stringValue: String {
         get { model.text }
         set {
@@ -14,6 +18,7 @@ open class TextField: Control, TextInputClient, ~Sendable {
             model = makeModel(text: newValue)
             invalidateTextLayout()
             notifyInputMethodOfStateChange()
+            recordMutation(.accessibility)
             onChange?(self)
         }
     }
@@ -30,9 +35,11 @@ open class TextField: Control, TextInputClient, ~Sendable {
         get { model.isSecure }
         set {
             guard newValue != model.isSecure else { return }
-            model.isSecure = newValue
+            model.setSecure(newValue)
+            preeditStyles = []
             invalidateTextLayout()
             notifyInputMethodOfStateChange()
+            recordMutation(.accessibility)
         }
     }
 
@@ -64,6 +71,9 @@ open class TextField: Control, TextInputClient, ~Sendable {
     public var contentType: TextInputContentType = .normal
     public var hints: TextInputHints = [.spellcheck, .autocorrect]
 
+    /// Subclasses such as `TextView` opt into wrapping and newline insertion.
+    open var allowsMultilineText: Bool { false }
+
     /// Called after any change to the text.
     public var onChange: ((TextField) -> Void)?
     /// Called when Return is pressed.
@@ -78,6 +88,8 @@ open class TextField: Control, TextInputClient, ~Sendable {
     private var cachedLayout: TextLayout?
     private var caretPhaseStartNs: UInt64 = 0
     private var caretVisibleOverride: Bool?
+    private var preeditStyles: [TextInputPreeditSpan] = []
+    public private(set) var inputLanguage: String?
     /// Where a drag-selection began, so dragging extends from the press point.
     private var selectionDragAnchor: Int?
 
@@ -87,6 +99,7 @@ open class TextField: Control, TextInputClient, ~Sendable {
         model.setCaret(at: model.utf16Count)
         accessibilityRole = .textField
         isEnabled = true
+        installStandardEditingActions()
     }
 
     private func makeModel(text: String) -> TextEditorModel {
@@ -95,9 +108,39 @@ open class TextField: Control, TextInputClient, ~Sendable {
         return replacement
     }
 
+    private func installStandardEditingActions() {
+        setAction(.copy) { [weak self] _ in _ = self?.copySelection() }
+        setAction(.cut) { [weak self] _ in _ = self?.cutSelection() }
+        setAction(.paste) { [weak self] _ in _ = self?.paste() }
+        setAction(.selectAll) { [weak self] _ in self?.selectAllText() }
+        setAction(.undo) { [weak self] _ in
+            guard var model = self?.model, model.undo() else { return }
+            self?.model = model
+            self?.afterEdit()
+        }
+        setAction(.redo) { [weak self] _ in
+            guard var model = self?.model, model.redo() else { return }
+            self?.model = model
+            self?.afterEdit()
+        }
+    }
+
     // MARK: - Focus
 
     open override var acceptsFirstResponder: Bool { isEnabled }
+
+    open override var environmentDependencies: UIEnvironmentChanges {
+        super.environmentDependencies.union(.textScale)
+    }
+
+    open override func environmentDidChange(
+        _ changes: UIEnvironmentChanges
+    ) {
+        if changes.contains(.textScale) {
+            invalidateTextLayout()
+        }
+        super.environmentDidChange(changes)
+    }
 
     open override func becomeFirstResponder() -> Bool {
         guard super.becomeFirstResponder() else { return false }
@@ -118,13 +161,42 @@ open class TextField: Control, TextInputClient, ~Sendable {
         return true
     }
 
-    public var isFocused: Bool { window?.firstResponder === self }
-
     // MARK: - Selection
 
     public func selectAllText() {
         model.selectAll()
         afterSelectionChange()
+    }
+
+    @discardableResult
+    public func copySelection(to pasteboard: Pasteboard = .general) -> Bool {
+        guard isFocused, let selected = model.copyableSelection() else {
+            return false
+        }
+        pasteboard.string = selected
+        return true
+    }
+
+    @discardableResult
+    public func cutSelection(to pasteboard: Pasteboard = .general) -> Bool {
+        guard copySelection(to: pasteboard), model.deleteSelection() else {
+            return false
+        }
+        afterEdit()
+        return true
+    }
+
+    @discardableResult
+    public func paste(from pasteboard: Pasteboard = .general) -> Bool {
+        guard isFocused, let string = pasteboard.string, !string.isEmpty else {
+            return false
+        }
+        let insertion = allowsMultilineText
+            ? string
+            : string.replacingOccurrences(of: "\n", with: " ")
+        model.insert(insertion)
+        afterEdit()
+        return true
     }
 
     /// Drop the undo and redo history. Clearing a secure field's text leaves the
@@ -207,11 +279,15 @@ open class TextField: Control, TextInputClient, ~Sendable {
         if let cachedLayout { return cachedLayout }
         let string = model.displayText
         let layout = TextLayout(
-            runs: [TextRun(text: string, font: font, color: textColor)],
-            containerWidth: nil,
+            runs: [TextRun(
+                text: string,
+                font: font.scaled(by: uiContext.environment.textScale),
+                color: textColor)],
+            containerWidth: allowsMultilineText && textRect.size.width > 0
+                ? textRect.size.width : nil,
             alignment: .leading,
-            lineBreakMode: .byClipping,
-            numberOfLines: 1)
+            lineBreakMode: allowsMultilineText ? .byWordWrapping : .byClipping,
+            numberOfLines: allowsMultilineText ? 0 : 1)
         cachedLayout = layout
         return layout
     }
@@ -225,6 +301,10 @@ open class TextField: Control, TextInputClient, ~Sendable {
 
     /// Slide the text horizontally so the caret stays inside the visible area.
     private func revealCaret() {
+        guard !allowsMultilineText else {
+            scrollOffset = 0
+            return
+        }
         let visibleWidth = textRect.size.width
         guard visibleWidth > 0 else { return }
         let caretX = xPosition(forUTF16: model.selection.head)
@@ -242,8 +322,14 @@ open class TextField: Control, TextInputClient, ~Sendable {
 
     /// Horizontal position of a UTF-16 offset within the laid-out text.
     private func xPosition(forUTF16 offset: Int) -> Double {
-        guard offset > 0 else { return 0 }
         let layout = textLayout()
+        if let caret = layout.caretGeometry(
+            atUTF16Offset: offset,
+            affinity: model.affinity
+        ) {
+            return caret.rect.origin.x
+        }
+        guard offset > 0 else { return 0 }
         let rects = layout.selectionRects(forUTF16Range: 0..<offset)
         guard let last = rects.last else {
             return layout.intrinsicSize.width
@@ -267,6 +353,17 @@ open class TextField: Control, TextInputClient, ~Sendable {
     /// method uses to place candidate UI.
     public var caretRect: Rect {
         let layout = textLayout()
+        if let caret = layout.caretGeometry(
+            atUTF16Offset: model.selection.head,
+            affinity: model.affinity
+        ) {
+            return Rect(
+                x: textRect.origin.x + caret.rect.origin.x - scrollOffset,
+                y: textRect.origin.y + caret.rect.origin.y,
+                width: max(1, caret.rect.size.width),
+                height: max(1, caret.rect.size.height)
+            )
+        }
         let height = layout.intrinsicSize.height > 0
             ? layout.intrinsicSize.height : Double(font.pointSize)
         return Rect(
@@ -303,7 +400,11 @@ open class TextField: Control, TextInputClient, ~Sendable {
 
         if model.isEmpty, !placeholderString.isEmpty, !isFocused {
             let placeholder = TextLayout(
-                runs: [TextRun(text: placeholderString, font: font, color: placeholderColor)],
+                runs: [TextRun(
+                    text: placeholderString,
+                    font: font.scaled(
+                        by: uiContext.environment.textScale),
+                    color: placeholderColor)],
                 containerWidth: nil, alignment: .leading,
                 lineBreakMode: .byTruncatingTail, numberOfLines: 1)
             context.fillColor = placeholderColor
@@ -318,15 +419,36 @@ open class TextField: Control, TextInputClient, ~Sendable {
         // A composition is underlined so provisional text is visibly distinct
         // from committed text.
         if let markedRange = model.markedRange {
-            context.fillColor = textColor.opacity(0.7)
-            for rect in layout.selectionRects(forUTF16Range: markedRange) {
-                var underline = Path()
-                underline.addRect(Rect(
-                    x: origin.x + rect.rect.origin.x,
-                    y: origin.y + rect.rect.origin.y + rect.rect.size.height - 1,
-                    width: rect.rect.size.width,
-                    height: 1))
-                context.fill(underline)
+            let spans = preeditStyles.isEmpty
+                ? [TextInputPreeditSpan(
+                    range: 0..<markedRange.count,
+                    style: .active
+                )]
+                : preeditStyles
+            for span in spans {
+                let lower = markedRange.lowerBound
+                    + min(max(0, span.range.lowerBound), markedRange.count)
+                let upper = markedRange.lowerBound
+                    + min(max(0, span.range.upperBound), markedRange.count)
+                guard lower < upper else { continue }
+                context.fillColor = span.style == .incorrect
+                    ? Color(0.95, 0.25, 0.25, 0.9)
+                    : textColor.opacity(span.style == .inactive ? 0.45 : 0.7)
+                let thickness: Double = span.style == .selected
+                    || span.style == .highlighted ? 2 : 1
+                for rect in layout.selectionRects(
+                    forUTF16Range: lower..<upper
+                ) {
+                    var underline = Path()
+                    underline.addRect(Rect(
+                        x: origin.x + rect.rect.origin.x,
+                        y: origin.y + rect.rect.origin.y
+                            + rect.rect.size.height - thickness,
+                        width: rect.rect.size.width,
+                        height: thickness
+                    ))
+                    context.fill(underline)
+                }
             }
         }
 
@@ -434,7 +556,12 @@ open class TextField: Control, TextInputClient, ~Sendable {
             afterEdit()
             return .handled
         case .return:
-            onSubmit?(self)
+            if allowsMultilineText {
+                model.insert("\n")
+                afterEdit()
+            } else {
+                onSubmit?(self)
+            }
             return .handled
         case .escape:
             if model.hasMarkedText {
@@ -448,19 +575,18 @@ open class TextField: Control, TextInputClient, ~Sendable {
         }
 
         if toLineBoundary, let characters = event.characters?.lowercased() {
-            switch characters {
-            case "a":
-                model.selectAll()
-                afterSelectionChange()
-                return .handled
-            case "z":
-                _ = event.modifierFlags.contains(.shift) ? model.redo() : model.undo()
-                afterEdit()
-                return .handled
-            default:
-                // Other command combinations belong to the responder chain.
-                return .notHandled
+            let action: ActionID? = switch characters {
+            case "a": .selectAll
+            case "c": .copy
+            case "x": .cut
+            case "v": .paste
+            case "z": event.modifierFlags.contains(.shift) ? .redo : .undo
+            default: nil
             }
+            guard let action else { return .notHandled }
+            return performAction(action, event: event)
+                ? .handled
+                : .notHandled
         }
 
         // Composed text last: `characters` is what the platform's input method
@@ -473,10 +599,11 @@ open class TextField: Control, TextInputClient, ~Sendable {
         return .notHandled
     }
 
-    private func afterEdit() {
+    private func afterEdit(cause: TextInputChangeCause = .other) {
         invalidateTextLayout()
         restartCaretBlink()
-        notifyInputMethodOfStateChange()
+        notifyInputMethodOfStateChange(cause: cause)
+        recordMutation(.accessibility)
         onChange?(self)
     }
 
@@ -484,11 +611,14 @@ open class TextField: Control, TextInputClient, ~Sendable {
         revealCaret()
         restartCaretBlink()
         notifyInputMethodOfStateChange()
+        recordMutation(.accessibility)
         setNeedsDisplay()
     }
 
-    private func notifyInputMethodOfStateChange() {
-        window?.textInputContext.invalidateState(for: self)
+    private func notifyInputMethodOfStateChange(
+        cause: TextInputChangeCause = .other
+    ) {
+        window?.textInputContext.invalidateState(for: self, cause: cause)
     }
 
     // MARK: - Accessibility
@@ -503,18 +633,33 @@ open class TextField: Control, TextInputClient, ~Sendable {
     // MARK: - TextInputClient
 
     public func insertText(_ string: String) {
+        preeditStyles = []
         model.commitMarkedText(string)
-        afterEdit()
+        afterEdit(cause: .inputMethod)
     }
 
     public func setMarkedText(_ string: String, selectedRange: Range<Int>?) {
         model.setMarkedText(string, selectedRange: selectedRange)
-        afterEdit()
+        afterEdit(cause: .inputMethod)
     }
 
     public func unmarkText() {
+        preeditStyles = []
         model.unmarkText()
-        afterEdit()
+        afterEdit(cause: .inputMethod)
+    }
+
+    public func setMarkedTextStyles(_ styles: [TextInputPreeditSpan]) {
+        preeditStyles = styles
+        setNeedsDisplay()
+    }
+
+    public func textInputDidChangeLanguage(_ language: String?) {
+        inputLanguage = language
+    }
+
+    public func performTextInputAction() {
+        onSubmit?(self)
     }
 
     public var hasMarkedText: Bool { model.hasMarkedText }
@@ -523,7 +668,7 @@ open class TextField: Control, TextInputClient, ~Sendable {
 
     public func deleteSurroundingText(beforeBytes: Int, afterBytes: Int) {
         model.deleteSurroundingText(beforeBytes: beforeBytes, afterBytes: afterBytes)
-        afterEdit()
+        afterEdit(cause: .inputMethod)
     }
 
     public func textInputSurroundingContext() -> TextInputSurroundingContext? {
@@ -543,7 +688,9 @@ open class TextField: Control, TextInputClient, ~Sendable {
     }
 
     public var textInputHints: TextInputHints {
-        guard model.isSecure else { return hints }
+        guard model.isSecure else {
+            return allowsMultilineText ? hints.union(.multiline) : hints
+        }
         // Secure entry overrides every learning-related hint.
         return [.sensitiveData]
     }

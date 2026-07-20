@@ -63,7 +63,7 @@ public enum WaylandGlobalKind: String, CaseIterable {
         case .viewporter: return 1
         case .fractionalScale: return 1
         case .xdgOutput: return 3
-        case .textInputManager: return 1
+        case .textInputManager: return 2
         case .cursorShape: return 1
         }
     }
@@ -80,6 +80,8 @@ public final class WaylandOutput {
     public let registryName: UInt32
     public var logicalWidth: Int32 = 0
     public var logicalHeight: Int32 = 0
+    public var logicalX: Int32 = 0
+    public var logicalY: Int32 = 0
     public var scale: Int32 = 1
     public var name: String = ""
 
@@ -178,7 +180,10 @@ public final class ShellWaylandClient {
 // A wl_output's events land on its own per-output owner object (not @MainActor), so its geometry
 // fields are updated directly; the name string is decoded in-place.
 extension WaylandOutput: WlOutputEvents {
-    public nonisolated func geometry(_ proxy: OpaquePointer, x: Int32, y: Int32, physical_width: Int32, physical_height: Int32, subpixel: Int32, make: UnsafePointer<CChar>?, model: UnsafePointer<CChar>?, transform: Int32) {}
+    public nonisolated func geometry(_ proxy: OpaquePointer, x: Int32, y: Int32, physical_width: Int32, physical_height: Int32, subpixel: Int32, make: UnsafePointer<CChar>?, model: UnsafePointer<CChar>?, transform: Int32) {
+        logicalX = x
+        logicalY = y
+    }
     public nonisolated func mode(_ proxy: OpaquePointer, flags: UInt32, width: Int32, height: Int32, refresh: Int32) {
         logicalWidth = width
         logicalHeight = height

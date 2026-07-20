@@ -6,7 +6,7 @@ import NucleusUI
 /// is the same object afterwards, so a surface mutates it through its properties
 /// rather than by re-describing it.
 @MainActor
-@Suite struct ViewBuilderTests {
+@Suite(.uiContext) struct ViewBuilderTests {
     @Test func aBodyInstallsItsViewsInOrder() {
         let root = View()
         let first = Label("one")

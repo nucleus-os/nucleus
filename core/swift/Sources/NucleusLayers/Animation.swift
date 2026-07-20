@@ -120,6 +120,7 @@ extension AnimationEndpoint {
 /// cubic-bezier, or spring physics — all evaluated consumer-side).
 public struct Animation: Sendable, Equatable {
     public var id: UInt64
+    public var completionToken: UInt64
     public var keyPath: AnimationKeyPath
     public var duration: Double
     public var fromEndpoint: AnimationEndpoint
@@ -128,6 +129,7 @@ public struct Animation: Sendable, Equatable {
 
     public init(
         id: UInt64 = 0,
+        completionToken: UInt64 = 0,
         keyPath: AnimationKeyPath = .opacity,
         duration: Double,
         from: AnimationEndpoint = .zero,
@@ -135,6 +137,7 @@ public struct Animation: Sendable, Equatable {
         curve: AnimationCurve = .bezier(.default)
     ) {
         self.id = id
+        self.completionToken = completionToken
         self.keyPath = keyPath
         self.duration = duration
         self.fromEndpoint = from
@@ -151,11 +154,34 @@ public struct Animation: Sendable, Equatable {
         to: Double,
         duration: Double,
         curve: AnimationCurve = .bezier(.default),
-        id: UInt64 = 0
+        id: UInt64 = 0,
+        completionToken: UInt64 = 0
     ) -> Animation {
         Animation(
-            id: id, keyPath: keyPath, duration: duration,
+            id: id, completionToken: completionToken,
+            keyPath: keyPath, duration: duration,
             from: .scalar(from), to: .scalar(to), curve: curve
+        )
+    }
+
+    /// Complete 4×4 transform animation. The model transform remains the final
+    /// value while the renderer owns the in-flight presentation override.
+    public static func transform(
+        from: GeometryTransform,
+        to: GeometryTransform,
+        duration: Double,
+        curve: AnimationCurve = .bezier(.default),
+        id: UInt64 = 0,
+        completionToken: UInt64 = 0
+    ) -> Animation {
+        Animation(
+            id: id,
+            completionToken: completionToken,
+            keyPath: .transform,
+            duration: duration,
+            from: .transform(from),
+            to: .transform(to),
+            curve: curve
         )
     }
 

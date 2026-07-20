@@ -25,13 +25,22 @@ enum PresentationWalk {
     /// black clear (`FrameDriver`). `nil` is the normal, unlocked composition.
     static func buildFramePlan(
         tree: LayerTree, target: RenderTarget, frame: FrameInfo,
+        rootContexts: [ContextID] = [compositorContextId],
         lockContexts: Set<ContextID>? = nil
     ) -> FramePlan {
         let plan = FramePlan()
         plan.reset(frame)
         var contextStack: [ContextID] = []
-        for rootId in tree.roots(for: compositorContextId) {
-            walk(tree, rootId, .identity, 1.0, .none, [], target, plan, &contextStack, lockContexts)
+        for rootContext in rootContexts {
+            guard !contextStack.contains(rootContext) else { continue }
+            contextStack.append(rootContext)
+            for rootId in tree.roots(for: rootContext) {
+                walk(
+                    tree, rootId, .identity, 1.0, .none, [], target, plan,
+                    &contextStack, lockContexts
+                )
+            }
+            _ = contextStack.popLast()
         }
         plan.cullOccludedOps()
         return plan
@@ -65,7 +74,7 @@ enum PresentationWalk {
         }
 
         // Session-lock content gate: the current context is the top of the stack (the
-        // compositor root when empty), which is never a lock context, so any content
+        // directly presented root context), so any content
         // authored directly into the root or a non-lock context is suppressed while
         // locked. Content inside an allowed lock context (entered through its host in
         // `expandRemoteHost`) still emits.
@@ -79,8 +88,14 @@ enum PresentationWalk {
                 plan.recordLayerSnapshot(layerId, LayerFrameSnapshot(
                     rect: rect,
                     visualSignature: nativeLayerVisualSignature(input.layer, input.combinedOpacity),
+                    compositeSignature: nativeLayerCompositeSignature(
+                        input.layer,
+                        input.combinedOpacity),
                     structural: input.layer.damage.flags.structure,
-                    contentDamaged: input.layer.damage.flags.content))
+                    contentDamaged: input.layer.damage.flags.content,
+                    localizedContentDamage: projectedContentDamage(
+                        input,
+                        target)))
             }
         }
 
@@ -200,6 +215,9 @@ enum PresentationWalk {
                 srcWidth: Double(sample.srcSize.0), srcHeight: Double(sample.srcSize.1),
                 logicalSize: sample.logicalSize,
                 opaqueFullSurface: sample.opaqueFullSurface))
+            if content.role == .paint {
+                quad?.localPaintDamage = input.layer.damage.localContentRect
+            }
             quad?.foregroundVibrancy = vibrancy(input.layer, vibrancyStack)
             if let quad { plan.appendTextureQuad(quad) }
             return
@@ -211,7 +229,44 @@ enum PresentationWalk {
             dst: dst, src: PlanRect(x: 0, y: 0, w: 0, h: 0),
             alpha: input.combinedOpacity,
             maskRRect: maskRRect(input, dst, target),
-            foregroundVibrancy: vibrancy(input.layer, vibrancyStack)))
+            foregroundVibrancy: vibrancy(input.layer, vibrancyStack),
+            localPaintDamage: content.role == .paint
+                ? input.layer.damage.localContentRect
+                : nil))
+    }
+
+    /// Project safe layer-local paint damage through the exact presentation
+    /// transform and accumulated clip used by the content draw.
+    private static func projectedContentDamage(
+        _ input: LayerInput,
+        _ target: RenderTarget
+    ) -> PhysicalRect? {
+        guard input.layer.damage.flags.content,
+              let damage = input.layer.damage.localContentRect,
+              damage.w > 0,
+              damage.h > 0
+        else {
+            return nil
+        }
+        let left = max(0, damage.x)
+        let top = max(0, damage.y)
+        let right = min(input.bounds.w, damage.x + damage.w)
+        let bottom = min(input.bounds.h, damage.y + damage.h)
+        guard right > left, bottom > top else { return nil }
+        let mapped = input.worldMatrix.mapRect(
+            left,
+            top,
+            right - left,
+            bottom - top)
+        let logical = LogicalRect(
+            x: Double(mapped.x),
+            y: Double(mapped.y),
+            width: Double(mapped.w),
+            height: Double(mapped.h))
+        guard let clipped = clipLayerRect(input.clip, logical) else {
+            return nil
+        }
+        return physicalDamageRectFromLogicalRect(target, clipped)
     }
 
     private static func emitBackdrop(

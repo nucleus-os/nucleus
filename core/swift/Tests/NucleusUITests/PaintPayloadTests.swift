@@ -1,12 +1,28 @@
 import Testing
-import NucleusUI
-import NucleusTypes
+import class NucleusUI.GraphicsContext
+import enum NucleusUI.LineCap
+import enum NucleusUI.LineJoin
+import enum NucleusUI.Shading
+import struct NucleusUI.AffineTransform
+import struct NucleusUI.Color
+import struct NucleusUI.GradientStop
+import struct NucleusUI.ImageHandle
+import struct NucleusUI.Path
+import struct NucleusUI.Point
+import struct NucleusUI.Rect
+import enum NucleusTypes.PaintPayload
+import enum NucleusTypes.PaintPathVerb
+import struct NucleusTypes.PaintCommand
+import struct NucleusTypes.Color
+
+private typealias UIColor = NucleusUI.Color
+private typealias WireColor = NucleusTypes.Color
 
 /// The payload blob is the one format written by `GraphicsContext` and read by
 /// the rasterizer. Both sides live in different modules, so these tests pin the
 /// round trip and — more importantly — the rejections, since a payload that
 /// decodes *wrongly* would draw arbitrary geometry rather than fail.
-@Suite struct PaintPayloadTests {
+@Suite(.uiContext) struct PaintPayloadTests {
     @Test func regionsRoundTrip() throws {
         var blob: [UInt8] = []
         let slice = PaintPayload.append(
@@ -14,11 +30,16 @@ import NucleusTypes
             verbs: [.move, .line, .close],
             points: [1, 2, 3, 4],
             scalars: [0.25, 0.75],
-            colors: [Color(r: 1, g: 0, b: 0, a: 1), Color(r: 0, g: 0, b: 1, a: 0.5)])
+            colors: [
+                WireColor(r: 1, g: 0, b: 0, a: 1),
+                WireColor(r: 0, g: 0, b: 1, a: 0.5),
+            ])
 
         let regions = try #require(
             PaintPayload.decode(blob, offset: slice.offset, length: slice.length))
-        #expect(regions.verbs == [.move, .line, .close])
+        #expect(regions.verbs == [
+            PaintPathVerb.move, PaintPathVerb.line, PaintPathVerb.close,
+        ])
         #expect(regions.points == [1, 2, 3, 4])
         #expect(regions.scalars == [0.25, 0.75])
         #expect(regions.colors.count == 2)
@@ -107,7 +128,7 @@ import NucleusTypes
 
 /// `GraphicsContext`'s graphics-state stack.
 @MainActor
-@Suite struct GraphicsStateTests {
+@Suite(.uiContext) struct GraphicsStateTests {
     /// A view that saves and forgets to restore must not change how its own
     /// later commands render. Skia's canvas would otherwise stay saved, and a
     /// clip set after the save would leak forward through the recording.
@@ -157,11 +178,11 @@ import NucleusTypes
     /// not leak past it.
     @Test func restoringUndoesStateChanges() {
         let context = GraphicsContext()
-        context.fillColor = Color(1, 0, 0, 1)
+        context.fillColor = UIColor(1, 0, 0, 1)
         context.withGraphicsState {
-            context.fillColor = Color(0, 0, 1, 1)
+            context.fillColor = UIColor(0, 0, 1, 1)
         }
-        #expect(context.fillColor == Color(1, 0, 0, 1))
+        #expect(context.fillColor == UIColor(1, 0, 0, 1))
     }
 }
 
@@ -172,10 +193,10 @@ import NucleusTypes
 /// indication anything had been ignored. The rasterizer's half is covered by
 /// pixels in `StrokeCapJoinTests`; this is the producer's half.
 @MainActor
-@Suite struct StrokeStyleEncodingTests {
+@Suite(.uiContext) struct StrokeStyleEncodingTests {
     private func strokedCommand(
         cap: LineCap, join: LineJoin
-    ) -> NucleusTypes.PaintCommand? {
+    ) -> PaintCommand? {
         let graphics = GraphicsContext()
         graphics.lineWidth = 4
         graphics.lineCap = cap
@@ -223,7 +244,7 @@ import NucleusTypes
 
 /// What the recorder does with the current transform.
 @MainActor
-@Suite struct TransformEncodingTests {
+@Suite(.uiContext) struct TransformEncodingTests {
     private func imageCommand(
         _ configure: (GraphicsContext) -> Void
     ) -> NucleusTypes.PaintCommand? {
@@ -233,18 +254,22 @@ import NucleusTypes
         return graphics.recording.commands.first
     }
 
-    /// A translation or a scale maps a rectangle to a rectangle, so it folds
-    /// into the geometry and the command stays a plain rect.
-    @Test func translationAndScaleFoldIntoTheGeometry() {
+    /// Translation, scale, rotation, and skew all use one command-local matrix
+    /// path. Geometry never changes coordinate systems during recording.
+    @Test func translationAndScaleAreCarriedWithLocalGeometry() {
         let translated = imageCommand { $0.translateBy(x: 5, y: 7) }
-        #expect(translated?.flags.contains(.hasTransform) == false)
-        #expect(translated?.x == 5)
-        #expect(translated?.y == 7)
+        #expect(translated?.flags.contains(.hasTransform) == true)
+        #expect(translated?.x == 0)
+        #expect(translated?.y == 0)
+        #expect(translated?.transformTX == 5)
+        #expect(translated?.transformTY == 7)
 
         let scaled = imageCommand { $0.scaleBy(x: 2, y: 3) }
-        #expect(scaled?.flags.contains(.hasTransform) == false)
-        #expect(scaled?.w == 20)
-        #expect(scaled?.h == 60)
+        #expect(scaled?.flags.contains(.hasTransform) == true)
+        #expect(scaled?.w == 10)
+        #expect(scaled?.h == 20)
+        #expect(scaled?.transformA == 2)
+        #expect(scaled?.transformD == 3)
     }
 
     /// Rotation does not. Folding it in leaves an axis-aligned bounding box,
@@ -262,45 +287,166 @@ import NucleusTypes
         #expect(abs((command?.transformC ?? 0)) > 0.5)
     }
 
-    /// A carried transform scales the scalars itself, so the recorder must not
-    /// pre-scale them as well.
-    @Test func carriedTransformsDoNotPreScaleScalars() {
+    /// The matrix transforms scalar geometry as an outline. The recorder never
+    /// approximates anisotropic scale with one determinant-derived factor.
+    @Test func transformsDoNotPreScaleScalars() {
         let graphics = GraphicsContext()
-        graphics.scaleBy(x: 4, y: 4)
-        graphics.rotateBy(degrees: 30)
+        graphics.scaleBy(x: 4, y: 2)
         graphics.draw(
             ImageHandle(id: 1), in: Rect(x: 0, y: 0, width: 10, height: 10),
             cornerRadius: 3)
 
         let command = graphics.recording.commands.first
         #expect(command?.flags.contains(.hasTransform) == true)
-        #expect(command?.radius == 3, "local radius; the matrix carries the 4x")
+        #expect(command?.radius == 3, "local radius; the matrix carries the scale")
     }
 
-    /// Without a carried transform the scalars *are* pre-scaled, which is the
-    /// behaviour the fast path depends on.
-    @Test func foldedTransformsStillPreScaleScalars() {
+    @Test func identityIsStillAnExplicitTransform() {
         let graphics = GraphicsContext()
-        graphics.scaleBy(x: 4, y: 4)
         graphics.draw(
             ImageHandle(id: 1), in: Rect(x: 0, y: 0, width: 10, height: 10),
             cornerRadius: 3)
 
         let command = graphics.recording.commands.first
-        #expect(command?.flags.contains(.hasTransform) == false)
-        #expect(command?.radius == 12)
+        #expect(command?.flags.contains(.hasTransform) == true)
+        #expect(command?.transformA == 1)
+        #expect(command?.transformD == 1)
+        #expect(command?.radius == 3)
     }
 
-    /// Rect fills are encoded as paths, whose points are transformed
-    /// individually — so they rotated correctly all along and must keep doing so
-    /// without carrying a matrix.
-    @Test func rectFillsRemainPathsAndNeedNoMatrix() {
+    @Test func pathsAndTheirGradientsStayLocalUnderRotation() throws {
         let graphics = GraphicsContext()
         graphics.rotateBy(degrees: 45)
-        graphics.fill(Rect(x: 0, y: 0, width: 10, height: 10))
+        graphics.fill(
+            Rect(x: 0, y: 0, width: 10, height: 10),
+            with: .linearGradient(
+                from: Point(x: 0, y: 0), to: Point(x: 10, y: 0),
+                stops: [
+                    GradientStop(location: 0, color: UIColor(0, 0, 0, 1)),
+                    GradientStop(location: 1, color: UIColor(1, 1, 1, 1)),
+                ]))
 
-        let command = graphics.recording.commands.first
-        #expect(command?.kind == .path)
-        #expect(command?.flags.contains(.hasTransform) == false)
+        let recording = graphics.recording
+        let command = try #require(recording.commands.first)
+        #expect(command.kind == .path)
+        #expect(command.flags.contains(.hasTransform))
+        let regions = try #require(PaintPayload.decode(
+            recording.payload,
+            offset: command.payloadOffset,
+            length: command.payloadLength))
+        #expect(Array(regions.points.prefix(4)) == [0, 0, 10, 0])
+        #expect(Array(regions.scalars.prefix(4)) == [0, 0, 10, 0])
+    }
+}
+
+@Suite(.uiContext) struct PathStateTests {
+    private func expectClose(
+        _ point: Point?, _ expected: Point,
+        sourceLocation: SourceLocation = #_sourceLocation
+    ) {
+        #expect(
+            abs((point?.x ?? .infinity) - expected.x) < 1e-9 &&
+                abs((point?.y ?? .infinity) - expected.y) < 1e-9,
+            sourceLocation: sourceLocation)
+    }
+
+    @Test func anArcOpensAtItsRealStartAndEndsAtItsRealEnd() {
+        var path = Path()
+        path.addArc(
+            in: Rect(x: 0, y: 0, width: 20, height: 10),
+            start: 0, sweep: 90)
+
+        #expect(path.verbs == [.move, .arc])
+        #expect(Array(path.points.prefix(2)) == [20, 5])
+        expectClose(path.currentPoint, Point(x: 10, y: 10))
+    }
+
+    @Test func anArcConnectsAnExistingContourToItsStart() {
+        var path = Path()
+        path.move(to: Point(x: 0, y: 0))
+        path.addArc(
+            in: Rect(x: 0, y: 0, width: 20, height: 10),
+            start: 0, sweep: -90)
+
+        #expect(path.verbs == [.move, .line, .arc])
+        #expect(Array(path.points[2...3]) == [20, 5])
+        expectClose(path.currentPoint, Point(x: 10, y: 0))
+    }
+
+    @Test func aFullSweepReturnsToTheAuthoredStartAndCloseUsesIt() throws {
+        var path = Path()
+        path.addArc(
+            in: Rect(x: 10, y: 20, width: 40, height: 20),
+            start: 45, sweep: 720)
+        let start = try #require(path.currentPoint)
+        path.close()
+
+        expectClose(path.currentPoint, start)
+        #expect(path.verbs == [.move, .arc, .close])
+    }
+
+    @Test func invalidOrEmptyGeometryDoesNotEnterAPath() {
+        var path = Path()
+        path.move(to: Point(x: .nan, y: 0))
+        path.addRect(Rect(x: 0, y: 0, width: -10, height: 10))
+        path.addArc(
+            in: Rect(x: 0, y: 0, width: 10, height: 10),
+            start: 0, sweep: .infinity)
+        #expect(path.isEmpty)
+        #expect(path.currentPoint == nil)
+    }
+}
+
+@MainActor
+@Suite(.uiContext) struct GraphicsInputValidationTests {
+    @Test func aRectangleWithEitherZeroDimensionIsEmptyForUnion() {
+        let content = Rect(x: 10, y: 20, width: 30, height: 40)
+        #expect(
+            Rect(x: -100, y: -100, width: 0, height: 50)
+                .union(content) == content)
+        #expect(
+            Rect(x: -100, y: -100, width: 50, height: 0)
+                .union(content) == content)
+        #expect(
+            Rect(x: 0, y: 0, width: -1, height: 10)
+                .union(content) == content)
+    }
+
+    @Test func invalidGeometryOrTransformProducesNoCommand() {
+        let graphics = GraphicsContext()
+        graphics.fill(Rect(x: 0, y: 0, width: .nan, height: 10))
+        graphics.concatenate(AffineTransform(tx: .infinity))
+        graphics.fill(Rect(x: 0, y: 0, width: 10, height: 10))
+        #expect(graphics.recording.commands.isEmpty)
+        #expect(graphics.recording.payload.isEmpty)
+    }
+
+    @Test func saturationAndGradientStopsAreCanonicalized() throws {
+        let imageContext = GraphicsContext()
+        imageContext.draw(
+            ImageHandle(id: 1),
+            in: Rect(x: 0, y: 0, width: 10, height: 10),
+            saturation: 4)
+        #expect(imageContext.recording.commands.first?.saturation == 1)
+
+        let gradientContext = GraphicsContext()
+        gradientContext.fill(
+            Rect(x: 0, y: 0, width: 10, height: 10),
+            with: .linearGradient(
+                from: .zero, to: Point(x: 10, y: 0),
+                stops: [
+                    GradientStop(location: 1.5, color: UIColor(1, 1, 1, 1)),
+                    GradientStop(location: -1, color: UIColor(0, 0, 0, 1)),
+                    GradientStop(location: 0, color: UIColor(1, 0, 0, 1)),
+                ]))
+        let recording = gradientContext.recording
+        let command = try #require(recording.commands.first)
+        let regions = try #require(PaintPayload.decode(
+            recording.payload,
+            offset: command.payloadOffset,
+            length: command.payloadLength))
+        #expect(Array(regions.scalars.dropFirst(4)) == [0, 0, 1])
+        #expect(regions.colors[0].r == 0)
+        #expect(regions.colors[1].r == 1, "equal stops preserve input order")
     }
 }

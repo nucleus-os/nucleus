@@ -3,6 +3,7 @@ import NucleusShellRender
 import NucleusShellInput
 import NucleusShellProduct
 import NucleusUI
+import NucleusUIEmbedder
 
 /// Drives the session lock: request the lock, present a native lock screen on
 /// every output, route input to it, and unlock once authentication succeeds.
@@ -30,6 +31,7 @@ public final class ShellLockController {
     private let engine: ShellRenderEngine
     private let inputRouter: ShellInputRouter?
     private let scene: WindowScene
+    private let publicationContext: WindowScenePublicationContext
     private let lockClient: SessionLockClient?
 
     private struct LockOutput {
@@ -42,24 +44,17 @@ public final class ShellLockController {
 
     private var lockOutputs: [LockOutput] = []
 
-    /// The lock's region of the shell's shared logical space.
-    ///
-    /// The render core composites one logical plane and gives each presentation
-    /// target a rectangle within it, so two surfaces whose rectangles overlap
-    /// show the same content. The bar sits at the origin; the lock is placed far
-    /// enough away that no plausible output layout reaches it, which is what
-    /// keeps the bar's layers off the lock screen.
-    private static let lockRegionOriginY: Double = 1_000_000
-
     public init(
         client: ShellWaylandClient,
         engine: ShellRenderEngine,
         scene: WindowScene,
+        publicationContext: WindowScenePublicationContext,
         inputRouter: ShellInputRouter?
     ) {
         self.client = client
         self.engine = engine
         self.scene = scene
+        self.publicationContext = publicationContext
         self.inputRouter = inputRouter
         self.lockClient = SessionLockClient(client: client)
         lockClient?.onLocked = { [weak self] in self?.presentLockSurfaces() }
@@ -94,20 +89,24 @@ public final class ShellLockController {
         guard let lockClient else { return }
         isLocked = true
 
-        for (index, output) in client.outputs.values.enumerated() {
+        for output in client.outputs.values {
             guard let surface = lockClient.lockSurface(for: output) else { continue }
 
             let origin = Point(
-                x: 0,
-                y: ShellLockController.lockRegionOriginY + Double(index) * 100_000)
-            let view = LockScreenView()
-            view.authenticator = authenticator
-            view.onAuthenticated = { [weak self] in self?.unlock() }
+                x: Double(output.logicalX),
+                y: Double(output.logicalY)
+            )
+            let (view, window) = publicationContext.withSemanticContext {
+                let view = LockScreenView()
+                view.authenticator = authenticator
+                view.onAuthenticated = { [weak self] in self?.unlock() }
 
-            let window = Window(title: "Lock")
-            window.setContentView(view)
-            window.orderFront()
-            scene.addWindow(window)
+                let window = Window(title: "Lock")
+                window.setContentView(view)
+                window.orderFront()
+                scene.addWindow(window)
+                return (view, window)
+            }
 
             let record = LockOutput(
                 surface: surface, window: window, view: view,
@@ -142,6 +141,14 @@ public final class ShellLockController {
         // single place the lock screen's logical rectangle is set.
         lockOutputs[index].window.setFrame(Rect(
             x: origin.x, y: origin.y, width: logicalWidth, height: logicalHeight))
+        lockOutputs[index].window.setSurfaceAssociation(WindowSurfaceAssociation(
+            surfaceID: PresentationSurfaceID(rawValue: UInt64(surfaceID)),
+            transform: WindowSurfaceTransform(
+                windowOriginInSurface: .zero,
+                surfaceOriginInOutput: origin,
+                backingScaleFactor: BackingScaleFactor(scale)
+            )
+        ))
 
         let pixelWidth = Int32(logicalWidth * scale)
         let pixelHeight = Int32(logicalHeight * scale)
@@ -150,7 +157,11 @@ public final class ShellLockController {
                 renderOutputID, width: pixelWidth, height: pixelHeight, scale: scale)
         } else if let renderOutputID = engine.addSurface(
             waylandSurface: lockOutputs[index].surface.wlSurface,
-            width: pixelWidth, height: pixelHeight, scale: scale)
+            width: pixelWidth,
+            height: pixelHeight,
+            scale: scale,
+            presentationContextID: publicationContext.visualContext.id.rawValue
+        )
         {
             lockOutputs[index].renderOutputID = renderOutputID
         }

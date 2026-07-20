@@ -185,6 +185,7 @@ static skia::textlayout::TextStyle skiaTextStyle(const nucleus::text::TextStyle&
     TextStyle style;
     const float point_size = text_style.pointSize > 1.0f ? text_style.pointSize : 1.0f;
     style.setFontSize(point_size);
+    style.setBaselineShift(text_style.baselineShift);
     if (text_style.lineHeight > point_size) {
         style.setHeight(text_style.lineHeight / point_size);
         style.setHeightOverride(true);
@@ -215,6 +216,11 @@ static skia::textlayout::TextStyle skiaTextStyle(const nucleus::text::TextStyle&
         families.emplace_back("sans-serif");
     }
     style.setFontFamilies(std::move(families));
+    if (!text_style.locale.empty()) {
+        style.setLocale(SkString(
+            text_style.locale.c_str(),
+            text_style.locale.size()));
+    }
     return style;
 }
 
@@ -294,8 +300,10 @@ static std::unique_ptr<skia::textlayout::Paragraph> buildParagraphRuns(
 }
 
 static bool sameTextStyle(const nucleus::text::TextStyle& lhs, const nucleus::text::TextStyle& rhs) {
-    return lhs.fontFamily == rhs.fontFamily && lhs.pointSize == rhs.pointSize
-        && lhs.lineHeight == rhs.lineHeight && lhs.fontWeight == rhs.fontWeight
+    return lhs.fontFamily == rhs.fontFamily && lhs.locale == rhs.locale
+        && lhs.pointSize == rhs.pointSize && lhs.lineHeight == rhs.lineHeight
+        && lhs.baselineShift == rhs.baselineShift
+        && lhs.fontWeight == rhs.fontWeight
         && lhs.italic == rhs.italic && lhs.underline == rhs.underline
         && lhs.strikeThrough == rhs.strikeThrough && lhs.red == rhs.red
         && lhs.green == rhs.green && lhs.blue == rhs.blue && lhs.alpha == rhs.alpha;
@@ -505,8 +513,12 @@ static std::vector<TextRun> collectRuns(const TextRunView *runs, size_t runCount
         if (runs[index].fontFamily.data && runs[index].fontFamily.size > 0) {
             run.style.fontFamily.assign(runs[index].fontFamily.data, runs[index].fontFamily.size);
         }
+        if (runs[index].locale.data && runs[index].locale.size > 0) {
+            run.style.locale.assign(runs[index].locale.data, runs[index].locale.size);
+        }
         run.style.pointSize = runs[index].pointSize;
         run.style.lineHeight = runs[index].lineHeight;
+        run.style.baselineShift = runs[index].baselineShift;
         switch (runs[index].weight) {
             case FontWeightMedium:
                 run.style.fontWeight = SkFontStyle::kMedium_Weight;

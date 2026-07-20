@@ -71,7 +71,7 @@ public struct LayerContent: Sendable, Equatable {
     }
 }
 
-public final class PaintContent: @unchecked Sendable {
+public final class PaintContent: Sendable {
     public let handle: UInt64
     package let resourceHostHandle: UInt64
 
@@ -143,7 +143,7 @@ private func paintContentLayerError(from err: PaintContentRegistrationError) -> 
     }
 }
 
-public final class SnapshotContent: @unchecked Sendable {
+public final class SnapshotContent: Sendable {
     public let handle: UInt64
     package let resourceHostHandle: UInt64
 
@@ -163,7 +163,7 @@ public final class SnapshotContent: @unchecked Sendable {
 
 }
 
-public final class IOSurfaceContent: @unchecked Sendable {
+public final class IOSurfaceContent: Sendable {
     public let handle: UInt64
 
     public init(handle: UInt64, retain: Bool = true) {

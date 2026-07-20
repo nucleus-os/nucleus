@@ -21,25 +21,19 @@ public enum Appearance: Sendable, Equatable {
             .dark
         }
     }
-
-    @MainActor
-    public static var systemDefault: Appearance {
-        get { Appearance(NucleusLayers.Appearance.systemDefault) }
-        set { NucleusLayers.Appearance.systemDefault = newValue.layersAppearance }
-    }
 }
 
 public struct Color: Sendable, Equatable {
-    public var r: Float
-    public var g: Float
-    public var b: Float
-    public var a: Float
+    public let r: Float
+    public let g: Float
+    public let b: Float
+    public let a: Float
 
     public init(_ r: Float, _ g: Float, _ b: Float, _ a: Float) {
-        self.r = r
-        self.g = g
-        self.b = b
-        self.a = a
+        self.r = Self.component(r)
+        self.g = Self.component(g)
+        self.b = Self.component(b)
+        self.a = Self.component(a)
     }
 
     public init(r: Float, g: Float, b: Float, a: Float) {
@@ -54,10 +48,15 @@ public struct Color: Sendable, Equatable {
         .init(r, g, b, a)
     }
 
-    /// Returns this color with its alpha replaced. Mirrors
-    /// `NSColor.withAlphaComponent`.
+    /// Returns this color with its alpha replaced, matching
+    /// `NSColor.withAlphaComponent(_:)` behavior.
     public func opacity(_ alpha: Float) -> Color {
         Color(r, g, b, alpha)
+    }
+
+    private static func component(_ value: Float) -> Float {
+        guard value.isFinite else { return 0 }
+        return min(max(value, 0), 1)
     }
 }
 
@@ -129,11 +128,11 @@ public struct Shadow: Sendable, Equatable {
         opacity: Double = 0,
         color: Color = Color(0, 0, 0, 1)
     ) {
-        self.offsetX = offsetX
-        self.offsetY = offsetY
-        self.blurRadius = blurRadius
-        self.cornerRadius = cornerRadius
-        self.opacity = opacity
+        self.offsetX = offsetX.isFinite ? offsetX : 0
+        self.offsetY = offsetY.isFinite ? offsetY : 0
+        self.blurRadius = blurRadius.isFinite ? max(0, blurRadius) : 0
+        self.cornerRadius = cornerRadius.isFinite ? max(0, cornerRadius) : 0
+        self.opacity = opacity.isFinite ? min(max(opacity, 0), 1) : 0
         self.color = color
     }
 

@@ -158,8 +158,9 @@ import Glibc
             return readlink("/proc/self/exe", base, pointer.count - 1)
         }
         guard count > 0 else { return nil }
-        buffer[count] = 0
-        let executable = String(cString: buffer)
+        let executable = String(
+            decoding: buffer[..<count].map { UInt8(bitPattern: $0) },
+            as: UTF8.self)
         guard let slash = executable.lastIndex(of: "/") else { return nil }
         let candidate = String(executable[..<slash]) + "/NucleusShellPamHelper"
         return access(candidate, X_OK) == 0 ? candidate : nil

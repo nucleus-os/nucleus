@@ -1,11 +1,8 @@
 @_spi(NucleusCompositor) import NucleusLayers
+import Tracy
 
-/// A view property that can be animated by the compositor.
-///
-/// Deliberately narrower than "any property": these are the ones the render
-/// tier interpolates on its own thread. Animating anything else means driving it
-/// from the frame loop, and pretending otherwise would produce properties that
-/// silently snap instead of animating.
+/// A view property the compositor can interpolate without invoking main-actor
+/// setters on every frame.
 public enum AnimatableProperty: Sendable, Equatable {
     case opacity
     case cornerRadius
@@ -16,18 +13,28 @@ public enum AnimatableProperty: Sendable, Equatable {
     case scrollOffsetX
     case scrollOffsetY
 
-    var keyPath: AnimationKeyPath {
+    package var keyPath: AnimationKeyPath {
         switch self {
-        case .opacity: return .opacity
-        case .cornerRadius: return .cornerRadius
-        case .positionX: return .positionX
-        case .positionY: return .positionY
-        case .boundsWidth: return .boundsW
-        case .boundsHeight: return .boundsH
-        case .scrollOffsetX: return .scrollOffsetX
-        case .scrollOffsetY: return .scrollOffsetY
+        case .opacity: .opacity
+        case .cornerRadius: .cornerRadius
+        case .positionX: .positionX
+        case .positionY: .positionY
+        case .boundsWidth: .boundsW
+        case .boundsHeight: .boundsH
+        case .scrollOffsetX: .scrollOffsetX
+        case .scrollOffsetY: .scrollOffsetY
         }
     }
+}
+
+package enum ViewAnimationOperation: Sendable, Equatable {
+    case add(Animation)
+    case remove(AnimationKeyPath)
+}
+
+package struct ViewAnimationRequest: Sendable, Equatable {
+    package var generation: UInt64
+    package var operation: ViewAnimationOperation
 }
 
 /// How an animation moves between its endpoints.
@@ -36,110 +43,510 @@ public struct AnimationTiming: Sendable, Equatable {
     public var curve: AnimationCurve
 
     public init(duration: Double, curve: AnimationCurve = .bezier(.default)) {
+        precondition(
+            duration.isFinite && duration >= 0,
+            "animation duration must be finite and nonnegative"
+        )
         self.duration = duration
         self.curve = curve
     }
 
-    /// The reference's three durations, which are conventions worth sharing:
-    /// a shell whose panels and toggles animate at unrelated speeds reads as
-    /// unfinished.
     public static let fast = AnimationTiming(duration: 0.10)
     public static let standard = AnimationTiming(duration: 0.20)
     public static let slow = AnimationTiming(duration: 0.40)
 
     public static func spring(
-        duration: Double = 0.4, _ curve: SpringCurve = .snappy
+        duration: Double = 0.4,
+        _ curve: SpringCurve = .snappy
     ) -> AnimationTiming {
         AnimationTiming(duration: duration, curve: .spring(curve))
     }
 }
 
-/// Global motion policy.
-///
-/// A single switch rather than a per-call flag: reduce-motion is an
-/// accessibility preference, and honouring it only where a caller remembered to
-/// check would honour it nowhere. When motion is off, animations are not
-/// shortened — they are skipped, and the property takes its final value at once.
-@MainActor
-public enum Motion {
-    /// Set false for reduce-motion. Every `animate` call becomes an immediate
-    /// assignment.
-    public static var isEnabled = true
+/// Exactly one terminal result for an accepted or skipped animation request.
+public enum AnimationOutcome: Sendable, Equatable {
+    case completed
+    case cancelled
+    case superseded
+    case skippedReducedMotion
+    case failed
+}
 
-    /// Multiplies every duration. For a global speed preference, and for making
-    /// animation observable in a test without waiting.
-    public static var speed: Double = 1 {
-        didSet { if speed <= 0 { speed = 1 } }
+/// Main-actor animation ownership token.
+///
+/// The handle stays pending until the renderer acknowledges a frame containing
+/// the animation's terminal state. Calling `cancel()` authors a removal request;
+/// it does not invent a producer-side deadline.
+@MainActor
+public final class AnimationHandle: ~Sendable {
+    public let id: UInt64
+    public private(set) var outcome: AnimationOutcome?
+    public var isFinished: Bool { outcome != nil }
+
+    package private(set) var isPublished = false
+    package private(set) var presentationToken: PresentationCompletionToken?
+    private let startedAt = ContinuousClock.now
+    private var cancellation: (@MainActor () -> Void)?
+    private var completionCallbacks: [
+        @MainActor (AnimationOutcome) -> Void
+    ] = []
+
+    package init(id: UInt64) {
+        self.id = id
     }
 
-    static func effectiveDuration(_ duration: Double) -> Double {
-        guard isEnabled else { return 0 }
-        return duration / speed
+    package func install(
+        token: PresentationCompletionToken,
+        cancellation: @escaping @MainActor () -> Void
+    ) {
+        precondition(presentationToken == nil, "animation handle installed twice")
+        presentationToken = token
+        self.cancellation = cancellation
+    }
+
+    package func installLocalCancellation(
+        _ cancellation: @escaping @MainActor () -> Void
+    ) {
+        precondition(self.cancellation == nil, "animation handle installed twice")
+        self.cancellation = cancellation
+    }
+
+    public func cancel() {
+        guard outcome == nil else { return }
+        cancellation?()
+    }
+
+    @discardableResult
+    public func onCompletion(
+        _ callback: @escaping @MainActor (AnimationOutcome) -> Void
+    ) -> Self {
+        if let outcome {
+            callback(outcome)
+        } else {
+            completionCallbacks.append(callback)
+        }
+        return self
+    }
+
+    package func markPublished() {
+        isPublished = true
+    }
+
+    package func resolve(_ outcome: AnimationOutcome) {
+        guard self.outcome == nil else { return }
+        self.outcome = outcome
+        let elapsed = startedAt.duration(to: ContinuousClock.now).components
+        let nanoseconds: UInt64
+        if elapsed.seconds < 0 || elapsed.attoseconds < 0 {
+            nanoseconds = 0
+        } else {
+            nanoseconds = UInt64(elapsed.seconds) &* 1_000_000_000
+                &+ UInt64(elapsed.attoseconds / 1_000_000_000)
+        }
+        Trace.plot(
+            "swift.nucleus.animation.completion_latency_ns",
+            nanoseconds)
+        cancellation = nil
+        let callbacks = completionCallbacks
+        completionCallbacks.removeAll(keepingCapacity: false)
+        for callback in callbacks {
+            callback(outcome)
+        }
     }
 }
 
+/// What should happen to a view after a fade-out reaches its terminal frame.
+public enum FadeOutDisposition: Sendable, Equatable {
+    case none
+    case hide
+    case removeFromSuperview
+}
+
 extension View {
-    /// Animate a property from one value to another.
+    /// Animate a scalar presentation-safe property.
     ///
-    /// The render tier interpolates this — the animation runs on the compositor
-    /// without the frame loop assigning anything per frame, which is why the
-    /// property set is narrow and why `Motion` can skip it wholesale.
-    ///
-    /// Returns whether an animation was actually started; `false` means motion
-    /// is disabled and the caller should assign the final value itself.
+    /// The final model value is assigned eagerly. The renderer temporarily
+    /// overrides presentation from `from` to `to`, then acknowledges the
+    /// handle after that terminal state is presented.
     @discardableResult
     public func animate(
         _ property: AnimatableProperty,
         from: Double,
         to: Double,
         timing: AnimationTiming = .standard,
-        id: UInt64 = 0
-    ) -> Bool {
-        let duration = Motion.effectiveDuration(timing.duration)
-        guard duration > 0 else { return false }
+        id requestedID: UInt64 = 0,
+        completion: (@MainActor (AnimationOutcome) -> Void)? = nil
+    ) -> AnimationHandle {
+        precondition(
+            from.isFinite && to.isFinite,
+            "animation endpoints must be finite"
+        )
+        validate(timing)
+        let keyPath = property.keyPath
+        let animationID = requestedID == 0
+            ? uiContext.allocateAnimationID()
+            : requestedID
+        let handle = makeAnimationHandle(
+            id: animationID,
+            keyPath: keyPath,
+            completion: completion
+        )
+
+        uiContext.withActionPolicy(.none) {
+            assignModelValue(to, for: property)
+        }
+
+        let duration = uiContext.effectiveAnimationDuration(timing.duration)
+        guard duration > 0 else {
+            completeWithoutPresentation(
+                handle,
+                result: .skippedReducedMotion
+            )
+            return handle
+        }
 
         let animation = Animation.scalar(
-            keyPath: property.keyPath,
-            from: from, to: to,
+            keyPath: keyPath,
+            from: from,
+            to: to,
             duration: duration,
             curve: timing.curve,
-            id: id)
-        LayerTransaction.appendAmbient(
-            .animationAdded(layer: backingLayer.id, animation),
-            in: backingLayer.context)
-        return true
+            id: animationID,
+            completionToken: handle.presentationToken?.rawValue ?? 0
+        )
+        let generation = recordMutation(.animation)
+        animationRequests[keyPath] = ViewAnimationRequest(
+            generation: generation,
+            operation: .add(animation)
+        )
+        return handle
     }
 
-    /// Stop animating a property. Whatever value it currently shows stays.
+    /// Animate the view's complete 4×4 transform as one typed compositor slot.
+    @discardableResult
+    public func animateTransform(
+        from: Transform,
+        to: Transform,
+        timing: AnimationTiming = .standard,
+        id requestedID: UInt64 = 0,
+        completion: (@MainActor (AnimationOutcome) -> Void)? = nil
+    ) -> AnimationHandle {
+        precondition(
+            from.isFinite && to.isFinite,
+            "transform animation endpoints must be finite"
+        )
+        validate(timing)
+        let animationID = requestedID == 0
+            ? uiContext.allocateAnimationID()
+            : requestedID
+        let handle = makeAnimationHandle(
+            id: animationID,
+            keyPath: .transform,
+            completion: completion
+        )
+
+        uiContext.withActionPolicy(.none) {
+            transform = to
+        }
+
+        let duration = uiContext.effectiveAnimationDuration(timing.duration)
+        guard duration > 0 else {
+            completeWithoutPresentation(
+                handle,
+                result: .skippedReducedMotion
+            )
+            return handle
+        }
+
+        let animation = Animation.transform(
+            from: from.layersTransform,
+            to: to.layersTransform,
+            duration: duration,
+            curve: timing.curve,
+            id: animationID,
+            completionToken: handle.presentationToken?.rawValue ?? 0
+        )
+        let generation = recordMutation(.animation)
+        animationRequests[.transform] = ViewAnimationRequest(
+            generation: generation,
+            operation: .add(animation)
+        )
+        return handle
+    }
+
+    /// Stop the current animation for `property`. A published animation
+    /// completes as cancelled only after the renderer presents its removal.
     public func removeAnimation(for property: AnimatableProperty) {
-        LayerTransaction.appendAmbient(
-            .animationRemoved(layer: backingLayer.id, property.keyPath),
-            in: backingLayer.context)
+        removeAnimation(forKeyPath: property.keyPath)
     }
 
-    /// Fade in from transparent, and unhide.
-    ///
-    /// `isHidden` is cleared *first*: a hidden layer does not composite, so
-    /// fading one in would run the animation invisibly and pop at the end.
-    public func fadeIn(timing: AnimationTiming = .standard) {
+    public func removeTransformAnimation() {
+        removeAnimation(forKeyPath: .transform)
+    }
+
+    /// Fade in from transparent to an explicit target. If no target is passed,
+    /// the last nonzero opacity remembered by `fadeOut` is restored.
+    @discardableResult
+    public func fadeIn(
+        to targetOpacity: Double? = nil,
+        timing: AnimationTiming = .standard,
+        completion: (@MainActor (AnimationOutcome) -> Void)? = nil
+    ) -> AnimationHandle {
+        let target = min(max(
+            0,
+            targetOpacity ??
+                storedFadeTargetOpacity ??
+                (alphaValue > 0 ? alphaValue : 1)
+        ), 1)
+        storedFadeTargetOpacity = target
         isHidden = false
-        // With motion off this is just the unhide above, which is the correct
-        // reduced behaviour: the view appears at its final opacity.
-        animate(.opacity, from: 0, to: alphaValue, timing: timing)
+        return animate(
+            .opacity,
+            from: 0,
+            to: target,
+            timing: timing,
+            completion: completion
+        )
     }
 
-    /// Fade to transparent. The caller hides or removes the view on completion —
-    /// this does not, because there is no completion callback at this tier and
-    /// guessing would leave views either flashing back or vanishing early.
-    public func fadeOut(timing: AnimationTiming = .standard) {
-        // Model first, then the animation — the Core Animation order, and for the
-        // same reason. An animation installs a *presentation override* that the
-        // compositor shows while it runs, so moving the model value immediately
-        // is not a race with it. Leaving the model behind would be the bug:
-        // `alphaValue` is the view tier's authoritative value, and a later write
-        // that included opacity would push the stale one back out.
+    /// Fade to transparent and optionally hide or remove the view only after
+    /// the terminal frame is acknowledged.
+    @discardableResult
+    public func fadeOut(
+        timing: AnimationTiming = .standard,
+        disposition: FadeOutDisposition = .none,
+        completion: (@MainActor (AnimationOutcome) -> Void)? = nil
+    ) -> AnimationHandle {
         let start = alphaValue
-        alphaValue = 0
-        animate(.opacity, from: start, to: 0, timing: timing)
+        if start > 0 {
+            storedFadeTargetOpacity = start
+        }
+        return animate(
+            .opacity,
+            from: start,
+            to: 0,
+            timing: timing
+        ) { [weak self] outcome in
+            guard let self else { return }
+            if outcome == .completed || outcome == .skippedReducedMotion {
+                switch disposition {
+                case .none:
+                    break
+                case .hide:
+                    isHidden = true
+                case .removeFromSuperview:
+                    removeFromSuperview()
+                }
+            }
+            completion?(outcome)
+        }
+    }
+
+    package func markAnimationRequestsPublished(through generation: UInt64) {
+        for request in animationRequests.values
+        where request.generation <= generation {
+            guard case .add(let animation) = request.operation else { continue }
+            animationHandles[animation.id]?.markPublished()
+        }
+    }
+
+    package func cancelOwnedAnimationHandles() {
+        let handles = Array(animationHandles.values)
+        animationHandles.removeAll(keepingCapacity: false)
+        currentAnimationHandleIDs.removeAll(keepingCapacity: false)
+        animationRequests.removeAll(keepingCapacity: false)
+        for handle in handles where !handle.isFinished {
+            if let token = handle.presentationToken {
+                PresentationCompletionCenter.resolve(
+                    token,
+                    result: .cancelled
+                )
+            } else {
+                handle.resolve(.cancelled)
+            }
+        }
+    }
+
+    private func makeAnimationHandle(
+        id: UInt64,
+        keyPath: AnimationKeyPath,
+        completion: (@MainActor (AnimationOutcome) -> Void)?
+    ) -> AnimationHandle {
+        precondition(id != 0, "animation id zero is reserved")
+        precondition(
+            animationHandles[id] == nil,
+            "animation id \(id) is already active on this view"
+        )
+
+        if let currentID = currentAnimationHandleIDs[keyPath],
+           let current = animationHandles[currentID],
+           !current.isPublished
+        {
+            completeWithoutPresentation(current, result: .superseded)
+        }
+
+        let handle = AnimationHandle(id: id)
+        if let completion {
+            handle.onCompletion(completion)
+        }
+        let token = PresentationCompletionCenter.register {
+            [weak self, weak handle] result in
+            let outcome = AnimationOutcome(result)
+            handle?.resolve(outcome)
+            self?.animationHandleDidComplete(id: id, keyPath: keyPath)
+        }
+        handle.install(token: token) { [weak self, weak handle] in
+            guard let self, let handle else { return }
+            cancel(handle, keyPath: keyPath)
+        }
+        animationHandles[id] = handle
+        currentAnimationHandleIDs[keyPath] = id
+        return handle
+    }
+
+    private func cancel(
+        _ handle: AnimationHandle,
+        keyPath: AnimationKeyPath
+    ) {
+        guard !handle.isFinished else { return }
+        guard currentAnimationHandleIDs[keyPath] == handle.id else {
+            return
+        }
+
+        let generation = recordMutation(.animation)
+        animationRequests[keyPath] = ViewAnimationRequest(
+            generation: generation,
+            operation: .remove(keyPath)
+        )
+        if !handle.isPublished {
+            completeWithoutPresentation(handle, result: .cancelled)
+        }
+    }
+
+    private func removeAnimation(forKeyPath keyPath: AnimationKeyPath) {
+        let generation = recordMutation(.animation)
+        animationRequests[keyPath] = ViewAnimationRequest(
+            generation: generation,
+            operation: .remove(keyPath)
+        )
+        guard let id = currentAnimationHandleIDs[keyPath],
+              let handle = animationHandles[id],
+              !handle.isPublished
+        else {
+            return
+        }
+        completeWithoutPresentation(handle, result: .cancelled)
+    }
+
+    private func completeWithoutPresentation(
+        _ handle: AnimationHandle,
+        result: PresentationCompletionResult
+    ) {
+        guard let token = handle.presentationToken else {
+            handle.resolve(AnimationOutcome(result))
+            return
+        }
+        PresentationCompletionCenter.resolve(token, result: result)
+    }
+
+    private func animationHandleDidComplete(
+        id: UInt64,
+        keyPath: AnimationKeyPath
+    ) {
+        animationHandles[id] = nil
+        if currentAnimationHandleIDs[keyPath] == id {
+            currentAnimationHandleIDs[keyPath] = nil
+        }
+    }
+
+    private func assignModelValue(
+        _ value: Double,
+        for property: AnimatableProperty
+    ) {
+        switch property {
+        case .opacity:
+            alphaValue = value
+        case .cornerRadius:
+            cornerRadius = value
+        case .positionX:
+            frame = Rect(
+                x: value,
+                y: frame.origin.y,
+                width: frame.size.width,
+                height: frame.size.height
+            )
+        case .positionY:
+            frame = Rect(
+                x: frame.origin.x,
+                y: value,
+                width: frame.size.width,
+                height: frame.size.height
+            )
+        case .boundsWidth:
+            frame = Rect(
+                x: frame.origin.x,
+                y: frame.origin.y,
+                width: max(0, value),
+                height: frame.size.height
+            )
+        case .boundsHeight:
+            frame = Rect(
+                x: frame.origin.x,
+                y: frame.origin.y,
+                width: frame.size.width,
+                height: max(0, value)
+            )
+        case .scrollOffsetX:
+            boundsOrigin = Point(x: value, y: boundsOrigin.y)
+        case .scrollOffsetY:
+            boundsOrigin = Point(x: boundsOrigin.x, y: value)
+        }
+    }
+
+    private func validate(_ timing: AnimationTiming) {
+        precondition(
+            timing.duration.isFinite && timing.duration >= 0,
+            "animation duration must be finite and nonnegative"
+        )
+        switch timing.curve.kind {
+        case .linear:
+            break
+        case .bezier:
+            precondition(
+                timing.curve.bezierP1x.isFinite &&
+                    timing.curve.bezierP1y.isFinite &&
+                    timing.curve.bezierP2x.isFinite &&
+                    timing.curve.bezierP2y.isFinite,
+                "animation Bézier control points must be finite"
+            )
+        case .spring:
+            precondition(
+                timing.curve.springMass.isFinite &&
+                    timing.curve.springMass > 0 &&
+                    timing.curve.springStiffness.isFinite &&
+                    timing.curve.springStiffness > 0 &&
+                    timing.curve.springDamping.isFinite &&
+                    timing.curve.springDamping >= 0 &&
+                    timing.curve.springInitialVelocity.isFinite,
+                "animation spring parameters are invalid"
+            )
+        }
+    }
+}
+
+private extension AnimationOutcome {
+    init(_ result: PresentationCompletionResult) {
+        switch result {
+        case .completed:
+            self = .completed
+        case .cancelled:
+            self = .cancelled
+        case .superseded:
+            self = .superseded
+        case .skippedReducedMotion:
+            self = .skippedReducedMotion
+        case .failed:
+            self = .failed
+        }
     }
 }

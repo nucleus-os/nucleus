@@ -25,12 +25,35 @@ package final class WindowLayerPublisher: ~Sendable {
         windows: [Window],
         includes windowIncluded: @MainActor (Window) -> Bool
     ) throws(UIError) -> [PublishedVisualContent] {
-        let roots = windows.compactMap { window -> View? in
+        let roots = windows.compactMap { window -> ViewLayerRootPublication? in
             guard windowIncluded(window), window.isVisible else {
                 return nil
             }
-            return window.root
+            guard let root = window.root else { return nil }
+            return ViewLayerRootPublication(
+                view: root,
+                placement: ViewLayerRootPlacement(
+                    id: window.id,
+                    frame: window.frame
+                )
+            )
         }
         return try viewPublisher.publish(roots: roots)
+    }
+
+    package func placementLayer(for window: Window) -> Layer? {
+        viewPublisher.placementLayer(for: window)
+    }
+
+    package func invalidate() throws(UIError) {
+        try viewPublisher.invalidate()
+    }
+
+    package var publishedVisualLayerCount: Int {
+        viewPublisher.publishedVisualLayerCount
+    }
+
+    package var retainedPaintRegistrationCount: Int {
+        viewPublisher.retainedPaintRegistrationCount
     }
 }

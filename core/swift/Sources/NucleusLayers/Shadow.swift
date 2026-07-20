@@ -1,10 +1,10 @@
-/// Drop shadow on a `Layer`. Mirrors `CALayer`'s split shadow properties
+/// Drop shadow on a `Layer`. It groups the supported `CALayer` shadow properties
 /// (`shadowColor`, `shadowOpacity`, `shadowOffset`, `shadowRadius`) as a
 /// single composite value carried over the wire — the high-level
 /// `Layer.shadowColor` etc. accessors read and write the composite.
 ///
 /// `opacity` and `color.a` are multiplicatively combined when rendered
-/// (matching `CALayer.shadowOpacity` × the alpha component of
+/// (the same multiplication used by `CALayer.shadowOpacity` and
 /// `shadowColor`). Default `opacity` is 0 — i.e. `.none` produces no
 /// rendered shadow.
 public struct Shadow: Sendable, Equatable {

@@ -81,6 +81,8 @@ struct TextureQuad {
     var maskRRect: RRectMask?
     var opaqueRect: PlanRect?
     var foregroundVibrancy: ForegroundVibrancy?
+    /// Layer-local logical paint damage. Nil means a complete texture rebuild.
+    var localPaintDamage: Rect?
 }
 
 /// A solid fill. Mirrors `FillQuad`.
@@ -227,15 +229,19 @@ struct PlanCounters: Equatable {
 struct LayerFrameSnapshot: Equatable {
     var rect: PhysicalRect
     var visualSignature: UInt64
+    var compositeSignature: UInt64 = 0
     var structural: Bool
     /// Per-frame content invalidation is intentionally excluded from equality.
     /// It forces the current footprint dirty once without making the following
     /// frame look changed merely because RetainedTreeStore cleared its flags.
     var contentDamaged: Bool = false
+    /// Output-physical projection of a safe layer-local paint invalidation.
+    var localizedContentDamage: PhysicalRect? = nil
 
     static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.rect == rhs.rect
             && lhs.visualSignature == rhs.visualSignature
+            && lhs.compositeSignature == rhs.compositeSignature
             && lhs.structural == rhs.structural
     }
 }

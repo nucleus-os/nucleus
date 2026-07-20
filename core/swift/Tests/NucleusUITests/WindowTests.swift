@@ -5,7 +5,7 @@ import class NucleusLayers.InMemoryCommitSink
 import Testing
 
 @MainActor
-@Suite struct WindowTests {
+@Suite(.uiContext) struct WindowTests {
     final class TrackingViewController: ViewController {
         let loadedView: View
         var didLoadCount = 0
@@ -49,11 +49,11 @@ import Testing
         #expect(window.level == .overlay)
         #expect(!window.participatesInHitTesting)
 
-        window.role = .statusOverlay
+        window.role = .overlay
         window.level = .criticalOverlay
         window.participatesInHitTesting = true
 
-        #expect(window.role == .statusOverlay)
+        #expect(window.role == .overlay)
         #expect(window.level == .criticalOverlay)
         #expect(window.participatesInHitTesting)
     }
@@ -71,7 +71,7 @@ import Testing
         #expect(window.contentView === view)
         #expect(window.root === view)
         #expect(window.frame == Rect(x: 10, y: 20, width: 320, height: 180))
-        #expect(view.frame == window.frame)
+        #expect(view.frame == Rect(x: 0, y: 0, width: 320, height: 180))
         #expect(controller.didLoadCount == 1)
         #expect(view.nextResponder === controller)
 
@@ -93,12 +93,31 @@ import Testing
         let view = View()
 
         window.setContentView(view)
-        #expect(view.frame == Rect(x: 4, y: 5, width: 120, height: 90))
+        #expect(view.frame == Rect(x: 0, y: 0, width: 120, height: 90))
 
         window.setFrame(Rect(x: 20, y: 30, width: 400, height: 300))
         #expect(window.frame == Rect(x: 20, y: 30, width: 400, height: 300))
-        #expect(view.frame == window.frame)
+        #expect(view.frame == Rect(x: 0, y: 0, width: 400, height: 300))
         #expect(view.needsDisplay)
+    }
+
+    @Test func windowAndSceneConversionsKeepTheContentOriginLocal() {
+        let window = Window(
+            title: "Placed",
+            frame: Rect(x: 125.5, y: 48.25, width: 320, height: 180)
+        )
+        let root = View()
+        window.setContentView(root)
+
+        #expect(root.frame.origin == .zero)
+        #expect(window.scenePoint(fromWindow: Point(x: 7.25, y: 9.5))
+            == Point(x: 132.75, y: 57.75))
+        #expect(window.windowPoint(fromScene: Point(x: 132.75, y: 57.75))
+            == Point(x: 7.25, y: 9.5))
+        #expect(window.sceneRect(fromWindow: Rect(x: 7.25, y: 9.5, width: 30, height: 20))
+            == Rect(x: 132.75, y: 57.75, width: 30, height: 20))
+        #expect(window.windowRect(fromScene: Rect(x: 132.75, y: 57.75, width: 30, height: 20))
+            == Rect(x: 7.25, y: 9.5, width: 30, height: 20))
     }
 
     @Test func windowSceneOwnsOrderingVisibilityAndKeyWindow() throws {
@@ -111,7 +130,10 @@ import Testing
         )
         normal.setContentView(View())
         overlay.setContentView(View())
-        let scene = WindowScene(windows: [overlay, normal], visualContext: visualContext)
+        let scene = WindowScene(
+            windows: [overlay, normal],
+            uiContext: normal.uiContext,
+            visualContext: visualContext)
 
         normal.orderFront()
         overlay.orderFront()

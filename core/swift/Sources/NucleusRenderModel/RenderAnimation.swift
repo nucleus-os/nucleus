@@ -26,6 +26,10 @@ public enum AnimationKeyPath: UInt8, Sendable {
     case positionX
     case positionY
     case opacity
+    /// Complete producer-authored 4×4 transform. Kept distinct from the
+    /// component slots used by compositor-owned effects so a view transform is
+    /// replaced atomically.
+    case transform
     case transformScaleX
     case transformScaleY
     case transformScaleZ
@@ -38,6 +42,10 @@ public enum AnimationKeyPath: UInt8, Sendable {
     case anchorPointX
     case anchorPointY
     case cornerRadius
+    case boundsWidth
+    case boundsHeight
+    case scrollOffsetX
+    case scrollOffsetY
     /// Compound rect of (left, top, right, bottom). Drives `position` and
     /// `bounds` overrides together as one retargetable record.
     case frame
@@ -67,11 +75,12 @@ public typealias AnimationSlotKey = AnimationKeyPath
 public enum AnimationValue: Equatable, Sendable {
     case scalar(Float)
     case frame(Frame)
+    case transform(M44)
 
     var scalarOrZero: Float {
         switch self {
         case .scalar(let s): return s
-        case .frame: return 0
+        case .frame, .transform: return 0
         }
     }
 }
@@ -289,6 +298,168 @@ public struct BasicFrameAnimation: Equatable, Sendable {
     }
 }
 
+/// Timed interpolation of one complete 4×4 transform.
+///
+/// Matrix interpolation deliberately preserves arbitrary affine, perspective,
+/// reflection, and shear values. Higher-level component animations continue to
+/// use their dedicated slots when decomposition semantics are required.
+public struct BasicTransformAnimation: Equatable, Sendable {
+    public var keyPath: AnimationKeyPath
+    public var fromValue: M44
+    public var toValue: M44
+    public var duration: Double = 0.25
+    public var timingFunction: TimingFunction = .default
+    public var beginTime: Double = 0
+    public var elapsed: Double = 0
+
+    public init(
+        keyPath: AnimationKeyPath = .transform,
+        fromValue: M44,
+        toValue: M44,
+        duration: Double = 0.25,
+        timingFunction: TimingFunction = .default,
+        beginTime: Double = 0
+    ) {
+        self.keyPath = keyPath
+        self.fromValue = fromValue
+        self.toValue = toValue
+        self.duration = duration
+        self.timingFunction = timingFunction
+        self.beginTime = beginTime
+    }
+
+    public mutating func evaluateAt(_ presentTimeS: Double) -> AnimationResult {
+        let elapsedS = max(0, presentTimeS - beginTime)
+        elapsed = elapsedS
+        return evaluateElapsed(elapsedS)
+    }
+
+    func evaluateElapsed(_ elapsedS: Double) -> AnimationResult {
+        let t: Float = duration > 0 ? Float(min(elapsedS / duration, 1)) : 1
+        let eased = timingFunction.evaluate(t)
+        return AnimationResult(
+            value: .transform(Self.interpolate(fromValue, toValue, eased)),
+            done: t >= 1
+        )
+    }
+
+    var currentValue: AnimationValue {
+        let t: Float = duration > 0 ? Float(min(elapsed / duration, 1)) : 1
+        return .transform(Self.interpolate(
+            fromValue,
+            toValue,
+            timingFunction.evaluate(t)
+        ))
+    }
+
+    private static func interpolate(_ from: M44, _ to: M44, _ t: Float) -> M44 {
+        M44(m: zip(from.m, to.m).map { start, end in
+            start + (end - start) * t
+        })
+    }
+}
+
+/// Spring interpolation for a complete 4×4 transform. Each matrix component
+/// follows the same oscillator and the record settles only when every component
+/// has converged.
+public struct SpringTransformAnimation: Equatable, Sendable {
+    public var keyPath: AnimationKeyPath
+    public var fromValue: M44
+    public var toValue: M44
+    public var mass: Float = 1
+    public var stiffness: Float = 100
+    public var damping: Float = 10
+    public var beginTime: Double = 0
+    public var currentValue: M44
+    public var velocity: [Float]
+    public var initialized: Bool = false
+
+    public init(
+        keyPath: AnimationKeyPath = .transform,
+        fromValue: M44,
+        toValue: M44,
+        mass: Float = 1,
+        stiffness: Float = 100,
+        damping: Float = 10,
+        beginTime: Double = 0
+    ) {
+        self.keyPath = keyPath
+        self.fromValue = fromValue
+        self.toValue = toValue
+        self.mass = mass
+        self.stiffness = stiffness
+        self.damping = damping
+        self.beginTime = beginTime
+        self.currentValue = fromValue
+        self.velocity = Array(repeating: 0, count: 16)
+    }
+
+    mutating func evaluateAt(
+        _ presentTimeS: Double,
+        _ previousPresentTimeS: Double
+    ) -> AnimationResult {
+        if !initialized {
+            currentValue = fromValue
+            velocity = Array(repeating: 0, count: 16)
+            initialized = true
+        }
+        guard presentTimeS > beginTime else {
+            return AnimationResult(value: .transform(currentValue), done: false)
+        }
+
+        let startS = previousPresentTimeS > beginTime
+            ? previousPresentTimeS
+            : beginTime
+        let dt = Float(min(max(0, presentTimeS - startS), 0.05))
+        let w0 = (stiffness / mass).squareRoot()
+        let zeta = damping / (2 * (stiffness * mass).squareRoot())
+        var next = currentValue.m
+        var allSettled = true
+
+        for index in next.indices {
+            let displacement = currentValue.m[index] - toValue.m[index]
+            let oldVelocity = velocity[index]
+            let newDisplacement: Float
+            let newVelocity: Float
+            if zeta >= 1 {
+                let decay = expf(-w0 * zeta * dt)
+                let c1 = displacement
+                let c2 = oldVelocity + w0 * zeta * displacement
+                newDisplacement = (c1 + c2 * dt) * decay
+                newVelocity =
+                    (c2 - w0 * zeta * (c1 + c2 * dt)) * decay
+            } else {
+                let wd = w0 * (1 - zeta * zeta).squareRoot()
+                let decay = expf(-w0 * zeta * dt)
+                let cosine = cosf(wd * dt)
+                let sine = sinf(wd * dt)
+                newDisplacement = decay * (
+                    displacement * cosine +
+                    ((oldVelocity + w0 * zeta * displacement) / wd) * sine
+                )
+                newVelocity = decay * (
+                    oldVelocity * cosine -
+                    ((oldVelocity * w0 * zeta + displacement * w0 * w0) / wd) * sine
+                )
+            }
+            next[index] = newDisplacement + toValue.m[index]
+            velocity[index] = newVelocity
+            let travel = abs(toValue.m[index] - fromValue.m[index])
+            let threshold = max(0.0001, travel * 0.005)
+            allSettled =
+                allSettled &&
+                abs(newDisplacement) < threshold &&
+                abs(newVelocity) < threshold
+        }
+
+        currentValue = allSettled ? toValue : M44(m: next)
+        if allSettled {
+            velocity = Array(repeating: 0, count: 16)
+        }
+        return AnimationResult(value: .transform(currentValue), done: allSettled)
+    }
+}
+
 /// Compound-frame counterpart of `SpringAnimation`: each edge runs an
 /// independent oscillator with shared spring parameters and a shared settle
 /// decision. Mirrors `animation.SpringFrameAnimation`.
@@ -406,6 +577,8 @@ public enum Animation: Equatable, Sendable {
     case spring(SpringAnimation)
     case basicFrame(BasicFrameAnimation)
     case springFrame(SpringFrameAnimation)
+    case basicTransform(BasicTransformAnimation)
+    case springTransform(SpringTransformAnimation)
 
     public var keyPath: AnimationKeyPath {
         switch self {
@@ -413,6 +586,8 @@ public enum Animation: Equatable, Sendable {
         case .spring(let a): return a.keyPath
         case .basicFrame(let a): return a.keyPath
         case .springFrame(let a): return a.keyPath
+        case .basicTransform(let a): return a.keyPath
+        case .springTransform(let a): return a.keyPath
         }
     }
 
@@ -426,6 +601,12 @@ public enum Animation: Equatable, Sendable {
             let r = a.evaluateAt(presentTimeS, previousPresentTimeS); self = .spring(a); return r
         case .springFrame(var a):
             let r = a.evaluateAt(presentTimeS, previousPresentTimeS); self = .springFrame(a); return r
+        case .basicTransform(var a):
+            let r = a.evaluateAt(presentTimeS); self = .basicTransform(a); return r
+        case .springTransform(var a):
+            let r = a.evaluateAt(presentTimeS, previousPresentTimeS)
+            self = .springTransform(a)
+            return r
         }
     }
 
@@ -435,6 +616,12 @@ public enum Animation: Equatable, Sendable {
         case .spring(var a): a.beginTime = beginTimeS; self = .spring(a)
         case .basicFrame(var a): a.beginTime = beginTimeS; self = .basicFrame(a)
         case .springFrame(var a): a.beginTime = beginTimeS; self = .springFrame(a)
+        case .basicTransform(var a):
+            a.beginTime = beginTimeS
+            self = .basicTransform(a)
+        case .springTransform(var a):
+            a.beginTime = beginTimeS
+            self = .springTransform(a)
         }
     }
 
@@ -444,6 +631,8 @@ public enum Animation: Equatable, Sendable {
         case .spring(let a): return .scalar(a.toValue)
         case .basicFrame(let a): return .frame(a.toValue)
         case .springFrame(let a): return .frame(a.toValue)
+        case .basicTransform(let a): return .transform(a.toValue)
+        case .springTransform(let a): return .transform(a.toValue)
         }
     }
 
@@ -453,6 +642,8 @@ public enum Animation: Equatable, Sendable {
         case .spring(let a): return .scalar(a.fromValue)
         case .basicFrame(let a): return .frame(a.fromValue)
         case .springFrame(let a): return .frame(a.fromValue)
+        case .basicTransform(let a): return .transform(a.fromValue)
+        case .springTransform(let a): return .transform(a.fromValue)
         }
     }
 
@@ -464,6 +655,8 @@ public enum Animation: Equatable, Sendable {
         case .spring(let a): return a.currentValue
         case .basicFrame(let a): return a.currentValue
         case .springFrame(let a): return a.currentValue
+        case .basicTransform(let a): return a.currentValue
+        case .springTransform(let a): return .transform(a.currentValue)
         }
     }
 }
@@ -479,12 +672,16 @@ public struct AnimationRecord: Equatable, Sendable {
     public var slotKey: AnimationSlotKey
     public var completionToken: CompletionToken
     public var transactionId: UInt64
+    /// A zero presentation timestamp defers the animation start until the
+    /// renderer's first predicted-presentation tick.
+    public var beginTimePending: Bool
     public var animation: Animation
 
     public init(
         id: AnimationID, layerId: UInt64, animation: Animation,
         completionToken: CompletionToken = .none, transactionId: UInt64 = 0,
-        slotKey: AnimationSlotKey? = nil
+        slotKey: AnimationSlotKey? = nil,
+        beginTimePending: Bool = false
     ) {
         let keyPath = animation.keyPath
         self.id = id
@@ -493,6 +690,7 @@ public struct AnimationRecord: Equatable, Sendable {
         self.slotKey = slotKey ?? keyPath
         self.completionToken = completionToken
         self.transactionId = transactionId
+        self.beginTimePending = beginTimePending
         self.animation = animation
     }
 }
@@ -517,6 +715,34 @@ public enum AnimationEvent: Equatable, Sendable {
                  finished: Bool, reason: AnimationStopReason)
 }
 
+/// Renderer-side request to remove one property animation.
+public struct AnimationRemoval: Equatable, Sendable {
+    public var layerId: UInt64
+    public var keyPath: AnimationKeyPath
+
+    public init(layerId: UInt64, keyPath: AnimationKeyPath) {
+        self.layerId = layerId
+        self.keyPath = keyPath
+    }
+}
+
+public enum PresentationCompletionOutcome: Equatable, Sendable {
+    case completed
+    case cancelled
+    case superseded
+    case failed
+}
+
+public struct PresentationCompletionEvent: Equatable, Sendable {
+    public var token: UInt64
+    public var outcome: PresentationCompletionOutcome
+
+    public init(token: UInt64, outcome: PresentationCompletionOutcome) {
+        self.token = token
+        self.outcome = outcome
+    }
+}
+
 // MARK: - Content-reveal sink
 
 /// Sink the `.contents` key path drives during a presentation transition. The
@@ -530,7 +756,7 @@ public protocol PresentationTransitionSink: AnyObject {
     func finishContentRevealProgress(layerId: UInt64, value: Float)
 }
 
-public final class NullPresentationTransitionSink: PresentationTransitionSink, @unchecked Sendable {
+public final class NullPresentationTransitionSink: PresentationTransitionSink, Sendable {
     public init() {}
     public func writeContentRevealProgress(layerId: UInt64, value: Float) {}
     public func finishContentRevealProgress(layerId: UInt64, value: Float) {}
@@ -561,6 +787,35 @@ extension Layer {
             completionToken: record.completionToken, transactionId: record.transactionId))
     }
 
+    mutating func removeAnimation(
+        for keyPath: AnimationKeyPath,
+        reason: AnimationStopReason = .removed,
+        events: inout [AnimationEvent]
+    ) {
+        var removedTransform = false
+        var index = animations.count
+        while index > 0 {
+            index -= 1
+            guard animations[index].slotKey == keyPath else { continue }
+            let record = animations.remove(at: index)
+            removedTransform = removedTransform || record.keyPath.isTransformComponent
+            events.append(.stopped(
+                animationId: record.id,
+                layerId: record.layerId,
+                keyPath: record.keyPath,
+                completionToken: record.completionToken,
+                transactionId: record.transactionId,
+                finished: false,
+                reason: reason
+            ))
+        }
+        if removedTransform {
+            rebuildTransformOverride()
+        } else {
+            clearOverrideField(keyPath)
+        }
+    }
+
     /// Seed the layer's override to the record's initial value (so a sample
     /// before the first tick already shows the animation's start). Mirrors
     /// `seedAnimationStartValueOnLayer`.
@@ -585,6 +840,10 @@ extension Layer {
         var transformTouched = false
         var i = 0
         while i < animations.count {
+            if animations[i].beginTimePending {
+                animations[i].animation.setBeginTime(presentTimeS)
+                animations[i].beginTimePending = false
+            }
             let result = animations[i].animation.evaluateAt(presentTimeS, previousPresentTimeS)
             let keyPath = animations[i].keyPath
             let isTransform = keyPath.isTransformComponent
@@ -646,6 +905,31 @@ extension Layer {
             var ov = presentation.override_ ?? PresentationOverride()
             ov.opacity = value.scalarOrZero
             presentation.override_ = ov
+        case .transform:
+            guard case .transform(let transform) = value else { break }
+            var ov = presentation.override_ ?? PresentationOverride()
+            ov.transform = transform
+            presentation.override_ = ov
+        case .boundsWidth:
+            var ov = presentation.override_ ?? PresentationOverride()
+            let current = ov.bounds ?? model.properties.bounds
+            ov.bounds = Bounds(w: value.scalarOrZero, h: current.h)
+            presentation.override_ = ov
+        case .boundsHeight:
+            var ov = presentation.override_ ?? PresentationOverride()
+            let current = ov.bounds ?? model.properties.bounds
+            ov.bounds = Bounds(w: current.w, h: value.scalarOrZero)
+            presentation.override_ = ov
+        case .scrollOffsetX:
+            var ov = presentation.override_ ?? PresentationOverride()
+            let current = ov.scrollOffset ?? model.properties.scrollOffset
+            ov.scrollOffset = Point2D(x: value.scalarOrZero, y: current.y)
+            presentation.override_ = ov
+        case .scrollOffsetY:
+            var ov = presentation.override_ ?? PresentationOverride()
+            let current = ov.scrollOffset ?? model.properties.scrollOffset
+            ov.scrollOffset = Point2D(x: current.x, y: value.scalarOrZero)
+            presentation.override_ = ov
         case .frame:
             if case .frame(let f) = value {
                 var ov = presentation.override_ ?? PresentationOverride()
@@ -679,6 +963,14 @@ extension Layer {
         case .anchorPointX: model.properties.anchorPoint.x = value.scalarOrZero
         case .anchorPointY: model.properties.anchorPoint.y = value.scalarOrZero
         case .opacity: model.properties.opacity = value.scalarOrZero
+        case .transform:
+            if case .transform(let transform) = value {
+                model.properties.transform = transform
+            }
+        case .boundsWidth: model.properties.bounds.w = value.scalarOrZero
+        case .boundsHeight: model.properties.bounds.h = value.scalarOrZero
+        case .scrollOffsetX: model.properties.scrollOffset.x = value.scalarOrZero
+        case .scrollOffsetY: model.properties.scrollOffset.y = value.scalarOrZero
         case .frame:
             if case .frame(let f) = value {
                 model.properties.position = Point2D(x: f.left, y: f.top)
@@ -702,6 +994,7 @@ extension Layer {
             vs.cornerRadii = (r, r, r, r)
             model.visualStyle = vs
             model.visualRevision &+= 1
+            model.compositeRevision &+= 1
         case .transformScaleX, .transformScaleY, .transformScaleZ,
              .transformRotationX, .transformRotationY, .transformRotationZ,
              .transformTranslationX, .transformTranslationY, .transformTranslationZ:
@@ -717,6 +1010,9 @@ extension Layer {
         case .positionX, .positionY: ov.position = nil
         case .anchorPointX, .anchorPointY: ov.anchorPoint = nil
         case .opacity: ov.opacity = nil
+        case .transform: ov.transform = nil
+        case .boundsWidth, .boundsHeight: ov.bounds = nil
+        case .scrollOffsetX, .scrollOffsetY: ov.scrollOffset = nil
         case .frame:
             ov.position = nil
             ov.bounds = nil
@@ -728,7 +1024,8 @@ extension Layer {
             break
         }
         if ov.transform == nil && ov.opacity == nil && ov.position == nil &&
-            ov.bounds == nil && ov.anchorPoint == nil && ov.cornerRadiusUniform == nil {
+            ov.bounds == nil && ov.anchorPoint == nil && ov.scrollOffset == nil &&
+            ov.cornerRadiusUniform == nil {
             presentation.override_ = nil
         } else {
             presentation.override_ = ov
@@ -771,7 +1068,9 @@ extension Layer {
             return
         }
         ov.transform = nil
-        if ov.opacity == nil && ov.position == nil && ov.bounds == nil && ov.anchorPoint == nil {
+        if ov.opacity == nil && ov.position == nil && ov.bounds == nil &&
+            ov.anchorPoint == nil && ov.scrollOffset == nil &&
+            ov.cornerRadiusUniform == nil {
             presentation.override_ = nil
         } else {
             presentation.override_ = ov
@@ -794,7 +1093,12 @@ private func copyVelocity(from existing: Animation, into next: inout Animation) 
             newSF.initialVelocity = old.velocity
             next = .springFrame(newSF)
         }
-    case .basic, .basicFrame:
+    case .springTransform(var newTransform):
+        if case .springTransform(let old) = existing, old.initialized {
+            newTransform.velocity = old.velocity
+            next = .springTransform(newTransform)
+        }
+    case .basic, .basicFrame, .basicTransform:
         break
     }
 }

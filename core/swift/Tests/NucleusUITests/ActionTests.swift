@@ -2,7 +2,7 @@
 import Testing
 
 @MainActor
-@Suite struct ActionTests {
+@Suite(.uiContext) struct ActionTests {
     @Test func setAndPerformActionCallsHandler() throws {
         let view = View()
         let action = ActionID(rawValue: 1)

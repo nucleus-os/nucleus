@@ -137,6 +137,20 @@ public struct Palette: Sendable, Equatable {
         return luma > 0.5
     }
 
+    public func increasedContrast() -> Palette {
+        var result = self
+        result.onPrimary = Color.highContrast(against: primary)
+        result.onSecondary = Color.highContrast(against: secondary)
+        result.onTertiary = Color.highContrast(against: tertiary)
+        result.onError = Color.highContrast(against: error)
+        result.onSurface = Color.highContrast(against: surface)
+        result.onSurfaceVariant =
+            Color.highContrast(against: surfaceVariant)
+        result.outline = result.onSurface.opacity(0.92)
+        result.onHover = Color.highContrast(against: hover)
+        return result
+    }
+
     /// Interpolate, for cross-fading between themes.
     public static func lerp(_ a: Palette, _ b: Palette, _ t: Double) -> Palette {
         let amount = Float(min(max(0, t), 1))
@@ -149,6 +163,17 @@ public struct Palette: Sendable, Equatable {
 }
 
 extension Color {
+    fileprivate static func highContrast(
+        against background: Color
+    ) -> Color {
+        let luminance = 0.2126 * background.r
+            + 0.7152 * background.g
+            + 0.0722 * background.b
+        return luminance > 0.45
+            ? Color(0, 0, 0, 1)
+            : Color(1, 1, 1, 1)
+    }
+
     /// Component-wise interpolation. Not gamma-correct — the reference's is not
     /// either, and a cross-fade between two nearby theme colours does not need
     /// it.

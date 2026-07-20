@@ -1,21 +1,26 @@
 import Testing
-import NucleusUI
+@testable import NucleusUI
 
 /// Scrolling, on the bounds-origin model. The scroll position *is* the clip
 /// view's bounds origin; nothing else moves.
 @MainActor
-@Suite struct ScrollViewTests {
+@Suite(.uiContext) struct ScrollViewTests {
     private func makeScrollView(
         viewport: Size = Size(width: 100, height: 100),
         content: Size = Size(width: 100, height: 400)
     ) -> ScrollView {
-        let scroll = ScrollView()
-        scroll.frame = Rect(origin: .zero, size: viewport)
-        let document = View()
-        document.frame = Rect(origin: .zero, size: content)
-        scroll.documentView = document
-        scroll.layoutIfNeeded()
-        return scroll
+        Application.withContexts(
+            uiContext: UIContext(),
+            visualContext: Application.makeInMemoryVisualContext()
+        ) {
+            let scroll = ScrollView()
+            scroll.frame = Rect(origin: .zero, size: viewport)
+            let document = View()
+            document.frame = Rect(origin: .zero, size: content)
+            scroll.documentView = document
+            scroll.layoutIfNeeded()
+            return scroll
+        }
     }
 
     // MARK: - The position
@@ -192,12 +197,149 @@ import NucleusUI
         scroll.indicators = .both
         #expect(scroll.horizontalIndicatorRect() != nil)
     }
+
+    @Test func continuousScrollStartsAndSamplesKineticMotionAtFrameTime() {
+        let scroll = makeScrollView(content: Size(width: 100, height: 2_000))
+        _ = scroll.handleEvent(Event(
+            type: .scrollWheel,
+            timestampNanoseconds: 100_000_000,
+            scrollDeltaY: 10,
+            scrollSource: .finger))
+        _ = scroll.handleEvent(Event(
+            type: .scrollWheel,
+            timestampNanoseconds: 200_000_000,
+            scrollDeltaY: 20,
+            scrollSource: .finger))
+        let atLift = scroll.contentOffset.y
+
+        #expect(scroll.handleEvent(Event(
+            type: .scrollWheel,
+            timestampNanoseconds: 200_000_000,
+            scrollSource: .finger,
+            scrollPhase: .ended)) == .handled)
+        #expect(scroll.interactionPhase == .decelerating)
+
+        _ = scroll.uiContext.advanceAnimations(
+            predictedPresentationNanoseconds: 200_000_000)
+        #expect(abs(scroll.contentOffset.y - atLift) < 0.001)
+        _ = scroll.uiContext.advanceAnimations(
+            predictedPresentationNanoseconds: 1_200_000_000)
+        #expect(scroll.contentOffset.y > atLift)
+        #expect(scroll.interactionPhase == .idle)
+    }
+
+    @Test func reducedMotionSuppressesKineticScrolling() {
+        let scroll = makeScrollView()
+        let oldEnvironment = scroll.uiContext.environment
+        var environment = oldEnvironment
+        environment.reducesMotion = true
+        scroll.uiContext.updateEnvironment(environment)
+        defer { scroll.uiContext.updateEnvironment(oldEnvironment) }
+
+        _ = scroll.handleEvent(Event(
+            type: .scrollWheel,
+            timestampNanoseconds: 100_000_000,
+            scrollDeltaY: 10,
+            scrollSource: .finger))
+        _ = scroll.handleEvent(Event(
+            type: .scrollWheel,
+            timestampNanoseconds: 200_000_000,
+            scrollDeltaY: 20,
+            scrollSource: .finger))
+        let atLift = scroll.contentOffset
+        #expect(scroll.handleEvent(Event(
+            type: .scrollWheel,
+            timestampNanoseconds: 200_000_000,
+            scrollSource: .finger,
+            scrollPhase: .ended)) == .notHandled)
+        #expect(scroll.contentOffset == atLift)
+        #expect(scroll.interactionPhase == .idle)
+    }
+
+    @Test func aNewInteractionCancelsKineticScrolling() {
+        let scroll = makeScrollView(content: Size(width: 100, height: 2_000))
+        _ = scroll.handleEvent(Event(
+            type: .scrollWheel,
+            timestampNanoseconds: 100_000_000,
+            scrollDeltaY: 10,
+            scrollSource: .finger))
+        _ = scroll.handleEvent(Event(
+            type: .scrollWheel,
+            timestampNanoseconds: 200_000_000,
+            scrollDeltaY: 20,
+            scrollSource: .finger))
+        _ = scroll.handleEvent(Event(
+            type: .scrollWheel,
+            timestampNanoseconds: 200_000_000,
+            scrollSource: .finger,
+            scrollPhase: .ended))
+        #expect(scroll.interactionPhase == .decelerating)
+
+        _ = scroll.handleEvent(Event(
+            type: .pointerDown,
+            location: Point(x: 20, y: 20),
+            timestampNanoseconds: 210_000_000))
+        #expect(scroll.interactionPhase == .dragging)
+        #expect(scroll.scrollVelocity == .zero)
+    }
+
+    @Test func pointerDraggingScrollsOppositeThePointer() {
+        let scroll = makeScrollView()
+        scroll.contentOffset.y = 100
+        _ = scroll.handleEvent(Event(
+            type: .pointerDown,
+            location: Point(x: 20, y: 50),
+            timestampNanoseconds: 100_000_000))
+        #expect(scroll.handleEvent(Event(
+            type: .pointerDragged,
+            location: Point(x: 20, y: 30),
+            timestampNanoseconds: 200_000_000)) == .handled)
+        #expect(scroll.contentOffset.y == 120)
+    }
+
+    @Test func retainedIndicatorSupportsThumbDragAndTrackPaging() {
+        let scroll = makeScrollView()
+        scroll.indicatorVisibilityPolicy = .always
+        scroll.layoutIfNeeded()
+        let thumb = scroll.verticalScrollIndicator.thumbRect
+        let start = Point(
+            x: thumb.origin.x + thumb.size.width / 2,
+            y: thumb.origin.y + thumb.size.height / 2)
+        _ = scroll.verticalScrollIndicator.handleEvent(Event(
+            type: .pointerDown, location: start))
+        _ = scroll.verticalScrollIndicator.handleEvent(Event(
+            type: .pointerDragged,
+            location: Point(x: start.x, y: 90)))
+        _ = scroll.verticalScrollIndicator.handleEvent(Event(
+            type: .pointerUp,
+            location: Point(x: start.x, y: 90)))
+        #expect(scroll.contentOffset.y > 0)
+
+        scroll.contentOffset = .zero
+        let belowThumb = Point(
+            x: start.x,
+            y: thumb.origin.y + thumb.size.height + 10)
+        _ = scroll.verticalScrollIndicator.handleEvent(Event(
+            type: .pointerDown, location: belowThumb))
+        #expect(scroll.contentOffset.y == 90)
+    }
+
+    @Test func scrollingDoesNotInvalidateDocumentPaint() {
+        let scroll = makeScrollView()
+        scroll.displayIfNeeded()
+        let document = scroll.documentView!
+        #expect(!document.needsDisplay)
+
+        scroll.contentOffset.y = 40
+        #expect(!document.needsDisplay)
+        #expect(!scroll.clipView.needsDisplay)
+    }
 }
 
 /// The virtualized list. Rows are recycled, which is what makes a list of ten
 /// thousand entries affordable.
 @MainActor
-@Suite struct ListViewTests {
+@Suite(.uiContext) struct ListViewTests {
     private func makeList(
         rows: Int, height: Double = 200
     ) -> (ListView, () -> Int) {
@@ -210,7 +352,7 @@ import NucleusUI
             return View()
         }
         list.layoutIfNeeded()
-        list.setRowCount(rows)
+        list.applySnapshot(try! CollectionSnapshot(ids: Array(0..<rows)))
         return (list, { built })
     }
 
@@ -243,7 +385,7 @@ import NucleusUI
     @Test func rowsAreConfiguredWithTheirIndex() {
         let (list, _) = makeList(rows: 50)
         var configured: [Int] = []
-        list.configureRow = { _, index in configured.append(index) }
+        list.configureRow = { _, _, index in configured.append(index) }
         list.reloadVisibleRows()
 
         #expect(!configured.isEmpty)
@@ -293,12 +435,12 @@ import NucleusUI
 
     @Test func selectingReportsTheRowUnderThePointer() {
         let (list, _) = makeList(rows: 1_000)
-        var selected: Int?
-        list.onSelectRow = { selected = $0 }
+        var selected: Set<CollectionItemID> = []
+        list.onSelectionChange = { selected = $0 }
 
         list.contentOffset = Point(x: 0, y: 400)
         list.dispatchEvent(Event(type: .pointerDown, location: Point(x: 5, y: 30)))
-        #expect(selected == 21)
+        #expect(selected == [CollectionItemID(21)])
     }
 
     @Test func scrollingARowIntoViewMovesTheMinimum() {
@@ -332,7 +474,7 @@ import NucleusUI
 
         var rowSelections = 0
         var buttonPresses = 0
-        list.onSelectRow = { _ in rowSelections += 1 }
+        list.onSelectionChange = { _ in rowSelections += 1 }
 
         // A button per row — one shared instance would be re-parented by each
         // `addSubview` and end up in the last row only.
@@ -344,7 +486,7 @@ import NucleusUI
             row.addSubview(button)
             return row
         }
-        list.setRowCount(100)
+        list.applySnapshot(try! CollectionSnapshot(ids: Array(0..<100)))
 
         // A plain part of a row, past the button, selects the row.
         list.dispatchEvent(Event(type: .pointerDown, location: Point(x: 80, y: 10)))
@@ -366,7 +508,7 @@ import NucleusUI
         let (list, _) = makeList(rows: 1_000)
         list.contentOffset = Point(x: 0, y: 15_000)
 
-        list.setRowCount(20)
+        list.applySnapshot(try! CollectionSnapshot(ids: Array(0..<20)))
         #expect(list.contentOffset.y == 200, "20 rows * 20pt - 200pt viewport")
         #expect(list.visibleRowRange().upperBound <= 20)
     }

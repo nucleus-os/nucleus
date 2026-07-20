@@ -4,15 +4,17 @@ import Testing
 
 /// Variable row heights, and rows that follow their item rather than their slot.
 @MainActor
-@Suite struct ListViewVariableHeightTests {
+@Suite(.uiContext) struct ListViewVariableHeightTests {
     /// Heights cycling 20 / 40 / 60, so an index is not derivable by division.
     private func makeList(rowCount: Int = 30) -> ListView {
         let list = ListView()
         list.frame = Rect(x: 0, y: 0, width: 200, height: 100)
         list.overscan = 0
         list.makeRow = { View() }
-        list.rowHeightProvider = { index in Double(20 + (index % 3) * 20) }
-        list.setRowCount(rowCount)
+        list.rowHeightProvider = { _, index in
+            Double(20 + (index % 3) * 20)
+        }
+        list.applySnapshot(try! CollectionSnapshot(ids: Array(0..<rowCount)))
         list.layoutIfNeeded()
         return list
     }
@@ -85,7 +87,7 @@ import Testing
         let list = makeList(rowCount: 3)
         #expect(list.contentHeight == 120)
 
-        list.rowHeightProvider = { _ in 10 }
+        list.rowHeightProvider = { _, _ in 10 }
         #expect(list.contentHeight == 30)
         #expect(list.offset(forRow: 2) == 20)
     }
@@ -107,8 +109,8 @@ import Testing
         let list = ListView()
         list.frame = Rect(x: 0, y: 0, width: 100, height: 100)
         list.makeRow = { View() }
-        list.rowHeightProvider = { index in index == 1 ? -50 : 20 }
-        list.setRowCount(3)
+        list.rowHeightProvider = { _, index in index == 1 ? -50 : 20 }
+        list.applySnapshot(try! CollectionSnapshot(ids: Array(0..<3)))
         #expect(list.contentHeight == 40)
         #expect(list.height(forRow: 1) == 0)
     }
@@ -124,10 +126,11 @@ import Testing
         list.rowHeight = 20
         list.overscan = 0
         list.makeRow = { View() }
-        list.rowKey = { index in items[index] }
         var configured: [String] = []
-        list.configureRow = { _, index in configured.append(items[index]) }
-        list.setRowCount(items.count)
+        list.configureRow = { _, _, index in
+            configured.append(items[index])
+        }
+        list.applySnapshot(try! CollectionSnapshot(ids: items))
         list.layoutIfNeeded()
 
         let viewForB = list.rowView(at: 1)
@@ -136,31 +139,39 @@ import Testing
 
         // Insert at the top: every item shifts down one slot.
         items.insert("z", at: 0)
-        list.setRowCount(items.count)
+        list.applySnapshot(try! CollectionSnapshot(ids: items))
         list.layoutIfNeeded()
 
         #expect(list.rowView(at: 2) === viewForB, "b's view moved with b")
         #expect(configured == ["z"], "only the new item was configured")
     }
 
-    /// Without keys the old behaviour stands: a view belongs to its position.
-    @Test func withoutKeysRowsBelongToPositions() {
-        var items = ["a", "b", "c"]
+    /// A revision changes content without discarding the retained row.
+    @Test func aChangedRevisionReconfiguresOnlyThatItem() {
         let list = ListView()
         list.frame = Rect(x: 0, y: 0, width: 100, height: 200)
         list.rowHeight = 20
         list.overscan = 0
         list.makeRow = { View() }
-        var configuredCount = 0
-        list.configureRow = { _, _ in configuredCount += 1 }
-        list.setRowCount(items.count)
+        var configured: [CollectionItemID] = []
+        list.configureRow = { _, item, _ in configured.append(item.id) }
+        list.applySnapshot(try! CollectionSnapshot(items: [
+            CollectionItem(id: "a"),
+            CollectionItem(id: "b"),
+            CollectionItem(id: "c"),
+        ]))
         list.layoutIfNeeded()
 
-        configuredCount = 0
-        items.insert("z", at: 0)
-        list.setRowCount(items.count)
+        let retained = list.rowView(forItemID: "b")
+        configured.removeAll()
+        list.applySnapshot(try! CollectionSnapshot(items: [
+            CollectionItem(id: "a"),
+            CollectionItem(id: "b", revision: 1),
+            CollectionItem(id: "c"),
+        ]))
         list.layoutIfNeeded()
-        #expect(configuredCount == items.count, "every row is reconfigured")
+        #expect(configured == [CollectionItemID("b")])
+        #expect(list.rowView(forItemID: "b") === retained)
     }
 
     /// An item that disappeared must not keep its view alive under its key.
@@ -171,13 +182,12 @@ import Testing
         list.rowHeight = 20
         list.overscan = 0
         list.makeRow = { View() }
-        list.rowKey = { index in items[index] }
-        list.configureRow = { _, _ in }
-        list.setRowCount(items.count)
+        list.configureRow = { _, _, _ in }
+        list.applySnapshot(try! CollectionSnapshot(ids: items))
         list.layoutIfNeeded()
 
         items = ["a"]
-        list.setRowCount(1)
+        list.applySnapshot(try! CollectionSnapshot(ids: items))
         list.layoutIfNeeded()
         #expect(list.materializedRowCount == 1)
     }

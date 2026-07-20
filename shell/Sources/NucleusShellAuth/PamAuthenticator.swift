@@ -219,8 +219,9 @@ public final class PamAuthenticator: LockAuthenticator {
             return readlink("/proc/self/exe", base, pointer.count - 1)
         }
         guard count > 0 else { return "nucleus-pam-helper" }
-        buffer[count] = 0
-        let executable = String(cString: buffer)
+        let executable = String(
+            decoding: buffer[..<count].map { UInt8(bitPattern: $0) },
+            as: UTF8.self)
         guard let slash = executable.lastIndex(of: "/") else { return "nucleus-pam-helper" }
         return String(executable[..<slash]) + "/nucleus-pam-helper"
     }

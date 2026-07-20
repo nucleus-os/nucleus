@@ -51,8 +51,9 @@ public struct ShellInputEvent: Sendable, Equatable {
     public var scrollDetentsX: Double = 0
     public var scrollDetentsY: Double = 0
     /// `axis_stop`: the finger lifted.
-    public var isScrollEnd: Bool = false
+    public var scrollEnded: Bool = false
     public var button: UInt32 = 0
+    public var activeButtonCodes: Set<UInt32> = []
     public var keycode: UInt32 = 0
     public var modifiers: ShellModifierState = ShellModifierState()
     public var text: String?
@@ -91,6 +92,9 @@ public final class ShellSeat {
     public private(set) var repeatDelayMs: Int32 = 600
 
     private let seat: OpaquePointer
+
+    /// Borrowed seat proxy used to create seat-scoped protocol extensions.
+    public var protocolSeat: OpaquePointer { seat }
     private var pointer: OpaquePointer?
     private var keyboard: OpaquePointer?
     // Retained for the proxies' lifetime: `addListener` borrows its owner.
@@ -117,6 +121,7 @@ public final class ShellSeat {
     private var lastPointerX: Double = 0
     private var lastPointerY: Double = 0
     private var pendingAxisSource: UInt32 = 0
+    private var pressedPointerButtons: Set<UInt32> = []
 
     /// The held key awaiting repeat, and when its next repeat is due.
     private var heldKeycode: UInt32?
@@ -367,6 +372,19 @@ public final class ShellSeat {
     }
 
     var currentAxisSource: UInt32 { pendingAxisSource }
+    var currentPointerButtons: Set<UInt32> { pressedPointerButtons }
+
+    func notePointerButton(_ button: UInt32, pressed: Bool) {
+        if pressed {
+            pressedPointerButtons.insert(button)
+        } else {
+            pressedPointerButtons.remove(button)
+        }
+    }
+
+    func clearPointerButtons() {
+        pressedPointerButtons.removeAll(keepingCapacity: true)
+    }
 
     /// Detents accumulate across `axis_value120` and are consumed by the `axis`
     /// event they belong to; the compositor sends both for one wheel movement.
@@ -458,6 +476,7 @@ final class ShellPointerListener: WlPointerEvents {
             event.surface = seat.currentPointerSurface
             event.x = surface_x
             event.y = surface_y
+            event.activeButtonCodes = seat.currentPointerButtons
             seat.emit(event)
         }
     }
@@ -470,6 +489,7 @@ final class ShellPointerListener: WlPointerEvents {
             var event = seat.makeEvent(.pointerLeave)
             event.surface = surfaceID
             seat.emit(event)
+            seat.clearPointerButtons()
             seat.notePointerSurface(0)
         }
     }
@@ -483,6 +503,7 @@ final class ShellPointerListener: WlPointerEvents {
             event.surface = seat.currentPointerSurface
             event.x = surface_x
             event.y = surface_y
+            event.activeButtonCodes = seat.currentPointerButtons
             seat.emit(event)
         }
     }
@@ -492,11 +513,13 @@ final class ShellPointerListener: WlPointerEvents {
     ) {
         MainActor.assumeIsolated {
             let pressed = state == UInt32(WL_POINTER_BUTTON_STATE_PRESSED.rawValue)
+            seat.notePointerButton(button, pressed: pressed)
             var event = seat.makeEvent(pressed ? .pointerButtonDown : .pointerButtonUp)
             event.surface = seat.currentPointerSurface
             event.button = button
             event.x = seat.pointerPosition.x
             event.y = seat.pointerPosition.y
+            event.activeButtonCodes = seat.currentPointerButtons
             seat.emit(event)
         }
     }
@@ -539,7 +562,7 @@ final class ShellPointerListener: WlPointerEvents {
             event.x = seat.pointerPosition.x
             event.y = seat.pointerPosition.y
             event.scrollSource = seat.currentAxisSource
-            event.isScrollEnd = true
+            event.scrollEnded = true
             seat.emit(event)
         }
     }

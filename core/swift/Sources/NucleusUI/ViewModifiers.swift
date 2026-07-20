@@ -318,7 +318,7 @@ extension Separator {
     }
 }
 
-extension ProgressBar {
+extension ProgressIndicator {
     @discardableResult
     public func progress(_ progress: Double) -> Self {
         self.progress = progress
@@ -326,7 +326,7 @@ extension ProgressBar {
     }
 
     @discardableResult
-    public func orientation(_ orientation: ProgressBar.Orientation) -> Self {
+    public func orientation(_ orientation: ProgressIndicator.Orientation) -> Self {
         self.orientation = orientation
         return self
     }

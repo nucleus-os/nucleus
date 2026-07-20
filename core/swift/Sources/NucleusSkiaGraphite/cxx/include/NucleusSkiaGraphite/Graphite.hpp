@@ -335,6 +335,11 @@ public:
     void clipRect(RectF rect, bool antialias) const;
     void clipRRect(RectF rect, RRectRadii radii, bool antialias) const;
     void clipPath(const Path &path, bool antialias) const;
+    /// Intersect with `path` after mapping it through `matrix`, without
+    /// changing the canvas CTM. This preserves the resulting clip after a
+    /// command-local transform has gone out of scope.
+    void clipPathTransformed(
+        const Path &path, const float matrix[9], bool antialias) const;
 
     // --- Transform ---
     /// Concatenate a row-major 3x3 matrix. `translate`/`scale`/`rotate` are all

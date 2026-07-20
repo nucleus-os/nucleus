@@ -2,7 +2,11 @@
 import Testing
 
 @MainActor
-@Suite struct ButtonTests {
+@Suite(.uiContext) struct ButtonTests {
+    init() {
+        installTestTextBackend()
+    }
+
     @Test func buttonKeepsSwiftSemanticTitle() throws {
         let button = Button(title: "Save")
         #expect(button.title == "Save")

@@ -9,7 +9,7 @@ import NucleusAppHostProtocols
 /// the registration — they ride the per-frame payload blob, because they change
 /// every frame while the program does not. That split is the reason this store
 /// exists rather than compiling at each draw.
-public final class RuntimeEffect: @unchecked Sendable {
+public final class RuntimeEffect: Sendable {
     public let handle: UInt64
 
     public init(handle: UInt64, retain: Bool = true) {

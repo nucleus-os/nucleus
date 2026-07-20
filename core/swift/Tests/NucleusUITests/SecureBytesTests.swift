@@ -4,7 +4,7 @@ import NucleusUI
 /// `SecureBytes` and the credential exit path. These exist because a Swift
 /// `String` cannot be scrubbed, so the guarantee has to live somewhere that can.
 @MainActor
-@Suite struct SecureBytesTests {
+@Suite(.uiContext) struct SecureBytesTests {
     @Test func bytesRoundTripFromAString() {
         let secret = SecureBytes(utf8: "hunter2")
         #expect(secret.count == 7)

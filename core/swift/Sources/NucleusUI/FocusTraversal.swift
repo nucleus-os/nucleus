@@ -78,12 +78,72 @@ extension Window {
     /// Move focus to the next tab stop, wrapping. Returns whether focus moved.
     @discardableResult
     public func advanceFocus(reverse: Bool = false) -> Bool {
-        guard let root else { return false }
+        guard let root = activeFocusScopeRoot ?? root else { return false }
         let current = firstResponder as? View
         guard let next = root.tabStop(after: current, reverse: reverse),
               next !== current
         else { return false }
         return makeFirstResponder(next)
+    }
+
+    /// Enter a modal focus scope, preserving the prior responder for restoration.
+    public func beginFocusScope(_ scope: View) {
+        guard let windowRoot = root,
+              scope === windowRoot || scope.isDescendant(of: windowRoot)
+        else {
+            preconditionFailure("focus scope must belong to this window")
+        }
+        scope.focusScopeBehavior = .modal
+        focusScopeRecords.append(FocusScopeRecord(
+            root: scope,
+            previousResponder: firstResponder,
+            previousFocusKey: focusedKey))
+        if let current = firstResponder as? View,
+           current === scope || current.isDescendant(of: scope)
+        {
+            return
+        }
+        _ = makeFirstResponder(scope.firstTabStop())
+    }
+
+    /// Leave this scope and any nested scopes, restoring stable focus.
+    public func endFocusScope(_ scope: View) {
+        guard let index = focusScopeRecords.lastIndex(where: {
+            $0.root === scope
+        }) else { return }
+        let record = focusScopeRecords[index]
+        focusScopeRecords.removeSubrange(index...)
+        scope.focusScopeBehavior = .none
+
+        if let responder = record.previousResponder,
+           responderBelongsToWindow(responder)
+        {
+            _ = makeFirstResponder(responder)
+        } else if let key = record.previousFocusKey {
+            _ = restoreFocus(toKey: key)
+        } else {
+            _ = makeFirstResponder(root?.firstTabStop())
+        }
+    }
+
+    package var activeFocusScopeRoot: View? {
+        while let last = focusScopeRecords.last, last.root == nil {
+            focusScopeRecords.removeLast()
+        }
+        return focusScopeRecords.last?.root
+    }
+
+    package func responderBelongsToActiveFocusScope(
+        _ responder: Responder
+    ) -> Bool {
+        guard let scope = activeFocusScopeRoot else { return true }
+        guard let view = responder as? View else { return false }
+        return view === scope || view.isDescendant(of: scope)
+    }
+
+    package func responderBelongsToWindow(_ responder: Responder) -> Bool {
+        guard let view = responder as? View, let root else { return false }
+        return view === root || view.isDescendant(of: root)
     }
 
     /// The focus key of whatever currently holds focus, to restore it later.
@@ -189,5 +249,27 @@ public final class RovingFocus {
         }
         setIndex(target)
         return .handled
+    }
+}
+public enum FocusScopeBehavior: Sendable, Equatable {
+    case none
+    case group
+    case modal
+}
+
+@MainActor
+package final class FocusScopeRecord {
+    package weak var root: View?
+    package weak var previousResponder: Responder?
+    package let previousFocusKey: String?
+
+    package init(
+        root: View,
+        previousResponder: Responder?,
+        previousFocusKey: String?
+    ) {
+        self.root = root
+        self.previousResponder = previousResponder
+        self.previousFocusKey = previousFocusKey
     }
 }

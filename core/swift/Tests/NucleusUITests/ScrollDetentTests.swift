@@ -8,7 +8,7 @@ import Testing
 /// must mean the same thing from a ratcheted wheel, a free-spinning
 /// high-resolution one, or a touchpad. Conflating the two is what makes shell
 /// widgets feel wrong.
-@Suite struct ScrollDetentTests {
+@Suite(.uiContext) struct ScrollDetentTests {
     // MARK: - Whole detents
 
     /// A ratcheted wheel: one event, one notch.
@@ -144,7 +144,7 @@ import Testing
 
 /// `ScrollView` against the two device kinds.
 @MainActor
-@Suite struct ScrollViewDeviceTests {
+@Suite(.uiContext) struct ScrollViewDeviceTests {
     private func makeScrollView() -> ScrollView {
         let scrollView = ScrollView()
         scrollView.frame = Rect(x: 0, y: 0, width: 100, height: 100)

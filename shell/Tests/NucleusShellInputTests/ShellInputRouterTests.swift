@@ -1,5 +1,7 @@
 import Testing
 import NucleusUI
+import NucleusUIEmbedder
+@_spi(NucleusCompositor) import NucleusLayers
 import NucleusShellWayland
 @testable import NucleusShellInput
 
@@ -9,7 +11,7 @@ import NucleusShellWayland
 /// framework's platform-neutral vocabulary on the other; these pin the mapping
 /// between them.
 @MainActor
-@Suite struct ShellInputRouterTests {
+@Suite(.uiContext) struct ShellInputRouterTests {
     private func pointerEvent(
         _ kind: ShellInputEventKind, x: Double = 0, y: Double = 0, button: UInt32 = 272
     ) -> ShellInputEvent {
@@ -45,6 +47,15 @@ import NucleusShellWayland
         let event = try #require(translate(pointerEvent(.pointerMotion, x: 12, y: 34)))
         #expect(event.type == .pointerMoved)
         #expect(event.location == Point(x: 12, y: 34))
+    }
+
+    @Test func pointerMotionWithPressedButtonsBecomesADrag() throws {
+        var wayland = pointerEvent(.pointerMotion, x: 12, y: 34)
+        wayland.activeButtonCodes = [272, 274]
+        let event = try #require(translate(wayland))
+        #expect(event.type == .pointerDragged)
+        #expect(event.activeButtons == [.left, .middle])
+        #expect(event.pointerTool == .mouse)
     }
 
     @Test func evdevButtonsMapOntoTheNamedButtons() {
@@ -101,10 +112,10 @@ import NucleusShellWayland
     /// kinetic scrolling starts it here.
     @Test func axisStopMarksTheEndOfAGesture() throws {
         var wayland = pointerEvent(.pointerAxis)
-        wayland.isScrollEnd = true
+        wayland.scrollEnded = true
 
         let event = try #require(translate(wayland))
-        #expect(event.isScrollEnd)
+        #expect(event.scrollPhase == .ended)
     }
 
     @Test func everyAxisSourceMaps() {
@@ -208,12 +219,15 @@ import NucleusShellWayland
     /// Keyboard focus arriving at a surface makes its window key. Without it no
     /// first responder would ever receive a key.
     @Test func keyboardEnterMakesTheSurfacesWindowKey() {
-        let scene = WindowScene(windows: [])
-        let window = Window(title: "Bar")
-        let view = RecordingView()
-        view.frame = Rect(x: 0, y: 0, width: 100, height: 40)
-        window.setContentView(view)
-        window.orderFront()
+        let scene = WindowScene(inMemoryWindows: [])
+        let (window, _) = scene.uiContext.construct {
+            let window = Window(title: "Bar")
+            let view = RecordingView()
+            view.frame = Rect(x: 0, y: 0, width: 100, height: 40)
+            window.setContentView(view)
+            window.orderFront()
+            return (window, view)
+        }
         scene.addWindow(window)
 
         // Real seats come from a live Wayland connection, so drive the router's
@@ -235,12 +249,15 @@ import NucleusShellWayland
     /// Events for a surface the router does not own are ignored rather than
     /// misrouted onto whatever window happens to be first.
     @Test func anUnknownSurfaceIsIgnored() {
-        let scene = WindowScene(windows: [])
-        let window = Window(title: "Bar")
-        let view = RecordingView()
-        view.frame = Rect(x: 0, y: 0, width: 100, height: 40)
-        window.setContentView(view)
-        window.orderFront()
+        let scene = WindowScene(inMemoryWindows: [])
+        let (window, _) = scene.uiContext.construct {
+            let window = Window(title: "Bar")
+            let view = RecordingView()
+            view.frame = Rect(x: 0, y: 0, width: 100, height: 40)
+            window.setContentView(view)
+            window.orderFront()
+            return (window, view)
+        }
         scene.addWindow(window)
 
         let router = ShellInputRouter(scene: scene, seat: nil)
@@ -260,13 +277,16 @@ import NucleusShellWayland
     /// without rebasing every hit test misses by the window's origin. This is
     /// exactly the lock screen's situation.
     @Test func pointerEventsRebaseOntoAWindowAwayFromTheOrigin() {
-        let scene = WindowScene(windows: [])
-        let window = Window(title: "Lock")
-        let view = RecordingView()
-        view.frame = Rect(x: 0, y: 0, width: 800, height: 600)
-        window.setContentView(view)
-        window.setFrame(Rect(x: 0, y: 1_000_000, width: 800, height: 600))
-        window.orderFront()
+        let scene = WindowScene(inMemoryWindows: [])
+        let (window, view) = scene.uiContext.construct {
+            let window = Window(title: "Lock")
+            let view = RecordingView()
+            view.frame = Rect(x: 0, y: 0, width: 800, height: 600)
+            window.setContentView(view)
+            window.setFrame(Rect(x: 0, y: 1_000_000, width: 800, height: 600))
+            window.orderFront()
+            return (window, view)
+        }
         scene.addWindow(window)
 
         let router = ShellInputRouter(scene: scene, seat: nil)
@@ -288,13 +308,16 @@ import NucleusShellWayland
     /// An unregistered surface is left alone rather than rebased onto some other
     /// window's origin.
     @Test func anUnregisteredSurfacesPointerIsNotRebased() {
-        let scene = WindowScene(windows: [])
-        let window = Window(title: "Lock")
-        let view = RecordingView()
-        view.frame = Rect(x: 0, y: 0, width: 800, height: 600)
-        window.setContentView(view)
-        window.setFrame(Rect(x: 0, y: 1_000_000, width: 800, height: 600))
-        window.orderFront()
+        let scene = WindowScene(inMemoryWindows: [])
+        let (window, view) = scene.uiContext.construct {
+            let window = Window(title: "Lock")
+            let view = RecordingView()
+            view.frame = Rect(x: 0, y: 0, width: 800, height: 600)
+            window.setContentView(view)
+            window.setFrame(Rect(x: 0, y: 1_000_000, width: 800, height: 600))
+            window.orderFront()
+            return (window, view)
+        }
         scene.addWindow(window)
 
         let router = ShellInputRouter(scene: scene, seat: nil)
@@ -312,12 +335,15 @@ import NucleusShellWayland
     }
 
     @Test func pointerEventsReachAViewThroughTheScene() {
-        let scene = WindowScene(windows: [])
-        let window = Window(title: "Bar")
-        let view = RecordingView()
-        view.frame = Rect(x: 0, y: 0, width: 100, height: 40)
-        window.setContentView(view)
-        window.orderFront()
+        let scene = WindowScene(inMemoryWindows: [])
+        let (window, view) = scene.uiContext.construct {
+            let window = Window(title: "Bar")
+            let view = RecordingView()
+            view.frame = Rect(x: 0, y: 0, width: 100, height: 40)
+            window.setContentView(view)
+            window.orderFront()
+            return (window, view)
+        }
         scene.addWindow(window)
 
         let router = ShellInputRouter(scene: scene, seat: nil)
@@ -326,5 +352,47 @@ import NucleusShellWayland
 
         #expect(view.received.contains(.pointerDown))
         withExtendedLifetime(window) {}
+    }
+
+    @Test func waylandClientAdapterPublishesMutatesAndTearsDownOneScene()
+        throws
+    {
+        installStubHost()
+        let sink = InMemoryCommitSink()
+        let publication = try WindowScenePublicationContext(
+            visualContextID: ContextID(rawValue: 8_701),
+            commitSink: sink)
+        let (window, view) = publication.withSemanticContext {
+            let window = Window(title: "Wayland client")
+            let view = RecordingView()
+            view.frame = Rect(x: 0, y: 0, width: 100, height: 40)
+            view.backgroundColor = Color(0.2, 0.3, 0.4, 1)
+            window.setContentView(view)
+            window.orderFront()
+            return (window, view)
+        }
+        let scene = publication.makeWindowScene(windows: [window])
+        let router = ShellInputRouter(scene: scene, seat: nil)
+        router.register(window: window, forSurface: 42)
+
+        _ = try scene.publish()
+        let firstLayerCount = publication.visualContext.layers.count
+        #expect(firstLayerCount >= 2)
+        var press = pointerEvent(.pointerButtonDown, x: 10, y: 10)
+        press.surface = 42
+        router.deliver(press)
+        #expect(view.received.contains(.pointerDown))
+
+        view.alphaValue = 0.5
+        _ = try scene.publish()
+        #expect(sink.transactions.last?.propertyUpdates.contains {
+            $0.properties.opacity == 0.5
+        } == true)
+
+        router.unregister(surfaceID: 42)
+        try scene.disconnect()
+        #expect(scene.windows.isEmpty)
+        #expect(publication.visualContext.layers.isEmpty)
+        #expect(sink.transactions.last?.removed.isEmpty == false)
     }
 }

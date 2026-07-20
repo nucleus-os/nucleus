@@ -2,7 +2,7 @@ import Testing
 import NucleusUI
 
 /// The palette model: roles, specs, and the repaint path a retheme needs.
-@Suite struct PaletteValueTests {
+@Suite(.uiContext) struct PaletteValueTests {
     @Test func rolesRoundTripThroughTheirTokens() {
         for role in ColorRole.allCases {
             #expect(ColorRole(token: role.token) == role)
@@ -94,13 +94,13 @@ import NucleusUI
 
 /// Palette inheritance and the repaint that a change has to cause.
 @MainActor
-@Suite struct PaletteViewTests {
+@Suite(.uiContext) struct PaletteViewTests {
     private func makeScene(root: View) -> WindowScene {
         root.frame = Rect(x: 0, y: 0, width: 100, height: 100)
         let window = Window(title: "Scene")
         window.setContentView(root)
         window.orderFront()
-        let scene = WindowScene(windows: [window])
+        let scene = WindowScene(inMemoryWindows: [window])
         scene.makeKey(window)
         return scene
     }
@@ -153,6 +153,8 @@ import NucleusUI
     @Test func rethemingTheSceneRepaintsTheTree() {
         let root = View()
         let child = View()
+        root.frame = Rect(x: 0, y: 0, width: 100, height: 100)
+        child.frame = Rect(x: 0, y: 0, width: 40, height: 40)
         root.addSubview(child)
         let scene = makeScene(root: root)
 
@@ -168,6 +170,8 @@ import NucleusUI
     @Test func assigningAViewPaletteRepaintsItsSubtree() {
         let root = View()
         let child = View()
+        root.frame = Rect(x: 0, y: 0, width: 100, height: 100)
+        child.frame = Rect(x: 0, y: 0, width: 40, height: 40)
         root.addSubview(child)
         root.displayIfNeeded()
         child.displayIfNeeded()
@@ -210,6 +214,8 @@ import NucleusUI
     @Test func changingTheAppearanceRepaints() {
         let root = View()
         let child = View()
+        root.frame = Rect(x: 0, y: 0, width: 100, height: 100)
+        child.frame = Rect(x: 0, y: 0, width: 40, height: 40)
         root.addSubview(child)
         root.displayIfNeeded()
         child.displayIfNeeded()

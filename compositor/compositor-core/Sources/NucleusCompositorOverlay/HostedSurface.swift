@@ -23,25 +23,32 @@ import typealias NucleusLayers.GeometryRect
 public final class HostedSurface: ~Sendable {
     public let surfaceID: Int
     public let rootView: View
+    public let visualRootLayer: Layer
     public var role: WindowRole
     public var level: WindowLevel
     public private(set) var frame: Rect?
     public private(set) var commitsFrameUpdates: Bool = false
     public private(set) var hasCommittedContent: Bool = false
+    private var visualRootWasCreated = false
 
     public init(
         surfaceID: Int,
         context: Context,
-        role: WindowRole = .hostedSurface,
+        uiContext: UIContext,
+        role: WindowRole = .hostedContent,
         level: WindowLevel = .normal,
         frame: Rect? = nil
     ) {
         self.surfaceID = surfaceID
         self.role = role
         self.level = level
-        self.rootView = EmbedderApplication.withContext(context) {
+        self.rootView = EmbedderApplication.withContexts(
+            uiContext: uiContext,
+            visualContext: context
+        ) {
             View()
         }
+        self.visualRootLayer = context.makeLayer()
         if let frame {
             updateFrame(frame)
         }
@@ -58,10 +65,12 @@ public final class HostedSurface: ~Sendable {
     public func detach() throws(UIError) {
         hasCommittedContent = false
         commitsFrameUpdates = false
-        var transaction = LayerTransaction(context: rootView.embedderBackingLayer.context)
+        guard visualRootWasCreated else { return }
+        var transaction = LayerTransaction(context: visualRootLayer.context)
         do {
-            try transaction.remove(rootView.embedderBackingLayer)
+            try transaction.remove(visualRootLayer)
             try transaction.commit()
+            visualRootWasCreated = false
         } catch {
             transaction.abort()
             throw UIError.invalidArgument(detail: String(describing: error))
@@ -76,7 +85,7 @@ public final class HostedSurface: ~Sendable {
             width: frame.size.width,
             height: frame.size.height
         ))
-        rootView.embedderBackingLayer.applyProperties(
+        visualRootLayer.applyProperties(
             update, ambient: commitsFrameUpdates)
     }
 }
@@ -84,19 +93,25 @@ public final class HostedSurface: ~Sendable {
 @MainActor
 public final class HostedSurfaceRegistry<Identifier: Hashable>: ~Sendable {
     private let context: Context
+    private let uiContext: UIContext
     private var records: [Identifier: HostedSurface] = [:]
     private var order: [Identifier] = []
     private var nextSurfaceID: Int
 
-    public init(context: Context, firstSurfaceID: Int = 1) {
+    public init(
+        context: Context,
+        uiContext: UIContext,
+        firstSurfaceID: Int = 1
+    ) {
         self.context = context
+        self.uiContext = uiContext
         self.nextSurfaceID = firstSurfaceID
     }
 
     public func surface(
         for identifier: Identifier,
         frame: Rect? = nil,
-        role: WindowRole = .hostedSurface,
+        role: WindowRole = .hostedContent,
         level: WindowLevel = .normal
     ) -> HostedSurface {
         if let surface = records[identifier] {
@@ -110,6 +125,7 @@ public final class HostedSurfaceRegistry<Identifier: Hashable>: ~Sendable {
         let surface = HostedSurface(
             surfaceID: nextSurfaceID,
             context: context,
+            uiContext: uiContext,
             role: role,
             level: level,
             frame: frame
@@ -153,7 +169,7 @@ public final class HostedSurfaceRegistry<Identifier: Hashable>: ~Sendable {
             }
             return ScenePlacement(
                 id: UInt64(surface.surfaceID),
-                rootLayerID: surface.rootView.embedderBackingLayer.id.rawValue,
+                rootLayerID: surface.visualRootLayer.id.rawValue,
                 level: surface.level,
                 visible: surface.hasCommittedContent
             )
@@ -170,7 +186,13 @@ public final class HostedSurfaceRegistry<Identifier: Hashable>: ~Sendable {
     ) throws -> Result {
         let parentLayer = try scene.attachedRootLayer()
         let index = scene.sublayerIndex(forLevel: surface.level)
-        let result = try attach(surface.rootView, surface.surfaceID, parentLayer, index)
+        try surface.attachVisualRoot(to: parentLayer, at: index)
+        let result = try attach(
+            surface.rootView,
+            surface.surfaceID,
+            surface.visualRootLayer,
+            0
+        )
         surface.markCommittedContent()
         surface.beginCommittedFrameUpdates()
         return result
@@ -193,12 +215,38 @@ public final class HostedSurfaceRegistry<Identifier: Hashable>: ~Sendable {
             parentLayer = resolvedParent
             let baseIndex = scene.sublayerIndex(forLevel: surface.level)
             let levelOffset = attachedAtLevel[surface.level] ?? 0
-            try attach(surface.rootView, surface.surfaceID, resolvedParent, baseIndex + levelOffset)
+            try surface.attachVisualRoot(
+                to: resolvedParent,
+                at: baseIndex + levelOffset
+            )
+            try attach(
+                surface.rootView,
+                surface.surfaceID,
+                surface.visualRootLayer,
+                0
+            )
             attachedAtLevel[surface.level] = levelOffset + 1
             surface.markCommittedContent()
             surface.beginCommittedFrameUpdates()
             didAttach = true
         }
         return didAttach
+    }
+}
+
+private extension HostedSurface {
+    func attachVisualRoot(to parent: Layer, at index: UInt32) throws(UIError) {
+        var transaction = LayerTransaction(context: visualRootLayer.context)
+        do {
+            if !visualRootWasCreated {
+                try transaction.createExisting(visualRootLayer)
+            }
+            try transaction.insert(visualRootLayer, into: parent, at: index)
+            try transaction.commit()
+            visualRootWasCreated = true
+        } catch {
+            transaction.abort()
+            throw UIError.invalidArgument(detail: String(describing: error))
+        }
     }
 }

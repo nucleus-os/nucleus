@@ -9,7 +9,7 @@ import NucleusUI
 /// needs `NucleusUIEmbedder` — layout state is product-tier, readable through
 /// `frame` and `measure(_:)`.
 @MainActor
-@Suite struct ShellNoticeViewTests {
+@Suite(.uiContext) struct ShellNoticeViewTests {
     // MARK: - Wrapped text
 
     /// Wrapped text participating in layout, which is what two-phase measurement

@@ -138,11 +138,16 @@ public struct LayerPropertyUpdate: Sendable {
     public var visualStyle: VisualStyleDelta = .unchanged
     public var shadow: ShadowDelta = .unchanged
     public var content: ContentDelta = .unchanged
+    /// Layer-local logical damage for a paint replacement. `nil` means the
+    /// replacement affects the complete layer bounds.
+    public var contentDamage: Rect?
     public var backdropAttachment: BackdropAttachment??
     public var contentSample: ContentSample?
     public var backgroundEffect: Bool?
     public var backgroundEffectRegions: BackgroundEffectRegions?
     public var frame: Frame?
+    public var usesDefaultFrameAction = false
+    public var usesDefaultOpacityAction = false
 
     public init(nodeId: UInt64) { self.nodeId = nodeId }
 }
@@ -160,6 +165,10 @@ public struct Transaction: Sendable {
     public var removed: [LayerRemoved] = []
     public var detached: [LayerDetached] = []
     public var propertyUpdates: [LayerPropertyUpdate] = []
+    public var animationsAdded: [AnimationRecord] = []
+    public var animationsRemoved: [AnimationRemoval] = []
+    public var animationBeginTimeSeconds: Double = 0
+    public var animationBeginTimePending = false
     /// Completion token fired once every animation created by this transaction
     /// finishes. `0` = none. Carried for queue coalescing; the animation
     /// completion machinery co-lands with the renderer move (10b). Mirrors
@@ -172,7 +181,9 @@ public struct Transaction: Sendable {
     /// (minus the animation/fence terms excluded from this port).
     public var isEmpty: Bool {
         created.isEmpty && inserted.isEmpty && removed.isEmpty &&
-            detached.isEmpty && propertyUpdates.isEmpty && completionToken == 0
+            detached.isEmpty && propertyUpdates.isEmpty &&
+            animationsAdded.isEmpty && animationsRemoved.isEmpty &&
+            completionToken == 0
     }
 }
 
@@ -302,18 +313,23 @@ public enum TransactionApplier: Sendable {
             node.model.properties.clip = created.clip
             node.model.properties.bounds = created.bounds
             node.model.visualStyle = created.visualStyle
-            if boundsChanged { node.model.visualRevision &+= 1 }
+            if boundsChanged {
+                node.model.visualRevision &+= 1
+                node.model.compositeRevision &+= 1
+            }
             if case .none = initialContent {
                 // No content supplied; leave existing content untouched.
             } else {
                 node.model.content = initialContent
                 node.presentation.content = initialContent
-                node.damage.flags.content = true
+                node.damage.markContent(nil)
             }
             node.damage.flags.structure = true
             if boundsChanged {
                 node.damage.flags.backingReallocate = true
-                if case .paint = node.model.content { node.damage.flags.content = true }
+                if case .paint = node.model.content {
+                    node.damage.markContent(nil)
+                }
             }
             tree.layers[id] = node
         } else {
@@ -330,7 +346,9 @@ public enum TransactionApplier: Sendable {
             node.model.visualStyle = created.visualStyle
             node.model.content = initialContent
             node.presentation.content = initialContent
-            node.damage.flags.content = hasPaint
+            if hasPaint {
+                node.damage.markContent(nil)
+            }
             node.damage.flags.structure = true
             tree.insertLayer(node)
         }
@@ -339,6 +357,13 @@ public enum TransactionApplier: Sendable {
     // MARK: Property update
 
     private static func applyPropertyUpdate(_ pu: LayerPropertyUpdate, to node: inout Layer) {
+        let priorProperties = node.model.properties
+        let priorVisualStyle = node.model.visualStyle
+        let priorBackdropAttachment = node.backdropAttachment
+        let priorContentSample = node.presentation.contentSample
+        let priorBackgroundEffect = node.presentation.backgroundEffect
+        let priorBackgroundEffectRegions =
+            node.presentation.backgroundEffectRegions
         if let p = pu.position { node.model.properties.position = p }
         if let a = pu.anchorPoint { node.model.properties.anchorPoint = a }
         if let t = pu.transform { node.model.properties.transform = t }
@@ -351,14 +376,13 @@ public enum TransactionApplier: Sendable {
         if let b = pu.bounds {
             if b.w != node.model.properties.bounds.w || b.h != node.model.properties.bounds.h {
                 node.model.properties.bounds = b
-                node.model.visualRevision &+= 1
                 if node.model.properties.clip != nil {
                     node.model.properties.clip!.rect.2 = b.w
                     node.model.properties.clip!.rect.3 = b.h
                 }
                 if case .paint = node.model.content {
                     node.damage.flags.backingReallocate = true
-                    node.damage.flags.content = true
+                    node.damage.markContent(nil)
                 }
             }
         }
@@ -366,11 +390,14 @@ public enum TransactionApplier: Sendable {
 
         applyVisualStyleDelta(pu.visualStyle, to: &node)
         applyShadowDelta(pu.shadow, to: &node)
-        applyContentDelta(pu.content, to: &node)
+        applyContentDelta(
+            pu.content,
+            localDamage: pu.contentDamage,
+            to: &node)
 
         if let sample = pu.contentSample {
             node.presentation.contentSample = sample
-            node.damage.flags.content = true
+            node.damage.markContent(nil)
         } else if case .none = pu.content {
             node.presentation.contentSample = ContentSample()
         }
@@ -379,7 +406,20 @@ public enum TransactionApplier: Sendable {
             applyFrame(f, to: &node)
         }
 
-        node.damage.flags.property = true
+        let compositeChanged =
+            node.model.properties != priorProperties
+                || node.model.visualStyle != priorVisualStyle
+                || node.backdropAttachment != priorBackdropAttachment
+                || node.presentation.contentSample != priorContentSample
+                || node.presentation.backgroundEffect
+                    != priorBackgroundEffect
+                || node.presentation.backgroundEffectRegions
+                    != priorBackgroundEffectRegions
+        if compositeChanged {
+            node.model.visualRevision &+= 1
+            node.model.compositeRevision &+= 1
+            node.damage.flags.property = true
+        }
     }
 
     /// Visual-style delta: a `.set` equal to the current style is suppressed (no
@@ -390,16 +430,13 @@ public enum TransactionApplier: Sendable {
             if let current = node.model.visualStyle {
                 if current != style {
                     node.model.visualStyle = style
-                    node.model.visualRevision &+= 1
                 }
             } else {
                 node.model.visualStyle = style
-                node.model.visualRevision &+= 1
             }
         case .clear:
             if node.model.visualStyle != nil {
                 node.model.visualStyle = nil
-                node.model.visualRevision &+= 1
             }
         case .unchanged:
             break
@@ -417,18 +454,15 @@ public enum TransactionApplier: Sendable {
                 let same = node.model.visualStyle!.shadow == newShadow
                 if !same {
                     node.model.visualStyle!.shadow = newShadow
-                    node.model.visualRevision &+= 1
                 }
             } else {
                 var style = VisualStyle()
                 style.shadow = newShadow
                 node.model.visualStyle = style
-                node.model.visualRevision &+= 1
             }
         case .clear:
             if node.model.visualStyle != nil, node.model.visualStyle!.shadow != nil {
                 node.model.visualStyle!.shadow = nil
-                node.model.visualRevision &+= 1
             }
         case .unchanged:
             break
@@ -439,14 +473,18 @@ public enum TransactionApplier: Sendable {
     /// mirror in lockstep. External/snapshot rebinds to the same handle are
     /// suppressed; paint always replaces. Mirrors the `pu.content` switch (minus
     /// the refcount retain/release, which is renderer-owned).
-    private static func applyContentDelta(_ delta: ContentDelta, to node: inout Layer) {
+    private static func applyContentDelta(
+        _ delta: ContentDelta,
+        localDamage: Rect?,
+        to node: inout Layer
+    ) {
         switch delta {
         case .paint(let handle):
             if !handle.isNone {
                 node.model.content = .paint(handle)
                 node.presentation.content = .paint(handle)
                 node.model.visualRevision &+= 1
-                node.damage.flags.content = true
+                node.damage.markContent(localDamage)
             }
         case .external(let newId):
             let same: Bool = { if case .external(let cur) = node.model.content { return cur == newId }; return false }()
@@ -454,7 +492,7 @@ public enum TransactionApplier: Sendable {
                 node.model.content = .external(newId)
                 node.presentation.content = .external(newId)
                 node.model.visualRevision &+= 1
-                node.damage.flags.content = true
+                node.damage.markContent(nil)
             }
         case .snapshot(let handle):
             let same: Bool = { if case .snapshot(let cur) = node.model.content { return cur == handle }; return false }()
@@ -462,7 +500,7 @@ public enum TransactionApplier: Sendable {
                 node.model.content = .snapshot(handle)
                 node.presentation.content = .snapshot(handle)
                 node.model.visualRevision &+= 1
-                node.damage.flags.content = true
+                node.damage.markContent(nil)
             }
         case .none:
             if case .none = node.model.content {
@@ -488,14 +526,13 @@ public enum TransactionApplier: Sendable {
         node.model.properties.position = newPosition
         node.model.properties.bounds = newBounds
         if boundsChanged {
-            node.model.visualRevision &+= 1
             if node.model.properties.clip != nil {
                 node.model.properties.clip!.rect.2 = newBounds.w
                 node.model.properties.clip!.rect.3 = newBounds.h
             }
             if case .paint = node.model.content {
                 node.damage.flags.backingReallocate = true
-                node.damage.flags.content = true
+                node.damage.markContent(nil)
             }
         }
     }

@@ -8,6 +8,7 @@ extension Host {
     @_spi(NucleusCompositor) public func attachSurface(
         rootView: View,
         surfaceID: Int = 1,
+        visualContext: Context,
         parentLayer: Layer? = nil,
         backingScaleFactor: BackingScaleFactor = .one,
         at index: UInt32 = UInt32.max
@@ -15,7 +16,13 @@ extension Host {
         guard let consumer = mountConsumer else {
             return ViewComponentViewRegistry()
         }
-        let renderContext = rootView.embedderBackingLayer.context
+        let renderContext = parentLayer?.context ?? visualContext
+        precondition(
+            parentLayer == nil || parentLayer?.context === visualContext,
+            "the explicit visual context must own the parent layer")
+        let publisher = surfacePublishers[surfaceID] ??
+            EmbeddedViewTreePublisher(visualContext: renderContext)
+        surfacePublishers[surfaceID] = publisher
         let environment = ReactSurfaceEnvironment(backingScaleFactor: backingScaleFactor)
         let registry = surfaceRegistries[surfaceID] ?? ViewComponentViewRegistry()
         surfaceRegistries[surfaceID] = registry
@@ -33,12 +40,12 @@ extension Host {
             )
         }
 
-        // The materialize callback runs after each batch is applied.
-        // For the initial registration flush, errors are captured here
-        // and re-thrown so the caller's `try` sees them — mirroring the
-        // previous synchronous shape. Errors thrown during later
-        // transactions have no caller to throw to and are dropped.
+        // The materialize callback runs after each batch is applied. The
+        // initial registration flush rethrows to this call site. A later batch
+        // has no synchronous caller, so its failure is retained on `Host` and
+        // delivered through the host's diagnostic callback.
         var thrownError: Error?
+        var initialAttachInProgress = true
         surfaceContext.onMaterialize = { [weak self] registry in
             guard let self else { return }
             do {
@@ -48,29 +55,33 @@ extension Host {
                     parentLayer: parentLayer,
                     insertionIndex: index,
                     registry: registry,
-                    renderContext: renderContext,
+                    publisher: publisher,
                     environment: environment
                 )
+                self.clearPublicationFailure(surfaceID: surfaceID)
             } catch {
-                thrownError = error
+                if initialAttachInProgress {
+                    thrownError = error
+                } else {
+                    self.recordPublicationFailure(
+                        surfaceID: surfaceID,
+                        error: error)
+                }
             }
         }
 
-        EmbedderApplication.withContext(renderContext) {
+        EmbedderApplication.withContexts(
+            uiContext: rootView.embedderUIContext,
+            visualContext: renderContext
+        ) {
             consumer.registerContext(surfaceContext)
         }
+        initialAttachInProgress = false
 
         if let error = thrownError {
             throw error
         }
         return registry
-    }
-
-    @MainActor
-    package func detachSurface(surfaceID: Int) {
-        mountConsumer?.unregisterContext(surfaceID: surfaceID)
-        surfaceRegistries.removeValue(forKey: surfaceID)
-        attachedSurfaceIDs.remove(surfaceID)
     }
 
     @MainActor
@@ -80,27 +91,19 @@ extension Host {
         parentLayer: Layer?,
         insertionIndex: UInt32,
         registry: ViewComponentViewRegistry,
-        renderContext: Context,
+        publisher: EmbeddedViewTreePublisher,
         environment: ReactSurfaceEnvironment
     ) throws {
         for component in registry.components where component.view !== rootView {
             component.updateEnvironment(environment)
         }
 
-        if !attachedSurfaceIDs.contains(surfaceID) {
-            var transaction = LayerTransaction(context: renderContext)
-            try transaction.createExisting(rootView.embedderBackingLayer)
-            for component in registry.components where component.view !== rootView {
-                try transaction.createExisting(component.view.embedderBackingLayer)
-            }
-            try transaction.insert(rootView.embedderBackingLayer, into: parentLayer, at: insertionIndex)
-            try transaction.commit()
-            attachedSurfaceIDs.insert(surfaceID)
-        }
-
-        for component in registry.components {
-            try component.commitDisplayContentIfNeeded()
-        }
-        try LayerTransaction.flushImplicit(in: renderContext)
+        _ = registry
+        try publisher.publish(
+            rootView: rootView,
+            into: parentLayer,
+            at: insertionIndex
+        )
+        attachedSurfaceIDs.insert(surfaceID)
     }
 }

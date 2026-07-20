@@ -68,9 +68,37 @@ public struct InvalidationFlags: Equatable, Sendable {
 /// Per-node damage state. Mirrors `DamageState`.
 public struct DamageState: Equatable, Sendable {
     public var flags = InvalidationFlags()
+    /// Union of layer-local logical paint damage since the last presented
+    /// frame. `nil` while `flags.content` is true means full-bounds damage.
+    public var localContentRect: Rect?
 
-    public init(flags: InvalidationFlags = InvalidationFlags()) {
+    public init(
+        flags: InvalidationFlags = InvalidationFlags(),
+        localContentRect: Rect? = nil
+    ) {
         self.flags = flags
+        self.localContentRect = localContentRect
+    }
+
+    public mutating func markContent(_ rect: Rect?) {
+        if flags.content {
+            guard let current = localContentRect, let rect else {
+                localContentRect = nil
+                return
+            }
+            let left = min(current.x, rect.x)
+            let top = min(current.y, rect.y)
+            let right = max(current.x + current.w, rect.x + rect.w)
+            let bottom = max(current.y + current.h, rect.y + rect.h)
+            localContentRect = Rect(
+                x: left,
+                y: top,
+                w: max(0, right - left),
+                h: max(0, bottom - top))
+        } else {
+            flags.content = true
+            localContentRect = rect
+        }
     }
 }
 
@@ -118,6 +146,10 @@ public struct Layer: Sendable {
 
     public func effectiveAnchorPoint() -> Point2D {
         EffectiveLayer.anchorPoint(model: model.properties, presentation: presentation)
+    }
+
+    public func effectiveScrollOffset() -> Point2D {
+        presentation.override_?.scrollOffset ?? model.properties.scrollOffset
     }
 
     public func effectiveOpacity() -> Float {

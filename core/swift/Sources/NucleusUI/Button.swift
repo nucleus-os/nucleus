@@ -1,7 +1,7 @@
 import NucleusLayers
 
 @MainActor
-public final class Button: Control, ~Sendable {
+open class Button: Control, ~Sendable {
     public enum Glyph: Sendable, Equatable {
         case none
         case close
@@ -9,6 +9,7 @@ public final class Button: Control, ~Sendable {
 
     public var title: String {
         didSet {
+            guard title != oldValue else { return }
             invalidateLayoutCache()
             invalidateIntrinsicContentSize()
             setNeedsDisplay()
@@ -16,17 +17,20 @@ public final class Button: Control, ~Sendable {
     }
     public var glyph: Glyph {
         didSet {
+            guard glyph != oldValue else { return }
             setNeedsDisplay()
         }
     }
     public var foregroundColor: Color {
         didSet {
-            if foregroundColor != oldValue { invalidateLayoutCache() }
+            guard foregroundColor != oldValue else { return }
+            invalidateLayoutCache()
             setNeedsDisplay()
         }
     }
     public var fontSize: Float {
         didSet {
+            guard fontSize != oldValue else { return }
             invalidateLayoutCache()
             invalidateIntrinsicContentSize()
             setNeedsDisplay()
@@ -39,6 +43,30 @@ public final class Button: Control, ~Sendable {
         self.foregroundColor = Color(1, 1, 1, 1)
         self.fontSize = 14
         super.init()
+        accessibilityRole = .button
+        accessibilityTraits.insert(.button)
+    }
+
+    public var isDefaultButton = false {
+        didSet { if isDefaultButton != oldValue { setNeedsDisplay() } }
+    }
+
+    public override var keyboardActivationKeys: Set<KeyCode> {
+        [.space, .return]
+    }
+
+    public override var environmentDependencies: UIEnvironmentChanges {
+        super.environmentDependencies.union(.textScale)
+    }
+
+    public override func environmentDidChange(
+        _ changes: UIEnvironmentChanges
+    ) {
+        if changes.contains(.textScale) {
+            invalidateLayoutCache()
+            invalidateIntrinsicContentSize()
+        }
+        super.environmentDidChange(changes)
     }
 
     public func onPress(_ handler: @escaping (Button) -> Void) {
@@ -75,6 +103,7 @@ public final class Button: Control, ~Sendable {
     private static let titleInsetHeight: Double = 10
 
     public override func draw(in context: GraphicsContext) {
+        drawChrome(in: context)
         switch glyph {
         case .none:
             guard !title.isEmpty else { return }
@@ -103,6 +132,26 @@ public final class Button: Control, ~Sendable {
         }
     }
 
+    private func drawChrome(in context: GraphicsContext) {
+        let state = controlState
+        let color: ColorSpec
+        if !state.contains(.enabled) {
+            color = .role(.surfaceVariant)
+        } else if state.contains(.pressed) || state.contains(.selected) {
+            color = .role(.primary)
+        } else if state.contains(.hovered) || isDefaultButton {
+            color = .role(.hover)
+        } else {
+            color = .role(.surfaceVariant)
+        }
+        var path = Path()
+        path.addRoundedRect(
+            Rect(origin: .zero, size: bounds.size),
+            radius: max(6, cornerRadius))
+        context.fillColor = resolve(color)
+        context.fill(path)
+    }
+
     /// One measured title layout per containerWidth, reused across intrinsicContentSize
     /// and displayCommands instead of re-running a Skia paragraph measurement for each.
     /// Built with the current foregroundColor so the color-independent metrics and the
@@ -113,7 +162,11 @@ public final class Button: Control, ~Sendable {
     private func titleTextLayout(containerWidth: Double?) -> TextLayout {
         if let cached = layoutCache[containerWidth] { return cached }
         let layout = TextLayout(
-            runs: [TextRun(text: title, font: Font.systemFont(ofSize: fontSize), color: foregroundColor)],
+            runs: [TextRun(
+                text: title,
+                font: Font.systemFont(ofSize: fontSize)
+                    .scaled(by: uiContext.environment.textScale),
+                color: foregroundColor)],
             containerWidth: containerWidth,
             lineBreakMode: .byTruncatingTail
         )

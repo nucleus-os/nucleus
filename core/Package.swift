@@ -213,21 +213,32 @@ let package = Package(
         // product the compositor / shell / RN platform LINK. The public headers expose the
         // nucleus::text vocabulary to consumers (the RN Fabric text layout manager).
         .target(
-            name: "NucleusTextBackend",
+            name: "NucleusTextBackendNative",
             path: "render-cxx/skia",
             sources: ["skia_text_backend.cpp", "TextRegistry.cpp"],
             publicHeadersPath: "include",
             cxxSettings: [.unsafeFlags(skiaBridgeLinuxCxxFlags)]
         ),
-        // The NucleusUI UI framework. Imports Tracy + the text bridge
-        // (TextSystem.swift), so it needs cxx interop. The text-backend .so is a
-        // link-time concern (the bridge header is self-contained), so the library
-        // compiles without prebuilt staging.
+        // C++-interop adapter for NucleusUI's pure Swift TextLayoutBackend seam.
+        // Composition roots install it during bring-up; NucleusUI never imports
+        // this module or exposes its clang graph.
+        .target(
+            name: "NucleusTextBackend",
+            dependencies: [
+                "NucleusUI",
+                "NucleusTextCxxBridge",
+                "NucleusTextBackendNative",
+                .product(name: "Tracy", package: "swift-tracy"),
+            ],
+            path: "swift/Sources/NucleusTextBackend",
+            swiftSettings: [.interoperabilityMode(.Cxx)]
+        ),
+        // The NucleusUI UI framework. TextSystem owns only a pure Swift service
+        // contract; native backends are installed by hosts.
         .target(
             name: "NucleusUI",
-            dependencies: ["NucleusTypes", "NucleusLayers", "NucleusAppHostProtocols", .product(name: "Tracy", package: "swift-tracy"), "NucleusTextCxxBridge"],
-            path: "swift/Sources/NucleusUI",
-            swiftSettings: [.interoperabilityMode(.Cxx)]
+            dependencies: ["NucleusTypes", "NucleusLayers", "NucleusAppHostProtocols", .product(name: "Tracy", package: "swift-tracy")],
+            path: "swift/Sources/NucleusUI"
         ),
         // NucleusUIEmbedder — the API for code that *embeds* a NucleusUI scene into a
         // platform and feeds it a surface, input, and a frame clock: the compositor, the
@@ -238,18 +249,15 @@ let package = Package(
         .target(
             name: "NucleusUIEmbedder",
             dependencies: ["NucleusUI", "NucleusLayers", "NucleusTypes"],
-            path: "swift/Sources/NucleusUIEmbedder",
-            swiftSettings: [.interoperabilityMode(.Cxx)]
+            path: "swift/Sources/NucleusUIEmbedder"
         ),
         // NucleusApp — the SwiftUI-shaped App/Scene entry vocabulary and the single-import
         // front door (`@_exported import NucleusUI`). Depends on NucleusUI (re-exported)
-        // and NucleusLayers (the host rendering context). Cxx-interop to match NucleusUI,
-        // which surfaces the text bridge through its public API.
+        // and NucleusLayers (the host rendering context).
         .target(
             name: "NucleusApp",
             dependencies: ["NucleusUI", "NucleusLayers"],
-            path: "swift/Sources/NucleusApp",
-            swiftSettings: [.interoperabilityMode(.Cxx)]
+            path: "swift/Sources/NucleusApp"
         ),
         // The retained render model. Its @main smoke fixtures were migrated to the
         // NucleusRenderModelTests swift-testing target, so the directory now holds
@@ -355,6 +363,7 @@ let package = Package(
                 .product(name: "VulkanC", package: "swift-vulkan"),
                 .product(name: "Vulkan", package: "swift-vulkan"),
                 "NucleusSkiaGraphiteBridge",
+                .product(name: "Tracy", package: "swift-tracy"),
             ],
             path: "swift/Sources/NucleusRenderer",
             swiftSettings: [
@@ -388,27 +397,38 @@ let package = Package(
         // moved to compositor-core/ with the modules they cover — migration Phase 2.)
         //
         // The NucleusUI behavioral suite (View/layout/control/publisher fixtures).
-        // Runs headless via `installStubHost()`; cxx-interop to match NucleusUI's
-        // text bridge. The compositor-coupled fixtures that used to live alongside
+        // The embedder suite deliberately remains pure Swift and exercises the
+        // recoverable no-backend path. The compositor-coupled fixtures that used to live alongside
         // these (ShellOverlayRuntimeTests, the sibling WindowSceneTests) were
         // relocated to compositor-core's test graph, where their compositor targets
         // live — this React/compositor-agnostic core package cannot depend on them.
         .testTarget(
             name: "NucleusUIEmbedderTests",
-            dependencies: ["NucleusUIEmbedder", "NucleusUI", "NucleusLayers", "NucleusTypes", "NucleusTextBackend"],
-            path: "swift/Tests/NucleusUIEmbedderTests",
-            swiftSettings: [.interoperabilityMode(.Cxx)],
-            linkerSettings: [.unsafeFlags(skiaLinkFlags)]
+            dependencies: ["NucleusUIEmbedder", "NucleusUI", "NucleusLayers", "NucleusTypes"],
+            path: "swift/Tests/NucleusUIEmbedderTests"
+        ),
+        .testTarget(
+            name: "NucleusAppTests",
+            dependencies: ["NucleusApp", "NucleusUI"],
+            path: "swift/Tests/NucleusAppTests"
         ),
         .testTarget(
             name: "NucleusUITests",
-            dependencies: ["NucleusUI", "NucleusLayers", "NucleusTypes", "NucleusTextBackend", "NucleusSkiaGraphiteBridge"],
+            dependencies: [
+                "NucleusUI",
+                "NucleusUIEmbedder",
+                "NucleusLayers",
+                "NucleusTypes",
+                "NucleusTextBackend",
+                "NucleusSkiaGraphiteBridge",
+                "NucleusRenderHost",
+                "NucleusRenderModel",
+            ],
             path: "swift/Tests/NucleusUITests",
             swiftSettings: [.interoperabilityMode(.Cxx)],
-            // First root executable to link NucleusUI: it pulls in the
-            // NucleusTextBackend TextLayoutService symbols (via TextSystem), which in
-            // turn need the Skia archives. Downstream the compositor/RN executables
-            // supply these; here the test runner must link them itself.
+            // The real-backend text tests import the C++ adapter explicitly;
+            // its native implementation needs the Skia archives and Graphite
+            // resolver at this runner's final link.
             linkerSettings: [.unsafeFlags(skiaLinkFlags)]
         ),
     ]

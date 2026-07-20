@@ -3,7 +3,7 @@ import Testing
 
 /// Flexible empty space.
 @MainActor
-@Suite struct SpacerTests {
+@Suite(.uiContext) struct SpacerTests {
     @Test func aSpacerAbsorbsSurplusSpace() {
         let stack = StackView()
         stack.axis = .horizontal
@@ -64,7 +64,7 @@ import Testing
 
 /// Dividing rules.
 @MainActor
-@Suite struct SeparatorTests {
+@Suite(.uiContext) struct SeparatorTests {
     /// Returns the stack too: it owns the separator, and letting it fall out of
     /// scope would leave `parentView` nil and the inference with nothing to read.
     private func separator(in axis: StackView.Axis) -> (StackView, Separator) {
@@ -133,14 +133,14 @@ import Testing
 
 /// Progress bars.
 @MainActor
-@Suite struct ProgressBarTests {
-    private func makeBar(width: Double = 100, height: Double = 8) -> ProgressBar {
-        let bar = ProgressBar()
+@Suite(.uiContext) struct ProgressIndicatorTests {
+    private func makeBar(width: Double = 100, height: Double = 8) -> ProgressIndicator {
+        let bar = ProgressIndicator()
         bar.frame = Rect(x: 0, y: 0, width: width, height: height)
         return bar
     }
 
-    private func fillClipFrame(_ bar: ProgressBar) -> Rect {
+    private func fillClipFrame(_ bar: ProgressIndicator) -> Rect {
         bar.layoutIfNeeded()
         // The clip is the bar's only subview; the fill sits inside it.
         return bar.subviews.first?.frame ?? .zero
@@ -237,7 +237,7 @@ import Testing
     }
 
     @Test func aBarHasThicknessButNoNaturalLength() {
-        let bar = ProgressBar()
+        let bar = ProgressIndicator()
         #expect(bar.intrinsicContentSize.width == 0)
         #expect(bar.intrinsicContentSize.height > 0)
 
@@ -259,6 +259,6 @@ import Testing
     }
 
     @Test func aBarDescribesItselfAsAProgressIndicator() {
-        #expect(ProgressBar().accessibilityRole == .progressIndicator)
+        #expect(ProgressIndicator().accessibilityRole == .progressIndicator)
     }
 }

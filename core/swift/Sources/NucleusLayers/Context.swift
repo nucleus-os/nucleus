@@ -79,6 +79,7 @@ public final class Context: ~Sendable {
     private let releasesContextOnDeinit: Bool
     package var nextLayerOrdinal: UInt32
     package var nextContentGenerationValue: UInt64
+    package var nextTransactionIDValue: UInt64
     package var revision: UInt32
     @_spi(NucleusCompositor) public var layers: [LayerID: Layer]
     package let transactionStack: TransactionStack
@@ -100,6 +101,7 @@ public final class Context: ~Sendable {
         self.releasesContextOnDeinit = releasesContextOnDeinit
         self.nextLayerOrdinal = 1
         self.nextContentGenerationValue = 1
+        self.nextTransactionIDValue = 1
         self.revision = 1
         self.layers = [:]
         self.transactionStack = TransactionStack()
@@ -159,7 +161,20 @@ public final class Context: ~Sendable {
         return layer
     }
 
+    package func nextTransactionID() -> UInt64 {
+        let value = nextTransactionIDValue
+        nextTransactionIDValue &+= 1
+        precondition(nextTransactionIDValue != 0, "layer transaction id space exhausted")
+        return value
+    }
+
     public func makeLayer(id: LayerID, _ descriptor: LayerDescriptor = LayerDescriptor()) -> Layer {
+        precondition(
+            layers[id] == nil,
+            "duplicate layer identity \(id.rawValue) in context \(self.id.rawValue)")
+        precondition(
+            UInt32(truncatingIfNeeded: id.rawValue >> 32) == self.id.rawValue,
+            "explicit layer identity belongs to another context")
         let layer = Layer(context: self, id: id, descriptor: descriptor)
         layers[layer.id] = layer
         advanceLayerOrdinal(past: id)
@@ -167,6 +182,9 @@ public final class Context: ~Sendable {
     }
 
     public func importExistingLayer(id: LayerID, _ descriptor: LayerDescriptor = LayerDescriptor()) -> Layer {
+        precondition(
+            UInt32(truncatingIfNeeded: id.rawValue >> 32) == self.id.rawValue,
+            "imported layer identity belongs to another context")
         if let layer = layers[id] {
             return layer
         }

@@ -180,4 +180,37 @@ import NucleusRenderModel
         #expect(nested?.role == .paint && nested?.texture == TextureHandle(raw: 31), "walk-nested-remote-host-content")
         #expect(nested?.dst == PlanRect(x: 150, y: 90, w: 20, h: 20), "walk-nested-remote-host-projection")
     }
+
+    @Test func presentationSurfaceWalksOnlyItsAssociatedRootContext() throws {
+        var tree = LayerTree()
+        var first = Self.layer(100, x: 0, y: 0, w: 40, h: 40)
+        first.presentation.content = .paint(PaintContentHandle(raw: 1000))
+        var second = Self.layer(200, x: 0, y: 0, w: 40, h: 40)
+        second.presentation.content = .paint(PaintContentHandle(raw: 2000))
+        tree.insertLayer(first)
+        tree.insertLayer(second)
+        try tree.attachRoot(100, index: 0, contextId: ContextID(raw: 7))
+        try tree.attachRoot(200, index: 0, contextId: ContextID(raw: 8))
+
+        let target = RenderTarget(
+            outputId: 1,
+            logicalRect: LogicalRect(x: 0, y: 0, width: 100, height: 100),
+            pixelSize: PixelSize(width: 100, height: 100),
+            scale: 1,
+            fractionalScale: 1,
+            overlayUsableArea: UsableArea()
+        )
+        let plan = PresentationWalk.buildFramePlan(
+            tree: tree,
+            target: target,
+            frame: FrameInfo(outputId: 1),
+            rootContexts: [ContextID(raw: 8)]
+        )
+        let layerIDs = plan.ops.compactMap { operation -> UInt64? in
+            guard case .textureQuad(let quad) = operation else { return nil }
+            return quad.layerId
+        }
+
+        #expect(layerIDs == [200])
+    }
 }

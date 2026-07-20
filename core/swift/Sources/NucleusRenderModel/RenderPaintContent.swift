@@ -8,6 +8,8 @@
 // — it works in a headless bring-up where no Graphite recorder exists.
 // Refcounted: registered at 1, evicted at 0.
 
+import Synchronization
+
 // MARK: - Draw-command vocabulary
 
 /// What a paint draw command paints. Densely numbered: the discriminants are
@@ -108,8 +110,8 @@ public struct PaintDrawCommand: Equatable, Sendable {
     public var strokeJoin: PaintDrawStrokeJoin
     /// The command's own transform, when it has one. Its geometry is then
     /// stated in the space this maps *from*; without it, geometry is already in
-    /// the destination space. Only rotation and skew need this — a translation
-    /// or scale folds into the geometry.
+    /// the destination space. NucleusUI records every paint operation with a
+    /// transform; `nil` remains supported for lower-level producers.
     public var transform: PaintDrawTransform?
     public var shading: PaintDrawShading
     public var blend: PaintDrawBlendMode
@@ -194,7 +196,7 @@ public struct PaintDrawCommand: Equatable, Sendable {
 
 /// Refcounted registry of paint command lists keyed by `PaintContentHandle`.
 /// The renderer reads `commands(_:)` at frame time. Mirrors `PaintContentStore`.
-public final class PaintContentStore: @unchecked Sendable {
+public final class PaintContentStore: Sendable {
     public struct Content: Sendable {
         public var commands: [PaintDrawCommand]
         /// Variable-length data the commands index into via
@@ -219,20 +221,17 @@ public final class PaintContentStore: @unchecked Sendable {
         var refs: UInt32
     }
 
-    private var entries: [PaintContentHandle: Entry] = [:]
-    private var nextHandle: UInt64 = 1
+    private struct State {
+        var entries: [PaintContentHandle: Entry] = [:]
+        var nextHandle: UInt64 = 1
+    }
+
+    private let state = Mutex(State())
 
     public init() {}
 
-    public var count: Int { entries.count }
-
-    /// Allocate a fresh non-zero handle (u64 wrap, skipping 0). Mirrors the
-    /// handle minting in `PaintContentStore`.
-    private func allocHandle() -> PaintContentHandle {
-        let id = nextHandle
-        nextHandle &+= 1
-        if nextHandle == 0 { nextHandle = 1 }
-        return PaintContentHandle(raw: id)
+    public var count: Int {
+        state.withLock { $0.entries.count }
     }
 
     /// Register a command list at refcount 1 and return its handle. Mirrors
@@ -242,40 +241,49 @@ public final class PaintContentStore: @unchecked Sendable {
         _ commands: [PaintDrawCommand], payload: [UInt8] = [],
         width: Float, height: Float
     ) -> PaintContentHandle {
-        let handle = allocHandle()
-        entries[handle] = Entry(
-            content: Content(
-                commands: commands, payload: payload, width: width, height: height),
-            refs: 1)
-        return handle
+        state.withLock {
+            let handle = PaintContentHandle(raw: $0.nextHandle)
+            $0.nextHandle &+= 1
+            if $0.nextHandle == 0 { $0.nextHandle = 1 }
+            $0.entries[handle] = Entry(
+                content: Content(
+                    commands: commands, payload: payload, width: width,
+                    height: height),
+                refs: 1)
+            return handle
+        }
     }
 
     /// Add one ref. No-op for an unknown handle. Mirrors `retain`.
     public func retain(_ handle: PaintContentHandle) {
-        guard entries[handle] != nil else { return }
-        entries[handle]!.refs &+= 1
+        state.withLock {
+            guard $0.entries[handle] != nil else { return }
+            $0.entries[handle]!.refs &+= 1
+        }
     }
 
     /// Drop one ref; evict at zero. No-op for an unknown handle. Mirrors
     /// `release` (image-handle release inside a command is the renderer's image
     /// registry's concern — this store holds only the command list).
     public func release(_ handle: PaintContentHandle) {
-        guard var entry = entries[handle] else { return }
-        if entry.refs > 1 {
-            entry.refs -= 1
-            entries[handle] = entry
-        } else {
-            entries[handle] = nil
+        state.withLock {
+            guard var entry = $0.entries[handle] else { return }
+            if entry.refs > 1 {
+                entry.refs -= 1
+                $0.entries[handle] = entry
+            } else {
+                $0.entries[handle] = nil
+            }
         }
     }
 
     /// The command list registered for `handle`, or nil if unknown. Mirrors
     /// `displayList`/`picture` queries.
     public func commands(_ handle: PaintContentHandle) -> [PaintDrawCommand]? {
-        entries[handle]?.content.commands
+        state.withLock { $0.entries[handle]?.content.commands }
     }
 
     public func content(_ handle: PaintContentHandle) -> Content? {
-        entries[handle]?.content
+        state.withLock { $0.entries[handle]?.content }
     }
 }

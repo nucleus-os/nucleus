@@ -181,6 +181,7 @@ struct ShellOverlayNotificationMetrics: Sendable, Equatable {
     var thumbW: Float
     var thumbH: Float
 
+    @MainActor
     init(showsThumbnail: Bool = false, hasBody: Bool = false) {
         let cardPad: Float = 18
         let summarySize: Float = 15
@@ -210,6 +211,7 @@ struct ShellOverlayNotificationMetrics: Sendable, Equatable {
         summaryTextHeight + (hasBody ? bodyTextHeight + 7 : 0)
     }
 
+    @MainActor
     func updated(showsThumbnail: Bool, hasBody: Bool) -> ShellOverlayNotificationMetrics {
         ShellOverlayNotificationMetrics(showsThumbnail: showsThumbnail, hasBody: hasBody)
     }

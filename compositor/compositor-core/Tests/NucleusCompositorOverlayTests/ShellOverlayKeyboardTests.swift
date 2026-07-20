@@ -8,7 +8,7 @@ import NucleusUIEmbedder
 /// The compositor's keyboard adapter: composed text, modifier flags, and key
 /// repeat. These are the pieces Phase 8 left deferred and text input needs.
 @MainActor
-@Suite struct ShellOverlayKeyboardTests {
+@Suite(.uiContext) struct ShellOverlayKeyboardTests {
     private static func keyEvent(
         _ kind: ShellOverlayInputKind,
         keycode: UInt32,
@@ -110,11 +110,14 @@ import NucleusUIEmbedder
 
         let clock = TestClock()
         let scene = try makeScene(clock)
-        let view = CountingView()
-        view.frame = Rect(x: 0, y: 0, width: 100, height: 100)
-        let window = Window(title: "Repeat")
-        window.setContentView(view)
-        window.orderFront()
+        let (view, window) = scene.windowScene.uiContext.construct {
+            let view = CountingView()
+            view.frame = Rect(x: 0, y: 0, width: 100, height: 100)
+            let window = Window(title: "Repeat")
+            window.setContentView(view)
+            window.orderFront()
+            return (view, window)
+        }
         scene.windowScene.addWindow(window)
         scene.windowScene.makeKey(window)
         #expect(window.makeFirstResponder(view))
@@ -202,11 +205,14 @@ import NucleusUIEmbedder
 
         let clock = TestClock()
         let scene = try makeScene(clock)
-        let view = CountingView()
-        view.frame = Rect(x: 0, y: 0, width: 100, height: 100)
-        let window = Window(title: "Stall")
-        window.setContentView(view)
-        window.orderFront()
+        let (view, window) = scene.windowScene.uiContext.construct {
+            let view = CountingView()
+            view.frame = Rect(x: 0, y: 0, width: 100, height: 100)
+            let window = Window(title: "Stall")
+            window.setContentView(view)
+            window.orderFront()
+            return (view, window)
+        }
         scene.windowScene.addWindow(window)
         scene.windowScene.makeKey(window)
         #expect(window.makeFirstResponder(view))

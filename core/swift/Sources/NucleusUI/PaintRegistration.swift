@@ -7,23 +7,26 @@ import NucleusTypes
 /// handles alive until it is deallocated. A caller must keep it alive until the
 /// update has been appended to a transaction or applied to a layer — releasing
 /// early would drop the content's last reference before the compositor reads it.
+@MainActor
 package final class RegisteredPaint {
     /// The property update binding the registered content, ready to apply.
     package let update: NucleusLayers.LayerPropertyUpdate
 
     private let content: PaintContent?
-    private let transientTextHandles: [UInt64]
+    private let textLayoutLeases: [TextLayoutLease]
 
-    init(update: NucleusLayers.LayerPropertyUpdate, content: PaintContent?, transientTextHandles: [UInt64]) {
+    init(
+        update: NucleusLayers.LayerPropertyUpdate,
+        content: PaintContent?,
+        textLayoutLeases: [TextLayoutLease]
+    ) {
         self.update = update
         self.content = content
-        self.transientTextHandles = transientTextHandles
+        self.textLayoutLeases = textLayoutLeases
     }
 
-    deinit {
-        for handle in transientTextHandles {
-            TextSystem.shared.releaseLayoutHandle(handle)
-        }
+    isolated deinit {
+        withExtendedLifetime(textLayoutLeases) {}
         withExtendedLifetime(content) {}
     }
 }
@@ -54,14 +57,14 @@ package enum PaintRegistration {
             return RegisteredPaint(
                 update: NucleusLayers.LayerPropertyUpdate(content: LayerContent.none),
                 content: nil,
-                transientTextHandles: [])
+                textLayoutLeases: [])
         }
 
         // Resolve recording-local text-layout indices to registry handles. A
         // layout with backing storage vends a stable handle; otherwise a
         // transient one is minted here and released when this value dies —
         // never during recording, so recordings stay comparable.
-        var transient: [UInt64] = []
+        var leases: [TextLayoutLease] = []
         var commands = recording.commands
         for i in commands.indices where commands[i].kind == .textLayout {
             let index = Int(commands[i].textLayoutHandle)
@@ -70,13 +73,12 @@ package enum PaintRegistration {
                 continue
             }
             let layout = recording.textLayouts[index - 1]
-            if let stable = layout.storage?.retainedHandle(), stable != 0 {
-                commands[i].textLayoutHandle = stable
-            } else {
-                let handle = TextSystem.shared.makeLayoutHandle(for: layout)
-                commands[i].textLayoutHandle = handle
-                if handle != 0 { transient.append(handle) }
+            guard let lease = TextSystem.shared.makeLayoutLease(for: layout) else {
+                commands[i].textLayoutHandle = 0
+                continue
             }
+            commands[i].textLayoutHandle = lease.handle.rawValue
+            leases.append(lease)
         }
 
         let content = try PaintContent.register(
@@ -88,6 +90,6 @@ package enum PaintRegistration {
         return RegisteredPaint(
             update: NucleusLayers.LayerPropertyUpdate(content: LayerContent(content)),
             content: content,
-            transientTextHandles: transient)
+            textLayoutLeases: leases)
     }
 }

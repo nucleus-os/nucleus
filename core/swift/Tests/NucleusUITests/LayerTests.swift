@@ -3,7 +3,7 @@ import NucleusTypes
 import Testing
 
 @MainActor
-@Suite struct LayerTests {
+@Suite(.uiContext) struct LayerTests {
     init() { installStubHost() }
 
     @Test func contextLayerTransactionAppliesPropertiesThroughInMemorySink() throws {

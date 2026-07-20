@@ -28,7 +28,11 @@ final class CountingPaintContentRegistrar: PaintContentRegistrar {
 }
 
 @MainActor
-@Suite struct PaintRegistrationTests {
+@Suite(.uiContext) struct PaintRegistrationTests {
+    init() {
+        installTestTextBackend()
+    }
+
     /// Install a host whose paint registrar counts, keeping every other slot
     /// stubbed.
     private func installCountingHost() -> CountingPaintContentRegistrar {
@@ -61,7 +65,7 @@ final class CountingPaintContentRegistrar: PaintContentRegistrar {
     /// no backing layer, and no publisher involved at all.
     @Test func registrationNeedsNoViewTree() throws {
         let registrar = installCountingHost()
-        let context = Application.defaultContext
+        let context = Application.makeInMemoryVisualContext()
 
         let graphics = GraphicsContext()
         graphics.fillColor = Color(1, 0, 0, 1)
@@ -78,7 +82,7 @@ final class CountingPaintContentRegistrar: PaintContentRegistrar {
     @Test func anEmptyRecordingProducesTheClearContentUpdate() throws {
         let registrar = installCountingHost()
         let registered = try PaintRegistration.register(
-            PaintRecording(), width: 10, height: 10, in: Application.defaultContext)
+            PaintRecording(), width: 10, height: 10, in: Application.makeInMemoryVisualContext())
 
         #expect(registrar.registrationCount == 0, "nothing is registered")
         #expect(registered.update.content == LayerContent.none, "content is cleared")
@@ -97,7 +101,7 @@ final class CountingPaintContentRegistrar: PaintContentRegistrar {
         graphics.stroke(path)
 
         _ = try PaintRegistration.register(
-            graphics.recording, width: 10, height: 10, in: Application.defaultContext)
+            graphics.recording, width: 10, height: 10, in: Application.makeInMemoryVisualContext())
         #expect(registrar.lastPayloadByteCount > 0, "payload reached the registrar")
     }
 
@@ -109,7 +113,7 @@ final class CountingPaintContentRegistrar: PaintContentRegistrar {
     /// previous one and re-register on every publish.
     @Test func republishingAnUnchangedViewDoesNotReRegister() throws {
         let registrar = installCountingHost()
-        let context = Application.defaultContext
+        let context = Application.makeInMemoryVisualContext()
         let window = Window(title: "Gate")
         let root = makeStyledView()
         window.setContentView(root)
@@ -126,7 +130,7 @@ final class CountingPaintContentRegistrar: PaintContentRegistrar {
 
     @Test func changingTheDrawingReRegisters() throws {
         let registrar = installCountingHost()
-        let context = Application.defaultContext
+        let context = Application.makeInMemoryVisualContext()
         let window = Window(title: "Gate")
         let root = makeStyledView()
         window.setContentView(root)
@@ -146,7 +150,7 @@ final class CountingPaintContentRegistrar: PaintContentRegistrar {
     /// handles were minted while drawing, they would differ every time.
     @Test func republishingUnchangedTextDoesNotReRegister() throws {
         let registrar = installCountingHost()
-        let context = Application.defaultContext
+        let context = Application.makeInMemoryVisualContext()
         let window = Window(title: "Text gate")
         let label = Label("Nucleus")
         label.frame = Rect(x: 0, y: 0, width: 120, height: 20)
@@ -163,5 +167,28 @@ final class CountingPaintContentRegistrar: PaintContentRegistrar {
         #expect(
             registrar.registrationCount == afterFirst,
             "redrawing the same text must not re-register")
+    }
+
+    @Test func equalPaintAcrossViewsSharesOneBoundedRegistration() throws {
+        let registrar = installCountingHost()
+        let context = Application.makeInMemoryVisualContext()
+        let root = View()
+        let first = makeStyledView()
+        let second = makeStyledView()
+        root.addSubview(first)
+        root.addSubview(second)
+        let publisher = ViewLayerPublisher(context: context)
+
+        _ = try publisher.publish(roots: [root])
+
+        #expect(registrar.registrationCount == 1)
+        #expect(publisher.lastMetrics.contentRegistrations == 1)
+        #expect(publisher.lastMetrics.contentCacheHits == 1)
+        #expect(publisher.retainedPaintRegistrationCount == 1)
+
+        first.removeFromSuperview()
+        second.removeFromSuperview()
+        _ = try publisher.publish(roots: [root])
+        #expect(publisher.retainedPaintRegistrationCount == 0)
     }
 }

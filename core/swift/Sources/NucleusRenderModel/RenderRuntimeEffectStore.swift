@@ -11,6 +11,8 @@
 // every frame, while the program does not. Caching the compiled program behind
 // a handle is the whole point of this store.
 
+import Synchronization
+
 /// A registered SkSL program source.
 public struct RuntimeEffectSource: Equatable, Sendable {
     public var sksl: String
@@ -23,73 +25,80 @@ public struct RuntimeEffectSource: Equatable, Sendable {
 /// Refcounted registry of SkSL sources keyed by an opaque handle. The renderer
 /// reads `source(_:)` to compile at frame time and caches the compiled program;
 /// compile/cache is the renderer's job. Mirrors `ImageStore`.
-public final class RuntimeEffectStore: @unchecked Sendable {
+public final class RuntimeEffectStore: Sendable {
     private struct Entry {
         var source: RuntimeEffectSource
         var refs: UInt32
     }
 
-    private var entries: [UInt64: Entry] = [:]
-    /// Source → handle dedupe. The shell's effect set is small, fixed, and
-    /// registered repeatedly as views come and go, so registering the same
-    /// program twice must share one handle rather than recompile.
-    private var byKey: [String: UInt64] = [:]
-    private var nextHandle: UInt64 = 1
+    private struct State {
+        var entries: [UInt64: Entry] = [:]
+        var byKey: [String: UInt64] = [:]
+        var nextHandle: UInt64 = 1
+        var evictedHandles: [UInt64] = []
+    }
 
-    /// Notified with a handle when its last reference is released and its
-    /// source is evicted. The renderer installs this to drop the handle's
-    /// compiled-program cache entry — handles are monotonic and never reused,
-    /// so the compiled effect would otherwise persist until shutdown. Invoked
-    /// on the store's single (compositor) thread, same as `release`.
-    public var onEvict: ((UInt64) -> Void)?
+    private let state = Mutex(State())
 
     public init() {}
 
-    public var count: Int { entries.count }
-
-    private func allocHandle() -> UInt64 {
-        let id = nextHandle
-        nextHandle &+= 1
-        if nextHandle == 0 { nextHandle = 1 }
-        return id
+    public var count: Int {
+        state.withLock { $0.entries.count }
     }
 
     /// Register (or dedupe to) an SkSL source, returning its handle at refcount
     /// ≥1. A repeat registration of the same source bumps the existing refcount.
     @discardableResult
     public func register(_ source: RuntimeEffectSource) -> UInt64 {
-        if let handle = byKey[source.sksl] {
-            entries[handle]!.refs &+= 1
+        state.withLock { state in
+            if let handle = state.byKey[source.sksl] {
+                state.entries[handle]!.refs &+= 1
+                return handle
+            }
+            let handle = state.nextHandle
+            state.nextHandle &+= 1
+            if state.nextHandle == 0 { state.nextHandle = 1 }
+            state.entries[handle] = Entry(source: source, refs: 1)
+            state.byKey[source.sksl] = handle
             return handle
         }
-        let handle = allocHandle()
-        entries[handle] = Entry(source: source, refs: 1)
-        byKey[source.sksl] = handle
-        return handle
     }
 
     /// Add one ref. No-op for an unknown handle.
     public func retain(_ handle: UInt64) {
-        guard entries[handle] != nil else { return }
-        entries[handle]!.refs &+= 1
+        state.withLock {
+            guard $0.entries[handle] != nil else { return }
+            $0.entries[handle]!.refs &+= 1
+        }
     }
 
     /// Drop one ref; evict at zero. No-op for an unknown handle.
     public func release(_ handle: UInt64) {
-        guard var entry = entries[handle] else { return }
-        if entry.refs > 1 {
-            entry.refs -= 1
-            entries[handle] = entry
-        } else {
-            byKey[entry.source.sksl] = nil
-            entries[handle] = nil
-            onEvict?(handle)
+        state.withLock { state in
+            guard var entry = state.entries[handle] else { return }
+            if entry.refs > 1 {
+                entry.refs -= 1
+                state.entries[handle] = entry
+            } else {
+                state.byKey[entry.source.sksl] = nil
+                state.entries[handle] = nil
+                state.evictedHandles.append(handle)
+            }
         }
     }
 
     /// The source registered for `handle`, or nil if unknown. The renderer
     /// compiles this at rasterization time.
     public func source(_ handle: UInt64) -> RuntimeEffectSource? {
-        entries[handle]?.source
+        state.withLock { $0.entries[handle]?.source }
+    }
+
+    /// Take cache handles evicted since the previous render-owner drain.
+    public func takeEvictedHandles() -> [UInt64] {
+        state.withLock {
+            let handles = $0.evictedHandles
+            $0.evictedHandles.removeAll(keepingCapacity: true)
+            return handles
+        }
     }
 }

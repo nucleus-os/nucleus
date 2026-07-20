@@ -35,7 +35,7 @@ import NucleusTypes
         let sink = InMemoryCommitSink()
         let publication = try WindowScenePublicationContext(
             visualContextID: ContextID(rawValue: 901), commitSink: sink)
-        let window = EmbedderApplication.withContext(publication.visualContext) { () -> Window in
+        let window = publication.withSemanticContext { () -> Window in
             let window = Window(title: "Native")
             let root = View()
             root.frame = Rect(x: 0, y: 0, width: 100, height: 20)
@@ -72,7 +72,7 @@ import NucleusTypes
         let sink = InMemoryCommitSink()
         let publication = try WindowScenePublicationContext(
             visualContextID: ContextID(rawValue: 903), commitSink: sink)
-        let window = EmbedderApplication.withContext(publication.visualContext) { () -> Window in
+        let window = publication.withSemanticContext { () -> Window in
             let window = Window(title: "Native")
             let root = View()
             root.frame = Rect(x: 0, y: 0, width: 100, height: 20)
@@ -110,13 +110,15 @@ import NucleusTypes
             view.backgroundColor = Color(0, 1, 0, 1)
             return view
         }
-        view.displayIfNeeded()
+        let publisher = EmbeddedViewTreePublisher(visualContext: context)
+        let published = try publisher.publish(rootView: view)
         #expect(view.recordedDrawing.paintCommands.count == 1)
-        #expect(view.embedderBackingLayer.context === context)
+        #expect(publisher.rootLayer?.context === context)
+        #expect(publisher.visualLayer(for: view)?.id.rawValue == published.rootLayerID)
     }
 
-    /// Binding must apply locally *and* append ambiently; a caller that only
-    /// applied would leave the compositor's committed state stale.
+    /// Direct layer clients still use the registration seam without creating a
+    /// second semantic-View publication path.
     @Test func bindingAppliesAndAppendsTheUpdate() throws {
         installStubHost()
         let (context, sink) = try makeContext(906)
@@ -128,7 +130,11 @@ import NucleusTypes
         }
         view.displayIfNeeded()
 
-        let layer = view.embedderBackingLayer
+        let layer = context.makeLayer()
+        var creation = LayerTransaction(context: context)
+        try creation.createExisting(layer)
+        try creation.insert(layer)
+        try creation.commit()
         let registered = try registerPaint(
             view.recordedDrawing, width: 20, height: 10, in: context)
         registered.bind(to: layer)

@@ -6,31 +6,32 @@ public struct ArrangedSubviewRemovalTransition: Sendable, Equatable {
     }
 
     public var kind: Kind
-    public var durationNs: UInt64
-    public var actionPolicy: ActionPolicy
+    public var timing: AnimationTiming
 
-    public init(kind: Kind, duration: Double, actionPolicy: ActionPolicy = .default) {
+    public init(kind: Kind, timing: AnimationTiming) {
         self.kind = kind
-        self.durationNs = UInt64(max(0, duration) * 1_000_000_000)
-        self.actionPolicy = actionPolicy
+        self.timing = timing
     }
 
     public static func slideTrailingFade(duration: Double = 0.24) -> ArrangedSubviewRemovalTransition {
-        ArrangedSubviewRemovalTransition(kind: Kind.slideTrailingFade, duration: duration)
+        ArrangedSubviewRemovalTransition(
+            kind: .slideTrailingFade,
+            timing: AnimationTiming(duration: duration)
+        )
     }
 }
 
 public struct ArrangedSubviewReflowTransition: Sendable, Equatable {
-    public var durationNs: UInt64
-    public var actionPolicy: ActionPolicy
+    public var timing: AnimationTiming
 
-    public init(duration: Double, actionPolicy: ActionPolicy = .default) {
-        self.durationNs = UInt64(max(0, duration) * 1_000_000_000)
-        self.actionPolicy = actionPolicy
+    public init(timing: AnimationTiming) {
+        self.timing = timing
     }
 
     public static func animated(duration: Double = 0.22) -> ArrangedSubviewReflowTransition {
-        ArrangedSubviewReflowTransition(duration: duration)
+        ArrangedSubviewReflowTransition(
+            timing: AnimationTiming(duration: duration)
+        )
     }
 }
 
@@ -46,9 +47,11 @@ open class StackView: View, ~Sendable {
         case center
         case trailing
         case fill
+        case firstBaseline
+        case lastBaseline
     }
 
-    /// How main-axis space is apportioned. Mirrors `NSStackView.Distribution`.
+    /// How main-axis space is apportioned. Corresponds to `NSStackView.Distribution`.
     public enum Distribution: Sendable, Equatable {
         /// Measured sizes, then `growFactor`/`shrinkFactor` absorb the surplus or
         /// deficit. The default, and the only one that honors flex.
@@ -61,23 +64,61 @@ open class StackView: View, ~Sendable {
         case equalSpacing
     }
 
+    private var storedAxis: Axis
     public var axis: Axis {
-        didSet { setNeedsLayout() }
+        get { storedAxis }
+        set {
+            guard newValue != storedAxis else { return }
+            storedAxis = newValue
+            setNeedsLayout()
+        }
     }
+    private var storedSpacing: Double
     public var spacing: Double {
-        didSet { setNeedsLayout() }
+        get { storedSpacing }
+        set {
+            let value = newValue.isFinite ? max(0, newValue) : 0
+            guard value != storedSpacing else { return }
+            storedSpacing = value
+            setNeedsLayout()
+        }
     }
+    private var storedAlignment: Alignment
     public var alignment: Alignment {
-        didSet { setNeedsLayout() }
+        get { storedAlignment }
+        set {
+            guard newValue != storedAlignment else { return }
+            storedAlignment = newValue
+            setNeedsLayout()
+        }
     }
+    private var storedDistribution: Distribution
     public var distribution: Distribution {
-        didSet { setNeedsLayout() }
+        get { storedDistribution }
+        set {
+            guard newValue != storedDistribution else { return }
+            storedDistribution = newValue
+            setNeedsLayout()
+        }
     }
+    private var storedLayoutMargins: EdgeInsets
     public var layoutMargins: EdgeInsets {
-        didSet { setNeedsLayout() }
+        get { storedLayoutMargins }
+        set {
+            let value = Self.canonicalInsets(newValue)
+            guard value != storedLayoutMargins else { return }
+            storedLayoutMargins = value
+            setNeedsLayout()
+        }
     }
+    private var storedHidesHiddenArrangedSubviews: Bool
     public var hidesHiddenArrangedSubviews: Bool {
-        didSet { setNeedsLayout() }
+        get { storedHidesHiddenArrangedSubviews }
+        set {
+            guard newValue != storedHidesHiddenArrangedSubviews else { return }
+            storedHidesHiddenArrangedSubviews = newValue
+            setNeedsLayout()
+        }
     }
     private struct QueuedRemoval: ~Sendable {
         var view: View
@@ -88,14 +129,14 @@ open class StackView: View, ~Sendable {
     }
 
     private struct ActiveRemoval: ~Sendable {
-        enum Phase {
+        enum Phase: Equatable {
             case exiting
             case reflowing
         }
 
         var queued: QueuedRemoval
         var phase: Phase
-        var startedNs: UInt64
+        var handle: AnimationHandle?
     }
 
     private var arranged: [View]
@@ -108,12 +149,12 @@ open class StackView: View, ~Sendable {
         alignment: Alignment = .fill,
         distribution: Distribution = .fill
     ) {
-        self.axis = axis
-        self.spacing = spacing
-        self.alignment = alignment
-        self.distribution = distribution
-        self.layoutMargins = .zero
-        self.hidesHiddenArrangedSubviews = true
+        self.storedAxis = axis
+        self.storedSpacing = spacing.isFinite ? max(0, spacing) : 0
+        self.storedAlignment = alignment
+        self.storedDistribution = distribution
+        self.storedLayoutMargins = .zero
+        self.storedHidesHiddenArrangedSubviews = true
         self.arranged = []
         self.queuedRemovals = []
         self.activeRemoval = nil
@@ -134,10 +175,12 @@ open class StackView: View, ~Sendable {
     /// from `views`, so a reordered body reorders the stack without detaching
     /// and re-adding the views that merely moved.
     package func replaceArrangedSubviews(with views: [View]) {
-        for existing in arranged where !views.contains(where: { $0 === existing }) {
+        let incomingIDs = Set(views.map(ObjectIdentifier.init))
+        let existingIDs = Set(arranged.map(ObjectIdentifier.init))
+        for existing in arranged where !incomingIDs.contains(ObjectIdentifier(existing)) {
             existing.removeFromSuperview()
         }
-        for view in views where !arranged.contains(where: { $0 === view }) {
+        for view in views where !existingIDs.contains(ObjectIdentifier(view)) {
             addSubview(view)
         }
         arranged = views
@@ -155,10 +198,9 @@ open class StackView: View, ~Sendable {
         _ view: View,
         transition: ArrangedSubviewRemovalTransition,
         reflow: ArrangedSubviewReflowTransition,
-        nowNs: UInt64,
         didRemove: (() -> Void)? = nil,
         completion: (() -> Void)? = nil
-    ) throws(UIError) -> Bool {
+    ) -> Bool {
         guard arranged.contains(where: { $0 === view }) else {
             return false
         }
@@ -172,51 +214,12 @@ open class StackView: View, ~Sendable {
             didRemove: didRemove,
             completion: completion
         ))
-        try startNextArrangedSubviewRemovalIfNeeded(nowNs: nowNs)
+        startNextArrangedSubviewRemovalIfNeeded()
         return true
-    }
-
-    public func advanceArrangedSubviewTransitions(nowNs: UInt64) throws(UIError) {
-        if var activeRemoval {
-            switch activeRemoval.phase {
-            case .exiting:
-                if nowNs >= activeRemoval.startedNs + activeRemoval.queued.transition.durationNs {
-                    removeArrangedSubview(activeRemoval.queued.view)
-                    activeRemoval.queued.didRemove?()
-                    activeRemoval.phase = .reflowing
-                    activeRemoval.startedNs = nowNs
-                    self.activeRemoval = activeRemoval
-                    try animateInOwnContext(actionPolicy: activeRemoval.queued.reflow.actionPolicy) {
-                        self.setNeedsLayout()
-                        self.layoutIfNeeded()
-                    }
-                }
-            case .reflowing:
-                if nowNs >= activeRemoval.startedNs + activeRemoval.queued.reflow.durationNs {
-                    activeRemoval.queued.completion?()
-                    self.activeRemoval = nil
-                    try startNextArrangedSubviewRemovalIfNeeded(nowNs: nowNs)
-                }
-            }
-        } else {
-            try startNextArrangedSubviewRemovalIfNeeded(nowNs: nowNs)
-        }
     }
 
     public var arrangedSubviewTransitionActive: Bool {
         activeRemoval != nil || !queuedRemovals.isEmpty
-    }
-
-    public var nextArrangedSubviewTransitionDeadlineNs: UInt64? {
-        guard let activeRemoval else {
-            return nil
-        }
-        switch activeRemoval.phase {
-        case .exiting:
-            return activeRemoval.startedNs + activeRemoval.queued.transition.durationNs
-        case .reflowing:
-            return activeRemoval.startedNs + activeRemoval.queued.reflow.durationNs
-        }
     }
 
     public func isArrangedSubviewExiting(_ view: View) -> Bool {
@@ -276,7 +279,9 @@ open class StackView: View, ~Sendable {
         let measured = views.map { resolvedSize(for: $0, in: measurementConstraints) }
         let totalSpacing = spacing * Double(views.count - 1)
         var mainSizes = views.enumerated().map { index, view in
-            view.layoutBasis ?? mainAxisValue(measured[index])
+            clampedMainExtent(
+                view.layoutBasis ?? mainAxisValue(measured[index]),
+                for: view)
         }
         var gap = spacing
 
@@ -294,18 +299,29 @@ open class StackView: View, ~Sendable {
                 mainSizes = mainSizes.map { $0 / total * available }
             }
         case .equalSpacing:
+            if mainSizes.reduce(0, +) > contentMain {
+                resolveFlexibleSpace(
+                    &mainSizes, views: views, available: contentMain)
+            }
             let used = mainSizes.reduce(0, +)
             if views.count > 1 {
-                gap = max(spacing, (contentMain - used) / Double(views.count - 1))
+                // Keep the configured minimum whenever it fits. When it does
+                // not, the gaps contract to the exact remaining space instead
+                // of forcing the final child past the container edge.
+                gap = max(0, (contentMain - used) / Double(views.count - 1))
             }
         }
 
+        let baselineOffsets = crossAxisBaselineOffsets(
+            views: views, measured: measured, mainSizes: mainSizes,
+            available: contentCross)
         var cursor: Double = 0
         for (index, view) in views.enumerated() {
             let mainSize = mainSizes[index]
             let crossSize = crossAxisSize(
                 preferred: crossAxisValue(measured[index]), available: contentCross)
-            let crossOffset = crossAxisOffset(size: crossSize, available: contentCross)
+            let crossOffset = baselineOffsets?[index]
+                ?? crossAxisOffset(size: crossSize, available: contentCross)
             let childFrame: Rect
             switch axis {
             case .vertical:
@@ -332,28 +348,12 @@ open class StackView: View, ~Sendable {
     private func resolveFlexibleSpace(
         _ sizes: inout [Double], views: [View], available: Double
     ) {
-        let used = sizes.reduce(0, +)
-        let free = available - used
-        guard abs(free) > 0.0001 else { return }
+        sizes = FlexibleLayoutResolver.resolve(
+            sizes, views: views, available: available)
+    }
 
-        if free > 0 {
-            let totalGrow = views.reduce(0) { $0 + max(0, $1.growFactor) }
-            guard totalGrow > 0 else { return }
-            for index in sizes.indices {
-                sizes[index] += free * max(0, views[index].growFactor) / totalGrow
-            }
-        } else {
-            // Weighted by size as well as factor: a large child absorbs more of
-            // the deficit than a small one at the same shrink factor.
-            let weights = views.enumerated().map { index, view in
-                max(0, view.shrinkFactor) * sizes[index]
-            }
-            let totalWeight = weights.reduce(0, +)
-            guard totalWeight > 0 else { return }
-            for index in sizes.indices {
-                sizes[index] = max(0, sizes[index] + free * weights[index] / totalWeight)
-            }
-        }
+    private func clampedMainExtent(_ extent: Double, for view: View) -> Double {
+        FlexibleLayoutResolver.clamp(extent, for: view)
     }
 
     private var visibleArrangedSubviews: [View] {
@@ -399,37 +399,120 @@ open class StackView: View, ~Sendable {
             : Size(width: main, height: cross)
     }
 
-    private func startNextArrangedSubviewRemovalIfNeeded(nowNs: UInt64) throws(UIError) {
+    private func startNextArrangedSubviewRemovalIfNeeded() {
         guard activeRemoval == nil, !queuedRemovals.isEmpty else {
             return
         }
         let queued = queuedRemovals.removeFirst()
-        activeRemoval = .init(queued: queued, phase: .exiting, startedNs: nowNs)
-        try animateInOwnContext(actionPolicy: queued.transition.actionPolicy) {
-            try apply(queued.transition, to: queued.view)
+        activeRemoval = .init(
+            queued: queued,
+            phase: .exiting,
+            handle: nil
+        )
+
+        let initialFrame = queued.view.frame
+        let initialOpacity = queued.view.alphaValue
+        let key = AnimationPropertyKey(
+            rawValue: "stack-exit-\(queued.view.id.rawValue)"
+        )
+        let handle = uiContext.animateValue(
+            owner: self,
+            property: key,
+            from: 0,
+            to: 1,
+            options: ValueAnimationOptions(timing: queued.transition.timing)
+        ) { [weak self, weak view = queued.view] progress in
+            guard let self, let view else { return }
+            switch queued.transition.kind {
+            case .slideTrailingFade:
+                view.frame = Rect(
+                    x: initialFrame.origin.x +
+                        (initialFrame.size.width + 16) * progress,
+                    y: initialFrame.origin.y,
+                    width: initialFrame.size.width,
+                    height: initialFrame.size.height
+                )
+                view.alphaValue = initialOpacity * (1 - progress)
+            }
+            self.setNeedsDisplay()
+        } completion: { [weak self] outcome in
+            self?.exitAnimationDidFinish(outcome)
+        }
+        if activeRemoval?.phase == .exiting {
+            activeRemoval?.handle = handle
         }
     }
 
-    private func apply(_ transition: ArrangedSubviewRemovalTransition, to view: View) throws(UIError) {
-        switch transition.kind {
-        case .slideTrailingFade:
-            view.frame = Rect(
-                x: view.frame.origin.x + view.frame.size.width + 16,
-                y: view.frame.origin.y,
-                width: view.frame.size.width,
-                height: view.frame.size.height
-            )
-            view.alphaValue = 0
+    private func exitAnimationDidFinish(_ outcome: AnimationOutcome) {
+        guard let active = activeRemoval, active.phase == .exiting else {
+            return
+        }
+        guard outcome == .completed || outcome == .skippedReducedMotion else {
+            activeRemoval = nil
+            startNextArrangedSubviewRemovalIfNeeded()
+            return
+        }
+
+        let oldFrames = Dictionary(
+            uniqueKeysWithValues: arranged
+                .filter { $0 !== active.queued.view }
+                .map { ($0.id, $0.frame) }
+        )
+        removeArrangedSubview(active.queued.view)
+        active.queued.didRemove?()
+        setNeedsLayout()
+        layoutIfNeeded()
+        let finalFrames = Dictionary(
+            uniqueKeysWithValues: arranged.map { ($0.id, $0.frame) }
+        )
+        for view in arranged {
+            if let old = oldFrames[view.id] {
+                view.frame = old
+            }
+        }
+
+        activeRemoval = .init(
+            queued: active.queued,
+            phase: .reflowing,
+            handle: nil
+        )
+        let key = AnimationPropertyKey(
+            rawValue: "stack-reflow-\(active.queued.view.id.rawValue)"
+        )
+        let handle = uiContext.animateValue(
+            owner: self,
+            property: key,
+            from: 0,
+            to: 1,
+            options: ValueAnimationOptions(timing: active.queued.reflow.timing)
+        ) { [weak self] progress in
+            guard let self else { return }
+            for view in arranged {
+                guard let final = finalFrames[view.id] else { continue }
+                let initial = oldFrames[view.id] ?? final
+                view.frame = Rect.interpolate(
+                    from: initial,
+                    to: final,
+                    progress: progress
+                )
+            }
+        } completion: { [weak self] outcome in
+            self?.reflowAnimationDidFinish(outcome)
+        }
+        if activeRemoval?.phase == .reflowing {
+            activeRemoval?.handle = handle
         }
     }
 
-    private func animateInOwnContext(
-        actionPolicy: ActionPolicy,
-        _ body: () throws -> Void
-    ) throws(UIError) {
-        try Transaction.run(in: backingLayer.context, actionPolicy: actionPolicy) {
-            try body()
+    private func reflowAnimationDidFinish(_ outcome: AnimationOutcome) {
+        guard let active = activeRemoval, active.phase == .reflowing else {
+            return
         }
+        if outcome == .completed || outcome == .skippedReducedMotion {
+            active.queued.completion?()
+        }
+        activeRemoval = nil
+        startNextArrangedSubviewRemovalIfNeeded()
     }
 
     private func crossAxisSize(preferred: Double, available: Double) -> Double {
@@ -438,12 +521,69 @@ open class StackView: View, ~Sendable {
 
     private func crossAxisOffset(size: Double, available: Double) -> Double {
         switch alignment {
-        case .leading, .fill:
+        case .leading, .fill, .firstBaseline, .lastBaseline:
             return 0
         case .center:
             return max(0, (available - size) / 2)
         case .trailing:
             return max(0, available - size)
         }
+    }
+
+    private func crossAxisBaselineOffsets(
+        views: [View],
+        measured: [Size],
+        mainSizes: [Double],
+        available: Double
+    ) -> [Double]? {
+        guard axis == .horizontal,
+              alignment == .firstBaseline || alignment == .lastBaseline
+        else { return nil }
+
+        var positions: [Double] = []
+        positions.reserveCapacity(views.count)
+        for index in views.indices {
+            let cross = crossAxisSize(
+                preferred: crossAxisValue(measured[index]), available: available)
+            let size = Size(width: mainSizes[index], height: cross)
+            let metrics = (views[index] as? any LayoutBaselineProviding)?
+                .layoutBaselines(for: size)
+            switch alignment {
+            case .firstBaseline:
+                positions.append(metrics?.firstFromTop ?? cross)
+            case .lastBaseline:
+                positions.append(cross - (metrics?.lastFromBottom ?? 0))
+            default:
+                preconditionFailure("baseline offsets requested for non-baseline alignment")
+            }
+        }
+        let reference = positions.max() ?? 0
+        return positions.map { max(0, reference - $0) }
+    }
+
+    private static func canonicalInsets(_ insets: EdgeInsets) -> EdgeInsets {
+        func value(_ input: Double) -> Double {
+            input.isFinite ? max(0, input) : 0
+        }
+        return EdgeInsets(
+            top: value(insets.top), left: value(insets.left),
+            bottom: value(insets.bottom), right: value(insets.right))
+    }
+}
+
+private extension Rect {
+    static func interpolate(
+        from: Rect,
+        to: Rect,
+        progress: Double
+    ) -> Rect {
+        Rect(
+            x: from.origin.x + (to.origin.x - from.origin.x) * progress,
+            y: from.origin.y + (to.origin.y - from.origin.y) * progress,
+            width: from.size.width +
+                (to.size.width - from.size.width) * progress,
+            height: from.size.height +
+                (to.size.height - from.size.height) * progress
+        )
     }
 }

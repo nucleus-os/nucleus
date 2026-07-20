@@ -1,4 +1,4 @@
-/// Modifier keys held when an event occurred. Mirrors `NSEvent.ModifierFlags`.
+/// Modifier keys held when an event occurred. Corresponds to `NSEvent.ModifierFlags`.
 public struct EventModifierFlags: OptionSet, Sendable, Hashable {
     public var rawValue: UInt32
     public init(rawValue: UInt32) { self.rawValue = rawValue }
@@ -27,6 +27,43 @@ public struct PointerButton: RawRepresentable, Hashable, Sendable {
     /// three named ones.
     public static let back = PointerButton(rawValue: 3)
     public static let forward = PointerButton(rawValue: 4)
+}
+
+public struct InputDeviceID: RawRepresentable, Hashable, Sendable {
+    public var rawValue: UInt64
+    public init(rawValue: UInt64) { self.rawValue = rawValue }
+    public static let primary = InputDeviceID(rawValue: 0)
+}
+
+/// Stable for the lifetime of one pointer or touch sequence.
+public struct InputSequenceID: RawRepresentable, Hashable, Sendable {
+    public var rawValue: UInt64
+    public init(rawValue: UInt64) { self.rawValue = rawValue }
+    public static let primaryPointer = InputSequenceID(rawValue: 0)
+}
+
+public struct PointerButtonMask: OptionSet, Hashable, Sendable {
+    public var rawValue: UInt64
+    public init(rawValue: UInt64) { self.rawValue = rawValue }
+
+    public static let left = PointerButtonMask(rawValue: 1 << 0)
+    public static let right = PointerButtonMask(rawValue: 1 << 1)
+    public static let middle = PointerButtonMask(rawValue: 1 << 2)
+    public static let back = PointerButtonMask(rawValue: 1 << 3)
+    public static let forward = PointerButtonMask(rawValue: 1 << 4)
+
+    public static func button(_ button: PointerButton) -> PointerButtonMask {
+        guard button.rawValue < 64 else { return [] }
+        return PointerButtonMask(rawValue: 1 << button.rawValue)
+    }
+}
+
+public enum PointerTool: Sendable, Equatable {
+    case unknown
+    case mouse
+    case finger
+    case stylus
+    case eraser
 }
 
 /// A physical key, in a platform-neutral space.
@@ -214,6 +251,7 @@ public enum EventType: Int32, Sendable {
     case touchMoved = 13
     case touchUp = 14
     case touchCancelled = 15
+    case pointerCancelled = 16
 }
 
 /// An input event, shaped after `NSEvent`: one record carrying whichever
@@ -223,7 +261,7 @@ public enum EventType: Int32, Sendable {
 /// crosses the adapter boundary as data and is compared, copied, and defaulted
 /// constantly; an enum would make every adapter a switch and every field access
 /// a pattern match.
-/// What produced a scroll event. Mirrors `wl_pointer.axis_source`, which is
+/// What produced a scroll event. Corresponds to `wl_pointer.axis_source`, which is
 /// where the information comes from.
 public enum ScrollSource: UInt8, Sendable, Equatable, CaseIterable {
     /// Unreported. Treated as a wheel, since that is the conservative guess: a
@@ -235,6 +273,14 @@ public enum ScrollSource: UInt8, Sendable, Equatable, CaseIterable {
     case wheelTilt
 }
 
+public enum ScrollPhase: UInt8, Sendable, Equatable {
+    case none
+    case began
+    case changed
+    case ended
+    case cancelled
+}
+
 public struct Event: Sendable, Equatable {
     public var type: EventType
     public var modifierFlags: EventModifierFlags
@@ -242,9 +288,18 @@ public struct Event: Sendable, Equatable {
     /// coordinates at the scene, converted to view-local as it descends.
     public var location: Point
     public var timestampNanoseconds: UInt64
+    public var deviceID: InputDeviceID
+    public var sequenceID: InputSequenceID
 
     // Pointer
     public var button: PointerButton
+    public var activeButtons: PointerButtonMask
+    public var pressure: Double {
+        didSet {
+            pressure = pressure.isFinite ? min(max(0, pressure), 1) : 0
+        }
+    }
+    public var pointerTool: PointerTool
     /// 1 for a single click, 2 for a double, and so on. 0 for non-pointer events.
     public var clickCount: Int
 
@@ -263,13 +318,8 @@ public struct Event: Sendable, Equatable {
     /// the device reports no detents at all, which is the touchpad case.
     public var scrollDetentsX: Double
     public var scrollDetentsY: Double
-    /// The end of a scroll gesture: the finger lifted.
-    ///
-    /// Wayland delivers this as `axis_stop`. There is no momentum *phase* to go
-    /// with it — unlike AppKit, the compositor does not synthesize inertia, so a
-    /// view that wants kinetic scrolling starts it here from the recent
-    /// velocity.
-    public var isScrollEnd: Bool
+    /// Gesture phase. Wayland `axis_stop` maps to `.ended`.
+    public var scrollPhase: ScrollPhase
 
     /// Whether the scroll came from a device with continuous deltas rather than
     /// discrete detents. Derived from the source, which is the thing the
@@ -287,44 +337,48 @@ public struct Event: Sendable, Equatable {
     /// Whether this key event came from auto-repeat rather than a fresh press.
     public var isARepeat: Bool
 
-    // Touch
-    /// Identifies a finger across a touch sequence.
-    public var touchID: UInt32
-
     public init(
         type: EventType,
         modifierFlags: EventModifierFlags = [],
         location: Point = Point(x: 0, y: 0),
         timestampNanoseconds: UInt64 = 0,
+        deviceID: InputDeviceID = .primary,
+        sequenceID: InputSequenceID = .primaryPointer,
         button: PointerButton = .left,
+        activeButtons: PointerButtonMask = [],
+        pressure: Double = 0,
+        pointerTool: PointerTool = .unknown,
         clickCount: Int = 0,
         scrollDeltaX: Double = 0,
         scrollDeltaY: Double = 0,
         scrollSource: ScrollSource = .unknown,
         scrollDetentsX: Double = 0,
         scrollDetentsY: Double = 0,
-        isScrollEnd: Bool = false,
+        scrollPhase: ScrollPhase = .none,
         keyCode: KeyCode = .unknown,
         characters: String? = nil,
-        isARepeat: Bool = false,
-        touchID: UInt32 = 0
+        isARepeat: Bool = false
     ) {
         self.type = type
         self.modifierFlags = modifierFlags
         self.location = location
         self.timestampNanoseconds = timestampNanoseconds
+        self.deviceID = deviceID
+        self.sequenceID = sequenceID
         self.button = button
+        self.activeButtons = activeButtons
+        self.pressure = pressure.isFinite ? min(max(0, pressure), 1) : 0
+        self.pointerTool = pointerTool
         self.clickCount = clickCount
         self.scrollDeltaX = scrollDeltaX
         self.scrollDeltaY = scrollDeltaY
         self.scrollSource = scrollSource
         self.scrollDetentsX = scrollDetentsX
         self.scrollDetentsY = scrollDetentsY
-        self.isScrollEnd = isScrollEnd
+        self.scrollPhase = scrollPhase
         self.keyCode = keyCode
         self.characters = characters
         self.isARepeat = isARepeat
-        self.touchID = touchID
     }
 
     /// Whether this event routes by hit testing (pointer-like) rather than to
@@ -333,6 +387,7 @@ public struct Event: Sendable, Equatable {
         switch type {
         case .pointerDown, .pointerUp, .pointerMoved, .pointerDragged,
              .pointerEntered, .pointerExited, .scrollWheel,
+             .pointerCancelled,
              .touchDown, .touchMoved, .touchUp, .touchCancelled:
             true
         case .action, .keyDown, .keyUp, .flagsChanged:

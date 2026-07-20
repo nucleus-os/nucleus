@@ -1,8 +1,7 @@
 import NucleusTypes
 import NucleusLayers
 
-/// AppKit-shaped backdrop view. Mirrors `NSVisualEffectView` /
-/// `UIVisualEffectView` property-for-property. Apps name the semantic
+/// AppKit-shaped semantic backdrop view. Apps name the
 /// material role (`.popover`, `.sidebar`, `.titlebar`, ...); the framework's
 /// catalog turns that role plus `state`/`appearance`/`isEmphasized` into
 /// concrete blur+tint+noise parameters. Producers never see passes,
@@ -10,9 +9,8 @@ import NucleusLayers
 @MainActor
 public final class VisualEffectView: View, ~Sendable {
 
-    /// `NSVisualEffectView.Material`, verbatim. Names are taken from
-    /// modern AppKit; legacy aliases live in `BlurEffect.Style` and are
-    /// folded into these by `MaterialBridge`.
+    /// Supported semantic material names from modern AppKit. Legacy aliases
+    /// live in `BlurEffect.Style` and fold into these through `MaterialBridge`.
     public enum Material: Sendable, Equatable {
         case titlebar
         case selection
@@ -30,13 +28,13 @@ public final class VisualEffectView: View, ~Sendable {
         case underPageBackground
     }
 
-    /// `NSVisualEffectView.BlendingMode`, verbatim.
+    /// Supported `NSVisualEffectView.BlendingMode`-shaped vocabulary.
     public enum BlendingMode: Sendable, Equatable {
         case behindWindow
         case withinWindow
     }
 
-    /// `NSVisualEffectView.State`, verbatim.
+    /// Supported `NSVisualEffectView.State`-shaped vocabulary.
     public enum State: Sendable, Equatable {
         case followsWindowActiveState
         case active
@@ -122,6 +120,8 @@ public final class VisualEffectView: View, ~Sendable {
         materialOpacity: Double = 1,
         appearance: Appearance? = nil
     ) {
+        let resolvedAppearance =
+            appearance ?? Application.currentUIContext.environment.appearance
         self.material = material
         self.blendingMode = blendingMode
         self.state = state
@@ -137,7 +137,7 @@ public final class VisualEffectView: View, ~Sendable {
                 isEmphasized: isEmphasized,
                 cornerRadius: max(0, cornerRadius),
                 opacity: min(max(0, materialOpacity), 1),
-                appearance: appearance ?? Appearance.systemDefault,
+                appearance: resolvedAppearance,
                 maskImage: nil
             )
         ))
@@ -161,10 +161,16 @@ public final class VisualEffectView: View, ~Sendable {
 
     private func applyBackdrop() {
         setProperties(ViewProperties(backdropMaterial: resolvedBackdropMaterial()))
+        backgroundColor = uiContext.environment.reducesTransparency
+            ? effectivePalette.surface
+            : nil
     }
 
     package func resolvedBackdropMaterial() -> BackdropMaterial {
-        MaterialBridge.backdropMaterial(
+        guard !uiContext.environment.reducesTransparency else {
+            return .none
+        }
+        return MaterialBridge.backdropMaterial(
             material: material,
             blendingMode: blendingMode,
             state: state,
@@ -178,5 +184,16 @@ public final class VisualEffectView: View, ~Sendable {
 
     public override var properties: ViewProperties {
         ViewProperties(frame: frame, isHidden: isHidden, backdropMaterial: resolvedBackdropMaterial())
+    }
+
+    public override var environmentDependencies: UIEnvironmentChanges {
+        [.reducedTransparency, .appearance, .increasedContrast]
+    }
+
+    public override func environmentDidChange(
+        _ changes: UIEnvironmentChanges
+    ) {
+        applyBackdrop()
+        super.environmentDidChange(changes)
     }
 }

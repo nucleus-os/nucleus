@@ -7,6 +7,8 @@
 // (when a paint `.image` command references the handle). Registration therefore
 // works in a headless bring-up where no Graphite recorder exists.
 
+import Synchronization
+
 /// Where an image's bytes come from.
 public enum ImageContent: Equatable, Sendable {
     /// A file to decode. The overwhelmingly common case.
@@ -73,38 +75,25 @@ public struct ImageSource: Equatable, Sendable {
 /// Refcounted registry of image sources keyed by an opaque handle. The renderer
 /// reads `source(_:)` to decode/upload at frame time; decode/cache is the
 /// renderer's job.
-public final class ImageStore: @unchecked Sendable {
+public final class ImageStore: Sendable {
     private struct Entry {
         var source: ImageSource
         var refs: UInt32
     }
 
-    private var entries: [UInt64: Entry] = [:]
-    /// Path → handle dedupe so repeated registrations of the same source (same
-    /// path + bounds) share one handle + bump its refcount.
-    private var byKey: [String: UInt64] = [:]
-    private var nextHandle: UInt64 = 1
+    private struct State {
+        var entries: [UInt64: Entry] = [:]
+        var byKey: [String: UInt64] = [:]
+        var nextHandle: UInt64 = 1
+        var evictedHandles: [UInt64] = []
+    }
 
-    /// Notified with a handle when its last reference is released and its source is
-    /// evicted. The renderer installs this to drop the handle's decoded-image cache
-    /// entry — handles are monotonic and never reused, so the decoded GPU image would
-    /// otherwise persist until shutdown. Invoked on the store's single (compositor)
-    /// thread, same as `release`.
-    public var onEvict: ((UInt64) -> Void)?
+    private let state = Mutex(State())
 
     public init() {}
 
-    public var count: Int { entries.count }
-
-    private func key(_ source: ImageSource) -> String {
-        source.dedupeKey
-    }
-
-    private func allocHandle() -> UInt64 {
-        let id = nextHandle
-        nextHandle &+= 1
-        if nextHandle == 0 { nextHandle = 1 }
-        return id
+    public var count: Int {
+        state.withLock { $0.entries.count }
     }
 
     /// Register (or dedupe to) an image source, returning its handle at refcount
@@ -112,39 +101,56 @@ public final class ImageStore: @unchecked Sendable {
     /// Mirrors `adoptPrepared` keyed on the source.
     @discardableResult
     public func register(_ source: ImageSource) -> UInt64 {
-        let k = key(source)
-        if let handle = byKey[k] {
-            entries[handle]!.refs &+= 1
+        state.withLock { state in
+            let key = source.dedupeKey
+            if let handle = state.byKey[key] {
+                state.entries[handle]!.refs &+= 1
+                return handle
+            }
+            let handle = state.nextHandle
+            state.nextHandle &+= 1
+            if state.nextHandle == 0 { state.nextHandle = 1 }
+            state.entries[handle] = Entry(source: source, refs: 1)
+            state.byKey[key] = handle
             return handle
         }
-        let handle = allocHandle()
-        entries[handle] = Entry(source: source, refs: 1)
-        byKey[k] = handle
-        return handle
     }
 
     /// Add one ref. No-op for an unknown handle. Mirrors `retain`.
     public func retain(_ handle: UInt64) {
-        guard entries[handle] != nil else { return }
-        entries[handle]!.refs &+= 1
+        state.withLock {
+            guard $0.entries[handle] != nil else { return }
+            $0.entries[handle]!.refs &+= 1
+        }
     }
 
     /// Drop one ref; evict at zero. No-op for an unknown handle. Mirrors `release`.
     public func release(_ handle: UInt64) {
-        guard var entry = entries[handle] else { return }
-        if entry.refs > 1 {
-            entry.refs -= 1
-            entries[handle] = entry
-        } else {
-            byKey[key(entry.source)] = nil
-            entries[handle] = nil
-            onEvict?(handle)
+        state.withLock { state in
+            guard var entry = state.entries[handle] else { return }
+            if entry.refs > 1 {
+                entry.refs -= 1
+                state.entries[handle] = entry
+            } else {
+                state.byKey[entry.source.dedupeKey] = nil
+                state.entries[handle] = nil
+                state.evictedHandles.append(handle)
+            }
         }
     }
 
     /// The source registered for `handle`, or nil if unknown. The renderer
     /// decodes/uploads this at rasterization time.
     public func source(_ handle: UInt64) -> ImageSource? {
-        entries[handle]?.source
+        state.withLock { $0.entries[handle]?.source }
+    }
+
+    /// Take cache handles evicted since the previous render-owner drain.
+    public func takeEvictedHandles() -> [UInt64] {
+        state.withLock {
+            let handles = $0.evictedHandles
+            $0.evictedHandles.removeAll(keepingCapacity: true)
+            return handles
+        }
     }
 }

@@ -49,6 +49,16 @@ public final class RetainedTreeStore {
     /// `drainAnimationEvents`. Mirrors the render server's `animation_events`
     /// queue.
     public private(set) var animationEvents: [AnimationEvent] = []
+    private var activeAnimationsByCompletionToken: [UInt64: Int] = [:]
+    private var terminalCompletionsAwaitingPresentation: [
+        UInt64: PresentationCompletionOutcome
+    ] = [:]
+    private var completionObservers: [
+        UInt64: @MainActor (PresentationCompletionEvent) -> Void
+    ] = [:]
+    private var nextCompletionObserverID: UInt64 = 1
+    private var nextImplicitAnimationID: UInt64 = 1
+    private let implicitActionTableOverride: ImplicitActionTable?
 
     /// Sink the `.contents` key path drives during a presentation transition.
     /// Defaults to a no-op; the renderer installs a `PresentationOperationService`
@@ -56,18 +66,74 @@ public final class RetainedTreeStore {
     /// server's `operationProgressSink`.
     private let transitionSink: PresentationTransitionSink
 
-    public init(transitionSink: PresentationTransitionSink = NullPresentationTransitionSink()) {
+    public init(
+        transitionSink: PresentationTransitionSink =
+            NullPresentationTransitionSink(),
+        implicitActionTable: ImplicitActionTable? = nil
+    ) {
         self.transitionSink = transitionSink
+        self.implicitActionTableOverride = implicitActionTable
     }
 
     /// Fold one committed transaction into the authoritative tree. An empty
     /// transaction is a no-op — it neither bumps the revision nor dirties the
     /// present state, matching the queue's coalescing contract.
     @discardableResult
-    public func ingest(_ txn: Transaction) -> Result<Void, TransactionApplier.ApplyError> {
+    public func ingest(
+        _ incoming: Transaction
+    ) -> Result<Void, TransactionApplier.ApplyError> {
+        var txn = incoming
         if txn.isEmpty { return .success(()) }
+        txn.animationsAdded.append(contentsOf: expandImplicitActions(in: txn))
+        var lifecycleEvents: [AnimationEvent] = []
+        for removal in txn.removed {
+            guard let layer = tree.layers[removal.nodeId] else { continue }
+            for record in layer.animations {
+                lifecycleEvents.append(.stopped(
+                    animationId: record.id,
+                    layerId: record.layerId,
+                    keyPath: record.keyPath,
+                    completionToken: record.completionToken,
+                    transactionId: record.transactionId,
+                    finished: false,
+                    reason: .layerRemoved
+                ))
+            }
+        }
         let result = TransactionApplier.apply(txn, to: &tree)
         guard case .success = result else { return result }
+        for record in txn.animationsAdded {
+            guard var node = tree.layers[record.layerId] else {
+                if record.completionToken.raw != 0 {
+                    terminalCompletionsAwaitingPresentation[
+                        record.completionToken.raw
+                    ] = .failed
+                }
+                continue
+            }
+            node.addAnimation(record, events: &lifecycleEvents)
+            node.seedAnimationStartValue(record, sink: transitionSink)
+            node.damage.flags.property = true
+            tree.layers[record.layerId] = node
+        }
+        for removal in txn.animationsRemoved {
+            guard var node = tree.layers[removal.layerId] else { continue }
+            node.removeAnimation(
+                for: removal.keyPath,
+                events: &lifecycleEvents
+            )
+            node.damage.flags.property = true
+            tree.layers[removal.layerId] = node
+        }
+        animationEvents.append(contentsOf: lifecycleEvents)
+        processAnimationLifecycle(lifecycleEvents)
+        if txn.completionToken != 0,
+           !txn.animationsAdded.contains(where: {
+               $0.completionToken.raw == txn.completionToken
+           })
+        {
+            mergeTerminalOutcome(.completed, for: txn.completionToken)
+        }
         revision &+= 1
         presentDirty = true
         return result
@@ -77,6 +143,25 @@ public final class RetainedTreeStore {
     /// each frame; value semantics give the walk a stable snapshot even if a
     /// commit lands mid-frame.
     public func snapshot() -> LayerTree { tree }
+
+    /// Producer-authored final value for an animatable property.
+    public func modelValue(
+        layerID: UInt64,
+        keyPath: AnimationKeyPath
+    ) -> AnimationValue? {
+        guard let layer = tree.layers[layerID] else { return nil }
+        return value(for: keyPath, on: layer, usesPresentation: false)
+    }
+
+    /// Value currently displayed by the renderer, including any in-flight
+    /// presentation override.
+    public func presentationValue(
+        layerID: UInt64,
+        keyPath: AnimationKeyPath
+    ) -> AnimationValue? {
+        guard let layer = tree.layers[layerID] else { return nil }
+        return value(for: keyPath, on: layer, usesPresentation: true)
+    }
 
     /// The ids of every layer currently in the tree (across all contexts) — the
     /// liveness set the renderer reclaims per-layer GPU caches against when a
@@ -112,6 +197,7 @@ public final class RetainedTreeStore {
         previousPresentTimeS = presentTimeS
 
         var anyActive = false
+        let firstNewEvent = animationEvents.count
         // Snapshot the keys first: iterating `tree.layers.keys` directly holds a
         // second reference to the dictionary storage, so each in-loop subscript
         // assignment would trigger a full copy-on-write — O(n²) per animated frame.
@@ -126,6 +212,7 @@ public final class RetainedTreeStore {
             tree.layers[id] = node
             if active { anyActive = true }
         }
+        processAnimationLifecycle(Array(animationEvents[firstNewEvent...]))
         if anyActive { presentDirty = true }
         return anyActive
     }
@@ -137,10 +224,12 @@ public final class RetainedTreeStore {
     /// `seedAnimationStartValueOnLayer`.
     public func addAnimation(layerId: UInt64, _ record: AnimationRecord, seedStartValue: Bool = true) {
         guard var node = tree.layers[layerId] else { return }
+        let firstNewEvent = animationEvents.count
         node.addAnimation(record, events: &animationEvents)
         if seedStartValue { node.seedAnimationStartValue(record, sink: transitionSink) }
         node.damage.flags.property = true
         tree.layers[layerId] = node
+        processAnimationLifecycle(Array(animationEvents[firstNewEvent...]))
         presentDirty = true
     }
 
@@ -152,6 +241,21 @@ public final class RetainedTreeStore {
         return events
     }
 
+    @discardableResult
+    public func addCompletionObserver(
+        _ observer: @escaping @MainActor (PresentationCompletionEvent) -> Void
+    ) -> UInt64 {
+        let id = nextCompletionObserverID
+        nextCompletionObserverID &+= 1
+        precondition(nextCompletionObserverID != 0, "completion observer space exhausted")
+        completionObservers[id] = observer
+        return id
+    }
+
+    public func removeCompletionObserver(_ id: UInt64) {
+        completionObservers[id] = nil
+    }
+
     /// Acknowledge that a frame carrying the committed work has presented: clear
     /// the present-dirty flag and every node's per-frame damage so the next
     /// frame's demand reflects only work committed after this point. Mirrors the
@@ -160,7 +264,243 @@ public final class RetainedTreeStore {
         presentDirty = false
         // Array() snapshot avoids the copy-on-write-per-iteration hazard (see `tick`).
         for id in Array(tree.layers.keys) {
-            tree.layers[id]?.damage.flags = .none
+            tree.layers[id]?.damage = DamageState()
+        }
+        let completions: [PresentationCompletionEvent] =
+            terminalCompletionsAwaitingPresentation.keys.sorted().compactMap { token in
+                guard let outcome = terminalCompletionsAwaitingPresentation[token] else {
+                    return nil
+                }
+                return PresentationCompletionEvent(token: token, outcome: outcome)
+            }
+        terminalCompletionsAwaitingPresentation.removeAll(keepingCapacity: true)
+        for event in completions {
+            for observer in completionObservers.values {
+                observer(event)
+            }
+        }
+    }
+
+    private func processAnimationLifecycle(_ events: [AnimationEvent]) {
+        var affectedTokens = Set<UInt64>()
+        for event in events {
+            switch event {
+            case .started(_, _, _, let completionToken, _):
+                guard completionToken.raw != 0 else { continue }
+                affectedTokens.insert(completionToken.raw)
+                activeAnimationsByCompletionToken[completionToken.raw, default: 0] += 1
+            case .stopped(
+                _, _, _, let completionToken, _, _, let reason
+            ):
+                guard completionToken.raw != 0 else { continue }
+                affectedTokens.insert(completionToken.raw)
+                let count = activeAnimationsByCompletionToken[
+                    completionToken.raw,
+                    default: 0
+                ]
+                activeAnimationsByCompletionToken[completionToken.raw] = max(0, count - 1)
+                mergeTerminalOutcome(
+                    completionOutcome(for: reason),
+                    for: completionToken.raw
+                )
+            }
+        }
+        for token in affectedTokens
+        where activeAnimationsByCompletionToken[token, default: 0] > 0 {
+            terminalCompletionsAwaitingPresentation[token] = nil
+        }
+        for token in affectedTokens
+        where activeAnimationsByCompletionToken[token, default: 0] == 0 {
+            activeAnimationsByCompletionToken[token] = nil
+        }
+    }
+
+    private func completionOutcome(
+        for reason: AnimationStopReason
+    ) -> PresentationCompletionOutcome {
+        switch reason {
+        case .completed:
+            .completed
+        case .replaced:
+            .superseded
+        case .removed, .layerRemoved, .cancelledBeforeStart:
+            .cancelled
+        case .targetMissing:
+            .failed
+        }
+    }
+
+    private func mergeTerminalOutcome(
+        _ outcome: PresentationCompletionOutcome,
+        for token: UInt64
+    ) {
+        guard token != 0 else { return }
+        guard let current = terminalCompletionsAwaitingPresentation[token] else {
+            terminalCompletionsAwaitingPresentation[token] = outcome
+            return
+        }
+        if completionPriority(outcome) > completionPriority(current) {
+            terminalCompletionsAwaitingPresentation[token] = outcome
+        }
+    }
+
+    private func completionPriority(_ outcome: PresentationCompletionOutcome) -> Int {
+        switch outcome {
+        case .completed: 0
+        case .superseded: 1
+        case .cancelled: 2
+        case .failed: 3
+        }
+    }
+
+    private func expandImplicitActions(
+        in transaction: Transaction
+    ) -> [AnimationRecord] {
+        let table = implicitActionTableOverride ??
+            SwiftResourceHost.shared.implicitActions
+        var records: [AnimationRecord] = []
+
+        for update in transaction.propertyUpdates {
+            guard let layer = tree.layers[update.nodeId] else { continue }
+
+            if update.usesDefaultFrameAction,
+               let target = update.frame,
+               let parameters = table.frameFor(layer.role),
+               !transaction.animationsAdded.contains(where: {
+                   $0.layerId == update.nodeId && $0.slotKey == .frame
+               })
+            {
+                let position = layer.effectivePosition()
+                let bounds = layer.effectiveBounds()
+                let from = Frame(
+                    left: position.x,
+                    top: position.y,
+                    right: position.x + bounds.w,
+                    bottom: position.y + bounds.h
+                )
+                if from != target {
+                    records.append(AnimationRecord(
+                        id: allocateImplicitAnimationID(),
+                        layerId: update.nodeId,
+                        animation: .springFrame(SpringFrameAnimation(
+                            keyPath: .frame,
+                            fromValue: from,
+                            toValue: target,
+                            mass: parameters.mass,
+                            stiffness: parameters.stiffness,
+                            damping: parameters.damping,
+                            beginTime: transaction.animationBeginTimeSeconds
+                        )),
+                        completionToken: CompletionToken(
+                            raw: transaction.completionToken
+                        ),
+                        transactionId: transaction.revision,
+                        beginTimePending:
+                            transaction.animationBeginTimePending
+                    ))
+                }
+            }
+
+            if update.usesDefaultOpacityAction,
+               let target = update.opacity,
+               let parameters = table.opacityFor(layer.role),
+               !transaction.animationsAdded.contains(where: {
+                   $0.layerId == update.nodeId && $0.slotKey == .opacity
+               })
+            {
+                let from = layer.effectiveOpacity()
+                if from != target {
+                    records.append(AnimationRecord(
+                        id: allocateImplicitAnimationID(),
+                        layerId: update.nodeId,
+                        animation: .basic(BasicAnimation(
+                            keyPath: .opacity,
+                            fromValue: from,
+                            toValue: target,
+                            duration: parameters.duration,
+                            timingFunction: parameters.timingFunction,
+                            beginTime: transaction.animationBeginTimeSeconds
+                        )),
+                        completionToken: CompletionToken(
+                            raw: transaction.completionToken
+                        ),
+                        transactionId: transaction.revision,
+                        beginTimePending:
+                            transaction.animationBeginTimePending
+                    ))
+                }
+            }
+        }
+        return records
+    }
+
+    private func allocateImplicitAnimationID() -> AnimationID {
+        let id = nextImplicitAnimationID
+        nextImplicitAnimationID &+= 1
+        precondition(
+            nextImplicitAnimationID != 0,
+            "implicit animation identity exhausted"
+        )
+        // Reserve the high bit to avoid collisions with ordinary producer IDs.
+        return AnimationID(raw: id | (1 << 63))
+    }
+
+    private func value(
+        for keyPath: AnimationKeyPath,
+        on layer: Layer,
+        usesPresentation: Bool
+    ) -> AnimationValue? {
+        let position = usesPresentation
+            ? layer.effectivePosition()
+            : layer.model.properties.position
+        let bounds = usesPresentation
+            ? layer.effectiveBounds()
+            : layer.model.properties.bounds
+        let anchor = usesPresentation
+            ? layer.effectiveAnchorPoint()
+            : layer.model.properties.anchorPoint
+        let scroll = usesPresentation
+            ? layer.effectiveScrollOffset()
+            : layer.model.properties.scrollOffset
+        return switch keyPath {
+        case .positionX: .scalar(position.x)
+        case .positionY: .scalar(position.y)
+        case .opacity:
+            .scalar(
+                usesPresentation
+                    ? layer.effectiveOpacity()
+                    : layer.model.properties.opacity
+            )
+        case .transform:
+            .transform(
+                usesPresentation
+                    ? layer.effectiveTransform()
+                    : layer.model.properties.transform
+            )
+        case .anchorPointX: .scalar(anchor.x)
+        case .anchorPointY: .scalar(anchor.y)
+        case .cornerRadius:
+            .scalar(
+                usesPresentation
+                    ? layer.effectiveCornerRadii().0
+                    : layer.model.visualStyle?.cornerRadii.0 ?? 0
+            )
+        case .boundsWidth: .scalar(bounds.w)
+        case .boundsHeight: .scalar(bounds.h)
+        case .scrollOffsetX: .scalar(scroll.x)
+        case .scrollOffsetY: .scalar(scroll.y)
+        case .frame:
+            .frame(Frame(
+                left: position.x,
+                top: position.y,
+                right: position.x + bounds.w,
+                bottom: position.y + bounds.h
+            ))
+        case .transformScaleX, .transformScaleY, .transformScaleZ,
+             .transformRotationX, .transformRotationY, .transformRotationZ,
+             .transformTranslationX, .transformTranslationY,
+             .transformTranslationZ, .contents:
+            nil
         }
     }
 }

@@ -3,7 +3,7 @@ import NucleusTypes
 import Testing
 
 @MainActor
-@Suite struct GeometryTransactionTests {
+@Suite(.uiContext) struct GeometryTransactionTests {
     // Geometry/effect struct layout is pinned by the generated `NucleusTypes`
     // module.
 
@@ -21,17 +21,18 @@ import Testing
         #expect(view.frame == Rect(x: 50, y: 60, width: 70, height: 80))
     }
 
-    @Test func transactionAbortDoesNotRollBackViewState() throws {
+    @Test func throwingTransactionDoesNotRollBackEagerViewState() throws {
         let view = View()
         view.frame = (Rect(x: 1, y: 2, width: 3, height: 4))
 
-        do {
-            var tx = Transaction()
-            view.frame = (Rect(x: 100, y: 200, width: 300, height: 400))
-            tx.abort()
+        #expect(throws: UIError.self) {
+            try Transaction.run(in: view) {
+                view.frame = Rect(x: 100, y: 200, width: 300, height: 400)
+                throw UIError.invalidArgument(detail: "abort fixture")
+            }
         }
 
-        // Mirrors CATransaction: model state stays mutated even after abort.
+        // The scope aborts its policy frame; eager model state remains authored.
         #expect(view.frame == Rect(x: 100, y: 200, width: 300, height: 400))
     }
 
@@ -39,20 +40,16 @@ import Testing
         let view = View()
         #expect(!view.isHidden)
 
-        var tx = Transaction()
-        view.setProperties(ViewProperties(
-            frame: Rect(x: 11, y: 12, width: 13, height: 14),
-            isHidden: true
-        ))
+        try Transaction.run(in: view) {
+            view.setProperties(ViewProperties(
+                frame: Rect(x: 11, y: 12, width: 13, height: 14),
+                isHidden: true
+            ))
 
-        // Eager local apply — visible immediately on the view.
-        #expect(view.frame == Rect(x: 11, y: 12, width: 13, height: 14))
-        #expect(view.isHidden)
-
-        try tx.commit()
-
-        #expect(view.frame == Rect(x: 11, y: 12, width: 13, height: 14))
-        #expect(view.isHidden)
+            // Eager local apply — visible inside the transaction body.
+            #expect(view.frame == Rect(x: 11, y: 12, width: 13, height: 14))
+            #expect(view.isHidden)
+        }
     }
 
     @Test func directHiddenSetterUsesPropertyBatchPath() throws {
@@ -98,17 +95,13 @@ import Testing
         #expect(window.root === view)
     }
 
-    @Test func explicitTransactionGroupsWritesIntoOneFFICommit() throws {
-        // Two writes inside one Transaction land in a single FFI commit
-        // when the transaction commits. Outside-transaction writes go to
-        // the implicit ambient buffer; they're not flushed by Transaction.
+    @Test func scopedTransactionCapturesOneImmutablePolicy() throws {
         let view = View()
-        var tx = Transaction()
-        view.frame = (Rect(x: 1, y: 2, width: 3, height: 4))
-        view.isHidden = (true)
-        try tx.commit()
+        try Transaction.run(in: view, configuration: .animated) {
+            view.frame = Rect(x: 1, y: 2, width: 3, height: 4)
+            view.isHidden = true
+        }
 
-        // Eager local apply means reads see the writes either way.
         #expect(view.frame == Rect(x: 1, y: 2, width: 3, height: 4))
         #expect(view.isHidden)
     }

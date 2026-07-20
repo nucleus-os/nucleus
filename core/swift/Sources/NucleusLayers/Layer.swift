@@ -153,6 +153,13 @@ public struct LayerPropertyUpdate: Sendable, Equatable {
     public var borderBottom: BorderEdge?
     public var borderLeft: BorderEdge?
     public var content: LayerContent?
+    /// Layer-local logical region whose pixels changed with `content`.
+    ///
+    /// `nil` means the complete content bounds. The field is meaningful only
+    /// when `content` is present; keeping it on the content update makes damage
+    /// a per-layer publication fact rather than metadata baked into a reusable
+    /// paint registration.
+    public var contentDamage: GeometryRect?
     public var contentSample: ContentSample?
     public var backgroundEffect: Bool?
     public var backgroundEffectRegions: BackgroundEffectRegions?
@@ -177,6 +184,7 @@ public struct LayerPropertyUpdate: Sendable, Equatable {
         borderBottom: BorderEdge? = nil,
         borderLeft: BorderEdge? = nil,
         content: LayerContent? = nil,
+        contentDamage: GeometryRect? = nil,
         contentSample: ContentSample? = nil,
         backgroundEffect: Bool? = nil,
         backgroundEffectRegions: BackgroundEffectRegions? = nil
@@ -200,6 +208,7 @@ public struct LayerPropertyUpdate: Sendable, Equatable {
         self.borderBottom = borderBottom
         self.borderLeft = borderLeft
         self.content = content
+        self.contentDamage = contentDamage
         self.contentSample = contentSample
         self.backgroundEffect = backgroundEffect
         self.backgroundEffectRegions = backgroundEffectRegions
@@ -285,28 +294,42 @@ open class Layer: ~Sendable {
     /// matching component of the layer's `Shadow` composite and commits a
     /// property update. To set multiple shadow properties atomically, use
     /// `setProperties(.init(shadow: ...))` or batch in a `LayerTransaction`.
-    public var shadowColor: Color {
-        get { descriptor.shadow.color }
-        set { setShadowComponent { $0.color = newValue } }
-    }
-    public var shadowOpacity: Double {
-        get { descriptor.shadow.opacity }
-        set { setShadowComponent { $0.opacity = newValue } }
-    }
+    public var shadowColor: Color { descriptor.shadow.color }
+    public var shadowOpacity: Double { descriptor.shadow.opacity }
     public var shadowOffset: GeometrySize {
-        get { GeometrySize(width: descriptor.shadow.offsetX, height: descriptor.shadow.offsetY) }
-        set { setShadowComponent { $0.offsetX = newValue.width; $0.offsetY = newValue.height } }
+        GeometrySize(
+            width: descriptor.shadow.offsetX,
+            height: descriptor.shadow.offsetY
+        )
     }
-    public var shadowRadius: Double {
-        get { descriptor.shadow.blurRadius }
-        set { setShadowComponent { $0.blurRadius = newValue } }
+    public var shadowRadius: Double { descriptor.shadow.blurRadius }
+
+    public func setShadowColor(_ color: Color) throws(LayerError) {
+        try setShadowComponent { $0.color = color }
     }
 
-    private func setShadowComponent(_ mutate: (inout Shadow) -> Void) {
+    public func setShadowOpacity(_ opacity: Double) throws(LayerError) {
+        try setShadowComponent { $0.opacity = opacity }
+    }
+
+    public func setShadowOffset(_ offset: GeometrySize) throws(LayerError) {
+        try setShadowComponent {
+            $0.offsetX = offset.width
+            $0.offsetY = offset.height
+        }
+    }
+
+    public func setShadowRadius(_ radius: Double) throws(LayerError) {
+        try setShadowComponent { $0.blurRadius = radius }
+    }
+
+    private func setShadowComponent(
+        _ mutate: (inout Shadow) -> Void
+    ) throws(LayerError) {
         var next = descriptor.shadow
         mutate(&next)
         guard next != descriptor.shadow else { return }
-        try? setProperties(LayerPropertyUpdate(shadow: next))
+        try setProperties(LayerPropertyUpdate(shadow: next))
     }
 
     public func setProperties(_ properties: LayerPropertyUpdate) throws(LayerError) {
@@ -317,7 +340,7 @@ open class Layer: ~Sendable {
 
     /// Producer-side convenience: writes `position` + `bounds` in one
     /// transaction so the wire carries only decomposed geometry.
-    /// Mirrors `CALayer`'s frame setter, which expands into
+    /// This follows `CALayer`'s frame behavior by expanding into
     /// `position` + `bounds` writes underneath.
     public func setFrame(_ rect: GeometryRect) throws(LayerError) {
         try setProperties(.decomposedFrame(rect))

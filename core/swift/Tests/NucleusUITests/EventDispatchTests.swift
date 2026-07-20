@@ -6,7 +6,7 @@ import NucleusUI
 /// traverse that view's chain, with a press capturing so the release reaches
 /// the same view wherever the pointer ended up.
 @MainActor
-@Suite struct EventDispatchTests {
+@Suite(.uiContext) struct EventDispatchTests {
     class RecordingView: View {
         var received: [EventType] = []
         var handles: Set<EventType> = []
@@ -27,7 +27,7 @@ import NucleusUI
         root.frame = frame
         window.setContentView(root)
         window.orderFront()
-        let scene = WindowScene(windows: [window])
+        let scene = WindowScene(inMemoryWindows: [window])
         scene.makeKey(window)
         return (scene, window)
     }
@@ -75,7 +75,7 @@ import NucleusUI
         root.frame = Rect(x: 0, y: 0, width: 100, height: 100)
         window.setContentView(root)
         window.orderFront()
-        let scene = WindowScene(windows: [window])
+        let scene = WindowScene(inMemoryWindows: [window])
 
         #expect(scene.dispatchEvent(Event(type: .keyDown)) == .notHandled)
         #expect(root.received.isEmpty)
@@ -154,6 +154,49 @@ import NucleusUI
 
         _ = scene.dispatchEvent(Event(type: .pointerDown, location: Point(x: 25, y: 27)))
         #expect(target.lastLocation == Point(x: 5, y: 7))
+    }
+
+    @Test func capturedPointerSequenceStaysExactInANonzeroOriginWindow() {
+        final class LocationView: View {
+            var locations: [(EventType, Point)] = []
+
+            override func handleEvent(_ event: Event) -> EventHandling {
+                locations.append((event.type, event.location))
+                return .handled
+            }
+        }
+
+        let root = RecordingView()
+        let container = View()
+        container.frame = Rect(x: 30, y: 20, width: 120, height: 90)
+        container.boundsOrigin = Point(x: 5, y: 8)
+        let target = LocationView()
+        target.frame = Rect(x: 15, y: 18, width: 40, height: 30)
+        container.addSubview(target)
+        root.addSubview(container)
+
+        let window = Window(
+            title: "Placed",
+            frame: Rect(x: 400, y: 250, width: 300, height: 200)
+        )
+        window.setContentView(root)
+        window.orderFront()
+        let scene = WindowScene(inMemoryWindows: [window])
+
+        _ = scene.dispatchEvent(
+            Event(type: .pointerDown, location: Point(x: 442, y: 283))
+        )
+        _ = scene.dispatchEvent(
+            Event(type: .pointerDragged, location: Point(x: 457, y: 301))
+        )
+        _ = scene.dispatchEvent(
+            Event(type: .pointerUp, location: Point(x: 475, y: 315))
+        )
+
+        #expect(target.locations.map(\.0) == [.pointerEntered, .pointerDown, .pointerDragged, .pointerUp])
+        #expect(target.locations[1].1 == Point(x: 2, y: 3))
+        #expect(target.locations[2].1 == Point(x: 17, y: 21))
+        #expect(target.locations[3].1 == Point(x: 35, y: 35))
     }
 
     /// A press captures, so a release that lands outside still reaches the

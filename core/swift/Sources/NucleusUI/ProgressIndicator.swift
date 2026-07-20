@@ -4,7 +4,7 @@
 /// current volume are the same control — so there is no separate level
 /// indicator.
 @MainActor
-public final class ProgressBar: View, ~Sendable {
+public final class ProgressIndicator: View, ~Sendable {
     public enum Orientation: Sendable, Equatable {
         /// Fills from the leading edge.
         case horizontal
@@ -31,6 +31,7 @@ public final class ProgressBar: View, ~Sendable {
             let clamped = newValue.isFinite ? min(1, max(0, newValue)) : 0
             guard clamped != storedProgress else { return }
             storedProgress = clamped
+            accessibilityValue = String(clamped)
             setNeedsLayout()
         }
     }
@@ -67,7 +68,9 @@ public final class ProgressBar: View, ~Sendable {
         fillClip.clipsToBounds = true
         fillClip.addSubview(fill)
         addSubview(fillClip)
+        isAccessibilityElement = true
         accessibilityRole = .progressIndicator
+        accessibilityValue = "0.0"
         applyColors()
     }
 
@@ -84,6 +87,10 @@ public final class ProgressBar: View, ~Sendable {
     public override func viewDidChangeEffectiveAppearance() {
         applyColors()
         super.viewDidChangeEffectiveAppearance()
+    }
+
+    public override var environmentDependencies: UIEnvironmentChanges {
+        super.environmentDependencies
     }
 
     public override func layout() {
@@ -124,8 +131,8 @@ public final class ProgressBar: View, ~Sendable {
     /// how long it is.
     public override var intrinsicContentSize: Size {
         orientation == .vertical
-            ? Size(width: ProgressBar.thickness, height: 0)
-            : Size(width: 0, height: ProgressBar.thickness)
+            ? Size(width: ProgressIndicator.thickness, height: 0)
+            : Size(width: 0, height: ProgressIndicator.thickness)
     }
 
     private static let thickness: Double = 4

@@ -2,7 +2,7 @@
 // description of one or more windows; an `App`'s `body` is a `Scene`. Scenes compose:
 // a custom `Scene`'s `body` is another `Scene`, walked until a *primitive* scene
 // (`WindowGroup`, `_SceneList`, `EmptyScene`) is reached, which materializes onto the
-// platform host. This mirrors SwiftUI: primitives set `Body = Never` and don't implement
+// platform host. As in SwiftUI, primitives set `Body = Never` and don't implement
 // `body` (a `where Body == Never` default traps), and are recognized structurally
 // (`_PrimitiveScene`) rather than by having their `body` evaluated.
 
@@ -29,18 +29,18 @@ extension Scene where Body == Never {
 /// `body`. Internal: the vocabulary's leaves conform, and the walk recognizes them.
 @MainActor
 protocol _PrimitiveScene {
-    func _materializePrimitive(into host: any PlatformAppHost) throws
+    func _materializePrimitive(using materializer: SceneMaterializer) throws
 }
 
 extension Scene {
     /// Walk to primitives and materialize. A primitive materializes itself; any other
     /// scene recurses into its `body`. Recursion terminates because every user scene's
     /// `body` eventually resolves to a primitive.
-    func _materialize(into host: any PlatformAppHost) throws {
+    func _materialize(using materializer: SceneMaterializer) throws {
         if let primitive = self as? any _PrimitiveScene {
-            try primitive._materializePrimitive(into: host)
+            try primitive._materializePrimitive(using: materializer)
         } else {
-            try body._materialize(into: host)
+            try body._materialize(using: materializer)
         }
     }
 }
@@ -55,7 +55,7 @@ extension Never: Scene {
 public struct EmptyScene: Scene, _PrimitiveScene {
     public typealias Body = Never
     public init() {}
-    func _materializePrimitive(into host: any PlatformAppHost) throws {}
+    func _materializePrimitive(using materializer: SceneMaterializer) throws {}
 }
 
 /// An ordered group of scenes — the result of a multi-statement `@SceneBuilder` block.
@@ -65,9 +65,9 @@ public struct _SceneList: Scene, _PrimitiveScene {
     public typealias Body = Never
     let scenes: [any Scene]
     init(_ scenes: [any Scene]) { self.scenes = scenes }
-    func _materializePrimitive(into host: any PlatformAppHost) throws {
+    func _materializePrimitive(using materializer: SceneMaterializer) throws {
         for scene in scenes {
-            try scene._materialize(into: host)
+            try scene._materialize(using: materializer)
         }
     }
 }

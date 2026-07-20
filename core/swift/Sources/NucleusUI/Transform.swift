@@ -16,6 +16,13 @@ public struct Transform: Sendable, Equatable {
         m30: 0, m31: 0, m32: 0, m33: 1
     )
 
+    public var isFinite: Bool {
+        m00.isFinite && m01.isFinite && m02.isFinite && m03.isFinite
+            && m10.isFinite && m11.isFinite && m12.isFinite && m13.isFinite
+            && m20.isFinite && m21.isFinite && m22.isFinite && m23.isFinite
+            && m30.isFinite && m31.isFinite && m32.isFinite && m33.isFinite
+    }
+
     public init(
         m00: Double, m01: Double, m02: Double, m03: Double,
         m10: Double, m11: Double, m12: Double, m13: Double,

@@ -4,7 +4,7 @@ import NucleusUI
 /// Tracking areas, cursors, and tooltips: what a bar widget needs to respond to
 /// a pointer resting on it.
 @MainActor
-@Suite struct TrackingAreaTests {
+@Suite(.uiContext) struct TrackingAreaTests {
     private func makeScene(
         root: View, frame: Rect = Rect(x: 0, y: 0, width: 200, height: 100)
     ) -> WindowScene {
@@ -12,7 +12,7 @@ import NucleusUI
         root.frame = frame
         window.setContentView(root)
         window.orderFront()
-        let scene = WindowScene(windows: [window])
+        let scene = WindowScene(inMemoryWindows: [window])
         scene.makeKey(window)
         return scene
     }
@@ -97,6 +97,33 @@ import NucleusUI
 
         move(scene, to: Point(x: 100, y: 80))
         #expect(!child.isHovered)
+    }
+
+    @Test func disconnectReleasesHoveredSemanticTrees() throws {
+        var root: View? = View()
+        var child: View? = View()
+        child!.frame = Rect(x: 10, y: 10, width: 30, height: 30)
+        child!.addTracking()
+        root!.addSubview(child!)
+        var window: Window? = Window(title: "Teardown")
+        root!.frame = Rect(x: 0, y: 0, width: 100, height: 100)
+        window!.setContentView(root!)
+        window!.orderFront()
+        let scene = WindowScene(inMemoryWindows: [window!])
+        move(scene, to: Point(x: 20, y: 20))
+        #expect(child!.isHovered)
+
+        weak let weakRoot = root
+        weak let weakChild = child
+        weak let weakWindow = window
+        try scene.disconnect()
+        root = nil
+        child = nil
+        window = nil
+
+        #expect(weakRoot == nil)
+        #expect(weakChild == nil)
+        #expect(weakWindow == nil)
     }
 
     /// Hover is a chain. A widget stays hovered while the pointer is over the
@@ -361,5 +388,28 @@ import NucleusUI
         move(scene, to: Point(x: 35, y: 15), at: 0)
         scene.updateToolTip(atNanoseconds: scene.toolTipDelayNanoseconds)
         #expect(anchor == Rect(x: 30, y: 12, width: 40, height: 20))
+    }
+
+    @Test func tooltipAnchorIncludesANonzeroWindowPlacementOnce() {
+        let root = View()
+        let view = View()
+        view.frame = Rect(x: 30, y: 12, width: 40, height: 20)
+        view.addTracking(toolTip: "Anchored")
+        root.addSubview(view)
+
+        let window = Window(
+            title: "Placed",
+            frame: Rect(x: 500, y: 300, width: 200, height: 100)
+        )
+        window.setContentView(root)
+        window.orderFront()
+        let scene = WindowScene(inMemoryWindows: [window])
+
+        var anchor: Rect = .zero
+        scene.onToolTipChange = { _, rect in anchor = rect }
+
+        move(scene, to: Point(x: 535, y: 315), at: 0)
+        scene.updateToolTip(atNanoseconds: scene.toolTipDelayNanoseconds)
+        #expect(anchor == Rect(x: 530, y: 312, width: 40, height: 20))
     }
 }

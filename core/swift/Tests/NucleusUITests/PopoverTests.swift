@@ -1,9 +1,10 @@
 import Testing
 import NucleusUI
+import func NucleusLayers.installStubHost
 
 /// Popup placement. Pure geometry, and the part most likely to be wrong at a
 /// screen edge — which is exactly where it is hardest to reproduce by hand.
-@Suite struct PopupPlacementTests {
+@Suite(.uiContext) struct PopupPlacementTests {
     private let screen = Rect(x: 0, y: 0, width: 1000, height: 800)
 
     @Test func thePreferredEdgeIsUsedWhenItFits() {
@@ -91,14 +92,14 @@ import NucleusUI
 
 /// Popovers: presentation, the dismissal cascade, and the policies.
 @MainActor
-@Suite struct PopoverTests {
+@Suite(.uiContext) struct PopoverTests {
     private func makeScene() -> WindowScene {
         let root = View()
         root.frame = Rect(x: 0, y: 0, width: 400, height: 300)
         let window = Window(title: "Base")
         window.setContentView(root)
         window.orderFront()
-        let scene = WindowScene(windows: [window])
+        let scene = WindowScene(inMemoryWindows: [window])
         scene.makeKey(window)
         scene.displayBounds = Rect(x: 0, y: 0, width: 400, height: 300)
         scene.drawsToolTips = false
@@ -236,6 +237,64 @@ import NucleusUI
         #expect(scene.popovers.count == 1)
     }
 
+    @Test func repeatedPopoverLifecycleKeepsVisualResourcesBounded() throws {
+        installStubHost()
+        let scene = makeScene()
+        _ = try scene.publish()
+        var maximumLayers = scene.publishedVisualLayerCount
+        var maximumPaintRegistrations =
+            scene.retainedPaintRegistrationCount
+
+        for iteration in 0..<200 {
+            let label = Label("Tooltip \(iteration)")
+            label.frame = Rect(x: 0, y: 0, width: 100, height: 24)
+            let popover = Popover.withChrome(
+                content: label,
+                anchor: Rect(
+                    x: Double(iteration % 200),
+                    y: 50,
+                    width: 10,
+                    height: 10),
+                dismissal: .anyClickPassively)
+            scene.present(popover)
+            _ = try scene.publish()
+            maximumLayers = max(
+                maximumLayers,
+                scene.publishedVisualLayerCount)
+            maximumPaintRegistrations = max(
+                maximumPaintRegistrations,
+                scene.retainedPaintRegistrationCount)
+
+            scene.dismiss(popover)
+            _ = try scene.publish()
+        }
+
+        #expect(scene.popovers.isEmpty)
+        #expect(maximumLayers <= 4)
+        #expect(maximumPaintRegistrations <= 3)
+        #expect(scene.publishedVisualLayerCount == 1)
+        #expect(scene.retainedPaintRegistrationCount <= 1)
+        try scene.disconnect()
+    }
+
+    @Test func disconnectDismissesAndReleasesOpenPopovers() throws {
+        let scene = makeScene()
+        var popover: Popover? = makePopover()
+        var dismissCount = 0
+        popover!.onDismiss = { dismissCount += 1 }
+        scene.present(popover!)
+        _ = try scene.publish()
+        weak let weakPopover = popover
+
+        try scene.disconnect()
+        popover = nil
+
+        #expect(scene.popovers.isEmpty)
+        #expect(scene.windows.isEmpty)
+        #expect(dismissCount == 1)
+        #expect(weakPopover == nil)
+    }
+
     // MARK: - Reflow
 
     @Test func changingTheAnchorRepositions() {
@@ -275,7 +334,7 @@ import NucleusUI
         let window = Window(title: "Base")
         window.setContentView(root)
         window.orderFront()
-        let scene = WindowScene(windows: [window])
+        let scene = WindowScene(inMemoryWindows: [window])
         scene.makeKey(window)
         scene.displayBounds = Rect(x: 0, y: 0, width: 400, height: 300)
 
@@ -302,7 +361,7 @@ import NucleusUI
         let window = Window(title: "Base")
         window.setContentView(root)
         window.orderFront()
-        let scene = WindowScene(windows: [window])
+        let scene = WindowScene(inMemoryWindows: [window])
         scene.makeKey(window)
         scene.displayBounds = Rect(x: 0, y: 0, width: 400, height: 300)
 

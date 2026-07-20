@@ -369,7 +369,10 @@ Path::Impl *Path::raw() const { return impl_.get(); }
 Path makePath(
     const uint8_t *verbs, size_t verbCount,
     const float *points, size_t pointCount, bool evenOdd) {
-    if (verbs == nullptr || (points == nullptr && pointCount > 0)) return Path(nullptr);
+    if ((verbs == nullptr && verbCount > 0) ||
+        (points == nullptr && pointCount > 0)) {
+        return Path(nullptr);
+    }
 
     SkPathBuilder builder;
     builder.setFillType(evenOdd ? SkPathFillType::kEvenOdd : SkPathFillType::kWinding);
@@ -415,13 +418,16 @@ Path makePath(
                 const float *p = take(6);
                 if (!p) return Path(nullptr);
                 const SkRect oval = SkRect::MakeXYWH(p[0], p[1], p[2], p[3]);
-                // `arcTo` degenerates at a full sweep — it emits nothing, so a
-                // 360-degree arc would silently disappear. A full sweep is an
-                // oval, which is also what a caller means by it (a ring at 100%,
-                // a circle).
+                // A full sweep is emitted as two connected half-arcs. `arcTo`
+                // degenerates at 360 degrees, while `addOval` discards the
+                // authored start angle and therefore changes the current point
+                // seen by a following segment.
                 if (std::abs(p[5]) >= 360.0f) {
-                    builder.addOval(oval, p[5] < 0 ? SkPathDirection::kCCW
-                                                   : SkPathDirection::kCW);
+                    const float halfSweep = p[5] < 0 ? -180.0f : 180.0f;
+                    builder.arcTo(oval, p[4], halfSweep, /*forceMoveTo=*/false);
+                    builder.arcTo(
+                        oval, p[4] + halfSweep, halfSweep,
+                        /*forceMoveTo=*/false);
                 } else {
                     builder.arcTo(oval, p[4], p[5], /*forceMoveTo=*/false);
                 }
@@ -1003,6 +1009,19 @@ void Canvas::clipPath(const Path &path, bool antialias) const {
     Path::Impl *p = path.raw();
     if (p == nullptr) return;
     impl_->canvas->clipPath(p->path, SkClipOp::kIntersect, antialias);
+}
+
+void Canvas::clipPathTransformed(
+    const Path &path, const float matrix[9], bool antialias) const {
+    if (!isValid() || matrix == nullptr) return;
+    Path::Impl *p = path.raw();
+    if (p == nullptr) return;
+    const SkMatrix transform = SkMatrix::MakeAll(
+        matrix[0], matrix[1], matrix[2],
+        matrix[3], matrix[4], matrix[5],
+        matrix[6], matrix[7], matrix[8]);
+    const SkPath mapped = p->path.makeTransform(transform);
+    impl_->canvas->clipPath(mapped, SkClipOp::kIntersect, antialias);
 }
 
 void Canvas::concat(const float m[9]) const {

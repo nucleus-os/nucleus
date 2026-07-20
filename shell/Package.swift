@@ -309,6 +309,26 @@ let package = Package(
             path: "Sources/NucleusShellDBus",
             swiftSettings: [.interoperabilityMode(.Cxx)]
         ),
+        // AT-SPI is a Linux host adapter over NucleusUI's platform-neutral
+        // accessibility tree. The portable framework never imports sd-bus.
+        .target(
+            name: "NucleusShellAccessibility",
+            dependencies: [
+                "NucleusShellDBusC",
+                .product(name: "NucleusUI", package: "Nucleus"),
+            ],
+            path: "Sources/NucleusShellAccessibility",
+            swiftSettings: [.interoperabilityMode(.Cxx)]
+        ),
+        .testTarget(
+            name: "NucleusShellAccessibilityTests",
+            dependencies: [
+                "NucleusShellAccessibility",
+                .product(name: "NucleusUI", package: "Nucleus"),
+            ],
+            path: "Tests/NucleusShellAccessibilityTests",
+            swiftSettings: [.interoperabilityMode(.Cxx)]
+        ),
         .testTarget(
             name: "NucleusShellDBusTests",
             dependencies: ["NucleusShellDBus"],
@@ -379,6 +399,8 @@ let package = Package(
                 // The helper binary itself, so the round-trip test has one to run.
                 "NucleusShellPamHelper",
                 .product(name: "NucleusUI", package: "Nucleus"),
+                .product(name: "NucleusUIEmbedder", package: "Nucleus"),
+                .product(name: "NucleusLayers", package: "Nucleus"),
                 .product(name: "NucleusTextBackend", package: "Nucleus"),
             ],
             path: "Tests/NucleusShellInputTests",
@@ -391,7 +413,7 @@ let package = Package(
             dependencies: [
                 "NucleusShellWayland", "NucleusShellRender", "NucleusShellSignalC",
                 "NucleusShellProduct", "NucleusShellInput", "NucleusShellAuth",
-                "NucleusShellServices",
+                "NucleusShellServices", "NucleusShellAccessibility",
                 .product(name: "NucleusReactRuntime", package: "NucleusReactNative"),
                 .product(name: "NucleusReactRuntimeCxx", package: "NucleusReactNative"),
                 .product(name: "NucleusRenderer", package: "Nucleus"),
@@ -403,7 +425,6 @@ let package = Package(
                 .product(name: "NucleusAppHostBundle", package: "Nucleus"),
                 .product(name: "NucleusAppHostProtocols", package: "Nucleus"),
                 .product(name: "Tracy", package: "swift-tracy"),
-                .product(name: "NucleusTextCxxBridge", package: "Nucleus"),
             ],
             path: "Sources/NucleusShellRuntime",
             swiftSettings: [

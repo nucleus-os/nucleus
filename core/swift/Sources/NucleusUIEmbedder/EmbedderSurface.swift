@@ -19,6 +19,7 @@ import NucleusUI
 /// Registered paint content plus the layer update that binds it. Hold it until
 /// the update has been applied or appended; it keeps the content and any
 /// transient text handles alive.
+@MainActor
 public struct RegisteredPaintContent {
     package let inner: RegisteredPaint
 
@@ -81,15 +82,69 @@ extension Layer {
     }
 }
 
+// MARK: - Retained view-tree publication
+
+/// Owns the visual realization of one embedder-hosted semantic view tree.
+///
+/// The semantic `View` graph never exposes layers. This object is the sole
+/// owner of its visual cache and lowers every mount batch through the same
+/// publisher used by native windows.
+@MainActor
+public final class EmbeddedViewTreePublisher: ~Sendable {
+    private let publisher: ViewLayerPublisher
+
+    public let visualContext: Context
+
+    public init(visualContext: Context) {
+        self.visualContext = visualContext
+        self.publisher = ViewLayerPublisher(context: visualContext)
+    }
+
+    @discardableResult
+    public func publish(
+        rootView: View,
+        into parentLayer: Layer? = nil,
+        at index: UInt32 = UInt32.max
+    ) throws(UIError) -> PublishedVisualContent {
+        let content = try publisher.publish(
+            roots: [rootView],
+            rootParent: parentLayer,
+            rootSiblingIndex: index
+        )
+        guard let published = content.first else {
+            throw .invalidArgument(detail: "embedded view tree produced no visual root")
+        }
+        return published
+    }
+
+    /// The publisher-owned container placed into the embedder's layer tree.
+    public var rootLayer: Layer? {
+        publisher.publishedRootLayer
+    }
+
+    public func visualLayer(for view: View) -> Layer? {
+        publisher.visualLayer(for: view)
+    }
+
+    public func invalidate() throws(UIError) {
+        try publisher.invalidate()
+    }
+}
+
 // MARK: - Views
 
 extension View {
-    /// The layer this view draws into. An embedder that builds its own layer
-    /// tree parents and binds content here.
-    public var embedderBackingLayer: Layer { backingLayer }
-
     /// What this view last drew. `displayIfNeeded()` refreshes it.
     public var recordedDrawing: PaintRecording { layerContent.recording }
+
+    /// Opaque resource-host identity inherited from the semantic UI context.
+    public var embedderResourceHostHandle: UInt64 {
+        uiContext.resourceHostHandle
+    }
+
+    public var embedderUIContext: UIContext {
+        uiContext
+    }
 }
 
 // MARK: - Graphics contexts
@@ -133,20 +188,24 @@ extension WindowScene {
 // MARK: - Application
 
 public enum EmbedderApplication {
-    /// Install `context` as the current render context for the duration of
-    /// `body`. Views minted inside it attach to that context's layer tree.
+    /// Pair a new semantic UI context with `context` for the duration of
+    /// construction.
     @MainActor
     public static func withContext<T>(_ context: Context, _ body: () throws -> T) rethrows -> T {
         try Application.withContext(context, body)
     }
 
     @MainActor
-    public static func pushContext(_ context: Context) {
-        Application.pushContext(context)
+    public static func withContexts<T>(
+        uiContext: UIContext,
+        visualContext: Context,
+        _ body: () throws -> T
+    ) rethrows -> T {
+        try Application.withContexts(
+            uiContext: uiContext,
+            visualContext: visualContext,
+            body
+        )
     }
 
-    @MainActor
-    public static func popContext() {
-        Application.popContext()
-    }
 }

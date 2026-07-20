@@ -86,7 +86,7 @@ public final class ShellOverlayScene: ~Sendable {
         hostedSurfaceRegistry.surface(
             for: id,
             frame: frame.map { Self.hostedSurfaceFrame($0) },
-            role: .shellChrome,
+            role: .layer,
             level: .shellChrome
         )
     }
@@ -145,7 +145,9 @@ public final class ShellOverlayScene: ~Sendable {
         self.clockNs = nowNs
         let publicationContext = try WindowScenePublicationContext(commitSink: commitSink)
         self.publicationContext = publicationContext
-        self.hostedSurfaceRegistry = HostedSurfaceRegistry(context: publicationContext.visualContext)
+        self.hostedSurfaceRegistry = HostedSurfaceRegistry(
+            context: publicationContext.visualContext,
+            uiContext: publicationContext.semanticContext)
         let notificationListView = publicationContext.withSemanticContext {
             ShellOverlayNotificationListView()
         }
@@ -160,10 +162,10 @@ public final class ShellOverlayScene: ~Sendable {
             Window(title: "Notifications", role: .notification, level: .overlay)
         }
         self.hotkeyWindow = publicationContext.withSemanticContext {
-            Window(title: "Keyboard Shortcuts", role: .statusOverlay, level: .criticalOverlay)
+            Window(title: "Keyboard Shortcuts", role: .overlay, level: .criticalOverlay)
         }
         self.menuWindow = publicationContext.withSemanticContext {
-            Window(title: "Menu", role: .statusOverlay, level: .criticalOverlay)
+            Window(title: "Menu", role: .popup, level: .criticalOverlay)
         }
         self.windowScene = publicationContext.makeWindowScene(windows: [notificationWindow, hotkeyWindow, menuWindow])
         try publicationContext.withSemanticContext {
@@ -212,6 +214,16 @@ public final class ShellOverlayScene: ~Sendable {
         }
     }
 
+    package func updateEnvironment(
+        colorScheme: UInt32,
+        contrast: UInt32
+    ) {
+        var environment = publicationContext.semanticContext.environment
+        environment.appearance = colorScheme == 2 ? .light : .dark
+        environment.increasesContrast = contrast == 1
+        publicationContext.semanticContext.updateEnvironment(environment)
+    }
+
     package func showNotification(_ notification: ShellOverlayNotificationInfo) -> Bool {
         Trace.zone("overlay.scene.show_notification", color: Trace.Color.green) {
             if let index = notificationRecords.firstIndex(where: { $0.info.id == notification.id }) {
@@ -243,7 +255,6 @@ public final class ShellOverlayScene: ~Sendable {
 
     package func dismissNotification(_ id: UInt32, reason: UInt32?) -> Bool {
         Trace.zone("overlay.scene.dismiss_notification", color: Trace.Color.yellow) {
-            let nowNs = clockNs()
             guard let index = notificationRecords.firstIndex(where: { $0.info.id == id }) else {
                 return false
             }
@@ -257,11 +268,10 @@ public final class ShellOverlayScene: ~Sendable {
                     try updateNotificationWindowFrame(frame)
                     notificationListView.layoutIfNeeded()
                 }
-                try notificationListView.removeArrangedSubview(
+                notificationListView.removeArrangedSubview(
                     view,
                     transition: .slideTrailingFade(duration: 0.24),
                     reflow: .animated(duration: 0.22),
-                    nowNs: nowNs,
                     didRemove: { [weak self, weak view] in
                         guard let self, let view else { return }
                         self.finishNotificationRemoval(view: view)
@@ -534,6 +544,8 @@ public final class ShellOverlayScene: ~Sendable {
         }
     }
 
+    private var activePointerButtons: PointerButtonMask = []
+
     /// Emit any repeats now due. Returns whether anything was dispatched, so the
     /// caller knows a frame is wanted.
     @discardableResult
@@ -565,7 +577,20 @@ public final class ShellOverlayScene: ~Sendable {
     package var keyRepeatActive: Bool { heldKey != nil }
 
     package func dispatchInput(_ event: ShellOverlayInputEvent) -> ShellOverlayInputResult {
-        let pointEvent = frame.map { event.convertedFromBackingPixels($0.backingScaleFactor) } ?? event
+        var pointEvent = frame.map {
+            event.convertedFromBackingPixels($0.backingScaleFactor)
+        } ?? event
+        switch pointEvent.kind {
+        case .pointerDown:
+            activePointerButtons.insert(
+                .button(ShellOverlayInputEvent.nucleonButton(pointEvent.button)))
+        case .pointerUp:
+            activePointerButtons.remove(
+                .button(ShellOverlayInputEvent.nucleonButton(pointEvent.button)))
+        default:
+            break
+        }
+        pointEvent.activeButtons = activePointerButtons
         noteKeyState(pointEvent, nucleon: pointEvent.nucleonEvent)
         let cursor = cursor(for: pointEvent.location)
         if !menuLevels.isEmpty {
@@ -629,10 +654,6 @@ public final class ShellOverlayScene: ~Sendable {
             }
         }
 
-        if pointEvent.kind == .pointerMove {
-            return .init(consumed: false, wantsFrame: false, cursor: cursor)
-        }
-
         guard let nucleonEvent = pointEvent.nucleonEvent else {
             return .init(consumed: false, wantsFrame: false, cursor: cursor)
         }
@@ -660,22 +681,20 @@ public final class ShellOverlayScene: ~Sendable {
                 return nil
             }
             let nowNs = clockNs()
+            _ = publicationContext.semanticContext.advanceAnimations(
+                predictedPresentationNanoseconds: nowNs
+            )
             advanceKeyRepeat(nowNs: nowNs)
             expireNotifications(nowNs: nowNs)
-            do {
-                try notificationListView.advanceArrangedSubviewTransitions(nowNs: nowNs)
-            } catch {
-                logShellOverlayError("notification transition advance failed: \(error)")
-            }
             let publishedScene: PublishedScene
             do {
                 publishedScene = try windowScene.publish(
                     placing: hostedSurfaceRegistry.placements()
                 ) { window in
                     switch window.role {
-                    case .notification, .statusOverlay:
+                    case .notification, .overlay, .popup:
                         true
-                    case .application, .shellChrome, .hostedSurface:
+                    case .application, .layer, .lock, .hostedContent:
                         false
                     }
                 }
@@ -750,7 +769,9 @@ public final class ShellOverlayScene: ~Sendable {
     }
 
     private func nextNotificationPublicationDeadlineNs() -> UInt64? {
-        var deadline = notificationListView.nextArrangedSubviewTransitionDeadlineNs
+        var deadline: UInt64? = notificationListView.arrangedSubviewTransitionActive
+            ? clockNs()
+            : nil
         for record in notificationRecords where !notificationListView.isArrangedSubviewRemovalQueued(record.view) {
             let timeoutMs = record.info.expireTimeoutMs <= 0 ? 5_000 : record.info.expireTimeoutMs
             let timeoutNs = record.createdNs + UInt64(timeoutMs) * 1_000_000

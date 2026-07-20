@@ -52,7 +52,7 @@ final class SwiftImageRegistrar: ImageRegistrar {
 }
 
 /// `ImageLifecycle` over `SwiftResourceHost.images`.
-final class SwiftImageLifecycle: ImageLifecycle, @unchecked Sendable {
+final class SwiftImageLifecycle: ImageLifecycle {
     func retain(resourceHostHandle: UInt64, handle: UInt64) {
         if resourceHostHandle == 0 { return }
         SwiftResourceHost.shared.images.retain(handle)
@@ -77,7 +77,7 @@ final class SwiftRuntimeEffectRegistrar: RuntimeEffectRegistrar {
 }
 
 /// `RuntimeEffectLifecycle` over `SwiftResourceHost.runtimeEffects`.
-final class SwiftRuntimeEffectLifecycle: RuntimeEffectLifecycle, @unchecked Sendable {
+final class SwiftRuntimeEffectLifecycle: RuntimeEffectLifecycle {
     func retain(handle: UInt64) {
         SwiftResourceHost.shared.runtimeEffects.retain(handle)
     }
@@ -178,7 +178,7 @@ final class SwiftPaintContentRegistrar: PaintContentRegistrar {
 }
 
 /// `PaintContentLifecycle` over `SwiftResourceHost.paintContents`.
-final class SwiftPaintContentLifecycle: PaintContentLifecycle, @unchecked Sendable {
+final class SwiftPaintContentLifecycle: PaintContentLifecycle {
     func retain(resourceHostHandle: UInt64, handle: UInt64) {
         if resourceHostHandle == 0 { return }
         SwiftResourceHost.shared.paintContents.retain(PaintContentHandle(raw: handle))
@@ -194,7 +194,7 @@ final class SwiftPaintContentLifecycle: PaintContentLifecycle, @unchecked Sendab
 /// `SnapshotLifecycle` over `SwiftResourceHost.snapshots`. Release drops the
 /// snapshot's backing texture handle (the renderer's registry release is driven
 /// by the renderer-side `releaseSnapshot`; here we only drop the metadata ref).
-final class SwiftSnapshotLifecycle: SnapshotLifecycle, @unchecked Sendable {
+final class SwiftSnapshotLifecycle: SnapshotLifecycle {
     func retain(resourceHostHandle: UInt64, handle: UInt64) {
         if resourceHostHandle == 0 { return }
         SwiftResourceHost.shared.snapshots.retain(SnapshotHandle(raw: handle))
@@ -223,6 +223,8 @@ final class SwiftImplicitActionRegistrar: ImplicitActionRegistrar {
                 mass: r.mass, stiffness: r.stiffness, damping: r.damping, duration: r.duration,
                 c1x: r.c1x, c1y: r.c1y, c2x: r.c2x, c2y: r.c2y))
         }
-        SwiftResourceHost.shared.implicitActions.replace(decoded)
+        var table = ImplicitActionTable()
+        table.replace(decoded)
+        SwiftResourceHost.shared.replaceImplicitActions(table)
     }
 }

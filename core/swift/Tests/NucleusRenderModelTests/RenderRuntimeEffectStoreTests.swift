@@ -50,18 +50,21 @@ import Testing
     /// The renderer caches compiled programs keyed by handle and drops them on
     /// eviction; handles are monotonic and never reused, so without this the
     /// compiled effect would persist until shutdown.
-    @Test func evictionNotifiesOnceWhenTheLastReferenceDrops() {
+    @Test func evictionQueuesOnceWhenTheLastReferenceDrops() {
         let store = RuntimeEffectStore()
-        var evicted: [UInt64] = []
-        store.onEvict = { evicted.append($0) }
 
         let h = store.register(RuntimeEffectSource(sksl: Self.programA))
         store.retain(h)
         store.release(h)
-        #expect(evicted.isEmpty, "no eviction while a reference remains")
+        #expect(
+            store.takeEvictedHandles().isEmpty,
+            "no eviction while a reference remains")
 
         store.release(h)
-        #expect(evicted == [h], "eviction fires once on the last release")
+        #expect(
+            store.takeEvictedHandles() == [h],
+            "eviction queues once on the last release")
+        #expect(store.takeEvictedHandles().isEmpty, "evictions drain once")
     }
 
     /// A handle freed and a later registration of the same source must not

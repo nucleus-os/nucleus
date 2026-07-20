@@ -2,12 +2,35 @@
 import Testing
 
 @MainActor
-@Suite struct LayoutTests {
+@Suite(.uiContext) struct LayoutTests {
+    init() {
+        installTestTextBackend()
+    }
+
     final class LayoutCountingView: View {
         var layoutCount = 0
 
         override func layout() {
             layoutCount += 1
+        }
+    }
+
+    final class BaselineView: View, LayoutBaselineProviding {
+        let desiredSize: Size
+        let metrics: LayoutBaselineMetrics
+
+        init(size: Size, first: Double, last: Double) {
+            desiredSize = size
+            metrics = LayoutBaselineMetrics(
+                firstFromTop: first, lastFromBottom: last)
+            super.init()
+        }
+
+        override var intrinsicContentSize: Size { desiredSize }
+
+        func layoutBaselines(for size: Size) -> LayoutBaselineMetrics {
+            _ = size
+            return metrics
         }
     }
 
@@ -379,6 +402,28 @@ import Testing
             .inset(by: EdgeInsets(top: 10, left: 10)).maxWidth == .infinity)
     }
 
+    @Test func constraintsCanonicalizeEveryInvalidRangeAndResult() {
+        let constraints = LayoutConstraints(
+            minWidth: .nan,
+            maxWidth: -.infinity,
+            minHeight: .infinity,
+            maxHeight: -10)
+        #expect(constraints == LayoutConstraints(
+            minWidth: 0, maxWidth: 0, minHeight: 0, maxHeight: 0))
+        #expect(constraints.constrain(Size(width: .nan, height: .infinity)) == .zero)
+
+        let reversed = LayoutConstraints(
+            minWidth: 40, maxWidth: 10,
+            minHeight: 20, maxHeight: 5)
+        #expect(reversed.minWidth == 40 && reversed.maxWidth == 40)
+        #expect(reversed.minHeight == 20 && reversed.maxHeight == 20)
+
+        let inset = LayoutConstraints(maxWidth: 100, maxHeight: 100).inset(
+            by: EdgeInsets(top: .nan, left: -.infinity, bottom: 10, right: 20))
+        #expect(inset.maxWidth == 80)
+        #expect(inset.maxHeight == 90)
+    }
+
     /// A stack reports its own size from its children, so nesting works.
     @Test func aStackMeasuresFromItsChildrenPlusSpacingAndMargins() throws {
         let stack = StackView(axis: .vertical, spacing: 4, alignment: .leading)
@@ -463,6 +508,66 @@ import Testing
 
         #expect(rigid.frame.size.width == 100)
         #expect(yielding.frame.size.width == 0)
+    }
+
+    @Test func stackShrinkFreezesMinimumsAndRedistributesTheRemainingDeficit() {
+        let stack = StackView(axis: .horizontal, alignment: .fill)
+        stack.frame = Rect(x: 0, y: 0, width: 120, height: 20)
+        let minimumBound = View()
+        minimumBound.frame = Rect(x: 0, y: 0, width: 100, height: 20)
+        minimumBound.minimumLayoutExtent = 80
+        let flexible = View()
+        flexible.frame = Rect(x: 0, y: 0, width: 100, height: 20)
+        flexible.minimumLayoutExtent = 0
+        stack.addArrangedSubview(minimumBound)
+        stack.addArrangedSubview(flexible)
+
+        stack.layoutIfNeeded()
+
+        #expect(abs(minimumBound.frame.size.width - 80) < 0.001)
+        #expect(abs(flexible.frame.size.width - 40) < 0.001)
+        #expect(abs(flexible.frame.origin.x + flexible.frame.size.width - 120) < 0.001)
+    }
+
+    @Test func equalSpacingContractsItsGapsWhenTheMinimumDoesNotFit() {
+        let stack = StackView(
+            axis: .horizontal, spacing: 20,
+            alignment: .fill, distribution: .equalSpacing)
+        stack.frame = Rect(x: 0, y: 0, width: 110, height: 20)
+        let first = View()
+        first.frame = Rect(x: 0, y: 0, width: 50, height: 20)
+        let second = View()
+        second.frame = Rect(x: 0, y: 0, width: 50, height: 20)
+        stack.addArrangedSubview(first)
+        stack.addArrangedSubview(second)
+
+        stack.layoutIfNeeded()
+
+        #expect(first.frame.size.width == 50)
+        #expect(second.frame.size.width == 50)
+        #expect(second.frame.origin.x == 60, "the gap contracts from 20 to 10")
+        #expect(second.frame.origin.x + second.frame.size.width == 110)
+    }
+
+    @Test func firstAndLastBaselineAlignmentUseChildMetrics() {
+        let first = BaselineView(
+            size: Size(width: 20, height: 20), first: 5, last: 3)
+        let second = BaselineView(
+            size: Size(width: 20, height: 30), first: 12, last: 7)
+        let stack = StackView(
+            axis: .horizontal, alignment: .firstBaseline)
+        stack.frame = Rect(x: 0, y: 0, width: 100, height: 50)
+        stack.addArrangedSubview(first)
+        stack.addArrangedSubview(second)
+
+        stack.layoutIfNeeded()
+        #expect(first.frame.origin.y + 5 == second.frame.origin.y + 12)
+
+        stack.alignment = .lastBaseline
+        stack.layoutIfNeeded()
+        #expect(
+            first.frame.origin.y + first.frame.size.height - 3 ==
+                second.frame.origin.y + second.frame.size.height - 7)
     }
 
     @Test func layoutBasisOverridesTheMeasuredMainAxisSize() throws {
@@ -577,38 +682,49 @@ import Testing
         stack.layoutIfNeeded()
 
         let initialSecondY = second.frame.origin.y
-        try stack.removeArrangedSubview(
+        stack.removeArrangedSubview(
             first,
             transition: .slideTrailingFade(duration: 0.10),
             reflow: .animated(duration: 0.10),
-            nowNs: 1_000_000,
             didRemove: { removed.append(1) }
         )
-        try stack.removeArrangedSubview(
+        stack.removeArrangedSubview(
             second,
             transition: .slideTrailingFade(duration: 0.10),
             reflow: .animated(duration: 0.10),
-            nowNs: 1_000_000,
             didRemove: { removed.append(2) }
         )
 
-        #expect(first.alphaValue == 0)
+        #expect(first.alphaValue == 1)
         #expect(second.alphaValue == 1)
         #expect(second.frame.origin.y == initialSecondY)
 
-        try stack.advanceArrangedSubviewTransitions(nowNs: 101_000_000)
+        _ = stack.uiContext.advanceAnimations(
+            predictedPresentationNanoseconds: 1_000_000
+        )
+        _ = stack.uiContext.advanceAnimations(
+            predictedPresentationNanoseconds: 101_000_000
+        )
         #expect(removed == [1])
         #expect(!stack.arrangedSubviews.contains { $0 === first })
-        #expect(second.frame.origin.y == 0)
+        #expect(second.frame.origin.y == initialSecondY)
         #expect(second.alphaValue == 1)
 
-        try stack.advanceArrangedSubviewTransitions(nowNs: 201_000_000)
-        #expect(second.alphaValue == 0)
+        _ = stack.uiContext.advanceAnimations(
+            predictedPresentationNanoseconds: 201_000_000
+        )
+        #expect(second.frame.origin.y == 0)
+        #expect(second.alphaValue == 1)
         #expect(stack.arrangedSubviews.contains { $0 === second })
 
-        try stack.advanceArrangedSubviewTransitions(nowNs: 301_000_000)
+        _ = stack.uiContext.advanceAnimations(
+            predictedPresentationNanoseconds: 301_000_000
+        )
         #expect(removed == [1, 2])
         #expect(!stack.arrangedSubviews.contains { $0 === second })
+        _ = stack.uiContext.advanceAnimations(
+            predictedPresentationNanoseconds: 401_000_000
+        )
         #expect(third.frame.origin.y == 0)
     }
 }

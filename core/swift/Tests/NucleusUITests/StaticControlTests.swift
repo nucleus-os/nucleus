@@ -2,7 +2,7 @@
 import Testing
 
 @MainActor
-@Suite struct StaticControlTests {
+@Suite(.uiContext) struct StaticControlTests {
     @Test func buttonIntrinsicSizeTracksTitle() throws {
         let button = Button(title: "OK")
         let initial = button.intrinsicContentSize

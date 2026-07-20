@@ -7,6 +7,13 @@ public struct WindowHitTestResult {
     public let view: View
 }
 
+public enum SceneActivationState: Sendable, Equatable {
+    case background
+    case inactive
+    case active
+    case disconnected
+}
+
 @MainActor
 public final class WindowScene: ~Sendable {
     private let publisher: WindowLayerPublisher
@@ -17,12 +24,41 @@ public final class WindowScene: ~Sendable {
     }
 
     package let visualContext: Context
+    public let uiContext: UIContext
     public private(set) var windows: [Window] = []
     public private(set) var keyWindow: Window?
+    public private(set) var activationState: SceneActivationState = .background
+    public lazy var accessibilityTree = AccessibilityTree(scene: self)
 
-    /// The view a press latched onto, if any. Drags and the release go here
-    /// regardless of where the pointer currently is.
-    private var pointerCapture: WindowHitTestResult?
+    /// Called after the host changes this retained scene's activation state.
+    public var onActivationChange:
+        (@MainActor (SceneActivationState) -> Void)?
+
+    private enum SequenceKind: Hashable {
+        case pointer
+        case touch
+    }
+
+    private struct SequenceKey: Hashable {
+        var kind: SequenceKind
+        var deviceID: InputDeviceID
+        var sequenceID: InputSequenceID
+    }
+
+    private final class CaptureRecord {
+        weak var window: Window?
+        weak var view: View?
+        var lastSceneLocation: Point
+
+        init(window: Window, view: View, lastSceneLocation: Point) {
+            self.window = window
+            self.view = view
+            self.lastSceneLocation = lastSceneLocation
+        }
+    }
+
+    /// Independent capture per pointer/touch sequence.
+    private var captures: [SequenceKey: CaptureRecord] = [:]
     /// The view the pointer is currently over, for enter/exit.
     private weak var trackedView: View?
 
@@ -53,20 +89,17 @@ public final class WindowScene: ~Sendable {
     /// tooltip does not jitter as the pointer moves within a widget.
     public var onToolTipChange: ((String?, Rect) -> Void)?
 
-    public init(
-        windows: [Window] = []
-    ) {
-        self.publisher = WindowLayerPublisher(context: Application.currentContext)
-        self.visualContext = Application.currentContext
-        for window in windows {
-            addWindow(window)
-        }
-    }
-
     package init(
         windows: [Window] = [],
+        uiContext: UIContext,
         visualContext: Context
     ) {
+        precondition(
+            uiContext.resourceHostHandle == 0
+                || uiContext.resourceHostHandle
+                    == visualContext.commitSink.resourceHostHandle,
+            "WindowScene semantic and visual contexts use different resource hosts")
+        self.uiContext = uiContext
         self.visualContext = visualContext
         self.publisher = WindowLayerPublisher(context: visualContext)
         for window in windows {
@@ -74,16 +107,101 @@ public final class WindowScene: ~Sendable {
         }
     }
 
+    /// Explicit in-memory scene for tests, previews, and measurement tools.
+    ///
+    /// Production hosts construct scenes through their embedder/app-host
+    /// context so no production call silently acquires this sink.
+    public convenience init(inMemoryWindows windows: [Window] = []) {
+        let visualContext = Application.makeInMemoryVisualContext()
+        self.init(
+            windows: windows,
+            uiContext: windows.first?.uiContext ?? UIContext(),
+            visualContext: visualContext)
+    }
+
     public func addWindow(_ window: Window) {
+        precondition(
+            activationState != .disconnected,
+            "a disconnected WindowScene cannot adopt a window")
         guard !windows.contains(where: { $0 === window }) else {
             return
         }
+        precondition(
+            window.uiContext === uiContext,
+            "a WindowScene cannot adopt a window from another UIContext")
         windows.append(window)
         window.windowScene = self
     }
 
+    /// Apply a lifecycle transition authored by the platform host.
+    ///
+    /// Disconnect is a throwing teardown operation because it first removes the
+    /// published visual tree. Use `disconnect()` for that terminal transition.
+    public func transition(to state: SceneActivationState) {
+        precondition(
+            state != .disconnected,
+            "use WindowScene.disconnect() for terminal teardown")
+        guard activationState != .disconnected else { return }
+        guard activationState != state else { return }
+        activationState = state
+        if state == .inactive || state == .background {
+            resignKey()
+        }
+        onActivationChange?(state)
+    }
+
+    /// Terminal, idempotent scene teardown.
+    ///
+    /// The visual publisher is invalidated before semantic ownership is
+    /// released, so registered content and layers cannot outlive the scene that
+    /// authored them. A host destroys its protocol surface after this returns.
+    public func disconnect() throws(UIError) {
+        guard activationState != .disconnected else { return }
+        try publisher.invalidate()
+        resignKey()
+        hideToolTip()
+        dismissAllPopovers()
+        for view in hoveredViews {
+            view.isHovered = false
+        }
+        hoveredViews.removeAll(keepingCapacity: false)
+        trackedView = nil
+        activeTrackingArea = nil
+        hoverBeganAtNanoseconds = 0
+        toolTipShown = false
+        popoverFocusRestorations.removeAll(keepingCapacity: false)
+        for window in windows {
+            window.windowScene = nil
+            window.setOrderedOut()
+        }
+        windows.removeAll(keepingCapacity: false)
+        activationState = .disconnected
+        let activationCallback = onActivationChange
+        onActivationChange = nil
+        onCursorChange = nil
+        onToolTipChange = nil
+        activationCallback?(.disconnected)
+    }
+
+    public func windowPoint(_ point: Point, in window: Window) -> Point {
+        window.windowPoint(fromScene: point)
+    }
+
+    public func scenePoint(_ point: Point, in window: Window) -> Point {
+        window.scenePoint(fromWindow: point)
+    }
+
+    public func windowRect(_ rect: Rect, in window: Window) -> Rect {
+        window.windowRect(fromScene: rect)
+    }
+
+    public func sceneRect(_ rect: Rect, in window: Window) -> Rect {
+        window.sceneRect(fromWindow: rect)
+    }
+
     @discardableResult
     public func removeWindow(_ window: Window) -> Bool {
+        cancelInputSequences(in: window)
         let oldCount = windows.count
         windows.removeAll { $0 === window }
         if window.windowScene === self {
@@ -104,6 +222,7 @@ public final class WindowScene: ~Sendable {
     }
 
     public func orderOut(_ window: Window) {
+        cancelInputSequences(in: window)
         window.setOrderedOut()
         if keyWindow === window {
             keyWindow = nil
@@ -127,13 +246,25 @@ public final class WindowScene: ~Sendable {
     public func resignKey() {
         keyWindow?.setKey(false)
         keyWindow = nil
-        releasePointerCapture()
+        cancelInputSequences()
     }
 
     /// The scene's root layer, created and attached on first use. An embedder
     /// attaching its own content parents it here.
     package func ensureRootAttached() throws(UIError) -> Layer {
-        try publisher.ensureRootAttached()
+        guard activationState != .disconnected else {
+            throw .invalidArgument(
+                detail: "a disconnected WindowScene cannot attach visuals")
+        }
+        return try publisher.ensureRootAttached()
+    }
+
+    package var publishedVisualLayerCount: Int {
+        publisher.publishedVisualLayerCount
+    }
+
+    package var retainedPaintRegistrationCount: Int {
+        publisher.retainedPaintRegistrationCount
     }
 
     /// The sublayer index at which embedder-owned content at `level` should be
@@ -158,6 +289,10 @@ public final class WindowScene: ~Sendable {
     package func publish(
         includes windowIncluded: @MainActor (Window) -> Bool
     ) throws(UIError) -> PublishedScene {
+        guard activationState != .disconnected else {
+            throw .invalidArgument(
+                detail: "a disconnected WindowScene cannot publish")
+        }
         let traceZone = Trace.beginZone("nucleus.window_scene.publish", color: Trace.Color.blue)
         defer {
             traceZone.end()
@@ -189,6 +324,10 @@ public final class WindowScene: ~Sendable {
         _ placements: [ScenePlacement],
         includes windowIncluded: @MainActor (Window) -> Bool
     ) throws(UIError) -> PublishedScene {
+        guard activationState != .disconnected else {
+            throw .invalidArgument(
+                detail: "a disconnected WindowScene cannot publish")
+        }
         let displayWindows = windowsForDisplay().filter { window in
             windowIncluded(window) && window.isVisible && window.root != nil
         }
@@ -234,6 +373,9 @@ public final class WindowScene: ~Sendable {
     /// the pressed view keeps reaching it.
     @discardableResult
     public func dispatchEvent(_ event: Event) -> EventHandling {
+        guard activationState != .disconnected else {
+            return .notHandled
+        }
         // Dismissal comes first: a click that closes a menu must not also press
         // whatever was underneath it.
         if applyPopoverDismissal(event) { return .handled }
@@ -247,11 +389,22 @@ public final class WindowScene: ~Sendable {
             return keyWindow.deliverKeyEvent(event)
         }
 
-        if let capture = pointerCapture {
-            let local = convert(event.location, toViewIn: capture)
-            let delivered = capture.view.deliverEvent(event.relocated(to: local))
-            if event.type == .pointerUp { releasePointerCapture() }
-            return delivered
+        if let key = sequenceKey(for: event),
+           eventContinuesCapturedSequence(event),
+           let capture = captures[key]
+        {
+            guard let window = capture.window, let view = capture.view else {
+                captures[key] = nil
+                return .notHandled
+            }
+            capture.lastSceneLocation = event.location
+            let hit = WindowHitTestResult(window: window, view: view)
+            let local = convert(event.location, toViewIn: hit)
+            let route = view.deliverEventRoute(event.relocated(to: local))
+            if eventEndsSequence(event) {
+                captures[key] = nil
+            }
+            return normalized(route.handling)
         }
 
         guard let hit = hitTest(at: event.location) else {
@@ -261,21 +414,145 @@ public final class WindowScene: ~Sendable {
         }
         let localEvent = event.relocated(to: convert(event.location, toViewIn: hit))
 
-        // A press captures, so the release and any intervening drags reach the
-        // same view even if the pointer has moved off it. Without this a
-        // control could never distinguish "released on me" from "released
-        // somewhere else", which is what makes drag-cancel possible.
-        if event.type == .pointerDown {
-            pointerCapture = hit
+        if event.type == .pointerDown, event.button == .right,
+           let menu = contextMenu(startingAt: hit.view)
+        {
+            let anchor = Rect(
+                x: event.location.x,
+                y: event.location.y,
+                width: 1,
+                height: 1)
+            let popover = menu.makePopover(anchor: anchor)
+            menu.onPerform = { [weak self, weak popover] in
+                guard let popover else { return }
+                self?.dismiss(popover)
+            }
+            present(popover)
+            return .handled
         }
-        updateTrackedView(hit.view, event: localEvent)
-        updateHover(hit, event: event)
-        return hit.view.deliverEvent(localEvent)
+
+        if event.type != .touchDown && event.type != .touchMoved
+            && event.type != .touchUp && event.type != .touchCancelled
+        {
+            updateTrackedView(hit.view, event: localEvent)
+            updateHover(hit, event: event)
+        }
+        let route = hit.view.deliverEventRoute(localEvent)
+        if eventBeginsSequence(event),
+           route.handling != .notHandled,
+           let key = sequenceKey(for: event)
+        {
+            let capturedView = route.responder as? View ?? hit.view
+            captures[key] = CaptureRecord(
+                window: hit.window,
+                view: capturedView,
+                lastSceneLocation: event.location)
+        }
+        return normalized(route.handling)
     }
 
-    /// Give up an active pointer capture without delivering anything.
+    /// Give up every pointer capture without delivering cancellation.
     public func releasePointerCapture() {
-        pointerCapture = nil
+        captures = captures.filter { $0.key.kind != .pointer }
+    }
+
+    /// Cancel every captured input sequence. Hosts call this on surface leave
+    /// and teardown; cancellation clears control state before references drop.
+    public func cancelInputSequences() {
+        cancelInputSequences(where: { _ in true })
+    }
+
+    public func cancelInputSequences(for deviceID: InputDeviceID) {
+        cancelInputSequences { $0.key.deviceID == deviceID }
+    }
+
+    package func cancelInputSequences(capturedBy subtree: View) {
+        cancelInputSequences { entry in
+            guard let captured = entry.value.view else { return true }
+            return captured === subtree || captured.isDescendant(of: subtree)
+        }
+    }
+
+    private func cancelInputSequences(in window: Window) {
+        cancelInputSequences { $0.value.window === window }
+    }
+
+    private func cancelInputSequences(
+        where shouldCancel: ((key: SequenceKey, value: CaptureRecord)) -> Bool
+    ) {
+        let victims = captures.filter(shouldCancel)
+        for (key, record) in victims {
+            captures[key] = nil
+            guard let window = record.window, let view = record.view else {
+                continue
+            }
+            let hit = WindowHitTestResult(window: window, view: view)
+            let local = convert(record.lastSceneLocation, toViewIn: hit)
+            var event = Event(
+                type: key.kind == .pointer
+                    ? .pointerCancelled
+                    : .touchCancelled,
+                location: local,
+                deviceID: key.deviceID,
+                sequenceID: key.sequenceID)
+            event.activeButtons = []
+            _ = view.deliverEvent(event)
+        }
+    }
+
+    private func sequenceKey(for event: Event) -> SequenceKey? {
+        switch event.type {
+        case .pointerDown, .pointerDragged, .pointerUp, .pointerCancelled:
+            SequenceKey(
+                kind: .pointer,
+                deviceID: event.deviceID,
+                sequenceID: event.sequenceID)
+        case .touchDown, .touchMoved, .touchUp, .touchCancelled:
+            SequenceKey(
+                kind: .touch,
+                deviceID: event.deviceID,
+                sequenceID: event.sequenceID)
+        default:
+            nil
+        }
+    }
+
+    private func eventBeginsSequence(_ event: Event) -> Bool {
+        event.type == .pointerDown || event.type == .touchDown
+    }
+
+    private func eventContinuesCapturedSequence(_ event: Event) -> Bool {
+        switch event.type {
+        case .pointerDragged, .pointerUp, .pointerCancelled,
+             .touchMoved, .touchUp, .touchCancelled:
+            true
+        default:
+            false
+        }
+    }
+
+    private func eventEndsSequence(_ event: Event) -> Bool {
+        switch event.type {
+        case .pointerUp, .pointerCancelled, .touchUp, .touchCancelled:
+            true
+        default:
+            false
+        }
+    }
+
+    private func normalized(_ handling: EventHandling) -> EventHandling {
+        handling == .capture ? .handled : handling
+    }
+
+    private func contextMenu(startingAt view: View) -> Menu? {
+        var node: View? = view
+        while let current = node {
+            if let provider = current.contextMenuProvider {
+                return provider()
+            }
+            node = current.parentView
+        }
+        return nil
     }
 
     /// Send enter/exit as the pointer crosses view boundaries, so a control can
@@ -299,13 +576,26 @@ public final class WindowScene: ~Sendable {
     /// submenu, and dismissing the parent has to take the child with it.
     public private(set) var popovers: [Popover] = []
 
+    private final class PopoverFocusRestoration {
+        weak var window: Window?
+        weak var responder: Responder?
+
+        init(window: Window?, responder: Responder?) {
+            self.window = window
+            self.responder = responder
+        }
+    }
+
+    private var popoverFocusRestorations:
+        [ObjectIdentifier: PopoverFocusRestoration] = [:]
+
     /// The palette every window in this scene paints under, unless a view
     /// overrides it.
     ///
     /// Assigning retheme the whole scene: each root is notified, and any view
     /// resolving `ColorSpec`s in `draw` repaints with the new colours without
     /// being rebuilt.
-    public var palette: Palette = .dark {
+    public var palette: Palette? {
         didSet {
             guard palette != oldValue else { return }
             for window in windows {
@@ -329,6 +619,15 @@ public final class WindowScene: ~Sendable {
         popovers.append(popover)
         addWindow(popover.window)
         popover.window.orderFront()
+        if popover.focusBehavior == .key {
+            popoverFocusRestorations[ObjectIdentifier(popover)] =
+                PopoverFocusRestoration(
+                    window: keyWindow,
+                    responder: keyWindow?.firstResponder)
+            makeKey(popover.window)
+            _ = popover.window.makeFirstResponder(
+                popover.window.root?.firstTabStop())
+        }
     }
 
     /// Dismiss `popover` and everything opened on top of it.
@@ -340,9 +639,27 @@ public final class WindowScene: ~Sendable {
         for victim in popovers[index...].reversed() {
             victim.window.orderOut()
             _ = removeWindow(victim.window)
+            restoreFocus(after: victim)
             victim.onDismiss?()
         }
         popovers.removeSubrange(index...)
+    }
+
+    private func restoreFocus(after popover: Popover) {
+        guard let restoration = popoverFocusRestorations.removeValue(
+            forKey: ObjectIdentifier(popover))
+        else { return }
+        guard let window = restoration.window,
+              windows.contains(where: { $0 === window }),
+              window.isVisible
+        else {
+            keyWindow = nil
+            return
+        }
+        makeKey(window)
+        if let responder = restoration.responder {
+            _ = window.makeFirstResponder(responder)
+        }
     }
 
     public func dismissAllPopovers() {
@@ -432,9 +749,7 @@ public final class WindowScene: ~Sendable {
     private func hoverChain(
         for hit: WindowHitTestResult, at scenePoint: Point
     ) -> [(view: View, area: TrackingArea)] {
-        let inWindow = Point(
-            x: scenePoint.x - hit.window.frame.origin.x,
-            y: scenePoint.y - hit.window.frame.origin.y)
+        let inWindow = hit.window.windowPoint(fromScene: scenePoint)
 
         var result: [(view: View, area: TrackingArea)] = []
         var node: View? = hit.view
@@ -518,11 +833,7 @@ public final class WindowScene: ~Sendable {
         }
         let local = area.rect ?? owner.bounds
         let inWindow = owner.convert(local, to: nil)
-        return Rect(
-            x: inWindow.origin.x + window.frame.origin.x,
-            y: inWindow.origin.y + window.frame.origin.y,
-            width: inWindow.size.width,
-            height: inWindow.size.height)
+        return window.sceneRect(fromWindow: inWindow)
     }
 
     private func window(containing view: View) -> Window? {
@@ -542,15 +853,14 @@ public final class WindowScene: ~Sendable {
     /// `boundsOrigin`, so a click inside a scrolled view landed at the wrong
     /// place.
     private func convert(_ point: Point, toViewIn hit: WindowHitTestResult) -> Point {
-        let inWindow = Point(
-            x: point.x - hit.window.frame.origin.x,
-            y: point.y - hit.window.frame.origin.y)
+        let inWindow = hit.window.windowPoint(fromScene: point)
         return hit.view.convert(inWindow, from: nil)
     }
 
     public func hitTest(at point: Point) -> WindowHitTestResult? {
         for window in windowsForDisplay().reversed() where window.isVisible && window.participatesInHitTesting {
-            guard let root = window.root, let view = root.hitTest(point) else {
+            let localPoint = window.windowPoint(fromScene: point)
+            guard let root = window.root, let view = root.hitTest(localPoint) else {
                 continue
             }
             return .init(window: window, view: view)

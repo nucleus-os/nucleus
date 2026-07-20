@@ -19,6 +19,7 @@ public struct FontDescriptor: Sendable, Equatable {
         self.slant = slant
     }
 
+    @MainActor
     public var resolved: ResolvedFontDescriptor {
         TextSystem.shared.resolve(self)
     }
@@ -114,12 +115,23 @@ public struct Font: Sendable, Equatable {
         Font(pointSize: pointSize, weight: weight, width: width, slant: slant)
     }
 
+    @MainActor
     public var metrics: FontMetrics {
         TextSystem.shared.metrics(for: descriptor)
     }
 
+    @MainActor
     public var resolvedDescriptor: ResolvedFontDescriptor {
         descriptor.resolved
+    }
+}
+
+extension Font {
+    package func scaled(by factor: Double) -> Font {
+        var result = self
+        let scale = factor.isFinite && factor > 0 ? factor : 1
+        result.pointSize = Float(Double(pointSize) * scale)
+        return result
     }
 }
 

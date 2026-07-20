@@ -15,24 +15,27 @@ public struct WindowGroup<Content: View>: Scene, _PrimitiveScene {
     public typealias Body = Never
 
     let title: String
+    let role: WindowRole
+    let activationPolicy: SceneActivationPolicy
     let makeContent: @MainActor () throws -> Content
 
-    public init(_ title: String = "", content: @escaping @MainActor () throws -> Content) {
+    public init(
+        _ title: String = "",
+        role: WindowRole = .application,
+        activationPolicy: SceneActivationPolicy = .automatic,
+        content: @escaping @MainActor () throws -> Content
+    ) {
         self.title = title
+        self.role = role
+        self.activationPolicy = activationPolicy
         self.makeContent = content
     }
 
-    func _materializePrimitive(into host: any PlatformAppHost) throws {
-        // Runs inside `Application.withContext(host.appContext())` (established by
-        // `App.main()`), so the root view and window mint their layers in the host's
-        // context — committed transactions flow to the host's renderer.
-        let root = try makeContent()
-        let window = Window(
+    func _materializePrimitive(using materializer: SceneMaterializer) throws {
+        try materializer.present(
             title: title,
-            role: .application,
-            level: .normal,
-            styleMask: [.titled, .closable, .resizable])
-        window.setContentView(root)
-        host.present(WindowScene(windows: [window]))
+            role: role,
+            activationPolicy: activationPolicy,
+            makeContent: makeContent)
     }
 }

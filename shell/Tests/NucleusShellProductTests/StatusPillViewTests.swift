@@ -17,7 +17,7 @@ import NucleusTypes
 /// A product-tier inspection seam would be better than reaching for the
 /// embedder here, and is the honest gap these tests document.
 @MainActor
-@Suite struct StatusPillViewTests {
+@Suite(.uiContext) struct StatusPillViewTests {
     private func record(_ view: View) -> [PaintCommand] {
         view.displayIfNeeded()
         return view.recordedDrawing.paintCommands

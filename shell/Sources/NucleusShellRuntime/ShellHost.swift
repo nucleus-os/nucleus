@@ -9,6 +9,7 @@ import NucleusShellWayland
 import NucleusShellInput
 import NucleusShellAuth
 import NucleusShellDBus
+import NucleusShellAccessibility
 import NucleusShellServices
 import NucleusShellProduct
 import NucleusShellRender
@@ -51,6 +52,7 @@ public final class ShellHost {
     // The bar's root View is what the RN surface mounts into (attachSurface); its backing
     // layer tree commits through the context's sink.
     private var renderContext: Context?
+    private var nativePublicationContext: WindowScenePublicationContext?
     private var barRootView: View?
 
     /// The seat and the scene its input is routed into.
@@ -63,6 +65,8 @@ public final class ShellHost {
     private var seat: ShellSeat?
     public private(set) var inputScene: WindowScene?
     public private(set) var inputRouter: ShellInputRouter?
+    private var accessibilityAdapter: SystemdAtSPIAdapter?
+    private var accessibilityBridge: AtSPIBridge?
 
     /// Session lock. Nothing here locks on its own — no idle timer, no lid
     /// switch — and `lock()` refuses without an authenticator, because the
@@ -147,11 +151,13 @@ public final class ShellHost {
         // The RN layer tree flows: Context.commitSink → RenderCommitSink → RetainedTreeStore.shared.
         // RenderCommitSink defaults resourceHostHandle to the production host installed above.
         do {
-            let context = try Context(commitSink: RenderCommitSink(store: .shared))
-            // Make it the current context for the shell's lifetime, so Views (the bar root)
-            // mint their backing layers into it and commit through its sink.
-            EmbedderApplication.pushContext(context)
+            let commitSink = RenderCommitSink(store: .shared)
+            let context = try Context(commitSink: commitSink)
+            let nativePublicationContext = try WindowScenePublicationContext(
+                commitSink: commitSink
+            )
             renderContext = context
+            self.nativePublicationContext = nativePublicationContext
         } catch {
             writeErr("shell: failed to build render context: \(error)")
         }
@@ -160,7 +166,11 @@ public final class ShellHost {
     // MARK: - Input
 
     private func setupInput() {
-        let scene = WindowScene(windows: [])
+        guard let nativePublicationContext else {
+            writeErr("shell: native scene publication context is unavailable")
+            return
+        }
+        let scene = nativePublicationContext.makeWindowScene(windows: [])
         let seat = ShellSeat(client: client)
         if seat == nil {
             // A seatless session (no input devices) is legitimate; the shell
@@ -175,17 +185,40 @@ public final class ShellHost {
         scene.onCursorChange = { [weak seat] cursor in
             seat?.setCursor(ShellHost.cursorShape(for: cursor))
         }
-        let router = ShellInputRouter(scene: scene, seat: seat)
+        let router = ShellInputRouter(scene: scene, seat: seat, client: client)
         inputRouter = router
+        setupAccessibility(scene: scene)
         // PAM runs in a helper process, never in this address space: a module
         // that crashes or calls `exit()` would otherwise take the locker with it,
         // and a dead locker leaves the session blank and locked for good.
         let authenticator = PamAuthenticator()
         self.authenticator = authenticator
         let controller = ShellLockController(
-            client: client, engine: engine, scene: scene, inputRouter: router)
+            client: client,
+            engine: engine,
+            scene: scene,
+            publicationContext: nativePublicationContext,
+            inputRouter: router
+        )
         controller.authenticator = authenticator
         lockController = controller
+    }
+
+    private func setupAccessibility(scene: WindowScene) {
+        do {
+            let adapter = try SystemdAtSPIAdapter(
+                applicationName: "Nucleus Shell")
+            let bridge = AtSPIBridge(scene: scene, adapter: adapter)
+            adapter.onAction = { [weak bridge] request in
+                bridge?.perform(request) ?? false
+            }
+            accessibilityAdapter = adapter
+            accessibilityBridge = bridge
+            _ = bridge.publish()
+        } catch {
+            // A disabled accessibility bus is a valid desktop configuration.
+            writeErr("shell: AT-SPI unavailable: \(error)")
+        }
     }
 
     /// NucleusUI's cursor vocabulary onto the protocol's.
@@ -256,7 +289,10 @@ public final class ShellHost {
 
     private func onBarConfigured(width: Int32, height: Int32) {
         let scale = Double(client.outputs.values.first?.scale ?? 1)
-        guard let surface = barSurface else { return }
+        guard let surface = barSurface, let renderContext else {
+            writeErr("shell: bar configured without a render context")
+            return
+        }
 
         // Popovers place themselves inside the display, so the scene needs the
         // output's logical size. The bar's own configure is the first point at
@@ -270,8 +306,13 @@ public final class ShellHost {
         }
         if let id = barOutputID {
             engine.resizeSurface(id, width: width, height: height, scale: scale)
-        } else if let id = engine.addSurface(waylandSurface: surface.wlSurface,
-                                              width: width, height: height, scale: scale) {
+        } else if let id = engine.addSurface(
+            waylandSurface: surface.wlSurface,
+            width: width,
+            height: height,
+            scale: scale,
+            presentationContextID: renderContext.id.rawValue
+        ) {
             barOutputID = id
             bootReactBar(width: Double(width) / scale, height: Double(height) / scale, scale: scale)
         }
@@ -280,11 +321,11 @@ public final class ShellHost {
     // MARK: - React boot (the NucleusReactRuntime.Host facade)
 
     private func bootReactBar(width: Double, height: Double, scale: Double) {
-        guard renderContext != nil else { return }
+        guard let renderContext, let nativePublicationContext else { return }
         do {
-            // The bar's root View (minted into the pushed render context); the RN surface
-            // mounts into it, and its backing-layer tree commits through the context's sink.
-            let rootView = View()
+            let rootView = nativePublicationContext.withSemanticContext {
+                View()
+            }
             let host = try NucleusReactRuntime.Host()
             try host.installFabricRuntime()
             let surfaceID = 1
@@ -295,6 +336,7 @@ public final class ShellHost {
             try host.runApplication(surfaceID: surfaceID, appKey: "bar")
             _ = try host.attachSurface(
                 rootView: rootView, surfaceID: surfaceID,
+                visualContext: renderContext,
                 backingScaleFactor: BackingScaleFactor(Float(scale)), at: 0)
             // JS→native taskbar actions: NucleusHostCommand.invoke(command, argsJson) fires
             // on the JS thread → push onto the thread-safe inbox the frame loop drains onto
@@ -386,17 +428,38 @@ public final class ShellHost {
             // the next frame — and the lock screen keeps drawing meanwhile.
             let authFD = authenticator?.pendingFD
             let busFD = systemBus?.fileDescriptor ?? -1
+            let accessibilityFD =
+                accessibilityAdapter?.fileDescriptor ?? -1
             pollfds.removeSubrange(2...)
+            var authIndex: Int?
+            var busIndex: Int?
+            var accessibilityIndex: Int?
             if let authFD {
+                authIndex = pollfds.count
                 pollfds.append(pollfd(fd: authFD, events: Int16(POLLIN), revents: 0))
             }
             if busFD >= 0, let systemBus {
+                busIndex = pollfds.count
                 pollfds.append(pollfd(
                     fd: busFD, events: systemBus.pollEvents, revents: 0))
                 // sd-bus has deadlines of its own — a pending call's timeout —
                 // so the loop must not sleep past them.
                 if let untilBusUs = systemBus.timeoutMicroseconds() {
                     timeoutMs = min(timeoutMs, Int32(clamping: untilBusUs / 1000))
+                }
+            }
+            if accessibilityFD >= 0, let accessibilityAdapter {
+                accessibilityIndex = pollfds.count
+                pollfds.append(pollfd(
+                    fd: accessibilityFD,
+                    events: accessibilityAdapter.pollEvents,
+                    revents: 0))
+                if let untilAccessibilityUs =
+                    accessibilityAdapter.timeoutMicroseconds()
+                {
+                    timeoutMs = min(
+                        timeoutMs,
+                        Int32(clamping: untilAccessibilityUs / 1_000))
                 }
             }
 
@@ -413,18 +476,28 @@ public final class ShellHost {
                 _ = nucleus_shell_consume_exit_signal(exitSignalFD)
                 break
             }
-            if ready > 0, authFD != nil, pollfds.count > 2,
-               pollfds[2].revents & Int16(POLLIN | POLLHUP) != 0 {
+            if ready > 0,
+               let authIndex,
+               pollfds[authIndex].revents & Int16(POLLIN | POLLHUP) != 0
+            {
                 authenticator?.drainPendingAttempt()
             }
 
-            if busFD >= 0 {
+            if busIndex != nil {
                 // Timeouts fire without the descriptor becoming readable, so the
                 // bus is processed on a bare wakeup too.
                 do {
                     try systemBus?.process()
                 } catch {
                     writeErr("nucleus-shell: system bus error: \(error)")
+                }
+            }
+            if accessibilityIndex != nil {
+                do {
+                    try accessibilityAdapter?.process()
+                } catch {
+                    writeErr(
+                        "nucleus-shell: accessibility bus error: \(error)")
                 }
             }
 
@@ -449,8 +522,27 @@ public final class ShellHost {
             for (command, argsJson) in commandInbox.drain() {
                 applyCommand(command, argsJson)
             }
+            let predictedPresentationNs =
+                monotonicNowNs() &+ 16_666_666
+            _ = nativePublicationContext?.semanticContext.advanceAnimations(
+                predictedPresentationNanoseconds: predictedPresentationNs
+            )
+            // Publish every native window before any surface can present this
+            // frame. A rejected transaction leaves the previously accepted
+            // scene intact and suppresses presentation of a partially updated
+            // native frame.
+            do {
+                _ = try inputScene?.publish()
+                _ = accessibilityBridge?.publish()
+            } catch {
+                writeErr("nucleus-shell: native scene publication failed: \(error)")
+                continue
+            }
+
             // Render every dirty shell surface for this frame.
-            _ = engine.renderFrame(presentTimeNs: monotonicNowNs() &+ 16_666_666)
+            _ = engine.renderFrame(
+                presentTimeNs: predictedPresentationNs
+            )
         }
         shutdown()
     }
@@ -464,6 +556,9 @@ public final class ShellHost {
             }
         }
         barSurface?.destroy()
+        accessibilityAdapter?.close()
+        accessibilityBridge = nil
+        accessibilityAdapter = nil
         engine.shutdown()
     }
 

@@ -271,13 +271,9 @@ public final class MountConsumer: MountingObserverHandler, Sendable {
         switch event.type {
         case .create:
             guard event.isViewComponent else { return }
-            do {
-                let component = try ReactComponentViewFactory.make(event: event)
-                component.apply(event)
-                registry.register(component)
-            } catch {
-                return
-            }
+            let component = ReactComponentViewFactory.make(event: event)
+            component.apply(event)
+            registry.register(component)
         case .insert:
             guard let child = registry.component(for: event.newTag),
                   let parent = registry.component(for: event.parentTag) else {
@@ -386,7 +382,6 @@ public protocol ReactComponentView: AnyObject {
 
     func apply(_ event: MountEvent)
     func updateEnvironment(_ environment: ReactSurfaceEnvironment)
-    func commitDisplayContentIfNeeded() throws
 }
 
 @MainActor
@@ -476,7 +471,7 @@ public enum ReactComponentViewFactory {
         ReactRootComponentView(tag: tag, view: view)
     }
 
-    static func make(event: MountEvent) throws -> any ReactComponentView {
+    static func make(event: MountEvent) -> any ReactComponentView {
         if event.isImageComponent {
             return ReactImageComponentView(
                 tag: event.tag,

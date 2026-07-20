@@ -1,7 +1,7 @@
 import NucleusLayers
 
 @MainActor
-public final class Label: View, ~Sendable {
+public final class Label: View, LayoutBaselineProviding, ~Sendable {
     public enum Alignment: Sendable, Equatable {
         case leading
         case center
@@ -10,6 +10,9 @@ public final class Label: View, ~Sendable {
 
     public var text: String {
         didSet {
+            if accessibilityLabel == oldValue {
+                accessibilityLabel = text
+            }
             invalidateLayoutCache()
             invalidateIntrinsicContentSize()
             setNeedsDisplay()
@@ -65,10 +68,28 @@ public final class Label: View, ~Sendable {
         self.numberOfLines = 1
         self.textColor = Color(1, 1, 1, 1)
         super.init()
+        isAccessibilityElement = true
+        accessibilityRole = .staticText
+        accessibilityLabel = text
     }
 
     public override var intrinsicContentSize: Size {
         return textLayout(containerWidth: nil).intrinsicSize
+    }
+
+    public override var environmentDependencies: UIEnvironmentChanges {
+        super.environmentDependencies.union(.textScale)
+    }
+
+    public override func environmentDidChange(
+        _ changes: UIEnvironmentChanges
+    ) {
+        if changes.contains(.textScale) {
+            invalidateLayoutCache()
+            invalidateIntrinsicContentSize()
+            setNeedsDisplay()
+        }
+        super.environmentDidChange(changes)
     }
 
     /// The reason two-phase layout exists. A label's height is a function of the
@@ -85,6 +106,13 @@ public final class Label: View, ~Sendable {
 
     public var lastBaselineOffsetFromBottom: Double {
         textLayout(containerWidth: Double(frame.size.width)).lastBaselineOffsetFromBottom
+    }
+
+    public func layoutBaselines(for size: Size) -> LayoutBaselineMetrics {
+        let layout = textLayout(containerWidth: size.width)
+        return LayoutBaselineMetrics(
+            firstFromTop: layout.firstBaselineOffsetFromTop,
+            lastFromBottom: layout.lastBaselineOffsetFromBottom)
     }
 
     public func placeBaseline(at baseline: Double, x: Double, width: Double) {
@@ -129,7 +157,10 @@ public final class Label: View, ~Sendable {
     private func textLayout(containerWidth: Double?) -> TextLayout {
         if let cached = layoutCache[containerWidth] { return cached }
         let layout = TextLayout(
-            runs: [TextRun(text: text, font: font, color: textColor)],
+            runs: [TextRun(
+                text: text,
+                font: font.scaled(by: uiContext.environment.textScale),
+                color: textColor)],
             containerWidth: containerWidth,
             alignment: alignment.textAlignment,
             lineBreakMode: lineBreakMode,

@@ -58,17 +58,44 @@ static func drawPaintCommand(
     resolveImage: (UInt64) -> nucleus.skia.Image?,
     resolveEffect: (UInt64) -> nucleus.skia.RuntimeEffect?
 ) {
-    // A command that rotates or skews states its geometry in its own space and
-    // carries the matrix. Concatenating it — after the device scale, so the two
-    // compose in the right order — is what makes a rotated image or glyph run
-    // land rotated instead of as an upright bounding box.
+    // Save/restore are recording-state commands, not paint operations with
+    // local geometry.
+    if command.kind == .save {
+        canvas.save()
+        return
+    }
+    if command.kind == .restore {
+        canvas.restore()
+        return
+    }
+
+    // A clip must survive after its command-local matrix is gone. Applying a
+    // matrix inside save/restore would restore the clip too, so map the path
+    // through the complete device transform and clip without changing the CTM.
+    if command.kind == .clipPath {
+        guard let path = decodePath(
+            command, payload: payload,
+            scaleX: command.transform == nil ? sx : 1,
+            scaleY: command.transform == nil ? sy : 1)
+        else { return }
+        if let transform = command.transform {
+            let matrix = deviceMatrix(transform, scaleX: sx, scaleY: sy)
+            matrix.withUnsafeBufferPointer {
+                canvas.clipPathTransformed(path, $0.baseAddress, command.antialias)
+            }
+        } else {
+            canvas.clipPath(path, command.antialias)
+        }
+        return
+    }
+
+    // Paint geometry stays local. Concatenating device scale with the command's
+    // complete affine transform lets Skia transform paths as outlines, so
+    // anisotropic stroke and radial-gradient behavior are not approximated by
+    // one scalar.
     if let transform = command.transform {
         canvas.save()
-        var matrix: [Float] = [
-            transform.a * sx, transform.c * sx, transform.tx * sx,
-            transform.b * sy, transform.d * sy, transform.ty * sy,
-            0, 0, 1,
-        ]
+        let matrix = deviceMatrix(transform, scaleX: sx, scaleY: sy)
         matrix.withUnsafeBufferPointer { canvas.concat($0.baseAddress) }
     }
     defer { if command.transform != nil { canvas.restore() } }
@@ -93,7 +120,8 @@ static func drawPaintCommand(
     case .path:
         drawPathCommand(
             command, payload: payload, onto: canvas, paint: paint,
-            scaleX: sx, scaleY: sy, resolveEffect: resolveEffect)
+            scaleX: deviceScaleX, scaleY: deviceScaleY,
+            resolveEffect: resolveEffect)
     case .image:
         guard command.imageHandle != 0, let image = resolveImage(command.imageHandle) else { break }
         canvas.drawImageRect(
@@ -103,14 +131,19 @@ static func drawPaintCommand(
         canvas.drawTextLayout(
             command.textLayoutHandle,
             scaledRect(command, deviceScaleX, deviceScaleY), command.color.3)
-    case .clipPath:
-        guard let path = decodePath(command, payload: payload, scaleX: sx, scaleY: sy) else { break }
-        canvas.clipPath(path, command.antialias)
-    case .save:
-        canvas.save()
-    case .restore:
-        canvas.restore()
+    case .clipPath, .save, .restore:
+        break
     }
+}
+
+private static func deviceMatrix(
+    _ transform: PaintDrawTransform, scaleX sx: Float, scaleY sy: Float
+) -> [Float] {
+    [
+        transform.a * sx, transform.c * sx, transform.tx * sx,
+        transform.b * sy, transform.d * sy, transform.ty * sy,
+        0, 0, 1,
+    ]
 }
 
 /// Lower a decoded command's style onto a façade `Paint`. Until now this set

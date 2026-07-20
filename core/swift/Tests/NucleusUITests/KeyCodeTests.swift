@@ -9,7 +9,7 @@ import Testing
 /// the "1" key (evdev 2) *was* `.return`, "q" (evdev 16) *was* `.pageUp`. Any
 /// view switching on `keyCode` before inserting text, which is every text view,
 /// acted on a keystroke the user never made.
-@Suite struct KeyCodeTests {
+@Suite(.uiContext) struct KeyCodeTests {
     // MARK: - The vocabulary is closed
 
     /// The defect, stated directly: no key on a keyboard may arrive as a
@@ -127,7 +127,7 @@ import Testing
 /// A text field must insert the character a key produced, not act on a control
 /// key that happened to share its platform code.
 @MainActor
-@Suite struct TextFieldDigitEntryTests {
+@Suite(.uiContext) struct TextFieldDigitEntryTests {
     private func makeField() -> TextField {
         let field = TextField()
         field.frame = Rect(x: 0, y: 0, width: 200, height: 24)

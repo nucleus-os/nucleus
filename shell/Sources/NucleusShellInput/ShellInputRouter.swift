@@ -15,6 +15,7 @@ public final class ShellInputRouter: ShellSeatDelegate {
     /// seat comes from a real Wayland connection; the translation and routing do
     /// not depend on having one.
     private let seat: ShellSeat?
+    private let textInput: ShellTextInput?
     /// Surfaces the router owns, mapped to the window each one presents. Events
     /// for anything else are ignored rather than misrouted.
     private var windowsBySurface: [UInt: Window] = [:]
@@ -23,19 +24,45 @@ public final class ShellInputRouter: ShellSeatDelegate {
     /// coordinates of its own in `wl_pointer` — lands where the pointer is.
     private var pointerLocation = Point(x: 0, y: 0)
 
-    public init(scene: WindowScene, seat: ShellSeat?) {
+    public init(
+        scene: WindowScene,
+        seat: ShellSeat?,
+        client: ShellWaylandClient? = nil
+    ) {
         self.scene = scene
         self.seat = seat
+        if let seat, let client {
+            self.textInput = ShellTextInput(
+                client: client,
+                seat: seat.protocolSeat
+            )
+        } else {
+            self.textInput = nil
+        }
         seat?.delegate = self
     }
 
     /// Associate a `wl_surface` with the window that draws it.
     public func register(window: Window, forSurface surfaceID: UInt) {
+        if let replaced = windowsBySurface[surfaceID], replaced !== window {
+            replaced.installTextInputAdapter(nil)
+            replaced.setSurfaceAssociation(nil)
+        }
         windowsBySurface[surfaceID] = window
+        window.installTextInputAdapter(textInput)
+        if surfaceID != 0 {
+            window.setSurfaceAssociation(WindowSurfaceAssociation(
+                surfaceID: PresentationSurfaceID(rawValue: UInt64(surfaceID))
+            ))
+        }
     }
 
     public func unregister(surfaceID: UInt) {
-        windowsBySurface.removeValue(forKey: surfaceID)
+        let window = windowsBySurface.removeValue(forKey: surfaceID)
+        window?.installTextInputAdapter(nil)
+        if window?.surfaceAssociation?.surfaceID.rawValue == UInt64(surfaceID) {
+            window?.setSurfaceAssociation(nil)
+        }
     }
 
     /// Emit any key repeats now due. Driven from the host's event loop, which
@@ -68,6 +95,7 @@ public final class ShellInputRouter: ShellSeatDelegate {
         case .keyboardLeave:
             scene.resignKey()
         case .pointerLeave:
+            scene.cancelInputSequences()
             // Nothing is under the pointer any more, so any tracked view must be
             // told it was exited.
             _ = scene.dispatchEvent(Event(
@@ -94,8 +122,10 @@ public final class ShellInputRouter: ShellSeatDelegate {
     /// An unregistered surface is left alone: there is no window to rebase onto.
     private func rebased(_ location: Point, forSurface surfaceID: UInt) -> Point {
         guard let window = windowsBySurface[surfaceID] else { return location }
-        let origin = window.frame.origin
-        return Point(x: location.x + origin.x, y: location.y + origin.y)
+        let inWindow = window.surfaceAssociation?.transform.windowPoint(
+            fromSurface: location
+        ) ?? location
+        return scene.scenePoint(inWindow, in: window)
     }
 
     // MARK: - Translation
@@ -118,18 +148,30 @@ public final class ShellInputRouter: ShellSeatDelegate {
                 timestampNanoseconds: event.timestampNanoseconds)
         case .pointerMotion:
             return Event(
-                type: .pointerMoved, modifierFlags: modifiers, location: location,
-                timestampNanoseconds: event.timestampNanoseconds)
+                type: event.activeButtonCodes.isEmpty
+                    ? .pointerMoved
+                    : .pointerDragged,
+                modifierFlags: modifiers,
+                location: location,
+                timestampNanoseconds: event.timestampNanoseconds,
+                activeButtons: pointerButtonMask(event.activeButtonCodes),
+                pointerTool: .mouse)
         case .pointerButtonDown:
             return Event(
                 type: .pointerDown, modifierFlags: modifiers, location: location,
                 timestampNanoseconds: event.timestampNanoseconds,
-                button: pointerButton(event.button), clickCount: 1)
+                button: pointerButton(event.button),
+                activeButtons: pointerButtonMask(event.activeButtonCodes),
+                pointerTool: .mouse,
+                clickCount: 1)
         case .pointerButtonUp:
             return Event(
                 type: .pointerUp, modifierFlags: modifiers, location: location,
                 timestampNanoseconds: event.timestampNanoseconds,
-                button: pointerButton(event.button), clickCount: 1)
+                button: pointerButton(event.button),
+                activeButtons: pointerButtonMask(event.activeButtonCodes),
+                pointerTool: .mouse,
+                clickCount: 1)
         case .pointerAxis:
             return Event(
                 type: .scrollWheel, modifierFlags: modifiers, location: location,
@@ -138,7 +180,7 @@ public final class ShellInputRouter: ShellSeatDelegate {
                 scrollSource: scrollSource(event.scrollSource),
                 scrollDetentsX: event.scrollDetentsX,
                 scrollDetentsY: event.scrollDetentsY,
-                isScrollEnd: event.isScrollEnd)
+                scrollPhase: event.scrollEnded ? .ended : .changed)
         case .keyDown, .keyUp:
             return Event(
                 type: event.kind == .keyDown ? .keyDown : .keyUp,
@@ -172,6 +214,14 @@ public final class ShellInputRouter: ShellSeatDelegate {
         case 275: return .back
         case 276: return .forward
         default: return PointerButton(rawValue: code)
+        }
+    }
+
+    static func pointerButtonMask(
+        _ codes: Set<UInt32>
+    ) -> PointerButtonMask {
+        codes.reduce(into: PointerButtonMask()) { result, code in
+            result.formUnion(.button(pointerButton(code)))
         }
     }
 

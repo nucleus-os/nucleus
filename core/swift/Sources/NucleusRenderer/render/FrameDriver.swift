@@ -55,6 +55,13 @@ public struct RenderFrameTelemetry: Sendable, Equatable {
     public var damageRectCount: UInt64 = 0
     public var damagePixelCount: UInt64 = 0
     public var fullDamage: Bool = false
+    public var paintRepaintCount: UInt64 = 0
+    public var partialPaintRepaintCount: UInt64 = 0
+    public var fullPaintRepaintCount: UInt64 = 0
+    public var shadowRepaintCount: UInt64 = 0
+    public var producerDrawCount: UInt64 = 0
+    public var producerTexturePassCount: UInt64 = 0
+    public var producerInvalidationCount: UInt64 = 0
     public var oldestCommitToRenderNs: UInt64 = 0
     public var clientCommitToRenderNs: [UInt64] = []
     public var acquireTargetNs: UInt64 = 0
@@ -217,16 +224,15 @@ final class FrameDriver {
         return effect
     }
 
-    /// Drop a compiled-program cache entry when its source is released from the
-    /// effect store (driven by `RuntimeEffectStore.onEvict`). No-op for an
-    /// unknown handle.
+    /// Drop a compiled-program cache entry after the render owner drains its
+    /// source store's eviction queue. No-op for an unknown handle.
     func evictCompiledEffect(_ handle: UInt64) {
         compiledEffects[handle] = nil
     }
 
-    /// Drop a decoded-image cache entry when its source is released from the image
-    /// store (driven by `ImageStore.onEvict`), so the decoded GPU image does not
-    /// outlive its source. No-op for an unknown handle.
+    /// Drop a decoded-image cache entry after the render owner drains its
+    /// source store's eviction queue, so the decoded GPU image does not outlive
+    /// its source. No-op for an unknown handle.
     func evictDecodedImage(_ handle: UInt64) {
         decodedImages[handle] = nil
         // A decode already in flight for this handle is now for a source that no
@@ -238,6 +244,10 @@ final class FrameDriver {
     /// Reclaim producer cache textures for layers no longer in the retained tree.
     func collectProducerGarbage(liveLayerIds: Set<UInt64>) {
         producer.retainOnly(liveLayerIds: liveLayerIds)
+    }
+
+    func takeProducerWorkStats() -> ProducerWorkStats {
+        producer.drainStats()
     }
 
     /// Poll Graphite's internal Vulkan submission fences and return the newest
@@ -355,6 +365,7 @@ final class FrameDriver {
                 authoredHeight: content.height,
                 contentWidth: pixelExtent(content.width * Float(target.fractionalScale)),
                 contentHeight: pixelExtent(content.height * Float(target.fractionalScale)),
+                localDamage: quad.localPaintDamage,
                 resolveImage: resolvePaintImage,
                 resolveEffect: resolvePaintEffect)
             if let produced, let image = registry.resolve(produced) {
@@ -422,6 +433,7 @@ final class FrameDriver {
         present: PresentSubmit? = nil,
         drmSubmit: DrmSubmit? = nil,
         acquireWaitSemaphores: [UInt64: VkSemaphore] = [:],
+        rootContexts: [ContextID] = [compositorContextId],
         lockContexts: Set<ContextID>? = nil,
         resolvePaintContent: (PaintContentHandle) -> PaintContentStore.Content?,
         resolvePaintImage: (UInt64) -> nucleus.skia.Image?,
@@ -435,7 +447,12 @@ final class FrameDriver {
         // is what keeps it safe to leave unsynchronized.
         drainDecodedImages()
         let plan = PresentationWalk.buildFramePlan(
-            tree: tree, target: target, frame: frame, lockContexts: lockContexts)
+            tree: tree,
+            target: target,
+            frame: frame,
+            rootContexts: rootContexts,
+            lockContexts: lockContexts
+        )
         let referencedSurfaceIDs = Self.referencedClientSurfaceIDs(plan)
         let acquiredSurfaceIDs = referencedSurfaceIDs.filter {
             acquireWaitSemaphores[$0] != nil
@@ -644,8 +661,20 @@ final class FrameDriver {
             // unchanged while the sampled pixels are new; the render-model content
             // damage bit is the authoritative invalidation for that commit.
             if old != new || new?.contentDamaged == true {
-                if let old { accumulator.addRect(old.rect) }
-                if let new { accumulator.addRect(new.rect) }
+                let canUseLocalizedContentDamage =
+                    old?.rect == new?.rect
+                        && old?.compositeSignature == new?.compositeSignature
+                        && old?.structural == false
+                        && new?.structural == false
+                        && new?.contentDamaged == true
+                if canUseLocalizedContentDamage,
+                   let localized = new?.localizedContentDamage
+                {
+                    accumulator.addRect(localized)
+                } else {
+                    if let old { accumulator.addRect(old.rect) }
+                    if let new { accumulator.addRect(new.rect) }
+                }
             }
         }
         if structural {

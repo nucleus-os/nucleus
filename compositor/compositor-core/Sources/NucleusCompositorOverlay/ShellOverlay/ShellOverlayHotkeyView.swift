@@ -46,6 +46,7 @@ struct ShellOverlayHotkeyMetrics: Sendable, Equatable {
     var footerTextHeight: Float
     var footerBaselineOffset: Float
 
+    @MainActor
     init(backingScaleFactor: BackingScaleFactor = .one) {
         self.backingScaleFactor = backingScaleFactor
         fontSize = 14

@@ -44,7 +44,7 @@ public final class ShellRenderEngine {
     /// surface, after its first layer-shell `configure` reports a size.
     @discardableResult
     public func addSurface(waylandSurface: OpaquePointer, width: Int32, height: Int32,
-                           scale: Double) -> UInt64? {
+                           scale: Double, presentationContextID: UInt32) -> UInt64? {
         let id = nextOutputID
         nextOutputID &+= 1
         let display = self.display
@@ -63,6 +63,10 @@ public final class ShellRenderEngine {
             pixelWidth: UInt32(max(0, presenter.lastExtentWidth)),
             pixelHeight: UInt32(max(0, presenter.lastExtentHeight)),
             fractionalScale: scale)
+        core.setOutputRootContexts(
+            outputID: id,
+            contextIDs: [presentationContextID]
+        )
         return id
     }
 

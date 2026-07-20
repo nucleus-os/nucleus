@@ -190,9 +190,9 @@ public struct PaintCommandFlags: Swift.OptionSet, Swift.Sendable {
   public static let joinBevel = PaintCommandFlags(rawValue: 1 << 7)
 
   /// The command carries its own transform, and its geometry is stated in the
-  /// space that transform maps from. Only set when the recorded transform
-  /// rotates or skews — a translation or a scale is folded into the geometry,
-  /// which keeps the common case a plain rect.
+  /// space that transform maps from. Every paint and clip operation authored by
+  /// `GraphicsContext` sets this bit, including for the identity matrix, so
+  /// geometry and scalar style never take a separate pre-transformed path.
   public static let hasTransform = PaintCommandFlags(rawValue: 1 << 8)
 
   public static let `default`: PaintCommandFlags = [.antialias]
@@ -274,6 +274,7 @@ public let layerPropertyContent: Swift.UInt64 = 131072
 public let layerPropertyBackdropGroup: Swift.UInt64 = 262144
 public let layerPropertyContentSample: Swift.UInt64 = 524288
 public let layerPropertyBackgroundEffect: Swift.UInt64 = 1048576
+public let layerPropertyContentDamage: Swift.UInt64 = 2097152
 
 public struct ImageHandle: Swift.Equatable, Swift.Sendable {
   public var id: Swift.UInt64
@@ -858,7 +859,8 @@ public struct LayerPropertyUpdate: Swift.Equatable, Swift.Sendable {
   public var content: NucleusTypes.LayerContent
   public var contentSample: NucleusTypes.ContentSample
   public var backgroundEffectRegions: NucleusTypes.BackgroundEffectRegions
-  public init(mask: Swift.UInt64 = Swift.UInt64(), opacity: Swift.Double = 0, hidden: Swift.Bool = false, actionPolicy: ActionPolicy = .none, foregroundVibrancy: ForegroundVibrancyMode = .inherit, backgroundEffect: Swift.Bool = false, reserved2: Swift.UInt32 = Swift.UInt32(), backdropGroupId: Swift.UInt64 = Swift.UInt64(), visualEffect: NucleusTypes.VisualEffect = NucleusTypes.VisualEffect(), shadow: NucleusTypes.Shadow = NucleusTypes.Shadow(), position: NucleusTypes.Point = NucleusTypes.Point(), bounds: NucleusTypes.Size = NucleusTypes.Size(), anchorPoint: NucleusTypes.Point = NucleusTypes.Point(), scrollOffset: NucleusTypes.Point = NucleusTypes.Point(), transform: NucleusTypes.Transform = NucleusTypes.Transform(), clip: NucleusTypes.ClipOp = NucleusTypes.ClipOp(), cornerRadiusTl: Swift.Float = 0, cornerRadiusTr: Swift.Float = 0, cornerRadiusBr: Swift.Float = 0, cornerRadiusBl: Swift.Float = 0, borderTop: NucleusTypes.BorderEdge = NucleusTypes.BorderEdge(), borderRight: NucleusTypes.BorderEdge = NucleusTypes.BorderEdge(), borderBottom: NucleusTypes.BorderEdge = NucleusTypes.BorderEdge(), borderLeft: NucleusTypes.BorderEdge = NucleusTypes.BorderEdge(), content: NucleusTypes.LayerContent = NucleusTypes.LayerContent(), contentSample: NucleusTypes.ContentSample = NucleusTypes.ContentSample(), backgroundEffectRegions: NucleusTypes.BackgroundEffectRegions = NucleusTypes.BackgroundEffectRegions()) {
+  public var contentDamage: NucleusTypes.Rect
+  public init(mask: Swift.UInt64 = Swift.UInt64(), opacity: Swift.Double = 0, hidden: Swift.Bool = false, actionPolicy: ActionPolicy = .none, foregroundVibrancy: ForegroundVibrancyMode = .inherit, backgroundEffect: Swift.Bool = false, reserved2: Swift.UInt32 = Swift.UInt32(), backdropGroupId: Swift.UInt64 = Swift.UInt64(), visualEffect: NucleusTypes.VisualEffect = NucleusTypes.VisualEffect(), shadow: NucleusTypes.Shadow = NucleusTypes.Shadow(), position: NucleusTypes.Point = NucleusTypes.Point(), bounds: NucleusTypes.Size = NucleusTypes.Size(), anchorPoint: NucleusTypes.Point = NucleusTypes.Point(), scrollOffset: NucleusTypes.Point = NucleusTypes.Point(), transform: NucleusTypes.Transform = NucleusTypes.Transform(), clip: NucleusTypes.ClipOp = NucleusTypes.ClipOp(), cornerRadiusTl: Swift.Float = 0, cornerRadiusTr: Swift.Float = 0, cornerRadiusBr: Swift.Float = 0, cornerRadiusBl: Swift.Float = 0, borderTop: NucleusTypes.BorderEdge = NucleusTypes.BorderEdge(), borderRight: NucleusTypes.BorderEdge = NucleusTypes.BorderEdge(), borderBottom: NucleusTypes.BorderEdge = NucleusTypes.BorderEdge(), borderLeft: NucleusTypes.BorderEdge = NucleusTypes.BorderEdge(), content: NucleusTypes.LayerContent = NucleusTypes.LayerContent(), contentSample: NucleusTypes.ContentSample = NucleusTypes.ContentSample(), backgroundEffectRegions: NucleusTypes.BackgroundEffectRegions = NucleusTypes.BackgroundEffectRegions(), contentDamage: NucleusTypes.Rect = NucleusTypes.Rect()) {
     self.mask = mask
     self.opacity = opacity
     self.hidden = hidden
@@ -886,6 +888,7 @@ public struct LayerPropertyUpdate: Swift.Equatable, Swift.Sendable {
     self.content = content
     self.contentSample = contentSample
     self.backgroundEffectRegions = backgroundEffectRegions
+    self.contentDamage = contentDamage
   }
   public var actionPolicy: ActionPolicy {
     get { ActionPolicy(rawValue: _actionPolicy) ?? .none }
@@ -1021,15 +1024,17 @@ public struct AnimationEndpoint: Swift.Equatable, Swift.Sendable {
 public struct AnimationRecord: Swift.Equatable, Swift.Sendable {
   public var nodeId: Swift.UInt64
   public var animationId: Swift.UInt64
+  public var completionToken: Swift.UInt64
   public var _keyPath: Swift.UInt32
   public var reserved: Swift.UInt32
   public var duration: Swift.Double
   public var fromEndpoint: NucleusTypes.AnimationEndpoint
   public var toEndpoint: NucleusTypes.AnimationEndpoint
   public var curve: NucleusTypes.AnimationCurve
-  public init(nodeId: Swift.UInt64 = Swift.UInt64(), animationId: Swift.UInt64 = Swift.UInt64(), keyPath: AnimationKeyPath = .none, reserved: Swift.UInt32 = Swift.UInt32(), duration: Swift.Double = 0, fromEndpoint: NucleusTypes.AnimationEndpoint = NucleusTypes.AnimationEndpoint(), toEndpoint: NucleusTypes.AnimationEndpoint = NucleusTypes.AnimationEndpoint(), curve: NucleusTypes.AnimationCurve = NucleusTypes.AnimationCurve()) {
+  public init(nodeId: Swift.UInt64 = Swift.UInt64(), animationId: Swift.UInt64 = Swift.UInt64(), completionToken: Swift.UInt64 = Swift.UInt64(), keyPath: AnimationKeyPath = .none, reserved: Swift.UInt32 = Swift.UInt32(), duration: Swift.Double = 0, fromEndpoint: NucleusTypes.AnimationEndpoint = NucleusTypes.AnimationEndpoint(), toEndpoint: NucleusTypes.AnimationEndpoint = NucleusTypes.AnimationEndpoint(), curve: NucleusTypes.AnimationCurve = NucleusTypes.AnimationCurve()) {
     self.nodeId = nodeId
     self.animationId = animationId
+    self.completionToken = completionToken
     self._keyPath = keyPath.rawValue
     self.reserved = reserved
     self.duration = duration
@@ -1090,7 +1095,8 @@ public struct PaintCommand: Swift.Equatable, Swift.Sendable {
   public var payloadOffset: Swift.UInt32
   public var payloadLength: Swift.UInt32
   /// An affine transform (a, b, c, d, tx, ty), meaningful only with
-  /// `.hasTransform`. Identity otherwise, and ignored.
+  /// `.hasTransform`. Geometry remains local and the renderer composes this
+  /// matrix with backing scale.
   public var transformA: Swift.Float
   public var transformB: Swift.Float
   public var transformC: Swift.Float
@@ -1187,4 +1193,3 @@ public struct TransitionRecord: Swift.Equatable, Swift.Sendable {
     set { _kind = newValue.rawValue }
   }
 }
-

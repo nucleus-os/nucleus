@@ -1,7 +1,7 @@
 import NucleusTypes
 
 /// Composition-time rounded-rect clip applied to a layer's subtree.
-/// Mirrors the rect+per-corner-radii+local-transform shape used by Skia
+/// Corresponds to the rect+per-corner-radii+local-transform shape used by Skia
 /// `SkRRect` clips. The 3×3 transform applies to the clip path before it
 /// is intersected with the layer's content; identity is the common case.
 ///

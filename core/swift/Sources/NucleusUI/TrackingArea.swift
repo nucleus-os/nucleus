@@ -1,8 +1,8 @@
 /// A region of a view that reports the pointer entering and leaving it, and
 /// that can carry a cursor and a tooltip.
 ///
-/// Mirrors `NSTrackingArea`, and covers what the reference's `InputArea` does:
-/// hover, a cursor shape, and a tooltip with a content provider.
+/// An `NSTrackingArea`-shaped subset covering hover, a cursor shape, and a
+/// tooltip content provider.
 ///
 /// The rect is in the owning view's **bounds** coordinates, so a scrolled view's
 /// tracking regions move with its contents rather than staying where they were

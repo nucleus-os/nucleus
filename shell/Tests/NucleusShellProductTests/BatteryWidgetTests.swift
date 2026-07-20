@@ -8,7 +8,7 @@ import NucleusTypes
 /// service — so every case a real machine takes weeks to produce is one
 /// assignment away.
 @MainActor
-@Suite struct BatteryWidgetTests {
+@Suite(.uiContext) struct BatteryWidgetTests {
     private func makeWidget(_ level: BatteryLevel) -> BatteryWidget {
         let widget = BatteryWidget()
         widget.update(level)

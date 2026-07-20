@@ -1,5 +1,3 @@
-@_spi(NucleusCompositor) import NucleusLayers
-
 /// Builds a list of subviews from a nested expression.
 ///
 /// Construction only. The result of a builder is a set of views a container
@@ -59,7 +57,7 @@ extension View {
     /// path.
     ///
     /// Views already installed and still present are kept rather than detached
-    /// and re-added, so re-running a body does not disturb their layers, their
+    /// and re-added, so re-running a body does not disturb their identity, their
     /// first-responder status, or their cached drawing.
     public func setBody(@ViewBuilder _ body: () -> [View]) {
         let desired = body()
@@ -83,11 +81,9 @@ extension View {
             guard let current = childViews.firstIndex(where: { $0 === view }) else { continue }
             childViews.remove(at: current)
             childViews.insert(view, at: index)
-            view.backingLayer.attach(to: backingLayer, at: UInt32(index))
-            LayerTransaction.appendAmbient(
-                .inserted(layer: view.backingLayer.id, parent: backingLayer.id, index: UInt32(index)),
-                in: backingLayer.context)
         }
+        reindexChildren()
+        recordMutation(.structure)
         markSubtreeNeedsLayout()
         markSubtreeNeedsDisplay()
     }

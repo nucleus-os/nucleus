@@ -195,9 +195,36 @@ private func mappedLayerRect(_ matrix: M44, _ rect: Rect) -> LogicalRect {
 /// value; a change to geometry/content/kind/transition changes it. Mirrors
 /// `nativeLayerVisualSignature` (contract-parity, see file header).
 func nativeLayerVisualSignature(_ layer: Layer, _ combinedOpacity: Float) -> UInt64 {
+    nativeLayerSignature(
+        layer,
+        combinedOpacity,
+        revision: layer.model.visualRevision,
+        includesContent: true)
+}
+
+/// Visual signature excluding sampled content identity. A localized paint
+/// replacement can use its projected damage only when this signature and the
+/// old footprint are unchanged.
+func nativeLayerCompositeSignature(
+    _ layer: Layer,
+    _ combinedOpacity: Float
+) -> UInt64 {
+    nativeLayerSignature(
+        layer,
+        combinedOpacity,
+        revision: layer.model.compositeRevision,
+        includesContent: false)
+}
+
+private func nativeLayerSignature(
+    _ layer: Layer,
+    _ combinedOpacity: Float,
+    revision: UInt64,
+    includesContent: Bool
+) -> UInt64 {
     var h = SceneHasher(seed: 0x9ea3_7281_71fd_4c5b)
     h.u64(UInt64(layer.role.rawValue))
-    h.u64(layer.model.visualRevision)
+    h.u64(revision)
     h.f32(combinedOpacity)
     h.f32(layer.effectiveOpacity())
 
@@ -233,11 +260,13 @@ func nativeLayerVisualSignature(_ layer: Layer, _ combinedOpacity: Float) -> UIn
         h.byte(2)
     }
 
-    switch layer.presentedContent() {
-    case .none: h.byte(0)
-    case .paint(let handle): h.byte(1); h.u64(handle.raw)
-    case .external(let surfaceId): h.byte(2); h.u64(UInt64(surfaceId.raw))
-    case .snapshot(let snapshot): h.byte(3); h.u64(snapshot.raw)
+    if includesContent {
+        switch layer.presentedContent() {
+        case .none: h.byte(0)
+        case .paint(let handle): h.byte(1); h.u64(handle.raw)
+        case .external(let surfaceId): h.byte(2); h.u64(UInt64(surfaceId.raw))
+        case .snapshot(let snapshot): h.byte(3); h.u64(snapshot.raw)
+        }
     }
 
     if layer.hasPresentationTransition() {

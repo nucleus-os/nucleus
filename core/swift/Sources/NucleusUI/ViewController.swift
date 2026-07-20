@@ -55,6 +55,6 @@ open class ViewController: Responder, ~Sendable {
 
     open override var nextResponder: Responder? {
         get { parentWindow ?? explicitNextResponder }
-        set { explicitNextResponder = newValue }
+        set { setExplicitNextResponder(newValue) }
     }
 }

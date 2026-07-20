@@ -179,7 +179,6 @@ let package = Package(
                 .product(name: "NucleusCompositorWindowManager", package: "compositor-core"),
                 .product(name: "NucleusCompositorShell", package: "compositor-core"),
                 .product(name: "Tracy", package: "swift-tracy"),
-                .product(name: "NucleusTextCxxBridge", package: "Nucleus"),
                 "NucleusCompositorRuntimeEntry", "NucleusCompositorLoop",
                 "NucleusCompositorSignalC",
                 .product(name: "SystemPackage", package: "swift-system"),
@@ -205,8 +204,8 @@ let package = Package(
             dependencies: [
                 "NucleusCompositorRuntime", "NucleusCompositorRuntimeEntry",
                 // The Skia text backend, compiled once in the core and linked here (no
-                // symlink target). Provides nucleus_canvas_draw_text_layout (NucleusUI's
-                // TextSystem.swift calls it via NucleusTextCxxBridge) + the paragraph registry.
+                // symlink target). Provides the installed Skia TextLayoutBackend
+                // adapter plus the paragraph registry used by drawing.
                 .product(name: "NucleusTextBackend", package: "Nucleus"),
             ],
             path: "Sources/NucleusCompositor",

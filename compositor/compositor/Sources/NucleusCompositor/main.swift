@@ -4,5 +4,7 @@
 // the io_uring loop, and teardown, then maps the result to a process exit code.
 import Glibc
 import NucleusCompositorRuntimeEntry
+import NucleusTextBackend
 
+SkiaTextLayoutBackend.installIfNeeded()
 exit(nucleus_runtime_main())

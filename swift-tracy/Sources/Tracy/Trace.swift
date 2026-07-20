@@ -9,11 +9,11 @@ public enum Trace {
     }
 
     public static var enabled: Bool {
-        swift_tracy.TraceBridge.enabled()
+        swift_tracy_enabled()
     }
 
     public static var connected: Bool {
-        swift_tracy.TraceBridge.connected()
+        swift_tracy_connected()
     }
 
     public static func beginZone(
@@ -26,7 +26,7 @@ public enum Trace {
         withStaticStringBytes(name) { namePointer, nameLength in
             function.withCString { functionPointer in
                 file.withCString { filePointer in
-                    TraceZone(context: swift_tracy.TraceBridge.beginZone(
+                    TraceZone(context: swift_tracy_begin_zone(
                         namePointer,
                         nameLength,
                         functionPointer,
@@ -58,31 +58,31 @@ public enum Trace {
 
     public static func setThreadName(_ name: String) {
         name.withCString { pointer in
-            swift_tracy.TraceBridge.setThreadName(pointer, name.utf8.count)
+            swift_tracy_set_thread_name(pointer, name.utf8.count)
         }
     }
 
     public static func message(_ text: String) {
         text.withCString { pointer in
-            swift_tracy.TraceBridge.message(pointer, text.utf8.count)
+            swift_tracy_message(pointer, text.utf8.count)
         }
     }
 
     public static func message(_ text: String, color: UInt32) {
         text.withCString { pointer in
-            swift_tracy.TraceBridge.messageColor(pointer, text.utf8.count, color)
+            swift_tracy_message_color(pointer, text.utf8.count, color)
         }
     }
 
     public static func plot(_ name: String, _ value: Double) {
         name.withCString { pointer in
-            swift_tracy.TraceBridge.plot(pointer, value)
+            swift_tracy_plot(pointer, value)
         }
     }
 
     public static func plot(_ name: String, _ value: Int64) {
         name.withCString { pointer in
-            swift_tracy.TraceBridge.plotInt(pointer, value)
+            swift_tracy_plot_int(pointer, value)
         }
     }
 
@@ -93,32 +93,32 @@ public enum Trace {
     /// Open/close a named discontinuous frame range. Tracy requires the name's
     /// storage to outlive the capture; the C++ bridge interns dynamic names.
     public static func frameMarkStart(_ name: String) {
-        name.withCString { swift_tracy.TraceBridge.frameMarkStart($0) }
+        name.withCString { swift_tracy_frame_mark_start($0) }
     }
 
     public static func frameMarkEnd(_ name: String) {
-        name.withCString { swift_tracy.TraceBridge.frameMarkEnd($0) }
+        name.withCString { swift_tracy_frame_mark_end($0) }
     }
 }
 
 public struct TraceZone {
-    private let context: swift_tracy.ZoneContext
+    private let context: SwiftTracyZoneContext
 
-    fileprivate init(context: swift_tracy.ZoneContext) {
+    fileprivate init(context: SwiftTracyZoneContext) {
         self.context = context
     }
 
     public func end() {
-        swift_tracy.TraceBridge.endZone(context)
+        swift_tracy_end_zone(context)
     }
 
     public func value(_ value: UInt64) {
-        swift_tracy.TraceBridge.zoneValue(context, value)
+        swift_tracy_zone_value(context, value)
     }
 
     public func text(_ text: String) {
         text.withCString { pointer in
-            swift_tracy.TraceBridge.zoneText(context, pointer, text.utf8.count)
+            swift_tracy_zone_text(context, pointer, text.utf8.count)
         }
     }
 }

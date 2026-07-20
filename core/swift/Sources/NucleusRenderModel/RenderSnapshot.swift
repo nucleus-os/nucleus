@@ -11,6 +11,8 @@
 // `TextureHandle` (canonically `composition_plan.TextureHandle`) is defined here
 // as its first Swift consumer.
 
+import Synchronization
+
 /// Opaque render-resource texture handle. Mirrors `composition_plan.TextureHandle`
 /// (`enum(u64)`).
 public struct TextureHandle: Equatable, Hashable, Sendable {
@@ -68,12 +70,21 @@ public struct SnapshotEntry: Equatable, Sendable {
 /// Owns immutable snapshot handles and their refcounts. Mirrors
 /// `SnapshotService`. A reference type — the service is shared, mutable
 /// registry state.
-public final class SnapshotService: @unchecked Sendable {
-    private var entries: [SnapshotHandle: SnapshotEntry] = [:]
-    private var nextHandle: UInt64 = 1
+public final class SnapshotService: Sendable {
+    private struct State {
+        var entries: [SnapshotHandle: SnapshotEntry] = [:]
+        var nextHandle: UInt64 = 1
+        var backdropCaptureBlocks: UInt64 = 0
+    }
+
+    private let state = Mutex(State())
+
     /// Capture attempts blocked because the layer was a backdrop. Mirrors
     /// `backdrop_capture_blocks`.
-    public var backdropCaptureBlocks: UInt64 = 0
+    public var backdropCaptureBlocks: UInt64 {
+        get { state.withLock { $0.backdropCaptureBlocks } }
+        set { state.withLock { $0.backdropCaptureBlocks = newValue } }
+    }
 
     public init() {}
 
@@ -81,14 +92,16 @@ public final class SnapshotService: @unchecked Sendable {
     /// `resolve`.
     public func resolve(_ handle: SnapshotHandle) -> SnapshotEntry? {
         if handle.isNone { return nil }
-        return entries[handle]
+        return state.withLock { $0.entries[handle] }
     }
 
     /// Add one ref to a live handle. No-op for `none`/unknown. Mirrors `retain`.
     public func retain(_ handle: SnapshotHandle) {
         if handle.isNone { return }
-        guard entries[handle] != nil else { return }
-        entries[handle]!.refcount &+= 1
+        state.withLock {
+            guard $0.entries[handle] != nil else { return }
+            $0.entries[handle]!.refcount &+= 1
+        }
     }
 
     /// Drop one ref. On the final ref, removes the entry and returns its texture
@@ -96,20 +109,26 @@ public final class SnapshotService: @unchecked Sendable {
     /// `release`.
     public func release(_ handle: SnapshotHandle) -> TextureHandle? {
         if handle.isNone { return nil }
-        guard let entry = entries[handle] else { return nil }
-        if entry.refcount > 1 {
-            entries[handle]!.refcount -= 1
-            return nil
+        return state.withLock {
+            guard let entry = $0.entries[handle] else { return nil }
+            if entry.refcount > 1 {
+                $0.entries[handle]!.refcount -= 1
+                return nil
+            }
+            $0.entries[handle] = nil
+            return entry.texture
         }
-        entries[handle] = nil
-        return entry.texture
     }
 
     /// Release every entry's texture through `releaser` and clear the registry.
     /// Mirrors `releaseAll`.
     public func releaseAll(_ releaser: (TextureHandle) -> Void) {
-        for entry in entries.values { releaser(entry.texture) }
-        entries.removeAll(keepingCapacity: true)
+        let textures = state.withLock {
+            let textures = $0.entries.values.map(\.texture)
+            $0.entries.removeAll(keepingCapacity: true)
+            return textures
+        }
+        for texture in textures { releaser(texture) }
     }
 
     /// Register a service-owned texture under a fresh handle (unknown
@@ -124,12 +143,15 @@ public final class SnapshotService: @unchecked Sendable {
     public func registerTextureHandle(
         _ texture: TextureHandle, size: Bounds, provenance: SnapshotProvenance
     ) -> SnapshotHandle {
-        let id = nextHandle
-        nextHandle &+= 1
-        if nextHandle == 0 { nextHandle = 1 }
-        let handle = SnapshotHandle(raw: id)
-        entries[handle] = SnapshotEntry(
-            texture: texture, size: size, provenance: provenance, refcount: 1)
-        return handle
+        state.withLock {
+            let id = $0.nextHandle
+            $0.nextHandle &+= 1
+            if $0.nextHandle == 0 { $0.nextHandle = 1 }
+            let handle = SnapshotHandle(raw: id)
+            $0.entries[handle] = SnapshotEntry(
+                texture: texture, size: size, provenance: provenance,
+                refcount: 1)
+            return handle
+        }
     }
 }

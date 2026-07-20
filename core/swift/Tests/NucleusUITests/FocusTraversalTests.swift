@@ -5,7 +5,7 @@ import NucleusUI
 /// authored as a linked list, because a tree rebuilt from a body closure would
 /// otherwise have to re-thread the loop on every rebuild.
 @MainActor
-@Suite struct FocusTraversalTests {
+@Suite(.uiContext) struct FocusTraversalTests {
     private final class Focusable: View {
         override var acceptsFirstResponder: Bool { true }
     }
@@ -15,7 +15,7 @@ import NucleusUI
         let window = Window(title: "Focus")
         window.setContentView(root)
         window.orderFront()
-        let scene = WindowScene(windows: [window])
+        let scene = WindowScene(inMemoryWindows: [window])
         scene.makeKey(window)
         return (scene, window)
     }
@@ -216,7 +216,7 @@ import NucleusUI
 
 /// Roving focus: one tab stop for a whole list, arrow keys moving inside it.
 @MainActor
-@Suite struct RovingFocusTests {
+@Suite(.uiContext) struct RovingFocusTests {
     private func makeRoving(count: Int) -> RovingFocus {
         let roving = RovingFocus()
         roving.setCount(count)

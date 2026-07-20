@@ -58,6 +58,16 @@ public struct PaintRecording: Sendable, Equatable {
 
     package var isEmpty: Bool { commands.isEmpty }
 
+    /// Runtime effects may sample outside the invalidated region, so the
+    /// renderer must rebuild the complete backing for those recordings. Every
+    /// other command is replayed from the beginning under an outer damage clip,
+    /// preserving save/restore, clip, and destination-blend semantics.
+    package var supportsLocalizedDamage: Bool {
+        !commands.contains {
+            $0.shading == .effect || $0.effectHandle != 0
+        }
+    }
+
     package init() {}
 
     /// Whether anything was drawn.
@@ -126,7 +136,7 @@ public final class GraphicsContext {
 
     public var lineWidth: Double {
         get { state.lineWidth }
-        set { state.lineWidth = max(0, newValue) }
+        set { state.lineWidth = newValue.isFinite ? max(0, newValue) : 0 }
     }
 
     public var lineCap: LineCap {
@@ -146,7 +156,7 @@ public final class GraphicsContext {
 
     public var alpha: Double {
         get { state.alpha }
-        set { state.alpha = min(max(0, newValue), 1) }
+        set { state.alpha = newValue.isFinite ? min(max(0, newValue), 1) : 1 }
     }
 
     public var shouldAntialias: Bool {
@@ -177,10 +187,9 @@ public final class GraphicsContext {
 
     // MARK: - Transform
 
-    /// The current transform. Applied to geometry as it is recorded rather
-    /// than carried on each command: the rasterizer scales the whole canvas to
-    /// the output, and a per-command matrix would be a second, conflicting way
-    /// to say the same thing.
+    /// The current local-to-recording transform. Every paint operation carries
+    /// a snapshot of this transform while keeping its geometry local. The
+    /// renderer composes backing scale and this matrix exactly once.
     public var currentTransform: AffineTransform { state.transform }
 
     public func translateBy(x: Double, y: Double) {
@@ -208,8 +217,11 @@ public final class GraphicsContext {
     public func fill(_ path: Path, with shading: Shading) {
         guard !path.isEmpty else { return }
         var command = PaintCommand(kind: .path, flags: pathFlags(path, stroke: false))
+        let shading = canonicalShading(shading, fallback: state.fillColor)
         applyStyle(&command, color: fillColorFor(shading))
-        encode(path: path, shading: shading, into: &command)
+        guard applyCurrentTransform(to: &command),
+              encode(path: path, shading: shading, into: &command)
+        else { return }
         append(command)
     }
 
@@ -220,10 +232,14 @@ public final class GraphicsContext {
     public func stroke(_ path: Path, with shading: Shading) {
         guard !path.isEmpty else { return }
         var command = PaintCommand(kind: .path, flags: pathFlags(path, stroke: true))
+        let shading = canonicalShading(shading, fallback: state.strokeColor)
         applyStyle(&command, color: fillColorFor(shading, fallback: state.strokeColor))
-        command.strokeWidth = Float(state.lineWidth * scalarScale)
+        guard let strokeWidth = finiteFloat(state.lineWidth) else { return }
+        command.strokeWidth = strokeWidth
         applyStrokeStyle(&command)
-        encode(path: path, shading: shading, into: &command)
+        guard applyCurrentTransform(to: &command),
+              encode(path: path, shading: shading, into: &command)
+        else { return }
         append(command)
     }
 
@@ -239,13 +255,15 @@ public final class GraphicsContext {
 
     /// Intersect the clip with `path`, scoped to the enclosing graphics state.
     public func clip(to path: Path) {
-        guard !path.isEmpty else { return }
         var command = PaintCommand(kind: .clipPath, flags: pathFlags(path, stroke: false))
         applyStyle(&command, color: state.fillColor)
+        guard applyCurrentTransform(to: &command),
+              let points = narrow(path.points)
+        else { return }
         let slice = PaintPayload.append(
             to: &storedRecording.payload,
             verbs: path.verbs,
-            points: transformedPoints(path))
+            points: points)
         command.payloadOffset = slice.offset
         command.payloadLength = slice.length
         append(command)
@@ -260,11 +278,22 @@ public final class GraphicsContext {
     /// Draw a shaped text layout. Plain `public` — text is a headline drawing
     /// operation, not publication plumbing.
     public func draw(_ layout: TextLayout, in rect: Rect) {
-        guard !layout.isEmpty else { return }
+        guard !layout.isEmpty, rect.isFinite, !rect.isEmpty else { return }
+        guard layout.hasBackendResource else {
+            // A host/backend failure is recoverable, but invisible text is not
+            // diagnosable. Render an unmistakable missing-text box while
+            // TextSystem reports the underlying issue through its diagnostic
+            // policy.
+            fill(rect, with: .color(Color(1, 0, 1, 0.35)))
+            return
+        }
         storedRecording.textLayouts.append(layout.applyingDefaultColor(state.fillColor))
         var command = PaintCommand(kind: .textLayout)
         applyStyle(&command, color: state.fillColor)
-        setGeometry(&command, rect)
+        guard setGeometry(&command, rect) else {
+            storedRecording.textLayouts.removeLast()
+            return
+        }
         // One-based index; resolved to a registry handle at registration.
         command.textLayoutHandle = UInt64(storedRecording.textLayouts.count)
         append(command)
@@ -282,12 +311,14 @@ public final class GraphicsContext {
         _ image: ImageHandle, in rect: Rect, cornerRadius: Double = 0,
         tint: Color? = nil, saturation: Double = 1
     ) {
+        guard rect.isFinite, !rect.isEmpty, image.id != 0 else { return }
         var command = PaintCommand(kind: .image)
         applyStyle(&command, color: tint ?? state.fillColor)
-        setGeometry(&command, rect)
-        command.radius = Float(max(0, cornerRadius) * scalarScale)
+        guard setGeometry(&command, rect) else { return }
+        command.radius = finiteNonnegativeFloat(cornerRadius) ?? 0
         command.imageHandle = image.id
-        command.saturation = Float(saturation)
+        command.saturation = Float(
+            saturation.isFinite ? min(max(0, saturation), 1) : 1)
         if tint != nil { command.flags.insert(.tintImage) }
         append(command)
     }
@@ -296,22 +327,26 @@ public final class GraphicsContext {
     /// by `ViewStyle` for backgrounds, which are the most common draw in the
     /// tree and always axis-aligned.
     package func fillRect(_ rect: Rect, color: Color, cornerRadius: Double) {
+        guard rect.isFinite, !rect.isEmpty else { return }
         var command = PaintCommand(kind: cornerRadius > 0 ? .roundedRect : .rect)
         applyStyle(&command, color: color)
-        setGeometry(&command, rect)
-        command.radius = Float(cornerRadius * scalarScale)
+        guard setGeometry(&command, rect) else { return }
+        command.radius = finiteNonnegativeFloat(cornerRadius) ?? 0
         append(command)
     }
 
     package func strokeRect(
         _ rect: Rect, color: Color, cornerRadius: Double, width: Double
     ) {
+        guard rect.isFinite, !rect.isEmpty else { return }
         var command = PaintCommand(kind: cornerRadius > 0 ? .roundedRect : .rect)
         applyStyle(&command, color: color)
         command.flags.insert(.stroke)
-        setGeometry(&command, rect)
-        command.radius = Float(cornerRadius * scalarScale)
-        command.strokeWidth = Float(width * scalarScale)
+        guard setGeometry(&command, rect),
+              let strokeWidth = finiteNonnegativeFloat(width)
+        else { return }
+        command.radius = finiteNonnegativeFloat(cornerRadius) ?? 0
+        command.strokeWidth = strokeWidth
         append(command)
     }
 
@@ -329,7 +364,7 @@ public final class GraphicsContext {
     }
 
     private func applyStyle(_ command: inout PaintCommand, color: Color) {
-        command.color = color.layersColor
+        command.color = canonicalColor(color).layersColor
         command.alpha = Float(state.alpha)
         command.blend = wireBlend(state.blendMode)
         if state.antialias { command.flags.insert(.antialias) }
@@ -352,51 +387,40 @@ public final class GraphicsContext {
         }
     }
 
-    /// Whether the current transform does something a rectangle cannot absorb.
-    ///
-    /// A translation or a scale maps a rectangle to a rectangle, so it folds
-    /// into the geometry and the command stays a plain rect. Rotation and skew
-    /// do not — folding those in leaves an axis-aligned bounding box, which is
-    /// what this used to do to every image, glyph run, and rect fill under a
-    /// `rotateBy`: drawn upright, at the wrong size, with no indication that
-    /// the rotation had been dropped.
-    private var transformNeedsCarrying: Bool {
-        state.transform.b != 0 || state.transform.c != 0
+    private func setGeometry(_ command: inout PaintCommand, _ rect: Rect) -> Bool {
+        guard rect.isFinite, !rect.isEmpty,
+              let x = finiteFloat(rect.origin.x),
+              let y = finiteFloat(rect.origin.y),
+              let width = finiteFloat(rect.size.width),
+              let height = finiteFloat(rect.size.height)
+        else { return false }
+        command.x = x
+        command.y = y
+        command.w = width
+        command.h = height
+        return applyCurrentTransform(to: &command)
     }
 
-    private func setGeometry(_ command: inout PaintCommand, _ rect: Rect) {
-        guard transformNeedsCarrying else {
-            let origin = state.transform.apply(Point(x: rect.origin.x, y: rect.origin.y))
-            let far = state.transform.apply(Point(
-                x: rect.origin.x + rect.size.width, y: rect.origin.y + rect.size.height))
-            command.x = Float(min(origin.x, far.x))
-            command.y = Float(min(origin.y, far.y))
-            command.w = Float(abs(far.x - origin.x))
-            command.h = Float(abs(far.y - origin.y))
-            return
-        }
-
-        // Geometry stays in local space and the transform rides along; the
-        // rasterizer concatenates it. Scalars that would otherwise be
-        // pre-scaled (radius, stroke width) stay local too — the matrix scales
-        // them, and pre-scaling as well would apply it twice.
-        command.x = Float(rect.origin.x)
-        command.y = Float(rect.origin.y)
-        command.w = Float(rect.size.width)
-        command.h = Float(rect.size.height)
+    /// Paint geometry always stays in its authored coordinate space. This one
+    /// boundary snapshots the complete local-to-recording matrix for paths,
+    /// clips, gradients, images, text, and rectangle primitives alike.
+    private func applyCurrentTransform(to command: inout PaintCommand) -> Bool {
+        guard state.transform.isFinite,
+              let a = finiteFloat(state.transform.a),
+              let b = finiteFloat(state.transform.b),
+              let c = finiteFloat(state.transform.c),
+              let d = finiteFloat(state.transform.d),
+              let tx = finiteFloat(state.transform.tx),
+              let ty = finiteFloat(state.transform.ty)
+        else { return false }
         command.flags.insert(.hasTransform)
-        command.transformA = Float(state.transform.a)
-        command.transformB = Float(state.transform.b)
-        command.transformC = Float(state.transform.c)
-        command.transformD = Float(state.transform.d)
-        command.transformTX = Float(state.transform.tx)
-        command.transformTY = Float(state.transform.ty)
-    }
-
-    /// The factor to pre-scale a local scalar by. One when the command carries
-    /// its own transform, since the matrix already does it.
-    private var scalarScale: Double {
-        transformNeedsCarrying ? 1 : state.transform.approximateScale
+        command.transformA = a
+        command.transformB = b
+        command.transformC = c
+        command.transformD = d
+        command.transformTX = tx
+        command.transformTY = ty
+        return true
     }
 
     private func fillColorFor(_ shading: Shading, fallback: Color? = nil) -> Color {
@@ -404,36 +428,9 @@ public final class GraphicsContext {
         return fallback ?? state.fillColor
     }
 
-    private func transformedPoints(_ path: Path) -> [Float] {
-        guard !state.transform.isIdentity else { return path.points }
-        var out = path.points
-        var cursor = 0
-        for verb in path.verbs {
-            switch verb {
-            case .arc:
-                // (origin, size, angles): transform the rect, leave the angles.
-                let origin = state.transform.apply(
-                    Point(x: Double(out[cursor]), y: Double(out[cursor + 1])))
-                out[cursor] = Float(origin.x)
-                out[cursor + 1] = Float(origin.y)
-                out[cursor + 2] *= Float(state.transform.a)
-                out[cursor + 3] *= Float(state.transform.d)
-            default:
-                var i = 0
-                while i < verb.floatCount {
-                    let p = state.transform.apply(
-                        Point(x: Double(out[cursor + i]), y: Double(out[cursor + i + 1])))
-                    out[cursor + i] = Float(p.x)
-                    out[cursor + i + 1] = Float(p.y)
-                    i += 2
-                }
-            }
-            cursor += verb.floatCount
-        }
-        return out
-    }
-
-    private func encode(path: Path, shading: Shading, into command: inout PaintCommand) {
+    private func encode(
+        path: Path, shading: Shading, into command: inout PaintCommand
+    ) -> Bool {
         var scalars: [Float] = []
         var colors: [Color] = []
 
@@ -442,20 +439,18 @@ public final class GraphicsContext {
             command.shading = .color
         case .linearGradient(let from, let to, let stops):
             command.shading = .linearGradient
-            let a = state.transform.apply(from), b = state.transform.apply(to)
-            scalars = [Float(a.x), Float(a.y), Float(b.x), Float(b.y)]
+            guard let geometry = narrow([from.x, from.y, to.x, to.y]) else { return false }
+            scalars = geometry
             appendStops(stops, &scalars, &colors)
         case .radialGradient(let center, let radius, let stops):
             command.shading = .radialGradient
-            let c = state.transform.apply(center)
-            scalars = [
-                Float(c.x), Float(c.y), Float(radius * state.transform.approximateScale),
-            ]
+            guard let geometry = narrow([center.x, center.y, radius]) else { return false }
+            scalars = geometry
             appendStops(stops, &scalars, &colors)
         case .sweepGradient(let center, let start, let end, let stops):
             command.shading = .sweepGradient
-            let c = state.transform.apply(center)
-            scalars = [Float(c.x), Float(c.y), Float(start), Float(end)]
+            guard let geometry = narrow([center.x, center.y, start, end]) else { return false }
+            scalars = geometry
             appendStops(stops, &scalars, &colors)
         case .effect(let effect, let uniforms):
             command.shading = .effect
@@ -463,14 +458,16 @@ public final class GraphicsContext {
             scalars = uniforms
         }
 
+        guard let points = narrow(path.points) else { return false }
         let slice = PaintPayload.append(
             to: &storedRecording.payload,
             verbs: path.verbs,
-            points: transformedPoints(path),
+            points: points,
             scalars: scalars,
             colors: colors.map(\.layersColor))
         command.payloadOffset = slice.offset
         command.payloadLength = slice.length
+        return true
     }
 
     private func appendStops(
@@ -480,6 +477,87 @@ public final class GraphicsContext {
             scalars.append(Float(stop.location))
             colors.append(stop.color)
         }
+    }
+
+    /// Normalize all caller-provided gradient data before it reaches the wire.
+    /// Stops are clamped and sorted by location; equal locations preserve input
+    /// order, defining a deterministic hard transition.
+    private func canonicalShading(_ shading: Shading, fallback: Color) -> Shading {
+        func stops(_ input: [GradientStop]) -> [GradientStop]? {
+            guard input.count >= 2 else { return nil }
+            var result: [(index: Int, stop: GradientStop)] = []
+            result.reserveCapacity(input.count)
+            for (index, stop) in input.enumerated() {
+                guard stop.location.isFinite else { return nil }
+                result.append((
+                    index,
+                    GradientStop(
+                        location: min(max(0, stop.location), 1),
+                        color: canonicalColor(stop.color))))
+            }
+            result.sort {
+                if $0.stop.location == $1.stop.location {
+                    return $0.index < $1.index
+                }
+                return $0.stop.location < $1.stop.location
+            }
+            return result.map(\.stop)
+        }
+
+        switch shading {
+        case .color(let color):
+            return .color(canonicalColor(color))
+        case .linearGradient(let from, let to, let input):
+            guard from.isFinite, to.isFinite, let stops = stops(input) else {
+                return .color(canonicalColor(fallback))
+            }
+            return .linearGradient(from: from, to: to, stops: stops)
+        case .radialGradient(let center, let radius, let input):
+            guard center.isFinite, radius.isFinite, radius > 0,
+                  let stops = stops(input)
+            else { return .color(canonicalColor(fallback)) }
+            return .radialGradient(center: center, radius: radius, stops: stops)
+        case .sweepGradient(let center, let start, let end, let input):
+            guard center.isFinite, start.isFinite, end.isFinite,
+                  let stops = stops(input)
+            else { return .color(canonicalColor(fallback)) }
+            return .sweepGradient(center: center, start: start, end: end, stops: stops)
+        case .effect(let effect, let uniforms):
+            guard effect.id != 0, uniforms.allSatisfy(\.isFinite) else {
+                return .color(canonicalColor(fallback))
+            }
+            return .effect(effect, uniforms: uniforms)
+        }
+    }
+
+    private func canonicalColor(_ color: Color) -> Color {
+        func component(_ value: Float) -> Float {
+            value.isFinite ? min(max(0, value), 1) : 0
+        }
+        return Color(
+            component(color.r), component(color.g),
+            component(color.b), component(color.a))
+    }
+
+    private func finiteFloat(_ value: Double) -> Float? {
+        guard value.isFinite else { return nil }
+        let narrowed = Float(value)
+        return narrowed.isFinite ? narrowed : nil
+    }
+
+    private func finiteNonnegativeFloat(_ value: Double) -> Float? {
+        guard value.isFinite else { return nil }
+        return finiteFloat(max(0, value))
+    }
+
+    private func narrow(_ values: [Double]) -> [Float]? {
+        var result: [Float] = []
+        result.reserveCapacity(values.count)
+        for value in values {
+            guard let narrowed = finiteFloat(value) else { return nil }
+            result.append(narrowed)
+        }
+        return result
     }
 
     private func wireBlend(_ mode: BlendMode) -> PaintBlendMode {

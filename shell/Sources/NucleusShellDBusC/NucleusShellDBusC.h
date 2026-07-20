@@ -1,8 +1,7 @@
-// NucleusShellDBusC — importer façade over libsystemd sd-bus, client side.
+// NucleusShellDBusC — importer façade over libsystemd sd-bus.
 //
-// The compositor's equivalent façade wraps the parts a *service* needs and Swift
-// cannot express: the SD_BUS_VTABLE_* designated-initializer macros and the
-// variadic message ops. A client needs almost none of that. Every entry point
+// The shell's accessibility provider uses a fallback callback and manually
+// builds messages, so it does not need an sd_bus_vtable. Every entry point
 // used here — open_user/open_system, get_fd/get_events/get_timeout, process,
 // flush, add_match, message_new_method_call, message_append_basic, call,
 // message_read_basic, enter/exit_container, get_property_trivial/string,
@@ -35,6 +34,15 @@ static inline const char *nucleus_dbus_error_name(const sd_bus_error *error) {
 
 static inline const char *nucleus_dbus_error_message(const sd_bus_error *error) {
     return (error != NULL && error->message != NULL) ? error->message : "";
+}
+
+// sd_bus_reply_method_errorf is variadic and therefore not importable by
+// Swift. Keep the one concrete formatting shape the provider needs here.
+static inline int nucleus_dbus_reply_error(sd_bus_message *call,
+                                           const char *name,
+                                           const char *message) {
+    return sd_bus_reply_method_errorf(call, name, "%s",
+                                      message != NULL ? message : "");
 }
 
 #endif

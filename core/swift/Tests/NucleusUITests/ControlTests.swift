@@ -3,7 +3,7 @@ import NucleusTypes
 import Testing
 
 @MainActor
-@Suite struct ControlTests {
+@Suite(.uiContext) struct ControlTests {
     @Test func controlTracksPointerStateAndSendsPrimaryAction() throws {
         let control = Control()
         var actions = 0

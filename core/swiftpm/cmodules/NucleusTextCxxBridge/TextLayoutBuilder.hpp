@@ -61,8 +61,10 @@ struct TextStringView final {
 
 struct TextStyle final {
   std::string fontFamily;
+  std::string locale;
   float pointSize{14.0f};
   float lineHeight{0.0f};
+  float baselineShift{0.0f};
   int fontWeight{400};
   bool italic{false};
   bool underline{false};
@@ -101,8 +103,10 @@ struct ParagraphMetrics final {
 struct TextRunView final {
   TextStringView text;
   TextStringView fontFamily;
+  TextStringView locale;
   float pointSize{14.0f};
   float lineHeight{0.0f};
+  float baselineShift{0.0f};
   uint32_t weight{FontWeightRegular};
   uint32_t width{FontWidthStandard};
   uint32_t slant{FontSlantUpright};

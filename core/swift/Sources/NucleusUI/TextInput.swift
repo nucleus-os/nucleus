@@ -47,6 +47,45 @@ public struct TextInputSurroundingContext: Sendable, Equatable {
     }
 }
 
+public enum TextInputChangeCause: Sendable, Equatable {
+    /// Text changed in response to an input-method event.
+    case inputMethod
+    /// Text, selection, or geometry changed for any other reason.
+    case other
+}
+
+public enum TextInputPreeditStyle: Sendable, Equatable {
+    case none
+    case active
+    case inactive
+    case highlighted
+    case selected
+    case incorrect
+}
+
+public struct TextInputPreeditSpan: Sendable, Equatable {
+    /// UTF-16 range relative to the current marked text.
+    public var range: Range<Int>
+    public var style: TextInputPreeditStyle
+
+    public init(range: Range<Int>, style: TextInputPreeditStyle) {
+        self.range = range
+        self.style = style
+    }
+}
+
+/// Candidate rectangle after the UI framework has converted a text client's
+/// local caret through view, window, and presentation-surface coordinates.
+public struct TextInputCandidateGeometry: Sendable, Equatable {
+    public var surfaceID: PresentationSurfaceID
+    public var rect: Rect
+
+    public init(surfaceID: PresentationSurfaceID, rect: Rect) {
+        self.surfaceID = surfaceID
+        self.rect = rect
+    }
+}
+
 /// A view that can receive composed text from an input method.
 ///
 /// The platform-neutral half of the seam, shaped after `NSTextInputClient`. An
@@ -64,6 +103,15 @@ public protocol TextInputClient: AnyObject {
 
     /// Abandon the composition without committing it.
     func unmarkText()
+
+    /// Styling metadata for the current marked text.
+    func setMarkedTextStyles(_ styles: [TextInputPreeditSpan])
+
+    /// The input method selected a language, expressed as a BCP-47 tag.
+    func textInputDidChangeLanguage(_ language: String?)
+
+    /// The input method invoked its primary action (for example Submit).
+    func performTextInputAction()
 
     var hasMarkedText: Bool { get }
     var markedRange: Range<Int>? { get }
@@ -84,6 +132,37 @@ public protocol TextInputClient: AnyObject {
     var textInputHints: TextInputHints { get }
 }
 
+extension TextInputClient {
+    public func setMarkedTextStyles(_ styles: [TextInputPreeditSpan]) {
+        _ = styles
+    }
+
+    public func textInputDidChangeLanguage(_ language: String?) {
+        _ = language
+    }
+
+    public func performTextInputAction() {}
+
+    /// Candidate geometry ready for a platform adapter.
+    ///
+    /// The caret remains client-local in the protocol itself. This is the one
+    /// boundary that walks through the retained view tree and the window's
+    /// current surface association.
+    public var textInputCandidateGeometry: TextInputCandidateGeometry? {
+        guard let view = self as? View,
+              let window = view.window,
+              let association = window.surfaceAssociation
+        else {
+            return nil
+        }
+        let caretInWindow = view.convert(textInputCaretRect, to: nil)
+        return TextInputCandidateGeometry(
+            surfaceID: association.surfaceID,
+            rect: association.transform.surfaceRect(fromWindow: caretInWindow)
+        )
+    }
+}
+
 /// The platform half of the seam: what an adapter must implement to carry a
 /// client's state out to a real input method.
 ///
@@ -99,7 +178,10 @@ public protocol TextInputAdapter: AnyObject {
     func textInputDidDeactivate(_ client: any TextInputClient)
     /// The client's text, selection, or caret rectangle changed, so the input
     /// method's cached state is stale.
-    func textInputDidChangeState(_ client: any TextInputClient)
+    func textInputDidChangeState(
+        _ client: any TextInputClient,
+        cause: TextInputChangeCause
+    )
 }
 
 /// Routes between the focused text client and the platform's input method.
@@ -112,12 +194,27 @@ public protocol TextInputAdapter: AnyObject {
 public final class TextInputContext {
     /// The adapter for this context, installed by the embedder. `nil` in tests
     /// and in sessions with no input method.
-    public weak var adapter: (any TextInputAdapter)?
+    public private(set) weak var adapter: (any TextInputAdapter)?
 
     /// The client currently accepting composed text.
     public private(set) weak var activeClient: (any TextInputClient)?
 
     public init() {}
+
+    /// Attach or detach the platform adapter while preserving focused-client
+    /// state. Repeated installation of the same adapter is a no-op.
+    public func installAdapter(_ newAdapter: (any TextInputAdapter)?) {
+        if let adapter, let newAdapter, adapter === newAdapter {
+            return
+        }
+        if let activeClient {
+            adapter?.textInputDidDeactivate(activeClient)
+        }
+        adapter = newAdapter
+        if let activeClient {
+            newAdapter?.textInputDidActivate(activeClient)
+        }
+    }
 
     public func activate(_ client: any TextInputClient) {
         guard activeClient !== client else { return }
@@ -136,8 +233,11 @@ public final class TextInputContext {
 
     /// Tell the input method its cached view of the client is stale. Called by a
     /// field whenever its text, selection, or caret position changes.
-    public func invalidateState(for client: any TextInputClient) {
+    public func invalidateState(
+        for client: any TextInputClient,
+        cause: TextInputChangeCause = .other
+    ) {
         guard activeClient === client else { return }
-        adapter?.textInputDidChangeState(client)
+        adapter?.textInputDidChangeState(client, cause: cause)
     }
 }

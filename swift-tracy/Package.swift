@@ -39,13 +39,11 @@ let package = Package(
             name: "Tracy",
             dependencies: ["TracyBridge"],
             path: "Sources/Tracy",
-            sources: ["Trace.swift"],
-            swiftSettings: [.interoperabilityMode(.Cxx)]
+            sources: ["Trace.swift"]
         ),
         .testTarget(
             name: "TracyTests",
-            dependencies: ["Tracy"],
-            swiftSettings: [.interoperabilityMode(.Cxx)]
+            dependencies: ["Tracy"]
         ),
     ]
 )

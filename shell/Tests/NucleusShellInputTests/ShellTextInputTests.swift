@@ -7,7 +7,7 @@ import NucleusUI
 /// type, hints, and preedit cursor offsets — plus the secure-entry guarantees
 /// that must hold at this boundary.
 @MainActor
-@Suite struct ShellTextInputTests {
+@Suite(.uiContext) struct ShellTextInputTests {
     // MARK: - Content type
 
     @Test func contentTypesMapOntoProtocolPurposes() {

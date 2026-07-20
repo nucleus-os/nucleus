@@ -6,7 +6,7 @@ import NucleusUI
 /// because it is a lock screen: it fails closed, it does not retain what was
 /// typed, and no amount of key-mashing queues attempts against the backend.
 @MainActor
-@Suite struct LockScreenViewTests {
+@Suite(.uiContext) struct LockScreenViewTests {
     /// A controllable authenticator: the completion fires only when the test
     /// says so, which is how in-flight state gets exercised.
     final class StubAuthenticator: LockAuthenticator {
@@ -138,7 +138,8 @@ import NucleusUI
     @Test func aClearedPasswordIsNotRecoverableThroughUndo() {
         let (view, window) = makeLock()
         withExtendedLifetime(window) {
-            view.authenticator = StubAuthenticator()
+            let authenticator = StubAuthenticator()
+            view.authenticator = authenticator
             view.passwordField.stringValue = "hunter2"
             view.submit()
 

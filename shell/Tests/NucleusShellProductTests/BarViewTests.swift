@@ -30,7 +30,7 @@ private final class TestWidget: BarWidget {
 
 /// The bar: three sections, chrome behind them, and the widget contract.
 @MainActor
-@Suite struct BarViewTests {
+@Suite(.uiContext) struct BarViewTests {
     private func makeBar(width: Double = 400) -> BarView {
         let bar = BarView()
         bar.frame = Rect(x: 0, y: 0, width: width, height: 30)

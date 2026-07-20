@@ -45,6 +45,7 @@ public final class RenderCommitSink: NucleusLayers.CommitSink {
     /// inspection by fixtures that assert the lowered deltas directly — the
     /// retained tree only retains the folded result, not the wire deltas.
     public private(set) var lastLowered: NucleusRenderModel.Transaction?
+    private var completionObserverID: UInt64 = 0
 
     public init(
         store: NucleusRenderModel.RetainedTreeStore = .shared,
@@ -52,6 +53,29 @@ public final class RenderCommitSink: NucleusLayers.CommitSink {
     ) {
         self.store = store
         self.resourceHostHandle = resourceHostHandle
+        completionObserverID = store.addCompletionObserver { event in
+            let result: PresentationCompletionResult
+            switch event.outcome {
+            case .completed:
+                result = .completed
+            case .cancelled:
+                result = .cancelled
+            case .superseded:
+                result = .superseded
+            case .failed:
+                result = .failed
+            }
+            PresentationCompletionCenter.resolve(
+                rawToken: event.token,
+                result: result
+            )
+        }
+    }
+
+    isolated deinit {
+        if completionObserverID != 0 {
+            store.removeCompletionObserver(completionObserverID)
+        }
     }
 
     /// The well-known non-zero resource-host handle the Swift-direct path uses.
@@ -64,6 +88,16 @@ public final class RenderCommitSink: NucleusLayers.CommitSink {
         let lowered = RenderTransactionLowering.lower(transaction)
         lastLowered = lowered
         if case let .failure(error) = store.ingest(lowered) {
+            var tokens = Set(
+                transaction.animationsAdded.map { $0.animation.completionToken }
+            )
+            tokens.insert(transaction.completionToken)
+            for token in tokens where token != 0 {
+                PresentationCompletionCenter.resolve(
+                    rawToken: token,
+                    result: .failed
+                )
+            }
             throw .backendFailure(detail: "render transaction rejected: \(error)")
         }
         SceneCommitFrameDemand.request()

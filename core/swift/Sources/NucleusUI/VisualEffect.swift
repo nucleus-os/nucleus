@@ -1,12 +1,12 @@
-/// UIKit-shaped visual effect value. Mirrors `UIVisualEffect`.
+/// UIKit-shaped semantic visual-effect value.
 ///
 /// `VisualEffectView.init(effect:)` accepts any of these; the view
 /// derives its `material`/`blendingMode`/`isEmphasized` from the effect
 /// through `MaterialBridge`.
 public protocol VisualEffect: Sendable {}
 
-/// `UIBlurEffect`, verbatim. A blur effect carries a style; the style
-/// maps to a `VisualEffectView.Material` via `MaterialBridge`.
+/// Supported `UIBlurEffect`-shaped subset. A blur effect carries a style that
+/// maps to a `VisualEffectView.Material` through `MaterialBridge`.
 public final class BlurEffect: VisualEffect {
     public enum Style: Sendable, Equatable {
         // Adaptive (light/dark by current trait).
@@ -44,9 +44,8 @@ public final class BlurEffect: VisualEffect {
     }
 }
 
-/// `UIVibrancyEffect`, verbatim. Wraps a `BlurEffect` and optionally a
-/// `Style` tint preset. The catalog folds the style into the chain's
-/// tint pass when resolving.
+/// Supported `UIVibrancyEffect`-shaped subset. It wraps a `BlurEffect` and an
+/// optional semantic tint preset resolved by the material catalog.
 public final class VibrancyEffect: VisualEffect {
     public enum Style: Sendable, Equatable {
         case label, secondaryLabel, tertiaryLabel, quaternaryLabel

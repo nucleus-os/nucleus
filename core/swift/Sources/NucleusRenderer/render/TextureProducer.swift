@@ -16,6 +16,8 @@ import NucleusTypes
 /// counting fields).
 struct ProducerWorkStats: Equatable {
     var paintRepaint: UInt64 = 0
+    var paintPartialRepaint: UInt64 = 0
+    var paintFullRepaint: UInt64 = 0
     var shadowRepaint: UInt64 = 0
     var drawQuad: UInt64 = 0
     var texturePass: UInt64 = 0
@@ -26,6 +28,8 @@ struct ProducerWorkStats: Equatable {
 
     mutating func merge(_ other: ProducerWorkStats) {
         paintRepaint += other.paintRepaint
+        paintPartialRepaint += other.paintPartialRepaint
+        paintFullRepaint += other.paintFullRepaint
         shadowRepaint += other.shadowRepaint
         drawQuad += other.drawQuad
         texturePass += other.texturePass
@@ -117,6 +121,7 @@ final class TextureProducer {
     func produce(
         recorder: nucleus.skia.Recorder, layerId: UInt64, revision: UInt64,
         width: Int32, height: Int32, kind: ProducerKind,
+        damage: PlanRect? = nil,
         draw: (nucleus.skia.Canvas) -> Void
     ) -> UInt64? {
         let key = ProducerCacheKey(
@@ -134,10 +139,35 @@ final class TextureProducer {
             return nil
         }
         let canvas = surface.getCanvas()
-        var clear = nucleus.skia.Color()
-        clear.a = 0  // transparent backing
-        canvas.clear(clear)
-        draw(canvas)
+        let previousImage: nucleus.skia.Image? = {
+            guard damage != nil else { return nil }
+            let oldKey = keysByLayer[layerId]?.first {
+                $0.kind == kind
+                    && $0.revision != revision
+                    && $0.width == width
+                    && $0.height == height
+            }
+            guard let oldKey,
+                  let oldHandle = handlesByKey[oldKey]
+            else {
+                return nil
+            }
+            return registry.resolve(oldHandle)
+        }()
+        let localized = Self.repaint(
+            canvas: canvas,
+            previousImage: previousImage,
+            damage: damage,
+            width: width,
+            height: height,
+            draw: draw)
+        if kind == .paint {
+            if localized {
+                stats.paintPartialRepaint += 1
+            } else {
+                stats.paintFullRepaint += 1
+            }
+        }
 
         let image = surface.snapshotImage()
         guard image.isValid() else {
@@ -176,6 +206,52 @@ final class TextureProducer {
         return handle
     }
 
+    /// Repaint a cache surface while preserving pixels outside `damage`.
+    ///
+    /// The outer clip is established before the complete command list is
+    /// replayed, so nested save/restore and clip commands cannot escape it.
+    /// Returns whether preservation was possible; a missing prior image is the
+    /// required full-repaint fallback.
+    @discardableResult
+    static func repaint(
+        canvas: nucleus.skia.Canvas,
+        previousImage: nucleus.skia.Image?,
+        damage: PlanRect?,
+        width: Int32,
+        height: Int32,
+        draw: (nucleus.skia.Canvas) -> Void
+    ) -> Bool {
+        var clear = nucleus.skia.Color()
+        clear.a = 0
+        guard let damage, let previousImage else {
+            canvas.clear(clear)
+            draw(canvas)
+            return false
+        }
+
+        let full = nucleus.skia.RectF(
+            x: 0,
+            y: 0,
+            width: Float(width),
+            height: Float(height))
+        canvas.drawImage(previousImage, full, 1)
+        canvas.save()
+        let damageRect = nucleus.skia.RectF(
+            x: damage.x,
+            y: damage.y,
+            width: damage.w,
+            height: damage.h)
+        canvas.clipRect(damageRect, false)
+        var clearPaint = nucleus.skia.Paint()
+        clearPaint.color = clear
+        clearPaint.alpha = 1
+        clearPaint.blend = .src
+        canvas.drawRect(damageRect, clearPaint)
+        draw(canvas)
+        canvas.restore()
+        return true
+    }
+
     /// Rasterize a stored Swift paint command list into a cache texture for the
     /// plan's `.paint` quad. Commands are authored in layer-local paint units;
     /// `contentWidth`/`contentHeight` are the authored logical canvas projected at
@@ -190,6 +266,7 @@ final class TextureProducer {
         authoredHeight: Float,
         contentWidth: Int32,
         contentHeight: Int32,
+        localDamage: NucleusRenderModel.Rect? = nil,
         resolveImage: (UInt64) -> nucleus.skia.Image?,
         resolveEffect: (UInt64) -> nucleus.skia.RuntimeEffect?
     ) -> UInt64? {
@@ -197,16 +274,68 @@ final class TextureProducer {
         let height = max(1, contentHeight)
         let sx = authoredWidth > 0 ? Float(width) / authoredWidth : 1
         let sy = authoredHeight > 0 ? Float(height) / authoredHeight : 1
+        let rasterDamage = localDamage.flatMap {
+            Self.rasterDamage(
+                $0,
+                scaleX: sx,
+                scaleY: sy,
+                width: width,
+                height: height)
+        }
 
         return produce(
             recorder: recorder, layerId: layerId, revision: revision,
-            width: width, height: height, kind: .paint
+            width: width, height: height, kind: .paint,
+            damage: rasterDamage
         ) { canvas in
             PaintRasterizer.draw(
                 commands: commands, payload: payload, onto: canvas,
                 scaleX: sx, scaleY: sy,
                 resolveImage: resolveImage, resolveEffect: resolveEffect)
         }
+    }
+
+    static func rasterDamage(
+        _ damage: NucleusRenderModel.Rect,
+        scaleX: Float,
+        scaleY: Float,
+        width: Int32,
+        height: Int32
+    ) -> PlanRect? {
+        guard damage.x.isFinite,
+              damage.y.isFinite,
+              damage.w.isFinite,
+              damage.h.isFinite,
+              damage.w > 0,
+              damage.h > 0,
+              scaleX.isFinite,
+              scaleY.isFinite,
+              scaleX > 0,
+              scaleY > 0
+        else {
+            return nil
+        }
+        let left = max(0, (damage.x * scaleX).rounded(.down))
+        let top = max(0, (damage.y * scaleY).rounded(.down))
+        let right = min(
+            Float(width),
+            ((damage.x + damage.w) * scaleX).rounded(.up))
+        let bottom = min(
+            Float(height),
+            ((damage.y + damage.h) * scaleY).rounded(.up))
+        guard right > left, bottom > top else { return nil }
+        if left == 0,
+           top == 0,
+           right == Float(width),
+           bottom == Float(height)
+        {
+            return nil
+        }
+        return PlanRect(
+            x: left,
+            y: top,
+            w: right - left,
+            h: bottom - top)
     }
 
     /// Rasterize a drop-shadow decoration (blurred rounded rect filling the cache).

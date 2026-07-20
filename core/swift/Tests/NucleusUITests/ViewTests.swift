@@ -10,7 +10,7 @@ import func NucleusLayers.installStubHost
 import Testing
 
 @MainActor
-@Suite struct ViewTests {
+@Suite(.uiContext) struct ViewTests {
     init() { installStubHost() }
 
     final class LayoutProbeView: View {
@@ -98,6 +98,8 @@ import Testing
 
     @Test func displayInvalidationIsSeparateFromLayout() throws {
         let view = DrawingProbeView()
+        view.frame = Rect(x: 0, y: 0, width: 20, height: 20)
+        view.layoutIfNeeded()
         #expect(view.needsDisplay)
         #expect(!view.needsLayout)
 
@@ -173,14 +175,18 @@ import Testing
         let publisher = ViewLayerPublisher(context: visualContext)
 
         let published = try publisher.publish(roots: [root])
-        #expect(published.map(\.rootLayerID) == [root.backingLayer.id.rawValue])
+        let rootLayer = try #require(publisher.visualLayer(for: root))
+        let labelLayer = try #require(publisher.visualLayer(for: label))
+        #expect(published.map(\.id) == [root.id.rawValue])
+        #expect(published.map(\.rootLayerID) == [rootLayer.id.rawValue])
+        #expect(rootLayer.id.rawValue != root.id.rawValue)
 
         let transaction = try #require(visualSink.transactions.first)
         let createdLayerIDs = Set(transaction.created.map(\.0))
-        #expect(createdLayerIDs.contains(root.backingLayer.id))
-        #expect(createdLayerIDs.contains(label.backingLayer.id))
+        #expect(createdLayerIDs.contains(rootLayer.id))
+        #expect(createdLayerIDs.contains(labelLayer.id))
         #expect(transaction.propertyUpdates.contains {
-            $0.layer == label.backingLayer.id && $0.properties.content?.kind == .paint
+            $0.layer == labelLayer.id && $0.properties.content?.kind == .paint
         })
     }
 
@@ -201,9 +207,10 @@ import Testing
         let publisher = ViewLayerPublisher(context: visualContext)
 
         _ = try publisher.publish(roots: [root])
+        let rootLayerID = try #require(publisher.visualLayer(for: root)?.id)
 
         let createTransaction = try #require(visualSink.transactions.first)
-        let created = try #require(createTransaction.created.first { $0.0 == root.backingLayer.id }?.1)
+        let created = try #require(createTransaction.created.first { $0.0 == rootLayerID }?.1)
         #expect(created.role == .notification)
         #expect(created.backdropGroupID == BackdropGroup.notifications.rawValue)
 
@@ -211,7 +218,7 @@ import Testing
         _ = try publisher.publish(roots: [root])
 
         let update = try #require(visualSink.transactions.last?.propertyUpdates.first {
-            $0.layer == root.backingLayer.id && $0.properties.backdropGroupID != nil
+            $0.layer == rootLayerID && $0.properties.backdropGroupID != nil
         }?.properties)
         #expect(update.backdropGroupID == BackdropGroup.hotkeyOverlay.rawValue)
         #expect(update.actionPolicy == .explicit)
@@ -249,12 +256,53 @@ import Testing
             window.title == "Visible"
         }
 
-        #expect(published.map(\.rootLayerID) == [try #require(windows.visible.root).backingLayer.id.rawValue])
+        #expect(published.map(\.id) == [windows.visible.id.rawValue])
         let transaction = try #require(visualSink.transactions.first)
         let createdLayerIDs = Set(transaction.created.map(\.0))
-        #expect(createdLayerIDs.contains(try #require(windows.visible.root).backingLayer.id))
-        #expect(!createdLayerIDs.contains(try #require(windows.filtered.root).backingLayer.id))
-        #expect(!createdLayerIDs.contains(try #require(windows.hidden.root).backingLayer.id))
+        let publishedRootLayerID = try #require(published.first).rootLayerID
+        #expect(createdLayerIDs.map(\.rawValue).contains(publishedRootLayerID))
+        #expect(
+            createdLayerIDs.count == 3,
+            "publisher container, stable window placement, and selected content root"
+        )
+    }
+
+    @Test func movingAWindowRetainsItsPlacementAndContentLayers() throws {
+        let visualSink = InMemoryCommitSink()
+        let visualContext = try Context(
+            id: ContextID(rawValue: 724),
+            commitSink: visualSink
+        )
+        let window = Window(
+            title: "Movable",
+            frame: Rect(x: 40, y: 60, width: 320, height: 180)
+        )
+        let root = View()
+        window.setContentView(root)
+        window.orderFront()
+        let publisher = WindowLayerPublisher(context: visualContext)
+
+        let first = try publisher.publish(windows: [window])
+        let firstPlacement = try #require(publisher.placementLayer(for: window))
+        let firstRoot = try #require(firstPlacement.sublayers.first)
+
+        #expect(first.first?.rootLayerID == firstPlacement.id.rawValue)
+        #expect(firstPlacement.frame == GeometryRect(x: 40, y: 60, width: 320, height: 180))
+        #expect(firstRoot.frame == GeometryRect(x: 0, y: 0, width: 320, height: 180))
+
+        window.setFrame(Rect(x: 125, y: 95, width: 480, height: 270), display: false)
+        _ = try publisher.publish(windows: [window])
+        let movedPlacement = try #require(publisher.placementLayer(for: window))
+        let movedRoot = try #require(movedPlacement.sublayers.first)
+
+        #expect(movedPlacement === firstPlacement)
+        #expect(movedRoot === firstRoot)
+        #expect(movedPlacement.frame == GeometryRect(x: 125, y: 95, width: 480, height: 270))
+        #expect(movedRoot.frame == GeometryRect(x: 0, y: 0, width: 480, height: 270))
+
+        let secondTransaction = try #require(visualSink.transactions.last)
+        #expect(secondTransaction.created.isEmpty)
+        #expect(secondTransaction.removed.isEmpty)
     }
 
     @Test func windowScenePublishesAndHitTestsOrderedWindows() throws {
@@ -276,7 +324,10 @@ import Testing
 
             return (back: back, front: front)
         }
-        let scene = WindowScene(windows: [windows.back, windows.front], visualContext: visualContext)
+        let scene = WindowScene(
+            windows: [windows.back, windows.front],
+            uiContext: windows.back.uiContext,
+            visualContext: visualContext)
 
         let hit = try #require(scene.hitTest(at: Point(x: 10, y: 10)))
         #expect(hit.window === windows.front)
@@ -286,7 +337,9 @@ import Testing
         #expect(revealedHit.window === windows.back)
 
         let published = try scene.publish { $0.title == "Back" }
-        #expect(published.visualContent.map(\.rootLayerID) == [try #require(windows.back.root).backingLayer.id.rawValue])
+        #expect(published.visualContent.map(\.id) == [
+            windows.back.id.rawValue
+        ])
     }
 
     @Test func windowSceneInterleavesEmbedderPlacementsByWindowLevel() throws {
@@ -307,7 +360,10 @@ import Testing
             notification.orderFront()
             return (window, notification)
         }
-        let scene = WindowScene(windows: [windows.0, windows.1], visualContext: visualContext)
+        let scene = WindowScene(
+            windows: [windows.0, windows.1],
+            uiContext: windows.0.uiContext,
+            visualContext: visualContext)
 
         let published = try scene.publishPlacing([
                 ScenePlacement(id: 40, rootLayerID: 400, level: .shellChrome),
@@ -319,9 +375,9 @@ import Testing
         // A content-kind discriminant would say the same thing less precisely.
         #expect(published.visualContent.map(\.orderIndex) == [0, 1, 2])
         #expect(published.visualContent.map(\.id) == [
-            try #require(windows.0.root).backingLayer.id.rawValue,
+            windows.0.id.rawValue,
             40,
-            try #require(windows.1.root).backingLayer.id.rawValue,
+            windows.1.id.rawValue,
         ])
     }
 
@@ -343,7 +399,7 @@ import Testing
         #expect(effect.properties.backdropMaterial?.material == .hudWindow)
         #expect(effect.properties.backdropMaterial?.state == .inactive)
         #expect(effect.properties.backdropMaterial?.blendingMode == .withinWindow)
-        #expect(effect.backingLayer.descriptor.kind == .backdrop)
+        #expect(effect.semanticLayerKind == .backdrop)
 
         effect.cornerRadius = 12
         effect.materialOpacity = 0.5
@@ -371,15 +427,17 @@ import Testing
         let publisher = ViewLayerPublisher(context: visualContext)
 
         _ = try publisher.publish(roots: [root])
+        let rootLayerID = try #require(publisher.visualLayer(for: root)?.id)
+        let effectLayerID = try #require(publisher.visualLayer(for: effect)?.id)
 
         let transaction = try #require(visualSink.transactions.first)
         let createdBackdrops = transaction.created.filter { $0.1.kind == .backdrop }
-        #expect(createdBackdrops.map(\.0) == [effect.backingLayer.id])
+        #expect(createdBackdrops.map(\.0) == [effectLayerID])
         #expect(transaction.inserted.contains {
-            $0.layer == effect.backingLayer.id && $0.parent == root.backingLayer.id
+            $0.layer == effectLayerID && $0.parent == rootLayerID
         })
         #expect(!transaction.created.contains {
-            $0.0 != effect.backingLayer.id && $0.1.kind == .backdrop
+            $0.0 != effectLayerID && $0.1.kind == .backdrop
         })
     }
 
@@ -392,6 +450,26 @@ import Testing
         #expect(backingScaleFactor.singlePixelLength == 1.0 / 1.5)
         #expect(pointRect == Rect(x: 10, y: 20, width: 200, height: 100))
         #expect(backingScaleFactor.backingPixels(fromPoints: pointRect) == backingRect)
+    }
+
+    @Test func windowSurfaceTransformRoundTripsFractionalBackingGeometry() {
+        let transform = WindowSurfaceTransform(
+            windowOriginInSurface: Point(x: 11.25, y: 7.5),
+            surfaceOriginInOutput: Point(x: 1920.5, y: 40.25),
+            backingScaleFactor: BackingScaleFactor(1.5)
+        )
+        let windowRect = Rect(x: 4, y: 6, width: 120.5, height: 35)
+        let surfaceRect = transform.surfaceRect(fromWindow: windowRect)
+        let backingRect = transform.backingRect(fromSurface: surfaceRect)
+
+        #expect(surfaceRect == Rect(x: 15.25, y: 13.5, width: 120.5, height: 35))
+        #expect(transform.windowRect(fromSurface: surfaceRect) == windowRect)
+        #expect(transform.surfaceRect(fromBacking: backingRect) == surfaceRect)
+        #expect(
+            transform.surfacePoint(
+                fromOutput: transform.outputPoint(fromSurface: surfaceRect.origin)
+            ) == surfaceRect.origin
+        )
     }
 
     @Test func viewLayerPublisherKeepsPublicationMetricsInPointSpace() throws {
@@ -421,26 +499,27 @@ import Testing
         let publisher = ViewLayerPublisher(context: visualContext)
 
         _ = try publisher.publish(roots: [root])
+        let rootLayerID = try #require(publisher.visualLayer(for: root)?.id)
+        let effectLayerID = try #require(publisher.visualLayer(for: effect)?.id)
+        let labelLayerID = try #require(publisher.visualLayer(for: label)?.id)
 
         let transaction = try #require(visualSink.transactions.first)
-        let rootDescriptor = try #require(transaction.created.first { $0.0 == root.backingLayer.id }?.1)
-        let effectDescriptor = try #require(transaction.created.first { $0.0 == effect.backingLayer.id }?.1)
-        let labelDescriptor = try #require(transaction.created.first { $0.0 == label.backingLayer.id }?.1)
+        let rootDescriptor = try #require(transaction.created.first { $0.0 == rootLayerID }?.1)
+        let effectDescriptor = try #require(transaction.created.first { $0.0 == effectLayerID }?.1)
+        let labelDescriptor = try #require(transaction.created.first { $0.0 == labelLayerID }?.1)
         #expect(rootDescriptor.frame == GeometryRect(x: 10, y: 20, width: 200, height: 100))
         #expect(effectDescriptor.frame == GeometryRect(x: 8, y: 10, width: 120, height: 44))
         #expect(effectDescriptor.backdropMaterial.cornerRadius == 18)
         #expect(labelDescriptor.frame == GeometryRect(x: 12, y: 16, width: 140, height: 24))
 
-        let rootUpdate = try #require(transaction.propertyUpdates.first { $0.layer == root.backingLayer.id }?.properties)
+        let rootUpdate = try #require(transaction.propertyUpdates.first { $0.layer == rootLayerID }?.properties)
         let rootShadow = try #require(rootUpdate.shadow)
-        #expect(rootUpdate.position == GeometryPoint(x: 10, y: 20))
-        #expect(rootUpdate.bounds == GeometrySize(width: 200, height: 100))
         #expect(rootShadow.offsetY == 6)
         #expect(rootShadow.blurRadius == 20)
         #expect(rootShadow.cornerRadius == 12)
 
         #expect(!transaction.propertyUpdates.contains {
-            $0.layer == effect.backingLayer.id && $0.properties.backdropMaterial != nil
+            $0.layer == effectLayerID && $0.properties.backdropMaterial != nil
         })
     }
 
@@ -458,6 +537,7 @@ import Testing
         let publisher = ViewLayerPublisher(context: visualContext)
 
         _ = try publisher.publish(roots: [root])
+        let rootLayerID = try #require(publisher.visualLayer(for: root)?.id)
         let initialTransactionCount = visualSink.transactions.count
 
         root.shadow = Shadow(offsetY: 8, blurRadius: 18, cornerRadius: 6, opacity: 0.5)
@@ -465,7 +545,7 @@ import Testing
 
         #expect(visualSink.transactions.count == initialTransactionCount + 1)
         let shadowUpdate = try #require(visualSink.transactions.last?.propertyUpdates.first {
-            $0.layer == root.backingLayer.id && $0.properties.shadow != nil
+            $0.layer == rootLayerID && $0.properties.shadow != nil
         }?.properties.shadow)
         #expect(shadowUpdate.offsetY == 8)
         #expect(shadowUpdate.blurRadius == 18)
@@ -475,7 +555,7 @@ import Testing
         _ = try publisher.publish(roots: [root])
 
         let clearUpdate = try #require(visualSink.transactions.last?.propertyUpdates.first {
-            $0.layer == root.backingLayer.id && $0.properties.shadow != nil
+            $0.layer == rootLayerID && $0.properties.shadow != nil
         }?.properties.shadow)
         #expect(clearUpdate.opacity == 0)
     }

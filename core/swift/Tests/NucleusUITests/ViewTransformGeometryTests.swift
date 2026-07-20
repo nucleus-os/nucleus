@@ -8,7 +8,7 @@ import Testing
 /// rotated one drew rotated and hit-tested as an upright box. The step between a
 /// view and its parent was open-coded in four places, none of which applied it.
 @MainActor
-@Suite struct ViewTransformGeometryTests {
+@Suite(.uiContext) struct ViewTransformGeometryTests {
     private func makeView(_ frame: Rect) -> View {
         let view = View()
         view.frame = frame
@@ -206,7 +206,10 @@ import Testing
         event.button = .left
         _ = parent.dispatchEvent(event)
 
-        let received = try? #require(child.received)
-        expectClose(received ?? .zero, 37.5, 37.5)
+        guard let received = child.received else {
+            Issue.record("child did not receive the transformed event")
+            return
+        }
+        expectClose(received, 37.5, 37.5)
     }
 }

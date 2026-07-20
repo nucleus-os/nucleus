@@ -125,17 +125,23 @@ public struct ModelState: Equatable, Sendable {
     /// `none` for pure structural layers; otherwise paint/external/snapshot.
     public var content: LayerContent = .none
     public var visualRevision: UInt64 = 0
+    /// Revision of visual state excluding the sampled content identity. This
+    /// lets output damage distinguish a localized paint replacement from a
+    /// simultaneous geometry/style change that requires old-and-new footprints.
+    public var compositeRevision: UInt64 = 0
 
     public init(
         properties: ModelProperties = ModelProperties(),
         visualStyle: VisualStyle? = nil,
         content: LayerContent = .none,
-        visualRevision: UInt64 = 0
+        visualRevision: UInt64 = 0,
+        compositeRevision: UInt64 = 0
     ) {
         self.properties = properties
         self.visualStyle = visualStyle
         self.content = content
         self.visualRevision = visualRevision
+        self.compositeRevision = compositeRevision
     }
 
     /// Releases content back to `none`. Mirrors `ModelState.deinit` (value-type
@@ -156,6 +162,7 @@ public struct PresentationOverride: Equatable, Sendable {
     public var position: Point2D?
     public var bounds: Bounds?
     public var anchorPoint: Point2D?
+    public var scrollOffset: Point2D?
     /// Uniform corner-radius override applied to all four corners while the
     /// rasterized fill stays based on the model's per-corner radii.
     public var cornerRadiusUniform: Float?
@@ -166,6 +173,7 @@ public struct PresentationOverride: Equatable, Sendable {
         position: Point2D? = nil,
         bounds: Bounds? = nil,
         anchorPoint: Point2D? = nil,
+        scrollOffset: Point2D? = nil,
         cornerRadiusUniform: Float? = nil
     ) {
         self.transform = transform
@@ -173,6 +181,7 @@ public struct PresentationOverride: Equatable, Sendable {
         self.position = position
         self.bounds = bounds
         self.anchorPoint = anchorPoint
+        self.scrollOffset = scrollOffset
         self.cornerRadiusUniform = cornerRadiusUniform
     }
 }

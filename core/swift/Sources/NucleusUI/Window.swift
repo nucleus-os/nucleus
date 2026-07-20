@@ -1,15 +1,15 @@
 @_spi(NucleusCompositor) import NucleusLayers
 
-@MainActor
 public enum WindowRole: Sendable, Equatable {
     case application
-    case shellChrome
+    case layer
+    case popup
     case notification
-    case statusOverlay
-    case hostedSurface
+    case overlay
+    case lock
+    case hostedContent
 }
 
-@MainActor
 public enum WindowLevel: UInt32, Sendable {
     case desktop = 0
     case normal = 1
@@ -18,9 +18,9 @@ public enum WindowLevel: UInt32, Sendable {
     case criticalOverlay = 4
 }
 
-/// `NSWindow.StyleMask`, verbatim. Modern AppKit shape with the legacy
-/// borderless / nonactivatingPanel / texturedBackground bits intentionally
-/// not modeled — they correspond to deprecated visual modes.
+/// The supported `NSWindow.StyleMask`-shaped subset. Legacy borderless,
+/// nonactivating-panel, and textured-background behavior is intentionally not
+/// modeled.
 public struct WindowStyleMask: OptionSet, Sendable {
     public let rawValue: UInt
     public init(rawValue: UInt) { self.rawValue = rawValue }
@@ -32,14 +32,16 @@ public struct WindowStyleMask: OptionSet, Sendable {
     public static let fullSizeContentView = WindowStyleMask(rawValue: 1 << 4)
 }
 
-/// `NSWindow.TitlebarSeparatorStyle`, verbatim.
+/// The supported `NSWindow.TitlebarSeparatorStyle`-shaped vocabulary.
 public enum TitlebarSeparatorStyle: Sendable, Equatable {
     case automatic, none, line, shadow
 }
 
 @MainActor
 open class Window: Responder, ~Sendable {
-    package let context: Context
+    public let id: WindowID
+    public let accessibilityID: AccessibilityID
+    package let uiContext: UIContext
     public private(set) var title: String
     public private(set) var frame: Rect
     public var role: WindowRole
@@ -62,10 +64,8 @@ open class Window: Responder, ~Sendable {
     public var titlebarAppearsTransparent: Bool
     /// `NSWindow.titlebarSeparatorStyle`.
     public var titlebarSeparatorStyle: TitlebarSeparatorStyle
-    /// Implicit `VisualEffectView` with `material == .titlebar`. Mirrors
-    /// `NSWindow.titlebar`: present when `styleMask.contains(.titled)`,
-    /// `nil` otherwise. App code reads this to override the titlebar's
-    /// `state` / `appearance` per-window.
+    /// Implicit `VisualEffectView` with `material == .titlebar`, present when
+    /// `styleMask.contains(.titled)` and `nil` otherwise.
     public internal(set) var titlebar: VisualEffectView?
     package var rootView: View?
     package weak var windowScene: WindowScene?
@@ -75,11 +75,21 @@ open class Window: Responder, ~Sendable {
     /// The responder keyboard events route to. Set through
     /// `makeFirstResponder(_:)` so both sides get their lifecycle callbacks.
     public private(set) var firstResponder: Responder?
+    package var focusScopeRecords: [FocusScopeRecord]
+    /// Platform surface currently presenting this window. Hosts update this on
+    /// surface enter/configure/leave; portable UI code reads it only through
+    /// named coordinate conversions such as text candidate geometry.
+    public private(set) var surfaceAssociation: WindowSurfaceAssociation?
 
     /// Routes composed text between this window's focused text client and the
     /// platform's input method. Per-window because focus is per-window; an
     /// embedder installs one adapter on each window it hosts.
     public let textInputContext = TextInputContext()
+
+    /// Install the platform text-input adapter for this hosted window.
+    public func installTextInputAdapter(_ adapter: (any TextInputAdapter)?) {
+        textInputContext.installAdapter(adapter)
+    }
 
     public init(
         title: String = "",
@@ -89,6 +99,15 @@ open class Window: Responder, ~Sendable {
         styleMask: WindowStyleMask = [],
         participatesInHitTesting: Bool = true
     ) {
+        precondition(
+            frame.isFinite
+                && frame.size.width >= 0
+                && frame.size.height >= 0,
+            "a window frame must be finite with nonnegative dimensions")
+        let uiContext = Application.currentUIContext
+        self.id = uiContext.allocateWindowID()
+        self.accessibilityID = uiContext.allocateAccessibilityID()
+        self.uiContext = uiContext
         self.title = title
         self.frame = frame
         self.role = role
@@ -98,20 +117,20 @@ open class Window: Responder, ~Sendable {
         self.titlebarSeparatorStyle = .automatic
         self.titlebar = nil
         self.participatesInHitTesting = participatesInHitTesting
-        self.context = Application.currentContext
         self.rootView = nil
         self.windowScene = nil
         self.contentViewController = nil
         self.isVisible = false
         self.isKeyWindow = false
         self.firstResponder = nil
+        self.focusScopeRecords = []
+        self.surfaceAssociation = nil
         super.init()
         syncTitlebar()
     }
 
     /// Allocate or clear `titlebar` to match the current `styleMask`.
-    /// Idempotent; safe to call repeatedly. Mirrors `NSWindow`'s
-    /// titlebar-on-demand allocation.
+    /// Idempotent and safe to call repeatedly.
     private func syncTitlebar() {
         if styleMask.contains(.titled) {
             if titlebar == nil {
@@ -127,10 +146,9 @@ open class Window: Responder, ~Sendable {
     }
 
     package func setRootView(_ view: View) {
-        // Eager Swift-tree update. The FFI insert journals into whatever
-        // transaction is currently active for the context; the
-        // consumer's flush trigger delivers it at the next frame
-        // boundary.
+        precondition(
+            view.uiContext === uiContext,
+            "a window cannot adopt content from another UIContext")
         let preservesContentViewController = contentViewController?.rootView === view
         if !preservesContentViewController {
             contentViewController?.parentWindow = nil
@@ -138,34 +156,61 @@ open class Window: Responder, ~Sendable {
         }
         if let oldRoot = rootView, oldRoot !== view {
             oldRoot.detachFromSwiftTree()
-            oldRoot.backingLayer.detach()
-            LayerTransaction.appendAmbient(.detached(oldRoot.backingLayer.id), in: context)
         }
         view.detachFromSwiftTree(clearOwningViewController: !preservesContentViewController)
-        view.backingLayer.attach(to: nil, at: UInt32.max)
         rootView = view
         view.parentWindow = self
         if frame == .zero && view.frame != .zero {
             frame = view.frame
-        } else {
-            syncContentViewFrame()
         }
+        syncContentViewFrame()
         if firstResponder == nil, view.acceptsFirstResponder {
-            firstResponder = view
+            _ = makeFirstResponder(view)
         }
-        LayerTransaction.appendAmbient(
-            .inserted(layer: view.backingLayer.id, parent: nil, index: UInt32.max),
-            in: context
-        )
     }
 
     public func setFrame(_ frame: Rect, display shouldDisplay: Bool = true) {
+        precondition(
+            frame.isFinite
+                && frame.size.width >= 0
+                && frame.size.height >= 0,
+            "a window frame must be finite with nonnegative dimensions")
         self.frame = frame
         syncContentViewFrame()
         if shouldDisplay {
             rootView?.setNeedsDisplay()
         }
         contentViewController?.viewDidLayout()
+    }
+
+    public func scenePoint(fromWindow point: Point) -> Point {
+        Point(
+            x: point.x + frame.origin.x,
+            y: point.y + frame.origin.y
+        )
+    }
+
+    public func windowPoint(fromScene point: Point) -> Point {
+        Point(
+            x: point.x - frame.origin.x,
+            y: point.y - frame.origin.y
+        )
+    }
+
+    public func sceneRect(fromWindow rect: Rect) -> Rect {
+        Rect(origin: scenePoint(fromWindow: rect.origin), size: rect.size)
+    }
+
+    public func windowRect(fromScene rect: Rect) -> Rect {
+        Rect(origin: windowPoint(fromScene: rect.origin), size: rect.size)
+    }
+
+    public func setSurfaceAssociation(_ association: WindowSurfaceAssociation?) {
+        guard surfaceAssociation != association else { return }
+        surfaceAssociation = association
+        if let activeClient = textInputContext.activeClient {
+            textInputContext.invalidateState(for: activeClient)
+        }
     }
 
     public var stableHandle: Handle {
@@ -233,7 +278,7 @@ open class Window: Responder, ~Sendable {
 
     open override var nextResponder: Responder? {
         get { explicitNextResponder }
-        set { explicitNextResponder = newValue }
+        set { setExplicitNextResponder(newValue) }
     }
 
     package func setVisible(_ visible: Bool) {
@@ -252,17 +297,26 @@ open class Window: Responder, ~Sendable {
 
     /// Move keyboard focus to `responder`, honouring both sides' refusals.
     ///
-    /// Returns whether focus moved. Mirrors `NSWindow.makeFirstResponder(_:)`:
+    /// Returns whether focus moved. Corresponds to `NSWindow.makeFirstResponder(_:)`:
     /// the outgoing responder may refuse to resign (a field with invalid
     /// content), and the incoming one may refuse to accept.
     @discardableResult
     public func makeFirstResponder(_ responder: Responder?) -> Bool {
         if firstResponder === responder { return true }
+        if let responder,
+           !responderBelongsToActiveFocusScope(responder)
+        {
+            return false
+        }
+        let previousView = firstResponder as? View
         if let current = firstResponder, !current.resignFirstResponder() {
             return false
         }
         guard let responder else {
             firstResponder = nil
+            previousView?.focusStateDidChange()
+            uiContext.postAccessibilityNotification(
+                AccessibilityNotification(kind: .focus))
             return true
         }
         guard responder.becomeFirstResponder() else {
@@ -270,9 +324,19 @@ open class Window: Responder, ~Sendable {
             // rather than silently staying put — otherwise a refused move would
             // leave a resigned responder still receiving keys.
             firstResponder = nil
+            previousView?.focusStateDidChange()
+            uiContext.postAccessibilityNotification(
+                AccessibilityNotification(kind: .focus))
             return false
         }
         firstResponder = responder
+        previousView?.focusStateDidChange()
+        let nextView = responder as? View
+        nextView?.focusStateDidChange()
+        uiContext.postAccessibilityNotification(
+            AccessibilityNotification(
+                kind: .focus,
+                target: nextView?.accessibilityID))
         return true
     }
 
@@ -280,8 +344,22 @@ open class Window: Responder, ~Sendable {
     /// whether anything handled it.
     @discardableResult
     package func deliverKeyEvent(_ event: Event) -> EventHandling {
-        guard let firstResponder else { return .notHandled }
-        return firstResponder.deliverEvent(event)
+        if event.type == .keyDown,
+           event.keyCode == .return,
+           !(firstResponder is Button),
+           let button = rootView?.defaultButton()
+        {
+            button.performPress()
+            return .handled
+        }
+        let routed = firstResponder?.deliverEvent(event) ?? .notHandled
+        guard routed == .notHandled,
+              event.type == .keyDown,
+              event.keyCode == .return,
+              let button = rootView?.defaultButton()
+        else { return routed }
+        button.performPress()
+        return .handled
     }
 
     package func setKey(_ key: Bool) {
@@ -294,6 +372,6 @@ open class Window: Responder, ~Sendable {
     }
 
     private func syncContentViewFrame() {
-        rootView?.frame = frame
+        rootView?.frame = Rect(origin: .zero, size: frame.size)
     }
 }

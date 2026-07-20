@@ -13,17 +13,16 @@ import NucleusUI
 /// The protocol is double-buffered: `enable`, `set_surrounding_text`,
 /// `set_content_type`, and `set_cursor_rectangle` all stage state that only
 /// takes effect on `commit`, and every commit increments a serial the compositor
-/// echoes back in `done`. State applied from a `done` whose serial is stale must
-/// be discarded, which is what `pendingSerial`/`doneSerial` track.
+/// echoes back in `done`. Incoming edits are always applied; only outbound
+/// client state is deferred when the serial does not match the commit count.
 @MainActor
 public final class ShellTextInput: TextInputAdapter {
-    private let textInput: OpaquePointer
+    private var textInput: OpaquePointer?
     /// The surface this text input is scoped to, set from `enter`.
     private var focusedSurface: UInt = 0
 
-    /// Serial of the last `commit` sent, and of the last `done` received.
-    private var pendingSerial: UInt32 = 0
-    private var doneSerial: UInt32 = 0
+    /// Number of commit requests issued on this object.
+    private var committedStateSerial: UInt32 = 0
 
     /// Preedit and commit arrive before `done` and apply on it — the protocol
     /// batches a composition update across several events.
@@ -31,6 +30,11 @@ public final class ShellTextInput: TextInputAdapter {
     private var pendingCommitString: String?
     private var pendingDeleteBefore: UInt32 = 0
     private var pendingDeleteAfter: UInt32 = 0
+    private var pendingPreeditHints: [
+        (start: UInt32, end: UInt32, hint: UInt32)
+    ] = []
+    private var pendingAction: UInt32?
+    private var isApplyingDone = false
 
     private weak var activeClient: (any TextInputClient)?
     private var listener: ShellTextInputListener?
@@ -49,46 +53,61 @@ public final class ShellTextInput: TextInputAdapter {
         _ = ZwpTextInputV3Client.addListener(textInput, owner: listener)
     }
 
-    deinit {
-        // The proxy is @MainActor-confined state; releasing it here would cross
-        // an isolation boundary, so destruction is explicit via `close()`.
+    isolated deinit {
+        close()
     }
 
-    /// Destroy the protocol object. Explicit rather than in `deinit` because the
-    /// proxy is actor-confined.
+    /// Destroy the protocol object. Idempotent so host teardown and actor
+    /// destruction may both call it.
     public func close() {
+        guard let textInput else { return }
+        self.textInput = nil
+        listener = nil
         zwp_text_input_v3_destroy(textInput)
     }
 
     // MARK: - TextInputAdapter
 
     public func textInputDidActivate(_ client: any TextInputClient) {
+        guard let textInput else { return }
         activeClient = client
         zwp_text_input_v3_enable(textInput)
-        applyState(for: client)
+        applyState(for: client, cause: .other)
         commitState()
     }
 
     public func textInputDidDeactivate(_ client: any TextInputClient) {
         guard activeClient === client else { return }
         activeClient = nil
+        guard let textInput else { return }
         zwp_text_input_v3_disable(textInput)
         commitState()
     }
 
-    public func textInputDidChangeState(_ client: any TextInputClient) {
+    public func textInputDidChangeState(
+        _ client: any TextInputClient,
+        cause: TextInputChangeCause
+    ) {
         guard activeClient === client else { return }
-        applyState(for: client)
+        guard !isApplyingDone else { return }
+        applyState(for: client, cause: cause)
         commitState()
     }
 
     /// Stage the client's current state. Nothing reaches the compositor until
     /// `commitState`.
-    private func applyState(for client: any TextInputClient) {
+    private func applyState(
+        for client: any TextInputClient,
+        cause: TextInputChangeCause,
+        surroundingContext: TextInputSurroundingContext? = nil
+    ) {
+        guard let textInput else { return }
         // A refusing client — a secure field — sends no surrounding text at all.
         // Sending an empty string instead would still tell the input method the
         // caret moved, which is more than a password field should reveal.
-        if let context = client.textInputSurroundingContext() {
+        if let context = surroundingContext
+            ?? client.textInputSurroundingContext()
+        {
             context.text.withCString { pointer in
                 zwp_text_input_v3_set_surrounding_text(
                     textInput, pointer,
@@ -96,12 +115,24 @@ public final class ShellTextInput: TextInputAdapter {
             }
         }
 
+        zwp_text_input_v3_set_text_change_cause(
+            textInput,
+            cause == .inputMethod
+                ? UInt32(ZWP_TEXT_INPUT_V3_CHANGE_CAUSE_INPUT_METHOD.rawValue)
+                : UInt32(ZWP_TEXT_INPUT_V3_CHANGE_CAUSE_OTHER.rawValue)
+        )
+
         zwp_text_input_v3_set_content_type(
             textInput,
             ShellTextInput.contentHint(client.textInputHints),
             ShellTextInput.contentPurpose(client.textInputContentType))
 
-        let caret = client.textInputCaretRect
+        guard let candidate = client.textInputCandidateGeometry,
+              candidate.surfaceID.rawValue == UInt64(focusedSurface)
+        else {
+            return
+        }
+        let caret = candidate.rect
         zwp_text_input_v3_set_cursor_rectangle(
             textInput,
             Int32(caret.origin.x), Int32(caret.origin.y),
@@ -109,8 +140,9 @@ public final class ShellTextInput: TextInputAdapter {
     }
 
     private func commitState() {
+        guard let textInput else { return }
         zwp_text_input_v3_commit(textInput)
-        pendingSerial &+= 1
+        committedStateSerial &+= 1
     }
 
     // MARK: - Protocol events
@@ -119,9 +151,9 @@ public final class ShellTextInput: TextInputAdapter {
         focusedSurface = surfaceID
         // A client that already has a focused field re-enables for the new
         // surface; otherwise the input method stays disabled until one is.
-        if let activeClient {
+        if let activeClient, let textInput {
             zwp_text_input_v3_enable(textInput)
-            applyState(for: activeClient)
+            applyState(for: activeClient, cause: .other)
             commitState()
         }
     }
@@ -129,6 +161,7 @@ public final class ShellTextInput: TextInputAdapter {
     fileprivate func handleLeave(surfaceID: UInt) {
         guard surfaceID == focusedSurface else { return }
         focusedSurface = 0
+        guard let textInput else { return }
         zwp_text_input_v3_disable(textInput)
         commitState()
     }
@@ -146,20 +179,38 @@ public final class ShellTextInput: TextInputAdapter {
         pendingDeleteAfter = after
     }
 
+    fileprivate func handlePreeditHint(
+        start: UInt32,
+        end: UInt32,
+        hint: UInt32
+    ) {
+        pendingPreeditHints.append((start, end, hint))
+    }
+
+    fileprivate func handleLanguage(_ language: String?) {
+        activeClient?.textInputDidChangeLanguage(
+            language.flatMap { $0.isEmpty ? nil : $0 }
+        )
+    }
+
+    fileprivate func handleAction(_ action: UInt32) {
+        pendingAction = action
+    }
+
     /// Apply everything staged since the last `done`.
     ///
-    /// Order is fixed by the protocol: delete first, then commit, then preedit.
-    /// Doing it in any other order corrupts offsets that were computed against
-    /// the pre-delete text.
+    /// Order follows the protocol state machine exactly: remove the old
+    /// preedit, delete surrounding text, commit, snapshot surrounding state,
+    /// install the new preedit and cursor, then perform an action.
     fileprivate func handleDone(serial: UInt32) {
-        doneSerial = serial
         defer { clearPending() }
-
-        // A `done` for a state the client has already moved past must be
-        // discarded: its offsets refer to text that no longer exists.
-        guard serial == pendingSerial else { return }
         guard let client = activeClient else { return }
 
+        isApplyingDone = true
+        defer { isApplyingDone = false }
+        if client.hasMarkedText {
+            client.unmarkText()
+        }
         if pendingDeleteBefore > 0 || pendingDeleteAfter > 0 {
             client.deleteSurroundingText(
                 beforeBytes: Int(pendingDeleteBefore), afterBytes: Int(pendingDeleteAfter))
@@ -167,6 +218,9 @@ public final class ShellTextInput: TextInputAdapter {
         if let commitString = pendingCommitString, !commitString.isEmpty {
             client.insertText(commitString)
         }
+        // The surrounding snapshot is defined before the new preedit is
+        // inserted. Secure clients continue to return nil here.
+        let surrounding = client.textInputSurroundingContext()
         if let preedit = pendingPreedit {
             if preedit.text.isEmpty {
                 client.unmarkText()
@@ -175,8 +229,26 @@ public final class ShellTextInput: TextInputAdapter {
                     preedit.text,
                     selectedRange: ShellTextInput.preeditSelection(
                         preedit.text, begin: preedit.cursorBegin, end: preedit.cursorEnd))
+                client.setMarkedTextStyles(
+                    preeditStyles(for: preedit.text)
+                )
             }
         }
+        if pendingAction
+            == UInt32(ZWP_TEXT_INPUT_V3_ACTION_SUBMIT.rawValue)
+        {
+            client.performTextInputAction()
+        }
+
+        // A mismatched serial still applies every incoming edit. It only
+        // suppresses outbound state until a matching `done`.
+        guard serial == committedStateSerial else { return }
+        applyState(
+            for: client,
+            cause: .inputMethod,
+            surroundingContext: surrounding
+        )
+        commitState()
     }
 
     private func clearPending() {
@@ -184,6 +256,44 @@ public final class ShellTextInput: TextInputAdapter {
         pendingCommitString = nil
         pendingDeleteBefore = 0
         pendingDeleteAfter = 0
+        pendingPreeditHints.removeAll(keepingCapacity: true)
+        pendingAction = nil
+    }
+
+    private func preeditStyles(for text: String) -> [TextInputPreeditSpan] {
+        pendingPreeditHints.map { hint in
+            let lower = ShellTextInput.utf16Offset(
+                in: text,
+                forUTF8: Int(hint.start)
+            )
+            let upper = ShellTextInput.utf16Offset(
+                in: text,
+                forUTF8: Int(hint.end)
+            )
+            return TextInputPreeditSpan(
+                range: min(lower, upper)..<max(lower, upper),
+                style: ShellTextInput.preeditStyle(hint.hint)
+            )
+        }
+    }
+
+    private static func preeditStyle(_ hint: UInt32) -> TextInputPreeditStyle {
+        switch hint {
+        case UInt32(ZWP_TEXT_INPUT_V3_PREEDIT_HINT_SELECTION.rawValue):
+            .selected
+        case UInt32(ZWP_TEXT_INPUT_V3_PREEDIT_HINT_PREDICTION.rawValue):
+            .highlighted
+        case UInt32(ZWP_TEXT_INPUT_V3_PREEDIT_HINT_PREFIX.rawValue),
+             UInt32(ZWP_TEXT_INPUT_V3_PREEDIT_HINT_SUFFIX.rawValue):
+            .inactive
+        case UInt32(ZWP_TEXT_INPUT_V3_PREEDIT_HINT_SPELLING_ERROR.rawValue),
+             UInt32(ZWP_TEXT_INPUT_V3_PREEDIT_HINT_COMPOSE_ERROR.rawValue):
+            .incorrect
+        case UInt32(ZWP_TEXT_INPUT_V3_PREEDIT_HINT_WHOLE.rawValue):
+            .active
+        default:
+            .none
+        }
     }
 
     /// Convert the preedit cursor, given in UTF-8 bytes into the preedit string,
@@ -293,9 +403,18 @@ final class ShellTextInputListener: ZwpTextInputV3Events {
         MainActor.assumeIsolated { owner.handleDone(serial: serial) }
     }
 
-    nonisolated func action(_ proxy: OpaquePointer, action: UInt32, serial: UInt32) {}
-    nonisolated func language(_ proxy: OpaquePointer, language: UnsafePointer<CChar>?) {}
+    nonisolated func action(_ proxy: OpaquePointer, action: UInt32, serial: UInt32) {
+        MainActor.assumeIsolated { owner.handleAction(action) }
+    }
+    nonisolated func language(_ proxy: OpaquePointer, language: UnsafePointer<CChar>?) {
+        let value = language.map { String(cString: $0) }
+        MainActor.assumeIsolated { owner.handleLanguage(value) }
+    }
     nonisolated func preeditHint(
         _ proxy: OpaquePointer, start: UInt32, end: UInt32, hint: UInt32
-    ) {}
+    ) {
+        MainActor.assumeIsolated {
+            owner.handlePreeditHint(start: start, end: end, hint: hint)
+        }
+    }
 }

@@ -5,9 +5,9 @@
 //
 // Scope mirrors the retained-model `Transaction` boundary (see
 // `RenderTransactionApply.swift`): only created/inserted/removed/detached/
-// propertyUpdates are lowered. Animations, animation-removes, fences, and the
-// renderer-owned presentation-transition expansion of layer `transitions`
-// are excluded by design — they don't participate in the retained tree.
+// property updates and compositor-side animation records are lowered. Fences
+// and the renderer-owned presentation-transition expansion of layer
+// `transitions` remain separate concerns.
 //
 // The field mappings, the default-action compound-frame decomposition, the
 // backdrop-attachment derivation, and the content/shadow/visual-style deltas
@@ -47,9 +47,159 @@ public enum RenderTransactionLowering {
         for (layer, properties) in encoded.propertyUpdates {
             txn.propertyUpdates.append(lowerPropertyUpdate(layer, properties, contextId: contextId))
         }
-        // Animations, animation-removes, fences, and the layers `transitions`
-        // presentation-transition expansion are renderer-owned — excluded here.
+        let beginTimeNanoseconds =
+            encoded.targetPresentationNanoseconds != 0
+                ? encoded.targetPresentationNanoseconds
+                : encoded.predictedPresentationNanoseconds
+        let beginTimeSeconds = Double(beginTimeNanoseconds) / 1_000_000_000
+        txn.animationBeginTimeSeconds = beginTimeSeconds
+        txn.animationBeginTimePending = beginTimeNanoseconds == 0
+        for (layer, animation) in encoded.animationsAdded {
+            guard let lowered = lowerAnimation(
+                animation,
+                layerID: layer.rawValue,
+                transactionID: encoded.transactionID,
+                inheritedCompletionToken: encoded.completionToken,
+                beginTimeSeconds: beginTimeSeconds
+            ) else {
+                continue
+            }
+            txn.animationsAdded.append(lowered)
+        }
+        for removal in encoded.animationsRemoved {
+            guard let keyPath = lowerAnimationKeyPath(removal.keyPath) else { continue }
+            txn.animationsRemoved.append(NucleusRenderModel.AnimationRemoval(
+                layerId: removal.layer.rawValue,
+                keyPath: keyPath
+            ))
+        }
         return txn
+    }
+
+    private static func lowerAnimation(
+        _ animation: NucleusLayers.Animation,
+        layerID: UInt64,
+        transactionID: UInt64,
+        inheritedCompletionToken: UInt64,
+        beginTimeSeconds: Double
+    ) -> NucleusRenderModel.AnimationRecord? {
+        guard let keyPath = lowerAnimationKeyPath(animation.keyPath) else {
+            return nil
+        }
+        let loweredAnimation: NucleusRenderModel.Animation
+        if keyPath == .transform {
+            let from = m44(animation.fromEndpoint.transform)
+            let to = m44(animation.toEndpoint.transform)
+            switch animation.curve.kind {
+            case .spring:
+                loweredAnimation = .springTransform(
+                    NucleusRenderModel.SpringTransformAnimation(
+                        fromValue: from,
+                        toValue: to,
+                        mass: animation.curve.springMass,
+                        stiffness: animation.curve.springStiffness,
+                        damping: animation.curve.springDamping,
+                        beginTime: beginTimeSeconds
+                    ))
+            case .linear:
+                loweredAnimation = .basicTransform(
+                    NucleusRenderModel.BasicTransformAnimation(
+                        fromValue: from,
+                        toValue: to,
+                        duration: animation.duration,
+                        timingFunction: .linear,
+                        beginTime: beginTimeSeconds
+                    ))
+            case .bezier:
+                loweredAnimation = .basicTransform(
+                    NucleusRenderModel.BasicTransformAnimation(
+                        fromValue: from,
+                        toValue: to,
+                        duration: animation.duration,
+                        timingFunction: timingFunction(animation.curve),
+                        beginTime: beginTimeSeconds
+                    ))
+            }
+        } else {
+            let from = Float(animation.fromEndpoint.scalar)
+            let to = Float(animation.toEndpoint.scalar)
+            switch animation.curve.kind {
+            case .spring:
+                loweredAnimation = .spring(NucleusRenderModel.SpringAnimation(
+                    keyPath: keyPath,
+                    fromValue: from,
+                    toValue: to,
+                    mass: animation.curve.springMass,
+                    stiffness: animation.curve.springStiffness,
+                    damping: animation.curve.springDamping,
+                    initialVelocity: animation.curve.springInitialVelocity,
+                    beginTime: beginTimeSeconds
+                ))
+            case .linear:
+                loweredAnimation = .basic(NucleusRenderModel.BasicAnimation(
+                    keyPath: keyPath,
+                    fromValue: from,
+                    toValue: to,
+                    duration: animation.duration,
+                    timingFunction: .linear,
+                    beginTime: beginTimeSeconds
+                ))
+            case .bezier:
+                loweredAnimation = .basic(NucleusRenderModel.BasicAnimation(
+                    keyPath: keyPath,
+                    fromValue: from,
+                    toValue: to,
+                    duration: animation.duration,
+                    timingFunction: timingFunction(animation.curve),
+                    beginTime: beginTimeSeconds
+                ))
+            }
+        }
+        return NucleusRenderModel.AnimationRecord(
+            id: NucleusRenderModel.AnimationID(raw: animation.id),
+            layerId: layerID,
+            animation: loweredAnimation,
+            completionToken: NucleusRenderModel.CompletionToken(
+                raw: animation.completionToken != 0
+                    ? animation.completionToken
+                    : inheritedCompletionToken
+            ),
+            transactionId: transactionID,
+            beginTimePending: beginTimeSeconds == 0
+        )
+    }
+
+    private static func timingFunction(
+        _ curve: NucleusLayers.AnimationCurve
+    ) -> NucleusRenderModel.TimingFunction {
+        NucleusRenderModel.TimingFunction(
+            c1x: curve.bezierP1x,
+            c1y: curve.bezierP1y,
+            c2x: curve.bezierP2x,
+            c2y: curve.bezierP2y
+        )
+    }
+
+    private static func lowerAnimationKeyPath(
+        _ keyPath: NucleusTypes.AnimationKeyPath
+    ) -> NucleusRenderModel.AnimationKeyPath? {
+        switch keyPath {
+        case .none: nil
+        case .opacity: .opacity
+        case .cornerRadius: .cornerRadius
+        case .positionX: .positionX
+        case .positionY: .positionY
+        case .boundsW: .boundsWidth
+        case .boundsH: .boundsHeight
+        case .anchorPointX: .anchorPointX
+        case .anchorPointY: .anchorPointY
+        case .scrollOffsetX: .scrollOffsetX
+        case .scrollOffsetY: .scrollOffsetY
+        case .transform: .transform
+        case .borderTopWidth, .borderRightWidth,
+             .borderBottomWidth, .borderLeftWidth:
+            nil
+        }
     }
 
     // MARK: - Created
@@ -78,7 +228,7 @@ public enum RenderTransactionLowering {
             ),
             position: NucleusRenderModel.Point2D(x: Float(frame.x), y: Float(frame.y)),
             anchorPoint: NucleusRenderModel.Point2D(x: 0, y: 0),
-            opacity: Float(descriptor.opacity),
+            opacity: descriptor.isHidden ? 0 : Float(descriptor.opacity),
             bounds: NucleusRenderModel.Bounds(w: frameW, h: frameH),
             initialContent: initialContent(descriptor.initialContent)
         )
@@ -160,12 +310,15 @@ public enum RenderTransactionLowering {
         }
 
         let isDefaultAction = p.actionPolicy == .default
+        update.usesDefaultOpacityAction =
+            isDefaultAction && (p.opacity != nil || p.isHidden != nil)
         if let position = p.position, let bounds = p.bounds, isDefaultAction {
             let x = Float(position.x)
             let y = Float(position.y)
             let w = Float(bounds.width)
             let h = Float(bounds.height)
             update.frame = NucleusRenderModel.Frame(left: x, top: y, right: x + w, bottom: y + h)
+            update.usesDefaultFrameAction = true
         } else {
             if let position = p.position {
                 update.position = NucleusRenderModel.Point2D(x: Float(position.x), y: Float(position.y))
@@ -192,6 +345,13 @@ public enum RenderTransactionLowering {
         }
         if let content = p.content {
             update.content = contentDelta(content)
+            update.contentDamage = p.contentDamage.map {
+                NucleusRenderModel.Rect(
+                    x: Float($0.x),
+                    y: Float($0.y),
+                    w: Float($0.width),
+                    h: Float($0.height))
+            }
         }
         if let sample = p.contentSample {
             update.contentSample = contentSample(sample)

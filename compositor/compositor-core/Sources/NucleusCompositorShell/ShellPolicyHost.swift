@@ -72,10 +72,18 @@ public final class ShellPolicyService: ShellPolicyHost {
 
     public func appearanceSetColorScheme(value: UInt32) {
         AppearancePortal.shared.setColorScheme(value)
+        let snapshot = AppearancePortal.shared.snapshot()
+        nucleus_compositor_overlay_scene_update_environment(
+            colorScheme: snapshot.0,
+            contrast: snapshot.1)
     }
 
     public func appearanceSetContrast(value: UInt32) {
         AppearancePortal.shared.setContrast(value)
+        let snapshot = AppearancePortal.shared.snapshot()
+        nucleus_compositor_overlay_scene_update_environment(
+            colorScheme: snapshot.0,
+            contrast: snapshot.1)
     }
 
     public func appearanceSnapshot(

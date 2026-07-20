@@ -2,17 +2,18 @@
 
 @MainActor
 open class View: Responder, Accessible, ~Sendable {
-    package let backingLayer: Layer
-    /// A `weak` handle to the context owning `backingLayer`'s registry, captured at
-    /// init. The deinit prunes the registry through this rather than
-    /// `backingLayer.context` — an `unowned` ref that traps if the context was torn
-    /// down first (e.g. when a whole scene/context deallocates before its views). A
-    /// dead context means the registry is already gone, so pruning is a safe no-op.
-    private weak var registryContext: Context?
+    public let id: ViewID
+    public let accessibilityID: AccessibilityID
+    package let uiContext: UIContext
+    package let semanticLayerKind: LayerKind
+    package var semanticBackdropMaterial: BackdropMaterial
     package weak var parentView: View?
     package weak var parentWindow: Window?
     package weak var owningViewController: ViewController?
     package var childViews: [View]
+    package var childViewsByID: [ViewID: View]
+    package var childViewIndices: [ViewID: Int]
+    package var dirtyChildViewIDs: Set<ViewID>
     package var intrinsicContentSizeNeedsUpdate: Bool
     package var layoutNeedsUpdate: Bool
     package var displayNeedsUpdate: Bool
@@ -21,144 +22,212 @@ open class View: Responder, Accessible, ~Sendable {
     package var subtreeLayoutNeedsUpdate: Bool
     package var subtreeDisplayNeedsUpdate: Bool
     package var cachedRecording: PaintRecording
+    package var cachedPaintDamage: Rect?
+    private var pendingDisplayDamage: Rect?
     package var storedStyle: ViewStyle
     package var storedAccessibilityProperties: AccessibilityProperties
     package var storedAccessibilityChildren: [any Accessible]?
+    package var storedAccessibilityVirtualChildrenProvider:
+        (@MainActor () -> [AccessibilityVirtualElement])?
+    package var storedAccessibilityActions:
+        [AccessibilityAction:
+            @MainActor (AccessibilityActionRequest) -> Bool]
     package var storedTransform: Transform
     package var storedLayerPresentation: ViewLayerPresentation
+    package var storedMutationActionPolicies: [ViewDirtyDomain: ActionPolicy]
+    package var storedContextMenuProvider: (@MainActor () -> Menu)?
+    package var animationRequests: [AnimationKeyPath: ViewAnimationRequest]
+    package var animationHandles: [UInt64: AnimationHandle]
+    package var currentAnimationHandleIDs: [AnimationKeyPath: UInt64]
+    package var storedFadeTargetOpacity: Double?
+    package var dirtyGenerations: ViewDirtyGenerations
+    package var subtreeDirtyGenerations: ViewDirtyGenerations
+
+    private var storedFrame: Rect
+    private var storedIsHidden: Bool
+    private var storedAlphaValue: Double
+    private var storedBoundsOrigin: Point
+    private var storedClipsToBounds: Bool
+    private var storedShadow: Shadow
 
     public override init() {
-        self.backingLayer = Application.currentContext.makeLayer()
-        self.registryContext = backingLayer.context
+        let uiContext = Application.currentUIContext
+        self.id = uiContext.allocateViewID()
+        self.accessibilityID = uiContext.allocateAccessibilityID()
+        self.uiContext = uiContext
+        self.semanticLayerKind = .container
+        self.semanticBackdropMaterial = .none
         self.childViews = []
+        self.childViewsByID = [:]
+        self.childViewIndices = [:]
+        self.dirtyChildViewIDs = []
         self.intrinsicContentSizeNeedsUpdate = false
         self.layoutNeedsUpdate = false
         self.displayNeedsUpdate = true
         self.subtreeLayoutNeedsUpdate = false
         self.subtreeDisplayNeedsUpdate = true
         self.cachedRecording = PaintRecording()
+        self.cachedPaintDamage = nil
+        self.pendingDisplayDamage = nil
         self.storedStyle = .none
         self.storedAccessibilityProperties = AccessibilityProperties()
         self.storedAccessibilityChildren = nil
+        self.storedAccessibilityVirtualChildrenProvider = nil
+        self.storedAccessibilityActions = [:]
         self.storedTransform = .identity
         self.storedLayerPresentation = .default
+        self.storedMutationActionPolicies = [:]
+        self.storedContextMenuProvider = nil
+        self.animationRequests = [:]
+        self.animationHandles = [:]
+        self.currentAnimationHandleIDs = [:]
+        self.storedFadeTargetOpacity = nil
+        self.dirtyGenerations = ViewDirtyGenerations()
+        self.subtreeDirtyGenerations = ViewDirtyGenerations()
+        self.storedFrame = .zero
+        self.storedIsHidden = false
+        self.storedAlphaValue = 1
+        self.storedBoundsOrigin = .zero
+        self.storedClipsToBounds = false
+        self.storedShadow = .none
         super.init()
+        uiContext.registerEnvironmentConsumer(self)
     }
 
     init(layerDescriptor: LayerDescriptor) {
-        self.backingLayer = Application.currentContext.makeLayer(layerDescriptor)
-        self.registryContext = backingLayer.context
+        let uiContext = Application.currentUIContext
+        self.id = uiContext.allocateViewID()
+        self.accessibilityID = uiContext.allocateAccessibilityID()
+        self.uiContext = uiContext
+        self.semanticLayerKind = layerDescriptor.kind
+        self.semanticBackdropMaterial = layerDescriptor.backdropMaterial
         self.childViews = []
+        self.childViewsByID = [:]
+        self.childViewIndices = [:]
+        self.dirtyChildViewIDs = []
         self.intrinsicContentSizeNeedsUpdate = false
         self.layoutNeedsUpdate = false
         self.displayNeedsUpdate = true
         self.subtreeLayoutNeedsUpdate = false
         self.subtreeDisplayNeedsUpdate = true
         self.cachedRecording = PaintRecording()
+        self.cachedPaintDamage = nil
+        self.pendingDisplayDamage = nil
         self.storedStyle = .none
         self.storedAccessibilityProperties = AccessibilityProperties()
         self.storedAccessibilityChildren = nil
+        self.storedAccessibilityVirtualChildrenProvider = nil
+        self.storedAccessibilityActions = [:]
         self.storedTransform = .identity
         self.storedLayerPresentation = .default
+        self.storedMutationActionPolicies = [:]
+        self.storedContextMenuProvider = nil
+        self.animationRequests = [:]
+        self.animationHandles = [:]
+        self.currentAnimationHandleIDs = [:]
+        self.storedFadeTargetOpacity = nil
+        self.dirtyGenerations = ViewDirtyGenerations()
+        self.subtreeDirtyGenerations = ViewDirtyGenerations()
+        self.storedFrame = Rect(
+            x: layerDescriptor.frame.x,
+            y: layerDescriptor.frame.y,
+            width: layerDescriptor.frame.width,
+            height: layerDescriptor.frame.height
+        )
+        self.storedIsHidden = layerDescriptor.isHidden
+        self.storedAlphaValue = layerDescriptor.opacity
+        self.storedBoundsOrigin = .zero
+        self.storedClipsToBounds = false
+        self.storedShadow = Shadow(layerDescriptor.shadow)
         super.init()
+        uiContext.registerEnvironmentConsumer(self)
     }
 
-    // `isolated deinit` runs the body on the `@MainActor` (the layer registry and
-    // Layer/Context are `@MainActor`), so no non-Sendable state crosses an isolation
-    // boundary.
     isolated deinit {
-        // Drop the backing layer from the context's registry so it — and the
-        // paint/content handle it retains via `descriptor.initialContent` — can
-        // deallocate. `context.layers` co-owns every layer with its View, so without
-        // this the layer (and its content) outlives the View for the context's whole
-        // lifetime. A live subview is retained by its superview, so a View only
-        // deinits after removeFromSuperview has already detached its layer from the
-        // tree; this just releases the registry's last strong reference. Pruned
-        // through the `weak` `registryContext`: if the context was already torn down
-        // (a whole scene deallocating), the registry is gone and this is a no-op —
-        // reading the layer's `unowned` context there would instead trap.
-        registryContext?.layers.removeValue(forKey: backingLayer.id)
+        uiContext.unregisterEnvironmentConsumer(id)
+        uiContext.cancelAnimations(owner: self)
+        cancelOwnedAnimationHandles()
     }
 
     public func addSubview(_ child: View) {
-        // Eager Swift-tree mutation: matches `NSView.addSubview`. The
-        // FFI-side layer insert journals into whatever transaction is
-        // currently active for this context (explicit if one is in
-        // scope, otherwise the per-context implicit ambient buffer
-        // which is flushed by the consumer's frame-time trigger).
+        if child.parentView === self, childViews.last === child {
+            return
+        }
+        precondition(
+            child.uiContext === uiContext,
+            "a view cannot adopt a child from another UIContext")
         child.detachFromSwiftTree()
         childViews.append(child)
+        childViewsByID[child.id] = child
+        childViewIndices[child.id] = childViews.count - 1
         child.parentView = self
         // The new child carries its own dirty state; the ancestors that will run
         // the next pass have to learn there is now work under them.
         markSubtreeNeedsLayout()
         markSubtreeNeedsDisplay()
-        child.backingLayer.attach(to: backingLayer, at: UInt32.max)
-        LayerTransaction.appendAmbient(
-            .inserted(layer: child.backingLayer.id, parent: backingLayer.id, index: UInt32.max),
-            in: backingLayer.context
-        )
+        recordMutation(.structure)
     }
 
     public func removeFromSuperview() {
-        let layer = backingLayer
-        let context = layer.context
         detachFromSwiftTree()
-        layer.detach()
-        LayerTransaction.appendAmbient(.detached(layer.id), in: context)
     }
 
-    /// Apply a batched ViewProperties update. Local model state updates
-    /// eagerly; the FFI commit is journaled into the active ambient
-    /// transaction.
+    /// Apply a batched semantic update. Publication diffs the resulting model
+    /// state into one visual transaction.
     public func setProperties(_ properties: ViewProperties) {
-        let update = properties.layerUpdate()
-        backingLayer.apply(update)
-        LayerTransaction.appendAmbient(.properties(layer: backingLayer.id, update), in: backingLayer.context)
-        if properties.frame != nil {
-            setNeedsLayout()
+        if let frame = properties.frame {
+            self.frame = frame
+        }
+        if let isHidden = properties.isHidden {
+            self.isHidden = isHidden
+        }
+        if let backdropMaterial = properties.backdropMaterial,
+           backdropMaterial != semanticBackdropMaterial
+        {
+            semanticBackdropMaterial = backdropMaterial
+            recordMutation(.style)
         }
     }
 
-    /// Live model frame, mirrors `NSView.frame`. Reads return the eagerly
-    /// updated value; the setter applies eagerly and journals the layer
-    /// update into the active ambient transaction (matches AppKit shape:
-    /// no `try`, no error propagation at the model level).
+    /// Live semantic frame, mirroring `NSView.frame`.
     public var frame: Rect {
-        get {
-            let f = backingLayer.frame
-            return Rect(x: f.x, y: f.y, width: f.width, height: f.height)
-        }
+        get { storedFrame }
         set {
-            let update = LayerPropertyUpdate.decomposedFrame(
-                GeometryRect(x: newValue.origin.x, y: newValue.origin.y, width: newValue.size.width, height: newValue.size.height)
-            )
-            backingLayer.apply(update)
-            LayerTransaction.appendAmbient(.properties(layer: backingLayer.id, update), in: backingLayer.context)
-            // The bounds clip is expressed in this view's size, so a resize
-            // moves it.
-            if clipsToBounds { applyBoundsClip() }
-            setNeedsLayout()
-            setNeedsDisplay()
+            precondition(
+                newValue.isFinite
+                    && newValue.size.width >= 0
+                    && newValue.size.height >= 0,
+                "a view frame must be finite with nonnegative dimensions")
+            guard newValue != storedFrame else { return }
+            let sizeChanged = newValue.size != storedFrame.size
+            storedFrame = newValue
+            recordMutation(.geometry)
+            if sizeChanged {
+                setNeedsLayout()
+                setNeedsDisplay()
+            }
         }
     }
 
     public var isHidden: Bool {
-        get { backingLayer.isHidden }
+        get { storedIsHidden }
         set {
-            let update = LayerPropertyUpdate(isHidden: newValue)
-            backingLayer.apply(update)
-            LayerTransaction.appendAmbient(.properties(layer: backingLayer.id, update), in: backingLayer.context)
-            parentView?.setNeedsDisplay()
+            guard newValue != storedIsHidden else { return }
+            storedIsHidden = newValue
+            recordMutation(.visibility)
         }
     }
 
     public var alphaValue: Double {
-        get { backingLayer.opacity }
+        get { storedAlphaValue }
         set {
-            let update = LayerPropertyUpdate(opacity: min(max(0, newValue), 1))
-            backingLayer.apply(update)
-            LayerTransaction.appendAmbient(.properties(layer: backingLayer.id, update), in: backingLayer.context)
+            precondition(
+                newValue.isFinite,
+                "view alpha must be finite")
+            let value = min(max(0, newValue), 1)
+            guard value != storedAlphaValue else { return }
+            storedAlphaValue = value
+            recordMutation(.visibility)
         }
     }
 
@@ -191,60 +260,53 @@ open class View: Responder, Accessible, ~Sendable {
     /// without touching a single child frame or re-recording any drawing: the
     /// children's layers are placed relative to it, so a scroll is one property
     /// update rather than one per child.
-    public var boundsOrigin: Point = .zero {
-        didSet {
-            guard boundsOrigin != oldValue else { return }
-            let update = LayerPropertyUpdate(
-                scrollOffset: GeometryPoint(x: boundsOrigin.x, y: boundsOrigin.y))
-            backingLayer.apply(update)
-            LayerTransaction.appendAmbient(
-                .properties(layer: backingLayer.id, update), in: backingLayer.context)
-            // Placement changes; recordings do not. Children are positioned
-            // relative to this origin, so their own drawing is untouched.
-            setNeedsDisplay()
+    public var boundsOrigin: Point {
+        get { storedBoundsOrigin }
+        set {
+            precondition(
+                newValue.isFinite,
+                "a view bounds origin must be finite")
+            guard newValue != storedBoundsOrigin else { return }
+            storedBoundsOrigin = newValue
+            recordMutation(.scrolling)
         }
     }
 
     /// Whether this view clips its contents to its bounds.
     ///
-    /// Mirrors `NSView.clipsToBounds`. Hit testing respects it as well as
+    /// Corresponds to `NSView.clipsToBounds`. Hit testing respects it as well as
     /// drawing: a child scrolled out of sight must not receive a click, and this
     /// is what makes it out of sight.
-    public var clipsToBounds: Bool = false {
-        didSet {
-            guard clipsToBounds != oldValue else { return }
-            applyBoundsClip()
+    public var clipsToBounds: Bool {
+        get { storedClipsToBounds }
+        set {
+            guard newValue != storedClipsToBounds else { return }
+            storedClipsToBounds = newValue
+            recordMutation(.style)
         }
-    }
-
-    /// Push the bounds clip to the layer. A zero-sized clip rect is the render
-    /// model's spelling of "no clip", which is what an unclipped view wants and
-    /// also what a zero-sized view would produce anyway.
-    private func applyBoundsClip() {
-        let size = clipsToBounds ? frame.size : .zero
-        let update = LayerPropertyUpdate(
-            clip: ClipOp(
-                rectX: 0, rectY: 0,
-                rectW: Float(size.width), rectH: Float(size.height)))
-        backingLayer.apply(update)
-        LayerTransaction.appendAmbient(
-            .properties(layer: backingLayer.id, update), in: backingLayer.context)
     }
 
     public var transform: Transform {
         get { storedTransform }
         set {
+            precondition(
+                newValue.isFinite,
+                "a view transform must be finite")
+            guard newValue != storedTransform else { return }
             storedTransform = newValue
-            let update = LayerPropertyUpdate(transform: newValue.layersTransform)
-            backingLayer.apply(update)
-            LayerTransaction.appendAmbient(.properties(layer: backingLayer.id, update), in: backingLayer.context)
+            recordMutation(.transform)
         }
     }
 
     public var style: ViewStyle {
         get { storedStyle }
         set {
+            precondition(
+                newValue.cornerRadius.isFinite,
+                "a view style corner radius must be finite")
+            guard newValue != storedStyle else { return }
             storedStyle = newValue
+            recordMutation(.style)
             setNeedsDisplay()
         }
     }
@@ -252,7 +314,9 @@ open class View: Responder, Accessible, ~Sendable {
     public var backgroundColor: Color? {
         get { storedStyle.backgroundColor }
         set {
+            guard newValue != storedStyle.backgroundColor else { return }
             storedStyle.backgroundColor = newValue
+            recordMutation(.style)
             setNeedsDisplay()
         }
     }
@@ -260,7 +324,13 @@ open class View: Responder, Accessible, ~Sendable {
     public var cornerRadius: Double {
         get { storedStyle.cornerRadius }
         set {
-            storedStyle.cornerRadius = max(0, newValue)
+            precondition(
+                newValue.isFinite,
+                "a view corner radius must be finite")
+            let value = max(0, newValue)
+            guard value != storedStyle.cornerRadius else { return }
+            storedStyle.cornerRadius = value
+            recordMutation(.style)
             setNeedsDisplay()
         }
     }
@@ -268,25 +338,23 @@ open class View: Responder, Accessible, ~Sendable {
     public var border: Border {
         get { storedStyle.border }
         set {
+            guard newValue != storedStyle.border else { return }
             storedStyle.border = newValue
+            recordMutation(.style)
             setNeedsDisplay()
         }
     }
 
-    /// Drop shadow on this view's backing layer. Mirrors `NSView.shadow`
+    /// Drop shadow on this view's backing layer. Corresponds to `NSView.shadow`
     /// (composite NSShadow-style) — sets all four CALayer split shadow
     /// properties at once.
     public var shadow: Shadow {
-        get { Shadow(backingLayer.descriptor.shadow) }
+        get { storedShadow }
         set {
-            let update = LayerPropertyUpdate(shadow: newValue.layersShadow)
-            backingLayer.apply(update)
-            LayerTransaction.appendAmbient(.properties(layer: backingLayer.id, update), in: backingLayer.context)
+            guard newValue != storedShadow else { return }
+            storedShadow = newValue
+            recordMutation(.style)
         }
-    }
-
-    public var backingLayerID: UInt64 {
-        backingLayer.id.rawValue
     }
 
     /// Presentation metadata used when this view is materialized into an
@@ -295,10 +363,14 @@ open class View: Responder, Accessible, ~Sendable {
     /// spreading lifecycle fields across the view.
     public var layerPresentation: ViewLayerPresentation {
         get { storedLayerPresentation }
-        set { storedLayerPresentation = newValue }
+        set {
+            guard newValue != storedLayerPresentation else { return }
+            storedLayerPresentation = newValue
+            recordMutation(.style)
+        }
     }
 
-    /// Chainable variant for inline configuration. Mirrors SwiftUI's
+    /// Chainable variant for inline configuration. Corresponds to SwiftUI's
     /// `.shadow(color:radius:x:y:)` modifier; returns `self` so the view
     /// can be passed to `addSubview` or held inline. Discardable result —
     /// the mutation is the point.
@@ -332,9 +404,28 @@ open class View: Responder, Accessible, ~Sendable {
     package var layerContent: ViewLayerContent {
         ViewLayerContent(
             recording: cachedRecording,
+            damage: cachedPaintDamage,
             presentation: layerPresentation,
             shadow: shadow == .none ? nil : shadow
         )
+    }
+
+    @discardableResult
+    package func recordMutation(_ domain: ViewDirtyDomain) -> UInt64 {
+        let generation = uiContext.allocateGeneration()
+        dirtyGenerations[domain] = generation
+        if domain != .accessibility {
+            storedMutationActionPolicies[domain] = uiContext.currentActionPolicy
+        }
+        var branch = self
+        var ancestor = parentView
+        while let current = ancestor {
+            current.subtreeDirtyGenerations[domain] = generation
+            current.dirtyChildViewIDs.insert(branch.id)
+            branch = current
+            ancestor = current.parentView
+        }
+        return generation
     }
 
     public var stableHandle: Handle {
@@ -343,12 +434,20 @@ open class View: Responder, Accessible, ~Sendable {
 
     public var isAccessibilityElement: Bool {
         get { storedAccessibilityProperties.isElement }
-        set { storedAccessibilityProperties.isElement = newValue }
+        set {
+            guard newValue != storedAccessibilityProperties.isElement else { return }
+            storedAccessibilityProperties.isElement = newValue
+            recordMutation(.accessibility)
+        }
     }
 
     public var accessibilityLabel: String? {
         get { storedAccessibilityProperties.label }
-        set { storedAccessibilityProperties.label = newValue }
+        set {
+            guard newValue != storedAccessibilityProperties.label else { return }
+            storedAccessibilityProperties.label = newValue
+            recordMutation(.accessibility)
+        }
     }
 
     // MARK: - Focus traversal
@@ -372,6 +471,39 @@ open class View: Responder, Accessible, ~Sendable {
     /// every keystroke. With it, focus is restored by name to whatever view now
     /// occupies that role.
     public var focusKey: String?
+
+    /// Marks a subtree as a focus group or modal focus boundary.
+    public var focusScopeBehavior: FocusScopeBehavior = .none
+
+    public var isFocused: Bool {
+        window?.firstResponder === self
+    }
+
+    /// Called exactly once when this view gains or loses first-responder focus.
+    open func focusStateDidChange() {
+        recordMutation(.accessibility)
+        setNeedsDisplay()
+    }
+
+    /// Whether the standard ring is added after this view draws.
+    open var drawsFocusRing: Bool { acceptsFirstResponder }
+
+    open func drawFocusRing(in context: GraphicsContext) {
+        guard isFocused, drawsFocusRing,
+              bounds.size.width > 0, bounds.size.height > 0
+        else { return }
+        var path = Path()
+        path.addRoundedRect(
+            Rect(
+                x: 1,
+                y: 1,
+                width: max(0, bounds.size.width - 2),
+                height: max(0, bounds.size.height - 2)),
+            radius: max(2, cornerRadius))
+        context.strokeColor = resolve(.role(.primary))
+        context.lineWidth = 2
+        context.stroke(path)
+    }
 
     // MARK: - Tracking
 
@@ -427,37 +559,104 @@ open class View: Responder, Accessible, ~Sendable {
 
     public var accessibilityHint: String? {
         get { storedAccessibilityProperties.hint }
-        set { storedAccessibilityProperties.hint = newValue }
+        set {
+            guard newValue != storedAccessibilityProperties.hint else { return }
+            storedAccessibilityProperties.hint = newValue
+            recordMutation(.accessibility)
+        }
     }
 
     public var accessibilityValue: String? {
         get { storedAccessibilityProperties.value }
-        set { storedAccessibilityProperties.value = newValue }
+        set {
+            guard newValue != storedAccessibilityProperties.value else { return }
+            storedAccessibilityProperties.value = newValue
+            recordMutation(.accessibility)
+        }
     }
 
     public var accessibilityRole: AccessibilityRole? {
         get { storedAccessibilityProperties.role }
-        set { storedAccessibilityProperties.role = newValue }
+        set {
+            guard newValue != storedAccessibilityProperties.role else { return }
+            storedAccessibilityProperties.role = newValue
+            recordMutation(.accessibility)
+        }
     }
 
     public var accessibilityTraits: AccessibilityTraits {
         get { storedAccessibilityProperties.traits }
-        set { storedAccessibilityProperties.traits = newValue }
+        set {
+            guard newValue != storedAccessibilityProperties.traits else { return }
+            storedAccessibilityProperties.traits = newValue
+            recordMutation(.accessibility)
+        }
     }
 
     public var accessibilityChildren: [any Accessible]? {
         get { storedAccessibilityChildren }
-        set { storedAccessibilityChildren = newValue }
+        set {
+            storedAccessibilityChildren = newValue
+            recordMutation(.accessibility)
+        }
     }
 
     public var accessibilityProperties: AccessibilityProperties {
         get { storedAccessibilityProperties }
-        set { storedAccessibilityProperties = newValue }
+        set {
+            guard newValue != storedAccessibilityProperties else { return }
+            storedAccessibilityProperties = newValue
+            recordMutation(.accessibility)
+        }
+    }
+
+    /// Supplies semantic children that are not retained visual views.
+    public var accessibilityVirtualChildrenProvider:
+        (@MainActor () -> [AccessibilityVirtualElement])?
+    {
+        get { storedAccessibilityVirtualChildrenProvider }
+        set {
+            storedAccessibilityVirtualChildrenProvider = newValue
+            recordMutation(.accessibility)
+        }
+    }
+
+    public func setAccessibilityAction(
+        _ action: AccessibilityAction,
+        handler:
+            @escaping @MainActor (AccessibilityActionRequest) -> Bool
+    ) {
+        storedAccessibilityActions[action] = handler
+        recordMutation(.accessibility)
+    }
+
+    public func clearAccessibilityAction(_ action: AccessibilityAction) {
+        guard storedAccessibilityActions.removeValue(forKey: action) != nil
+        else { return }
+        recordMutation(.accessibility)
+    }
+
+    public func postAccessibilityAnnouncement(
+        _ announcement: String,
+        priority: AccessibilityLiveRegion = .polite
+    ) {
+        guard !announcement.isEmpty else { return }
+        uiContext.postAccessibilityNotification(
+            AccessibilityNotification(
+                kind: priority == .assertive ? .announcement : .liveRegion,
+                target: accessibilityID,
+                announcement: announcement))
     }
 
     package func detachFromSwiftTree(clearOwningViewController: Bool = true) {
+        window?.windowScene?.cancelInputSequences(capturedBy: self)
         if let parentView {
             parentView.childViews.removeAll { $0 === self }
+            parentView.childViewsByID[id] = nil
+            parentView.reindexChildren()
+            parentView.recordMutation(.structure)
+            parentView.markSubtreeNeedsLayout()
+            parentView.markSubtreeNeedsDisplay()
         }
         if let parentWindow, parentWindow.rootView === self {
             parentWindow.rootView = nil
@@ -476,9 +675,41 @@ open class View: Responder, Accessible, ~Sendable {
         parentView
     }
 
+    package func reindexChildren() {
+        childViewIndices.removeAll(keepingCapacity: true)
+        childViewIndices.reserveCapacity(childViews.count)
+        for (index, child) in childViews.enumerated() {
+            childViewsByID[child.id] = child
+            childViewIndices[child.id] = index
+        }
+    }
+
+    package func isDescendant(of ancestor: View) -> Bool {
+        var node = parentView
+        while let current = node {
+            if current === ancestor { return true }
+            node = current.parentView
+        }
+        return false
+    }
+
+    package func defaultButton() -> Button? {
+        if let button = self as? Button,
+           button.isDefaultButton,
+           button.isEnabled,
+           !button.isHidden
+        {
+            return button
+        }
+        for child in childViews {
+            if let button = child.defaultButton() { return button }
+        }
+        return nil
+    }
+
     /// The window this view is installed in, found by walking up the view tree.
     /// `parentWindow` is only set on a window's root view, so a nested view has
-    /// to climb. Mirrors `NSView.window`.
+    /// to climb. This matches `NSView.window` behavior.
     public var window: Window? {
         var node: View? = self
         while let current = node {
@@ -493,8 +724,8 @@ open class View: Responder, Accessible, ~Sendable {
     }
 
     /// Per-view appearance override. `nil` (the default) means inherit from
-    /// the nearest ancestor that specifies one, falling back to
-    /// `Appearance.systemDefault`. Mirrors `NSView.appearance`.
+    /// the nearest ancestor that specifies one, then from the owning
+    /// `UIContext` environment.
     public var appearance: Appearance? {
         didSet {
             guard appearance != oldValue else { return }
@@ -524,8 +755,11 @@ open class View: Responder, Accessible, ~Sendable {
             if let palette = view.palette { return palette }
             current = view.parentView
         }
-        if let scenePalette = parentWindow?.windowScene?.palette { return scenePalette }
-        return Palette.standard(for: effectiveAppearance)
+        let base = parentWindow?.windowScene?.palette
+            ?? Palette.standard(for: effectiveAppearance)
+        return uiContext.environment.increasesContrast
+            ? base.increasedContrast()
+            : base
     }
 
     /// Resolve a spec against this view's palette. The call every `draw`
@@ -535,9 +769,28 @@ open class View: Responder, Accessible, ~Sendable {
         spec.resolve(in: effectivePalette)
     }
 
+    /// Environment domains this view consumes.
+    ///
+    /// Appearance and contrast are the safe default because every custom view
+    /// can call `resolve(_:)` and every focusable view can draw the framework
+    /// focus ring. Subclasses add only the extra domains they actually consume.
+    open var environmentDependencies: UIEnvironmentChanges {
+        [.appearance, .increasedContrast]
+    }
+
+    open func environmentDidChange(
+        _ changes: UIEnvironmentChanges
+    ) {
+        if changes.contains(.appearance)
+            || changes.contains(.increasedContrast)
+        {
+            viewDidChangeEffectiveAppearance()
+        }
+    }
+
     /// Called when the appearance or palette this view paints under changes.
     ///
-    /// Mirrors `NSView.viewDidChangeEffectiveAppearance`. Overriding is for
+    /// Corresponds to `NSView.viewDidChangeEffectiveAppearance`. Overriding is for
     /// views holding *derived* state — a resolved colour cached on a sublayer.
     /// A view that resolves its specs in `draw` needs only the default repaint.
     open func viewDidChangeEffectiveAppearance() {
@@ -554,8 +807,8 @@ open class View: Responder, Accessible, ~Sendable {
     }
 
     /// The appearance this view actually paints under. Walks the parent
-    /// chain to the nearest non-nil `appearance`, falling back to
-    /// `Appearance.systemDefault`. Mirrors `NSView.effectiveAppearance`.
+    /// chain to the nearest non-nil `appearance`, then uses the owning
+    /// `UIContext` environment.
     public var effectiveAppearance: Appearance {
         var current: View? = self
         while let view = current {
@@ -564,7 +817,7 @@ open class View: Responder, Accessible, ~Sendable {
             }
             current = view.parentView
         }
-        return Appearance.systemDefault
+        return uiContext.environment.appearance
     }
 
     public var needsIntrinsicContentSizeUpdate: Bool {
@@ -614,20 +867,75 @@ open class View: Responder, Accessible, ~Sendable {
 
     /// Share of a container's *surplus* main-axis space this view absorbs,
     /// relative to its siblings. `0` (the default) means "stay at measured size".
-    public var growFactor: Double = 0 {
-        didSet { if growFactor != oldValue { parentView?.setNeedsLayout() } }
+    private var storedGrowFactor: Double = 0
+    public var growFactor: Double {
+        get { storedGrowFactor }
+        set {
+            let value = newValue.isFinite ? max(0, newValue) : 0
+            guard value != storedGrowFactor else { return }
+            storedGrowFactor = value
+            parentView?.setNeedsLayout()
+        }
     }
 
     /// Share of a container's main-axis *overflow* this view gives back, weighted
     /// by measured size. `1` by default, so children shrink together rather than
     /// letting the last one overflow.
-    public var shrinkFactor: Double = 1 {
-        didSet { if shrinkFactor != oldValue { parentView?.setNeedsLayout() } }
+    private var storedShrinkFactor: Double = 1
+    public var shrinkFactor: Double {
+        get { storedShrinkFactor }
+        set {
+            let value = newValue.isFinite ? max(0, newValue) : 0
+            guard value != storedShrinkFactor else { return }
+            storedShrinkFactor = value
+            parentView?.setNeedsLayout()
+        }
     }
 
     /// Main-axis starting size, overriding the measured one. `nil` means measure.
-    public var layoutBasis: Double? = nil {
-        didSet { if layoutBasis != oldValue { parentView?.setNeedsLayout() } }
+    private var storedLayoutBasis: Double?
+    public var layoutBasis: Double? {
+        get { storedLayoutBasis }
+        set {
+            let value = newValue.map { $0.isFinite ? max(0, $0) : 0 }
+            guard value != storedLayoutBasis else { return }
+            storedLayoutBasis = value
+            parentView?.setNeedsLayout()
+        }
+    }
+
+    /// Minimum main-axis extent used by flex, stack, list, and grid containers.
+    private var storedMinimumLayoutExtent: Double = 0
+    public var minimumLayoutExtent: Double {
+        get { storedMinimumLayoutExtent }
+        set {
+            let value = newValue.isFinite ? max(0, newValue) : 0
+            guard value != storedMinimumLayoutExtent else { return }
+            storedMinimumLayoutExtent = value
+            if storedMaximumLayoutExtent < value {
+                storedMaximumLayoutExtent = value
+            }
+            parentView?.setNeedsLayout()
+        }
+    }
+
+    /// Maximum main-axis extent. Positive infinity means no upper bound.
+    private var storedMaximumLayoutExtent: Double = .infinity
+    public var maximumLayoutExtent: Double {
+        get { storedMaximumLayoutExtent }
+        set {
+            let value: Double
+            if newValue == .infinity {
+                value = .infinity
+            } else if newValue.isFinite {
+                value = max(storedMinimumLayoutExtent, max(0, newValue))
+            } else {
+                value = storedMinimumLayoutExtent
+            }
+            guard value != storedMaximumLayoutExtent else { return }
+            storedMaximumLayoutExtent = value
+            parentView?.setNeedsLayout()
+        }
     }
 
     open func invalidateIntrinsicContentSize() {
@@ -669,13 +977,57 @@ open class View: Responder, Accessible, ~Sendable {
         setNeedsDisplay(bounds)
     }
 
-    /// Keeps AppKit's signature so callers are unaffected, but the rect only
-    /// marks the view dirty — see `draw(in:)` on why a subrect cannot be
-    /// honored here.
+    /// Invalidate a view-local region. Local damage is preserved through
+    /// publication and rasterized under an outer clip when the recording is
+    /// localizable. Runtime effects and backing-size changes automatically
+    /// promote the update to a complete repaint.
     open func setNeedsDisplay(_ rect: Rect) {
-        _ = rect
+        guard let damage = normalizedDisplayDamage(rect) else {
+            return
+        }
+        if !displayNeedsUpdate {
+            pendingDisplayDamage = damage
+        } else if damage == .zero {
+            pendingDisplayDamage = .zero
+        } else if let pendingDisplayDamage,
+                  pendingDisplayDamage != .zero
+        {
+            self.pendingDisplayDamage = pendingDisplayDamage.union(damage)
+        }
         displayNeedsUpdate = true
         parentView?.markSubtreeNeedsDisplay()
+    }
+
+    /// Convert an AppKit-shaped bounds-space invalidation to the zero-origin
+    /// backing coordinates used by paint textures. A complete-bounds request
+    /// returns `nil`; `.zero` is the sentinel used internally for that case
+    /// while a display pass is pending.
+    private func normalizedDisplayDamage(_ rect: Rect) -> Rect? {
+        guard rect.isFinite, !rect.isEmpty,
+              bounds.isFinite, !bounds.isEmpty
+        else {
+            return nil
+        }
+        let left = max(rect.origin.x, bounds.origin.x)
+        let top = max(rect.origin.y, bounds.origin.y)
+        let right = min(
+            rect.origin.x + rect.size.width,
+            bounds.origin.x + bounds.size.width)
+        let bottom = min(
+            rect.origin.y + rect.size.height,
+            bounds.origin.y + bounds.size.height)
+        guard right > left, bottom > top else { return nil }
+        let clipped = Rect(
+            x: left - bounds.origin.x,
+            y: top - bounds.origin.y,
+            width: right - left,
+            height: bottom - top)
+        if clipped.origin == .zero, clipped.size == bounds.size {
+            // A zero rect distinguishes complete damage from an invalid/no-op
+            // request while `displayNeedsUpdate` is true.
+            return .zero
+        }
+        return clipped
     }
 
     open func layout() {
@@ -685,11 +1037,10 @@ open class View: Responder, Accessible, ~Sendable {
     /// first, so an override adds to the styled background rather than
     /// replacing it.
     ///
-    /// There is no `dirtyRect`. Paint content registers a whole-canvas command
-    /// list and rasterizes into a fresh texture, so a subrect-only redraw would
-    /// produce a texture containing only that subrect — AppKit's contract
-    /// preserves the undrawn pixels, and this pipeline structurally cannot.
-    /// Partial repaint lands when a partial-texture-update path does.
+    /// Nucleus records the complete drawing each time, then replays it under the
+    /// invalidated local clip while preserving unchanged backing pixels. This
+    /// keeps the immediate drawing contract deterministic and avoids requiring
+    /// subclasses to branch on a dirty rectangle.
     open func draw(in context: GraphicsContext) {
         _ = context
     }
@@ -698,39 +1049,59 @@ open class View: Responder, Accessible, ~Sendable {
     /// skipped outright: with a per-frame layout pass over a whole shell, walking
     /// every view to discover that nothing changed is the dominant cost.
     public func layoutIfNeeded() {
-        guard layoutNeedsUpdate || subtreeLayoutNeedsUpdate else { return }
-        if layoutNeedsUpdate {
-            layoutNeedsUpdate = false
-            intrinsicContentSizeNeedsUpdate = false
-            layout()
-        }
-        // Cleared before recursing: `layout()` places children, which re-marks
-        // this flag through their `frame` setters, and those children are exactly
-        // the ones the loop below is about to visit.
-        subtreeLayoutNeedsUpdate = false
-        for child in childViews {
-            child.layoutIfNeeded()
+        var work: [View] = [self]
+        while let view = work.popLast() {
+            guard view.layoutNeedsUpdate || view.subtreeLayoutNeedsUpdate else {
+                continue
+            }
+            if view.layoutNeedsUpdate {
+                view.layoutNeedsUpdate = false
+                view.intrinsicContentSizeNeedsUpdate = false
+                view.layout()
+            }
+            // Cleared before descending: `layout()` places children, which
+            // re-marks this flag through their frame setters, and those children
+            // are exactly the nodes queued below.
+            view.subtreeLayoutNeedsUpdate = false
+            for child in view.childViews.reversed() {
+                work.append(child)
+            }
         }
     }
 
     public func displayIfNeeded() {
-        guard displayNeedsUpdate || subtreeDisplayNeedsUpdate else { return }
-        if displayNeedsUpdate {
-            let context = GraphicsContext()
-            storedStyle.draw(in: context, bounds: bounds)
-            draw(in: context)
-            cachedRecording = context.recording
-            displayNeedsUpdate = false
-        }
-        subtreeDisplayNeedsUpdate = false
-        for child in childViews {
-            child.displayIfNeeded()
+        var work: [View] = [self]
+        while let view = work.popLast() {
+            guard view.displayNeedsUpdate || view.subtreeDisplayNeedsUpdate
+            else {
+                continue
+            }
+            if view.displayNeedsUpdate {
+                let requestedDamage = view.pendingDisplayDamage
+                view.displayNeedsUpdate = false
+                view.pendingDisplayDamage = nil
+                let context = GraphicsContext()
+                view.storedStyle.draw(in: context, bounds: view.bounds)
+                view.draw(in: context)
+                view.drawFocusRing(in: context)
+                let recording = context.recording
+                if recording != view.cachedRecording {
+                    view.cachedRecording = recording
+                    view.cachedPaintDamage =
+                        requestedDamage == .zero ? nil : requestedDamage
+                    view.recordMutation(.content)
+                }
+            }
+            view.subtreeDisplayNeedsUpdate = false
+            for child in view.childViews.reversed() {
+                work.append(child)
+            }
         }
     }
 
     open override var nextResponder: Responder? {
         get { parentView ?? owningViewController ?? parentWindow ?? explicitNextResponder }
-        set { explicitNextResponder = newValue }
+        set { setExplicitNextResponder(newValue) }
     }
 
     /// Hit-test `event.location` in this subtree and deliver the event to the
@@ -741,7 +1112,7 @@ open class View: Responder, Accessible, ~Sendable {
     /// dispatch adds capture and enter/exit tracking, which need scene-wide
     /// state; a view alone cannot know the pointer left it for a sibling.
     /// Convert `point` from `view`'s coordinate system into this view's.
-    /// A `nil` view means window coordinates. Mirrors `NSView.convert(_:from:)`.
+    /// A `nil` view means window coordinates. Corresponds to `NSView.convert(_:from:)`.
     ///
     /// Both sides route through the window, and the terms for any shared
     /// ancestor cancel, so this is also correct for two views in a tree that has

@@ -4,7 +4,7 @@ import NucleusUI
 /// The bounds-origin model: a view's own coordinate system, and the translation
 /// between it and the view's contents.
 @MainActor
-@Suite struct BoundsOriginTests {
+@Suite(.uiContext) struct BoundsOriginTests {
     private func makeView(_ rect: Rect) -> View {
         let view = View()
         view.frame = rect

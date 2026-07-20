@@ -263,6 +263,16 @@ public enum OverlaySceneRuntime {
     overlaySceneRuntimeHost.wantsKeyboard()
 }
 
+@MainActor
+public func nucleus_compositor_overlay_scene_update_environment(
+    colorScheme: UInt32,
+    contrast: UInt32
+) {
+    ensureShellOverlayController()?.scene.updateEnvironment(
+        colorScheme: colorScheme,
+        contrast: contrast)
+}
+
 @MainActor public func nucleus_compositor_overlay_scene_show_window_menu(
     _ windowID: UInt64,
     _ x: Double,

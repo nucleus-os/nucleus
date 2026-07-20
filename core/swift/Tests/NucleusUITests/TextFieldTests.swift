@@ -4,7 +4,11 @@ import NucleusUI
 /// `TextField` behaviour: focus, keyboard editing, pointer selection, secure
 /// entry, and the input-method client contract.
 @MainActor
-@Suite struct TextFieldTests {
+@Suite(.uiContext) struct TextFieldTests {
+    init() {
+        installTestTextBackend()
+    }
+
     private func makeField(
         _ string: String = "", isSecure: Bool = false, width: Double = 200
     ) -> (TextField, Window) {
@@ -141,6 +145,18 @@ import NucleusUI
 
         _ = field.handleEvent(key(.unknown, .command, characters: "z"))
         #expect(field.stringValue == "")
+    }
+
+    @Test func commandEditingActionsTraverseTheResponderChain() {
+        let (field, window) = makeField("hello")
+        #expect(window.makeFirstResponder(field))
+        field.clearAction(.copy)
+        var routed = 0
+        field.parentView?.setAction(.copy) { _ in routed += 1 }
+
+        #expect(field.handleEvent(
+            key(.unknown, .command, characters: "c")) == .handled)
+        #expect(routed == 1)
     }
 
     @Test func onChangeFiresForEditsButNotForCaretMoves() {
@@ -280,6 +296,33 @@ import NucleusUI
         #expect(caret.origin.x <= 100, "the caret is inside the field, not off its right edge")
     }
 
+    @Test func candidateGeometryCrossesViewWindowAndSurfaceExactlyOnce() {
+        let (field, window) = makeField("candidate")
+        field.frame = Rect(x: 15, y: 12, width: 180, height: 24)
+        window.setFrame(Rect(x: 400, y: 250, width: 240, height: 80))
+        let association = WindowSurfaceAssociation(
+            surfaceID: PresentationSurfaceID(rawValue: 91),
+            transform: WindowSurfaceTransform(
+                windowOriginInSurface: Point(x: 7.5, y: 3.25),
+                surfaceOriginInOutput: Point(x: 400, y: 250),
+                backingScaleFactor: BackingScaleFactor(1.5)
+            )
+        )
+        window.setSurfaceAssociation(association)
+
+        let geometry = field.textInputCandidateGeometry
+        let candidate = field.convert(field.caretRect, to: nil)
+        let expected = association.transform.surfaceRect(fromWindow: candidate)
+
+        #expect(geometry?.surfaceID == PresentationSurfaceID(rawValue: 91))
+        #expect(geometry?.rect == expected)
+        #expect(
+            association.transform.surfaceRect(
+                fromBacking: association.transform.backingRect(fromSurface: expected)
+            ) == expected
+        )
+    }
+
     // MARK: - Secure entry
 
     @Test func aSecureFieldMasksWhatItDraws() {
@@ -320,6 +363,41 @@ import NucleusUI
         #expect(field.textLayout().text == "hunter2")
         field.isSecure = true
         #expect(field.textLayout().text == "•••••••")
+    }
+
+    @Test func standardPasteboardActionsRespectFocusAndSecureEntry() {
+        let pasteboard = Pasteboard()
+        let (field, window) = makeField("copy me")
+        field.setSelectedRange(0..<4)
+        #expect(!field.copySelection(to: pasteboard), "unfocused fields do not act")
+
+        #expect(window.makeFirstResponder(field))
+        #expect(field.copySelection(to: pasteboard))
+        #expect(pasteboard.string == "copy")
+
+        field.isSecure = true
+        field.selectAllText()
+        #expect(!field.copySelection(to: pasteboard))
+        #expect(!field.cutSelection(to: pasteboard))
+        #expect(field.stringValue == "copy me")
+
+        pasteboard.string = "replacement"
+        #expect(field.paste(from: pasteboard))
+        #expect(field.stringValue == "replacement")
+    }
+
+    @Test func textViewAcceptsNewlinesAndUsesMultilineInputHints() {
+        let view = TextView(string: "first")
+        view.frame = Rect(x: 0, y: 0, width: 120, height: 80)
+        let window = Window(title: "Editor")
+        window.setContentView(view)
+        window.orderFront()
+        #expect(window.makeFirstResponder(view))
+
+        #expect(view.handleEvent(key(.return)) == .handled)
+        #expect(view.stringValue == "first\n")
+        #expect(view.textInputHints.contains(.multiline))
+        #expect(view.textLayout().numberOfLines == 0)
     }
 
     // MARK: - Input method
@@ -366,12 +444,17 @@ import NucleusUI
             var stateChanges = 0
             func textInputDidActivate(_ client: any TextInputClient) { activations += 1 }
             func textInputDidDeactivate(_ client: any TextInputClient) { deactivations += 1 }
-            func textInputDidChangeState(_ client: any TextInputClient) { stateChanges += 1 }
+            func textInputDidChangeState(
+                _ client: any TextInputClient,
+                cause: TextInputChangeCause
+            ) {
+                stateChanges += 1
+            }
         }
 
         let (field, window) = makeField("ab")
         let adapter = RecordingAdapter()
-        window.textInputContext.adapter = adapter
+        window.installTextInputAdapter(adapter)
 
         #expect(window.makeFirstResponder(field))
         #expect(adapter.activations == 1)

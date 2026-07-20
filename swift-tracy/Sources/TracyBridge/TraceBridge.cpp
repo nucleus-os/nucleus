@@ -1,4 +1,4 @@
-#include <TracyBridge/TraceBridge.hpp>
+#include <TracyBridge/TraceBridge.h>
 
 // Tracy's own switch (`-Xcc -DTRACY_ENABLE`) is the single toggle for the whole
 // tracing stack. When it is set, the Tracy client translation unit
@@ -161,9 +161,7 @@ const char *internString(const char *bytes, size_t length)
 
 #endif
 
-namespace swift_tracy {
-
-bool TraceBridge::enabled()
+extern "C" bool swift_tracy_enabled(void)
 {
 #if SWIFT_TRACY_ENABLED
   return true;
@@ -172,7 +170,7 @@ bool TraceBridge::enabled()
 #endif
 }
 
-bool TraceBridge::connected()
+extern "C" bool swift_tracy_connected(void)
 {
 #if SWIFT_TRACY_ENABLED
   return ___tracy_connected() != 0;
@@ -181,7 +179,7 @@ bool TraceBridge::connected()
 #endif
 }
 
-ZoneContext TraceBridge::beginZone(
+extern "C" SwiftTracyZoneContext swift_tracy_begin_zone(
     const char *name,
     size_t nameLength,
     const char *function,
@@ -205,7 +203,7 @@ ZoneContext TraceBridge::beginZone(
     return {};
   }
   const auto context = ___tracy_emit_zone_begin(loc, 1);
-  return ZoneContext{context.id, context.active};
+  return SwiftTracyZoneContext{context.id, context.active};
 #else
   (void)name;
   (void)nameLength;
@@ -219,7 +217,7 @@ ZoneContext TraceBridge::beginZone(
 #endif
 }
 
-void TraceBridge::endZone(ZoneContext zone)
+extern "C" void swift_tracy_end_zone(SwiftTracyZoneContext zone)
 {
 #if SWIFT_TRACY_ENABLED
   ___tracy_emit_zone_end(___tracy_c_zone_context{zone.id, zone.active});
@@ -228,7 +226,7 @@ void TraceBridge::endZone(ZoneContext zone)
 #endif
 }
 
-void TraceBridge::zoneValue(ZoneContext zone, uint64_t value)
+extern "C" void swift_tracy_zone_value(SwiftTracyZoneContext zone, uint64_t value)
 {
 #if SWIFT_TRACY_ENABLED
   ___tracy_emit_zone_value(___tracy_c_zone_context{zone.id, zone.active}, value);
@@ -238,7 +236,10 @@ void TraceBridge::zoneValue(ZoneContext zone, uint64_t value)
 #endif
 }
 
-void TraceBridge::zoneText(ZoneContext zone, const char *text, size_t textLength)
+extern "C" void swift_tracy_zone_text(
+    SwiftTracyZoneContext zone,
+    const char *text,
+    size_t textLength)
 {
 #if SWIFT_TRACY_ENABLED
   ___tracy_emit_zone_text(___tracy_c_zone_context{zone.id, zone.active}, text, textLength);
@@ -249,7 +250,7 @@ void TraceBridge::zoneText(ZoneContext zone, const char *text, size_t textLength
 #endif
 }
 
-void TraceBridge::setThreadName(const char *name, size_t nameLength)
+extern "C" void swift_tracy_set_thread_name(const char *name, size_t nameLength)
 {
 #if SWIFT_TRACY_ENABLED
   auto copy = stringFromBytes(name, nameLength);
@@ -260,7 +261,7 @@ void TraceBridge::setThreadName(const char *name, size_t nameLength)
 #endif
 }
 
-void TraceBridge::message(const char *text, size_t textLength)
+extern "C" void swift_tracy_message(const char *text, size_t textLength)
 {
 #if SWIFT_TRACY_ENABLED
   ___tracy_emit_logString(kTracySeverityInfo, 0, 0, textLength, text);
@@ -270,7 +271,10 @@ void TraceBridge::message(const char *text, size_t textLength)
 #endif
 }
 
-void TraceBridge::messageColor(const char *text, size_t textLength, uint32_t color)
+extern "C" void swift_tracy_message_color(
+    const char *text,
+    size_t textLength,
+    uint32_t color)
 {
 #if SWIFT_TRACY_ENABLED
   ___tracy_emit_logString(kTracySeverityInfo, static_cast<int32_t>(color), 0, textLength, text);
@@ -281,7 +285,7 @@ void TraceBridge::messageColor(const char *text, size_t textLength, uint32_t col
 #endif
 }
 
-void TraceBridge::plot(const char *name, double value)
+extern "C" void swift_tracy_plot(const char *name, double value)
 {
 #if SWIFT_TRACY_ENABLED
   const auto *stableName = internString(name, std::strlen(name));
@@ -294,7 +298,7 @@ void TraceBridge::plot(const char *name, double value)
 #endif
 }
 
-void TraceBridge::plotInt(const char *name, int64_t value)
+extern "C" void swift_tracy_plot_int(const char *name, int64_t value)
 {
 #if SWIFT_TRACY_ENABLED
   const auto *stableName = internString(name, std::strlen(name));
@@ -307,7 +311,7 @@ void TraceBridge::plotInt(const char *name, int64_t value)
 #endif
 }
 
-void TraceBridge::frameMarkStart(const char *name)
+extern "C" void swift_tracy_frame_mark_start(const char *name)
 {
 #if SWIFT_TRACY_ENABLED
   const auto *stableName = internString(name, std::strlen(name));
@@ -317,7 +321,7 @@ void TraceBridge::frameMarkStart(const char *name)
 #endif
 }
 
-void TraceBridge::frameMarkEnd(const char *name)
+extern "C" void swift_tracy_frame_mark_end(const char *name)
 {
 #if SWIFT_TRACY_ENABLED
   const auto *stableName = internString(name, std::strlen(name));
@@ -326,5 +330,3 @@ void TraceBridge::frameMarkEnd(const char *name)
   (void)name;
 #endif
 }
-
-} // namespace swift_tracy

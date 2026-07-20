@@ -8,10 +8,10 @@
 /// Maxima may be `.infinity`, meaning "as large as you like on this axis".
 /// Minima are always finite.
 public struct LayoutConstraints: Equatable, Sendable {
-    public var minWidth: Double
-    public var maxWidth: Double
-    public var minHeight: Double
-    public var maxHeight: Double
+    public let minWidth: Double
+    public let maxWidth: Double
+    public let minHeight: Double
+    public let maxHeight: Double
 
     public init(
         minWidth: Double = 0,
@@ -19,10 +19,12 @@ public struct LayoutConstraints: Equatable, Sendable {
         minHeight: Double = 0,
         maxHeight: Double = .infinity
     ) {
-        self.minWidth = max(0, minWidth)
-        self.maxWidth = max(self.minWidth, maxWidth)
-        self.minHeight = max(0, minHeight)
-        self.maxHeight = max(self.minHeight, maxHeight)
+        let width = Self.canonicalRange(minimum: minWidth, maximum: maxWidth)
+        let height = Self.canonicalRange(minimum: minHeight, maximum: maxHeight)
+        self.minWidth = width.minimum
+        self.maxWidth = width.maximum
+        self.minHeight = height.minimum
+        self.maxHeight = height.maximum
     }
 
     /// No bounds on either axis. Measuring against this yields the intrinsic size.
@@ -56,15 +58,17 @@ public struct LayoutConstraints: Equatable, Sendable {
     /// Clamp `size` into this range. Infinite maxima leave that axis alone.
     public func constrain(_ size: Size) -> Size {
         Size(
-            width: min(max(size.width, minWidth), maxWidth),
-            height: min(max(size.height, minHeight), maxHeight))
+            width: Self.constrain(size.width, minimum: minWidth, maximum: maxWidth),
+            height: Self.constrain(size.height, minimum: minHeight, maximum: maxHeight))
     }
 
     /// The constraints that remain after reserving `insets` — what a container
     /// offers its children once its own padding is taken out.
     public func inset(by insets: EdgeInsets) -> LayoutConstraints {
-        let horizontal = insets.left + insets.right
-        let vertical = insets.top + insets.bottom
+        let horizontal = Self.canonicalInset(insets.left)
+            + Self.canonicalInset(insets.right)
+        let vertical = Self.canonicalInset(insets.top)
+            + Self.canonicalInset(insets.bottom)
         return LayoutConstraints(
             minWidth: max(0, minWidth - horizontal),
             maxWidth: maxWidth.isFinite ? max(0, maxWidth - horizontal) : .infinity,
@@ -77,5 +81,33 @@ public struct LayoutConstraints: Equatable, Sendable {
     /// minimum.
     public var looseningMinima: LayoutConstraints {
         LayoutConstraints(maxWidth: maxWidth, maxHeight: maxHeight)
+    }
+
+    private static func canonicalRange(
+        minimum: Double, maximum: Double
+    ) -> (minimum: Double, maximum: Double) {
+        let minimum = minimum.isFinite ? max(0, minimum) : 0
+        let canonicalMaximum: Double
+        if maximum == .infinity {
+            canonicalMaximum = .infinity
+        } else if maximum.isFinite {
+            canonicalMaximum = max(minimum, max(0, maximum))
+        } else {
+            // NaN and negative infinity are invalid maxima. Collapsing to the
+            // minimum yields a deterministic tight range.
+            canonicalMaximum = minimum
+        }
+        return (minimum, canonicalMaximum)
+    }
+
+    private static func constrain(
+        _ proposed: Double, minimum: Double, maximum: Double
+    ) -> Double {
+        guard proposed.isFinite else { return minimum }
+        return min(max(max(0, proposed), minimum), maximum)
+    }
+
+    private static func canonicalInset(_ value: Double) -> Double {
+        value.isFinite ? max(0, value) : 0
     }
 }

@@ -2,6 +2,7 @@
 import NucleusCompositorOverlayTypes
 import NucleusUI
 import NucleusUIEmbedder
+import NucleusTextBackend
 @testable import NucleusCompositorOverlay
 import Testing
 
@@ -19,8 +20,11 @@ import Testing
 // hosted-surface tracking, and input hit-testing — through the public/@_spi
 // contract plus this package's own `@testable` internals.
 @MainActor
-@Suite struct ShellOverlayRuntimeTests {
-    init() { installStubHost() }
+@Suite(.uiContext) struct ShellOverlayRuntimeTests {
+    init() {
+        installStubHost()
+        SkiaTextLayoutBackend.installIfNeeded()
+    }
 
     final class ManualClock: @unchecked Sendable {
         var now: UInt64
@@ -89,7 +93,7 @@ import Testing
         #expect(scene.notificationWindow.contentView === scene.notificationListView)
         #expect(scene.notificationWindow.isVisible)
         #expect(scene.notificationListView.nextResponder === scene.notificationViewController)
-        #expect(scene.hotkeyWindow.role == .statusOverlay)
+        #expect(scene.hotkeyWindow.role == .overlay)
         #expect(scene.hotkeyWindow.level == .criticalOverlay)
         #expect(scene.hotkeyWindow.contentView === scene.hotkeyView)
         #expect(scene.hotkeyWindow.isVisible)
@@ -169,15 +173,15 @@ import Testing
         )
     }
 
-    private static func hotkeyFrame(backingScale: Float) throws -> (x: Double, y: Double, width: Double, height: Double) {
-        let hotkeyView = try ShellOverlayHotkeyView()
-        try hotkeyView.updateFrame(Self.frame(backingScale: backingScale))
+    private static func hotkeyFrame(backingScale: Float) -> (x: Double, y: Double, width: Double, height: Double) {
+        let hotkeyView = ShellOverlayHotkeyView()
+        hotkeyView.updateFrame(Self.frame(backingScale: backingScale))
         let frame = hotkeyView.frame
         return (frame.origin.x, frame.origin.y, frame.size.width, frame.size.height)
     }
 
-    private static func notificationFrame(backingScale: Float) throws -> (x: Double, y: Double, width: Double, height: Double) {
-        let notification = try ShellOverlayNotificationView(info: .init(
+    private static func notificationFrame(backingScale: Float) -> (x: Double, y: Double, width: Double, height: Double) {
+        let notification = ShellOverlayNotificationView(info: .init(
             id: 12,
             appName: "Nucleus",
             summary: "Build complete",
@@ -186,10 +190,10 @@ import Testing
             showsThumbnail: false,
             expireTimeoutMs: 5000
         ))
-        let list = try ShellOverlayNotificationListView()
+        let list = ShellOverlayNotificationListView()
         list.frameInfo = Self.frame(backingScale: backingScale)
-        try list.setNotifications([notification])
-        try list.layoutIfNeeded()
+        list.setNotifications([notification])
+        list.layoutIfNeeded()
         let frame = notification.frame
         return (frame.origin.x, frame.origin.y, frame.size.width, frame.size.height)
     }
@@ -210,8 +214,8 @@ import Testing
             overlayRegionH: 1080
         ), commitSink: sink)
 
-        try scene.hotkeyView.layoutIfNeeded()
-        try scene.hotkeyView.displayIfNeeded()
+        scene.hotkeyView.layoutIfNeeded()
+        scene.hotkeyView.displayIfNeeded()
 
         let row = try #require(scene.hotkeyView.rowViews.first)
         // Rows size their labels to the laid-out text height (taller than the raw
@@ -228,8 +232,8 @@ import Testing
         #expect(scene.hotkeyView.separatorView.recordedDrawing.paintCommands.first?.kind == .rect)
     }
 
-    @Test func notificationLabelsUseTextLayoutHeights() throws {
-        let notification = try ShellOverlayNotificationView(info: .init(
+    @Test func notificationLabelsUseTextLayoutHeights() {
+        let notification = ShellOverlayNotificationView(info: .init(
             id: 12,
             appName: "Nucleus",
             summary: "Build complete",
@@ -245,9 +249,9 @@ import Testing
             height: Double(notification.metrics.cardH)
         )
 
-        try notification.layoutIfNeeded()
-        try notification.summaryLabel.displayIfNeeded()
-        try notification.bodyLabel.displayIfNeeded()
+        notification.layoutIfNeeded()
+        notification.summaryLabel.displayIfNeeded()
+        notification.bodyLabel.displayIfNeeded()
 
         #expect(notification.summaryLabel.frame.size.height > Double(notification.summaryLabel.fontSize))
         #expect(notification.bodyLabel.frame.size.height > Double(notification.bodyLabel.fontSize))
@@ -257,9 +261,9 @@ import Testing
         #expect(notification.bodyLabel.recordedDrawing.paintCommands.first?.h == Float(notification.bodyLabel.frame.size.height))
     }
 
-    @Test func notificationBackdropRadiusMatchesShadowAcrossBackingScale() throws {
+    @Test func notificationBackdropRadiusMatchesShadowAcrossBackingScale() {
         let metrics = ShellOverlayNotificationMetrics(showsThumbnail: true, hasBody: true)
-        let notification = try ShellOverlayNotificationView(info: .init(
+        let notification = ShellOverlayNotificationView(info: .init(
             id: 12,
             appName: "Nucleus",
             summary: "Screenshot saved",
@@ -275,19 +279,19 @@ import Testing
             height: Double(metrics.cardH)
         )
 
-        try notification.layoutIfNeeded()
+        notification.layoutIfNeeded()
 
         #expect(notification.backgroundEffectView.cornerRadius == ShellShadow.popoverCornerRadius)
         #expect(notification.shadow.cornerRadius == notification.backgroundEffectView.cornerRadius)
         #expect(notification.thumbnailView.cornerRadius == 10)
     }
 
-    @Test func hotkeyBackdropRadiusMatchesShadowAcrossBackingScale() throws {
-        let hotkeyView = try ShellOverlayHotkeyView(entries: [
+    @Test func hotkeyBackdropRadiusMatchesShadowAcrossBackingScale() {
+        let hotkeyView = ShellOverlayHotkeyView(entries: [
             .init(key: "Super + V", description: "Toggle Vignette"),
         ])
 
-        try hotkeyView.updateFrame(.init(
+        hotkeyView.updateFrame(.init(
             outputWidth: 1600,
             outputHeight: 1200,
             devicePixelRatio: 2,
@@ -302,13 +306,13 @@ import Testing
         #expect(hotkeyView.metrics.hairlineWidth == 0.5)
     }
 
-    @Test func shellOverlayLayoutsStayPointStableAcrossFractionalBackingScales() throws {
-        let baselineHotkeyFrame = try Self.hotkeyFrame(backingScale: 1)
-        let baselineNotificationFrame = try Self.notificationFrame(backingScale: 1)
+    @Test func shellOverlayLayoutsStayPointStableAcrossFractionalBackingScales() {
+        let baselineHotkeyFrame = Self.hotkeyFrame(backingScale: 1)
+        let baselineNotificationFrame = Self.notificationFrame(backingScale: 1)
 
         for scale in [Float(1.25), Float(1.5), Float(2)] {
-            let hotkeyFrame = try Self.hotkeyFrame(backingScale: scale)
-            let notificationFrame = try Self.notificationFrame(backingScale: scale)
+            let hotkeyFrame = Self.hotkeyFrame(backingScale: scale)
+            let notificationFrame = Self.notificationFrame(backingScale: scale)
 
             #expect(Self.nearlyEqual(hotkeyFrame.x, baselineHotkeyFrame.x))
             #expect(Self.nearlyEqual(hotkeyFrame.y, baselineHotkeyFrame.y))
@@ -347,14 +351,14 @@ import Testing
         #expect(result.cursor == .default)
     }
 
-    @Test func hotkeyOverlayLayoutsInstanceEntries() throws {
-        let hotkeyView = try ShellOverlayHotkeyView(entries: [
+    @Test func hotkeyOverlayLayoutsInstanceEntries() {
+        let hotkeyView = ShellOverlayHotkeyView(entries: [
             .init(key: "Super + X", description: "Custom action"),
             .init(key: "Super + Y", description: "Custom effect"),
             .init(key: "", description: ""),
         ])
 
-        try hotkeyView.updateFrame(.init(
+        hotkeyView.updateFrame(.init(
             outputWidth: 800,
             outputHeight: 600,
             devicePixelRatio: 1,
@@ -363,7 +367,7 @@ import Testing
             overlayRegionW: 800,
             overlayRegionH: 600
         ))
-        try hotkeyView.displayIfNeeded()
+        hotkeyView.displayIfNeeded()
 
         // One row per non-empty entry (the blank spacer entry adds no row).
         #expect(hotkeyView.rowViews.count == 2)
@@ -485,8 +489,8 @@ import Testing
         #expect(scene.beginFrame(frame))
     }
 
-    @Test func exitingNotificationReservesStackSlotUntilRemoved() throws {
-        let list = try ShellOverlayNotificationListView()
+    @Test func exitingNotificationReservesStackSlotUntilRemoved() {
+        let list = ShellOverlayNotificationListView()
         list.frameInfo = .init(
             outputWidth: 800,
             outputHeight: 600,
@@ -496,7 +500,7 @@ import Testing
             overlayRegionW: 800,
             overlayRegionH: 600
         )
-        let top = try ShellOverlayNotificationView(info: .init(
+        let top = ShellOverlayNotificationView(info: .init(
             id: 1,
             appName: "Nucleus",
             summary: "Top",
@@ -505,7 +509,7 @@ import Testing
             showsThumbnail: false,
             expireTimeoutMs: 5000
         ))
-        let lower = try ShellOverlayNotificationView(info: .init(
+        let lower = ShellOverlayNotificationView(info: .init(
             id: 2,
             appName: "Nucleus",
             summary: "Lower",
@@ -514,28 +518,35 @@ import Testing
             showsThumbnail: false,
             expireTimeoutMs: 5000
         ))
-        try list.setNotifications([top, lower])
+        list.setNotifications([top, lower])
 
-        try list.layoutIfNeeded()
+        list.layoutIfNeeded()
         let initialTopY = Float(top.frame.origin.y)
         let initialTopX = Float(top.frame.origin.x)
         let initialLowerY = Float(lower.frame.origin.y)
         #expect(initialLowerY > initialTopY)
 
-        try list.removeArrangedSubview(
+        list.removeArrangedSubview(
             top,
             transition: .slideTrailingFade(duration: 0.24),
-            reflow: .animated(duration: 0.22),
-            nowNs: 1_000_000
+            reflow: .animated(duration: 0.22)
         )
-        try list.layoutIfNeeded()
+        list.layoutIfNeeded()
         #expect(Float(top.frame.origin.y) == initialTopY)
-        #expect(Float(top.frame.origin.x) > initialTopX)
-        #expect(top.alphaValue == 0)
+        #expect(Float(top.frame.origin.x) == initialTopX)
+        #expect(top.alphaValue == 1)
         #expect(Float(lower.frame.origin.y) == initialLowerY)
 
-        try list.advanceArrangedSubviewTransitions(nowNs: 241_000_000)
-        try list.layoutIfNeeded()
+        _ = list.embedderUIContext.advanceAnimations(
+            predictedPresentationNanoseconds: 1_000_000
+        )
+        _ = list.embedderUIContext.advanceAnimations(
+            predictedPresentationNanoseconds: 241_000_000
+        )
+        _ = list.embedderUIContext.advanceAnimations(
+            predictedPresentationNanoseconds: 461_000_000
+        )
+        list.layoutIfNeeded()
         #expect(!list.arrangedSubviews.contains { $0 === top })
         #expect(Float(lower.frame.origin.y) == initialTopY)
     }
@@ -577,7 +588,7 @@ import Testing
         _ = scene.publishVisuals()
 
         #expect(scene.dismissNotification(1, reason: 2))
-        #expect(scene.notificationPublicationDeadlineNs == clock.now + 240_000_000)
+        #expect(scene.notificationPublicationDeadlineNs == clock.now)
         let duringExit = try #require(scene.publishVisuals())
         #expect(!duringExit.scene.visualContent.isEmpty)
         #expect(scene.notifications.map(\.id) == [1, 2])
@@ -587,7 +598,7 @@ import Testing
         let afterExit = try #require(scene.publishVisuals())
         #expect(!afterExit.scene.visualContent.isEmpty)
         #expect(scene.notifications.map(\.id) == [2])
-        #expect(scene.notificationPublicationDeadlineNs == clock.now + 220_000_000)
+        #expect(scene.notificationPublicationDeadlineNs == clock.now)
     }
 
     @Test func burstDismissalsExitOneAtATimeWithReflowBetweenEachExit() throws {
@@ -642,7 +653,7 @@ import Testing
         #expect(scene.notifications.map(\.id) == [3])
     }
 
-    @Test func semanticOverlayViewsStayInInMemoryRootContext() throws {
+    @Test func semanticOverlayViewsDoNotMutateTheVisualContextBeforePublication() throws {
         let visualSink = InMemoryCommitSink()
         let scene = try ShellOverlayScene(frame: .init(
             outputWidth: 800,
@@ -654,13 +665,12 @@ import Testing
             overlayRegionH: 600
         ), commitSink: visualSink)
 
-        // Overlay semantic views live in the in-memory root context (which uses the
-        // InMemoryCommitSink), not the shellOverlay wire context — so nothing is
-        // committed to the visual sink until publish. (`Context.id` itself is a
-        // core-internal detail; the sink type + shared-context identity are the
-        // observable contract.)
-        #expect(scene.notificationListView.embedderBackingLayer.context.commitSink is InMemoryCommitSink)
-        #expect(scene.hotkeyView.embedderBackingLayer.context === scene.notificationListView.embedderBackingLayer.context)
+        // Semantic views share a pure UI context. They own no fallback render
+        // context and cannot enqueue layer mutations.
+        #expect(
+            scene.notificationListView.embedderUIContext ===
+                scene.hotkeyView.embedderUIContext
+        )
         #expect(visualSink.transactions.isEmpty)
 
         #expect(scene.showNotification(.init(
@@ -673,7 +683,10 @@ import Testing
             expireTimeoutMs: 5000
         )))
 
-        #expect(scene.notificationViews.first?.embedderBackingLayer.context.commitSink is InMemoryCommitSink)
+        #expect(
+            scene.notificationViews.first?.embedderUIContext ===
+                scene.notificationListView.embedderUIContext
+        )
         #expect(visualSink.transactions.isEmpty)
 
         let publication = scene.publishVisuals()
@@ -688,9 +701,8 @@ import Testing
         let firstVisualTransaction = try #require(visualSink.transactions.first)
         let createdLayerIDs = Set(firstVisualTransaction.created.map(\.0))
         #expect(!createdLayerIDs.isEmpty)
-        let summaryLayerID = try #require(scene.notificationViews.first).summaryLabel.embedderBackingLayer.id
         #expect(firstVisualTransaction.propertyUpdates.contains {
-            $0.layer == summaryLayerID && $0.properties.content?.kind == .paint
+            $0.properties.content?.kind == .paint
         })
         #expect(firstVisualTransaction.inserted.allSatisfy { inserted in
             createdLayerIDs.contains(inserted.layer) &&
@@ -718,12 +730,16 @@ import Testing
             overlayRegionW: 800,
             overlayRegionH: 600
         ), commitSink: visualSink)
-        let hosted = try scene.hostedSurface(for: "dock")
-        #expect(scene.hostedSurfaces.contains { $0.surfaceID == hosted.surfaceID })
+        try scene.attachHostedSurface(for: "dock") {
+            _, _, _, _ in
+        }
+        let tracked = try #require(scene.hostedSurfaces.first)
+        #expect(tracked.hasCommittedContent)
+        #expect(scene.hostedSurfaces.contains { $0.surfaceID == tracked.surfaceID })
         let removalMark = visualSink.transactions.count
 
         #expect(try scene.detachHostedSurface("dock"))
-        #expect(!scene.hostedSurfaces.contains { $0.surfaceID == hosted.surfaceID })
+        #expect(!scene.hostedSurfaces.contains { $0.surfaceID == tracked.surfaceID })
         // Detach commits a transaction that removes the surface's backing layer.
         #expect(visualSink.transactions[removalMark...].contains { !$0.removed.isEmpty })
         // Idempotent: detaching an already-absent surface reports no-op.

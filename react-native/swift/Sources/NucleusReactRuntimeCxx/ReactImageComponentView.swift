@@ -54,7 +54,7 @@ public final class ReactImageComponentView: ReactComponentView {
         let frame = event.frame
         let maxWidth = Self.pixelDimension(frame.size.width)
         let maxHeight = Self.pixelDimension(frame.size.height)
-        let resourceHostHandle = view.embedderBackingLayer.context.commitSink.resourceHostHandle
+        let resourceHostHandle = view.embedderResourceHostHandle
         if let handle = Self.registerImage(
             path: path,
             maxWidth: maxWidth,

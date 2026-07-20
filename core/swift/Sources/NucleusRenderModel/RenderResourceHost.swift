@@ -5,11 +5,9 @@
 // renderer reads at frame time. One process-global instance so a registration
 // from any layers context and the renderer's per-frame read share one host.
 //
-// `@unchecked Sendable`: the compositor runs single-threaded on its main loop
-// (the lifecycle protocols are `Sendable` and may be invoked from a value's
-// `deinit`, but in this runtime that still happens on the compositor thread), so
-// the contained reference-type stores are accessed without further locking.
-public final class SwiftResourceHost: @unchecked Sendable {
+import Synchronization
+
+public final class SwiftResourceHost: Sendable {
     /// The process-global resource host.
     public static let shared = SwiftResourceHost()
 
@@ -28,9 +26,18 @@ public final class SwiftResourceHost: @unchecked Sendable {
     /// at frame time.
     public let runtimeEffects = RuntimeEffectStore()
 
-    /// Resident implicit-action templates (the layers curve set). Replaced
-    /// wholesale by the implicit-action registrar.
-    public var implicitActions = ImplicitActionTable()
+    /// Resident implicit-action templates (the layers curve set). The host
+    /// installs them as one immutable snapshot so readers never observe a
+    /// partially replaced role table.
+    private let implicitActionStorage = Mutex(ImplicitActionTable())
+
+    public var implicitActions: ImplicitActionTable {
+        implicitActionStorage.withLock { $0 }
+    }
 
     public init() {}
+
+    public func replaceImplicitActions(_ table: ImplicitActionTable) {
+        implicitActionStorage.withLock { $0 = table }
+    }
 }
