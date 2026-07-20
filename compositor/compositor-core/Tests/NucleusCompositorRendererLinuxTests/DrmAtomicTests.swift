@@ -9,14 +9,18 @@ import NucleusCompositorDrmC
 // diagnostic dump — all hardware-independent. The fixture's best-effort real
 // `drmModeAtomicReq` alloc + test-commit (which asserted nothing) is dropped.
 @Suite struct DrmAtomicTests {
-    static func e(_ id: UInt32, _ name: String) -> DrmPropertyEntry {
-        DrmPropertyEntry(id: id, value: 0, name: name)
+    static func e(_ id: UInt32, _ name: String, value: UInt64 = 0) -> DrmPropertyEntry {
+        DrmPropertyEntry(id: id, value: value, name: name)
     }
 
     @Test func propertyDiscovery() {
         // Synthetic per-object property tables, named exactly as KMS exposes them.
         let connector = [Self.e(10, "CRTC_ID"), Self.e(11, "Broadcast RGB")]
-        let crtc = [Self.e(20, "ACTIVE"), Self.e(21, "MODE_ID"), Self.e(22, "OUT_FENCE_PTR"), Self.e(23, "VRR_ENABLED")]
+        let crtc = [
+            Self.e(20, "ACTIVE"), Self.e(21, "MODE_ID"),
+            Self.e(22, "OUT_FENCE_PTR"), Self.e(23, "VRR_ENABLED"),
+            Self.e(24, "GAMMA_LUT"), Self.e(25, "GAMMA_LUT_SIZE", value: 256),
+        ]
         let plane = [
             Self.e(30, "FB_ID"), Self.e(31, "CRTC_ID"),
             Self.e(32, "SRC_X"), Self.e(33, "SRC_Y"), Self.e(34, "SRC_W"), Self.e(35, "SRC_H"),
@@ -29,6 +33,7 @@ import NucleusCompositorDrmC
         // Discovery routed each name to the right field (and the right object).
         #expect(props.connCrtcId == 10, "discover-conn-crtc-id")
         #expect(props.crtcActive == 20 && props.crtcModeId == 21, "discover-crtc")
+        #expect(props.crtcGammaLut == 24 && props.crtcGammaLutSize == 256, "discover-gamma")
         #expect(props.planeFbId == 30 && props.planeCrtcH == 39, "discover-plane")
         // plane CRTC_ID (31) and connector CRTC_ID (10) don't cross over.
         #expect(props.planeCrtcId == 31, "discover-no-object-crossover")

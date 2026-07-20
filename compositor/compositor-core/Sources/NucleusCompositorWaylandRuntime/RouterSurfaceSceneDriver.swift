@@ -1,14 +1,15 @@
 // The surface-import / scene-publish half of the router's window driving, split out
 // of RouterWindowDriver (which keeps the xdg-shell configure / window-model adapter).
 //
-// Every wl_surface commit turns into a GPU buffer import (SHM via libwayland's
-// wl_shm_buffer_*, DMA-BUF via the router's DmabufBuffer) uploaded through
-// `RenderBridge`, then a content publish to the `SceneFeeder` — a subsurface/popup
-// composites within its parent's scene, a window/root surface publishes to its own
-// backing layer, and a zwlr layer surface is authored as its own output-anchored
-// model window from the map commit. This concern is nearly state-disjoint from the
-// configure/model half: it never touches the toplevel→WindowID table, resolving
-// windows only through the O(1) surface-object-id index.
+// A wl_surface commit with a newly attached buffer imports it (SHM via
+// libwayland's wl_shm_buffer_*, DMA-BUF via the router's DmabufBuffer) through
+// `RenderBridge`. State-only commits republish the retained content without
+// touching client memory. A subsurface/popup composites within its parent's scene,
+// a window/root surface publishes to its own backing layer, and a zwlr layer
+// surface is authored as its own output-anchored model window from the map commit.
+// This concern is nearly state-disjoint from the configure/model half: it never
+// touches the toplevel→WindowID table, resolving windows only through the O(1)
+// surface-object-id index.
 //
 // RouterWindowDriver owns an instance of this and forwards its two SurfaceSceneDelegate
 // thunks here; `WlCompositor.sceneDelegate` stays wired to RouterWindowDriver.
@@ -61,9 +62,25 @@ final class RouterSurfaceSceneDriver {
         // A client cursor surface (wl_pointer.set_cursor): its committed buffer is the
         // cursor image, not window content — route it to the cursor model and stop.
         if surfaceId == PointerCursorSurface.surfaceId {
-            PointerCursorSurface.applyCommittedImage(surface)
+            if commit.bufferAttached {
+                PointerCursorSurface.applyCommittedImage(
+                    surface)
+            }
+            RenderBridge.requestCursorFrame()
             return
         }
+        if !commit.bufferAttached {
+            surface.committedLogicalWidth =
+                commit.logicalContentSize.width
+            surface.committedLogicalHeight =
+                commit.logicalContentSize.height
+            if surface.renderIosurfaceId != 0 {
+                publishContent(surface, commit: commit)
+                requestRedraw(for: surface)
+            }
+            return
+        }
+        defer { requestRedraw(for: surface) }
         guard let buffer = UnsafeMutablePointer<wl_resource>(bitPattern: commit.bufferResourceBits) else {
             if surface.renderIosurfaceId != 0 {
                 RenderBridge.releaseIosurface(surface.renderIosurfaceId)
@@ -72,7 +89,6 @@ final class RouterSurfaceSceneDriver {
             surface.committedLogicalWidth = 0
             surface.committedLogicalHeight = 0
             feeder?.surfaceContentDetached(surfaceID: surfaceId)
-            RenderBridge.requestFrame(outputId: 0)
             return
         }
 
@@ -139,6 +155,7 @@ final class RouterSurfaceSceneDriver {
             publishContent(surface, commit: commit)
             return
         }
+        importFailed(surface)
     }
 
     /// Reject a committed buffer that could not become renderer content. Any old
@@ -154,7 +171,44 @@ final class RouterSurfaceSceneDriver {
         surface.committedLogicalWidth = 0
         surface.committedLogicalHeight = 0
         feeder?.surfaceContentDetached(surfaceID: surface.objectId)
-        RenderBridge.requestFrame(outputId: 0)
+    }
+
+    /// Resolve the smallest safe output set for a surface commit. Presentation
+    /// membership is authoritative once known; role pins and model output affinity
+    /// cover first-map commits before the presentation walk has populated it.
+    private func requestRedraw(for surface: WlSurface) {
+        var outputIDs = surface.enteredOutputIDs
+        if let layer = surface.role as? ZwlrLayerSurface {
+            outputIDs.insert(layer.outputID)
+        } else if let lock =
+            surface.role as? ExtSessionLockSurface
+        {
+            outputIDs.insert(lock.outputID)
+        } else if let parent = surface.subsurfaceParent {
+            outputIDs.formUnion(parent.enteredOutputIDs)
+        } else if let xdg = surface.role as? XdgSurface,
+            let popup = xdg.popup,
+            let parent = popup.grabOriginSurface
+        {
+            outputIDs.formUnion(parent.enteredOutputIDs)
+        }
+        if outputIDs.isEmpty,
+            let windowID = windowID(
+                forSurfaceId: surface.objectId),
+            let outputID = WindowManager.shared.server.window(
+                id: windowID)?.currentOutputID
+        {
+            outputIDs.insert(outputID)
+        }
+        if outputIDs.isEmpty {
+            RenderBridge.requestFrame(outputId: 0)
+            return
+        }
+        for outputID in outputIDs {
+            RenderBridge.requestFrame(
+                outputId: outputID,
+                reason: .surfaceDamage)
+        }
     }
 
     /// Scene teardown for a destroyed surface: release its IOSurface, tear down a
@@ -291,6 +345,7 @@ final class RouterSurfaceSceneDriver {
         else { return }
         feeder?.windowUnmapped(surfaceID: surfaceId)
         wm.layerShellPolicy.unregister(id: UInt64(surfaceId))
+        RouterHost.shared.xwaylandHost?.updateScale()
         _ = wm.server.destroyWindow(id: window.id)
     }
 

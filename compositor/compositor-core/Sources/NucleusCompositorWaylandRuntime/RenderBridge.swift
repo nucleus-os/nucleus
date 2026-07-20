@@ -17,6 +17,7 @@
 // and the wrappers below call through it (inert before install).
 
 import NucleusCompositorServer
+import Glibc
 
 // MARK: - Swift-facing wrapper (host-handle resolution + nil-safety)
 
@@ -60,15 +61,123 @@ enum RenderBridge {
     /// Arm a hardware frame for `outputId` (0 = every output) after a router surface
     /// commits content, so the new content composites and pending frame callbacks
     /// complete — the router-driven analog of the substrate `requestFrameForSurface`.
-    static func requestFrame(outputId: UInt64) {
+    static func requestFrame(
+        outputId: UInt64,
+        reason: RedrawReasons = .surfaceDamage
+    ) {
         let layout = NucleusCompositorServer.shared.layout
-        if outputId != 0, let display = layout.display(id: outputId) {
-            display.displayLink.requestFrame()
+        if outputId != 0 {
+            guard let display = layout.display(id: outputId)
+            else { return }
+            NucleusCompositorServer.shared.renderUpload?
+                .forcePresent(outputId)
+            display.requestRedraw(reason)
             return
         }
         for display in layout.displays {
-            display.displayLink.requestFrame()
+            NucleusCompositorServer.shared.renderUpload?
+                .forcePresent(display.id)
+            display.requestRedraw(reason)
         }
+    }
+
+    /// Queue the outputs touched by a model window's current frame and, for a
+    /// geometry transition, its previous frame. Including both rectangles clears
+    /// the vacated pixels while avoiding an all-output redraw for moves, maps,
+    /// unmaps, stacking changes, and Xwayland ConfigureNotify traffic.
+    static func requestFrame(
+        forWindowID windowID: UInt64,
+        includingPreviousRect previousRect: WindowRect? = nil,
+        reason: RedrawReasons = .surfaceDamage
+    ) {
+        let server = NucleusCompositorServer.shared
+        guard let window = server.window(id: windowID)
+        else { return }
+        let rects = [previousRect, window.currentRect()]
+            .compactMap { $0 }
+        var outputIDs: Set<DisplayID> = []
+        if let outputID = window.currentOutputID {
+            outputIDs.insert(outputID)
+        }
+        for display in server.layout.displays
+        where rects.contains(where: {
+            intersects($0, display.logicalRect)
+        }) {
+            outputIDs.insert(display.id)
+        }
+        guard !outputIDs.isEmpty else { return }
+        for outputID in outputIDs {
+            requestFrame(outputId: outputID, reason: reason)
+        }
+    }
+
+    private static func intersects(
+        _ window: WindowRect,
+        _ output: LogicalRect
+    ) -> Bool {
+        let right = window.x + Double(window.width)
+        let bottom = window.y + Double(window.height)
+        return window.x < output.maxX
+            && right > output.x
+            && window.y < output.maxY
+            && bottom > output.y
+    }
+
+    /// Queue only outputs intersecting the cursor's old or new bounds. This keeps
+    /// pointer motion on one display from authoring every unrelated display while
+    /// still updating both sides of a cross-output move.
+    static func requestCursorFrame(
+        previousX: Double? = nil,
+        previousY: Double? = nil
+    ) {
+        let server = NucleusCompositorServer.shared
+        let currentX = server.events.cursorX
+        let currentY = server.events.cursorY
+        var points = [(currentX, currentY)]
+        if let previousX, let previousY,
+            previousX != currentX
+                || previousY != currentY
+        {
+            points.append((previousX, previousY))
+        }
+        let cursor = server.cursor
+        for display in server.layout.displays
+        where points.contains(where: {
+            cursorIntersects(
+                display: display, x: $0.0, y: $0.1,
+                width: cursor.width,
+                height: cursor.height,
+                hotspotX: cursor.hotSpotX,
+                hotspotY: cursor.hotSpotY)
+        }) {
+            requestFrame(
+                outputId: display.id, reason: .cursor)
+        }
+    }
+
+    private static func cursorIntersects(
+        display: Display,
+        x: Double,
+        y: Double,
+        width: UInt32,
+        height: UInt32,
+        hotspotX: Int32,
+        hotspotY: Int32
+    ) -> Bool {
+        let output = display.logicalRect
+        if width == 0 || height == 0 {
+            return x >= output.x && x < output.maxX
+                && y >= output.y && y < output.maxY
+        }
+        let scale = max(0.01, display.fractionalScale)
+        let left = x - Double(hotspotX) / scale
+        let top = y - Double(hotspotY) / scale
+        let right = left + Double(width) / scale
+        let bottom = top + Double(height) / scale
+        return left < output.maxX
+            && right > output.x
+            && top < output.maxY
+            && bottom > output.y
     }
 
     /// The importable (DRM fourcc, modifier) pairs for client dmabuf buffers.
@@ -92,6 +201,53 @@ enum RenderBridge {
     /// (0 before bring-up / if unavailable).
     static func dmabufMainDevice() -> UInt64 {
         NucleusCompositorServer.shared.renderUpload?.dmabufMainDevice() ?? 0
+    }
+
+    static func presentationClockID() -> UInt32 {
+        NucleusCompositorServer.shared.renderUpload?.presentationClockID()
+            ?? UInt32(CLOCK_MONOTONIC)
+    }
+
+    static func gammaRampSize(outputID: UInt64) -> UInt32 {
+        NucleusCompositorServer.shared.renderUpload?.gammaRampSize(outputID) ?? 0
+    }
+
+    static func applyGamma(
+        outputID: UInt64,
+        red: [UInt16],
+        green: [UInt16],
+        blue: [UInt16]
+    ) -> Bool {
+        NucleusCompositorServer.shared.renderUpload?.gammaApply(
+            outputID, red, green, blue) ?? false
+    }
+
+    static func clearGamma(outputID: UInt64) {
+        NucleusCompositorServer.shared.renderUpload?.gammaClear(outputID)
+    }
+
+    static func probeDmabuf(_ snapshot: DmabufProbeSnapshot) -> Bool {
+        guard let sink = NucleusCompositorServer.shared.renderUpload else {
+            return false
+        }
+        let fds = snapshot.planes.map(\.fd)
+        let offsets = snapshot.planes.map(\.offset)
+        let strides = snapshot.planes.map(\.stride)
+        return fds.withUnsafeBufferPointer { fdBuffer in
+            offsets.withUnsafeBufferPointer { offsetBuffer in
+                strides.withUnsafeBufferPointer { strideBuffer in
+                    sink.dmabufProbe(
+                        snapshot.width,
+                        snapshot.height,
+                        snapshot.format,
+                        snapshot.modifier,
+                        UInt32(snapshot.planes.count),
+                        fdBuffer.baseAddress!,
+                        offsetBuffer.baseAddress!,
+                        strideBuffer.baseAddress!)
+                }
+            }
+        }
     }
 
     /// Import a client DRM syncobj timeline fd into a kernel handle, or nil on

@@ -27,15 +27,19 @@ extension SubcompositorBinding: WlSubcompositorRequests {
             let parentRes, let parent = WaylandResource.owner(of: parentRes, as: WlSurface.self)
         else { return }
 
-        // The surface must not already be a subsurface (or its own parent).
-        guard surface !== parent, surface.subsurfaceParent == nil else {
+        guard !surface.wouldCreateSubsurfaceCycle(parent: parent),
+            surface.claimSubsurfaceRole()
+        else {
             swift_wayland_resource_post_error(resource, 0 /* WL_SUBCOMPOSITOR_ERROR_BAD_SURFACE */,
                 "surface already has a role or is its own parent")
             return
         }
 
         let sub = WlSubsurface(surface: surface, parent: parent)
-        guard id.create(vtable: WlSubsurfaceServer.vtable, owner: sub) != nil else { return }
+        guard id.create(vtable: WlSubsurfaceServer.vtable, owner: sub) != nil else {
+            surface.releaseSubsurfaceRole()
+            return
+        }
         surface.attachAsSubsurface(to: parent)
     }
 }
@@ -55,6 +59,7 @@ final class WlSubsurface {
     deinit {
         // wl_subsurface destroyed: the surface loses its subsurface role.
         surface?.detachFromParent()
+        surface?.releaseSubsurfaceRole()
     }
 }
 
@@ -66,13 +71,13 @@ extension WlSubsurface: WlSubsurfaceRequests {
     func placeAbove(
         _ resource: UnsafeMutablePointer<wl_resource>, sibling siblingRes: UnsafeMutablePointer<wl_resource>?
     ) {
-        place(siblingRes, .above)
+        place(resource, siblingRes, .above)
     }
 
     func placeBelow(
         _ resource: UnsafeMutablePointer<wl_resource>, sibling siblingRes: UnsafeMutablePointer<wl_resource>?
     ) {
-        place(siblingRes, .below)
+        place(resource, siblingRes, .below)
     }
 
     func setSync(_ resource: UnsafeMutablePointer<wl_resource>) {
@@ -84,12 +89,21 @@ extension WlSubsurface: WlSubsurfaceRequests {
     }
 
     private func place(
-        _ siblingRes: UnsafeMutablePointer<wl_resource>?, _ dir: WlSurface.PlaceDir
+        _ resource: UnsafeMutablePointer<wl_resource>,
+        _ siblingRes: UnsafeMutablePointer<wl_resource>?,
+        _ dir: WlSurface.PlaceDir
     ) {
         guard let surface = self.surface, let parent = self.parent,
             let siblingRes, let sibling = WaylandResource.owner(of: siblingRes, as: WlSurface.self)
         else { return }
-        parent.placeChild(surface, relativeTo: sibling, dir)
+        guard sibling === parent || sibling.subsurfaceParent === parent,
+            parent.placeChild(surface, relativeTo: sibling, dir)
+        else {
+            swift_wayland_resource_post_error(
+                resource, 0 /* WL_SUBSURFACE_ERROR_BAD_SURFACE */,
+                "stacking reference is not the parent or a sibling")
+            return
+        }
     }
 }
 

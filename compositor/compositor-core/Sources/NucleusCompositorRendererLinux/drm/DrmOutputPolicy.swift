@@ -1,4 +1,4 @@
-// Phase 10a.7 — Swift DrmOutput policy state machines: VRR, recovery, telemetry.
+// Swift DrmOutput policy state machines: VRR, recovery, telemetry.
 //
 // These are the self-contained per-output policy/state cores for VRR, recovery,
 // and telemetry. DrmOutput owns them while RendererRuntime drives their live
@@ -67,9 +67,9 @@ struct VrrState: Sendable, Equatable {
 
 // MARK: - Recovery state
 
-/// KMS commit recovery counters/timers for one output. The recovery *verbs*
-/// (pause/resume/force-modeset) coordinate across other owners and land at the
-/// cutover; this is the persistent state + backoff schedule they read.
+/// KMS commit recovery counters/timers for one output. The runtime's
+/// pause/resume/force-modeset verbs coordinate across owners using this persistent
+/// state and backoff schedule.
 struct RecoveryState: Sendable, Equatable {
     /// Consecutive EBUSY commits; reset on any success.
     var busyRetryCount: UInt8 = 0

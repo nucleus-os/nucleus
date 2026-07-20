@@ -9,9 +9,8 @@
 // deactivates on focus loss; a `oneshot` constraint that deactivated once is
 // permanently dead, while `persistent` reactivates on the next focus-enter. Only
 // one constraint may exist per (surface, pointer): re-requesting raises
-// already_constrained. The cursor clamp/warp itself is render/input-side (#12);
-// this owns the lifetime/active/dead transitions and the (un)locked/(un)confined
-// wire events.
+// already_constrained. InputDispatch applies the cursor clamp/freeze; this owns the
+// lifetime/active/dead transitions and the (un)locked/(un)confined wire events.
 
 import WaylandServerC
 import WaylandServer
@@ -58,8 +57,7 @@ final class PointerConstraintsManager {
         return c.kind
     }
 
-    /// Drive the active/inactive transitions on a pointer-focus change. The focus
-    /// mechanism calls this alongside wl_pointer.enter/leave (wired at #12).
+    /// Drive the active/inactive transitions alongside wl_pointer.enter/leave.
     func notifyPointerFocus(old: WlSurface?, new: WlSurface?) {
         if let old, let c = constraint(for: old), c.active {
             c.active = false

@@ -1,21 +1,13 @@
-// Phase 10a.11 — Swift DrmOutput aggregate.
+// Swift DrmOutput aggregate.
 //
-// The owner that composes every 10a.0–10a.10 piece into one per-output unit:
+// The owner that composes the DRM mechanisms into one per-output unit:
 // the borrowed DRM device fd, the connector/CRTC/plane pipeline ids + mode blob,
-// the discovered atomic property group (10a.3), the VRR/recovery/telemetry policy
-// (10a.7), the presentation-timing + frame queues (10a.8), gamma + cursor (10a.9),
-// and the page-flip token (10a.5). It owns the atomic commit *assembly* — the
-// property set a scanout/modeset commit submits, built through the 10a.3
+// the discovered atomic property group, VRR/recovery/telemetry policy,
+// presentation-timing + frame queues, gamma + cursor, and the page-flip token. It
+// owns the atomic commit *assembly* — the property set a scanout/modeset commit
+// submits, built through
 // AtomicRequestBuilder — plus the page-flip arming and the pure lifecycle
 // orchestration (cancel-pending, recovery clear).
-//
-// What it deliberately does NOT do yet: drive the live frame loop. The composited
-// framebuffer is produced by the renderer; making Swift authoritative
-// over the per-frame commit requires a transitional renderer↔Swift-DRM hot-
-// path ABI that Phase 10b dissolves when the renderer moves to Swift. So the live
-// flip co-lands with
-// 10b; here the aggregate is exercised with a borrowed fb id and validated via a
-// real KMS test-only commit. Nothing imports it yet.
 
 import NucleusCompositorDrmC
 
@@ -211,6 +203,9 @@ final class DrmOutput {
         cursor: CursorCommitState? = nil
     ) -> Bool {
         guard props.hasRequired else { return false }
+        guard gamma.ensureBlob(
+            fd: deviceFd, gammaLutProp: props.crtcGammaLut)
+        else { return false }
         builder.add(objectId: connectorId, propertyId: props.connCrtcId, value: UInt64(crtcId), label: "connector.CRTC_ID")
         builder.add(objectId: crtcId, propertyId: props.crtcActive, value: 1, label: "crtc.ACTIVE")
         builder.add(objectId: crtcId, propertyId: props.crtcModeId, value: UInt64(modeBlobId), label: "crtc.MODE_ID")
@@ -294,40 +289,41 @@ final class DrmOutput {
         pendingScanout = nil
     }
 
-    /// Blank this output's CRTC (a blocking modeset that detaches the connector,
-    /// deactivates the CRTC, and clears the primary plane's framebuffer) and then
-    /// release the retained scanout buffers. Must run on output removal / shutdown
-    /// BEFORE the render pool drops the slot ring, so the kernel stops scanning the
-    /// framebuffers before they are destroyed. The commit is blocking (no page-flip
-    /// event), so on return the kernel has released the buffers.
-    /// Returns whether the blank commit succeeded. A failure (e.g. -EBUSY because a
-    /// non-blocking flip is still in flight on this CRTC at teardown) means the kernel
-    /// may not have stopped scanning the current framebuffers — the caller should treat
-    /// releasing the slot ring as unsafe / log it.
-    @discardableResult
-    func disableScanout() -> Bool {
-        var ok = false
-        if var builder = AtomicRequestBuilder() {
-            let p = props.primaryPlaneProps
-            builder.add(objectId: connectorId, propertyId: props.connCrtcId, value: 0, label: "connector.CRTC_ID")
-            builder.add(objectId: crtcId, propertyId: props.crtcActive, value: 0, label: "crtc.ACTIVE")
-            builder.add(objectId: planeId, propertyId: p.fbId, value: 0, label: "plane.FB_ID")
-            builder.add(objectId: planeId, propertyId: p.crtcId, value: 0, label: "plane.CRTC_ID")
-            // Clear the cursor plane too, so the kernel stops scanning its BO before it
-            // is destroyed on teardown.
-            if cursorPlaneId != 0, cursorProps.fbId != 0 {
-                builder.add(objectId: cursorPlaneId, propertyId: cursorProps.fbId, value: 0, label: "cursor.FB_ID")
-                builder.add(objectId: cursorPlaneId, propertyId: cursorProps.crtcId, value: 0, label: "cursor.CRTC_ID")
-            }
-            ok = builder.commit(fd: deviceFd, flags: drmModeAtomicAllowModeset) == 0
+    /// Add this output's complete disabled state to a device-wide atomic request.
+    /// Callers can combine several outputs so a topology generation is retired in
+    /// one KMS transaction.
+    func addDisableState(into builder: inout AtomicRequestBuilder) {
+        let p = props.primaryPlaneProps
+        builder.add(
+            objectId: connectorId, propertyId: props.connCrtcId,
+            value: 0, label: "connector.CRTC_ID")
+        builder.add(
+            objectId: crtcId, propertyId: props.crtcActive,
+            value: 0, label: "crtc.ACTIVE")
+        builder.add(
+            objectId: planeId, propertyId: p.fbId,
+            value: 0, label: "plane.FB_ID")
+        builder.add(
+            objectId: planeId, propertyId: p.crtcId,
+            value: 0, label: "plane.CRTC_ID")
+        if cursorPlaneId != 0, cursorProps.fbId != 0 {
+            builder.add(
+                objectId: cursorPlaneId, propertyId: cursorProps.fbId,
+                value: 0, label: "cursor.FB_ID")
+            builder.add(
+                objectId: cursorPlaneId, propertyId: cursorProps.crtcId,
+                value: 0, label: "cursor.CRTC_ID")
         }
-        if ok {
-            active = false
-            pageFlipPending = false
-            frontScanout = nil
-            pendingScanout = nil
-        }
-        return ok
+    }
+
+    /// Record the successful blocking disable before framebuffer owners are
+    /// released.
+    func noteScanoutDisabled() {
+        active = false
+        pageFlipPending = false
+        timing.clearInFlight()
+        frontScanout = nil
+        pendingScanout = nil
     }
 
     // MARK: - Lifecycle orchestration (pure state)
@@ -343,7 +339,8 @@ final class DrmOutput {
         timing.clearInFlight()
         // A cancelled flip may already be latched by the kernel, so keep retaining
         // the submitted buffer (fold it into front) rather than freeing one the
-        // CRTC might still scan. It is released by the next flip or disableScanout().
+        // CRTC might still scan. It is released by the next flip or the
+        // device-wide topology retirement commit.
         if pendingScanout != nil {
             frontScanout = pendingScanout
             pendingScanout = nil

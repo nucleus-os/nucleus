@@ -19,12 +19,6 @@ protocol SessionLockDelegate: AnyObject {
     func sessionLockEnd()
     func sessionLockSurfaceMapped(_ surface: WlSurface, output: WlOutput?)
 }
-extension SessionLockDelegate {
-    func sessionLockBegin() -> Bool { true }
-    func sessionLockEnd() {}
-    func sessionLockSurfaceMapped(_ surface: WlSurface, output: WlOutput?) {}
-}
-
 final class SessionLockManager {
     weak var delegate: SessionLockDelegate?
     private var display: OpaquePointer?
@@ -45,7 +39,7 @@ final class SessionLockManager {
         return wl_display_next_serial(display)
     }
 
-    fileprivate func begin() -> Bool { delegate?.sessionLockBegin() ?? true }
+    fileprivate func begin() -> Bool { delegate?.sessionLockBegin() ?? false }
     fileprivate func end() { delegate?.sessionLockEnd() }
     fileprivate func surfaceMapped(_ surface: WlSurface, output: WlOutput?) {
         delegate?.sessionLockSurfaceMapped(surface, output: output)
@@ -192,51 +186,68 @@ final class ExtSessionLockSurface: WlSurfaceRole {
     }
     fileprivate func bind(_ resource: UnsafeMutablePointer<wl_resource>) { self.resource = resource }
 
+    /// A lock surface cannot be retargeted to a different wl_output. Destroy its
+    /// server-side role resource when that output is withdrawn; the security gate
+    /// remains fail-closed and the locker may create a surface for a new output.
+    func outputRemoved() {
+        output = nil
+        if let resource {
+            self.resource = nil
+            wl_resource_destroy(resource)
+        }
+    }
+
     /// Configure the lock surface to its output's size (surface-local).
     fileprivate func sendConfigure() {
         guard let resource, let manager else { return }
         let rect = output?.logicalRect ?? WlRect(x: 0, y: 0, width: 1, height: 1)
         let serial = manager.nextSerial()
         lastConfigureSerial = serial
+        ackedSerial = nil
         configuredWidth = UInt32(max(0, rect.width))
         configuredHeight = UInt32(max(0, rect.height))
         ext_session_lock_surface_v1_send_configure(
             resource, serial, configuredWidth, configuredHeight)
     }
 
-    /// The committed buffer's pixel dimensions (shm or dmabuf); (0,0) if unresolved.
-    private static func bufferPixelSize(_ buffer: UnsafeMutablePointer<wl_resource>) -> (UInt32, UInt32) {
-        if let shm = wl_shm_buffer_get(buffer) {
-            return (UInt32(bitPattern: wl_shm_buffer_get_width(shm)),
-                UInt32(bitPattern: wl_shm_buffer_get_height(shm)))
+    func validateSurfaceCommit(
+        _ surface: WlSurface,
+        context: SurfaceRoleCommitContext
+    ) -> Bool {
+        guard let resource else { return false }
+        guard ackedSerial != nil else {
+            swift_wayland_resource_post_error(
+                resource, 0, "commit before first ack_configure")
+            return false
         }
-        if let dmabuf = WaylandResource.owner(of: buffer, as: DmabufBuffer.self) {
-            return (UInt32(bitPattern: dmabuf.attrs.width), UInt32(bitPattern: dmabuf.attrs.height))
+        guard context.willHaveBuffer else {
+            swift_wayland_resource_post_error(
+                resource, 1, "commit with null buffer")
+            return false
         }
-        return (0, 0)
+        if configuredWidth > 0, configuredHeight > 0 {
+            let scale = UInt32(max(1, context.bufferScale))
+            guard
+                context.bufferPixelSize.width
+                    == configuredWidth * scale,
+                context.bufferPixelSize.height
+                    == configuredHeight * scale
+            else {
+                swift_wayland_resource_post_error(
+                    resource, 2,
+                    "buffer size does not match configure")
+                return false
+            }
+        }
+        return true
     }
 
     func roleSurfaceCommit(_ surface: WlSurface, isInitial: Bool) {
-        guard let res = resource else { return }
-        guard ackedSerial != nil else {
-            swift_wayland_resource_post_error(res, 0, "commit before first ack_configure")  // commit_before_first_ack
-            return
-        }
-        guard let buffer = surface.currentBuffer else {
-            swift_wayland_resource_post_error(res, 1, "commit with null buffer")  // null_buffer
-            return
-        }
-        // The committed buffer must exactly cover the configured surface size (scaled
-        // by buffer_scale); a mismatch would leave part of the output uncovered.
-        if configuredWidth > 0, configuredHeight > 0 {
-            let scale = UInt32(max(1, surface.bufferScale))
-            let (bw, bh) = Self.bufferPixelSize(buffer)
-            guard bw == configuredWidth * scale, bh == configuredHeight * scale else {
-                swift_wayland_resource_post_error(res, 2, "buffer size does not match configure")  // dimensions_mismatch
-                return
-            }
-        }
         manager?.surfaceMapped(surface, output: output)
+    }
+
+    func outputChanged() {
+        sendConfigure()
     }
 
     func roleSurfaceDestroyed(_ surface: WlSurface) { self.surface = nil }

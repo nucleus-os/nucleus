@@ -13,6 +13,19 @@ import NucleusCompositorWindowManager
 import WaylandServer
 import WaylandServerDispatch
 
+struct PresentedSurfaceCommit: Sendable, Equatable {
+    let surfaceID: UInt32
+    let commitID: UInt64
+}
+
+struct SubmittedOutputFrame: Sendable, Equatable {
+    let outputID: UInt64
+    let outputGeneration: UInt64
+    let submissionID: UInt64
+    let sampledCommits: [PresentedSurfaceCommit]
+    let targetPresentationNs: UInt64
+}
+
 /// Owner bound to each wl_compositor resource (Rule 9). Routes create_surface /
 /// create_region back to the shared WlCompositor.
 final class CompositorBinding {
@@ -37,13 +50,23 @@ private final class WeakSurface {
     /// index can be cleaned up in `removeSurface` even after the resource (and thus
     /// `surface.objectId`) is gone.
     let objectId: UInt32
+    /// Current renderer content identity. Mirrored here so a dead weak reference
+    /// can still be removed from the presentation-sampling index.
+    var renderIOSurfaceID: UInt32
     init(_ surface: WlSurface) {
         self.surface = surface
         self.objectId = surface.objectId
+        self.renderIOSurfaceID = surface.renderIosurfaceId
     }
 }
 
 final class WlCompositor {
+    private struct SubmittedFrameKey: Hashable {
+        let outputID: UInt64
+        let outputGeneration: UInt64
+        let submissionID: UInt64
+    }
+
     /// Scene/render seam; surfaces report commits and destruction here.
     weak var sceneDelegate: SurfaceSceneDelegate?
     /// Buffer-scale hint sent to each surface on creation (v6+). The per-output
@@ -53,10 +76,14 @@ final class WlCompositor {
 
     private var surfaces: [WeakSurface] = []
     /// `objectId -> WeakSurface` index for O(1) `surface(id:)` — the hot per-input /
-    /// per-commit / per-hit-test-candidate lookup. The `surfaces` array remains the
-    /// authority for the whole-list presentation walks; this mirrors it for keyed
-    /// resolution. Maintained in register/removeSurface.
+    /// per-commit / per-hit-test-candidate lookup. Maintained in
+    /// register/removeSurface.
     private var surfacesByObjectId: [UInt32: WeakSurface] = [:]
+    /// Stable renderer content identity → surface. Frame submission reports these
+    /// identities, so exact commit sampling must not scan every live surface once
+    /// for every visible scene node.
+    private var surfacesByRenderIOSurfaceID: [UInt32: WeakSurface] = [:]
+    private var submittedFrames: [SubmittedFrameKey: SubmittedOutputFrame] = [:]
     private struct DeferredBufferRelease {
         let buffer: WaylandResourceReference
         let callback: WaylandResourceReference?
@@ -95,8 +122,178 @@ final class WlCompositor {
     /// router also retains them as global bind data). A surface maps an overlapping
     /// DisplayID to a bound wl_output resource for `wl_surface.enter`/`leave`.
     private(set) var outputs: [WlOutput] = []
+    private var preparedOutputRemovals: Set<UInt64> = []
 
     func addOutput(_ output: WlOutput) { outputs.append(output) }
+
+    /// Emit every output-bound teardown while the output and its bound resources
+    /// are still resolvable. The composition root then migrates windows/focus
+    /// using the old and fallback geometries before withdrawing the global.
+    @discardableResult
+    func prepareOutputRemoval(id: UInt64) -> Bool {
+        guard output(id: id) != nil else { return false }
+        guard preparedOutputRemovals.insert(id).inserted else {
+            return true
+        }
+        discardSubmittedFrames(outputID: id)
+        var sawDead = false
+        for box in surfaces {
+            guard let surface = box.surface else { sawDead = true; continue }
+            surface.removeEnteredOutput(id)
+            if let layer = surface.role as? ZwlrLayerSurface,
+                layer.outputID == id
+            {
+                layer.outputRemoved()
+            }
+            if let lock = surface.role as? ExtSessionLockSurface,
+                lock.outputID == id
+            {
+                lock.outputRemoved()
+            }
+        }
+        if sawDead { compactDeadSurfaces() }
+        return true
+    }
+
+    /// Withdraw an output after its surface relationships and shell ownership
+    /// have been prepared and window policy has migrated dependent state.
+    func finishOutputRemoval(id: UInt64) -> WlOutput? {
+        guard let index = outputs.firstIndex(where: { $0.outputId == id }) else {
+            return nil
+        }
+        if !preparedOutputRemovals.contains(id) {
+            _ = prepareOutputRemoval(id: id)
+        }
+        preparedOutputRemovals.remove(id)
+        let output = outputs.remove(at: index)
+        output.removeGlobal()
+        return output
+    }
+
+    func removeOutput(id: UInt64) -> WlOutput? {
+        guard prepareOutputRemoval(id: id) else { return nil }
+        return finishOutputRemoval(id: id)
+    }
+
+    /// Reconfigure every role whose geometry is pinned to a changed output.
+    /// This runs immediately after WlOutput applies the new logical state, so role
+    /// configures and shell geometry observe the same output generation.
+    func outputStateChanged(id: UInt64) {
+        guard let output = output(id: id) else { return }
+        var sawDead = false
+        for box in surfaces {
+            guard let surface = box.surface else {
+                sawDead = true
+                continue
+            }
+            if let layer = surface.role as? ZwlrLayerSurface,
+                layer.outputID == id
+            {
+                layer.outputChanged(rect: output.logicalRect)
+            }
+            if let lock = surface.role as? ExtSessionLockSurface,
+                lock.outputID == id
+            {
+                lock.outputChanged()
+            }
+        }
+        if sawDead { compactDeadSurfaces() }
+    }
+
+    /// Freeze the exact applied commits sampled by an accepted KMS submission.
+    /// Page-flip completion consumes this immutable record and never scans mutable
+    /// live-surface targeting state.
+    func submitFrame(
+        outputID: UInt64,
+        outputGeneration: UInt64,
+        submissionID: UInt64,
+        targetPresentationNs: UInt64,
+        sampledIOSurfaceIDs: [UInt64]
+    ) {
+        var sampled: [PresentedSurfaceCommit] = []
+        sampled.reserveCapacity(sampledIOSurfaceIDs.count)
+        for iosurfaceID in Set(sampledIOSurfaceIDs) where iosurfaceID != 0 {
+            guard let renderID = UInt32(exactly: iosurfaceID),
+                let surface = surface(renderIOSurfaceID: renderID),
+                let commitID = surface.noteSampled(submissionID: submissionID)
+            else { continue }
+            sampled.append(PresentedSurfaceCommit(
+                surfaceID: surface.objectId, commitID: commitID))
+        }
+        sampled.sort {
+            if $0.surfaceID != $1.surfaceID {
+                return $0.surfaceID < $1.surfaceID
+            }
+            return $0.commitID < $1.commitID
+        }
+        let key = SubmittedFrameKey(
+            outputID: outputID,
+            outputGeneration: outputGeneration,
+            submissionID: submissionID)
+        submittedFrames[key] = SubmittedOutputFrame(
+            outputID: outputID,
+            outputGeneration: outputGeneration,
+            submissionID: submissionID,
+            sampledCommits: sampled,
+            targetPresentationNs: targetPresentationNs)
+    }
+
+    func presentSubmittedFrame(
+        outputID: UInt64,
+        outputGeneration: UInt64,
+        submissionID: UInt64,
+        timestampNs: UInt64,
+        refreshNs: UInt32,
+        sequence: UInt64,
+        flags: UInt32
+    ) {
+        let key = SubmittedFrameKey(
+            outputID: outputID,
+            outputGeneration: outputGeneration,
+            submissionID: submissionID)
+        guard let frame = submittedFrames.removeValue(forKey: key) else {
+            return
+        }
+        let tvSec = timestampNs / 1_000_000_000
+        let output = output(id: outputID)
+        for sampled in frame.sampledCommits {
+            surface(id: sampled.surfaceID)?.completePresentation(
+                commitID: sampled.commitID,
+                submissionID: submissionID,
+                output: output,
+                timeMs: UInt32(truncatingIfNeeded: timestampNs / 1_000_000),
+                tvSecHi: UInt32(truncatingIfNeeded: tvSec >> 32),
+                tvSecLo: UInt32(truncatingIfNeeded: tvSec),
+                tvNsec: UInt32(timestampNs % 1_000_000_000),
+                refreshNs: refreshNs,
+                seqHi: UInt32(truncatingIfNeeded: sequence >> 32),
+                seqLo: UInt32(truncatingIfNeeded: sequence),
+                flags: flags)
+        }
+    }
+
+    func discardSubmittedFrames(
+        outputID: UInt64? = nil,
+        outputGeneration: UInt64? = nil,
+        submissionID: UInt64? = nil
+    ) {
+        let keys = submittedFrames.keys.filter {
+            (outputID == nil || $0.outputID == outputID)
+                && (outputGeneration == nil
+                    || $0.outputGeneration == outputGeneration)
+                && (submissionID == nil || $0.submissionID == submissionID)
+        }
+        for key in keys {
+            guard let frame = submittedFrames.removeValue(forKey: key) else {
+                continue
+            }
+            for sampled in frame.sampledCommits {
+                surface(id: sampled.surfaceID)?.discardPresentation(
+                    commitID: sampled.commitID,
+                    submissionID: frame.submissionID)
+            }
+        }
+    }
 
     /// The advertised output with this DisplayID, if any.
     func output(id: UInt64) -> WlOutput? {
@@ -116,6 +313,9 @@ final class WlCompositor {
         let box = WeakSurface(surface)
         surfaces.append(box)
         surfacesByObjectId[box.objectId] = box
+        if box.renderIOSurfaceID != 0 {
+            surfacesByRenderIOSurfaceID[box.renderIOSurfaceID] = box
+        }
     }
 
     func removeSurface(_ surface: WlSurface) {
@@ -123,8 +323,32 @@ final class WlCompositor {
             // Identity-checked so a reused object id (a new surface already indexed
             // under this id) is never clobbered by the departing one's cleanup.
             if surfacesByObjectId[box.objectId] === box { surfacesByObjectId[box.objectId] = nil }
+            if box.renderIOSurfaceID != 0,
+                surfacesByRenderIOSurfaceID[box.renderIOSurfaceID] === box
+            {
+                surfacesByRenderIOSurfaceID[box.renderIOSurfaceID] = nil
+            }
         }
         surfaces.removeAll { $0.surface == nil || $0.surface === surface }
+    }
+
+    func surfaceRenderIdentityChanged(
+        _ surface: WlSurface,
+        from oldID: UInt32
+    ) {
+        guard let box = surfacesByObjectId[surface.objectId],
+            box.surface === surface
+        else { return }
+        if oldID != 0,
+            surfacesByRenderIOSurfaceID[oldID] === box
+        {
+            surfacesByRenderIOSurfaceID[oldID] = nil
+        }
+        box.renderIOSurfaceID = surface.renderIosurfaceId
+        if box.renderIOSurfaceID != 0 {
+            surfacesByRenderIOSurfaceID[
+                box.renderIOSurfaceID] = box
+        }
     }
 
     /// The live surface with this wire object id, if any. Maps a focus target
@@ -135,6 +359,20 @@ final class WlCompositor {
         return s
     }
 
+    private func surface(
+        renderIOSurfaceID: UInt32
+    ) -> WlSurface? {
+        guard let box =
+            surfacesByRenderIOSurfaceID[renderIOSurfaceID]
+        else { return nil }
+        guard let surface = box.surface else {
+            surfacesByRenderIOSurfaceID[
+                renderIOSurfaceID] = nil
+            return nil
+        }
+        return surface
+    }
+
     /// Compact dead-surface boxes from the list and the id index. Called by the
     /// surface-list walks only when a dead box was actually observed, so the common
     /// (nothing-died) presentation-tick / query path does not reallocate `surfaces`.
@@ -142,6 +380,12 @@ final class WlCompositor {
         surfaces.removeAll { box in
             guard box.surface == nil else { return false }
             if surfacesByObjectId[box.objectId] === box { surfacesByObjectId[box.objectId] = nil }
+            if box.renderIOSurfaceID != 0,
+                surfacesByRenderIOSurfaceID[box.renderIOSurfaceID] === box
+            {
+                surfacesByRenderIOSurfaceID[
+                    box.renderIOSurfaceID] = nil
+            }
             return true
         }
     }
@@ -183,22 +427,6 @@ final class WlCompositor {
     }
 
     @MainActor
-    func hasAsyncPresentationRequest(on outputID: UInt64) -> Bool {
-        var found = false
-        var sawDead = false
-        for box in surfaces {
-            guard let surface = box.surface else { sawDead = true; continue }
-            if surface.aux.presentationHint == 1,
-                surfaceTargetsOutput(surface, outputID: outputID)
-            {
-                found = true
-            }
-        }
-        if sawDead { compactDeadSurfaces() }
-        return found
-    }
-
-    @MainActor
     private func surfaceTargetsOutput(_ surface: WlSurface, outputID: UInt64) -> Bool {
         if outputID == 0 { return true }
         // Role pins are authoritative: a layer/lock surface is bound to one output
@@ -226,61 +454,6 @@ final class WlCompositor {
     }
 
     /// Complete frame callbacks on every live surface (presentation tick).
-    func present(timeMs: UInt32) {
-        var sawDead = false
-        for box in surfaces {
-            if let s = box.surface { s.present(timeMs: timeMs) } else { sawDead = true }
-        }
-        if sawDead { compactDeadSurfaces() }
-    }
-
-    @MainActor
-    func present(forOutput outputID: UInt64, timeMs: UInt32) {
-        var sawDead = false
-        for box in surfaces {
-            guard let s = box.surface else { sawDead = true; continue }
-            if surfaceTargetsOutput(s, outputID: outputID) {
-                s.present(timeMs: timeMs)
-            }
-        }
-        if sawDead { compactDeadSurfaces() }
-    }
-
-    /// Deliver wp_presentation_feedback.presented to every live surface's
-    /// awaiting feedbacks (the page-flip tick). Prunes dead surfaces, mirroring
-    /// `present`. Kept for all-output fixture paths and offscreen fallback.
-    func presentFeedbackAll(
-        tvSecHi: UInt32, tvSecLo: UInt32, tvNsec: UInt32,
-        refreshNs: UInt32, seqHi: UInt32, seqLo: UInt32, flags: UInt32
-    ) {
-        var sawDead = false
-        for box in surfaces {
-            guard let s = box.surface else { sawDead = true; continue }
-            s.presentFeedback(
-                tvSecHi: tvSecHi, tvSecLo: tvSecLo, tvNsec: tvNsec,
-                refreshNs: refreshNs, seqHi: seqHi, seqLo: seqLo, flags: flags)
-        }
-        if sawDead { compactDeadSurfaces() }
-    }
-
-    @MainActor
-    func presentFeedback(
-        forOutput outputID: UInt64,
-        tvSecHi: UInt32, tvSecLo: UInt32, tvNsec: UInt32,
-        refreshNs: UInt32, seqHi: UInt32, seqLo: UInt32, flags: UInt32
-    ) {
-        var sawDead = false
-        for box in surfaces {
-            guard let s = box.surface else { sawDead = true; continue }
-            if surfaceTargetsOutput(s, outputID: outputID) {
-                s.presentFeedback(
-                    tvSecHi: tvSecHi, tvSecLo: tvSecLo, tvNsec: tvNsec,
-                    refreshNs: refreshNs, seqHi: seqHi, seqLo: seqLo, flags: flags)
-            }
-        }
-        if sawDead { compactDeadSurfaces() }
-    }
-
     func makeRegion(
         client: OpaquePointer, id: UInt32, version: Int32
     ) -> UnsafeMutablePointer<wl_resource>? {

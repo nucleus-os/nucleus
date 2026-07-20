@@ -15,30 +15,34 @@ import Glibc
 @MainActor
 enum DisplayFrameDemand {
     /// Mark a one-shot frame need on every output.
-    static func requestFrame() {
+    static func requestFrame(reason: RedrawReasons = .surfaceDamage) {
         for display in NucleusCompositorServer.shared.layout.displays {
-            display.displayLink.requestFrame()
+            display.requestRedraw(reason)
         }
     }
 
     /// Mark a one-shot frame need on `outputID`; falls back to every output when
     /// the id is not a known output.
-    static func requestFrame(outputID: UInt64) {
+    static func requestFrame(
+        outputID: UInt64,
+        reason: RedrawReasons = .surfaceDamage
+    ) {
         if let display = NucleusCompositorServer.shared.layout.display(id: outputID) {
-            display.displayLink.requestFrame()
+            display.requestRedraw(reason)
         } else {
-            requestFrame()
+            requestFrame(reason: reason)
         }
     }
 
     static func requestFrameForOverlay() {
-        requestFrame(outputID: overlayOutputID())
+        requestFrame(outputID: overlayOutputID(), reason: .shellOverlay)
     }
 
     /// Collect the current frame-demand policy from the shell/overlay/render
     /// owners and apply it across the outputs' `DisplayLink`s.
     static func sync() {
         let layout = NucleusCompositorServer.shared.layout
+        guard !layout.displays.isEmpty else { return }
         let overlayID = overlayOutputID()
 
         // Collect. The `||` short-circuits, so a satisfied
@@ -52,10 +56,11 @@ enum DisplayFrameDemand {
 
         // Apply.
         if overlayFrameRequested { requestFrameForOverlay() }
-        if let deadline = operationDeadlineNs {
-            for display in layout.displays {
-                display.displayLink.requestOperationDeadline(deadline)
-            }
+        if let deadline = operationDeadlineNs,
+            let display = layout.display(id: overlayID)
+        {
+            display.displayLink.requestOperationDeadline(deadline)
+            display.requestRedraw(.shellOverlay)
         }
         for display in layout.displays {
             let isOverlay = display.id == overlayID
@@ -64,6 +69,11 @@ enum DisplayFrameDemand {
                 notification: isOverlay && notificationAnimationActive,
                 screenshot: false,
                 background: false)
+            if isOverlay && (
+                overlayRenderAnimationActive || notificationAnimationActive)
+            {
+                display.requestRedraw(.animation)
+            }
             emitTimelinePlots(display)
         }
     }
@@ -96,6 +106,7 @@ enum DisplayFrameDemand {
     private static func emitTimelinePlots(_ display: Display) {
         let link = display.displayLink
         let sample = link.sampleTimeline()
+        let redraw = display.sampleRedrawMetrics()
         let now = monotonicNowNs()
         let remaining = Int64(bitPattern: sample.deadlineNs) - Int64(bitPattern: now)
         Trace.plot(plotName(display, "budget_remaining_ms"), Double(remaining) / 1_000_000.0)
@@ -106,6 +117,37 @@ enum DisplayFrameDemand {
         Trace.plot(
             plotName(display, "refresh_interval_ms"),
             Double(sample.refreshIntervalNs) / 1_000_000.0)
+        Trace.plot(
+            plotName(display, "redraw_requests"),
+            redraw.redrawRequests)
+        Trace.plot(
+            plotName(display, "redraw_coalesced"),
+            redraw.coalescedRequests)
+        Trace.plot(
+            plotName(display, "scene_author_passes"),
+            redraw.sceneAuthorPasses)
+        Trace.plot(
+            plotName(display, "render_without_submission"),
+            redraw.renderPassesWithoutSubmission)
+        for (index, count) in
+            redraw.coalescedByReason.enumerated()
+        {
+            Trace.plot(
+                plotName(
+                    display,
+                    "coalesced_reason_\(index)"),
+                count)
+        }
+        for (index, residenceNs) in
+            redraw.stateResidenceNs.enumerated()
+        {
+            Trace.plot(
+                plotName(
+                    display,
+                    "state_\(index)_seconds"),
+                Double(residenceNs)
+                    / 1_000_000_000.0)
+        }
     }
 
     private static func plotName(_ display: Display, _ metric: String) -> String {

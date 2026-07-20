@@ -1,14 +1,14 @@
 // wp-cursor-shape-v1 on the router — named cursor shapes (a client requests a
 // themed cursor instead of attaching a buffer). The manager mints a per-pointer
 // device; set_shape maps the named shape to the compositor's global cursor through
-// the delegate (the xcursor theme + renderer are #12). The cursor is compositor-
-// global, so a device carries no per-pointer state — get_pointer only mints it.
+// the delegate and live XCursor/renderer path. The cursor is compositor-global,
+// so a device carries only the pointer authorization source.
 
 import WaylandServerC
 import WaylandServer
 import WaylandServerDispatch
 
-/// The seam to the cursor renderer (#12). Returns false for an unknown shape, which
+/// The seam to the cursor renderer. Returns false for an unknown shape, which
 /// the router turns into the protocol's invalid_shape error.
 protocol CursorShapeDelegate: AnyObject {
     func applyCursorShape(_ shape: UInt32) -> Bool
@@ -24,7 +24,7 @@ final class CursorShapeManager {
 
     func register(in router: NucleusWaylandRouter) {
         router.addGlobal(
-            interface: swift_wayland_iface_wp_cursor_shape_manager_v1(), version: 2, impl: self, bind: Self.bind)
+            interface: swift_wayland_iface_wp_cursor_shape_manager_v1(), version: 1, impl: self, bind: Self.bind)
     }
 
     private static let bind: @convention(c) (
@@ -45,8 +45,13 @@ extension CursorShapeManagerBinding: WpCursorShapeManagerV1Requests {
         _ resource: UnsafeMutablePointer<wl_resource>, cursor_shape_device: WlNewId,
         pointer: UnsafeMutablePointer<wl_resource>?
     ) {
+        let pointerOwner = pointer.flatMap {
+            WaylandResource.owner(of: $0, as: WlPointer.self)
+        }
         _ = cursor_shape_device.create(
-            vtable: WpCursorShapeDeviceV1Server.vtable, owner: CursorShapeDevice(manager: manager))
+            vtable: WpCursorShapeDeviceV1Server.vtable,
+            owner: CursorShapeDevice(
+                manager: manager, pointer: pointerOwner))
     }
 
     func getTabletToolV2(
@@ -54,7 +59,8 @@ extension CursorShapeManagerBinding: WpCursorShapeManagerV1Requests {
         tablet_tool: UnsafeMutablePointer<wl_resource>?
     ) {
         _ = cursor_shape_device.create(
-            vtable: WpCursorShapeDeviceV1Server.vtable, owner: CursorShapeDevice(manager: manager))
+            vtable: WpCursorShapeDeviceV1Server.vtable,
+            owner: CursorShapeDevice(manager: manager, pointer: nil))
     }
 }
 
@@ -80,13 +86,17 @@ func cursorShapeName(_ shape: UInt32) -> String? {
 /// A wp_cursor_shape_device_v1: maps set_shape to the global cursor.
 final class CursorShapeDevice {
     private unowned let manager: CursorShapeManager
-    init(manager: CursorShapeManager) { self.manager = manager }
+    private weak var pointer: WlPointer?
+    init(manager: CursorShapeManager, pointer: WlPointer?) {
+        self.manager = manager
+        self.pointer = pointer
+    }
 }
 
 extension CursorShapeDevice: WpCursorShapeDeviceV1Requests {
     func setShape(_ resource: UnsafeMutablePointer<wl_resource>, serial: UInt32, shape: UInt32) {
-        // The serial (a per-enter latch) is unused — the cursor is compositor-global.
-        let ok = manager.delegate?.applyCursorShape(shape) ?? true
+        guard pointer?.authorizesCursor(serial: serial) == true else { return }
+        let ok = manager.delegate?.applyCursorShape(shape) ?? false
         if !ok {
             swift_wayland_resource_post_error(resource, 1 /* invalid_shape */, "unknown cursor shape")
         }

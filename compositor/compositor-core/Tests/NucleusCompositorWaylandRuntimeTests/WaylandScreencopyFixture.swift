@@ -16,6 +16,7 @@ private final class ScreencopyStub: ScreencopyDelegate {
     func screencopyParams(output: WlOutput?, region: WlRect?) -> ScreencopyParams? {
         region == nil ? full : nil  // region capture "unsupported" here → failed
     }
+    func screencopyRequestFrame(output: WlOutput?) {}
     func screencopyCapture(
         output: WlOutput?, region: WlRect?,
         buffer: UnsafeMutablePointer<wl_resource>, withDamage: Bool) -> ScreencopyResult {
@@ -29,6 +30,7 @@ enum WaylandScreencopyFixture {
         guard let router = NucleusWaylandRouter() else { fail("router") }
         let stub = ScreencopyStub()
         let output = WlOutput(info: OutputInfo(
+            outputId: 41,
             physicalWidthMm: 600, physicalHeightMm: 340, pixelWidth: 64, pixelHeight: 48,
             refreshMhz: 60000, scale: 1, name: "CAP-1", description: "Capture Output"))
         output.register(in: router)
@@ -82,6 +84,11 @@ enum WaylandScreencopyFixture {
         var c = WireBuilder()
         c.message(object: frame1, opcode: 0) { $0.object(bufId) }  // copy
         guard client.send(c) else { fail("send c") }
+        client.pump()
+        guard client.drainEvents().isEmpty else {
+            fail("copy completed before output submission")
+        }
+        screencopy.outputSubmitted(output.outputId)
         client.pump()
         let rC = client.drainEvents()
         guard let flags = WireMessage.first(rC, object: frame1, opcode: 1), flags.u32(0) == 1 else {

@@ -1385,4 +1385,8 @@ final class RecordingDesktopObserver: DesktopModelObserver {
 
     #expect(WindowManager.shared.xwaylandClientListIncludes(windowID: managed) == true)
     #expect(WindowManager.shared.xwaylandClientListIncludes(windowID: overrideRedirect) == false)
+    #expect(WindowManager.shared.xwaylandClientXIDs() == [0x40001, 0x40002])
+
+    #expect(WindowManager.shared.server.windows.raise(id: managed))
+    #expect(WindowManager.shared.xwaylandClientXIDs() == [0x40002, 0x40001])
 }

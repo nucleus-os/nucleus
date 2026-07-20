@@ -24,7 +24,9 @@ enum SessionLockGate {
                 outputID: display.id,
                 threshold: display.displayLink.peekNextPresentID()
             ))
-            display.displayLink.requestFrame()
+            RenderBridge.requestFrame(
+                outputId: display.id,
+                reason: .lockTransition)
         }
 
         RouterHost.shared.inputHost?.dispatch.clearKeyboardFocus()
@@ -77,9 +79,8 @@ enum SessionLockGate {
     static func isActive() -> Bool { active }
 
     private static func requestFrameOnEveryOutput() {
-        for display in NucleusCompositorServer.shared.layout.displays {
-            display.displayLink.requestFrame()
-        }
+        RenderBridge.requestFrame(
+            outputId: 0, reason: .lockTransition)
     }
 
     private static func isLockSurface(surfaceID: UInt64) -> Bool {

@@ -22,9 +22,6 @@ import WaylandServerC
 
 /// True when the router has a mapped layer-shell surface assigned to `outputId`.
 
-/// True when any router-owned surface targeting `outputId` has latched an async
-/// wp_tearing_control presentation hint.
-
 /// Number of xdg popups parented to `surfaceId`. The scanout planner reads this to
 /// keep a fullscreen surface with popups off the overlay-plane-promotion path,
 /// replacing the `WLSurface.popups` count. 0 when the surface owns no popups.

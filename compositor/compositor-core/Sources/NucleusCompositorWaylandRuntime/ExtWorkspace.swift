@@ -249,15 +249,18 @@ final class ExtWorkspaceClient: DesktopModelObserver {
             switch request {
             case let .activate(space, output):
                 if spaces.setActiveSpace(space, forDisplay: output) {
-                    RenderBridge.requestFrame(outputId: 0)
+                    RenderBridge.requestFrame(outputId: output)
                 }
             case let .createWorkspace(output):
                 if spaces.appendWorkspace(onOutput: output) != 0 {
-                    RenderBridge.requestFrame(outputId: 0)
+                    RenderBridge.requestFrame(outputId: output)
                 }
             case let .remove(space):
+                let output = spaces.spaces.first {
+                    $0.id == space
+                }?.outputID ?? 0
                 if spaces.removeSpace(space) {
-                    RenderBridge.requestFrame(outputId: 0)
+                    RenderBridge.requestFrame(outputId: output)
                 }
             }
         }

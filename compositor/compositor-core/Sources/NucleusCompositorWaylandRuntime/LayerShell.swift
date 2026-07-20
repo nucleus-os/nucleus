@@ -5,23 +5,22 @@
 // the output, and sends configure/closed.
 //
 // The compositor owns layer-surface geometry: configure carries the arranged size,
-// the client commits a buffer at that size, and ack_configure records nothing (no
-// ack→commit latch, unlike xdg). The arrange math (anchor/margin/fill) is router-
-// owned; output selection for a null output arg, exclusive-zone publication, and
-// the layer Window model are the LayerShellDelegate seam, wired at #12.
+// and the client acknowledges that configure before mapping a buffer. The arrange
+// math (anchor/margin/fill) is router-owned; output selection for a null output arg,
+// exclusive-zone publication, and the layer Window model use LayerShellDelegate.
 
 import WaylandServerC
 import WaylandServer
 import WaylandServerDispatch
 import Glibc
 
-// MARK: - Delegate seam (#12: LayerShellPolicy / output layout)
+// MARK: - Delegate seam
 
 protocol LayerShellDelegate: AnyObject {
     /// The compositor DisplayID to use when get_layer_surface's output arg was nil.
     func defaultLayerOutputID() -> UInt64
     /// The logical rect to arrange against when get_layer_surface's output arg was
-    /// null (the compositor picks; #12: primary/first output). nil rejects.
+    /// null (the compositor picks its current primary output). nil rejects.
     func defaultLayerOutputRect() -> WlRect?
     /// A layer surface mapped (committed a buffer) with its arranged geometry —
     /// the cue to recompute the output's exclusive zones.
@@ -30,13 +29,6 @@ protocol LayerShellDelegate: AnyObject {
     /// persists) or it committed a null buffer. Tears down the model window and
     /// releases its reserved exclusive zone so toplevels reclaim the band.
     func layerSurfaceUnmapped(surfaceID: UInt32)
-}
-
-extension LayerShellDelegate {
-    func defaultLayerOutputID() -> UInt64 { 0 }
-    func defaultLayerOutputRect() -> WlRect? { nil }
-    func layerSurfaceMapped(_ surface: ZwlrLayerSurface) {}
-    func layerSurfaceUnmapped(surfaceID: UInt32) {}
 }
 
 // MARK: - zwlr_layer_shell_v1 global
@@ -53,7 +45,7 @@ final class ZwlrLayerShell {
     func register(in router: NucleusWaylandRouter) {
         display = router.display.display
         router.addGlobal(
-            interface: swift_wayland_iface_zwlr_layer_shell_v1(), version: 5, impl: self, bind: Self.bind)
+            interface: swift_wayland_iface_zwlr_layer_shell_v1(), version: 4, impl: self, bind: Self.bind)
     }
 
     func nextSerial() -> UInt32 {
@@ -124,7 +116,7 @@ final class ZwlrLayerSurface: WlSurfaceRole {
     let namespace: String
     let outputID: UInt64
     private(set) var resource: UnsafeMutablePointer<wl_resource>?
-    private let outputRect: WlRect
+    private var outputRect: WlRect
 
     // Pending (request) state.
     private var pendingWidth: Int32 = 0
@@ -157,6 +149,8 @@ final class ZwlrLayerSurface: WlSurfaceRole {
     private(set) var configuredHeight: UInt32 = 1
 
     private var configured = false
+    private var outstandingConfigureSerials: [UInt32] = []
+    private var acknowledgedConfigureSerial: UInt32?
     private(set) var mapped = false
     private var reportedMap = false
     /// Set once the compositor sends `closed`; further client changes are ignored.
@@ -204,6 +198,35 @@ final class ZwlrLayerSurface: WlSurfaceRole {
     fileprivate func bind(_ resource: UnsafeMutablePointer<wl_resource>) { self.resource = resource }
 
     // MARK: WlSurfaceRole
+
+    func validateSurfaceCommit(
+        _ surface: WlSurface,
+        context: SurfaceRoleCommitContext
+    ) -> Bool {
+        guard !closed else { return true }
+        if !configured {
+            guard !context.willHaveBuffer else {
+                postSurfaceError(
+                    2 /* already_constructed */,
+                    "buffer attached before the initial configure")
+                return false
+            }
+            return true
+        }
+        if context.willHaveBuffer,
+            acknowledgedConfigureSerial == nil
+        {
+            postSurfaceError(
+                0 /* invalid_surface_state */,
+                "buffer committed before acknowledging a configure")
+            return false
+        }
+        if let error = sizeAnchorError() {
+            postSurfaceError(1 /* invalid_size */, error)
+            return false
+        }
+        return true
+    }
 
     func roleSurfaceCommit(_ surface: WlSurface, isInitial: Bool) {
         // After `closed`, "further changes to the surface will be ignored."
@@ -277,6 +300,32 @@ final class ZwlrLayerSurface: WlSurfaceRole {
         line.withCString { _ = write(STDERR_FILENO, $0, strlen($0)) }
     }
 
+    /// The pinned output disappeared. Close the role and release its shell-policy
+    /// reservation immediately; the client destroys the role resource afterward.
+    func outputRemoved() {
+        guard !closed else { return }
+        closed = true
+        if mapped {
+            mapped = false
+            shell.delegate?.layerSurfaceUnmapped(surfaceID: surfaceObjectID)
+        }
+        if let resource { zwlr_layer_surface_v1_send_closed(resource) }
+    }
+
+    /// Re-arrange a pinned layer surface against an updated logical output rect.
+    /// A fresh configure creates a new ack boundary before the next mapped commit.
+    func outputChanged(rect: WlRect) {
+        guard !closed, outputRect != rect else { return }
+        outputRect = rect
+        guard configured else { return }
+        arrange()
+        acknowledgedConfigureSerial = nil
+        sendConfigure()
+        if mapped {
+            shell.delegate?.layerSurfaceMapped(self)
+        }
+    }
+
     /// zwlr_layer_surface_v1.closed — the compositor asks the client to destroy the
     /// surface (its output vanished with no fallback).
     func sendClosed() {
@@ -338,8 +387,10 @@ final class ZwlrLayerSurface: WlSurfaceRole {
 
     private func sendConfigure() {
         guard let resource else { return }
+        let serial = shell.nextSerial()
+        outstandingConfigureSerials.append(serial)
         zwlr_layer_surface_v1_send_configure(
-            resource, shell.nextSerial(), configuredWidth, configuredHeight)
+            resource, serial, configuredWidth, configuredHeight)
     }
 
 }
@@ -392,7 +443,8 @@ extension ZwlrLayerSurface: ZwlrLayerSurfaceV1Requests {
     }
 
     func setExclusiveEdge(_ resource: UnsafeMutablePointer<wl_resource>, edge: UInt32) {
-        // advisory; the arrange derives the edge from the anchor
+        // Unreachable while the global advertises v4. Restore v5 only with
+        // validated, double-buffered exclusive-edge layout behavior.
     }
 
     func getPopup(
@@ -403,10 +455,20 @@ extension ZwlrLayerSurface: ZwlrLayerSurfaceV1Requests {
         // cross-client XdgWmBaseTable lookup is gone.
         guard let popupRes, let popup = WaylandResource.owner(of: popupRes, as: XdgPopup.self)
         else { return }
-        popup.reconfigureUnderNewParent()
+        popup.adoptLayerParent(surface)
     }
 
     func ackConfigure(_ resource: UnsafeMutablePointer<wl_resource>, serial: UInt32) {
-        // compositor owns layer geometry — no ack→commit latch
+        guard let index = outstandingConfigureSerials.firstIndex(
+            of: serial)
+        else {
+            swift_wayland_resource_post_error(
+                resource, 0 /* invalid_surface_state */,
+                "configure serial was not issued by this layer surface")
+            return
+        }
+        acknowledgedConfigureSerial = serial
+        outstandingConfigureSerials.removeSubrange(
+            ...index)
     }
 }

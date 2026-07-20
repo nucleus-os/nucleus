@@ -2,8 +2,7 @@
 // The pure reply→state parsing lives in
 // XwaylandProperties.swift; this file owns the XCB I/O that subscribes to,
 // fetches, and publishes the tracked window properties over a live connection.
-//
-// Lands with the XWM connection-ownership cutover; the Swift XWM drives these.
+// The Swift XWM drives these operations on its owned XCB connection.
 
 import Glibc
 import NucleusCompositorXcbC

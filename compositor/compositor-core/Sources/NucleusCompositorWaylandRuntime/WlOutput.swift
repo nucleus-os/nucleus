@@ -3,10 +3,9 @@
 // description + done. libwayland owns the
 // resource/wire mechanics; this owns the advertisement semantics.
 //
-// The output description is a value (OutputInfo) the router supplies. In task #8
-// fixtures it is a synthetic output; wiring it to the live compositor_display
-// model (cg_display.Display) happens when the router goes live at #12, by
-// constructing one WlOutput per Display and refreshing on output change.
+// The output description is a value (OutputInfo) the topology reconciler supplies.
+// Production constructs one WlOutput per live Display and refreshes it in place on
+// output changes; protocol fixtures can supply the same value model synthetically.
 
 import WaylandServerC
 import WaylandServer
@@ -15,9 +14,8 @@ import WaylandServer
 struct OutputInfo {
     /// The compositor DisplayID this output advertises — the output analog of
     /// `Window.surfaceObjectId`. Output-keyed render crossings (gamma, screencopy)
-    /// map a bound wl_output back to its live DRM output through this id. 0 means
-    /// synthetic (the #8 fixtures); set per live `Display` when the router goes
-    /// live at the cutover.
+    /// map a bound wl_output back to its live DRM output through this id. Zero is
+    /// reserved for synthetic protocol fixtures.
     var outputId: UInt64 = 0
     var x: Int32 = 0
     var y: Int32 = 0
@@ -42,24 +40,23 @@ struct OutputInfo {
 
 /// Owner bound to each wl_output resource (Rule 9). Back-links to its WlOutput so
 /// protocols that take a wl_output argument (layer-shell, xdg-output) resolve the
-/// output's geometry from the resource. The link is weak: the WlOutput normally
-/// outlives its resources (the router + compositor retain it), but at display
-/// teardown a resource may be destroyed after its output, so the binding's deinit
-/// must not assume the output is still alive. On destruction the binding drops the
-/// resource from the output's bound-resource list so `wl_surface.enter`/`leave`
-/// never references a freed resource.
+/// output's geometry from the resource. The binding retains its WlOutput snapshot
+/// so a resource already handed to a client stays safe while the global is being
+/// withdrawn. On destruction it drops the resource from the output's bound-resource
+/// list so `wl_surface.enter`/`leave` never references a freed resource.
 final class WlOutputBinding {
-    weak var output: WlOutput?
+    let output: WlOutput
     var resource: UnsafeMutablePointer<wl_resource>?
     init(_ output: WlOutput) { self.output = output }
     deinit {
-        if let resource { output?.removeResource(resource) }
+        if let resource { output.removeResource(resource) }
     }
 }
 
 final class WlOutput {
-    let info: OutputInfo
+    private(set) var info: OutputInfo
     private let vtable: UnsafeMutableRawPointer
+    private let globalState = OutputGlobalState()
 
     /// The DisplayID this output advertises. Surfaces report their overlapping
     /// output set by this id; the router maps it back to bound wl_output resources.
@@ -69,16 +66,18 @@ final class WlOutput {
     /// reference one of these for the surface's own client, so the list is kept in
     /// sync as clients bind (append in `bind`) and disconnect (removed by the
     /// binding's deinit).
-    private(set) var resources: [UnsafeMutablePointer<wl_resource>] = []
+    var resources: [UnsafeMutablePointer<wl_resource>] {
+        globalState.resources
+    }
 
     func removeResource(_ resource: UnsafeMutablePointer<wl_resource>) {
-        resources.removeAll { $0 == resource }
+        globalState.removeResource(resource)
     }
 
     /// The bound wl_output resources belonging to one client (a client may bind the
     /// output more than once; `wl_surface.enter` is sent to each, as wlroots does).
     func resources(forClient client: OpaquePointer?) -> [UnsafeMutablePointer<wl_resource>] {
-        resources.filter { wl_resource_get_client($0) == client }
+        globalState.resources(forClient: client)
     }
 
     /// The output's authoritative logical rect in compositor space. Layer-shell
@@ -114,10 +113,39 @@ final class WlOutput {
         self.vtable = raw
     }
 
-    func register(in router: NucleusWaylandRouter) {
-        router.addGlobal(
-            interface: swift_wayland_iface_wl_output(), version: 4, impl: self, bind: Self.bind
-        )
+    @discardableResult
+    func register(in router: NucleusWaylandRouter) -> Bool {
+        globalState.install(router.addGlobal(
+            interface: swift_wayland_iface_wl_output(),
+            version: 4,
+            impl: self,
+            bind: Self.bind))
+    }
+
+    /// Stop advertising this output. Existing wl_output resources remain valid
+    /// until their clients release them and keep this value alive through their
+    /// binding owner.
+    func removeGlobal() {
+        globalState.withdraw()
+    }
+
+    /// Apply one complete advertised state and refresh every extant wl_output and
+    /// xdg-output binding. XDG v3 synchronizes through the subsequent
+    /// wl_output.done emitted by `sendState`.
+    func apply(_ newInfo: OutputInfo) {
+        info = newInfo
+        for xdg in globalState.liveXdgOutputs() {
+            xdg.sendDescription()
+        }
+        for resource in resources {
+            sendState(
+                to: resource,
+                version: UInt32(wl_resource_get_version(resource)))
+        }
+    }
+
+    func registerXdgOutput(_ output: XdgOutput) {
+        globalState.registerXdgOutput(output)
     }
 
     private static let bind: @convention(c) (
@@ -133,7 +161,7 @@ final class WlOutput {
             owner: binding
         ) else { return }
         binding.resource = resource
-        me.resources.append(resource)
+        me.globalState.addResource(resource)
         me.sendState(to: resource, version: version)
     }
 
@@ -156,13 +184,12 @@ final class WlOutput {
             UInt32(0x1 | 0x2) /* WL_OUTPUT_MODE_CURRENT | WL_OUTPUT_MODE_PREFERRED */,
             info.pixelWidth, info.pixelHeight, info.refreshMhz
         )
-        if version >= 2 {
-            wl_output_send_scale(resource, info.scale)
-            wl_output_send_done(resource)
-        }
+        if version >= 2 { wl_output_send_scale(resource, info.scale) }
         if version >= 4 {
             wl_output_send_name(resource, info.name)
             wl_output_send_description(resource, info.description)
+        }
+        if version >= 2 {
             wl_output_send_done(resource)
         }
     }

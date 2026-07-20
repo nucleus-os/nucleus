@@ -241,18 +241,17 @@ private func logDrmDiscover(_ message: String) {
 /// Discover the DRM device for compositor bring-up: enumerate PCI GPUs via libdrm
 /// (`drmGetDevices2` through `NucleusCompositorDrmC`), apply the Nucleus selection policy
 /// (`NUCLEUS_DRM_PATH` override, then connected-output/boot-VGA policy), require a
-/// primary node, and open the render node. Writes the primary-node path (for the
-/// seat to open) into `primaryPathOut` (NUL-terminated, capped at `primaryPathCap`)
-/// and the open render fd into `renderFdOut`. The render fd is handed to the caller
-/// (the render runtime owns it). Returns false on enumeration failure, no/ambiguous
-/// match, a match with no primary node, or render-open failure.
+/// primary node, and return both device-node paths. Discovery does not open the
+/// render node: DMA-BUF feedback needs only its `dev_t`, which the composition
+/// root obtains with `stat(2)`.
 public func nucleus_drm_discover(
     _ primaryPathOut: UnsafeMutablePointer<CChar>,
     _ primaryPathCap: Int,
-    _ renderFdOut: UnsafeMutablePointer<Int32>
+    _ renderPathOut: UnsafeMutablePointer<CChar>,
+    _ renderPathCap: Int
 ) -> Bool {
-    renderFdOut.pointee = -1
     if primaryPathCap > 0 { primaryPathOut.pointee = 0 }
+    if renderPathCap > 0 { renderPathOut.pointee = 0 }
 
     let override = getenv("NUCLEUS_DRM_PATH").map { String(cString: $0) }
     guard case .success(let candidates) = DrmDeviceEnumerator.enumerate() else {
@@ -275,14 +274,15 @@ public func nucleus_drm_discover(
         logDrmDiscover("matched DRM device \(selected.pciAddress) has no primary node")
         return false
     }
-    guard let renderFd = DrmDeviceFd(openingNode: selected.renderPath) else {
-        logDrmDiscover("failed to open render node \(selected.renderPath)")
-        return false
-    }
-    renderFdOut.pointee = renderFd.release()
     if primaryPathCap > 0 {
         _ = primary.withCString { strncpy(primaryPathOut, $0, primaryPathCap - 1) }
         primaryPathOut[primaryPathCap - 1] = 0
+    }
+    if renderPathCap > 0 {
+        _ = selected.renderPath.withCString {
+            strncpy(renderPathOut, $0, renderPathCap - 1)
+        }
+        renderPathOut[renderPathCap - 1] = 0
     }
     let displays = selected.connectedDisplayCount.map(String.init) ?? "unknown"
     logDrmDiscover("matched DRM device \(selected.pciAddress) render=\(selected.renderPath) primary=\(primary) connected_displays=\(displays) boot_vga=\(selected.isBootVGA)")

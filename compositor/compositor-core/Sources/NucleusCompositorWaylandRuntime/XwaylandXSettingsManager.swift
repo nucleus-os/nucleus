@@ -1,6 +1,6 @@
 // Connection-bound XSETTINGS / RESOURCE_MANAGER publishing. The byte-exact payloads come from
 // XwaylandXSettings.swift; this owns the hidden _XSETTINGS_S0 selection window and
-// the change_property calls that publish them. Lands with the XWM cutover.
+// the change_property calls that publish them.
 
 import NucleusCompositorXcbC
 

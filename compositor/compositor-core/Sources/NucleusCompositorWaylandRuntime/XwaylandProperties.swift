@@ -6,8 +6,8 @@
 // classification (which maps those raw atom lists to the model) is the separate,
 // model-coupled half ported alongside the XWM.
 //
-// The connection-bound mechanics (subscribe/refresh/writeback) land with the XWM
-// connection-ownership cutover; this file is the pure reply→state parsing.
+// XwaylandPropertyIO owns the connection-bound subscribe/refresh/writeback
+// mechanics; this file is the pure reply→state parsing.
 
 import NucleusCompositorXcbC
 

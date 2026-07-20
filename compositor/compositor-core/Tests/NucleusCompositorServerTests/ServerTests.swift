@@ -3,6 +3,108 @@ import NucleusTypes
 import NucleusCompositorServerTypes
 @testable import NucleusCompositorServer
 
+@Test func outputTopologyDiffIsStableAndClassifiesReplacement() {
+    func output(
+        _ id: UInt64, crtc: UInt32, width: UInt32 = 1_920
+    ) -> OutputTopologyFingerprint {
+        OutputTopologyFingerprint(
+            outputID: id,
+            pixelWidth: width,
+            pixelHeight: 1_080,
+            refreshMilliHz: 60_000,
+            crtcID: crtc,
+            primaryPlaneID: crtc + 100,
+            cursorPlaneID: crtc + 200)
+    }
+
+    let diff = OutputTopologyDiff.compute(
+        current: [output(30, crtc: 3), output(10, crtc: 1), output(20, crtc: 2)],
+        proposed: [
+            output(40, crtc: 4),
+            output(20, crtc: 8),
+            output(10, crtc: 1),
+        ])
+    #expect(diff.removed == [30])
+    #expect(diff.changed == [20])
+    #expect(diff.added == [40])
+    #expect(diff.unchanged == [10])
+
+    let forced = OutputTopologyDiff.compute(
+        current: [output(10, crtc: 1)],
+        proposed: [output(10, crtc: 1)],
+        forceChanged: true)
+    #expect(forced.changed == [10])
+    #expect(forced.unchanged.isEmpty)
+}
+
+@MainActor
+@Test func displayRefreshAndRedrawStatePreserveExactDemand() {
+    var mode = DisplayMode()
+    mode.pixelWidth = 1920
+    mode.pixelHeight = 1080
+    mode.refreshMhz = 59_940
+    let display = Display(
+        id: 1,
+        configuration: DisplayConfiguration(mode: mode))
+
+    #expect(display.displayLink.refreshIntervalNs == 16_683_350)
+    #expect(display.redrawState == .idle)
+    #expect(display.displayLink.targetPresentNs() == nil)
+
+    display.requestRedraw([.surfaceDamage, .cursor])
+    #expect(display.redrawState == .queued([.surfaceDamage, .cursor]))
+    #expect(display.beginRedraw(frameBuildID: 4))
+    display.requestRedraw(.animation)
+    display.redrawSubmitted(submissionID: 9)
+    #expect(display.redrawState == .awaitingPresentation(
+        submissionID: 9, pending: .animation))
+
+    display.requestRedraw(.shellOverlay)
+    let coalesced = display.sampleRedrawMetrics()
+    #expect(coalesced.redrawRequests == 3)
+    #expect(coalesced.coalescedRequests == 2)
+    #expect(coalesced.coalescedByReason[1] == 1)
+    #expect(coalesced.coalescedByReason[3] == 1)
+    display.redrawPresented(submissionID: 8)
+    #expect(display.redrawState == .awaitingPresentation(
+        submissionID: 9, pending: [.animation, .shellOverlay]))
+    display.redrawPresented(submissionID: 9)
+    #expect(display.redrawState == .queued([.animation, .shellOverlay]))
+
+    display.suspendRedraws()
+    #expect(display.redrawState == .suspended([.animation, .shellOverlay]))
+    display.resumeRedraws()
+    #expect(display.redrawState == .queued([
+        .animation, .shellOverlay, .recovery,
+    ]))
+}
+
+@MainActor
+@Test func desktopLayoutPlacesOutputsWithoutOverlapAndNormalizesPrimary() {
+    let layout = DesktopLayout()
+    var mode = DisplayMode()
+    mode.pixelWidth = 1_920
+    mode.pixelHeight = 1_080
+    mode.refreshMhz = 60_000
+
+    let first = layout.addDisplay(
+        id: 10,
+        configuration: DisplayConfiguration(
+            logicalX: 50, logicalY: 25, mode: mode))
+    let second = layout.addDisplay(
+        id: 20,
+        configuration: DisplayConfiguration(mode: mode),
+        logicalXSpecified: false,
+        logicalYSpecified: false)
+
+    #expect(second.logicalRect.x == first.logicalRect.maxX)
+    #expect(second.logicalRect.y == first.logicalRect.y)
+    #expect(layout.primaryDisplayID() == 10)
+    _ = layout.removeDisplay(id: 10)
+    #expect(layout.primaryDisplayID() == 20)
+    #expect(second.configuration.primary)
+}
+
 @MainActor
 @Test func displayAndWindowABIRoundTrip() throws {
     let server = NucleusCompositorServer.shared

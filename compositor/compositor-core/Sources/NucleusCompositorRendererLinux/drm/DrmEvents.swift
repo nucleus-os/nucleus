@@ -1,4 +1,4 @@
-// Phase 10a.5 — Swift DRM page-flip / vblank event drain over real libdrm.
+// Swift DRM page-flip / vblank event drain over real libdrm.
 //
 // The reactor registers the DRM device fd for readability; on readiness Swift
 // drains the fd through libdrm's `drmHandleEvent` via the NucleusCompositorDrmC façade and
@@ -9,7 +9,7 @@
 // `user_data`: a `DrmPageFlipToken` whose opaque pointer is set on the commit
 // and recovered here. The façade routes every completion to one
 // `@convention(c)` trampoline; the trampoline decodes the token and invokes its
-// handler with (timestamp, sequence, crtc_id). Nothing imports it yet.
+// handler with (timestamp, sequence, crtc_id).
 
 import NucleusCompositorDrmC
 

@@ -1,5 +1,6 @@
 import NucleusTypes
 import NucleusCompositorServerTypes
+import Glibc
 
 public typealias DisplayID = UInt64
 public typealias SpaceID = UInt32
@@ -79,6 +80,21 @@ public struct DisplayConfigurationChanges: Sendable, Equatable {
     public init() {}
 }
 
+public struct OutputRedrawMetrics: Sendable, Equatable {
+    public var redrawRequests: UInt64 = 0
+    public var coalescedRequests: UInt64 = 0
+    /// One counter per `RedrawReasons` bit, indexed by its trailing-zero bit.
+    public var coalescedByReason: [UInt64] =
+        Array(repeating: 0, count: 8)
+    public var sceneAuthorPasses: UInt64 = 0
+    public var renderPassesWithoutSubmission: UInt64 = 0
+    /// idle, queued, rendering, awaiting-presentation, deferred, suspended.
+    public var stateResidenceNs: [UInt64] =
+        Array(repeating: 0, count: 6)
+
+    public init() {}
+}
+
 @MainActor
 public final class Display {
     public let id: DisplayID
@@ -91,6 +107,11 @@ public final class Display {
     /// Per-output frame scheduler (the native Swift owner; the reactor reaches it by
     /// output id through the `nucleus_display_link_*` `@_cdecl` accessors).
     public var displayLink: DisplayLink
+    public private(set) var redrawState:
+        OutputRedrawState = .idle
+    private var redrawStateSinceNs =
+        Display.monotonicNowNs()
+    private var redrawMetrics = OutputRedrawMetrics()
     public var physicalWidthMM: Int32
     public var physicalHeightMM: Int32
     public var name: String
@@ -132,6 +153,156 @@ public final class Display {
         inFlightPresentID = 0
     }
 
+    public func requestRedraw(_ reasons: RedrawReasons) {
+        guard !reasons.isEmpty else { return }
+        redrawMetrics.redrawRequests &+= 1
+        if !isIdle(redrawState) {
+            redrawMetrics.coalescedRequests &+= 1
+            for bit in 0..<8
+            where reasons.rawValue & (1 << bit) != 0 {
+                redrawMetrics.coalescedByReason[bit] &+= 1
+            }
+        }
+        switch redrawState {
+        case .idle:
+            transition(to: .queued(reasons))
+        case .queued(let existing):
+            transition(
+                to: .queued(existing.union(reasons)))
+        case .rendering(let frameBuildID, let pending):
+            transition(to: .rendering(
+                frameBuildID: frameBuildID,
+                pending: pending.union(reasons)))
+        case .awaitingPresentation(let submissionID, let pending):
+            transition(to: .awaitingPresentation(
+                submissionID: submissionID,
+                pending: pending.union(reasons)))
+        case .deferredUntil(let deadline, let existing):
+            transition(to: .deferredUntil(
+                deadline, existing.union(reasons)))
+        case .suspended(let existing):
+            transition(
+                to: .suspended(existing.union(reasons)))
+        }
+        displayLink.requestFrame()
+    }
+
+    @discardableResult
+    public func beginRedraw(frameBuildID: UInt64) -> Bool {
+        guard case .queued = redrawState else { return false }
+        _ = displayLink.consumeFrameDemand()
+        transition(to: .rendering(
+            frameBuildID: frameBuildID, pending: []))
+        return true
+    }
+
+    public func redrawSubmitted(submissionID: UInt64) {
+        guard case .rendering(_, let pending) = redrawState else { return }
+        transition(to: .awaitingPresentation(
+            submissionID: submissionID, pending: pending))
+    }
+
+    public func redrawDidNotSubmit() {
+        guard case .rendering(_, let pending) = redrawState else { return }
+        redrawMetrics.renderPassesWithoutSubmission &+= 1
+        transition(to:
+            pending.isEmpty ? .idle : .queued(pending))
+    }
+
+    public func redrawPresented(submissionID: UInt64) {
+        guard case .awaitingPresentation(
+            let expectedSubmissionID, let pending) = redrawState,
+            expectedSubmissionID == submissionID
+        else { return }
+        transition(to:
+            pending.isEmpty ? .idle : .queued(pending))
+    }
+
+    public func suspendRedraws() {
+        let retained: RedrawReasons
+        switch redrawState {
+        case .queued(let reasons),
+             .deferredUntil(_, let reasons),
+             .suspended(let reasons):
+            retained = reasons
+        case .rendering(_, let pending),
+             .awaitingPresentation(_, let pending):
+            retained = pending
+        case .idle:
+            retained = []
+        }
+        transition(to: .suspended(retained))
+        displayLink.suspend()
+    }
+
+    public func resumeRedraws() {
+        let retained: RedrawReasons
+        if case .suspended(let reasons) = redrawState {
+            retained = reasons
+        } else {
+            retained = []
+        }
+        transition(to:
+            .queued(retained.union(.recovery)))
+        displayLink.resetPresentationPhase()
+        displayLink.requestFrame()
+    }
+
+    public func noteSceneAuthorPass() {
+        redrawMetrics.sceneAuthorPasses &+= 1
+    }
+
+    public func sampleRedrawMetrics()
+        -> OutputRedrawMetrics
+    {
+        var sample = redrawMetrics
+        let now = Self.monotonicNowNs()
+        let elapsed = now &- redrawStateSinceNs
+        sample.stateResidenceNs[
+            stateIndex(redrawState)] &+= elapsed
+        return sample
+    }
+
+    private func transition(
+        to state: OutputRedrawState
+    ) {
+        let now = Self.monotonicNowNs()
+        redrawMetrics.stateResidenceNs[
+            stateIndex(redrawState)] &+=
+            now &- redrawStateSinceNs
+        redrawState = state
+        redrawStateSinceNs = now
+    }
+
+    private func isIdle(
+        _ state: OutputRedrawState
+    ) -> Bool {
+        if case .idle = state { return true }
+        return false
+    }
+
+    private func stateIndex(
+        _ state: OutputRedrawState
+    ) -> Int {
+        switch state {
+        case .idle: 0
+        case .queued: 1
+        case .rendering: 2
+        case .awaitingPresentation: 3
+        case .deferredUntil: 4
+        case .suspended: 5
+        }
+    }
+
+    private static func monotonicNowNs() -> UInt64 {
+        var timestamp = timespec()
+        clock_gettime(
+            CLOCK_MONOTONIC, &timestamp)
+        return UInt64(timestamp.tv_sec)
+            &* 1_000_000_000
+            &+ UInt64(timestamp.tv_nsec)
+    }
+
     public init(id: DisplayID, configuration: DisplayConfiguration, physicalWidthMM: Int32 = 0, physicalHeightMM: Int32 = 0, name: String = "", description: String = "") {
         self.id = id
         self.configuration = configuration
@@ -145,7 +316,9 @@ public final class Display {
         self.fractionalScale = 1
         self.refreshMHz = 0
         self.displayLink = DisplayLink(
-            refreshHz: Self.refreshHz(forMode: configuration.mode),
+            refreshIntervalNs:
+                Self.refreshIntervalNs(
+                    forMode: configuration.mode),
             outputTag: name.isEmpty ? "bootstrap" : name
         )
         apply(configuration)
@@ -166,12 +339,9 @@ public final class Display {
         displayLink.updateRefreshInterval(Self.refreshIntervalNs(forMode: configuration.mode))
     }
 
-    static func refreshHz(forMode mode: DisplayMode) -> UInt32 {
-        UInt32(max(mode.refreshMhz / 1000, 1))
-    }
-
     static func refreshIntervalNs(forMode mode: DisplayMode) -> UInt64 {
-        1_000_000_000 / UInt64(refreshHz(forMode: mode))
+        let milliHz = UInt64(max(mode.refreshMhz, 1))
+        return (1_000_000_000_000 &+ milliHz / 2) / milliHz
     }
 }
 

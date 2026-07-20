@@ -4,9 +4,7 @@
 // flushed in one pump). Covers the standard XWM/EWMH atoms plus the
 // xwayland_shell_v1 `WL_SURFACE_SERIAL` atom.
 //
-// Phase 6 step 2: a pure-data port, compiled and unit-tested (the enum set +
-// names) but not yet wired into the live XWM — the existing atom table stays
-// authoritative until the step-4 cutover.
+// The live Swift XWM interns this exact enum set at connection startup.
 
 import Glibc
 import NucleusCompositorXcbC

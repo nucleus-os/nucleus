@@ -1,10 +1,10 @@
-// Phase 10a.6 (part 2) — Swift scanout format/modifier model + intersection.
+// Swift scanout format/modifier model + intersection.
 //
 // `FormatModifiers`/`FormatSet` are the per-fourcc capability records
 // (the three formats Nucleus advertises). `collectPlaneFormats`
-// reads a plane's format list + its IN_FORMATS modifier blob through the Phase
-// 10a.2 result owners; `selectScanoutFormat` intersects the plane's and the
-// renderer's importable formats into one scanout choice. Nothing imports it yet.
+// reads a plane's format list + its IN_FORMATS modifier blob through the
+// noncopyable result owners; `selectScanoutFormat` intersects the plane's and the
+// renderer's importable formats into one scanout choice.
 
 import NucleusCompositorDrmC
 

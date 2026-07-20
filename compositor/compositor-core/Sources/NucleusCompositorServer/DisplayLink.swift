@@ -16,6 +16,29 @@ public enum PresentSource: Sendable, Equatable {
     case synthetic
 }
 
+public struct RedrawReasons: OptionSet, Sendable, Equatable {
+    public let rawValue: UInt16
+    public init(rawValue: UInt16) { self.rawValue = rawValue }
+
+    public static let surfaceDamage = Self(rawValue: 1 << 0)
+    public static let animation = Self(rawValue: 1 << 1)
+    public static let cursor = Self(rawValue: 1 << 2)
+    public static let shellOverlay = Self(rawValue: 1 << 3)
+    public static let outputChange = Self(rawValue: 1 << 4)
+    public static let screencopy = Self(rawValue: 1 << 5)
+    public static let lockTransition = Self(rawValue: 1 << 6)
+    public static let recovery = Self(rawValue: 1 << 7)
+}
+
+public enum OutputRedrawState: Sendable, Equatable {
+    case idle
+    case queued(RedrawReasons)
+    case rendering(frameBuildID: UInt64, pending: RedrawReasons)
+    case awaitingPresentation(submissionID: UInt64, pending: RedrawReasons)
+    case deferredUntil(UInt64, RedrawReasons)
+    case suspended(RedrawReasons)
+}
+
 public struct PresentReport: Sendable, Equatable {
     public var source: PresentSource
     public var presentationNs: UInt64
@@ -109,10 +132,6 @@ public struct DisplayLink: Sendable {
     public var operationDeadlineNs: UInt64? = nil
     public var continuous: ContinuousDemand = .init()
 
-    public init(refreshHz: UInt32, outputTag: String = "bootstrap") {
-        self.init(refreshIntervalNs: 1_000_000_000 / UInt64(max(1, refreshHz)), outputTag: outputTag)
-    }
-
     public init(refreshIntervalNs: UInt64, outputTag: String = "bootstrap") {
         self.refreshIntervalNs = refreshIntervalNs
         self.lastPresentationNs = Int64(bitPattern: nsNow())
@@ -129,6 +148,21 @@ public struct DisplayLink: Sendable {
 
     public mutating func cancelRequest() {
         requested = false
+    }
+
+    public mutating func suspend() {
+        requested = false
+        frameDue = false
+        operationDeadlineNs = nil
+        cancelSubmittedFrame()
+    }
+
+    /// Drop the old vblank phase. The first page flip after recovery replaces
+    /// this bootstrap sample with the new kernel clock observation.
+    public mutating func resetPresentationPhase() {
+        lastPresentationNs = Int64(bitPattern: nsNow())
+        lastAckedPresentID = lastPresentID
+        cancelSubmittedFrame()
     }
 
     public mutating func updateRefreshInterval(_ refreshIntervalNs: UInt64) {

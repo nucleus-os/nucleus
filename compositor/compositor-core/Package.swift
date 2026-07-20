@@ -115,6 +115,7 @@ let package = Package(
         .library(name: "NucleusCompositorOverlayTypes", targets: ["NucleusCompositorOverlayTypes"]),
         .library(name: "NucleusCompositorOverlayScene", targets: ["NucleusCompositorOverlayScene"]),
         .library(name: "NucleusCompositorServer", targets: ["NucleusCompositorServer"]),
+        .library(name: "NucleusCompositorWindowManager", targets: ["NucleusCompositorWindowManager"]),
         .library(name: "NucleusCompositorShell", targets: ["NucleusCompositorShell"]),
     ],
     dependencies: [
@@ -409,7 +410,18 @@ let package = Package(
                 "XwaylandAtomsFixture.swift", "XwaylandPropertiesFixture.swift",
                 "XwaylandXSettingsFixture.swift",
             ],
-            sources: ["WaylandWireTest.swift", "WaylandProtocolConformanceTests.swift", "CursorShapeNameTests.swift", "CursorShmRepackTests.swift", "CursorRequestSerialTests.swift", "CursorIntentTests.swift", "SurfaceCommitGeometryTests.swift"],
+            sources: [
+                "WaylandWireTest.swift", "WaylandProtocolConformanceTests.swift",
+                "CursorShapeNameTests.swift", "CursorShmRepackTests.swift",
+                "CursorRequestSerialTests.swift", "CursorIntentTests.swift",
+                "SurfaceCommitGeometryTests.swift", "SurfaceTransactionTests.swift",
+                "SubsurfaceTopologyTests.swift",
+                "SeatSerialLedgerTests.swift",
+                "XdgConfigureLedgerTests.swift",
+                "XdgPositionerTests.swift",
+                "DmabufLayoutValidatorTests.swift",
+                "DndActionNegotiationTests.swift",
+            ],
             swiftSettings: [
                 .interoperabilityMode(.Cxx),
                 .unsafeFlags(waylandRuntimeCcFlags),

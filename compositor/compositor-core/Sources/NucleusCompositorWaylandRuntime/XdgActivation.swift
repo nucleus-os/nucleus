@@ -3,8 +3,7 @@
 // commits, and receives an opaque token string; another client (or the same) calls
 // activate(token, surface) to request the compositor raise/focus that surface.
 //
-// Token policy is permissive (every commit yields a fresh token). The actual
-// raise/focus is the XdgActivationDelegate seam (#12: WindowManager).
+// Tokens are one-shot grants backed by an exact input serial from this seat.
 
 import WaylandServerC
 import WaylandServer
@@ -23,16 +22,33 @@ final class XdgActivationBinding {
 
 final class XdgActivationManager {
     weak var delegate: XdgActivationDelegate?
+    weak var seat: WlSeat?
     private var tokenCounter: UInt64 = 0
+    private var grants: [String: Bool] = [:]
+    private var grantOrder: [String] = []
 
     func register(in router: NucleusWaylandRouter) {
         router.addGlobal(
             interface: swift_wayland_iface_xdg_activation_v1(), version: 1, impl: self, bind: Self.bind)
     }
 
-    func mintToken() -> String {
+    func mintToken(authorized: Bool) -> String {
         tokenCounter += 1
-        return "nucleus-activation-\(tokenCounter)"
+        let token = "nucleus-activation-\(tokenCounter)"
+        grants[token] = authorized
+        grantOrder.append(token)
+        while grantOrder.count > 256 {
+            grants[grantOrder.removeFirst()] = nil
+        }
+        return token
+    }
+
+    func consumeToken(_ token: String) -> Bool {
+        guard let authorized = grants.removeValue(forKey: token) else {
+            return false
+        }
+        grantOrder.removeAll { $0 == token }
+        return authorized
     }
 
     private static let bind: @convention(c) (
@@ -53,36 +69,87 @@ extension XdgActivationBinding: XdgActivationV1Requests {
     func activate(_ resource: UnsafeMutablePointer<wl_resource>, token: UnsafePointer<CChar>?,
                   surface surfaceRes: UnsafeMutablePointer<wl_resource>?) {
         let surface = surfaceRes.flatMap { WaylandResource.owner(of: $0, as: WlSurface.self) }
-        manager.delegate?.activateSurface(surface, token: token.map { String(cString: $0) } ?? "")
+        let token = token.map { String(cString: $0) } ?? ""
+        guard surface != nil, manager.consumeToken(token) else { return }
+        manager.delegate?.activateSurface(surface, token: token)
     }
 }
 
-/// An activation token. Provenance setters are permissive no-ops; commit emits a
-/// fresh token via the done event.
+/// An activation token accumulates provenance until its one commit.
 final class XdgActivationToken {
     private unowned let manager: XdgActivationManager
     private var used = false
+    private var serial: UInt32?
+    private weak var seat: WlSeat?
+    private weak var surface: WlSurface?
+    private var appID: String?
 
     init(manager: XdgActivationManager) { self.manager = manager }
 }
 
 extension XdgActivationToken: XdgActivationTokenV1Requests {
     func setSerial(_ resource: UnsafeMutablePointer<wl_resource>, serial: UInt32,
-                   seat: UnsafeMutablePointer<wl_resource>?) {}
+                   seat: UnsafeMutablePointer<wl_resource>?) {
+        guard !used else {
+            postAlreadyUsed(resource)
+            return
+        }
+        self.serial = serial
+        self.seat = seat.flatMap {
+            WaylandResource.owner(of: $0, as: SeatBinding.self)?.seat
+        }
+    }
 
-    func setAppId(_ resource: UnsafeMutablePointer<wl_resource>, app_id: UnsafePointer<CChar>?) {}
+    func setAppId(_ resource: UnsafeMutablePointer<wl_resource>, app_id: UnsafePointer<CChar>?) {
+        guard !used else {
+            postAlreadyUsed(resource)
+            return
+        }
+        appID = app_id.map(String.init(cString:))
+    }
 
     func setSurface(_ resource: UnsafeMutablePointer<wl_resource>,
-                    surface: UnsafeMutablePointer<wl_resource>?) {}
+                    surface: UnsafeMutablePointer<wl_resource>?) {
+        guard !used else {
+            postAlreadyUsed(resource)
+            return
+        }
+        self.surface = surface.flatMap {
+            WaylandResource.owner(of: $0, as: WlSurface.self)
+        }
+    }
 
     func commit(_ resource: UnsafeMutablePointer<wl_resource>) {
         // The token resource carries the done event; the manager mints the string.
         guard !used else {
-            swift_wayland_resource_post_error(resource, 0 /* already_used */, "activation token already committed")
+            postAlreadyUsed(resource)
             return
         }
         used = true
-        let tok = manager.mintToken()
+        let authorized: Bool
+        if let serial, let seat, let managerSeat = manager.seat,
+            seat === managerSeat, let surface,
+            let surfaceResource = surface.resource,
+            let client = wl_resource_get_client(surfaceResource)
+        {
+            authorized = seat.authorize(
+                serial: serial,
+                clientKey: WlSeat.clientKey(client),
+                surfaceID: surface.objectId,
+                kinds: [.pointerButton, .touchDown, .keyboardKey])
+        } else {
+            authorized = false
+        }
+        _ = appID
+        let tok = manager.mintToken(authorized: authorized)
         tok.withCString { xdg_activation_token_v1_send_done(resource, $0) }
+    }
+
+    private func postAlreadyUsed(
+        _ resource: UnsafeMutablePointer<wl_resource>
+    ) {
+        swift_wayland_resource_post_error(
+            resource, 0 /* already_used */,
+            "activation token already committed")
     }
 }

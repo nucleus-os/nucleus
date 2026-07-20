@@ -2,12 +2,17 @@
 // logical geometry (position, size) and user-facing name/description. The manager
 // mints a per-(client, wl_output) zxdg_output_v1 that sources its description from
 // the WlOutput model (resolved straight from the wl_output resource — no sink seam)
-// and emits it on creation. Read-only from the client; the compositor owns all
-// output geometry. Re-emit on output layout-change is a #12 concern.
+// and emits it on creation and every topology update. Read-only from the client;
+// the compositor owns all output geometry.
 
 import WaylandServerC
 import WaylandServer
 import WaylandServerDispatch
+
+final class WeakXdgOutput {
+    weak var output: XdgOutput?
+    init(_ output: XdgOutput) { self.output = output }
+}
 
 final class XdgOutputManagerBinding {
     unowned let manager: XdgOutputManager
@@ -58,13 +63,14 @@ extension XdgOutputManagerBinding: ZxdgOutputManagerV1Requests {
             vtable: UnsafeRawPointer(manager.outputVtable), owner: xdgOutput
         ) else { return }
         xdgOutput.bind(xres)
+        output.registerXdgOutput(xdgOutput)
         xdgOutput.sendDescription()
     }
 }
 
 /// One client's view of one output's logical geometry. Sources from the WlOutput.
 final class XdgOutput {
-    private unowned let output: WlOutput
+    private weak var output: WlOutput?
     private var resource: UnsafeMutablePointer<wl_resource>?
 
     init(output: WlOutput) { self.output = output }
@@ -73,7 +79,7 @@ final class XdgOutput {
 
     /// Emit logical position + size, then (v≥2) name + description, then done.
     func sendDescription() {
-        guard let resource else { return }
+        guard let resource, let output else { return }
         let r = output.logicalRect
         zxdg_output_v1_send_logical_position(resource, r.x, r.y)
         zxdg_output_v1_send_logical_size(resource, r.width, r.height)
@@ -81,6 +87,10 @@ final class XdgOutput {
             output.info.name.withCString { zxdg_output_v1_send_name(resource, $0) }
             output.info.description.withCString { zxdg_output_v1_send_description(resource, $0) }
         }
-        zxdg_output_v1_send_done(resource)
+        // Version 3 uses wl_output.done as the synchronization point and retires
+        // zxdg_output_v1.done.
+        if wl_resource_get_version(resource) < 3 {
+            zxdg_output_v1_send_done(resource)
+        }
     }
 }

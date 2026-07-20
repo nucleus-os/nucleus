@@ -35,19 +35,11 @@ struct ScreencopyResult {
 /// uncapturable → failed); capture fills the client buffer and reports timing/flags.
 protocol ScreencopyDelegate: AnyObject {
     func screencopyParams(output: WlOutput?, region: WlRect?) -> ScreencopyParams?
+    func screencopyRequestFrame(output: WlOutput?)
     func screencopyCapture(
         output: WlOutput?, region: WlRect?, overlayCursor: Bool,
         buffer: UnsafeMutablePointer<wl_resource>, withDamage: Bool) -> ScreencopyResult
 }
-extension ScreencopyDelegate {
-    func screencopyParams(output: WlOutput?, region: WlRect?) -> ScreencopyParams? { nil }
-    func screencopyCapture(
-        output: WlOutput?, region: WlRect?, overlayCursor: Bool,
-        buffer: UnsafeMutablePointer<wl_resource>, withDamage: Bool) -> ScreencopyResult {
-        ScreencopyResult(ok: false, tvSecHi: 0, tvSecLo: 0, tvNsec: 0, flags: 0)
-    }
-}
-
 /// Live screencopy-frame activity (M2 direct-scanout prerequisite). A capture reads
 /// the composited output, so while any client holds a screencopy frame (from the
 /// capture request until it destroys the frame) the affected outputs must composite
@@ -66,8 +58,17 @@ enum ScreencopyActivity {
     }
 }
 
+private final class WeakScreencopyFrame {
+    weak var frame: ScreencopyFrame?
+
+    init(_ frame: ScreencopyFrame) {
+        self.frame = frame
+    }
+}
+
 final class ScreencopyManager {
     weak var delegate: ScreencopyDelegate?
+    private var pendingFrames: [UInt64: [WeakScreencopyFrame]] = [:]
 
     func register(in router: NucleusWaylandRouter) {
         router.addGlobal(
@@ -85,6 +86,40 @@ final class ScreencopyManager {
             output: output, region: region, overlayCursor: overlayCursor,
             buffer: buffer, withDamage: withDamage)
             ?? ScreencopyResult(ok: false, tvSecHi: 0, tvSecLo: 0, tvNsec: 0, flags: 0)
+    }
+
+    fileprivate func enqueue(_ frame: ScreencopyFrame, output: WlOutput) {
+        let outputID = output.outputId
+        guard outputID != 0 else {
+            frame.failQueuedCopy()
+            return
+        }
+        var frames = pendingFrames[outputID, default: []]
+        frames.removeAll { $0.frame == nil }
+        frames.append(WeakScreencopyFrame(frame))
+        pendingFrames[outputID] = frames
+        delegate?.screencopyRequestFrame(output: output)
+    }
+
+    /// Complete captures only after the renderer accepted a new submission for
+    /// their output. At this point the composited accumulator contains the exact
+    /// frame requested by `copy`, rather than an older frame that happened to be
+    /// resident while the Wayland request was dispatched.
+    func outputSubmitted(_ outputID: UInt64) {
+        let frames = pendingFrames.removeValue(forKey: outputID) ?? []
+        for frame in frames.compactMap(\.frame) {
+            frame.completeQueuedCopy()
+        }
+    }
+
+    /// A removed output can no longer produce the frame promised to its pending
+    /// captures. Existing frame resources remain valid and receive one terminal
+    /// `failed` event.
+    func outputRemoved(_ outputID: UInt64) {
+        let frames = pendingFrames.removeValue(forKey: outputID) ?? []
+        for frame in frames.compactMap(\.frame) {
+            frame.failQueuedCopy()
+        }
     }
 
     private static let bind: @convention(c) (
@@ -151,6 +186,8 @@ final class ScreencopyFrame {
     private var resource: UnsafeMutablePointer<wl_resource>?
     fileprivate var params: ScreencopyParams?
     private var used = false
+    private var pendingBuffer: WaylandResourceReference?
+    private var pendingWithDamage = false
 
     init(
         manager: ScreencopyManager, output: WlOutput?, region: WlRect?,
@@ -208,10 +245,42 @@ final class ScreencopyFrame {
             return
         }
         used = true
+        // libwayland owns wl_shm buffer user_data; only router-created DMA-BUF
+        // resources carry a Swift WaylandResource owner.
+        let semanticOwner: DmabufBuffer? =
+            wl_shm_buffer_get(buffer) == nil
+                ? WaylandResource.owner(
+                    of: buffer, as: DmabufBuffer.self)
+                : nil
+        guard let bufferReference = WaylandResourceReference(
+            buffer, retaining: semanticOwner)
+        else {
+            zwlr_screencopy_frame_v1_send_failed(res)
+            return
+        }
+        pendingBuffer = bufferReference
+        pendingWithDamage = withDamage
+        guard let manager, let output else {
+            failQueuedCopy()
+            return
+        }
+        manager.enqueue(self, output: output)
+    }
+
+    fileprivate func completeQueuedCopy() {
+        guard let res = resource,
+            let buffer = pendingBuffer?.resource
+        else {
+            pendingBuffer = nil
+            return
+        }
+        let withDamage = pendingWithDamage
+        pendingBuffer = nil
         let result = manager?.capture(
             output: output, region: region, overlayCursor: overlayCursor,
             buffer: buffer, withDamage: withDamage)
-            ?? ScreencopyResult(ok: false, tvSecHi: 0, tvSecLo: 0, tvNsec: 0, flags: 0)
+            ?? ScreencopyResult(
+                ok: false, tvSecHi: 0, tvSecLo: 0, tvNsec: 0, flags: 0)
         guard result.ok else {
             zwlr_screencopy_frame_v1_send_failed(res)
             return
@@ -225,6 +294,12 @@ final class ScreencopyFrame {
                 UInt32(max(0, r.width)), UInt32(max(0, r.height)))
         }
         zwlr_screencopy_frame_v1_send_ready(res, result.tvSecHi, result.tvSecLo, result.tvNsec)
+    }
+
+    fileprivate func failQueuedCopy() {
+        pendingBuffer = nil
+        guard let resource else { return }
+        zwlr_screencopy_frame_v1_send_failed(resource)
     }
 }
 

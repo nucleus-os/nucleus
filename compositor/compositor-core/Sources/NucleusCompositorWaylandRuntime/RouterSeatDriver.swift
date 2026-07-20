@@ -12,6 +12,7 @@
 // driver owns only keyboard focus, which follows window activation.
 
 import NucleusCompositorServer
+import WaylandServerC
 
 @MainActor
 final class RouterSeatDriver {
@@ -23,6 +24,23 @@ final class RouterSeatDriver {
     init(seat: WlSeat, compositor: WlCompositor) {
         self.seat = seat
         self.compositor = compositor
+    }
+
+    func authorizeUserIntent(
+        serial: UInt32,
+        seatResourceBits: UInt,
+        surfaceID: UInt32
+    ) -> Bool {
+        seat.authorize(
+            serial: serial,
+            seatResource: UnsafeMutablePointer<wl_resource>(
+                bitPattern: seatResourceBits),
+            surface: compositor.surface(id: surfaceID),
+            kinds: [.pointerButton, .touchDown])
+    }
+
+    func beginPopupGrab(_ popup: XdgPopup) {
+        seat.beginPopupGrab(popup)
     }
 
     /// Move keyboard focus to the surface with `newId` (0 clears it). Resolves the

@@ -1,4 +1,4 @@
-// Phase 10a.2 — Swift noncopyable `drmMode*` result owners + property
+// Swift noncopyable `drmMode*` result owners + property
 // enumeration over real libdrm.
 //
 // Each KMS describe-the-card result libdrm returns (`drmModeRes`,
@@ -15,9 +15,6 @@
 // (id + value + name), then resolve a property id/value by name. The name
 // matching is pure and value-typed so it is exercised without DRM hardware;
 // the libdrm-backed projection runs where a KMS-capable node is open.
-//
-// Nothing imports it yet.
-
 import NucleusCompositorDrmC
 
 // MARK: - Mode info value
@@ -27,19 +24,43 @@ import NucleusCompositorDrmC
 struct DrmModeInfo: Sendable, Equatable {
     var clock: UInt32
     var hdisplay: UInt16
+    var htotal: UInt16
     var vdisplay: UInt16
+    var vtotal: UInt16
+    var vscan: UInt16
     var vrefresh: UInt32
     var flags: UInt32
     var type: UInt32
     var name: String
+    /// Exact bytes supplied by libdrm for MODE_ID blob creation. Synthetic policy
+    /// fixtures leave this empty because they never create kernel blobs.
+    private var kernelBytes: [UInt8]
 
     /// True for the connector's driver-preferred mode (`DRM_MODE_TYPE_PREFERRED`).
     var isPreferred: Bool { (type & UInt32(DRM_MODE_TYPE_PREFERRED)) != 0 }
 
+    /// Refresh in millihertz, derived from the mode timings rather than the
+    /// integer `vrefresh` convenience field. This preserves fractional rates.
+    var refreshMilliHz: Int32 {
+        guard clock > 0, htotal > 0, vtotal > 0 else {
+            return Int32(clamping: UInt64(vrefresh) * 1_000)
+        }
+        var numerator = UInt64(clock) * 1_000_000
+        var denominator = UInt64(htotal) * UInt64(vtotal)
+        if (flags & UInt32(DRM_MODE_FLAG_INTERLACE)) != 0 { numerator *= 2 }
+        if (flags & UInt32(DRM_MODE_FLAG_DBLSCAN)) != 0 { denominator *= 2 }
+        if vscan > 1 { denominator *= UInt64(vscan) }
+        let rounded = (numerator + denominator / 2) / denominator
+        return Int32(clamping: rounded)
+    }
+
     init(_ mode: drmModeModeInfo) {
         self.clock = mode.clock
         self.hdisplay = mode.hdisplay
+        self.htotal = mode.htotal
         self.vdisplay = mode.vdisplay
+        self.vtotal = mode.vtotal
+        self.vscan = mode.vscan
         self.vrefresh = mode.vrefresh
         self.flags = mode.flags
         self.type = mode.type
@@ -47,6 +68,50 @@ struct DrmModeInfo: Sendable, Equatable {
         self.name = withUnsafeBytes(of: &raw) { bytes in
             String(cString: bytes.bindMemory(to: CChar.self).baseAddress!)
         }
+        var rawMode = mode
+        self.kernelBytes = withUnsafeBytes(of: &rawMode) { Array($0) }
+    }
+
+    init(
+        clock: UInt32, hdisplay: UInt16, htotal: UInt16,
+        vdisplay: UInt16, vtotal: UInt16, vscan: UInt16 = 0,
+        vrefresh: UInt32, flags: UInt32 = 0, type: UInt32 = 0, name: String
+    ) {
+        self.clock = clock
+        self.hdisplay = hdisplay
+        self.htotal = htotal
+        self.vdisplay = vdisplay
+        self.vtotal = vtotal
+        self.vscan = vscan
+        self.vrefresh = vrefresh
+        self.flags = flags
+        self.type = type
+        self.name = name
+        self.kernelBytes = []
+    }
+
+    static func == (lhs: DrmModeInfo, rhs: DrmModeInfo) -> Bool {
+        lhs.clock == rhs.clock
+            && lhs.hdisplay == rhs.hdisplay
+            && lhs.htotal == rhs.htotal
+            && lhs.vdisplay == rhs.vdisplay
+            && lhs.vtotal == rhs.vtotal
+            && lhs.vscan == rhs.vscan
+            && lhs.vrefresh == rhs.vrefresh
+            && lhs.flags == rhs.flags
+            && lhs.type == rhs.type
+            && lhs.name == rhs.name
+    }
+
+    /// Create a MODE_ID property blob from the exact kernel mode record captured
+    /// during discovery.
+    func createModeBlob(fd: Int32) -> UInt32? {
+        guard kernelBytes.count == MemoryLayout<drmModeModeInfo>.size else { return nil }
+        var blobID: UInt32 = 0
+        let result = kernelBytes.withUnsafeBytes {
+            drmModeCreatePropertyBlob(fd, $0.baseAddress, $0.count, &blobID)
+        }
+        return result == 0 && blobID != 0 ? blobID : nil
     }
 }
 
@@ -95,48 +160,6 @@ struct DrmConnector: ~Copyable {
         let count = Int(ptr.pointee.count_modes)
         guard count > 0, let base = ptr.pointee.modes else { return [] }
         return (0..<count).map { DrmModeInfo(base[$0]) }
-    }
-
-    /// The driver-preferred mode, else the first mode, else nil.
-    var preferredMode: DrmModeInfo? {
-        let all = modes
-        return all.first(where: { $0.isPreferred }) ?? all.first
-    }
-
-    /// Create a KMS MODE_ID property blob at the driver-preferred resolution,
-    /// choosing its highest-refresh variant (else the first mode). Some drivers,
-    /// including NVIDIA, mark 4K60 preferred even when 4K120 is exposed at the
-    /// same resolution. The raw
-    /// `drmModeModeInfo` (not the lossy `DrmModeInfo` value copy) is what
-    /// `drmModeCreatePropertyBlob` requires. Returns nil when there are no modes
-    /// or blob creation fails. The kernel owns the blob until
-    /// `drmModeDestroyPropertyBlob`; the DrmOutput teardown releases it.
-    func createPreferredModeBlob(fd: Int32) -> (
-        blobId: UInt32, width: UInt32, height: UInt32, refreshMhz: Int32
-    )? {
-        let count = Int(ptr.pointee.count_modes)
-        guard count > 0, let base = ptr.pointee.modes else { return nil }
-        let preferredIndex = (0..<count).first {
-            (base[$0].type & UInt32(DRM_MODE_TYPE_PREFERRED)) != 0
-        } ?? 0
-        let preferredWidth = base[preferredIndex].hdisplay
-        let preferredHeight = base[preferredIndex].vdisplay
-        var index = preferredIndex
-        for i in 0..<count
-        where base[i].hdisplay == preferredWidth && base[i].vdisplay == preferredHeight
-            && base[i].vrefresh > base[index].vrefresh {
-            index = i
-        }
-        var blobId: UInt32 = 0
-        let rc = drmModeCreatePropertyBlob(
-            fd, base.advanced(by: index), MemoryLayout<drmModeModeInfo>.size, &blobId)
-        guard rc == 0, blobId != 0 else { return nil }
-        return (
-            blobId,
-            UInt32(base[index].hdisplay),
-            UInt32(base[index].vdisplay),
-            Int32(base[index].vrefresh) * 1_000
-        )
     }
 
     deinit { drmModeFreeConnector(ptr) }

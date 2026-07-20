@@ -906,6 +906,57 @@ public final class RenderCore {
         sampleableDmaBufFormats
     }
 
+    /// Probe the complete Vulkan external-memory path without registering client
+    /// content. The caller retains its fds; duplicates are consumed by the probe.
+    public func canImportSurfaceDmaBuf(
+        fd: Int32,
+        width: UInt32,
+        height: UInt32,
+        drmFormat: UInt32,
+        modifier: UInt64,
+        planes: [DmaBufPlane]
+    ) -> Bool {
+        guard width > 0, height > 0, !planes.isEmpty,
+            sampleableDmaBufFormats.contains(
+                DmaBufFormatModifier(format: drmFormat, modifier: modifier))
+        else { return false }
+
+        var importedFdBySource: [Int32: Int32] = [:]
+        var importPlanes: [DmaBufPlane] = []
+        importPlanes.reserveCapacity(planes.count)
+        for plane in planes {
+            let sourceFd = plane.fd >= 0 ? plane.fd : fd
+            if importedFdBySource[sourceFd] == nil {
+                let imported = dup(sourceFd)
+                guard imported >= 0 else {
+                    for duplicate in importedFdBySource.values { close(duplicate) }
+                    return false
+                }
+                importedFdBySource[sourceFd] = imported
+            }
+            importPlanes.append(DmaBufPlane(
+                fd: importedFdBySource[sourceFd] ?? -1,
+                offset: plane.offset,
+                rowPitch: plane.rowPitch))
+        }
+        guard let importFd = importPlanes.first?.fd, importFd >= 0 else {
+            for duplicate in importedFdBySource.values { close(duplicate) }
+            return false
+        }
+        let descriptor = DmaBufImageDescriptor(
+            fd: importFd,
+            width: width,
+            height: height,
+            drmFormat: drmFormat,
+            modifier: modifier,
+            planes: importPlanes,
+            usage: DmaBufImageDescriptor.sampledUsage)
+        return importDmaBufImage(
+            device: deviceHandle,
+            dispatch: deviceDispatch,
+            descriptor: descriptor) != nil
+    }
+
     /// Copy and coalesce a client SHM update. GPU allocation/upload is deliberately
     /// deferred to `renderReady`, outside Wayland dispatch.
     @discardableResult

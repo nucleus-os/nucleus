@@ -5,7 +5,7 @@
 //
 // One XdgForeign owns both globals and the process-wide handle→surface registry.
 // libwayland hands surfaces as live resources; the surface→window resolution and
-// the parent apply are the XdgForeignDelegate seam (#12). (v2, not v1: v1's
+// the parent apply use the RouterWindowDriver delegate seam. (v2, not v1: v1's
 // export/import request names are C++ keywords the importer cannot parse.)
 
 import WaylandServerC

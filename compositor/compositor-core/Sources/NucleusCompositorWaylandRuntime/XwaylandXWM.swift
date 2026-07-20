@@ -193,14 +193,49 @@ final class XwaylandXWM {
         let b = desktopBounds()
         let geomW = logicalExtentToCardinal(b.w)
         let geomH = logicalExtentToCardinal(b.h)
-        // The router layer-shell owns exclusive zones; the full desktop is the
-        // workarea until that refinement lands, so workarea offset is 0,0.
+        let workarea = desktopWorkarea()
         let cardinal = atoms[.CARDINAL]
         writeCardinals(rootWindow, atoms[._NET_NUMBER_OF_DESKTOPS], cardinal, [1])
         writeCardinals(rootWindow, atoms[._NET_CURRENT_DESKTOP], cardinal, [0])
         writeCardinals(rootWindow, atoms[._NET_DESKTOP_GEOMETRY], cardinal, [geomW, geomH])
         writeCardinals(rootWindow, atoms[._NET_DESKTOP_VIEWPORT], cardinal, [0, 0])
-        writeCardinals(rootWindow, atoms[._NET_WORKAREA], cardinal, [0, 0, geomW, geomH])
+        writeCardinals(
+            rootWindow, atoms[._NET_WORKAREA], cardinal,
+            [logicalOffsetToCardinal(workarea.x),
+             logicalOffsetToCardinal(workarea.y),
+             logicalExtentToCardinal(workarea.w),
+             logicalExtentToCardinal(workarea.h)])
+    }
+
+    private func desktopWorkarea() -> (
+        x: Double, y: Double, w: Double, h: Double
+    ) {
+        let layout = NucleusCompositorServer.shared.layout
+        guard !layout.displays.isEmpty else {
+            return desktopBounds()
+        }
+        var minX = Double.greatestFiniteMagnitude
+        var minY = Double.greatestFiniteMagnitude
+        var maxX = -Double.greatestFiniteMagnitude
+        var maxY = -Double.greatestFiniteMagnitude
+        for display in layout.displays {
+            let frame = display.logicalRect
+            let zones = WindowManager.shared.layerShellPolicy
+                .recalcZones(outputID: display.id)
+                ?? LayerExclusiveZones()
+            let x = frame.x + Double(zones.left)
+            let y = frame.y + Double(zones.top)
+            let right = frame.maxX - Double(zones.right)
+            let bottom = frame.maxY - Double(zones.bottom)
+            minX = min(minX, x)
+            minY = min(minY, y)
+            maxX = max(maxX, right)
+            maxY = max(maxY, bottom)
+        }
+        return (
+            minX, minY,
+            max(0, maxX - minX),
+            max(0, maxY - minY))
     }
 
     private func publishDpiSettings() {
@@ -209,23 +244,32 @@ final class XwaylandXWM {
         xsettings.publishScale(scale)
     }
 
-    /// Re-publish _NET_CLIENT_LIST + _NET_ACTIVE_WINDOW. The cross-window list is a
-    /// Swift-owned refinement (deferred); for now only the active window is authored.
+    /// Re-publish the EWMH managed-client lists in the window model's current
+    /// back-to-front stacking order, plus the active Xwayland window.
     func refreshClientLists() {
-        let empty: [UInt32] = []
-        empty.withUnsafeBytes { raw in
+        let clients = WindowManager.shared
+            .xwaylandClientXIDs()
+        clients.withUnsafeBytes { raw in
             _ = xcb_change_property(
                 conn, UInt8(XCB_PROP_MODE_REPLACE.rawValue), rootWindow,
-                atoms[._NET_CLIENT_LIST], xcb_atom_t(XCB_ATOM_WINDOW.rawValue), 32, 0, raw.baseAddress)
+                atoms[._NET_CLIENT_LIST],
+                xcb_atom_t(XCB_ATOM_WINDOW.rawValue), 32,
+                UInt32(clamping: clients.count),
+                raw.baseAddress)
             _ = xcb_change_property(
                 conn, UInt8(XCB_PROP_MODE_REPLACE.rawValue), rootWindow,
-                atoms[._NET_CLIENT_LIST_STACKING], xcb_atom_t(XCB_ATOM_WINDOW.rawValue), 32, 0, raw.baseAddress)
+                atoms[._NET_CLIENT_LIST_STACKING],
+                xcb_atom_t(XCB_ATOM_WINDOW.rawValue), 32,
+                UInt32(clamping: clients.count),
+                raw.baseAddress)
         }
         let active: [UInt32] = [UInt32(truncatingIfNeeded: WindowManager.shared.activeXwaylandXID())]
         active.withUnsafeBytes { raw in
             _ = xcb_change_property(
                 conn, UInt8(XCB_PROP_MODE_REPLACE.rawValue), rootWindow,
-                atoms[._NET_ACTIVE_WINDOW], atoms[.ATOM], 32, 1, raw.baseAddress)
+                atoms[._NET_ACTIVE_WINDOW],
+                xcb_atom_t(XCB_ATOM_WINDOW.rawValue), 32, 1,
+                raw.baseAddress)
         }
         _ = xcb_flush(conn)
     }
@@ -283,7 +327,7 @@ final class XwaylandXWM {
         cursor.height = cursorH
         cursor.hotSpotX = Int32(cursorHX)
         cursor.hotSpotY = Int32(cursorHY)
-        RenderBridge.requestFrame(outputId: 0)
+        RenderBridge.requestCursorFrame()
         return true
     }
 
@@ -522,7 +566,9 @@ final class XwaylandXWM {
         active.withUnsafeBytes { raw in
             _ = xcb_change_property(
                 conn, UInt8(XCB_PROP_MODE_REPLACE.rawValue), rootWindow,
-                atoms[._NET_ACTIVE_WINDOW], atoms[.ATOM], 32, 1, raw.baseAddress)
+                atoms[._NET_ACTIVE_WINDOW],
+                xcb_atom_t(XCB_ATOM_WINDOW.rawValue), 32, 1,
+                raw.baseAddress)
         }
         if plan.previousX11Window != 0, plan.previousX11Window != plan.focusedX11Window,
             let old = windowMap[xcb_window_t(truncatingIfNeeded: plan.previousX11Window)] {
@@ -532,6 +578,7 @@ final class XwaylandXWM {
             let new = windowMap[xcb_window_t(truncatingIfNeeded: plan.focusedX11Window)] {
             syncWindowNetState(new)
         }
+        refreshClientLists()
         _ = xcb_flush(conn)
     }
 

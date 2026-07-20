@@ -22,17 +22,11 @@ struct SyncPoint: Equatable, Sendable {
 }
 
 /// The DRM seam. importTimeline turns a syncobj fd into a kernel handle (nil =
-/// invalid); syncobjCommit hands the materialized acquire/release points to the
-/// presentation path at #12.
+/// invalid); applied surface transactions hand materialized acquire/release points
+/// to the renderer import and retirement paths.
 protocol DrmSyncobjDelegate: AnyObject {
     func importSyncobjTimeline(fd: Int32) -> UInt32?
     func destroySyncobjTimeline(handle: UInt32)
-    func syncobjCommit(_ surface: WlSurface, acquire: SyncPoint, release: SyncPoint)
-}
-extension DrmSyncobjDelegate {
-    func importSyncobjTimeline(fd: Int32) -> UInt32? { 1 }
-    func destroySyncobjTimeline(handle _: UInt32) {}
-    func syncobjCommit(_ surface: WlSurface, acquire: SyncPoint, release: SyncPoint) {}
 }
 
 final class WpLinuxDrmSyncobjManager {
@@ -58,10 +52,6 @@ final class WpLinuxDrmSyncobjManager {
             impl: self, bind: Self.bind)
     }
 
-    fileprivate func deliver(_ surface: WlSurface, acquire: SyncPoint, release: SyncPoint) {
-        delegate?.syncobjCommit(surface, acquire: acquire, release: release)
-    }
-
     private static let bind: @convention(c) (
         OpaquePointer?, UnsafeMutableRawPointer?, UInt32, UInt32
     ) -> Void = { client, data, version, id in
@@ -80,9 +70,9 @@ final class WpLinuxDrmSyncobjManager {
 extension WpLinuxDrmSyncobjManager: WpLinuxDrmSyncobjManagerV1Requests {
     // import_timeline(id, fd): import the syncobj fd into a kernel handle.
     func importTimeline(_ resource: UnsafeMutablePointer<wl_resource>, id: WlNewId, fd: Int32) {
-        let handle = delegate?.importSyncobjTimeline(fd: fd) ?? 1
+        let handle = delegate?.importSyncobjTimeline(fd: fd)
         if fd >= 0 { close(fd) }  // the import consumes the fd; DRM holds the handle
-        guard handle != 0 else {
+        guard let handle, handle != 0 else {
             swift_wayland_resource_post_error(resource, 1, "cannot import drm syncobj timeline")  // invalid_timeline
             return
         }
@@ -104,7 +94,7 @@ extension WpLinuxDrmSyncobjManager: WpLinuxDrmSyncobjManagerV1Requests {
             swift_wayland_resource_post_error(resource, 0, "surface already has a syncobj surface")  // surface_exists
             return
         }
-        let object = WpDrmSyncobjSurface(manager: self, surface: surface)
+        let object = WpDrmSyncobjSurface(surface: surface)
         guard let ores = id.create(vtable: WpLinuxDrmSyncobjSurfaceV1Server.vtable, owner: object) else {
             surface.releaseAux(.syncobj)
             return
@@ -118,7 +108,7 @@ extension WpLinuxDrmSyncobjManager: WpLinuxDrmSyncobjManagerV1Requests {
 final class WpDrmSyncobjTimeline {
     let handle: UInt32
     private let destroy: (UInt32) -> Void
-    init(handle: UInt32, destroy: @escaping (UInt32) -> Void = { _ in }) {
+    init(handle: UInt32, destroy: @escaping (UInt32) -> Void) {
         self.handle = handle
         self.destroy = destroy
     }
@@ -133,41 +123,58 @@ final class WpDrmSyncobjTimeline {
 /// wp_linux_drm_syncobj_surface_v1 owner (Rule 9). Double-buffered acquire/release
 /// points latched and validated on the surface's commit.
 final class WpDrmSyncobjSurface: WlSurfaceCommitObserver {
-    private weak let manager: WpLinuxDrmSyncobjManager?
     private weak let surface: WlSurface?
     private var resource: UnsafeMutablePointer<wl_resource>?
     private var pendingAcquire: SyncPoint?
     private var pendingRelease: SyncPoint?
 
-    init(manager: WpLinuxDrmSyncobjManager, surface: WlSurface) {
-        self.manager = manager
+    init(surface: WlSurface) {
         self.surface = surface
     }
     fileprivate func bind(_ resource: UnsafeMutablePointer<wl_resource>) { self.resource = resource }
 
-    func surfaceCommitApplied(_ surface: WlSurface) {
-        // Not using explicit sync this commit: nothing to validate.
-        guard pendingAcquire != nil || pendingRelease != nil else { return }
+    func captureSurfaceCommit(
+        _ surface: WlSurface,
+        bufferAttached: Bool,
+        attachedBufferIsNonNull: Bool,
+        attachedBufferSupportsExplicitSync: Bool,
+        aux: inout SurfaceAuxState,
+        effects: inout [() -> Void]
+    ) -> Bool {
+        let hasPoint = pendingAcquire != nil || pendingRelease != nil
         defer { pendingAcquire = nil; pendingRelease = nil }
-        guard let res = resource else { return }
-        guard surface.hasCurrentBuffer else {
-            swift_wayland_resource_post_error(res, 3, "no buffer with sync points")  // no_buffer
-            return
+        guard let res = resource else { return false }
+
+        // Points and one newly attached non-null buffer are an iff contract.
+        guard bufferAttached, attachedBufferIsNonNull else {
+            guard !hasPoint else {
+                swift_wayland_resource_post_error(
+                    res, 3, "sync points require a non-null attached buffer")
+                return false
+            }
+            return true
+        }
+        guard attachedBufferSupportsExplicitSync else {
+            swift_wayland_resource_post_error(
+                res, 2, "attached buffer does not support explicit synchronization")
+            return false
         }
         guard let acquire = pendingAcquire else {
             swift_wayland_resource_post_error(res, 4, "no acquire point set")  // no_acquire_point
-            return
+            return false
         }
         guard let release = pendingRelease else {
             swift_wayland_resource_post_error(res, 5, "no release point set")  // no_release_point
-            return
+            return false
         }
         if acquire.handle == release.handle, acquire.point >= release.point {
-            swift_wayland_resource_post_error(res, 6, "acquire point not before release point")  // conflicting_points
-            return
+            swift_wayland_resource_post_error(
+                res, 6, "acquire point not before release point")  // conflicting_points
+            return false
         }
-        surface.setSyncobjPoints(acquire: acquire, release: release)
-        manager?.deliver(surface, acquire: acquire, release: release)
+        aux.syncAcquire = acquire
+        aux.syncRelease = release
+        return true
     }
 
     deinit { surface?.releaseAux(.syncobj) }

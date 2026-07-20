@@ -1,11 +1,11 @@
-// Phase 10a.6 (part 1) — Swift DRM capability discovery + session ioctls over
+// Swift DRM capability discovery + session ioctls over
 // real libdrm.
 //
 // Init-time capability negotiation an output pipeline needs before scanout:
 // enabling the universal-planes + atomic client caps, and reading the cursor
 // dimensions / ADDFB2-modifiers / syncobj device caps. Plus the
 // outside-the-frame-path session ioctls (`drmSetMaster`/`drmDropMaster`) and the
-// PRIME import / GEM-close helpers framebuffer creation uses. Nothing imports it yet.
+// PRIME import / GEM-close helpers framebuffer creation uses.
 
 import NucleusCompositorDrmC
 
@@ -15,6 +15,7 @@ struct DrmCaps: Sendable, Equatable {
     var cursorHeight: UInt64
     var addFB2Modifiers: Bool
     var syncobj: Bool
+    var timestampMonotonic: Bool
 }
 
 enum DrmCapabilities {
@@ -23,6 +24,7 @@ enum DrmCapabilities {
     static let capCursorHeight: UInt64 = 0x9
     static let capAddFB2Modifiers: UInt64 = 0x10
     static let capSyncobj: UInt64 = 0x13
+    static let capTimestampMonotonic: UInt64 = 0x6
 
     // Client caps (drm.h DRM_CLIENT_CAP_*).
     static let clientCapUniversalPlanes: UInt64 = 1
@@ -53,7 +55,9 @@ enum DrmCapabilities {
             cursorWidth: get(fd: fd, capability: capCursorWidth) ?? 0,
             cursorHeight: get(fd: fd, capability: capCursorHeight) ?? 0,
             addFB2Modifiers: (get(fd: fd, capability: capAddFB2Modifiers) ?? 0) != 0,
-            syncobj: (get(fd: fd, capability: capSyncobj) ?? 0) != 0)
+            syncobj: (get(fd: fd, capability: capSyncobj) ?? 0) != 0,
+            timestampMonotonic:
+                (get(fd: fd, capability: capTimestampMonotonic) ?? 0) != 0)
     }
 }
 

@@ -3,10 +3,9 @@
 // manager hands out zwp_relative_pointer_v1 objects bound to a client's pointer;
 // while that pointer has focus, every motion event also emits relative_motion.
 //
-// The wl_pointer argument
-// is never dereferenced — a relative-pointer binding delivers to its client, and
-// the seat's pointerMotion path calls emitRelativeMotion for that client (wired at
-// #12). libwayland owns the resource mechanics; this owns the delivery semantics.
+// A relative-pointer binding retains the associated pointer owner, and the seat's
+// pointerMotion path emits relative motion to the focused client's live bindings.
+// libwayland owns the resource mechanics; this owns the delivery semantics.
 
 import WaylandServerC
 import WaylandServer

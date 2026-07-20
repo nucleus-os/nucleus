@@ -97,6 +97,13 @@ final class InputDispatch {
 
     init(xkb: XkbKeyboard) { self.xkb = xkb }
 
+    static func monotonicNowNs() -> UInt64 {
+        var timestamp = timespec()
+        clock_gettime(CLOCK_MONOTONIC, &timestamp)
+        return UInt64(timestamp.tv_sec) &* 1_000_000_000
+            &+ UInt64(timestamp.tv_nsec)
+    }
+
     // MARK: - backend-facing surface (the input host drives these)
 
     /// The stream snapshot the libinput→record normalization reads (current cursor,
@@ -118,6 +125,9 @@ final class InputDispatch {
     func beginInteractiveMove(windowID: UInt64) { beginInteractiveMoveFromChrome(windowID: windowID) }
     func beginInteractiveResize(windowID: UInt64, edges: UInt32) {
         beginInteractiveResizeFromChrome(windowID: windowID, edges: edges)
+    }
+    func showWindowMenu(windowID: UInt64) {
+        showWindowMenuForWindow(windowID)
     }
 
     /// Clear pointer focus (the orchestration calls this on unmap / lock).
@@ -156,6 +166,18 @@ final class InputDispatch {
         }
         seatFocus.resetPointerButtons()
         WindowManager.shared.endInteractiveGrab()
+    }
+
+    /// Clear every focus and grab that was authorized by the departing session.
+    /// No serial or implicit grab may survive a VT boundary.
+    func resetSessionState() {
+        clearPointerFocus()
+        clearKeyboardFocus()
+        touchGrabs.removeAll(keepingCapacity: true)
+        armedChromeButton = nil
+        lastTitlebarPress = nil
+        chromeButtonVisual = nil
+        resetKeyboardState()
     }
 
     // MARK: - reachable Swift owners
@@ -231,6 +253,7 @@ final class InputDispatch {
     func dispatch(_ record: WireEventRecord, location: TapLocation = .hid) -> Result {
         var submitted = record
         InputLatencyProbe.beginHidEvent()
+        WaylandRuntime.noteUserInput(nowNs: Self.monotonicNowNs())
 
         if isKey(submitted.kind) { updateKeyboardStateForEvent(&submitted) }
         applyPointerConstraints(&submitted)
@@ -244,9 +267,15 @@ final class InputDispatch {
             }
         }
 
+        let previousCursorX = cursorX
+        let previousCursorY = cursorY
         let decision = NucleusCompositorServer.shared.events.dispatch(submitted, bounds: pointerBounds())
         cacheState(decision.state)
-        if decision.change.cursorMoved { requestCursorFrame() }
+        if decision.change.cursorMoved {
+            requestCursorFrame(
+                previousX: previousCursorX,
+                previousY: previousCursorY)
+        }
 
         switch decision.action {
         case .route: return route(decision.event)
@@ -294,6 +323,15 @@ final class InputDispatch {
                 surfaceID: hit.surfaceId, timeMsec: msec(event), id: id,
                 x: hit.localX, y: hit.localY)
         case .touchMotion:
+            if RouterHost.shared.runtime?.dataDevice.dragActive == true {
+                let hit = routerHitTest(sx: event.x, sy: event.y)
+                _ = RouterHost.shared.runtime?.dataDevice.dragMotion(
+                    surfaceID: hit.surfaceId,
+                    x: hit.localX,
+                    y: hit.localY,
+                    timeMsec: msec(event))
+                return
+            }
             guard let grab = touchGrabs[id], !lockBlocks(grab.surfaceID) else { return }
             SeatDelivery.touchMotion(
                 surfaceID: grab.surfaceID, timeMsec: msec(event), id: id,
@@ -301,6 +339,9 @@ final class InputDispatch {
         case .touchUp:
             guard let grab = touchGrabs.removeValue(forKey: id), !lockBlocks(grab.surfaceID) else { return }
             SeatDelivery.touchUp(surfaceID: grab.surfaceID, timeMsec: msec(event), id: id)
+            if touchGrabs.isEmpty {
+                _ = RouterHost.shared.runtime?.dataDevice.dropActiveDrag()
+            }
         case .touchFrame:
             for surfaceID in Set(touchGrabs.values.map(\.surfaceID)) {
                 SeatDelivery.touchFrame(surfaceID: surfaceID)
@@ -310,6 +351,8 @@ final class InputDispatch {
                 SeatDelivery.touchCancel(surfaceID: surfaceID)
             }
             touchGrabs.removeAll(keepingCapacity: true)
+            RouterHost.shared.runtime?.dataDevice.cancelActiveDrag(
+                notifySource: true)
         default:
             break
         }
@@ -370,10 +413,10 @@ final class InputDispatch {
             if surface != 0 { windowDriver?.close(surfaceId: UInt32(truncatingIfNeeded: surface)) }
         case 3:  // toggle_hotkey
             NucleusCompositorServer.shared.shellPolicy?.toggleHotkey()
-            RenderBridge.requestFrame(outputId: 0)
+            requestOverlayFrame()
         case 4:  // dismiss_hotkey
             NucleusCompositorServer.shared.shellPolicy?.dismissHotkey()
-            RenderBridge.requestFrame(outputId: 0)
+            requestOverlayFrame()
         // case 5: RESERVED (formerly wallpaper cycle; wallpaper is now a
         // background-layer wlr-layer-shell client, not compositor-owned).
         case 6:  // window_menu (for the focused window)
@@ -473,6 +516,14 @@ final class InputDispatch {
         let sx = cursorX
         let sy = cursorY
         let hit = routerHitTest(sx: sx, sy: sy)
+        if RouterHost.shared.runtime?.dataDevice.dragMotion(
+            surfaceID: hit.surfaceId,
+            x: hit.localX,
+            y: hit.localY,
+            timeMsec: msec(event)) == true
+        {
+            return
+        }
         let chromeRegion = ChromeRegion(rawValue: hit.chromeRegion) ?? .content
         let chromeIsChrome = chromeRegion != .content && hit.windowId != 0
 
@@ -561,6 +612,14 @@ final class InputDispatch {
         // press that isn't over a lock surface reaches nothing.
         if lockActive() {
             deliverPointerButton(event, button: button, down: down)
+            return
+        }
+
+        if RouterHost.shared.runtime?.dataDevice.dragActive == true {
+            deliverPointerButton(event, button: button, down: down)
+            if !down, seatFocus.buttonCount == 0 {
+                _ = RouterHost.shared.runtime?.dataDevice.dropActiveDrag()
+            }
             return
         }
 
@@ -828,8 +887,16 @@ final class InputDispatch {
 
     private func applyOverlayResult(bits: UInt32) {
         if bits & 4 != 0 {
-            RenderBridge.requestFrame(outputId: 0)
+            requestOverlayFrame()
         }
+    }
+
+    private func requestOverlayFrame() {
+        let server = NucleusCompositorServer.shared
+        RenderBridge.requestFrame(
+            outputId: server.spaces.overlayDisplayID(
+                layout: server.layout),
+            reason: .shellOverlay)
     }
 
     private func workspaceTargetOutput() -> UInt64 {
@@ -845,7 +912,8 @@ final class InputDispatch {
     private func raiseWindow(_ windowID: UInt64) {
         guard windowID != 0 else { return }
         if NucleusCompositorServer.shared.windows.raise(id: windowID) {
-            RenderBridge.requestFrame(outputId: 0)
+            RenderBridge.requestFrame(
+                forWindowID: windowID)
         }
     }
 
@@ -857,7 +925,7 @@ final class InputDispatch {
         let spaceID = server.spaces.ensureWorkspace(onOutput: outputID, index: Int(index))
         guard spaceID != 0 else { return }
         if server.spaces.setActiveSpace(spaceID, forDisplay: outputID) {
-            RenderBridge.requestFrame(outputId: 0)
+            RenderBridge.requestFrame(outputId: outputID)
         }
     }
 
@@ -874,7 +942,7 @@ final class InputDispatch {
         let spaceID = server.spaces.ensureWorkspace(onOutput: outputID, index: Int(index))
         guard spaceID != 0 else { return }
         if server.spaces.assign(window: windowID, toSpace: spaceID) {
-            RenderBridge.requestFrame(outputId: 0)
+            RenderBridge.requestFrame(outputId: outputID)
         }
     }
 
@@ -924,8 +992,13 @@ final class InputDispatch {
         appliedCursorIntent = intent
     }
 
-    private func requestCursorFrame() {
-        RenderBridge.requestFrame(outputId: 0)
+    private func requestCursorFrame(
+        previousX: Double? = nil,
+        previousY: Double? = nil
+    ) {
+        RenderBridge.requestCursorFrame(
+            previousX: previousX,
+            previousY: previousY)
     }
 
     // MARK: - interactive move/resize grab
@@ -978,6 +1051,8 @@ final class InputDispatch {
         guard let update = try? WindowManager.shared.updateInteractiveGrab(cursorX: cursorX, cursorY: cursorY)
         else { return }
         let windowID = update.windowId
+        let previousRect = WindowManager.shared.server
+            .window(id: windowID)?.currentRect()
         if update.needsResizeConfigure {
             // Keep presenting the last client-committed buffer at its native
             // logical size. The new frame lands atomically with the client's
@@ -989,7 +1064,9 @@ final class InputDispatch {
                 windowId: windowID, x: update.rect.x, y: update.rect.y,
                 w: Double(update.rect.width), h: Double(update.rect.height))
         }
-        RenderBridge.requestFrame(outputId: 0)
+        RenderBridge.requestFrame(
+            forWindowID: windowID,
+            includingPreviousRect: previousRect)
     }
 
     private func finishInteractiveGrab(timeMsec: UInt32) {
@@ -1079,7 +1156,8 @@ extension InputDispatch: CompositorInputControl {
         case 1:
             if driver.minimize(windowId: windowID) {
                 clearKeyboardFocus(ifWindow: windowID)
-                RenderBridge.requestFrame(outputId: 0)
+                RenderBridge.requestFrame(
+                    forWindowID: windowID)
             }
         case 2:
             if surfaceID != 0 { driver.toggleMaximize(surfaceId: surfaceID) }

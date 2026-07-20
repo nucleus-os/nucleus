@@ -22,12 +22,20 @@ import Tracy
 @MainActor
 public enum RenderRuntime {
     public struct OutputInfo: Sendable, Equatable {
+        public let topologyGeneration: UInt64
         public let id: UInt64
         public let pixelWidth: UInt32
         public let pixelHeight: UInt32
         public let refreshMhz: Int32
         public let physicalWidthMM: Int32
         public let physicalHeightMM: Int32
+        public let crtcID: UInt32
+        public let primaryPlaneID: UInt32
+        public let cursorPlaneID: UInt32
+    }
+    public struct OutputTopologyProposal: Sendable, Equatable {
+        public let generation: UInt64
+        public let outputs: [OutputInfo]
     }
     /// The process-global renderer-owner, constructed by `bringUp`.
     private static var shared: RendererRuntime?
@@ -39,20 +47,9 @@ public enum RenderRuntime {
         return UInt64(ts.tv_sec) &* 1_000_000_000 &+ UInt64(ts.tv_nsec)
     }
 
-    /// The linux-dmabuf-v4 `main_device` dev_t (the GPU's render node), captured
-    /// from the render-node fd at bring-up. The Swift render runtime owns this
-    /// platform fact; dmabuf-feedback reads it back rather than the loop holding
-    /// the render fd.
+    /// The linux-dmabuf-v4 `main_device` dev_t supplied by the composition root
+    /// after stat-ing the selected render-node path.
     private static var dmabufMainDeviceID: UInt64 = 0
-
-    /// Record the render-node `dev_t` for dmabuf feedback by `fstat`-ing the render
-    /// node fd. The fd is only read here (its `st_rdev`); ownership/close stays with
-    /// the bootstrap caller. A negative fd or stat failure clears it to 0.
-    public static func captureMainDevice(renderNodeFd: Int32) {
-        guard renderNodeFd >= 0 else { dmabufMainDeviceID = 0; return }
-        var st = stat()
-        dmabufMainDeviceID = fstat(renderNodeFd, &st) == 0 ? UInt64(st.st_rdev) : 0
-    }
 
     /// The render-node `dev_t` the dmabuf-v4 feedback advertises as `main_device`,
     /// or 0 if unavailable.
@@ -60,26 +57,106 @@ public enum RenderRuntime {
         dmabufMainDeviceID
     }
 
+    public static var presentationClockID: UInt32 {
+        shared?.presentationClockID ?? UInt32(CLOCK_MONOTONIC)
+    }
+
+    public static func gammaRampSize(outputID: UInt64) -> UInt32 {
+        shared?.gammaRampSize(outputID: outputID) ?? 0
+    }
+
+    public static func applyGamma(
+        outputID: UInt64,
+        red: [UInt16],
+        green: [UInt16],
+        blue: [UInt16]
+    ) -> Bool {
+        shared?.applyGamma(
+            outputID: outputID, red: red, green: green, blue: blue)
+            ?? false
+    }
+
+    public static func clearGamma(outputID: UInt64) {
+        shared?.clearGamma(outputID: outputID)
+    }
+
+    public static func forcePresent(outputID: UInt64) {
+        shared?.forcePresent(outputID: outputID)
+    }
+
     /// Bring up the Swift render runtime over the DRM master fd and install the
     /// Swift-direct commit sink (transactions fold into the shared retained tree).
     /// Returns false when the GPU/GBM stack is unavailable. Idempotent.
-    public static func bringUp(drmDeviceFd: Int32) -> Bool {
+    public static func bringUp(
+        drmDeviceFd: Int32,
+        dmabufMainDevice: UInt64
+    ) -> Bool {
         if shared != nil { return true }
         guard let runtime = RendererRuntime.create(drmDeviceFd: drmDeviceFd) else { return false }
         telemetryCorrelator = PresentationTelemetryCorrelator()
+        dmabufMainDeviceID = dmabufMainDevice
         shared = runtime
         return true
     }
 
-    /// Self-enumerate + attach every connected DRM output over the master fd.
-    /// Returns the count attached.
-    public static func enumerateOutputs(fractionalScale: Double) -> [OutputInfo] {
-        (shared?.enumerateAndAttachConnectedOutputs(fractionalScale: fractionalScale) ?? []).map {
-            OutputInfo(
+    /// Discover and globally allocate every connected DRM output without changing
+    /// live KMS bindings. The composition root applies the returned proposal.
+    public static func proposeOutputTopology() -> OutputTopologyProposal? {
+        guard let proposal = shared?.proposeConnectedOutputTopology() else {
+            return nil
+        }
+        return OutputTopologyProposal(
+            generation: proposal.generation,
+            outputs: proposal.outputs.map {
+                OutputInfo(
+                topologyGeneration: $0.topologyGeneration,
                 id: $0.id, pixelWidth: $0.pixelWidth, pixelHeight: $0.pixelHeight,
                 refreshMhz: $0.refreshMhz, physicalWidthMM: $0.physicalWidthMM,
-                physicalHeightMM: $0.physicalHeightMM)
-        }
+                physicalHeightMM: $0.physicalHeightMM,
+                crtcID: $0.crtcID, primaryPlaneID: $0.primaryPlaneID,
+                cursorPlaneID: $0.cursorPlaneID)
+            })
+    }
+
+    /// Apply one member of the current topology proposal.
+    public static func applyProposedOutput(
+        _ output: OutputInfo,
+        logicalX: Double, logicalY: Double,
+        logicalWidth: Double, logicalHeight: Double,
+        fractionalScale: Double
+    ) -> Bool {
+        shared?.applyProposedOutput(
+            RendererOutputInfo(
+                topologyGeneration: output.topologyGeneration,
+                id: output.id,
+                pixelWidth: output.pixelWidth,
+                pixelHeight: output.pixelHeight,
+                refreshMhz: output.refreshMhz,
+                physicalWidthMM: output.physicalWidthMM,
+                physicalHeightMM: output.physicalHeightMM,
+                crtcID: output.crtcID,
+                primaryPlaneID: output.primaryPlaneID,
+                cursorPlaneID: output.cursorPlaneID),
+            logicalX: logicalX, logicalY: logicalY,
+            logicalWidth: logicalWidth, logicalHeight: logicalHeight,
+            fractionalScale: fractionalScale) ?? false
+    }
+
+    @discardableResult
+    public static func retireOutput(_ outputID: UInt64) -> Bool {
+        shared?.retireOutput(outputID) ?? true
+    }
+
+    @discardableResult
+    public static func retireOutputs(_ outputIDs: Set<UInt64>) -> Bool {
+        shared?.retireOutputs(outputIDs) ?? true
+    }
+
+    public static func commitProposedTopology(
+        generation: UInt64, appliedOutputIDs: Set<UInt64>
+    ) {
+        shared?.commitProposedTopology(
+            generation: generation, appliedOutputIDs: appliedOutputIDs)
     }
 
     /// Drain pending DRM events (page-flip completions) on the master fd. Called
@@ -90,13 +167,15 @@ public enum RenderRuntime {
 
     /// Suspend the render session on VT-switch-away (drop DRM master + cancel
     /// pending flips).
-    public static func pauseSession() {
-        shared?.pauseSession()
+    @discardableResult
+    public static func pauseSession() -> Bool {
+        shared?.pauseSessionChecked() ?? true
     }
 
     /// Resume the render session on VT-switch-back (reacquire DRM master).
-    public static func resumeSession() {
-        shared?.resumeSession()
+    @discardableResult
+    public static func resumeSession() -> Bool {
+        shared?.resumeSessionChecked() ?? false
     }
 
     /// Upload a client SHM buffer to a texture under the surface's IOSurface id.
@@ -172,6 +251,34 @@ public enum RenderRuntime {
         return UInt32(pairs.count)
     }
 
+    /// Validate one complete client allocation through Vulkan immediately, before
+    /// linux-dmabuf creates its wl_buffer.
+    public static func probeDmabuf(
+        width: UInt32,
+        height: UInt32,
+        drmFormat: UInt32,
+        modifier: UInt64,
+        nPlanes: UInt32,
+        fds: UnsafePointer<Int32>,
+        offsets: UnsafePointer<UInt32>,
+        strides: UnsafePointer<UInt32>
+    ) -> Bool {
+        guard nPlanes > 0, let runtime = shared else { return false }
+        let planes = (0..<Int(nPlanes)).map {
+            DmaBufPlane(
+                fd: fds[$0],
+                offset: UInt64(offsets[$0]),
+                rowPitch: UInt64(strides[$0]))
+        }
+        return runtime.canImportSurfaceDmabuf(
+            fd: fds[0],
+            width: width,
+            height: height,
+            drmFormat: drmFormat,
+            modifier: modifier,
+            planes: planes)
+    }
+
     /// Import a DRM syncobj timeline handle on the Swift renderer's DRM fd.
     public static func importSyncobjTimeline(fd: Int32) -> UInt32 {
         shared?.importSyncobjTimeline(fd: fd) ?? 0
@@ -184,14 +291,15 @@ public enum RenderRuntime {
 
     /// Advance animations to the current present time, then render + flip every
     /// output with pending damage. Returns true if any output flipped this vblank.
-    public static func renderOutputs() -> Bool {
+    public static func renderOutputs(_ outputIDs: Set<UInt64>) -> Bool {
+        guard !outputIDs.isEmpty else { return false }
         let presentNs = monotonicNowNs()
         guard let runtime = shared else { return false }
         _ = Trace.zone("renderer.store_tick", color: Trace.Color.blue) {
             runtime.store.tick(presentTimeNs: presentNs)
         }
         return Trace.zone("renderer.client_upload_and_frame", color: Trace.Color.green) {
-            let rendered = runtime.renderReadyOutputs()
+            let rendered = runtime.renderReadyOutputs(outputIDs: outputIDs)
             for frame in runtime.takeFrameTelemetry() {
                 if let accepted = telemetryCorrelator.noteFrame(frame) {
                     publishAcceptedFrame(accepted, uploadStats: runtime.clientUploadStats)
@@ -341,27 +449,56 @@ public enum RenderRuntime {
     /// these to the output's `DisplayLink` present-id accounting, the session-lock
     /// present ack, and the client frame/feedback tick. Call after `bringUp`.
     public static func installPresentReport(
-        submitted: @escaping @MainActor (UInt64) -> Void,
-        presented: @escaping @MainActor (_ outputID: UInt64, _ presentationNs: UInt64, _ sequence: UInt64) -> Void
+        submitted: @escaping @MainActor (
+            _ outputID: UInt64,
+            _ outputGeneration: UInt64,
+            _ submissionID: UInt64,
+            _ sampledIOSurfaceIDs: [UInt64]
+        ) -> Void,
+        presented: @escaping @MainActor (
+            _ outputID: UInt64,
+            _ outputGeneration: UInt64,
+            _ submissionID: UInt64,
+            _ presentationNs: UInt64,
+            _ sequence: UInt64
+        ) -> Void,
+        discarded: @escaping @MainActor (
+            _ outputID: UInt64,
+            _ outputGeneration: UInt64,
+            _ submissionID: UInt64
+        ) -> Void
     ) {
-        shared?.onOutputSubmitted = { outputID, frameSerial, acceptedNs in
+        shared?.onOutputSubmitted = {
+            outputID, outputGeneration, submissionID, frameSerial,
+            acceptedNs, sampledIOSurfaceIDs in
             if let accepted = telemetryCorrelator.noteSubmission(
                 outputID: outputID, frameSerial: frameSerial,
                 atomicCommitAcceptedNs: acceptedNs),
                let stats = shared?.clientUploadStats {
                 publishAcceptedFrame(accepted, uploadStats: stats)
             }
-            submitted(outputID)
+            submitted(
+                outputID, outputGeneration, submissionID,
+                sampledIOSurfaceIDs)
         }
         shared?.onOutputPresented = {
-            outputID, frameSerial, presentationNs, sequence, fenceTelemetry in
+            outputID, outputGeneration, submissionID, frameSerial,
+            presentationNs, sequence, fenceTelemetry in
             if let sample = telemetryCorrelator.notePageflip(
                 outputID: outputID, frameSerial: frameSerial,
                 pageflipNs: presentationNs,
                 fenceTelemetry: fenceTelemetry) {
                 publishPresentedFrame(sample)
             }
-            presented(outputID, presentationNs, sequence)
+            presented(
+                outputID, outputGeneration, submissionID,
+                presentationNs, sequence)
+        }
+        shared?.onOutputPresentationDiscarded = {
+            outputID, outputGeneration, submissionID, frameSerial in
+            telemetryCorrelator.discard(
+                outputID: outputID, frameSerial: frameSerial)
+            discarded(outputID, outputGeneration, submissionID)
         }
     }
 

@@ -1,12 +1,9 @@
 // xdg-decoration-unstable-v1 on the router — server/client-side decoration
 // negotiation. The manager mints a per-toplevel decoration object; the delegate
 // resolves the effective mode from the client's request and the compositor default
-// (server-side). The resolved mode drives the window's style at #12; here the
-// object owns the set_mode/unset_mode state and emits the configure(mode) event.
-//
-// The retired path batched the decoration configure into the toplevel's
-// xdg_surface.configure cycle so the client applied it atomically. That batching is
-// a #12 refinement; on the router the configure is sent when the mode resolves.
+// (server-side). Mode events are emitted immediately before the corresponding
+// xdg_toplevel/xdg_surface configure cycle so the client applies the decoration
+// choice atomically with the window state.
 
 import WaylandServerC
 import WaylandServer
@@ -15,14 +12,8 @@ import WaylandServerDispatch
 /// mode enum: client_side=1, server_side=2.
 protocol DecorationDelegate: AnyObject {
     /// The effective mode for a toplevel, given the client's explicit request (nil =
-    /// none). Default is server-side. #12 folds in the per-window style/env policy.
+    /// none). Default is server-side.
     func resolveDecorationMode(for toplevel: XdgToplevel?, clientRequested: UInt32?) -> UInt32
-}
-
-extension DecorationDelegate {
-    func resolveDecorationMode(for toplevel: XdgToplevel?, clientRequested: UInt32?) -> UInt32 {
-        clientRequested ?? 2  // server_side default
-    }
 }
 
 final class XdgDecorationManagerBinding {
@@ -40,12 +31,20 @@ extension XdgDecorationManagerBinding: ZxdgDecorationManagerV1Requests {
         guard let toplevelRes,
             let toplevel = WaylandResource.owner(of: toplevelRes, as: XdgToplevel.self)
         else { return }
+        guard toplevel.decoration == nil else {
+            swift_wayland_resource_post_error(
+                resource, 0,
+                "xdg_toplevel already has a decoration object")
+            return
+        }
         let decoration = XdgToplevelDecoration(manager: manager, toplevel: toplevel)
         guard let dres = id.create(vtable: ZxdgToplevelDecorationV1Server.vtable, owner: decoration)
         else { return }
         decoration.bind(dres)
-        // Advertise the resolved mode immediately (the initial configure).
-        decoration.applyAndConfigure()
+        toplevel.decoration = decoration
+        if toplevel.xdgSurface?.hasSentInitialConfigure == true {
+            toplevel.xdgSurface?.configureToplevel(initial: false)
+        }
     }
 }
 
@@ -81,8 +80,9 @@ final class XdgToplevelDecoration {
 
     fileprivate func bind(_ resource: UnsafeMutablePointer<wl_resource>) { self.resource = resource }
 
-    /// Resolve the effective mode and emit configure(mode) if it changed.
-    fileprivate func applyAndConfigure() {
+    /// Resolve the effective mode and emit configure(mode) if it changed. Called
+    /// from XdgSurface immediately before the rest of the configure cycle.
+    func sendConfigureIfNeeded() {
         let mode = manager.delegate?.resolveDecorationMode(for: toplevel, clientRequested: clientRequested)
             ?? (clientRequested ?? 2)
         guard mode != lastSent else { return }
@@ -90,16 +90,28 @@ final class XdgToplevelDecoration {
         if let resource { zxdg_toplevel_decoration_v1_send_configure(resource, mode) }
     }
 
+    private func requestConfigureCycleIfReady() {
+        guard let xdgSurface = toplevel?.xdgSurface,
+            xdgSurface.hasSentInitialConfigure
+        else { return }
+        xdgSurface.configureToplevel(initial: false)
+    }
+
 }
 
 extension XdgToplevelDecoration: ZxdgToplevelDecorationV1Requests {
     func setMode(_ resource: UnsafeMutablePointer<wl_resource>, mode: UInt32) {
+        guard mode == 1 || mode == 2 else {
+            swift_wayland_resource_post_error(
+                resource, 0, "invalid decoration mode")
+            return
+        }
         clientRequested = mode
-        applyAndConfigure()
+        requestConfigureCycleIfReady()
     }
 
     func unsetMode(_ resource: UnsafeMutablePointer<wl_resource>) {
         clientRequested = nil
-        applyAndConfigure()
+        requestConfigureCycleIfReady()
     }
 }

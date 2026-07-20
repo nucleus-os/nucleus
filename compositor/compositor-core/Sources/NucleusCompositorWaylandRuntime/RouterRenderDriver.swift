@@ -17,21 +17,56 @@ final class RouterRenderDriver {
     init() {}
 }
 
-// wp_presentation: advertise the compositor's presentation clock domain. The
-// DrmPresentationSink stamps page-flip times against CLOCK_MONOTONIC.
+// wp_presentation: advertise the renderer-selected normalized clock domain.
 extension RouterRenderDriver: PresentationDelegate {
-    nonisolated var presentationClockId: UInt32 { 1 /* CLOCK_MONOTONIC */ }
+    nonisolated var presentationClockId: UInt32 {
+        MainActor.assumeIsolated { RenderBridge.presentationClockID() }
+    }
 }
 
-// zwlr_gamma_control is Swift-contained for now: the router advertises no
-// programmable LUT through GammaControlDelegate's default methods. KMS gamma
-// support lands as Swift render-runtime state, not a cross-language crossing.
-extension RouterRenderDriver: GammaControlDelegate {}
+extension RouterRenderDriver: GammaControlDelegate {
+    nonisolated func gammaRampSize(output: WlOutput?) -> UInt32 {
+        let outputID = output?.outputId ?? 0
+        return MainActor.assumeIsolated {
+            RenderBridge.gammaRampSize(outputID: outputID)
+        }
+    }
+
+    nonisolated func gammaApply(
+        output: WlOutput?,
+        red: [UInt16],
+        green: [UInt16],
+        blue: [UInt16]
+    ) {
+        let outputID = output?.outputId ?? 0
+        MainActor.assumeIsolated {
+            if RenderBridge.applyGamma(
+                outputID: outputID,
+                red: red,
+                green: green,
+                blue: blue)
+            {
+                RenderBridge.requestFrame(
+                    outputId: outputID,
+                    reason: .outputChange)
+            }
+        }
+    }
+
+    nonisolated func gammaClear(output: WlOutput?) {
+        let outputID = output?.outputId ?? 0
+        MainActor.assumeIsolated {
+            RenderBridge.clearGamma(outputID: outputID)
+            RenderBridge.requestFrame(
+                outputId: outputID,
+                reason: .outputChange)
+        }
+    }
+}
 
 // zwp_linux_dmabuf: advertise the GPU's importable format/modifier table + the
-// render-node device. The GPU import itself runs at surface commit through the
-// window driver (RenderRuntime.uploadDmabuf), so import-time validation here
-// just accepts the params; strict create_immed rejection is Phase-F parity work.
+// render-node device. Creation probes the real Vulkan import path synchronously;
+// commit-time import still handles device loss and allocation failure.
 extension RouterRenderDriver: DmabufDelegate {
     nonisolated func dmabufSupportedFormats() -> [DmabufFormat] {
         MainActor.assumeIsolated { RenderBridge.dmabufSupportedFormats() }
@@ -41,7 +76,12 @@ extension RouterRenderDriver: DmabufDelegate {
         MainActor.assumeIsolated { RenderBridge.dmabufMainDevice() }
     }
 
-    nonisolated func dmabufImport(_: DmabufAttrs) -> Bool { true }
+    nonisolated func dmabufImport(_ attrs: DmabufAttrs) -> Bool {
+        guard let snapshot = DmabufProbeSnapshot(attrs) else { return false }
+        return MainActor.assumeIsolated {
+            RenderBridge.probeDmabuf(snapshot)
+        }
+    }
 }
 
 // wp_linux_drm_syncobj: import a client timeline fd into a renderer-owned kernel
@@ -56,7 +96,6 @@ extension RouterRenderDriver: DrmSyncobjDelegate {
         MainActor.assumeIsolated { RenderBridge.syncobjDestroyTimeline(handle: handle) }
     }
 
-    nonisolated func syncobjCommit(_: WlSurface, acquire _: SyncPoint, release _: SyncPoint) {}
 }
 
 extension ScreencopyResult {
@@ -68,9 +107,9 @@ extension ScreencopyResult {
 // composited accumulator into the client's wl_buffer. The bound wl_output resolves
 // to its live DRM output by the DisplayID it carries (WlOutput.info.outputId); the
 // client buffer (shm, or the router's own DmabufBuffer) is resolved here and handed
-// across as plain values, so no transport type crosses the `@c` boundary. The copy
-// targets the active (just-composited) accumulator; live
-// per-output scheduling (request a frame, then capture) is finalized at the cut.
+// across as plain values, so no transport type crosses the `@c` boundary. A copy
+// queues its target output and runs only from that output's accepted-submission
+// callback, when the accumulator contains the newly produced frame.
 extension RouterRenderDriver: ScreencopyDelegate {
     nonisolated func screencopyParams(output: WlOutput?, region: WlRect?) -> ScreencopyParams? {
         guard let id = output?.info.outputId, id != 0 else { return nil }
@@ -93,6 +132,14 @@ extension RouterRenderDriver: ScreencopyDelegate {
                 p.stride = p.width * 4
             }
             return p
+        }
+    }
+
+    nonisolated func screencopyRequestFrame(output: WlOutput?) {
+        let outputID = output?.outputId ?? 0
+        MainActor.assumeIsolated {
+            RenderBridge.requestFrame(
+                outputId: outputID, reason: .screencopy)
         }
     }
 

@@ -66,6 +66,10 @@ final class RouterXwaylandDriver {
         window.seedPresentationActorToRect(
             PresentationRect(x: Double(x), y: Double(y), w: Double(fw), h: Double(fh)),
             slotGeneration: window.presentationActor.currentSlotGeneration)
+        assignOutput(
+            window,
+            centerX: Double(x) + Double(fw) * 0.5,
+            centerY: Double(y) + Double(fh) * 0.5)
         x11ByWindow[windowID] = x11WindowID
         return windowID
     }
@@ -75,6 +79,7 @@ final class RouterXwaylandDriver {
     /// as the layout rect and snap the presented frame to it.
     func applyGeometry(windowID: UInt64, x: Int32, y: Int32, w: UInt32, h: UInt32) {
         guard let window = WindowManager.shared.server.window(id: windowID) else { return }
+        let previousRect = window.currentRect()
         let cw = UInt32(max(1, w))
         let ch = UInt32(max(1, h))
         window.committedLogicalSize = RenderSize(w: Double(cw), h: Double(ch))
@@ -85,7 +90,15 @@ final class RouterXwaylandDriver {
         window.seedPresentationActorToRect(
             PresentationRect(x: Double(x), y: Double(y), w: Double(fw), h: Double(fh)),
             slotGeneration: window.presentationActor.currentSlotGeneration)
-        if window.mapped { RenderBridge.requestFrame(outputId: 0) }
+        assignOutput(
+            window,
+            centerX: Double(x) + Double(fw) * 0.5,
+            centerY: Double(y) + Double(fh) * 0.5)
+        if window.mapped {
+            RenderBridge.requestFrame(
+                forWindowID: windowID,
+                includingPreviousRect: previousRect)
+        }
     }
 
     /// Map or unmap the model window. On map: author the scene at the current frame,
@@ -106,13 +119,15 @@ final class RouterXwaylandDriver {
                 wm.server.windows.focus(id: windowID)
                 seatDriver.setKeyboardFocus(toSurfaceId: surfaceId)
             }
-            RenderBridge.requestFrame(outputId: 0)
+            RenderBridge.requestFrame(
+                forWindowID: windowID)
         } else {
             guard window.mapped else { return }
             window.mapped = false
             feeder?.windowUnmapped(surfaceID: surfaceId)
             seatDriver.surfaceUnmapped(surfaceId: surfaceId)
-            RenderBridge.requestFrame(outputId: 0)
+            RenderBridge.requestFrame(
+                forWindowID: windowID)
         }
     }
 
@@ -169,7 +184,8 @@ final class RouterXwaylandDriver {
                 w: Double(plan.targetRect.width), h: Double(plan.targetRect.height)),
             slotGeneration: window.presentationActor.currentSlotGeneration)
         configureToX(windowID: windowID)
-        RenderBridge.requestFrame(outputId: window.currentOutputID ?? 0)
+        RenderBridge.requestFrame(
+            forWindowID: windowID)
     }
 
     /// EWMH activation uses the same family raise, model focus, and wl_keyboard
@@ -182,12 +198,51 @@ final class RouterXwaylandDriver {
         if window.wantsKeyboardFocus {
             seatDriver.setKeyboardFocus(toSurfaceId: UInt32(window.surfaceObjectId))
         }
-        RenderBridge.requestFrame(outputId: window.currentOutputID ?? 0)
+        RenderBridge.requestFrame(
+            forWindowID: windowID)
     }
 
     func raiseWindow(windowID: UInt64) {
         guard WindowManager.shared.server.windows.raise(id: windowID) else { return }
         RenderBridge.requestFrame(
-            outputId: WindowManager.shared.server.window(id: windowID)?.currentOutputID ?? 0)
+            forWindowID: windowID)
+    }
+
+    /// Replan X11 windows whose geometry is output-relative after a mode, scale,
+    /// placement, or membership change. Normal floating windows retain their
+    /// client-owned geometry; fullscreen/maximized windows receive a fresh X
+    /// ConfigureNotify against the updated work area.
+    func outputTopologyChanged() {
+        for window in WindowManager.shared.server.windows.windows
+        where window.source == .xwayland
+            && window.mapped
+            && (window.requestedFullscreen
+                || window.activeFullscreen
+                || window.requestedMaximized
+                || window.activeMaximized)
+        {
+            applyStateConfigure(windowID: window.id)
+        }
+    }
+
+    private func assignOutput(
+        _ window: Window,
+        centerX: Double,
+        centerY: Double
+    ) {
+        let server = WindowManager.shared.server
+        let outputID = server.displayOutputForPoint(
+            x: centerX, y: centerY)
+        guard outputID != 0,
+            window.currentOutputID != outputID
+        else { return }
+        window.currentOutputID = outputID
+        window.preferredOutputID = outputID
+        if WindowManager.shared.xwaylandClientListIncludes(
+            windowID: window.id)
+        {
+            server.spaces.assignToActiveSpace(
+                window: window.id, outputID: outputID)
+        }
     }
 }

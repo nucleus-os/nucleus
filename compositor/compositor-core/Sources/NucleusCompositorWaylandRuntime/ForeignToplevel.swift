@@ -32,7 +32,8 @@ protocol ForeignToplevelActions: AnyObject {
     func foreignClose(windowID: UInt64)
     func foreignSetMaximized(windowID: UInt64, _ on: Bool)
     func foreignSetMinimized(windowID: UInt64, _ on: Bool)
-    func foreignSetFullscreen(windowID: UInt64, _ on: Bool)
+    func foreignSetFullscreen(
+        windowID: UInt64, _ on: Bool, outputID: UInt64?)
 }
 
 @MainActor
@@ -313,6 +314,30 @@ final class ForeignToplevelHandle {
             self.manager.runActions { body($0, self.windowID) }
         }
     }
+
+    private nonisolated func act(
+        requiring seat: UnsafeMutablePointer<wl_resource>?,
+        requestResource: UnsafeMutablePointer<wl_resource>,
+        _ body: @escaping @MainActor (
+            ForeignToplevelActions, UInt64
+        ) -> Void
+    ) {
+        let seatAddress = seat.map(UInt.init(bitPattern:)) ?? 0
+        let requestAddress = UInt(bitPattern: requestResource)
+        MainActor.assumeIsolated {
+            guard
+                let seatResource = UnsafeMutablePointer<wl_resource>(
+                    bitPattern: seatAddress),
+                let request = UnsafeMutablePointer<wl_resource>(
+                    bitPattern: requestAddress),
+                WaylandResource.owner(
+                    of: seatResource, as: SeatBinding.self) != nil,
+                wl_resource_get_client(seatResource)
+                    == wl_resource_get_client(request)
+            else { return }
+            self.manager.runActions { body($0, self.windowID) }
+        }
+    }
 }
 
 extension ForeignToplevelHandle: ZwlrForeignToplevelHandleV1Requests {
@@ -328,10 +353,11 @@ extension ForeignToplevelHandle: ZwlrForeignToplevelHandleV1Requests {
     nonisolated func unsetMinimized(_ resource: UnsafeMutablePointer<wl_resource>) {
         act { $0.foreignSetMinimized(windowID: $1, false) }
     }
-    // activate(seat): the seat arg names which seat requested it; single-seat, ignored.
     nonisolated func activate(_ resource: UnsafeMutablePointer<wl_resource>,
                               seat: UnsafeMutablePointer<wl_resource>?) {
-        act { $0.foreignActivate(windowID: $1) }
+        act(requiring: seat, requestResource: resource) {
+            $0.foreignActivate(windowID: $1)
+        }
     }
     nonisolated func close(_ resource: UnsafeMutablePointer<wl_resource>) {
         act { $0.foreignClose(windowID: $1) }
@@ -341,12 +367,22 @@ extension ForeignToplevelHandle: ZwlrForeignToplevelHandleV1Requests {
     nonisolated func setRectangle(_ resource: UnsafeMutablePointer<wl_resource>,
                                   surface: UnsafeMutablePointer<wl_resource>?,
                                   x: Int32, y: Int32, width: Int32, height: Int32) {}
-    // set_fullscreen(output): the output arg is an optional preferred output; ignored.
     nonisolated func setFullscreen(_ resource: UnsafeMutablePointer<wl_resource>,
                                    output: UnsafeMutablePointer<wl_resource>?) {
-        act { $0.foreignSetFullscreen(windowID: $1, true) }
+        let outputAddress = output.map(UInt.init(bitPattern:)) ?? 0
+        act {
+            let outputResource = UnsafeMutablePointer<wl_resource>(
+                bitPattern: outputAddress)
+            $0.foreignSetFullscreen(
+                windowID: $1,
+                true,
+                outputID: WlOutput.from(outputResource)?.outputId)
+        }
     }
     nonisolated func unsetFullscreen(_ resource: UnsafeMutablePointer<wl_resource>) {
-        act { $0.foreignSetFullscreen(windowID: $1, false) }
+        act {
+            $0.foreignSetFullscreen(
+                windowID: $1, false, outputID: nil)
+        }
     }
 }

@@ -10,11 +10,8 @@
 // truth (NucleusCompositorServer.seatFocus's keyboard surface id) back to its libwayland
 // client and comparing client keys.
 //
-// The drag path (`start_drag`) hands a grab + hit-testing to compositor policy
-// that lives outside the runtime module (NucleusCompositorShell), so it is wired at the
-// cutover and inert here.
-//
-// Dormant until the swap: constructed only when the router goes live. Isolation:
+// Drag sessions stay in WlDataDeviceManager and are advanced by InputDispatch's
+// live hit-testing and button path. Isolation:
 // the manager invokes the focus predicate from nonisolated @convention(c) request
 // handlers on the compositor's main-actor thread, so the method is nonisolated and
 // re-enters the actor with MainActor.assumeIsolated, crossing only the Sendable
@@ -51,9 +48,4 @@ extension RouterDataDeviceDriver: DataDeviceDelegate {
         MainActor.assumeIsolated { self.clientIsFocused(clientKey) }
     }
 
-    /// `start_drag` hands the drag grab + hit-testing to compositor policy in
-    /// NucleusCompositorShell, which the runtime module does not depend on; wired at the cut.
-    nonisolated func dataDeviceStartDrag(
-        source _: WlDataSource?, origin _: WlSurface?, icon _: WlSurface?, serial _: UInt32
-    ) {}
 }

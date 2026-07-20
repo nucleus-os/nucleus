@@ -203,6 +203,19 @@ extension WindowManager {
         return !role.overrideRedirect && window.managedAppWindow
     }
 
+    /// EWMH client windows in the compositor's authoritative back-to-front
+    /// stacking order. Override-redirect and non-app utility surfaces are omitted
+    /// from the managed client list.
+    public func xwaylandClientXIDs() -> [UInt32] {
+        server.windows.windows.compactMap { window in
+            guard xwaylandClientListIncludes(
+                windowID: window.id),
+                let xid = xwaylandXIDByWindow[window.id]
+            else { return nil }
+            return UInt32(truncatingIfNeeded: xid)
+        }
+    }
+
     public func activeXwaylandXID() -> UInt64 {
         guard let activeXwaylandWindowID,
               let xid = xwaylandXIDByWindow[activeXwaylandWindowID]

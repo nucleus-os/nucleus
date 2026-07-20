@@ -20,12 +20,6 @@ protocol GammaControlDelegate: AnyObject {
     func gammaApply(output: WlOutput?, red: [UInt16], green: [UInt16], blue: [UInt16])
     func gammaClear(output: WlOutput?)
 }
-extension GammaControlDelegate {
-    func gammaRampSize(output: WlOutput?) -> UInt32 { 0 }
-    func gammaApply(output: WlOutput?, red: [UInt16], green: [UInt16], blue: [UInt16]) {}
-    func gammaClear(output: WlOutput?) {}
-}
-
 private final class WeakGammaControl {
     weak var control: ZwlrGammaControl?
     init(_ control: ZwlrGammaControl) { self.control = control }
@@ -55,6 +49,17 @@ final class ZwlrGammaControlManager {
             controls[key] = nil
             delegate?.gammaClear(output: output)
         }
+    }
+
+    func outputRemoved(_ output: WlOutput) {
+        let key = ObjectIdentifier(output)
+        let control = controls.removeValue(forKey: key)?.control
+        control?.preempt()
+        delegate?.gammaClear(output: output)
+    }
+
+    func outputRestored(_ output: WlOutput) {
+        controls[ObjectIdentifier(output)]?.control?.reapply()
     }
 
     private static let bind: @convention(c) (
@@ -97,6 +102,9 @@ final class ZwlrGammaControl {
     private weak var output: WlOutput?
     private let size: UInt32
     private var resource: UnsafeMutablePointer<wl_resource>?
+    private var currentRamp: (
+        red: [UInt16], green: [UInt16], blue: [UInt16]
+    )?
 
     init(manager: ZwlrGammaControlManager, output: WlOutput?, size: UInt32) {
         self.manager = manager
@@ -108,6 +116,15 @@ final class ZwlrGammaControl {
     /// Preempted by a newer control for the same output: tell the client it failed.
     fileprivate func preempt() {
         if let resource { zwlr_gamma_control_v1_send_failed(resource) }
+    }
+
+    fileprivate func reapply() {
+        guard let currentRamp else { return }
+        manager?.apply(
+            output: output,
+            red: currentRamp.red,
+            green: currentRamp.green,
+            blue: currentRamp.blue)
     }
 
     deinit { manager?.controlDestroyed(self, output: output) }
@@ -130,6 +147,7 @@ extension ZwlrGammaControl: ZwlrGammaControlV1Requests {
         let red = (0..<s).map { u16($0) }
         let green = (0..<s).map { u16(s + $0) }
         let blue = (0..<s).map { u16(2 * s + $0) }
+        currentRamp = (red, green, blue)
         manager?.apply(output: output, red: red, green: green, blue: blue)
     }
 }

@@ -69,6 +69,15 @@ struct PresentationTelemetryCorrelator {
             fenceTelemetry: fenceTelemetry)
     }
 
+    mutating func discard(outputID: UInt64, frameSerial: UInt64) {
+        guard frameSerial != 0 else { return }
+        let key = Key(outputID: outputID, frameSerial: frameSerial)
+        submissions[key] = nil
+        frames[key] = nil
+        acceptedFrames[key] = nil
+        discardedCompletions.insert(key)
+    }
+
     private mutating func acceptIfComplete(_ key: Key) -> AcceptedCompositeFrame? {
         guard let submission = submissions[key], let frame = frames[key] else { return nil }
         submissions[key] = nil

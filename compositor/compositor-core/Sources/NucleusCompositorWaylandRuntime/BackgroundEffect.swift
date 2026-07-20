@@ -3,8 +3,8 @@
 // with the surface's content (latched on wl_surface.commit via the surface's
 // commit-observer seam). The manager advertises its capabilities on bind.
 //
-// The router owns the request/
-// latch mechanics and exposes the committed region to the render side at #12.
+// The router owns the request/latch mechanics and publishes the committed region
+// through SceneFeeder into the renderer's backdrop-effect plan.
 
 import WaylandServerC
 import WaylandServer
@@ -13,9 +13,6 @@ import WaylandServerDispatch
 /// The render seam for ext-background-effect. `region` nil = no blur.
 protocol BackgroundEffectDelegate: AnyObject {
     func backgroundBlurRegionUpdated(surfaceID: UInt32, region: RegionSnapshot?)
-}
-extension BackgroundEffectDelegate {
-    func backgroundBlurRegionUpdated(surfaceID: UInt32, region: RegionSnapshot?) {}
 }
 
 final class ExtBackgroundEffectManager {
@@ -80,10 +77,22 @@ final class ExtBackgroundEffectSurface: WlSurfaceCommitObserver {
         self.surface = surface
     }
 
-    func surfaceCommitApplied(_ surface: WlSurface) {
-        guard pendingSet else { return }
+    func captureSurfaceCommit(
+        _ surface: WlSurface,
+        bufferAttached: Bool,
+        attachedBufferIsNonNull: Bool,
+        attachedBufferSupportsExplicitSync: Bool,
+        aux: inout SurfaceAuxState,
+        effects: inout [() -> Void]
+    ) -> Bool {
+        guard pendingSet else { return true }
+        let region = pendingRegion
+        let surfaceID = surface.objectId
         pendingSet = false
-        manager?.publish(surfaceID: surface.objectId, region: pendingRegion)
+        effects.append { [weak manager] in
+            manager?.publish(surfaceID: surfaceID, region: region)
+        }
+        return true
     }
 
     deinit { surface?.releaseAux(.backgroundEffect) }

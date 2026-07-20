@@ -38,8 +38,13 @@ final class WaylandRouterRuntime {
     // the lock manager emits `locked` from the present path; the rest are retained by
     // the router's `impls` array via register).
     let compositor: WlCompositor
+    let xdgShell: XdgShell
     let seat: WlSeat
     let sessionLock: SessionLockManager
+    let idle: IdleManager
+    let dataDevice: WlDataDeviceManager
+    let screencopy: ScreencopyManager
+    private let gamma: ZwlrGammaControlManager
     /// The input feed queries this by surface id to clamp/freeze the cursor under an
     /// active pointer constraint (the seat owns the relative/locked motion delivery).
     let pointerConstraints: PointerConstraintsManager
@@ -61,9 +66,6 @@ final class WaylandRouterRuntime {
         let xdgForeign = XdgForeign()
         let viewporter = WpViewporter()
         let fractionalScale = WpFractionalScaleManager()
-        let tearingControl = WpTearingControlManager()
-        let commitTiming = WpCommitTimingManager()
-        let fifo = WpFifoManager()
         let idle = IdleManager()
         let blur = OrgKdeKwinBlurManager()
         let backgroundEffect = ExtBackgroundEffectManager()
@@ -72,7 +74,8 @@ final class WaylandRouterRuntime {
         let syncobj = WpLinuxDrmSyncobjManager()
         let screencopy = ScreencopyManager()
         let gamma = ZwlrGammaControlManager()
-        let dataDevice = WlDataDeviceManager()
+        let dataDevice = WlDataDeviceManager(compositor: compositor)
+        seat.dataDeviceManager = dataDevice
         let sessionLock = SessionLockManager()
         let relativePointer = RelativePointerManager()
         let pointerConstraints = PointerConstraintsManager()
@@ -106,6 +109,7 @@ final class WaylandRouterRuntime {
         cursorShape.delegate = windowDriver
         decoration.delegate = windowDriver
         xdgActivation.delegate = windowDriver
+        xdgActivation.seat = seat
         xdgForeign.delegate = windowDriver
         presentation.delegate = renderDriver
         dmabuf.delegate = renderDriver
@@ -115,15 +119,13 @@ final class WaylandRouterRuntime {
         dataDevice.delegate = dataDeviceDriver
         sessionLock.delegate = sessionLockDriver
         backgroundEffect.delegate = feeder
+        blur.delegate = feeder
         // The seat owns relative-pointer emission + pointer-constraint application on
         // the motion path; hand it the two managers (retained by the router globals).
         seat.relativePointer = relativePointer
         seat.pointerConstraints = pointerConstraints
         // The feeder resolves router surfaces to push per-frame output membership.
         feeder.compositor = compositor
-        // idle.delegate (idle deadline feed) and blur (region author) are wired at
-        // activation alongside the reactor idle-timeout arm.
-
         // Register every global. wl_output globals are added at activation, one per
         // live Display; wl_shm is libwayland's (WaylandDisplay.init_shm).
         compositor.register(in: router)
@@ -138,9 +140,6 @@ final class WaylandRouterRuntime {
         xdgForeign.register(in: router)
         viewporter.register(in: router)
         fractionalScale.register(in: router)
-        tearingControl.register(in: router)
-        commitTiming.register(in: router)
-        fifo.register(in: router)
         idle.register(in: router)
         blur.register(in: router)
         backgroundEffect.register(in: router)
@@ -171,18 +170,58 @@ final class WaylandRouterRuntime {
         self.dataDeviceDriver = dataDeviceDriver
         self.sessionLockDriver = sessionLockDriver
         self.compositor = compositor
+        self.xdgShell = xdgShell
         self.seat = seat
         self.sessionLock = sessionLock
+        self.idle = idle
+        self.dataDevice = dataDevice
+        self.screencopy = screencopy
+        self.gamma = gamma
         self.pointerConstraints = pointerConstraints
     }
 
-    /// Add a live wl_output global from a DRM output / Display snapshot. Called per
-    /// output at activation and on udev hotplug; the router retains the WlOutput.
-    func addOutput(_ info: OutputInfo) {
+    /// Add or update one stable connector identity.
+    func applyOutput(_ info: OutputInfo) {
+        if let output = compositor.output(id: info.outputId) {
+            output.apply(info)
+            compositor.outputStateChanged(id: info.outputId)
+            gamma.outputRestored(output)
+            xdgShell.outputTopologyChanged()
+            outputTopologyChangedForXwayland()
+            return
+        }
         let output = WlOutput(info: info)
-        output.register(in: router)
+        guard output.register(in: router) else { return }
         // The compositor also retains the output so surfaces can resolve their
         // overlapping DisplayIDs to bound wl_output resources for enter/leave.
         compositor.addOutput(output)
+        xdgShell.outputTopologyChanged()
+        outputTopologyChangedForXwayland()
+    }
+
+    @discardableResult
+    func prepareOutputRemoval(_ outputID: UInt64) -> Bool {
+        guard let output = compositor.output(id: outputID)
+        else { return false }
+        screencopy.outputRemoved(outputID)
+        gamma.outputRemoved(output)
+        return compositor.prepareOutputRemoval(id: outputID)
+    }
+
+    func finishOutputRemoval(_ outputID: UInt64) {
+        guard compositor.finishOutputRemoval(id: outputID) != nil
+        else { return }
+        xdgShell.outputTopologyChanged()
+        outputTopologyChangedForXwayland()
+    }
+
+    func removeOutput(_ outputID: UInt64) {
+        guard prepareOutputRemoval(outputID) else { return }
+        finishOutputRemoval(outputID)
+    }
+
+    private func outputTopologyChangedForXwayland() {
+        xwaylandDriver.outputTopologyChanged()
+        RouterHost.shared.xwaylandHost?.updateScale()
     }
 }

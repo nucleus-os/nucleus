@@ -176,6 +176,7 @@ let package = Package(
                 .product(name: "NucleusCompositorOverlayTypes", package: "compositor-core"),
                 .product(name: "NucleusCompositorOverlayScene", package: "compositor-core"),
                 .product(name: "NucleusCompositorServer", package: "compositor-core"),
+                .product(name: "NucleusCompositorWindowManager", package: "compositor-core"),
                 .product(name: "NucleusCompositorShell", package: "compositor-core"),
                 .product(name: "Tracy", package: "swift-tracy"),
                 .product(name: "NucleusTextCxxBridge", package: "Nucleus"),

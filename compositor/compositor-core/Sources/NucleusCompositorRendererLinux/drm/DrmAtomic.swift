@@ -1,4 +1,4 @@
-// Phase 10a.3 — Swift atomic-commit builder + atomic property groups over real
+// Swift atomic-commit builder + atomic property groups over real
 // libdrm.
 //
 // `AtomicRequestBuilder` owns the opaque libdrm `drmModeAtomicReq` (alloc on
@@ -11,9 +11,9 @@
 //
 // `AtomicProps` / `PlaneAtomicProps` are the cached property-ID groups one
 // output pipeline commits through. Discovery
-// resolves each ID by name through the Phase 10a.2 property enumeration
-// (`DrmProperties`); the pure `discover(connector:crtc:plane:)` overload and the
-// `hasRequired` gates are exercised without DRM hardware. Nothing imports it yet.
+// resolves each ID by name through `DrmProperties`; the pure
+// `discover(connector:crtc:plane:)` overload and `hasRequired` gates are exercised
+// without DRM hardware.
 
 import NucleusCompositorDrmC
 
@@ -104,8 +104,9 @@ struct PlaneAtomicProps: Sendable, Equatable {
     }
 }
 
-/// The cached DRM atomic property IDs for one output pipeline (connector + CRTC
-/// + primary plane). 0 means the property is absent.
+/// The cached DRM atomic property metadata for one output pipeline (connector +
+/// CRTC + primary plane). Property ids use 0 for absence. `crtcGammaLutSize`
+/// is the immutable value of `GAMMA_LUT_SIZE`, not a property id.
 struct AtomicProps: Sendable, Equatable {
     var connCrtcId: UInt32 = 0
     var connBroadcastRgb: UInt32 = 0
@@ -114,6 +115,7 @@ struct AtomicProps: Sendable, Equatable {
     var crtcVrrEnabled: UInt32 = 0
     var crtcOutFencePtr: UInt32 = 0
     var crtcGammaLut: UInt32 = 0
+    var crtcGammaLutSize: UInt32 = 0
     var crtcDegammaLut: UInt32 = 0
     var crtcCtm: UInt32 = 0
     var planeFbId: UInt32 = 0
@@ -155,6 +157,11 @@ enum AtomicPropsDiscovery {
     ) -> AtomicProps {
         func findConn(_ name: String) -> UInt32 { DrmProperties.findId(in: connector, name: name) }
         func findCrtc(_ name: String) -> UInt32 { DrmProperties.findId(in: crtc, name: name) }
+        func findCrtcValue(_ name: String) -> UInt32 {
+            guard let value = DrmProperties.findValue(in: crtc, name: name),
+                  let narrowed = UInt32(exactly: value) else { return 0 }
+            return narrowed
+        }
         func findPlane(_ name: String) -> UInt32 { DrmProperties.findId(in: plane, name: name) }
         return AtomicProps(
             connCrtcId: findConn("CRTC_ID"),
@@ -164,6 +171,7 @@ enum AtomicPropsDiscovery {
             crtcVrrEnabled: findCrtc("VRR_ENABLED"),
             crtcOutFencePtr: findCrtc("OUT_FENCE_PTR"),
             crtcGammaLut: findCrtc("GAMMA_LUT"),
+            crtcGammaLutSize: findCrtcValue("GAMMA_LUT_SIZE"),
             crtcDegammaLut: findCrtc("DEGAMMA_LUT"),
             crtcCtm: findCrtc("CTM"),
             planeFbId: findPlane("FB_ID"),

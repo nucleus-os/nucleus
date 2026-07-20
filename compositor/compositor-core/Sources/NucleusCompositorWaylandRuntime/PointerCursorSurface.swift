@@ -37,6 +37,22 @@ enum PointerCursorSurface {
         surfaceId = 0
     }
 
+    static func unbind(surfaceID: UInt32) {
+        if surfaceId == surfaceID { clear() }
+    }
+
+    /// `wl_surface.offset` moves the cursor surface relative to its previous
+    /// buffer, so the hotspot moves by the inverse delta on the same commit.
+    static func applyCommittedOffset(
+        surfaceID: UInt32,
+        x: Int32,
+        y: Int32
+    ) {
+        guard surfaceId == surfaceID else { return }
+        hotspotX = Int32(clamping: Int64(hotspotX) - Int64(x))
+        hotspotY = Int32(clamping: Int64(hotspotY) - Int64(y))
+    }
+
     @discardableResult
     static func reapplyCurrent(from compositor: WlCompositor) -> Bool {
         guard surfaceId != 0, let surface = compositor.surface(id: surfaceId) else { return false }

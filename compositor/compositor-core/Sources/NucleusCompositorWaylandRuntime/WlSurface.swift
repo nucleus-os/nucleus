@@ -8,144 +8,13 @@
 // the update to the scene delegate. Frame callbacks accumulated across commits
 // complete on the next presentation tick.
 //
-// The scene delegate is the seam to the render/scene system. Today it is a
-// libwayland-independent protocol the parity fixtures observe; at go-live (#12)
-// the live implementation is the Swift WindowSceneHost owner (surface attach,
-// content, layout, damage), so the surface model drives scene authoring directly
-// rather than through today's trampoline.
+// The scene delegate is the seam to the live retained scene author. It receives
+// immutable commits and drives surface attach, content, layout, and damage.
 
 import WaylandServerC
 import WaylandServer
 import WaylandServerDispatch
 import NucleusTypes
-
-/// A rectangle in fractional buffer coordinates (wp_viewport source is fixed-point).
-typealias WlFRect = BufferPixelRect
-
-/// An integer size (wp_viewport destination override, in surface-local pixels).
-struct WlSize: Equatable, Sendable {
-    var width: Int32
-    var height: Int32
-}
-
-extension WlSize {
-    var surfaceLogicalSize: SurfaceLogicalSize {
-        SurfaceLogicalSize(width: Double(width), height: Double(height))
-    }
-}
-
-func resolveSurfaceLogicalSize(
-    pixels: BufferPixelSize, bufferScale: Int32, bufferTransform: Int32,
-    viewportDestination: WlSize?
-) -> SurfaceLogicalSize {
-    if let viewportDestination { return viewportDestination.surfaceLogicalSize }
-    // wl_output_transform 90/270 variants exchange the buffer axes before the
-    // integer buffer scale projects into surface-local coordinates.
-    let swapsAxes = bufferTransform == 1 || bufferTransform == 3
-        || bufferTransform == 5 || bufferTransform == 7
-    let width = swapsAxes ? pixels.height : pixels.width
-    let height = swapsAxes ? pixels.width : pixels.height
-    let scale = Double(max(1, bufferScale))
-    return SurfaceLogicalSize(
-        width: Double(width) / scale,
-        height: Double(height) / scale)
-}
-
-/// Surface-adjacent protocol state resolved at one commit and carried as part of
-/// the content-update transaction (boundary plan line 205: the router owns
-/// viewport, tearing, and timing). Accumulated into the surface's pending state,
-/// latched alongside content on wl_surface.commit.
-struct SurfaceAuxState: Equatable, Sendable {
-    /// wp_viewport crop rect in buffer coordinates; nil = full buffer. Sticky.
-    var viewportSource: WlFRect?
-    /// wp_viewport logical-size override; nil = unset (use buffer size). Sticky.
-    var viewportDestination: WlSize?
-    /// wp_tearing_control_v1.presentation_hint: 0 = vsync, 1 = async. Sticky.
-    var presentationHint: UInt32 = 0
-    /// wp_commit_timer_v1 target presentation time (ns, presentation clock domain);
-    /// nil = none. Per-commit: consumed by each commit, not carried forward.
-    var commitTimestampNs: UInt64?
-    /// wp_fifo_v1 barrier flags applying to this commit. Per-commit.
-    var fifoBarrier = false
-    var fifoWaitBarrier = false
-    /// wp_linux_drm_syncobj acquire/release points for this content commit.
-    /// Per-commit: consumed by the buffer upload/frame execution path.
-    var syncAcquire: SyncPoint?
-    var syncRelease: SyncPoint?
-}
-
-/// The surface-adjacent protocol kinds a surface admits at most one of.
-enum SurfaceAuxKind: Hashable {
-    case viewport
-    case fifo
-    case commitTimer
-    case tearingControl
-    case fractionalScale
-    case kdeBlur
-    case backgroundEffect
-    case syncobj
-}
-
-/// A double-buffered protocol object that owns its own pending state and latches
-/// it when the surface's content commit applies (ext-background-effect blur
-/// region, drm-syncobj acquire/release points). Held weakly — the object is owned
-/// by its own wl_resource (Rule 9), never by the surface.
-protocol WlSurfaceCommitObserver: AnyObject {
-    func surfaceCommitApplied(_ surface: WlSurface)
-}
-
-/// A bound wp_fractional_scale_v1 that the surface pushes preferred-scale updates
-/// to. Held weakly — the object is owned by its own wl_resource (Rule 9).
-protocol PreferredScaleSink: AnyObject {
-    func sendPreferredScale(_ scale120: UInt32)
-}
-
-/// What changed in one commit, handed to the scene delegate. Buffer is the
-/// committed wl_buffer resource (nil = no content / detached).
-struct SurfaceCommit: Sendable {
-    let surfaceID: UInt32
-    /// Monotonic identity of the attached content state. It changes for every
-    /// applied attach (including detach), and is stable for this immutable commit.
-    let bufferGeneration: UInt64
-    let bufferResourceBits: UInt
-    let bufferPixelSize: BufferPixelSize
-    let logicalContentSize: SurfaceLogicalSize
-    let bufferScale: Int32
-    let bufferTransform: Int32
-    let surfaceDamage: [WlRect]
-    let bufferDamage: [WlRect]
-    let opaqueRegion: RegionSnapshot?
-    let inputRegion: RegionSnapshot?
-    let isInitialCommit: Bool
-    /// Surface-adjacent protocol state latched with this commit.
-    let aux: SurfaceAuxState
-}
-
-/// The render/scene seam: the compositor notifies the window driver of each
-/// surface commit/destroy, which drives the scene feeder. All calls happen on the
-/// compositor turn.
-protocol SurfaceSceneDelegate: AnyObject {
-    func surfaceCommitted(_ commit: SurfaceCommit)
-    func surfaceDestroyed(surfaceID: UInt32, iosurfaceID: UInt32)
-}
-
-/// A surface role attached to a wl_surface that drives a configure↔commit
-/// handshake (xdg_surface, zwlr_layer_surface). The surface notifies its role at
-/// each commit so the role can send its initial configure (first commit) or latch
-/// an acked configure and map (later commits), and on destruction so the role
-/// drops its surface back-link. The role is held weakly: it is owned by its own
-/// wl_resource (Rule 9), never by the surface.
-protocol WlSurfaceRole: AnyObject {
-    func roleSurfaceCommit(_ surface: WlSurface, isInitial: Bool)
-    func roleSurfaceDestroyed(_ surface: WlSurface)
-}
-
-/// One field's double-buffered update: `.unchanged` carries the committed value
-/// forward; `.set` replaces it on the next commit (`.set(nil)` = explicit clear).
-private enum Pending<T> {
-    case unchanged
-    case set(T?)
-}
 
 final class WlSurface {
     // Weak: a surface must not keep its compositor alive (Rule 9 — a surface is
@@ -156,52 +25,75 @@ final class WlSurface {
     /// The wl_surface resource. Set right after creation; nil after destruction.
     fileprivate(set) var resource: UnsafeMutablePointer<wl_resource>?
 
-    // Pending (accumulating) state.
-    private var pendingBufferAttached = false
-    private var pendingBuffer: WaylandResourceReference?
-    /// wl_surface v7 get_release: the release callback for the pending buffer (double-buffered).
-    private var pendingReleaseCallback: UnsafeMutablePointer<wl_resource>?
-    private var pendingOffsetX: Int32 = 0
-    private var pendingOffsetY: Int32 = 0
-    private var pendingSurfaceDamage: [WlRect] = []
-    private var pendingBufferDamage: [WlRect] = []
-    private var pendingFrameCallbacks: [UnsafeMutablePointer<wl_resource>] = []
-    // wp_presentation_feedback objects (no requests; pure event carriers like
-    // wl_callback) registered for this content update, fired on presentation.
-    private var pendingPresentationFeedbacks: [UnsafeMutablePointer<wl_resource>] = []
-    private var pendingBufferScale: Int32 = 1
-    private var pendingBufferTransform: Int32 = 0
-    private var pendingOpaque: Pending<RegionSnapshot> = .unchanged
-    private var pendingInput: Pending<RegionSnapshot> = .unchanged
+    private var pending = SurfacePendingState()
+    private var current = SurfaceCurrentState()
 
-    // Current (committed) state.
-    private var currentBufferReference: WaylandResourceReference?
     /// The live wire resource for the committed buffer. Clients may destroy a
     /// wl_buffer while its pixels remain current, so this is nil once the wire
     /// object is gone even though `hasCurrentBuffer` remains true.
-    var currentBuffer: UnsafeMutablePointer<wl_resource>? { currentBufferReference?.resource }
+    var currentBuffer: UnsafeMutablePointer<wl_resource>? {
+        current.buffer?.resource
+    }
     /// Whether the surface logically has attached content, independent of the
     /// lifetime of the client-side wl_buffer object used to supply those pixels.
-    var hasCurrentBuffer: Bool { currentBufferReference != nil }
-    /// The release callback bound to currentBuffer; fired when that buffer is released.
-    private var currentReleaseCallback: UnsafeMutablePointer<wl_resource>?
-    /// True after the current buffer was rejected before becoming renderer-owned.
-    /// A later replacement or surface teardown must not emit a second release.
-    private var currentBufferReleased = false
-    private(set) var bufferScale: Int32 = 1
-    private(set) var bufferTransform: Int32 = 0
-    private(set) var opaqueRegion: RegionSnapshot?
-    private(set) var inputRegion: RegionSnapshot?
-    private(set) var offsetX: Int32 = 0
-    private(set) var offsetY: Int32 = 0
-    private(set) var committed = false
+    var hasCurrentBuffer: Bool { current.buffer != nil }
+    private var currentBufferReference:
+        WaylandResourceReference?
+    {
+        get { current.buffer }
+        set { current.buffer = newValue }
+    }
+    private var currentReleaseCallback:
+        UnsafeMutablePointer<wl_resource>?
+    {
+        get { current.releaseCallback }
+        set { current.releaseCallback = newValue }
+    }
+    private var currentBufferReleased: Bool {
+        get { current.bufferReleased }
+        set { current.bufferReleased = newValue }
+    }
+    private(set) var bufferScale: Int32 {
+        get { current.bufferScale }
+        set { current.bufferScale = newValue }
+    }
+    private(set) var bufferTransform: Int32 {
+        get { current.bufferTransform }
+        set { current.bufferTransform = newValue }
+    }
+    private(set) var opaqueRegion: RegionSnapshot? {
+        get { current.opaqueRegion }
+        set { current.opaqueRegion = newValue }
+    }
+    private(set) var inputRegion: RegionSnapshot? {
+        get { current.inputRegion }
+        set { current.inputRegion = newValue }
+    }
+    private(set) var offsetX: Int32 {
+        get { current.offsetX }
+        set { current.offsetX = newValue }
+    }
+    private(set) var offsetY: Int32 {
+        get { current.offsetY }
+        set { current.offsetY = newValue }
+    }
+    private(set) var committed: Bool {
+        get { current.committed }
+        set { current.committed = newValue }
+    }
 
     /// This surface's committed content extent in surface-local logical pixels
     /// (buffer size / buffer scale). Published each commit by the router window
     /// driver; the router hit-test uses it as the surface's default input bounds
     /// when no `wl_surface.set_input_region` is present. 0 until first content.
-    var committedLogicalWidth: Double = 0
-    var committedLogicalHeight: Double = 0
+    var committedLogicalWidth: Double {
+        get { current.logicalWidth }
+        set { current.logicalWidth = newValue }
+    }
+    var committedLogicalHeight: Double {
+        get { current.logicalHeight }
+        set { current.logicalHeight = newValue }
+    }
 
     // MARK: render-state
     //
@@ -212,13 +104,28 @@ final class WlSurface {
     // publishes it as the surface's backing-layer content through the scene feeder —
     // the author owns the surface→layer mapping, so the surface holds no layer ids.
     // Released via `RenderRuntime.releaseIOSurface` when the surface tears down.
-    var renderIosurfaceId: UInt32 = 0
+    var renderIosurfaceId: UInt32 {
+        get { current.renderIOSurfaceID }
+        set {
+            let oldValue = current.renderIOSurfaceID
+            guard oldValue != newValue else { return }
+            current.renderIOSurfaceID = newValue
+            compositor?.surfaceRenderIdentityChanged(
+                self, from: oldValue)
+        }
+    }
     /// Revision of the pixels stored under the stable IOSurface id. The id is
     /// intentionally reused across commits, so scene content must carry this
     /// changing value or the retained renderer will treat a new client buffer as
     /// unchanged and withhold both redraw and the next frame callback.
-    private(set) var renderContentGeneration: UInt64 = 0
-    private var committedBufferGeneration: UInt64 = 0
+    private(set) var renderContentGeneration: UInt64 {
+        get { current.renderContentGeneration }
+        set { current.renderContentGeneration = newValue }
+    }
+    private var committedBufferGeneration: UInt64 {
+        get { current.bufferGeneration }
+        set { current.bufferGeneration = newValue }
+    }
 
     func didImportContent(generation: UInt64) {
         renderContentGeneration = generation
@@ -239,27 +146,17 @@ final class WlSurface {
         currentBufferReleased = true
     }
 
-    // MARK: surface-adjacent protocol state (viewporter / tearing / timing / fifo)
+    // MARK: surface-adjacent protocol state
     //
     // Double-buffered with content: requests write the pending* fields, which
-    // latch into `aux` on commit (sticky fields carry forward, per-commit fields
-    // reset). The protocol objects (WpViewport, WpTearingControl, WpCommitTimer,
-    // WpFifo) own only their resource lifecycle; this surface owns the state.
-    private var pendingViewportSource: WlFRect?
-    private var pendingViewportSourceSet = false
-    private var pendingViewportDestination: WlSize?
-    private var pendingViewportDestinationSet = false
-    private var pendingPresentationHint: UInt32 = 0
-    private var pendingCommitTimestampNs: UInt64?
-    private var pendingFifoBarrier = false
-    private var pendingFifoWaitBarrier = false
+    // latch into `aux` on commit. Protocol objects own only their resource
+    // lifecycle; this surface owns the state.
+    weak var viewport: WpViewport?
     /// The surface-adjacent state latched at the last commit.
-    private(set) var aux = SurfaceAuxState()
-    func setSyncobjPoints(acquire: SyncPoint, release: SyncPoint) {
-        aux.syncAcquire = acquire
-        aux.syncRelease = release
+    private(set) var aux: SurfaceAuxState {
+        get { current.auxiliary }
+        set { current.auxiliary = newValue }
     }
-
     /// At most one object of each surface-adjacent kind may attach to a surface;
     /// the factories raise the protocol's "<x>_exists" error otherwise.
     private var claimedAux: Set<SurfaceAuxKind> = []
@@ -294,32 +191,16 @@ final class WlSurface {
     var hasKnownOutputMembership: Bool { !enteredOutputs.isEmpty }
     /// Whether this surface currently overlaps `outputID` (per the last reported set).
     func overlapsOutput(_ outputID: UInt64) -> Bool { enteredOutputs.contains(outputID) }
+    var enteredOutputIDs: Set<UInt64> { enteredOutputs }
 
-    // Frame callbacks committed but not yet completed (fire on the next present).
-    private var frameCallbacksAwaitingPresent: [UnsafeMutablePointer<wl_resource>] = []
-    /// Total frame callbacks completed over this surface's life (fixture probe).
-    private(set) var completedFrameCallbacks = 0
+    private let presentation = SurfacePresentationState()
+    private var nextCommitID: UInt64 = 1
+    var currentCommitID: UInt64 { presentation.currentCommitID }
+    var completedFrameCallbacks: Int {
+        presentation.completedFrameCallbacks
+    }
 
-    // Presentation feedbacks committed but not yet presented.
-    private var presentationFeedbacksAwaitingPresent: [UnsafeMutablePointer<wl_resource>] = []
-
-    // MARK: subsurface role / topology
-    //
-    // When this surface is a subsurface, `subsurfaceParent` is its parent and
-    // `subsurfaceSync`/position carry its role state. When this surface is a
-    // parent, `subStack` is its z-order stack — subsurface children plus a marker
-    // for the parent's own content, so children can be stacked above OR below it.
-    // Children are held weakly (Rule 9: a subsurface is owned by its wl_surface).
-
-    weak var subsurfaceParent: WlSurface?
-    private(set) var subsurfaceX: Int32 = 0
-    private(set) var subsurfaceY: Int32 = 0
-    /// The subsurface's own sync flag. Effective sync also inherits from ancestors.
-    var subsurfaceSync = false
-    /// Commit cached while effectively-sync; applied when the parent commits (or
-    /// when the subsurface transitions to desync).
-    private var cachedCommit: LatchedState?
-    private var subStack: [SubStackEntry] = []
+    let subsurfaceTopology = SubsurfaceTopology()
 
     /// This surface's wire object id (0 if the resource is gone). Identity probe.
     var objectId: UInt32 { resource.map { wl_resource_get_id($0) } ?? 0 }
@@ -330,16 +211,71 @@ final class WlSurface {
     // `role`/`already_constructed` invariants are enforced by the role factory).
     // The role is held weakly — it is owned by its own wl_resource.
     weak var role: WlSurfaceRole?
-    private(set) var hasRole = false
+    private(set) var roleIdentity: SurfaceRoleIdentity?
+    private var hasXdgConstructionClaim = false
+    var hasRole: Bool { roleIdentity != nil }
 
     /// Attach a configure-driving role. Returns false if one is already attached
     /// (the caller raises the protocol's "already has a role" error).
     @discardableResult
     func assignRole(_ role: WlSurfaceRole) -> Bool {
-        guard !hasRole else { return false }
-        hasRole = true
+        let identity: SurfaceRoleIdentity
+        switch role {
+        case is XdgSurface: identity = .xdg
+        case is ZwlrLayerSurface: identity = .layerShell
+        case is ExtSessionLockSurface: identity = .sessionLock
+        case is XwaylandSurfaceRole: identity = .xwayland
+        default: return false
+        }
+        guard roleIdentity == nil else { return false }
+        roleIdentity = identity
         self.role = role
         return true
+    }
+
+    func claimSubsurfaceRole() -> Bool {
+        guard roleIdentity == nil else { return false }
+        roleIdentity = .subsurface
+        return true
+    }
+
+    /// `wl_pointer.set_cursor` gives a surface the permanent cursor role. Reusing
+    /// the same surface as a cursor is valid; assigning any other role is not.
+    func claimCursorRole() -> Bool {
+        if roleIdentity == .cursor { return true }
+        guard roleIdentity == nil else { return false }
+        roleIdentity = .cursor
+        return true
+    }
+
+    func claimDragIconRole() -> Bool {
+        if roleIdentity == .dragIcon { return true }
+        guard roleIdentity == nil else { return false }
+        roleIdentity = .dragIcon
+        return true
+    }
+
+    func releaseSubsurfaceRole() {
+        guard roleIdentity == .subsurface else { return }
+        roleIdentity = nil
+    }
+
+    func claimXdgConstruction() -> Bool {
+        guard !hasXdgConstructionClaim, roleIdentity == nil,
+            !hasCurrentBuffer, !committed
+        else { return false }
+        hasXdgConstructionClaim = true
+        return true
+    }
+
+    func releaseXdgConstruction() {
+        hasXdgConstructionClaim = false
+        if roleIdentity == nil { role = nil }
+    }
+
+    func bindXdgConstructionRole(_ role: XdgSurface) {
+        guard hasXdgConstructionClaim, roleIdentity == nil else { return }
+        self.role = role
     }
 
     init(compositor: WlCompositor, version: Int32) {
@@ -347,7 +283,7 @@ final class WlSurface {
         self.version = version
     }
 
-    fileprivate func bind(resource: UnsafeMutablePointer<wl_resource>) {
+    func bind(resource: UnsafeMutablePointer<wl_resource>) {
         self.resource = resource
         // Seed the v6 preferred scale before the surface enters an output. The
         // entered-output set recomputes and republishes the live per-output value.
@@ -359,60 +295,76 @@ final class WlSurface {
     // MARK: request application (called from the shared surface vtable)
 
     func attach(buffer: UnsafeMutablePointer<wl_resource>?, x: Int32, y: Int32) {
-        pendingBufferAttached = true
+        pending.bufferAttached = true
         let dmabufOwner: DmabufBuffer? = buffer.flatMap {
             wl_shm_buffer_get($0) == nil
                 ? WaylandResource.owner(of: $0, as: DmabufBuffer.self)
                 : nil
         }
-        pendingBuffer = WaylandResourceReference(buffer, retaining: dmabufOwner)
+        pending.buffer = WaylandResourceReference(buffer, retaining: dmabufOwner)
         // attach x/y is superseded by the offset request in v5+; record either way.
-        pendingOffsetX = x
-        pendingOffsetY = y
+        pending.offsetX = x
+        pending.offsetY = y
     }
 
     func addSurfaceDamage(_ r: WlRect) {
-        guard r.width > 0, r.height > 0 else { return }
-        pendingSurfaceDamage.append(r)
+        guard Self.hasSafeExtent(r) else { return }
+        pending.surfaceDamage.append(r)
     }
 
     func addBufferDamage(_ r: WlRect) {
-        guard r.width > 0, r.height > 0 else { return }
-        pendingBufferDamage.append(r)
+        guard Self.hasSafeExtent(r) else { return }
+        pending.bufferDamage.append(r)
+    }
+
+    private static func hasSafeExtent(_ rect: WlRect) -> Bool {
+        guard rect.width > 0, rect.height > 0 else { return false }
+        return !rect.x.addingReportingOverflow(rect.width).overflow
+            && !rect.y.addingReportingOverflow(rect.height).overflow
     }
 
     func addFrameCallback(_ callback: UnsafeMutablePointer<wl_resource>) {
-        pendingFrameCallbacks.append(callback)
+        pending.frameCallbacks.append(callback)
     }
 
     func addPresentationFeedback(_ feedback: UnsafeMutablePointer<wl_resource>) {
-        pendingPresentationFeedbacks.append(feedback)
+        pending.presentationFeedbacks.append(feedback)
     }
 
-    func setOpaqueRegion(_ snapshot: RegionSnapshot?) { pendingOpaque = .set(snapshot) }
-    func setInputRegion(_ snapshot: RegionSnapshot?) { pendingInput = .set(snapshot) }
-    func setBufferScale(_ scale: Int32) { pendingBufferScale = scale }
-    func setBufferTransform(_ transform: Int32) { pendingBufferTransform = transform }
-    func setOffset(x: Int32, y: Int32) { pendingOffsetX = x; pendingOffsetY = y }
+    func setOpaqueRegion(_ snapshot: RegionSnapshot?) { pending.opaque = .set(snapshot) }
+    func setInputRegion(_ snapshot: RegionSnapshot?) { pending.input = .set(snapshot) }
+    func setBufferScale(_ scale: Int32) { pending.bufferScale = scale }
+    func setBufferTransform(_ transform: Int32) { pending.bufferTransform = transform }
+    func setOffset(x: Int32, y: Int32) {
+        pending.offsetX = x
+        pending.offsetY = y
+    }
+
+    func installPendingReleaseCallback(
+        _ callback: WlNewId,
+        postingErrorsTo resource: UnsafeMutablePointer<wl_resource>
+    ) {
+        guard pending.bufferAttached, pending.buffer != nil else {
+            swift_wayland_resource_post_error(
+                resource, 5, "get_release without an attached buffer")
+            return
+        }
+        if let stale = pending.releaseCallback {
+            wl_resource_destroy(stale)
+        }
+        pending.releaseCallback = callback.createBare()
+    }
 
     // MARK: surface-adjacent protocol setters (write pending; latched on commit)
 
     func setPendingViewportSource(_ rect: WlFRect?) {
-        pendingViewportSource = rect
-        pendingViewportSourceSet = true
+        pending.viewportSource = rect
+        pending.viewportSourceSet = true
     }
     func setPendingViewportDestination(_ size: WlSize?) {
-        pendingViewportDestination = size
-        pendingViewportDestinationSet = true
+        pending.viewportDestination = size
+        pending.viewportDestinationSet = true
     }
-    func setPendingPresentationHint(_ hint: UInt32) { pendingPresentationHint = hint }
-    /// True if a commit timestamp is already pending (wp_commit_timer's
-    /// `timestamp_exists` error fires when set_timestamp is called twice per commit).
-    var hasPendingCommitTimestamp: Bool { pendingCommitTimestampNs != nil }
-    func setPendingCommitTimestamp(_ ns: UInt64) { pendingCommitTimestampNs = ns }
-    func markPendingFifoBarrier() { pendingFifoBarrier = true }
-    func markPendingFifoWaitBarrier() { pendingFifoWaitBarrier = true }
-
     // MARK: one-per-surface aux claims
 
     func hasAux(_ kind: SurfaceAuxKind) -> Bool { claimedAux.contains(kind) }
@@ -460,6 +412,13 @@ final class WlSurface {
         refreshPreferredScale()
     }
 
+    func removeEnteredOutput(_ outputID: UInt64) {
+        guard enteredOutputs.contains(outputID) else { return }
+        var remaining = enteredOutputs
+        remaining.remove(outputID)
+        updateEnteredOutputs(remaining)
+    }
+
     /// Recompute the preferred buffer + fractional scale as the max scale among the
     /// outputs the surface overlaps, and advertise it if it changed. With no live
     /// outputs the last advertised scale is kept (sending scale 0 is invalid).
@@ -483,79 +442,58 @@ final class WlSurface {
         if frac120 != preferredFractionalScale120 { setPreferredFractionalScale(frac120) }
     }
 
-    /// All double-buffered state captured at one commit. Held as `cachedCommit`
-    /// while effectively-sync, applied to current state when the parent commits.
-    private struct LatchedState {
-        var bufferAttached: Bool
-        var buffer: WaylandResourceReference?
-        var releaseCallback: UnsafeMutablePointer<wl_resource>?
-        var offsetX: Int32
-        var offsetY: Int32
-        var bufferScale: Int32
-        var bufferTransform: Int32
-        var opaque: Pending<RegionSnapshot>
-        var input: Pending<RegionSnapshot>
-        var surfaceDamage: [WlRect]
-        var bufferDamage: [WlRect]
-        var frameCallbacks: [UnsafeMutablePointer<wl_resource>]
-        var presentationFeedbacks: [UnsafeMutablePointer<wl_resource>]
-        var isInitial: Bool
-        // Surface-adjacent protocol state captured at this commit.
-        var auxViewportSource: WlFRect?
-        var auxViewportSourceSet: Bool
-        var auxViewportDestination: WlSize?
-        var auxViewportDestinationSet: Bool
-        var auxPresentationHint: UInt32
-        var auxCommitTimestampNs: UInt64?
-        var auxFifoBarrier: Bool
-        var auxFifoWaitBarrier: Bool
-    }
-
     /// Capture pending state into a latch and reset pending. In sync mode the
     /// latch is cached for the parent commit; otherwise it applies immediately.
-    func commit() {
+    @discardableResult
+    func commit() -> UInt64 {
         let isInitial = !committed
         committed = true
-        let latch = LatchedState(
-            bufferAttached: pendingBufferAttached, buffer: pendingBuffer,
-            releaseCallback: pendingReleaseCallback,
-            offsetX: pendingOffsetX, offsetY: pendingOffsetY,
-            bufferScale: pendingBufferScale, bufferTransform: pendingBufferTransform,
-            opaque: pendingOpaque, input: pendingInput,
-            surfaceDamage: pendingSurfaceDamage, bufferDamage: pendingBufferDamage,
-            frameCallbacks: pendingFrameCallbacks,
-            presentationFeedbacks: pendingPresentationFeedbacks, isInitial: isInitial,
-            auxViewportSource: pendingViewportSource,
-            auxViewportSourceSet: pendingViewportSourceSet,
-            auxViewportDestination: pendingViewportDestination,
-            auxViewportDestinationSet: pendingViewportDestinationSet,
-            auxPresentationHint: pendingPresentationHint,
-            auxCommitTimestampNs: pendingCommitTimestampNs,
-            auxFifoBarrier: pendingFifoBarrier,
-            auxFifoWaitBarrier: pendingFifoWaitBarrier
+        let commitID = nextCommitID
+        nextCommitID &+= 1
+        if nextCommitID == 0 { nextCommitID = 1 }
+        let attachedBufferIsNonNull = pending.bufferAttached
+            && pending.buffer?.resource != nil
+        let attachedBufferSupportsExplicitSync =
+            attachedBufferIsNonNull
+            && pending.buffer?.semanticOwner is DmabufBuffer
+        var capturedAux = SurfaceAuxState()
+        var effects: [() -> Void] = []
+        var observerStateValid = true
+        if !commitObservers.isEmpty {
+            commitObservers.removeAll { $0.observer == nil }
+            for box in commitObservers {
+                guard let observer = box.observer else { continue }
+                if !observer.captureSurfaceCommit(
+                    self,
+                    bufferAttached: pending.bufferAttached,
+                    attachedBufferIsNonNull: attachedBufferIsNonNull,
+                    attachedBufferSupportsExplicitSync:
+                        attachedBufferSupportsExplicitSync,
+                    aux: &capturedAux,
+                    effects: &effects)
+                {
+                    observerStateValid = false
+                }
+            }
+        }
+        let latch = pending.capture(
+            commitID: commitID,
+            isInitial: isInitial,
+            syncAcquire: capturedAux.syncAcquire,
+            syncRelease: capturedAux.syncRelease,
+            effects: effects
         )
-        pendingBufferAttached = false
-        pendingBuffer = nil
-        pendingReleaseCallback = nil
-        pendingOpaque = .unchanged
-        pendingInput = .unchanged
-        pendingSurfaceDamage = []
-        pendingBufferDamage = []
-        pendingFrameCallbacks = []
-        pendingPresentationFeedbacks = []
-        // Sticky aux values (viewport, hint) carry forward; only their set-flags
-        // and the per-commit aux fields reset.
-        pendingViewportSourceSet = false
-        pendingViewportDestinationSet = false
-        pendingCommitTimestampNs = nil
-        pendingFifoBarrier = false
-        pendingFifoWaitBarrier = false
+
+        guard observerStateValid else {
+            discardUnapplied(latch)
+            return commitID
+        }
 
         if isEffectivelySync {
             var next = latch
             // A superseded cached commit is dropped: release its never-applied new
             // buffer, and roll its frame callbacks into the new latch so none leak.
-            if let prev = cachedCommit {
+            if let prev = subsurfaceTopology.cachedCommit {
                 if prev.bufferAttached, let b = prev.buffer?.resource {
                     wl_buffer_send_release(b)
                     if let cb = prev.releaseCallback { wl_callback_send_done(cb, 0); wl_resource_destroy(cb) }
@@ -567,21 +505,37 @@ final class WlSurface {
                     wl_resource_destroy(fb)
                 }
             }
-            cachedCommit = next
+            subsurfaceTopology.cachedCommit = next
         } else {
             applyLatch(latch)
         }
-
-        // Drive the surface role's configure↔commit handshake. On the first commit
-        // (an xdg/layer surface commits bufferless to elicit its initial configure)
-        // the role sends that configure; later commits latch the acked configure and
-        // map. Roots are never effectively-sync, so the role observes applied state.
-        role?.roleSurfaceCommit(self, isInitial: isInitial)
+        return commitID
     }
 
     /// Apply a latched commit to current state, snapshot it to the scene, then —
     /// per parent-commit semantics — apply the cached commits of sync children.
-    private func applyLatch(_ latch: LatchedState) {
+    private func applyLatch(_ latch: SurfaceTransaction) {
+        guard validateViewport(latch) else {
+            discardUnapplied(latch)
+            return
+        }
+        let willHaveBuffer = latch.bufferAttached
+            ? latch.buffer?.resource != nil
+            : hasCurrentBuffer
+        let roleBufferPixelSize = latch.bufferAttached
+            ? bufferPixelSize(latch.buffer?.resource)
+            : committedBufferPixelSize()
+        guard role?.validateSurfaceCommit(
+            self,
+            context: SurfaceRoleCommitContext(
+                bufferAttached: latch.bufferAttached,
+                willHaveBuffer: willHaveBuffer,
+                bufferPixelSize: roleBufferPixelSize,
+                bufferScale: latch.bufferScale)) ?? true
+        else {
+            discardUnapplied(latch)
+            return
+        }
         if latch.bufferAttached {
             committedBufferGeneration &+= 1
             if committedBufferGeneration == 0 { committedBufferGeneration = 1 }
@@ -590,6 +544,9 @@ final class WlSurface {
             let new = latch.buffer?.resource
             let oldWasReleased = currentBufferReleased
             currentBufferReference = latch.buffer
+            current.bufferPixelSize = latch.buffer == nil
+                ? BufferPixelSize()
+                : roleBufferPixelSize
             // A replaced buffer is no longer referenced; release it for client reuse.
             let replaced = oldReference != nil && (latch.buffer == nil || old == nil || old != new)
             if replaced && !oldWasReleased {
@@ -614,32 +571,37 @@ final class WlSurface {
             currentBufferReleased = false
             offsetX = latch.offsetX
             offsetY = latch.offsetY
+            if roleIdentity == .cursor {
+                let surfaceID = objectId
+                let offsetX = latch.offsetX
+                let offsetY = latch.offsetY
+                MainActor.assumeIsolated {
+                    PointerCursorSurface.applyCommittedOffset(
+                        surfaceID: surfaceID,
+                        x: offsetX,
+                        y: offsetY)
+                }
+            }
         }
         bufferScale = latch.bufferScale
         bufferTransform = latch.bufferTransform
         if case .set(let s) = latch.opaque { opaqueRegion = s }
         if case .set(let s) = latch.input { inputRegion = s }
-        frameCallbacksAwaitingPresent.append(contentsOf: latch.frameCallbacks)
-        presentationFeedbacksAwaitingPresent.append(contentsOf: latch.presentationFeedbacks)
+        presentation.install(
+            commitID: latch.commitID,
+            frameCallbacks: latch.frameCallbacks,
+            feedbacks: latch.presentationFeedbacks)
 
         // Latch surface-adjacent state: sticky fields update only when set this
-        // commit; per-commit fields take the commit's value (defaulting to clear).
+        // commit.
         if latch.auxViewportSourceSet { aux.viewportSource = latch.auxViewportSource }
         if latch.auxViewportDestinationSet { aux.viewportDestination = latch.auxViewportDestination }
-        aux.presentationHint = latch.auxPresentationHint
-        aux.commitTimestampNs = latch.auxCommitTimestampNs
-        aux.fifoBarrier = latch.auxFifoBarrier
-        aux.fifoWaitBarrier = latch.auxFifoWaitBarrier
-        aux.syncAcquire = nil
-        aux.syncRelease = nil
+        aux.syncAcquire = latch.syncAcquire
+        aux.syncRelease = latch.syncRelease
 
-        // Double-buffered protocol objects latch with the content commit before
-        // the scene delegate observes it, so upload/presentation sees the same
-        // adjacent state the commit validated.
-        if !commitObservers.isEmpty {
-            commitObservers.removeAll { $0.observer == nil }
-            for box in commitObservers { box.observer?.surfaceCommitApplied(self) }
-        }
+        // Transaction-owned adjacent effects become observable before the scene
+        // snapshot, exactly alongside the content state they were captured with.
+        for effect in latch.effects { effect() }
 
         let pixels = committedBufferPixelSize()
         let logical = resolveSurfaceLogicalSize(
@@ -648,6 +610,8 @@ final class WlSurface {
             viewportDestination: aux.viewportDestination)
         let info = SurfaceCommit(
             surfaceID: objectId,
+            commitID: latch.commitID,
+            bufferAttached: latch.bufferAttached,
             bufferGeneration: committedBufferGeneration,
             bufferResourceBits: UInt(bitPattern: currentBuffer),
             bufferPixelSize: pixels,
@@ -659,16 +623,85 @@ final class WlSurface {
         )
         compositor?.sceneDelegate?.surfaceCommitted(info)
 
+        role?.roleSurfaceCommit(self, isInitial: latch.isInitial)
+        applyPendingSubsurfaceTopology()
         for child in subsurfaceChildren where child.isEffectivelySync {
-            if let cached = child.cachedCommit {
-                child.cachedCommit = nil
+            if let cached = child.subsurfaceTopology.cachedCommit {
+                child.subsurfaceTopology.cachedCommit = nil
                 child.applyLatch(cached)
             }
         }
     }
 
+    func applyCachedSubsurfaceCommit(_ transaction: SurfaceTransaction) {
+        applyLatch(transaction)
+    }
+
+    private func discardUnapplied(_ latch: SurfaceTransaction) {
+        if latch.bufferAttached, let buffer = latch.buffer?.resource {
+            wl_buffer_send_release(buffer)
+        }
+        if let callback = latch.releaseCallback {
+            wl_resource_destroy(callback)
+        }
+        for callback in latch.frameCallbacks {
+            wl_resource_destroy(callback)
+        }
+        for feedback in latch.presentationFeedbacks {
+            wp_presentation_feedback_send_discarded(feedback)
+            wl_resource_destroy(feedback)
+        }
+    }
+
+    private func validateViewport(_ latch: SurfaceTransaction) -> Bool {
+        let source = latch.auxViewportSourceSet
+            ? latch.auxViewportSource
+            : aux.viewportSource
+        let destination = latch.auxViewportDestinationSet
+            ? latch.auxViewportDestination
+            : aux.viewportDestination
+        guard let source else { return true }
+        if destination == nil,
+            source.width.rounded(.towardZero) != source.width
+                || source.height.rounded(.towardZero) != source.height
+        {
+            viewport?.postError(
+                1 /* bad_size */,
+                "fractional viewport source requires a destination size")
+            return false
+        }
+        let pixels = latch.bufferAttached
+            ? bufferPixelSize(latch.buffer?.resource)
+            : committedBufferPixelSize()
+        guard pixels.width != 0, pixels.height != 0 else { return true }
+        let unviewported = resolveSurfaceLogicalSize(
+            pixels: pixels,
+            bufferScale: latch.bufferScale,
+            bufferTransform: latch.bufferTransform,
+            viewportDestination: nil)
+        let maxX = source.x + source.width
+        let maxY = source.y + source.height
+        guard maxX.isFinite, maxY.isFinite,
+            source.x >= 0, source.y >= 0,
+            maxX <= unviewported.width,
+            maxY <= unviewported.height
+        else {
+            viewport?.postError(
+                2 /* out_of_buffer */,
+                "viewport source lies outside the transformed, scaled buffer")
+            return false
+        }
+        return true
+    }
+
     private func committedBufferPixelSize() -> BufferPixelSize {
-        guard let buffer = currentBuffer else { return BufferPixelSize() }
+        current.bufferPixelSize
+    }
+
+    private func bufferPixelSize(
+        _ buffer: UnsafeMutablePointer<wl_resource>?
+    ) -> BufferPixelSize {
+        guard let buffer else { return BufferPixelSize() }
         if let shm = wl_shm_buffer_get(buffer) {
             return BufferPixelSize(
                 width: UInt32(max(0, wl_shm_buffer_get_width(shm))),
@@ -682,54 +715,58 @@ final class WlSurface {
         return BufferPixelSize()
     }
 
-    /// Complete all frame callbacks accumulated since the last present, sending
-    /// wl_callback.done(timeMs) and destroying each callback resource. Driven by
-    /// the presentation path; in #8 fixtures the test triggers it directly.
-    func present(timeMs: UInt32) {
-        let callbacks = frameCallbacksAwaitingPresent
-        frameCallbacksAwaitingPresent.removeAll(keepingCapacity: true)
-        for cb in callbacks {
-            wl_callback_send_done(cb, timeMs)
-            wl_resource_destroy(cb)
-            completedFrameCallbacks += 1
-        }
+    /// Snapshot the exact current commit into an accepted output submission.
+    func noteSampled(submissionID: UInt64) -> UInt64? {
+        presentation.noteSampled(submissionID: submissionID)
     }
 
-    /// Deliver wp_presentation_feedback.presented to every feedback committed since
-    /// the last presentation, then destroy each (presented is a destructor event).
-    /// Timestamp is in the presentation clock; refresh is ns to the next vblank;
-    /// seq is the output MSC; flags is wp_presentation_feedback.kind. The render
-    /// path drives this at #12; the fixture calls it directly.
-    func presentFeedback(
+    /// Complete only the resources owned by the commit carried through the
+    /// matching KMS submission.
+    func completePresentation(
+        commitID: UInt64,
+        submissionID: UInt64,
+        output: WlOutput?,
+        timeMs: UInt32,
         tvSecHi: UInt32, tvSecLo: UInt32, tvNsec: UInt32,
         refreshNs: UInt32, seqHi: UInt32, seqLo: UInt32, flags: UInt32
     ) {
-        let feedbacks = presentationFeedbacksAwaitingPresent
-        presentationFeedbacksAwaitingPresent.removeAll(keepingCapacity: true)
-        for fb in feedbacks {
-            wp_presentation_feedback_send_presented(
-                fb, tvSecHi, tvSecLo, tvNsec, refreshNs, seqHi, seqLo, flags)
-            wl_resource_destroy(fb)
-        }
+        presentation.complete(
+            commitID: commitID,
+            submissionID: submissionID,
+            output: output,
+            timeMs: timeMs,
+            tvSecHi: tvSecHi,
+            tvSecLo: tvSecLo,
+            tvNsec: tvNsec,
+            refreshNs: refreshNs,
+            seqHi: seqHi,
+            seqLo: seqLo,
+            flags: flags)
+    }
+
+    /// An accepted frame will never present. Feedback is exact-content and is
+    /// discarded; frame callbacks remain eligible for a later redraw when this is
+    /// still the current commit, or move to the newer current commit.
+    func discardPresentation(commitID: UInt64, submissionID: UInt64) {
+        presentation.discard(
+            commitID: commitID, submissionID: submissionID)
     }
 
     deinit {
         // Outstanding frame callbacks never presented: destroy their resources so
         // they don't dangle. (Their wl_resources belong to the client and would
         // otherwise be cleaned up only at client teardown.)
-        for cb in frameCallbacksAwaitingPresent { wl_resource_destroy(cb) }
-        for cb in pendingFrameCallbacks { wl_resource_destroy(cb) }
-        if let latch = cachedCommit { for cb in latch.frameCallbacks { wl_resource_destroy(cb) } }
+        presentation.destroyAll()
+        for cb in pending.frameCallbacks { wl_resource_destroy(cb) }
+        if let latch = subsurfaceTopology.cachedCommit {
+            for cb in latch.frameCallbacks { wl_resource_destroy(cb) }
+        }
         // Presentation feedbacks for never-presented content are discarded.
-        for fb in presentationFeedbacksAwaitingPresent {
+        for fb in pending.presentationFeedbacks {
             wp_presentation_feedback_send_discarded(fb)
             wl_resource_destroy(fb)
         }
-        for fb in pendingPresentationFeedbacks {
-            wp_presentation_feedback_send_discarded(fb)
-            wl_resource_destroy(fb)
-        }
-        if let latch = cachedCommit {
+        if let latch = subsurfaceTopology.cachedCommit {
             for fb in latch.presentationFeedbacks {
                 wp_presentation_feedback_send_discarded(fb)
                 wl_resource_destroy(fb)
@@ -751,186 +788,27 @@ final class WlSurface {
                 wl_resource_destroy(cb)
             }
         }
-        if let cb = pendingReleaseCallback { wl_resource_destroy(cb) }
-        if let latch = cachedCommit, let cb = latch.releaseCallback { wl_resource_destroy(cb) }
+        if let cb = pending.releaseCallback { wl_resource_destroy(cb) }
+        if let latch = subsurfaceTopology.cachedCommit,
+            let cb = latch.releaseCallback
+        {
+            wl_resource_destroy(cb)
+        }
         role?.roleSurfaceDestroyed(self)
         detachFromParent()
+        detachSubsurfaceChildren()
+        let destroyedSurfaceID = objectId
+        MainActor.assumeIsolated {
+            PointerCursorSurface.unbind(surfaceID: destroyedSurfaceID)
+        }
         compositor?.removeSurface(self)
         compositor?.sceneDelegate?.surfaceDestroyed(
             surfaceID: objectId, iosurfaceID: renderIosurfaceId)
     }
 }
 
-// MARK: - WlSurfaceRequests conformance
-//
-// The request vtable + trampolines now live in swift-wayland's WaylandServerDispatch. WlSurface
-// (attach/commit/setBufferScale/setBufferTransform already match the request names) conforms; the
-// remaining requests forward to the model. Region resolution stays here — it is compositor policy.
-extension WlSurface: WlSurfaceRequests {
-    func attach(_ resource: UnsafeMutablePointer<wl_resource>, buffer: UnsafeMutablePointer<wl_resource>?, x: Int32, y: Int32) {
-        attach(buffer: buffer, x: x, y: y)
-    }
-    func damage(_ resource: UnsafeMutablePointer<wl_resource>, x: Int32, y: Int32, width: Int32, height: Int32) {
-        addSurfaceDamage(WlRect(x: x, y: y, width: width, height: height))
-    }
-    func damageBuffer(_ resource: UnsafeMutablePointer<wl_resource>, x: Int32, y: Int32, width: Int32, height: Int32) {
-        addBufferDamage(WlRect(x: x, y: y, width: width, height: height))
-    }
-    func frame(_ resource: UnsafeMutablePointer<wl_resource>, callback: WlNewId) {
-        guard let cb = callback.createBare() else { return }
-        addFrameCallback(cb)
-    }
-    func setOpaqueRegion(_ resource: UnsafeMutablePointer<wl_resource>, region: UnsafeMutablePointer<wl_resource>?) {
-        setOpaqueRegion(Self.regionSnapshot(region))
-    }
-    func setInputRegion(_ resource: UnsafeMutablePointer<wl_resource>, region: UnsafeMutablePointer<wl_resource>?) {
-        setInputRegion(Self.regionSnapshot(region))
-    }
-    func commit(_ resource: UnsafeMutablePointer<wl_resource>) { commit() }
-    func offset(_ resource: UnsafeMutablePointer<wl_resource>, x: Int32, y: Int32) { setOffset(x: x, y: y) }
-    func getRelease(_ resource: UnsafeMutablePointer<wl_resource>, callback: WlNewId) {
-        // Requires a non-null buffer attached this content update (protocol: no_buffer = 5). On the
-        // error path the callback is simply never created — the protocol error disconnects the client.
-        guard pendingBufferAttached, pendingBuffer != nil else {
-            swift_wayland_resource_post_error(resource, 5, "get_release without an attached buffer")
-            return
-        }
-        if let stale = pendingReleaseCallback { wl_resource_destroy(stale) }
-        pendingReleaseCallback = callback.createBare()
-    }
-    func setBufferScale(_ resource: UnsafeMutablePointer<wl_resource>, scale: Int32) { setBufferScale(scale) }
-    func setBufferTransform(_ resource: UnsafeMutablePointer<wl_resource>, transform: Int32) { setBufferTransform(transform) }
-
-    private static func regionSnapshot(_ res: UnsafeMutablePointer<wl_resource>?) -> RegionSnapshot? {
-        guard let res, let r = WaylandResource.owner(of: res, as: WlRegion.self) else { return nil }
-        return r.snapshot()
-    }
-}
-
-extension WlCompositor {
-    /// Create a wl_surface resource bound to a new WlSurface owner.
-    func makeSurface(
-        client: OpaquePointer, id: UInt32, version: Int32
-    ) -> UnsafeMutablePointer<wl_resource>? {
-        let surface = WlSurface(compositor: self, version: version)
-        guard let resource = WaylandResource.create(
-            client: client, interface: swift_wayland_iface_wl_surface(),
-            version: version, id: id, vtable: WlSurfaceServer.vtable, owner: surface
-        ) else { return nil }
-        surface.bind(resource: resource)
-        registerSurface(surface)
-        return resource
-    }
-}
-
-// MARK: - subsurface topology
-
-/// Weak reference to a surface, for parent→child links (Rule 9: a surface is
-/// owned only by its resource, never by its parent).
-final class WeakSurfaceBox {
-    weak var surface: WlSurface?
-    init(_ surface: WlSurface) { self.surface = surface }
-}
-
 /// Weak box for the surface's commit-observer list (Rule 9).
 private final class WeakCommitObserver {
     weak var observer: WlSurfaceCommitObserver?
     init(_ observer: WlSurfaceCommitObserver) { self.observer = observer }
-}
-
-/// One slot in a parent's z-order: a subsurface child, or the marker for the
-/// parent's own content (so children can stack above or below the parent).
-enum SubStackEntry {
-    case selfContent
-    case child(WeakSurfaceBox)
-}
-
-extension WlSurface {
-    /// A subsurface is effectively synchronized if its own flag is set or any
-    /// ancestor is. A non-subsurface (root) is never sync — its commits apply now.
-    var isEffectivelySync: Bool {
-        guard let parent = subsurfaceParent else { return false }
-        return subsurfaceSync || parent.isEffectivelySync
-    }
-
-    /// Live subsurface children in bottom-to-top z-order.
-    var subsurfaceChildren: [WlSurface] {
-        subStack.compactMap { if case .child(let box) = $0 { return box.surface } else { return nil } }
-    }
-
-    /// The full stack as object ids — parent's own content included — bottom to
-    /// top. Identity probe for fixtures.
-    var subsurfaceOrder: [UInt32] {
-        subStack.compactMap {
-            switch $0 {
-            case .selfContent: return objectId
-            case .child(let box): return box.surface?.objectId
-            }
-        }
-    }
-
-    func attachAsSubsurface(to parent: WlSurface) {
-        subsurfaceParent = parent
-        subsurfaceSync = true  // subsurfaces start synchronized
-        parent.addChildOnTop(self)
-    }
-
-    func detachFromParent() {
-        subsurfaceParent?.removeChild(self)
-        subsurfaceParent = nil
-    }
-
-    fileprivate func addChildOnTop(_ child: WlSurface) {
-        if subStack.isEmpty { subStack = [.selfContent] }
-        subStack.append(.child(WeakSurfaceBox(child)))
-    }
-
-    fileprivate func removeChild(_ child: WlSurface) {
-        subStack.removeAll {
-            if case .child(let box) = $0 { return box.surface == nil || box.surface === child }
-            return false
-        }
-    }
-
-    func setSubsurfacePosition(x: Int32, y: Int32) {
-        subsurfaceX = x
-        subsurfaceY = y
-    }
-
-    func setSubsurfaceSync(_ sync: Bool) {
-        let wasSync = isEffectivelySync
-        subsurfaceSync = sync
-        // sync → desync with a commit cached while sync: apply it immediately.
-        if wasSync, !isEffectivelySync, let cached = cachedCommit {
-            cachedCommit = nil
-            applyLatch(cached)
-        }
-    }
-
-    enum PlaceDir { case above, below }
-
-    /// Move `child` directly above/below `sibling` in this parent's stack;
-    /// `sibling === self` targets the parent's own content marker.
-    func placeChild(_ child: WlSurface, relativeTo sibling: WlSurface, _ dir: PlaceDir) {
-        guard child !== sibling, let from = childIndex(child) else { return }
-        let entry = subStack.remove(at: from)
-        let target = (sibling === self) ? selfContentIndex() : childIndex(sibling)
-        guard let sibIdx = target else {
-            subStack.append(entry)  // sibling gone: leave child on top
-            return
-        }
-        let insertAt = (dir == .above) ? sibIdx + 1 : sibIdx
-        subStack.insert(entry, at: min(max(insertAt, 0), subStack.count))
-    }
-
-    private func childIndex(_ child: WlSurface) -> Int? {
-        subStack.firstIndex {
-            if case .child(let box) = $0 { return box.surface === child }
-            return false
-        }
-    }
-
-    private func selfContentIndex() -> Int? {
-        subStack.firstIndex { if case .selfContent = $0 { return true }; return false }
-    }
 }

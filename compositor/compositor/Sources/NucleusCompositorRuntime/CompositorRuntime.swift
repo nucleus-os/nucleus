@@ -7,6 +7,7 @@ import NucleusCompositorRenderRuntime
 import NucleusCompositorRenderSession
 import NucleusCompositorRendererLinux
 import NucleusCompositorWaylandRuntime
+import NucleusCompositorWindowManager
 import NucleusCompositorSignalC
 import Tracy
 import Glibc
@@ -35,7 +36,6 @@ import Glibc
 final class CompositorRuntime {
     private static weak var active: CompositorRuntime?
 
-    private static let frameIntervalNs: UInt64 = 16_666_667
     private static let loopKindShift: UInt64 = 56
     private static let instMask: UInt64 = (UInt64(1) << 56) - 1
 
@@ -61,10 +61,15 @@ final class CompositorRuntime {
     private var polledReadyFd: Int32 = -1
     private var polledXwmFd: Int32 = -1
     private var loopTurns: UInt64 = 0
+    private var idleWakeupWindowStartNs =
+        CompositorRuntime.monotonicNowNs()
+    private var idleWakeupsInWindow: UInt64 = 0
 
     /// Output fractional scale (from `NUCLEUS_SCALE`); the udev DRM-hotplug
     /// handler re-enumerates outputs at this scale.
     let outputScale: Double
+    private(set) lazy var outputTopology = OutputTopologyReconciler(
+        defaultScale: outputScale)
 
     init?() {
         let exitSignalFD = nucleus_compositor_create_exit_signal_fd()
@@ -91,16 +96,31 @@ final class CompositorRuntime {
         active?.exitRequested = true
     }
 
-    static func sessionResume() {
-        guard let runtime = active else { return }
-        RenderRuntime.resumeSession()
+    static func sessionResume() -> Bool {
+        guard let runtime = active else { return false }
+        guard RenderRuntime.resumeSession(),
+            runtime.outputTopology.reconcile(forceReattach: true)
+        else {
+            runtime.paused = true
+            logRuntime("session: DRM recovery failed; remaining suspended")
+            return false
+        }
+        for display in NucleusCompositorServer.shared.layout.displays {
+            display.resumeRedraws()
+        }
         runtime.paused = false
+        return true
     }
 
     static func sessionPause() {
         guard let runtime = active else { return }
-        RenderRuntime.pauseSession()
         runtime.paused = true
+        for display in NucleusCompositorServer.shared.layout.displays {
+            display.suspendRedraws()
+        }
+        if !RenderRuntime.pauseSession() {
+            logRuntime("session: failed to retire DRM state cleanly")
+        }
     }
 
     // ── Token encoding (shared with loop_tokens.token / NucleusCompositorLoop.h) ──
@@ -163,45 +183,47 @@ final class CompositorRuntime {
             Trace.plot("swift.runtime.loop.turn", loopTurns)
             let renderZone = Trace.beginZone("runtime.render_turn", color: Trace.Color.green)
             if !paused {
-                // Author each output's window scene into the retained tree ahead of
-                // the render pass: the scene feeder samples the tiling spring, pushes
-                // model-ordered z-stack + eased layout, and applies the session-lock
-                // blank. Each output authors against its OWN vblank-phased predicted
-                // present (from the display link, phase-corrected by real page-flip
-                // timestamps) — not a free-running clock — so the spring samples the
-                // time the frame will actually scan out. No-op until the router is
-                // activated. If any tile animation is still in flight, keep frames arriving.
-                var animating = false
-                for display in NucleusCompositorServer.shared.layout.displays {
+                let nowNs = Self.monotonicNowNs()
+                let dueDisplays = NucleusCompositorServer.shared.layout.displays
+                    .filter { display in
+                        guard case .queued = display.redrawState else {
+                            return false
+                        }
+                        return (display.displayLink.targetPresentNs()
+                            ?? display.displayLink.predictedPresentNs(0)) <= nowNs
+                    }
+                let dueOutputIDs = Set(dueDisplays.map(\.id))
+                for display in dueDisplays {
+                    _ = display.beginRedraw(frameBuildID: loopTurns)
+                    display.noteSceneAuthorPass()
                     if WaylandRuntime.authorSceneFrame(
                         outputId: display.id,
                         predictedPresentNs: display.displayLink.predictedPresentNs(0)) {
-                        animating = true
+                        display.requestRedraw(.animation)
                     }
                 }
-                if animating { DisplayFrameDemand.requestFrame() }
-                // Publish this frame's session-lock composition — the render core's
-                // scanout choke point that composites only lock surfaces over the
-                // opaque ground while locked (nil when unlocked, normal composition).
-                RenderRuntime.setLockComposition(WaylandRuntime.sessionLockComposition())
-                // Publish this frame's direct-scanout candidates (M2): per output, the
-                // fullscreen root that could scan out the primary plane, gathered from
-                // the live window model and combined with the output's geometry. The
-                // backend evaluates eligibility and promotes accepted buffers.
-                RenderRuntime.setScanoutCandidates(scanoutCandidates())
-                // Publish the hardware cursor: re-upload the cursor BOs only
-                // when the image changes (generation), re-place the plane every frame from
-                // the live pointer position. Without this the compositor draws no cursor.
-                let cursorModel = NucleusCompositorServer.shared.cursor
-                if cursorModel.generation != lastCursorGeneration {
-                    lastCursorGeneration = cursorModel.generation
-                    RenderRuntime.setCursorImage(
-                        pixels: cursorModel.pixels, width: cursorModel.width, height: cursorModel.height,
-                        hotspotX: cursorModel.hotSpotX, hotspotY: cursorModel.hotSpotY)
+                if !dueDisplays.isEmpty {
+                    RenderRuntime.setLockComposition(
+                        WaylandRuntime.sessionLockComposition())
+                    RenderRuntime.setScanoutCandidates(scanoutCandidates())
+                    let cursorModel = NucleusCompositorServer.shared.cursor
+                    if cursorModel.generation != lastCursorGeneration {
+                        lastCursorGeneration = cursorModel.generation
+                        RenderRuntime.setCursorImage(
+                            pixels: cursorModel.pixels,
+                            width: cursorModel.width,
+                            height: cursorModel.height,
+                            hotspotX: cursorModel.hotSpotX,
+                            hotspotY: cursorModel.hotSpotY)
+                    }
+                    let events = NucleusCompositorServer.shared.events
+                    RenderRuntime.setCursorPosition(
+                        x: events.cursorX, y: events.cursorY)
+                    _ = RenderRuntime.renderOutputs(dueOutputIDs)
+                    for display in dueDisplays {
+                        display.redrawDidNotSubmit()
+                    }
                 }
-                let events = NucleusCompositorServer.shared.events
-                RenderRuntime.setCursorPosition(x: events.cursorX, y: events.cursorY)
-                _ = RenderRuntime.renderOutputs()
             }
             renderZone.end()
 
@@ -228,9 +250,11 @@ final class CompositorRuntime {
             dispatchZone.value(completionCount)
             dispatchZone.end()
             Trace.plot("swift.runtime.loop.completions", completionCount)
+            recordIdleWakeupRate()
 
             maintainDrmGeneration()
             maintainXwayland()
+            WaylandRuntime.idleTick(nowNs: Self.monotonicNowNs())
 
             // post-drain: always drain libseat — a VT-switch signal arrives as a
             // delivered EINTR with no CQE, and the io_uring wait returns on it —
@@ -240,17 +264,58 @@ final class CompositorRuntime {
         }
     }
 
+    private func recordIdleWakeupRate() {
+        let now = Self.monotonicNowNs()
+        let displays =
+            NucleusCompositorServer.shared.layout.displays
+        if !displays.isEmpty,
+            displays.allSatisfy({
+                if case .idle = $0.redrawState {
+                    return true
+                }
+                return false
+            })
+        {
+            idleWakeupsInWindow &+= 1
+        }
+        let elapsed =
+            now &- idleWakeupWindowStartNs
+        guard elapsed >= 1_000_000_000 else {
+            return
+        }
+        Trace.plot(
+            "swift.runtime.idle_wakeups_per_second",
+            Double(idleWakeupsInWindow)
+                * 1_000_000_000.0
+                / Double(elapsed))
+        idleWakeupsInWindow = 0
+        idleWakeupWindowStartNs = now
+    }
+
     /// The wait ceiling until the next frame is due: the earliest predicted-present deadline across
     /// all outputs (each output's DisplayLink blends its vblank-phase prediction with any pending
     /// operation deadline). `.zero` renders immediately when a deadline has already passed. Before any
-    /// output is enumerated, falls back to the fixed 60 Hz interval.
-    private func earliestDeadlineTimeout() -> Duration {
+    /// output is queued. Idle and in-flight outputs contribute no timeout.
+    private func earliestDeadlineTimeout() -> Duration? {
         let now = Self.monotonicNowNs()
         var earliest: UInt64 = .max
-        for display in NucleusCompositorServer.shared.layout.displays {
-            earliest = min(earliest, UInt64(bitPattern: display.displayLink.nextDeadlineNs()))
+        if let idleDeadline = WaylandRuntime.nextIdleDeadlineNs() {
+            earliest = min(earliest, idleDeadline)
         }
-        if earliest == .max { earliest = now &+ Self.frameIntervalNs }
+        for display in NucleusCompositorServer.shared.layout.displays {
+            switch display.redrawState {
+            case .queued:
+                earliest = min(
+                    earliest,
+                    display.displayLink.targetPresentNs()
+                        ?? display.displayLink.predictedPresentNs(0))
+            case .deferredUntil(let deadline, _):
+                earliest = min(earliest, deadline)
+            case .idle, .rendering, .awaitingPresentation, .suspended:
+                break
+            }
+        }
+        guard earliest != .max else { return nil }
         if now >= earliest { return .zero }
         return .nanoseconds(Int(earliest &- now))
     }
@@ -287,9 +352,15 @@ final class CompositorRuntime {
         case UInt8(NUCLEUS_LOOP_KIND_APPEARANCE_PORTAL.rawValue):
             if ready { nucleus_shell_dbus_pump_appearance(); DisplayFrameDemand.requestFrame() } else { fail("appearance_portal") }
         case UInt8(NUCLEUS_LOOP_KIND_UDEV.rawValue):
-            // DRM connector hotplug: drain the udev events Swift-side; if a DRM
-            // event was seen, ask the render runtime to re-enumerate outputs.
-            if ready { if nucleus_input_host_drain_drm_hotplug() { _ = RenderRuntime.enumerateOutputs(fractionalScale: outputScale) } } else { fail("udev") }
+            // DRM connector hotplug: one root transaction reconciles renderer,
+            // server, shell policy, and Wayland protocol ownership.
+            if ready {
+                if nucleus_input_host_drain_drm_hotplug() {
+                    _ = outputTopology.reconcile()
+                }
+            } else {
+                fail("udev")
+            }
         case UInt8(NUCLEUS_LOOP_KIND_XWAYLAND_LISTEN.rawValue):
             // The listen fd is the token instance; the xwm host accepts on it.
             if ready { _ = nucleus_xwm_host_display_readable(Int32(bitPattern: UInt32(truncatingIfNeeded: token & Self.instMask))) } else { fail("xwayland_listen") }
@@ -451,7 +522,7 @@ func logRuntime(_ message: String) {
 // host (`.nucleus_compositor_substrate`) drives VT resume/pause + exit through
 // `NucleusCompositorServer.shared.sessionControl`, installed at bring-up.
 extension CompositorRuntime: CompositorSessionControl {
-    func sessionResume() { Self.sessionResume() }
+    func sessionResume() -> Bool { Self.sessionResume() }
     func sessionPause() { Self.sessionPause() }
     func requestExit() { Self.requestExit() }
 }

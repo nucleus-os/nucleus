@@ -1,9 +1,8 @@
-// Phase 10b.6e — the live GBM scanout-buffer allocator: create a scanout-capable
+// The live GBM scanout-buffer allocator: create a scanout-capable
 // GBM buffer object, export it as a DMA-BUF, import that as a Vulkan image (with
-// the scanout usage Graphite render-target wrapping requires, per 10b.6d), and
-// package the coupled GBM ↔ Vulkan ↔ KMS lifetimes into the 10b.5
-// `OutputBufferOwner`. This is the buffer the 10b.6f cutover composites into via
-// the 10b.6d scanout surface and the 10a `DrmOutput` flips.
+// the scanout usage Graphite render-target wrapping requires), and package the
+// coupled GBM ↔ Vulkan ↔ KMS lifetimes into `OutputBufferOwner`. The renderer
+// composites into this buffer before DrmOutput submits it for scanout.
 //
 // LIFETIME CONTRACT (mirrors `OutputBufferOwner`'s reverse-order teardown):
 //   - The GBM BO owns the physical scanout memory. It outlives the Vulkan image

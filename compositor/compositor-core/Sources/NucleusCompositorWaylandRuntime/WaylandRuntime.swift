@@ -19,6 +19,7 @@ public enum WaylandRuntime {
         RouterHost.shared.runtime = runtime
         RouterHost.shared.router = runtime.router
         RouterHost.shared.feeder = runtime.feeder
+        runtime.idle.noteUserInput(atMs: monotonicNowNs() / 1_000_000)
     }
 
     /// Add a live wl_output global from a DRM output snapshot. `name`/`description` are NUL-terminated
@@ -33,13 +34,37 @@ public enum WaylandRuntime {
         let nm = name.map { String(cString: $0) } ?? "Nucleus"
         let desc = description.map { String(cString: $0) } ?? nm
         guard let runtime = RouterHost.shared.runtime else { return }
-        runtime.addOutput(OutputInfo(
+        runtime.applyOutput(OutputInfo(
             outputId: outputId, x: x, y: y,
             physicalWidthMm: physicalWidthMm, physicalHeightMm: physicalHeightMm,
             pixelWidth: pixelWidth, pixelHeight: pixelHeight, refreshMhz: refreshMhz, scale: scale,
             name: nm, description: desc,
             logicalWidth: logicalWidth, logicalHeight: logicalHeight,
             fractionalScale: fractionalScale))
+    }
+
+    /// Withdraw an output global after emitting surface leaves and cleaning up
+    /// output-bound protocol state.
+    @MainActor public static func removeOutput(_ outputID: UInt64) {
+        RouterHost.shared.runtime?.removeOutput(outputID)
+    }
+
+    /// Emit output-bound teardown while the output remains available to window
+    /// migration policy.
+    @discardableResult
+    @MainActor public static func prepareOutputRemoval(
+        _ outputID: UInt64
+    ) -> Bool {
+        RouterHost.shared.runtime?.prepareOutputRemoval(
+            outputID) ?? false
+    }
+
+    /// Withdraw the prepared output global after window/focus migration.
+    @MainActor public static func finishOutputRemoval(
+        _ outputID: UInt64
+    ) {
+        RouterHost.shared.runtime?.finishOutputRemoval(
+            outputID)
     }
 
     /// Add the listen socket and export WAYLAND_DISPLAY/XDG_SESSION_TYPE. Returns true on success.
@@ -71,6 +96,31 @@ public enum WaylandRuntime {
         router.flushClients()
     }
 
+    /// The next protocol idle deadline in the monotonic clock domain. A nil
+    /// deadline contributes no wakeup to the compositor loop.
+    @MainActor public static func nextIdleDeadlineNs() -> UInt64? {
+        guard let milliseconds = RouterHost.shared.runtime?.idle.nextDeadlineMs
+        else { return nil }
+        let result = milliseconds.multipliedReportingOverflow(by: 1_000_000)
+        return result.overflow ? UInt64.max : result.partialValue
+    }
+
+    @MainActor public static func idleTick(nowNs: UInt64) {
+        RouterHost.shared.runtime?.idle.idleTick(nowMs: nowNs / 1_000_000)
+    }
+
+    @MainActor public static func noteUserInput(nowNs: UInt64) {
+        RouterHost.shared.runtime?.idle.noteUserInput(
+            atMs: nowNs / 1_000_000)
+    }
+
+    private static func monotonicNowNs() -> UInt64 {
+        var timestamp = timespec()
+        clock_gettime(CLOCK_MONOTONIC, &timestamp)
+        return UInt64(timestamp.tv_sec) &* 1_000_000_000
+            &+ UInt64(timestamp.tv_nsec)
+    }
+
     // MARK: - Per-frame authoring + presentation
 
     /// One presentation frame for `outputId` (predicted to present at `predictedPresentNs`): advance +
@@ -83,19 +133,55 @@ public enum WaylandRuntime {
             outputID: outputId, predictedPresentNs: predictedPresentNs) ?? false
     }
 
-    /// A page flip completed on `outputId`: fire the presented surfaces' wl_surface.frame callbacks and
-    /// deliver wp_presentation_feedback.presented with the kernel flip time (`presentationNs`, ns), the
-    /// `refreshNs` interval, and the vblank `sequence` (MSC). The frame-callback clock is milliseconds
-    /// (undefined base, per wl_surface.frame); the feedback timestamp/MSC split into protocol hi/lo.
-    @MainActor public static func notePresented(
-        _ outputId: UInt64, _ presentationNs: UInt64, _ refreshNs: UInt32, _ sequence: UInt64
+    /// An atomic KMS commit was accepted. Freeze the exact surface commits sampled
+    /// by this output frame before mutable scene state can advance.
+    @MainActor public static func noteSubmitted(
+        outputID: UInt64,
+        outputGeneration: UInt64,
+        submissionID: UInt64,
+        targetPresentationNs: UInt64,
+        sampledIOSurfaceIDs: [UInt64]
     ) {
-        guard let router = RouterHost.shared.router else { return }
+        RouterHost.shared.runtime?.compositor.submitFrame(
+            outputID: outputID,
+            outputGeneration: outputGeneration,
+            submissionID: submissionID,
+            targetPresentationNs: targetPresentationNs,
+            sampledIOSurfaceIDs: sampledIOSurfaceIDs)
+        RouterHost.shared.runtime?.screencopy.outputSubmitted(
+            outputID)
+    }
+
+    /// Complete the immutable record matching this binding generation and
+    /// submission. A stale flip has no record and therefore completes nothing.
+    @MainActor public static func notePresented(
+        _ outputId: UInt64,
+        _ outputGeneration: UInt64,
+        _ submissionID: UInt64,
+        _ presentationNs: UInt64,
+        _ refreshNs: UInt32,
+        _ sequence: UInt64
+    ) {
         RouterHost.shared.feeder?.outputPresented(outputId)
-        router.completeFrameCallbacks(forOutput: outputId,
-                                      timeMs: UInt32(truncatingIfNeeded: presentationNs / 1_000_000))
-        router.completePresentedFrame(outputId: outputId, timestampNs: presentationNs,
-                                      refreshNs: refreshNs, sequence: sequence, flags: 0)
+        RouterHost.shared.runtime?.compositor.presentSubmittedFrame(
+            outputID: outputId,
+            outputGeneration: outputGeneration,
+            submissionID: submissionID,
+            timestampNs: presentationNs,
+            refreshNs: refreshNs,
+            sequence: sequence,
+            flags: 0)
+    }
+
+    @MainActor public static func discardSubmitted(
+        outputID: UInt64,
+        outputGeneration: UInt64,
+        submissionID: UInt64
+    ) {
+        RouterHost.shared.runtime?.compositor.discardSubmittedFrames(
+            outputID: outputID,
+            outputGeneration: outputGeneration,
+            submissionID: submissionID)
     }
 
     /// A renderer-imported client generation is no longer referenced by Vulkan or

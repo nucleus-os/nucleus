@@ -31,9 +31,13 @@ extension CompositorRuntime {
         }
         // ── DRM device discovery (Swift-owned, over libdrm) ───────────────
         var primaryPathBuf = [CChar](repeating: 0, count: 256)
-        var renderFd: Int32 = -1
-        let discovered = primaryPathBuf.withUnsafeMutableBufferPointer { buf in
-            nucleus_drm_discover(buf.baseAddress!, buf.count, &renderFd)
+        var renderPathBuf = [CChar](repeating: 0, count: 256)
+        let discovered = primaryPathBuf.withUnsafeMutableBufferPointer { primary in
+            renderPathBuf.withUnsafeMutableBufferPointer { render in
+                nucleus_drm_discover(
+                    primary.baseAddress!, primary.count,
+                    render.baseAddress!, render.count)
+            }
         }
         guard discovered else {
             logRuntime("DRM device discovery failed")
@@ -63,6 +67,21 @@ extension CompositorRuntime {
             iosurfaceRelease: { RenderRuntime.releaseIOSurface($0) },
             dmabufFormats: { RenderRuntime.dmabufFormats($0, $1, $2) },
             dmabufMainDevice: { RenderRuntime.dmabufMainDevice },
+            dmabufProbe: {
+                RenderRuntime.probeDmabuf(
+                    width: $0, height: $1, drmFormat: $2, modifier: $3,
+                    nPlanes: $4, fds: $5, offsets: $6, strides: $7)
+            },
+            presentationClockID: { RenderRuntime.presentationClockID },
+            gammaRampSize: { RenderRuntime.gammaRampSize(outputID: $0) },
+            gammaApply: {
+                RenderRuntime.applyGamma(
+                    outputID: $0, red: $1, green: $2, blue: $3)
+            },
+            gammaClear: { RenderRuntime.clearGamma(outputID: $0) },
+            forcePresent: {
+                RenderRuntime.forcePresent(outputID: $0)
+            },
             syncobjImportTimeline: { RenderRuntime.importSyncobjTimeline(fd: $0) },
             syncobjDestroyTimeline: { RenderRuntime.destroySyncobjTimeline(handle: $0) },
             screencopyCapture: { RenderRuntime.screencopyCapture(outputId: $0) },
@@ -82,7 +101,6 @@ extension CompositorRuntime {
         }
 
         let scale = outputScale
-        let intScale = UInt32(max(1.0, scale.rounded(.up)))
 
         // ── Render host bundle + overlay controller ───────────────────────
         // The render runtime queries the host bundle conformers, and the overlay
@@ -101,56 +119,64 @@ extension CompositorRuntime {
         NucleusCompositorServer.shared.shellPolicy = ShellPolicyService.shared
 
         // ── Swift render runtime ──────────────────────────────────────────
-        guard RenderRuntime.bringUp(drmDeviceFd: primaryFd) else {
+        var renderNodeStat = stat()
+        let renderMainDevice = renderPathBuf.withUnsafeBufferPointer {
+            stat($0.baseAddress!, &renderNodeStat) == 0
+                ? UInt64(renderNodeStat.st_rdev)
+                : 0
+        }
+        guard renderMainDevice != 0 else {
+            logRuntime("render runtime: failed to stat selected render node")
+            return false
+        }
+        guard RenderRuntime.bringUp(
+            drmDeviceFd: primaryFd,
+            dmabufMainDevice: renderMainDevice)
+        else {
             logRuntime("render runtime: Swift bring-up failed")
             return false
         }
-        RenderRuntime.captureMainDevice(renderNodeFd: renderFd)
         RenderRuntime.installSurfaceRetirement {
             WaylandRuntime.noteSurfaceBufferRetired($0)
         }
-        let attached = RenderRuntime.enumerateOutputs(fractionalScale: scale)
-        guard !attached.isEmpty else {
-            logRuntime("render runtime: no physical DRM outputs attached")
+        guard outputTopology.reconcile() else {
+            logRuntime("render runtime: initial output topology discovery failed")
             return false
         }
-        for (index, output) in attached.enumerated() {
-            let mode = DisplayMode(
-                pixelWidth: output.pixelWidth,
-                pixelHeight: output.pixelHeight,
-                refreshMhz: output.refreshMhz)
-            let config = DisplayConfiguration(
-                enabled: true, primary: index == 0,
-                logicalX: 0, logicalY: 0,
-                logicalWidth: Double(output.pixelWidth) / scale,
-                logicalHeight: Double(output.pixelHeight) / scale,
-                scale: intScale, fractionalScale: scale, mode: mode)
-            NucleusCompositorServer.shared.layout.addDisplay(
-                id: output.id, configuration: config,
-                name: "DRM-\(output.id)", description: "Nucleus DRM output",
-                physicalWidthMM: output.physicalWidthMM,
-                physicalHeightMM: output.physicalHeightMM)
-        }
-        logRuntime("render runtime: Swift render path active for \(attached.count) output(s)")
+        logRuntime(
+            "render runtime: Swift render path active for " +
+            "\(NucleusCompositorServer.shared.layout.displays.count) output(s)")
 
         // Present-report seam: fold each output's scanout submit / page-flip into its
         // DisplayLink present-id ack, and ack the session-lock gate on flip completion.
         // The `locked` security invariant is confirmed by a real present here (the
         // author-time blank filter, applied in the scene author, is the other half).
         RenderRuntime.installPresentReport(
-            submitted: { outputID in
+            submitted: {
+                outputID, outputGeneration, submissionID, sampledIOSurfaceIDs in
                 guard let display = NucleusCompositorServer.shared.layout.display(id: outputID) else { return }
+                display.redrawSubmitted(submissionID: submissionID)
                 DisplayFrameDemand.willSubmit(display)
                 display.noteFrameSubmitted()
                 DisplayFrameDemand.didSubmit(display)
+                WaylandRuntime.noteSubmitted(
+                    outputID: outputID,
+                    outputGeneration: outputGeneration,
+                    submissionID: submissionID,
+                    targetPresentationNs:
+                        display.displayLink.predictedPresentNs(0),
+                    sampledIOSurfaceIDs: sampledIOSurfaceIDs)
             },
-            presented: { outputID, presentationNs, sequence in
+            presented: {
+                outputID, outputGeneration, submissionID,
+                presentationNs, sequence in
                 // The kernel's real flip timestamp/sequence (from the page-flip event) — not a
                 // re-sampled wall clock — drives the DisplayLink ack, the session-lock ack, AND the
                 // client-facing tick: wl_surface.frame + wp_presentation_feedback for this output.
                 let display = NucleusCompositorServer.shared.layout.display(id: outputID)
                 let predicted = display?.displayLink.predictedPresentNs(0) ?? presentationNs
                 display?.noteFramePresented(presentationNs: presentationNs)
+                display?.redrawPresented(submissionID: submissionID)
                 if let display {
                     DisplayFrameDemand.didPresent(
                         display, presentationNs: presentationNs,
@@ -158,7 +184,27 @@ extension CompositorRuntime {
                 }
                 WaylandRuntime.noteSessionLockPresented(outputID)
                 let refreshNs = UInt32(truncatingIfNeeded: display?.displayLink.refreshIntervalNs ?? 16_666_666)
-                WaylandRuntime.notePresented(outputID, presentationNs, refreshNs, sequence)
+                WaylandRuntime.notePresented(
+                    outputID, outputGeneration, submissionID,
+                    presentationNs, refreshNs, sequence)
+            },
+            discarded: {
+                outputID, outputGeneration, submissionID in
+                if let display =
+                    NucleusCompositorServer.shared.layout.display(id: outputID)
+                {
+                    display.redrawPresented(submissionID: submissionID)
+                    // The flip itself completed, but its timestamp was unusable.
+                    // Close scheduler bookkeeping without advancing the presentation
+                    // timeline from an invalid clock sample.
+                    display.inFlightPresentID = 0
+                    DisplayFrameDemand.requestFrame(
+                        outputID: outputID, reason: .surfaceDamage)
+                }
+                WaylandRuntime.discardSubmitted(
+                    outputID: outputID,
+                    outputGeneration: outputGeneration,
+                    submissionID: submissionID)
             })
 
         // Seed the overlay scene's initial output geometry.
@@ -183,6 +229,17 @@ extension CompositorRuntime {
         WaylandRuntime.activateRouter()
         seedRouter()
         nucleus_input_host_publish_keymap()
+
+        // Build and drain the initial libinput inventory before publishing the
+        // Wayland socket. Otherwise an autostart client can bind wl_seat while it
+        // still advertises zero capabilities and trigger missing_capability before
+        // the first reactor turn processes DEVICE_ADDED.
+        guard nucleus_input_host_start_libinput() else {
+            logRuntime("session: failed to start Swift-owned libinput")
+            return false
+        }
+        nucleus_input_host_drain_libinput()
+
         guard WaylandRuntime.addSocket() else {
             logRuntime("router add_socket failed; no Wayland socket available")
             return false
@@ -198,15 +255,9 @@ extension CompositorRuntime {
             logRuntime("[xwayland] init failed — continuing without X11 support")
         }
 
-        // ── libinput + DRM connector-hotplug monitor (Swift-owned) ────────
-        guard nucleus_input_host_start_libinput() else {
-            logRuntime("session: failed to start Swift-owned libinput")
-            return false
-        }
-
         // ── Hardware cursor + first frame ─────────────────────────────────
         nucleus_compositor_cursor_apply_default()
-        DisplayFrameDemand.requestFrame()
+        DisplayFrameDemand.requestFrame(reason: .outputChange)
         return true
     }
 

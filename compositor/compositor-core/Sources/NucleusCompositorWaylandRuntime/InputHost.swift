@@ -20,6 +20,19 @@ import NucleusCompositorServer
 
 @MainActor
 final class InputHost {
+    private struct DeviceCapabilities: Equatable {
+        var pointer = false
+        var keyboard = false
+        var touch = false
+
+        static func | (lhs: Self, rhs: Self) -> Self {
+            Self(
+                pointer: lhs.pointer || rhs.pointer,
+                keyboard: lhs.keyboard || rhs.keyboard,
+                touch: lhs.touch || rhs.touch)
+        }
+    }
+
     let seat: SeatSession
     let xkb: XkbKeyboard
     let dispatch: InputDispatch
@@ -27,6 +40,8 @@ final class InputHost {
     /// DRM connector-hotplug monitor over libinput's udev context. Released before
     /// the backend that owns that context (udev refcounting makes the order safe).
     private var drmHotplug: UdevMonitor?
+    private var devices: [UInt: DeviceCapabilities] = [:]
+    private var advertisedCapabilities = DeviceCapabilities()
     private(set) var active = false
 
     private init(seat: SeatSession, xkb: XkbKeyboard) {
@@ -58,15 +73,23 @@ final class InputHost {
 
     private func handleSeatEnable() {
         active = true
-        // Modifier keys may have released on the other VT; clear stuck state first.
-        dispatch.resetKeyboardState()
+        if let sessionControl = NucleusCompositorServer.shared.sessionControl,
+            !sessionControl.sessionResume()
+        {
+            active = false
+            return
+        }
+        // Modifier keys, focus, or implicit grabs may have changed on the other VT.
+        RouterHost.shared.runtime?.seat.invalidateSerialsForSessionTransition()
+        dispatch.resetSessionState()
         libinput?.resume()
         libinput?.dispatch()
-        NucleusCompositorServer.shared.sessionControl?.sessionResume()
     }
 
     private func handleSeatDisable() {
         active = false
+        RouterHost.shared.runtime?.seat.invalidateSerialsForSessionTransition()
+        dispatch.resetSessionState()
         NucleusCompositorServer.shared.sessionControl?.sessionPause()
         libinput?.suspend()
     }
@@ -88,8 +111,7 @@ final class InputHost {
     /// which relays wl_keyboard.keymap to clients. Re-callable at router activation.
     func publishKeymap() {
         guard xkb.keymapFd >= 0, let seatObj = RouterHost.shared.runtime?.seat else { return }
-        seatObj.keymapFd = xkb.keymapFd
-        seatObj.keymapSize = xkb.keymapSize
+        seatObj.updateKeymap(fd: xkb.keymapFd, size: xkb.keymapSize)
     }
 
     var seatFd: Int32 { seat.fd }
@@ -117,6 +139,10 @@ final class InputHost {
         guard let li = libinput else { return }
         li.dispatch()
         while let event = li.nextEvent() {
+            if consumeDeviceLifecycle(event) {
+                libinput_event_destroy(event)
+                continue
+            }
             let snapshot = dispatch.currentSnapshot()
             let scale = NucleusCompositorServer.shared.displayFractionalScaleAt(x: snapshot.cursorX, y: snapshot.cursorY)
             let touchSpace = NucleusCompositorServer.shared.layout.displays.first.map {
@@ -141,6 +167,44 @@ final class InputHost {
             }
             if batch.needsPointerFrame { dispatch.deliverPointerFrame() }
         }
+    }
+
+    /// Consume libinput's device inventory events before normal event
+    /// translation. Capabilities are an aggregate of live physical devices, not a
+    /// hard-coded promise made by the Wayland seat.
+    private func consumeDeviceLifecycle(_ event: OpaquePointer) -> Bool {
+        let type = libinput_event_get_type(event)
+        guard type == LIBINPUT_EVENT_DEVICE_ADDED || type == LIBINPUT_EVENT_DEVICE_REMOVED,
+            let device = libinput_event_get_device(event)
+        else { return false }
+
+        let key = UInt(bitPattern: UnsafeRawPointer(device))
+        if type == LIBINPUT_EVENT_DEVICE_ADDED {
+            devices[key] = DeviceCapabilities(
+                pointer: libinput_device_has_capability(
+                    device, LIBINPUT_DEVICE_CAP_POINTER) != 0,
+                keyboard: libinput_device_has_capability(
+                    device, LIBINPUT_DEVICE_CAP_KEYBOARD) != 0,
+                touch: libinput_device_has_capability(
+                    device, LIBINPUT_DEVICE_CAP_TOUCH) != 0)
+        } else {
+            devices[key] = nil
+        }
+
+        let next = devices.values.reduce(DeviceCapabilities(), |)
+        guard next != advertisedCapabilities else { return true }
+        if (advertisedCapabilities.pointer && !next.pointer)
+            || (advertisedCapabilities.keyboard && !next.keyboard)
+            || (advertisedCapabilities.touch && !next.touch)
+        {
+            // Clear focus, implicit grabs, pressed keys, and active touches before
+            // withdrawing the corresponding capability.
+            dispatch.resetSessionState()
+        }
+        advertisedCapabilities = next
+        RouterHost.shared.runtime?.seat.updateCapabilities(
+            pointer: next.pointer, keyboard: next.keyboard, touch: next.touch)
+        return true
     }
 
     // Seat-mediated device opens for the DRM backend.

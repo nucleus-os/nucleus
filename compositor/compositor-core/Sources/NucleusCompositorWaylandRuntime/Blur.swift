@@ -3,9 +3,8 @@
 // KDE's protocol with its own explicit blur.commit (it does not latch on
 // wl_surface.commit), and a null region means "blur the whole surface".
 //
-// The router owns the request/
-// publish mechanics and exposes the published region to the render side; the
-// actual blur pass is the compositor's at #12.
+// The router owns the request/publish mechanics and SceneFeeder lowers the
+// published region into the renderer's backdrop-effect pass.
 
 import WaylandServerC
 import WaylandServer
@@ -16,10 +15,6 @@ import WaylandServerDispatch
 protocol KdeBlurDelegate: AnyObject {
     func kdeBlurUpdated(_ surface: WlSurface, region: RegionSnapshot?, wholeSurface: Bool)
     func kdeBlurCleared(_ surface: WlSurface)
-}
-extension KdeBlurDelegate {
-    func kdeBlurUpdated(_ surface: WlSurface, region: RegionSnapshot?, wholeSurface: Bool) {}
-    func kdeBlurCleared(_ surface: WlSurface) {}
 }
 
 final class OrgKdeKwinBlurManager {

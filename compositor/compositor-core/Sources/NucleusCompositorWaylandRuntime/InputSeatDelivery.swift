@@ -23,15 +23,20 @@ enum SeatDelivery {
         return WlSeat.clientKey(c)
     }
 
+    private static func pointerDeliverySurface(_ id: UInt64) -> WlSurface? {
+        guard let target = surface(id) else { return nil }
+        return seat?.popupGrabDeliverySurface(fallback: target) ?? target
+    }
+
     // MARK: - pointer
 
     static func pointerEnter(surfaceID: UInt64, x: Double, y: Double) {
-        guard let s = surface(surfaceID), let seat else { return }
+        guard let s = pointerDeliverySurface(surfaceID), let seat else { return }
         _ = seat.pointerEnter(s, surfaceX: x, surfaceY: y)
     }
 
     static func pointerLeave(surfaceID: UInt64) {
-        guard let s = surface(surfaceID), let seat else { return }
+        guard let s = pointerDeliverySurface(surfaceID), let seat else { return }
         seat.pointerLeave(s)
     }
 
@@ -43,7 +48,7 @@ enum SeatDelivery {
         surfaceID: UInt64, timeMsec: UInt32, surfaceX: Double, surfaceY: Double,
         dx: Double, dy: Double, dxUnaccel: Double, dyUnaccel: Double
     ) {
-        guard let s = surface(surfaceID), let key = clientKey(s), let seat else { return }
+        guard let s = pointerDeliverySurface(surfaceID), let key = clientKey(s), let seat else { return }
         seat.pointerMotionRaw(
             s, clientKey: key, timeMsec: timeMsec, surfaceX: surfaceX, surfaceY: surfaceY,
             dx: dx, dy: dy, dxUnaccel: dxUnaccel, dyUnaccel: dyUnaccel)
@@ -51,20 +56,25 @@ enum SeatDelivery {
 
     /// Returns the button event serial (0 if undelivered), for interactive-grab serials.
     static func pointerButton(surfaceID: UInt64, timeMsec: UInt32, button: UInt32, state: UInt32) -> UInt32 {
-        guard let s = surface(surfaceID), let key = clientKey(s), let seat else { return 0 }
-        return seat.pointerButton(clientKey: key, timeMsec: timeMsec, button: button, state: state)
+        guard let original = surface(surfaceID), let seat else { return 0 }
+        if state != 0, seat.dismissPopupGrabIfOutside(original) { return 0 }
+        let s = seat.popupGrabDeliverySurface(fallback: original)
+        guard let key = clientKey(s) else { return 0 }
+        return seat.pointerButton(
+            clientKey: key, surface: s, timeMsec: timeMsec,
+            button: button, state: state)
     }
 
     static func pointerAxis(
         surfaceID: UInt64, timeMsec: UInt32, axis: UInt32, delta: Double, value120: Int32, source: UInt32
     ) {
-        guard let s = surface(surfaceID), let key = clientKey(s), let seat else { return }
+        guard let s = pointerDeliverySurface(surfaceID), let key = clientKey(s), let seat else { return }
         seat.pointerAxis(clientKey: key, timeMsec: timeMsec, axis: axis, delta: delta,
                          value120: value120, source: source)
     }
 
     static func pointerFrame(surfaceID: UInt64) {
-        guard let s = surface(surfaceID), let key = clientKey(s), let seat else { return }
+        guard let s = pointerDeliverySurface(surfaceID), let key = clientKey(s), let seat else { return }
         seat.pointerFrame(clientKey: key)
     }
 
@@ -93,6 +103,10 @@ enum SeatDelivery {
 
     static func keyboardKey(surfaceID: UInt64, timeMsec: UInt32, keycode: UInt32, keyState: UInt32) {
         guard let s = surface(surfaceID), let key = clientKey(s), let seat else { return }
+        if keycode == 1, keyState != 0 {
+            seat.cancelPopupGrabs()
+            return
+        }
         seat.keyboardKey(clientKey: key, timeMsec: timeMsec, keycode: keycode, keyState: keyState)
     }
 
@@ -115,7 +129,9 @@ enum SeatDelivery {
     static func touchDown(
         surfaceID: UInt64, timeMsec: UInt32, id: Int32, x: Double, y: Double
     ) {
-        guard let s = surface(surfaceID), let seat else { return }
+        guard let original = surface(surfaceID), let seat else { return }
+        if seat.dismissPopupGrabIfOutside(original) { return }
+        let s = seat.popupGrabDeliverySurface(fallback: original)
         _ = seat.touchDown(s, timeMsec: timeMsec, id: id, surfaceX: x, surfaceY: y)
     }
 

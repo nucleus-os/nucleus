@@ -3,14 +3,14 @@
 // timing/flags) the update became visible, or that it was discarded. The clock
 // domain is advertised once on bind.
 //
-// A wp_presentation_feedback object
-// has no requests — it is a pure event carrier (like wl_callback), owned by the
-// surface and fired by the presentation path (WlSurface.presentFeedback) at #12.
-// The fixture drives that path directly.
+// A wp_presentation_feedback object has no requests — it is a pure event carrier
+// (like wl_callback), owned by the exact surface commit and completed only by the
+// matching submitted output frame.
 
 import WaylandServerC
 import WaylandServer
 import WaylandServerDispatch
+import Glibc
 
 /// The presentation seam. The clock id is the CLOCK_* domain the compositor stamps
 /// presentation times in (CLOCK_MONOTONIC by default).
@@ -20,8 +20,9 @@ protocol PresentationDelegate: AnyObject {
 
 final class WpPresentation {
     weak var delegate: PresentationDelegate?
-    /// Presentation clock domain (CLOCK_MONOTONIC = 1) unless a delegate overrides.
-    var clockId: UInt32 { delegate?.presentationClockId ?? 1 }
+    var clockId: UInt32 {
+        delegate?.presentationClockId ?? UInt32(CLOCK_MONOTONIC)
+    }
 
     func register(in router: NucleusWaylandRouter) {
         router.addGlobal(

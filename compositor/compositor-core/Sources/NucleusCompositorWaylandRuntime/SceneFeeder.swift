@@ -25,7 +25,7 @@ import NucleusCompositorWindowScene
 import Glibc
 
 @MainActor
-final class SceneFeeder: BackgroundEffectDelegate {
+final class SceneFeeder: BackgroundEffectDelegate, KdeBlurDelegate {
     struct PresentedWindow: Sendable, Equatable {
         let windowID: UInt64
         let surfaceID: UInt32
@@ -280,6 +280,37 @@ final class SceneFeeder: BackgroundEffectDelegate {
                     surfaceID: UInt64(surfaceID),
                     enabled: region != nil,
                     regions: Self.backgroundEffectRegions(from: region))
+            }
+        }
+    }
+
+    nonisolated func kdeBlurUpdated(
+        _ surface: WlSurface,
+        region: RegionSnapshot?,
+        wholeSurface: Bool
+    ) {
+        let surfaceID = surface.objectId
+        _ = MainActor.assumeIsolated {
+            authoring("update KDE blur", surfaceID: UInt64(surfaceID)) {
+                try author.setBackgroundEffect(
+                    surfaceID: UInt64(surfaceID),
+                    enabled: true,
+                    regions: wholeSurface
+                        ? BackgroundEffectRegions(
+                            rects: [], wholeSurface: true)
+                        : Self.backgroundEffectRegions(from: region))
+            }
+        }
+    }
+
+    nonisolated func kdeBlurCleared(_ surface: WlSurface) {
+        let surfaceID = surface.objectId
+        _ = MainActor.assumeIsolated {
+            authoring("clear KDE blur", surfaceID: UInt64(surfaceID)) {
+                try author.setBackgroundEffect(
+                    surfaceID: UInt64(surfaceID),
+                    enabled: false,
+                    regions: BackgroundEffectRegions())
             }
         }
     }

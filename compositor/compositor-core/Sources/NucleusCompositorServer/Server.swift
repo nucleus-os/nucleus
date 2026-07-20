@@ -406,7 +406,7 @@ public protocol CompositorShellPolicy: AnyObject {
 /// forbids substrate → runtime). The runtime conforms + installs the instance.
 @MainActor
 public protocol CompositorSessionControl: AnyObject {
-    func sessionResume()
+    func sessionResume() -> Bool
     func sessionPause()
     func requestExit()
 }
@@ -423,6 +423,20 @@ public struct RenderUploadSink {
     public var iosurfaceRelease: (_ id: UInt32) -> Void
     public var dmabufFormats: (_ formatsOut: UnsafeMutablePointer<UInt32>, _ modifiersOut: UnsafeMutablePointer<UInt64>, _ max: UInt32) -> UInt32
     public var dmabufMainDevice: () -> UInt64
+    public var dmabufProbe: (_ width: UInt32, _ height: UInt32, _ drmFormat: UInt32, _ modifier: UInt64, _ nPlanes: UInt32, _ fds: UnsafePointer<Int32>, _ offsets: UnsafePointer<UInt32>, _ strides: UnsafePointer<UInt32>) -> Bool
+    public var presentationClockID: () -> UInt32
+    public var gammaRampSize: (_ outputID: UInt64) -> UInt32
+    public var gammaApply: (
+        _ outputID: UInt64,
+        _ red: [UInt16],
+        _ green: [UInt16],
+        _ blue: [UInt16]
+    ) -> Bool
+    public var gammaClear: (_ outputID: UInt64) -> Void
+    /// Force the next ready pass for an output to produce a KMS submission even
+    /// when the visible change lives outside retained-tree damage (gamma,
+    /// screencopy, recovery).
+    public var forcePresent: (_ outputID: UInt64) -> Void
     public var syncobjImportTimeline: (_ fd: Int32) -> UInt32
     public var syncobjDestroyTimeline: (_ handle: UInt32) -> Void
     /// Read back an output's composited frame as tightly-packed BGRA8888 (wl_shm
@@ -440,6 +454,14 @@ public struct RenderUploadSink {
         iosurfaceRelease: @escaping (UInt32) -> Void,
         dmabufFormats: @escaping (UnsafeMutablePointer<UInt32>, UnsafeMutablePointer<UInt64>, UInt32) -> UInt32,
         dmabufMainDevice: @escaping () -> UInt64,
+        dmabufProbe: @escaping (UInt32, UInt32, UInt32, UInt64, UInt32, UnsafePointer<Int32>, UnsafePointer<UInt32>, UnsafePointer<UInt32>) -> Bool,
+        presentationClockID: @escaping () -> UInt32,
+        gammaRampSize: @escaping (UInt64) -> UInt32,
+        gammaApply: @escaping (
+            UInt64, [UInt16], [UInt16], [UInt16]
+        ) -> Bool,
+        gammaClear: @escaping (UInt64) -> Void,
+        forcePresent: @escaping (UInt64) -> Void,
         syncobjImportTimeline: @escaping (Int32) -> UInt32,
         syncobjDestroyTimeline: @escaping (UInt32) -> Void,
         screencopyCapture: @escaping (UInt64) -> (pixels: [UInt8], width: Int, height: Int)?,
@@ -451,6 +473,12 @@ public struct RenderUploadSink {
         self.iosurfaceRelease = iosurfaceRelease
         self.dmabufFormats = dmabufFormats
         self.dmabufMainDevice = dmabufMainDevice
+        self.dmabufProbe = dmabufProbe
+        self.presentationClockID = presentationClockID
+        self.gammaRampSize = gammaRampSize
+        self.gammaApply = gammaApply
+        self.gammaClear = gammaClear
+        self.forcePresent = forcePresent
         self.syncobjImportTimeline = syncobjImportTimeline
         self.syncobjDestroyTimeline = syncobjDestroyTimeline
         self.screencopyCapture = screencopyCapture

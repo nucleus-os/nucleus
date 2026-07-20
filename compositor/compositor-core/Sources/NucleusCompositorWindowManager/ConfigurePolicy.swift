@@ -313,7 +313,7 @@ extension WindowManager {
         )
     }
 
-    private func usableArea(for display: Display) -> UsableArea {
+    func usableArea(for display: Display) -> UsableArea {
         let full = UsableArea(
             x: 0,
             y: 0,
@@ -326,6 +326,35 @@ extension WindowManager {
         // already reserve.
         let zones = layerShellPolicy.recalcZones(outputID: display.id) ?? LayerExclusiveZones()
         return full.applying(layerZones: zones)
+    }
+
+    /// Apply the complete server/window-policy side of output removal. Migration
+    /// runs while both the departing and fallback geometries are still queryable;
+    /// only then are the display and its workspaces removed.
+    @discardableResult
+    public func removeOutput(_ outputID: DisplayID) -> Bool {
+        guard let removed = server.layout.display(id: outputID) else { return false }
+        let fallbackID = server.layout.fallbackDisplayIDForRemoval(outputID)
+        let fallback = fallbackID.flatMap { server.layout.display(id: $0) }
+        let plan = OutputMigrationPlan(
+            removedOutputID: outputID,
+            fallbackOutputID: fallbackID,
+            removedUsable: usableArea(for: removed),
+            fallbackUsable: fallback.map(usableArea(for:)),
+            fullscreenRect: fallback.map {
+                server.spaces.fullscreenLayoutRect(for: $0)
+            },
+            maximizedRect: fallback.map {
+                server.spaces.maximizedLayoutRect(
+                    for: $0, usable: usableArea(for: $0))
+            })
+        server.inputControl?.displayWillRemove(hasFallbackDisplay: fallback != nil)
+        for window in server.windows.windows {
+            _ = migrateOffOutput(windowID: window.id, plan: plan)
+        }
+        _ = server.layout.removeDisplay(id: outputID)
+        server.spaces.removeDisplay(outputID, layout: server.layout)
+        return true
     }
 
     /// Center a floating window's committed size for its first placement: over

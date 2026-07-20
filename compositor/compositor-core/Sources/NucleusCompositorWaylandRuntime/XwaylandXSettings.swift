@@ -7,10 +7,8 @@
 //      Gdk/WindowScalingFactor, Gdk/UnscaledDPI.
 //
 // This file is pure data: the byte-exact XSETTINGS payload and the Xrdb string.
-// The connection-bound publisher (the hidden selection window, change_property)
-// lands with the XWM connection-ownership cutover. These functions are the
-// parity-critical part — toolkits depend on the exact byte layout — so they port
-// and get tested first.
+// XSettingsManager owns the connection-bound hidden selection window and property
+// publication.
 
 /// The Xrdb-format RESOURCE_MANAGER string for `scale`. The subset of Xrdb syntax
 /// Xft/GTK/Qt all grok.

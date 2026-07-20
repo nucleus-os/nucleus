@@ -277,11 +277,13 @@ final class RouterWindowDriver {
         byToplevel[token]?.replanReason = on ? .maximize : .restore
     }
 
-    func setFullscreenImpl(token: UInt, _ on: Bool) {
+    func setFullscreenImpl(
+        token: UInt, _ on: Bool, outputID: UInt64?
+    ) {
         let wm = WindowManager.shared
         guard let windowID = byToplevel[token]?.windowID else { return }
         if on {
-            wm.xdgRequestFullscreen(windowID: windowID, target: nil)
+            wm.xdgRequestFullscreen(windowID: windowID, target: outputID)
         } else {
             wm.xdgUnsetFullscreen(windowID: windowID)
         }
@@ -419,7 +421,8 @@ final class RouterWindowDriver {
             let windowID = windowID(forSurfaceId: surfaceId),
             let window = WindowManager.shared.server.window(id: windowID)
         else { return }
-        setFullscreenImpl(token: token(toplevel), !window.requestedFullscreen)
+        setFullscreenImpl(
+            token: token(toplevel), !window.requestedFullscreen, outputID: nil)
         toplevel.xdgSurface?.configureToplevel(initial: false)
     }
 
@@ -614,9 +617,12 @@ final class RouterWindowDriver {
         toplevel.xdgSurface?.configureToplevel(initial: false)
     }
 
-    func foreignSetFullscreen(windowID: UInt64, _ on: Bool) {
+    func foreignSetFullscreen(
+        windowID: UInt64, _ on: Bool, outputID: UInt64?
+    ) {
         guard let toplevel = toplevel(forWindowId: windowID) else { return }
-        setFullscreenImpl(token: token(toplevel), on)
+        setFullscreenImpl(
+            token: token(toplevel), on, outputID: outputID)
         toplevel.xdgSurface?.configureToplevel(initial: false)
     }
 
@@ -653,7 +659,7 @@ extension RouterWindowDriver: XdgShellDelegate {
         let t = token(toplevel)
         let surfaceId = toplevel.xdgSurface?.surface?.objectId ?? 0
         let geom = toplevel.windowGeometry
-        MainActor.assumeIsolated {
+        return MainActor.assumeIsolated {
             self.didCommitImpl(
                 token: t, surfaceId: surfaceId, ackedSerial: ackedSerial,
                 geom: geom, hasBuffer: hasBuffer)
@@ -671,12 +677,54 @@ extension RouterWindowDriver: XdgShellDelegate {
             MainActor.assumeIsolated { self.setParentImpl(token: t, parentToken: parentToken) }
         case .setMaximized(let on):
             MainActor.assumeIsolated { self.setMaximizedImpl(token: t, on) }
-        case .setFullscreen(let on):
-            MainActor.assumeIsolated { self.setFullscreenImpl(token: t, on) }
-        case .setMinimized, .setMinSize, .setMaxSize, .move, .resize, .showWindowMenu:
-            // Minimize, interactive move/resize grabs, and min/max size hints land
-            // with the mechanism host / interaction state in a later phase.
+        case .setFullscreen(let on, let outputID):
+            MainActor.assumeIsolated {
+                self.setFullscreenImpl(
+                    token: t, on, outputID: outputID)
+            }
+        case .setMinimized:
+            MainActor.assumeIsolated {
+                guard let id = self.byToplevel[t]?.windowID,
+                    self.minimize(windowId: id)
+                else { return }
+                self.seatDriver.setKeyboardFocus(toSurfaceId: 0)
+                RenderBridge.requestFrame(forWindowID: id)
+            }
+        case .setMinSize, .setMaxSize:
+            // XDG size hints constrain future client-chosen sizes. They are
+            // validated and retained by XdgToplevel; server configure policy does
+            // not synthesize a client size from those hints.
             break
+        case .move:
+            MainActor.assumeIsolated {
+                guard let id = self.byToplevel[t]?.windowID else { return }
+                RouterHost.shared.inputHost?.dispatch.beginInteractiveMove(windowID: id)
+            }
+        case .resize(_, let edges):
+            MainActor.assumeIsolated {
+                guard let id = self.byToplevel[t]?.windowID else { return }
+                RouterHost.shared.inputHost?.dispatch.beginInteractiveResize(
+                    windowID: id, edges: edges)
+            }
+        case .showWindowMenu:
+            MainActor.assumeIsolated {
+                guard let id = self.byToplevel[t]?.windowID else { return }
+                RouterHost.shared.inputHost?.dispatch.showWindowMenu(windowID: id)
+            }
+        }
+    }
+    nonisolated func authorizeInteractiveRequest(
+        _ toplevel: XdgToplevel,
+        seat: UnsafeMutablePointer<wl_resource>?,
+        serial: UInt32
+    ) -> Bool {
+        let seatBits = seat.map { UInt(bitPattern: $0) } ?? 0
+        let surfaceID = toplevel.xdgSurface?.surface?.objectId ?? 0
+        return MainActor.assumeIsolated {
+            self.seatDriver.authorizeUserIntent(
+                serial: serial,
+                seatResourceBits: seatBits,
+                surfaceID: surfaceID)
         }
     }
     nonisolated func toplevelWillDestroy(_ toplevel: XdgToplevel) {
@@ -684,8 +732,58 @@ extension RouterWindowDriver: XdgShellDelegate {
         let surfaceId = toplevel.xdgSurface?.surface?.objectId ?? 0
         MainActor.assumeIsolated { self.willDestroyImpl(token: t, surfaceId: surfaceId) }
     }
-    // resolvePopup keeps the router's unconstrained placement for now; popup
-    // constraint policy (flip/slide/resize) lands with PopupPolicy in a later phase.
+    nonisolated func resolvePopup(
+        _ popup: XdgPopup,
+        positioner: XdgPositionerSnapshot,
+        base: WlRect
+    ) -> WlRect {
+        let parentSurfaceID = popup.parent?.surface?.objectId ?? 0
+        return MainActor.assumeIsolated {
+            let parentWindowID = self.windowId(
+                forSurfaceId: parentSurfaceID)
+            guard parentWindowID != 0 else { return base }
+            var wire = WirePopupPositioner()
+            wire.sizeW = positioner.sizeW
+            wire.sizeH = positioner.sizeH
+            wire.anchorRectX = positioner.anchorRect.x
+            wire.anchorRectY = positioner.anchorRect.y
+            wire.anchorRectW = positioner.anchorRect.width
+            wire.anchorRectH = positioner.anchorRect.height
+            wire.anchor = positioner.anchor
+            wire.gravity = positioner.gravity
+            wire.constraintAdjustment = positioner.constraintAdjustment
+            wire.offsetX = positioner.offsetX
+            wire.offsetY = positioner.offsetY
+            guard let resolved = WindowManager.shared.resolvePopup(
+                parentID: parentWindowID, positioner: wire)
+            else { return base }
+            return WlRect(
+                x: resolved.x, y: resolved.y,
+                width: resolved.w, height: resolved.h)
+        }
+    }
+    nonisolated func popupGrabRequested(
+        _ popup: XdgPopup,
+        seat: UnsafeMutablePointer<wl_resource>?,
+        serial: UInt32
+    ) -> Bool {
+        let seatBits = seat.map { UInt(bitPattern: $0) } ?? 0
+        let surfaceID = popup.grabOriginSurface?.objectId ?? 0
+        let popupBits = UInt(
+            bitPattern: Unmanaged.passUnretained(popup).toOpaque())
+        return MainActor.assumeIsolated {
+            guard self.seatDriver.authorizeUserIntent(
+                serial: serial,
+                seatResourceBits: seatBits,
+                surfaceID: surfaceID)
+            else { return false }
+            let popup = Unmanaged<XdgPopup>.fromOpaque(
+                UnsafeRawPointer(bitPattern: popupBits)!
+            ).takeUnretainedValue()
+            self.seatDriver.beginPopupGrab(popup)
+            return true
+        }
+    }
 }
 
 extension RouterWindowDriver: SurfaceSceneDelegate {
@@ -737,7 +835,7 @@ extension RouterWindowDriver: CursorShapeDelegate {
         guard let name = cursorShapeName(shape) else { return false }
         MainActor.assumeIsolated {
             NucleusCompositorServer.shared.shellPolicy?.cursorApplyNamed(name)
-            RenderBridge.requestFrame(outputId: 0)
+            RenderBridge.requestCursorFrame()
         }
         return true
     }
@@ -784,5 +882,6 @@ extension RouterWindowDriver: LayerShellDelegate {
             keyboardInteractivity: Int32(arrangement.keyboardInteractivity),
             mapped: true)
         WindowManager.shared.layerShellPolicy.register(record)
+        RouterHost.shared.xwaylandHost?.updateScale()
     }
 }

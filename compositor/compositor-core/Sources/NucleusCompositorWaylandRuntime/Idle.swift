@@ -1,12 +1,11 @@
 // Idle protocols on the router, owned by one IdleManager:
 //   - zwp_idle_inhibit_manager_v1: a client creates an inhibitor bound to a
 //     surface to keep the session awake while that surface is shown. The router
-//     tracks a live inhibitor count; the compositor (at #12) gates its idle timer
-//     on it.
+//     tracks a live inhibitor count and gates regular idle notifications on it.
 //   - ext_idle_notifier_v1: a client asks to be told when the seat has been idle
 //     for a timeout. The router owns the notification registry and the idled/
 //     resumed event delivery; the reactor's monotonic timer drives it (idleTick /
-//     noteUserInput) at #12, computing deadlines from nextDeadlineMs.
+//     noteUserInput), computing deadlines from nextDeadlineMs.
 //
 // The clock is parameterized (timestamps passed
 // in) so the mechanism is reactor-independent and directly testable. Regular
@@ -17,23 +16,12 @@ import WaylandServerC
 import WaylandServer
 import WaylandServerDispatch
 
-/// The reactor seam: the router calls this when the idle schedule changes so the
-/// compositor can recompute its monotonic idle timer (wired at #12).
-protocol IdleDelegate: AnyObject {
-    func idleScheduleChanged()
-}
-extension IdleDelegate {
-    func idleScheduleChanged() {}
-}
-
 private final class WeakNotification {
     weak var notification: ExtIdleNotification?
     init(_ notification: ExtIdleNotification) { self.notification = notification }
 }
 
 final class IdleManager {
-    weak var delegate: IdleDelegate?
-
     /// Destroy-only child vtable kept hand-wired: zwp_idle_inhibitor_v1 has no
     /// non-destructor request, so it has no generated dispatch.
     private let inhibitorVtable: UnsafeMutableRawPointer
@@ -72,7 +60,7 @@ final class IdleManager {
             impl: self, bind: Self.bindNotifier)
     }
 
-    // MARK: compositor / reactor seam (driven directly by fixtures, by the reactor at #12)
+    // MARK: compositor / reactor seam
 
     /// Earliest deadline (ms) across notifications that can still fire, or nil if
     /// none are armed. Regular notifications are excluded while inhibited.
@@ -94,7 +82,6 @@ final class IdleManager {
         for box in notifications where box.notification?.idled == true {
             box.notification?.sendResumed()
         }
-        delegate?.idleScheduleChanged()
     }
 
     /// Advance the idle clock to `nowMs`: fire `idled` for notifications whose
@@ -111,19 +98,15 @@ final class IdleManager {
 
     fileprivate func addInhibitor() {
         inhibitorCount += 1
-        delegate?.idleScheduleChanged()
     }
     fileprivate func removeInhibitor() {
         if inhibitorCount > 0 { inhibitorCount -= 1 }
-        delegate?.idleScheduleChanged()
     }
     fileprivate func addNotification(_ n: ExtIdleNotification) {
         notifications.append(WeakNotification(n))
-        delegate?.idleScheduleChanged()
     }
     fileprivate func removeNotification(_ n: ExtIdleNotification) {
         notifications.removeAll { $0.notification == nil || $0.notification === n }
-        delegate?.idleScheduleChanged()
     }
 
     // MARK: binds
@@ -190,7 +173,7 @@ extension IdleManager: ExtIdleNotifierV1Requests {
 }
 
 /// zwp_idle_inhibitor_v1 owner (Rule 9). Contributes to the inhibitor count while
-/// alive; the surface is held for #12 visibility policy.
+/// alive; the surface association keeps the inhibition scoped to its owner.
 final class IdleInhibitor {
     private weak var manager: IdleManager?
     private weak var surface: WlSurface?

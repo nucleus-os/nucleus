@@ -50,6 +50,7 @@ extension WpViewporter: WpViewporterRequests {
             return
         }
         viewport.bind(vres)
+        surface.viewport = viewport
     }
 }
 
@@ -67,6 +68,13 @@ final class WpViewport {
             surface.setPendingViewportSource(nil)
             surface.setPendingViewportDestination(nil)
             surface.releaseAux(.viewport)
+            if surface.viewport === self { surface.viewport = nil }
+        }
+    }
+
+    func postError(_ code: UInt32, _ message: String) {
+        if let resource {
+            swift_wayland_resource_post_error(resource, code, message)
         }
     }
 }
