@@ -65,7 +65,9 @@ final class InputDispatch {
     }
 
     let xkb: XkbKeyboard
-    package let clientPolicy = InputClientPolicy()
+    unowned let host: RouterHost
+    package let seatDelivery: SeatDelivery
+    package let clientPolicy: InputClientPolicy
 
     // Cached accepted stream state (mirror of EventServer's, for pre-dispatch reads
     // and the libinput→record normalization snapshot).
@@ -95,7 +97,14 @@ final class InputDispatch {
     package var lastTitlebarPress: (windowID: UInt64, timeMsec: UInt32)?
     package var chromeButtonVisual: (windowID: UInt64, rootSurface: UInt64, hovered: UInt32, pressed: UInt32)?
 
-    init(xkb: XkbKeyboard) { self.xkb = xkb }
+    init(xkb: XkbKeyboard, host: RouterHost) {
+        self.xkb = xkb
+        self.host = host
+        let seatDelivery = SeatDelivery(host: host)
+        self.seatDelivery = seatDelivery
+        self.clientPolicy = InputClientPolicy(
+            host: host, seatDelivery: seatDelivery)
+    }
 
     // MARK: - entry
 
@@ -103,7 +112,8 @@ final class InputDispatch {
     func dispatch(_ record: WireEventRecord, location: TapLocation = .hid) -> Result {
         var submitted = record
         InputLatencyProbe.beginHidEvent()
-        WaylandRuntime.noteUserInput(nowNs: Self.monotonicNowNs())
+        host.runtime?.idle.noteUserInput(
+            atMs: Self.monotonicNowNs() / 1_000_000)
 
         if isKey(submitted.kind) { updateKeyboardStateForEvent(&submitted) }
         applyPointerConstraints(&submitted)
@@ -119,7 +129,7 @@ final class InputDispatch {
 
         let previousCursorX = cursorX
         let previousCursorY = cursorY
-        let decision = NucleusCompositorServer.shared.events.dispatch(submitted, bounds: pointerBounds())
+        let decision = host.server.events.dispatch(submitted, bounds: pointerBounds())
         cacheState(decision.state)
         if decision.change.cursorMoved {
             requestCursorFrame(

@@ -5,7 +5,7 @@ import Glibc
 @MainActor
 extension InputDispatch {
     package func overlayScaleAtCursor() -> Double {
-        for display in NucleusCompositorServer.shared.layout.displays {
+        for display in host.server.layout.displays {
             let r = display.logicalRect
             if cursorX >= r.x && cursorX < r.maxX && cursorY >= r.y && cursorY < r.maxY {
                 return display.fractionalScale
@@ -16,7 +16,7 @@ extension InputDispatch {
 
     package func dispatchOverlayPointer(kind: UInt32, button: UInt32, timestampNs: UInt64) -> UInt32 {
         let scale = overlayScaleAtCursor()
-        let result = NucleusCompositorServer.shared.shellPolicy?.overlayPointer(
+        let result = host.server.shellPolicy?.overlayPointer(
             x: Float(cursorX * scale),
             y: Float(cursorY * scale),
             kind: kind,
@@ -30,7 +30,7 @@ extension InputDispatch {
     package func dispatchOverlayKey(
         keycode: UInt32, modifiers: UInt32, text: String?, kind: UInt32, timestampNs: UInt64
     ) -> UInt32 {
-        let result = NucleusCompositorServer.shared.shellPolicy?.overlayKey(
+        let result = host.server.shellPolicy?.overlayKey(
             keycode: keycode, modifiers: modifiers, text: text,
             kind: kind, timestampNs: timestampNs) ?? 0
         let bits = UInt32(truncatingIfNeeded: result)
@@ -45,8 +45,9 @@ extension InputDispatch {
     }
 
     package func requestOverlayFrame() {
-        let server = NucleusCompositorServer.shared
+        let server = host.server
         RenderBridge.requestFrame(
+            server: server,
             outputId: server.spaces.overlayDisplayID(
                 layout: server.layout),
             reason: .shellOverlay)
@@ -58,14 +59,15 @@ extension InputDispatch {
             let output = windowDriver?.windowOutput(forSurfaceId: UInt32(truncatingIfNeeded: surface)) ?? 0
             if output != 0 { return output }
         }
-        let layout = NucleusCompositorServer.shared.layout
+        let layout = host.server.layout
         return layout.primaryDisplayID() ?? layout.displays.first?.id ?? 0
     }
 
     package func raiseWindow(_ windowID: UInt64) {
         guard windowID != 0 else { return }
-        if NucleusCompositorServer.shared.windows.raise(id: windowID) {
+        if host.server.windows.raise(id: windowID) {
             RenderBridge.requestFrame(
+                server: host.server,
                 forWindowID: windowID)
         }
     }
@@ -74,11 +76,11 @@ extension InputDispatch {
         guard index != 0 else { return }
         let outputID = workspaceTargetOutput()
         guard outputID != 0 else { return }
-        let server = NucleusCompositorServer.shared
+        let server = host.server
         let spaceID = server.spaces.ensureWorkspace(onOutput: outputID, index: Int(index))
         guard spaceID != 0 else { return }
         if server.spaces.setActiveSpace(spaceID, forDisplay: outputID) {
-            RenderBridge.requestFrame(outputId: outputID)
+            RenderBridge.requestFrame(server: server, outputId: outputID)
         }
     }
 
@@ -91,11 +93,11 @@ extension InputDispatch {
         var outputID = windowDriver?.windowOutput(forSurfaceId: UInt32(truncatingIfNeeded: surface)) ?? 0
         if outputID == 0 { outputID = workspaceTargetOutput() }
         guard outputID != 0 else { return }
-        let server = NucleusCompositorServer.shared
+        let server = host.server
         let spaceID = server.spaces.ensureWorkspace(onOutput: outputID, index: Int(index))
         guard spaceID != 0 else { return }
         if server.spaces.assign(window: windowID, toSpace: spaceID) {
-            RenderBridge.requestFrame(outputId: outputID)
+            RenderBridge.requestFrame(server: server, outputId: outputID)
         }
     }
 

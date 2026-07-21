@@ -1,11 +1,13 @@
-// Process-wide holder for the live Wayland router and its runtime-owned services.
-// The compositor reactor drives it on the main actor through `WaylandRuntime`.
+// Runtime-owned holder for the live Wayland router and its services. Every object
+// that needs graph access receives this context explicitly from `WaylandRuntime`.
 
 import NucleusCompositorServer
+import NucleusCompositorWindowManager
 
 @MainActor
 final class RouterHost {
-    static let shared = RouterHost()
+    unowned let server: NucleusCompositorServer
+    unowned let windowManager: WindowManager
 
     /// The live router, nil before compositor bring-up constructs it.
     var router: NucleusWaylandRouter?
@@ -29,9 +31,15 @@ final class RouterHost {
     /// handlers drive it and the DRM bring-up borrows its seat for device opens.
     var inputHost: InputHost?
 
+    lazy var sessionLockGate = SessionLockGate(host: self)
+    lazy var pointerCursorSurface = PointerCursorSurface(server: server)
+
     private var presentationSequence: UInt64 = 0
 
-    private init() {}
+    init(server: NucleusCompositorServer, windowManager: WindowManager) {
+        self.server = server
+        self.windowManager = windowManager
+    }
 
     func nextPresentationSequence() -> UInt64 {
         presentationSequence &+= 1

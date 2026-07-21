@@ -23,9 +23,11 @@ import NucleusCompositorServer
 @MainActor
 final class RouterDataDeviceDriver {
     private let compositor: WlCompositor
+    private unowned let server: NucleusCompositorServer
 
-    init(compositor: WlCompositor) {
+    init(compositor: WlCompositor, server: NucleusCompositorServer) {
         self.compositor = compositor
+        self.server = server
     }
 
     /// Whether `clientKey` owns the surface that currently holds keyboard focus.
@@ -33,7 +35,7 @@ final class RouterDataDeviceDriver {
     /// truth the seat driver mirrors into) to its WlSurface and compares the
     /// surface's libwayland client key against `clientKey`.
     private func clientIsFocused(_ clientKey: UInt) -> Bool {
-        let focused = NucleusCompositorServer.shared.seatFocus.keyboardSurfaceID
+        let focused = server.seatFocus.keyboardSurfaceID
         guard focused != 0,
             let surface = compositor.surface(id: UInt32(truncatingIfNeeded: focused)),
             let sres = surface.resource,

@@ -21,6 +21,7 @@ final class WlSurface {
     // owned only by its resource). This is also nil-safe at teardown, where the
     // display (and thus surface-resource destruction) outlives the compositor.
     weak let compositor: WlCompositor?
+    private let pointerCursorSurfaceBits: UInt
     let version: Int32
     /// Process-unique compositor identity. Wayland object ids are scoped to one
     /// client and routinely collide across clients, so they cannot key focus,
@@ -293,10 +294,13 @@ final class WlSurface {
 
     init(
         compositor: WlCompositor,
+        pointerCursorSurface: PointerCursorSurface,
         version: Int32,
         stableObjectId: UInt32 = 0
     ) {
         self.compositor = compositor
+        self.pointerCursorSurfaceBits = UInt(
+            bitPattern: Unmanaged.passUnretained(pointerCursorSurface).toOpaque())
         self.version = version
         self.stableObjectId = stableObjectId
     }
@@ -599,8 +603,14 @@ final class WlSurface {
                 let surfaceID = objectId
                 let offsetX = latch.offsetX
                 let offsetY = latch.offsetY
+                let pointerCursorSurfaceBits = pointerCursorSurfaceBits
                 MainActor.assumeIsolated {
-                    PointerCursorSurface.applyCommittedOffset(
+                    guard let pointer = UnsafeRawPointer(
+                        bitPattern: pointerCursorSurfaceBits)
+                    else { return }
+                    let pointerCursorSurface = Unmanaged<PointerCursorSurface>
+                        .fromOpaque(pointer).takeUnretainedValue()
+                    pointerCursorSurface.applyCommittedOffset(
                         surfaceID: surfaceID,
                         x: offsetX,
                         y: offsetY)
@@ -822,8 +832,14 @@ final class WlSurface {
         detachFromParent()
         detachSubsurfaceChildren()
         let destroyedSurfaceID = objectId
+        let pointerCursorSurfaceBits = pointerCursorSurfaceBits
         MainActor.assumeIsolated {
-            PointerCursorSurface.unbind(surfaceID: destroyedSurfaceID)
+            guard let pointer = UnsafeRawPointer(
+                bitPattern: pointerCursorSurfaceBits)
+            else { return }
+            let pointerCursorSurface = Unmanaged<PointerCursorSurface>
+                .fromOpaque(pointer).takeUnretainedValue()
+            pointerCursorSurface.unbind(surfaceID: destroyedSurfaceID)
         }
         compositor?.removeSurface(self)
         compositor?.sceneDelegate?.surfaceDestroyed(

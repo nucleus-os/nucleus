@@ -17,6 +17,12 @@ import WaylandServer
 import WaylandServerDispatch
 
 final class XwaylandShellManager {
+    private unowned let host: RouterHost
+
+    init(host: RouterHost) {
+        self.host = host
+    }
+
     func register(in router: NucleusWaylandRouter) {
         router.addGlobal(
             interface: swift_wayland_iface_xwayland_shell_v1(), version: 1,
@@ -45,7 +51,7 @@ extension XwaylandShellManager: XwaylandShellV1Requests {
             swift_wayland_resource_post_error(resource, 0, "surface already has a role")  // role
             return
         }
-        let role = XwaylandSurfaceRole(surface: surface)
+        let role = XwaylandSurfaceRole(surface: surface, host: host)
         surface.assignRole(role)
         guard let xres = id.create(vtable: XwaylandSurfaceV1Server.vtable, owner: role) else { return }
         role.bind(xres)
@@ -56,6 +62,7 @@ extension XwaylandShellManager: XwaylandShellV1Requests {
 /// pairing serial (double-buffered) and reports it to the XWM on the first
 /// post-serial commit.
 final class XwaylandSurfaceRole: WlSurfaceRole {
+    private unowned let host: RouterHost
     private weak var surface: WlSurface?
     private var resource: UnsafeMutablePointer<wl_resource>?
     /// Serial set since the last commit, latched into `serial` on commit.
@@ -65,7 +72,10 @@ final class XwaylandSurfaceRole: WlSurfaceRole {
     /// `already_associated` protocol error.
     private var serialCommitted = false
 
-    init(surface: WlSurface) { self.surface = surface }
+    init(surface: WlSurface, host: RouterHost) {
+        self.surface = surface
+        self.host = host
+    }
     fileprivate func bind(_ resource: UnsafeMutablePointer<wl_resource>) { self.resource = resource }
 
     func roleSurfaceCommit(_ surface: WlSurface, isInitial: Bool) {
@@ -80,10 +90,14 @@ final class XwaylandSurfaceRole: WlSurfaceRole {
         serial = pending
         serialCommitted = true
         let surfaceObjectId = UInt64(surface.objectId)
+        let hostBits = UInt(bitPattern: Unmanaged.passUnretained(host).toOpaque())
         // The router dispatch runs single-threaded on the compositor main actor. The
         // pairing is handed directly to the XWM.
         MainActor.assumeIsolated {
-            _ = RouterHost.shared.xwaylandHost?.xwm?.tryAssociateRouterSurfaceBySerial(
+            guard let hostPointer = UnsafeRawPointer(bitPattern: hostBits) else { return }
+            let host = Unmanaged<RouterHost>.fromOpaque(hostPointer)
+                .takeUnretainedValue()
+            _ = host.xwaylandHost?.xwm?.tryAssociateRouterSurfaceBySerial(
                 pending, surfaceObjectId)
         }
     }

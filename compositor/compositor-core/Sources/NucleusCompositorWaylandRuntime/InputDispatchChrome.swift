@@ -5,7 +5,7 @@ import Glibc
 @MainActor
 extension InputDispatch {
     package func chromeHitUnderCursor() -> (windowID: UInt64, surfaceID: UInt64, region: ChromeRegion, edges: UInt32)? {
-        let hit = routerHitTest(sx: cursorX, sy: cursorY)
+        let hit = routerHitTest(host: host, sx: cursorX, sy: cursorY)
         let region = ChromeRegion(rawValue: hit.chromeRegion) ?? .content
         if region == .content || hit.windowId == 0 { return nil }
         let surfaceID = windowDriver?.rootSurface(forWindowId: hit.windowId) ?? 0
@@ -103,25 +103,25 @@ extension InputDispatch {
         if let prev = chromeButtonVisual {
             if prev.windowID == targetID && prev.hovered == hovered && prev.pressed == pressed { return }
             if prev.windowID != targetID && (prev.hovered != 0 || prev.pressed != 0) {
-                RouterHost.shared.feeder?.setChromeButtonState(rootSurfaceID: prev.rootSurface, hovered: 0, pressed: 0)
+                host.feeder?.setChromeButtonState(rootSurfaceID: prev.rootSurface, hovered: 0, pressed: 0)
             }
         }
         if targetID == 0 {
             chromeButtonVisual = nil
             return
         }
-        RouterHost.shared.feeder?.setChromeButtonState(rootSurfaceID: targetRoot, hovered: hovered, pressed: pressed)
+        host.feeder?.setChromeButtonState(rootSurfaceID: targetRoot, hovered: hovered, pressed: pressed)
         chromeButtonVisual = (targetID, targetRoot, hovered, pressed)
     }
 
     /// Open the per-window menu at the cursor (right-click titlebar / menu keybind).
     package func showWindowMenuForWindow(_ windowID: UInt64) {
         guard windowID != 0 else { return }
-        NucleusCompositorServer.shared.shellPolicy?.overlaySceneShowWindowMenu(
+        host.server.shellPolicy?.overlaySceneShowWindowMenu(
             windowID: windowID,
             x: cursorX,
             y: cursorY,
-            capabilities: NucleusCompositorServer.shared.windowCapabilities(id: windowID))
+            capabilities: host.server.windowCapabilities(id: windowID))
     }
 
     package func isTitlebarDoubleClick(windowID: UInt64, timeMsec: UInt32) -> Bool {
@@ -150,7 +150,7 @@ extension InputDispatch {
     }
 
     package func applyNamedCursor(_ name: String) {
-        NucleusCompositorServer.shared.shellPolicy?.cursorApplyNamed(name)
+        host.server.shellPolicy?.cursorApplyNamed(name)
         requestCursorFrame()
     }
 
@@ -161,9 +161,9 @@ extension InputDispatch {
             applyNamedCursor(name)
         case .client:
             if cursorFromXwayland {
-                _ = nucleus_compositor_xwm_reapply_cursor()
-            } else if let compositor = RouterHost.shared.runtime?.compositor {
-                _ = PointerCursorSurface.reapplyCurrent(from: compositor)
+                _ = host.xwaylandHost?.xwm?.applyCurrentCursor()
+            } else if let compositor = host.runtime?.compositor {
+                _ = host.pointerCursorSurface.reapplyCurrent(from: compositor)
             }
             requestCursorFrame()
         }
@@ -175,6 +175,7 @@ extension InputDispatch {
         previousY: Double? = nil
     ) {
         RenderBridge.requestCursorFrame(
+            server: host.server,
             previousX: previousX,
             previousY: previousY)
     }
@@ -193,16 +194,16 @@ extension InputDispatch {
     package func beginInteractiveMoveFromChrome(windowID: UInt64) {
         guard windowID != 0, let wd = windowDriver, wd.canInteract(windowId: windowID) else { return }
         raiseWindow(windowID)
-        let tile = NucleusCompositorServer.shared.window(id: windowID)?.tileEdges
+        let tile = host.server.window(id: windowID)?.tileEdges
         let hadTile = tile.map { $0.left || $0.right || $0.top || $0.bottom } ?? false
-        guard let presented = RouterHost.shared.feeder?.presentedWindow(windowID: windowID)?.frame,
+        guard let presented = host.feeder?.presentedWindow(windowID: windowID)?.frame,
               let r = wd.beginDirectManipulation(windowId: windowID, presented: presented)
         else { return }
         // Drag start un-tiles so the client redraws full decorations.
         if hadTile { wd.configureInteractive(windowId: windowID, resizing: false) }
-        WindowManager.shared.seedInteractiveStartContext(
+        host.windowManager.seedInteractiveStartContext(
             windowID: windowID, cursorX: cursorX, cursorY: cursorY, startRect: startRect(from: r))
-        WindowManager.shared.beginInteractiveMove(windowID: windowID, serial: 0)
+        host.windowManager.beginInteractiveMove(windowID: windowID, serial: 0)
         clearPointerFocusSurface()
         applyNamedCursor("grabbing")
     }
@@ -210,7 +211,7 @@ extension InputDispatch {
     package func beginInteractiveResizeFromChrome(windowID: UInt64, edges: UInt32) {
         guard edges != 0, windowID != 0, let wd = windowDriver, wd.canInteract(windowId: windowID) else { return }
         raiseWindow(windowID)
-        guard let presented = RouterHost.shared.feeder?.presentedWindow(windowID: windowID)?.frame,
+        guard let presented = host.feeder?.presentedWindow(windowID: windowID)?.frame,
               let r = wd.beginDirectManipulation(windowId: windowID, presented: presented)
         else { return }
         var re = WireResizeEdges()
@@ -218,20 +219,20 @@ extension InputDispatch {
         re.right = edges & 2 != 0
         re.top = edges & 4 != 0
         re.bottom = edges & 8 != 0
-        WindowManager.shared.seedInteractiveStartContext(
+        host.windowManager.seedInteractiveStartContext(
             windowID: windowID, cursorX: cursorX, cursorY: cursorY, startRect: startRect(from: r))
-        WindowManager.shared.beginInteractiveResize(windowID: windowID, serial: 0, edges: re)
+        host.windowManager.beginInteractiveResize(windowID: windowID, serial: 0, edges: re)
         wd.configureInteractive(windowId: windowID, resizing: true)
         clearPointerFocusSurface()
     }
 
     package func updateInteractiveGrab() {
-        guard let update = WindowManager.shared.updateInteractiveGrab(
+        guard let update = host.windowManager.updateInteractiveGrab(
             cursorX: cursorX,
             cursorY: cursorY)
         else { return }
         let windowID = update.windowId
-        let previousRect = WindowManager.shared.server
+        let previousRect = host.server
             .window(id: windowID)?.currentRect()
         if update.needsResizeConfigure {
             // Keep presenting the last client-committed buffer at its native
@@ -245,14 +246,15 @@ extension InputDispatch {
                 w: Double(update.rect.width), h: Double(update.rect.height))
         }
         RenderBridge.requestFrame(
+            server: host.server,
             forWindowID: windowID,
             includingPreviousRect: previousRect)
     }
 
     package func finishInteractiveGrab(timeMsec: UInt32) {
-        let finalResize = WindowManager.shared.updateInteractiveGrab(
+        let finalResize = host.windowManager.updateInteractiveGrab(
             cursorX: cursorX, cursorY: cursorY)
-        WindowManager.shared.endInteractiveGrab()
+        host.windowManager.endInteractiveGrab()
         if let finalResize, finalResize.needsResizeConfigure {
             // Clear xdg_toplevel.state.resizing and carry the final requested
             // geometry in the same configure cycle.

@@ -21,6 +21,7 @@ import NucleusCompositorWindowScene
 
 @MainActor
 public final class WaylandRouterRuntime {
+    private unowned let host: RouterHost
     let router: NucleusWaylandRouter
     let feeder: SceneFeeder
 
@@ -52,14 +53,14 @@ public final class WaylandRouterRuntime {
     /// active pointer constraint (the seat owns the relative/locked motion delivery).
     let pointerConstraints: PointerConstraintsManager
 
-    public init?(author: WindowSceneAuthor) {
+    init?(author: WindowSceneAuthor, host: RouterHost) {
         guard let router = NucleusWaylandRouter() else { return nil }
-        let feeder = SceneFeeder(author: author)
+        let feeder = SceneFeeder(author: author, host: host)
 
         // Protocol impls.
-        let compositor = WlCompositor()
+        let compositor = WlCompositor(host: host)
         let subcompositor = WlSubcompositor()
-        let seat = WlSeat()
+        let seat = WlSeat(host: host)
         let xdgShell = XdgShell()
         let layerShell = ZwlrLayerShell()
         let xdgOutput = XdgOutputManager()
@@ -77,7 +78,8 @@ public final class WaylandRouterRuntime {
         let syncobj = WpLinuxDrmSyncobjManager()
         let screencopy = ScreencopyManager()
         let gamma = ZwlrGammaControlManager()
-        let dataDevice = WlDataDeviceManager(compositor: compositor)
+        let dataDevice = WlDataDeviceManager(
+            compositor: compositor, host: host)
         seat.dataDeviceManager = dataDevice
         let textInputManager = TextInputManagerV3(seat: seat)
         seat.textInputManager = textInputManager
@@ -86,23 +88,30 @@ public final class WaylandRouterRuntime {
         let pointerConstraints = PointerConstraintsManager()
         // Xwayland surface association. Dormant until Xwayland attaches to the
         // router at the socket handover; reports pairings to the Swift XWM directly.
-        let xwaylandShell = XwaylandShellManager()
+        let xwaylandShell = XwaylandShellManager(host: host)
         // Taskbar / window-list projection of the Swift window model.
-        let foreignToplevel = ZwlrForeignToplevelManager(compositor: compositor)
+        let foreignToplevel = ZwlrForeignToplevelManager(
+            compositor: compositor, server: host.server)
         // Workspace / virtual-desktop pager projection of the Spaces model.
-        let extWorkspace = ExtWorkspaceManager(compositor: compositor)
+        let extWorkspace = ExtWorkspaceManager(
+            compositor: compositor, server: host.server)
         // Privileged clipboard manager — shares the wl_data_device selection.
         let extDataControl = ExtDataControlManager(dataDevice: dataDevice)
 
         // Drivers.
-        let seatDriver = RouterSeatDriver(seat: seat, compositor: compositor)
+        let seatDriver = RouterSeatDriver(
+            seat: seat, compositor: compositor, server: host.server)
         let windowDriver = RouterWindowDriver(
-            seatDriver: seatDriver, compositor: compositor, feeder: feeder)
+            seatDriver: seatDriver, compositor: compositor, feeder: feeder,
+            host: host)
         let xwaylandDriver = RouterXwaylandDriver(
-            seatDriver: seatDriver, compositor: compositor, feeder: feeder)
-        let renderDriver = RouterRenderDriver()
-        let dataDeviceDriver = RouterDataDeviceDriver(compositor: compositor)
-        let sessionLockDriver = RouterSessionLockDriver()
+            seatDriver: seatDriver, compositor: compositor, feeder: feeder,
+            host: host)
+        let renderDriver = RouterRenderDriver(server: host.server)
+        let dataDeviceDriver = RouterDataDeviceDriver(
+            compositor: compositor, server: host.server)
+        let sessionLockDriver = RouterSessionLockDriver(
+            gate: host.sessionLockGate)
 
         // Wire delegates. The window driver answers every shell/scene/decoration/
         // activation/foreign/cursor seam; the render driver every render/DRM seam.
@@ -167,6 +176,7 @@ public final class WaylandRouterRuntime {
         // completion crossings iterate.
         router.compositor = compositor
 
+        self.host = host
         self.router = router
         self.feeder = feeder
         self.seatDriver = seatDriver
@@ -249,6 +259,6 @@ public final class WaylandRouterRuntime {
 
     private func outputTopologyChangedForXwayland() {
         xwaylandDriver.outputTopologyChanged()
-        RouterHost.shared.xwaylandHost?.updateScale()
+        host.xwaylandHost?.updateScale()
     }
 }

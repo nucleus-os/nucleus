@@ -17,7 +17,11 @@ import WaylandServerC
 
 @MainActor
 final class RouterSessionLockDriver {
-    init() {}
+    private unowned let gate: SessionLockGate
+
+    init(gate: SessionLockGate) {
+        self.gate = gate
+    }
 }
 
 extension RouterSessionLockDriver: SessionLockDelegate {
@@ -25,13 +29,13 @@ extension RouterSessionLockDriver: SessionLockDelegate {
     /// concurrent lock (currentLock != nil), so arming always succeeds here; the
     /// gate is idempotent (re-arm is the lock-client recovery path).
     nonisolated func sessionLockBegin() -> Bool {
-        MainActor.assumeIsolated { SessionLockGate.begin() }
+        MainActor.assumeIsolated { self.gate.begin() }
         return true
     }
 
     /// `unlock_and_destroy` (or a pre-`locked` `destroy`): disarm the gate.
     nonisolated func sessionLockEnd() {
-        MainActor.assumeIsolated { SessionLockGate.end() }
+        MainActor.assumeIsolated { self.gate.end() }
     }
 
     /// A lock surface mapped. The router owns the protocol surface and crosses
@@ -40,6 +44,6 @@ extension RouterSessionLockDriver: SessionLockDelegate {
     /// frame.
     nonisolated func sessionLockSurfaceMapped(_ surface: WlSurface, output _: WlOutput?) {
         let surfaceId = UInt64(surface.objectId)
-        MainActor.assumeIsolated { SessionLockGate.surfaceMapped(surfaceID: surfaceId) }
+        MainActor.assumeIsolated { self.gate.surfaceMapped(surfaceID: surfaceId) }
     }
 }

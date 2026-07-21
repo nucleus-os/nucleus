@@ -78,11 +78,28 @@ final class OutputTopologyReconciler {
     private var applied: [DisplayID: AppliedOutput] = [:]
     private var rememberedPlacements: [DisplayID: (x: Double, y: Double)] = [:]
     private let defaultScale: Double
+    private unowned let server: NucleusCompositorServer
+    private unowned let windowManager: WindowManager
+    private unowned let renderRuntime: RenderRuntime
+    private unowned let frameDemand: DisplayFrameDemand
+    private unowned let waylandRuntime: WaylandRuntime
     private var reconcilePending = false
     private var forceReattachPending = false
 
-    init(defaultScale: Double) {
+    init(
+        defaultScale: Double,
+        server: NucleusCompositorServer,
+        windowManager: WindowManager,
+        renderRuntime: RenderRuntime,
+        frameDemand: DisplayFrameDemand,
+        waylandRuntime: WaylandRuntime
+    ) {
         self.defaultScale = max(0.01, defaultScale)
+        self.server = server
+        self.windowManager = windowManager
+        self.renderRuntime = renderRuntime
+        self.frameDemand = frameDemand
+        self.waylandRuntime = waylandRuntime
     }
 
     @discardableResult
@@ -98,7 +115,7 @@ final class OutputTopologyReconciler {
     @discardableResult
     func continuePendingReconcile() -> Bool {
         guard reconcilePending else { return true }
-        guard let proposal = RenderRuntime.proposeOutputTopology() else {
+        guard let proposal = renderRuntime.proposeOutputTopology() else {
             logRuntime("output topology: discovery failed; preserving applied outputs")
             reconcilePending = false
             forceReattachPending = false
@@ -112,7 +129,7 @@ final class OutputTopologyReconciler {
         let retiring = Set(
             changes.removed.map(\.id)
                 + changes.changed.map { $0.old.id })
-        switch RenderRuntime.retireOutputs(retiring) {
+        switch renderRuntime.retireOutputs(retiring) {
         case .waitingForPageFlip:
             logRuntime(
                 "output topology: waiting for accepted presentation to retire")
@@ -168,7 +185,7 @@ final class OutputTopologyReconciler {
             advertise(refreshed)
         }
 
-        RenderRuntime.commitProposedTopology(
+        renderRuntime.commitProposedTopology(
             generation: proposal.generation,
             appliedOutputIDs: Set(applied.keys))
         refreshDerivedOutputState()
@@ -186,9 +203,9 @@ final class OutputTopologyReconciler {
     }
 
     private func withdraw(_ output: AppliedOutput) {
-        _ = WaylandRuntime.prepareOutputRemoval(output.id)
-        _ = WindowManager.shared.removeOutput(output.id)
-        WaylandRuntime.finishOutputRemoval(output.id)
+        _ = waylandRuntime.prepareOutputRemoval(output.id)
+        _ = windowManager.removeOutput(output.id)
+        waylandRuntime.finishOutputRemoval(output.id)
         applied[output.id] = nil
     }
 
@@ -211,7 +228,7 @@ final class OutputTopologyReconciler {
         let configuration = DisplayConfiguration(
             enabled: true,
             primary: previous?.primary
-                ?? NucleusCompositorServer.shared.layout.displays.isEmpty,
+                ?? server.layout.displays.isEmpty,
             logicalX: placement.0,
             logicalY: placement.1,
             logicalWidth: Double(planned.renderer.pixelWidth) / scale,
@@ -219,7 +236,7 @@ final class OutputTopologyReconciler {
             scale: integerScale,
             fractionalScale: scale,
             mode: mode)
-        guard RenderRuntime.applyProposedOutput(
+        guard renderRuntime.applyProposedOutput(
             planned.renderer,
             logicalX: configuration.logicalX,
             logicalY: configuration.logicalY,
@@ -235,21 +252,21 @@ final class OutputTopologyReconciler {
 
         let outputName = name ?? "DRM-\(planned.id)"
         let outputDescription = description ?? "Nucleus DRM output"
-        if let display = NucleusCompositorServer.shared.layout.display(id: planned.id) {
+        if let display = server.layout.display(id: planned.id) {
             display.apply(configuration)
             display.physicalWidthMM = planned.renderer.physicalWidthMM
             display.physicalHeightMM = planned.renderer.physicalHeightMM
             display.name = outputName
             display.description = outputDescription
         } else {
-            NucleusCompositorServer.shared.layout.addDisplay(
+            server.layout.addDisplay(
                 id: planned.id,
                 configuration: configuration,
                 name: outputName,
                 description: outputDescription,
                 physicalWidthMM: planned.renderer.physicalWidthMM,
                 physicalHeightMM: planned.renderer.physicalHeightMM)
-            NucleusCompositorServer.shared.spaces.ensureDisplay(planned.id)
+            server.spaces.ensureDisplay(planned.id)
         }
         rememberedPlacements[planned.id] = nil
         return AppliedOutput(
@@ -260,11 +277,11 @@ final class OutputTopologyReconciler {
     }
 
     private func advertise(_ output: AppliedOutput) {
-        guard let display = NucleusCompositorServer.shared.layout.display(id: output.id)
+        guard let display = server.layout.display(id: output.id)
         else { return }
         display.name.withCString { name in
             display.description.withCString { description in
-                WaylandRuntime.addOutput(
+                waylandRuntime.addOutput(
                     display.id,
                     Int32(clamping: Int(display.logicalRect.x.rounded())),
                     Int32(clamping: Int(display.logicalRect.y.rounded())),
@@ -287,7 +304,7 @@ final class OutputTopologyReconciler {
         _ output: AppliedOutput
     ) {
         guard let display =
-            NucleusCompositorServer.shared.layout.display(
+            server.layout.display(
                 id: output.id)
         else { return }
         display.apply(output.configuration)
@@ -300,7 +317,7 @@ final class OutputTopologyReconciler {
     }
 
     private func nextPlacement() -> (Double, Double) {
-        let layout = NucleusCompositorServer.shared.layout
+        let layout = server.layout
         guard let bounds = layout.desktopBounds() else { return (0, 0) }
         let primaryY = layout.primaryDisplayID()
             .flatMap { layout.display(id: $0)?.logicalRect.y }
@@ -309,10 +326,10 @@ final class OutputTopologyReconciler {
     }
 
     private func refreshDerivedOutputState() {
-        guard let primary = NucleusCompositorServer.shared.layout.primaryDisplayID()
-            .flatMap({ NucleusCompositorServer.shared.layout.display(id: $0) })
+        guard let primary = server.layout.primaryDisplayID()
+            .flatMap({ server.layout.display(id: $0) })
         else { return }
-        DisplayFrameDemand.requestFrame(reason: .outputChange)
+        frameDemand.requestFrame(reason: .outputChange)
         OverlaySceneRuntime.shared.frameUpdated(FrameInfo(
             outputWidth: UInt32(max(1, primary.logicalRect.width.rounded())),
             outputHeight: UInt32(max(1, primary.logicalRect.height.rounded())),

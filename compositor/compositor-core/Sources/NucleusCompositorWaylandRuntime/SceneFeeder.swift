@@ -43,6 +43,8 @@ final class SceneFeeder: BackgroundEffectDelegate, KdeBlurDelegate {
     /// every layer id + the compositor-root hosting; the feeder supplies only the
     /// surface id, geometry, content, and order.
     private let author: WindowSceneAuthor
+    private unowned let host: RouterHost
+    private var server: NucleusCompositorServer { host.server }
     private let injectedRenderService: (any CompositorRenderService)?
     private var reportedAuthorFailures: Set<String> = []
     /// Front-to-back input geometry from the same samples successfully authored
@@ -58,18 +60,20 @@ final class SceneFeeder: BackgroundEffectDelegate, KdeBlurDelegate {
 
     init(
         author: WindowSceneAuthor,
+        host: RouterHost,
         renderService: (any CompositorRenderService)? = nil
     ) {
         self.author = author
+        self.host = host
         self.injectedRenderService = renderService
     }
 
     private var renderService: (any CompositorRenderService)? {
-        injectedRenderService ?? NucleusCompositorServer.shared.renderService
+        injectedRenderService ?? server.renderService
     }
 
     func presentedWindows(atX x: Double, y: Double) -> [PresentedWindow] {
-        let layout = NucleusCompositorServer.shared.layout
+        let layout = server.layout
         let output = layout.displays.first { display in
             let rect = display.logicalRect
             return x >= Double(rect.x) && x < Double(rect.x + rect.width)
@@ -160,7 +164,7 @@ final class SceneFeeder: BackgroundEffectDelegate, KdeBlurDelegate {
             window.beginPresentationTileAnimation(
                 finalRect: finalRect,
                 slotGeneration: slotGeneration)
-            RenderBridge.requestFrame(forWindowID: window.id)
+            RenderBridge.requestFrame(server: server, forWindowID: window.id)
         }
         guard window.surfaceObjectId != 0,
               let service = renderService,
@@ -247,7 +251,7 @@ final class SceneFeeder: BackgroundEffectDelegate, KdeBlurDelegate {
                 "swift.compositor.transition_snapshot_retirements",
                 transitionMetrics.snapshotRetirements)
         }
-        RenderBridge.requestFrame(forWindowID: window.id)
+        RenderBridge.requestFrame(server: server, forWindowID: window.id)
         return true
     }
 
@@ -263,7 +267,7 @@ final class SceneFeeder: BackgroundEffectDelegate, KdeBlurDelegate {
     /// lock gate activates. Mapped tile transitions keep their ordinary scene;
     /// closing scenes are removed immediately.
     func cancelTransitionsForSessionLock() {
-        for window in NucleusCompositorServer.shared.windows.windows
+        for window in server.windows.windows
         where window.source != .lock && window.presentationActor.transition != nil {
             window.presentationActor.cancelTileAnimation()
             _ = finishTransition(
@@ -276,7 +280,7 @@ final class SceneFeeder: BackgroundEffectDelegate, KdeBlurDelegate {
     /// cancelled and closing scenes complete immediately so no transition waits
     /// forever for a presentation timestamp that can no longer arrive.
     func outputRemoved(_ outputID: UInt64) {
-        for window in NucleusCompositorServer.shared.windows.windows
+        for window in server.windows.windows
         where window.currentOutputID == outputID
             && window.presentationActor.transition != nil
         {
@@ -294,7 +298,7 @@ final class SceneFeeder: BackgroundEffectDelegate, KdeBlurDelegate {
     /// are retired through their normal owner instead of being orphaned by process
     /// teardown order.
     func shutdown() {
-        let windows = NucleusCompositorServer.shared.windows.windows
+        let windows = server.windows.windows
         for window in windows {
             window.presentationActor.cancelTileAnimation()
             if window.presentationActor.transition != nil {
@@ -346,7 +350,7 @@ final class SceneFeeder: BackgroundEffectDelegate, KdeBlurDelegate {
             window.mapped = false
         }
         if retirement.destroyWindow {
-            _ = NucleusCompositorServer.shared.destroyWindow(id: window.id)
+            _ = server.destroyWindow(id: window.id)
         }
         return true
     }
@@ -374,7 +378,7 @@ final class SceneFeeder: BackgroundEffectDelegate, KdeBlurDelegate {
     /// from being animated — not the boundary. An empty set blanks the output.
     func lockSurfaceContexts(outputID: UInt64) -> Set<UInt32> {
         var contexts: Set<UInt32> = []
-        for window in NucleusCompositorServer.shared.windows.windows
+        for window in server.windows.windows
         where window.source == .lock && window.mapped && window.surfaceObjectId != 0 {
             let onOutput = window.currentOutputID == nil || window.currentOutputID == outputID
             guard onOutput,
@@ -477,7 +481,7 @@ final class SceneFeeder: BackgroundEffectDelegate, KdeBlurDelegate {
         var ids: Set<UInt64> = []
         var dominantID: UInt64?
         var dominantArea = 0.0
-        for display in NucleusCompositorServer.shared.layout.displays {
+        for display in server.layout.displays {
             let r = display.logicalRect
             let area = Self.overlapArea(x: x, y: y, w: w, h: h, rx: r.x, ry: r.y, rw: r.width, rh: r.height)
             guard area > 0 else { continue }
@@ -571,7 +575,7 @@ final class SceneFeeder: BackgroundEffectDelegate, KdeBlurDelegate {
     func authorFrame(outputID: UInt64, predictedPresentNs: UInt64) -> Bool {
         // Refresh this output's predicted-present clock; the spring samples it.
         // Hardware frame-request arming stays in the reactor.
-        if let display = NucleusCompositorServer.shared.layout.display(id: outputID) {
+        if let display = server.layout.display(id: outputID) {
             display.predictedPresentNs = predictedPresentNs
         }
         let presentSeconds = Double(predictedPresentNs) / 1_000_000_000
@@ -583,14 +587,14 @@ final class SceneFeeder: BackgroundEffectDelegate, KdeBlurDelegate {
         // render-time locked composition (see `lockSurfaceLayers`). The `locked` event
         // is emitted from the present-ack path (`SessionLockGate.noteOutputPresented`)
         // once a post-lock frame has actually presented.
-        let locked = SessionLockGate.isActive()
-        let windows = NucleusCompositorServer.shared.windows.windows.filter {
+        let locked = host.sessionLockGate.isActive()
+        let windows = server.windows.windows.filter {
             $0.visibleInScene() && (!locked || $0.source == .lock)
         }
         let order = windows.map { UInt64($0.surfaceObjectId) }.filter { $0 != 0 }
         authoring("set window order") { try author.setWindowOrder(order) }
 
-        let focusedID = NucleusCompositorServer.shared.windows.focusedWindow?.id
+        let focusedID = server.windows.focusedWindow?.id
         var anyInFlight = false
         var authoredWindows: [PresentedWindow] = []
         for window in windows {

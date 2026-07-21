@@ -4,8 +4,8 @@ import NucleusCompositorWindowManager
 import Glibc
 @MainActor
 extension InputDispatch {
-    package var seatFocus: SeatFocus { NucleusCompositorServer.shared.seatFocus }
-    package var windowDriver: RouterWindowDriver? { RouterHost.shared.runtime?.windowDriver }
+    package var seatFocus: SeatFocus { host.server.seatFocus }
+    package var windowDriver: RouterWindowDriver? { host.runtime?.windowDriver }
 
     package func pointerFocusID() -> UInt64 { seatFocus.pointerSurfaceID }
     package func keyboardFocusID() -> UInt64 { seatFocus.keyboardSurfaceID }
@@ -13,7 +13,7 @@ extension InputDispatch {
     // MARK: - session-lock gate
 
     package func lockActive() -> Bool {
-        SessionLockGate.isActive()
+        host.sessionLockGate.isActive()
     }
 
     /// While locked, focus/events may only land on a lock surface (source 4); an
@@ -38,15 +38,15 @@ extension InputDispatch {
             let line = "input-route: focus old=\(old) new=\(surfaceID) source=\(source) local=\(sx),\(sy)\n"
             line.withCString { _ = write(STDERR_FILENO, $0, strlen($0)) }
         }
-        if old != 0 { SeatDelivery.pointerLeave(surfaceID: old) }
-        if surfaceID != 0 { SeatDelivery.pointerEnter(surfaceID: surfaceID, x: sx, y: sy) }
+        if old != 0 { seatDelivery.pointerLeave(surfaceID: old) }
+        if surfaceID != 0 { seatDelivery.pointerEnter(surfaceID: surfaceID, x: sx, y: sy) }
     }
 
     package func clearPointerFocusSurface() {
         let old = pointerFocusID()
         if old == 0 { return }
         seatFocus.clearPointerFocus()
-        SeatDelivery.pointerLeave(surfaceID: old)
+        seatDelivery.pointerLeave(surfaceID: old)
     }
 
     package func setKeyboardFocusSurface(_ surfaceID: UInt64) {
@@ -57,11 +57,11 @@ extension InputDispatch {
         if surfaceID != 0, let wd = windowDriver {
             let windowID = wd.windowId(forSurfaceId: UInt32(truncatingIfNeeded: surfaceID))
             if windowID != 0 {
-                NucleusCompositorServer.shared.windows.focus(id: windowID)
+                host.server.windows.focus(id: windowID)
             }
         }
-        if old != 0 { SeatDelivery.keyboardLeave(surfaceID: old) }
-        if surfaceID != 0 { SeatDelivery.keyboardEnter(surfaceID: surfaceID) }
+        if old != 0 { seatDelivery.keyboardLeave(surfaceID: old) }
+        if surfaceID != 0 { seatDelivery.keyboardEnter(surfaceID: surfaceID) }
         // Re-drive xdg activation for the focus change (model focus + configure; the
         // seat enter/leave above already delivered the wl_keyboard transition).
         windowDriver?.publishKeyboardFocus(

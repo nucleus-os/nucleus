@@ -40,6 +40,7 @@ final class ShortcutsInhibitManagerBinding {
 }
 
 final class WlSeat {
+    unowned let host: RouterHost
     // wl_keyboard / wl_touch / zwp_keyboard_shortcuts_inhibitor_v1 are destroy-only
     // (no generated dispatch): keep their hand-wired vtables. fileprivate so the seat
     // binding / inhibit-manager binding can pass them to id.create.
@@ -105,7 +106,8 @@ final class WlSeat {
     private var inhibitors: [InhibitorKey: Inhibitor] = [:]
     private struct InhibitorKey: Hashable { let clientKey: UInt; let objectId: UInt32 }
 
-    init() {
+    init(host: RouterHost) {
+        self.host = host
         keyboardVtable = Self.makeKeyboardVtable()
         touchVtable = Self.makeTouchVtable()
         inhibitorVtable = Self.makeInhibitorVtable()
@@ -536,8 +538,13 @@ final class WlSeat {
         // while a key is physically down sees correct key state instead of an empty
         // set (which desyncs the client's repeat/stuck-key handling). keyboardEnter is
         // nonisolated for C-interop but only ever driven by @MainActor focus logic.
-        let pressed = MainActor.assumeIsolated {
-            NucleusCompositorServer.shared.inputControl?.currentPressedEvdevKeys() ?? []
+        let hostBits = UInt(bitPattern: Unmanaged.passUnretained(host).toOpaque())
+        let pressed: [UInt32] = MainActor.assumeIsolated {
+            guard let hostPointer = UnsafeRawPointer(bitPattern: hostBits)
+            else { return [] }
+            let host = Unmanaged<RouterHost>.fromOpaque(hostPointer)
+                .takeUnretainedValue()
+            return host.server.inputControl?.currentPressedEvdevKeys() ?? []
         }
         for code in pressed {
             if let slot = wl_array_add(&keys, MemoryLayout<UInt32>.size) {
@@ -861,9 +868,9 @@ extension WlPointer: WlPointerRequests {
                   let surfaceObj = WaylandResource.owner(of: surfaceRes, as: WlSurface.self)
             else {
                 // Nil surface → hide the cursor.
-                RenderBridge.requestCursorFrame()
-                PointerCursorSurface.clear()
-                NucleusCompositorServer.shared.cursor.hide()
+                RenderBridge.requestCursorFrame(server: seat.host.server)
+                seat.host.pointerCursorSurface.clear()
+                seat.host.server.cursor.hide()
                 return
             }
             guard surfaceObj.claimCursorRole() else {
@@ -876,12 +883,12 @@ extension WlPointer: WlPointerRequests {
                 }
                 return
             }
-            PointerCursorSurface.bind(
+            seat.host.pointerCursorSurface.bind(
                 surfaceId: surfaceObj.objectId, hotspotX: hotspot_x, hotspotY: hotspot_y)
             // Realize the surface's current buffer immediately (client may have committed
             // it before set_cursor); later commits refresh it via the commit hook.
-            PointerCursorSurface.applyCommittedImage(surfaceObj)
-            RenderBridge.requestCursorFrame()
+            seat.host.pointerCursorSurface.applyCommittedImage(surfaceObj)
+            RenderBridge.requestCursorFrame(server: seat.host.server)
         }
     }
 }

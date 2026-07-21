@@ -26,6 +26,9 @@ import NucleusCompositorWindowManager
 
 @MainActor
 final class RouterXwaylandDriver {
+    private unowned let host: RouterHost
+    private var windowManager: WindowManager { host.windowManager }
+    private var server: NucleusCompositorServer { host.server }
     private let seatDriver: RouterSeatDriver
     private let compositor: WlCompositor
     private let feeder: SceneFeeder?
@@ -33,7 +36,13 @@ final class RouterXwaylandDriver {
     /// model window id → X11 window id, for the reverse configure crossing.
     private var x11ByWindow: [UInt64: UInt64] = [:]
 
-    init(seatDriver: RouterSeatDriver, compositor: WlCompositor, feeder: SceneFeeder? = nil) {
+    init(
+        seatDriver: RouterSeatDriver,
+        compositor: WlCompositor,
+        feeder: SceneFeeder? = nil,
+        host: RouterHost
+    ) {
+        self.host = host
         self.seatDriver = seatDriver
         self.compositor = compositor
         self.feeder = feeder
@@ -48,7 +57,7 @@ final class RouterXwaylandDriver {
         x: Int32, y: Int32, w: UInt32, h: UInt32
     ) -> UInt64 {
         guard surfaceObjectId != 0 else { return 0 }
-        let wm = WindowManager.shared
+        let wm = windowManager
         let windowID = wm.xwaylandCreated(
             x11WindowID: x11WindowID, overrideRedirect: overrideRedirect, wantsKeyboardFocus: true)
         guard let window = wm.server.window(id: windowID) else { return 0 }
@@ -78,7 +87,7 @@ final class RouterXwaylandDriver {
     /// XWM's authoritative rect for managed windows) to the model window: adopt it
     /// as the layout rect and snap the presented frame to it.
     func applyGeometry(windowID: UInt64, x: Int32, y: Int32, w: UInt32, h: UInt32) {
-        guard let window = WindowManager.shared.server.window(id: windowID) else { return }
+        guard let window = server.window(id: windowID) else { return }
         let previousRect = window.currentRect()
         let cw = UInt32(max(1, w))
         let ch = UInt32(max(1, h))
@@ -96,6 +105,7 @@ final class RouterXwaylandDriver {
             centerY: Double(y) + Double(fh) * 0.5)
         if window.mapped {
             RenderBridge.requestFrame(
+                server: server,
                 forWindowID: windowID,
                 includingPreviousRect: previousRect)
         }
@@ -105,7 +115,7 @@ final class RouterXwaylandDriver {
     /// flip `mapped`, and take keyboard focus. On unmap: hide it (`mapped` false) and
     /// tear the scene down. The X-side MapNotify/UnmapNotify drives this.
     func setMapped(windowID: UInt64, mapped: Bool) {
-        let wm = WindowManager.shared
+        let wm = windowManager
         guard let window = wm.server.window(id: windowID), window.surfaceObjectId != 0 else { return }
         let surfaceId = UInt32(window.surfaceObjectId)
         if mapped {
@@ -121,6 +131,7 @@ final class RouterXwaylandDriver {
                 seatDriver.setKeyboardFocus(toSurfaceId: surfaceId)
             }
             RenderBridge.requestFrame(
+                server: server,
                 forWindowID: windowID)
         } else {
             guard window.mapped else { return }
@@ -135,13 +146,14 @@ final class RouterXwaylandDriver {
                 feeder?.windowUnmapped(surfaceID: surfaceId)
             }
             RenderBridge.requestFrame(
+                server: server,
                 forWindowID: windowID)
         }
     }
 
     /// Tear the model window + scene down on X11 DestroyNotify / surface destruction.
     func destroy(windowID: UInt64) {
-        let wm = WindowManager.shared
+        let wm = windowManager
         guard let window = wm.server.window(id: windowID) else { return }
         var closing = false
         if window.surfaceObjectId != 0 {
@@ -167,12 +179,12 @@ final class RouterXwaylandDriver {
     /// Emit an X11 configure for the model window's current rect (interactive
     /// move/resize of a managed X window). The XWM owns the X-side ConfigureNotify.
     func configureToX(windowID: UInt64) {
-        guard let window = WindowManager.shared.server.window(id: windowID),
+        guard let window = server.window(id: windowID),
             let x11WindowID = x11ByWindow[windowID]
         else { return }
         let content = window.contentRect(forFrameRect: window.currentRect())
         // The Swift XWM owns the X-side ConfigureNotify emission, keyed by X11 id.
-        RouterHost.shared.xwaylandHost?.xwm?.configureWindowById(
+        host.xwaylandHost?.xwm?.configureWindowById(
             xcb_window_t(truncatingIfNeeded: x11WindowID),
             Int16(clamping: Int(content.x.rounded())), Int16(clamping: Int(content.y.rounded())),
             UInt16(clamping: Int(max(1, content.width))), UInt16(clamping: Int(max(1, content.height))))
@@ -182,7 +194,7 @@ final class RouterXwaylandDriver {
     /// and immediately issue the corresponding X ConfigureWindow. X11 has no
     /// xdg-style configure serial/ack; the WM configure is authoritative.
     func applyStateConfigure(windowID: UInt64) {
-        let wm = WindowManager.shared
+        let wm = windowManager
         guard let window = wm.server.window(id: windowID),
               let plan = wm.planConfigure(ConfigureRequest(
                 windowID: windowID, reason: .xwaylandStateRequest,
@@ -214,26 +226,29 @@ final class RouterXwaylandDriver {
         }
         configureToX(windowID: windowID)
         RenderBridge.requestFrame(
+            server: server,
             forWindowID: windowID)
     }
 
     /// EWMH activation uses the same family raise, model focus, and wl_keyboard
     /// focus transition as native click-to-focus.
     func activateWindow(windowID: UInt64) {
-        guard let window = WindowManager.shared.server.window(id: windowID),
+        guard let window = server.window(id: windowID),
               window.mapped, window.surfaceObjectId != 0 else { return }
-        WindowManager.shared.server.windows.raise(id: windowID)
-        WindowManager.shared.server.windows.focus(id: windowID)
+        server.windows.raise(id: windowID)
+        server.windows.focus(id: windowID)
         if window.wantsKeyboardFocus {
             seatDriver.setKeyboardFocus(toSurfaceId: UInt32(window.surfaceObjectId))
         }
         RenderBridge.requestFrame(
+            server: server,
             forWindowID: windowID)
     }
 
     func raiseWindow(windowID: UInt64) {
-        guard WindowManager.shared.server.windows.raise(id: windowID) else { return }
+        guard server.windows.raise(id: windowID) else { return }
         RenderBridge.requestFrame(
+            server: server,
             forWindowID: windowID)
     }
 
@@ -242,7 +257,7 @@ final class RouterXwaylandDriver {
     /// client-owned geometry; fullscreen/maximized windows receive a fresh X
     /// ConfigureNotify against the updated work area.
     func outputTopologyChanged() {
-        for window in WindowManager.shared.server.windows.windows
+        for window in server.windows.windows
         where window.source == .xwayland
             && window.mapped
             && (window.requestedFullscreen
@@ -259,7 +274,6 @@ final class RouterXwaylandDriver {
         centerX: Double,
         centerY: Double
     ) {
-        let server = WindowManager.shared.server
         let outputID = server.displayOutputForPoint(
             x: centerX, y: centerY)
         guard outputID != 0,
@@ -267,7 +281,7 @@ final class RouterXwaylandDriver {
         else { return }
         window.currentOutputID = outputID
         window.preferredOutputID = outputID
-        if WindowManager.shared.xwaylandClientListIncludes(
+        if windowManager.xwaylandClientListIncludes(
             windowID: window.id)
         {
             server.spaces.assignToActiveSpace(

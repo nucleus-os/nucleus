@@ -20,6 +20,7 @@ import NucleusCompositorServer
 
 @MainActor
 final class InputHost {
+    private unowned let host: RouterHost
     private struct DeviceCapabilities: Equatable {
         var pointer = false
         var keyboard = false
@@ -44,22 +45,23 @@ final class InputHost {
     private var advertisedCapabilities = DeviceCapabilities()
     private(set) var active = false
 
-    private init(seat: SeatSession, xkb: XkbKeyboard) {
+    private init(host: RouterHost, seat: SeatSession, xkb: XkbKeyboard) {
+        self.host = host
         self.seat = seat
         self.xkb = xkb
-        self.dispatch = InputDispatch(xkb: xkb)
-        NucleusCompositorServer.shared.inputControl = self.dispatch
+        self.dispatch = InputDispatch(xkb: xkb, host: host)
+        host.server.inputControl = self.dispatch
     }
 
     /// Open the libseat session + compile the keymap. The session is not active until
     /// libseat fires enable; `waitForActivation` pumps the FD until it does. Returns
     /// nil if seatd/logind or xkb is unavailable.
-    static func open() -> InputHost? {
+    static func open(host: RouterHost) -> InputHost? {
         guard let seat = SeatSession.open(), let xkb = XkbKeyboard() else { return nil }
-        let host = InputHost(seat: seat, xkb: xkb)
-        seat.onEnable = { [weak host] in host?.handleSeatEnable() }
-        seat.onDisable = { [weak host] in host?.handleSeatDisable() ?? true }
-        return host
+        let inputHost = InputHost(host: host, seat: seat, xkb: xkb)
+        seat.onEnable = { [weak inputHost] in inputHost?.handleSeatEnable() }
+        seat.onDisable = { [weak inputHost] in inputHost?.handleSeatDisable() ?? true }
+        return inputHost
     }
 
     /// Pump the seat FD until the initial enable arrives (libseat activates async).
@@ -73,14 +75,14 @@ final class InputHost {
 
     private func handleSeatEnable() {
         active = true
-        if let sessionControl = NucleusCompositorServer.shared.sessionControl,
+        if let sessionControl = host.server.sessionControl,
             !sessionControl.sessionResume()
         {
             active = false
             return
         }
         // Modifier keys, focus, or implicit grabs may have changed on the other VT.
-        RouterHost.shared.runtime?.seat.invalidateSerialsForSessionTransition()
+        host.runtime?.seat.invalidateSerialsForSessionTransition()
         dispatch.resetSessionState()
         libinput?.resume()
         libinput?.dispatch()
@@ -88,10 +90,10 @@ final class InputHost {
 
     private func handleSeatDisable() -> Bool {
         active = false
-        RouterHost.shared.runtime?.seat.invalidateSerialsForSessionTransition()
+        host.runtime?.seat.invalidateSerialsForSessionTransition()
         dispatch.resetSessionState()
         let canAcknowledge =
-            NucleusCompositorServer.shared.sessionControl?.sessionPause()
+            host.server.sessionControl?.sessionPause()
             ?? true
         libinput?.suspend()
         return canAcknowledge
@@ -117,7 +119,7 @@ final class InputHost {
     /// Hand the compiled keymap fd + size to the router seat (Swift owns it now),
     /// which relays wl_keyboard.keymap to clients. Re-callable at router activation.
     func publishKeymap() {
-        guard xkb.keymapFd >= 0, let seatObj = RouterHost.shared.runtime?.seat else { return }
+        guard xkb.keymapFd >= 0, let seatObj = host.runtime?.seat else { return }
         seatObj.updateKeymap(fd: xkb.keymapFd, size: xkb.keymapSize)
     }
 
@@ -151,8 +153,8 @@ final class InputHost {
                 continue
             }
             let snapshot = dispatch.currentSnapshot()
-            let scale = NucleusCompositorServer.shared.displayFractionalScaleAt(x: snapshot.cursorX, y: snapshot.cursorY)
-            let touchSpace = NucleusCompositorServer.shared.layout.displays.first.map {
+            let scale = host.server.displayFractionalScaleAt(x: snapshot.cursorX, y: snapshot.cursorY)
+            let touchSpace = host.server.layout.displays.first.map {
                 TouchCoordinateSpace(
                     x: $0.logicalRect.x, y: $0.logicalRect.y,
                     width: UInt32(max(1, $0.logicalRect.width.rounded())),
@@ -164,7 +166,7 @@ final class InputHost {
             for record in batch.records {
                 switch dispatch.dispatch(record, location: .hid) {
                 case .exitRequested:
-                    NucleusCompositorServer.shared.sessionControl?.requestExit()
+                    host.server.sessionControl?.requestExit()
                     return
                 case .switchVT(let vt):
                     seat.switchSession(to: vt)
@@ -209,7 +211,7 @@ final class InputHost {
             dispatch.resetSessionState()
         }
         advertisedCapabilities = next
-        RouterHost.shared.runtime?.seat.updateCapabilities(
+        host.runtime?.seat.updateCapabilities(
             pointer: next.pointer, keyboard: next.keyboard, touch: next.touch)
         return true
     }
@@ -220,70 +222,42 @@ final class InputHost {
     func switchSession(to vt: Int32) { seat.switchSession(to: vt) }
 }
 
-// MARK: - bring-up + loop crossings (the composition root drives these directly)
+// MARK: - composition-root lifecycle
 
-@MainActor public func nucleus_input_host_open_seat() -> Bool {
-    guard let host = InputHost.open() else { return false }
-    RouterHost.shared.inputHost = host
-    host.waitForActivation()
-    return host.active
-}
-
-@MainActor public func nucleus_input_host_start_libinput() -> Bool {
-    RouterHost.shared.inputHost?.startLibinput() ?? false
-}
-
-@MainActor public func nucleus_input_host_publish_keymap() {
-    RouterHost.shared.inputHost?.publishKeymap()
-}
-
-@MainActor public func nucleus_input_host_seat_fd() -> Int32 {
-    RouterHost.shared.inputHost?.seatFd ?? -1
-}
-
-@MainActor public func nucleus_input_host_libinput_fd() -> Int32 {
-    RouterHost.shared.inputHost?.libinputFd ?? -1
-}
-
-@MainActor public func nucleus_input_host_seat_dispatch() {
-    RouterHost.shared.inputHost?.dispatchSeat()
-}
-
-/// The Swift-owned DRM connector-hotplug udev monitor fd, or -1 before libinput
-/// (which provides the shared udev context) is started.
-@MainActor public func nucleus_input_host_drm_hotplug_fd() -> Int32 {
-    RouterHost.shared.inputHost?.drmHotplugFd ?? -1
-}
-
-/// Drain queued DRM udev hotplug events; returns true if any DRM event was seen.
-@MainActor public func nucleus_input_host_drain_drm_hotplug() -> Bool {
-    RouterHost.shared.inputHost?.drainDrmHotplug() ?? false
-}
-
-@MainActor public func nucleus_input_host_drain_libinput() {
-    RouterHost.shared.inputHost?.drainLibinput()
-}
-
-/// Open a device node through the Swift seat (the DRM primary node + VT reopen).
-/// The composition root installs this as the render runtime's device-seat opener.
-@MainActor public func nucleus_input_host_open_device(_ path: UnsafePointer<CChar>?) -> Int32 {
-    guard let path else { return -1 }
-    return RouterHost.shared.inputHost?.openDevice(path: path) ?? -1
-}
-
-@MainActor public func nucleus_input_host_close_device(_ fd: Int32) {
-    RouterHost.shared.inputHost?.closeDevice(fd: fd)
-}
-
-@MainActor public func nucleus_input_host_shutdown() {
-    if NucleusCompositorServer.shared.inputControl === RouterHost.shared.inputHost?.dispatch {
-        NucleusCompositorServer.shared.inputControl = nil
+public extension WaylandRuntime {
+    func openSeat() -> Bool {
+        guard let inputHost = InputHost.open(host: host) else { return false }
+        host.inputHost = inputHost
+        inputHost.waitForActivation()
+        return inputHost.active
     }
-    RouterHost.shared.inputHost = nil
-}
 
-/// Complete a libseat disable that was deferred while a KMS page flip retained
-/// scanout resources. Safe to call when no disable is pending.
-@MainActor public func nucleus_input_host_complete_session_pause() {
-    RouterHost.shared.inputHost?.completeSessionPause()
+    func startLibinput() -> Bool { host.inputHost?.startLibinput() ?? false }
+    func publishKeymap() { host.inputHost?.publishKeymap() }
+    var seatFileDescriptor: Int32 { host.inputHost?.seatFd ?? -1 }
+    var libinputFileDescriptor: Int32 { host.inputHost?.libinputFd ?? -1 }
+    func dispatchSeat() { host.inputHost?.dispatchSeat() }
+    var drmHotplugFileDescriptor: Int32 { host.inputHost?.drmHotplugFd ?? -1 }
+    func drainDrmHotplug() -> Bool { host.inputHost?.drainDrmHotplug() ?? false }
+    func drainLibinput() { host.inputHost?.drainLibinput() }
+
+    func openDevice(_ path: UnsafePointer<CChar>?) -> Int32 {
+        guard let path else { return -1 }
+        return host.inputHost?.openDevice(path: path) ?? -1
+    }
+
+    func closeDevice(_ fileDescriptor: Int32) {
+        host.inputHost?.closeDevice(fd: fileDescriptor)
+    }
+
+    func shutdownInput() {
+        if host.server.inputControl === host.inputHost?.dispatch {
+            host.server.inputControl = nil
+        }
+        host.inputHost = nil
+    }
+
+    func completeSessionPause() {
+        host.inputHost?.completeSessionPause()
+    }
 }

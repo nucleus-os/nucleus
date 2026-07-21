@@ -19,15 +19,20 @@ import Glibc
 /// The current client cursor-surface binding (the focused client's `set_cursor`).
 /// Main-actor: set/read on the single compositor thread.
 @MainActor
-enum PointerCursorSurface {
+final class PointerCursorSurface {
+    private unowned let server: NucleusCompositorServer
     /// The wire id of the surface acting as the cursor, or 0 when none is bound.
-    private(set) static var surfaceId: UInt32 = 0
-    private(set) static var hotspotX: Int32 = 0
-    private(set) static var hotspotY: Int32 = 0
-    private static var pendingCaptureID: UInt64?
-    private static var captureGeneration: UInt64 = 0
+    private(set) var surfaceId: UInt32 = 0
+    private(set) var hotspotX: Int32 = 0
+    private(set) var hotspotY: Int32 = 0
+    private var pendingCaptureID: UInt64?
+    private var captureGeneration: UInt64 = 0
 
-    static func bind(surfaceId: UInt32, hotspotX: Int32, hotspotY: Int32) {
+    init(server: NucleusCompositorServer) {
+        self.server = server
+    }
+
+    func bind(surfaceId: UInt32, hotspotX: Int32, hotspotY: Int32) {
         cancelPendingCapture()
         self.surfaceId = surfaceId
         self.hotspotX = hotspotX
@@ -36,18 +41,18 @@ enum PointerCursorSurface {
 
     /// Clear the binding (nil surface, or focus left the client). Does not itself change
     /// the cursor image — the caller applies the default/hidden cursor.
-    static func clear() {
+    func clear() {
         cancelPendingCapture()
         surfaceId = 0
     }
 
-    static func unbind(surfaceID: UInt32) {
+    func unbind(surfaceID: UInt32) {
         if surfaceId == surfaceID { clear() }
     }
 
     /// `wl_surface.offset` moves the cursor surface relative to its previous
     /// buffer, so the hotspot moves by the inverse delta on the same commit.
-    static func applyCommittedOffset(
+    func applyCommittedOffset(
         surfaceID: UInt32,
         x: Int32,
         y: Int32
@@ -58,7 +63,7 @@ enum PointerCursorSurface {
     }
 
     @discardableResult
-    static func reapplyCurrent(from compositor: WlCompositor) -> Bool {
+    func reapplyCurrent(from compositor: WlCompositor) -> Bool {
         guard surfaceId != 0, let surface = compositor.surface(id: surfaceId) else { return false }
         applyCommittedImage(surface)
         return true
@@ -67,12 +72,12 @@ enum PointerCursorSurface {
     /// Realize surface `surfaceId`'s committed SHM buffer as the cursor image with the
     /// bound hotspot. No-op if it is not the bound cursor surface, has no SHM buffer, or
     /// the format is not a 32-bit ARGB/XRGB variant.
-    static func applyCommittedImage(_ surface: WlSurface) {
+    func applyCommittedImage(_ surface: WlSurface) {
         guard surface.objectId == surfaceId, surfaceId != 0 else { return }
         cancelPendingCapture()
-        if let buffer = surface.currentBuffer, let shm = cursorImageFromShm(buffer) {
+        if let buffer = surface.currentBuffer, let shm = Self.cursorImageFromShm(buffer) {
             surface.releaseCurrentBufferImmediately()
-            NucleusCompositorServer.shared.cursor.setImage(
+            server.cursor.setImage(
                 pixels: shm.pixels,
                 width: shm.width,
                 height: shm.height,
@@ -82,36 +87,36 @@ enum PointerCursorSurface {
         }
         let iosurfaceID = surface.renderIosurfaceId
         guard iosurfaceID != 0,
-              let service = NucleusCompositorServer.shared.renderService
+              let service = server.renderService
         else { return }
         let generation = captureGeneration
         pendingCaptureID = service.beginReadSurface(
             iosurfaceID: iosurfaceID
-        ) { [weak surface] capture in
-            guard generation == captureGeneration else { return }
-            pendingCaptureID = nil
+        ) { [weak self, weak surface] capture in
+            guard let self, generation == self.captureGeneration else { return }
+            self.pendingCaptureID = nil
             guard let surface,
-                  surface.objectId == surfaceId,
+                  surface.objectId == self.surfaceId,
                   surface.renderIosurfaceId == iosurfaceID,
                   let capture,
                   let width = UInt32(exactly: capture.width),
                   let height = UInt32(exactly: capture.height)
             else { return }
-            NucleusCompositorServer.shared.cursor.setImage(
+            self.server.cursor.setImage(
                 pixels: capture.pixels,
                 width: width,
                 height: height,
-                hotSpotX: hotspotX,
-                hotSpotY: hotspotY)
-            RenderBridge.requestCursorFrame()
+                hotSpotX: self.hotspotX,
+                hotSpotY: self.hotspotY)
+            RenderBridge.requestCursorFrame(server: self.server)
         }
     }
 
-    private static func cancelPendingCapture() {
+    private func cancelPendingCapture() {
         captureGeneration &+= 1
         precondition(captureGeneration != 0, "cursor capture generation exhausted")
         if let pendingCaptureID {
-            NucleusCompositorServer.shared.renderService?
+            server.renderService?
                 .cancelCapture(pendingCaptureID)
             self.pendingCaptureID = nil
         }

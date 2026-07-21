@@ -27,6 +27,7 @@ private func xwmLog(_ s: String) {
 
 @MainActor
 final class XwaylandXWM {
+    private unowned let host: RouterHost
     let conn: OpaquePointer
     /// XCB connection fd, polled by the compositor loop (xwayland_xwm token).
     let pollFd: Int32
@@ -52,7 +53,7 @@ final class XwaylandXWM {
 
     /// Take ownership of `wmFd`, connect via XCB, claim the WM role + EWMH, enable
     /// Composite redirect, and expose the XCB fd. Returns nil on any bring-up failure.
-    init?(wmFd: Int32) {
+    init?(wmFd: Int32, host: RouterHost) {
         guard let c = xcb_connect_to_fd(wmFd, nil) else { close(wmFd); return nil }
         if xcb_connection_has_error(c) != 0 { xcb_disconnect(c); return nil }
         guard let setup = xcb_get_setup(c) else { xcb_disconnect(c); return nil }
@@ -61,6 +62,7 @@ final class XwaylandXWM {
         let screen = screenPtr.pointee
         let interned = internAllAtoms(c)
 
+        self.host = host
         self.conn = c
         self.pollFd = xcb_get_file_descriptor(c)
         self.rootWindow = screen.root
@@ -100,7 +102,7 @@ final class XwaylandXWM {
     }
 
     // ── router driver / window model access ──────────────────────────────────
-    private var driver: RouterXwaylandDriver? { RouterHost.shared.runtime?.xwaylandDriver }
+    private var driver: RouterXwaylandDriver? { host.runtime?.xwaylandDriver }
 
     // ── bring-up ──────────────────────────────────────────────────────────────
 
@@ -174,7 +176,7 @@ final class XwaylandXWM {
     func updateScale() { refreshDesktopState() }
 
     private func shellFractionalScale() -> Double {
-        let layout = NucleusCompositorServer.shared.layout
+        let layout = host.server.layout
         guard let id = layout.primaryDisplayID(), let display = layout.display(id: id) else {
             return layout.displays.first?.fractionalScale ?? 1.0
         }
@@ -182,7 +184,7 @@ final class XwaylandXWM {
     }
 
     private func desktopBounds() -> (x: Double, y: Double, w: Double, h: Double) {
-        guard let bounds = NucleusCompositorServer.shared.layout.desktopBounds() else { return (0, 0, 0, 0) }
+        guard let bounds = host.server.layout.desktopBounds() else { return (0, 0, 0, 0) }
         return (bounds.x, bounds.y, bounds.width, bounds.height)
     }
 
@@ -210,7 +212,7 @@ final class XwaylandXWM {
     private func desktopWorkarea() -> (
         x: Double, y: Double, w: Double, h: Double
     ) {
-        let layout = NucleusCompositorServer.shared.layout
+        let layout = host.server.layout
         guard !layout.displays.isEmpty else {
             return desktopBounds()
         }
@@ -220,7 +222,7 @@ final class XwaylandXWM {
         var maxY = -Double.greatestFiniteMagnitude
         for display in layout.displays {
             let frame = display.logicalRect
-            let zones = WindowManager.shared.layerShellPolicy
+            let zones = host.windowManager.layerShellPolicy
                 .recalcZones(outputID: display.id)
                 ?? LayerExclusiveZones()
             let x = frame.x + Double(zones.left)
@@ -247,7 +249,7 @@ final class XwaylandXWM {
     /// Re-publish the EWMH managed-client lists in the window model's current
     /// back-to-front stacking order, plus the active Xwayland window.
     func refreshClientLists() {
-        let clients = WindowManager.shared
+        let clients = host.windowManager
             .xwaylandClientXIDs()
         clients.withUnsafeBytes { raw in
             _ = xcb_change_property(
@@ -263,7 +265,7 @@ final class XwaylandXWM {
                 UInt32(clamping: clients.count),
                 raw.baseAddress)
         }
-        let active: [UInt32] = [UInt32(truncatingIfNeeded: WindowManager.shared.activeXwaylandXID())]
+        let active: [UInt32] = [UInt32(truncatingIfNeeded: host.windowManager.activeXwaylandXID())]
         active.withUnsafeBytes { raw in
             _ = xcb_change_property(
                 conn, UInt8(XCB_PROP_MODE_REPLACE.rawValue), rootWindow,
@@ -321,13 +323,13 @@ final class XwaylandXWM {
     @discardableResult
     func applyCurrentCursor() -> Bool {
         guard cursorHas else { return false }
-        let cursor = NucleusCompositorServer.shared.cursor
+        let cursor = host.server.cursor
         cursor.imageHandle = 0
         cursor.width = cursorW
         cursor.height = cursorH
         cursor.hotSpotX = Int32(cursorHX)
         cursor.hotSpotY = Int32(cursorHY)
-        RenderBridge.requestCursorFrame()
+        RenderBridge.requestCursorFrame(server: host.server)
         return true
     }
 
@@ -390,7 +392,7 @@ final class XwaylandXWM {
     private func onDestroyNotify(_ ev: UnsafeMutablePointer<xcb_destroy_notify_event_t>) {
         let window = ev.pointee.window
         guard let surface = windowMap.removeValue(forKey: window) else { return }
-        if WindowManager.shared.activeXwaylandXID() == UInt64(window) { clearFocus() }
+        if host.windowManager.activeXwaylandXID() == UInt64(window) { clearFocus() }
         destroyPairedWindow(surface)
         dissociate(surface)
         refreshClientLists()
@@ -413,7 +415,7 @@ final class XwaylandXWM {
         surface.x11Mapped = false
         if !surface.overrideRedirect { setWmState(conn, atoms, surface, .withdrawn) }
         if surface.routerWindowID != 0 { driver?.setMapped(windowID: surface.routerWindowID, mapped: false) }
-        if WindowManager.shared.activeXwaylandXID() == UInt64(ev.pointee.window) { clearFocus() }
+        if host.windowManager.activeXwaylandXID() == UInt64(ev.pointee.window) { clearFocus() }
         syncWindowNetState(surface)
     }
 
@@ -511,7 +513,7 @@ final class XwaylandXWM {
         guard let surface = windowMap[ev.pointee.window], surface.routerWindowID != 0 else { return }
         let d = ev.pointee.data.data32
         let stateMask = netStateMask(for: [d.1, d.2], atoms)
-        let plan = WindowManager.shared.xwaylandHandleStateRequest(
+        let plan = host.windowManager.xwaylandHandleStateRequest(
             XwaylandStateRequest(
                 windowID: surface.routerWindowID, action: d.0,
                 stateMask: stateMask.rawValue, sourceIndication: d.3))
@@ -535,11 +537,11 @@ final class XwaylandXWM {
 
     func setFocus(_ surface: XwaylandSurface) {
         guard surface.routerWindowID != 0 else { return }
-        applyFocusPlan(WindowManager.shared.xwaylandFocusPlan(windowID: surface.routerWindowID))
+        applyFocusPlan(host.windowManager.xwaylandFocusPlan(windowID: surface.routerWindowID))
     }
 
     func clearFocus() {
-        applyFocusPlan(WindowManager.shared.xwaylandClearFocusPlan())
+        applyFocusPlan(host.windowManager.xwaylandClearFocusPlan())
     }
 
     private func applyFocusPlan(_ plan: XwaylandFocusPlan) {
@@ -584,7 +586,7 @@ final class XwaylandXWM {
 
     func closeWindow(_ surface: XwaylandSurface) {
         guard surface.routerWindowID != 0 else { return }
-        switch WindowManager.shared.xwaylandClosePlan(windowID: surface.routerWindowID).action {
+        switch host.windowManager.xwaylandClosePlan(windowID: surface.routerWindowID).action {
         case UInt32(xwaylandCloseDeleteWindow): sendDeleteWindow(surface.windowID)
         case UInt32(xwaylandCloseDestroy): _ = xcb_kill_client(conn, surface.windowID)
         default: break
@@ -594,7 +596,7 @@ final class XwaylandXWM {
 
     func syncWindowNetState(_ surface: XwaylandSurface) {
         guard surface.routerWindowID != 0 else { return }
-        let mask = WindowManager.shared.xwaylandNetStateSnapshot(windowID: surface.routerWindowID)
+        let mask = host.windowManager.xwaylandNetStateSnapshot(windowID: surface.routerWindowID)
         writeNetWmStateMask(conn, atoms, surface, mask)
     }
 
@@ -708,7 +710,7 @@ final class XwaylandXWM {
     }
 
     private func syncMetadata(_ windowID: UInt64, _ surface: XwaylandSurface) {
-        let wm = WindowManager.shared
+        let wm = host.windowManager
         if let title = surface.title { wm.xwaylandSetTitle(windowID: windowID, title: title) }
         if let cls = surface.className {
             wm.xwaylandSetClass(windowID: windowID, windowClass: cls, instance: surface.instance ?? "")

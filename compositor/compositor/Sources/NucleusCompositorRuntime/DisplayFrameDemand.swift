@@ -9,39 +9,46 @@ import Glibc
 ///
 /// It drives each output's Swift-owned `DisplayLink` directly (no `display_link_*`
 /// crossing) and reads "why another frame is needed" from the Swift shell /
-/// overlay / render owners (`BezelService`/`NotificationService`
-/// `.shared`, `OverlaySceneRuntime.shared`, the render active-animations fact).
+/// overlay / render owners and the render active-animations fact.
 /// Reached Swift-direct from the compositor loop.
 @MainActor
-enum DisplayFrameDemand {
+final class DisplayFrameDemand {
+    private unowned let server: NucleusCompositorServer
+    private unowned let renderRuntime: RenderRuntime
+
+    init(server: NucleusCompositorServer, renderRuntime: RenderRuntime) {
+        self.server = server
+        self.renderRuntime = renderRuntime
+    }
+
     /// Mark a one-shot frame need on every output.
-    static func requestFrame(reason: RedrawReasons = .surfaceDamage) {
-        for display in NucleusCompositorServer.shared.layout.displays {
+    func requestFrame(reason: RedrawReasons = .surfaceDamage) {
+        for display in server.layout.displays {
             display.requestRedraw(reason)
         }
     }
 
     /// Mark a one-shot frame need on `outputID`; falls back to every output when
     /// the id is not a known output.
-    static func requestFrame(
+    func requestFrame(
         outputID: UInt64,
         reason: RedrawReasons = .surfaceDamage
     ) {
-        if let display = NucleusCompositorServer.shared.layout.display(id: outputID) {
+        if let display = server.layout.display(id: outputID) {
             display.requestRedraw(reason)
         } else {
             requestFrame(reason: reason)
         }
     }
 
-    static func requestFrameForOverlay() {
+    func requestFrameForOverlay() {
         requestFrame(outputID: overlayOutputID(), reason: .shellOverlay)
     }
 
     /// Collect the current frame-demand policy from the shell/overlay/render
     /// owners and apply it across the outputs' `DisplayLink`s.
-    static func sync() {
-        let layout = NucleusCompositorServer.shared.layout
+    func sync() {
+        let layout = server.layout
         guard !layout.displays.isEmpty else { return }
         let overlayID = overlayOutputID()
 
@@ -52,7 +59,7 @@ enum DisplayFrameDemand {
         let notificationDeadlineNs =
             OverlaySceneRuntime.shared.notificationDeadlineNs()
         let notificationAnimationActive = BezelService.shared.hasActiveNotifications()
-        let overlayRenderAnimationActive = RenderRuntime.hasActiveAnimations
+        let overlayRenderAnimationActive = renderRuntime.hasActiveAnimations
 
         // Apply.
         if overlayFrameRequested { requestFrameForOverlay() }
@@ -78,7 +85,7 @@ enum DisplayFrameDemand {
         }
     }
 
-    static func willSubmit(_ display: Display) {
+    func willSubmit(_ display: Display) {
         let range = frameRangeName(display)
         if display.displayLink.submittedFrameOpen {
             Trace.frameMarkEnd(range)
@@ -87,11 +94,11 @@ enum DisplayFrameDemand {
         Trace.frameMarkStart(range)
     }
 
-    static func didSubmit(_ display: Display) {
+    func didSubmit(_ display: Display) {
         emitTimelinePlots(display)
     }
 
-    static func didPresent(
+    func didPresent(
         _ display: Display, presentationNs: UInt64, predictedPresentNs: UInt64
     ) {
         Trace.frameMarkEnd(frameRangeName(display))
@@ -103,7 +110,7 @@ enum DisplayFrameDemand {
         emitTimelinePlots(display)
     }
 
-    private static func emitTimelinePlots(_ display: Display) {
+    private func emitTimelinePlots(_ display: Display) {
         let link = display.displayLink
         let sample = link.sampleTimeline()
         let redraw = display.sampleRedrawMetrics()
@@ -150,21 +157,21 @@ enum DisplayFrameDemand {
         }
     }
 
-    private static func plotName(_ display: Display, _ metric: String) -> String {
+    private func plotName(_ display: Display, _ metric: String) -> String {
         "swift.frame.\(display.displayLink.outputTag).\(metric)"
     }
 
-    private static func frameRangeName(_ display: Display) -> String {
+    private func frameRangeName(_ display: Display) -> String {
         "swift.frame.\(display.displayLink.outputTag)"
     }
 
-    private static func monotonicNowNs() -> UInt64 {
+    private func monotonicNowNs() -> UInt64 {
         var ts = timespec()
         clock_gettime(CLOCK_MONOTONIC, &ts)
         return UInt64(ts.tv_sec) &* 1_000_000_000 &+ UInt64(ts.tv_nsec)
     }
 
-    private static func overlayOutputID() -> UInt64 {
-        NucleusCompositorServer.shared.spaces.overlayDisplayID(layout: NucleusCompositorServer.shared.layout)
+    private func overlayOutputID() -> UInt64 {
+        server.spaces.overlayDisplayID(layout: server.layout)
     }
 }

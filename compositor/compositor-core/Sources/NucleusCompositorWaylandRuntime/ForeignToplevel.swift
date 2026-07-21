@@ -41,9 +41,11 @@ final class ZwlrForeignToplevelManager {
     weak var actions: ForeignToplevelActions?
     /// Resolves a client's bound wl_output for a display id (output_enter/leave).
     private unowned let compositor: WlCompositor
+    fileprivate unowned let server: NucleusCompositorServer
 
-    init(compositor: WlCompositor) {
+    init(compositor: WlCompositor, server: NucleusCompositorServer) {
         self.compositor = compositor
+        self.server = server
     }
 
     func register(in router: NucleusWaylandRouter) {
@@ -120,11 +122,11 @@ final class ForeignToplevelClient: DesktopModelObserver {
     fileprivate func bind(_ resource: UnsafeMutablePointer<wl_resource>) { self.resource = resource }
 
     /// Register as a model observer; the snapshot replay enumerates current windows.
-    fileprivate func start() { NucleusCompositorServer.shared.addObserver(self) }
+    fileprivate func start() { manager.server.addObserver(self) }
 
     fileprivate func stop() {
         finished = true
-        NucleusCompositorServer.shared.removeObserver(self)
+        manager.server.removeObserver(self)
         if let resource { zwlr_foreign_toplevel_manager_v1_send_finished(resource) }
     }
 
@@ -156,7 +158,7 @@ final class ForeignToplevelClient: DesktopModelObserver {
     }
 
     private func reconcile(_ windowID: UInt64) {
-        guard let resource, let window = NucleusCompositorServer.shared.window(id: windowID) else { return }
+        guard let resource, let window = manager.server.window(id: windowID) else { return }
         guard qualifies(window) else { closeHandle(windowID); return }
         if handle(windowID) == nil { createHandle(windowID, managerRes: resource) }
         guard let handle = handle(windowID) else { return }
@@ -243,7 +245,7 @@ final class ForeignToplevelClient: DesktopModelObserver {
             let shouldActivate = (windowID == focused)
             guard handle.activated != shouldActivate else { continue }
             handle.activated = shouldActivate
-            guard let window = NucleusCompositorServer.shared.window(id: windowID) else { continue }
+            guard let window = manager.server.window(id: windowID) else { continue }
             sendState(handle.resource, window: window, activated: shouldActivate)
             zwlr_foreign_toplevel_handle_v1_send_done(handle.resource)
         }

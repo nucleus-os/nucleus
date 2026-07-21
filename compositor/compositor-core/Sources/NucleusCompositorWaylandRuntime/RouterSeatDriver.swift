@@ -16,12 +16,18 @@ import WaylandServerC
 
 @MainActor
 final class RouterSeatDriver {
+    private unowned let server: NucleusCompositorServer
     private let seat: WlSeat
     private let compositor: WlCompositor
     /// The wire id of the surface that currently holds keyboard focus (0 = none).
     private var focusedSurfaceId: UInt32 = 0
 
-    init(seat: WlSeat, compositor: WlCompositor) {
+    init(
+        seat: WlSeat,
+        compositor: WlCompositor,
+        server: NucleusCompositorServer
+    ) {
+        self.server = server
         self.seat = seat
         self.compositor = compositor
     }
@@ -54,9 +60,9 @@ final class RouterSeatDriver {
         focusedSurfaceId = newId
         if newId != 0, let surface = compositor.surface(id: newId) {
             seat.keyboardEnter(surface)
-            NucleusCompositorServer.shared.seatFocus.setKeyboardFocus(surfaceID: UInt64(newId))
+            server.seatFocus.setKeyboardFocus(surfaceID: UInt64(newId))
         } else {
-            NucleusCompositorServer.shared.seatFocus.clearKeyboardFocus()
+            server.seatFocus.clearKeyboardFocus()
         }
     }
 
@@ -68,6 +74,6 @@ final class RouterSeatDriver {
         focusedSurfaceId = 0
         seat.textInputManager?.focusedSurfaceDestroyed(
             surfaceID: surfaceId)
-        NucleusCompositorServer.shared.seatFocus.clearKeyboardFocus()
+        server.seatFocus.clearKeyboardFocus()
     }
 }

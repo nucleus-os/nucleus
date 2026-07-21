@@ -11,6 +11,7 @@ import NucleusCompositorXcbC
 
 @MainActor
 final class XwaylandProcess {
+    private unowned let host: RouterHost
     private(set) var pid: pid_t = 0
     private(set) var wmFd: Int32 = -1
     private(set) var displayPipeRd: Int32 = -1
@@ -18,6 +19,10 @@ final class XwaylandProcess {
     private var sockType: Int32 { Int32(SOCK_STREAM.rawValue) }
     private var cloexec: Int32 { Int32(SOCK_CLOEXEC.rawValue) }
     private var nonblock: Int32 { Int32(SOCK_NONBLOCK.rawValue) }
+
+    init(host: RouterHost) {
+        self.host = host
+    }
 
     /// Spawn Xwayland on `displayNum` using the pre-bound listen fds. Returns false on
     /// failure. On success the wl parent end is adopted as a router client; the WM fd +
@@ -38,7 +43,7 @@ final class XwaylandProcess {
 
         // Adopt the wl parent end as a router client (the router owns it on success;
         // libwayland destroys the client when Xwayland disconnects).
-        guard RouterHost.shared.runtime?.router.display.createClient(fd: wlPair[0]) != nil else {
+        guard host.runtime?.router.display.createClient(fd: wlPair[0]) != nil else {
             close(wlPair[0]); close(wlPair[1]); close(wmPair[0]); close(wmPair[1])
             close(pipeFds[0]); close(pipeFds[1]); return false
         }

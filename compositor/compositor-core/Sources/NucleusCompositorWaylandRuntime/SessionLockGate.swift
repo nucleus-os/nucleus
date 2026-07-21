@@ -7,36 +7,42 @@ private struct AwaitingLockedFrame {
 }
 
 @MainActor
-enum SessionLockGate {
-    private static var active = false
-    private static var lockedSent = false
-    private static var awaiting: [AwaitingLockedFrame] = []
-    private static var keyboardFocusSurfaceID: UInt64 = 0
+final class SessionLockGate {
+    private unowned let host: RouterHost
+    private var active = false
+    private var lockedSent = false
+    private var awaiting: [AwaitingLockedFrame] = []
+    private var keyboardFocusSurfaceID: UInt64 = 0
 
-    static func begin() {
+    init(host: RouterHost) {
+        self.host = host
+    }
+
+    func begin() {
         // Retained pre-lock client pixels are forbidden once the security gate
         // activates, even though render-time context filtering would hide them.
-        RouterHost.shared.feeder?.cancelTransitionsForSessionLock()
+        host.feeder?.cancelTransitionsForSessionLock()
         active = true
         lockedSent = false
         keyboardFocusSurfaceID = 0
         awaiting.removeAll(keepingCapacity: true)
 
-        for display in NucleusCompositorServer.shared.layout.displays {
+        for display in host.server.layout.displays {
             awaiting.append(AwaitingLockedFrame(
                 outputID: display.id,
                 threshold: display.displayLink.peekNextPresentID()
             ))
             RenderBridge.requestFrame(
+                server: host.server,
                 outputId: display.id,
                 reason: .lockTransition)
         }
 
-        RouterHost.shared.inputHost?.dispatch.clearKeyboardFocus()
-        RouterHost.shared.inputHost?.dispatch.clearPointerFocus()
+        host.inputHost?.dispatch.clearKeyboardFocus()
+        host.inputHost?.dispatch.clearPointerFocus()
     }
 
-    static func end() {
+    func end() {
         guard active else { return }
         if keyboardFocusSurfaceID != 0 {
             keyboardLeave(surfaceID: keyboardFocusSurfaceID)
@@ -48,7 +54,7 @@ enum SessionLockGate {
         requestFrameOnEveryOutput()
     }
 
-    static func surfaceMapped(surfaceID: UInt64) {
+    func surfaceMapped(surfaceID: UInt64) {
         guard active, surfaceID != 0, isLockSurface(surfaceID: surfaceID) else { return }
         if keyboardFocusSurfaceID == 0 {
             keyboardEnter(surfaceID: surfaceID)
@@ -57,11 +63,11 @@ enum SessionLockGate {
         requestFrameOnEveryOutput()
     }
 
-    static func noteOutputPresented(outputID: UInt64) {
+    func noteOutputPresented(outputID: UInt64) {
         guard active, !lockedSent else { return }
-        guard let display = NucleusCompositorServer.shared.layout.display(id: outputID) else { return }
+        guard let display = host.server.layout.display(id: outputID) else { return }
         let acked = display.displayLink.lastAckedPresentID
-        let live = Set(NucleusCompositorServer.shared.layout.displays.map(\.id))
+        let live = Set(host.server.layout.displays.map(\.id))
 
         awaiting.removeAll { entry in
             (entry.outputID == outputID && acked >= entry.threshold) || !live.contains(entry.outputID)
@@ -69,38 +75,39 @@ enum SessionLockGate {
 
         if awaiting.isEmpty {
             lockedSent = true
-            RouterHost.shared.runtime?.sessionLock.currentLock?.emitLocked()
+            host.runtime?.sessionLock.currentLock?.emitLocked()
         }
     }
 
-    static func blocksSurface(surfaceID: UInt64) -> Bool {
+    func blocksSurface(surfaceID: UInt64) -> Bool {
         guard active else { return false }
         guard surfaceID != 0 else { return true }
         return !isLockSurface(surfaceID: surfaceID)
     }
 
-    static func isActive() -> Bool { active }
+    func isActive() -> Bool { active }
 
-    private static func requestFrameOnEveryOutput() {
+    private func requestFrameOnEveryOutput() {
         RenderBridge.requestFrame(
+            server: host.server,
             outputId: 0, reason: .lockTransition)
     }
 
-    private static func isLockSurface(surfaceID: UInt64) -> Bool {
-        RouterHost.shared.runtime?.windowDriver.windowSource(
+    private func isLockSurface(surfaceID: UInt64) -> Bool {
+        host.runtime?.windowDriver.windowSource(
             forSurfaceId: UInt32(truncatingIfNeeded: surfaceID)) == WindowSource.lock.rawValue
     }
 
-    private static func keyboardEnter(surfaceID: UInt64) {
-        guard let runtime = RouterHost.shared.runtime,
+    private func keyboardEnter(surfaceID: UInt64) {
+        guard let runtime = host.runtime,
             let surface = runtime.compositor.surface(id: UInt32(truncatingIfNeeded: surfaceID))
         else { return }
         let seat = runtime.seat
         seat.keyboardEnter(surface)
     }
 
-    private static func keyboardLeave(surfaceID: UInt64) {
-        guard let runtime = RouterHost.shared.runtime,
+    private func keyboardLeave(surfaceID: UInt64) {
+        guard let runtime = host.runtime,
             let surface = runtime.compositor.surface(id: UInt32(truncatingIfNeeded: surfaceID))
         else { return }
         let seat = runtime.seat

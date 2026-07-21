@@ -10,17 +10,18 @@ private struct LifecycleTestWakeSink: AsyncRenderWakeSink {
 
 @MainActor
 @Test func failedRendererBringupDoesNotInstallRenderService() {
-    RenderRuntime.shutdown()
-    let server = NucleusCompositorServer.shared
+    let server = NucleusCompositorServer()
+    let runtime = RenderRuntime(server: server)
     let resourceHost = SwiftResourceHost()
     let store = RetainedTreeStore(resourceHost: resourceHost)
     #expect(server.renderService == nil)
 
-    #expect(!RenderRuntime.bringUp(
+    #expect(!runtime.bringUp(
         drmDeviceFd: -1,
         dmabufMainDevice: 0,
         store: store,
         resourceHost: resourceHost,
         asyncRenderWakeSink: LifecycleTestWakeSink()))
     #expect(server.renderService == nil)
+    runtime.shutdown()
 }

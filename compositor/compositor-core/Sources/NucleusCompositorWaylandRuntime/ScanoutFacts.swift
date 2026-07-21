@@ -89,11 +89,11 @@ public extension WaylandRuntime {
     /// Gather the per-output direct-scanout facts from the live window model. Empty
     /// until the router is activated. `@MainActor`: the compositor loop calls it on
     /// the main thread each frame, before the render pass.
-    @MainActor static func scanoutFacts() -> [UInt64: OutputScanoutFacts] {
-        let server = NucleusCompositorServer.shared
-        guard let runtime = RouterHost.shared.runtime else { return [:] }
+    func scanoutFacts() -> [UInt64: OutputScanoutFacts] {
+        let server = host.server
+        guard let runtime = host.runtime else { return [:] }
         let compositor = runtime.compositor
-        let locked = SessionLockGate.isActive()
+        let locked = host.sessionLockGate.isActive()
         let capturing = ScreencopyActivity.isCapturing
         guard !server.layout.displays.isEmpty else { return [:] }
         let shellOutputID = server.spaces.overlayDisplayID(layout: server.layout)
@@ -133,9 +133,9 @@ public extension WaylandRuntime {
                let surface = compositor.surface(id: window.surfaceObjectId),
                compositor.popupCount(forParentSurfaceId: window.surfaceObjectId) == 0,
                surface.subsurfaceChildren.isEmpty,
-               let authored = RouterHost.shared.feeder?.pendingWindow(
+               let authored = host.feeder?.pendingWindow(
                    surfaceID: surface.objectId, outputID: outputID) {
-                facts.fullscreenRoot = fullscreenRootFacts(
+                facts.fullscreenRoot = Self.fullscreenRootFacts(
                     window: window, surface: surface, authored: authored)
             }
             result[outputID] = facts

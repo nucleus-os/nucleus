@@ -28,8 +28,6 @@ import Glibc
 // live interests and routes readiness to the source that owns each descriptor.
 @MainActor
 final class CompositorRuntime {
-    private static weak var active: CompositorRuntime?
-
     private static let loopKindShift: UInt64 = 56
     private static let instMask: UInt64 = (UInt64(1) << 56) - 1
     private static let shutdownDrainTimeoutNanoseconds: UInt64 = 1_000_000_000
@@ -56,6 +54,11 @@ final class CompositorRuntime {
     let retainedStore: RetainedTreeStore
     let hostBundle: NucleusAppHostBundle
     let windowSceneAuthor: WindowSceneAuthor
+    let server: NucleusCompositorServer
+    let windowManager: WindowManager
+    let waylandRuntime: WaylandRuntime
+    let renderRuntime: RenderRuntime
+    let frameDemand: DisplayFrameDemand
     let shellServices = ShellServices()
     private var exitRequested = false
     private var paused = false
@@ -78,7 +81,12 @@ final class CompositorRuntime {
     /// handler re-enumerates outputs at this scale.
     let outputScale: Double
     private(set) lazy var outputTopology = OutputTopologyReconciler(
-        defaultScale: outputScale)
+        defaultScale: outputScale,
+        server: server,
+        windowManager: windowManager,
+        renderRuntime: renderRuntime,
+        frameDemand: frameDemand,
+        waylandRuntime: waylandRuntime)
 
     init?() {
         let exitSignalFD = nucleus_compositor_create_exit_signal_fd()
@@ -100,19 +108,30 @@ final class CompositorRuntime {
         let hostBundle = NucleusAppHostBundle(resourceHost: resourceHost)
         self.retainedStore = retainedStore
         self.hostBundle = hostBundle
+        let server = NucleusCompositorServer()
+        let windowManager = WindowManager(server: server)
+        let waylandRuntime = WaylandRuntime(
+            server: server, windowManager: windowManager)
+        let renderRuntime = RenderRuntime(server: server)
+        let frameDemand = DisplayFrameDemand(
+            server: server, renderRuntime: renderRuntime)
+        self.server = server
+        self.windowManager = windowManager
+        self.waylandRuntime = waylandRuntime
+        self.renderRuntime = renderRuntime
+        self.frameDemand = frameDemand
         self.windowSceneAuthor = WindowSceneAuthor {
             RenderCommitSink(
                 store: retainedStore,
                 resourceHost: resourceHost,
                 runtimeHost: hostBundle.layersHost,
-                requestFrame: { DisplayFrameDemand.requestFrame() })
+                requestFrame: { frameDemand.requestFrame() })
         }
         if let raw = getenv("NUCLEUS_SCALE"), let value = Double(String(cString: raw)), value > 0 {
             self.outputScale = value
         } else {
             self.outputScale = 1.0
         }
-        Self.active = self
     }
 
     func makeRenderCommitSink() -> RenderCommitSink {
@@ -120,54 +139,52 @@ final class CompositorRuntime {
             store: retainedStore,
             resourceHost: resourceHost,
             runtimeHost: hostBundle.layersHost,
-            requestFrame: { DisplayFrameDemand.requestFrame() })
+            requestFrame: { [frameDemand] in frameDemand.requestFrame() })
     }
 
     deinit {
         close(exitSignalFD)
     }
 
-    static func requestExit() {
-        active?.exitRequested = true
-        active?.reactor.wake()
+    func requestExit() {
+        exitRequested = true
+        reactor.wake()
     }
 
     func stopReactor() {
         reactor.shutdown()
     }
 
-    static func sessionResume() -> Bool {
-        guard let runtime = active else { return false }
-        guard RenderRuntime.resumeSession(),
-            runtime.outputTopology.reconcile(forceReattach: true)
+    func sessionResume() -> Bool {
+        guard renderRuntime.resumeSession(),
+            outputTopology.reconcile(forceReattach: true)
         else {
-            runtime.paused = true
+            paused = true
             logRuntime("session: DRM recovery failed; remaining suspended")
             return false
         }
-        for display in NucleusCompositorServer.shared.layout.displays {
+        for display in server.layout.displays {
             display.resumeRedraws()
         }
-        runtime.paused = false
+        paused = false
         return true
     }
 
-    static func sessionPause() -> Bool {
-        guard let runtime = active else { return true }
-        runtime.paused = true
-        runtime.outputTopology.cancelPendingReconcile()
-        for display in NucleusCompositorServer.shared.layout.displays {
+    func sessionPause() -> Bool {
+        paused = true
+        outputTopology.cancelPendingReconcile()
+        for display in server.layout.displays {
             display.suspendRedraws()
         }
-        switch RenderRuntime.pauseSession() {
+        switch renderRuntime.pauseSession() {
         case .complete:
-            runtime.sessionPausePending = false
+            sessionPausePending = false
             return true
         case .waitingForPageFlip:
-            runtime.sessionPausePending = true
+            sessionPausePending = true
             return false
         case .failed:
-            runtime.sessionPausePending = false
+            sessionPausePending = false
             logRuntime("session: failed to retire DRM state cleanly")
             // Do not strand the VT on an unrecoverable renderer failure.
             return true
@@ -176,16 +193,16 @@ final class CompositorRuntime {
 
     private func continuePendingSessionPause() {
         guard sessionPausePending else { return }
-        switch RenderRuntime.pauseSession() {
+        switch renderRuntime.pauseSession() {
         case .waitingForPageFlip:
             return
         case .complete:
             sessionPausePending = false
-            nucleus_input_host_complete_session_pause()
+            waylandRuntime.completeSessionPause()
         case .failed:
             sessionPausePending = false
             logRuntime("session: deferred DRM retirement failed")
-            nucleus_input_host_complete_session_pause()
+            waylandRuntime.completeSessionPause()
         }
     }
 
@@ -236,27 +253,27 @@ final class CompositorRuntime {
             instance: DrmSession.generation,
             mode: .multishot,
             to: &interests)
-        let abstractFD = nucleus_xwm_host_abstract_fd()
+        let abstractFD = waylandRuntime.xwaylandAbstractFileDescriptor
         appendInterest(
             .xwaylandListen,
             fileDescriptor: abstractFD,
             instance: instOf(abstractFD),
             mode: .multishot,
             to: &interests)
-        let fileSystemFD = nucleus_xwm_host_fs_fd()
+        let fileSystemFD = waylandRuntime.xwaylandFilesystemFileDescriptor
         appendInterest(
             .xwaylandListen,
             fileDescriptor: fileSystemFD,
             instance: instOf(fileSystemFD),
             mode: .multishot,
             to: &interests)
-        let readyFD = nucleus_xwm_host_ready_fd()
+        let readyFD = waylandRuntime.xwaylandReadyFileDescriptor
         appendInterest(
             .xwaylandReady,
             fileDescriptor: readyFD,
             instance: instOf(readyFD),
             to: &interests)
-        let xwmFD = nucleus_xwm_host_xwm_fd()
+        let xwmFD = waylandRuntime.xwaylandWindowManagerFileDescriptor
         appendInterest(
             .xwaylandXwm,
             fileDescriptor: xwmFD,
@@ -264,12 +281,12 @@ final class CompositorRuntime {
             to: &interests)
         appendInterest(
             .seat,
-            fileDescriptor: nucleus_input_host_seat_fd(),
+            fileDescriptor: waylandRuntime.seatFileDescriptor,
             mode: .multishot,
             to: &interests)
         appendInterest(
             .input,
-            fileDescriptor: nucleus_input_host_libinput_fd(),
+            fileDescriptor: waylandRuntime.libinputFileDescriptor,
             mode: .multishot,
             to: &interests)
         appendLinuxSource(
@@ -282,12 +299,12 @@ final class CompositorRuntime {
             to: &interests)
         appendInterest(
             .udev,
-            fileDescriptor: nucleus_input_host_drm_hotplug_fd(),
+            fileDescriptor: waylandRuntime.drmHotplugFileDescriptor,
             mode: .multishot,
             to: &interests)
         appendInterest(
             .waylandLoop,
-            fileDescriptor: WaylandRuntime.eventLoopFd(),
+            fileDescriptor: waylandRuntime.eventLoopFd(),
             mode: .multishot,
             to: &interests)
         appendInterest(
@@ -319,11 +336,11 @@ final class CompositorRuntime {
                     shutdownDrainDeadlineNanoseconds = deadline.overflow
                         ? UInt64.max
                         : deadline.partialValue
-                    for display in NucleusCompositorServer.shared.layout.displays {
+                    for display in server.layout.displays {
                         display.suspendRedraws()
                     }
                 }
-                switch RenderRuntime.prepareShutdown() {
+                switch renderRuntime.prepareShutdown() {
                 case .complete:
                     break runtimeLoop
                 case .failed:
@@ -347,7 +364,7 @@ final class CompositorRuntime {
             let renderZone = Trace.beginZone("runtime.render_turn", color: Trace.Color.green)
             if !paused {
                 let nowNs = Self.monotonicNowNs()
-                let dueDisplays = NucleusCompositorServer.shared.layout.displays
+                let dueDisplays = server.layout.displays
                     .filter { display in
                         guard case .queued = display.redrawState else {
                             return false
@@ -359,30 +376,30 @@ final class CompositorRuntime {
                 for display in dueDisplays {
                     _ = display.beginRedraw(frameBuildID: loopTurns)
                     display.noteSceneAuthorPass()
-                    if WaylandRuntime.authorSceneFrame(
+                    if waylandRuntime.authorSceneFrame(
                         outputId: display.id,
                         predictedPresentNs: display.displayLink.predictedPresentNs(0)) {
                         display.requestRedraw(.animation)
                     }
                 }
                 if !dueDisplays.isEmpty {
-                    RenderRuntime.setLockComposition(
-                        WaylandRuntime.sessionLockComposition())
-                    RenderRuntime.setScanoutCandidates(scanoutCandidates())
-                    let cursorModel = NucleusCompositorServer.shared.cursor
+                    renderRuntime.setLockComposition(
+                        waylandRuntime.sessionLockComposition())
+                    renderRuntime.setScanoutCandidates(scanoutCandidates())
+                    let cursorModel = server.cursor
                     if cursorModel.generation != lastCursorGeneration {
                         lastCursorGeneration = cursorModel.generation
-                        RenderRuntime.setCursorImage(
+                        renderRuntime.setCursorImage(
                             pixels: cursorModel.pixels,
                             width: cursorModel.width,
                             height: cursorModel.height,
                             hotspotX: cursorModel.hotSpotX,
                             hotspotY: cursorModel.hotSpotY)
                     }
-                    let events = NucleusCompositorServer.shared.events
-                    RenderRuntime.setCursorPosition(
+                    let events = server.events
+                    renderRuntime.setCursorPosition(
                         x: events.cursorX, y: events.cursorY)
-                    _ = RenderRuntime.renderOutputs(dueOutputIDs)
+                    _ = renderRuntime.renderOutputs(dueOutputIDs)
                     for display in dueDisplays {
                         display.redrawDidNotSubmit()
                     }
@@ -434,9 +451,9 @@ final class CompositorRuntime {
             }
             recordIdleWakeupRate()
 
-            WaylandRuntime.idleTick(nowNs: Self.monotonicNowNs())
+            waylandRuntime.idleTick(nowNs: Self.monotonicNowNs())
             if let renderService =
-                NucleusCompositorServer.shared.renderService
+                server.renderService
             {
                 renderService.pollCaptureWork()
                 if renderService.captureWorkStalled {
@@ -445,21 +462,21 @@ final class CompositorRuntime {
                     exitRequested = true
                 }
             }
-            WaylandRuntime.flushClients()
+            waylandRuntime.flushClients()
             processDueLinuxReactorSources()
 
             // post-drain: always drain libseat — a VT-switch signal arrives as a
             // delivered EINTR with no CQE, and the io_uring wait returns on it —
             // then re-collect frame demand for the turn.
-            nucleus_input_host_seat_dispatch()
-            DisplayFrameDemand.sync()
+            waylandRuntime.dispatchSeat()
+            frameDemand.sync()
         }
     }
 
     private func recordIdleWakeupRate() {
         let now = Self.monotonicNowNs()
         let displays =
-            NucleusCompositorServer.shared.layout.displays
+            server.layout.displays
         if !displays.isEmpty,
             displays.allSatisfy({
                 if case .idle = $0.redrawState {
@@ -491,11 +508,11 @@ final class CompositorRuntime {
     private func earliestDeadlineNanoseconds() -> UInt64? {
         let now = Self.monotonicNowNs()
         var earliest: UInt64 = .max
-        if let idleDeadline = WaylandRuntime.nextIdleDeadlineNs() {
+        if let idleDeadline = waylandRuntime.nextIdleDeadlineNs() {
             earliest = min(earliest, idleDeadline)
         }
         if let captureDelay =
-            NucleusCompositorServer.shared.renderService?.capturePollDelay
+            server.renderService?.capturePollDelay
         {
             let capturePoll = now.addingReportingOverflow(captureDelay)
             earliest = min(
@@ -510,7 +527,7 @@ final class CompositorRuntime {
             source: shellServices.accessibilityReactorSource,
             nowNanoseconds: now,
             earliest: &earliest)
-        for display in NucleusCompositorServer.shared.layout.displays {
+        for display in server.layout.displays {
             switch display.redrawState {
             case .queued:
                 earliest = min(
@@ -549,7 +566,7 @@ final class CompositorRuntime {
                 return
             }
             if result.isReadable {
-                RenderRuntime.handleDrmEvents()
+                renderRuntime.handleDrmEvents()
                 if !paused && !exitRequested {
                     _ = outputTopology.continuePendingReconcile()
                 }
@@ -559,13 +576,13 @@ final class CompositorRuntime {
             }
         case .seat:
             if result.isReadable {
-                nucleus_input_host_seat_dispatch()
+                waylandRuntime.dispatchSeat()
             } else if result.isTerminal {
                 descriptorFailure(kind: kind, result: event.result)
             }
         case .input:
             if result.isReadable {
-                nucleus_input_host_drain_libinput()
+                waylandRuntime.drainLibinput()
             } else if result.isTerminal {
                 descriptorFailure(kind: kind, result: event.result)
             }
@@ -581,7 +598,7 @@ final class CompositorRuntime {
                 failureOperation: "accessibility bus descriptor closed")
         case .udev:
             if result.isReadable {
-                if nucleus_input_host_drain_drm_hotplug(),
+                if waylandRuntime.drainDrmHotplug(),
                    !paused, !exitRequested
                 {
                     _ = outputTopology.reconcile()
@@ -593,25 +610,25 @@ final class CompositorRuntime {
             if result.isReadable {
                 let descriptor = Int32(bitPattern: UInt32(
                     truncatingIfNeeded: token & Self.instMask))
-                _ = nucleus_xwm_host_display_readable(descriptor)
+                _ = waylandRuntime.xwaylandDisplayReadable(descriptor)
             } else if result.isTerminal {
                 logRuntime("Xwayland listen descriptor closed")
             }
         case .xwaylandReady:
             if result.isReadable || result.isHungUp {
-                nucleus_xwm_host_ready_readable()
+                waylandRuntime.xwaylandReadyReadable()
             } else if result.isTerminal {
                 logRuntime("Xwayland readiness descriptor failed")
             }
         case .xwaylandXwm:
             if result.isReadable || result.isHungUp {
-                _ = nucleus_xwm_host_dispatch()
+                _ = waylandRuntime.dispatchXwaylandWindowManager()
             } else if result.isTerminal {
                 logRuntime("Xwayland window-manager descriptor failed")
             }
         case .waylandLoop:
             if result.isReadable {
-                WaylandRuntime.dispatch()
+                waylandRuntime.dispatch()
             } else if result.isTerminal {
                 descriptorFailure(kind: kind, result: event.result)
             }
@@ -623,7 +640,7 @@ final class CompositorRuntime {
         case .renderWake:
             if result.isReadable {
                 if renderWake.drain() {
-                    DisplayFrameDemand.requestFrame()
+                    frameDemand.requestFrame()
                 }
             } else if result.isTerminal {
                 descriptorFailure(kind: kind, result: event.result)
@@ -663,7 +680,7 @@ final class CompositorRuntime {
             return
         }
         if pollResult.returnedEvents != 0, source.process() {
-            DisplayFrameDemand.requestFrame()
+            frameDemand.requestFrame()
         }
     }
 
@@ -672,7 +689,7 @@ final class CompositorRuntime {
     ) {
         guard let source else { return }
         if source.timeoutMicroseconds() == 0, source.process() {
-            DisplayFrameDemand.requestFrame()
+            frameDemand.requestFrame()
         }
     }
 
@@ -687,7 +704,7 @@ final class CompositorRuntime {
     /// candidate with a nil surface (the evaluator blocks it); the whole map is empty
     /// until the router is activated.
     private func scanoutCandidates() -> [UInt64: ScanoutCandidate] {
-        let facts = WaylandRuntime.scanoutFacts()
+        let facts = waylandRuntime.scanoutFacts()
         guard !facts.isEmpty else { return [:] }
         // The native overlay (notifications / hotkey display) renders on the shell
         // output only; when it has content that output must composite over any
@@ -695,7 +712,7 @@ final class CompositorRuntime {
         // here but not from the facts gather, so fold it in as the notification input.
         let overlayActive = nucleus_compositor_shell_overlay_active()
         var result: [UInt64: ScanoutCandidate] = [:]
-        for display in NucleusCompositorServer.shared.layout.displays {
+        for display in server.layout.displays {
             guard let f = facts[display.id] else { continue }
             let logical = display.logicalRect
             let pixels = display.pixelSize
@@ -745,9 +762,6 @@ func logRuntime(_ message: String) {
 
 // The composition root's conformer to the inverted session-control seam. The input
 // host (`.nucleus_compositor_substrate`) drives VT resume/pause + exit through
-// `NucleusCompositorServer.shared.sessionControl`, installed at bring-up.
+// the server's `sessionControl`, installed at bring-up.
 extension CompositorRuntime: CompositorSessionControl {
-    func sessionResume() -> Bool { Self.sessionResume() }
-    func sessionPause() -> Bool { Self.sessionPause() }
-    func requestExit() { Self.requestExit() }
 }

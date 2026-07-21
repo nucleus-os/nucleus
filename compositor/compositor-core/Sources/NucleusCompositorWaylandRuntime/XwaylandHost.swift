@@ -13,10 +13,15 @@ import NucleusCompositorServer
 
 @MainActor
 final class XwaylandHost {
+    private unowned let host: RouterHost
     var display: XwaylandDisplay?
     var process: XwaylandProcess?
     var xwm: XwaylandXWM?
     private var processActive = false
+
+    init(host: RouterHost) {
+        self.host = host
+    }
 
     /// Claim a display slot, bind sockets, export DISPLAY, and arm first-client
     /// detection. Returns false if no display could be bound (X11 unavailable).
@@ -36,7 +41,7 @@ final class XwaylandHost {
     func handleDisplayReadable(_ fd: Int32) -> Bool {
         guard let d = display, d.isFirstClient(fd) else { return false }
         guard !processActive else { return true }
-        let p = XwaylandProcess()
+        let p = XwaylandProcess(host: host)
         if p.spawn(displayNum: d.number, abstractFd: d.abstractFd, fsFd: d.fsFd) {
             process = p
             processActive = true
@@ -52,7 +57,7 @@ final class XwaylandHost {
         guard let p = process else { return }
         let wmFd = p.takeWmFdOnReady()
         guard wmFd >= 0 else { return }
-        guard let x = XwaylandXWM(wmFd: wmFd) else { return }
+        guard let x = XwaylandXWM(wmFd: wmFd, host: host) else { return }
         xwm = x
         x.refreshDesktopState()
     }
@@ -77,59 +82,46 @@ final class XwaylandHost {
     }
 }
 
-// ── bring-up + loop crossings (the composition root drives these directly) ───────
+// ── composition-root lifecycle ────────────────────────────────────────────────
 
-/// Bring up the Xwayland manager. Returns whether X11 support is available.
-@MainActor public func nucleus_xwm_host_init() -> Bool {
-    let host = XwaylandHost()
-    guard host.bringUp() else { return false }
-    RouterHost.shared.xwaylandHost = host
-    return true
-}
+public extension WaylandRuntime {
+    func bringUpXwayland() -> Bool {
+        let xwaylandHost = XwaylandHost(host: host)
+        guard xwaylandHost.bringUp() else { return false }
+        host.xwaylandHost = xwaylandHost
+        return true
+    }
 
-@MainActor public func nucleus_xwm_host_abstract_fd() -> Int32 {
-    RouterHost.shared.xwaylandHost?.abstractFd ?? -1
-}
+    var xwaylandAbstractFileDescriptor: Int32 {
+        host.xwaylandHost?.abstractFd ?? -1
+    }
 
-@MainActor public func nucleus_xwm_host_fs_fd() -> Int32 {
-    RouterHost.shared.xwaylandHost?.fsFd ?? -1
-}
+    var xwaylandFilesystemFileDescriptor: Int32 {
+        host.xwaylandHost?.fsFd ?? -1
+    }
 
-/// xwayland_listen token: a listen socket became readable. Returns true on the
-/// first-client edge (Xwayland spawned; stop polling the socket).
-@MainActor public func nucleus_xwm_host_display_readable(_ fd: Int32) -> Bool {
-    RouterHost.shared.xwaylandHost?.handleDisplayReadable(fd) ?? false
-}
+    func xwaylandDisplayReadable(_ fileDescriptor: Int32) -> Bool {
+        host.xwaylandHost?.handleDisplayReadable(fileDescriptor) ?? false
+    }
 
-/// The readiness pipe fd, or -1 if not waiting (post-drain registration).
-@MainActor public func nucleus_xwm_host_ready_fd() -> Int32 {
-    RouterHost.shared.xwaylandHost?.readyFd() ?? -1
-}
+    var xwaylandReadyFileDescriptor: Int32 {
+        host.xwaylandHost?.readyFd() ?? -1
+    }
 
-/// xwayland_ready token: Xwayland reported its display number → bring up the XWM.
-@MainActor public func nucleus_xwm_host_ready_readable() {
-    RouterHost.shared.xwaylandHost?.handleReadyReadable()
-}
+    func xwaylandReadyReadable() {
+        host.xwaylandHost?.handleReadyReadable()
+    }
 
-/// The XCB connection fd, or -1 if the XWM isn't live (post-drain registration).
-@MainActor public func nucleus_xwm_host_xwm_fd() -> Int32 {
-    RouterHost.shared.xwaylandHost?.xwmFd() ?? -1
-}
+    var xwaylandWindowManagerFileDescriptor: Int32 {
+        host.xwaylandHost?.xwmFd() ?? -1
+    }
 
-/// xwayland_xwm token: XCB fd readable → pump events. Returns false on fatal error.
-@MainActor public func nucleus_xwm_host_dispatch() -> Bool {
-    RouterHost.shared.xwaylandHost?.dispatch() ?? false
-}
+    func dispatchXwaylandWindowManager() -> Bool {
+        host.xwaylandHost?.dispatch() ?? false
+    }
 
-/// Pointer focus entered an xwayland surface -> re-assert the last X cursor against
-/// the Swift cursor server. Returns whether an XWM cursor source is live. Called
-/// intra-module by the input dispatch (same NucleusCompositorWaylandRuntime module).
-@MainActor func nucleus_compositor_xwm_reapply_cursor() -> Bool {
-    guard let xwm = RouterHost.shared.xwaylandHost?.xwm else { return false }
-    return xwm.applyCurrentCursor()
-}
-
-@MainActor public func nucleus_xwm_host_shutdown() {
-    RouterHost.shared.xwaylandHost?.shutdown()
-    RouterHost.shared.xwaylandHost = nil
+    func shutdownXwayland() {
+        host.xwaylandHost?.shutdown()
+        host.xwaylandHost = nil
+    }
 }

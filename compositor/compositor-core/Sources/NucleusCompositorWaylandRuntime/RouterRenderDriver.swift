@@ -15,14 +15,18 @@ import Glibc
 
 @MainActor
 final class RouterRenderDriver {
-    init() {}
+    private unowned let server: NucleusCompositorServer
+
+    init(server: NucleusCompositorServer) {
+        self.server = server
+    }
 }
 
 // wp_presentation: advertise the renderer-selected normalized clock domain.
 extension RouterRenderDriver: PresentationDelegate {
     nonisolated var presentationClockId: UInt32 {
         MainActor.assumeIsolated {
-            NucleusCompositorServer.shared.renderService?
+            self.server.renderService?
                 .presentationClockID ?? UInt32(CLOCK_MONOTONIC)
         }
     }
@@ -32,7 +36,7 @@ extension RouterRenderDriver: GammaControlDelegate {
     nonisolated func gammaRampSize(output: WlOutput?) -> UInt32 {
         let outputID = output?.outputId ?? 0
         return MainActor.assumeIsolated {
-            NucleusCompositorServer.shared.renderService?
+            self.server.renderService?
                 .gammaRampSize(outputID: outputID) ?? 0
         }
     }
@@ -45,7 +49,7 @@ extension RouterRenderDriver: GammaControlDelegate {
     ) {
         let outputID = output?.outputId ?? 0
         MainActor.assumeIsolated {
-            if NucleusCompositorServer.shared.renderService?.applyGamma(
+            if self.server.renderService?.applyGamma(
                 RenderGammaRamp(
                     outputID: outputID,
                     red: red,
@@ -53,6 +57,7 @@ extension RouterRenderDriver: GammaControlDelegate {
                     blue: blue)) == true
             {
                 RenderBridge.requestFrame(
+                    server: self.server,
                     outputId: outputID,
                     reason: .outputChange)
             }
@@ -63,10 +68,11 @@ extension RouterRenderDriver: GammaControlDelegate {
         let outputID = output?.outputId ?? 0
         MainActor.assumeIsolated {
             guard let renderService =
-                NucleusCompositorServer.shared.renderService
+                self.server.renderService
             else { return }
             renderService.clearGamma(outputID: outputID)
             RenderBridge.requestFrame(
+                server: self.server,
                 outputId: outputID,
                 reason: .outputChange)
         }
@@ -79,7 +85,7 @@ extension RouterRenderDriver: GammaControlDelegate {
 extension RouterRenderDriver: DmabufDelegate {
     nonisolated func dmabufSupportedFormats() -> [DmabufFormat] {
         MainActor.assumeIsolated {
-            NucleusCompositorServer.shared.renderService?
+            self.server.renderService?
                 .dmabufFormats()
                 .map {
                     DmabufFormat(
@@ -91,7 +97,7 @@ extension RouterRenderDriver: DmabufDelegate {
 
     nonisolated func dmabufMainDevice() -> UInt64 {
         MainActor.assumeIsolated {
-            NucleusCompositorServer.shared.renderService?
+            self.server.renderService?
                 .dmabufMainDevice ?? 0
         }
     }
@@ -99,7 +105,7 @@ extension RouterRenderDriver: DmabufDelegate {
     nonisolated func dmabufImport(_ attrs: DmabufAttrs) -> Bool {
         guard let snapshot = DmabufProbeSnapshot(attrs) else { return false }
         return MainActor.assumeIsolated {
-            NucleusCompositorServer.shared.renderService?.probeDmabuf(
+            self.server.renderService?.probeDmabuf(
                 RenderDmabufProbe(
                     width: snapshot.width,
                     height: snapshot.height,
@@ -121,14 +127,14 @@ extension RouterRenderDriver: DmabufDelegate {
 extension RouterRenderDriver: DrmSyncobjDelegate {
     nonisolated func importSyncobjTimeline(fd: Int32) -> UInt32? {
         MainActor.assumeIsolated {
-            NucleusCompositorServer.shared.renderService?
+            self.server.renderService?
                 .importSyncobjTimeline(fd: fd)
         }
     }
 
     nonisolated func destroySyncobjTimeline(handle: UInt32) {
         MainActor.assumeIsolated {
-            NucleusCompositorServer.shared.renderService?
+            self.server.renderService?
                 .destroySyncobjTimeline(handle: handle)
         }
     }
@@ -153,6 +159,7 @@ extension RouterRenderDriver: ScreencopyDelegate {
     ) -> ScreencopyConfiguration? {
         guard let output, output.info.outputId != 0,
               var params = RenderBridge.screencopyParams(
+                server: server,
                 outputId: output.info.outputId)
         else { return nil }
         guard let region else {
@@ -223,6 +230,7 @@ extension RouterRenderDriver: ScreencopyDelegate {
     func screencopyRequestFrame(output: WlOutput?) {
         let outputID = output?.outputId ?? 0
         RenderBridge.requestFrame(
+            server: server,
             outputId: outputID, reason: .screencopy)
     }
 
@@ -244,7 +252,7 @@ extension RouterRenderDriver: ScreencopyDelegate {
     }
 
     func screencopyCancelCapture(_ requestID: UInt64) {
-        NucleusCompositorServer.shared.renderService?
+        server.renderService?
             .cancelCapture(requestID)
     }
 
@@ -263,6 +271,7 @@ extension RouterRenderDriver: ScreencopyDelegate {
             bitPattern: bufferBits)
         else { return nil }
         guard let currentParams = RenderBridge.screencopyParams(
+            server: server,
             outputId: outputId)
         else { return nil }
         if let source = configuration.sourceRegion {
@@ -294,7 +303,7 @@ extension RouterRenderDriver: ScreencopyDelegate {
                     width: $0.width, height: $0.height)
             }
             guard !attrs.planes.isEmpty else { return nil }
-            return NucleusCompositorServer.shared.renderService?.beginCaptureOutput(
+            return self.server.renderService?.beginCaptureOutput(
                 to: Self.renderDmabufCapture(
                     outputID: outputId,
                     attrs: attrs,
@@ -316,7 +325,8 @@ extension RouterRenderDriver: ScreencopyDelegate {
                     width: $0.width, height: $0.height)
             }
             : nil
-        return NucleusCompositorServer.shared.renderService?.beginCaptureOutput(
+        let server = self.server
+        return server.renderService?.beginCaptureOutput(
             outputID: outputId,
             sourceRegion: sourceRegion
         ) { capture in
@@ -326,6 +336,7 @@ extension RouterRenderDriver: ScreencopyDelegate {
             }
             if overlayCursor {
                 Self.compositeCursor(
+                    server: server,
                     into: &capture.pixels,
                     outputId: outputId,
                     width: capture.width,
@@ -437,10 +448,10 @@ extension RouterRenderDriver: ScreencopyDelegate {
     }
 
     private static func compositeCursor(
+        server: NucleusCompositorServer,
         into pixels: inout [UInt8], outputId: UInt64, width: Int, height: Int,
         captureOriginX: Int, captureOriginY: Int
     ) {
-        let server = NucleusCompositorServer.shared
         guard let output = server.layout.display(id: outputId) else { return }
         let cursor = server.cursor
         let cw = Int(cursor.width), ch = Int(cursor.height)

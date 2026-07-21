@@ -24,7 +24,7 @@ extension InputDispatch {
     /// Emit a wl_pointer.frame to the focused surface after a pointer event batch.
     func deliverPointerFrame() {
         let target = pointerFocusID()
-        if target != 0 { SeatDelivery.pointerFrame(surfaceID: target) }
+        if target != 0 { seatDelivery.pointerFrame(surfaceID: target) }
     }
 
     /// Begin a compositor-driven interactive move/resize grab (the window-menu
@@ -46,7 +46,7 @@ extension InputDispatch {
         let old = keyboardFocusID()
         if old == 0 { return }
         seatFocus.clearKeyboardFocus()
-        SeatDelivery.keyboardLeave(surfaceID: old)
+        seatDelivery.keyboardLeave(surfaceID: old)
     }
 
     func clearKeyboardFocus(ifWindow windowID: UInt64) {
@@ -62,17 +62,17 @@ extension InputDispatch {
         xkb.updateMask(depressed: 0, latched: 0, locked: 0, group: 0)
         xkb.resetPressedKeys()
         clientPolicy.reset()
-        NucleusCompositorServer.shared.events.resetInputState()
+        host.server.events.resetInputState()
         streamFlags = 0
         leftButtonDown = false
         rightButtonDown = false
         otherButtonCount = 0
         let target = keyboardFocusID()
         if target != 0 {
-            SeatDelivery.keyboardModifiers(surfaceID: target, depressed: 0, latched: 0, locked: 0, group: 0)
+            seatDelivery.keyboardModifiers(surfaceID: target, depressed: 0, latched: 0, locked: 0, group: 0)
         }
         seatFocus.resetPointerButtons()
-        WindowManager.shared.endInteractiveGrab()
+        host.windowManager.endInteractiveGrab()
     }
 
     /// Clear every focus and grab that was authorized by the departing session.
@@ -100,7 +100,7 @@ extension InputDispatch {
 
     package func pointerBounds() -> WirePointerBounds {
         var b = WirePointerBounds()
-        if let r = NucleusCompositorServer.shared.layout.desktopBounds() {
+        if let r = host.server.layout.desktopBounds() {
             b.minX = r.x
             b.minY = r.y
             b.maxX = r.maxX - 1
@@ -142,7 +142,7 @@ extension InputDispatch: CompositorInputControl {
     /// Run a window-menu verb the overlay reported to the shell. Reached from the
     /// shell's overlay-publication conformer through `NucleusCompositorServer.shared.inputControl`.
     func windowMenuSelected(windowID: UInt64, verb: Int32) {
-        guard windowID != 0, let runtime = RouterHost.shared.runtime else { return }
+        guard windowID != 0, let runtime = host.runtime else { return }
         let driver = runtime.windowDriver
         let surfaceID = UInt32(truncatingIfNeeded: driver.rootSurface(forWindowId: windowID))
         switch verb {
@@ -152,6 +152,7 @@ extension InputDispatch: CompositorInputControl {
             if driver.minimize(windowId: windowID) {
                 clearKeyboardFocus(ifWindow: windowID)
                 RenderBridge.requestFrame(
+                    server: host.server,
                     forWindowID: windowID)
             }
         case 2:

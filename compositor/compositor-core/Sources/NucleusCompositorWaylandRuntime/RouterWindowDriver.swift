@@ -28,6 +28,9 @@ import NucleusCompositorWindowManager
 
 @MainActor
 final class RouterWindowDriver {
+    private unowned let host: RouterHost
+    private var windowManager: WindowManager { host.windowManager }
+    private var server: NucleusCompositorServer { host.server }
     private let seatDriver: RouterSeatDriver
     /// Re-resolves surfaces by wire id (the Sendable token crossed from the
     /// nonisolated scene-delegate thunks) so no non-Sendable WlSurface is stored.
@@ -54,11 +57,18 @@ final class RouterWindowDriver {
     /// coupled `surfaceDestroyed` (scene teardown + seat unmap) stay coherent here.
     private let sceneDriver: RouterSurfaceSceneDriver
 
-    init(seatDriver: RouterSeatDriver, compositor: WlCompositor, feeder: SceneFeeder? = nil) {
+    init(
+        seatDriver: RouterSeatDriver,
+        compositor: WlCompositor,
+        feeder: SceneFeeder? = nil,
+        host: RouterHost
+    ) {
+        self.host = host
         self.seatDriver = seatDriver
         self.compositor = compositor
         self.feeder = feeder
-        self.sceneDriver = RouterSurfaceSceneDriver(compositor: compositor, feeder: feeder)
+        self.sceneDriver = RouterSurfaceSceneDriver(
+            compositor: compositor, feeder: feeder, host: host)
     }
 
     // MARK: - configure helpers (main-actor, Sendable-only inputs)
@@ -68,7 +78,7 @@ final class RouterWindowDriver {
     @discardableResult
     private func ensureWindow(token: UInt, surfaceId: UInt32) -> WindowID? {
         if let entry = byToplevel[token] { return entry.windowID }
-        let wm = WindowManager.shared
+        let wm = windowManager
         let windowID = wm.xdgCreated(xdgToplevelID: UInt64(token))
         if let window = wm.server.window(id: windowID) {
             window.surfaceObjectId = surfaceId
@@ -83,7 +93,7 @@ final class RouterWindowDriver {
         guard id != 0 else { return nil }
         // Route through the O(1) surfaceObjectId index rather than an O(n) scan: this
         // resolves the surface's window on every commit/configure/parent path.
-        return WindowManager.shared.server.windows.window(bySurfaceObjectId: id)?.id
+        return server.windows.window(bySurfaceObjectId: id)?.id
     }
 
     /// The tiled-edge states a server-side-decorated window carries so the client
@@ -114,11 +124,11 @@ final class RouterWindowDriver {
     }
 
     private func isFocused(_ windowID: WindowID) -> Bool {
-        WindowManager.shared.server.windows.focusedWindow?.id == windowID
+        server.windows.focusedWindow?.id == windowID
     }
 
     func configureImpl(token: UInt, surfaceId: UInt32, initial: Bool) -> XdgToplevelConfigure {
-        let wm = WindowManager.shared
+        let wm = windowManager
         guard let windowID = ensureWindow(token: token, surfaceId: surfaceId),
             let window = wm.server.window(id: windowID)
         else { return XdgToplevelConfigure() }
@@ -152,7 +162,7 @@ final class RouterWindowDriver {
     }
 
     func configureSentImpl(token: UInt, serial: UInt32, initial: Bool) {
-        let wm = WindowManager.shared
+        let wm = windowManager
         guard let entry = byToplevel[token], let window = wm.server.window(id: entry.windowID) else { return }
         if initial {
             _ = window.protocolState.queueConfigure(
@@ -191,7 +201,7 @@ final class RouterWindowDriver {
         token: UInt, surfaceId: UInt32, ackedSerial: UInt32,
         geom: WlRect?, hasBuffer: Bool
     ) {
-        let wm = WindowManager.shared
+        let wm = windowManager
         guard let entry = byToplevel[token], let window = wm.server.window(id: entry.windowID) else { return }
         guard hasBuffer else {
             if window.mapped || window.hasActiveClosingFade() {
@@ -268,21 +278,21 @@ final class RouterWindowDriver {
     }
 
     func setTitleImpl(token: UInt, _ title: String) {
-        WindowManager.shared.server.window(id: byToplevel[token]?.windowID ?? 0)?.title = title
+        server.window(id: byToplevel[token]?.windowID ?? 0)?.title = title
     }
 
     func setAppIdImpl(token: UInt, _ appId: String) {
-        WindowManager.shared.server.window(id: byToplevel[token]?.windowID ?? 0)?.appId = appId
+        server.window(id: byToplevel[token]?.windowID ?? 0)?.appId = appId
     }
 
     func setParentImpl(token: UInt, parentToken: UInt?) {
         guard let windowID = byToplevel[token]?.windowID else { return }
         let parentID = parentToken.flatMap { byToplevel[$0]?.windowID }
-        WindowManager.shared.xdgSetParent(windowID: windowID, parentWindowID: parentID)
+        windowManager.xdgSetParent(windowID: windowID, parentWindowID: parentID)
     }
 
     func setMaximizedImpl(token: UInt, _ on: Bool) {
-        let wm = WindowManager.shared
+        let wm = windowManager
         guard let windowID = byToplevel[token]?.windowID else { return }
         if on { wm.server.window(id: windowID)?.requestedFullscreen = false }
         wm.xdgRequestMaximize(windowID: windowID, requested: on)
@@ -292,7 +302,7 @@ final class RouterWindowDriver {
     func setFullscreenImpl(
         token: UInt, _ on: Bool, outputID: UInt64?
     ) {
-        let wm = WindowManager.shared
+        let wm = windowManager
         guard let windowID = byToplevel[token]?.windowID else { return }
         if on {
             wm.xdgRequestFullscreen(windowID: windowID, target: outputID)
@@ -303,7 +313,7 @@ final class RouterWindowDriver {
     }
 
     func willDestroyImpl(token: UInt, surfaceId: UInt32) {
-        let wm = WindowManager.shared
+        let wm = windowManager
         guard let entry = byToplevel.removeValue(forKey: token) else { return }
         seatDriver.surfaceUnmapped(surfaceId: surfaceId)
         wm.xdgDestroyed(windowID: entry.windowID)
@@ -324,8 +334,8 @@ final class RouterWindowDriver {
 
     func activateSurfaceImpl(surfaceId: UInt32) {
         guard let windowID = windowID(forSurfaceId: surfaceId) else { return }
-        WindowManager.shared.server.windows.raise(id: windowID)
-        WindowManager.shared.server.windows.focus(id: windowID)
+        server.windows.raise(id: windowID)
+        server.windows.focus(id: windowID)
         seatDriver.setKeyboardFocus(toSurfaceId: surfaceId)
     }
 
@@ -335,16 +345,16 @@ final class RouterWindowDriver {
     /// into the router, so this returns whether the caller should move keyboard focus.
     func focusSurfaceForPress(surfaceId: UInt32) -> Bool {
         guard let windowID = windowID(forSurfaceId: surfaceId),
-            let window = WindowManager.shared.server.window(id: windowID)
+            let window = server.window(id: windowID)
         else { return false }
-        WindowManager.shared.server.windows.raise(id: windowID)
-        WindowManager.shared.server.windows.focus(id: windowID)
+        server.windows.raise(id: windowID)
+        server.windows.focus(id: windowID)
         return window.wantsKeyboardFocus
     }
 
     func setForeignParentImpl(childSurfaceId: UInt32, parentSurfaceId: UInt32?) {
         guard let childID = windowID(forSurfaceId: childSurfaceId) else { return }
-        WindowManager.shared.xdgSetParent(
+        windowManager.xdgSetParent(
             windowID: childID, parentWindowID: parentSurfaceId.flatMap { windowID(forSurfaceId: $0) })
     }
 
@@ -353,7 +363,7 @@ final class RouterWindowDriver {
     }
 
     func defaultLayerOutputRectImpl() -> WlRect? {
-        let layout = NucleusCompositorServer.shared.layout
+        let layout = server.layout
         guard let id = layout.primaryDisplayID() ?? layout.displays.first?.id,
             let display = layout.display(id: id)
         else { return nil }
@@ -382,7 +392,7 @@ final class RouterWindowDriver {
     /// 1=xdg 2=xwayland 3=layerShell 4=lock), or 0 if no window owns it. The
     /// session-lock + input gates read this in place of the deleted `findWindowForSurface`.
     func windowSource(forSurfaceId id: UInt32) -> UInt32 {
-        WindowManager.shared.server.windows.window(bySurfaceObjectId: id)?.source.rawValue ?? 0
+        server.windows.window(bySurfaceObjectId: id)?.source.rawValue ?? 0
     }
 
     func windowId(forSurfaceId id: UInt32) -> UInt64 {
@@ -391,14 +401,14 @@ final class RouterWindowDriver {
 
     func windowOutput(forSurfaceId id: UInt32) -> UInt64 {
         guard let windowID = windowID(forSurfaceId: id),
-            let window = WindowManager.shared.server.window(id: windowID)
+            let window = server.window(id: windowID)
         else { return 0 }
         return window.currentOutputID ?? 0
     }
 
     func currentAnimatedRect(forSurfaceId id: UInt32) -> (x: Double, y: Double, w: Double, h: Double)? {
         guard let windowID = windowID(forSurfaceId: id),
-            let window = WindowManager.shared.server.window(id: windowID)
+            let window = server.window(id: windowID)
         else { return nil }
         let rect = window.currentAnimatedRect()
         return (rect.x, rect.y, rect.w, rect.h)
@@ -416,7 +426,7 @@ final class RouterWindowDriver {
         let oldToplevel = toplevel(forSurfaceId: oldSurfaceId)
         let newToplevel = toplevel(forSurfaceId: newSurfaceId)
         if let windowID = windowID(forSurfaceId: newSurfaceId) {
-            WindowManager.shared.server.windows.focus(id: windowID)
+            server.windows.focus(id: windowID)
         }
         if oldSurfaceId != newSurfaceId {
             oldToplevel?.xdgSurface?.configureToplevel(initial: false)
@@ -430,7 +440,7 @@ final class RouterWindowDriver {
     func toggleMaximize(surfaceId: UInt32) {
         guard let toplevel = toplevel(forSurfaceId: surfaceId),
             let windowID = windowID(forSurfaceId: surfaceId),
-            let window = WindowManager.shared.server.window(id: windowID)
+            let window = server.window(id: windowID)
         else { return }
         setMaximizedImpl(token: token(toplevel), !window.requestedMaximized)
         toplevel.xdgSurface?.configureToplevel(initial: false)
@@ -440,7 +450,7 @@ final class RouterWindowDriver {
     func toggleFullscreen(surfaceId: UInt32) {
         guard let toplevel = toplevel(forSurfaceId: surfaceId),
             let windowID = windowID(forSurfaceId: surfaceId),
-            let window = WindowManager.shared.server.window(id: windowID)
+            let window = server.window(id: windowID)
         else { return }
         setFullscreenImpl(
             token: token(toplevel), !window.requestedFullscreen, outputID: nil)
@@ -454,14 +464,14 @@ final class RouterWindowDriver {
 
     /// Keybind-driven tile/maximize for a router-owned xdg toplevel.
     func tile(surfaceId: UInt32, command: UInt32) -> Bool {
-        let wm = WindowManager.shared
+        let wm = windowManager
         guard let toplevel = toplevel(forSurfaceId: surfaceId),
             let windowID = windowID(forSurfaceId: surfaceId),
             let window = wm.server.window(id: windowID),
             let cmd = TileCommand(rawValue: command)
         else { return false }
 
-        let layout = NucleusCompositorServer.shared.layout
+        let layout = server.layout
         let outputID = window.currentOutputID ?? layout.primaryDisplayID() ?? layout.displays.first?.id ?? 0
         guard outputID != 0, let output = layout.display(id: outputID) else { return false }
         let r = output.logicalRect
@@ -506,7 +516,7 @@ final class RouterWindowDriver {
 
     /// The xdg-toplevel role bound to a model window id, via its root surface.
     private func toplevel(forWindowId id: UInt64) -> XdgToplevel? {
-        guard let window = WindowManager.shared.server.window(id: id), window.surfaceObjectId != 0
+        guard let window = server.window(id: id), window.surfaceObjectId != 0
         else { return nil }
         return toplevel(forSurfaceId: window.surfaceObjectId)
     }
@@ -515,7 +525,7 @@ final class RouterWindowDriver {
     /// path's surface-keyed verb crossings (close / maximize) and the traffic-light
     /// visual (router scenes are keyed by the root surface object id).
     func rootSurface(forWindowId id: UInt64) -> UInt64 {
-        UInt64(WindowManager.shared.server.window(id: id)?.surfaceObjectId ?? 0)
+        UInt64(server.window(id: id)?.surfaceObjectId ?? 0)
     }
 
     /// Minimize the model window: hide it from the scene (`visibleInScene` → false)
@@ -523,7 +533,7 @@ final class RouterWindowDriver {
     /// seat focus + requests a frame only when it did). xdg has no minimized
     /// configure, so the client is not told.
     func minimize(windowId id: UInt64) -> Bool {
-        guard let window = WindowManager.shared.server.window(id: id),
+        guard let window = server.window(id: id),
             window.mapped, !window.minimized
         else { return false }
         window.minimized = true
@@ -537,7 +547,7 @@ final class RouterWindowDriver {
     /// dead-end (the window stays `visibleInScene()==false` forever).
     @discardableResult
     func unminimize(windowId id: UInt64) -> Bool {
-        guard let window = WindowManager.shared.server.window(id: id), window.minimized
+        guard let window = server.window(id: id), window.minimized
         else { return false }
         window.minimized = false
         return true
@@ -546,7 +556,7 @@ final class RouterWindowDriver {
     /// Whether `windowId` can begin a compositor-driven interactive move/resize:
     /// mapped and not in a requested/active maximized or fullscreen mode.
     func canInteract(windowId id: UInt64) -> Bool {
-        guard let window = WindowManager.shared.server.window(id: id) else { return false }
+        guard let window = server.window(id: id) else { return false }
         return window.mapped
             && !window.requestedFullscreen && !window.requestedMaximized
             && !window.activeFullscreen && !window.activeMaximized
@@ -558,7 +568,7 @@ final class RouterWindowDriver {
     func beginDirectManipulation(
         windowId id: UInt64, presented: PresentationRect
     ) -> (x: Double, y: Double, w: Double, h: Double)? {
-        guard let window = WindowManager.shared.server.window(id: id) else { return nil }
+        guard let window = server.window(id: id) else { return nil }
         let w = max(1.0, presented.w.rounded(.up)).rounded(.towardZero)
         let h = max(1.0, presented.h.rounded(.up)).rounded(.towardZero)
         let rect = WindowRect(x: presented.x, y: presented.y, width: UInt32(w), height: UInt32(h))
@@ -573,7 +583,7 @@ final class RouterWindowDriver {
     /// and snap the presented frame to it (no animation), so the SceneFeeder authors
     /// the window at the dragged position. Mirrors `InteractionRuntime.previewInteractiveRect`.
     func previewInteractiveRect(windowId id: UInt64, x: Double, y: Double, w: Double, h: Double) {
-        guard let window = WindowManager.shared.server.window(id: id) else { return }
+        guard let window = server.window(id: id) else { return }
         let rect = WindowRect(x: x, y: y, width: UInt32(max(1.0, w)), height: UInt32(max(1.0, h)))
         window.moveRequestedAndCommittedFrame(to: rect)
         window.seedPresentationActorToRect(
@@ -588,7 +598,7 @@ final class RouterWindowDriver {
     func configureInteractive(
         windowId id: UInt64, resizing: Bool, targetRect: WireWindowRect? = nil
     ) {
-        let wm = WindowManager.shared
+        let wm = windowManager
         guard let toplevel = toplevel(forWindowId: id),
             let window = wm.server.window(id: id)
         else { return }
@@ -619,7 +629,7 @@ final class RouterWindowDriver {
     // equivalent control lands with the xwayland EWMH refinement.
 
     func foreignActivate(windowID: UInt64) {
-        guard let window = WindowManager.shared.server.window(id: windowID), window.surfaceObjectId != 0
+        guard let window = server.window(id: windowID), window.surfaceObjectId != 0
         else { return }
         // Activating a minimized window restores it first — a taskbar `activate` on a
         // minimized entry is the standard "un-minimize and focus" gesture, and
@@ -709,7 +719,7 @@ extension RouterWindowDriver: XdgShellDelegate {
                     self.minimize(windowId: id)
                 else { return }
                 self.seatDriver.setKeyboardFocus(toSurfaceId: 0)
-                RenderBridge.requestFrame(forWindowID: id)
+                RenderBridge.requestFrame(server: self.server, forWindowID: id)
             }
         case .setMinSize, .setMaxSize:
             // XDG size hints constrain future client-chosen sizes. They are
@@ -719,18 +729,18 @@ extension RouterWindowDriver: XdgShellDelegate {
         case .move:
             MainActor.assumeIsolated {
                 guard let id = self.byToplevel[t]?.windowID else { return }
-                RouterHost.shared.inputHost?.dispatch.beginInteractiveMove(windowID: id)
+                self.host.inputHost?.dispatch.beginInteractiveMove(windowID: id)
             }
         case .resize(_, let edges):
             MainActor.assumeIsolated {
                 guard let id = self.byToplevel[t]?.windowID else { return }
-                RouterHost.shared.inputHost?.dispatch.beginInteractiveResize(
+                self.host.inputHost?.dispatch.beginInteractiveResize(
                     windowID: id, edges: edges)
             }
         case .showWindowMenu:
             MainActor.assumeIsolated {
                 guard let id = self.byToplevel[t]?.windowID else { return }
-                RouterHost.shared.inputHost?.dispatch.showWindowMenu(windowID: id)
+                self.host.inputHost?.dispatch.showWindowMenu(windowID: id)
             }
         }
     }
@@ -775,7 +785,7 @@ extension RouterWindowDriver: XdgShellDelegate {
             wire.constraintAdjustment = positioner.constraintAdjustment
             wire.offsetX = positioner.offsetX
             wire.offsetY = positioner.offsetY
-            guard let resolved = WindowManager.shared.resolvePopup(
+            guard let resolved = windowManager.resolvePopup(
                 parentID: parentWindowID, positioner: wire)
             else { return base }
             return WlRect(
@@ -855,8 +865,8 @@ extension RouterWindowDriver: CursorShapeDelegate {
     nonisolated func applyCursorShape(_ shape: UInt32) -> Bool {
         guard let name = cursorShapeName(shape) else { return false }
         MainActor.assumeIsolated {
-            NucleusCompositorServer.shared.shellPolicy?.cursorApplyNamed(name)
-            RenderBridge.requestCursorFrame()
+            server.shellPolicy?.cursorApplyNamed(name)
+            RenderBridge.requestCursorFrame(server: server)
         }
         return true
     }
@@ -865,8 +875,8 @@ extension RouterWindowDriver: CursorShapeDelegate {
 extension RouterWindowDriver: LayerShellDelegate {
     nonisolated func defaultLayerOutputID() -> UInt64 {
         MainActor.assumeIsolated {
-            NucleusCompositorServer.shared.layout.primaryDisplayID()
-                ?? NucleusCompositorServer.shared.layout.displays.first?.id
+            server.layout.primaryDisplayID()
+                ?? server.layout.displays.first?.id
                 ?? 0
         }
     }
@@ -902,7 +912,7 @@ extension RouterWindowDriver: LayerShellDelegate {
             namespace: arrangement.namespace,
             keyboardInteractivity: Int32(arrangement.keyboardInteractivity),
             mapped: true)
-        WindowManager.shared.layerShellPolicy.register(record)
-        RouterHost.shared.xwaylandHost?.updateScale()
+        windowManager.layerShellPolicy.register(record)
+        host.xwaylandHost?.updateScale()
     }
 }

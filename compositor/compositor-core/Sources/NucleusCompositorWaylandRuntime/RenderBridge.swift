@@ -18,20 +18,21 @@ enum RenderBridge {
     /// commits content, so the new content composites and pending frame callbacks
     /// complete — the router-driven analog of the substrate `requestFrameForSurface`.
     static func requestFrame(
+        server: NucleusCompositorServer,
         outputId: UInt64,
         reason: RedrawReasons = .surfaceDamage
     ) {
-        let layout = NucleusCompositorServer.shared.layout
+        let layout = server.layout
         if outputId != 0 {
             guard let display = layout.display(id: outputId)
             else { return }
-            NucleusCompositorServer.shared.renderService?
+            server.renderService?
                 .forcePresent(outputID: outputId)
             display.requestRedraw(reason)
             return
         }
         for display in layout.displays {
-            NucleusCompositorServer.shared.renderService?
+            server.renderService?
                 .forcePresent(outputID: display.id)
             display.requestRedraw(reason)
         }
@@ -42,11 +43,11 @@ enum RenderBridge {
     /// the vacated pixels while avoiding an all-output redraw for moves, maps,
     /// unmaps, stacking changes, and Xwayland ConfigureNotify traffic.
     static func requestFrame(
+        server: NucleusCompositorServer,
         forWindowID windowID: UInt64,
         includingPreviousRect previousRect: WindowRect? = nil,
         reason: RedrawReasons = .surfaceDamage
     ) {
-        let server = NucleusCompositorServer.shared
         guard let window = server.window(id: windowID)
         else { return }
         let rects = [previousRect, window.currentRect()]
@@ -63,7 +64,7 @@ enum RenderBridge {
         }
         guard !outputIDs.isEmpty else { return }
         for outputID in outputIDs {
-            requestFrame(outputId: outputID, reason: reason)
+            requestFrame(server: server, outputId: outputID, reason: reason)
         }
     }
 
@@ -83,10 +84,10 @@ enum RenderBridge {
     /// pointer motion on one display from authoring every unrelated display while
     /// still updating both sides of a cross-output move.
     static func requestCursorFrame(
+        server: NucleusCompositorServer,
         previousX: Double? = nil,
         previousY: Double? = nil
     ) {
-        let server = NucleusCompositorServer.shared
         let currentX = server.events.cursorX
         let currentY = server.events.cursorY
         var points = [(currentX, currentY)]
@@ -107,7 +108,7 @@ enum RenderBridge {
                 hotspotY: cursor.hotSpotY)
         }) {
             requestFrame(
-                outputId: display.id, reason: .cursor)
+                server: server, outputId: display.id, reason: .cursor)
         }
     }
 
@@ -141,8 +142,11 @@ enum RenderBridge {
     /// from the Swift display layout's pixel size, advertising the default xrgb8888
     /// scanout format (capture converts at copy time if needed); the Swift render
     /// runtime owns scanout, so there is no separate display registry to consult.
-    static func screencopyParams(outputId: UInt64) -> ScreencopyParams? {
-        guard let display = NucleusCompositorServer.shared.layout.display(id: outputId) else { return nil }
+    static func screencopyParams(
+        server: NucleusCompositorServer,
+        outputId: UInt64
+    ) -> ScreencopyParams? {
+        guard let display = server.layout.display(id: outputId) else { return nil }
         let width = display.pixelSize.width
         let height = display.pixelSize.height
         let stride = width.multipliedReportingOverflow(by: 4)

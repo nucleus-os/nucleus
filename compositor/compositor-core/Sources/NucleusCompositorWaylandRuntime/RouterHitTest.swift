@@ -47,11 +47,11 @@ struct HitResult {
 /// region/edges on a chrome hit. The single Swift-native walk both the input
 /// dispatch and the `nucleus_runtime_hit_test` crossing share.
 @MainActor
-func routerHitTest(sx: Double, sy: Double) -> HitResult {
-    guard let runtime = RouterHost.shared.runtime else { return HitResult() }
+func routerHitTest(host: RouterHost, sx: Double, sy: Double) -> HitResult {
+    guard let runtime = host.runtime else { return HitResult() }
     let compositor = runtime.compositor
-    let server = NucleusCompositorServer.shared
-    guard let feeder = RouterHost.shared.feeder else { return HitResult() }
+    let server = host.server
+    guard let feeder = host.feeder else { return HitResult() }
 
     let occluded = server.fullscreenOccludedWindowIDs()
     for presented in feeder.presentedWindows(atX: sx, y: sy) {

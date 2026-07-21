@@ -124,6 +124,7 @@ extension WlSurface: WlSurfaceRequests {
 
 extension WlCompositor {
     /// Create a wl_surface resource bound to one transaction aggregate.
+    @MainActor
     func makeSurface(
         client: OpaquePointer,
         id: UInt32,
@@ -131,6 +132,7 @@ extension WlCompositor {
     ) -> UnsafeMutablePointer<wl_resource>? {
         let surface = WlSurface(
             compositor: self,
+            pointerCursorSurface: host.pointerCursorSurface,
             version: version,
             stableObjectId: allocateSurfaceIdentity(
                 preferred: id))

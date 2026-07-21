@@ -20,8 +20,7 @@ import Glibc
 // module (the input/router/xwm hosts in NucleusCompositorWaylandRuntime, the render runtime +
 // DRM session in NucleusCompositorRenderRuntime, DRM discovery in NucleusRenderer, the shell
 // services in NucleusCompositorShell); the display model + router seed + first frame go
-// through the Swift owners (`NucleusCompositorServer.shared.layout`, `DisplayFrameDemand`,
-// `OverlaySceneRuntime.shared`) directly.
+// through the runtime-owned server, frame-demand coordinator, and overlay scene directly.
 
 extension CompositorRuntime {
     /// Bring the compositor up. Discovers the DRM device (Swift, over libdrm), opens
@@ -45,17 +44,17 @@ extension CompositorRuntime {
         }
 
         // ── libseat session + DRM primary node (Swift-owned) ──────────────
-        guard nucleus_input_host_open_seat() else {
+        guard waylandRuntime.openSeat() else {
             logRuntime("session: failed to open Swift-owned seat")
             return false
         }
 
         // Install the inverted session seams. The render service installs itself
         // only after successful GPU bring-up below.
-        NucleusCompositorServer.shared.sessionControl = self
+        server.sessionControl = self
         DrmSession.installDeviceSeat(
-            open: { nucleus_input_host_open_device($0) },
-            close: { nucleus_input_host_close_device($0) })
+            open: { [weak waylandRuntime] in waylandRuntime?.openDevice($0) ?? -1 },
+            close: { [weak waylandRuntime] in waylandRuntime?.closeDevice($0) })
 
         let primaryFd = primaryPathBuf.withUnsafeBufferPointer { DrmSession.open(path: $0.baseAddress!) }
         guard primaryFd >= 0 else {
@@ -86,7 +85,7 @@ extension CompositorRuntime {
         }
         // Install the shell's conformer to the inverted input→shell seam so the
         // input dispatch reaches cursor/bezel/overlay policy + keybinds.
-        NucleusCompositorServer.shared.shellPolicy =
+        server.shellPolicy =
             shellServices.shellPolicy
 
         // ── Swift render runtime ──────────────────────────────────────────
@@ -100,7 +99,7 @@ extension CompositorRuntime {
             logRuntime("render runtime: failed to stat selected render node")
             return false
         }
-        guard RenderRuntime.bringUp(
+        guard renderRuntime.bringUp(
             drmDeviceFd: primaryFd,
             dmabufMainDevice: renderMainDevice,
             store: retainedStore,
@@ -110,8 +109,8 @@ extension CompositorRuntime {
             logRuntime("render runtime: Swift bring-up failed")
             return false
         }
-        RenderRuntime.installSurfaceRetirement {
-            WaylandRuntime.noteSurfaceBufferRetired($0)
+        renderRuntime.installSurfaceRetirement {
+            self.waylandRuntime.noteSurfaceBufferRetired($0)
         }
         guard outputTopology.reconcile() else {
             logRuntime("render runtime: initial output topology discovery failed")
@@ -119,21 +118,23 @@ extension CompositorRuntime {
         }
         logRuntime(
             "render runtime: Swift render path active for " +
-            "\(NucleusCompositorServer.shared.layout.displays.count) output(s)")
+            "\(server.layout.displays.count) output(s)")
 
         // Present-report seam: fold each output's scanout submit / page-flip into its
         // DisplayLink present-id ack, and ack the session-lock gate on flip completion.
         // The `locked` security invariant is confirmed by a real present here (the
         // author-time blank filter, applied in the scene author, is the other half).
-        RenderRuntime.installPresentReport(
-            submitted: {
+        renderRuntime.installPresentReport(
+            submitted: { [weak self]
                 outputID, outputGeneration, submissionID, sampledIOSurfaceIDs in
-                guard let display = NucleusCompositorServer.shared.layout.display(id: outputID) else { return }
+                guard let self,
+                      let display = self.server.layout.display(id: outputID)
+                else { return }
                 display.redrawSubmitted(submissionID: submissionID)
-                DisplayFrameDemand.willSubmit(display)
+                self.frameDemand.willSubmit(display)
                 display.noteFrameSubmitted()
-                DisplayFrameDemand.didSubmit(display)
-                WaylandRuntime.noteSubmitted(
+                self.frameDemand.didSubmit(display)
+                self.waylandRuntime.noteSubmitted(
                     outputID: outputID,
                     outputGeneration: outputGeneration,
                     submissionID: submissionID,
@@ -141,48 +142,50 @@ extension CompositorRuntime {
                         display.displayLink.predictedPresentNs(0),
                     sampledIOSurfaceIDs: sampledIOSurfaceIDs)
             },
-            presented: {
+            presented: { [weak self]
                 outputID, outputGeneration, submissionID,
                 presentationNs, sequence in
+                guard let self else { return }
                 // The kernel's real flip timestamp/sequence (from the page-flip event) — not a
                 // re-sampled wall clock — drives the DisplayLink ack, the session-lock ack, AND the
                 // client-facing tick: wl_surface.frame + wp_presentation_feedback for this output.
-                let display = NucleusCompositorServer.shared.layout.display(id: outputID)
+                let display = self.server.layout.display(id: outputID)
                 let predicted = display?.displayLink.predictedPresentNs(0) ?? presentationNs
                 display?.noteFramePresented(presentationNs: presentationNs)
                 display?.redrawPresented(submissionID: submissionID)
                 if let display {
-                    DisplayFrameDemand.didPresent(
+                    self.frameDemand.didPresent(
                         display, presentationNs: presentationNs,
                         predictedPresentNs: predicted)
                 }
-                WaylandRuntime.noteSessionLockPresented(outputID)
+                self.waylandRuntime.noteSessionLockPresented(outputID)
                 let refreshNs = UInt32(truncatingIfNeeded: display?.displayLink.refreshIntervalNs ?? 16_666_666)
-                WaylandRuntime.notePresented(
+                self.waylandRuntime.notePresented(
                     outputID, outputGeneration, submissionID,
                     presentationNs, refreshNs, sequence)
             },
-            discarded: {
+            discarded: { [weak self]
                 outputID, outputGeneration, submissionID in
+                guard let self else { return }
                 if let display =
-                    NucleusCompositorServer.shared.layout.display(id: outputID)
+                    self.server.layout.display(id: outputID)
                 {
                     display.redrawPresented(submissionID: submissionID)
                     // The flip itself completed, but its timestamp was unusable.
                     // Close scheduler bookkeeping without advancing the presentation
                     // timeline from an invalid clock sample.
                     display.inFlightPresentID = 0
-                    DisplayFrameDemand.requestFrame(
+                    self.frameDemand.requestFrame(
                         outputID: outputID, reason: .surfaceDamage)
                 }
-                WaylandRuntime.discardSubmitted(
+                self.waylandRuntime.discardSubmitted(
                     outputID: outputID,
                     outputGeneration: outputGeneration,
                     submissionID: submissionID)
             })
 
         // Seed the overlay scene's initial output geometry.
-        if let primary = NucleusCompositorServer.shared.layout.displays.first {
+        if let primary = server.layout.displays.first {
             OverlaySceneRuntime.shared.frameUpdated(FrameInfo(
                 outputWidth: UInt32(primary.logicalRect.width),
                 outputHeight: UInt32(primary.logicalRect.height),
@@ -200,21 +203,21 @@ extension CompositorRuntime {
         }
 
         // ── Wayland router: the sole live transport ───────────────────────
-        WaylandRuntime.activateRouter(author: windowSceneAuthor)
+        waylandRuntime.activateRouter(author: windowSceneAuthor)
         seedRouter()
-        nucleus_input_host_publish_keymap()
+        waylandRuntime.publishKeymap()
 
         // Build and drain the initial libinput inventory before publishing the
         // Wayland socket. Otherwise an autostart client can bind wl_seat while it
         // still advertises zero capabilities and trigger missing_capability before
         // the first reactor turn processes DEVICE_ADDED.
-        guard nucleus_input_host_start_libinput() else {
+        guard waylandRuntime.startLibinput() else {
             logRuntime("session: failed to start Swift-owned libinput")
             return false
         }
-        nucleus_input_host_drain_libinput()
+        waylandRuntime.drainLibinput()
 
-        guard WaylandRuntime.addSocket() else {
+        guard waylandRuntime.addSocket() else {
             logRuntime("router add_socket failed; no Wayland socket available")
             return false
         }
@@ -224,13 +227,13 @@ extension CompositorRuntime {
         spawnShellClient()
 
         // ── XWayland (lazy spawn) ─────────────────────────────────────────
-        if !nucleus_xwm_host_init() {
+        if !waylandRuntime.bringUpXwayland() {
             logRuntime("[xwayland] init failed — continuing without X11 support")
         }
 
         // ── Hardware cursor + first frame ─────────────────────────────────
         nucleus_compositor_cursor_apply_default()
-        DisplayFrameDemand.requestFrame(reason: .outputChange)
+        frameDemand.requestFrame(reason: .outputChange)
         return true
     }
 
@@ -241,30 +244,30 @@ extension CompositorRuntime {
     func teardown() {
         stopReactor()
         logRuntime("shutdown: Wayland scene")
-        WaylandRuntime.prepareShutdown()
+        waylandRuntime.prepareShutdown()
         logRuntime("shutdown: render runtime")
-        RenderRuntime.shutdown()
+        renderRuntime.shutdown()
         // Release DRM master and return the primary fd to libseat immediately
         // after scanout teardown. Xwayland/D-Bus/client cleanup must not be able to
         // delay restoring the VT if one of those services blocks during shutdown.
         logRuntime("shutdown: DRM session")
         DrmSession.close()
         logRuntime("shutdown: Xwayland")
-        nucleus_xwm_host_shutdown()
+        waylandRuntime.shutdownXwayland()
         logRuntime("shutdown: app hosts")
         shellServices.shutdown()
         hostBundle.invalidate()
         logRuntime("shutdown: input seat")
-        nucleus_input_host_shutdown()
+        waylandRuntime.shutdownInput()
         logRuntime("shutdown: complete")
     }
 
     /// Seed the router's `wl_output` set from the Swift display layout (Swift→Swift).
     private func seedRouter() {
-        for display in NucleusCompositorServer.shared.layout.displays {
+        for display in server.layout.displays {
             display.name.withCString { namePtr in
                 display.description.withCString { descPtr in
-                    WaylandRuntime.addOutput(
+                    waylandRuntime.addOutput(
                         display.id,
                         Int32(display.logicalRect.x.rounded()),
                         Int32(display.logicalRect.y.rounded()),

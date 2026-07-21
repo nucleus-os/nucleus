@@ -80,6 +80,7 @@ private final class WeakSelectionObserver {
 final class WlDataDeviceManager {
     weak var delegate: DataDeviceDelegate?
     private unowned let compositor: WlCompositor
+    fileprivate unowned let host: RouterHost
 
     private var devices: [WeakDataDevice] = []
     private var display: OpaquePointer?
@@ -99,8 +100,9 @@ final class WlDataDeviceManager {
     /// The current selection source, for an observer's bind-time projection.
     var currentSelection: (any SelectionSource)? { selection }
 
-    init(compositor: WlCompositor) {
+    init(compositor: WlCompositor, host: RouterHost) {
         self.compositor = compositor
+        self.host = host
     }
 
     func addSelectionObserver(_ observer: any SelectionObserver) {
@@ -781,6 +783,9 @@ extension WlDataDevice: WlDataDeviceRequests {
                 "drag icon surface already has an incompatible role")
             return
         }
+        let managerBits = manager.map {
+            UInt(bitPattern: Unmanaged.passUnretained($0).toOpaque())
+        } ?? 0
         manager?.startDrag(
             source: source,
             origin: origin,
@@ -788,10 +793,17 @@ extension WlDataDevice: WlDataDeviceRequests {
             serial: serial,
             initiatingClientKey: clientKey,
             initialTarget: MainActor.assumeIsolated {
-                guard let snapshot =
-                    RouterHost.shared.inputHost?.dispatch.currentSnapshot()
+                guard let managerPointer = UnsafeRawPointer(
+                    bitPattern: managerBits)
+                else { return nil }
+                let manager = Unmanaged<WlDataDeviceManager>
+                    .fromOpaque(managerPointer).takeUnretainedValue()
+                let host = manager.host
+                guard
+                      let snapshot = host.inputHost?.dispatch.currentSnapshot()
                 else { return nil }
                 let hit = routerHitTest(
+                    host: host,
                     sx: snapshot.cursorX, sy: snapshot.cursorY)
                 return (
                     UInt64(hit.surfaceId), hit.localX, hit.localY,

@@ -37,7 +37,23 @@ final class CompositorBinding {
 // per-resource CompositorBinding owner and forwarded to the shared WlCompositor factory verbs.
 extension CompositorBinding: WlCompositorRequests {
     func createSurface(_ resource: UnsafeMutablePointer<wl_resource>, id: WlNewId) {
-        _ = compositor.makeSurface(client: id.client, id: id.id, version: id.version)
+        let compositorBits = UInt(
+            bitPattern: Unmanaged.passUnretained(compositor).toOpaque())
+        let clientBits = UInt(bitPattern: UnsafeRawPointer(id.client))
+        let objectID = id.id
+        let version = id.version
+        MainActor.assumeIsolated {
+            guard let compositorPointer = UnsafeRawPointer(
+                bitPattern: compositorBits),
+                let clientPointer = UnsafeRawPointer(bitPattern: clientBits)
+            else { return }
+            let compositor = Unmanaged<WlCompositor>
+                .fromOpaque(compositorPointer).takeUnretainedValue()
+            _ = compositor.makeSurface(
+                client: OpaquePointer(clientPointer),
+                id: objectID,
+                version: version)
+        }
     }
     func createRegion(_ resource: UnsafeMutablePointer<wl_resource>, id: WlNewId) {
         _ = compositor.makeRegion(client: id.client, id: id.id, version: id.version)
@@ -61,6 +77,7 @@ private final class WeakSurface {
 }
 
 final class WlCompositor {
+    unowned let host: RouterHost
     private struct SubmittedFrameKey: Hashable {
         let outputID: UInt64
         let outputGeneration: UInt64
@@ -90,6 +107,10 @@ final class WlCompositor {
         let callback: WaylandResourceReference?
     }
     private var deferredBufferReleases: [UInt32: [DeferredBufferRelease]] = [:]
+
+    init(host: RouterHost) {
+        self.host = host
+    }
 
     func deferBufferRelease(
         iosurfaceID: UInt32, buffer: WaylandResourceReference,
@@ -466,7 +487,7 @@ final class WlCompositor {
         if surface.hasKnownOutputMembership {
             return surface.overlapsOutput(outputID)
         }
-        if let window = WindowManager.shared.server.windows.window(bySurfaceObjectId: surface.objectId),
+        if let window = host.server.windows.window(bySurfaceObjectId: surface.objectId),
             let currentOutputID = window.currentOutputID
         {
             return currentOutputID == outputID

@@ -17,21 +17,28 @@ enum ClientKeyPolicy {
 
 @MainActor
 final class InputClientPolicy {
+    private unowned let host: RouterHost
+    private let seatDelivery: SeatDelivery
     /// Bitset of evdev keycodes < 128 whose press we translated, so the matching
     /// release is translated identically.
     private var translatedKeysLow: UInt128 = 0
     private var logCount: UInt32 = 0
+
+    init(host: RouterHost, seatDelivery: SeatDelivery) {
+        self.host = host
+        self.seatDelivery = seatDelivery
+    }
 
     func reset() { translatedKeysLow = 0 }
 
     /// The Command-handling policy for the window owning `surfaceID`. Native-Command
     /// windows (shell layers, matched app identities) get raw chords; everyone else
     /// gets Command→Control translation.
-    static func policy(forSurfaceID surfaceID: UInt64) -> ClientKeyPolicy {
-        guard let windowDriver = RouterHost.shared.runtime?.windowDriver else { return .nativeCommand }
+    func policy(forSurfaceID surfaceID: UInt64) -> ClientKeyPolicy {
+        guard let windowDriver = host.runtime?.windowDriver else { return .nativeCommand }
         let windowID = windowDriver.windowId(forSurfaceId: UInt32(truncatingIfNeeded: surfaceID))
         if windowID == 0 { return .nativeCommand }
-        return WindowManager.shared.nativeCommandPolicy(windowID: windowID)
+        return host.windowManager.nativeCommandPolicy(windowID: windowID)
             ? .nativeCommand : .commandToControl
     }
 
@@ -54,10 +61,10 @@ final class InputClientPolicy {
         if pressed && commandActive {
             guard surfaceID != 0 else { return true }
             let mods = Self.translatedModifiers(physical, masks: masks, forceControl: true)
-            SeatDelivery.keyboardModifiers(
+            seatDelivery.keyboardModifiers(
                 surfaceID: surfaceID, depressed: mods.depressed, latched: mods.latched,
                 locked: mods.locked, group: mods.group)
-            SeatDelivery.keyboardKey(surfaceID: surfaceID, timeMsec: timeMsec, keycode: keycode, keyState: 1)
+            seatDelivery.keyboardKey(surfaceID: surfaceID, timeMsec: timeMsec, keycode: keycode, keyState: 1)
             markTranslatedKey(keycode, down: true)
             logTranslated(keycode: keycode, pressed: true, reason: "command-to-control-down")
             return true
@@ -66,14 +73,14 @@ final class InputClientPolicy {
         if !pressed && translatedKeyIsDown(keycode) {
             guard surfaceID != 0 else { return true }
             let mods = Self.translatedModifiers(physical, masks: masks, forceControl: true)
-            SeatDelivery.keyboardModifiers(
+            seatDelivery.keyboardModifiers(
                 surfaceID: surfaceID, depressed: mods.depressed, latched: mods.latched,
                 locked: mods.locked, group: mods.group)
-            SeatDelivery.keyboardKey(surfaceID: surfaceID, timeMsec: timeMsec, keycode: keycode, keyState: 0)
+            seatDelivery.keyboardKey(surfaceID: surfaceID, timeMsec: timeMsec, keycode: keycode, keyState: 0)
             markTranslatedKey(keycode, down: false)
             let restored = Self.translatedModifiers(
                 physical, masks: masks, forceControl: translatedKeysLow != 0)
-            SeatDelivery.keyboardModifiers(
+            seatDelivery.keyboardModifiers(
                 surfaceID: surfaceID, depressed: restored.depressed, latched: restored.latched,
                 locked: restored.locked, group: restored.group)
             logTranslated(keycode: keycode, pressed: false, reason: "command-to-control-up")

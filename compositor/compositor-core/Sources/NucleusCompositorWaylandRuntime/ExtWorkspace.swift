@@ -23,9 +23,11 @@ import WaylandServerDispatch
 @MainActor
 final class ExtWorkspaceManager {
     private unowned let compositor: WlCompositor
+    fileprivate unowned let server: NucleusCompositorServer
 
-    init(compositor: WlCompositor) {
+    init(compositor: WlCompositor, server: NucleusCompositorServer) {
         self.compositor = compositor
+        self.server = server
     }
 
     func register(in router: NucleusWaylandRouter) {
@@ -100,9 +102,9 @@ final class ExtWorkspaceClient: DesktopModelObserver {
         self.version = Int32(version)
     }
     fileprivate func bind(_ resource: UnsafeMutablePointer<wl_resource>) { self.resource = resource }
-    fileprivate func start() { NucleusCompositorServer.shared.addObserver(self) }
+    fileprivate func start() { manager.server.addObserver(self) }
 
-    private var spaces: Spaces { NucleusCompositorServer.shared.spaces }
+    private var spaces: Spaces { manager.server.spaces }
 
     private func group(_ outputID: DisplayID) -> ExtWorkspaceGroup? {
         guard let box = groups[outputID] else { return nil }
@@ -244,23 +246,23 @@ final class ExtWorkspaceClient: DesktopModelObserver {
     private func applyPending() {
         let requests = pending
         pending.removeAll(keepingCapacity: true)
-        let spaces = NucleusCompositorServer.shared.spaces
+        let spaces = manager.server.spaces
         for request in requests {
             switch request {
             case let .activate(space, output):
                 if spaces.setActiveSpace(space, forDisplay: output) {
-                    RenderBridge.requestFrame(outputId: output)
+                    RenderBridge.requestFrame(server: manager.server, outputId: output)
                 }
             case let .createWorkspace(output):
                 if spaces.appendWorkspace(onOutput: output) != 0 {
-                    RenderBridge.requestFrame(outputId: output)
+                    RenderBridge.requestFrame(server: manager.server, outputId: output)
                 }
             case let .remove(space):
                 let output = spaces.spaces.first {
                     $0.id == space
                 }?.outputID ?? 0
                 if spaces.removeSpace(space) {
-                    RenderBridge.requestFrame(outputId: output)
+                    RenderBridge.requestFrame(server: manager.server, outputId: output)
                 }
             }
         }
@@ -270,7 +272,7 @@ final class ExtWorkspaceClient: DesktopModelObserver {
     fileprivate func stopProjection() {
         finished = true
         pending.removeAll()
-        NucleusCompositorServer.shared.removeObserver(self)
+        manager.server.removeObserver(self)
         if let resource { ext_workspace_manager_v1_send_finished(resource) }
     }
 

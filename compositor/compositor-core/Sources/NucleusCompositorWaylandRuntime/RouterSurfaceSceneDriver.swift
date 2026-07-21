@@ -25,6 +25,9 @@ import Glibc
 
 @MainActor
 final class RouterSurfaceSceneDriver {
+    private unowned let host: RouterHost
+    private var windowManager: WindowManager { host.windowManager }
+    private var server: NucleusCompositorServer { host.server }
     /// Re-resolves surfaces by wire id (the Sendable token crossed from the nonisolated
     /// commit/destroy thunks) so no non-Sendable WlSurface is stored.
     private let compositor: WlCompositor
@@ -34,7 +37,8 @@ final class RouterSurfaceSceneDriver {
     private var reportedImports: Set<UInt32> = []
     private var reportedLayerMaps: Set<UInt32> = []
 
-    init(compositor: WlCompositor, feeder: SceneFeeder?) {
+    init(compositor: WlCompositor, feeder: SceneFeeder?, host: RouterHost) {
+        self.host = host
         self.compositor = compositor
         self.feeder = feeder
     }
@@ -48,7 +52,7 @@ final class RouterSurfaceSceneDriver {
     /// toplevel-token table, which the configure/model half owns).
     private func windowID(forSurfaceId id: UInt32) -> WindowID? {
         guard id != 0 else { return nil }
-        return WindowManager.shared.server.windows.window(bySurfaceObjectId: id)?.id
+        return server.windows.window(bySurfaceObjectId: id)?.id
     }
 
     /// Import the committed buffer to the surface's IOSurface and publish it to the
@@ -61,12 +65,12 @@ final class RouterSurfaceSceneDriver {
         guard let surface = compositor.surface(id: surfaceId) else { return }
         // A client cursor surface (wl_pointer.set_cursor): its committed buffer is the
         // cursor image, not window content — route it to the cursor model and stop.
-        if surfaceId == PointerCursorSurface.surfaceId {
+        if surfaceId == host.pointerCursorSurface.surfaceId {
             if commit.bufferAttached {
-                PointerCursorSurface.applyCommittedImage(
+                host.pointerCursorSurface.applyCommittedImage(
                     surface)
             }
-            RenderBridge.requestCursorFrame()
+            RenderBridge.requestCursorFrame(server: server)
             return
         }
         if !commit.bufferAttached {
@@ -86,7 +90,7 @@ final class RouterSurfaceSceneDriver {
             // that follows this scene commit flips `mapped` off and clears input;
             // this preserves only immutable visual content for the close fade.
             if let windowID = windowID(forSurfaceId: surfaceId),
-               let window = WindowManager.shared.server.window(id: windowID),
+               let window = server.window(id: windowID),
                window.mapped
             {
                 _ = feeder?.beginClosing(
@@ -95,7 +99,7 @@ final class RouterSurfaceSceneDriver {
                     destroyWindowOnCompletion: false)
             }
             if surface.renderIosurfaceId != 0 {
-                NucleusCompositorServer.shared.renderService?
+                server.renderService?
                     .releaseIOSurface(surface.renderIosurfaceId)
                 surface.renderIosurfaceId = 0
             }
@@ -130,7 +134,7 @@ final class RouterSurfaceSceneDriver {
             defer { wl_shm_buffer_end_access(shm) }
             guard
                 let data = wl_shm_buffer_get_data(shm),
-                let renderService = NucleusCompositorServer.shared.renderService
+                let renderService = server.renderService
             else {
                 importFailed(surface)
                 return
@@ -167,7 +171,7 @@ final class RouterSurfaceSceneDriver {
             let attrs = dmabuf.attrs
             // The plane fds are borrowed (owned by DmabufBuffer); the renderer
             // duplicates them before this synchronous call returns.
-            guard let renderService = NucleusCompositorServer.shared.renderService
+            guard let renderService = server.renderService
             else {
                 importFailed(surface)
                 return
@@ -228,7 +232,7 @@ final class RouterSurfaceSceneDriver {
     /// The scene is detached so stale pixels cannot masquerade as the failed commit.
     private func importFailed(_ surface: WlSurface) {
         if surface.renderIosurfaceId != 0 {
-            NucleusCompositorServer.shared.renderService?
+            server.renderService?
                 .releaseIOSurface(surface.renderIosurfaceId)
             surface.renderIosurfaceId = 0
         }
@@ -260,17 +264,18 @@ final class RouterSurfaceSceneDriver {
         if outputIDs.isEmpty,
             let windowID = windowID(
                 forSurfaceId: surface.objectId),
-            let outputID = WindowManager.shared.server.window(
+            let outputID = server.window(
                 id: windowID)?.currentOutputID
         {
             outputIDs.insert(outputID)
         }
         if outputIDs.isEmpty {
-            RenderBridge.requestFrame(outputId: 0)
+            RenderBridge.requestFrame(server: server, outputId: 0)
             return
         }
         for outputID in outputIDs {
             RenderBridge.requestFrame(
+                server: server,
                 outputId: outputID,
                 reason: .surfaceDamage)
         }
@@ -285,7 +290,7 @@ final class RouterSurfaceSceneDriver {
         // root app-window topology is retained by the close transition.
         var retainedRootWindow = false
         if let windowID = windowID(forSurfaceId: surfaceId),
-           let window = WindowManager.shared.server.window(id: windowID),
+           let window = server.window(id: windowID),
            window.source == .xdg || window.source == .xwayland
         {
             retainedRootWindow = feeder?.beginClosing(
@@ -294,7 +299,7 @@ final class RouterSurfaceSceneDriver {
                 destroyWindowOnCompletion: true) ?? false
             window.mapped = false
         }
-        NucleusCompositorServer.shared.renderService?
+        server.renderService?
             .releaseIOSurface(iosurfaceId)
         // Tear down a child-surface (subsurface/popup) scene layer; no-ops for a
         // window or unknown id. xdg-toplevel teardown runs through `willDestroyImpl`.
@@ -304,11 +309,11 @@ final class RouterSurfaceSceneDriver {
             // model window + scene tear down here. A failed app-window capture
             // takes this immediate path too.
             if let windowID = windowID(forSurfaceId: surfaceId),
-               let window = WindowManager.shared.server.window(id: windowID),
+               let window = server.window(id: windowID),
                window.source == .xdg || window.source == .xwayland
             {
                 feeder?.windowUnmapped(surfaceID: surfaceId)
-                _ = WindowManager.shared.server.destroyWindow(id: windowID)
+                _ = server.destroyWindow(id: windowID)
             } else {
                 destroyLayerSurface(surfaceId: surfaceId)
             }
@@ -320,7 +325,7 @@ final class RouterSurfaceSceneDriver {
     /// scales onto the eased presented frame. No-ops for a surface with no window.
     private func recordBufferSize(surfaceId: UInt32, width: UInt32, height: UInt32) {
         guard let windowID = windowID(forSurfaceId: surfaceId),
-            let window = WindowManager.shared.server.window(id: windowID)
+            let window = server.window(id: windowID)
         else { return }
         window.committedBufferSize = RenderSize(w: Double(width), h: Double(height))
     }
@@ -394,7 +399,7 @@ final class RouterSurfaceSceneDriver {
         _ surface: WlSurface, _ layerSurface: ZwlrLayerSurface,
         bufferWidth: UInt32, bufferHeight: UInt32
     ) {
-        let wm = WindowManager.shared
+        let wm = windowManager
         let windowID = wm.layerShellCreated(surfaceObjectId: surface.objectId, layer: layerSurface.layer)
         guard let window = wm.server.window(id: windowID) else { return }
         let x = Double(layerSurface.arrangedX)
@@ -426,13 +431,13 @@ final class RouterSurfaceSceneDriver {
     /// No-ops for a non-layer surface id. Also reached from
     /// `RouterWindowDriver.layerSurfaceUnmapped` (idempotent).
     func destroyLayerSurface(surfaceId: UInt32) {
-        let wm = WindowManager.shared
+        let wm = windowManager
         guard let window = wm.server.windows.window(bySurfaceObjectId: surfaceId),
             window.source == .layerShell
         else { return }
         feeder?.windowUnmapped(surfaceID: surfaceId)
         wm.layerShellPolicy.unregister(id: UInt64(surfaceId))
-        RouterHost.shared.xwaylandHost?.updateScale()
+        host.xwaylandHost?.updateScale()
         _ = wm.server.destroyWindow(id: window.id)
     }
 
@@ -458,7 +463,7 @@ final class RouterSurfaceSceneDriver {
 
     private func contentSample(for surface: WlSurface) -> NucleusLayers.ContentSample? {
         guard let windowID = windowID(forSurfaceId: surface.objectId),
-            let window = WindowManager.shared.server.window(id: windowID)
+            let window = server.window(id: windowID)
         else { return nil }
         let buffer = window.committedBufferSize
         let logical = window.committedLogicalSize

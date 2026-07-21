@@ -6,14 +6,14 @@ import Glibc
 extension InputDispatch {
     package func processCursorMotion(_ event: WireEventRecord) {
         // An active interactive move/resize grab owns motion until release.
-        if WindowManager.shared.interactiveGrabActive() {
+        if host.windowManager.interactiveGrabActive() {
             updateInteractiveGrab()
             return
         }
         let sx = cursorX
         let sy = cursorY
-        let hit = routerHitTest(sx: sx, sy: sy)
-        if RouterHost.shared.runtime?.dataDevice.dragMotion(
+        let hit = routerHitTest(host: host, sx: sx, sy: sy)
+        if host.runtime?.dataDevice.dragMotion(
             surfaceID: hit.surfaceId,
             x: hit.localX,
             y: hit.localY,
@@ -50,13 +50,13 @@ extension InputDispatch {
 
         // Cursor-image swap on an xwayland<->client transition (device crossing).
         if decision.shouldApplyXwaylandCursor {
-            cursorFromXwayland = nucleus_compositor_xwm_reapply_cursor()
+            cursorFromXwayland = host.xwaylandHost?.xwm?.applyCurrentCursor() ?? false
             appliedCursorIntent = cursorFromXwayland ? .client : nil
         } else if decision.shouldRestoreDefaultCursor {
             // Pointer focus left the client: drop its set_cursor binding so its later
             // surface commits no longer control the cursor, then restore the default.
-            PointerCursorSurface.clear()
-            NucleusCompositorServer.shared.shellPolicy?.cursorApplyDefault()
+            host.pointerCursorSurface.clear()
+            host.server.shellPolicy?.cursorApplyDefault()
             requestCursorFrame()
             cursorFromXwayland = false
             appliedCursorIntent = .named("default")
@@ -69,7 +69,7 @@ extension InputDispatch {
             // Shell overlay arbitration: while a shell control is up, route motion into
             // the overlay and flip the cursor to the pointer hand over a clickable control.
             var shellControl = false
-            if NucleusCompositorServer.shared.shellPolicy?.overlayActive() ?? false {
+            if host.server.shellPolicy?.overlayActive() ?? false {
                 let bits = dispatchOverlayPointer(kind: 1, button: 0, timestampNs: event.timestampNs)
                 shellControl = bits & 2 != 0
             }
@@ -81,7 +81,7 @@ extension InputDispatch {
                 ? resizeCursorName(edges: hit.chromeEdges) : nil
             applyCursorIntent(resolveCursorIntent(
                 resizeName: resizeName,
-                clientOwnsCursor: PointerCursorSurface.surfaceId != 0 || cursorFromXwayland,
+                clientOwnsCursor: host.pointerCursorSurface.surfaceId != 0 || cursorFromXwayland,
                 shellControl: shellControl))
             updateChromeButtonVisual(windowID: chromeIsChrome ? hit.windowId : 0, region: chromeRegion)
         }
@@ -112,23 +112,23 @@ extension InputDispatch {
             return
         }
 
-        if RouterHost.shared.runtime?.dataDevice.dragActive == true {
+        if host.runtime?.dataDevice.dragActive == true {
             deliverPointerButton(event, button: button, down: down)
             if !down, seatFocus.buttonCount == 0 {
-                _ = RouterHost.shared.runtime?.dataDevice.dropActiveDrag()
+                _ = host.runtime?.dataDevice.dropActiveDrag()
             }
             return
         }
 
         // Shell-overlay arbitration: a button up, or any button while the overlay is
         // active, routes into the overlay first; a consumed event stops here.
-        if !down || (NucleusCompositorServer.shared.shellPolicy?.overlayActive() ?? false) {
+        if !down || (host.server.shellPolicy?.overlayActive() ?? false) {
             let bits = dispatchOverlayPointer(kind: down ? 2 : 3, button: button, timestampNs: event.timestampNs)
             if bits & 1 != 0 { return }
         }
 
         // An active interactive grab consumes the button; the last release finishes it.
-        if WindowManager.shared.interactiveGrabActive() {
+        if host.windowManager.interactiveGrabActive() {
             deliverPointerButton(event, button: button, down: down)
             if !down && seatFocus.buttonCount == 0 { finishInteractiveGrab(timeMsec: timeMsec) }
             return
@@ -159,14 +159,14 @@ extension InputDispatch {
         let value120 = Int32(bitPattern: UInt32(truncatingIfNeeded: event.data1))
         let orientation = UInt32(truncatingIfNeeded: event.data2)
         let source = UInt32(truncatingIfNeeded: event.data3)
-        SeatDelivery.pointerAxis(
+        seatDelivery.pointerAxis(
             surfaceID: target, timeMsec: msec(event), axis: orientation,
             delta: delta, value120: value120, source: source)
     }
 
     package func deliverPointerMotion(_ event: WireEventRecord, surfaceID: UInt64, sx: Double, sy: Double) {
         if lockBlocks(surfaceID) { return }
-        SeatDelivery.pointerMotionRaw(
+        seatDelivery.pointerMotionRaw(
             surfaceID: surfaceID, timeMsec: msec(event), surfaceX: sx, surfaceY: sy,
             dx: Double(bitPattern: event.data0), dy: Double(bitPattern: event.data1),
             dxUnaccel: Double(bitPattern: event.data2), dyUnaccel: Double(bitPattern: event.data3))
@@ -184,7 +184,7 @@ extension InputDispatch {
             line.withCString { _ = write(STDERR_FILENO, $0, strlen($0)) }
         }
         if target != 0 && !lockBlocks(target) {
-            serial = SeatDelivery.pointerButton(
+            serial = seatDelivery.pointerButton(
                 surfaceID: target, timeMsec: msec(event), button: button, state: down ? 1 : 0)
             InputLatencyProbe.markDelivery(.pointerButton)
         }
@@ -210,12 +210,12 @@ extension InputDispatch {
         guard isMotion(event.kind) else { return }
         let surfaceID = pointerFocusID()
         if surfaceID == 0 { return }
-        switch SeatDelivery.pointerConstraintKind(surfaceID: surfaceID) {
+        switch seatDelivery.pointerConstraintKind(surfaceID: surfaceID) {
         case 1:  // locked
             event.x = cursorX
             event.y = cursorY
         case 2:  // confined
-            guard let rect = RouterHost.shared.feeder?.presentedWindow(
+            guard let rect = host.feeder?.presentedWindow(
                 surfaceID: UInt32(truncatingIfNeeded: surfaceID))?.frame else { return }
             event.x = min(max(event.x, rect.x), rect.x + rect.w - 1)
             event.y = min(max(event.y, rect.y), rect.y + rect.h - 1)
