@@ -49,11 +49,12 @@ The existing Nucleus Browser work establishes the engine and presentation founda
 - the Chromium sandbox and site-isolated process model;
 - a repeatable browser build, install, launch, and diagnosis path.
 
-Its current product surface is still Chromium's Views UI with Nucleus-specific branding, defaults,
-and glass styling. That was the correct engine bring-up client, but it is not the intended final
-Nucleus product architecture. Continuing to restyle `BrowserView`, the tab strip, omnibox, and
-Views bubbles would make the product increasingly dependent on Chrome's view hierarchy and its
-upstream churn while leaving NucleusUI outside the browser.
+Its current product surface is still Chromium's Views UI with Nucleus-specific branding and
+defaults. The experimental Chromium-Views glass styling has been removed rather than expanded:
+it proved the limits of maintaining a custom visual system inside Chrome's view hierarchy. That
+engine bring-up client is not the intended final Nucleus product architecture. Restyling
+`BrowserView`, the tab strip, omnibox, and Views bubbles would make the product increasingly
+dependent on upstream hierarchy churn while leaving NucleusUI outside the browser.
 
 The next step is to replace the product shell while preserving the engine that now works. The
 existing `core/docs/appkit-api-plan.md` makes `NucleusUI` the AppKit-like authoring front door. The
@@ -408,8 +409,8 @@ adds no persistent copy to the page frame path.
 Make NucleusUI the only product shell.
 
 - Install and launch the custom executable as Nucleus Browser.
-- Remove product styling, glass, vertical-tab defaults, and branding behavior implemented by
-  patching Chromium Views.
+- Remove the remaining vertical-tab defaults and branding behavior implemented by patching
+  Chromium Views; the experimental glass styling was retired before this phase.
 - Remove custom-shell dependencies on `BrowserView` and Views bubble implementations.
 - Retain the unmodified reference Chromium target only as a developer engine diagnostic.
 - Update `docs/nucleus-browser-plan.md` so the engine plan points to this document for product UI.
