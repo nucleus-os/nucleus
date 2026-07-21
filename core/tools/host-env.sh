@@ -2,24 +2,29 @@
 # Shared host environment for Nucleus build entry points. Source this file.
 
 nucleus_toolchain=""
+nucleus_source_id="${NUCLEUS_SWIFT_SOURCE_ID:-release-6.4.x}"
+nucleus_platform_id="$nucleus_source_id"
+if [[ "$(uname -s)" == Darwin ]]; then nucleus_platform_id="$nucleus_source_id-macos"; fi
 if [[ -n "${NUCLEUS_SWIFT_TOOLCHAIN:-}" && -x "$NUCLEUS_SWIFT_TOOLCHAIN/bin/swift-build" ]]; then
   nucleus_toolchain="$NUCLEUS_SWIFT_TOOLCHAIN"
-elif [[ -x /opt/nucleus-swift/current/usr/bin/swift-build ]]; then
-  nucleus_toolchain=/opt/nucleus-swift/current/usr
-elif [[ -x "${XDG_CACHE_HOME:-$HOME/.cache}/nucleus/swift-toolchains/release-6.4.x/usr/bin/swift-build" ]]; then
-  nucleus_toolchain="${XDG_CACHE_HOME:-$HOME/.cache}/nucleus/swift-toolchains/release-6.4.x/usr"
+elif [[ -x "${XDG_CACHE_HOME:-$HOME/.cache}/nucleus/swift-platforms/$nucleus_platform_id/current/toolchain/usr/bin/swift-build" ]]; then
+  nucleus_toolchain="${XDG_CACHE_HOME:-$HOME/.cache}/nucleus/swift-platforms/$nucleus_platform_id/current/toolchain/usr"
 fi
 
 if [[ -z "$nucleus_toolchain" ]]; then
   echo "error: the Nucleus Swift 6.4 toolchain is not installed" >&2
-  echo "       install it under /opt/nucleus-swift/current/usr or set NUCLEUS_SWIFT_TOOLCHAIN" >&2
+  echo "       run tools/nucleus toolchain rebuild or set NUCLEUS_SWIFT_TOOLCHAIN" >&2
   return 127 2>/dev/null || exit 127
 fi
 
 export SWIFT_TOOLCHAIN="$nucleus_toolchain"
 export SWIFT="$nucleus_toolchain/bin/swift"
 export SWIFTC="$nucleus_toolchain/bin/swiftc"
-export SWIFT_LIBRARY_PATH="$nucleus_toolchain/lib/swift/linux"
+if [[ "$(uname -s)" == Darwin ]]; then
+  export SWIFT_LIBRARY_PATH="$nucleus_toolchain/lib/swift/macosx"
+else
+  export SWIFT_LIBRARY_PATH="$nucleus_toolchain/lib/swift/linux"
+fi
 export PATH="$nucleus_toolchain/bin:$PATH"
 : "${SWIFT_BACKTRACE:=enable=no}"
 export SWIFT_BACKTRACE
@@ -35,4 +40,4 @@ fi
 nucleus_workspace_root="$(cd "$(dirname "$nucleus_host_env_source")/../.." && pwd)"
 export SWIFT_JAVA_JNI_CORE_PATH="$nucleus_workspace_root/third-party/swift-java-jni-core"
 unset nucleus_host_env_source nucleus_workspace_root
-unset nucleus_toolchain
+unset nucleus_toolchain nucleus_source_id nucleus_platform_id

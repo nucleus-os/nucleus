@@ -68,13 +68,13 @@ Nucleus is one monorepo containing independently buildable Swift packages:
 - [`swift-vulkan`](swift-vulkan) — Swift Vulkan bindings (VulkanGen generator + generated typed API + vendored Khronos headers).
 - [`swift-wayland`](swift-wayland) — Swift Wayland protocol bindings (server + client C façades + Swift dispatch).
 - [`swift-tracy`](swift-tracy) — Swift bindings for the Tracy profiler.
-- [`swift-toolchain`](swift-toolchain) — Swift toolchain build infrastructure.
-- [`swift-android-sdk`](swift-android-sdk) — Swift Android SDK provisioning.
+- [`swift-toolchain`](swift-toolchain) and [`swift-android-sdk`](swift-android-sdk) —
+  separate build recipes published as one user-level Swift platform generation.
 
 The bindings are first-party SwiftPM path dependencies and participate in
-`tools/nucleus build all` and `tools/nucleus test all`. The toolchain and Android SDK are independently
-buildable source components whose long-running release builds remain explicit; Nucleus
-consumes their installed artifacts rather than building them during ordinary workspace builds.
+`tools/nucleus build all` and `tools/nucleus test all`. Swift platform rebuilds remain
+explicit and publish the host toolchain and Android SDK together; ordinary workspace builds
+consume the active generation.
 
 ## Building
 
@@ -104,7 +104,7 @@ component shell scripts:
 
 ```sh
 tools/nucleus android build
-tools/nucleus android sdk build
+tools/nucleus toolchain rebuild
 tools/nucleus profile --launch --seconds 20
 tools/nucleus install compositor
 ```
@@ -114,8 +114,9 @@ profiles must run from a free virtual terminal or a display-manager session wher
 another compositor does not already own the seat.
 
 Long-running Swift toolchain and Android SDK compiler recipes remain shell-based
-because they directly adapt upstream build systems; ordinary workspace dependency
-ordering, verification, profiling, and packaging are Swift-owned.
+internals because they directly adapt upstream build systems. The top-level Swift
+workflow stages, verifies, and atomically activates them under the user cache; it
+does not install into `/opt` or require `sudo`.
 
 All first-party SwiftPM dependencies use monorepo-relative paths. No sibling-repository
 detection or local dependency override step is required.

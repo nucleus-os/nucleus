@@ -15,11 +15,18 @@ case "$arch" in
   x86_64) readelf_machine='Advanced Micro Devices X86-64' ;;
   *) echo "unsupported test arch: $arch" >&2; exit 2 ;;
 esac
-bundle_name="swift-${source_id}_android.artifactbundle"
+bundle_name="${NUCLEUS_SWIFT_ANDROID_BUNDLE_NAME:-swift-${source_id}_android.artifactbundle}"
 swift_bin="$toolchain_root/bin/swift"
-readelf_bin="$ndk_home/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf"
+readelf_bin=""
+for candidate in "$ndk_home"/toolchains/llvm/prebuilt/*/bin/llvm-readelf; do
+  if [[ -x "$candidate" ]]; then
+    readelf_bin="$candidate"
+    break
+  fi
+done
 host_machine='Advanced Micro Devices X86-64'
-installed_bundle="$HOME/.swiftpm/swift-sdks/$bundle_name"
+sdk_search_root="${NUCLEUS_SWIFT_SDKS_PATH:-$HOME/.swiftpm/swift-sdks}"
+installed_bundle="$sdk_search_root/$bundle_name"
 
 if [[ ! -x "$swift_bin" ]]; then
   echo "swift not found at $swift_bin" >&2
@@ -27,15 +34,15 @@ if [[ ! -x "$swift_bin" ]]; then
 fi
 if [[ ! -d "$installed_bundle" ]]; then
   echo "Android Swift SDK is not installed at $installed_bundle" >&2
-  echo "run tools/nucleus android sdk install first" >&2
+  echo "run tools/nucleus toolchain rebuild first" >&2
   exit 1
 fi
 if [[ ! -d "$ndk_home" ]]; then
   echo "Android NDK not found at $ndk_home" >&2
   exit 1
 fi
-if [[ ! -x "$readelf_bin" ]]; then
-  echo "llvm-readelf not found at $readelf_bin" >&2
+if [[ -z "$readelf_bin" ]]; then
+  echo "llvm-readelf not found under $ndk_home/toolchains/llvm/prebuilt" >&2
   exit 1
 fi
 
@@ -99,8 +106,8 @@ struct FoundationXMLHostPlugin: BuildToolPlugin {
 }
 SWIFT
 
-  "$swift_bin" build --build-path .build-dynamic --swift-sdk "$target_triple"
-  "$swift_bin" build --build-path .build-static --swift-sdk "$target_triple" --static-swift-stdlib
+  "$swift_bin" build --build-path .build-dynamic --swift-sdks-path "$sdk_search_root" --swift-sdk "$target_triple"
+  "$swift_bin" build --build-path .build-static --swift-sdks-path "$sdk_search_root" --swift-sdk "$target_triple" --static-swift-stdlib
 )
 
 for mode in dynamic static; do

@@ -63,12 +63,11 @@ validate a patch in isolation before committing it.
    header block per the file format section above. The numeric prefix
    sets the apply order; reserve gaps so future patches can slot in
    between.
-5. Drop the changes from the workspace (`git restore`) and run
-   `./build.sh --skip-checkout` to confirm the patch applies cleanly
-   through the helper.
+5. Drop the changes from the workspace (`git restore`), then run `patch -p1
+   --dry-run` from the affected upstream checkout with the new patch as input.
 
 ## Removing a patch
 
 1. Delete the `.patch` file.
-2. Run `./build.sh` — `update-checkout --reset-to-remote` discards the
+2. Run `tools/nucleus toolchain rebuild` — `update-checkout --reset-to-remote` discards the
    change on its own.

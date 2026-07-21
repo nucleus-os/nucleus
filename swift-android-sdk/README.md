@@ -17,19 +17,19 @@ once the NDK publishes API-37 platform stubs (see
 `--arch x86_64`; it's only useful for x86 Android emulators. Every
 modern physical Android device is aarch64.
 
-## Why this is separate from the host toolchain build
+## Separate build stages, one published generation
 
-The host toolchain (`~/.cache/nucleus/swift-toolchains/release-6.4.x/`)
-is x86_64-linux only. Cross-compiling Swift code to Android requires a
+The host toolchain is host-native. Cross-compiling Swift code to Android requires a
 matching Android stdlib + Foundation + dispatch built with the same
-compiler version. Bundling that into the toolchain build would
-double its wall-clock time and conflate two independent concerns:
+compiler version. Bundling those commands into one upstream build graph would
+conflate two independent concerns:
 "what runs the Swift compiler" vs. "what the Swift compiler emits
 when targeting Android".
 
-Both builders live in the Nucleus monorepo, but remain separate components because
-the Android SDK is an optional, long-running cross-build artifact rather than a
-prerequisite of every host build. See `../swift-toolchain/docs/deferred.md`.
+Both recipes remain separate internally, but Nucleus never publishes them
+independently. The top-level workflow builds both into an inactive generation,
+wires and tests the Android SDK with that generation's compiler, then atomically
+switches one `current` symlink.
 
 ## Bundle layout
 
@@ -80,7 +80,7 @@ IDN, PSL.
 Recipes are invoked from `build.sh`'s `build_deps_for_arch` before
 `build_one_arch` runs, so Foundation's `find_package(CURL)` /
 `find_package(LibXml2)` resolve against the freshly-built `.a`
-files. Each recipe is idempotent — re-running `./build.sh` after
+files. Each recipe is idempotent across `tools/nucleus toolchain rebuild` runs after
 a successful deps run skips them via per-recipe sentinel files
 under `$STAGING/.deps-built/`.
 
@@ -99,15 +99,8 @@ that silently switches Android to libstdc++ would fail loudly.
 
 ## Prerequisites
 
-* `swift-toolchain` built and installed at
-  `$NUCLEUS_SWIFT_TOOLCHAIN` (default
-  `~/.cache/nucleus/swift-toolchains/release-6.4.x/usr`). This script
-  refuses to run if the toolchain is missing; it does not auto-build
-  it.
-* The Swift source workspace at `$NUCLEUS_SWIFT_SOURCE_WORKSPACE`
-  (default `~/.cache/nucleus/swift-source/release-6.4.x`). Reuses the
-  checkout that produced the host toolchain — same commits, same
-  patches applied.
+* A Swift 6.4 bootstrap compiler on `PATH` for the first generation. Later
+  rebuilds use the active user-level Nucleus toolchain.
 * Ubuntu 26.04+ (matches `swift-toolchain`'s build host).
 * Apt packages from [`apt-deps.txt`](apt-deps.txt) on top of
   `swift-toolchain/apt-deps.txt`:
@@ -120,25 +113,28 @@ that silently switches Android to libstdc++ would fail loudly.
 ## Build
 
 ```sh
-../tools/nucleus android sdk build
+../tools/nucleus toolchain rebuild
 ```
+
+It rebuilds the host Swift toolchain, rebuilds the Android SDK with fresh CMake
+state, wires the staged artifactbundle to the configured NDK, and builds dynamic
+and static consumers before activation. A failure leaves the previous paired
+generation active.
+
+Use `--dry-run` to print the complete workflow. `--reconfigure` also forces the
+host toolchain to reconfigure, `--skip-ndk` requires the configured NDK, and repeatable
+`--arch aarch64|x86_64` selects the SDK architectures to build and verify.
 
 Outputs:
 
-* Per-arch destdirs: `~/.cache/nucleus/swift-android-sdks/release-6.4.x/build/install-<arch>/`
-* Artifactbundle: `~/.cache/nucleus/swift-android-sdks/release-6.4.x/swift-release-6.4.x_android.artifactbundle.tar.gz`
-* SHA-256 sidecar: `…artifactbundle.tar.gz.sha256`
-* Build log: `~/.cache/nucleus/swift-android-sdks/release-6.4.x/logs/latest.log`
+* Active pair: `~/.cache/nucleus/swift-platforms/release-6.4.x/current/`
+* Toolchain: `current/toolchain/usr/`
+* Android artifactbundle and build outputs: `current/android/`
 
 The NDK is **not** downloaded by default — the script reuses the
 AGP-managed NDK 30 already installed via `sdkmanager` at
 `~/Android/Sdk/ndk/30.0.14904198/`. See the "NDK selection" section
 below.
-
-Wall-clock on a 32-core machine: roughly 2-3 hours for the first
-single-arch build. Subsequent runs reuse ccache and finish in
-10-20 minutes if only Foundation/dispatch changed. Adding x86_64
-roughly doubles the first-build time.
 
 ### NDK selection
 
@@ -157,7 +153,7 @@ Fallback to r27d:
 
 ```sh
 unset NUCLEUS_ANDROID_NDK_HOME
-NUCLEUS_ANDROID_NDK_VERSION=r27d ../tools/nucleus android sdk build
+NUCLEUS_ANDROID_NDK_VERSION=r27d ../tools/nucleus toolchain rebuild
 ```
 
 This fetches r27d from `dl.google.com` and caches it under
@@ -165,24 +161,15 @@ This fetches r27d from `dl.google.com` and caches it under
 
 ### Flags
 
-`../tools/nucleus android sdk build --dry-run` prints the command lines without running them.
+`../tools/nucleus toolchain rebuild --dry-run` prints the command lines without running them.
 
-`../tools/nucleus android sdk build --skip-ndk` skips even the existence check on the
-configured NDK path. Use when you've installed the NDK in a
-non-standard location and the default heuristics misfire.
+`../tools/nucleus toolchain rebuild --skip-ndk` requires the configured NDK and skips download.
 
-`../tools/nucleus android sdk build --arch x86_64` (repeatable) opts in to additional
+`../tools/nucleus toolchain rebuild --arch x86_64` (repeatable) opts in to additional
 arches. Default is aarch64 only.
-
-`../tools/nucleus android sdk build --skip-package` runs the cross-builds but stops before
-assembling the artifactbundle. Useful when iterating on the build
-itself.
 
 ### Environment variables
 
-* `NUCLEUS_SWIFT_TOOLCHAIN` — host toolchain root (the dir containing
-  `bin/swift`). Default:
-  `~/.cache/nucleus/swift-toolchains/release-6.4.x/usr`.
 * `NUCLEUS_SWIFT_SOURCE_WORKSPACE` — source workspace produced by
   `swift-toolchain`. Default:
   `~/.cache/nucleus/swift-source/release-6.4.x`.
@@ -194,15 +181,15 @@ itself.
   Android 17 / API 37 (and onward).
 * `NUCLEUS_SWIFT_ANDROID_BUILD_JOBS` — parallel build jobs. Default:
   `$(nproc)`.
-* `NUCLEUS_SWIFT_ANDROID_INSTALL` — output root. Default:
-  `~/.cache/nucleus/swift-android-sdks/release-6.4.x`.
+The workflow owns both install roots inside one inactive platform generation.
+They are intentionally not user-selectable independently, and their paths stay
+stable when the generation is activated so generated metadata remains valid.
 
 ## macOS (Apple Silicon)
 
-`build-macos.sh` builds this same Swift Android SDK on a Mac, against
-the sibling `swift-toolchain/build-macos.sh`'s host toolchain
-and source workspace. It's a separate script from `build.sh`, not a
-flag, mirroring the pattern in `swift-toolchain`: the
+The same top-level workflow builds this Swift Android SDK on a Mac against
+the staged macOS host toolchain and source workspace. Its internal recipe
+remains separate from `build.sh` because the
 cross-compile-to-Android work itself (NDK clang, `build-script
 --android` flags) is host-OS-agnostic, but every path that assumes a
 Linux *build host* — the NDK's `linux-x86_64` prebuilt-clang
@@ -214,13 +201,9 @@ is installed standalone via the command-line `sdkmanager`.
 
 ### Prerequisites
 
-**`swift-toolchain/build-macos.sh` already built.** This
-script refuses to run without it — it reuses that build's host
-toolchain (`~/.cache/nucleus/swift-toolchains/release-6.4.x-macos/usr`)
-and Swift source workspace
-(`~/.cache/nucleus/swift-source/release-6.4.x-macos`) rather than
-doing its own checkout, so Xcode.app is already required transitively
-(see that repo's README) and does not need separate setup here.
+The workflow builds the matching macOS host toolchain first and reuses its
+Swift source workspace. Xcode.app is required as described in the toolchain
+README.
 
 Homebrew, for the tools this script itself uses:
 
@@ -266,19 +249,17 @@ yes | ~/Library/Android/sdk/cmdline-tools/latest/bin/sdkmanager --licenses
 ### Build
 
 ```sh
-./build-macos.sh
+../tools/nucleus toolchain rebuild
 ```
 
-Outputs (parallel to the Linux build's, under a `-macos`-suffixed
-namespace so a machine building both platforms never collides):
+Outputs use the paired macOS namespace:
 
-* Per-arch destdirs: `~/.cache/nucleus/swift-android-sdks/release-6.4.x-macos/build/install-<arch>/`
-* Artifactbundle: `~/.cache/nucleus/swift-android-sdks/release-6.4.x-macos/swift-release-6.4.x-macos_android.artifactbundle.tar.gz`
-* SHA-256 sidecar: `…artifactbundle.tar.gz.sha256`
-* Build log: `~/.cache/nucleus/swift-android-sdks/release-6.4.x-macos/logs/latest.log`
+* Active pair: `~/.cache/nucleus/swift-platforms/release-6.4.x-macos/current/`
+* Toolchain: `current/toolchain/usr/`
+* Android artifactbundle and build outputs: `current/android/`
 
-Same `--dry-run` / `--skip-ndk` / `--skip-package` / `--reconfigure` /
-`--arch` flags as `build.sh` (see `./build-macos.sh --help`). The NDK
+The `--dry-run`, `--skip-ndk`, `--reconfigure`, and `--arch` flags match
+the Linux workflow. The NDK
 path defaults to `~/Library/Android/sdk/ndk/30.0.14904198` (override
 with `NUCLEUS_ANDROID_NDK_HOME`); `NUCLEUS_SWIFT_TOOLCHAIN` and
 `NUCLEUS_SWIFT_SOURCE_WORKSPACE` default to the macOS toolchain
@@ -302,36 +283,10 @@ its workspace — see that repo's `patches/README.md`.
 
 ### From the local cache
 
-Use the one-step installer — it runs `swift sdk install` **and** wires the
-bundle to your local NDK in a single command:
-
-```sh
-../tools/nucleus android sdk install
-```
-
-NDK selection is shared by build, install, and test. It checks
-`NUCLEUS_ANDROID_NDK_HOME`, then `ANDROID_NDK_HOME`, then the standard NDK 30
-installation path for the host OS.
-
-This is the recommended path. The two steps must not be split: a bare
-`swift sdk install` leaves the bundle NDK-agnostic (empty `ndk-sysroot/` and
-`ndk-toolchain/bin/`), which makes the swift driver fall back to the host
-clang as the link driver and leak host x86_64 `libc++`/`libunwind` onto
-Android links. `install-sdk.sh` always runs `setup-android-sdk.sh` so the SDK
-is never left half-installed.
-
-<details>
-<summary>Manual equivalent</summary>
-
-```sh
-swift sdk install \
-  ~/.cache/nucleus/swift-android-sdks/release-6.4.x/swift-release-6.4.x_android.artifactbundle.tar.gz \
-  --checksum "$(cat ~/.cache/nucleus/swift-android-sdks/release-6.4.x/swift-release-6.4.x_android.artifactbundle.tar.gz.sha256)"
-
-export ANDROID_NDK_HOME=~/Android/Sdk/ndk/30.0.14904198
-~/.swiftpm/swift-sdks/swift-release-6.4.x_android.artifactbundle/swift-android/scripts/setup-android-sdk.sh
-```
-</details>
+`tools/nucleus toolchain rebuild` creates the SwiftPM discovery symlink under
+`~/.swiftpm/swift-sdks/`. It points through the paired generation's `current`
+symlink, so activating the compiler and Android SDK is one atomic operation.
+No system directory or elevated privilege is involved.
 
 Verify:
 
@@ -339,19 +294,8 @@ Verify:
 swift sdk list   # should show swift-release-6.4.x_android
 ```
 
-### End-to-end consumer check
-
-After building the sibling `swift-toolchain` with its Swift
-Build Android Swift SDK patch, run:
-
-```sh
-../tools/nucleus android sdk test
-```
-
-The script leaves the installed SDK untouched, creates a temporary executable package that
-imports `Foundation` and `FoundationNetworking`, builds it with
-`--swift-sdk aarch64-unknown-linux-android36 --static-swift-stdlib`, and
-verifies the output is an AArch64 ELF.
+The rebuild workflow performs the dynamic and static end-to-end consumer checks
+against the inactive generation before it can become current.
 
 ### Cross-compiling a project
 
@@ -389,7 +333,7 @@ swift-android-sdk/
 ├── README.md           # this file
 ├── build.sh            # main build + package script
 ├── apt-deps.txt        # additional apt packages (on top of toolchain's)
-├── scripts/            # installed bundle setup + local e2e consumer test
+├── scripts/            # staged bundle setup + local e2e consumer test
 └── docs/
     └── deferred.md     # work intentionally not in the current build
 ```
@@ -399,7 +343,7 @@ swift-android-sdk/
 After the build, the Android stdlib should still bind to libc++:
 
 ```sh
-SDK=~/.cache/nucleus/swift-android-sdks/release-6.4.x/build/install-aarch64
+SDK=~/.cache/nucleus/swift-platforms/release-6.4.x/current/android/build/install-aarch64
 nm --defined-only --dynamic "$SDK/usr/lib/swift/android/libswiftCore.so" \
   | grep -c "std::__1::"
 # Expect: > 0

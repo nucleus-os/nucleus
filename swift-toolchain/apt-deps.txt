@@ -3,6 +3,7 @@ ccache
 clang
 clang-tools
 cmake
+coreutils
 curl
 git
 libblocksruntime-dev
@@ -22,5 +23,6 @@ patchelf
 pkg-config
 python3
 rsync
+util-linux
 uuid-dev
 zlib1g-dev

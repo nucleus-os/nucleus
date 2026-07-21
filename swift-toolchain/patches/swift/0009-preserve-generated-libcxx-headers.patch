@@ -1,0 +1,29 @@
+Subject: Preserve an existing generated libc++ header directory
+
+LLVM's build product prepares a system C++ header symlink before CMake runs.
+Nucleus builds libc++ through LLVM_ENABLE_RUNTIMES, and that configure replaces
+the symlink with a real generated include/c++ tree. A later incremental
+invocation must retain that tree: `ln -s -f` cannot replace a directory and,
+if the caller deletes it first, an invocation without --reconfigure leaves the
+new symlink pointing at the system libstdc++ headers. Skip the bootstrap
+symlink when the destination already exists as a directory.
+
+Sentinel: NUCLEUS_SWIFT_SOURCE_PRESERVE_GENERATED_LIBCXX_HEADERS
+
+diff --git a/utils/swift_build_support/swift_build_support/products/llvm.py b/utils/swift_build_support/swift_build_support/products/llvm.py
+index 896af262c..0816d07bf 100644
+--- a/utils/swift_build_support/swift_build_support/products/llvm.py
++++ b/utils/swift_build_support/swift_build_support/products/llvm.py
+@@ -510,6 +510,12 @@ class LLVM(cmake_product.CMakeProduct):
+         built_cxx_include_dir = os.path.join(self.build_dir, 'include')
+         if not os.path.exists(built_cxx_include_dir):
+             os.makedirs(built_cxx_include_dir)
++        cxx_include_path = os.path.join(built_cxx_include_dir, 'c++')
++        # NUCLEUS_SWIFT_SOURCE_PRESERVE_GENERATED_LIBCXX_HEADERS
++        # LLVM_ENABLE_RUNTIMES populates this as a real directory after the
++        # initial configure. Preserve it on incremental invocations.
++        if os.path.isdir(cxx_include_path) and not os.path.islink(cxx_include_path):
++            return
+         print('symlinking the system headers ({}) into the local '
+               'clang build directory ({}).'.format(
+                   host_cxx_headers_dir, built_cxx_include_dir), flush=True)

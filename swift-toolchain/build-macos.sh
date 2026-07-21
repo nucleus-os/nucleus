@@ -13,6 +13,11 @@
 
 set -euo pipefail
 
+if [[ "${NUCLEUS_SWIFT_PLATFORM_ORCHESTRATED:-0}" != 1 ]]; then
+  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  exec "$script_dir/../tools/nucleus" toolchain rebuild "$@"
+fi
+
 if [[ "$(uname -s)" != "Darwin" ]]; then
   echo "build-macos.sh is for macOS hosts; use build.sh on Linux." >&2
   exit 1
@@ -76,7 +81,7 @@ fi
 
 usage() {
   cat <<USAGE
-Usage: build-macos.sh [--dry-run] [--skip-checkout] [--reconfigure]
+Usage: build-macos.sh [--dry-run] [--reconfigure]
 
 Build the pinned Swift source ref natively for macOS (Apple Silicon).
 Requires full Xcode.app (not just Command Line Tools) plus cmake, ninja,
@@ -84,7 +89,6 @@ ccache from Homebrew. See README.md.
 
 Flags:
   --dry-run                       Print resolved commands and exit.
-  --skip-checkout                 Reuse the existing Swift source checkout.
   --reconfigure                   Force CMake reconfigure for all build-script
                                   projects. Use after changing preset CMake
                                   cache values.
@@ -106,12 +110,10 @@ USAGE
 }
 
 dry_run=0
-skip_checkout=0
 reconfigure=0
 while (($#)); do
   case "$1" in
     --dry-run) dry_run=1 ;;
-    --skip-checkout) skip_checkout=1 ;;
     --reconfigure) reconfigure=1 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "unknown argument: $1" >&2; usage >&2; exit 2 ;;
@@ -232,10 +234,6 @@ mkdir -p "$nucleus_xdg_cache"
 export XDG_CACHE_HOME="$nucleus_xdg_cache"
 
 if [[ ! -d "$workspace/swift/.git" ]]; then
-  if (( skip_checkout )); then
-    echo "missing checkout: $workspace/swift" >&2
-    exit 1
-  fi
   git clone https://github.com/swiftlang/swift.git "$workspace/swift"
 fi
 
@@ -252,9 +250,7 @@ case "$checkout_mode" in
     ;;
 esac
 
-if (( ! skip_checkout )); then
-  python3 "$workspace/swift/utils/update-checkout" "${update_checkout_args[@]}"
-fi
+python3 "$workspace/swift/utils/update-checkout" "${update_checkout_args[@]}"
 
 # Apply patches under patches/<repo>/ to each upstream subrepo via patch -p1
 # with idempotency enforced by `patch -R --dry-run`. See patches/README.md.
@@ -271,6 +267,13 @@ fi
 # unconditionally is a no-op for anything that only ever compiles for
 # Darwin targets.
 patches_dir="${NUCLEUS_SWIFT_PATCHES_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/patches}"
+
+# Keep repeated patch application deterministic after interrupted runs.
+for patched_repo in swift swift-driver swift-build swiftpm indexstore-db sourcekit-lsp; do
+  if [[ -d "$workspace/$patched_repo/.git" || -f "$workspace/$patched_repo/.git" ]]; then
+    git -C "$workspace/$patched_repo" clean -fd
+  fi
+done
 
 apply_patches() {
   local repo_patches="$1"

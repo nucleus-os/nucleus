@@ -5,9 +5,25 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 workspace_root="$(cd "$script_dir/.." && pwd)"
 export NUCLEUS_WORKSPACE_ROOT="$workspace_root"
 
-# Components remain independently buildable; the workspace reuses the core's
-# canonical toolchain selection when it is present.
-source "$workspace_root/core/tools/host-env.sh"
+# A first user-level platform generation can be orchestrated with a Swift 6.4
+# bootstrap compiler on PATH. Every other command requires the active Nucleus
+# generation (or an explicit toolchain override).
+if [[ "${1:-}" == toolchain && "${2:-}" == rebuild ]]; then
+  source_id="${NUCLEUS_SWIFT_SOURCE_ID:-release-6.4.x}"
+  platform_id="$source_id"
+  if [[ "$(uname -s)" == Darwin ]]; then platform_id="$source_id-macos"; fi
+  user_platform="${XDG_CACHE_HOME:-$HOME/.cache}/nucleus/swift-platforms/$platform_id/current/toolchain/usr"
+  if [[ ( -n "${NUCLEUS_SWIFT_TOOLCHAIN:-}" && -x "$NUCLEUS_SWIFT_TOOLCHAIN/bin/swift-build" ) ||
+        -x "$user_platform/bin/swift-build" ]]; then
+    source "$workspace_root/core/tools/host-env.sh"
+  elif ! command -v swift >/dev/null 2>&1; then
+    echo "error: Swift 6.4 is required on PATH to create the first Nucleus toolchain generation" >&2
+    exit 127
+  fi
+  unset source_id platform_id user_platform
+else
+  source "$workspace_root/core/tools/host-env.sh"
+fi
 
 swift build --package-path "$workspace_root" --product nucleus-workspace
 workspace_bin="$(swift build --package-path "$workspace_root" --show-bin-path)"

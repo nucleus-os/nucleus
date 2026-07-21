@@ -4,6 +4,9 @@
 
 set -euo pipefail
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ "${NUCLEUS_SWIFT_PLATFORM_ORCHESTRATED:-0}" != 1 ]]; then
+  exec "$script_dir/../tools/nucleus" toolchain rebuild "$@"
+fi
 source "$script_dir/scripts/android-sdk-env.sh"
 
 # ---------------------------------------------------------------------------

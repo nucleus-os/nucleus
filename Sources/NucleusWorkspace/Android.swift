@@ -11,8 +11,6 @@ struct AndroidCommand {
             try context.run("./gradlew", rest.isEmpty ? ["verifyDebug"] : rest, directory: context.root.appendingPathComponent("core/android"))
         case "verify":
             try verifyHostLibrary(rest.first)
-        case "sdk":
-            try runSDK(rest)
         case "help", "--help", "-h":
             print(usage)
         default:
@@ -26,31 +24,9 @@ struct AndroidCommand {
 
           build [gradle arguments]  Build and verify the Android host (default: verifyDebug)
           verify [library]         Verify the Android host ELF and JNI contract
-          sdk build [arguments]    Build the Swift Android SDK
-          sdk install [arguments]  Install the locally built SDK artifact bundle
-          sdk test [arguments]     Test the installed SDK without modifying it
+          Swift toolchain and Android SDK generations are managed together by:
+            tools/nucleus toolchain rebuild
         """
-    }
-
-    private func runSDK(_ arguments: [String]) throws {
-        guard let command = arguments.first else { throw WorkspaceFailure.message(usage) }
-        let sdk = context.root.appendingPathComponent("swift-android-sdk")
-        let rest = Array(arguments.dropFirst())
-        let script: String
-        switch command {
-        case "build":
-            #if os(macOS)
-            script = "build-macos.sh"
-            #else
-            script = "build.sh"
-            #endif
-        case "install": script = "scripts/install-sdk.sh"
-        case "test": script = "scripts/test-installed-sdk.sh"
-        default: throw WorkspaceFailure.message("unknown android sdk command '\(command)'\n\n\(usage)")
-        }
-        // These scripts are cross-toolchain build recipes; Swift owns command
-        // routing while the recipes retain shell semantics required by upstream.
-        try context.run("./" + script, rest, directory: sdk)
     }
 
     private func verifyHostLibrary(_ suppliedPath: String?) throws {

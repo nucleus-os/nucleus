@@ -2,9 +2,7 @@
 
 Build script for the Swift 6.4.x toolchain with **libc++ baked in** as
 the default C++ standard library. Produces a relocatable Linux tarball
-suitable for installing into `~/.cache/nucleus/swift-toolchains/` for
-local Nucleus development and eventually packaging as a `.deb` for
-Nucleus OS.
+suitable for the user-level Swift platform generations managed by Nucleus.
 
 ## Why this is a separate component
 
@@ -53,33 +51,61 @@ Set `NUCLEUS_SWIFT_BOOTSTRAP_ROOT`, or both `NUCLEUS_HOST_CC` and
 ## Build
 
 ```sh
-./build.sh
+../tools/nucleus toolchain rebuild
 ```
 
 That's it. Outputs:
 
-* Toolchain install: `~/.cache/nucleus/swift-toolchains/release-6.4.x/usr/`
-* Distributable tarball: `~/.cache/nucleus/swift-toolchains/release-6.4.x/swift-release-6.4.x-linux.tar.gz`
-* Build log: `~/.cache/nucleus/swift-toolchains/release-6.4.x/logs/latest.log`
+* Active toolchain: `~/.cache/nucleus/swift-platforms/release-6.4.x/current/toolchain/usr/`
+* Active Android SDK: `~/.cache/nucleus/swift-platforms/release-6.4.x/current/android/`
+* Immutable generations: `~/.cache/nucleus/swift-platforms/release-6.4.x/generations/`
 
 The canonical tarball is published only after its compiler and SwiftPM smoke
 tests pass. Failed or interrupted builds discard their candidate and leave the
 previous successful tarball unchanged.
 
-Wall-clock on a 32-core machine: roughly 4–6 hours for the first
-build. Incremental rebuilds reuse `~/.cache/nucleus/swift-source/`.
+The build never installs into that previous `usr/` tree. It assembles a fresh
+candidate under the install root, verifies and packages that candidate, then
+publishes both the tree and tarball. This prevents removed or disabled upstream
+components from surviving in a later artifact as stale files.
+
+The source build remains one upstream dependency graph, in this strict order:
+
+1. LLVM, Clang, Swift, libc++, compiler-rt, and the Swift standard library.
+2. Linux platform runtimes: libdispatch, Foundation, XCTest, and Swift Testing.
+3. Developer tools: llbuild, SwiftPM, the final Swift driver, and macros.
+4. Artifact assembly, package smoke tests, and publication.
+
+Each successful artifact records fingerprints for those first three component
+groups in `usr/share/nucleus/component-fingerprints.env`. The fingerprints bind
+source revisions, the patch set, the host compiler, and the generated build
+configuration. Build directories remain reusable when the identity is
+unchanged. A changed compiler identity invalidates the Swift-built Linux
+runtime and tool stages; a narrower tool-only change retains the compiler and
+runtime stages. A changed CMake configuration automatically requests the full
+reconfiguration that those untracked cache inputs require. The log reports
+every identity transition and invalidation explicitly.
+
+Phase events and measured durations are written to
+`logs/latest-phases.tsv` and summarized when the build exits. This is the source
+of truth for optimization work; the figures below are only orientation.
+
+The first build compiles the complete graph. Incremental rebuilds reuse
+`~/.cache/nucleus/swift-source/`; consult the recorded phase durations for the
+actual cost of the current source and configuration.
 
 ### Flags
 
-`./build.sh --dry-run` prints the command line without running it.
+`../tools/nucleus toolchain rebuild --dry-run` prints every stage without running it.
 
-`./build.sh --skip-checkout` reuses the existing
-`~/.cache/nucleus/swift-source/release-6.4.x/` checkout. Useful when
-iterating on the patch set.
-
-`./build.sh --reconfigure` forces CMake reconfigure for all Swift
+`../tools/nucleus toolchain rebuild --reconfigure` forces CMake reconfigure for all Swift
 build-script projects. Use after changing preset CMake cache values
 such as `LLVM_TARGETS_TO_BUILD`.
+
+Ordinary builds do not inherit upstream's `buildbot_linux` reconfiguration
+flag. CMake and Ninja retain their incremental state unless this option is
+passed explicitly or the last successful component manifest proves that the
+generated CMake configuration changed.
 
 ### Environment variables
 
@@ -134,19 +160,19 @@ brew install cmake ninja ccache
 ### Build
 
 ```sh
-./build-macos.sh
+../tools/nucleus toolchain rebuild
 ```
 
 Outputs:
 
-* Toolchain install: `~/.cache/nucleus/swift-toolchains/release-6.4.x-macos/usr/`
-* Distributable tarball: `~/.cache/nucleus/swift-toolchains/release-6.4.x-macos/swift-release-6.4.x-macos-arm64.tar.gz`
-* Build log: `~/.cache/nucleus/swift-toolchains/release-6.4.x-macos/logs/latest.log`
+* Active pair: `~/.cache/nucleus/swift-platforms/release-6.4.x-macos/current/`
+* Toolchain: `current/toolchain/usr/`
+* Android SDK and build outputs: `current/android/`
 
 The macOS tarball uses the same successful-build-only publication contract as
 the Linux artifact.
 
-Same `--dry-run` / `--skip-checkout` / `--reconfigure` flags and
+Same `--dry-run` / `--reconfigure` flags and
 `NUCLEUS_SWIFT_SOURCE_*` / `NUCLEUS_SWIFT_BUILD_JOBS` environment
 variables as `build.sh` (see `./build-macos.sh --help`). The source
 checkout and build tree live under a `-macos`-suffixed workspace,
@@ -161,8 +187,8 @@ them locally.
 
 ## Patches
 
-[`patches/`](patches) currently contains **twelve** patches across
-`swift/`, `swift-driver/`, and `swift-build/`. The build otherwise runs
+[`patches/`](patches) currently contains **fourteen** patches across
+`swift/`, `swift-driver/`, `swift-build/`, and `swiftpm/`. The build otherwise runs
 against upstream `release/6.4.x` unmodified. See
 [`patches/README.md`](patches/README.md) for the file format and
 authoring guide.
@@ -209,6 +235,13 @@ authoring guide.
   to fold the annotations out of `@_alwaysEmitIntoClient` bodies.
   *Filed-upstream-TODO.*
 
+* **`swift/0009-preserve-generated-libcxx-headers.patch`** — preserves
+  LLVM's generated libc++ header directory on incremental invocations. Upstream
+  otherwise attempts to replace it with a system-header symlink on every run;
+  deleting it first only worked because the old preset accidentally forced a
+  complete CMake reconfigure. The patch makes the non-reconfigured path retain
+  the libc++ configuration that the toolchain actually ships.
+
 * **`swift-driver/0001-android-swiftrt-resource-dir-fallback.patch`** —
   Swift's new driver prefers `swiftrt.o` from `-sdk` when an SDK is
   present. Android builds pass the NDK sysroot as `-sdk`, and the NDK
@@ -243,6 +276,11 @@ authoring guide.
   from the NDK the platform plugin already discovered, so correctness no
   longer depends on that setup step. *Filed-upstream-TODO.*
 
+* **`swiftpm/0001-swift-build-propagate-cxx-interop-to-test-runners.patch`** —
+  carries a test module's C++ interoperability mode into Swift Build's
+  synthesized test runner, matching the native build planner and allowing the
+  runner to import C++-interop test modules.
+
 ### Candidates for re-adding if upstream regresses
 
 Held in git history rather than carried as files. Three additional
@@ -270,10 +308,9 @@ recovered from the monorepo's Git history.
 
 ### From Nucleus development
 
-Install the toolchain at `/opt/nucleus-swift/current/usr`, set
-`NUCLEUS_SWIFT_TOOLCHAIN` to its `usr` directory, or keep it at the default
-`~/.cache/nucleus/swift-toolchains/release-6.4.x/usr` path. The workspace entry
-point selects it through `core/tools/host-env.sh`.
+The workspace entry point selects the active paired generation through
+`core/tools/host-env.sh`. Everything lives in the user's cache. No `/opt`
+installation or elevated privileges are required.
 
 ### From a tarball
 
@@ -324,7 +361,7 @@ After the build, the toolchain's `CxxStdlib` overlay should bind to
 libstdc++'s `std::__cxx11::basic_string`. Quick check:
 
 ```sh
-nm --defined-only ~/.cache/nucleus/swift-toolchains/release-6.4.x/usr/lib/swift/linux/libswiftCxxStdlib.a \
+nm --defined-only ~/.cache/nucleus/swift-platforms/release-6.4.x/current/toolchain/usr/lib/swift/linux/libswiftCxxStdlib.a \
   | grep -c "abi:cxx11"
 # Expect: 0
 ```

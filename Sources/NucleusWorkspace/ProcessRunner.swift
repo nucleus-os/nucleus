@@ -37,7 +37,8 @@ struct WorkspaceContext: Sendable {
         _ executable: String,
         _ arguments: [String],
         directory: URL? = nil,
-        capture: Bool = false
+        capture: Bool = false,
+        environmentOverrides: [String: String] = [:]
     ) throws -> String {
         let command = [executable] + arguments
         var fileActions = posix_spawn_file_actions_t()
@@ -107,7 +108,10 @@ struct WorkspaceContext: Sendable {
             (["/usr/bin/env"] + command).map {
                 $0.withCString { strdup($0) }
             } + [nil]
-        let environmentStrings = environment
+        let childEnvironment = environment.merging(environmentOverrides) { _, override in
+            override
+        }
+        let environmentStrings = childEnvironment
             .map { "\($0.key)=\($0.value)" }
             .sorted()
         let environmentStorage: [UnsafeMutablePointer<CChar>?] =

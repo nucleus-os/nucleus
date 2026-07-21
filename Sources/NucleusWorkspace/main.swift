@@ -11,7 +11,8 @@ Commands:
   api          Emit and audit the public core Swift symbol graphs
   sanitize     Run focused address/leak, undefined-behavior, and thread sanitizers
   benchmark    Run deterministic release-built headless performance baselines
-  android      Build, verify, or provision the Android host and Swift SDK
+  toolchain    Rebuild and atomically activate the paired Swift toolchain and Android SDK
+  android      Build or verify the Android host
   profile      Capture a compositor Tracy profile (`profile receivers` builds tools)
   install      Assemble an installable runtime prefix
   help         Show this help
@@ -39,6 +40,7 @@ struct NucleusWorkspaceCommand {
         case "api": try PublicAPIAudit(context: context).run()
         case "sanitize": try SanitizerCommand(context: context).run(arguments.dropFirst())
         case "benchmark": try BenchmarkCommand(context: context).run(arguments.dropFirst())
+        case "toolchain": try ToolchainCommand(context: context).run(arguments.dropFirst())
         case "android": try AndroidCommand(context: context).run(arguments.dropFirst())
         case "profile": try ProfilingCommand(context: context).run(arguments.dropFirst())
         case "install": try InstallCommand(context: context).run(arguments.dropFirst())

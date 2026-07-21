@@ -4,6 +4,11 @@
 
 set -euo pipefail
 
+if [[ "${NUCLEUS_SWIFT_PLATFORM_ORCHESTRATED:-0}" != 1 ]]; then
+  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  exec "$script_dir/../tools/nucleus" toolchain rebuild "$@"
+fi
+
 if [[ -n "${NUCLEUS_SWIFT_SOURCE_REF:-}" ]]; then
   source_ref="$NUCLEUS_SWIFT_SOURCE_REF"
   source_scheme="${NUCLEUS_SWIFT_SOURCE_SCHEME:-$source_ref}"
@@ -26,6 +31,11 @@ latest_log="$log_root/latest.log"
 run_info_file="$log_root/latest-run.env"
 package_path="$install_root/swift-${source_id}-linux.tar.gz"
 package_candidate="$install_root/.swift-${source_id}-linux.tar.gz.pending.$$"
+assembly_root="$install_root/.assembly.$$"
+published_usr="$install_root/usr"
+published_usr_backup="$install_root/.usr.previous.$$"
+fingerprint_root="$workspace/.nucleus-fingerprints"
+phase_events="$log_root/latest-phases.tsv"
 jobs="${NUCLEUS_SWIFT_BUILD_JOBS:-$(nproc)}"
 # Default linker is lld. We tried mold as the default (which is 2-5×
 # faster than lld on C++ link-heavy phases) but hit a hard mold
@@ -85,14 +95,13 @@ export CXX="$host_cxx"
 
 usage() {
   cat <<USAGE
-Usage: build.sh [--dry-run] [--skip-checkout] [--reconfigure]
+Usage: build.sh [--dry-run] [--reconfigure]
 
 Build the pinned Swift source ref with libc++ baked into the toolchain.
 Run on Ubuntu with the apt packages listed in apt-deps.txt installed.
 
 Flags:
   --dry-run                       Print resolved commands and exit.
-  --skip-checkout                 Reuse the existing Swift source checkout.
   --reconfigure                   Force CMake reconfigure for all build-script
                                   projects. Use after changing preset CMake
                                   cache values such as LLVM_TARGETS_TO_BUILD.
@@ -115,12 +124,10 @@ USAGE
 }
 
 dry_run=0
-skip_checkout=0
 reconfigure=0
 while (($#)); do
   case "$1" in
     --dry-run) dry_run=1 ;;
-    --skip-checkout) skip_checkout=1 ;;
     --reconfigure) reconfigure=1 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "unknown argument: $1" >&2; usage >&2; exit 2 ;;
@@ -145,6 +152,8 @@ require_tool patch patch
 require_tool tar tar
 require_tool patchelf patchelf
 require_tool ccache ccache
+require_tool flock util-linux
+require_tool sha256sum coreutils
 
 # Pin ccache's cache dir explicitly so the build-script's
 # `--relocate-xdg-cache-home-under-build-subdir` (which redirects
@@ -184,7 +193,7 @@ build_cmd=(
   "host_cc=$host_cc"
   "host_cxx=$host_cxx"
   "cmake_overrides=$cmake_overrides_file"
-  "install_destdir=$install_root"
+  "install_destdir=$assembly_root"
   "installable_package=$package_candidate"
 )
 if (( reconfigure )); then
@@ -204,6 +213,7 @@ esac
 if (( dry_run )); then
   printf 'workspace=%q\n' "$workspace"
   printf 'install_root=%q\n' "$install_root"
+  printf 'assembly_root=%q\n' "$assembly_root"
   printf 'log_file=%q\n' "$log_file"
   printf 'installable_package=%q\n' "$package_path"
   printf 'source_ref=%q\n' "$source_ref"
@@ -221,10 +231,16 @@ if (( dry_run )); then
 fi
 
 mkdir -p "$log_root" "$(dirname "$log_file")"
+exec 9>"$install_root/.build.lock"
+if ! flock -n 9; then
+  echo "another swift-toolchain build is already using $install_root" >&2
+  exit 1
+fi
 ln -sfn "$log_file" "$latest_log"
 cat > "$run_info_file" <<RUNINFO
 workspace=$workspace
 install_root=$install_root
+assembly_root=$assembly_root
 source_ref=$source_ref
 source_scheme=$source_scheme
 source_id=$source_id
@@ -294,7 +310,7 @@ unset CMAKE_EXE_LINKER_FLAGS CMAKE_SHARED_LINKER_FLAGS \
 # `compactMap { $0 }.first(where: fs.exists)` lookup. Once the install
 # step writes `<install>/usr/bin/swift`, SwiftBuild picks it up
 # unambiguously.
-export SWIFT_EXEC="$install_root/usr/bin/swift"
+export SWIFT_EXEC="$assembly_root/usr/bin/swift"
 
 # Isolate clang/swift's module cache to the workspace so a global
 # $HOME/.cache/clang/ never gets touched across builds.
@@ -322,10 +338,6 @@ export LIBRARY_PATH="$llvm_build_lib:$host_toolchain_lib${LIBRARY_PATH:+:$LIBRAR
 export LD_LIBRARY_PATH="$llvm_build_lib:$host_toolchain_lib:$host_swift_linux_lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 
 if [[ ! -d "$workspace/swift/.git" ]]; then
-  if (( skip_checkout )); then
-    echo "missing checkout: $workspace/swift" >&2
-    exit 1
-  fi
   git clone https://github.com/swiftlang/swift.git "$workspace/swift"
 fi
 
@@ -342,13 +354,22 @@ case "$checkout_mode" in
     ;;
 esac
 
-if (( ! skip_checkout )); then
-  python3 "$workspace/swift/utils/update-checkout" "${update_checkout_args[@]}"
-fi
+python3 "$workspace/swift/utils/update-checkout" "${update_checkout_args[@]}"
 
 # Apply patches under patches/<repo>/ to each upstream subrepo via patch -p1
 # with idempotency enforced by `patch -R --dry-run`. See patches/README.md.
 patches_dir="${NUCLEUS_SWIFT_PATCHES_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/patches}"
+
+# update-checkout resets tracked files but deliberately retains untracked files.
+# Patch-created fixtures and patch(1) .orig files from an interrupted run would
+# therefore make the next application only partially reversible. These are
+# generated upstream worktrees, so clean precisely the repositories we patch
+# before applying the authoritative patch set.
+for patched_repo in swift swift-driver swift-build swiftpm indexstore-db sourcekit-lsp; do
+  if [[ -d "$workspace/$patched_repo/.git" || -f "$workspace/$patched_repo/.git" ]]; then
+    git -C "$workspace/$patched_repo" clean -fd
+  fi
+done
 
 apply_patches() {
   local repo_patches="$1"
@@ -437,14 +458,14 @@ OVERRIDES
 cat > "$preset_file" <<'PRESET'
 [preset: nucleus_buildbot_linux,no_test]
 mixin-preset=
-    buildbot_linux,no_test
+    mixin_linux_install_components_with_clang
 
-# `reconfigure` was previously force-on, which made every invocation
-# regenerate CMake from scratch (3-5 min). CMake's own incremental
-# configure handles changed-input detection correctly; we only need a
-# fresh configure when build.sh's preset block changes. Drop the
-# force; pass `--reconfigure` to build.sh manually on the rare run
-# where cache invalidation is needed.
+# Do not inherit `buildbot_linux`: that release/CI preset deliberately carries
+# `reconfigure`, all test modes, LLDB, editor tools, and package benchmarks.
+# A bare flag inherited by a preset cannot be negated later. This preset names
+# the distributable Nucleus graph explicitly so ordinary invocations preserve
+# every CMake/Ninja build directory. `build.sh --reconfigure` is the sole
+# reconfiguration control.
 #
 # `use-linker=` (build-script's `--use-linker`) is intentionally NOT
 # passed. Swift release/6.4.x's build-script hardcodes argparse
@@ -455,12 +476,15 @@ mixin-preset=
 # self-link uses mold via `-DLLVM_USE_LINKER=mold` (also below).
 host-cc=%(host_cc)s
 host-cxx=%(host_cxx)s
+build-subdir=buildbot_linux
+release
+no-assertions
+no-swift-stdlib-assertions
+swift-enable-ast-verifier=0
 test=0
 validation-test=0
 long-test=0
 stress-test=0
-test-installable-package=
-toolchain-benchmarks=0
 lldb=0
 install-lldb=0
 skip-build-lldb
@@ -480,6 +504,10 @@ skip-build-lldb
 # foundation/libdispatch).
 sourcekit-lsp=0
 indexstore-db=0
+foundation
+libdispatch
+xctest
+llbuild
 swiftpm
 swift-driver
 swift-testing
@@ -488,6 +516,14 @@ swiftdocc=0
 swiftformat=0
 wasmkit=0
 install-sourcekit-lsp=0
+install-llvm
+install-static-linux-config
+install-swift
+install-llbuild
+install-foundation
+install-libdispatch
+install-xctest
+install-swiftsyntax
 install-swiftpm
 install-swift-driver
 install-swift-testing
@@ -495,6 +531,11 @@ install-swift-testing-macros
 install-swiftdocc=0
 install-swiftformat=0
 install-wasmkit=0
+install-prefix=/usr
+install-destdir=%(install_destdir)s
+installable-package=%(installable_package)s
+relocate-xdg-cache-home-under-build-subdir
+build-ninja
 build-swift-static-stdlib=1
 build-swift-static-sdk-overlay=0
 build-swift-stdlib-unittest-extra=0
@@ -552,9 +593,9 @@ extra-llvm-cmake-options=
     # through ccache; `try_compile` feature detection during configure
     # still runs the bare compiler, sidestepping the historic concern
     # about ccache returning stale "this flag works" results. First
-    # build populates the cache (~3-4h); subsequent rebuilds with the
-    # same source pin drop to ~30-45min because most TUs hit the
-    # cache. Bumping the host_cc/host_cxx in build.sh is not needed —
+    # build populates the cache; subsequent rebuilds with the same source
+    # pin reuse most translation units. Bumping host_cc/host_cxx in build.sh
+    # is not needed —
     # this flag and the absolute-path host_cc are independent.
     -DLLVM_CCACHE_BUILD:BOOL=ON
     -DLLVM_ENABLE_RUNTIMES:STRING=compiler-rt;libcxx;libcxxabi;libunwind
@@ -706,25 +747,204 @@ extra-swift-cmake-options=
     -DSWIFT_USE_LINKER:STRING=%(linker)s
     -DSWIFT_SHOULD_BUILD_EMBEDDED_STDLIB:BOOL=FALSE
     -DSWIFT_SHOULD_BUILD_EMBEDDED_STDLIB_CROSS_COMPILING:BOOL=FALSE
-    # Drop swift-side assertions for build speed. `--assertions`
-    # from the upstream mixin would set SWIFT_ENABLE_ASSERTIONS and
-    # SWIFTSYNTAX_ENABLE_ASSERTIONS to TRUE; both add measurable
-    # compile time (~10-15% on the Swift compiler build). Same
-    # reasoning as `-DLLVM_ENABLE_ASSERTIONS=FALSE` above: we're not
-    # iterating on Swift compiler internals.
+    # Keep swift-side assertions disabled explicitly as part of the
+    # distributable configuration. Both add measurable compile time
+    # and we do not iterate on Swift compiler internals here.
     -DSWIFT_ENABLE_ASSERTIONS:BOOL=FALSE
     -DSWIFTSYNTAX_ENABLE_ASSERTIONS:BOOL=FALSE
 llbuild-cmake-options=
     -DBUILD_TESTING:BOOL=FALSE
 PRESET
 
+hash_file_set() {
+  local path
+  while IFS= read -r path; do
+    sha256sum "$path"
+  done | sha256sum | awk '{print $1}'
+}
+
+patch_fingerprint() {
+  local directory
+  for directory in "$@"; do
+    if [[ -d "$directory" ]]; then
+      find "$directory" -type f -name '*.patch' -print
+    fi
+  done | LC_ALL=C sort | hash_file_set
+}
+
+repo_revision() {
+  local repo="$1"
+  if git -C "$workspace/$repo" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    printf '%s=%s\n' "$repo" "$(git -C "$workspace/$repo" rev-parse HEAD)"
+  else
+    printf '%s=absent\n' "$repo"
+  fi
+}
+
+patch_set_fingerprint="$(patch_fingerprint "$patches_dir")"
+configuration_fingerprint="$({
+  sha256sum "$preset_file" "$cmake_overrides_file"
+  printf 'host_cc=%s\n' "$host_cc"
+  printf 'host_cxx=%s\n' "$host_cxx"
+  printf 'host_cc_version=%s\n' "$($host_cc --version | head -n 1)"
+  printf 'linker=%s\n' "$linker"
+  printf 'source_id=%s\n' "$source_id"
+} | sha256sum | awk '{print $1}')"
+
+compiler_fingerprint="$({
+  for repo in swift llvm-project clang cmark swift-syntax; do
+    repo_revision "$repo"
+  done
+  printf 'swift_patches=%s\nconfiguration=%s\n' \
+    "$(patch_fingerprint "$patches_dir/swift")" \
+    "$configuration_fingerprint"
+} | sha256sum | awk '{print $1}')"
+runtime_fingerprint="$({
+  printf 'compiler=%s\n' "$compiler_fingerprint"
+  for repo in swift-corelibs-libdispatch swift-corelibs-foundation \
+              swift-foundation swift-foundation-icu swift-corelibs-xctest \
+              swift-testing; do
+    repo_revision "$repo"
+  done
+} | sha256sum | awk '{print $1}')"
+tools_fingerprint="$({
+  printf 'runtime=%s\n' "$runtime_fingerprint"
+  for repo in llbuild swiftpm swift-driver swift-build swift-tools-support-core; do
+    repo_revision "$repo"
+  done
+  printf 'tool_patches=%s\n' \
+    "$(patch_fingerprint "$patches_dir/swift-driver" "$patches_dir/swift-build" \
+                         "$patches_dir/swiftpm" "$patches_dir/indexstore-db" \
+                         "$patches_dir/sourcekit-lsp")"
+} | sha256sum | awk '{print $1}')"
+
+mkdir -p "$fingerprint_root/current"
+printf '%s\n' "$configuration_fingerprint" > "$fingerprint_root/current/configuration"
+printf '%s\n' "$compiler_fingerprint" > "$fingerprint_root/current/compiler"
+printf '%s\n' "$runtime_fingerprint" > "$fingerprint_root/current/runtime"
+printf '%s\n' "$tools_fingerprint" > "$fingerprint_root/current/tools"
+
+report_fingerprint_state() {
+  local component current previous_file previous=""
+  for component in compiler runtime tools; do
+    current="$(<"$fingerprint_root/current/$component")"
+    previous_file="$fingerprint_root/last-successful/$component"
+    if [[ -f "$previous_file" ]]; then
+      previous="$(<"$previous_file")"
+    fi
+    if [[ "$current" == "$previous" ]]; then
+      echo "Component artifact identity unchanged: $component $current"
+    elif [[ -n "$previous" ]]; then
+      echo "Component artifact identity changed:   $component $previous -> $current"
+    else
+      echo "Component artifact identity new:       $component $current"
+    fi
+  done
+}
+
+reset_component_build_dirs() {
+  local component="$1"
+  shift
+  local build_dir name
+  echo "Resetting changed $component build artifacts"
+  for name in "$@"; do
+    build_dir="$workspace/build/buildbot_linux/$name-linux-x86_64"
+    if [[ -e "$build_dir" || -L "$build_dir" ]]; then
+      rm -rf -- "$build_dir"
+    fi
+  done
+}
+
+prepare_component_build_dirs() {
+  local previous_config="" previous_runtime="" previous_tools=""
+  [[ -f "$fingerprint_root/last-successful/configuration" ]] && \
+    previous_config="$(<"$fingerprint_root/last-successful/configuration")"
+  [[ -f "$fingerprint_root/last-successful/runtime" ]] && \
+    previous_runtime="$(<"$fingerprint_root/last-successful/runtime")"
+  [[ -f "$fingerprint_root/last-successful/tools" ]] && \
+    previous_tools="$(<"$fingerprint_root/last-successful/tools")"
+
+  # CMake options are not inputs in the generated Ninja graph. Reconfigure
+  # automatically after a known successful configuration changes; the explicit
+  # flag remains available for manual cache repair.
+  if [[ -n "$previous_config" && "$previous_config" != "$configuration_fingerprint" ]] && \
+     (( ! reconfigure )); then
+    echo "Build configuration identity changed; enabling reconfigure"
+    build_cmd+=(--reconfigure)
+    reconfigure=1
+  fi
+
+  # Swift-produced modules must be rebuilt when their compiler identity changes.
+  # The nested fingerprints propagate compiler changes into runtime and tools,
+  # while retaining unaffected build directories for narrower source changes.
+  if (( ! reconfigure )); then
+    if [[ -n "$previous_runtime" && "$previous_runtime" != "$runtime_fingerprint" ]]; then
+      reset_component_build_dirs runtime \
+        libdispatch libdispatch_static foundation foundation_macros \
+        foundation_static swifttesting swifttestingmacros xctest
+    fi
+    if [[ -n "$previous_tools" && "$previous_tools" != "$tools_fingerprint" ]]; then
+      reset_component_build_dirs tools llbuild swiftpm swiftdriver
+    fi
+  fi
+}
+
+record_phase_event() {
+  local event="$1"
+  printf '%s\t%s\n' "$(date +%s%N)" "$event" >> "$phase_events"
+}
+
+trace_build_output() {
+  local line
+  while IFS= read -r line; do
+    printf '%s\n' "$line"
+    case "$line" in
+      '--- Building '*|'--- Installing '*|'--- Cleaning '*|'Cleaning the '*)
+        record_phase_event "$line"
+        ;;
+    esac
+  done
+}
+
+report_phase_durations() {
+  [[ -s "$phase_events" ]] || return 0
+  echo "─── phase durations ───"
+  awk -F '\t' '
+    NR == 1 { previous_ns = $1; previous_name = $2; next }
+    {
+      seconds = ($1 - previous_ns) / 1000000000
+      printf "  %8.3fs  %s\n", seconds, previous_name
+      previous_ns = $1
+      previous_name = $2
+    }
+  ' "$phase_events"
+}
+
+publication_started=0
+publication_had_previous=0
+phase_recording=0
+
 finish_build_script() {
   local status=$?
+  trap - EXIT
+  if (( status != 0 && publication_started )); then
+    rm -rf -- "$published_usr"
+    if (( publication_had_previous )) && [[ -e "$published_usr_backup" ]]; then
+      mv -- "$published_usr_backup" "$published_usr"
+    fi
+  fi
   if [[ -n "${package_candidate:-}" ]]; then
     rm -f -- "$package_candidate"
   fi
+  if [[ -d "${assembly_root:-}" ]]; then
+    rm -rf -- "$assembly_root"
+  fi
   if (( status != 0 )); then
     echo "Swift source build failed or was interrupted. Durable log: $log_file" >&2
+  fi
+  if (( phase_recording )); then
+    record_phase_event "process exit"
+    report_phase_durations >&2
   fi
   # Print ccache stats for this build. A healthy incremental rebuild
   # should show 80%+ direct hits once the cache has warmed; the first
@@ -741,27 +961,17 @@ finish_build_script() {
 trap finish_build_script EXIT
 
 mkdir -p "$install_root"
-if [[ -d "$install_root/usr/bin" ]]; then
-  rm -f \
-    "$install_root/usr/bin/swift" \
-    "$install_root/usr/bin/swiftc" \
-    "$install_root/usr/bin/swift-frontend" \
-    "$install_root/usr/bin/swift-driver" \
-    "$install_root/usr/bin/swift-driver-new" \
-    "$install_root/usr/bin/swift-legacy-driver" \
-    "$install_root/usr/bin/swiftc-legacy-driver" \
-    "$install_root/usr/bin/swift-help"
+if [[ -e "$assembly_root" || -L "$assembly_root" ]]; then
+  echo "Refusing to overwrite unexpected assembly path: $assembly_root" >&2
+  exit 1
 fi
-# Swift's build-script-impl runs `ln -s -f /usr/include/c++ <llvm-build>/include`
-# every invocation. If <llvm-build>/include/c++ already exists as a real
-# directory (e.g. libcxx populated it on a previous successful build),
-# ln cannot replace it with a symlink and aborts. Pre-clean it so ln can
-# create the symlink fresh; cmake_overrides_file then converts it back
-# to a real directory at the project() phase before libcxx repopulates.
+mkdir -p "$assembly_root"
+
+# The local llvm.py patch leaves an existing libc++ output directory intact
+# instead of trying to replace it with /usr/include/c++. On the first configure,
+# the top-level CMake include below converts the initial symlink into a real
+# directory. Subsequent incremental invocations preserve the generated headers.
 llvm_build_dir="$workspace/build/buildbot_linux/llvm-linux-x86_64"
-if [[ -e "$llvm_build_dir/include/c++" || -L "$llvm_build_dir/include/c++" ]]; then
-  rm -rf "$llvm_build_dir/include/c++"
-fi
 
 # Place libc++/libc++abi/libunwind shared libs where the freshly-built
 # swift-frontend can find them via its existing RUNPATH
@@ -786,7 +996,7 @@ fi
 # different prefix (Nucleus OS .deb, /opt/nucleus-swift/, etc.) still
 # resolves them.
 swift_build_linux_dir="$workspace/build/buildbot_linux/swift-linux-x86_64/lib/swift/linux"
-install_swift_linux_dir="$install_root/usr/lib/swift/linux"
+install_swift_linux_dir="$assembly_root/usr/lib/swift/linux"
 mkdir -p "$swift_build_linux_dir" "$install_swift_linux_dir"
 for lib in libc++.so libc++.so.1 libc++.so.1.0 \
            libc++abi.so libc++abi.so.1 libc++abi.so.1.0 \
@@ -807,7 +1017,7 @@ done
 # to the directory containing the .cfg file, so the toolchain stays
 # relocatable: extract the tarball to /opt/nucleus-swift/ and the
 # -L points at /opt/nucleus-swift/usr/lib without modification.
-install_bin="$install_root/usr/bin"
+install_bin="$assembly_root/usr/bin"
 mkdir -p "$install_bin"
 for cfg in clang.cfg clang++.cfg; do
   cat > "$install_bin/$cfg" <<'CLANG_CFG'
@@ -818,10 +1028,16 @@ for cfg in clang.cfg clang++.cfg; do
 CLANG_CFG
 done
 
-"${build_cmd[@]}"
+report_fingerprint_state
+prepare_component_build_dirs
+: > "$phase_events"
+phase_recording=1
+record_phase_event "toolchain build"
+"${build_cmd[@]}" 2>&1 | trace_build_output
+record_phase_event "post-build assembly"
 
-install_bin="$install_root/usr/bin"
-install_lib="$install_root/usr/lib"
+install_bin="$assembly_root/usr/bin"
+install_lib="$assembly_root/usr/lib"
 
 # FoundationXML's installed Swift module carries an autolink entry for its
 # private C shim. The shim is built as a static archive even for the dynamic
@@ -885,21 +1101,34 @@ if [[ -f "$testing_interop" && -d "$install_lib/swift/linux" ]]; then
 fi
 
 candidate=""
-if [[ -x "$install_root/usr/bin/swiftc" ]]; then
-  candidate="$install_root/usr/bin/swiftc"
+if [[ -x "$assembly_root/usr/bin/swiftc" ]]; then
+  candidate="$assembly_root/usr/bin/swiftc"
 fi
 if [[ -z "$candidate" ]]; then
-  echo "Swift build completed but no swiftc executable was found under $install_root" >&2
+  echo "Swift build completed but no swiftc executable was found under $assembly_root" >&2
   exit 1
 fi
 
 "$candidate" --version
 
+fingerprint_manifest="$assembly_root/usr/share/nucleus/component-fingerprints.env"
+mkdir -p "$(dirname "$fingerprint_manifest")"
+cat > "$fingerprint_manifest" <<FINGERPRINTS
+source_id=$source_id
+source_ref=$source_ref
+configuration=$configuration_fingerprint
+patch_set=$patch_set_fingerprint
+compiler=$compiler_fingerprint
+runtime=$runtime_fingerprint
+tools=$tools_fingerprint
+FINGERPRINTS
+
 # Repackage into a same-filesystem candidate. The previously published
 # tarball remains untouched until this candidate passes every smoke test.
 rm -f -- "$package_candidate"
 echo "--- Creating candidate installable package ---"
-( cd "$install_root" && tar -c -z -f "$package_candidate" --owner=0 --group=0 usr/ )
+record_phase_event "package candidate"
+( cd "$assembly_root" && tar -c -z -f "$package_candidate" --owner=0 --group=0 usr/ )
 
 # Smoke test the package: extract it to a temp dir, build a tiny Swift
 # package with it, confirm it runs.
@@ -915,6 +1144,7 @@ rm -rf "$smoke_root"
 mkdir -p "$package_toolchain" "$smoke_home" "$smoke_tmp" "$package_dir"
 
 echo "--- Smoking installable package ---"
+record_phase_event "package smoke"
 tar -x -z -f "$package_candidate" -C "$package_toolchain"
 
 toolchain_bin="$package_toolchain/usr/bin"
@@ -924,6 +1154,10 @@ for required in swift swiftc; do
     exit 1
   fi
 done
+if [[ ! -f "$package_toolchain/usr/share/nucleus/component-fingerprints.env" ]]; then
+  echo "Installable package smoke failed; component fingerprints are missing" >&2
+  exit 1
+fi
 
 clean_env=(
   env -i
@@ -974,10 +1208,37 @@ SWIFT
 rm -rf "$smoke_root"
 echo "Installable package smoke passed"
 
-# rename(2) within install_root publishes the complete, verified artifact in
-# one step. A failed or interrupted build leaves the previous package intact.
+# Publish the verified assembly without ever building into the previous
+# toolchain tree. The EXIT trap restores the old usr/ tree if publication
+# fails before the package rename completes.
+record_phase_event "publish assembly"
+if [[ -e "$published_usr_backup" || -L "$published_usr_backup" ]]; then
+  echo "Refusing to overwrite unexpected rollback path: $published_usr_backup" >&2
+  exit 1
+fi
+if [[ -e "$published_usr" || -L "$published_usr" ]]; then
+  mv -- "$published_usr" "$published_usr_backup"
+  publication_had_previous=1
+fi
+publication_started=1
+mv -- "$assembly_root/usr" "$published_usr"
 mv -f -- "$package_candidate" "$package_path"
 package_candidate=""
+publication_started=0
+if (( publication_had_previous )); then
+  rm -rf -- "$published_usr_backup"
+  publication_had_previous=0
+fi
+rm -rf -- "$assembly_root"
+
+mkdir -p "$fingerprint_root/last-successful.new.$$"
+cp "$fingerprint_root/current/configuration" "$fingerprint_root/last-successful.new.$$/configuration"
+cp "$fingerprint_root/current/compiler" "$fingerprint_root/last-successful.new.$$/compiler"
+cp "$fingerprint_root/current/runtime" "$fingerprint_root/last-successful.new.$$/runtime"
+cp "$fingerprint_root/current/tools" "$fingerprint_root/last-successful.new.$$/tools"
+rm -rf -- "$fingerprint_root/last-successful"
+mv -- "$fingerprint_root/last-successful.new.$$" "$fingerprint_root/last-successful"
+record_phase_event "complete"
 echo "Installable package published"
 echo "Swift toolchain available at:    $install_root/usr"
 echo "Distributable tarball available: $package_path"

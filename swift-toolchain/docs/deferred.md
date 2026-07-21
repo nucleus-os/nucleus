@@ -49,41 +49,6 @@ built (`sourcekit-lsp` at 8464cf21, `indexstore-db` at 59ca7820).
 nucleus development, or before Nucleus OS ships a developer-facing
 release.
 
-## Runtime library split (Foundation, libdispatch, xctest)
-
-Currently bundled into the toolchain build. Each rebuild of the
-toolchain rebuilds all three, even when only the Swift compiler
-changed.
-
-**Revisit shape:** sibling repo `nucleus-swift-runtime/` with the
-three libraries as submodules, each built via its own existing cmake
-against the installed toolchain. Same env-scrub / clang.cfg / libc++
-plumbing we already use.
-
-Each library installs into `<toolchain>/usr/lib/swift/linux/` (matches
-current layout — no consumer changes needed) or, alternatively, into
-`/opt/nucleus-foundation/` etc. with `swift-env.sh` updated.
-
-Wins:
-* Toolchain rebuild drops from ~3-4h to ~2h (no Foundation/libdispatch
-  rebuild on swift compiler bumps).
-* Per-library iteration becomes ~15-20 min instead of full rebuild.
-* Maps cleanly to separate `.deb`s on Nucleus OS:
-  `nucleus-swift-foundation` depends on `swift-toolchain`.
-* Foundation can absorb security fixes independently.
-
-Risks:
-* The in-tree build has cmake plumbing tuned for the toolchain layout
-  (linker flag overrides, includes, rpath). Standalone builds redo
-  that plumbing — known territory, but real work.
-* Version drift: bumping a runtime lib doesn't automatically rebuild
-  it as part of the toolchain. Requires discipline or an
-  `update-all.sh` orchestrator at the top level.
-
-**Revisit trigger:** when Foundation/libdispatch iteration friction
-exceeds the cost of the split, OR when Nucleus OS packaging needs
-independent `.deb`s.
-
 ## Additional CPU architectures
 
 Toolchain currently builds for `x86_64-unknown-linux-gnu` only.
