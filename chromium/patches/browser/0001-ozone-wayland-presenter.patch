@@ -1359,7 +1359,7 @@ new file mode 100644
 index 0000000000..cc0b6375d4
 --- /dev/null
 +++ b/ui/ozone/platform/wayland/gpu/wayland_buffer_queue_presenter.h
-@@ -0,0 +1,177 @@
+@@ -0,0 +1,179 @@
 +// Copyright 2018 The Chromium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -1426,6 +1426,8 @@ index 0000000000..cc0b6375d4
 +  void SetRelyOnImplicitSync();
 +
 + private:
++  FRIEND_TEST_ALL_PREFIXES(WaylandSurfaceFactoryTest,
++                           OzonePresenterCallbacksMayDestroyPresenter);
 +  FRIEND_TEST_ALL_PREFIXES(WaylandSurfaceFactoryTest,
 +                           OzonePresenterRejectsStaleSurfaceResponse);
 +

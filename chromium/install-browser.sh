@@ -87,6 +87,8 @@ while [[ $# -gt 0 ]]; do
   shift
 done
 
+prefix="$(realpath -m -- "$prefix")"
+
 if [[ ! -x "$out_dir/chrome" ]]; then
   echo "Chromium has not been built: $out_dir/chrome is missing" >&2
   exit 1
@@ -100,7 +102,9 @@ fi
 runtime_dir="$prefix/lib/nucleus-browser"
 prepared="$prefix/lib/.nucleus-browser.$$.prepared"
 previous="$prefix/lib/.nucleus-browser.$$.previous"
-trap 'rm -rf "$prepared" "$previous"' EXIT
+desktop_entry="$prefix/share/applications/dev.nucleus.Browser.desktop"
+desktop_entry_prepared="$prefix/share/applications/.dev.nucleus.Browser.$$.desktop"
+trap 'rm -rf "$prepared" "$previous"; rm -f "$desktop_entry_prepared"' EXIT
 rm -rf "$prepared"
 install -d -m 0755 "$prepared"
 
@@ -237,9 +241,33 @@ rm -rf "$previous"
 
 install -D -m 0755 "$script_dir/launcher/nucleus-browser" \
   "$prefix/bin/nucleus-browser"
-install -D -m 0644 \
-  "$script_dir/share/applications/dev.nucleus.Browser.desktop" \
-  "$prefix/share/applications/dev.nucleus.Browser.desktop"
+
+# Desktop launchers inherit the compositor's environment rather than an
+# interactive shell, so ~/.local/bin is not necessarily in PATH. Materialize
+# the absolute launcher path selected by --prefix instead of relying on command
+# lookup. Quote it so prefixes containing spaces remain one Exec argument.
+launcher_path="$prefix/bin/nucleus-browser"
+if [[ "$launcher_path" == *$'\n'* ||
+      "$launcher_path" == *$'\r'* ||
+      "$launcher_path" == *'\\'* ||
+      "$launcher_path" == *'"'* ||
+      "$launcher_path" == *'$'* ||
+      "$launcher_path" == *'`'* ||
+      "$launcher_path" == *'%'* ]]; then
+  echo "install prefix cannot be represented safely in a desktop Exec field: $prefix" >&2
+  exit 1
+fi
+install -d -m 0755 "$(dirname -- "$desktop_entry")"
+while IFS= read -r line || [[ -n "$line" ]]; do
+  printf '%s\n' \
+    "${line//@NUCLEUS_BROWSER_LAUNCHER@/$launcher_path}"
+done < "$script_dir/share/applications/dev.nucleus.Browser.desktop.in" \
+  > "$desktop_entry_prepared"
+if command -v desktop-file-validate >/dev/null 2>&1; then
+  desktop-file-validate "$desktop_entry_prepared"
+fi
+install -m 0644 "$desktop_entry_prepared" "$desktop_entry"
+rm -f "$desktop_entry_prepared"
 for size in 16 22 24 32 48 64 128 256; do
   if icon_source="$(find_product_icon "$size")"; then
     # The external product name is Nucleus Browser, but until a dedicated icon

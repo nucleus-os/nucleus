@@ -4,7 +4,7 @@ Type=Application
 Name=Nucleus Browser
 GenericName=Web Browser
 Comment=Access the Internet
-Exec=nucleus-browser %U
+Exec="@NUCLEUS_BROWSER_LAUNCHER@" %U
 Terminal=false
 Icon=dev.nucleus.Browser
 StartupNotify=true
@@ -15,8 +15,8 @@ Actions=new-window;new-private-window;
 
 [Desktop Action new-window]
 Name=New Window
-Exec=nucleus-browser --new-window
+Exec="@NUCLEUS_BROWSER_LAUNCHER@" --new-window
 
 [Desktop Action new-private-window]
 Name=New Incognito Window
-Exec=nucleus-browser --incognito
+Exec="@NUCLEUS_BROWSER_LAUNCHER@" --incognito

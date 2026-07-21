@@ -42,7 +42,8 @@ Patch ownership is explicit:
   device-selection, and media work used by both products;
 - `patches/dawn/` contains changes owned by Dawn's nested checkout;
 - `patches/browser/` contains the backend-neutral Ozone Wayland presenter,
-  its Viz adapter, and browser-only on-screen integration;
+  its Viz adapter, browser-only on-screen integration, and Linux browser-chrome
+  glass rendering;
 - `../cef/patches/` contains only CEF OSR and CEF behavior changes.
 
 Every CEF and browser preparation applies all four layers to the same Chromium
@@ -56,9 +57,10 @@ last-applied patches so renames and consolidations remain reversible.
 The common patch layer contains the strict renderer, device/media,
 Graphite/Dawn Ozone SharedImage, and DRM-modifier work consumed by both
 products. The browser patch layer contains only the completed presenter
-extraction, Viz adapter, on-screen Graphite hookup, and their source-level
-tests. The focused presenter targets can be rebuilt and run without
-constructing the full Chrome binary:
+extraction, Viz adapter, on-screen Graphite hookup, Linux browser-chrome glass
+rendering, browser UI feature defaults, and their source-level tests. The
+focused presenter targets can be rebuilt and run without constructing the full
+Chrome binary:
 
 ```sh
 source chromium/scripts/chromium-env.sh
