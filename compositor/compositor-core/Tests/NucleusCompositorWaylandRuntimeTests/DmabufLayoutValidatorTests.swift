@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import NucleusCompositorWaylandRuntime
 
@@ -64,5 +65,52 @@ import Testing
             try DmabufLayoutValidator.validateModifier(
                 current: 3, incoming: 4)
         }
+    }
+
+    @Test func checkedLayoutArithmeticMatchesBoundedIntegerProperties() {
+        var random = DmabufRandom(seed: dmabufPropertySeed())
+        for _ in 0..<4_096 {
+            let offset = random.next()
+            let stride = random.next()
+            let height = random.next()
+            let product = stride.multipliedReportingOverflow(by: height)
+            let expected = product.overflow
+                ? nil
+                : offset.addingReportingOverflow(product.partialValue)
+            let shouldOverflow = product.overflow || expected?.overflow == true
+            do {
+                let end = try DmabufLayoutValidator.checkedEnd(
+                    offset: offset,
+                    stride: stride,
+                    height: height)
+                #expect(!shouldOverflow)
+                #expect(end == expected?.partialValue)
+            } catch {
+                #expect(error == .layoutOverflow)
+                #expect(shouldOverflow)
+            }
+        }
+    }
+}
+
+private func dmabufPropertySeed() -> UInt64 {
+    guard let value = ProcessInfo.processInfo.environment["NUCLEUS_TEST_SEED"]
+    else { return 0x444d_4142_5546_4c59 }
+    let digits = value.hasPrefix("0x") ? String(value.dropFirst(2)) : value
+    return UInt64(digits, radix: 16) ?? 0x444d_4142_5546_4c59
+}
+
+private struct DmabufRandom {
+    private var state: UInt64
+
+    init(seed: UInt64) {
+        state = seed
+    }
+
+    mutating func next() -> UInt64 {
+        state ^= state >> 12
+        state ^= state << 25
+        state ^= state >> 27
+        return state &* 2_685_821_657_736_338_717
     }
 }

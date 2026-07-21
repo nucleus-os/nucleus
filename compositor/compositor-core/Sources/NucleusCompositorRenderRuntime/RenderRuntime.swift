@@ -16,6 +16,7 @@ import Glibc
 @_spi(NucleusPlatform) import NucleusCompositorRendererLinux
 import NucleusRenderModel
 import NucleusRenderHost
+import NucleusCompositorServer
 import Tracy
 @_spi(NucleusCompositor) import NucleusLayers
 
@@ -39,6 +40,7 @@ public enum RenderRuntime {
     }
     /// The process-global renderer-owner, constructed by `bringUp`.
     private static var shared: RendererRuntime?
+    private static weak var retainedStore: RetainedTreeStore?
     private static var telemetryCorrelator = PresentationTelemetryCorrelator()
 
     private static func monotonicNowNs() -> UInt64 {
@@ -47,55 +49,31 @@ public enum RenderRuntime {
         return UInt64(ts.tv_sec) &* 1_000_000_000 &+ UInt64(ts.tv_nsec)
     }
 
-    /// The linux-dmabuf-v4 `main_device` dev_t supplied by the composition root
-    /// after stat-ing the selected render-node path.
-    private static var dmabufMainDeviceID: UInt64 = 0
-
-    /// The render-node `dev_t` the dmabuf-v4 feedback advertises as `main_device`,
-    /// or 0 if unavailable.
-    public static var dmabufMainDevice: UInt64 {
-        dmabufMainDeviceID
-    }
-
-    public static var presentationClockID: UInt32 {
-        shared?.presentationClockID ?? UInt32(CLOCK_MONOTONIC)
-    }
-
-    public static func gammaRampSize(outputID: UInt64) -> UInt32 {
-        shared?.gammaRampSize(outputID: outputID) ?? 0
-    }
-
-    public static func applyGamma(
-        outputID: UInt64,
-        red: [UInt16],
-        green: [UInt16],
-        blue: [UInt16]
-    ) -> Bool {
-        shared?.applyGamma(
-            outputID: outputID, red: red, green: green, blue: blue)
-            ?? false
-    }
-
-    public static func clearGamma(outputID: UInt64) {
-        shared?.clearGamma(outputID: outputID)
-    }
-
-    public static func forcePresent(outputID: UInt64) {
-        shared?.forcePresent(outputID: outputID)
-    }
-
     /// Bring up the Swift render runtime over the DRM master fd and install the
     /// Swift-direct commit sink (transactions fold into the shared retained tree).
     /// Returns false when the GPU/GBM stack is unavailable. Idempotent.
     public static func bringUp(
         drmDeviceFd: Int32,
-        dmabufMainDevice: UInt64
+        dmabufMainDevice: UInt64,
+        store: RetainedTreeStore,
+        resourceHost: SwiftResourceHost,
+        asyncRenderWakeSink: any AsyncRenderWakeSink
     ) -> Bool {
-        if shared != nil { return true }
-        guard let runtime = RendererRuntime.create(drmDeviceFd: drmDeviceFd) else { return false }
+        if let shared {
+            NucleusCompositorServer.shared.renderService = shared
+            return true
+        }
+        guard let runtime = RendererRuntime.create(
+                drmDeviceFd: drmDeviceFd,
+                store: store,
+                resourceHost: resourceHost,
+                asyncRenderWakeSink: asyncRenderWakeSink)
+        else { return false }
         telemetryCorrelator = PresentationTelemetryCorrelator()
-        dmabufMainDeviceID = dmabufMainDevice
+        runtime.dmabufMainDevice = dmabufMainDevice
         shared = runtime
+        retainedStore = store
+        NucleusCompositorServer.shared.renderService = runtime
         return true
     }
 
@@ -143,13 +121,17 @@ public enum RenderRuntime {
     }
 
     @discardableResult
-    public static func retireOutput(_ outputID: UInt64) -> Bool {
-        shared?.retireOutput(outputID) ?? true
+    public static func retireOutput(
+        _ outputID: UInt64
+    ) -> RendererRetirementResult {
+        shared?.retireOutput(outputID) ?? .complete
     }
 
     @discardableResult
-    public static func retireOutputs(_ outputIDs: Set<UInt64>) -> Bool {
-        shared?.retireOutputs(outputIDs) ?? true
+    public static func retireOutputs(
+        _ outputIDs: Set<UInt64>
+    ) -> RendererRetirementResult {
+        shared?.retireOutputs(outputIDs) ?? .complete
     }
 
     public static func commitProposedTopology(
@@ -168,8 +150,8 @@ public enum RenderRuntime {
     /// Suspend the render session on VT-switch-away (drop DRM master + cancel
     /// pending flips).
     @discardableResult
-    public static func pauseSession() -> Bool {
-        shared?.pauseSessionChecked() ?? true
+    public static func pauseSession() -> RendererRetirementResult {
+        shared?.pauseSessionChecked() ?? .complete
     }
 
     /// Resume the render session on VT-switch-back (reacquire DRM master).
@@ -178,115 +160,8 @@ public enum RenderRuntime {
         shared?.resumeSessionChecked() ?? false
     }
 
-    /// Upload a client SHM buffer to a texture under the surface's IOSurface id.
-    /// Returns the stable IOSurface id, or zero on failure.
-    public static func uploadShm(
-        _ prevIosurfaceId: UInt32,
-        _ width: UInt32, _ height: UInt32, _ drmFormat: UInt32, _ stride: UInt32,
-        _ pixels: UnsafePointer<UInt8>
-    ) -> UInt32 {
-        // Copy the pixels out before crossing into the actor (the raw pointer is not
-        // Sendable; the buffer is only valid for this call).
-        let buffer = [UInt8](UnsafeBufferPointer(start: pixels, count: Int(stride) * Int(height)))
-        guard let runtime = shared else { return 0 }
-        let id = prevIosurfaceId != 0 ? prevIosurfaceId : runtime.allocSurfaceId()
-        let ok = runtime.registerSurfaceShm(
-            iosurfaceID: UInt64(id), pixels: buffer,
-            width: width, height: height, drmFormat: drmFormat, stride: stride)
-        return ok ? id : 0
-    }
-
-    /// Import a client DMA-BUF to a texture under the surface's IOSurface id. The
-    /// caller retains its plane fds (dup'd internally). `acquireFenceFd` is consumed
-    /// by this call. Returns the IOSurface id, or zero on failure.
-    public static func uploadDmabuf(
-        _ prevIosurfaceId: UInt32,
-        _ width: UInt32, _ height: UInt32, _ drmFormat: UInt32, _ drmModifier: UInt64,
-        _ nPlanes: UInt32, _ fds: UnsafePointer<Int32>, _ offsets: UnsafePointer<UInt32>,
-        _ strides: UnsafePointer<UInt32>, _ acquireFenceFd: Int32,
-        _ acquireHandle: UInt32, _ acquirePoint: UInt64,
-        _ releaseHandle: UInt32, _ releasePoint: UInt64
-    ) -> UInt32 {
-        if acquireFenceFd >= 0 { close(acquireFenceFd) }
-        guard nPlanes >= 1 else { return 0 }
-        let firstFd = fds[0]
-        var planes: [DmaBufPlane] = []
-        planes.reserveCapacity(Int(nPlanes))
-        for i in 0..<Int(nPlanes) {
-            planes.append(DmaBufPlane(
-                fd: fds[i], offset: UInt64(offsets[i]), rowPitch: UInt64(strides[i])))
-        }
-        guard let runtime = shared else { return 0 }
-        let id = prevIosurfaceId != 0 ? prevIosurfaceId : runtime.allocSurfaceId()
-        let ok = runtime.registerSurfaceDmabuf(
-            iosurfaceID: UInt64(id), fd: firstFd, width: width, height: height,
-            drmFormat: drmFormat, modifier: drmModifier, planes: planes,
-            acquire: Self.syncPoint(handle: acquireHandle, point: acquirePoint),
-            release: Self.syncPoint(handle: releaseHandle, point: releasePoint))
-        return ok ? id : 0
-    }
-
-    private static func syncPoint(handle: UInt32, point: UInt64) -> DmaBufSyncPoint? {
-        handle != 0 ? DmaBufSyncPoint(handle: handle, point: point) : nil
-    }
-
-    /// Drop the IOSurface identity `id` at surface teardown.
-    public static func releaseIOSurface(_ id: UInt32) {
-        if id != 0 { shared?.releaseSurfaceTexture(iosurfaceID: UInt64(id)) }
-    }
-
-    /// The importable (DRM fourcc, modifier) pairs advertised to dmabuf clients.
-    /// Fills `formatsOut`/`modifiersOut` (each `max` entries), returns the total
-    /// pair count. Empty before the render runtime is up.
-    public static func dmabufFormats(
-        _ formatsOut: UnsafeMutablePointer<UInt32>,
-        _ modifiersOut: UnsafeMutablePointer<UInt64>, _ max: UInt32
-    ) -> UInt32 {
-        let pairs = shared?.dmabufSupportedFormats() ?? []
-        let n = min(Int(max), pairs.count)
-        for i in 0..<n {
-            formatsOut[i] = pairs[i].format
-            modifiersOut[i] = pairs[i].modifier
-        }
-        return UInt32(pairs.count)
-    }
-
-    /// Validate one complete client allocation through Vulkan immediately, before
-    /// linux-dmabuf creates its wl_buffer.
-    public static func probeDmabuf(
-        width: UInt32,
-        height: UInt32,
-        drmFormat: UInt32,
-        modifier: UInt64,
-        nPlanes: UInt32,
-        fds: UnsafePointer<Int32>,
-        offsets: UnsafePointer<UInt32>,
-        strides: UnsafePointer<UInt32>
-    ) -> Bool {
-        guard nPlanes > 0, let runtime = shared else { return false }
-        let planes = (0..<Int(nPlanes)).map {
-            DmaBufPlane(
-                fd: fds[$0],
-                offset: UInt64(offsets[$0]),
-                rowPitch: UInt64(strides[$0]))
-        }
-        return runtime.canImportSurfaceDmabuf(
-            fd: fds[0],
-            width: width,
-            height: height,
-            drmFormat: drmFormat,
-            modifier: modifier,
-            planes: planes)
-    }
-
-    /// Import a DRM syncobj timeline handle on the Swift renderer's DRM fd.
-    public static func importSyncobjTimeline(fd: Int32) -> UInt32 {
-        shared?.importSyncobjTimeline(fd: fd) ?? 0
-    }
-
-    /// Destroy a DRM syncobj timeline handle.
-    public static func destroySyncobjTimeline(handle: UInt32) {
-        shared?.destroySyncobjTimeline(handle: handle)
+    public static func prepareShutdown() -> RendererRetirementResult {
+        shared?.prepareShutdown() ?? .complete
     }
 
     /// Advance animations to the current present time, then render + flip every
@@ -384,6 +259,15 @@ public enum RenderRuntime {
         Trace.plot("swift.renderer.client_upload.uploaded", uploadStats.uploaded)
         Trace.plot("swift.renderer.client_upload.failed", uploadStats.failed)
         Trace.plot("swift.renderer.client_upload.pending_bytes", uploadStats.pendingBytes)
+        Trace.plot(
+            "swift.renderer.client_upload.full_size_owned_allocations",
+            uploadStats.fullSizeOwnedAllocations)
+        Trace.plot(
+            "swift.renderer.client_upload.owned_allocation_bytes",
+            uploadStats.ownedAllocationBytes)
+        Trace.plot(
+            "swift.renderer.client_upload.bytes_copied",
+            uploadStats.bytesCopied)
     }
 
     private static func publishPresentedFrame(_ presented: PresentedCompositeFrame) {
@@ -538,51 +422,16 @@ public enum RenderRuntime {
         shared?.setCursorPosition(x: x, y: y)
     }
 
-    /// Read back an output's composited frame as tightly-packed BGRA8888 (wl_shm
-    /// XRGB8888 byte order) for a screencopy capture. nil if unavailable.
-    public static func screencopyCapture(outputId: UInt64) -> (pixels: [UInt8], width: Int, height: Int)? {
-        shared?.captureOutputBGRA(outputID: outputId)
-    }
-
-    public static func surfaceReadback(
-        iosurfaceId: UInt32
-    ) -> (pixels: [UInt8], width: Int, height: Int)? {
-        shared?.readSurfaceTextureBGRA(iosurfaceID: iosurfaceId)
-    }
-
-    /// Blit an output's composited frame into a client dmabuf render target (a
-    /// screencopy dmabuf capture). Returns true on success. The plane arrays are
-    /// `nPlanes`-long and valid for the call's duration.
-    public static func screencopyCaptureDmabuf(
-        outputId: UInt64, width: UInt32, height: UInt32, drmFormat: UInt32, modifier: UInt64,
-        nPlanes: UInt32, fds: UnsafePointer<Int32>, offsets: UnsafePointer<UInt32>,
-        strides: UnsafePointer<UInt32>, sourceX: Int32, sourceY: Int32,
-        sourceWidth: Int32, sourceHeight: Int32, overlayCursor: Bool
-    ) -> Bool {
-        guard nPlanes >= 1 else { return false }
-        let firstFd = fds[0]
-        var planes: [DmaBufPlane] = []
-        planes.reserveCapacity(Int(nPlanes))
-        for i in 0..<Int(nPlanes) {
-            planes.append(DmaBufPlane(fd: fds[i], offset: UInt64(offsets[i]), rowPitch: UInt64(strides[i])))
-        }
-        return shared?.captureOutputToDmabuf(
-            outputID: outputId, fd: firstFd, width: width, height: height,
-            drmFormat: drmFormat, modifier: modifier, planes: planes,
-            sourceX: sourceX, sourceY: sourceY,
-            sourceWidth: sourceWidth, sourceHeight: sourceHeight,
-            overlayCursor: overlayCursor) ?? false
-    }
-
     /// Whether any layer in the authoritative Swift tree has an in-flight animation.
     /// The frame-demand path reads this to keep driving frames while animations
     /// advance.
     public static var hasActiveAnimations: Bool {
-        RetainedTreeStore.shared.hasActiveAnimations
+        retainedStore?.hasActiveAnimations ?? false
     }
 
     /// Tear down the render runtime in GPU-lifetime order at compositor shutdown.
     public static func shutdown() {
+        NucleusCompositorServer.shared.renderService = nil
         guard let runtime = shared else { return }
         if !runtime.shutdown() {
             // A presentation still owned by the kernel makes the runtime's normal
@@ -591,6 +440,7 @@ public enum RenderRuntime {
             _ = Unmanaged.passRetained(runtime)
         }
         shared = nil
+        retainedStore = nil
         telemetryCorrelator = PresentationTelemetryCorrelator()
     }
 }

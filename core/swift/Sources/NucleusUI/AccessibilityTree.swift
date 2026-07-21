@@ -394,14 +394,16 @@ public final class AccessibilityTree: ~Sendable {
         for view: View
     ) -> AccessibilityProperties {
         var properties = view.accessibilityProperties
-        if let field = view as? TextField {
+        if let field = view as? any RetainedTextEditorAccessibility {
             properties.traits.insert(.editable)
-            if field.isSecure {
+            if field.accessibilityEditorIsSecure {
                 properties.traits.insert(.secureText)
                 properties.value = nil
                 properties.textSelection = nil
+            } else {
+                properties.value = field.accessibilityEditorText
             }
-            if field.allowsMultilineText {
+            if field.accessibilityEditorIsMultiline {
                 properties.traits.insert(.multiline)
                 properties.role = .textArea
             }
@@ -431,7 +433,8 @@ public final class AccessibilityTree: ~Sendable {
         properties: AccessibilityProperties
     ) -> String? {
         if properties.traits.contains(.secureText)
-            || (view as? TextField)?.isSecure == true
+            || (view as? any RetainedTextEditorAccessibility)?
+                .accessibilityEditorIsSecure == true
         {
             return nil
         }
@@ -496,7 +499,7 @@ public final class AccessibilityTree: ~Sendable {
             result.insert(.focus)
         }
         if view is Control,
-           !(view is TextField),
+           !(view is any RetainedTextEditorAccessibility),
            !(view is Slider),
            !(view is RangeSlider)
         {
@@ -505,7 +508,9 @@ public final class AccessibilityTree: ~Sendable {
         if view is Slider {
             result.formUnion([.increment, .decrement, .setValue])
         }
-        if let field = view as? TextField, !field.isSecure {
+        if let field = view as? any RetainedTextEditorAccessibility,
+           !field.accessibilityEditorIsSecure
+        {
             result.formUnion([
                 .setText, .setSelection, .copy, .cut, .paste,
                 .selectAll, .undo, .redo,
@@ -541,18 +546,21 @@ public final class AccessibilityTree: ~Sendable {
                 slider.value = value
                 return true
             case .setText:
-                guard let field = view as? TextField,
-                      !field.isSecure,
+                guard let field =
+                        view as? any RetainedTextEditorAccessibility,
+                      !field.accessibilityEditorIsSecure,
                       let text = request.text
                 else { return false }
-                field.stringValue = text
+                field.accessibilityEditorText = text
                 return true
             case .setSelection:
-                guard let field = view as? TextField,
-                      !field.isSecure,
+                guard let field =
+                        view as? any RetainedTextEditorAccessibility,
+                      !field.accessibilityEditorIsSecure,
                       let selection = request.selection
                 else { return false }
-                field.setSelectedRange(selection.utf16Range)
+                field.setAccessibilityEditorSelection(
+                    selection.utf16Range)
                 return true
             case .copy:
                 return view.performAction(
@@ -578,7 +586,8 @@ public final class AccessibilityTree: ~Sendable {
                 return view.performAction(
                     .redo,
                     event: Event(type: .action))
-            case .expand, .collapse, .dismiss:
+            case .expand, .collapse, .dismiss,
+                 .startDrag, .performDrop, .cancelDrag:
                 return false
             }
         }
@@ -609,9 +618,11 @@ public final class AccessibilityTree: ~Sendable {
         for view: View,
         properties: AccessibilityProperties
     ) -> AccessibilityTextSelection? {
-        if let field = view as? TextField, !field.isSecure {
+        if let field = view as? any RetainedTextEditorAccessibility,
+           !field.accessibilityEditorIsSecure
+        {
             return AccessibilityTextSelection(
-                utf16Range: field.selectedRange)
+                utf16Range: field.accessibilityEditorSelection)
         }
         return properties.textSelection
     }

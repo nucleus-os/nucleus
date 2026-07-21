@@ -15,16 +15,9 @@
 // `markPresented` clears them so the next frame's demand reflects only new work.
 
 /// Owns the authoritative `LayerTree` and the present-demand bookkeeping the
-/// frame loop reads, minus the renderer-owned backing/animation bookkeeping
-/// that co-lands with the renderer.
+/// frame loop reads.
 @MainActor
 public final class RetainedTreeStore {
-    /// The process-global authoritative tree. Both the layers commit sink (the
-    /// producer feed) and the renderer-owner (`RendererRuntime.store`) bind to
-    /// this single instance, so committed transactions and the per-frame read
-    /// share one tree whether or not a GPU renderer is up.
-    public static let shared = RetainedTreeStore()
-
     /// The authoritative scene. Read by the frame-plan walk each frame.
     public private(set) var tree = LayerTree()
 
@@ -40,14 +33,12 @@ public final class RetainedTreeStore {
 
     /// The present time the last `tick` advanced to (seconds). Spring animations
     /// integrate over `[previous, present]`, so the first tick after a record is
-    /// added starts from its begin time. Mirrors the render server's
-    /// `previous_animation_present_time_s`.
+    /// added starts from its begin time.
     public private(set) var previousPresentTimeS: Double = 0
 
     /// Accumulated animation lifecycle events (started on add, stopped on tick),
     /// for the producer feed's transaction-completion matching. Drained by
-    /// `drainAnimationEvents`. Mirrors the render server's `animation_events`
-    /// queue.
+    /// `drainAnimationEvents`.
     public private(set) var animationEvents: [AnimationEvent] = []
     private var activeAnimationsByCompletionToken: [UInt64: Int] = [:]
     private var terminalCompletionsAwaitingPresentation: [
@@ -58,21 +49,12 @@ public final class RetainedTreeStore {
     ] = [:]
     private var nextCompletionObserverID: UInt64 = 1
     private var nextImplicitAnimationID: UInt64 = 1
-    private let implicitActionTableOverride: ImplicitActionTable?
-
-    /// Sink the `.contents` key path drives during a presentation transition.
-    /// Defaults to a no-op; the renderer installs a `PresentationOperationService`
-    /// bridge once transitions are wired (a later slice). Mirrors the render
-    /// server's `operationProgressSink`.
-    private let transitionSink: PresentationTransitionSink
+    public let resourceHost: SwiftResourceHost
 
     public init(
-        transitionSink: PresentationTransitionSink =
-            NullPresentationTransitionSink(),
-        implicitActionTable: ImplicitActionTable? = nil
+        resourceHost: SwiftResourceHost
     ) {
-        self.transitionSink = transitionSink
-        self.implicitActionTableOverride = implicitActionTable
+        self.resourceHost = resourceHost
     }
 
     /// Fold one committed transaction into the authoritative tree. An empty
@@ -112,7 +94,7 @@ public final class RetainedTreeStore {
                 continue
             }
             node.addAnimation(record, events: &lifecycleEvents)
-            node.seedAnimationStartValue(record, sink: transitionSink)
+            node.seedAnimationStartValue(record)
             node.damage.flags.property = true
             tree.layers[record.layerId] = node
         }
@@ -205,7 +187,7 @@ public final class RetainedTreeStore {
             guard var node = tree.layers[id], !node.animations.isEmpty else { continue }
             let active = node.tickAnimations(
                 previousPresentTimeS: previous, presentTimeS: presentTimeS,
-                events: &animationEvents, sink: transitionSink)
+                events: &animationEvents)
             // The tick wrote presentation overrides / model values; mark the
             // node dirty so the frame loop re-composites it.
             node.damage.flags.property = true
@@ -226,7 +208,7 @@ public final class RetainedTreeStore {
         guard var node = tree.layers[layerId] else { return }
         let firstNewEvent = animationEvents.count
         node.addAnimation(record, events: &animationEvents)
-        if seedStartValue { node.seedAnimationStartValue(record, sink: transitionSink) }
+        if seedStartValue { node.seedAnimationStartValue(record) }
         node.damage.flags.property = true
         tree.layers[layerId] = node
         processAnimationLifecycle(Array(animationEvents[firstNewEvent...]))
@@ -258,8 +240,7 @@ public final class RetainedTreeStore {
 
     /// Acknowledge that a frame carrying the committed work has presented: clear
     /// the present-dirty flag and every node's per-frame damage so the next
-    /// frame's demand reflects only work committed after this point. Mirrors the
-    /// render server clearing `DamageState` once a frame consumes it.
+    /// frame's demand reflects only work committed after this point.
     public func markPresented() {
         presentDirty = false
         // Array() snapshot avoids the copy-on-write-per-iteration hazard (see `tick`).
@@ -356,8 +337,7 @@ public final class RetainedTreeStore {
     private func expandImplicitActions(
         in transaction: Transaction
     ) -> [AnimationRecord] {
-        let table = implicitActionTableOverride ??
-            SwiftResourceHost.shared.implicitActions
+        let table = resourceHost.implicitActions
         var records: [AnimationRecord] = []
 
         for update in transaction.propertyUpdates {
@@ -499,7 +479,7 @@ public final class RetainedTreeStore {
         case .transformScaleX, .transformScaleY, .transformScaleZ,
              .transformRotationX, .transformRotationY, .transformRotationZ,
              .transformTranslationX, .transformTranslationY,
-             .transformTranslationZ, .contents:
+             .transformTranslationZ:
             nil
         }
     }

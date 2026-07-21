@@ -52,6 +52,14 @@ class ReactRuntimeHostFacade final {
   // the JS thread (i.e. the thread that constructed this facade).
   // Returns the number of callbacks drained.
   RuntimeHostResult drainPendingJSCalls();
+  using JSWorkWakeCallback = void (*)(void *ctx);
+  using JSWorkWakeContextRelease = void (*)(void *ctx);
+  // Installs a thread-safe wake invoked when cross-thread JS work first enters
+  // an empty invoker queue. Ownership of `context` transfers to the runtime.
+  RuntimeHostResult setJSWorkWakeHandler(
+      JSWorkWakeCallback callback,
+      void *context,
+      JSWorkWakeContextRelease release);
   // Thread-safe. Schedules a JS-thread call to the global device-event
   // emitter with `name` and the optionally JSON-encoded `payloadJson`. The
   // event is dropped if the JS-side emitter is not installed yet.

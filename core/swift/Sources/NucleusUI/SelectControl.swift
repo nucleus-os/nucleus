@@ -80,22 +80,18 @@ public final class SelectControl: Button, ~Sendable {
             return .handled
         }
 
-        var popover: Popover?
         let menu = Menu(items: options.map { option in
             MenuItem(
                 id: option.id,
                 title: option.title,
                 isEnabled: option.isEnabled
-            ) { [weak self, weak scene] in
+            ) { [weak self] in
                 self?.selectedID = option.id
-                if let popover { scene?.dismiss(popover) }
             }
         })
         let anchorInWindow = convert(bounds, to: nil)
         let anchor = window?.sceneRect(fromWindow: anchorInWindow) ?? .zero
-        let presented = menu.makePopover(anchor: anchor)
-        popover = presented
-        scene.present(presented)
+        scene.present(menu, anchor: anchor)
         _ = super.performPrimaryAction(event: event)
         return .handled
     }

@@ -91,7 +91,8 @@ import NucleusUIEmbedder
         try ShellOverlayScene(
             frame: nil,
             nowNs: { clock.nowNs },
-            commitSink: InMemoryCommitSink())
+            commitSink: InMemoryCommitSink(),
+            services: testHostServices())
     }
 
     /// A held key produces no repeat until the delay elapses, then repeats at

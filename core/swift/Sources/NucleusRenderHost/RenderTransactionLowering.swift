@@ -5,9 +5,7 @@
 //
 // Scope mirrors the retained-model `Transaction` boundary (see
 // `RenderTransactionApply.swift`): only created/inserted/removed/detached/
-// property updates and compositor-side animation records are lowered. Fences
-// and the renderer-owned presentation-transition expansion of layer
-// `transitions` remain separate concerns.
+// property updates and compositor-side animation records are lowered.
 //
 // The field mappings, the default-action compound-frame decomposition, the
 // backdrop-attachment derivation, and the content/shadow/visual-style deltas
@@ -279,8 +277,8 @@ public enum RenderTransactionLowering {
 
     /// Mirrors `appendPropertyUpdates`. Opacity/hidden, visual-effect (style +
     /// backdrop attachment), shadow, the default-action compound frame
-    /// decomposition, anchor/transform/scroll/clip, content (+ generation reveal,
-    /// dropped here as renderer-owned), content-sample, and background-effect.
+    /// decomposition, anchor/transform/scroll/clip, content, content-sample, and
+    /// background-effect.
     private static func lowerPropertyUpdate(
         _ layer: NucleusLayers.LayerID,
         _ p: NucleusLayers.LayerPropertyUpdate,

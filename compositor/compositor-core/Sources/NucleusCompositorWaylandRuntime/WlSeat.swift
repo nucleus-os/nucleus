@@ -80,6 +80,7 @@ final class WlSeat {
     var relativePointer: RelativePointerManager?
     var pointerConstraints: PointerConstraintsManager?
     weak var dataDeviceManager: WlDataDeviceManager?
+    weak var textInputManager: TextInputManagerV3?
     private weak var pointerFocusSurface: WlSurface?
     private weak var keyboardFocusSurface: WlSurface?
     private let popupGrabs = PopupGrabState()
@@ -525,6 +526,7 @@ final class WlSeat {
     // MARK: keyboard sends
 
     func keyboardEnter(_ surface: WlSurface) {
+        textInputManager?.keyboardEnter(surface)
         guard let (key, sres) = client(of: surface),
             let resources = keyboards[key], !resources.isEmpty
         else { return }
@@ -553,6 +555,7 @@ final class WlSeat {
     }
 
     func keyboardLeave(_ surface: WlSurface) {
+        textInputManager?.keyboardLeave(surface)
         guard let (key, sres) = client(of: surface),
             let resources = keyboards[key]
         else { return }

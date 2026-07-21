@@ -46,13 +46,6 @@ extension ShellPolicyService: CompositorShellPolicy {
 
 @MainActor
 public protocol ShellPolicyHost: AnyObject {
-    func appearanceSetColorScheme(value: UInt32)
-    func appearanceSetContrast(value: UInt32)
-    func appearanceSnapshot(
-        colorScheme: UnsafeMutablePointer<UInt32>?,
-        contrast: UnsafeMutablePointer<UInt32>?,
-        epoch: UnsafeMutablePointer<UInt64>?
-    )
     func keybindDispatch(keycode: UInt32, modifiers: UInt64, pressed: Bool) -> NucleusCompositorOverlayTypes.KeybindDecision
     func launcherPlayScreenshotSound()
     func idleRegisterNotification(id: UInt64, timeoutMS: UInt32)
@@ -66,36 +59,7 @@ public protocol ShellPolicyHost: AnyObject {
 
 @MainActor
 public final class ShellPolicyService: ShellPolicyHost {
-    public static let shared = ShellPolicyService()
-
-    private init() {}
-
-    public func appearanceSetColorScheme(value: UInt32) {
-        AppearancePortal.shared.setColorScheme(value)
-        let snapshot = AppearancePortal.shared.snapshot()
-        nucleus_compositor_overlay_scene_update_environment(
-            colorScheme: snapshot.0,
-            contrast: snapshot.1)
-    }
-
-    public func appearanceSetContrast(value: UInt32) {
-        AppearancePortal.shared.setContrast(value)
-        let snapshot = AppearancePortal.shared.snapshot()
-        nucleus_compositor_overlay_scene_update_environment(
-            colorScheme: snapshot.0,
-            contrast: snapshot.1)
-    }
-
-    public func appearanceSnapshot(
-        colorScheme: UnsafeMutablePointer<UInt32>?,
-        contrast: UnsafeMutablePointer<UInt32>?,
-        epoch: UnsafeMutablePointer<UInt64>?
-    ) {
-        let snapshot = AppearancePortal.shared.snapshot()
-        colorScheme?.pointee = snapshot.0
-        contrast?.pointee = snapshot.1
-        epoch?.pointee = snapshot.2
-    }
+    public init() {}
 
     public func keybindDispatch(keycode: UInt32, modifiers: UInt64, pressed: Bool) -> NucleusCompositorOverlayTypes.KeybindDecision {
         KeybindService.bridgeDispatch(keycode: keycode, modifierBits: modifiers, pressed: pressed)

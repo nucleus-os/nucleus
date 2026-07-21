@@ -17,7 +17,7 @@ struct UIContextTrait: SuiteTrait, TestScoping {
     private static func provideMainActorScope(
         performing function: @Sendable () async throws -> Void
     ) async throws {
-        try await UIContext().construct(function)
+        try await UIContext(services: .inMemory()).construct(function)
     }
 }
 

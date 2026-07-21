@@ -164,7 +164,8 @@ public final class Label: View, LayoutBaselineProviding, ~Sendable {
             containerWidth: containerWidth,
             alignment: alignment.textAlignment,
             lineBreakMode: lineBreakMode,
-            numberOfLines: numberOfLines
+            numberOfLines: numberOfLines,
+            textSystem: uiContext.services.textSystem
         )
         layoutCache[containerWidth] = layout
         return layout

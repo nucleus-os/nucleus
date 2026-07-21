@@ -1,6 +1,5 @@
 import NucleusCompositorDrmC
 @_spi(NucleusPlatform) import NucleusRenderer
-import Glibc
 
 @MainActor
 extension RendererRuntime {
@@ -42,6 +41,7 @@ extension RendererRuntime {
             core.releaseRetiredGpuResources(
                 completedSubmissionSerial: submissionSerial)
         }
+        retireCompletedUnpresentedRenderSyncs()
         binding.pendingRenderSync = nil
         binding.drm.notePageFlipComplete()
         scanoutSurfaces.flipCompleted(output: outputID)
@@ -69,24 +69,6 @@ extension RendererRuntime {
 
     public func handleDrmEvents() {
         _ = DrmEventPump.dispatchIfReady(fd: drmDeviceFd)
-    }
-
-    /// Drain a previously accepted nonblocking flip before topology retirement.
-    /// The bounded polling interval prevents destruction of KMS-borrowed owners
-    /// while allowing the caller to defer a transition that has not completed.
-    func drainPendingFlip(
-        _ binding: RenderOutputBinding
-    ) -> Bool {
-        for _ in 0..<10 where binding.drm.pageFlipPending {
-            var descriptor = pollfd(
-                fd: drmDeviceFd,
-                events: Int16(POLLIN),
-                revents: 0)
-            if poll(&descriptor, 1, 10) > 0 {
-                _ = DrmEventPump.dispatchIfReady(
-                    fd: drmDeviceFd)
-            }
-        }
-        return !binding.drm.pageFlipPending
+        retireCompletedUnpresentedRenderSyncs()
     }
 }

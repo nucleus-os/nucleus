@@ -1,7 +1,7 @@
 // Phase 10b.4 / 10b.4e — NucleusRenderer: consume a Swift FramePlan (Phase 9)
 // directly and composite its ordered draw ops onto a Graphite canvas through the
 // NucleusSkiaGraphite façade. 10b.4e replaces the footprint-fill skeleton with
-// the real composite: texture/fill/shadow/transition quads with blend modes,
+// the real composite: texture/fill/shadow quads with blend modes,
 // rounded-rect clip masks, source rects, and alpha, walked in z-order. No
 // serialization sits between the plan and the renderer, and no Swift callback
 // runs during recording/submission (the façade submit path is pure C++).
@@ -121,8 +121,6 @@ enum NucleusRenderer {
                 canvas.drawImageRect(image, rectF(quad.src), rectF(quad.dst), paint)
                 return 1
 
-            case .transitionQuad(let quad):
-                return Transition.composite(quad, onto: canvas, resolveTexture: resolveTexture)
             case .backdrop:
                 return 0
             }
@@ -137,6 +135,7 @@ enum NucleusRenderer {
         plan: FramePlan,
         width: Int32,
         height: Int32,
+        submissionSerial: UInt64,
         resolveTexture: (TextureHandle) -> nucleus.skia.Image?
     ) -> RenderResult? {
         let recorder = context.makeRecorder()
@@ -162,7 +161,7 @@ enum NucleusRenderer {
 
         let image = surface.snapshotImage()
         let recording = recorder.snapRecording()
-        let status = context.submit(recording)
+        let status = context.submitAsync(recording, submissionSerial)
 
         return RenderResult(
             imageWidth: image.width(),

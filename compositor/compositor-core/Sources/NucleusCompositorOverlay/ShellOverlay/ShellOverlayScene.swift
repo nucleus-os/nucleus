@@ -31,26 +31,6 @@ public final class ShellOverlayScene: ~Sendable {
     let hotkeyWindow: Window
     let hotkeyViewController: ViewController
     let hotkeyView: ShellOverlayHotkeyView
-    let menuWindow: Window
-    /// One open menu panel in the cascade: its view, its output-space frame, and the
-    /// `actionID` of the parent-menu row that spawned it (a sentinel for the root).
-    /// `menuLevels` is the open stack — index 0 is the root menu, each later entry a
-    /// submenu opened to the side of a row in the entry before it. All panels live in
-    /// `menuContainer`, a full-output transparent view in `menuWindow`.
-    private struct MenuLevel {
-        let view: ShellOverlayMenuView
-        let frame: Rect
-        let parentActionID: Int
-    }
-    private var menuContainer: View?
-    private var menuLevels: [MenuLevel] = []
-    private var menuSelectHandler: (@MainActor (Int) -> Void)?
-    /// True while the open menu is "sticky": the release of the click that opened it
-    /// (or any release in empty space right after) keeps it open instead of dismissing,
-    /// so a plain click opens a menu that stays up. Cleared by the first pointer-up the
-    /// cascade sees. Press-drag-release onto a row still selects, because that release
-    /// lands over a panel and never reaches the sticky branch.
-    private var menuStickyArmed: Bool = false
     private let hostedSurfaceRegistry: HostedSurfaceRegistry<HostedSurfaceID>
     private let notificationClosed: @MainActor (UInt32, UInt32) -> Void
     /// `package` rather than `private` so the package's tests can install a
@@ -124,13 +104,17 @@ public final class ShellOverlayScene: ~Sendable {
     package convenience init(
         frame: ShellOverlayFrameInfo?,
         notificationClosed: @escaping @MainActor (UInt32, UInt32) -> Void = { _, _ in },
-        commitSink: any CommitSink
+        commitSink: any CommitSink,
+        services: UIHostServices,
+        environment: UIEnvironment = UIEnvironment()
     ) throws {
         try self.init(
             frame: frame,
             notificationClosed: notificationClosed,
             nowNs: monotonicNs,
-            commitSink: commitSink
+            commitSink: commitSink,
+            services: services,
+            environment: environment
         )
     }
 
@@ -138,12 +122,17 @@ public final class ShellOverlayScene: ~Sendable {
         frame: ShellOverlayFrameInfo?,
         notificationClosed: @escaping @MainActor (UInt32, UInt32) -> Void = { _, _ in },
         nowNs: @escaping @MainActor () -> UInt64,
-        commitSink: any CommitSink
+        commitSink: any CommitSink,
+        services: UIHostServices,
+        environment: UIEnvironment = UIEnvironment()
     ) throws {
         self.frame = frame
         self.notificationClosed = notificationClosed
         self.clockNs = nowNs
-        let publicationContext = try WindowScenePublicationContext(commitSink: commitSink)
+        let publicationContext = try WindowScenePublicationContext(
+            commitSink: commitSink,
+            services: services,
+            environment: environment)
         self.publicationContext = publicationContext
         self.hostedSurfaceRegistry = HostedSurfaceRegistry(
             context: publicationContext.visualContext,
@@ -152,7 +141,7 @@ public final class ShellOverlayScene: ~Sendable {
             ShellOverlayNotificationListView()
         }
         let hotkeyView = publicationContext.withSemanticContext {
-            ShellOverlayHotkeyView()
+            ShellOverlayHotkeyView(textSystem: services.textSystem)
         }
         self.notificationListView = notificationListView
         self.hotkeyView = hotkeyView
@@ -164,17 +153,13 @@ public final class ShellOverlayScene: ~Sendable {
         self.hotkeyWindow = publicationContext.withSemanticContext {
             Window(title: "Keyboard Shortcuts", role: .overlay, level: .criticalOverlay)
         }
-        self.menuWindow = publicationContext.withSemanticContext {
-            Window(title: "Menu", role: .popup, level: .criticalOverlay)
-        }
-        self.windowScene = publicationContext.makeWindowScene(windows: [notificationWindow, hotkeyWindow, menuWindow])
+        self.windowScene = publicationContext.makeWindowScene(
+            windows: [notificationWindow, hotkeyWindow])
         try publicationContext.withSemanticContext {
             notificationWindow.setContentViewController(notificationViewController)
             notificationWindow.orderFront()
             hotkeyWindow.setContentViewController(hotkeyViewController)
             hotkeyWindow.orderFront()
-            menuWindow.setContentViewController(ViewController(view: View()))
-            menuWindow.orderOut()
             if let frame {
                 try updateWindowFrames(frame)
             }
@@ -214,14 +199,12 @@ public final class ShellOverlayScene: ~Sendable {
         }
     }
 
-    package func updateEnvironment(
-        colorScheme: UInt32,
-        contrast: UInt32
-    ) {
-        var environment = publicationContext.semanticContext.environment
-        environment.appearance = colorScheme == 2 ? .light : .dark
-        environment.increasesContrast = contrast == 1
+    package func updateEnvironment(_ environment: UIEnvironment) {
         publicationContext.semanticContext.updateEnvironment(environment)
+    }
+
+    package var environment: UIEnvironment {
+        publicationContext.semanticContext.environment
     }
 
     package func showNotification(_ notification: ShellOverlayNotificationInfo) -> Bool {
@@ -235,7 +218,13 @@ public final class ShellOverlayScene: ~Sendable {
                 return changed
             } else {
                 let view = publicationContext.withSemanticContext {
-                    ShellOverlayNotificationView(info: notification)
+                    ShellOverlayNotificationView(
+                        info: notification,
+                        metrics: ShellOverlayNotificationMetrics(
+                            showsThumbnail: notification.showsThumbnail,
+                            hasBody: !notification.body.isEmpty,
+                            textSystem: publicationContext.semanticContext
+                                .services.textSystem))
                 }
                 view.setDismissHandler { [weak self] id in
                     _ = self?.dismissNotification(id, reason: 2)
@@ -307,191 +296,48 @@ public final class ShellOverlayScene: ~Sendable {
         return true
     }
 
-    /// A root-level menu's `parentActionID` — never matches a real dbusmenu id.
-    private static let menuRootSentinel = Int.min
-    /// How far a submenu panel overlaps its parent's right edge, so the cascade reads
-    /// as connected.
-    private static let menuSubmenuOverlap: Double = 4
-
-    /// Open a fresh menu (root level), replacing any open cascade, through a
-    /// full-output transparent container in `menuWindow`. Every submenu opened from
-    /// it later stacks into the same container. `onSelect` reports the chosen row's
-    /// token at any depth.
+    /// Present overlay command data through NucleusUI's single retained menu
+    /// controller. The overlay owns no parallel panel stack or input state.
     package func showMenu(
         _ menu: Menu,
-        at anchor: Point,
-        onSelect: @escaping @MainActor (Int) -> Void
+        at anchor: Point
     ) -> Bool {
         Trace.zone("overlay.scene.show_menu", color: Trace.Color.green) {
-            _ = dismissMenu()
-            let container = View()
-            let controller = ViewController(view: container)
-            let outputSize = menuOutputSize()
-            publicationContext.withSemanticContext {
-                menuWindow.setContentViewController(controller)
-                menuWindow.setFrame(Rect(x: 0, y: 0, width: outputSize.width, height: outputSize.height), display: false)
-                menuWindow.orderFront()
+            _ = publicationContext.withSemanticContext {
+                windowScene.present(
+                    menu,
+                    anchor: Rect(
+                        x: anchor.x,
+                        y: anchor.y,
+                        width: 1,
+                        height: 1),
+                    level: .criticalOverlay,
+                    stickyOpeningGesture: true)
             }
-            menuContainer = container
-            menuSelectHandler = onSelect
-            guard pushMenuLevel(items: menu.items, anchor: anchor, parentActionID: Self.menuRootSentinel) else {
-                _ = dismissMenu()
-                return false
-            }
-            // Stay open after the opening gesture: swallow the release of the click
-            // that brought the menu up rather than treating it as a dismiss.
-            menuStickyArmed = true
             return true
         }
     }
 
     @discardableResult
     package func dismissMenu() -> Bool {
-        guard menuContainer != nil else { return false }
-        popMenuLevels(toDepth: 0)
-        menuContainer = nil
-        menuSelectHandler = nil
-        menuStickyArmed = false
-        menuWindow.orderOut()
+        guard let presentation = windowScene.menuPresentation else {
+            return false
+        }
+        presentation.dismiss()
         return true
-    }
-
-    /// Push a menu panel into the cascade: a `MenuView` over `items`, clamped on the
-    /// output at `anchor`, added to the container and recorded as the new top level.
-    @discardableResult
-    private func pushMenuLevel(items: [MenuItem], anchor: Point, parentActionID: Int) -> Bool {
-        guard let container = menuContainer else { return false }
-        let view = publicationContext.withSemanticContext {
-            ShellOverlayMenuView(menu: Menu(items: items))
-        }
-        let frameRect = clampedMenuFrame(anchor: anchor, size: view.preferredSize)
-        view.frame = frameRect
-        container.addSubview(view)
-        let level = menuLevels.count
-        // The scene owns the level stack, so the menu delegates the outcomes it
-        // cannot carry out itself and keeps only highlight movement.
-        view.onDismiss = { [weak self] in
-            guard let self else { return }
-            if level > 0 { popMenuLevels(toDepth: level) } else { _ = dismissMenu() }
-        }
-        view.onAscend = { [weak self] in
-            guard let self, level > 0 else { return }
-            popMenuLevels(toDepth: level)
-        }
-        view.onDescend = { [weak self] in
-            self?.openHighlightedSubmenu(atLevel: level)
-        }
-        view.onActivateHighlighted = { [weak self] in
-            self?.activateHighlightedRow(atLevel: level)
-        }
-        menuLevels.append(MenuLevel(view: view, frame: frameRect, parentActionID: parentActionID))
-        // The deepest open menu takes keyboard focus, so key events reach it
-        // because it *has* focus rather than because the input path noticed a
-        // menu was open.
-        windowScene.makeKey(menuWindow)
-        menuWindow.makeFirstResponder(view)
-        return true
-    }
-
-    /// Close every panel deeper than `depth`, removing each from the container.
-    private func popMenuLevels(toDepth depth: Int) {
-        defer {
-            // Focus follows the stack back down; with no levels left the menu
-            // window holds no first responder at all.
-            menuWindow.makeFirstResponder(menuLevels.last?.view)
-        }
-        while menuLevels.count > depth {
-            let level = menuLevels.removeLast()
-            level.view.removeFromSuperview()
-        }
-    }
-
-    /// The screen anchor for a submenu opened from `rowFrame` in `parent`: just past
-    /// the parent's right edge, raised so the submenu's first row aligns with the row.
-    private func submenuAnchor(parent: MenuLevel, rowFrame: Rect) -> Point {
-        Point(
-            x: parent.frame.origin.x + parent.frame.size.width - Self.menuSubmenuOverlap,
-            y: parent.frame.origin.y + rowFrame.origin.y - ShellOverlayMenuView.topPadding
-        )
-    }
-
-    /// Reconcile the submenu for the hovered row of level `li`: open the row's
-    /// submenu if it has one and is not already the open child, or close any child
-    /// when the row has none. Idempotent so hovering within a row does not churn.
-    private func updateSubmenu(forLevel li: Int, hoveredRow idx: Int?) {
-        guard li < menuLevels.count else { return }
-        let level = menuLevels[li]
-        if let idx, let item = level.view.item(at: idx), let submenu = item.submenu, !submenu.isEmpty {
-            if menuLevels.count > li + 1, menuLevels[li + 1].parentActionID == item.actionID {
-                return
-            }
-            popMenuLevels(toDepth: li + 1)
-            guard let rowFrame = level.view.rowFrame(at: idx) else { return }
-            _ = pushMenuLevel(items: submenu, anchor: submenuAnchor(parent: level, rowFrame: rowFrame), parentActionID: item.actionID)
-        } else {
-            popMenuLevels(toDepth: li + 1)
-        }
-    }
-
-    /// Open (via keyboard) the submenu of level `li`'s highlighted row and select its
-    /// first row. No-op when the row has no submenu.
-    private func openHighlightedSubmenu(atLevel li: Int) {
-        guard li < menuLevels.count else { return }
-        let level = menuLevels[li]
-        guard let idx = level.view.highlightedRowIndex, let item = level.view.item(at: idx),
-              let submenu = item.submenu, !submenu.isEmpty, let rowFrame = level.view.rowFrame(at: idx)
-        else { return }
-        popMenuLevels(toDepth: li + 1)
-        if pushMenuLevel(items: submenu, anchor: submenuAnchor(parent: level, rowFrame: rowFrame), parentActionID: item.actionID) {
-            menuLevels.last?.view.moveHighlight(by: 1)
-        }
-    }
-
-    private func menuOutputSize() -> Size {
-        frame?.outputSizeInPoints ?? Size(width: 4096, height: 4096)
-    }
-
-    /// Keyboard handling for the open cascade (the menu grabs the keyboard). The top
-    /// panel owns the selection: Up/Down move it, Right/Enter open a submenu or
-    /// activate a leaf, Left/Escape close the top panel (Escape at the root
-    /// dismisses). Other keys are swallowed so the client beneath stays frozen.
-    /// Keycodes are evdev, the value the seat delivers.
-    /// Activate the highlighted row of the level at `index`: descend if it has
-    /// a submenu, otherwise fire its action and dismiss.
-    private func activateHighlightedRow(atLevel index: Int) {
-        guard index < menuLevels.count else { return }
-        let top = menuLevels[index]
-        guard let rowIndex = top.view.highlightedRowIndex,
-              let item = top.view.item(at: rowIndex) else { return }
-        if let submenu = item.submenu, !submenu.isEmpty {
-            openHighlightedSubmenu(atLevel: index)
-            return
-        }
-        let handler = menuSelectHandler
-        let actionID = item.actionID
-        _ = dismissMenu()
-        handler?(actionID)
     }
 
     private var heldKey: HeldKey?
 
-    package var menuVisible: Bool { !menuLevels.isEmpty }
+    package var menuVisible: Bool {
+        windowScene.menuPresentation != nil
+    }
 
     /// Whether keys should be routed here rather than to the focused Wayland
     /// client. True for an open menu, and for a focused responder in the
     /// overlay's own scene — a text field cannot receive input otherwise.
     package var wantsKeyboard: Bool {
-        !menuLevels.isEmpty || windowScene.keyWindow?.firstResponder != nil
-    }
-
-    /// Place a panel so it stays on the output: anchored at `anchor`, shifted up or
-    /// left as needed to keep it fully visible (a submenu clamped left lands over its
-    /// parent, the on-screen fallback when there is no room to the right).
-    private func clampedMenuFrame(anchor: Point, size: Size) -> Rect {
-        let output = menuOutputSize()
-        let x = max(0, min(anchor.x, output.width - size.width))
-        let y = max(0, min(anchor.y, output.height - size.height))
-        return Rect(x: x, y: y, width: size.width, height: size.height)
+        menuVisible || windowScene.keyWindow?.firstResponder != nil
     }
 
     // MARK: - Key repeat
@@ -593,67 +439,6 @@ public final class ShellOverlayScene: ~Sendable {
         pointEvent.activeButtons = activePointerButtons
         noteKeyState(pointEvent, nucleon: pointEvent.nucleonEvent)
         let cursor = cursor(for: pointEvent.location)
-        if !menuLevels.isEmpty {
-            let location = pointEvent.location
-            // The deepest open panel under the pointer; nil when over none of them.
-            let hit = menuLevels.lastIndex { $0.frame.contains(location) }
-            switch pointEvent.kind {
-            case .pointerMove:
-                guard let li = hit else {
-                    // Over a gap between panels: keep the cascade, change nothing.
-                    return .init(consumed: true, wantsFrame: false, cursor: .default)
-                }
-                let level = menuLevels[li]
-                let local = Point(x: location.x - level.frame.origin.x, y: location.y - level.frame.origin.y)
-                let idx = level.view.rowIndex(at: local)
-                level.view.setHighlightedIndex(idx)
-                updateSubmenu(forLevel: li, hoveredRow: idx)
-                return .init(consumed: true, wantsFrame: true, cursor: .pointer)
-            case .pointerDown where pointEvent.button == 272:
-                if hit != nil {
-                    return .init(consumed: true, wantsFrame: false, cursor: .pointer)
-                }
-                let changed = dismissMenu()
-                return .init(consumed: true, wantsFrame: changed, cursor: .default)
-            case .pointerUp where pointEvent.button == 272:
-                let sticky = menuStickyArmed
-                menuStickyArmed = false
-                guard let li = hit else {
-                    // The release of the opening click (over the bar title or empty
-                    // space) leaves a freshly opened menu up; a later click outside
-                    // dismisses on its own pointer-down before reaching here.
-                    if sticky {
-                        return .init(consumed: true, wantsFrame: false, cursor: .default)
-                    }
-                    let changed = dismissMenu()
-                    return .init(consumed: true, wantsFrame: changed, cursor: .default)
-                }
-                let level = menuLevels[li]
-                let local = Point(x: location.x - level.frame.origin.x, y: location.y - level.frame.origin.y)
-                if let idx = level.view.rowIndex(at: local), let item = level.view.item(at: idx) {
-                    if let submenu = item.submenu, !submenu.isEmpty {
-                        // A submenu parent opens (or keeps) its child; it never activates.
-                        updateSubmenu(forLevel: li, hoveredRow: idx)
-                        return .init(consumed: true, wantsFrame: true, cursor: .pointer)
-                    }
-                    let handler = menuSelectHandler
-                    let actionID = item.actionID
-                    _ = dismissMenu()
-                    handler?(actionID)
-                    return .init(consumed: true, wantsFrame: true, cursor: .default)
-                }
-                return .init(consumed: true, wantsFrame: false, cursor: .pointer)
-            case .keyDown:
-                guard let keyEvent = pointEvent.nucleonEvent else {
-                    return .init(consumed: true, wantsFrame: false, cursor: .default)
-                }
-                let handled = windowScene.dispatchEvent(keyEvent) == .handled
-                return .init(consumed: true, wantsFrame: handled, cursor: .default)
-            default:
-                return .init(consumed: true, wantsFrame: false, cursor: hit != nil ? .pointer : .default)
-            }
-        }
-
         guard let nucleonEvent = pointEvent.nucleonEvent else {
             return .init(consumed: false, wantsFrame: false, cursor: cursor)
         }
@@ -725,6 +510,12 @@ public final class ShellOverlayScene: ~Sendable {
     }
 
     private func updateWindowFrames(_ frame: ShellOverlayFrameInfo) throws(UIError) {
+        let outputSize = frame.outputSizeInPoints
+        windowScene.displayBounds = Rect(
+            x: 0,
+            y: 0,
+            width: outputSize.width,
+            height: outputSize.height)
         try updateNotificationWindowFrame(frame)
         if hotkeyVisible {
             try updateHotkeyFrame(frame)

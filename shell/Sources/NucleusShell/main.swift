@@ -1,5 +1,4 @@
 import NucleusShellRuntime
-import NucleusTextBackend
 #if canImport(Glibc)
 import Glibc
 #endif
@@ -12,8 +11,7 @@ import Glibc
 // installed default. WAYLAND_DISPLAY (else the default socket) selects the compositor.
 
 @MainActor
-func main() -> Int32 {
-    SkiaTextLayoutBackend.installIfNeeded()
+func main() async -> Int32 {
     let bundlePath: String = {
         if let env = getenv("NUCLEUS_SHELL_BUNDLE") { return String(cString: env) }
         return "/usr/share/nucleus-shell/bundles/bar.hbc"
@@ -27,7 +25,7 @@ func main() -> Int32 {
             + "(WAYLAND_DISPLAY=\(socket ?? "<default>")) or bring up the render device\n")
         return 1
     }
-    host.run()
+    await host.run()
     return 0
 }
 
@@ -35,4 +33,4 @@ private func FileHandle_stderr(_ s: String) {
     _ = s.withCString { write(2, $0, strlen($0)) }
 }
 
-exit(main())
+exit(await main())

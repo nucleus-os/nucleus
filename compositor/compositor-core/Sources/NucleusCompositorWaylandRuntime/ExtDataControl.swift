@@ -43,6 +43,9 @@ final class ExtDataControlManager: SelectionObserver {
 
     fileprivate func setClipboard(_ source: (any SelectionSource)?) { dataDevice.setSelection(source) }
     fileprivate var currentClipboard: (any SelectionSource)? { dataDevice.currentSelection }
+    fileprivate func sourceDestroyed(_ source: ExtDataControlSource) {
+        dataDevice.selectionSourceDestroyed(source)
+    }
 
     fileprivate func addDevice(_ device: ExtDataControlDevice) {
         devices.append(WeakExtDataControlDevice(device))
@@ -70,7 +73,7 @@ final class ExtDataControlManager: SelectionObserver {
 extension ExtDataControlManager: ExtDataControlManagerV1Requests {
     // create_data_source(id)
     func createDataSource(_ resource: UnsafeMutablePointer<wl_resource>, id: WlNewId) {
-        let source = ExtDataControlSource()
+        let source = ExtDataControlSource(manager: self)
         guard let sres = id.create(vtable: ExtDataControlSourceV1Server.vtable, owner: source) else { return }
         source.bind(sres)
     }
@@ -87,10 +90,24 @@ extension ExtDataControlManager: ExtDataControlManagerV1Requests {
 
 /// ext_data_control_source_v1 owner (Rule 9): a shell-offered clipboard source.
 final class ExtDataControlSource: SelectionSource, ExtDataControlSourceV1Requests {
+    private weak var manager: ExtDataControlManager?
     private(set) var mimes: [String] = []
     private var resource: UnsafeMutablePointer<wl_resource>?
+    private var wasUsed = false
 
+    init(manager: ExtDataControlManager) {
+        self.manager = manager
+    }
     fileprivate func bind(_ resource: UnsafeMutablePointer<wl_resource>) { self.resource = resource }
+    fileprivate func claimForSelection() -> Bool {
+        guard !wasUsed else { return false }
+        wasUsed = true
+        return true
+    }
+
+    deinit {
+        manager?.sourceDestroyed(self)
+    }
 
     // MARK: SelectionSource
 
@@ -151,6 +168,13 @@ extension ExtDataControlDevice: ExtDataControlDeviceV1Requests {
     func setSelection(_ resource: UnsafeMutablePointer<wl_resource>,
                       source sourceRes: UnsafeMutablePointer<wl_resource>?) {
         let source = sourceRes.flatMap { WaylandResource.owner(of: $0, as: ExtDataControlSource.self) }
+        if let source, !source.claimForSelection() {
+            swift_wayland_resource_post_error(
+                resource,
+                UInt32(EXT_DATA_CONTROL_DEVICE_V1_ERROR_USED_SOURCE.rawValue),
+                "data-control source was already used")
+            return
+        }
         manager?.setClipboard(source)
     }
 

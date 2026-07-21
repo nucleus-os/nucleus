@@ -1,14 +1,4 @@
-// Phase 8.3 — Swift render-layer per-node state (model + presentation split).
-//
-// The third slice of the render-server retained-layer model: the geometry
-// primitives (`M44`, `Bounds`, `Point2D`, `Rect`, `ClipOp`), the producer-side
-// `ModelProperties`/`ModelState`, the renderer-side `PresentationOverride`/
-// `PresentationState` (with the content-sample + background-effect-region
-// metadata), and the `effective*` override-precedence accessors.
-//
-// `M44` here is a carried value type only — the matrix math (translate/scale/
-// rotate/invert/decompose) is renderer-side and lands with the renderer move
-// (10b). Nothing imports this yet; the `Layer` node + tree follow in later 8.x slices.
+// Retained-layer geometry and per-node model/presentation state.
 
 // MARK: - Geometry
 
@@ -269,8 +259,6 @@ public struct PresentationState: Equatable, Sendable {
     public var contentSample = ContentSample()
     public var backgroundEffect: Bool = false
     public var backgroundEffectRegions = BackgroundEffectRegions()
-    /// Active presentation-transition operation id (`none` = no transition).
-    public var transition: OperationID = .none
 
     public init(
         override_: PresentationOverride? = nil,
@@ -278,8 +266,7 @@ public struct PresentationState: Equatable, Sendable {
         content: LayerContent = .none,
         contentSample: ContentSample = ContentSample(),
         backgroundEffect: Bool = false,
-        backgroundEffectRegions: BackgroundEffectRegions = BackgroundEffectRegions(),
-        transition: OperationID = .none
+        backgroundEffectRegions: BackgroundEffectRegions = BackgroundEffectRegions()
     ) {
         self.override_ = override_
         self.readiness = readiness
@@ -287,7 +274,6 @@ public struct PresentationState: Equatable, Sendable {
         self.contentSample = contentSample
         self.backgroundEffect = backgroundEffect
         self.backgroundEffectRegions = backgroundEffectRegions
-        self.transition = transition
     }
 }
 
@@ -295,8 +281,7 @@ public struct PresentationState: Equatable, Sendable {
 
 /// The `effective*` precedence: each reads
 /// the presentation override (set by an in-flight animation) before falling
-/// back to the model. Free functions here so they can be reused by the `Layer`
-/// node in a later 8.x slice and parity-tested now.
+/// back to the model.
 public enum EffectiveLayer: Sendable {
     public static func transform(model: ModelProperties, presentation: PresentationState) -> M44 {
         if let ov = presentation.override_, let t = ov.transform { return t }

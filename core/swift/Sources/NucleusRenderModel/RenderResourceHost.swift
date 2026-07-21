@@ -1,21 +1,28 @@
-// Phase 10c.3 cutover — the process-global Swift resource host.
-//
 // Aggregates the GPU-independent stores the layers resource-host conformers
 // (paint/image/snapshot/implicit-action registrars + lifecycles) write and the
-// renderer reads at frame time. One process-global instance so a registration
-// from any layers context and the renderer's per-frame read share one host.
+// renderer reads at frame time. Each runtime graph owns exactly one instance.
 //
 import Synchronization
 
-public final class SwiftResourceHost: Sendable {
-    /// The process-global resource host.
-    public static let shared = SwiftResourceHost()
+public struct ResourceHostIdentity: RawRepresentable, Hashable, Sendable {
+    public let rawValue: UInt64
 
+    public init(rawValue: UInt64) {
+        precondition(rawValue != 0, "resource-host identity must be nonzero")
+        self.rawValue = rawValue
+    }
+}
+
+public final class SwiftResourceHost: Sendable {
+    private static let identitySequence = Mutex(UInt64(1))
+
+    public let identity: ResourceHostIdentity
+    private let live = Mutex(true)
     /// Shell-authored paint command lists (refcounted), rasterized at frame time.
     public let paintContents = PaintContentStore()
 
-    /// Snapshot-handle registry (transition prev/next materials, `.snapshot`
-    /// content), resolved through to the renderer's texture registry.
+    /// Snapshot-handle registry for `.snapshot` content, resolved through to
+    /// the renderer's texture registry.
     public let snapshots = SnapshotService()
 
     /// Registered image sources (path + decode bounds, refcounted), decoded by
@@ -35,7 +42,27 @@ public final class SwiftResourceHost: Sendable {
         implicitActionStorage.withLock { $0 }
     }
 
-    public init() {}
+    public init() {
+        let rawIdentity = Self.identitySequence.withLock { next in
+            let current = next
+            next &+= 1
+            precondition(next != 0, "resource-host identity space exhausted")
+            return current
+        }
+        identity = ResourceHostIdentity(rawValue: rawIdentity)
+    }
+
+    public var isLive: Bool { live.withLock { $0 } }
+
+    public func accepts(rawIdentity: UInt64) -> Bool {
+        rawIdentity == identity.rawValue && isLive
+    }
+
+    /// Reject every late registrar/lifecycle callback before the runtime-owned
+    /// stores begin teardown. Idempotent.
+    public func invalidate() {
+        live.withLock { $0 = false }
+    }
 
     public func replaceImplicitActions(_ table: ImplicitActionTable) {
         implicitActionStorage.withLock { $0 = table }

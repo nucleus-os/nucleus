@@ -13,19 +13,32 @@ private func fail(_ msg: String) -> Never {
 
 private final class ScreencopyStub: ScreencopyDelegate {
     let full = ScreencopyParams(shmFormat: 1, width: 64, height: 48, stride: 256, drmFourcc: 0x3432_5258)
-    func screencopyParams(output: WlOutput?, region: WlRect?) -> ScreencopyParams? {
-        region == nil ? full : nil  // region capture "unsupported" here → failed
+    func screencopyConfiguration(
+        output: WlOutput?, region: WlRect?
+    ) -> ScreencopyConfiguration? {
+        region == nil
+            ? ScreencopyConfiguration(params: full, sourceRegion: nil)
+            : nil  // region capture "unsupported" here → failed
     }
     func screencopyRequestFrame(output: WlOutput?) {}
     func screencopyCapture(
-        output: WlOutput?, region: WlRect?,
-        buffer: UnsafeMutablePointer<wl_resource>, withDamage: Bool) -> ScreencopyResult {
-        ScreencopyResult(ok: true, tvSecHi: 0, tvSecLo: 99, tvNsec: 11, flags: 1)
+        output: WlOutput?, configuration: ScreencopyConfiguration,
+        overlayCursor: Bool,
+        buffer: UnsafeMutablePointer<wl_resource>, withDamage: Bool,
+        preferRegionReadback: Bool,
+        completion: @escaping @MainActor (ScreencopyResult) -> Void
+    ) -> UInt64? {
+        completion(ScreencopyResult(
+            ok: true, tvSecHi: 0, tvSecLo: 99,
+            tvNsec: 11, flags: 1))
+        return 1
     }
+    func screencopyCancelCapture(_: UInt64) {}
 }
 
 @main
 enum WaylandScreencopyFixture {
+    @MainActor
     static func main() {
         guard let router = NucleusWaylandRouter() else { fail("router") }
         let stub = ScreencopyStub()

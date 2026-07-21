@@ -12,11 +12,21 @@ import NucleusRenderModel
 @testable import NucleusRenderHost
 
 @Suite struct RenderHostFeedTests {
+    @MainActor
+    private func makeSink(
+        resourceHost: SwiftResourceHost = SwiftResourceHost(),
+        requestFrame: @escaping @MainActor () -> Void = {}
+    ) -> RenderCommitSink {
+        RenderCommitSink(
+            store: RetainedTreeStore(resourceHost: resourceHost),
+            resourceHost: resourceHost,
+            runtimeHost: .inMemory(),
+            requestFrame: requestFrame)
+    }
+
     @Test @MainActor func acceptedSceneCommitRequestsAFrame() throws {
         var requests = 0
-        SceneCommitFrameDemand.install { requests += 1 }
-        defer { SceneCommitFrameDemand.clear() }
-        let sink = RenderCommitSink(store: RetainedTreeStore())
+        let sink = makeSink(requestFrame: { requests += 1 })
         let context = try NucleusLayers.Context(id: ContextID(rawValue: 901), commitSink: sink)
         var transaction = NucleusLayers.LayerTransaction(context: context)
         let layer = transaction.createLayer()
@@ -27,8 +37,8 @@ import NucleusRenderModel
     }
 
     @Test @MainActor func animationCompletionWaitsForTerminalPresentation() throws {
-        let store = RetainedTreeStore()
-        let sink = RenderCommitSink(store: store)
+        let sink = makeSink()
+        let store = sink.store
         let context = try NucleusLayers.Context(
             id: ContextID(rawValue: 902),
             commitSink: sink
@@ -40,7 +50,7 @@ import NucleusRenderModel
         store.markPresented()
 
         var outcomes: [PresentationCompletionResult] = []
-        let token = PresentationCompletionCenter.register {
+        let token = sink.runtimeHost.presentationCompletions.register {
             outcomes.append($0)
         }
         var transaction = NucleusLayers.LayerTransaction(
@@ -85,8 +95,8 @@ import NucleusRenderModel
     }
 
     @Test @MainActor func replacementAndRemovalReportDistinctOutcomes() throws {
-        let store = RetainedTreeStore()
-        let sink = RenderCommitSink(store: store)
+        let sink = makeSink()
+        let store = sink.store
         let context = try NucleusLayers.Context(
             id: ContextID(rawValue: 903),
             commitSink: sink
@@ -98,7 +108,7 @@ import NucleusRenderModel
         store.markPresented()
 
         var firstOutcome: PresentationCompletionResult?
-        let firstToken = PresentationCompletionCenter.register {
+        let firstToken = sink.runtimeHost.presentationCompletions.register {
             firstOutcome = $0
         }
         var first = NucleusLayers.LayerTransaction(
@@ -116,7 +126,7 @@ import NucleusRenderModel
         try first.commit()
 
         var secondOutcome: PresentationCompletionResult?
-        let secondToken = PresentationCompletionCenter.register {
+        let secondToken = sink.runtimeHost.presentationCompletions.register {
             secondOutcome = $0
         }
         var replacement = NucleusLayers.LayerTransaction(
@@ -158,8 +168,10 @@ import NucleusRenderModel
                 c2y: 1
             ),
         ])
-        let store = RetainedTreeStore(implicitActionTable: table)
-        let sink = RenderCommitSink(store: store)
+        let resourceHost = SwiftResourceHost()
+        resourceHost.replaceImplicitActions(table)
+        let sink = makeSink(resourceHost: resourceHost)
+        let store = sink.store
         let context = try NucleusLayers.Context(
             id: ContextID(rawValue: 904),
             commitSink: sink
@@ -196,7 +208,7 @@ import NucleusRenderModel
     @Test @MainActor func layersToRenderFeed() throws {
         // The shell-overlay context so the .none/.default material role derives
         // .shellOverlay (matching the host's context-derived path).
-        let sink = RenderCommitSink()
+        let sink = makeSink()
         let ctx = try NucleusLayers.Context(id: .shellOverlay, commitSink: sink)
 
         var nextIndex: UInt32 = 0

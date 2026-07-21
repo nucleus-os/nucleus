@@ -12,7 +12,10 @@ final class ShellOverlayNotificationView: View, ~Sendable {
     let closeButton: Button
     private var dismissHandler: ((UInt32) -> Void)?
 
-    init(info: ShellOverlayNotificationInfo, metrics: ShellOverlayNotificationMetrics = .init()) {
+    init(
+        info: ShellOverlayNotificationInfo,
+        metrics: ShellOverlayNotificationMetrics
+    ) {
         self.info = info
         self.metrics = metrics.updated(showsThumbnail: info.showsThumbnail, hasBody: !info.body.isEmpty)
         self.backgroundEffectView = VisualEffectView(material: .popover, state: .active, cornerRadius: 18)
@@ -182,12 +185,22 @@ struct ShellOverlayNotificationMetrics: Sendable, Equatable {
     var thumbH: Float
 
     @MainActor
-    init(showsThumbnail: Bool = false, hasBody: Bool = false) {
+    init(
+        showsThumbnail: Bool = false,
+        hasBody: Bool = false,
+        textSystem: TextSystem
+    ) {
         let cardPad: Float = 18
         let summarySize: Float = 15
         let bodySize: Float = 13
-        let summaryLayout = TextLayout(text: "Hg", font: .systemFont(ofSize: summarySize))
-        let bodyLayout = TextLayout(text: "Hg", font: .systemFont(ofSize: bodySize))
+        let summaryLayout = TextLayout(
+            text: "Hg",
+            font: .systemFont(ofSize: summarySize),
+            textSystem: textSystem)
+        let bodyLayout = TextLayout(
+            text: "Hg",
+            font: .systemFont(ofSize: bodySize),
+            textSystem: textSystem)
         let summaryTextHeight = Float(summaryLayout.intrinsicSize.height)
         let bodyTextHeight = Float(bodyLayout.intrinsicSize.height)
         let thumbH: Float = 76
@@ -211,9 +224,14 @@ struct ShellOverlayNotificationMetrics: Sendable, Equatable {
         summaryTextHeight + (hasBody ? bodyTextHeight + 7 : 0)
     }
 
-    @MainActor
     func updated(showsThumbnail: Bool, hasBody: Bool) -> ShellOverlayNotificationMetrics {
-        ShellOverlayNotificationMetrics(showsThumbnail: showsThumbnail, hasBody: hasBody)
+        var copy = self
+        let textHeight = copy.textHeight(hasBody: hasBody)
+        copy.cardW = showsThumbnail ? 424 : 380
+        copy.cardH = showsThumbnail
+            ? copy.cardPad * 2 + max(copy.thumbH, textHeight)
+            : copy.cardPad * 2 + textHeight
+        return copy
     }
 }
 
@@ -261,10 +279,9 @@ final class ShellOverlayNotificationListView: StackView, ~Sendable {
         var activeOffset: Float = 0
 
         for case let notification as ShellOverlayNotificationView in arrangedSubviews {
-            let metrics = ShellOverlayNotificationMetrics(
+            let metrics = notification.metrics.updated(
                 showsThumbnail: notification.info.showsThumbnail,
-                hasBody: !notification.info.body.isEmpty
-            )
+                hasBody: !notification.info.body.isEmpty)
             notification.update(notification.info, metrics: metrics)
             let x = regionX + regionW - metrics.cardW - metrics.rightMargin
             if !isArrangedSubviewExiting(notification) {

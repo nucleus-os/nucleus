@@ -1,8 +1,7 @@
 // Phase 10b.5 — import a DRM-format-modifier DMA-BUF into the Swift Vulkan
 // device as a VkImage. Used for both committed Wayland client buffers and the
 // GBM scanout BO. The pNext chain assembly (external-memory + explicit DRM
-// modifier plane layouts) is the verifiable dormant core; the live import binds
-// imported memory and is exercised best-effort where a matched device exists.
+// modifier plane layouts) and live import bind imported memory to the image.
 
 #if canImport(Glibc)
 import Glibc
@@ -69,17 +68,66 @@ public enum DrmFourcc {
     public static let argb8888: UInt32 = 0x3432_5241  // 'AR24'
 }
 
+struct ClientShmConversionMetrics: Equatable, Sendable {
+    var fullSizeOwnedAllocations: UInt64
+    var ownedAllocationBytes: UInt64
+    var bytesCopied: UInt64
+}
+
+struct ClientShmConversion: Equatable, Sendable {
+    var pixels: [UInt8]
+    var metrics: ClientShmConversionMetrics
+}
+
 /// Convert a committed wl_shm client buffer into the RGBA byte layout consumed
 /// by `makeRasterImageRGBA`. wl_shm's ARGB8888/XRGB8888 values map to DRM
 /// AR24/XR24, whose little-endian memory order is BGRA/BGRX.
 public func convertClientShmToRGBA(
-    pixels: [UInt8], width: UInt32, height: UInt32, drmFormat: UInt32, stride: UInt32
+    pixels: UnsafeRawBufferPointer,
+    width: UInt32,
+    height: UInt32,
+    drmFormat: UInt32,
+    stride: UInt32
 ) -> [UInt8]? {
-    let w = Int(width)
-    let h = Int(height)
-    let rowStride = Int(stride)
-    guard rowStride >= w * 4 else { return nil }
-    guard pixels.count >= rowStride * h else { return nil }
+    convertClientShmToRGBAWithMetrics(
+        pixels: pixels,
+        width: width,
+        height: height,
+        drmFormat: drmFormat,
+        stride: stride
+    )?.pixels
+}
+
+func convertClientShmToRGBAWithMetrics(
+    pixels: UnsafeRawBufferPointer,
+    width: UInt32,
+    height: UInt32,
+    drmFormat: UInt32,
+    stride: UInt32
+) -> ClientShmConversion? {
+    guard width > 0, height > 0 else { return nil }
+
+    let (minimumStride, minimumStrideOverflow) =
+        UInt64(width).multipliedReportingOverflow(by: 4)
+    guard !minimumStrideOverflow, UInt64(stride) >= minimumStride else { return nil }
+
+    let (sourceByteCount, sourceByteCountOverflow) =
+        UInt64(stride).multipliedReportingOverflow(by: UInt64(height))
+    let (pixelCount, pixelCountOverflow) =
+        UInt64(width).multipliedReportingOverflow(by: UInt64(height))
+    let (destinationByteCount, destinationByteCountOverflow) =
+        pixelCount.multipliedReportingOverflow(by: 4)
+    guard
+        !sourceByteCountOverflow,
+        !pixelCountOverflow,
+        !destinationByteCountOverflow,
+        let sourceCount = Int(exactly: sourceByteCount),
+        let destinationCount = Int(exactly: destinationByteCount),
+        let rowStride = Int(exactly: stride),
+        let destinationRowBytes = Int(exactly: minimumStride),
+        pixels.count >= sourceCount,
+        let source = pixels.baseAddress?.assumingMemoryBound(to: UInt8.self)
+    else { return nil }
 
     let opaque: Bool
     switch drmFormat {
@@ -91,20 +139,32 @@ public func convertClientShmToRGBA(
         return nil
     }
 
-    var out = [UInt8](repeating: 0, count: w * h * 4)
-    for y in 0..<h {
-        let srcRow = y * rowStride
-        let dstRow = y * w * 4
-        for x in 0..<w {
-            let src = srcRow + x * 4
-            let dst = dstRow + x * 4
-            out[dst + 0] = pixels[src + 2]
-            out[dst + 1] = pixels[src + 1]
-            out[dst + 2] = pixels[src + 0]
-            out[dst + 3] = opaque ? 255 : pixels[src + 3]
+    let converted = [UInt8](unsafeUninitializedCapacity: destinationCount) {
+        destination, initializedCount in
+        guard let destinationBase = destination.baseAddress else {
+            initializedCount = 0
+            return
         }
+        for y in 0..<Int(height) {
+            let sourceRow = source.advanced(by: y * rowStride)
+            let destinationRow = destinationBase.advanced(by: y * destinationRowBytes)
+            for x in 0..<Int(width) {
+                let sourcePixel = sourceRow.advanced(by: x * 4)
+                let destinationPixel = destinationRow.advanced(by: x * 4)
+                destinationPixel[0] = sourcePixel[2]
+                destinationPixel[1] = sourcePixel[1]
+                destinationPixel[2] = sourcePixel[0]
+                destinationPixel[3] = opaque ? 255 : sourcePixel[3]
+            }
+        }
+        initializedCount = destinationCount
     }
-    return out
+    return ClientShmConversion(
+        pixels: converted,
+        metrics: ClientShmConversionMetrics(
+            fullSizeOwnedAllocations: 1,
+            ownedAllocationBytes: UInt64(destinationCount),
+            bytesCopied: UInt64(destinationCount)))
 }
 
 public struct DmaBufFormatModifier: Equatable, Sendable {

@@ -278,10 +278,10 @@ extension ImageView {
         return self
     }
 
-    /// Show an image file, decoded to fit this view once it has a size.
+    /// Show one retained image or icon source.
     @discardableResult
-    public func source(_ path: String?) -> Self {
-        sourcePath = path
+    public func source(_ source: ImageRequestSource?) -> Self {
+        self.source = source
         return self
     }
 

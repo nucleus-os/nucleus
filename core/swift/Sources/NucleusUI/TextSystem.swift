@@ -316,8 +316,6 @@ package final class TextLayoutLease {
 public final class TextSystem {
     public typealias DiagnosticHandler = @MainActor @Sendable (TextSystemIssue) -> Void
 
-    public static let shared = TextSystem()
-
     public private(set) var installationGeneration: UInt64 = 0
     public var diagnosticHandler: DiagnosticHandler?
     package private(set) var layoutRequestCount: UInt64 = 0

@@ -1,18 +1,4 @@
-// Phase 8.4 — Swift render-layer geometry helpers (pure rect algebra).
-//
-// The fourth slice of the render-server retained-layer model: the pure
-// rect-algebra and extent-clip helpers that the render-server extent/damage
-// bookkeeping uses.
-//
-// Scope: only the matrix-free, node-free helpers port here. The matrix-mapping
-// helpers (`mappedRect`, `layerLocalMatrixForExtent`, `layerClipRectForExtent`)
-// depend on M44 mapping math that is renderer-side and lands with the renderer
-// move (10b); the node-walking helpers (`layerContributesOwnExtent`, and the
-// `Layer`-fed half of `accumulateExtentClip`) depend on the `Layer` node that
-// follows in 8.5. `accumulateExtentClip` here ports the pure clip-propagation
-// core taking an already-resolved local clip, so the union/intersect/empty
-// logic is testable now and the caller feeds the matrix-mapped local clip once
-// the node + matrix paths exist.
+// Pure retained-layer rect algebra and extent-clip helpers.
 
 // MARK: - Extent clip
 
@@ -22,9 +8,6 @@ public enum ExtentClip: Equatable, Sendable {
     case rect(Rect)
     case empty
 }
-
-// `TransitionSubtype` (used by `pushDisplacement` below) is defined in
-// `RenderTransition.swift` — its canonical home.
 
 // MARK: - Layer-id list
 
@@ -36,20 +19,6 @@ public func appendUniqueLayerID(_ list: inout [UInt64], _ layerId: UInt64) {
 }
 
 // MARK: - Rect algebra
-
-/// Off-screen displacement vector for a slide-in transition: a full bounds-width
-/// (or -height) push in the entry direction, min magnitude 1. Mirrors
-/// `pushDisplacement`.
-public func pushDisplacement(_ subtype: TransitionSubtype, bounds: Rect) -> Point2D {
-    let dx = max(abs(bounds.w), 1)
-    let dy = max(abs(bounds.h), 1)
-    switch subtype {
-    case .fromLeft: return Point2D(x: -dx, y: 0)
-    case .fromRight: return Point2D(x: dx, y: 0)
-    case .fromTop: return Point2D(x: 0, y: -dy)
-    case .fromBottom: return Point2D(x: 0, y: dy)
-    }
-}
 
 /// Translate a rect by an offset (size unchanged). Mirrors `offsetRect`.
 public func offsetRect(_ rect: Rect, _ offset: Point2D) -> Rect {

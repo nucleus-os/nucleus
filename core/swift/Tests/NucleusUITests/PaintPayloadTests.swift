@@ -133,7 +133,7 @@ private typealias WireColor = NucleusTypes.Color
     /// later commands render. Skia's canvas would otherwise stay saved, and a
     /// clip set after the save would leak forward through the recording.
     @Test func anUnbalancedSaveIsClosedOff() {
-        let context = GraphicsContext()
+        let context = GraphicsContext(textSystem: testTextSystem())
         context.saveGState()
         context.clip(to: Rect(x: 0, y: 0, width: 10, height: 10))
         context.fill(Rect(x: 0, y: 0, width: 20, height: 20))
@@ -145,7 +145,7 @@ private typealias WireColor = NucleusTypes.Color
     }
 
     @Test func nestedUnbalancedSavesAreAllClosed() {
-        let context = GraphicsContext()
+        let context = GraphicsContext(textSystem: testTextSystem())
         context.saveGState()
         context.saveGState()
         context.fill(Rect(x: 0, y: 0, width: 10, height: 10))
@@ -156,7 +156,7 @@ private typealias WireColor = NucleusTypes.Color
     }
 
     @Test func aBalancedScopeIsUnchanged() {
-        let context = GraphicsContext()
+        let context = GraphicsContext(textSystem: testTextSystem())
         context.withGraphicsState {
             context.fill(Rect(x: 0, y: 0, width: 10, height: 10))
         }
@@ -167,7 +167,7 @@ private typealias WireColor = NucleusTypes.Color
     /// Reading `recording` must not consume or mutate the balancing, so a
     /// second read gives the same answer.
     @Test func readingTheRecordingTwiceIsStable() {
-        let context = GraphicsContext()
+        let context = GraphicsContext(textSystem: testTextSystem())
         context.saveGState()
         context.fill(Rect(x: 0, y: 0, width: 10, height: 10))
         #expect(context.recording == context.recording)
@@ -177,7 +177,7 @@ private typealias WireColor = NucleusTypes.Color
     /// State is restored, not just the canvas: a color set inside a scope does
     /// not leak past it.
     @Test func restoringUndoesStateChanges() {
-        let context = GraphicsContext()
+        let context = GraphicsContext(textSystem: testTextSystem())
         context.fillColor = UIColor(1, 0, 0, 1)
         context.withGraphicsState {
             context.fillColor = UIColor(0, 0, 1, 1)
@@ -197,7 +197,7 @@ private typealias WireColor = NucleusTypes.Color
     private func strokedCommand(
         cap: LineCap, join: LineJoin
     ) -> PaintCommand? {
-        let graphics = GraphicsContext()
+        let graphics = GraphicsContext(textSystem: testTextSystem())
         graphics.lineWidth = 4
         graphics.lineCap = cap
         graphics.lineJoin = join
@@ -231,7 +231,7 @@ private typealias WireColor = NucleusTypes.Color
 
     /// A fill has no ends and no corners to treat, so it must not claim to.
     @Test func aFillCarriesNoStrokeStyle() {
-        let graphics = GraphicsContext()
+        let graphics = GraphicsContext(textSystem: testTextSystem())
         graphics.lineCap = .round
         graphics.lineJoin = .bevel
         graphics.fill(Rect(x: 0, y: 0, width: 10, height: 10))
@@ -248,7 +248,7 @@ private typealias WireColor = NucleusTypes.Color
     private func imageCommand(
         _ configure: (GraphicsContext) -> Void
     ) -> NucleusTypes.PaintCommand? {
-        let graphics = GraphicsContext()
+        let graphics = GraphicsContext(textSystem: testTextSystem())
         configure(graphics)
         graphics.draw(ImageHandle(id: 1), in: Rect(x: 0, y: 0, width: 10, height: 20))
         return graphics.recording.commands.first
@@ -290,7 +290,7 @@ private typealias WireColor = NucleusTypes.Color
     /// The matrix transforms scalar geometry as an outline. The recorder never
     /// approximates anisotropic scale with one determinant-derived factor.
     @Test func transformsDoNotPreScaleScalars() {
-        let graphics = GraphicsContext()
+        let graphics = GraphicsContext(textSystem: testTextSystem())
         graphics.scaleBy(x: 4, y: 2)
         graphics.draw(
             ImageHandle(id: 1), in: Rect(x: 0, y: 0, width: 10, height: 10),
@@ -302,7 +302,7 @@ private typealias WireColor = NucleusTypes.Color
     }
 
     @Test func identityIsStillAnExplicitTransform() {
-        let graphics = GraphicsContext()
+        let graphics = GraphicsContext(textSystem: testTextSystem())
         graphics.draw(
             ImageHandle(id: 1), in: Rect(x: 0, y: 0, width: 10, height: 10),
             cornerRadius: 3)
@@ -315,7 +315,7 @@ private typealias WireColor = NucleusTypes.Color
     }
 
     @Test func pathsAndTheirGradientsStayLocalUnderRotation() throws {
-        let graphics = GraphicsContext()
+        let graphics = GraphicsContext(textSystem: testTextSystem())
         graphics.rotateBy(degrees: 45)
         graphics.fill(
             Rect(x: 0, y: 0, width: 10, height: 10),
@@ -413,7 +413,7 @@ private typealias WireColor = NucleusTypes.Color
     }
 
     @Test func invalidGeometryOrTransformProducesNoCommand() {
-        let graphics = GraphicsContext()
+        let graphics = GraphicsContext(textSystem: testTextSystem())
         graphics.fill(Rect(x: 0, y: 0, width: .nan, height: 10))
         graphics.concatenate(AffineTransform(tx: .infinity))
         graphics.fill(Rect(x: 0, y: 0, width: 10, height: 10))
@@ -422,14 +422,14 @@ private typealias WireColor = NucleusTypes.Color
     }
 
     @Test func saturationAndGradientStopsAreCanonicalized() throws {
-        let imageContext = GraphicsContext()
+        let imageContext = GraphicsContext(textSystem: testTextSystem())
         imageContext.draw(
             ImageHandle(id: 1),
             in: Rect(x: 0, y: 0, width: 10, height: 10),
             saturation: 4)
         #expect(imageContext.recording.commands.first?.saturation == 1)
 
-        let gradientContext = GraphicsContext()
+        let gradientContext = GraphicsContext(textSystem: testTextSystem())
         gradientContext.fill(
             Rect(x: 0, y: 0, width: 10, height: 10),
             with: .linearGradient(

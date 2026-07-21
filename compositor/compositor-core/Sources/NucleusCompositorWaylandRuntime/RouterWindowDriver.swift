@@ -171,7 +171,16 @@ final class RouterWindowDriver {
                     x: plan.targetRect.x, y: plan.targetRect.y,
                     w: Double(plan.targetRect.width), h: Double(plan.targetRect.height))
                 if !window.presentationActor.targetMatches(finalRect) {
-                    window.beginPresentationTileAnimation(finalRect: finalRect, slotGeneration: slot)
+                    if let feeder {
+                        feeder.beginTileTransition(
+                            window: window,
+                            finalRect: finalRect,
+                            slotGeneration: slot)
+                    } else {
+                        window.beginPresentationTileAnimation(
+                            finalRect: finalRect,
+                            slotGeneration: slot)
+                    }
                 }
             }
             byToplevel[token]?.pendingPlan = nil
@@ -185,10 +194,12 @@ final class RouterWindowDriver {
         let wm = WindowManager.shared
         guard let entry = byToplevel[token], let window = wm.server.window(id: entry.windowID) else { return }
         guard hasBuffer else {
-            if window.mapped {
+            if window.mapped || window.hasActiveClosingFade() {
                 window.mapped = false
-                feeder?.windowUnmapped(surfaceID: surfaceId)
                 seatDriver.surfaceUnmapped(surfaceId: surfaceId)
+                if !window.hasActiveClosingFade() {
+                    feeder?.windowUnmapped(surfaceID: surfaceId)
+                }
             }
             return
         }
@@ -205,6 +216,7 @@ final class RouterWindowDriver {
         var x = window.policyState.x
         var y = window.policyState.y
         if firstMap {
+            feeder?.cancelClosingForRemap(window: window)
             window.mapped = true
             // Floating first-map centering (over a mapped parent, else on the output);
             // nil for special modes, which keep their configured origin.
@@ -293,12 +305,21 @@ final class RouterWindowDriver {
     func willDestroyImpl(token: UInt, surfaceId: UInt32) {
         let wm = WindowManager.shared
         guard let entry = byToplevel.removeValue(forKey: token) else { return }
-        // Tear the window's scene down (unhost from the compositor root + remove its
-        // layer tree) before the model window goes away.
-        feeder?.windowUnmapped(surfaceID: surfaceId)
         seatDriver.surfaceUnmapped(surfaceId: surfaceId)
         wm.xdgDestroyed(windowID: entry.windowID)
-        wm.server.destroyWindow(id: entry.windowID)
+        guard let window = wm.server.window(id: entry.windowID) else { return }
+        let closing = feeder?.beginClosing(
+            window: window,
+            destroyWindowOnCompletion: true) ?? false
+        window.mapped = false
+        if !closing {
+            feeder?.windowUnmapped(surfaceID: surfaceId)
+            wm.server.destroyWindow(id: entry.windowID)
+        } else {
+            // The immutable snapshot now owns the visual lifetime; stop the scene
+            // from retaining the client's live buffer.
+            feeder?.surfaceContentDetached(surfaceID: surfaceId)
+        }
     }
 
     func activateSurfaceImpl(surfaceId: UInt32) {

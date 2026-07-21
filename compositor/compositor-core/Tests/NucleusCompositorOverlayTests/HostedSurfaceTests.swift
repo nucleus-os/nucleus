@@ -13,7 +13,9 @@ import NucleusUIEmbedder
     @Test func windowSceneAttachesHostedSurfaceThroughSceneRoot() throws {
         let visualSink = InMemoryCommitSink()
         let publication = try WindowScenePublicationContext(
-            visualContextID: ContextID(rawValue: 720), commitSink: visualSink)
+            visualContextID: ContextID(rawValue: 720),
+            commitSink: visualSink,
+            services: testHostServices())
         let visualContext = publication.visualContext
         let scene = publication.makeWindowScene(windows: [])
         let registry = HostedSurfaceRegistry<String>(
@@ -41,7 +43,9 @@ import NucleusUIEmbedder
     @Test func windowSceneBatchAttachesHostedSurfacesThroughOneSceneRoot() throws {
         let visualSink = InMemoryCommitSink()
         let publication = try WindowScenePublicationContext(
-            visualContextID: ContextID(rawValue: 721), commitSink: visualSink)
+            visualContextID: ContextID(rawValue: 721),
+            commitSink: visualSink,
+            services: testHostServices())
         let scene = publication.makeWindowScene(windows: [])
         let registry = HostedSurfaceRegistry<String>(
             context: publication.visualContext,
@@ -66,7 +70,9 @@ import NucleusUIEmbedder
     @Test func hostedSurfaceOwnsGenericRootLifecycleAndFrameUpdates() throws {
         let visualSink = InMemoryCommitSink()
         let publication = try WindowScenePublicationContext(
-            visualContextID: ContextID(rawValue: 718), commitSink: visualSink)
+            visualContextID: ContextID(rawValue: 718),
+            commitSink: visualSink,
+            services: testHostServices())
         let visualContext = publication.visualContext
         let scene = publication.makeWindowScene(windows: [])
         let registry = HostedSurfaceRegistry<String>(
@@ -111,7 +117,9 @@ import NucleusUIEmbedder
     @Test func hostedSurfaceRegistryOwnsStableIDsOrderingAndVisualContent() throws {
         let visualSink = InMemoryCommitSink()
         let publication = try WindowScenePublicationContext(
-            visualContextID: ContextID(rawValue: 719), commitSink: visualSink)
+            visualContextID: ContextID(rawValue: 719),
+            commitSink: visualSink,
+            services: testHostServices())
         let registry = HostedSurfaceRegistry<String>(
             context: publication.visualContext,
             uiContext: publication.semanticContext)
@@ -157,11 +165,11 @@ import NucleusUIEmbedder
     @Test func compositorEmbeddedAdapterPublishesReparentsAndTearsDownOneScene()
         throws
     {
-        installStubHost()
         let sink = InMemoryCommitSink()
         let publication = try WindowScenePublicationContext(
             visualContextID: ContextID(rawValue: 722),
-            commitSink: sink)
+            commitSink: sink,
+            services: testHostServices())
         let (window, left, right, label) =
             publication.withSemanticContext {
                 let window = Window(title: "Overlay")

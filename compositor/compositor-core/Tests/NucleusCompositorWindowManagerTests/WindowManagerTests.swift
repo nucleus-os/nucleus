@@ -138,7 +138,8 @@ private func nucleus_compositor_window_manager_migrate_off_output(
     WindowManager.shared.beginInteractiveMove(windowID: 77, serial: 44)
     #expect(WindowManager.shared.interactiveGrabActive() == true)
 
-    let moveUpdate = try #require(try WindowManager.shared.updateInteractiveGrab(cursorX: 15, cursorY: 25))
+    let moveUpdate = try #require(
+        WindowManager.shared.updateInteractiveGrab(cursorX: 15, cursorY: 25))
     #expect(moveUpdate.mode == .move)
     #expect(moveUpdate.windowId == 77)
     #expect(moveUpdate.rect.x == 20)
@@ -156,7 +157,8 @@ private func nucleus_compositor_window_manager_migrate_off_output(
     edges.bottom = true
     WindowManager.shared.seedInteractiveStartContext(windowID: 88, cursorX: 0, cursorY: 0, startRect: rect)
     WindowManager.shared.beginInteractiveResize(windowID: 88, serial: 45, edges: edges)
-    let resizeUpdate = try #require(try WindowManager.shared.updateInteractiveGrab(cursorX: 20, cursorY: 30))
+    let resizeUpdate = try #require(
+        WindowManager.shared.updateInteractiveGrab(cursorX: 20, cursorY: 30))
     #expect(resizeUpdate.mode == .resize)
     #expect(resizeUpdate.windowId == 88)
     #expect(resizeUpdate.rect.width == 120)

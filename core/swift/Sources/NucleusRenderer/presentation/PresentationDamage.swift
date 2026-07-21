@@ -174,7 +174,6 @@ struct NativeLayerDamageFact {
     var layerId: UInt64
     var visibleRect: DamageRect
     var visualSignature: UInt64
-    var hasPresentationTransition: Bool
 }
 
 struct RemoteHostDamageFact {
@@ -352,8 +351,7 @@ final class DamageTracker {
             changed = true
         }
 
-        let activePresentation = probe.subtreeHasActiveAnimations(fact.layerId) || fact.hasPresentationTransition
-        if activePresentation { changed = true }
+        if probe.subtreeHasActiveAnimations(fact.layerId) { changed = true }
 
         if changed && !currentAdded {
             addRect(sinks, .nativeLayer, current.visibleRect)

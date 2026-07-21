@@ -15,7 +15,7 @@
 // surface and author the scene.
 //
 // Isolation: the XWM calls the crossings from the compositor loop (the main actor);
-// the @_cdecl thunks assume isolation and call these @MainActor methods. Only
+// reactor callbacks assume isolation and call these @MainActor methods. Only
 // Sendable scalars cross.
 
 import WaylandServerC
@@ -110,6 +110,7 @@ final class RouterXwaylandDriver {
         let surfaceId = UInt32(window.surfaceObjectId)
         if mapped {
             guard !window.mapped else { return }
+            feeder?.cancelClosingForRemap(window: window)
             window.mapped = true
             let rect = window.currentRect()
             feeder?.windowMapped(
@@ -123,9 +124,16 @@ final class RouterXwaylandDriver {
                 forWindowID: windowID)
         } else {
             guard window.mapped else { return }
+            let closing = feeder?.beginClosing(
+                window: window,
+                destroyWindowOnCompletion: false) ?? false
             window.mapped = false
-            feeder?.windowUnmapped(surfaceID: surfaceId)
             seatDriver.surfaceUnmapped(surfaceId: surfaceId)
+            if closing {
+                feeder?.surfaceContentDetached(surfaceID: surfaceId)
+            } else {
+                feeder?.windowUnmapped(surfaceID: surfaceId)
+            }
             RenderBridge.requestFrame(
                 forWindowID: windowID)
         }
@@ -135,14 +143,25 @@ final class RouterXwaylandDriver {
     func destroy(windowID: UInt64) {
         let wm = WindowManager.shared
         guard let window = wm.server.window(id: windowID) else { return }
+        var closing = false
         if window.surfaceObjectId != 0 {
             let surfaceId = UInt32(window.surfaceObjectId)
-            feeder?.windowUnmapped(surfaceID: surfaceId)
+            closing = feeder?.beginClosing(
+                window: window,
+                destroyWindowOnCompletion: true) ?? false
+            window.mapped = false
             seatDriver.surfaceUnmapped(surfaceId: surfaceId)
+            if closing {
+                feeder?.surfaceContentDetached(surfaceID: surfaceId)
+            } else {
+                feeder?.windowUnmapped(surfaceID: surfaceId)
+            }
         }
         x11ByWindow[windowID] = nil
         wm.xwaylandDestroyed(windowID: windowID)
-        wm.server.destroyWindow(id: windowID)
+        if !closing {
+            wm.server.destroyWindow(id: windowID)
+        }
     }
 
     /// Emit an X11 configure for the model window's current rect (interactive
@@ -178,11 +197,21 @@ final class RouterXwaylandDriver {
             window.currentOutputID = outputID
             window.preferredOutputID = outputID
         }
-        window.seedPresentationActorToRect(
-            PresentationRect(
-                x: plan.targetRect.x, y: plan.targetRect.y,
-                w: Double(plan.targetRect.width), h: Double(plan.targetRect.height)),
-            slotGeneration: window.presentationActor.currentSlotGeneration)
+        let finalRect = PresentationRect(
+            x: plan.targetRect.x, y: plan.targetRect.y,
+            w: Double(plan.targetRect.width), h: Double(plan.targetRect.height))
+        if window.mapped, plan.shouldPresent, plan.layoutTransitionID != 0,
+           let feeder
+        {
+            feeder.beginTileTransition(
+                window: window,
+                finalRect: finalRect,
+                slotGeneration: window.presentationActor.currentSlotGeneration)
+        } else {
+            window.seedPresentationActorToRect(
+                finalRect,
+                slotGeneration: window.presentationActor.currentSlotGeneration)
+        }
         configureToX(windowID: windowID)
         RenderBridge.requestFrame(
             forWindowID: windowID)

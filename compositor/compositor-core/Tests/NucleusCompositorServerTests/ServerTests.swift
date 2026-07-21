@@ -746,6 +746,93 @@ final class RecordingSelectionObserver: DataSelectionObserver {
 }
 
 @MainActor
+@Test func snapshotTransitionGenerationRejectsLateCompletionAndRetiresOnce() {
+    let window = Window(id: 1, source: .xdg)
+    window.mapped = true
+    window.seedPresentationActorToRect(
+        PresentationRect(x: 0, y: 0, w: 400, h: 300),
+        slotGeneration: 1)
+
+    let first = window.installTileCrossfade(snapshotHandle: 101)
+    #expect(first.replaced == nil)
+    let second = window.installTileCrossfade(snapshotHandle: 202)
+    #expect(second.generation != first.generation)
+    #expect(second.replaced == WindowTransitionRetirement(
+        generation: first.generation,
+        snapshotHandle: 101,
+        wasClosing: false,
+        destroyWindow: false))
+
+    // A completion racing the replacement cannot consume the new resource.
+    #expect(window.takePresentationTransition(
+        generation: first.generation) == nil)
+    #expect(window.presentationActor.transition?.snapshotHandle == 202)
+    #expect(window.takePresentationTransition(
+        generation: second.generation)?.snapshotHandle == 202)
+    #expect(window.takePresentationTransition(
+        generation: second.generation) == nil)
+}
+
+@MainActor
+@Test func closingFadeFreezesGeometryDisablesInputAndUsesPresentationClock() {
+    let window = Window(id: 7, source: .xdg)
+    window.mapped = true
+    let frozen = PresentationRect(x: 12, y: 34, w: 640, h: 480)
+    window.seedPresentationActorToRect(frozen, slotGeneration: 1)
+    window.beginPresentationTileAnimation(
+        finalRect: PresentationRect(x: 100, y: 100, w: 900, h: 700),
+        slotGeneration: 2)
+    let installed = window.installClosingFade(
+        snapshotHandle: 303,
+        destroyWindowOnCompletion: true)
+    window.mapped = false
+
+    #expect(!window.eligibleForInput())
+    #expect(window.visibleInScene())
+    #expect(!window.hasActiveTileAnimation())
+    #expect(window.currentAnimatedRect() == frozen)
+    #expect(window.transitionOverlayOpacity() == 1)
+
+    #expect(window.advanceClosingFade(presentTimeSeconds: 50))
+    #expect(window.windowPresentationOpacity() == 1)
+    #expect(window.advanceClosingFade(
+        presentTimeSeconds: 50 + PresentationTiming.closingFadeSeconds / 2))
+    let midpoint = window.windowPresentationOpacity()
+    #expect(abs(midpoint - 0.5) < 0.001)
+    #expect(!window.advanceClosingFade(
+        presentTimeSeconds: 50 + PresentationTiming.closingFadeSeconds))
+    #expect(window.windowPresentationOpacity() == 0)
+    #expect(window.currentAnimatedRect() == frozen)
+
+    let retirement = window.takePresentationTransition(
+        generation: installed.generation)
+    #expect(retirement?.snapshotHandle == 303)
+    #expect(retirement?.wasClosing == true)
+    #expect(retirement?.destroyWindow == true)
+    #expect(!window.visibleInScene())
+    #expect(window.takePresentationTransition(
+        generation: installed.generation) == nil)
+}
+
+@MainActor
+@Test func closingSupersedesTileAndCanUpgradeUnmapToDestruction() {
+    let window = Window(id: 9, source: .xdg)
+    window.mapped = true
+    window.seedPresentationActorToRect(
+        PresentationRect(x: 0, y: 0, w: 800, h: 600),
+        slotGeneration: 1)
+    let tile = window.installTileCrossfade(snapshotHandle: 11)
+    let close = window.installClosingFade(
+        snapshotHandle: 22,
+        destroyWindowOnCompletion: false)
+    #expect(close.replaced?.generation == tile.generation)
+    #expect(close.replaced?.snapshotHandle == 11)
+    window.requireWindowDestructionAfterClosing()
+    #expect(window.takePresentationTransition(
+        generation: close.generation)?.destroyWindow == true)
+}
+
+@MainActor
 @Test func requestedCommittedAndPresentedGeometryRemainIndependent() {
     let window = Window(id: 42, source: .xdg)
     let committed = WindowRect(x: 10, y: 20, width: 640, height: 480)

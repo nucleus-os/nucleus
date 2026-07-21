@@ -5,8 +5,8 @@ import NucleusUI
 /// The reference's `Widget` base class is `create` / `doLayout` / `doUpdate` /
 /// `onPointerEvent` / `onFrameTick`, plus styling state and a panel-toggle
 /// callback. Three of those five are already `View`'s job here — construction,
-/// layout, and event handling — so what a widget adds is the two that are not:
-/// a pull from whatever it displays, and an opt-in to per-frame ticking.
+/// layout, and event handling — so what a widget adds is a pull from whatever
+/// it displays. Animated widgets use `UIContext` animation demand.
 ///
 /// A widget never presents its own panel. It has no scene and could not test one
 /// by assignment if it did; it reports that it was activated and the bar decides
@@ -19,21 +19,6 @@ open class BarWidget: View {
     /// because a widget driven purely by property assignment — which most are —
     /// has already updated by the time anyone could call this.
     open func refresh() {}
-
-    /// Whether this widget needs a callback every frame.
-    ///
-    /// Opt-in, and false by default: a bar of a dozen widgets where each polls
-    /// per frame is a bar that never lets the compositor idle. Only widgets that
-    /// genuinely animate — a visualizer, a spinner — should say yes, and only
-    /// while they are animating.
-    open var wantsFrameTick: Bool { false }
-
-    /// Advance whatever this widget animates.
-    ///
-    /// - Parameter deltaSeconds: time since the previous tick. Passed rather
-    ///   than measured so a widget cannot disagree with the bar about what
-    ///   "now" is, and so a test can drive it without a clock.
-    open func frameTick(deltaSeconds: Double) {}
 
     /// The widget was activated — clicked, or otherwise asked to open its panel.
     ///

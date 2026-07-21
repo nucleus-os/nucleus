@@ -133,7 +133,7 @@ extension RendererRuntime {
     @discardableResult
     public func registerSurfaceShm(
         iosurfaceID: UInt64,
-        pixels: [UInt8],
+        pixels: UnsafeRawBufferPointer,
         width: UInt32,
         height: UInt32,
         drmFormat: UInt32,
@@ -208,24 +208,38 @@ extension RendererRuntime {
             planes: planes)
     }
 
-    public func captureOutputBGRA(
-        outputID: UInt64
-    ) -> (
-        pixels: [UInt8], width: Int, height: Int
-    )? {
-        core.captureOutputBGRA(outputID: outputID)
+    @_spi(NucleusPlatform)
+    @discardableResult
+    public func beginCaptureOutputBGRA(
+        outputID: UInt64,
+        sourceX: Int32 = 0,
+        sourceY: Int32 = 0,
+        sourceWidth: Int32 = 0,
+        sourceHeight: Int32 = 0,
+        completion: @escaping @MainActor (RenderCore.PixelCapture?) -> Void
+    ) -> UInt64? {
+        core.beginCaptureOutputBGRA(
+            outputID: outputID,
+            sourceX: sourceX,
+            sourceY: sourceY,
+            sourceWidth: sourceWidth,
+            sourceHeight: sourceHeight,
+            completion: completion)
     }
 
-    public func readSurfaceTextureBGRA(
-        iosurfaceID: UInt32
-    ) -> (
-        pixels: [UInt8], width: Int, height: Int
-    )? {
-        core.readSurfaceTextureBGRA(
-            iosurfaceID: UInt64(iosurfaceID))
+    @_spi(NucleusPlatform)
+    @discardableResult
+    public func beginReadSurfaceTextureBGRA(
+        iosurfaceID: UInt32,
+        completion: @escaping @MainActor (RenderCore.PixelCapture?) -> Void
+    ) -> UInt64? {
+        core.beginReadSurfaceTextureBGRA(
+            iosurfaceID: UInt64(iosurfaceID),
+            completion: completion)
     }
 
-    public func captureOutputToDmabuf(
+    @discardableResult
+    public func beginCaptureOutputToDmabuf(
         outputID: UInt64,
         fd: Int32,
         width: UInt32,
@@ -237,12 +251,13 @@ extension RendererRuntime {
         sourceY: Int32 = 0,
         sourceWidth: Int32 = 0,
         sourceHeight: Int32 = 0,
-        overlayCursor: Bool = false
-    ) -> Bool {
+        overlayCursor: Bool = false,
+        completion: @escaping @MainActor (Bool) -> Void
+    ) -> UInt64? {
         let overlay = overlayCursor
             ? captureCursorOverlay(outputID: outputID)
             : nil
-        return core.captureOutputToDmabuf(
+        return core.beginCaptureOutputToDmabuf(
             outputID: outputID,
             fd: fd,
             width: width,
@@ -254,7 +269,28 @@ extension RendererRuntime {
             sourceY: sourceY,
             sourceWidth: sourceWidth,
             sourceHeight: sourceHeight,
-            overlay: overlay)
+            overlay: overlay,
+            completion: completion)
+    }
+
+    public var hasPendingCaptureWork: Bool {
+        core.hasPendingCaptureWork
+    }
+
+    public var capturePollDelay: UInt64? {
+        core.capturePollDelay
+    }
+
+    public var captureWorkStalled: Bool {
+        core.captureWorkStalled
+    }
+
+    public func pollCaptureWork() {
+        core.pollCaptureWork()
+    }
+
+    public func cancelCapture(_ requestID: UInt64) {
+        core.cancelCapture(requestID)
     }
 
     private func captureCursorOverlay(
@@ -299,6 +335,16 @@ extension RendererRuntime {
             textureHandle: textureHandle,
             width: width,
             height: height)
+    }
+
+    public func captureSurfaceSnapshot(
+        iosurfaceID: UInt64
+    ) -> RenderCore.CapturedSnapshot? {
+        core.captureSurfaceSnapshot(iosurfaceID: iosurfaceID)
+    }
+
+    public var liveSnapshotCount: Int {
+        core.liveSnapshotCount
     }
 
     public func releaseSnapshot(

@@ -23,6 +23,8 @@ public final class ShellTextInput: TextInputAdapter {
 
     /// Number of commit requests issued on this object.
     private var committedStateSerial: UInt32 = 0
+    private var sessionGeneration: UInt64 = 0
+    private var validDoneSerials: Set<UInt32> = []
 
     /// Preedit and commit arrive before `done` and apply on it — the protocol
     /// batches a composition update across several events.
@@ -34,6 +36,8 @@ public final class ShellTextInput: TextInputAdapter {
         (start: UInt32, end: UInt32, hint: UInt32)
     ] = []
     private var pendingAction: UInt32?
+    private var pendingLanguage: String?
+    private var pendingLanguageWasSet = false
     private var isApplyingDone = false
 
     private weak var activeClient: (any TextInputClient)?
@@ -61,6 +65,13 @@ public final class ShellTextInput: TextInputAdapter {
     /// destruction may both call it.
     public func close() {
         guard let textInput else { return }
+        if activeClient != nil, focusedSurface != 0 {
+            zwp_text_input_v3_disable(textInput)
+            commitState()
+        }
+        activeClient = nil
+        focusedSurface = 0
+        beginSessionEpoch()
         self.textInput = nil
         listener = nil
         zwp_text_input_v3_destroy(textInput)
@@ -69,8 +80,12 @@ public final class ShellTextInput: TextInputAdapter {
     // MARK: - TextInputAdapter
 
     public func textInputDidActivate(_ client: any TextInputClient) {
-        guard let textInput else { return }
+        if let activeClient, activeClient !== client {
+            textInputDidDeactivate(activeClient)
+        }
         activeClient = client
+        beginSessionEpoch()
+        guard let textInput, focusedSurface != 0 else { return }
         zwp_text_input_v3_enable(textInput)
         applyState(for: client, cause: .other)
         commitState()
@@ -78,10 +93,12 @@ public final class ShellTextInput: TextInputAdapter {
 
     public func textInputDidDeactivate(_ client: any TextInputClient) {
         guard activeClient === client else { return }
+        if let textInput, focusedSurface != 0 {
+            zwp_text_input_v3_disable(textInput)
+            commitState()
+        }
         activeClient = nil
-        guard let textInput else { return }
-        zwp_text_input_v3_disable(textInput)
-        commitState()
+        beginSessionEpoch()
     }
 
     public func textInputDidChangeState(
@@ -90,6 +107,7 @@ public final class ShellTextInput: TextInputAdapter {
     ) {
         guard activeClient === client else { return }
         guard !isApplyingDone else { return }
+        guard focusedSurface != 0 else { return }
         applyState(for: client, cause: cause)
         commitState()
     }
@@ -106,12 +124,15 @@ public final class ShellTextInput: TextInputAdapter {
         // Sending an empty string instead would still tell the input method the
         // caret moved, which is more than a password field should reveal.
         if let context = surroundingContext
-            ?? client.textInputSurroundingContext()
+            ?? client.textInputSurroundingContext(),
+           let wireContext = ShellTextInput.boundedSurroundingContext(
+            context)
         {
-            context.text.withCString { pointer in
+            wireContext.text.withCString { pointer in
                 zwp_text_input_v3_set_surrounding_text(
                     textInput, pointer,
-                    Int32(context.cursorByteOffset), Int32(context.anchorByteOffset))
+                    wireContext.cursor,
+                    wireContext.anchor)
             }
         }
 
@@ -128,27 +149,33 @@ public final class ShellTextInput: TextInputAdapter {
             ShellTextInput.contentPurpose(client.textInputContentType))
 
         guard let candidate = client.textInputCandidateGeometry,
-              candidate.surfaceID.rawValue == UInt64(focusedSurface)
+              candidate.surfaceID.rawValue == UInt64(focusedSurface),
+              let rectangle = ShellTextInput.wireRectangle(
+                candidate.rect)
         else {
             return
         }
-        let caret = candidate.rect
         zwp_text_input_v3_set_cursor_rectangle(
             textInput,
-            Int32(caret.origin.x), Int32(caret.origin.y),
-            Int32(max(1, caret.size.width)), Int32(max(1, caret.size.height)))
+            rectangle.x,
+            rectangle.y,
+            rectangle.width,
+            rectangle.height)
     }
 
     private func commitState() {
         guard let textInput else { return }
         zwp_text_input_v3_commit(textInput)
         committedStateSerial &+= 1
+        validDoneSerials.insert(committedStateSerial)
     }
 
     // MARK: - Protocol events
 
     fileprivate func handleEnter(surfaceID: UInt) {
+        guard surfaceID != 0, surfaceID != focusedSurface else { return }
         focusedSurface = surfaceID
+        beginSessionEpoch()
         // A client that already has a focused field re-enables for the new
         // surface; otherwise the input method stays disabled until one is.
         if let activeClient, let textInput {
@@ -160,10 +187,12 @@ public final class ShellTextInput: TextInputAdapter {
 
     fileprivate func handleLeave(surfaceID: UInt) {
         guard surfaceID == focusedSurface else { return }
+        if let textInput, activeClient != nil {
+            zwp_text_input_v3_disable(textInput)
+            commitState()
+        }
         focusedSurface = 0
-        guard let textInput else { return }
-        zwp_text_input_v3_disable(textInput)
-        commitState()
+        beginSessionEpoch()
     }
 
     fileprivate func handlePreedit(text: String?, cursorBegin: Int32, cursorEnd: Int32) {
@@ -188,9 +217,8 @@ public final class ShellTextInput: TextInputAdapter {
     }
 
     fileprivate func handleLanguage(_ language: String?) {
-        activeClient?.textInputDidChangeLanguage(
-            language.flatMap { $0.isEmpty ? nil : $0 }
-        )
+        pendingLanguage = language.flatMap { $0.isEmpty ? nil : $0 }
+        pendingLanguageWasSet = true
     }
 
     fileprivate func handleAction(_ action: UInt32) {
@@ -204,10 +232,16 @@ public final class ShellTextInput: TextInputAdapter {
     /// install the new preedit and cursor, then perform an action.
     fileprivate func handleDone(serial: UInt32) {
         defer { clearPending() }
-        guard let client = activeClient else { return }
+        guard focusedSurface != 0,
+              validDoneSerials.contains(serial),
+              let client = activeClient
+        else { return }
 
         isApplyingDone = true
         defer { isApplyingDone = false }
+        if pendingLanguageWasSet {
+            client.textInputDidChangeLanguage(pendingLanguage)
+        }
         if client.hasMarkedText {
             client.unmarkText()
         }
@@ -258,6 +292,17 @@ public final class ShellTextInput: TextInputAdapter {
         pendingDeleteAfter = 0
         pendingPreeditHints.removeAll(keepingCapacity: true)
         pendingAction = nil
+        pendingLanguage = nil
+        pendingLanguageWasSet = false
+    }
+
+    private func beginSessionEpoch() {
+        sessionGeneration &+= 1
+        precondition(
+            sessionGeneration != 0,
+            "text-input session generation exhausted")
+        validDoneSerials.removeAll(keepingCapacity: true)
+        clearPending()
     }
 
     private func preeditStyles(for text: String) -> [TextInputPreeditSpan] {
@@ -308,11 +353,121 @@ public final class ShellTextInput: TextInputAdapter {
 
     static func utf16Offset(in text: String, forUTF8 offset: Int) -> Int {
         let clamped = min(max(0, offset), text.utf8.count)
-        guard let index = text.utf8.index(
-            text.utf8.startIndex, offsetBy: clamped, limitedBy: text.utf8.endIndex),
-              let scalarAligned = index.samePosition(in: text.unicodeScalars)
-        else { return text.utf16.count }
+        var index = text.utf8.index(
+            text.utf8.startIndex,
+            offsetBy: clamped)
+        while index != text.utf8.startIndex,
+              index.samePosition(in: text.unicodeScalars) == nil
+        {
+            text.utf8.formIndex(before: &index)
+        }
+        guard let scalarAligned = index.samePosition(
+            in: text.unicodeScalars)
+        else { return 0 }
         return text.utf16.distance(from: text.utf16.startIndex, to: scalarAligned)
+    }
+
+    static func boundedSurroundingContext(
+        _ context: TextInputSurroundingContext,
+        maximumBytes: Int = 4_000
+    ) -> (text: String, cursor: Int32, anchor: Int32)? {
+        guard maximumBytes > 0,
+              let cursor = utf8Index(
+                offset: context.cursorByteOffset,
+                in: context.text),
+              let anchor = utf8Index(
+                offset: context.anchorByteOffset,
+                in: context.text)
+        else { return nil }
+        let bytes = context.text.utf8
+        if bytes.count <= maximumBytes {
+            return (
+                context.text,
+                Int32(context.cursorByteOffset),
+                Int32(context.anchorByteOffset))
+        }
+
+        let lower = min(
+            context.cursorByteOffset,
+            context.anchorByteOffset)
+        let upper = max(
+            context.cursorByteOffset,
+            context.anchorByteOffset)
+        guard upper - lower <= maximumBytes else { return nil }
+        var startOffset = max(
+            0,
+            lower - (maximumBytes - (upper - lower)) / 2)
+        var endOffset = min(
+            bytes.count,
+            startOffset + maximumBytes)
+        if endOffset - startOffset < maximumBytes {
+            startOffset = max(0, endOffset - maximumBytes)
+        }
+        while startOffset < lower,
+              utf8Index(offset: startOffset, in: context.text) == nil
+        {
+            startOffset += 1
+        }
+        while endOffset > upper,
+              utf8Index(offset: endOffset, in: context.text) == nil
+        {
+            endOffset -= 1
+        }
+        guard let start = utf8Index(
+            offset: startOffset,
+            in: context.text),
+              let end = utf8Index(
+                offset: endOffset,
+                in: context.text),
+              start <= cursor,
+              cursor <= end,
+              start <= anchor,
+              anchor <= end
+        else { return nil }
+        return (
+            String(context.text[start..<end]),
+            Int32(context.cursorByteOffset - startOffset),
+            Int32(context.anchorByteOffset - startOffset))
+    }
+
+    static func wireRectangle(
+        _ rect: Rect
+    ) -> (x: Int32, y: Int32, width: Int32, height: Int32)? {
+        guard rect.origin.x.isFinite,
+              rect.origin.y.isFinite,
+              rect.size.width.isFinite,
+              rect.size.height.isFinite
+        else { return nil }
+        guard let x = wireCoordinate(rect.origin.x),
+              let y = wireCoordinate(rect.origin.y),
+              let width = wireCoordinate(
+                max(1, rect.size.width)),
+              let height = wireCoordinate(
+                max(1, rect.size.height))
+        else { return nil }
+        return (x, y, max(1, width), max(1, height))
+    }
+
+    private static func utf8Index(
+        offset: Int,
+        in text: String
+    ) -> String.Index? {
+        guard offset >= 0, offset <= text.utf8.count else {
+            return nil
+        }
+        let index = text.utf8.index(
+            text.utf8.startIndex,
+            offsetBy: offset)
+        return index.samePosition(in: text)
+    }
+
+    private static func wireCoordinate(_ value: Double) -> Int32? {
+        guard value.isFinite else { return nil }
+        let rounded = value.rounded(.toNearestOrAwayFromZero)
+        guard rounded >= Double(Int32.min),
+              rounded <= Double(Int32.max)
+        else { return nil }
+        return Int32(rounded)
     }
 
     // MARK: - Content type mapping

@@ -2,5 +2,5 @@ import NucleusTextBackend
 
 @MainActor
 func installTestTextBackend() {
-    SkiaTextLayoutBackend.installIfNeeded()
+    SkiaTextLayoutBackend.installIfNeeded(in: testTextSystem())
 }

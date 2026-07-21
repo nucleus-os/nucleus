@@ -1,7 +1,8 @@
 // The public control surface of the compositor's Wayland-runtime module: the narrow set of verbs the
 // composition root (the exe's CompositorRuntime / CompositorBringup) drives to bring the router live,
 // pump it, author scene frames, and report presentation. These are ordinary Swift calls, NOT C-ABI
-// entry points — the genuine native crossings are separate @_cdecl symbols elsewhere. The router
+// entry points — the genuine process entry is a type-checked `@c` implementation
+// in the executable. The router
 // graph (RouterHost, NucleusWaylandRouter, the protocol impls) stays internal to this module; this
 // facade is the only way in, so the exe never touches the runtime's internals. Every entry runs on
 // the compositor's main actor (the loop drives them on that thread) and crosses only Sendable values.
@@ -9,17 +10,26 @@
 import Glibc
 import WaylandServerC
 import NucleusCompositorServer
+import NucleusCompositorWindowScene
 
 public enum WaylandRuntime {
     // MARK: - Router lifecycle
 
     /// Construct the router graph. Idempotent.
-    @MainActor public static func activateRouter() {
-        guard RouterHost.shared.runtime == nil, let runtime = WaylandRouterRuntime() else { return }
+    @MainActor public static func activateRouter(author: WindowSceneAuthor) {
+        guard RouterHost.shared.runtime == nil,
+              let runtime = WaylandRouterRuntime(author: author)
+        else { return }
         RouterHost.shared.runtime = runtime
         RouterHost.shared.router = runtime.router
         RouterHost.shared.feeder = runtime.feeder
         runtime.idle.noteUserInput(atMs: monotonicNowNs() / 1_000_000)
+    }
+
+    /// Retire scene-owned transition resources before the render service tears
+    /// down. Idempotent and safe when router bring-up never completed.
+    @MainActor public static func prepareShutdown() {
+        RouterHost.shared.feeder?.shutdown()
     }
 
     /// Add a live wl_output global from a DRM output snapshot. `name`/`description` are NUL-terminated
@@ -94,6 +104,10 @@ public enum WaylandRuntime {
         router.dispatch()
         NucleusCompositorServer.shared.drainChanges()
         router.flushClients()
+    }
+
+    @MainActor public static func flushClients() {
+        RouterHost.shared.router?.flushClients()
     }
 
     /// The next protocol idle deadline in the monotonic clock domain. A nil

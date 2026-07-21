@@ -40,18 +40,39 @@ final class SinkRegistry {
 }
 
 @MainActor
+final class RejectingCommitSink: CommitSink {
+    let resourceHostHandle: UInt64 = 0
+    let runtimeHost = LayerRuntimeHost.inMemory()
+    private(set) var transactions: [EncodedTransaction] = []
+    var rejectNext = false
+
+    func commit(_ transaction: EncodedTransaction) throws(LayerError) {
+        if rejectNext {
+            rejectNext = false
+            throw .backendFailure(detail: "fixture rejection")
+        }
+        transactions.append(transaction)
+    }
+}
+
+@MainActor
 @Suite struct WindowSceneAuthorTopologyTests {
     private func makeAuthor() -> (WindowSceneAuthor, SinkRegistry) {
-        installStubHost()
         let registry = SinkRegistry()
         let author = WindowSceneAuthor(commitSinkFactory: { registry.make() })
         return (author, registry)
     }
 
     @Test func repeatedProductionHostingDoesNotCreateCycle() throws {
-        installStubHost()
-        let store = RetainedTreeStore()
-        let author = WindowSceneAuthor(commitSinkFactory: { RenderCommitSink(store: store) })
+        let resourceHost = SwiftResourceHost()
+        let store = RetainedTreeStore(resourceHost: resourceHost)
+        let runtimeHost = LayerRuntimeHost.inMemory()
+        let author = WindowSceneAuthor(commitSinkFactory: {
+            RenderCommitSink(
+                store: store,
+                resourceHost: resourceHost,
+                runtimeHost: runtimeHost)
+        })
         for surfaceID in [41, 43, 45] as [UInt64] {
             _ = try author.surfaceAttached(
                 surfaceID: surfaceID,
@@ -84,6 +105,125 @@ final class SinkRegistry {
             backingFrame: GeometryRect(x: 0, y: 0, width: 800, height: 572),
             chromeInsets: WindowEdgeInsets(top: 28))
         #expect(registry.allTransactions.count == transactionCount)
+    }
+
+    @Test func snapshotOverlayReplacementAndWindowOpacityAreRetainedMutations() throws {
+        let (author, registry) = makeAuthor()
+        try author.surfaceAttached(
+            surfaceID: 60,
+            frame: GeometryRect(x: 10, y: 20, width: 800, height: 600))
+        try author.beginContentCrossfade(
+            surfaceID: 60,
+            snapshotHandle: 101)
+
+        let replacementMark = registry.allTransactions.count
+        try author.beginContentCrossfade(
+            surfaceID: 60,
+            snapshotHandle: 202)
+        let replacementTransactions = Array(
+            registry.allTransactions.dropFirst(replacementMark))
+        #expect(replacementTransactions.count == 1)
+        let replacement = try #require(replacementTransactions.first)
+        #expect(replacement.removed.count == 1)
+        #expect(replacement.created.count == 1)
+        #expect(replacement.created.first?.1.initialContent.kind == .snapshot)
+        #expect(replacement.created.first?.1.initialContent.handle == 202)
+
+        let layoutMark = registry.allTransactions.count
+        try author.applyLayout(
+            surfaceID: 60,
+            frame: GeometryRect(x: 10, y: 20, width: 800, height: 600),
+            baseSize: GeometrySize(width: 400, height: 300),
+            backingFrame: GeometryRect(x: 0, y: 0, width: 400, height: 300),
+            windowOpacity: 0.5,
+            overlayOpacity: 0.75)
+        let opacityUpdates = registry.allTransactions
+            .dropFirst(layoutMark)
+            .flatMap(\.propertyUpdates)
+            .compactMap(\.properties.opacity)
+        #expect(opacityUpdates.contains(0.5))
+        #expect(opacityUpdates.contains(0.75))
+
+        let removalMark = registry.allTransactions.count
+        try author.endContentCrossfade(surfaceID: 60)
+        let removals = registry.allTransactions
+            .dropFirst(removalMark)
+            .flatMap(\.removed)
+        #expect(removals.count == 1)
+    }
+
+    @Test func rejectedOverlayMutationRestoresRetryableLocalTopology() throws {
+        var sinks: [RejectingCommitSink] = []
+        let author = WindowSceneAuthor(commitSinkFactory: {
+            let sink = RejectingCommitSink()
+            sinks.append(sink)
+            return sink
+        })
+        try author.surfaceAttached(
+            surfaceID: 61,
+            frame: GeometryRect(x: 0, y: 0, width: 800, height: 600))
+        let windowSink = try #require(sinks.last)
+        try author.beginContentCrossfade(
+            surfaceID: 61,
+            snapshotHandle: 101)
+
+        windowSink.rejectNext = true
+        #expect(throws: HostCallError.self) {
+            try author.beginContentCrossfade(
+                surfaceID: 61,
+                snapshotHandle: 202)
+        }
+        let replacementMark = windowSink.transactions.count
+        try author.beginContentCrossfade(
+            surfaceID: 61,
+            snapshotHandle: 202)
+        let replacement = try #require(
+            windowSink.transactions.dropFirst(replacementMark).first)
+        #expect(replacement.removed.count == 1)
+        #expect(replacement.created.count == 1)
+        #expect(replacement.created.first?.1.initialContent.handle == 202)
+
+        windowSink.rejectNext = true
+        #expect(throws: HostCallError.self) {
+            try author.endContentCrossfade(surfaceID: 61)
+        }
+        let removalMark = windowSink.transactions.count
+        try author.endContentCrossfade(surfaceID: 61)
+        let removal = try #require(
+            windowSink.transactions.dropFirst(removalMark).first)
+        #expect(removal.removed.count == 1)
+    }
+
+    @Test func rejectedSceneRemovalRetriesTheOriginalTopologyRemoval() throws {
+        var sinks: [RejectingCommitSink] = []
+        let author = WindowSceneAuthor(commitSinkFactory: {
+            let sink = RejectingCommitSink()
+            sinks.append(sink)
+            return sink
+        })
+        try author.surfaceAttached(
+            surfaceID: 62,
+            frame: GeometryRect(x: 0, y: 0, width: 800, height: 600))
+        let windowSink = try #require(sinks.last)
+        try author.beginContentCrossfade(
+            surfaceID: 62,
+            snapshotHandle: 303)
+
+        windowSink.rejectNext = true
+        #expect(throws: LayerError.self) {
+            try author.surfaceDestroyed(surfaceID: 62)
+        }
+        let retryMark = windowSink.transactions.count
+        try author.surfaceDestroyed(surfaceID: 62)
+        let retry = try #require(
+            windowSink.transactions.dropFirst(retryMark).first)
+        #expect(retry.removed.count >= 3)
+        #expect(retry.detached.count == 1)
+
+        // Fully idempotent after the accepted retry.
+        let acceptedCount = windowSink.transactions.count
+        try author.surfaceDestroyed(surfaceID: 62)
+        #expect(windowSink.transactions.count == acceptedCount)
     }
 
     @Test func attachBuildsRootHostingAndWindowScene() throws {

@@ -37,15 +37,20 @@ public final class WindowList {
         items.insert(window, at: insertionIndex(forLevel: window.level))
         byID[window.id] = window
         if window.surfaceObjectId != 0 { bySurfaceObjectId[window.surfaceObjectId] = window }
-        window.onSurfaceObjectIdChange = { [weak self] w, old in
-            guard let self else { return }
+        // The callbacks are installed only while this list strongly owns the
+        // window and are cleared on every detach path. An unowned capture
+        // expresses that invariant without allocating a weak-reference side
+        // table for the process-lifetime compositor list.
+        window.onSurfaceObjectIdChange = { [unowned self] w, old in
             if old != 0, self.bySurfaceObjectId[old] === w { self.bySurfaceObjectId[old] = nil }
             if w.surfaceObjectId != 0 { self.bySurfaceObjectId[w.surfaceObjectId] = w }
         }
         // A level change after add must re-sort the window into its new band, or the
         // level-sorted `items` invariant breaks (e.g. an Xwayland _NET_WM_STATE_ABOVE
         // toggle that previously mutated `level` without restacking).
-        window.onLevelChange = { [weak self] w in _ = self?.restackByLevel(id: w.id) }
+        window.onLevelChange = { [unowned self] w in
+            _ = self.restackByLevel(id: w.id)
+        }
         onChange?(.windowAdded(window.id))
     }
 
@@ -162,11 +167,21 @@ public final class WindowList {
     }
 
     public func reset() {
-        for window in items { window.onSurfaceObjectIdChange = nil }
+        for window in items {
+            window.onSurfaceObjectIdChange = nil
+            window.onLevelChange = nil
+        }
         items.removeAll(keepingCapacity: true)
         byID.removeAll(keepingCapacity: true)
         bySurfaceObjectId.removeAll(keepingCapacity: true)
         focusedWindowID = nil
+    }
+
+    isolated deinit {
+        for window in items {
+            window.onSurfaceObjectIdChange = nil
+            window.onLevelChange = nil
+        }
     }
 
     private func insertionIndex(forLevel level: Int32) -> Int {

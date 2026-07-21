@@ -84,7 +84,8 @@ public final class RadioGroup: Control, ~Sendable {
             TextLayout(
                 text: option.title,
                 font: Font.systemFont(ofSize: 14)
-                    .scaled(by: uiContext.environment.textScale)
+                    .scaled(by: uiContext.environment.textScale),
+                textSystem: uiContext.services.textSystem
             ).intrinsicSize.width + 32
         }.max() ?? 0
         return Size(
@@ -167,7 +168,8 @@ public final class RadioGroup: Control, ~Sendable {
             let layout = TextLayout(
                 text: options[index].title,
                 font: Font.systemFont(ofSize: 14)
-                    .scaled(by: uiContext.environment.textScale))
+                    .scaled(by: uiContext.environment.textScale),
+                textSystem: uiContext.services.textSystem)
             context.alpha = options[index].isEnabled ? 1 : 0.45
             context.draw(layout, in: Rect(
                 x: 24,

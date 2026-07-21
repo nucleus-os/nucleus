@@ -29,6 +29,8 @@ public enum WaylandGlobalKind: String, CaseIterable {
     case xdgOutput = "zxdg_output_manager_v1"
     case textInputManager = "zwp_text_input_manager_v3"
     case cursorShape = "wp_cursor_shape_manager_v1"
+    case dataControl = "ext_data_control_manager_v1"
+    case dataDeviceManager = "wl_data_device_manager"
 
     /// The interface descriptor pointer the client binds against (from the generated accessors).
     var interface: UnsafePointer<wl_interface>? {
@@ -46,6 +48,9 @@ public enum WaylandGlobalKind: String, CaseIterable {
         case .xdgOutput: return swift_wayland_iface_zxdg_output_manager_v1()
         case .textInputManager: return swift_wayland_iface_zwp_text_input_manager_v3()
         case .cursorShape: return swift_wayland_iface_wp_cursor_shape_manager_v1()
+        case .dataControl: return swift_wayland_iface_ext_data_control_manager_v1()
+        case .dataDeviceManager:
+            return swift_wayland_iface_wl_data_device_manager()
         }
     }
 
@@ -65,6 +70,8 @@ public enum WaylandGlobalKind: String, CaseIterable {
         case .xdgOutput: return 3
         case .textInputManager: return 2
         case .cursorShape: return 1
+        case .dataControl: return 1
+        case .dataDeviceManager: return 3
         }
     }
 
@@ -75,6 +82,7 @@ public enum WaylandGlobalKind: String, CaseIterable {
 }
 
 /// A live wl_output the shell can anchor surfaces to.
+@MainActor
 public final class WaylandOutput {
     public let proxy: OpaquePointer
     public let registryName: UInt32
@@ -84,6 +92,9 @@ public final class WaylandOutput {
     public var logicalY: Int32 = 0
     public var scale: Int32 = 1
     public var name: String = ""
+    /// Current mode refresh in millihertz, as reported by wl_output.mode.
+    public var refreshMillihertz: Int32 = 0
+    var onChanged: (() -> Void)?
 
     init(proxy: OpaquePointer, registryName: UInt32) {
         self.proxy = proxy
@@ -95,6 +106,7 @@ public final class WaylandOutput {
 public final class ShellWaylandClient {
     private let connection: WaylandConnection
     private var registry: WaylandRegistry!
+    private var seatEventBroker: ShellSeatEventBroker?
 
     /// Singleton-bound globals (one instance each).
     public private(set) var globals: [WaylandGlobalKind: BoundGlobal] = [:]
@@ -105,25 +117,51 @@ public final class ShellWaylandClient {
     public var onReady: (() -> Void)?
     /// Fired when an output is added/removed so the shell can (re)place per-output surfaces.
     public var onOutputsChanged: (() -> Void)?
+    /// Fired after a singleton global is bound or removed.
+    public var onGlobalChanged: ((WaylandGlobalKind) -> Void)?
 
-    public init?(socketName: String? = nil) {
-        guard let conn = WaylandConnection(socket: socketName) else { return nil }
-        connection = conn
+    public convenience init?(socketName: String? = nil) {
+        guard let connection = WaylandConnection(socket: socketName) else {
+            return nil
+        }
+        self.init(connection: connection, performInitialRoundtrips: true)
+    }
+
+    /// Adopt a connected endpoint without a blocking setup roundtrip.
+    ///
+    /// The caller drives `pumpNonBlocking()` until the registry has arrived.
+    /// This is the deterministic in-process fixture seam; production socket
+    /// connections use `init(socketName:)`.
+    public convenience init?(connectedFileDescriptor: Int32) {
+        guard let connection = WaylandConnection(fd: connectedFileDescriptor)
+        else { return nil }
+        self.init(connection: connection, performInitialRoundtrips: false)
+    }
+
+    private init?(
+        connection: WaylandConnection,
+        performInitialRoundtrips: Bool
+    ) {
+        self.connection = connection
 
         let wanted: [DesiredGlobal] = WaylandGlobalKind.allCases.compactMap { kind in
             kind.interface.map { DesiredGlobal($0, maxVersion: kind.bindVersion,
                                                allowsMultiple: kind == .output) }
         }
-        guard let reg = WaylandRegistry(conn, wanting: wanted) else { return nil }
+        guard let reg = WaylandRegistry(connection, wanting: wanted) else {
+            return nil
+        }
         registry = reg
         reg.onBind = { [weak self] in self?.bound($0) }
         reg.onRemove = { [weak self] in self?.removed($0) }
 
-        // Two roundtrips: the first surfaces the globals (bind fires onBind), the second drains their
-        // initial events (output geometry/mode, etc.) so geometry is known before onReady.
-        connection.roundtrip()
-        connection.roundtrip()
-        onReady?()
+        if performInitialRoundtrips {
+            // The first roundtrip surfaces globals; the second drains initial
+            // per-global state such as output geometry.
+            connection.roundtrip()
+            connection.roundtrip()
+            onReady?()
+        }
     }
 
     // WaylandConnection disconnects the display in its own deinit; nothing to tear down here.
@@ -132,15 +170,22 @@ public final class ShellWaylandClient {
     /// The raw wl_display, for the render backend's VK_KHR_wayland_surface swapchain.
     public var display: OpaquePointer { connection.display }
 
-    /// The display fd, for poll()-based loop integration.
+    /// The display fd registered with the Linux host reactor.
     public var fd: Int32 { connection.fd }
 
-    /// Drain queued events (call after poll() reports the fd readable).
+    /// Drain queued events after the reactor reports the fd readable.
     @discardableResult
     public func dispatch() -> Int32 { connection.dispatch() }
 
     /// Apply pending requests and flush them to the compositor (call at end of each frame).
-    public func flush() { connection.flush() }
+    @discardableResult
+    public func flush() -> Int32 { connection.flush() }
+
+    /// Flush, read, and dispatch only work already available on the connection.
+    @discardableResult
+    public func pumpNonBlocking() -> Int32 {
+        connection.pumpNonBlocking()
+    }
 
     /// Block until the server has processed all issued requests (used at setup time).
     public func roundtrip() { _ = connection.roundtrip() }
@@ -160,12 +205,19 @@ public final class ShellWaylandClient {
         guard let kind = WaylandGlobalKind.from(interface: global.interface) else { return }
         if kind == .output {
             let output = WaylandOutput(proxy: global.proxy, registryName: global.name)
+            output.onChanged = { [weak self] in
+                self?.onOutputsChanged?()
+            }
             outputs[global.name] = output
             // The per-output object is the owner; `outputs` keeps it alive for the proxy's lifetime.
             WlOutputClient.addListener(output.proxy, owner: output)
             onOutputsChanged?()
         } else if globals[kind] == nil {
             globals[kind] = global
+            if kind == .seat {
+                seatEventBroker = ShellSeatEventBroker(proxy: global.proxy)
+            }
+            onGlobalChanged?(kind)
         }
     }
 
@@ -173,28 +225,103 @@ public final class ShellWaylandClient {
         if outputs[global.name] != nil {
             outputs[global.name] = nil
             onOutputsChanged?()
+            return
+        }
+        guard let kind = WaylandGlobalKind.from(interface: global.interface),
+              globals[kind]?.name == global.name
+        else {
+            return
+        }
+        globals.removeValue(forKey: kind)
+        if kind == .seat {
+            seatEventBroker?.detach()
+            seatEventBroker = nil
+        }
+        onGlobalChanged?(kind)
+    }
+
+    func attachSeatConsumer(_ seat: ShellSeat) -> Bool {
+        guard let seatEventBroker else { return false }
+        seatEventBroker.attach(seat)
+        return true
+    }
+
+    func detachSeatConsumer(_ seat: ShellSeat) {
+        seatEventBroker?.detach(seat)
+    }
+}
+
+/// Owns the one listener libwayland permits on `wl_seat` from the moment the
+/// registry binds it. `ShellSeat` may be constructed after the initial
+/// roundtrip; the broker replays the latest capability snapshot instead of
+/// losing that one-shot event.
+@MainActor
+private final class ShellSeatEventBroker: WlSeatEvents {
+    private weak var consumer: ShellSeat?
+    private var capabilities: UInt32?
+
+    init(proxy: OpaquePointer) {
+        WlSeatClient.addListener(proxy, owner: self)
+    }
+
+    func attach(_ consumer: ShellSeat) {
+        self.consumer = consumer
+        if let capabilities {
+            consumer.bindPointerIfNeeded(capabilities)
+            consumer.bindKeyboardIfNeeded(capabilities)
         }
     }
+
+    func detach(_ expected: ShellSeat? = nil) {
+        guard expected == nil || consumer === expected else { return }
+        consumer = nil
+    }
+
+    nonisolated func capabilities(
+        _ proxy: OpaquePointer,
+        capabilities: UInt32
+    ) {
+        MainActor.assumeIsolated {
+            self.capabilities = capabilities
+            consumer?.bindPointerIfNeeded(capabilities)
+            consumer?.bindKeyboardIfNeeded(capabilities)
+        }
+    }
+
+    nonisolated func name(
+        _ proxy: OpaquePointer,
+        name: UnsafePointer<CChar>?
+    ) {}
 }
 
 // A wl_output's events land on its own per-output owner object (not @MainActor), so its geometry
 // fields are updated directly; the name string is decoded in-place.
 extension WaylandOutput: WlOutputEvents {
     public nonisolated func geometry(_ proxy: OpaquePointer, x: Int32, y: Int32, physical_width: Int32, physical_height: Int32, subpixel: Int32, make: UnsafePointer<CChar>?, model: UnsafePointer<CChar>?, transform: Int32) {
-        logicalX = x
-        logicalY = y
+        MainActor.assumeIsolated {
+            logicalX = x
+            logicalY = y
+        }
     }
     public nonisolated func mode(_ proxy: OpaquePointer, flags: UInt32, width: Int32, height: Int32, refresh: Int32) {
-        logicalWidth = width
-        logicalHeight = height
+        MainActor.assumeIsolated {
+            // Other advertised modes are alternatives, not current geometry.
+            guard flags & 0x1 != 0 else { return }
+            logicalWidth = width
+            logicalHeight = height
+            refreshMillihertz = max(0, refresh)
+        }
     }
-    public nonisolated func done(_ proxy: OpaquePointer) {}
+    public nonisolated func done(_ proxy: OpaquePointer) {
+        MainActor.assumeIsolated { onChanged?() }
+    }
     public nonisolated func scale(_ proxy: OpaquePointer, factor: Int32) {
-        self.scale = factor
+        MainActor.assumeIsolated { self.scale = factor }
     }
     public nonisolated func name(_ proxy: OpaquePointer, name: UnsafePointer<CChar>?) {
         guard let name else { return }
-        self.name = String(cString: name)
+        let value = String(cString: name)
+        MainActor.assumeIsolated { self.name = value }
     }
     public nonisolated func description(_ proxy: OpaquePointer, description: UnsafePointer<CChar>?) {}
 }

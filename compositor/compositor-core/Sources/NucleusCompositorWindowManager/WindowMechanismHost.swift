@@ -101,7 +101,7 @@ extension WindowManager: WindowMechanismHost {
     public func updateInteractiveGrab(
         cursorX: Double,
         cursorY: Double
-    ) throws(HostCallError) -> WireInteractionGrabUpdate? {
+    ) -> WireInteractionGrabUpdate? {
         let update = interaction.updateInteractiveGrab(cursorX: cursorX, cursorY: cursorY)
         guard update.hasUpdate else { return nil }
         return update

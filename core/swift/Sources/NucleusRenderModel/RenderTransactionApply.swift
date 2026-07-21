@@ -1,29 +1,18 @@
-// Phase 8.6 — Swift render transaction wire types + applier (retained-model core).
+// The authoritative retained-layer transaction and applier.
 //
-// The sixth slice of the render-server retained-layer model: the `Transaction`
-// wire envelope and the `TransactionApplier` that folds one committed
-// transaction into the Swift `LayerTree`.
-//
-// Scope — the structural + model mutations that define the retained tree:
+// Structural and model mutations define the retained tree:
 // create/update nodes, detach, insert (with the root + cycle-fallback routing),
 // remove, and the sparse property writes (position/anchor/transform/opacity/
 // bounds/clip/scroll, the visual-style + shadow + content deltas, the compound
-// frame, content-sample + background-effect, backdrop attachment), plus the
-// `visual_revision` and `damage`-flag bookkeeping these produce.
-//
-// Excluded (co-lands with the renderer move, 10b): the render-server side
-// effects — paint/snapshot refcount retain/release, backing alloc/free,
-// presentation-transition capture + gate release, field fences, implicit-action
-// expansion, animation records, and host-target-root tracking. Those touch
-// renderer/animation state this dormant model does not own. Nothing
-// imports this yet.
+// frame, content-sample + background-effect, backdrop attachment), plus
+// revision and damage bookkeeping. `RenderTransactionLowering` produces these
+// transactions and `RetainedTreeStore` applies them.
 
 // MARK: - Well-known context ids
 
 /// The compositor's own producer slot. Mirrors `compositor_context_id`.
 public let compositorContextId = ContextID(raw: 63)
-/// The shell-overlay producer slot (latest-wins coalescing target in the commit
-/// queue). Mirrors `shell_overlay_context_id`.
+/// The shell-overlay producer slot.
 public let shellOverlayContextId = ContextID(raw: 62)
 
 // MARK: - Wire deltas
@@ -123,9 +112,7 @@ public struct LayerDetached: Sendable {
 /// Sparse property write. Any field set to non-`nil` (or non-`.unchanged` for
 /// deltas) is applied to `nodeId`'s model state. The `clip`/`backdropAttachment`
 /// double-optionals: `nil` = no change, `.some(nil)` =
-/// clear, `.some(value)` = replace. Mirrors the retained-model subset of
-/// `LayerPropertyUpdate` (animation/transition/fence fields are excluded — see
-/// the file header).
+/// clear, `.some(value)` = replace.
 public struct LayerPropertyUpdate: Sendable {
     public var nodeId: UInt64
     public var position: Point2D?
@@ -152,9 +139,8 @@ public struct LayerPropertyUpdate: Sendable {
     public init(nodeId: UInt64) { self.nodeId = nodeId }
 }
 
-/// One producer commit: structural + property deltas for one context. Mirrors
-/// the retained-model subset of `RenderTransaction.Transaction` (the
-/// animation/fence delta arrays are excluded here — see the file header).
+/// One producer commit: structural, property, and animation deltas for one
+/// context.
 public struct Transaction: Sendable {
     public var contextId: ContextID
     public var revision: UInt64 = 0
@@ -170,15 +156,12 @@ public struct Transaction: Sendable {
     public var animationBeginTimeSeconds: Double = 0
     public var animationBeginTimePending = false
     /// Completion token fired once every animation created by this transaction
-    /// finishes. `0` = none. Carried for queue coalescing; the animation
-    /// completion machinery co-lands with the renderer move (10b). Mirrors
-    /// `completion_token`.
+    /// finishes. `0` = none.
     public var completionToken: UInt64 = 0
 
     public init(contextId: ContextID) { self.contextId = contextId }
 
-    /// True when the transaction carries no deltas. Mirrors `Transaction.isEmpty`
-    /// (minus the animation/fence terms excluded from this port).
+    /// True when the transaction carries no deltas.
     public var isEmpty: Bool {
         created.isEmpty && inserted.isEmpty && removed.isEmpty &&
             detached.isEmpty && propertyUpdates.isEmpty &&
@@ -204,16 +187,17 @@ public enum TransactionApplier: Sendable {
             try validate(txn, against: tree)
             applyValidated(txn, to: &tree)
             return .success(())
-        } catch let error as ApplyError {
+        } catch let error {
             return .failure(error)
-        } catch {
-            preconditionFailure("unexpected transaction application error: \(error)")
         }
     }
 
     /// Validate against a lightweight topology shadow. Copying the full retained
     /// tree would trigger copy-on-write of every heavyweight Layer on each commit.
-    private static func validate(_ txn: Transaction, against tree: LayerTree) throws {
+    private static func validate(
+        _ txn: Transaction,
+        against tree: LayerTree
+    ) throws(ApplyError) {
         var parents = tree.layers.mapValues(\.parent)
         for created in txn.created where !parents.keys.contains(created.nodeId) {
             parents[created.nodeId] = .some(nil)

@@ -158,7 +158,8 @@ import NucleusSkiaGraphiteBridge
             _ = image.isValid()
 
             let recording = recorder.snapRecording()
-            if recording.isValid() { _ = context.submit(recording) }
+            _ = submitGraphiteAndWait(
+                context: context, recording: recording, serial: 1)
 
             // Dedicated mutable-upload recorder: two consecutive updates must
             // submit ahead of frames without converting a raster image during draw
@@ -183,7 +184,9 @@ import NucleusSkiaGraphiteBridge
                 uploadDst.width = 8; uploadDst.height = 8
                 target.getCanvas().drawImage(image, uploadDst, 1)
                 let frame = recorder.snapRecording()
-                #expect(context.submitWithUpload(upload, frame) == nucleus.skia.Status.ok,
+                #expect(submitGraphiteWithUploadAndWait(
+                    context: context, upload: upload, frame: frame,
+                    serial: UInt64(generation + 1)),
                         "upload-generation-submit-\(generation)")
             }
         }

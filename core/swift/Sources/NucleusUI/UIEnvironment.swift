@@ -18,11 +18,11 @@ public struct UIEnvironmentChanges: OptionSet, Sendable, Equatable {
 }
 
 public struct UIEnvironment: Sendable, Equatable {
-    public var reducesMotion: Bool
-    public var reducesTransparency: Bool
-    public var increasesContrast: Bool
-    public var appearance: Appearance
-    public var textScale: Double
+    public let reducesMotion: Bool
+    public let reducesTransparency: Bool
+    public let increasesContrast: Bool
+    public let appearance: Appearance
+    public let textScale: Double
 
     public init(
         reducesMotion: Bool = false,
@@ -38,6 +38,23 @@ public struct UIEnvironment: Sendable, Equatable {
         self.textScale = textScale.isFinite && textScale > 0
             ? min(max(0.5, textScale), 4)
             : 1
+    }
+
+    public func replacing(
+        reducesMotion: Bool? = nil,
+        reducesTransparency: Bool? = nil,
+        increasesContrast: Bool? = nil,
+        appearance: Appearance? = nil,
+        textScale: Double? = nil
+    ) -> UIEnvironment {
+        UIEnvironment(
+            reducesMotion: reducesMotion ?? self.reducesMotion,
+            reducesTransparency:
+                reducesTransparency ?? self.reducesTransparency,
+            increasesContrast:
+                increasesContrast ?? self.increasesContrast,
+            appearance: appearance ?? self.appearance,
+            textScale: textScale ?? self.textScale)
     }
 
     package func changes(

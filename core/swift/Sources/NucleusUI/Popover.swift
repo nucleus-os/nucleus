@@ -57,7 +57,7 @@ public final class Popover {
         didSet { if sceneBounds != oldValue { reposition() } }
     }
 
-    private let contentSize: Size
+    private var contentSize: Size
 
     public init(
         content: View,
@@ -132,6 +132,17 @@ public final class Popover {
 
     func place(in bounds: Rect) {
         sceneBounds = bounds
+        reposition()
+    }
+
+    package func setContentSize(_ size: Size) {
+        guard size != contentSize else { return }
+        precondition(
+            size.width.isFinite && size.height.isFinite
+                && size.width >= 0 && size.height >= 0,
+            "popover content size must be finite and nonnegative")
+        contentSize = size
+        window.root?.frame = Rect(origin: .zero, size: size)
         reposition()
     }
 }

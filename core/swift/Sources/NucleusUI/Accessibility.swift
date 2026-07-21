@@ -191,6 +191,9 @@ public enum AccessibilityAction: String, Sendable, Hashable {
     case selectAll
     case undo
     case redo
+    case startDrag
+    case performDrop
+    case cancelDrag
 }
 
 public struct AccessibilityActionRequest: Sendable, Equatable {

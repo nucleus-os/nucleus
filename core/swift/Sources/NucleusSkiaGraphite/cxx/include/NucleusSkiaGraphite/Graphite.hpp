@@ -433,7 +433,7 @@ public:
     Image snapshotImage() const;
     /// Read the surface's pixels as tightly-packed (or `rowBytes`-strided)
     /// RGBA8888 premultiplied. Valid for CPU raster surfaces; a GPU-backed
-    /// surface reads back through `GraphiteContext::readSurfaceRGBA` instead.
+    /// surface uses `GraphiteContext::beginSurfaceReadbackRGBA` instead.
     bool readPixelsRGBA(uint8_t *dst, size_t byteLength, int32_t rowBytes) const;
 
     // Internal: the context readback path reads the held SkSurface.
@@ -457,6 +457,20 @@ public:
 
     // Internal: the context's submit path reads the held recording.
     Impl *raw() const;
+
+private:
+    std::shared_ptr<Impl> impl_;
+};
+
+/// One asynchronous GPU surface readback. The Graphite context owns the GPU
+/// work; this value keeps the callback result alive until Swift consumes it.
+class SurfaceReadback {
+public:
+    struct Impl;
+    explicit SurfaceReadback(std::shared_ptr<Impl> impl);
+    bool isValid() const;
+    bool isComplete() const;
+    Status copyPixels(uint8_t *dst, size_t byteLength, int32_t rowBytes) const;
 
 private:
     std::shared_ptr<Impl> impl_;
@@ -498,11 +512,6 @@ public:
     /// borrowed Vulkan device is still alive. Idempotent.
     void reset();
     Recorder makeRecorder() const;
-    /// Insert a recording and submit, syncing to the CPU. Returns ok on success.
-    Status submit(const Recording &recording) const;
-    /// Insert upload work before frame work and submit them as one ordered GPU
-    /// batch, syncing to the CPU (compatibility and test use).
-    Status submitWithUpload(const Recording &upload, const Recording &frame) const;
     /// Insert frame work (and optional preceding upload work), signal the borrowed
     /// Vulkan binary semaphore, and submit without waiting on the CPU. The Linux
     /// DRM backend exports that semaphore as a sync_file for KMS IN_FENCE_FD.
@@ -532,6 +541,19 @@ public:
         void *const *waitSemaphores, size_t waitSemaphoreCount,
         void *signalSemaphore, uint32_t presentQueueFamily,
         uint64_t submissionSerial) const;
+    /// Submit ordinary Graphite work without a CPU wait. Completion advances the
+    /// same monotonically increasing serial observed by
+    /// `pollCompletedSubmissionSerial`.
+    Status submitAsync(const Recording &recording, uint64_t submissionSerial) const;
+    /// Start a nonblocking readback. The context owner calls
+    /// `pollCompletedSubmissionSerial` until the returned readback completes.
+    SurfaceReadback beginSurfaceReadbackRGBA(const Surface &surface) const;
+    SurfaceReadback beginSurfaceReadbackBGRA(const Surface &surface) const;
+    /// Read one checked surface sub-rectangle without allocating or transferring
+    /// the rest of the render target.
+    SurfaceReadback beginSurfaceReadbackBGRARegion(
+        const Surface &surface, int32_t x, int32_t y,
+        int32_t width, int32_t height) const;
     /// Poll internal submission fences without waiting and return the greatest
     /// serial whose GPU-finished callback has completed.
     uint64_t pollCompletedSubmissionSerial() const;
@@ -540,11 +562,6 @@ public:
     /// elapsed-time queries are unavailable. Consumption is exact-keyed because
     /// different outputs may deliver pageflips out of submission-serial order.
     uint64_t takeCompletedSubmissionGpuElapsedNs(uint64_t submissionSerial) const;
-    /// Read `surface`'s full extent into `dst` as RGBA8888 premultiplied (the
-    /// screenshot/screencopy raw readback). Synchronous: issues the Graphite async
-    /// read then drains it under a CPU sync. Returns ok on success.
-    Status readSurfaceRGBA(const Surface &surface, uint8_t *dst, size_t byteLength, int32_t rowBytes) const;
-
 private:
     std::shared_ptr<Impl> impl_;
 };

@@ -1,3 +1,5 @@
+import NucleusLayers
+
 /// Stable semantic identity for a `View`.
 ///
 /// A view ID belongs to the UI model. It is deliberately unrelated to a
@@ -89,12 +91,11 @@ package struct ViewDirtyGenerations: Sendable, Equatable {
 /// only while constructing a scene; views retain this semantic context alone.
 @MainActor
 public final class UIContext: ~Sendable {
-    private static var nextNamespace: UInt32 = 1
-
     private let namespace: UInt32
     private var nextViewOrdinal: UInt32 = 1
     private var nextWindowOrdinal: UInt32 = 1
     private var nextAnimationOrdinal: UInt64 = 1
+    private var nextDragSessionOrdinal: UInt64 = 1
     private var nextAccessibilityOrdinal: UInt64 = 1
     private var nextGeneration: UInt64 = 1
     private var actionPolicyStack: [ActionPolicy] = []
@@ -119,8 +120,26 @@ public final class UIContext: ~Sendable {
 
     private var environmentConsumers:
         [ViewID: WeakEnvironmentConsumer] = [:]
+    private var glyphConsumers: [ViewID: WeakGlyphConsumer] = [:]
 
+    public let services: UIHostServices
+    public let clock: UIClock
+    public let imageRequests: ImageRequestPipeline
+    public var glyphCatalog: GlyphCatalog? {
+        didSet {
+            guard glyphCatalog !== oldValue else { return }
+            for consumer in glyphConsumers.values {
+                consumer.value?.contextGlyphCatalogDidChange(
+                    from: oldValue)
+            }
+        }
+    }
     public private(set) var environment = UIEnvironment()
+    /// Monotonic identity for values derived from the complete environment.
+    ///
+    /// Consumers that cache measurements use this instead of attempting to
+    /// predict which environment fields a caller's measurement closure reads.
+    public private(set) var environmentGeneration: UInt64 = 1
 
     /// Scene-local animation speed multiplier. Invalid values canonicalize to
     /// one so no duration reaching the renderer is NaN, infinite, or negative.
@@ -139,13 +158,55 @@ public final class UIContext: ~Sendable {
     /// resource. Image ownership remains in `ImageResource`; visual paint
     /// ownership remains in the publisher.
     package let resourceHostHandle: UInt64
+    package let runtimeHost: LayerRuntimeHost
 
-    public init(resourceHostHandle: UInt64 = 0) {
-        let namespace = Self.nextNamespace
-        Self.nextNamespace &+= 1
-        precondition(Self.nextNamespace != 0, "UIContext identity namespace exhausted")
+    public init(
+        services: UIHostServices,
+        environment: UIEnvironment = UIEnvironment(),
+        resourceHostHandle: UInt64 = 0,
+        runtimeHost: LayerRuntimeHost = .inMemory(),
+        glyphCatalog: GlyphCatalog? = nil,
+        clock: UIClock = .continuous
+    ) {
+        let namespace: UInt32
+        do {
+            namespace = try runtimeHost.operations.contextIDAllocator.reserve()
+        } catch {
+            preconditionFailure(
+                "UIContext identity namespace allocation failed: \(error)")
+        }
+        self.services = services
+        self.clock = clock
+        self.imageRequests = ImageRequestPipeline(
+            resourceHostHandle: resourceHostHandle,
+            runtimeHost: runtimeHost,
+            clock: clock,
+            resolver: services.imageSourceResolver,
+            diagnostic: { failure, request in
+                services.report(UIHostDiagnostic(
+                    service: .image,
+                    operation: "request-resource",
+                    resourceIdentity: request.id.rawValue,
+                    generation: request.cancellationGeneration,
+                    failure: .image(failure)))
+            })
+        self.environment = environment
+        self.glyphCatalog = glyphCatalog
         self.namespace = namespace
         self.resourceHostHandle = resourceHostHandle
+        self.runtimeHost = runtimeHost
+    }
+
+    isolated deinit {
+        runtimeHost.lifecycle.contextIDAllocator.release(namespace)
+    }
+
+    package func registerGlyphConsumer(_ view: GlyphView) {
+        glyphConsumers[view.id] = WeakGlyphConsumer(view)
+    }
+
+    package func unregisterGlyphConsumer(_ id: ViewID) {
+        glyphConsumers[id] = nil
     }
 
     /// Construct a detached semantic graph in this context.
@@ -205,6 +266,15 @@ public final class UIContext: ~Sendable {
         return animationID
     }
 
+    package func allocateDragSessionID() -> DragSessionID {
+        let ordinal = nextDragSessionOrdinal
+        nextDragSessionOrdinal &+= 1
+        precondition(
+            nextDragSessionOrdinal != 0,
+            "drag session identity exhausted")
+        return DragSessionID(context: namespace, ordinal: ordinal)
+    }
+
     package func allocateAccessibilityID() -> AccessibilityID {
         let ordinal = nextAccessibilityOrdinal
         nextAccessibilityOrdinal &+= 1
@@ -249,6 +319,13 @@ public final class UIContext: ~Sendable {
         let changes = next.changes(from: self.environment)
         guard !changes.isEmpty else { return }
         self.environment = next
+        environmentGeneration &+= 1
+        precondition(
+            environmentGeneration != 0,
+            "UIContext environment generation exhausted")
+        if changes.contains(.reducedMotion), next.reducesMotion {
+            finishMotionScaledValueAnimationsForReducedMotion()
+        }
 
         var dead: [ViewID] = []
         for (id, consumer) in environmentConsumers {

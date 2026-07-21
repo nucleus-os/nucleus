@@ -161,8 +161,7 @@ func lowerNativeLayerDamageFact(_ target: RenderTarget, _ input: LayerInput) -> 
         outputId: target.outputId,
         layerId: input.layerId,
         visibleRect: currentVisible,
-        visualSignature: nativeLayerVisualSignature(input.layer, input.combinedOpacity),
-        hasPresentationTransition: input.layer.hasPresentationTransition())
+        visualSignature: nativeLayerVisualSignature(input.layer, input.combinedOpacity))
 }
 
 /// Lower a layer's external-content damage fact. Mirrors
@@ -192,7 +191,7 @@ private func mappedLayerRect(_ matrix: M44, _ rect: Rect) -> LogicalRect {
 // MARK: - Visual-state signatures
 
 /// Visual-state signature for a native-tracked layer. Same visual state → same
-/// value; a change to geometry/content/kind/transition changes it. Mirrors
+/// value; a change to geometry/content/kind changes it. Mirrors
 /// `nativeLayerVisualSignature` (contract-parity, see file header).
 func nativeLayerVisualSignature(_ layer: Layer, _ combinedOpacity: Float) -> UInt64 {
     nativeLayerSignature(
@@ -269,12 +268,6 @@ private func nativeLayerSignature(
         }
     }
 
-    if layer.hasPresentationTransition() {
-        h.byte(1)
-        h.u64(layer.presentation.transition.raw)
-    } else {
-        h.byte(0)
-    }
     return h.final()
 }
 

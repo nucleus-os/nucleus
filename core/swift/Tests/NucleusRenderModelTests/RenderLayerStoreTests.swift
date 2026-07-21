@@ -11,14 +11,7 @@ import Testing
         appendUniqueLayerID(&ids, 1)
         #expect(ids == [1, 2], "append-unique-dedups")
 
-        // pushDisplacement: full-extent push in the entry direction, min 1.
         let b = Rect(x: 0, y: 0, w: 100, h: 40)
-        #expect(pushDisplacement(.fromLeft, bounds: b) == Point2D(x: -100, y: 0), "push-left")
-        #expect(pushDisplacement(.fromRight, bounds: b) == Point2D(x: 100, y: 0), "push-right")
-        #expect(pushDisplacement(.fromTop, bounds: b) == Point2D(x: 0, y: -40), "push-top")
-        #expect(pushDisplacement(.fromBottom, bounds: b) == Point2D(x: 0, y: 40), "push-bottom")
-        // Zero-size bounds clamp the magnitude to 1.
-        #expect(pushDisplacement(.fromLeft, bounds: Rect()) == Point2D(x: -1, y: 0), "push-min-magnitude")
 
         // offsetRect translates, keeps size.
         #expect(offsetRect(b, Point2D(x: 5, y: -3)) == Rect(x: 5, y: -3, w: 100, h: 40), "offset")

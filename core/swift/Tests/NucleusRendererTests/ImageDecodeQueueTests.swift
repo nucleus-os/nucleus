@@ -13,6 +13,23 @@ import NucleusRenderModel
 /// under test *is* that work happens on another thread and comes back safely, and
 /// a fake would test the fake.
 @Suite struct ImageDecodeQueueTests {
+    private final class TestWakeSink: AsyncRenderWakeSink, @unchecked Sendable {
+        private let lock = NSLock()
+        private var count = 0
+
+        nonisolated func signalRenderWork() {
+            lock.lock()
+            count += 1
+            lock.unlock()
+        }
+
+        var signalCount: Int {
+            lock.lock()
+            defer { lock.unlock() }
+            return count
+        }
+    }
+
     /// A small PNG written to a temporary file, removed with the test.
     private final class Fixture {
         let path: String
@@ -51,7 +68,7 @@ import NucleusRenderModel
     // MARK: - Decoding
 
     @Test func aSubmittedImageComesBackDecoded() {
-        let queue = ImageDecodeQueue()
+        let queue = ImageDecodeQueue(wakeSink: TestWakeSink())
         defer { queue.shutdown() }
         let fixture = Fixture()
 
@@ -66,7 +83,7 @@ import NucleusRenderModel
     /// Nothing is ready the instant it is asked for — that is the whole point,
     /// and the caller must be able to cope with an empty drain.
     @Test func drainingBeforeAnythingFinishesYieldsNothing() {
-        let queue = ImageDecodeQueue()
+        let queue = ImageDecodeQueue(wakeSink: TestWakeSink())
         defer { queue.shutdown() }
         #expect(queue.drain().isEmpty)
     }
@@ -74,7 +91,7 @@ import NucleusRenderModel
     /// A pending decode draws nothing, so the caller asks again every frame.
     /// Without this the queue would fill with duplicates of the same work.
     @Test func resubmittingAPendingHandleIsRefused() {
-        let queue = ImageDecodeQueue()
+        let queue = ImageDecodeQueue(wakeSink: TestWakeSink())
         defer { queue.shutdown() }
         let fixture = Fixture()
 
@@ -89,7 +106,7 @@ import NucleusRenderModel
     /// Once drained, the handle is forgotten — a re-registered handle must be
     /// decodable again.
     @Test func aHandleCanBeSubmittedAgainAfterDraining() {
-        let queue = ImageDecodeQueue()
+        let queue = ImageDecodeQueue(wakeSink: TestWakeSink())
         defer { queue.shutdown() }
         let fixture = Fixture()
 
@@ -100,7 +117,7 @@ import NucleusRenderModel
     }
 
     @Test func severalImagesAllComeBack() {
-        let queue = ImageDecodeQueue()
+        let queue = ImageDecodeQueue(wakeSink: TestWakeSink())
         defer { queue.shutdown() }
         let fixtures = (0..<5).map { _ in Fixture() }
 
@@ -120,7 +137,7 @@ import NucleusRenderModel
     /// A file that is not an image fails on the worker and simply never arrives,
     /// rather than delivering an invalid image the render thread would cache.
     @Test func anUndecodableSourceDeliversNothing() {
-        let queue = ImageDecodeQueue()
+        let queue = ImageDecodeQueue(wakeSink: TestWakeSink())
         defer { queue.shutdown() }
 
         #expect(queue.submit(
@@ -140,25 +157,50 @@ import NucleusRenderModel
     /// change, the image simply arrived. Without this the result waits for an
     /// unrelated repaint.
     @Test func completionNotifies() {
-        let queue = ImageDecodeQueue()
+        let wakeSink = TestWakeSink()
+        let queue = ImageDecodeQueue(wakeSink: wakeSink)
         defer { queue.shutdown() }
         let fixture = Fixture()
 
-        let notified = Notified()
-        queue.onCompletion = { notified.signal() }
         #expect(queue.submit(handle: 1, source: source(fixture)))
 
         let deadline = Date().addingTimeInterval(5)
-        while !notified.wasSignalled && Date() < deadline { usleep(1000) }
-        #expect(notified.wasSignalled)
+        while wakeSink.signalCount == 0 && Date() < deadline { usleep(1000) }
+        #expect(wakeSink.signalCount == 1)
+        #expect(queue.completionToFrameDemandNanoseconds != nil)
     }
 
-    /// A flag written from a worker and read from the test thread.
-    private final class Notified: @unchecked Sendable {
-        private var flag = false
-        private let lock = NSLock()
-        func signal() { lock.lock(); flag = true; lock.unlock() }
-        var wasSignalled: Bool { lock.lock(); defer { lock.unlock() }; return flag }
+    @Test func aCompletionBurstCoalescesItsWake() {
+        let wakeSink = TestWakeSink()
+        let queue = ImageDecodeQueue(wakeSink: wakeSink)
+        defer { queue.shutdown() }
+        let fixtures = (0..<8).map { _ in Fixture() }
+
+        for (index, fixture) in fixtures.enumerated() {
+            #expect(queue.submit(handle: UInt64(index + 1), source: source(fixture)))
+        }
+
+        let deadline = Date().addingTimeInterval(5)
+        while Date() < deadline {
+            if wakeSink.signalCount == 1 {
+                usleep(250_000)
+                break
+            }
+            usleep(1000)
+        }
+        #expect(wakeSink.signalCount == 1)
+        #expect(queue.drain().count == fixtures.count)
+    }
+
+    @Test func failedDecodeDoesNotWake() {
+        let wakeSink = TestWakeSink()
+        let queue = ImageDecodeQueue(wakeSink: wakeSink)
+        defer { queue.shutdown() }
+
+        #expect(queue.submit(
+            handle: 1, source: ImageSource(path: "/nonexistent", maxWidth: 0, maxHeight: 0)))
+        usleep(100_000)
+        #expect(wakeSink.signalCount == 0)
     }
 
     // MARK: - Cancellation
@@ -166,7 +208,8 @@ import NucleusRenderModel
     /// An evicted handle may be re-registered for a different source, so a result
     /// in flight for the old one must not be delivered against it.
     @Test func cancellingBeforeDrainDropsTheResult() {
-        let queue = ImageDecodeQueue()
+        let wakeSink = TestWakeSink()
+        let queue = ImageDecodeQueue(wakeSink: wakeSink)
         defer { queue.shutdown() }
         let fixture = Fixture()
 
@@ -178,12 +221,13 @@ import NucleusRenderModel
             #expect(queue.drain().allSatisfy { $0.handle != 9 })
             usleep(2000)
         }
+        #expect(wakeSink.signalCount == 0)
     }
 
     /// Cancelling clears the handle, so the same handle can be submitted again
     /// immediately — which is exactly what a re-registration does.
     @Test func cancellingAllowsResubmission() {
-        let queue = ImageDecodeQueue()
+        let queue = ImageDecodeQueue(wakeSink: TestWakeSink())
         defer { queue.shutdown() }
         let fixture = Fixture()
 
@@ -192,8 +236,24 @@ import NucleusRenderModel
         #expect(queue.submit(handle: 4, source: source(fixture)))
     }
 
+    @Test func resubmissionCannotReceiveTheCancelledGeneration() {
+        let queue = ImageDecodeQueue(wakeSink: TestWakeSink())
+        defer { queue.shutdown() }
+        let oldFixture = Fixture(width: 256, height: 256)
+        let newFixture = Fixture(width: 3, height: 5)
+
+        #expect(queue.submit(handle: 4, source: source(oldFixture)))
+        queue.cancel(handle: 4)
+        #expect(queue.submit(handle: 4, source: source(newFixture)))
+
+        let results = waitForDrain(queue)
+        #expect(results.count == 1)
+        #expect(results.first?.width == 3)
+        #expect(results.first?.height == 5)
+    }
+
     @Test func cancellingAnUnknownHandleIsHarmless() {
-        let queue = ImageDecodeQueue()
+        let queue = ImageDecodeQueue(wakeSink: TestWakeSink())
         defer { queue.shutdown() }
         queue.cancel(handle: 999)
     }
@@ -203,7 +263,7 @@ import NucleusRenderModel
     /// Workers must be stopped before the Graphite context they decode against is
     /// torn down, so shutdown joins rather than merely signalling.
     @Test func shutdownStopsTheWorkers() {
-        let queue = ImageDecodeQueue()
+        let queue = ImageDecodeQueue(wakeSink: TestWakeSink())
         queue.shutdown()
         #expect(!queue.hasWorkers)
         // Submitting after shutdown is refused rather than silently queued
@@ -212,7 +272,7 @@ import NucleusRenderModel
     }
 
     @Test func shutdownIsIdempotent() {
-        let queue = ImageDecodeQueue()
+        let queue = ImageDecodeQueue(wakeSink: TestWakeSink())
         queue.shutdown()
         queue.shutdown()
         #expect(!queue.hasWorkers)
@@ -220,7 +280,7 @@ import NucleusRenderModel
 
     /// Shutting down with work outstanding must not hang or crash.
     @Test func shutdownWithWorkInFlightIsClean() {
-        let queue = ImageDecodeQueue()
+        let queue = ImageDecodeQueue(wakeSink: TestWakeSink())
         let fixtures = (0..<8).map { _ in Fixture(width: 64, height: 64) }
         for (index, fixture) in fixtures.enumerated() {
             queue.submit(handle: UInt64(index + 1), source: source(fixture))
@@ -229,10 +289,23 @@ import NucleusRenderModel
         #expect(!queue.hasWorkers)
     }
 
+    @Test func deinitStopsWorkersWithoutExplicitShutdown() {
+        let wakeSink = TestWakeSink()
+        weak var weakQueue: ImageDecodeQueue?
+        do {
+            var queue: ImageDecodeQueue? = ImageDecodeQueue(wakeSink: wakeSink)
+            weakQueue = queue
+            let fixture = Fixture(width: 64, height: 64)
+            queue?.submit(handle: 1, source: source(fixture))
+            queue = nil
+        }
+        #expect(weakQueue == nil)
+    }
+
     // MARK: - Raw sources
 
     @Test func rawPixelsDecodeWithoutAFile() {
-        let queue = ImageDecodeQueue()
+        let queue = ImageDecodeQueue(wakeSink: TestWakeSink())
         defer { queue.shutdown() }
 
         let buffer = RawPixelBuffer(
@@ -247,7 +320,7 @@ import NucleusRenderModel
     /// A buffer that does not describe itself consistently yields no image at
     /// all, rather than one built from misread bytes.
     @Test func anInconsistentRawBufferDeliversNothing() {
-        let queue = ImageDecodeQueue()
+        let queue = ImageDecodeQueue(wakeSink: TestWakeSink())
         defer { queue.shutdown() }
 
         let buffer = RawPixelBuffer(

@@ -6,7 +6,7 @@ import Testing
     private final class Owner {}
 
     @Test func samplesAgainstPredictedPresentationTime() {
-        let context = UIContext()
+        let context = UIContext(services: .inMemory())
         let owner = Owner()
         var values: [Double] = []
         var frameRequests = 0
@@ -42,7 +42,7 @@ import Testing
     }
 
     @Test func multipleStartsCoalesceOneFrameRequest() {
-        let context = UIContext()
+        let context = UIContext(services: .inMemory())
         let owner = Owner()
         var requests = 0
         context.setAnimationFrameRequestHandler { requests += 1 }
@@ -66,7 +66,7 @@ import Testing
     }
 
     @Test func replacingAndCancellingResolveExactlyOnce() {
-        let context = UIContext()
+        let context = UIContext(services: .inMemory())
         let owner = Owner()
         let key = AnimationPropertyKey(rawValue: "value")
         var firstOutcomes: [AnimationOutcome] = []
@@ -93,7 +93,7 @@ import Testing
     }
 
     @Test func destroyedOwnerNeverReceivesAnotherSetter() {
-        let context = UIContext()
+        let context = UIContext(services: .inMemory())
         var owner: Owner? = Owner()
         var setterCount = 0
         let handle = context.animateValue(
@@ -114,7 +114,7 @@ import Testing
     }
 
     @Test func realElapsedModeIgnoresReducedMotionAndSpeed() {
-        let context = UIContext()
+        let context = UIContext(services: .inMemory())
         context.updateEnvironment(UIEnvironment(reducesMotion: true))
         context.animationSpeed = 20
         let owner = Owner()
@@ -142,7 +142,7 @@ import Testing
     }
 
     @Test func reducedMotionSkipsMotionScaledValueSynchronously() {
-        let context = UIContext()
+        let context = UIContext(services: .inMemory())
         context.updateEnvironment(UIEnvironment(reducesMotion: true))
         let owner = Owner()
         var values: [Double] = []

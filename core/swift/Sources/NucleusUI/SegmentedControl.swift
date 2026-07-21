@@ -93,7 +93,8 @@ public final class SegmentedControl: Control, ~Sendable {
             TextLayout(
                 text: $0.title,
                 font: Font.systemFont(ofSize: 14)
-                    .scaled(by: uiContext.environment.textScale)
+                    .scaled(by: uiContext.environment.textScale),
+                textSystem: uiContext.services.textSystem
             ).intrinsicSize.width + 24
         }
         return Size(width: widths.reduce(0, +), height: 30)
@@ -179,7 +180,8 @@ public final class SegmentedControl: Control, ~Sendable {
             let text = TextLayout(
                 text: segments[index].title,
                 font: Font.systemFont(ofSize: 14)
-                    .scaled(by: uiContext.environment.textScale))
+                    .scaled(by: uiContext.environment.textScale),
+                textSystem: uiContext.services.textSystem)
             context.alpha = segments[index].isEnabled ? 1 : 0.45
             context.draw(text, in: Rect(
                 x: rect.origin.x

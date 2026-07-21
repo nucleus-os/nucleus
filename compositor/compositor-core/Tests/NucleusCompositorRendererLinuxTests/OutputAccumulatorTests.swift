@@ -94,7 +94,8 @@ import NucleusSkiaGraphiteBridge
 
             // Flush the recorded work so the context tears down cleanly.
             let recording = recorder.snapRecording()
-            if recording.isValid() { _ = context.submit(recording) }
+            _ = submitGraphiteAndWait(
+                context: context, recording: recording, serial: 1)
         }
     }
 }

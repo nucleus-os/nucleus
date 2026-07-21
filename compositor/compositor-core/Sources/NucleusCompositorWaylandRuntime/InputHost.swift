@@ -1,11 +1,11 @@
 // InputHost — the Swift owner of the compositor's input backend: the libseat
 // session, the libinput context, the xkb keyboard, and the central InputDispatch.
 // It is the input analog of XwaylandHost: the bring-up + reactor loop drive it
-// through the @_cdecl crossings below, and the reactor loop borrows its seat
-// for DRM-primary opens until the loop shell moves to Swift.
+// through ordinary Swift calls, and the reactor loop borrows its seat for
+// DRM-primary opens.
 //
 // Single-threaded on the compositor main actor; the loop handlers run on that
-// thread, so the @_cdecl thunks assume isolation. The libinput restricted opens go
+// thread, so callback thunks assume isolation. The libinput restricted opens go
 // through the seat; the DRM connector-hotplug udev monitor is Swift-owned too,
 // sharing libinput's udev context (the reactor borrows its fd and drives the drain).
 
@@ -58,7 +58,7 @@ final class InputHost {
         guard let seat = SeatSession.open(), let xkb = XkbKeyboard() else { return nil }
         let host = InputHost(seat: seat, xkb: xkb)
         seat.onEnable = { [weak host] in host?.handleSeatEnable() }
-        seat.onDisable = { [weak host] in host?.handleSeatDisable() }
+        seat.onDisable = { [weak host] in host?.handleSeatDisable() ?? true }
         return host
     }
 
@@ -86,12 +86,19 @@ final class InputHost {
         libinput?.dispatch()
     }
 
-    private func handleSeatDisable() {
+    private func handleSeatDisable() -> Bool {
         active = false
         RouterHost.shared.runtime?.seat.invalidateSerialsForSessionTransition()
         dispatch.resetSessionState()
-        NucleusCompositorServer.shared.sessionControl?.sessionPause()
+        let canAcknowledge =
+            NucleusCompositorServer.shared.sessionControl?.sessionPause()
+            ?? true
         libinput?.suspend()
+        return canAcknowledge
+    }
+
+    func completeSessionPause() {
+        seat.completeDisableAcknowledgement()
     }
 
     /// Create the libinput context (its device opens mediated through the seat) and
@@ -273,4 +280,10 @@ final class InputHost {
         NucleusCompositorServer.shared.inputControl = nil
     }
     RouterHost.shared.inputHost = nil
+}
+
+/// Complete a libseat disable that was deferred while a KMS page flip retained
+/// scanout resources. Safe to call when no disable is pending.
+@MainActor public func nucleus_input_host_complete_session_pause() {
+    RouterHost.shared.inputHost?.completeSessionPause()
 }

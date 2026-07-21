@@ -357,11 +357,11 @@ import NucleusShellWayland
     @Test func waylandClientAdapterPublishesMutatesAndTearsDownOneScene()
         throws
     {
-        installStubHost()
         let sink = InMemoryCommitSink()
         let publication = try WindowScenePublicationContext(
             visualContextID: ContextID(rawValue: 8_701),
-            commitSink: sink)
+            commitSink: sink,
+            services: .inMemory())
         let (window, view) = publication.withSemanticContext {
             let window = Window(title: "Wayland client")
             let view = RecordingView()

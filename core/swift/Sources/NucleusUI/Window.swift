@@ -68,7 +68,7 @@ open class Window: Responder, ~Sendable {
     /// `styleMask.contains(.titled)` and `nil` otherwise.
     public internal(set) var titlebar: VisualEffectView?
     package var rootView: View?
-    package weak var windowScene: WindowScene?
+    public package(set) weak var windowScene: WindowScene?
     public private(set) var contentViewController: ViewController?
     public private(set) var isVisible: Bool
     public private(set) var isKeyWindow: Bool
@@ -207,7 +207,14 @@ open class Window: Responder, ~Sendable {
 
     public func setSurfaceAssociation(_ association: WindowSurfaceAssociation?) {
         guard surfaceAssociation != association else { return }
+        let previousScale =
+            surfaceAssociation?.transform.backingScaleFactor ?? .one
+        let nextScale =
+            association?.transform.backingScaleFactor ?? .one
         surfaceAssociation = association
+        if previousScale != nextScale {
+            rootView?.notifyBackingScaleFactorDidChange()
+        }
         if let activeClient = textInputContext.activeClient {
             textInputContext.invalidateState(for: activeClient)
         }

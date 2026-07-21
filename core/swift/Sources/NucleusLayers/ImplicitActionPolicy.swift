@@ -102,27 +102,6 @@ public enum ImplicitActionPolicy {
 }
 
 @MainActor
-private var activeSettings = Settings()
-
-@MainActor
-public func currentSettings() -> Settings {
-    activeSettings
-}
-
-@MainActor
-public func setSettings(_ settings: Settings) {
-    guard settings != activeSettings else { return }
-    activeSettings = settings
-    registerImplicitActionSettings()
-}
-
-@MainActor
-public func registerImplicitActionSettings() {
-    guard let registrar = currentHost()?.implicitActionRegistrar else { return }
-    registerImplicitActionSettings(activeSettings, using: registrar)
-}
-
-@MainActor
 public func registerImplicitActionSettings(
     _ settings: Settings,
     using registrar: any ImplicitActionRegistrar

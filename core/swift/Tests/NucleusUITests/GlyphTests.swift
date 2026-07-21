@@ -88,36 +88,54 @@ import Testing
     }
 
     @Test func withoutACatalogNothingResolves() {
-        let previous = GlyphCatalog.shared
-        defer { GlyphCatalog.shared = previous }
-        GlyphCatalog.shared = nil
-
-        let view = GlyphView(name: "battery")
+        let context = UIContext(services: .inMemory())
+        let view = context.construct { GlyphView(name: "battery") }
         #expect(view.resolvedCharacter == nil)
     }
 
-    /// A shell ships one icon font, so the shared catalog is the default and
-    /// widgets need not thread one through.
-    @Test func theSharedCatalogIsTheDefault() {
-        let previous = GlyphCatalog.shared
-        defer { GlyphCatalog.shared = previous }
-        GlyphCatalog.shared = makeCatalog()
-
-        let view = GlyphView(name: "wifi")
+    /// A semantic UI graph owns its icon catalog, so widgets inherit the
+    /// catalog from their context without relying on process-global state.
+    @Test func theOwningContextCatalogIsTheDefault() {
+        let context = UIContext(
+            services: .inMemory(),
+            glyphCatalog: makeCatalog())
+        let view = context.construct { GlyphView(name: "wifi") }
         #expect(view.resolvedCharacter == "\u{e901}")
     }
 
-    @Test func anOwnCatalogOverridesTheShared() {
-        let previous = GlyphCatalog.shared
-        defer { GlyphCatalog.shared = previous }
-        GlyphCatalog.shared = makeCatalog()
-
+    @Test func anOwnCatalogOverridesTheContextCatalog() {
         let other = GlyphCatalog(fontFamily: "OtherIcons")
         other.register("wifi", "\u{f000}")
 
-        let view = GlyphView(name: "wifi")
+        let context = UIContext(
+            services: .inMemory(),
+            glyphCatalog: makeCatalog())
+        let view = context.construct { GlyphView(name: "wifi") }
         view.catalog = other
         #expect(view.resolvedCharacter == "\u{f000}")
+    }
+
+    @Test func contextCatalogsAreIsolated() {
+        let firstCatalog = GlyphCatalog(fontFamily: "FirstIcons")
+        firstCatalog.register("wifi", "\u{e901}")
+        let secondCatalog = GlyphCatalog(fontFamily: "SecondIcons")
+        secondCatalog.register("wifi", "\u{f000}")
+
+        let firstContext = UIContext(
+            services: .inMemory(),
+            glyphCatalog: firstCatalog)
+        let secondContext = UIContext(
+            services: .inMemory(),
+            glyphCatalog: secondCatalog)
+        let firstView = firstContext.construct { GlyphView(name: "wifi") }
+        let secondView = secondContext.construct { GlyphView(name: "wifi") }
+
+        #expect(firstView.resolvedCharacter == "\u{e901}")
+        #expect(secondView.resolvedCharacter == "\u{f000}")
+
+        firstCatalog.register("wifi", "\u{e902}")
+        #expect(firstView.resolvedCharacter == "\u{e902}")
+        #expect(secondView.resolvedCharacter == "\u{f000}")
     }
 
     // MARK: - Invalidation

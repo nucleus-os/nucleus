@@ -154,7 +154,6 @@ import Testing
     }
 
     @Test func continuousScrollingKeepsPublishedLayersBounded() throws {
-        installStubHost()
         let grid = makeGrid(count: 10_000)
         let publisher = ViewLayerPublisher(
             context: Application.makeInMemoryVisualContext())

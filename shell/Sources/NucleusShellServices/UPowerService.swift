@@ -1,4 +1,4 @@
-import NucleusShellDBus
+import NucleusLinuxDBus
 
 /// What UPower reports a battery is doing. Values match
 /// `org.freedesktop.UPower.Device.State`.
@@ -124,7 +124,7 @@ public final class UPowerService {
                 self.reading = reading
                 onChange?(reading)
             }
-        } catch let error as DBusError {
+        } catch let error {
             if error.isServiceUnavailable {
                 // No UPower on this machine. Report absence once and stop
                 // pretending there is a battery.
@@ -137,7 +137,6 @@ public final class UPowerService {
             }
             // Any other failure leaves the last good reading in place: a
             // transient bus error should not blank a widget that was working.
-        } catch {
         }
     }
 

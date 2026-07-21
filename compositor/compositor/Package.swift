@@ -3,11 +3,11 @@
 // The Nucleus compositor app package (SwiftPM build-ownership migration, Phase 5).
 //
 // This is the app half of an app/library split. The library package (../) holds
-// every first-party module that has tests; it is verified with `swift test`, which
-// builds the whole package under a global C++-interop flag (SwiftPM's synthesized
-// swift-testing runners don't inherit a per-target interop mode). The app package
-// keeps C++ interoperability scoped to the composition root and executable rather
-// than forcing it over every library test target. SystemPackage itself is valid in
+// the reusable first-party modules and their broad test suites. This app package
+// retains a dependency-clean render-session test target so `swift test` validates
+// executable-package assembly and the DRM-seat ownership contract. C++
+// interoperability remains scoped to the composition root and executable rather
+// than being forced over the non-C++ test target. SystemPackage itself is valid in
 // that C++-interop composition root; it imports only CSystem's C declarations.
 //
 // Targets whose sources were consolidated from a separate tree (the composition
@@ -116,11 +116,9 @@ let package = Package(
         // policy, the shell overlay). Consumes core via the @_spi(NucleusCompositor)
         // contract. (Migration Phase 2 — the core/compositor package split.)
         .package(path: "../compositor-core"),
-        // Vendored swift-system fork: its Linux manifest includes the IORing
-        // sources and the focused poll/wait APIs used by the compositor loop.
-        // SystemPackage builds normally and is imported by the C++-interop runtime
-        // target without propagating a C++ module graph of its own.
-        .package(path: "../../core/third-party/swift-system"),
+        .package(
+            name: "NucleusLinuxPlatform",
+            path: "../../platform-linux"),
     ],
     targets: [
         // Assemble a runnable install prefix (binary + session scripts + systemd unit).
@@ -136,11 +134,6 @@ let package = Package(
             ),
             path: "Plugins/InstallCompositor"
         ),
-        // Header-only C façades for the composition root's @c crossings (the
-        // process entry, the io_uring loop's C ABI). The functions are
-        // implemented in Swift (@c); these only declare the symbols.
-        .systemLibrary(name: "NucleusCompositorRuntimeEntry", path: "cmodules/NucleusCompositorRuntimeEntry"),
-        .systemLibrary(name: "NucleusCompositorLoop", path: "cmodules/NucleusCompositorLoop"),
         .target(
             name: "NucleusCompositorSignalC",
             path: "Sources/NucleusCompositorSignalC",
@@ -158,15 +151,21 @@ let package = Package(
             name: "NucleusCompositorRenderSession",
             path: "Sources/NucleusCompositorRenderSession"
         ),
+        .testTarget(
+            name: "NucleusCompositorRenderSessionTests",
+            dependencies: ["NucleusCompositorRenderSession"],
+            path: "Tests/NucleusCompositorRenderSessionTests"
+        ),
 
-        // The composition root: the @c process entry, the io_uring CompositorRuntime
-        // loop over swift-system's IORing, and CompositorBringup. Imports the
-        // substrate + the library graph as products; cxx interop + Lifetimes (IORing)
-        // + the renderer/substrate system-header flags.
+        // The async composition root: LinuxHostReactor-driven CompositorRuntime
+        // and CompositorBringup. Imports the substrate + library graph as products;
+        // cxx interop + the renderer/substrate system-header flags.
         .target(
             name: "NucleusCompositorRuntime",
             dependencies: [
                 .product(name: "NucleusAppHostBundle", package: "Nucleus"),
+                .product(name: "NucleusUI", package: "Nucleus"),
+                .product(name: "NucleusTextBackend", package: "Nucleus"),
                 .product(name: "NucleusRenderHost", package: "Nucleus"),
                 .product(name: "NucleusRenderer", package: "Nucleus"),
                 .product(name: "NucleusCompositorRendererLinux", package: "compositor-core"),
@@ -178,10 +177,14 @@ let package = Package(
                 .product(name: "NucleusCompositorServer", package: "compositor-core"),
                 .product(name: "NucleusCompositorWindowManager", package: "compositor-core"),
                 .product(name: "NucleusCompositorShell", package: "compositor-core"),
+                .product(
+                    name: "NucleusLinuxDBus",
+                    package: "NucleusLinuxPlatform"),
+                .product(
+                    name: "NucleusLinuxReactor",
+                    package: "NucleusLinuxPlatform"),
                 .product(name: "Tracy", package: "swift-tracy"),
-                "NucleusCompositorRuntimeEntry", "NucleusCompositorLoop",
                 "NucleusCompositorSignalC",
-                .product(name: "SystemPackage", package: "swift-system"),
             ],
             path: "Sources/NucleusCompositorRuntime",
             swiftSettings: [
@@ -194,19 +197,15 @@ let package = Package(
             ]
         ),
 
-        // The compositor executable. Hands control to NucleusCompositorRuntime's
-        // nucleus_runtime_main; the final link assembles the whole Swift graph (via
-        // VCR) + the text backend + the native set: Skia, libdrm/gbm, wayland-server +
+        // The compositor executable. Awaits NucleusCompositorRuntime directly; the
+        // final link assembles the whole Swift graph + the text backend + native set:
+        // Skia, libdrm/gbm, wayland-server +
         // extension descriptors, xcb/input/seat/udev/xkb, vulkan, fontconfig/freetype/z.
         // It links ZERO React (Phase 5): no Hermes/Fabric/folly, no host-cxx archive.
         .executableTarget(
             name: "NucleusCompositor",
             dependencies: [
-                "NucleusCompositorRuntime", "NucleusCompositorRuntimeEntry",
-                // The Skia text backend, compiled once in the core and linked here (no
-                // symlink target). Provides the installed Skia TextLayoutBackend
-                // adapter plus the paragraph registry used by drawing.
-                .product(name: "NucleusTextBackend", package: "Nucleus"),
+                "NucleusCompositorRuntime",
             ],
             path: "Sources/NucleusCompositor",
             swiftSettings: [.interoperabilityMode(.Cxx)],
@@ -219,3 +218,22 @@ let package = Package(
         ),
     ]
 )
+
+
+for target in package.targets {
+    switch target.type {
+    case .regular, .executable, .test:
+        break
+    default:
+        continue
+    }
+    target.swiftSettings = (target.swiftSettings ?? []) + [
+        .unsafeFlags(["-warnings-as-errors"]),
+    ]
+    target.cSettings = (target.cSettings ?? []) + [
+        .unsafeFlags(["-Werror"]),
+    ]
+    target.cxxSettings = (target.cxxSettings ?? []) + [
+        .unsafeFlags(["-Werror"]),
+    ]
+}

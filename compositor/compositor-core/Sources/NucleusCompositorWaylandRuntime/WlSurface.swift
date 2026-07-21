@@ -22,6 +22,10 @@ final class WlSurface {
     // display (and thus surface-resource destruction) outlives the compositor.
     weak let compositor: WlCompositor?
     let version: Int32
+    /// Process-unique compositor identity. Wayland object ids are scoped to one
+    /// client and routinely collide across clients, so they cannot key focus,
+    /// scene, input, or drag state.
+    private let stableObjectId: UInt32
     /// The wl_surface resource. Set right after creation; nil after destruction.
     fileprivate(set) var resource: UnsafeMutablePointer<wl_resource>?
 
@@ -103,7 +107,7 @@ final class WlSurface {
     // GPU upload on each commit and writes the resulting id back here, then
     // publishes it as the surface's backing-layer content through the scene feeder —
     // the author owns the surface→layer mapping, so the surface holds no layer ids.
-    // Released via `RenderRuntime.releaseIOSurface` when the surface tears down.
+    // Released through `CompositorRenderService` when the surface tears down.
     var renderIosurfaceId: UInt32 {
         get { current.renderIOSurfaceID }
         set {
@@ -202,8 +206,17 @@ final class WlSurface {
 
     let subsurfaceTopology = SubsurfaceTopology()
 
-    /// This surface's wire object id (0 if the resource is gone). Identity probe.
-    var objectId: UInt32 { resource.map { wl_resource_get_id($0) } ?? 0 }
+    var objectId: UInt32 {
+        stableObjectId != 0
+            ? stableObjectId
+            : resource.map { wl_resource_get_id($0) } ?? 0
+    }
+
+    /// The client-scoped protocol object id. Use only for wire diagnostics;
+    /// compositor state must use `objectId`.
+    var wireObjectId: UInt32 {
+        resource.map { wl_resource_get_id($0) } ?? 0
+    }
 
     // MARK: role (xdg_surface / layer surface)
     //
@@ -278,9 +291,14 @@ final class WlSurface {
         self.role = role
     }
 
-    init(compositor: WlCompositor, version: Int32) {
+    init(
+        compositor: WlCompositor,
+        version: Int32,
+        stableObjectId: UInt32 = 0
+    ) {
         self.compositor = compositor
         self.version = version
+        self.stableObjectId = stableObjectId
     }
 
     func bind(resource: UnsafeMutablePointer<wl_resource>) {
@@ -379,6 +397,12 @@ final class WlSurface {
     /// Register a double-buffered protocol object to latch on this surface's commit.
     func addCommitObserver(_ observer: WlSurfaceCommitObserver) {
         commitObservers.append(WeakCommitObserver(observer))
+    }
+
+    func removeCommitObserver(_ observer: WlSurfaceCommitObserver) {
+        commitObservers.removeAll {
+            $0.observer == nil || $0.observer === observer
+        }
     }
 
     /// Update the preferred fractional scale (×120) and push it to a bound

@@ -5,6 +5,10 @@ import NucleusSkiaGraphiteBridge
 import NucleusRenderModel
 @testable import NucleusRenderer
 
+struct RendererTestWakeSink: AsyncRenderWakeSink {
+    nonisolated func signalRenderWork() {}
+}
+
 // Converted from FrameDriverFixture (Phase 10b.4k): the FrameDemand render
 // predicate (hardware-independent) + the end-to-end top-level frame — walk →
 // pre-resolve → composite → backdrop → present → submit — over a real Graphite
@@ -14,7 +18,6 @@ import NucleusRenderModel
         #expect(!FrameDemand().shouldRenderThisVblank, "demand-idle-false")
         #expect(FrameDemand(continuousActive: true).shouldRenderThisVblank, "demand-continuous")
         #expect(FrameDemand(frameDue: true).shouldRenderThisVblank, "demand-frame-due")
-        #expect(FrameDemand(operationDeadlineNs: 1).shouldRenderThisVblank, "demand-deadline")
         #expect(FrameDemand(workPlausible: true).shouldRenderThisVblank, "demand-work-plausible")
     }
 
@@ -88,13 +91,7 @@ import NucleusRenderModel
             role: .paint, texture: TextureHandle(raw: 99),
             dst: PlanRect(x: 0, y: 0, w: 10, h: 10),
             src: PlanRect(x: 0, y: 0, w: 10, h: 10), alpha: 1))
-        plan.appendTransitionQuad(TransitionQuad(
-            texturePrev: TextureHandle(raw: 42), textureNext: TextureHandle(raw: 41),
-            sideSizePrev: (10, 10), sampleSizePrev: (10, 10),
-            sideSizeNext: (10, 10), sampleSizeNext: (10, 10),
-            dst: PlanRect(x: 0, y: 0, w: 10, h: 10)))
-
-        #expect(FrameDriver.referencedClientSurfaceIDs(plan) == [41, 42])
+        #expect(FrameDriver.referencedClientSurfaceIDs(plan) == [41])
     }
 
     static func layer(_ id: UInt64, kind: LayerKind = .container,
@@ -160,7 +157,11 @@ import NucleusRenderModel
 
             let context = nucleus.skia.makeGraphiteVulkanContext(desc)
             guard context.isValid() else { return }
-            guard let driver = FrameDriver(context: context) else { return }
+            guard let driver = FrameDriver(
+                context: context,
+                resourceHost: SwiftResourceHost(),
+                wakeSink: RendererTestWakeSink())
+            else { return }
 
             // A small green source image stands in for resolved content.
             var pixels = [UInt8](repeating: 0, count: 16 * 16 * 4)
@@ -174,6 +175,7 @@ import NucleusRenderModel
             var resolveCalls = 0
             let result = driver.renderFrame(
                 tree: tree, target: target, frame: FrameInfo(outputId: 1), scanout: scanout,
+                submissionMode: .offscreen,
                 resolvePaintContent: { handle in
                     handle.raw == 9
                         ? PaintContentStore.Content(commands: [
@@ -199,6 +201,7 @@ import NucleusRenderModel
             // A second frame reuses the persistent accumulator (no re-create).
             _ = driver.renderFrame(
                 tree: tree, target: target, frame: FrameInfo(outputId: 1), scanout: scanout,
+                submissionMode: .offscreen,
                 resolvePaintContent: { _ in
                     PaintContentStore.Content(commands: [
                         PaintDrawCommand(

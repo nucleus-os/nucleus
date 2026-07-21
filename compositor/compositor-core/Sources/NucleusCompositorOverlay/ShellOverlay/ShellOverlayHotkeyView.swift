@@ -47,15 +47,27 @@ struct ShellOverlayHotkeyMetrics: Sendable, Equatable {
     var footerBaselineOffset: Float
 
     @MainActor
-    init(backingScaleFactor: BackingScaleFactor = .one) {
+    init(
+        backingScaleFactor: BackingScaleFactor = .one,
+        textSystem: TextSystem
+    ) {
         self.backingScaleFactor = backingScaleFactor
         fontSize = 14
         titleSize = 20
         footerSize = 11
         hairlineWidth = Float(backingScaleFactor.singlePixelLength)
-        let rowLayout = TextLayout(text: "Hg", font: .systemFont(ofSize: fontSize))
-        let titleLayout = TextLayout(text: "Nucleus Keybindings", font: .systemFont(ofSize: titleSize))
-        let footerLayout = TextLayout(text: "Press Esc or click outside controls to dismiss", font: .systemFont(ofSize: footerSize))
+        let rowLayout = TextLayout(
+            text: "Hg",
+            font: .systemFont(ofSize: fontSize),
+            textSystem: textSystem)
+        let titleLayout = TextLayout(
+            text: "Nucleus Keybindings",
+            font: .systemFont(ofSize: titleSize),
+            textSystem: textSystem)
+        let footerLayout = TextLayout(
+            text: "Press Esc or click outside controls to dismiss",
+            font: .systemFont(ofSize: footerSize),
+            textSystem: textSystem)
         rowTextHeight = Float(rowLayout.intrinsicSize.height)
         rowBaselineOffset = Float(rowLayout.firstBaselineOffsetFromTop)
         titleTextHeight = Float(titleLayout.intrinsicSize.height)
@@ -145,11 +157,16 @@ final class ShellOverlayHotkeyView: View, ~Sendable {
     private(set) var metrics: ShellOverlayHotkeyMetrics
     private(set) var visible: Bool = true
     private let entries: [ShellOverlayHotkeyEntry]
+    private let textSystem: TextSystem
     private var lastFrameInfo: ShellOverlayFrameInfo?
 
-    init(entries: [ShellOverlayHotkeyEntry] = shellOverlayHotkeyEntries) {
+    init(
+        entries: [ShellOverlayHotkeyEntry] = shellOverlayHotkeyEntries,
+        textSystem: TextSystem
+    ) {
         self.entries = entries
-        self.metrics = ShellOverlayHotkeyMetrics()
+        self.textSystem = textSystem
+        self.metrics = ShellOverlayHotkeyMetrics(textSystem: textSystem)
         self.backgroundEffectView = VisualEffectView(material: .hudWindow, state: .active, cornerRadius: 18)
         self.separatorView = View()
         self.titleLabel = Label("Nucleus Keybindings")
@@ -192,7 +209,9 @@ final class ShellOverlayHotkeyView: View, ~Sendable {
             return
         }
         lastFrameInfo = frame
-        metrics = ShellOverlayHotkeyMetrics(backingScaleFactor: frame.backingScaleFactor)
+        metrics = ShellOverlayHotkeyMetrics(
+            backingScaleFactor: frame.backingScaleFactor,
+            textSystem: textSystem)
         let region = frame.overlayRegionInPoints
         let regionX = Float(region.origin.x)
         let regionY = Float(region.origin.y)

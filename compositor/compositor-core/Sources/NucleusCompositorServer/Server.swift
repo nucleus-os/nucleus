@@ -320,12 +320,6 @@ public struct LayerGeometry: Sendable, Equatable {
     public var rect: RenderRect
 }
 
-public struct TransitionDrawSpec: Sendable, Equatable {
-    public var layerID: UInt64
-    public var operationID: UInt64
-    public var progress: Double
-}
-
 @MainActor
 public final class Composition {
     public private(set) var rootLayerID: UInt64 = 0
@@ -407,84 +401,11 @@ public protocol CompositorShellPolicy: AnyObject {
 @MainActor
 public protocol CompositorSessionControl: AnyObject {
     func sessionResume() -> Bool
-    func sessionPause()
+    /// Begin VT deactivation. Returns true when DRM state is already retired and
+    /// libseat may be acknowledged before the callback returns. False defers the
+    /// acknowledgement until the composition root completes the transition.
+    func sessionPause() -> Bool
     func requestExit()
-}
-
-/// The GPU buffer-upload + IOSurface-registry + dmabuf/syncobj seam the wayland
-/// surface-commit path drives. The render runtime (`NucleusCompositorRenderRuntime`) owns the
-/// implementation; the area DAG keeps the substrate from importing it, so the root
-/// installs these closures at bring-up and the router calls through them. Plain
-/// value/pointer signatures only (the calls run on the compositor main actor).
-@MainActor
-public struct RenderUploadSink {
-    public var uploadShm: (_ prevIosurfaceId: UInt32, _ width: UInt32, _ height: UInt32, _ drmFormat: UInt32, _ stride: UInt32, _ pixels: UnsafePointer<UInt8>) -> UInt32
-    public var uploadDmabuf: (_ prevIosurfaceId: UInt32, _ width: UInt32, _ height: UInt32, _ drmFormat: UInt32, _ drmModifier: UInt64, _ nPlanes: UInt32, _ fds: UnsafePointer<Int32>, _ offsets: UnsafePointer<UInt32>, _ strides: UnsafePointer<UInt32>, _ acquireFenceFd: Int32, _ acquireHandle: UInt32, _ acquirePoint: UInt64, _ releaseHandle: UInt32, _ releasePoint: UInt64) -> UInt32
-    public var iosurfaceRelease: (_ id: UInt32) -> Void
-    public var dmabufFormats: (_ formatsOut: UnsafeMutablePointer<UInt32>, _ modifiersOut: UnsafeMutablePointer<UInt64>, _ max: UInt32) -> UInt32
-    public var dmabufMainDevice: () -> UInt64
-    public var dmabufProbe: (_ width: UInt32, _ height: UInt32, _ drmFormat: UInt32, _ modifier: UInt64, _ nPlanes: UInt32, _ fds: UnsafePointer<Int32>, _ offsets: UnsafePointer<UInt32>, _ strides: UnsafePointer<UInt32>) -> Bool
-    public var presentationClockID: () -> UInt32
-    public var gammaRampSize: (_ outputID: UInt64) -> UInt32
-    public var gammaApply: (
-        _ outputID: UInt64,
-        _ red: [UInt16],
-        _ green: [UInt16],
-        _ blue: [UInt16]
-    ) -> Bool
-    public var gammaClear: (_ outputID: UInt64) -> Void
-    /// Force the next ready pass for an output to produce a KMS submission even
-    /// when the visible change lives outside retained-tree damage (gamma,
-    /// screencopy, recovery).
-    public var forcePresent: (_ outputID: UInt64) -> Void
-    public var syncobjImportTimeline: (_ fd: Int32) -> UInt32
-    public var syncobjDestroyTimeline: (_ handle: UInt32) -> Void
-    /// Read back an output's composited frame as tightly-packed BGRA8888 (wl_shm
-    /// XRGB8888 byte order) for a screencopy capture. nil if unavailable.
-    public var screencopyCapture: (_ outputId: UInt64) -> (pixels: [UInt8], width: Int, height: Int)?
-    /// Read back a registered client texture as tightly packed BGRA8888.
-    public var surfaceReadback: (_ iosurfaceId: UInt32) -> (pixels: [UInt8], width: Int, height: Int)?
-    /// Blit an output's composited frame into a client dmabuf render target (a
-    /// screencopy dmabuf capture). Plane arrays are `nPlanes`-long, valid for the call.
-    public var screencopyCaptureDmabuf: (_ outputId: UInt64, _ width: UInt32, _ height: UInt32, _ drmFormat: UInt32, _ modifier: UInt64, _ nPlanes: UInt32, _ fds: UnsafePointer<Int32>, _ offsets: UnsafePointer<UInt32>, _ strides: UnsafePointer<UInt32>, _ sourceX: Int32, _ sourceY: Int32, _ sourceWidth: Int32, _ sourceHeight: Int32, _ overlayCursor: Bool) -> Bool
-
-    public init(
-        uploadShm: @escaping (UInt32, UInt32, UInt32, UInt32, UInt32, UnsafePointer<UInt8>) -> UInt32,
-        uploadDmabuf: @escaping (UInt32, UInt32, UInt32, UInt32, UInt64, UInt32, UnsafePointer<Int32>, UnsafePointer<UInt32>, UnsafePointer<UInt32>, Int32, UInt32, UInt64, UInt32, UInt64) -> UInt32,
-        iosurfaceRelease: @escaping (UInt32) -> Void,
-        dmabufFormats: @escaping (UnsafeMutablePointer<UInt32>, UnsafeMutablePointer<UInt64>, UInt32) -> UInt32,
-        dmabufMainDevice: @escaping () -> UInt64,
-        dmabufProbe: @escaping (UInt32, UInt32, UInt32, UInt64, UInt32, UnsafePointer<Int32>, UnsafePointer<UInt32>, UnsafePointer<UInt32>) -> Bool,
-        presentationClockID: @escaping () -> UInt32,
-        gammaRampSize: @escaping (UInt64) -> UInt32,
-        gammaApply: @escaping (
-            UInt64, [UInt16], [UInt16], [UInt16]
-        ) -> Bool,
-        gammaClear: @escaping (UInt64) -> Void,
-        forcePresent: @escaping (UInt64) -> Void,
-        syncobjImportTimeline: @escaping (Int32) -> UInt32,
-        syncobjDestroyTimeline: @escaping (UInt32) -> Void,
-        screencopyCapture: @escaping (UInt64) -> (pixels: [UInt8], width: Int, height: Int)?,
-        surfaceReadback: @escaping (UInt32) -> (pixels: [UInt8], width: Int, height: Int)?,
-        screencopyCaptureDmabuf: @escaping (UInt64, UInt32, UInt32, UInt32, UInt64, UInt32, UnsafePointer<Int32>, UnsafePointer<UInt32>, UnsafePointer<UInt32>, Int32, Int32, Int32, Int32, Bool) -> Bool
-    ) {
-        self.uploadShm = uploadShm
-        self.uploadDmabuf = uploadDmabuf
-        self.iosurfaceRelease = iosurfaceRelease
-        self.dmabufFormats = dmabufFormats
-        self.dmabufMainDevice = dmabufMainDevice
-        self.dmabufProbe = dmabufProbe
-        self.presentationClockID = presentationClockID
-        self.gammaRampSize = gammaRampSize
-        self.gammaApply = gammaApply
-        self.gammaClear = gammaClear
-        self.forcePresent = forcePresent
-        self.syncobjImportTimeline = syncobjImportTimeline
-        self.syncobjDestroyTimeline = syncobjDestroyTimeline
-        self.screencopyCapture = screencopyCapture
-        self.surfaceReadback = surfaceReadback
-        self.screencopyCaptureDmabuf = screencopyCaptureDmabuf
-    }
 }
 
 /// Input-side hooks the display model needs during output lifetime changes. The
@@ -515,10 +436,9 @@ public final class NucleusCompositorServer {
     /// The composition root's session lifecycle, injected at bring-up (the input
     /// host's VT enable/disable + exit reach it through here).
     public weak var sessionControl: CompositorSessionControl?
-    /// The GPU buffer-upload + IOSurface-registry service (NucleusCompositorRenderRuntime),
-    /// injected at bring-up. The wayland surface-commit path uploads through it
-    /// without importing the render module. nil before bring-up (uploads are inert).
-    public var renderUpload: RenderUploadSink?
+    /// The render service installed after successful GPU bring-up and cleared
+    /// before teardown. The weak reference does not extend renderer lifetime.
+    public weak var renderService: (any CompositorRenderService)?
 
     public let layout = DesktopLayout()
     public let windows = WindowList()
@@ -643,7 +563,9 @@ public final class NucleusCompositorServer {
 
     @discardableResult
     public func destroyWindow(id: WindowID) -> Bool {
-        windows.remove(id: id) != nil
+        guard let window = windows.remove(id: id) else { return false }
+        window.changeRecorder = nil
+        return true
     }
 
     public func window(id: WindowID) -> Window? {
@@ -651,6 +573,7 @@ public final class NucleusCompositorServer {
     }
 
     public func reset() {
+        for window in windows.windows { window.changeRecorder = nil }
         windows.reset()
         nextWindowID = 1
         while let display = layout.displays.first {

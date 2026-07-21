@@ -3,13 +3,44 @@ import Vulkan
 import NucleusCompositorDrmC
 import NucleusRenderModel
 @_spi(NucleusPlatform) import NucleusRenderer
+import Tracy
 import Glibc
 
 @MainActor
 extension RendererRuntime {
+    /// Keep an explicit-sync semaphore alive when its submitted GPU work did not
+    /// reach KMS. Completion serials replace exceptional queue-idle stalls on the
+    /// compositor thread.
+    private func retainUnpresentedRenderSync(
+        _ sync: DrmRenderSync,
+        submissionSerial: UInt64
+    ) {
+        precondition(submissionSerial != 0)
+        sync.submissionSerial = submissionSerial
+        sync.closeSyncFd()
+        unpresentedRenderSyncs.append(sync)
+        Trace.plot(
+            "swift.renderer.unpresented_render_syncs",
+            UInt64(unpresentedRenderSyncs.count))
+    }
+
+    func retireCompletedUnpresentedRenderSyncs() {
+        guard !unpresentedRenderSyncs.isEmpty else { return }
+        let completedSerial = core.pollCompletedSubmissionSerial()
+        unpresentedRenderSyncs.removeAll {
+            $0.submissionSerial <= completedSerial
+        }
+        core.releaseRetiredGpuResources(
+            completedSubmissionSerial: completedSerial)
+        Trace.plot(
+            "swift.renderer.unpresented_render_syncs",
+            UInt64(unpresentedRenderSyncs.count))
+    }
+
     public func renderReadyOutputs(
         outputIDs: Set<UInt64>
     ) -> Bool {
+        retireCompletedUnpresentedRenderSyncs()
         guard !outputIDs.isEmpty else { return false }
         scheduledOutputIDs = outputIDs
         defer { scheduledOutputIDs = nil }
@@ -31,10 +62,18 @@ extension RendererRuntime {
             guard let formats =
                 primaryPlaneFormats[outputID]
             else { continue }
-            let reason = candidate.evaluate(
-                primaryPlaneFormats: formats).reason
+            let eligibility = candidate.evaluate(
+                primaryPlaneFormats: formats)
+            let reason = eligibility.reason
             if lastScanoutDecision[outputID] != reason {
                 lastScanoutDecision[outputID] = reason
+                scanoutEligibilityChangeCount &+= 1
+                Trace.plot(
+                    "swift.renderer.scanout.eligibility_changes",
+                    scanoutEligibilityChangeCount)
+                Trace.plot(
+                    "swift.renderer.scanout.eligible",
+                    UInt64(eligibility.isEligible ? 1 : 0))
                 logScanout(
                     "output \(outputID): direct-scanout \(reason)")
             }
@@ -177,6 +216,7 @@ extension RendererRuntime {
     public func isReadyToPresent(
         _ outputID: UInt64
     ) -> Bool {
+        retireCompletedUnpresentedRenderSyncs()
         guard backendState.admitsPresentation,
             let binding = bindings[outputID]
         else { return false }
@@ -230,10 +270,9 @@ extension RendererRuntime {
                 pendingClientAcquireFenceDiagnostics[
                     surfaceID] = nil
             }
-            core.waitForGpuIdle()
-            core.releaseRetiredGpuResources(
-                completedSubmissionSerial:
-                    core.lastSubmittedSerial)
+            retainUnpresentedRenderSync(
+                sync,
+                submissionSerial: core.lastSubmittedSerial)
             binding.currentRenderSync = nil
             return false
         }
@@ -252,9 +291,8 @@ extension RendererRuntime {
         guard let binding = bindings[outputID] else {
             return
         }
-        if binding.currentRenderSync != nil {
-            core.waitForGpuIdle()
-        }
+        // A failed record never submitted the semaphore. Submitted failures in
+        // finalize/present move it to `unpresentedRenderSyncs` before this cleanup.
         binding.currentRenderSync = nil
         binding.currentSlot = nil
     }
@@ -316,11 +354,9 @@ extension RendererRuntime {
                 acceptedNs,
                 core.lastFrameAcquiredSurfaceIDs)
         } else {
-            sync.closeSyncFd()
-            core.waitForGpuIdle()
-            core.releaseRetiredGpuResources(
-                completedSubmissionSerial:
-                    core.lastSubmittedSerial)
+            retainUnpresentedRenderSync(
+                sync,
+                submissionSerial: sync.submissionSerial)
             binding.currentRenderSync = nil
             binding.currentSlot = nil
             binding.pendingRenderSync = nil

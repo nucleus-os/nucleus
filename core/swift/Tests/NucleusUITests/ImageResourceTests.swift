@@ -62,48 +62,51 @@ import NucleusLayers
     }
 
     final class RecordingLifecycle: ImageLifecycle, @unchecked Sendable {
-        nonisolated(unsafe) static var released: [UInt64] = []
+        var released: [UInt64] = []
         func retain(resourceHostHandle: UInt64, handle: UInt64) {}
         func release(resourceHostHandle: UInt64, handle: UInt64) {
-            RecordingLifecycle.released.append(handle)
+            released.append(handle)
         }
     }
 
     /// Install a host whose image slots record, leaving the rest stubbed.
     private func withRecordingHost(
-        _ body: (RecordingRegistrar) throws -> Void
+        _ body: (
+            RecordingRegistrar,
+            LayerRuntimeHost,
+            RecordingLifecycle
+        ) throws -> Void
     ) rethrows {
         let registrar = RecordingRegistrar()
-        RecordingLifecycle.released = []
-        installStubHost()
-        guard let stub = currentHost() else { return }
-        installHost(Host(
+        let recordingLifecycle = RecordingLifecycle()
+        let stub = LayerRuntimeHost.inMemory()
+        let runtimeHost = LayerRuntimeHost(
+            operations: Host(
             imageRegistrar: registrar,
-            paintContentRegistrar: stub.paintContentRegistrar,
-            runtimeEffectRegistrar: stub.runtimeEffectRegistrar,
-            iosurfaceBinder: stub.iosurfaceBinder,
-            contextIDAllocator: stub.contextIDAllocator,
-            displayLinkSource: stub.displayLinkSource,
-            implicitActionRegistrar: stub.implicitActionRegistrar))
-        guard let lifecycle = currentLifecycleHost() else { return }
-        installLifecycleHost(LifecycleHost(
-            imageLifecycle: RecordingLifecycle(),
-            paintContentLifecycle: lifecycle.paintContentLifecycle,
-            runtimeEffectLifecycle: lifecycle.runtimeEffectLifecycle,
-            snapshotLifecycle: lifecycle.snapshotLifecycle,
-            iosurfaceLifecycle: lifecycle.iosurfaceLifecycle,
-            contextIDAllocator: lifecycle.contextIDAllocator))
-        try body(registrar)
+            paintContentRegistrar: stub.operations.paintContentRegistrar,
+            runtimeEffectRegistrar: stub.operations.runtimeEffectRegistrar,
+            iosurfaceBinder: stub.operations.iosurfaceBinder,
+            contextIDAllocator: stub.operations.contextIDAllocator,
+            displayLinkSource: stub.operations.displayLinkSource,
+            implicitActionRegistrar: stub.operations.implicitActionRegistrar),
+            lifecycle: LifecycleHost(
+                imageLifecycle: recordingLifecycle,
+                paintContentLifecycle: stub.lifecycle.paintContentLifecycle,
+                runtimeEffectLifecycle: stub.lifecycle.runtimeEffectLifecycle,
+                snapshotLifecycle: stub.lifecycle.snapshotLifecycle,
+                iosurfaceLifecycle: stub.lifecycle.iosurfaceLifecycle,
+                contextIDAllocator: stub.lifecycle.contextIDAllocator))
+        try body(registrar, runtimeHost, recordingLifecycle)
     }
 
     // MARK: - Registration
 
     @Test func registeringYieldsAHandle() {
-        withRecordingHost { registrar in
+        withRecordingHost { registrar, runtimeHost, _ in
             let resource = ImageResource(
                 path: "/icons/firefox.png",
                 decodeSize: Size(width: 22, height: 22),
-                resourceHostHandle: 7)
+                resourceHostHandle: 7, runtimeHost: runtimeHost)
             #expect(resource != nil)
             #expect(resource?.handle.id != 0)
             #expect(registrar.registrations == [
@@ -115,10 +118,10 @@ import NucleusLayers
     /// The bounds are the registration's identity, not decoration — the store
     /// dedupes on path *and* bounds.
     @Test func theDecodeSizeIsCarriedThrough() {
-        withRecordingHost { registrar in
+        withRecordingHost { registrar, runtimeHost, _ in
             _ = ImageResource(
                 path: "/w.png", decodeSize: Size(width: 1920, height: 1080),
-                resourceHostHandle: 1)
+                resourceHostHandle: 1, runtimeHost: runtimeHost)
             #expect(registrar.registrations.first?.maxWidth == 1920)
             #expect(registrar.registrations.first?.maxHeight == 1080)
         }
@@ -142,8 +145,10 @@ import NucleusLayers
     // MARK: - Failure
 
     @Test func anEmptyPathRegistersNothing() {
-        withRecordingHost { registrar in
-            #expect(ImageResource(path: "", resourceHostHandle: 1) == nil)
+        withRecordingHost { registrar, runtimeHost, _ in
+            #expect(ImageResource(
+                path: "", resourceHostHandle: 1,
+                runtimeHost: runtimeHost) == nil)
             #expect(registrar.registrations.isEmpty)
         }
     }
@@ -151,42 +156,50 @@ import NucleusLayers
     /// Without a resource host there is nowhere to register, and that is the
     /// pre-bring-up case rather than a caller error.
     @Test func aZeroResourceHostRegistersNothing() {
-        withRecordingHost { registrar in
-            #expect(ImageResource(path: "/a.png", resourceHostHandle: 0) == nil)
+        withRecordingHost { registrar, runtimeHost, _ in
+            #expect(ImageResource(
+                path: "/a.png", resourceHostHandle: 0,
+                runtimeHost: runtimeHost) == nil)
             #expect(registrar.registrations.isEmpty)
         }
     }
 
     @Test func aFailedRegistrationYieldsNothing() {
-        withRecordingHost { registrar in
+        withRecordingHost { registrar, runtimeHost, _ in
             registrar.failsWith = .invalidArgument
-            #expect(ImageResource(path: "/a.png", resourceHostHandle: 1) == nil)
+            #expect(ImageResource(
+                path: "/a.png", resourceHostHandle: 1,
+                runtimeHost: runtimeHost) == nil)
         }
     }
 
     /// A zero handle is the registrar's "no" and must not be mistaken for one.
     @Test func aZeroHandleYieldsNothing() {
-        withRecordingHost { registrar in
+        withRecordingHost { registrar, runtimeHost, _ in
             registrar.returnsZero = true
-            #expect(ImageResource(path: "/a.png", resourceHostHandle: 1) == nil)
+            #expect(ImageResource(
+                path: "/a.png", resourceHostHandle: 1,
+                runtimeHost: runtimeHost) == nil)
         }
     }
 
     // MARK: - In-memory sources
 
     @Test func encodedBytesRegister() {
-        withRecordingHost { registrar in
+        withRecordingHost { registrar, runtimeHost, _ in
             let resource = ImageResource(
                 encoded: [1, 2, 3, 4], decodeSize: Size(width: 16, height: 16),
-                resourceHostHandle: 1)
+                resourceHostHandle: 1, runtimeHost: runtimeHost)
             #expect(resource != nil)
             #expect(registrar.encodedByteCounts == [4])
         }
     }
 
     @Test func emptyEncodedBytesRegisterNothing() {
-        withRecordingHost { registrar in
-            #expect(ImageResource(encoded: [], resourceHostHandle: 1) == nil)
+        withRecordingHost { registrar, runtimeHost, _ in
+            #expect(ImageResource(
+                encoded: [], resourceHostHandle: 1,
+                runtimeHost: runtimeHost) == nil)
             #expect(registrar.encodedByteCounts.isEmpty)
         }
     }
@@ -194,10 +207,11 @@ import NucleusLayers
     /// The sender's geometry travels intact; a stride guessed from the width
     /// would skew every row after the first.
     @Test func rawPixelsRegisterWithTheirGeometry() {
-        withRecordingHost { registrar in
+        withRecordingHost { registrar, runtimeHost, _ in
             let resource = ImageResource(
                 pixels: [UInt8](repeating: 0, count: 2 * 12), width: 2, height: 2,
-                rowStride: 12, order: .bgra, resourceHostHandle: 1)
+                rowStride: 12, order: .bgra, resourceHostHandle: 1,
+                runtimeHost: runtimeHost)
             #expect(resource != nil)
             #expect(registrar.rawGeometry.count == 1)
             #expect(registrar.rawGeometry.first?.width == 2)
@@ -208,20 +222,22 @@ import NucleusLayers
 
     /// Omitting the stride means the rows are packed, which is the common case.
     @Test func anOmittedStrideIsDerivedFromTheWidth() {
-        withRecordingHost { registrar in
+        withRecordingHost { registrar, runtimeHost, _ in
             _ = ImageResource(
                 pixels: [UInt8](repeating: 0, count: 16), width: 2, height: 2,
-                order: .rgba, resourceHostHandle: 1)
+                order: .rgba, resourceHostHandle: 1,
+                runtimeHost: runtimeHost)
             #expect(registrar.rawGeometry.first?.stride == 8)
         }
     }
 
     /// Raw pixels are already decoded, so the resource's size is the sender's.
     @Test func rawPixelsCarryTheirOwnSize() {
-        withRecordingHost { _ in
+        withRecordingHost { _, runtimeHost, _ in
             let resource = ImageResource(
                 pixels: [UInt8](repeating: 0, count: 16), width: 2, height: 2,
-                order: .rgba, resourceHostHandle: 1)
+                order: .rgba, resourceHostHandle: 1,
+                runtimeHost: runtimeHost)
             #expect(resource?.decodeSize == Size(width: 2, height: 2))
         }
     }
@@ -231,12 +247,16 @@ import NucleusLayers
     /// Callers get icon strings from applications and cannot know which kind they
     /// hold, so one entry point decides.
     @Test func aSourceStringRoutesByKind() {
-        withRecordingHost { registrar in
-            _ = ImageResource(source: "/icons/app.png", resourceHostHandle: 1)
+        withRecordingHost { registrar, runtimeHost, _ in
+            _ = ImageResource(
+                source: "/icons/app.png", resourceHostHandle: 1,
+                runtimeHost: runtimeHost)
             #expect(registrar.registrations.count == 1)
             #expect(registrar.encodedByteCounts.isEmpty)
 
-            _ = ImageResource(source: "data:image/png;base64,SGkh", resourceHostHandle: 1)
+            _ = ImageResource(
+                source: "data:image/png;base64,SGkh", resourceHostHandle: 1,
+                runtimeHost: runtimeHost)
             #expect(registrar.registrations.count == 1, "not registered as a path")
             #expect(registrar.encodedByteCounts == [3])
         }
@@ -247,9 +267,10 @@ import NucleusLayers
     /// alternative is deciding here that it *was* meant as a URI and failing
     /// with a more confident error than the evidence supports.
     @Test func anUnparseableDataURIFallsThroughToThePath() {
-        withRecordingHost { registrar in
+        withRecordingHost { registrar, runtimeHost, _ in
             let resource = ImageResource(
-                source: "data:;base64,not valid!!", resourceHostHandle: 1)
+                source: "data:;base64,not valid!!", resourceHostHandle: 1,
+                runtimeHost: runtimeHost)
             #expect(resource != nil)
             #expect(registrar.registrations.count == 1)
             #expect(registrar.encodedByteCounts.isEmpty)
@@ -261,24 +282,30 @@ import NucleusLayers
     /// Registration hands back refcount one, so dropping the owner must release
     /// it. This is the contract that makes "releasing is forgetting" true.
     @Test func droppingTheResourceReleasesTheRegistration() {
-        withRecordingHost { _ in
+        withRecordingHost { _, runtimeHost, lifecycle in
             var handle: UInt64 = 0
             do {
-                let resource = ImageResource(path: "/a.png", resourceHostHandle: 3)
+                let resource = ImageResource(
+                    path: "/a.png", resourceHostHandle: 3,
+                    runtimeHost: runtimeHost)
                 handle = resource?.handle.id ?? 0
                 #expect(handle != 0)
-                #expect(RecordingLifecycle.released.isEmpty, "still held")
+                #expect(lifecycle.released.isEmpty, "still held")
             }
-            #expect(RecordingLifecycle.released == [handle])
+            #expect(lifecycle.released == [handle])
         }
     }
 
     /// A failed registration owns nothing, so it must not release anything.
     @Test func aFailedRegistrationReleasesNothing() {
-        withRecordingHost { registrar in
+        withRecordingHost { registrar, runtimeHost, lifecycle in
             registrar.returnsZero = true
-            do { _ = ImageResource(path: "/a.png", resourceHostHandle: 1) }
-            #expect(RecordingLifecycle.released.isEmpty)
+            do {
+                _ = ImageResource(
+                    path: "/a.png", resourceHostHandle: 1,
+                    runtimeHost: runtimeHost)
+            }
+            #expect(lifecycle.released.isEmpty)
         }
     }
 }

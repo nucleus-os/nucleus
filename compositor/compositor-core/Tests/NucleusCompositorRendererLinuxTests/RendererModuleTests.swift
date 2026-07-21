@@ -5,13 +5,11 @@ import Vulkan
 import NucleusSkiaGraphiteBridge
 import NucleusRenderModel
 
-// Converted from RendererFixture: FramePlan op-vocabulary assembly and
-// transition-geometry lowering are hardware-independent and assert directly;
-// rendering a FramePlan through NucleusRenderer into an offscreen Graphite
-// target runs best-effort over a real device and asserts nothing
-// hardware-conditional.
+// FramePlan op-vocabulary assembly is hardware-independent and asserts directly;
+// rendering a FramePlan through NucleusRenderer into an offscreen Graphite target
+// runs best-effort over a real device and asserts nothing hardware-conditional.
 @Suite struct RendererModuleTests {
-    @Test func framePlanAssemblyAndTransitionGeometry() {
+    @Test func framePlanAssembly() {
         // Build a representative FramePlan (Phase 9): a plain fill, a rounded
         // masked fill, a textured quad, and a shadow quad.
         let plan = FramePlan()
@@ -31,26 +29,6 @@ import NucleusRenderModel
             alpha: 0.8))
         #expect(plan.ops.count == 4, "plan-op-count")
 
-        // Transition geometry lowering: the prev/next materials place at their
-        // anchored rects and sample by their source rects; corner radii drive
-        // the destination clip.
-        let txn = TransitionQuad(
-            texturePrev: TextureHandle(raw: 1),
-            textureNext: TextureHandle(raw: 2),
-            anchorPrev: (10, 20), sideSizePrev: (100, 80),
-            srcOriginPrev: (1, 1), sampleSizePrev: (50, 40),
-            anchorNext: (30, 40), sideSizeNext: (120, 90),
-            srcOriginNext: (2, 2), sampleSizeNext: (60, 45),
-            dst: PlanRect(x: 0, y: 0, w: 200, h: 160),
-            progress: 0.25, alpha: 1, cornerRadii: (6, 6, 6, 6))
-        // prevRect/nextRect/prevSrc return the C++ `nucleus.skia.RectF`; internal
-        // members with a C++-interop type in their signature are not reachable via
-        // cross-module @testable in this toolchain, so those rect assertions are
-        // dropped. hasCorners returns Bool and is reachable.
-        #expect(Transition.hasCorners(txn), "txn-has-corners")
-        var noCorner = txn
-        noCorner.cornerRadii = (0, 0, 0, 0)
-        #expect(!Transition.hasCorners(noCorner), "txn-no-corners")
     }
 
     // Best-effort GPU: render FramePlans through the real Graphite path. Asserts
@@ -115,11 +93,12 @@ import NucleusRenderModel
 
             _ = NucleusRenderer.renderOffscreen(
                 context: context, plan: plan, width: 256, height: 128,
+                submissionSerial: 1,
                 resolveTexture: { handle in handle.raw == 1 ? sourceImage : nil })
 
             // The richer composite: src-blend fill, a masked textured quad with a
-            // source rect, a shadow with a resolvable texture, and a crossfade
-            // transition. Each op type lowers through the real path.
+            // source rect and a shadow with a resolvable texture. Each op type
+            // lowers through the real path.
             let rich = FramePlan()
             rich.appendFillQuad(FillQuad(
                 dst: PlanRect(x: 0, y: 0, w: 256, h: 128), color: (0.05, 0.05, 0.05, 1),
@@ -135,16 +114,9 @@ import NucleusRenderModel
                 dst: PlanRect(x: 110, y: 20, w: 90, h: 30),
                 src: PlanRect(x: 0, y: 0, w: 16, h: 16),
                 alpha: 0.7))
-            rich.appendTransitionQuad(TransitionQuad(
-                texturePrev: TextureHandle(raw: 1),
-                textureNext: TextureHandle(raw: 1),
-                sideSizePrev: (64, 64), sampleSizePrev: (16, 16),
-                sideSizeNext: (64, 64), sampleSizeNext: (16, 16),
-                dst: PlanRect(x: 110, y: 60, w: 64, h: 64),
-                progress: 0.5, alpha: 1))
-
             _ = NucleusRenderer.renderOffscreen(
                 context: context, plan: rich, width: 256, height: 128,
+                submissionSerial: 2,
                 resolveTexture: { handle in handle.raw == 1 ? sourceImage : nil })
         }
     }

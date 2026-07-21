@@ -36,7 +36,9 @@ import Testing
         let visual = try Context(
             contextID: UInt32.random(in: 100...100_000),
             commitSink: sink)
-        let semantic = UIContext()
+        let semantic = UIContext(
+            services: .inMemory(),
+            runtimeHost: visual.runtimeHost)
         return try Application.withContexts(
             uiContext: semantic,
             visualContext: visual
@@ -99,9 +101,61 @@ import Testing
         }
     }
 
+    @Test func unchangedSnapshotDoesNotInvalidateConsumers() throws {
+        try withContext { context in
+            let probe = EnvironmentProbe(dependencies: [
+                .appearance, .increasedContrast, .reducedMotion,
+                .reducedTransparency, .textScale,
+            ])
+
+            context.updateEnvironment(context.environment)
+
+            #expect(probe.received.isEmpty)
+        }
+    }
+
+    @Test func enablingReducedMotionSettlesActiveMotionScaledValues() throws {
+        try withContext { context in
+            let owner = EnvironmentProbe(dependencies: [])
+            var value = 0.0
+            let handle = context.animateValue(
+                owner: owner,
+                property: AnimationPropertyKey(
+                    rawValue: "active-environment-test"),
+                from: 0,
+                to: 42,
+                options: ValueAnimationOptions(
+                    timing: AnimationTiming(duration: 10),
+                    timeMode: .motionScaled),
+                update: { value = $0 })
+
+            context.updateEnvironment(UIEnvironment(reducesMotion: true))
+
+            #expect(value == 42)
+            #expect(handle.outcome == .skippedReducedMotion)
+            #expect(!context.advanceAnimations(
+                predictedPresentationNanoseconds: 1))
+        }
+    }
+
+    @Test func initialEnvironmentExistsBeforeConstruction() {
+        let context = UIContext(
+            services: .inMemory(),
+            environment: UIEnvironment(
+                reducesMotion: true,
+                appearance: .light,
+                textScale: 1.5))
+
+        let view = context.construct { Label("Initial") }
+
+        #expect(view.effectiveAppearance == .light)
+        #expect(context.environment.reducesMotion)
+        #expect(context.environment.textScale == 1.5)
+    }
+
     @Test func nestedConstructionScopesRestoreTheirOwningContext() {
-        let outer = UIContext()
-        let inner = UIContext()
+        let outer = UIContext(services: .inMemory())
+        let inner = UIContext(services: .inMemory())
         outer.updateEnvironment(UIEnvironment(appearance: .light))
         inner.updateEnvironment(UIEnvironment(appearance: .dark))
 
@@ -115,7 +169,8 @@ import Testing
         #expect(first.effectiveAppearance == .light)
         #expect(nested.effectiveAppearance == .dark)
         #expect(last.effectiveAppearance == .light)
-        #expect(first.id.rawValue >> 32 == last.id.rawValue >> 32)
-        #expect(first.id.rawValue >> 32 != nested.id.rawValue >> 32)
+        #expect(first.uiContext === outer)
+        #expect(nested.uiContext === inner)
+        #expect(last.uiContext === outer)
     }
 }

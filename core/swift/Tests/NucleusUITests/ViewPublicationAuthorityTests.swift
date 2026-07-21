@@ -8,6 +8,7 @@ import Testing
 @MainActor
 private final class ApplyingCommitSink: CommitSink {
     var resourceHostHandle: UInt64 { 0 }
+    let runtimeHost = LayerRuntimeHost.inMemory()
     private(set) var transactions: [EncodedTransaction] = []
     private(set) var tree = LayerTree()
     var rejectsCommits = false
@@ -39,7 +40,9 @@ private final class DamagePaintView: View {
 }
 
 @MainActor
-@Suite(.uiContext) struct ViewPublicationAuthorityTests {
+/// Release structural gate. Bounds are counts of semantic and visual work, so
+/// they are independent of processor speed and scheduler timing.
+@Suite(.uiContext) struct NucleusFoundationPublicationStressTests {
     private func makeContext(
         id: UInt32,
         sink: ApplyingCommitSink
@@ -58,7 +61,6 @@ private final class DamagePaintView: View {
     }
 
     @Test func firstPublicationAppliesToTheRealRetainedTree() throws {
-        installStubHost()
         let sink = ApplyingCommitSink()
         let context = try makeContext(id: 8_101, sink: sink)
         let tree = makePaintedTree()
@@ -101,7 +103,9 @@ private final class DamagePaintView: View {
     @Test func semanticMutationDoesNotTouchTheVisualSinkBeforePublication() throws {
         let sink = ApplyingCommitSink()
         let context = try makeContext(id: 8_102, sink: sink)
-        let uiContext = UIContext()
+        let uiContext = UIContext(
+            services: .inMemory(),
+            runtimeHost: context.runtimeHost)
 
         let root = Application.withContexts(
             uiContext: uiContext,
@@ -121,7 +125,6 @@ private final class DamagePaintView: View {
     }
 
     @Test func reparentingPreservesVisualIdentityAndRegisteredContent() throws {
-        installStubHost()
         let sink = ApplyingCommitSink()
         let context = try makeContext(id: 8_103, sink: sink)
         let root = View()
@@ -157,7 +160,6 @@ private final class DamagePaintView: View {
     }
 
     @Test func hideShowRetainsLayerContentAndAnimationState() throws {
-        installStubHost()
         let sink = ApplyingCommitSink()
         let context = try makeContext(id: 8_104, sink: sink)
         let label = Label("persistent")
@@ -192,7 +194,6 @@ private final class DamagePaintView: View {
     }
 
     @Test func removingASubtreeRemovesEveryVisualLayerExactlyOnce() throws {
-        installStubHost()
         let sink = ApplyingCommitSink()
         let context = try makeContext(id: 8_105, sink: sink)
         let root = View()
@@ -219,7 +220,6 @@ private final class DamagePaintView: View {
     }
 
     @Test func cleanPublicationEmitsNoTransaction() throws {
-        installStubHost()
         let sink = ApplyingCommitSink()
         let context = try makeContext(id: 8_106, sink: sink)
         let tree = makePaintedTree()
@@ -233,7 +233,6 @@ private final class DamagePaintView: View {
     }
 
     @Test func deepTreePublicationUsesFlatTraversalAndLocalizedWork() throws {
-        installStubHost()
         let context = Application.makeInMemoryVisualContext()
         let publisher = ViewLayerPublisher(context: context)
         var root = View()
@@ -262,32 +261,34 @@ private final class DamagePaintView: View {
         #expect(publisher.lastMetrics.commits == 1)
     }
 
-    @Test func wideTreeLeafMutationVisitsOnlyRootAndLeaf() throws {
-        installStubHost()
-        let context = Application.makeInMemoryVisualContext()
-        let publisher = ViewLayerPublisher(context: context)
-        let root = View()
-        var target: View?
-        for index in 0..<4_096 {
-            let child = View()
-            root.addSubview(child)
-            if index == 2_048 {
-                target = child
+    @Test func oneLeafMutationVisitsOnlyRootAndLeafInSmallAndLargeTrees() throws {
+        for nodeCount in [8, 4_096] {
+            let context = Application.makeInMemoryVisualContext()
+            let publisher = ViewLayerPublisher(context: context)
+            let root = View()
+            var target: View?
+            for index in 0..<nodeCount {
+                let child = View()
+                root.addSubview(child)
+                if index == nodeCount / 2 {
+                    target = child
+                }
             }
+            _ = try publisher.publish(roots: [root])
+
+            target?.alphaValue = 0.25
+            _ = try publisher.publish(roots: [root])
+
+            #expect(publisher.lastMetrics.nodesVisited == 2)
+            #expect(publisher.lastMetrics.snapshotsAuthored == 1)
+            #expect(publisher.lastMetrics.propertyUpdates == 1)
+            #expect(publisher.lastMetrics.cacheUpserts == 2)
+            #expect(publisher.lastMetrics.cacheRemovals == 0)
+            #expect(publisher.lastMetrics.commits == 1)
         }
-        _ = try publisher.publish(roots: [root])
-
-        target?.alphaValue = 0.25
-        _ = try publisher.publish(roots: [root])
-
-        #expect(publisher.lastMetrics.nodesVisited == 2)
-        #expect(publisher.lastMetrics.snapshotsAuthored == 1)
-        #expect(publisher.lastMetrics.propertyUpdates == 1)
-        #expect(publisher.lastMetrics.commits == 1)
     }
 
     @Test func localDisplayInvalidationsReachTheContentUpdate() throws {
-        installStubHost()
         let sink = ApplyingCommitSink()
         let context = try makeContext(id: 8_113, sink: sink)
         let view = DamagePaintView()
@@ -313,7 +314,6 @@ private final class DamagePaintView: View {
     }
 
     @Test func rejectedPublicationKeepsTheAcceptedCacheAndModel() throws {
-        installStubHost()
         let sink = ApplyingCommitSink()
         let context = try makeContext(id: 8_107, sink: sink)
         let tree = makePaintedTree()
@@ -323,6 +323,8 @@ private final class DamagePaintView: View {
         let layer = try #require(publisher.visualLayer(for: tree.root))
         let acceptedFrame = layer.frame
         let acceptedLayerCount = context.layers.count
+        let acceptedPaintRegistrationCount =
+            publisher.retainedPaintRegistrationCount
         let newChild = Label("not accepted")
         tree.root.addSubview(newChild)
         tree.root.frame = Rect(x: 50, y: 60, width: 300, height: 200)
@@ -337,6 +339,9 @@ private final class DamagePaintView: View {
         #expect(publisher.visualLayer(for: newChild) == nil)
         #expect(layer.frame == acceptedFrame)
         #expect(context.layers.count == acceptedLayerCount)
+        #expect(
+            publisher.retainedPaintRegistrationCount
+                == acceptedPaintRegistrationCount)
 
         sink.rejectsCommits = false
         _ = try publisher.publish(roots: [tree.root])
@@ -369,7 +374,6 @@ private final class DamagePaintView: View {
     }
 
     @Test func standaloneAndEmbedderPublicationUseTheSameTopology() throws {
-        installStubHost()
         let standaloneSink = ApplyingCommitSink()
         let embedderSink = ApplyingCommitSink()
         let standaloneContext = try makeContext(id: 8_108, sink: standaloneSink)
@@ -405,7 +409,6 @@ private final class DamagePaintView: View {
     @Test func realApplierSceneLifecyclePreservesTopologyAndReleasesEverything()
         throws
     {
-        installStubHost()
         let sink = ApplyingCommitSink()
         let context = try makeContext(id: 8_114, sink: sink)
         let publisher = ViewLayerPublisher(context: context)
@@ -435,7 +438,7 @@ private final class DamagePaintView: View {
         }
         _ = try publisher.publish(roots: [root])
         #expect(completion == nil)
-        PresentationCompletionCenter.resolve(
+        sink.runtimeHost.presentationCompletions.resolve(
             rawToken: sink.transactions.last?.completionToken ?? 0,
             result: .completed)
         #expect(completion == .completed)
@@ -461,7 +464,6 @@ private final class DamagePaintView: View {
     }
 
     @Test func randomizedTreeMutationsMatchTheRealRenderTopology() throws {
-        installStubHost()
         let sink = ApplyingCommitSink()
         let context = try makeContext(id: 8_115, sink: sink)
         let publisher = ViewLayerPublisher(context: context)

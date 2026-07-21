@@ -3,8 +3,7 @@ import Testing
 import NucleusRenderModel
 
 // Converted from FrameInputsFixture (Phase 9.5): the per-frame input/demand value
-// types — the present-probe latch, deadline coalescing, and snapshot field
-// carriage. Fully hardware-independent.
+// types — the present-probe latch and snapshot field carriage.
 @Suite struct FrameInputsTests {
     @Test func renderInputsSnapshotCarriage() {
         let inputs = RenderInputsSnapshot(
@@ -24,22 +23,15 @@ import NucleusRenderModel
         #expect(!probe.shouldSubmit(hasContent: true), "probe-latched")
     }
 
-    @Test func deadlineCoalescing() {
-        #expect(minOptionalDeadline(nil, nil) == nil, "deadline-both-nil")
-        #expect(minOptionalDeadline(1000, nil) == 1000, "deadline-left-only")
-        #expect(minOptionalDeadline(nil, 2000) == 2000, "deadline-right-only")
-        #expect(minOptionalDeadline(3000, 1000) == 1000, "deadline-min")
-    }
-
     @Test func demandEqualityAndCarriage() {
         let cont = ContinuousDemand(
             overlayOutputId: 1, notificationAnimationActive: true, screenshotQueueActive: false,
             overlayRenderAnimationActive: true, backgroundAnimationActive: false)
         let a = Demand(overlayFrameRequested: true, sceneFrameRequested: false,
-                       operationDeadlineNs: 500, continuous: cont)
+                       continuous: cont)
         let b = Demand(overlayFrameRequested: true, sceneFrameRequested: false,
-                       operationDeadlineNs: 500, continuous: cont)
+                       continuous: cont)
         #expect(a == b, "demand-equatable")
-        #expect(a.continuous.notificationAnimationActive && a.operationDeadlineNs == 500, "demand-fields")
+        #expect(a.continuous.notificationAnimationActive, "demand-fields")
     }
 }

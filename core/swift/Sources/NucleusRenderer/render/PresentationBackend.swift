@@ -45,8 +45,9 @@ public struct AcquiredFrameTarget {
     public var kind: FrameTargetKind
     /// WSI swapchain only (`kind == .swapchainColor`): the acquire semaphore the
     /// GPU work waits on before rendering, and the semaphore signaled when it
-    /// completes (the one `vkQueuePresentKHR` waits on). nil for the DRM scanout
-    /// path (KMS orders presentation; no per-frame WSI semaphores).
+    /// completes (the one `vkQueuePresentKHR` waits on). DRM scanout requires
+    /// `signalSemaphore` as the exportable render-complete semaphore KMS consumes;
+    /// only `waitSemaphore` is nil on that path.
     public var waitSemaphore: VkSemaphore?
     public var signalSemaphore: VkSemaphore?
 

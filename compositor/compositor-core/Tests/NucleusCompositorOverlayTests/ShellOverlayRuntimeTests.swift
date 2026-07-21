@@ -22,8 +22,6 @@ import Testing
 @MainActor
 @Suite(.uiContext) struct ShellOverlayRuntimeTests {
     init() {
-        installStubHost()
-        SkiaTextLayoutBackend.installIfNeeded()
     }
 
     final class ManualClock: @unchecked Sendable {
@@ -34,9 +32,41 @@ import Testing
         }
     }
 
+    @Test func initialAndRuntimeEnvironmentAreSceneScoped() throws {
+        let first = try ShellOverlayScene(
+            frame: nil,
+            commitSink: InMemoryCommitSink(),
+            services: testHostServices(),
+            environment: UIEnvironment(
+                reducesMotion: true,
+                appearance: .light,
+                textScale: 1.5))
+        let second = try ShellOverlayScene(
+            frame: nil,
+            commitSink: InMemoryCommitSink(),
+            services: testHostServices())
+
+        #expect(first.environment.appearance == .light)
+        #expect(first.environment.reducesMotion)
+        #expect(first.environment.textScale == 1.5)
+        #expect(second.environment == UIEnvironment())
+
+        first.updateEnvironment(UIEnvironment(
+            reducesTransparency: true,
+            appearance: .dark,
+            textScale: 2))
+
+        #expect(first.environment.reducesTransparency)
+        #expect(first.environment.textScale == 2)
+        #expect(second.environment == UIEnvironment())
+    }
+
     @Test func controllerReflectsFrameNotificationAndOverlayState() throws {
         let sink = InMemoryCommitSink()
-        let scene = try ShellOverlayScene(frame: nil, commitSink: sink)
+        let scene = try ShellOverlayScene(
+            frame: nil,
+            commitSink: sink,
+            services: testHostServices())
         let controller = ShellOverlayController(scene: scene) { _ in }
 
         controller.beginFrame(.init(
@@ -125,7 +155,10 @@ import Testing
     }
 
     @Test func hostedShellSurfacesUseShellChromeLevelBelowNativeOverlays() throws {
-        let scene = try ShellOverlayScene(frame: nil, commitSink: InMemoryCommitSink())
+        let scene = try ShellOverlayScene(
+            frame: nil,
+            commitSink: InMemoryCommitSink(),
+            services: testHostServices())
         let surface = try scene.hostedSurface(for: "topbar")
         var insertionIndex: UInt32?
         try scene.attachHostedSurface(for: "topbar") { _, _, _, observedIndex in
@@ -174,7 +207,8 @@ import Testing
     }
 
     private static func hotkeyFrame(backingScale: Float) -> (x: Double, y: Double, width: Double, height: Double) {
-        let hotkeyView = ShellOverlayHotkeyView()
+        let hotkeyView = ShellOverlayHotkeyView(
+            textSystem: testTextSystem())
         hotkeyView.updateFrame(Self.frame(backingScale: backingScale))
         let frame = hotkeyView.frame
         return (frame.origin.x, frame.origin.y, frame.size.width, frame.size.height)
@@ -189,7 +223,8 @@ import Testing
             thumbnailHandle: 0,
             showsThumbnail: false,
             expireTimeoutMs: 5000
-        ))
+        ), metrics: ShellOverlayNotificationMetrics(
+            textSystem: testTextSystem()))
         let list = ShellOverlayNotificationListView()
         list.frameInfo = Self.frame(backingScale: backingScale)
         list.setNotifications([notification])
@@ -212,7 +247,9 @@ import Testing
             overlayRegionY: 0,
             overlayRegionW: 1920,
             overlayRegionH: 1080
-        ), commitSink: sink)
+        ),
+        commitSink: sink,
+        services: testHostServices())
 
         scene.hotkeyView.layoutIfNeeded()
         scene.hotkeyView.displayIfNeeded()
@@ -241,7 +278,8 @@ import Testing
             thumbnailHandle: 0,
             showsThumbnail: false,
             expireTimeoutMs: 5000
-        ))
+        ), metrics: ShellOverlayNotificationMetrics(
+            textSystem: testTextSystem()))
         notification.frame = Rect(
             x: 0,
             y: 0,
@@ -262,7 +300,10 @@ import Testing
     }
 
     @Test func notificationBackdropRadiusMatchesShadowAcrossBackingScale() {
-        let metrics = ShellOverlayNotificationMetrics(showsThumbnail: true, hasBody: true)
+        let metrics = ShellOverlayNotificationMetrics(
+            showsThumbnail: true,
+            hasBody: true,
+            textSystem: testTextSystem())
         let notification = ShellOverlayNotificationView(info: .init(
             id: 12,
             appName: "Nucleus",
@@ -289,7 +330,7 @@ import Testing
     @Test func hotkeyBackdropRadiusMatchesShadowAcrossBackingScale() {
         let hotkeyView = ShellOverlayHotkeyView(entries: [
             .init(key: "Super + V", description: "Toggle Vignette"),
-        ])
+        ], textSystem: testTextSystem())
 
         hotkeyView.updateFrame(.init(
             outputWidth: 1600,
@@ -327,7 +368,10 @@ import Testing
 
     @Test func backingPixelInputConvertsToPointHitTesting() throws {
         let sink = InMemoryCommitSink()
-        let scene = try ShellOverlayScene(frame: nil, commitSink: sink)
+        let scene = try ShellOverlayScene(
+            frame: nil,
+            commitSink: sink,
+            services: testHostServices())
         let controller = ShellOverlayController(scene: scene) { _ in }
         controller.beginFrame(Self.frame(backingScale: 1.5))
 
@@ -356,7 +400,7 @@ import Testing
             .init(key: "Super + X", description: "Custom action"),
             .init(key: "Super + Y", description: "Custom effect"),
             .init(key: "", description: ""),
-        ])
+        ], textSystem: testTextSystem())
 
         hotkeyView.updateFrame(.init(
             outputWidth: 800,
@@ -375,7 +419,10 @@ import Testing
 
     @Test func controllerPublishesFromWindows() throws {
         let sink = InMemoryCommitSink()
-        let scene = try ShellOverlayScene(frame: nil, commitSink: sink)
+        let scene = try ShellOverlayScene(
+            frame: nil,
+            commitSink: sink,
+            services: testHostServices())
         var publications: [ShellOverlayPublication] = []
         let controller = ShellOverlayController(scene: scene) { publication in
             publications.append(publication)
@@ -421,9 +468,18 @@ import Testing
 
     @Test func controllerDoesNotRepublishUnchangedStableOverlayFrames() throws {
         let sink = InMemoryCommitSink()
-        let scene = try ShellOverlayScene(frame: nil, commitSink: sink)
+        let scene = try ShellOverlayScene(
+            frame: nil,
+            commitSink: sink,
+            services: testHostServices())
         var publications: [ShellOverlayPublication] = []
-        let controller = ShellOverlayController(scene: scene) { publication in
+        var semanticPublicationCount = 0
+        let controller = ShellOverlayController(
+            scene: scene,
+            semanticPublisher: {
+                semanticPublicationCount += 1
+            }
+        ) { publication in
             publications.append(publication)
         }
         let frame = ShellOverlayFrameInfo(
@@ -438,6 +494,7 @@ import Testing
 
         controller.beginFrame(frame)
         #expect(publications.count == 1)
+        #expect(semanticPublicationCount == 1)
         let transactionCount = sink.transactions.count
 
         controller.beginFrame(frame)
@@ -447,8 +504,10 @@ import Testing
             y: 2
         )))
         controller.setHotkeyVisible(true)
+        controller.publishScene()
 
         #expect(publications.count == 1)
+        #expect(semanticPublicationCount == 2)
         #expect(sink.transactions.count == transactionCount)
     }
 
@@ -458,7 +517,8 @@ import Testing
         let scene = try ShellOverlayScene(
             frame: nil,
             nowNs: { clock.now },
-            commitSink: sink
+            commitSink: sink,
+            services: testHostServices()
         )
         let frame = ShellOverlayFrameInfo(
             outputWidth: 800,
@@ -508,7 +568,8 @@ import Testing
             thumbnailHandle: 0,
             showsThumbnail: false,
             expireTimeoutMs: 5000
-        ))
+        ), metrics: ShellOverlayNotificationMetrics(
+            textSystem: testTextSystem()))
         let lower = ShellOverlayNotificationView(info: .init(
             id: 2,
             appName: "Nucleus",
@@ -517,7 +578,8 @@ import Testing
             thumbnailHandle: 0,
             showsThumbnail: false,
             expireTimeoutMs: 5000
-        ))
+        ), metrics: ShellOverlayNotificationMetrics(
+            textSystem: testTextSystem()))
         list.setNotifications([top, lower])
 
         list.layoutIfNeeded()
@@ -565,7 +627,8 @@ import Testing
                 overlayRegionH: 600
             ),
             nowNs: { clock.now },
-            commitSink: sink
+            commitSink: sink,
+            services: testHostServices()
         )
         #expect(scene.showNotification(.init(
             id: 1,
@@ -615,7 +678,8 @@ import Testing
                 overlayRegionH: 600
             ),
             nowNs: { clock.now },
-            commitSink: sink
+            commitSink: sink,
+            services: testHostServices()
         )
         for id in UInt32(1)...3 {
             #expect(scene.showNotification(.init(
@@ -663,7 +727,9 @@ import Testing
             overlayRegionY: 0,
             overlayRegionW: 800,
             overlayRegionH: 600
-        ), commitSink: visualSink)
+        ),
+        commitSink: visualSink,
+        services: testHostServices())
 
         // Semantic views share a pure UI context. They own no fallback render
         // context and cannot enqueue layer mutations.
@@ -729,7 +795,9 @@ import Testing
             overlayRegionY: 0,
             overlayRegionW: 800,
             overlayRegionH: 600
-        ), commitSink: visualSink)
+        ),
+        commitSink: visualSink,
+        services: testHostServices())
         try scene.attachHostedSurface(for: "dock") {
             _, _, _, _ in
         }
@@ -756,7 +824,9 @@ import Testing
             overlayRegionY: 0,
             overlayRegionW: 800,
             overlayRegionH: 600
-        ), commitSink: visualSink)
+        ),
+        commitSink: visualSink,
+        services: testHostServices())
         let dock = try scene.hostedSurface(for: "dock")
         let menuBar = try scene.hostedSurface(for: "menubar")
 

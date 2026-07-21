@@ -7,13 +7,16 @@ import NucleusCompositorRenderRuntime
 import NucleusCompositorRenderSession
 import NucleusRenderer
 import NucleusRenderHost
+import NucleusUI
+import NucleusTextBackend
 import NucleusCompositorRendererLinux
 import NucleusCompositorWaylandRuntime
+import NucleusCompositorWindowScene
 import Glibc
 
 // Compositor bring-up + teardown, Swift-owned.
-// `nucleus_runtime_main` (Runtime.swift) calls `bringUp` on the main actor, runs the
-// loop, then `teardown`. Every platform step is a direct Swift call into the owner
+// `runNucleusCompositor` calls `bringUp` on the main actor, awaits the reactor loop,
+// then calls `teardown`. Every platform step is a direct Swift call into the owner
 // module (the input/router/xwm hosts in NucleusCompositorWaylandRuntime, the render runtime +
 // DRM session in NucleusCompositorRenderRuntime, DRM discovery in NucleusRenderer, the shell
 // services in NucleusCompositorShell); the display model + router seed + first frame go
@@ -26,9 +29,6 @@ extension CompositorRuntime {
     /// router/shell/input. Returns false on a fatal bring-up failure (the caller
     /// tears down + exits non-zero).
     func bringUp() -> Bool {
-        SceneCommitFrameDemand.install {
-            DisplayFrameDemand.requestFrame()
-        }
         // ── DRM device discovery (Swift-owned, over libdrm) ───────────────
         var primaryPathBuf = [CChar](repeating: 0, count: 256)
         var renderPathBuf = [CChar](repeating: 0, count: 256)
@@ -50,49 +50,12 @@ extension CompositorRuntime {
             return false
         }
 
-        // Install the inverted seams the substrate/render modules reach up through:
-        // session lifecycle (input host → root), the render runtime's device-seat
-        // opener (render → input host), and the wayland surface-commit upload sink
-        // (router → render runtime). The DRM-session open below uses the device seat,
-        // so it is installed first.
+        // Install the inverted session seams. The render service installs itself
+        // only after successful GPU bring-up below.
         NucleusCompositorServer.shared.sessionControl = self
         DrmSession.installDeviceSeat(
             open: { nucleus_input_host_open_device($0) },
             close: { nucleus_input_host_close_device($0) })
-        NucleusCompositorServer.shared.renderUpload = RenderUploadSink(
-            uploadShm: { RenderRuntime.uploadShm($0, $1, $2, $3, $4, $5) },
-            uploadDmabuf: { (prev, w, h, fmt, mod, n, fds, offs, strides, fence, ah, ap, rh, rp) in
-                RenderRuntime.uploadDmabuf(prev, w, h, fmt, mod, n, fds, offs, strides, fence, ah, ap, rh, rp)
-            },
-            iosurfaceRelease: { RenderRuntime.releaseIOSurface($0) },
-            dmabufFormats: { RenderRuntime.dmabufFormats($0, $1, $2) },
-            dmabufMainDevice: { RenderRuntime.dmabufMainDevice },
-            dmabufProbe: {
-                RenderRuntime.probeDmabuf(
-                    width: $0, height: $1, drmFormat: $2, modifier: $3,
-                    nPlanes: $4, fds: $5, offsets: $6, strides: $7)
-            },
-            presentationClockID: { RenderRuntime.presentationClockID },
-            gammaRampSize: { RenderRuntime.gammaRampSize(outputID: $0) },
-            gammaApply: {
-                RenderRuntime.applyGamma(
-                    outputID: $0, red: $1, green: $2, blue: $3)
-            },
-            gammaClear: { RenderRuntime.clearGamma(outputID: $0) },
-            forcePresent: {
-                RenderRuntime.forcePresent(outputID: $0)
-            },
-            syncobjImportTimeline: { RenderRuntime.importSyncobjTimeline(fd: $0) },
-            syncobjDestroyTimeline: { RenderRuntime.destroySyncobjTimeline(handle: $0) },
-            screencopyCapture: { RenderRuntime.screencopyCapture(outputId: $0) },
-            surfaceReadback: { RenderRuntime.surfaceReadback(iosurfaceId: $0) },
-            screencopyCaptureDmabuf: { outputId, w, h, fmt, mod, n, fds, offs, strides, sx, sy, sw, sh, cursor in
-                RenderRuntime.screencopyCaptureDmabuf(
-                    outputId: outputId, width: w, height: h, drmFormat: fmt, modifier: mod,
-                    nPlanes: n, fds: fds, offsets: offs, strides: strides,
-                    sourceX: sx, sourceY: sy, sourceWidth: sw, sourceHeight: sh,
-                    overlayCursor: cursor)
-            })
 
         let primaryFd = primaryPathBuf.withUnsafeBufferPointer { DrmSession.open(path: $0.baseAddress!) }
         guard primaryFd >= 0 else {
@@ -102,21 +65,29 @@ extension CompositorRuntime {
 
         let scale = outputScale
 
-        // ── Render host bundle + overlay controller ───────────────────────
-        // The render runtime queries the host bundle conformers, and the overlay
-        // controller must exist before the first frame, so install both before
-        // render bring-up.
-        guard nucleus_app_host_bundle_install_production() != 0 else {
-            logRuntime("render host bundle install failed")
-            return false
-        }
-        guard nucleus_shell_overlay_publication_install() != 0 else {
+        // ── Runtime-owned host bundle + overlay controller ────────────────
+        let textSystem = TextSystem()
+        SkiaTextLayoutBackend.install(in: textSystem)
+        let overlayServices = UIHostServices(
+            textSystem: textSystem,
+            pasteboard: Pasteboard(adapter: UnavailablePasteboardAdapter()),
+            imageSourceResolver: .directResourcesOnly,
+            diagnosticSink: { diagnostic in
+                logRuntime("UI service failure: \(diagnostic)")
+            })
+        _ = shellServices.prepareEnvironment()
+        guard textSystem.hasInstalledBackend,
+              shellServices.installOverlay(
+                commitSink: makeRenderCommitSink(),
+                services: overlayServices)
+        else {
             logRuntime("overlay runtime host install failed")
             return false
         }
         // Install the shell's conformer to the inverted input→shell seam so the
         // input dispatch reaches cursor/bezel/overlay policy + keybinds.
-        NucleusCompositorServer.shared.shellPolicy = ShellPolicyService.shared
+        NucleusCompositorServer.shared.shellPolicy =
+            shellServices.shellPolicy
 
         // ── Swift render runtime ──────────────────────────────────────────
         var renderNodeStat = stat()
@@ -131,7 +102,10 @@ extension CompositorRuntime {
         }
         guard RenderRuntime.bringUp(
             drmDeviceFd: primaryFd,
-            dmabufMainDevice: renderMainDevice)
+            dmabufMainDevice: renderMainDevice,
+            store: retainedStore,
+            resourceHost: resourceHost,
+            asyncRenderWakeSink: renderWake)
         else {
             logRuntime("render runtime: Swift bring-up failed")
             return false
@@ -226,7 +200,7 @@ extension CompositorRuntime {
         }
 
         // ── Wayland router: the sole live transport ───────────────────────
-        WaylandRuntime.activateRouter()
+        WaylandRuntime.activateRouter(author: windowSceneAuthor)
         seedRouter()
         nucleus_input_host_publish_keymap()
 
@@ -247,7 +221,6 @@ extension CompositorRuntime {
         logRuntime("Wayland compositor listening on the libwayland router")
 
         // ── Shell D-Bus services + desktop shell ──────────────────────────
-        nucleus_shell_dbus_start()
         spawnShellClient()
 
         // ── XWayland (lazy spawn) ─────────────────────────────────────────
@@ -261,11 +234,14 @@ extension CompositorRuntime {
         return true
     }
 
-    /// Tear down in reverse acquisition order: render runtime (holds GPU state over
-    /// the borrowed DRM master fd) first, then xwm, the host bundle, the overlay
-    /// host, the DRM session, and the seat/libinput.
+    /// Tear down in reverse acquisition order. Retained Wayland scene resources
+    /// retire first while their renderer owner is live; GPU/scanout state then
+    /// drops before the borrowed DRM master fd, followed by Xwayland, app hosts,
+    /// and seat/libinput.
     func teardown() {
-        SceneCommitFrameDemand.clear()
+        stopReactor()
+        logRuntime("shutdown: Wayland scene")
+        WaylandRuntime.prepareShutdown()
         logRuntime("shutdown: render runtime")
         RenderRuntime.shutdown()
         // Release DRM master and return the primary fd to libseat immediately
@@ -276,8 +252,8 @@ extension CompositorRuntime {
         logRuntime("shutdown: Xwayland")
         nucleus_xwm_host_shutdown()
         logRuntime("shutdown: app hosts")
-        nucleus_app_host_bundle_clear_production()
-        nucleus_shell_overlay_publication_clear()
+        shellServices.shutdown()
+        hostBundle.invalidate()
         logRuntime("shutdown: input seat")
         nucleus_input_host_shutdown()
         logRuntime("shutdown: complete")

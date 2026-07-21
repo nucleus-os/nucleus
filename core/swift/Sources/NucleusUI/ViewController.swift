@@ -2,11 +2,17 @@
 open class ViewController: Responder, ~Sendable {
     private var loaded = false
     private var storedView: View?
+    package var ownedObservationTokens:
+        [ObjectIdentifier: RetainedObservationToken] = [:]
     public var representedObject: Any?
     package weak var parentWindow: Window?
 
     public override init() {
         super.init()
+    }
+
+    isolated deinit {
+        cancelOwnedObservations()
     }
 
     public convenience init(view: View) {
@@ -34,6 +40,10 @@ open class ViewController: Responder, ~Sendable {
     }
 
     public func setView(_ view: View) {
+        if let storedView, storedView !== view {
+            cancelOwnedObservations()
+            storedView.cancelOwnedObservations()
+        }
         storedView?.owningViewController = nil
         storedView = view
         view.owningViewController = self
@@ -41,6 +51,7 @@ open class ViewController: Responder, ~Sendable {
     }
 
     package func clearLoadedView() {
+        cancelOwnedObservations()
         storedView = nil
         loaded = false
     }

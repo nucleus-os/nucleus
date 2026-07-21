@@ -1,0 +1,6 @@
+# Fontconfig and Skia's Fontconfig font manager retain process-global caches.
+# Their lifecycle is owned by the system/vendor libraries, not by a Nucleus
+# runtime graph. Keep these suppressions symbol-specific so every first-party
+# allocation remains visible to LeakSanitizer.
+leak:libfontconfig.so
+leak:SkFontMgr_fontconfig

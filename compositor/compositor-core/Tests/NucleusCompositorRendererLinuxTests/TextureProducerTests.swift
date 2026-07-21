@@ -153,7 +153,8 @@ import NucleusTypes
             _ = producer.drainStats()
 
             let recording = recorder.snapRecording()
-            if recording.isValid() { _ = context.submit(recording) }
+            _ = submitGraphiteAndWait(
+                context: context, recording: recording, serial: 1)
 
             // GPU-backed images must not outlive the context: drop them here.
             registry.clear()

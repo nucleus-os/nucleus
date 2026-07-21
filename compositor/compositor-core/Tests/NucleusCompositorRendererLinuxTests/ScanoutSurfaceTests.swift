@@ -185,15 +185,13 @@ import NucleusSkiaGraphiteBridge
             canvas.drawRect(nucleus.skia.RectF(x: 8, y: 8, width: 16, height: 16), paint)
 
             let recording = recorder.snapRecording()
-            _ = context.submit(recording)
+            _ = submitGraphiteAndWait(
+                context: context, recording: recording, serial: 1)
 
             // Read back to exercise the path; the values are not asserted because
             // the round-trip only runs on real GPU hardware.
-            let stride = Int(width) * 4
-            var buf = [UInt8](repeating: 0, count: stride * Int(height))
-            _ = buf.withUnsafeMutableBufferPointer {
-                context.readSurfaceRGBA(surface, $0.baseAddress, $0.count, Int32(stride))
-            }
+            _ = readGraphiteSurfaceRGBA(
+                context: context, surface: surface)
         }
         // `surface` destroyed here; `memoryOwned`/`imageOwned` destroyed on return.
     }

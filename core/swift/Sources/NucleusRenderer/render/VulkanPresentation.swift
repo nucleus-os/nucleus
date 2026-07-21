@@ -1,8 +1,11 @@
 import Vulkan
 import VulkanC
 
-/// Opaque, non-owning Vulkan tokens passed across the renderer's platform-host boundary.
-/// Only platform host modules may construct or unwrap them through the SPI.
+/// Opaque, non-owning Vulkan tokens passed across the renderer's platform-host
+/// boundary. The unchecked sendability covers only immutable pointer bits:
+/// construction and dereference remain platform SPI operations, and the
+/// originating `VulkanBootstrap`/`VulkanSurface` lifetime must encompass every
+/// use. No mutable Vulkan state is accessed through these values directly.
 public struct VulkanInstanceHandle: @unchecked Sendable {
     private let raw: UnsafeRawPointer
     @_spi(NucleusPlatform) public init(_ value: VkInstance) { raw = UnsafeRawPointer(value) }

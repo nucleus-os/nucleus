@@ -33,11 +33,6 @@ import Testing
         bd = Layer(id: 2, kind: .container)
         bd.model.visualStyle = VisualStyle()
         #expect(bd.contributesOwnExtent(), "extent-visual-style")
-        // A presentation transition contributes.
-        var tr = Layer(id: 3, kind: .container)
-        tr.presentation.transition = OperationID(raw: 5)
-        #expect(tr.hasPresentationTransition() && tr.contributesOwnExtent(), "extent-transition")
-
         // Tree: insert + get.
         var tree = LayerTree()
         tree.insertLayer(Layer(id: 10, kind: .container))

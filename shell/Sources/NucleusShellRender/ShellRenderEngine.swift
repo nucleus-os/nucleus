@@ -1,4 +1,7 @@
 public import NucleusRenderer
+import NucleusRenderModel
+import NucleusShellLoop
+import Tracy
 
 // Owns the shared render core and one Vulkan-WSI presenter per shell surface, and drives the
 // per-frame record/present. Mirrors the Android host's AndroidRenderEngine, generalized to N
@@ -6,7 +9,7 @@ public import NucleusRenderer
 // swapchain, all sharing one RenderCore (one VkDevice — Skia can only draw into swapchain
 // images on the device that owns them).
 //
-// The RN runtime commits its layer tree into RetainedTreeStore.shared via RenderCommitSink
+// The RN runtime commits its layer tree into the engine-owned store via RenderCommitSink
 // (installed by the runtime). Each frame the engine ticks the store's animations, then calls
 // RenderCore.renderReady per presenter, which composites the retained tree into that surface's
 // acquired swapchain image and presents it.
@@ -18,10 +21,16 @@ public final class ShellRenderEngine {
     // Keyed alongside the presenters: the wl_surface each presents onto, so a resize can
     // re-supply the makeSurface closure (a no-op after first create, which caches the surface).
     private var surfaces: [UInt64: OpaquePointer] = [:]
+    private var refreshMillihertzByOutput: [UInt64: Int32] = [:]
     private let display: OpaquePointer
     private var nextOutputID: UInt64 = 1
 
-    public init?(display: OpaquePointer) {
+    public init?(
+        display: OpaquePointer,
+        store: RetainedTreeStore,
+        resourceHost: SwiftResourceHost,
+        asyncRenderWakeSink: any AsyncRenderWakeSink
+    ) {
         // The client presentation device: VK_KHR_surface + VK_KHR_wayland_surface (instance)
         // and VK_KHR_swapchain (device). Selected via the core's presentation mode (the core
         // enablement change — otherwise a non-Android Linux process builds the DRM/dmabuf set).
@@ -33,7 +42,10 @@ public final class ShellRenderEngine {
                 WaylandVulkanSurface.supportsPresentation(
                     instance: instance, physicalDevice: physicalDevice,
                     queueFamily: queueFamily, display: display)
-            })
+            }),
+            store: store,
+            resourceHost: resourceHost,
+            asyncRenderWakeSink: asyncRenderWakeSink
         ) else { return nil }
         self.core = core
         self.display = display
@@ -44,7 +56,8 @@ public final class ShellRenderEngine {
     /// surface, after its first layer-shell `configure` reports a size.
     @discardableResult
     public func addSurface(waylandSurface: OpaquePointer, width: Int32, height: Int32,
-                           scale: Double, presentationContextID: UInt32) -> UInt64? {
+                           scale: Double, presentationContextID: UInt32,
+                           refreshMillihertz: Int32) -> UInt64? {
         let id = nextOutputID
         nextOutputID &+= 1
         let display = self.display
@@ -56,6 +69,7 @@ public final class ShellRenderEngine {
         else { return nil }
         presenters[id] = presenter
         surfaces[id] = waylandSurface
+        refreshMillihertzByOutput[id] = refreshMillihertz
         core.attachOutputGeometry(
             outputID: id, logicalX: 0, logicalY: 0,
             logicalWidth: Double(presenter.lastExtentWidth) / scale,
@@ -110,18 +124,39 @@ public final class ShellRenderEngine {
         presenters[id]?.teardown()
         presenters[id] = nil
         surfaces[id] = nil
+        refreshMillihertzByOutput[id] = nil
         core.detachOutputGeometry(outputID: id)
+    }
+
+    public func setRefreshMillihertz(_ value: Int32, forSurface id: UInt64) {
+        guard presenters[id] != nil else { return }
+        refreshMillihertzByOutput[id] = max(0, value)
+    }
+
+    /// Pace shared render turns to the fastest active presentation target.
+    public var presentationIntervalNanoseconds: UInt64 {
+        let interval = refreshMillihertzByOutput.values
+            .compactMap {
+                ShellPresentationTiming.intervalNanoseconds(
+                    refreshMillihertz: $0)
+            }
+            .min()
+        // wl_output supplies a current mode before normal surface
+        // configuration. Keep a fail-safe interval for incomplete compositors.
+        return interval ?? 16_666_666
     }
 
     /// Advance animations and render every dirty surface for this frame's predicted present.
     @discardableResult
     public func renderFrame(presentTimeNs: UInt64) -> Bool {
-        core.store.tick(presentTimeNs: presentTimeNs)
-        var posted = false
-        for (_, presenter) in presenters {
-            if core.renderReady(backend: presenter) { posted = true }
+        Trace.zone("shell.renderer.frame", color: Trace.Color.green) {
+            core.store.tick(presentTimeNs: presentTimeNs)
+            var posted = false
+            for (_, presenter) in presenters {
+                if core.renderReady(backend: presenter) { posted = true }
+            }
+            return posted
         }
-        return posted
     }
 
     /// Ordered teardown: presenters (their swapchains/surfaces live on the core's device) →

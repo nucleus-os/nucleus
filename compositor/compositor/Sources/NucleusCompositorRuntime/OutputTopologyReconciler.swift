@@ -78,6 +78,8 @@ final class OutputTopologyReconciler {
     private var applied: [DisplayID: AppliedOutput] = [:]
     private var rememberedPlacements: [DisplayID: (x: Double, y: Double)] = [:]
     private let defaultScale: Double
+    private var reconcilePending = false
+    private var forceReattachPending = false
 
     init(defaultScale: Double) {
         self.defaultScale = max(0.01, defaultScale)
@@ -85,10 +87,24 @@ final class OutputTopologyReconciler {
 
     @discardableResult
     func reconcile(forceReattach: Bool = false) -> Bool {
+        reconcilePending = true
+        forceReattachPending = forceReattachPending || forceReattach
+        return continuePendingReconcile()
+    }
+
+    /// Retry a topology transaction that previously reached a kernel-owned page
+    /// flip. The latest DRM inventory is rediscovered at the retry point, so a
+    /// burst of hotplug changes collapses into one authoritative transaction.
+    @discardableResult
+    func continuePendingReconcile() -> Bool {
+        guard reconcilePending else { return true }
         guard let proposal = RenderRuntime.proposeOutputTopology() else {
             logRuntime("output topology: discovery failed; preserving applied outputs")
+            reconcilePending = false
+            forceReattachPending = false
             return false
         }
+        let forceReattach = forceReattachPending
         let changes = OutputTopologyChangeSet.compute(
             current: applied, proposed: proposal.outputs,
             forceReattach: forceReattach)
@@ -96,11 +112,22 @@ final class OutputTopologyReconciler {
         let retiring = Set(
             changes.removed.map(\.id)
                 + changes.changed.map { $0.old.id })
-        guard RenderRuntime.retireOutputs(retiring) else {
+        switch RenderRuntime.retireOutputs(retiring) {
+        case .waitingForPageFlip:
+            logRuntime(
+                "output topology: waiting for accepted presentation to retire")
+            return false
+        case .failed:
             logRuntime(
                 "output topology: atomic retirement failed; preserving applied topology")
+            reconcilePending = false
+            forceReattachPending = false
             return false
+        case .complete:
+            break
         }
+        reconcilePending = false
+        forceReattachPending = false
         for output in changes.removed {
             rememberPlacement(output)
         }
@@ -146,6 +173,11 @@ final class OutputTopologyReconciler {
             appliedOutputIDs: Set(applied.keys))
         refreshDerivedOutputState()
         return true
+    }
+
+    func cancelPendingReconcile() {
+        reconcilePending = false
+        forceReattachPending = false
     }
 
     private func rememberPlacement(_ output: AppliedOutput) {

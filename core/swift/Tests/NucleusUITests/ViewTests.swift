@@ -5,13 +5,12 @@ import struct NucleusLayers.GeometryPoint
 import struct NucleusLayers.GeometryRect
 import struct NucleusLayers.GeometrySize
 import class NucleusLayers.InMemoryCommitSink
+import class NucleusLayers.LayerRuntimeHost
 import struct NucleusLayers.LayerTransaction
-import func NucleusLayers.installStubHost
 import Testing
 
 @MainActor
 @Suite(.uiContext) struct ViewTests {
-    init() { installStubHost() }
 
     final class LayoutProbeView: View {
         var layoutCount = 0
@@ -306,8 +305,11 @@ import Testing
     }
 
     @Test func windowScenePublishesAndHitTestsOrderedWindows() throws {
-        let semanticContext = try Context(id: ContextID(rawValue: 714), commitSink: InMemoryCommitSink())
-        let visualSink = InMemoryCommitSink()
+        let runtimeHost = LayerRuntimeHost.inMemory()
+        let semanticContext = try Context(
+            id: ContextID(rawValue: 714),
+            commitSink: InMemoryCommitSink(runtimeHost: runtimeHost))
+        let visualSink = InMemoryCommitSink(runtimeHost: runtimeHost)
         let visualContext = try Context(id: ContextID(rawValue: 715), commitSink: visualSink)
         let windows = Application.withContext(semanticContext) {
             let back = Window(title: "Back")
@@ -343,8 +345,11 @@ import Testing
     }
 
     @Test func windowSceneInterleavesEmbedderPlacementsByWindowLevel() throws {
-        let semanticContext = try Context(id: ContextID(rawValue: 716), commitSink: InMemoryCommitSink())
-        let visualSink = InMemoryCommitSink()
+        let runtimeHost = LayerRuntimeHost.inMemory()
+        let semanticContext = try Context(
+            id: ContextID(rawValue: 716),
+            commitSink: InMemoryCommitSink(runtimeHost: runtimeHost))
+        let visualSink = InMemoryCommitSink(runtimeHost: runtimeHost)
         let visualContext = try Context(id: ContextID(rawValue: 717), commitSink: visualSink)
         let windows = Application.withContext(semanticContext) {
             let window = Window(title: "Native")

@@ -14,6 +14,9 @@ enum SessionLockGate {
     private static var keyboardFocusSurfaceID: UInt64 = 0
 
     static func begin() {
+        // Retained pre-lock client pixels are forbidden once the security gate
+        // activates, even though render-time context filtering would hide them.
+        RouterHost.shared.feeder?.cancelTransitionsForSessionLock()
         active = true
         lockedSent = false
         keyboardFocusSurfaceID = 0

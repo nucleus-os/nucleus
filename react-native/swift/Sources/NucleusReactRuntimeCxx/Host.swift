@@ -64,6 +64,7 @@ public final class Host {
     public func registerSurface(id: Int) throws {
         let runtimeHost = try requireHost()
         try runtimeHost.registerSurface(id: id)
+        runtimeHost.mountConsumer.registerSurface(surfaceID: id)
     }
 
     public func configureSurface(id: Int, width: Double, height: Double) throws {
@@ -113,6 +114,12 @@ public final class Host {
     public func drainPendingJSCalls() throws -> UInt32 {
         let runtimeHost = try requireHost()
         return try runtimeHost.drainPendingJSCalls()
+    }
+
+    public func setJSWorkWakeHandler(
+        _ handler: @escaping @Sendable () -> Void
+    ) throws {
+        try requireHost().setJSWorkWakeHandler(handler)
     }
 
     /// Emit a device event to JS (native → JS). JS receives it via

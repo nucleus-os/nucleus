@@ -273,11 +273,16 @@ import NucleusUI
         scene.onToolTipChange = { text, _ in shown.append(text) }
 
         move(scene, to: Point(x: 10, y: 10), at: 1_000)
+        #expect(scene.nanosecondsUntilToolTip(atNanoseconds: 1_000)
+            == scene.toolTipDelayNanoseconds)
         scene.updateToolTip(atNanoseconds: 1_000)
         #expect(shown.isEmpty, "not yet")
 
+        #expect(scene.nanosecondsUntilToolTip(
+            atNanoseconds: 1_000 + scene.toolTipDelayNanoseconds) == 0)
         scene.updateToolTip(atNanoseconds: 1_000 + scene.toolTipDelayNanoseconds)
         #expect(shown == ["Battery 73%"])
+        #expect(scene.nanosecondsUntilToolTip(atNanoseconds: 5_000_000_000) == nil)
 
         // Idempotent once shown.
         scene.updateToolTip(atNanoseconds: 5_000_000_000)

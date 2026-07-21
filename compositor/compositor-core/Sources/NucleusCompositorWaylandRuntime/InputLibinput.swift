@@ -57,9 +57,10 @@ final class LibinputBackend {
     private let udev: OpaquePointer
     private var handle: OpaquePointer?
     private let interface: UnsafeMutablePointer<libinput_interface>
-    /// The seat mediating restricted device opens; libinput keeps `interface`'s
-    /// userdata pointing at it.
-    private unowned let seat: SeatSession
+    /// The seat mediates restricted device opens. Retaining it makes the
+    /// `interface` userdata borrow valid until `libinput_unref` disables every
+    /// callback; there is no reverse retain from the seat.
+    private let seat: SeatSession
 
     private init(udev: OpaquePointer, interface: UnsafeMutablePointer<libinput_interface>, seat: SeatSession) {
         self.udev = udev

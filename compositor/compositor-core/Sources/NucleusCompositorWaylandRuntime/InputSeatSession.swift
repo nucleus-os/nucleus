@@ -21,7 +21,12 @@ final class SeatSession {
     /// Session-active transitions. The owner wires these to resume/suspend Swift
     /// libinput and the DRM outputs.
     var onEnable: (@MainActor () -> Void)?
-    var onDisable: (@MainActor () -> Void)?
+    var onDisable: (@MainActor () -> Bool)?
+
+    /// A disable callback may outlive the callback stack while KMS waits for an
+    /// accepted nonblocking page flip. Keep the acknowledgement obligation here,
+    /// beside the libseat handle that owns it.
+    private var disableAcknowledgementPending = false
 
     /// fd → libseat device id, so a libinput close_restricted (which only knows the
     /// fd) can close the right seat device.
@@ -61,9 +66,17 @@ final class SeatSession {
     private func handleEnable() { onEnable?() }
 
     private func handleDisable(_ seat: OpaquePointer?) {
-        onDisable?()
-        // Acknowledge deactivation so the kernel can complete the VT switch.
-        if let seat { _ = libseat_disable_seat(seat) }
+        disableAcknowledgementPending = true
+        if onDisable?() ?? true {
+            completeDisableAcknowledgement()
+        }
+    }
+
+    func completeDisableAcknowledgement() {
+        guard disableAcknowledgementPending else { return }
+        disableAcknowledgementPending = false
+        // Acknowledge deactivation only after all KMS kernel borrows retired.
+        if let handle { _ = libseat_disable_seat(handle) }
     }
 
     // MARK: - FD + dispatch

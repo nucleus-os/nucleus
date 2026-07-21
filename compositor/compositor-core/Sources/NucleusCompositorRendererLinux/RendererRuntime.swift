@@ -24,7 +24,7 @@ import Glibc
 /// The DRM/KMS presentation backend. Constructed at compositor bring-up with the
 /// DRM master fd; outputs are attached as the display layout resolves; the reactor
 /// drives `renderReadyOutputs`. `@MainActor`: the render path runs on the main-loop
-/// thread; the `@c` reactor entries enter via `MainActor.assumeIsolated`.
+/// executor alongside Wayland and DRM ownership.
 @MainActor
 public final class RendererRuntime: PresentationBackend {
     public var defersGpuResourceRetirement: Bool { true }
@@ -47,8 +47,14 @@ public final class RendererRuntime: PresentationBackend {
     public var presentationClockID: UInt32 {
         DrmPresentationClock.clockID
     }
+    /// Render-node `dev_t` advertised through linux-dmabuf feedback.
+    public var dmabufMainDevice: UInt64 = 0
 
     var bindings: [UInt64: RenderOutputBinding] = [:]
+    /// Render-complete semaphores from GPU submissions that could not be handed to
+    /// KMS (sync-file export or atomic-commit failure). Their submission serial is
+    /// the lifetime fence; the main loop polls and destroys them after completion.
+    var unpresentedRenderSyncs: [DrmRenderSync] = []
     var scheduledOutputIDs: Set<UInt64>?
     /// Borrowed page-flip user_data must remain valid even if a replaced driver's
     /// kernel queues a late callback. These are released with the DRM runtime.
@@ -129,6 +135,7 @@ public final class RendererRuntime: PresentationBackend {
     /// Last logged decision string per output, so the per-frame evaluation logs only
     /// on a transition (eligible ↔ a specific block reason), not every vblank.
     var lastScanoutDecision: [UInt64: String] = [:]
+    var scanoutEligibilityChangeCount: UInt64 = 0
 
     // Hardware cursor plane. The compositor-global cursor image (retained
     // ARGB pixels + hotspot + size) and live pointer position, pushed by the composition
@@ -185,31 +192,39 @@ public final class RendererRuntime: PresentationBackend {
 
 
 
-    /// Suspend the session on VT-switch-away. Every binding is drained and fully
-    /// retired while master is still held, so no stale property/blob/framebuffer
-    /// state crosses the session boundary.
+    /// Suspend the session on VT-switch-away. This never blocks the main actor.
+    /// A pending page flip leaves the backend in `.pausing`; the composition root
+    /// retries after DRM readiness and acknowledges libseat only on a terminal
+    /// result.
     @discardableResult
-    public func pauseSessionChecked() -> Bool {
+    public func pauseSessionChecked() -> RendererRetirementResult {
         switch backendState {
         case .inactive:
-            return true
-        case .pausing, .failed:
-            return false
+            return .complete
+        case .failed:
+            return .failed
+        case .pausing:
+            break
         case .active, .resuming:
             backendState = .pausing
         }
-        guard retireOutputs(Set(bindings.keys)) else {
+        switch retireOutputs(Set(bindings.keys)) {
+        case .waitingForPageFlip:
+            return .waitingForPageFlip
+        case .failed:
             backendState = .failed(
                 "output topology could not retire before DRM master loss")
-            return false
+            return .failed
+        case .complete:
+            break
         }
         guard DrmSession.dropMaster(fd: drmDeviceFd) else {
             backendState = .failed("drmDropMaster failed")
-            return false
+            return .failed
         }
         pendingTopology = nil
         backendState = .inactive
-        return true
+        return .complete
     }
 
     /// Resume starts a recovery transaction. Presentation remains disabled until
@@ -242,34 +257,37 @@ public final class RendererRuntime: PresentationBackend {
         _ = resumeSessionChecked()
     }
 
+    /// Disable every live output without waiting. The compositor calls this while
+    /// its reactor still owns DRM readiness; `.waitingForPageFlip` means keep the
+    /// loop alive and retry after the next event.
+    public func prepareShutdown() -> RendererRetirementResult {
+        retireOutputs(Set(bindings.keys))
+    }
+
 
     // MARK: - Teardown
 
     /// Tear down in GPU-lifetime order: the core drops its render resources
     /// (accumulators + registry + imported client images) → every binding's scanout
     /// ring (images + BOs + KMS fbs) → the core drops Graphite and then the device.
-    /// Returns `false` when kernel presentation never retired. In that case the
+    /// Returns `false` when kernel presentation has not retired. In that case the
     /// caller must keep this runtime alive until process exit: destroying Vulkan,
     /// GBM, or KMS resources which the kernel may still reference is unsafe, but
     /// returning promptly is required so the compositor can release its DRM
     /// session and seat.
     public func shutdown() -> Bool {
-        logRendererDrm("shutdown: draining pending page flips")
-        // The main reactor is no longer draining DRM readiness at this point. Give
-        // an accepted non-blocking flip a bounded chance to complete before the
-        // blocking disable commit; otherwise NVIDIA rejects the disable with
-        // EBUSY and leaves the last framebuffer on screen after the exit keybind.
-        for binding in bindings.values { _ = drainPendingFlip(binding) }
+        logRendererDrm("shutdown: validating page-flip retirement")
         guard !bindings.values.contains(where: { $0.drm.pageFlipPending }) else {
             logRendererDrm(
                 "shutdown: page flip did not retire; abandoning GPU/KMS resources so the DRM session can close"
             )
             return false
         }
-        // Queue-idle makes every semaphore safe to destroy, including submits whose
-        // fence export or atomic commit failed and therefore never reached a flip.
+        // Queue-idle is the final device-lifetime barrier. Normal operation retires
+        // unpresented submission semaphores by completion serial without blocking.
         core.waitForGpuIdle()
-        guard retireOutputs(Set(bindings.keys)) else {
+        unpresentedRenderSyncs.removeAll()
+        guard retireOutputs(Set(bindings.keys)) == .complete else {
             logRendererDrm(
                 "shutdown: scanout disable failed; preserving GPU/KMS resources")
             return false
@@ -280,6 +298,7 @@ public final class RendererRuntime: PresentationBackend {
         primaryPlaneFormats.removeAll()
         scanoutCandidates.removeAll()
         lastScanoutDecision.removeAll()
+        scanoutEligibilityChangeCount = 0
         cursorPresentDirty.removeAll()
         forcedPresentOutputIDs.removeAll()
         cursorPixels = []

@@ -16,9 +16,9 @@ import NucleusRenderModel
         DamageRect(x: x, y: y, width: w, height: h)
     }
 
-    static func nativeFact(_ r: DamageRect, sig: UInt64, transition: Bool = false, layer: UInt64 = 1) -> NativeLayerDamageFact {
+    static func nativeFact(_ r: DamageRect, sig: UInt64, layer: UInt64 = 1) -> NativeLayerDamageFact {
         NativeLayerDamageFact(outputId: 1, layerId: layer, visibleRect: r,
-                              visualSignature: sig, hasPresentationTransition: transition)
+                              visualSignature: sig)
     }
 
     @Test func crossFrameCache() {

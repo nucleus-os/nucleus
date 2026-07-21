@@ -1,5 +1,6 @@
 import NucleusCompositorOverlayScene
 import NucleusCompositorServer
+import NucleusUI
 
 /// The shell's conformer to the overlay runtime's publication host.
 ///
@@ -10,23 +11,21 @@ import NucleusCompositorServer
 /// calls land on `NotificationService` / the input host directly.
 @MainActor
 final class ShellOverlayPublicationHost: OverlayPublicationHost {
+    private weak var services: ShellServices?
+
+    init(services: ShellServices) {
+        self.services = services
+    }
+
     func notificationClosed(id: UInt32, reason: UInt32) {
         NotificationService.shared.notificationClosedFromOverlay(id: id, reason: reason)
-        SystemdBus.shared.notificationClosed(id: id, reason: reason)
+    }
+
+    func accessibilitySceneDidPublish() {
+        services?.publishAccessibility()
     }
 
     func windowMenuSelected(windowID: UInt64, verb: Int32) {
         NucleusCompositorServer.shared.inputControl?.windowMenuSelected(windowID: windowID, verb: verb)
     }
-}
-
-/// Install the shell's overlay publication host into the overlay runtime. Returns
-/// 0 if the overlay scene failed to construct. A fresh stateless conformer is
-/// handed over per install (the `sending` boundary consumes it).
-@MainActor public func nucleus_shell_overlay_publication_install() -> UInt8 {
-    nucleus_compositor_overlay_runtime_install_host(ShellOverlayPublicationHost())
-}
-
-@MainActor public func nucleus_shell_overlay_publication_clear() {
-    _ = nucleus_compositor_overlay_runtime_clear_host()
 }

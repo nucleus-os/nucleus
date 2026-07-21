@@ -5,14 +5,17 @@ import Tracy
 @MainActor
 package final class ShellOverlayController: ~Sendable {
     package let scene: ShellOverlayScene
+    private let semanticPublisher: @MainActor () -> Void
     private let scenePublisher: @MainActor (ShellOverlayPublication) -> Void
     private var lastPublication: ShellOverlayPublication?
 
     package init(
         scene: ShellOverlayScene,
+        semanticPublisher: @escaping @MainActor () -> Void = {},
         scenePublisher: @escaping @MainActor (ShellOverlayPublication) -> Void
     ) {
         self.scene = scene
+        self.semanticPublisher = semanticPublisher
         self.scenePublisher = scenePublisher
     }
 
@@ -64,10 +67,9 @@ package final class ShellOverlayController: ~Sendable {
 
     package func showMenu(
         _ menu: Menu,
-        at anchor: Point,
-        onSelect: @escaping @MainActor (Int) -> Void
+        at anchor: Point
     ) {
-        if scene.showMenu(menu, at: anchor, onSelect: onSelect) {
+        if scene.showMenu(menu, at: anchor) {
             publishScene()
         }
     }
@@ -83,6 +85,7 @@ package final class ShellOverlayController: ~Sendable {
             guard let publication = scene.publishVisuals() else {
                 return
             }
+            semanticPublisher()
             guard publication != lastPublication else {
                 Trace.plot("swift.overlay.publish.unchanged", UInt64(1))
                 return

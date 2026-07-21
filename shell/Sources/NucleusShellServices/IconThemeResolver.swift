@@ -36,13 +36,7 @@ public final class IconThemeResolver {
     public private(set) var generation: UInt64 = 0
 
     private let roots: [String]
-    private var cache: [CacheKey: String?] = [:]
     private var directoryCache: [String: [IconSearchDirectory]] = [:]
-
-    private struct CacheKey: Hashable {
-        var name: String
-        var size: Int
-    }
 
     /// - Parameter roots: icon-theme roots, most specific first. Defaults to the
     ///   XDG search path.
@@ -76,7 +70,6 @@ public final class IconThemeResolver {
 
     /// Drop everything cached. Call when the icon theme changes.
     public func invalidate() {
-        cache.removeAll(keepingCapacity: true)
         directoryCache.removeAll(keepingCapacity: true)
         generation &+= 1
     }
@@ -95,12 +88,7 @@ public final class IconThemeResolver {
         }
         guard !name.isEmpty else { return nil }
 
-        let key = CacheKey(name: name, size: size)
-        if let cached = cache[key] { return cached }
-
-        let resolved = search(name, size: size)
-        cache[key] = resolved
-        return resolved
+        return search(name, size: size)
     }
 
     private func search(_ name: String, size: Int) -> String? {

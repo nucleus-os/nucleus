@@ -105,7 +105,7 @@ public final class Display {
     public var refreshMHz: Int32
     public var configuration: DisplayConfiguration
     /// Per-output frame scheduler (the native Swift owner; the reactor reaches it by
-    /// output id through the `nucleus_display_link_*` `@_cdecl` accessors).
+    /// output id through the display-link service).
     public var displayLink: DisplayLink
     public private(set) var redrawState:
         OutputRedrawState = .idle

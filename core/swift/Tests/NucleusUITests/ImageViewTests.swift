@@ -3,12 +3,12 @@ import Testing
 // import would make every geometry mention below ambiguous. Qualifying does not
 // help — NucleusUI declares an inner `NucleusUI` enum that shadows the module
 // name, so `NucleusUI.Size` does not resolve either.
-import func NucleusLayers.installStubHost
 import protocol NucleusLayers.CommitSink
 import struct NucleusLayers.EncodedTransaction
 import enum NucleusLayers.LayerError
 import class NucleusLayers.Context
 import struct NucleusLayers.ContextID
+import class NucleusLayers.LayerRuntimeHost
 @testable import NucleusUI
 
 /// A commit sink that reports a real resource host, which is what registration
@@ -16,6 +16,7 @@ import struct NucleusLayers.ContextID
 @MainActor
 private final class HostedCommitSink: CommitSink {
     let resourceHostHandle: UInt64 = 42
+    let runtimeHost = LayerRuntimeHost.inMemory()
     func commit(_ transaction: EncodedTransaction) throws(LayerError) {}
 }
 
@@ -23,7 +24,6 @@ private final class HostedCommitSink: CommitSink {
 /// context at init, so the context must be current *then*, not merely later.
 @MainActor
 private func withHostedContext<T>(_ body: () throws -> T) rethrows -> T {
-    installStubHost()
     guard let context = try? Context(id: .root, commitSink: HostedCommitSink()) else {
         return try body()
     }
@@ -37,6 +37,12 @@ private func withHostedContext<T>(_ body: () throws -> T) rethrows -> T {
         let view = ImageView(image: ImageHandle(id: 1), imageSize: image)
         view.frame = Rect(origin: .zero, size: frame)
         return view
+    }
+
+    private func waitForRequest(_ view: ImageView) async {
+        while view.loadState == .loading {
+            await Task.yield()
+        }
     }
 
     // MARK: - Fit
@@ -115,9 +121,10 @@ private func withHostedContext<T>(_ body: () throws -> T) rethrows -> T {
     // MARK: - Source registration
 
     @Test func assigningAResourceAdoptsItsHandle() {
-        installStubHost()
         let view = ImageView()
-        let resource = ImageResource(path: "/a.png", resourceHostHandle: 5)
+        let resource = ImageResource(
+            path: "/a.png", resourceHostHandle: 5,
+            runtimeHost: .inMemory())
         view.resource = resource
         #expect(view.image == resource?.handle)
 
@@ -127,65 +134,73 @@ private func withHostedContext<T>(_ body: () throws -> T) rethrows -> T {
 
     /// Registration waits for a size, because the size is part of what is being
     /// registered.
-    @Test func aSourceWithoutASizeDoesNotRegisterYet() {
-        withHostedContext {
+    @Test func aSourceWithoutASizeDoesNotRegisterYet() async {
+        let view = withHostedContext {
             let view = ImageView()
-            view.sourcePath = "/icons/app.png"
+            view.source = .resource("/icons/app.png")
             #expect(view.resource == nil)
 
             view.arrange(in: Rect(x: 0, y: 0, width: 24, height: 24))
-            #expect(view.resource?.path == "/icons/app.png")
-            #expect(view.resource?.decodeSize == Size(width: 24, height: 24))
+            return view
         }
+        await waitForRequest(view)
+        #expect(view.resource?.path == "/icons/app.png")
+        #expect(view.resource?.decodeSize == Size(width: 24, height: 24))
     }
 
     /// A view that grew needs a decode at the new size, not an upscale of the old
     /// one — the bounds are part of the registration's identity.
-    @Test func resizingRegistersAgainAtTheNewSize() {
-        withHostedContext {
+    @Test func resizingRegistersAgainAtTheNewSize() async {
+        let view = withHostedContext {
             let view = ImageView()
-            view.sourcePath = "/icons/app.png"
+            view.source = .resource("/icons/app.png")
             view.arrange(in: Rect(x: 0, y: 0, width: 24, height: 24))
-            let first = view.resource
-
-            view.arrange(in: Rect(x: 0, y: 0, width: 48, height: 48))
-            #expect(view.resource !== first)
-            #expect(view.resource?.decodeSize == Size(width: 48, height: 48))
+            return view
         }
+        await waitForRequest(view)
+        let first = view.resource
+        view.arrange(in: Rect(x: 0, y: 0, width: 48, height: 48))
+        await waitForRequest(view)
+        #expect(view.resource !== first)
+        #expect(view.resource?.decodeSize == Size(width: 48, height: 48))
     }
 
     /// Re-arranging at the same size is the common case (any relayout), and it
     /// must not churn the registration.
-    @Test func rearrangingAtTheSameSizeKeepsTheRegistration() {
-        withHostedContext {
+    @Test func rearrangingAtTheSameSizeKeepsTheRegistration() async {
+        let view = withHostedContext {
             let view = ImageView()
-            view.sourcePath = "/icons/app.png"
+            view.source = .resource("/icons/app.png")
             view.arrange(in: Rect(x: 0, y: 0, width: 24, height: 24))
-            let first = view.resource
-
-            view.arrange(in: Rect(x: 0, y: 0, width: 24, height: 24))
-            #expect(view.resource === first)
+            return view
         }
+        await waitForRequest(view)
+        let first = view.resource
+        view.arrange(in: Rect(x: 0, y: 0, width: 24, height: 24))
+        #expect(view.resource === first)
     }
 
-    @Test func changingTheSourceRegistersTheNewFile() {
-        withHostedContext {
+    @Test func changingTheSourceRegistersTheNewFile() async {
+        let view = withHostedContext {
             let view = ImageView()
-            view.sourcePath = "/icons/one.png"
+            view.source = .resource("/icons/one.png")
             view.arrange(in: Rect(x: 0, y: 0, width: 16, height: 16))
-            let first = view.resource
-
-            view.sourcePath = "/icons/two.png"
-            view.arrange(in: Rect(x: 0, y: 0, width: 16, height: 16))
-            #expect(view.resource !== first)
-            #expect(view.resource?.path == "/icons/two.png")
+            return view
         }
+        await waitForRequest(view)
+        let first = view.resource
+        view.source = .resource("/icons/two.png")
+        await waitForRequest(view)
+        #expect(view.resource !== first)
+        #expect(view.resource?.path == "/icons/two.png")
     }
 
     @Test func theConvenienceInitializerTakesAPath() {
         withHostedContext {
-                let view = ImageView(path: "/icons/app.png")
-                #expect(view.sourcePath == "/icons/app.png")
+                let view = ImageView(
+                    source: .resource("/icons/app.png"))
+                #expect(
+                    view.source == .resource("/icons/app.png"))
         }
     }
 }

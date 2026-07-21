@@ -6,7 +6,7 @@
 // `NucleusApp` does not own or drive a loop: `App.main()` builds the scene graph into the
 // backend's rendering context and hands control to the backend, which drives frames. The
 // seam is a protocol the backend installs, mirroring the codebase's other inversion
-// seams (the app-host bundle, `CompositorShellPolicy`, `RenderUploadSink`): the core owns
+// seams (the app-host bundle, `CompositorShellPolicy`, `CompositorRenderService`): the core owns
 // the protocol; the platform side conforms and registers.
 
 import NucleusLayers
@@ -70,6 +70,12 @@ public protocol PlatformAppHost: AnyObject {
         for request: ScenePresentationRequest
     ) throws(PlatformAppHostError) -> Context
 
+    /// Construct the semantic services before any retained content for this
+    /// scene. A production host installs its native adapters here.
+    func makeServices(
+        for request: ScenePresentationRequest
+    ) throws(PlatformAppHostError) -> UIHostServices
+
     /// Adopt one retained scene. The host transitions it through activation
     /// states and eventually calls `disconnect()` before destroying its
     /// protocol surface and visual context.
@@ -123,6 +129,7 @@ public enum NucleusAppRuntime {
 /// Explicit in-memory host for tests and scene-description tools.
 @MainActor
 public final class InMemoryAppHost: PlatformAppHost {
+    private let runtimeHost = LayerRuntimeHost.inMemory()
     public private(set) var presentedScenes:
         [(request: ScenePresentationRequest, scene: WindowScene)] = []
 
@@ -134,10 +141,17 @@ public final class InMemoryAppHost: PlatformAppHost {
         do {
             return try Context(
                 id: ContextID(rawValue: UInt32(truncatingIfNeeded: request.id.rawValue)),
-                commitSink: InMemoryCommitSink())
+                commitSink: InMemoryCommitSink(runtimeHost: runtimeHost))
         } catch {
             throw .contextUnavailable(String(describing: error))
         }
+    }
+
+    public func makeServices(
+        for request: ScenePresentationRequest
+    ) throws(PlatformAppHostError) -> UIHostServices {
+        _ = request
+        return .inMemory()
     }
 
     public func present(
@@ -173,9 +187,16 @@ final class SceneMaterializer {
         nextSceneID &+= 1
         precondition(nextSceneID != 0, "scene identity exhausted")
 
+        let services = try host.makeServices(for: request)
+        guard services.validateForRetainedMaterialization() else {
+            throw PlatformAppHostError.contextUnavailable(
+                "a production text backend is required before retained UI materialization")
+        }
         let visualContext = try host.makeContext(for: request)
         let uiContext = UIContext(
-            resourceHostHandle: visualContext.commitSink.resourceHostHandle)
+            services: services,
+            resourceHostHandle: visualContext.commitSink.resourceHostHandle,
+            runtimeHost: visualContext.runtimeHost)
         let scene = try Application.withContexts(
             uiContext: uiContext,
             visualContext: visualContext

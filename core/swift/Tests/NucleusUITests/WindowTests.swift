@@ -121,7 +121,6 @@ import Testing
     }
 
     @Test func windowSceneOwnsOrderingVisibilityAndKeyWindow() throws {
-        let visualContext = try Context(id: ContextID(rawValue: 810), commitSink: InMemoryCommitSink())
         let normal = Window(title: "Normal", frame: Rect(x: 0, y: 0, width: 100, height: 100))
         let overlay = Window(
             title: "Overlay",
@@ -130,6 +129,10 @@ import Testing
         )
         normal.setContentView(View())
         overlay.setContentView(View())
+        let visualContext = try Context(
+            id: ContextID(rawValue: 810),
+            commitSink: InMemoryCommitSink(
+                runtimeHost: normal.uiContext.runtimeHost))
         let scene = WindowScene(
             windows: [overlay, normal],
             uiContext: normal.uiContext,

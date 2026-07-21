@@ -6,6 +6,7 @@
 #include <cmath>
 #include <atomic>
 #include <cstring>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <unordered_map>
@@ -1298,31 +1299,20 @@ Recorder GraphiteContext::makeRecorder() const {
     return Recorder(std::move(impl));
 }
 
-Status GraphiteContext::submit(const Recording &recording) const {
-    if (!isValid()) return Status::submitFailed;
+Status GraphiteContext::submitAsync(
+    const Recording &recording, uint64_t submissionSerial) const {
+    if (!isValid() || submissionSerial == 0) return Status::invalidArgument;
     Recording::Impl *rec = recording.raw();
     if (!rec || !rec->recording) return Status::invalidArgument;
 
     skgpu::graphite::InsertRecordingInfo info;
     info.fRecording = rec->recording.get();
+    attachSubmissionCompletion(
+        info, impl_->submissionCompletion, submissionSerial);
     if (!impl_->context->insertRecording(info)) return Status::recordingFailed;
-    if (!impl_->context->submit(skgpu::graphite::SyncToCpu::kYes)) return Status::submitFailed;
-    return Status::ok;
-}
-
-Status GraphiteContext::submitWithUpload(
-    const Recording &upload, const Recording &frame) const {
-    if (!isValid()) return Status::submitFailed;
-    Recording::Impl *up = upload.raw();
-    Recording::Impl *fr = frame.raw();
-    if (!up || !up->recording || !fr || !fr->recording) return Status::invalidArgument;
-
-    skgpu::graphite::InsertRecordingInfo info;
-    info.fRecording = up->recording.get();
-    if (!impl_->context->insertRecording(info)) return Status::recordingFailed;
-    info.fRecording = fr->recording.get();
-    if (!impl_->context->insertRecording(info)) return Status::recordingFailed;
-    if (!impl_->context->submit(skgpu::graphite::SyncToCpu::kYes)) return Status::submitFailed;
+    if (!impl_->context->submit(skgpu::graphite::SyncToCpu::kNo)) {
+        return Status::submitFailed;
+    }
     return Status::ok;
 }
 
@@ -1509,58 +1499,130 @@ uint64_t GraphiteContext::takeCompletedSubmissionGpuElapsedNs(
     return elapsed;
 }
 
-namespace {
-struct ReadbackCtx {
-    bool done = false;
+struct SurfaceReadback::Impl {
+    std::atomic<bool> done{false};
+    int32_t width = 0;
+    int32_t height = 0;
+    std::mutex mutex;
     std::unique_ptr<const SkImage::AsyncReadResult> result;
 };
-}  // namespace
 
-Status GraphiteContext::readSurfaceRGBA(
-    const Surface &surface, uint8_t *dst, size_t byteLength, int32_t rowBytes) const {
-    if (!isValid() || dst == nullptr) return Status::invalidArgument;
-    Surface::Impl *s = surface.raw();
-    if (s == nullptr || !s->surface) return Status::invalidArgument;
+SurfaceReadback::SurfaceReadback(std::shared_ptr<Impl> impl)
+    : impl_(std::move(impl)) {}
 
-    const int w = s->surface->width();
-    const int h = s->surface->height();
-    const SkImageInfo info = SkImageInfo::Make(w, h, kRGBA_8888_SkColorType, kPremul_SkAlphaType);
-    const size_t stride = rowBytes > 0 ? static_cast<size_t>(rowBytes) : info.minRowBytes();
-    if (byteLength < stride * static_cast<size_t>(h)) return Status::invalidArgument;
+bool SurfaceReadback::isValid() const { return impl_ != nullptr; }
 
-    // The readback context must outlive this function: if the async read has not
-    // completed by the time we give up below, Skia still holds a pointer to it and
-    // will write into it from a later checkAsyncWorkCompletion (next readback, or
-    // context teardown draining pending callbacks). Heap-own it via a shared_ptr and
-    // hand Skia an owning box; the callback releases that box. On the give-up path
-    // this scope's ref drops but the box keeps the context alive, so the eventual
-    // callback writes into live memory rather than a freed stack frame.
-    auto ctx = std::make_shared<ReadbackCtx>();
-    auto *box = new std::shared_ptr<ReadbackCtx>(ctx);
-    auto callback = [](SkImage::ReadPixelsContext c,
-                       std::unique_ptr<const SkImage::AsyncReadResult> r) {
-        auto *b = static_cast<std::shared_ptr<ReadbackCtx> *>(c);
-        (*b)->result = std::move(r);
-        (*b)->done = true;
-        delete b;
-    };
-    impl_->context->asyncRescaleAndReadPixels(
-        s->surface.get(), info, SkIRect::MakeWH(w, h),
-        SkImage::RescaleGamma::kSrc, SkImage::RescaleMode::kNearest, callback, box);
-    impl_->context->submit(skgpu::graphite::SyncToCpu::kYes);
-    for (int guard = 0; !ctx->done && guard < 1000; ++guard) {
-        impl_->context->checkAsyncWorkCompletion();
+bool SurfaceReadback::isComplete() const {
+    return impl_ && impl_->done.load(std::memory_order_acquire);
+}
+
+Status SurfaceReadback::copyPixels(
+    uint8_t *dst, size_t byteLength, int32_t rowBytes) const {
+    if (!isComplete() || dst == nullptr) return Status::invalidArgument;
+    if (impl_->width <= 0 || impl_->height <= 0) {
+        return Status::invalidArgument;
     }
-    if (!ctx->done || !ctx->result) return Status::submitFailed;
-
-    const auto *src = static_cast<const uint8_t *>(ctx->result->data(0));
-    const size_t srcStride = ctx->result->rowBytes(0);
-    for (int y = 0; y < h; ++y) {
+    const size_t width = static_cast<size_t>(impl_->width);
+    const size_t height = static_cast<size_t>(impl_->height);
+    if (width > std::numeric_limits<size_t>::max() / 4) {
+        return Status::invalidArgument;
+    }
+    const size_t tightStride = width * 4;
+    const size_t stride = rowBytes > 0
+        ? static_cast<size_t>(rowBytes) : tightStride;
+    if (stride < tightStride || height > std::numeric_limits<size_t>::max() / stride ||
+        byteLength < stride * height) {
+        return Status::invalidArgument;
+    }
+    std::lock_guard<std::mutex> lock(impl_->mutex);
+    if (!impl_->result || impl_->result->count() < 1) {
+        return Status::submitFailed;
+    }
+    const auto *src = static_cast<const uint8_t *>(impl_->result->data(0));
+    const size_t srcStride = impl_->result->rowBytes(0);
+    if (src == nullptr || srcStride < tightStride) {
+        return Status::submitFailed;
+    }
+    for (int y = 0; y < impl_->height; ++y) {
         std::memcpy(dst + static_cast<size_t>(y) * stride,
                     src + static_cast<size_t>(y) * srcStride,
-                    static_cast<size_t>(w) * 4);
+                    tightStride);
     }
     return Status::ok;
+}
+
+namespace {
+SurfaceReadback beginSurfaceReadback(
+    skgpu::graphite::Context *context,
+    const Surface &surface,
+    SkColorType colorType,
+    int32_t x = 0,
+    int32_t y = 0,
+    int32_t requestedWidth = 0,
+    int32_t requestedHeight = 0) {
+    if (context == nullptr) return SurfaceReadback(nullptr);
+    Surface::Impl *s = surface.raw();
+    if (s == nullptr || !s->surface) return SurfaceReadback(nullptr);
+
+    const int surfaceWidth = s->surface->width();
+    const int surfaceHeight = s->surface->height();
+    const int w = requestedWidth > 0 ? requestedWidth : surfaceWidth;
+    const int h = requestedHeight > 0 ? requestedHeight : surfaceHeight;
+    if (surfaceWidth <= 0 || surfaceHeight <= 0 || x < 0 || y < 0 ||
+        w <= 0 || h <= 0 || x > surfaceWidth - w || y > surfaceHeight - h) {
+        return SurfaceReadback(nullptr);
+    }
+    const SkImageInfo info = SkImageInfo::Make(
+        w, h, colorType, kPremul_SkAlphaType);
+    auto state = std::make_shared<SurfaceReadback::Impl>();
+    state->width = w;
+    state->height = h;
+    auto *box = new std::shared_ptr<SurfaceReadback::Impl>(state);
+    auto callback = [](SkImage::ReadPixelsContext context,
+                       std::unique_ptr<const SkImage::AsyncReadResult> result) {
+        std::unique_ptr<std::shared_ptr<SurfaceReadback::Impl>> owner(
+            static_cast<std::shared_ptr<SurfaceReadback::Impl> *>(context));
+        {
+            std::lock_guard<std::mutex> lock((*owner)->mutex);
+            (*owner)->result = std::move(result);
+        }
+        (*owner)->done.store(true, std::memory_order_release);
+    };
+    context->asyncRescaleAndReadPixels(
+        s->surface.get(), info, SkIRect::MakeXYWH(x, y, w, h),
+        SkImage::RescaleGamma::kSrc, SkImage::RescaleMode::kNearest,
+        callback, box);
+    if (!context->submit(skgpu::graphite::SyncToCpu::kNo)) {
+        return SurfaceReadback(nullptr);
+    }
+    return SurfaceReadback(std::move(state));
+}
+}  // namespace
+
+SurfaceReadback GraphiteContext::beginSurfaceReadbackRGBA(
+    const Surface &surface) const {
+    return beginSurfaceReadback(
+        isValid() ? impl_->context.get() : nullptr,
+        surface,
+        kRGBA_8888_SkColorType);
+}
+
+SurfaceReadback GraphiteContext::beginSurfaceReadbackBGRA(
+    const Surface &surface) const {
+    return beginSurfaceReadback(
+        isValid() ? impl_->context.get() : nullptr,
+        surface,
+        kBGRA_8888_SkColorType);
+}
+
+SurfaceReadback GraphiteContext::beginSurfaceReadbackBGRARegion(
+    const Surface &surface, int32_t x, int32_t y,
+    int32_t width, int32_t height) const {
+    return beginSurfaceReadback(
+        isValid() ? impl_->context.get() : nullptr,
+        surface,
+        kBGRA_8888_SkColorType,
+        x, y, width, height);
 }
 
 // MARK: - Context factory

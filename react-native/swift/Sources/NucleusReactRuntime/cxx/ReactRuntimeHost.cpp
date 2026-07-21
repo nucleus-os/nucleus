@@ -312,6 +312,19 @@ class ReactRuntimeHostImpl final {
     return jsInvoker_->drainPending();
   }
 
+  void setJSWorkWakeHandler(
+      RuntimeJSCallInvoker::WakeCallback callback,
+      void *context,
+      RuntimeJSCallInvoker::WakeContextRelease release) {
+    if (jsInvoker_ == nullptr) {
+      if (release != nullptr) {
+        release(context);
+      }
+      return;
+    }
+    jsInvoker_->setWakeHandler(callback, context, release);
+  }
+
   void evaluateJavaScriptSource(const char *source, const char *sourceUrl) {
     setSourceURL(sourceUrl == nullptr ? "" : sourceUrl);
     auto buffer = std::make_shared<facebook::jsi::StringBuffer>(
@@ -710,25 +723,55 @@ class ReactRuntimeHostImpl final {
       return shadowView.componentHandle == 0 ? -1 : shadowView.tag;
     }
 
-    static const facebook::react::BaseViewProps *viewProps(
+    static nucleus::react::MountComponentKind mountComponentKind(
         const facebook::react::ShadowView &shadowView) {
+      if (shadowView.componentName == nullptr) {
+        return nucleus::react::MountComponentKind::Other;
+      }
+      const std::string_view componentName(shadowView.componentName);
+      if (componentName == "RootView") {
+        return nucleus::react::MountComponentKind::Root;
+      }
+      if (componentName == "View" || componentName == "RCTView") {
+        return nucleus::react::MountComponentKind::View;
+      }
+      if (componentName == "Paragraph" || componentName == "RCTParagraph" ||
+          componentName == "Text" || componentName == "RCTText" ||
+          componentName == "RawText" || componentName == "RCTRawText") {
+        return nucleus::react::MountComponentKind::Text;
+      }
+      if (componentName == "Image" || componentName == "RCTImage") {
+        return nucleus::react::MountComponentKind::Image;
+      }
+      return nucleus::react::MountComponentKind::Other;
+    }
+
+    static const facebook::react::BaseViewProps *viewProps(
+        const facebook::react::ShadowView &shadowView,
+        nucleus::react::MountComponentKind kind) {
       if (shadowView.props == nullptr || shadowView.componentName == nullptr) {
         return nullptr;
       }
-      const std::string_view componentName(shadowView.componentName);
-      if (componentName != "View" && componentName != "RCTView") {
+      if (kind == nucleus::react::MountComponentKind::Text) {
+        const std::string_view componentName(shadowView.componentName);
+        if (componentName != "Paragraph" &&
+            componentName != "RCTParagraph") {
+          return nullptr;
+        }
+      } else if (
+          kind != nucleus::react::MountComponentKind::Root &&
+          kind != nucleus::react::MountComponentKind::View &&
+          kind != nucleus::react::MountComponentKind::Image) {
         return nullptr;
       }
       return static_cast<const facebook::react::BaseViewProps *>(shadowView.props.get());
     }
 
     static const facebook::react::ImageProps *imageProps(
-        const facebook::react::ShadowView &shadowView) {
-      if (shadowView.props == nullptr || shadowView.componentName == nullptr) {
-        return nullptr;
-      }
-      const std::string_view componentName(shadowView.componentName);
-      if (componentName != "Image" && componentName != "RCTImage") {
+        const facebook::react::ShadowView &shadowView,
+        nucleus::react::MountComponentKind kind) {
+      if (shadowView.props == nullptr ||
+          kind != nucleus::react::MountComponentKind::Image) {
         return nullptr;
       }
       return static_cast<const facebook::react::ImageProps *>(shadowView.props.get());
@@ -746,7 +789,12 @@ class ReactRuntimeHostImpl final {
       return static_cast<const facebook::react::RawTextProps *>(shadowView.props.get());
     }
 
-    static std::string textContent(const facebook::react::ShadowView &shadowView) {
+    static std::string textContent(
+        const facebook::react::ShadowView &shadowView,
+        nucleus::react::MountComponentKind kind) {
+      if (kind != nucleus::react::MountComponentKind::Text) {
+        return "";
+      }
       if (const auto *props = rawTextProps(shadowView)) {
         return props->text;
       }
@@ -764,7 +812,11 @@ class ReactRuntimeHostImpl final {
     }
 
     static const facebook::react::ParagraphState *paragraphData(
-        const facebook::react::ShadowView &shadowView) {
+        const facebook::react::ShadowView &shadowView,
+        nucleus::react::MountComponentKind kind) {
+      if (kind != nucleus::react::MountComponentKind::Text) {
+        return nullptr;
+      }
       if (shadowView.state == nullptr || shadowView.componentName == nullptr) {
         return nullptr;
       }
@@ -819,9 +871,11 @@ class ReactRuntimeHostImpl final {
           : LineBreakModeValue::Clipping;
     }
 
-    static TextPayload textPayload(const facebook::react::ShadowView &shadowView) {
+    static TextPayload textPayload(
+        const facebook::react::ShadowView &shadowView,
+        nucleus::react::MountComponentKind kind) {
       TextPayload payload;
-      const auto *data = paragraphData(shadowView);
+      const auto *data = paragraphData(shadowView, kind);
       if (data == nullptr) {
         return payload;
       }
@@ -880,8 +934,12 @@ class ReactRuntimeHostImpl final {
     }
 
     static std::optional<facebook::react::ColorComponents> backgroundColor(
-        const facebook::react::ShadowView &shadowView) {
-      const auto *props = viewProps(shadowView);
+        const facebook::react::ShadowView &shadowView,
+        nucleus::react::MountComponentKind kind) {
+      if (kind != nucleus::react::MountComponentKind::View) {
+        return std::nullopt;
+      }
+      const auto *props = viewProps(shadowView, kind);
       if (props == nullptr) {
         return std::nullopt;
       }
@@ -889,17 +947,6 @@ class ReactRuntimeHostImpl final {
         return std::nullopt;
       }
       return facebook::react::colorComponentsFromColor(props->backgroundColor);
-    }
-
-    static int layoutDirectionValue(facebook::react::LayoutDirection direction) {
-      switch (direction) {
-        case facebook::react::LayoutDirection::Undefined:
-          return 0;
-        case facebook::react::LayoutDirection::LeftToRight:
-          return 1;
-        case facebook::react::LayoutDirection::RightToLeft:
-          return 2;
-      }
     }
 
     void emitEvent(
@@ -913,29 +960,25 @@ class ReactRuntimeHostImpl final {
           typeName(mutation.type),
           mutation.parentTag);
       const auto &shadowView = activeShadowView(mutation);
-      const auto *props = viewProps(shadowView);
       logRuntimeHostf(
           "emitEvent active tag=%d component=%s props=%p",
           tagOrMissing(shadowView),
           shadowView.componentName == nullptr ? "<null>" : shadowView.componentName,
           shadowView.props.get());
-      const auto &frame = shadowView.layoutMetrics.frame;
-      const auto color = backgroundColor(shadowView);
-      auto text = textContent(shadowView);
-      auto textAttributes = textPayload(shadowView);
+      auto snapshot = buildMountMutation(
+          surfaceId, mutation, shadowView);
       logRuntimeHostf(
           "emitEvent payload type=%s tag=%d component=%s frame=(%.1f,%.1f %.1fx%.1f) background=%d text_len=%zu",
           typeName(mutation.type),
           tagOrMissing(shadowView),
           shadowView.componentName == nullptr ? "" : shadowView.componentName,
-          frame.origin.x,
-          frame.origin.y,
-          frame.size.width,
-          frame.size.height,
-          color.has_value() ? 1 : 0,
-          text.size());
-      observer_->didMount(buildMountMutation(
-          surfaceId, mutation, shadowView, props, frame, color, text, textAttributes));
+          snapshot.frame.x,
+          snapshot.frame.y,
+          snapshot.frame.width,
+          snapshot.frame.height,
+          snapshot.backgroundColor.has_value() ? 1 : 0,
+          snapshot.text.has_value() ? snapshot.text->size() : 0);
+      observer_->didMount(snapshot);
       logRuntimeHostf(
           "emitEvent end type=%s tag=%d component=%s",
           typeName(mutation.type),
@@ -943,19 +986,13 @@ class ReactRuntimeHostImpl final {
           shadowView.componentName == nullptr ? "" : shadowView.componentName);
     }
 
-    // Packs the per-mutation data into the typed `MountMutation` shape
-    // that `MountingObserver::didMount` consumes. Takes the same
-    // already-computed inputs as the legacy callback so both paths
-    // see identical data.
+    // Packs only mutation-relevant data into the borrowed C++ snapshot.
+    // Structural mutations retain tags/index alone; component strings and
+    // content are materialized only for create/update.
     static nucleus::react::MountMutation buildMountMutation(
         facebook::react::SurfaceId surfaceId,
         const facebook::react::ShadowViewMutation &mutation,
-        const facebook::react::ShadowView &shadowView,
-        const facebook::react::BaseViewProps *props,
-        const facebook::react::Rect &frame,
-        const std::optional<facebook::react::ColorComponents> &color,
-        const std::string &text,
-        const TextPayload &textAttributes) {
+        const facebook::react::ShadowView &shadowView) {
       nucleus::react::MountMutation out{};
       out.surfaceId = static_cast<std::int32_t>(surfaceId);
       out.type = mountEventType(eventType(mutation.type));
@@ -964,56 +1001,85 @@ class ReactRuntimeHostImpl final {
       out.oldTag = tagOrMissing(mutation.oldChildShadowView);
       out.newTag = tagOrMissing(mutation.newChildShadowView);
       out.index = mutation.index;
-      out.componentName = shadowView.componentName == nullptr
-          ? std::string{}
-          : std::string{shadowView.componentName};
+      if (mutation.type != facebook::react::ShadowViewMutation::Create &&
+          mutation.type != facebook::react::ShadowViewMutation::Update) {
+        return out;
+      }
+      const auto kind = mountComponentKind(shadowView);
+      out.componentKind = kind;
+      if (mutation.type == facebook::react::ShadowViewMutation::Create &&
+          kind != nucleus::react::MountComponentKind::Root &&
+          kind != nucleus::react::MountComponentKind::Other &&
+          shadowView.componentName != nullptr) {
+        out.componentName = shadowView.componentName;
+      }
+      if (kind == nucleus::react::MountComponentKind::Other) {
+        return out;
+      }
+      const auto *props = viewProps(shadowView, kind);
       if (props != nullptr && !props->nativeId.empty()) {
         out.nativeId = props->nativeId;
       }
+      const auto &frame = shadowView.layoutMetrics.frame;
       out.frame = nucleus::react::Rect{
           .x = frame.origin.x,
           .y = frame.origin.y,
           .width = frame.size.width,
           .height = frame.size.height,
       };
-      if (color.has_value()) {
-        out.backgroundColor = nucleus::react::Color{
-            .red = color->red,
-            .green = color->green,
-            .blue = color->blue,
-            .alpha = color->alpha,
-        };
-      }
-      out.layoutDirection = mountLayoutDirection(shadowView.layoutMetrics.layoutDirection);
-      if (!text.empty()) {
-        out.text = text;
-      }
-      if (textAttributes.hasAttributes) {
-        nucleus::react::TextAttributes attrs{};
-        attrs.fontFamily = textAttributes.fontFamily;
-        attrs.fontSize = textAttributes.fontSize;
-        attrs.fontWeight = textAttributes.fontWeight;
-        attrs.fontSlant = textAttributes.fontSlant;
-        if (textAttributes.hasTextColor) {
-          attrs.textColor = nucleus::react::Color{
-              .red = textAttributes.textRed,
-              .green = textAttributes.textGreen,
-              .blue = textAttributes.textBlue,
-              .alpha = textAttributes.textAlpha,
-          };
+      switch (kind) {
+        case nucleus::react::MountComponentKind::View: {
+          const auto color = backgroundColor(shadowView, kind);
+          if (color.has_value()) {
+            out.backgroundColor = nucleus::react::Color{
+                .red = color->red,
+                .green = color->green,
+                .blue = color->blue,
+                .alpha = color->alpha,
+            };
+          }
+          break;
         }
-        attrs.lineHeight = textAttributes.lineHeight;
-        attrs.alignment = static_cast<nucleus::react::TextAlignment>(
-            static_cast<int>(textAttributes.alignment));
-        attrs.maximumNumberOfLines = textAttributes.maximumNumberOfLines;
-        attrs.lineBreakMode = static_cast<nucleus::react::LineBreakMode>(
-            static_cast<int>(textAttributes.lineBreakMode));
-        out.textAttributes = std::move(attrs);
-      }
-      if (const auto *imgProps = imageProps(shadowView);
-          imgProps != nullptr && !imgProps->sources.empty() &&
-          !imgProps->sources.front().uri.empty()) {
-        out.imageSource = imgProps->sources.front().uri;
+        case nucleus::react::MountComponentKind::Text: {
+          const auto text = textContent(shadowView, kind);
+          if (!text.empty()) {
+            out.text = text;
+          }
+          const auto textAttributes = textPayload(shadowView, kind);
+          if (textAttributes.hasAttributes) {
+            nucleus::react::TextAttributes attrs{};
+            attrs.fontFamily = textAttributes.fontFamily;
+            attrs.fontSize = textAttributes.fontSize;
+            attrs.fontWeight = textAttributes.fontWeight;
+            attrs.fontSlant = textAttributes.fontSlant;
+            if (textAttributes.hasTextColor) {
+              attrs.textColor = nucleus::react::Color{
+                  .red = textAttributes.textRed,
+                  .green = textAttributes.textGreen,
+                  .blue = textAttributes.textBlue,
+                  .alpha = textAttributes.textAlpha,
+              };
+            }
+            attrs.lineHeight = textAttributes.lineHeight;
+            attrs.alignment = static_cast<nucleus::react::TextAlignment>(
+                static_cast<int>(textAttributes.alignment));
+            attrs.maximumNumberOfLines = textAttributes.maximumNumberOfLines;
+            attrs.lineBreakMode = static_cast<nucleus::react::LineBreakMode>(
+                static_cast<int>(textAttributes.lineBreakMode));
+            out.textAttributes = std::move(attrs);
+          }
+          break;
+        }
+        case nucleus::react::MountComponentKind::Image:
+          if (const auto *imgProps = imageProps(shadowView, kind);
+              imgProps != nullptr && !imgProps->sources.empty() &&
+              !imgProps->sources.front().uri.empty()) {
+            out.imageSource = imgProps->sources.front().uri;
+          }
+          break;
+        case nucleus::react::MountComponentKind::Root:
+        case nucleus::react::MountComponentKind::Other:
+          break;
       }
       return out;
     }
@@ -1030,18 +1096,6 @@ class ReactRuntimeHostImpl final {
           return nucleus::react::MountEventType::Remove;
         case EventType::Update:
           return nucleus::react::MountEventType::Update;
-      }
-    }
-
-    static nucleus::react::LayoutDirection mountLayoutDirection(
-        facebook::react::LayoutDirection direction) {
-      switch (direction) {
-        case facebook::react::LayoutDirection::Undefined:
-          return nucleus::react::LayoutDirection::Undefined;
-        case facebook::react::LayoutDirection::LeftToRight:
-          return nucleus::react::LayoutDirection::LeftToRight;
-        case facebook::react::LayoutDirection::RightToLeft:
-          return nucleus::react::LayoutDirection::RightToLeft;
       }
     }
 
@@ -2198,6 +2252,23 @@ RuntimeHostResult ReactRuntimeHostFacade::drainPendingJSCalls() {
       return 0u;
     }
     return static_cast<unsigned int>(impl_->drainPendingJSCalls());
+  });
+}
+
+RuntimeHostResult ReactRuntimeHostFacade::setJSWorkWakeHandler(
+    JSWorkWakeCallback callback,
+    void *context,
+    JSWorkWakeContextRelease release) {
+  if (impl_ == nullptr) {
+    if (release != nullptr) {
+      release(context);
+    }
+    return RuntimeHostResult{
+        .succeeded = false,
+        .error = "React runtime host facade is moved-from"};
+  }
+  return invokeRuntimeHostEntry([this, callback, context, release] {
+    impl_->setJSWorkWakeHandler(callback, context, release);
   });
 }
 

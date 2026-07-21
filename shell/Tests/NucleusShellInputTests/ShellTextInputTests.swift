@@ -96,6 +96,49 @@ import NucleusUI
         #expect(ShellTextInput.utf16Offset(in: "ab", forUTF8: 99) == 2)
     }
 
+    @Test func aMidScalarOffsetClampsToThePreviousBoundary() {
+        #expect(ShellTextInput.utf16Offset(
+            in: "a😀b",
+            forUTF8: 3) == 1)
+    }
+
+    @Test func surroundingTextIsBoundedWithoutSplittingScalars() throws {
+        let text = String(repeating: "é", count: 3_000)
+        let cursor = 4_500
+        let context = try #require(
+            ShellTextInput.boundedSurroundingContext(
+                TextInputSurroundingContext(
+                    text: text,
+                    cursorByteOffset: cursor,
+                    anchorByteOffset: cursor)))
+        #expect(context.text.utf8.count <= 4_000)
+        #expect(context.cursor >= 0)
+        #expect(Int(context.cursor) <= context.text.utf8.count)
+        #expect(
+            context.text.utf8.index(
+                context.text.utf8.startIndex,
+                offsetBy: Int(context.cursor)
+            ).samePosition(in: context.text) != nil)
+    }
+
+    @Test func malformedSurroundingOffsetsAndGeometryAreRejected() {
+        #expect(ShellTextInput.boundedSurroundingContext(
+            TextInputSurroundingContext(
+                text: "a😀b",
+                cursorByteOffset: 3,
+                anchorByteOffset: 3)) == nil)
+        #expect(ShellTextInput.wireRectangle(Rect(
+            x: .nan,
+            y: 0,
+            width: 1,
+            height: 1)) == nil)
+        #expect(ShellTextInput.wireRectangle(Rect(
+            x: Double(Int32.max) * 2,
+            y: 0,
+            width: 1,
+            height: 1)) == nil)
+    }
+
     // MARK: - The client contract the protocol drives
 
     /// The protocol's commit/preedit sequence drives the field through
@@ -124,5 +167,26 @@ import NucleusUI
         field.deleteSurroundingText(beforeBytes: 2, afterBytes: 0)
         field.insertText("XY")
         #expect(field.stringValue == "abXY")
+    }
+
+    /// The composite scrolling editor projects through the same protocol seam;
+    /// the shell never depends on TextField inheritance.
+    @Test func multilineTextViewUsesTheSharedShellInputContract() {
+        let editor = TextView(string: "first\nsecond")
+        editor.setSelectedRange(editor.stringValue.utf16.count..<editor.stringValue.utf16.count)
+
+        #expect(editor.textInputHints.contains(.multiline))
+        #expect(
+            ShellTextInput.contentHint(editor.textInputHints) & 0x200
+                != 0)
+        editor.setMarkedText("にほん", selectedRange: 3..<3)
+        #expect(editor.hasMarkedText)
+        editor.insertText("日本\nthird")
+
+        #expect(editor.stringValue == "first\nsecond日本\nthird")
+        #expect(!editor.hasMarkedText)
+        let context = editor.textInputSurroundingContext()
+        #expect(context?.text == editor.stringValue)
+        #expect(context?.cursorByteOffset == editor.stringValue.utf8.count)
     }
 }

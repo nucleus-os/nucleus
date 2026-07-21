@@ -79,6 +79,7 @@ final class WlCompositor {
     /// per-commit / per-hit-test-candidate lookup. Maintained in
     /// register/removeSurface.
     private var surfacesByObjectId: [UInt32: WeakSurface] = [:]
+    private var nextSyntheticSurfaceID: UInt32 = .max
     /// Stable renderer content identity → surface. Frame submission reports these
     /// identities, so exact commit sampling must not scan every live surface once
     /// for every visible scene node.
@@ -318,6 +319,29 @@ final class WlCompositor {
         }
     }
 
+    func allocateSurfaceIdentity(preferred wireObjectID: UInt32) -> UInt32 {
+        if wireObjectID != 0,
+            surfacesByObjectId[wireObjectID]?.surface == nil
+        {
+            return wireObjectID
+        }
+        while nextSyntheticSurfaceID == 0
+            || surfacesByObjectId[nextSyntheticSurfaceID]?.surface != nil
+        {
+            nextSyntheticSurfaceID &-= 1
+            precondition(
+                nextSyntheticSurfaceID != 0,
+                "compositor surface identity exhausted")
+        }
+        let result = nextSyntheticSurfaceID
+        nextSyntheticSurfaceID &-= 1
+        return result
+    }
+
+    var liveSurfaceIDs: Set<UInt32> {
+        Set(surfaces.compactMap { $0.surface?.objectId })
+    }
+
     func removeSurface(_ surface: WlSurface) {
         for box in surfaces where box.surface == nil || box.surface === surface {
             // Identity-checked so a reused object id (a new surface already indexed
@@ -351,8 +375,7 @@ final class WlCompositor {
         }
     }
 
-    /// The live surface with this wire object id, if any. Maps a focus target
-    /// (arriving as a wl_resource id) to its surface model; also a fixture probe.
+    /// The live surface with this process-unique compositor identity.
     func surface(id: UInt32) -> WlSurface? {
         guard let box = surfacesByObjectId[id] else { return nil }
         guard let s = box.surface else { surfacesByObjectId[id] = nil; return nil }

@@ -44,6 +44,15 @@ public final class ShellLockController {
 
     private var lockOutputs: [LockOutput] = []
 
+    public func updateOutputRefreshRates() {
+        for record in lockOutputs {
+            guard let renderOutputID = record.renderOutputID else { continue }
+            engine.setRefreshMillihertz(
+                record.surface.output.refreshMillihertz,
+                forSurface: renderOutputID)
+        }
+    }
+
     public init(
         client: ShellWaylandClient,
         engine: ShellRenderEngine,
@@ -160,7 +169,9 @@ public final class ShellLockController {
             width: pixelWidth,
             height: pixelHeight,
             scale: scale,
-            presentationContextID: publicationContext.visualContext.id.rawValue
+            presentationContextID: publicationContext.visualContext.id.rawValue,
+            refreshMillihertz:
+                lockOutputs[index].surface.output.refreshMillihertz
         )
         {
             lockOutputs[index].renderOutputID = renderOutputID

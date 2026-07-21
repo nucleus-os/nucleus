@@ -58,6 +58,16 @@ open class ScrollView: View {
         }
     }
 
+    /// Axes on which content may move. Indicators are presentation policy;
+    /// this value is the independent interaction and programmatic-scrolling
+    /// policy.
+    public var scrollableAxes: ScrollIndicators = .both {
+        didSet {
+            guard scrollableAxes != oldValue else { return }
+            clampScrollPosition()
+        }
+    }
+
     public var indicatorVisibilityPolicy: ScrollIndicatorVisibilityPolicy = .automatic {
         didSet {
             guard indicatorVisibilityPolicy != oldValue else { return }
@@ -77,6 +87,7 @@ open class ScrollView: View {
 
     /// Called after the scroll position changes, whatever moved it.
     public var onScroll: ((Point) -> Void)?
+    package var onInternalScroll: ((Point) -> Void)?
 
     public private(set) var interactionPhase: ScrollInteractionPhase = .idle
     /// Points per second in content-offset coordinates.
@@ -149,7 +160,7 @@ open class ScrollView: View {
             guard clamped != clipView.boundsOrigin else { return }
             clipView.boundsOrigin = clamped
             updateIndicatorGeometry()
-            onScroll?(clamped)
+            notifyScroll(clamped)
         }
     }
 
@@ -170,17 +181,26 @@ open class ScrollView: View {
         let x = offset.x.isFinite ? offset.x : 0
         let y = offset.y.isFinite ? offset.y : 0
         return Point(
-            x: min(max(0, x), maximum.x),
-            y: min(max(0, y), maximum.y))
+            x: scrollableAxes.contains(.horizontal)
+                ? min(max(0, x), maximum.x)
+                : 0,
+            y: scrollableAxes.contains(.vertical)
+                ? min(max(0, y), maximum.y)
+                : 0)
     }
 
     public func clampScrollPosition() {
         let clamped = clampedOffset(clipView.boundsOrigin)
         if clamped != clipView.boundsOrigin {
             clipView.boundsOrigin = clamped
-            onScroll?(clamped)
+            notifyScroll(clamped)
         }
         updateIndicatorGeometry()
+    }
+
+    private func notifyScroll(_ offset: Point) {
+        onInternalScroll?(offset)
+        onScroll?(offset)
     }
 
     /// Scroll the minimum distance needed to reveal a document-space rectangle.

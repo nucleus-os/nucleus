@@ -50,6 +50,15 @@ public struct RendererTopologyProposal:
     public let outputs: [RendererOutputInfo]
 }
 
+/// Result of a nonblocking KMS lifetime transition. A pending page flip is not
+/// an error: the compositor keeps the DRM fd in its reactor and retries the
+/// transition after the normal page-flip event retires the kernel borrow.
+public enum RendererRetirementResult: Sendable, Equatable {
+    case complete
+    case waitingForPageFlip
+    case failed
+}
+
 enum DrmBackendState {
     case resuming
     case active(OutputTopologySnapshot)
@@ -109,7 +118,10 @@ func logScanout(_ message: String) {
 @MainActor
 extension RendererRuntime {
     public static func create(
-        drmDeviceFd: Int32
+        drmDeviceFd: Int32,
+        store: RetainedTreeStore,
+        resourceHost: SwiftResourceHost,
+        asyncRenderWakeSink: any AsyncRenderWakeSink
     ) -> RendererRuntime? {
         var deviceStat = stat()
         guard fstat(drmDeviceFd, &deviceStat) == 0
@@ -173,7 +185,10 @@ extension RendererRuntime {
                     "render=\(drm.hasRender != 0 ? "\(drm.renderMajor):\(drm.renderMinor)" : "none") " +
                     "match=\(matches)")
                 return matches
-            })
+            },
+            store: store,
+            resourceHost: resourceHost,
+            asyncRenderWakeSink: asyncRenderWakeSink)
         else {
             logRendererDrm(
                 "no Vulkan device matched the selected DRM primary node")

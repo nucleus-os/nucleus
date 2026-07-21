@@ -321,6 +321,41 @@ import NucleusUI
         #expect(model.surroundingText() == nil)
     }
 
+    @Test func longSurroundingTextKeepsSelectionAndScalarBoundaries()
+        throws
+    {
+        var model = TextEditorModel(
+            text: String(repeating: "é😀", count: 1_000)
+                + "selected"
+                + String(repeating: "אב", count: 1_000))
+        let selectionStart = String(repeating: "é😀", count: 1_000)
+            .utf16.count
+        model.setSelection(TextSelection(
+            anchor: selectionStart,
+            head: selectionStart + "selected".utf16.count))
+
+        let context = try #require(model.surroundingText(
+            maximumBytes: 512))
+        #expect(context.text.utf8.count <= 512)
+        let lower = min(context.cursor, context.anchor)
+        let upper = max(context.cursor, context.anchor)
+        let start = try #require(context.text.utf8.index(
+            context.text.utf8.startIndex,
+            offsetBy: lower
+        ).samePosition(in: context.text))
+        let end = try #require(context.text.utf8.index(
+            context.text.utf8.startIndex,
+            offsetBy: upper
+        ).samePosition(in: context.text))
+        #expect(context.text[start..<end] == "selected")
+    }
+
+    @Test func aSelectionLargerThanTheWireBudgetExportsNoContext() {
+        var model = TextEditorModel(text: String(repeating: "x", count: 32))
+        model.setSelection(TextSelection(anchor: 0, head: 32))
+        #expect(model.surroundingText(maximumBytes: 16) == nil)
+    }
+
     @Test func aSecureFieldRedactsItsDescription() {
         let model = TextEditorModel(text: "hunter2", isSecure: true)
         #expect(!model.description.contains("hunter2"))

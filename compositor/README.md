@@ -2,7 +2,11 @@
 
 The Nucleus **Wayland/DRM compositor** — the Linux OS substrate, DRM renderer backend, window/seat policy, shell overlay, and the `NucleusCompositor` executable.
 
-It consumes the monorepo's [`core/`](../core) package plus the provisioned render native SDK (Skia Graphite). It links **zero React**: the shell is an out-of-process layer-shell client, so the compositor has no build-time dependency on React Native.
+It consumes the monorepo's [`core/`](../core) and
+[`platform-linux/`](../platform-linux) packages plus the provisioned render
+native SDK (Skia Graphite). It links **zero React**: the shell is an
+out-of-process layer-shell client, so the compositor has no build-time
+dependency on React Native.
 
 ## Component layout
 
@@ -28,7 +32,10 @@ The Linux OS substrate and compositor policy modules. Tested via `swift test` (n
 | `NucleusCompositorDrmC` | libdrm/GBM C façade (systemLibrary). |
 | `NucleusCompositorXcbC` | xcb C façade (systemLibrary). |
 | `NucleusCompositorInputC` | libinput/udev C façade (systemLibrary). |
-| `NucleusCompositorSystemdC` | libsystemd C façade (systemLibrary). |
+
+Linux D-Bus transport and AT-SPI export are shared with the out-of-process
+shell through `NucleusLinuxDBus` and `NucleusLinuxAccessibility`; compositor
+targets do not import libsystemd directly.
 
 ### `compositor/` — The executable package
 
@@ -36,10 +43,8 @@ The `NucleusCompositor` binary and composition root. Lives in a separate package
 
 | Target | Description |
 |---|---|
-| `NucleusCompositorRuntime` | Composition root — `@c` process entry, io_uring `CompositorRuntime` loop over swift-system's IORing, `CompositorBringup`. |
+| `NucleusCompositorRuntime` | Main-actor composition root — awaitable shared Linux reactor, readiness dispatch, `CompositorBringup`, and ordered teardown. |
 | `NucleusCompositorRenderSession` | DRM primary-node device session — owns the DRM primary fd, seat open/close injection, session generation for page-flip poll tokens. |
-| `NucleusCompositorRuntimeEntry` | Header-only C façade for the `@c` process entry. |
-| `NucleusCompositorLoop` | Header-only C façade for the io_uring loop's C ABI. |
 | `NucleusCompositor` | The executable — links the full Swift graph + text backend + Skia + libdrm/gbm + wayland-server + xcb/input/seat/udev/xkb + vulkan + fontconfig/freetype. |
 
 ## Build

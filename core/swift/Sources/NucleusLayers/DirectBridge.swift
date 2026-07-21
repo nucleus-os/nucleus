@@ -215,21 +215,17 @@ extension ContentSample {
 
 // `AnimationEndpoint` is `NucleusTypes.AnimationEndpoint` itself (see Animation.swift).
 
-// `FenceRecord` is `NucleusTypes.FenceRecord` itself (see FenceRecord.swift).
-// `TransitionRecord` is `NucleusTypes.TransitionRecord` itself (see TransitionRecord.swift).
-
 // MARK: - LayerContent ↔ NucleusTypes.LayerContent
 
 extension LayerContent {
     package var wireValue: NucleusTypes.LayerContent {
-        NucleusTypes.LayerContent(kind: kind, handle: handle, generation: generation)
+        NucleusTypes.LayerContent(kind: kind, handle: handle)
     }
 
     package init(wireValue c: NucleusTypes.LayerContent) {
         self.init(
             kind: c.kind,
-            handle: c.handle,
-            generation: c.generation,
+            handle: c.handle
         )
     }
 }

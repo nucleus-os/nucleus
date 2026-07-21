@@ -94,14 +94,18 @@ import Testing
 
     @Test func textLayoutExposesFontMetricsAndBaselines() throws {
         let font = Font.systemFont(ofSize: 14)
-        let layout = TextLayout(text: "gy", font: font)
+        let layout = TextLayout(
+            text: "gy",
+            font: font,
+            textSystem: testTextSystem())
 
-        #expect(layout.intrinsicSize.width == TextLayout.measureWidth("gy", font: font))
+        #expect(layout.intrinsicSize.width == TextLayout.measureWidth(
+            "gy", font: font, in: testTextSystem()))
         #expect(layout.intrinsicSize.height == layout.usedRect.size.height)
         #expect(layout.firstBaselineOffsetFromTop < layout.intrinsicSize.height)
         #expect(layout.lastBaselineOffsetFromBottom > 0)
 
-        let context = GraphicsContext()
+        let context = GraphicsContext(textSystem: testTextSystem())
         context.fillColor = Color(1, 1, 1, 1)
         context.draw(layout, in: Rect(
             x: 0, y: 0,
@@ -120,7 +124,7 @@ import Testing
             width: .condensed,
             slant: .italic
         ))
-        let resolved = font.resolvedDescriptor
+        let resolved = font.resolvedDescriptor(in: testTextSystem())
 
         #expect(!resolved.familyName.isEmpty)
         #expect(resolved.familyName != "DefinitelyMissingNucleusFont")
@@ -167,7 +171,8 @@ import Testing
             font: font,
             containerWidth: 35,
             lineBreakMode: .byWordWrapping,
-            numberOfLines: 3
+            numberOfLines: 3,
+            textSystem: testTextSystem()
         )
 
         #expect(layout.lines.count > 1)
@@ -184,7 +189,8 @@ import Testing
             text: "Nucleus compositor",
             font: font,
             containerWidth: 42,
-            lineBreakMode: .byTruncatingTail
+            lineBreakMode: .byTruncatingTail,
+            textSystem: testTextSystem()
         )
 
         let line = try #require(layout.lines.first)
@@ -202,36 +208,49 @@ import Testing
             text: "Hello world",
             font: font,
             containerWidth: 140,
-            lineBreakMode: .byClipping
+            lineBreakMode: .byClipping,
+            textSystem: testTextSystem()
         )
 
-        if let position = layout.glyphPosition(at: Point(x: layout.usedRect.size.width * 0.5, y: layout.firstBaselineOffsetFromTop)) {
+        if let position = layout.glyphPosition(
+            at: Point(
+                x: layout.usedRect.size.width * 0.5,
+                y: layout.firstBaselineOffsetFromTop),
+            in: testTextSystem())
+        {
             #expect(position.utf16Offset > 0)
             #expect(position.utf16Offset <= layout.text.utf16.count)
 
-            let rects = layout.selectionRects(forUTF16Range: 0..<5)
+            let rects = layout.selectionRects(
+                forUTF16Range: 0..<5,
+                in: testTextSystem())
             #expect(!rects.isEmpty)
             #expect(rects[0].rect.size.width > 0)
             #expect(rects[0].rect.size.height > 0)
             #expect(rects[0].direction == .leftToRight)
         } else {
-            #expect(layout.selectionRects(forUTF16Range: 0..<5).isEmpty)
+            #expect(layout.selectionRects(
+                forUTF16Range: 0..<5,
+                in: testTextSystem()).isEmpty)
         }
     }
 
     @Test func textLayoutCarriesAttributedRunsToParagraphCommand() throws {
         let titleFont = Font.systemFont(ofSize: 14, weight: .semibold)
         let detailFont = Font.systemFont(ofSize: 10)
-        let layout = TextLayout(runs: [
-            TextRun(text: "Nucleus", font: titleFont, color: Color(1, 1, 1, 1)),
-            TextRun(text: " compositor", font: detailFont, color: Color(0.72, 0.78, 0.86, 1))
-        ])
+        let layout = TextLayout(
+            runs: [
+                TextRun(text: "Nucleus", font: titleFont, color: Color(1, 1, 1, 1)),
+                TextRun(text: " compositor", font: detailFont, color: Color(0.72, 0.78, 0.86, 1)),
+            ],
+            textSystem: testTextSystem())
 
         #expect(layout.text == "Nucleus compositor")
         #expect(layout.textRuns.count == 2)
-        #expect(layout.intrinsicSize.width > TextLayout.measureWidth("Nucleus", font: titleFont))
+        #expect(layout.intrinsicSize.width > TextLayout.measureWidth(
+            "Nucleus", font: titleFont, in: testTextSystem()))
 
-        let context = GraphicsContext()
+        let context = GraphicsContext(textSystem: testTextSystem())
         context.fillColor = Color(1, 1, 1, 1)
         context.draw(layout, in: Rect(x: 0, y: 0, width: 100, height: 20))
         let command = try #require(context.recording.commands.first)
@@ -268,7 +287,7 @@ import Testing
             maximumLineCount: 1
         )
 
-        let result = TextSystem.shared.layout(
+        let result = testTextSystem().layout(
             attributedText,
             containerWidth: nil,
             paragraphStyle: paragraphStyle
@@ -276,7 +295,10 @@ import Testing
 
         #expect(attributedText.string == "Nucleus text")
         #expect(result.lines.count == 1)
-        #expect(result.usedRect.size.width > TextLayout.measureWidth("Nucleus", font: .systemFont(ofSize: 14, weight: .semibold)))
+        #expect(result.usedRect.size.width > TextLayout.measureWidth(
+            "Nucleus",
+            font: .systemFont(ofSize: 14, weight: .semibold),
+            in: testTextSystem()))
         let line = try #require(result.lines.first)
         #expect(line.sourceUTF16Range == 0..<attributedText.string.utf16.count)
         #expect(line.endExcludingWhitespace == attributedText.string.utf16.count)

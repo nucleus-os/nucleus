@@ -1,6 +1,5 @@
 import Testing
 import NucleusUI
-import func NucleusLayers.installStubHost
 
 /// Popup placement. Pure geometry, and the part most likely to be wrong at a
 /// screen edge — which is exactly where it is hardest to reproduce by hand.
@@ -238,7 +237,6 @@ import func NucleusLayers.installStubHost
     }
 
     @Test func repeatedPopoverLifecycleKeepsVisualResourcesBounded() throws {
-        installStubHost()
         let scene = makeScene()
         _ = try scene.publish()
         var maximumLayers = scene.publishedVisualLayerCount

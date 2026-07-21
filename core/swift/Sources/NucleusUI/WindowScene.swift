@@ -28,6 +28,8 @@ public final class WindowScene: ~Sendable {
     public private(set) var windows: [Window] = []
     public private(set) var keyWindow: Window?
     public private(set) var activationState: SceneActivationState = .background
+    public private(set) var menuPresentation:
+        MenuPresentationController? = nil
     public lazy var accessibilityTree = AccessibilityTree(scene: self)
 
     /// Called after the host changes this retained scene's activation state.
@@ -59,6 +61,7 @@ public final class WindowScene: ~Sendable {
 
     /// Independent capture per pointer/touch sequence.
     private var captures: [SequenceKey: CaptureRecord] = [:]
+    package var activeDragSession: DragSession?
     /// The view the pointer is currently over, for enter/exit.
     private weak var trackedView: View?
 
@@ -99,6 +102,9 @@ public final class WindowScene: ~Sendable {
                 || uiContext.resourceHostHandle
                     == visualContext.commitSink.resourceHostHandle,
             "WindowScene semantic and visual contexts use different resource hosts")
+        precondition(
+            uiContext.runtimeHost === visualContext.runtimeHost,
+            "WindowScene semantic and visual contexts use different runtime hosts")
         self.uiContext = uiContext
         self.visualContext = visualContext
         self.publisher = WindowLayerPublisher(context: visualContext)
@@ -112,10 +118,16 @@ public final class WindowScene: ~Sendable {
     /// Production hosts construct scenes through their embedder/app-host
     /// context so no production call silently acquires this sink.
     public convenience init(inMemoryWindows windows: [Window] = []) {
-        let visualContext = Application.makeInMemoryVisualContext()
+        let runtimeHost = windows.first?.uiContext.runtimeHost
+            ?? LayerRuntimeHost.inMemory()
+        let visualContext = Application.makeInMemoryVisualContext(
+            runtimeHost: runtimeHost)
         self.init(
             windows: windows,
-            uiContext: windows.first?.uiContext ?? UIContext(),
+            uiContext: windows.first?.uiContext
+                ?? UIContext(
+                    services: .inMemory(),
+                    runtimeHost: runtimeHost),
             visualContext: visualContext)
     }
 
@@ -157,6 +169,8 @@ public final class WindowScene: ~Sendable {
     /// authored them. A host destroys its protocol surface after this returns.
     public func disconnect() throws(UIError) {
         guard activationState != .disconnected else { return }
+        cancelDrag()
+        menuPresentation?.sceneDidDisconnect()
         try publisher.invalidate()
         resignKey()
         hideToolTip()
@@ -171,6 +185,7 @@ public final class WindowScene: ~Sendable {
         toolTipShown = false
         popoverFocusRestorations.removeAll(keepingCapacity: false)
         for window in windows {
+            window.root?.notifyRetainedHierarchyWillDetach()
             window.windowScene = nil
             window.setOrderedOut()
         }
@@ -201,8 +216,11 @@ public final class WindowScene: ~Sendable {
 
     @discardableResult
     public func removeWindow(_ window: Window) -> Bool {
+        guard windows.contains(where: { $0 === window }) else {
+            return false
+        }
         cancelInputSequences(in: window)
-        let oldCount = windows.count
+        window.root?.notifyRetainedHierarchyWillDetach()
         windows.removeAll { $0 === window }
         if window.windowScene === self {
             window.windowScene = nil
@@ -211,7 +229,8 @@ public final class WindowScene: ~Sendable {
             keyWindow = nil
             window.setKey(false)
         }
-        return windows.count != oldCount
+        window.setOrderedOut()
+        return true
     }
 
     public func orderFront(_ window: Window) {
@@ -376,9 +395,28 @@ public final class WindowScene: ~Sendable {
         guard activationState != .disconnected else {
             return .notHandled
         }
+        if let menuPresentation {
+            return menuPresentation.handleEvent(event)
+        }
         // Dismissal comes first: a click that closes a menu must not also press
         // whatever was underneath it.
         if applyPopoverDismissal(event) { return .handled }
+
+        if activeDragSession != nil {
+            switch event.type {
+            case .pointerMoved, .pointerDragged, .touchMoved:
+                _ = updateDrag(at: event.location)
+                return .handled
+            case .pointerUp, .touchUp:
+                dropFromInput(at: event.location)
+                return .handled
+            case .pointerCancelled, .touchCancelled:
+                cancelDrag()
+                return .handled
+            default:
+                break
+            }
+        }
 
         if event.isKeyEvent {
             guard let keyWindow else { return .notHandled }
@@ -398,6 +436,15 @@ public final class WindowScene: ~Sendable {
                 return .notHandled
             }
             capture.lastSceneLocation = event.location
+            if event.type == .pointerDragged
+                || event.type == .touchMoved,
+                beginConfiguredDrag(
+                    startingAt: view,
+                    sceneLocation: event.location)
+            {
+                captures[key] = nil
+                return .handled
+            }
             let hit = WindowHitTestResult(window: window, view: view)
             let local = convert(event.location, toViewIn: hit)
             let route = view.deliverEventRoute(event.relocated(to: local))
@@ -414,6 +461,15 @@ public final class WindowScene: ~Sendable {
         }
         let localEvent = event.relocated(to: convert(event.location, toViewIn: hit))
 
+        if event.type == .pointerDragged
+            || event.type == .touchMoved,
+            beginConfiguredDrag(
+                startingAt: hit.view,
+                sceneLocation: event.location)
+        {
+            return .handled
+        }
+
         if event.type == .pointerDown, event.button == .right,
            let menu = contextMenu(startingAt: hit.view)
         {
@@ -422,12 +478,10 @@ public final class WindowScene: ~Sendable {
                 y: event.location.y,
                 width: 1,
                 height: 1)
-            let popover = menu.makePopover(anchor: anchor)
-            menu.onPerform = { [weak self, weak popover] in
-                guard let popover else { return }
-                self?.dismiss(popover)
-            }
-            present(popover)
+            present(
+                menu,
+                anchor: anchor,
+                stickyOpeningGesture: true)
             return .handled
         }
 
@@ -610,6 +664,44 @@ public final class WindowScene: ~Sendable {
         didSet {
             guard displayBounds != oldValue else { return }
             for popover in popovers { popover.place(in: displayBounds) }
+            menuPresentation?.displayBoundsDidChange()
+        }
+    }
+
+    /// Present one retained desktop menu. A scene owns at most one menu
+    /// presentation; opening another terminally cancels the prior cascade.
+    @discardableResult
+    public func present(
+        _ menu: Menu,
+        anchor: Rect,
+        preferring edge: PopupEdge = .below,
+        level: WindowLevel = .overlay,
+        stickyOpeningGesture: Bool = false,
+        onFinish:
+            (@MainActor (MenuPresentationResult) -> Void)? = nil
+    ) -> MenuPresentationController {
+        precondition(
+            activationState != .disconnected,
+            "a disconnected WindowScene cannot present a menu")
+        menuPresentation?.dismiss()
+        let controller = MenuPresentationController(
+            menu: menu,
+            scene: self,
+            anchor: anchor,
+            preferredEdge: edge,
+            level: level,
+            stickyOpeningGesture: stickyOpeningGesture,
+            onFinish: onFinish)
+        menuPresentation = controller
+        controller.begin()
+        return controller
+    }
+
+    package func menuPresentationDidFinish(
+        _ presentation: MenuPresentationController
+    ) {
+        if menuPresentation === presentation {
+            menuPresentation = nil
         }
     }
 
@@ -636,13 +728,14 @@ public final class WindowScene: ~Sendable {
     /// chrome that nothing can dismiss.
     public func dismiss(_ popover: Popover) {
         guard let index = popovers.firstIndex(where: { $0 === popover }) else { return }
-        for victim in popovers[index...].reversed() {
+        let victims = Array(popovers[index...])
+        popovers.removeSubrange(index...)
+        for victim in victims.reversed() {
             victim.window.orderOut()
             _ = removeWindow(victim.window)
             restoreFocus(after: victim)
             victim.onDismiss?()
         }
-        popovers.removeSubrange(index...)
     }
 
     private func restoreFocus(after popover: Popover) {
@@ -663,6 +756,9 @@ public final class WindowScene: ~Sendable {
     }
 
     public func dismissAllPopovers() {
+        if let menuPresentation {
+            menuPresentation.dismiss()
+        }
         guard let first = popovers.first else { return }
         dismiss(first)
     }
@@ -786,6 +882,24 @@ public final class WindowScene: ~Sendable {
         let anchor = toolTipAnchor(for: area)
         showToolTip(text, at: anchor)
         onToolTipChange?(text, anchor)
+    }
+
+    /// Nanoseconds until the current hover's tooltip becomes eligible.
+    ///
+    /// Hosts fold this into their event-loop deadline so a stationary pointer
+    /// can reveal a tooltip without requiring a free-running frame clock.
+    public func nanosecondsUntilToolTip(atNanoseconds now: UInt64) -> UInt64? {
+        guard !toolTipShown,
+              let area = activeTrackingArea,
+              let text = area.resolvedToolTip(),
+              !text.isEmpty
+        else { return nil }
+        let elapsed = now >= hoverBeganAtNanoseconds
+            ? now - hoverBeganAtNanoseconds
+            : 0
+        return elapsed >= toolTipDelayNanoseconds
+            ? 0
+            : toolTipDelayNanoseconds - elapsed
     }
 
     /// Whether the scene draws tooltips itself. A host that renders its own

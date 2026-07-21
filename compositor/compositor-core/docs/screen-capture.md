@@ -21,11 +21,13 @@ and concrete next steps.
 - `RouterRenderDriver.captureImpl` (`NucleusCompositorWaylandRuntime/RouterRenderDriver.swift`)
   — the `zwlr_screencopy` capture: **SHM** (readback + region crop) and **dmabuf** (GPU blit
   with full-output or region source rectangles), including optional cursor overlay.
-- `RenderCore.captureOutputBGRA` (readback to host BGRA) and `RenderCore.captureOutputToDmabuf`
-  (GPU blit into a client dmabuf), via `Screenshot.readback` / `ScanoutSurface.wrap` /
+- `RenderCore.beginCaptureOutputBGRA` (asynchronous readback to host BGRA) and
+  `RenderCore.beginCaptureOutputToDmabuf` (asynchronous GPU blit into a client dmabuf),
+  via Graphite async readback / `ScanoutSurface.wrap` /
   `OutputAccumulator.present` (`nucleus/swift/Sources/NucleusRenderer/render/`).
-- `RenderBridge.screencopyCapture` / `screencopyCaptureDmabuf`
-  (`NucleusCompositorWaylandRuntime/RenderBridge.swift`) → the `RenderUploadSink` seam.
+- `RouterRenderDriver.captureImpl`
+  (`NucleusCompositorWaylandRuntime/RouterRenderDriver.swift`) calls the typed
+  `CompositorRenderService` capture methods.
 - **Region crop works** in both SHM and dma-buf paths.
 
 ### Screenshot request model (shell)

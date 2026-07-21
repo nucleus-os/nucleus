@@ -129,11 +129,18 @@ guard usernameBuffer.withUnsafeMutableBufferPointer({
     state.scrub()
     respond(.unavailable, "Could not determine the current user")
 }
-let username = String(cString: usernameBuffer)
+let username = usernameBuffer.withUnsafeBufferPointer { buffer in
+    String(
+        decodingCString: UnsafeRawPointer(buffer.baseAddress!)
+            .assumingMemoryBound(to: UInt8.self),
+        as: UTF8.self)
+}
 
 // MARK: - Conversation
 
 var handle: OpaquePointer?
+// PAM borrows `state` through appdata only until pam_end below. The local
+// strong reference remains live for that entire synchronous conversation.
 var conv = pam_conv(
     conv: conversation,
     appdata_ptr: Unmanaged.passUnretained(state).toOpaque())
@@ -158,7 +165,12 @@ if result == PAM_SUCCESS {
     }
 }
 
-let description = pam_strerror(handle, result).map { String(cString: $0) }
+let description = pam_strerror(handle, result).map {
+    String(
+        decodingCString: UnsafeRawPointer($0)
+            .assumingMemoryBound(to: UInt8.self),
+        as: UTF8.self)
+}
     ?? "Authentication failed"
 pam_end(handle, result)
 state.scrub()

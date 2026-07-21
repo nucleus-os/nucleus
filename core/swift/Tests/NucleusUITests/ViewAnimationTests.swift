@@ -31,9 +31,8 @@ import Testing
     ) rethrows {
         let oldEnvironment = uiContext.environment
         let oldSpeed = uiContext.animationSpeed
-        var environment = oldEnvironment
-        environment.reducesMotion = reduced
-        uiContext.updateEnvironment(environment)
+        uiContext.updateEnvironment(
+            oldEnvironment.replacing(reducesMotion: reduced))
         uiContext.animationSpeed = speed
         defer {
             uiContext.updateEnvironment(oldEnvironment)
@@ -124,7 +123,7 @@ import Testing
     }
 
     @Test func invalidSceneSpeedCanonicalizesToOne() {
-        let context = UIContext()
+        let context = UIContext(services: .inMemory())
         context.animationSpeed = 0
         #expect(context.animationSpeed == 1)
         context.animationSpeed = -3

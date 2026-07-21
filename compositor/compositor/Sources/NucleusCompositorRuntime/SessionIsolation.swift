@@ -5,8 +5,8 @@ import Foundation
 // construction lives in the launcher/user unit; this only validates a
 // launcher-provided runtime dir or
 // creates a direct-run fallback for the Wayland socket, and exports
-// XDG_RUNTIME_DIR. `nucleus_runtime_main` runs it before bring-up and tears it
-// down after the loop returns.
+// XDG_RUNTIME_DIR. The async runtime entry runs it before bring-up and tears it
+// down after the reactor loop returns.
 
 struct SessionIsolationConfig {
     var xdgRuntimeDir: String?

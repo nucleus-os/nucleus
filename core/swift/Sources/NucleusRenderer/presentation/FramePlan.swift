@@ -1,18 +1,14 @@
 // Phase 9.8 — The reusable per-output Swift FramePlan.
 //
-// One native execution plan per output: ordered draw/clip/backdrop/transition/
-// external commands, immutable resource handles + sampling descriptors, damage
-// rectangles, the direct-scanout candidate, requested frame callbacks +
-// presentation operations, diagnostic counters, and plan identity. Built by the
-// presentation walk today; this is the Swift target it lowers into.
-//
-// The scanout/callback/operation/identity fields are the FramePlan
-// superset the plan calls for. Variable collections reuse capacity across frames
-// (`reset` keeps storage), mirroring the `UniqueArray` reuse contract.
+// One native execution plan per output: ordered draw/clip/backdrop/external
+// commands, immutable resource handles + sampling descriptors, damage
+// rectangles, the direct-scanout candidate, requested frame callbacks,
+// diagnostic counters, and plan identity. Variable collections reuse capacity
+// across frames (`reset` keeps storage).
 
 // MARK: - Resource handles + descriptors
 
-/// Opaque render-server texture handle. Mirrors `composition_plan.TextureHandle`
+/// Opaque renderer texture handle. Mirrors `composition_plan.TextureHandle`
 /// (`enum(u64)`, `invalid = 0`).
 import NucleusRenderModel
 
@@ -129,39 +125,12 @@ struct ShadowQuad {
     var alpha: Float
 }
 
-/// The cross-content transition material. Mirrors `TransitionMaterial`.
-enum TransitionMaterial {
-    case crossfade
-}
-
-/// A presentation-transition draw. Mirrors `TransitionQuad`.
-struct TransitionQuad {
-    var layerId: UInt64 = 0
-    var zBand: Int32 = 0
-    var material: TransitionMaterial = .crossfade
-    var texturePrev: TextureHandle?
-    var textureNext: TextureHandle?
-    var anchorPrev: (Float, Float) = (0, 0)
-    var sideSizePrev: (Float, Float)
-    var srcOriginPrev: (Float, Float) = (0, 0)
-    var sampleSizePrev: (Float, Float)
-    var anchorNext: (Float, Float) = (0, 0)
-    var sideSizeNext: (Float, Float)
-    var srcOriginNext: (Float, Float) = (0, 0)
-    var sampleSizeNext: (Float, Float)
-    var dst: PlanRect
-    var progress: Float = 0
-    var alpha: Float = 1.0
-    var cornerRadii: Float4 = (0, 0, 0, 0)
-}
-
 /// One ordered visual operation. Mirrors `Op`.
 enum PlanOp {
     case textureQuad(TextureQuad)
     case fillQuad(FillQuad)
     case visualStyle(VisualStyleQuad)
     case shadowQuad(ShadowQuad)
-    case transitionQuad(TransitionQuad)
     case backdrop(ExecSpec)
 }
 
@@ -221,7 +190,6 @@ struct PlanCounters: Equatable {
     var textureQuads: UInt64 = 0
     var fillQuads: UInt64 = 0
     var shadowQuads: UInt64 = 0
-    var transitionQuads: UInt64 = 0
     var backdropDraws: UInt64 = 0
     var damageRects: UInt64 = 0
 }
@@ -249,9 +217,8 @@ struct LayerFrameSnapshot: Equatable {
 // MARK: - The plan
 
 /// One reusable per-output frame plan. Mirrors `CompositionPlan` and extends it
-/// with the FramePlan superset (scanout candidate, frame callbacks, presentation
-/// operations, counters, identity). Variable collections retain capacity across
-/// `reset` for steady-state reuse.
+/// with scanout candidate, frame callbacks, counters, and identity. Variable
+/// collections retain capacity across `reset` for steady-state reuse.
 final class FramePlan {
     var frame = FrameInfo()
     private(set) var ops: [PlanOp] = []
@@ -262,8 +229,6 @@ final class FramePlan {
     // FramePlan superset.
     var directScanout: DirectScanoutPlan?
     private(set) var frameCallbacks: [UInt64] = []
-    private(set) var presentationOperations: [OperationID] = []
-    var operationDeadlineNs: UInt64?
     var counters = PlanCounters()
 
     /// Reset for a new frame, retaining all storage capacity. Mirrors `reset`.
@@ -273,9 +238,7 @@ final class FramePlan {
         sourceDamageRects.removeAll(keepingCapacity: true)
         layerSnapshots.removeAll(keepingCapacity: true)
         frameCallbacks.removeAll(keepingCapacity: true)
-        presentationOperations.removeAll(keepingCapacity: true)
         directScanout = nil
-        operationDeadlineNs = nil
         counters = PlanCounters()
         self.frame = frame
     }
@@ -314,7 +277,6 @@ final class FramePlan {
         counters.textureQuads = 0
         counters.fillQuads = 0
         counters.shadowQuads = 0
-        counters.transitionQuads = 0
         counters.backdropDraws = 0
         for op in ops {
             switch op {
@@ -322,7 +284,6 @@ final class FramePlan {
             case .fillQuad: counters.fillQuads += 1
             case .visualStyle: counters.fillQuads += 1
             case .shadowQuad: counters.shadowQuads += 1
-            case .transitionQuad: counters.transitionQuads += 1
             case .backdrop: counters.backdropDraws += 1
             }
         }
@@ -334,7 +295,6 @@ final class FramePlan {
         case .fillQuad(let quad): return quad.dst
         case .visualStyle(let quad): return quad.dst
         case .shadowQuad(let quad): return quad.dst
-        case .transitionQuad(let quad): return quad.dst
         case .backdrop(let spec): return spec.region
         }
     }
@@ -350,7 +310,7 @@ final class FramePlan {
                 && quad.cornerRadii.2 == 0 && quad.cornerRadii.3 == 0
             return quad.alpha >= 0.999 && quad.backgroundColor.3 >= 0.999 && square
                 ? quad.dst : nil
-        case .shadowQuad, .transitionQuad, .backdrop: return nil
+        case .shadowQuad, .backdrop: return nil
         }
     }
 
@@ -400,11 +360,6 @@ final class FramePlan {
         counters.shadowQuads += 1
     }
 
-    func appendTransitionQuad(_ quad: TransitionQuad) {
-        ops.append(.transitionQuad(quad))
-        counters.transitionQuads += 1
-    }
-
     /// Append a backdrop at its exact scene position. Backdrops are ordered
     /// commands, never a side list executed after unrelated foreground content.
     func appendBackdropExecSpec(_ draw: ExecSpec) {
@@ -420,10 +375,6 @@ final class FramePlan {
 
     func appendFrameCallback(_ surfaceId: UInt64) {
         frameCallbacks.append(surfaceId)
-    }
-
-    func appendPresentationOperation(_ op: OperationID) {
-        presentationOperations.append(op)
     }
 
 }

@@ -10,6 +10,8 @@ import Testing
 import Glibc
 import WaylandServerC
 import NucleusCompositorServer
+import NucleusCompositorWindowScene
+import NucleusLayers
 @testable import NucleusCompositorWaylandRuntime
 
 private let testDrmFormatXrgb8888: UInt32 = 0x3432_5258
@@ -54,7 +56,9 @@ private func bind(
 /// observable behavior Nucleus implements. This wire-visible contract prevents
 /// an inert protocol object from becoming discoverable accidentally.
 @Test func productionRegistryMatchesSupportedProtocolContract() throws {
-    let runtime = try #require(WaylandRouterRuntime())
+    let sink = InMemoryCommitSink()
+    let author = WindowSceneAuthor(commitSinkFactory: { sink })
+    let runtime = try #require(WaylandRouterRuntime(author: author))
     let client = try #require(WaylandTestClient(display: runtime.router.display))
 
     let actual = Dictionary(
@@ -92,6 +96,7 @@ private func bind(
         "zwp_linux_dmabuf_v1": 5,
         "zwp_pointer_constraints_v1": 1,
         "zwp_relative_pointer_manager_v1": 1,
+        "zwp_text_input_manager_v3": 2,
     ]
 
     #expect(actual == expected)
@@ -660,34 +665,48 @@ private func stateSet(_ m: WireMessage) -> [UInt32] {
 // MARK: - screencopy
 
 private final class ScreencopyStub: ScreencopyDelegate {
-    func screencopyParams(output: WlOutput?, region: WlRect?) -> ScreencopyParams? {
+    func screencopyConfiguration(
+        output: WlOutput?, region: WlRect?
+    ) -> ScreencopyConfiguration? {
         // Advertise a 64×48 XRGB8888 frame at stride 256.
-        ScreencopyParams(shmFormat: 1, width: 64, height: 48, stride: 256, drmFourcc: 0x3432_5258)
+        ScreencopyConfiguration(
+            params: ScreencopyParams(
+                shmFormat: 1, width: 64, height: 48,
+                stride: 256, drmFourcc: 0x3432_5258),
+            sourceRegion: nil)
     }
     func screencopyRequestFrame(output: WlOutput?) {}
     func screencopyCapture(
         output: WlOutput?,
-        region: WlRect?,
+        configuration: ScreencopyConfiguration,
         overlayCursor: Bool,
         buffer: UnsafeMutablePointer<wl_resource>,
-        withDamage: Bool
-    ) -> ScreencopyResult {
-        ScreencopyResult(
+        withDamage: Bool,
+        preferRegionReadback: Bool,
+        completion: @escaping @MainActor (ScreencopyResult) -> Void
+    ) -> UInt64? {
+        completion(ScreencopyResult(
             ok: false, tvSecHi: 0, tvSecLo: 0,
-            tvNsec: 0, flags: 0)
+            tvNsec: 0, flags: 0))
+        return 1
     }
+    func screencopyCancelCapture(_: UInt64) {}
 }
 
 private final class SuccessfulScreencopyStub: ScreencopyDelegate {
     var requestedOutputIDs: [UInt64] = []
     var captureCount = 0
+    var cancelledRequestIDs: [UInt64] = []
+    var pendingCompletion: (@MainActor (ScreencopyResult) -> Void)?
 
-    func screencopyParams(
+    func screencopyConfiguration(
         output: WlOutput?, region: WlRect?
-    ) -> ScreencopyParams? {
-        ScreencopyParams(
-            shmFormat: 1, width: 4, height: 4,
-            stride: 16, drmFourcc: testDrmFormatXrgb8888)
+    ) -> ScreencopyConfiguration? {
+        ScreencopyConfiguration(
+            params: ScreencopyParams(
+                shmFormat: 1, width: 4, height: 4,
+                stride: 16, drmFourcc: testDrmFormatXrgb8888),
+            sourceRegion: nil)
     }
 
     func screencopyRequestFrame(output: WlOutput?) {
@@ -696,16 +715,53 @@ private final class SuccessfulScreencopyStub: ScreencopyDelegate {
 
     func screencopyCapture(
         output: WlOutput?,
-        region: WlRect?,
+        configuration: ScreencopyConfiguration,
         overlayCursor: Bool,
         buffer: UnsafeMutablePointer<wl_resource>,
-        withDamage: Bool
-    ) -> ScreencopyResult {
+        withDamage: Bool,
+        preferRegionReadback: Bool,
+        completion: @escaping @MainActor (ScreencopyResult) -> Void
+    ) -> UInt64? {
         captureCount += 1
-        return ScreencopyResult(
-            ok: true, tvSecHi: 0, tvSecLo: 73,
-            tvNsec: 19, flags: 0)
+        pendingCompletion = completion
+        return 88
     }
+    func screencopyCancelCapture(_ requestID: UInt64) {
+        cancelledRequestIDs.append(requestID)
+        pendingCompletion = nil
+    }
+
+    func complete() {
+        let completion = pendingCompletion
+        pendingCompletion = nil
+        completion?(ScreencopyResult(
+            ok: true, tvSecHi: 0, tvSecLo: 73,
+            tvNsec: 19, flags: 0))
+    }
+}
+
+@Test func screencopyLogicalRegionsClipBeforePixelProjection() throws {
+    let clipped = try #require(RouterRenderDriver.projectCaptureAxis(
+        origin: -10,
+        length: 30,
+        logicalExtent: 100,
+        pixelExtent: 200))
+    #expect(clipped.origin == 0)
+    #expect(clipped.length == 40)
+
+    let fractional = try #require(RouterRenderDriver.projectCaptureAxis(
+        origin: 1,
+        length: 1,
+        logicalExtent: 3,
+        pixelExtent: 5))
+    #expect(fractional.origin == 1)
+    #expect(fractional.length == 3)
+
+    #expect(RouterRenderDriver.projectCaptureAxis(
+        origin: 100,
+        length: 1,
+        logicalExtent: 100,
+        pixelExtent: 200) == nil)
 }
 
 /// A copy request must wait for a newly accepted submission on its exact output.
@@ -777,6 +833,11 @@ private final class SuccessfulScreencopyStub: ScreencopyDelegate {
 
     manager.outputSubmitted(outputID)
     client.pump()
+    #expect(client.drainEvents().isEmpty)
+    #expect(stub.captureCount == 1)
+
+    stub.complete()
+    client.pump()
     let afterSubmission = client.drainEvents()
     let ready = try #require(
         WireMessage.first(
@@ -784,7 +845,33 @@ private final class SuccessfulScreencopyStub: ScreencopyDelegate {
     #expect(ready.u32(0) == 0)
     #expect(ready.u32(4) == 73)
     #expect(ready.u32(8) == 19)
-    #expect(stub.captureCount == 1)
+    #expect(stub.pendingCompletion == nil)
+
+    // Destroying a frame after its GPU capture begins must cancel that exact
+    // request and discard its completion before the retained wl_buffer dies.
+    let cancelledFrameID: UInt32 = 9
+    var cancelledCapture = WireBuilder()
+    cancelledCapture.message(object: managerID, opcode: 0) {
+        $0.newId(cancelledFrameID)
+        $0.int(0)
+        $0.object(outputObjectID)
+    }
+    cancelledCapture.message(object: cancelledFrameID, opcode: 0) {
+        $0.object(bufferID)
+    }
+    #expect(client.send(cancelledCapture))
+    client.pump()
+    _ = client.drainEvents()
+    manager.outputSubmitted(outputID)
+    #expect(stub.captureCount == 2)
+    #expect(stub.pendingCompletion != nil)
+
+    var destroyFrame = WireBuilder()
+    destroyFrame.message(object: cancelledFrameID, opcode: 1) { _ in }
+    #expect(client.send(destroyFrame))
+    client.pump()
+    #expect(stub.cancelledRequestIDs == [88])
+    #expect(stub.pendingCompletion == nil)
 }
 
 /// `copy` with a buffer whose format/size/stride doesn't match the advertised params

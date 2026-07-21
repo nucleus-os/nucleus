@@ -13,11 +13,11 @@ public final class SkiaTextLayoutBackend: TextLayoutBackend {
 
     public init() {}
 
-    public static func install(in system: TextSystem = .shared) {
+    public static func install(in system: TextSystem) {
         system.installBackend(SkiaTextLayoutBackend())
     }
 
-    public static func installIfNeeded(in system: TextSystem = .shared) {
+    public static func installIfNeeded(in system: TextSystem) {
         guard !system.hasInstalledBackend else { return }
         install(in: system)
     }

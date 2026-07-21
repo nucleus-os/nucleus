@@ -58,11 +58,16 @@ public func registerPaint(
     _ recording: PaintRecording,
     width: Float,
     height: Float,
-    in context: Context
+    in context: Context,
+    uiContext: UIContext
 ) throws(LayerError) -> RegisteredPaintContent {
     RegisteredPaintContent(
         inner: try PaintRegistration.register(
-            recording, width: width, height: height, in: context))
+            recording,
+            width: width,
+            height: height,
+            in: context,
+            textSystem: uiContext.services.textSystem))
 }
 
 extension Layer {
@@ -152,8 +157,10 @@ extension View {
 extension GraphicsContext {
     /// Record a drawing outside the normal display pass. Product code receives
     /// a context in `View.draw(in:)` and never constructs one.
-    public static func makeEmbedderContext() -> GraphicsContext {
-        GraphicsContext()
+    public static func makeEmbedderContext(
+        in uiContext: UIContext
+    ) -> GraphicsContext {
+        GraphicsContext(textSystem: uiContext.services.textSystem)
     }
 
     /// The recorded drawing, with any unbalanced `saveGState` closed off.

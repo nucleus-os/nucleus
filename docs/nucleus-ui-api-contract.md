@@ -37,6 +37,13 @@ resulting scene, assigns protocol surfaces and outputs, drives activation
 transitions, and disconnects the scene during teardown. NucleusApp does not
 re-evaluate `body` to reconcile state and does not own a frame loop.
 
+Each `UIContext` is constructed with one immutable `UIHostServices` bundle:
+one `TextSystem`, one `Pasteboard`, one image source resolver, and one
+diagnostic sink. The context owns the resulting image-request pipeline and
+environment generation. Services are complete before retained materialization;
+there is no mutable process-global installation path and two live contexts may
+use different backends.
+
 ## Apple-to-Nucleus mapping
 
 | Familiar concept | Nucleus API | Contract and deliberate difference |
@@ -164,9 +171,20 @@ and candidate-rectangle protocol traffic. Secure entry masks by grapheme,
 exports no surrounding or selected text, clears recoverable history when
 security changes, and redacts accessibility.
 
-`Pasteboard.general` is a portable in-process service surface. A host installs
-the native clipboard adapter where system clipboard integration is required;
-secure controls never write their contents through either path.
+Every context owns its `Pasteboard`. Reads, writes, and clears are asynchronous
+because native selections may transfer through another process. Replacing an
+adapter first shuts down the old adapter and advances its generation; context
+teardown invokes one idempotent shutdown. Editing commands capture the owning
+view and generation and reject late results after detachment, replacement, or
+cancellation. The in-memory adapter is an explicit host choice, not a global
+fallback. Secure controls never write their contents.
+
+The out-of-process shell projects the context pasteboard through the Wayland
+data-control protocol. Offers and transfers have one owner, bounded buffers,
+nonblocking file descriptors, generation checks, and idempotent cancellation.
+Portable drag-and-drop uses the same async transfer principles; the compositor
+adapter performs Wayland serial validation and action negotiation at the wire
+boundary.
 
 ## Accessibility publication
 
@@ -177,10 +195,59 @@ explicit notifications. Frames are exported in scene coordinates. Virtualized
 collections can expose offscreen virtual elements without materializing their
 views.
 
-Platform bridges translate the neutral snapshot and action vocabulary. The
-Linux shell installs the AT-SPI bridge out of process; NucleusUI contains no
-DBus or toolkit dependency. Secure text is redacted from value, description,
-selection, and action-related exports.
+Platform bridges translate the neutral snapshot and action vocabulary. Both
+Linux UI hosts install the shared AT-SPI bridge at their composition roots;
+NucleusUI contains no DBus or toolkit dependency. Secure text is redacted from
+value, description, selection, and action-related exports.
+
+Each host's AT-SPI service owns one bus connection and fallback slot. It
+validates each interface/member signature before decoding, emits typed DBus
+errors once at the request boundary, bounds disconnected event backlog, and
+re-registers the same export model after reconnect. Its live bus tests are the
+transport contract; export-model tests alone are not.
+
+## Images, menus, collections, and retained observation
+
+`ImageView` retains an `ImageRequestSource`, not a filesystem-path callback.
+Each context pipeline coalesces identical work, bounds positive and negative
+caches, limits in-flight requests, and keys pixel resources by target size,
+backing scale, and resource generation. Appearance and icon-theme generations
+participate only for icon resolution. Detachment, source replacement, memory
+pressure, and context shutdown cancel work; late generations cannot replace a
+newer image. Decoding remains renderer-owned.
+
+Menus use one retained `Menu` model and one presentation controller per open
+menu hierarchy. Lists and grids use stable item identity, revision-based
+configuration, bounded measurement caches and reuse pools, virtual
+accessibility children, and generation-safe reorder payloads. Stale reorders
+are rejected. Copy reorder requires a closure that creates a distinct item
+identity.
+
+Retained observation consists of one lifecycle-bound token owned by a view,
+controller, or scene. Updates coalesce on the owning context and invalidate
+the existing retained model. Removing a retained owner or disconnecting its
+scene cancels the token and releases captured state; observation does not
+introduce a second tree or publication path.
+
+## Structural performance contract
+
+Correctness and performance gates use production counters, not elapsed time.
+They bound semantic nodes visited, snapshots authored, topology mutations,
+paint registrations and bytes, materialized collection cells, paragraph
+layouts, image requests, accessibility events, transition snapshots, native
+transport resources, and teardown baselines. Idle retained scenes author no
+transaction, and an unchanged output is not acquired or presented. Local
+changes remain proportional to dirty paths, viewport plus overscan, or the
+specific resource generation.
+
+`View` remains the sole stored-state and virtual-dispatch owner; focused
+extensions hold environment inheritance, layout/display traversal, and
+coordinate/input mechanisms. `ViewLayerPublisher` remains the sole accepted
+publication-cache authority; traversal, diffing, paint caching, root
+attachment, and completion binding are focused mechanisms around that commit
+boundary. Render, Wayland, and AT-SPI support files similarly separate pure
+ledgers, wire contracts, resource owners, and codecs without adding another
+queue, state tree, or connection owner.
 
 ## Teardown and host obligations
 
@@ -199,3 +266,18 @@ publication or visual attachment and ignores later input. RN mount failures
 during the synchronous attach are thrown to the caller; failures from later
 asynchronous mount batches remain queryable on the RN host and are delivered
 to its optional publication-failure callback.
+
+The Linux compositor-embedded overlay and out-of-process shell each apply
+portal/host environment values only to their own `UIContext`. The text-input
+host owns protocol focus and candidate-geometry projection; AT-SPI owns DBus
+registration; the renderer owns GPU snapshots and presentation-correlated
+retirement. No one adapter extends another subsystem's native-handle lifetime.
+
+## Deliberate omissions
+
+Nucleus does not claim complete AppKit, UIKit, SwiftUI, Core Animation, Core
+Graphics, ATK, or toolkit compatibility. Unsupported APIs do not receive
+behaviorally misleading Apple-shaped wrappers. Hardware output hotplug,
+VT/suspend-resume, mixed-refresh, direct-scanout, and external-toolkit
+interoperability remain physical product-validation responsibilities after the
+automated semantic, wire, pixel, resource, and optimized structural gates pass.

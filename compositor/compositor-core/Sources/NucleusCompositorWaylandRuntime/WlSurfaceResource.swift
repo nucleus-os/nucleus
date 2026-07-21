@@ -129,7 +129,11 @@ extension WlCompositor {
         id: UInt32,
         version: Int32
     ) -> UnsafeMutablePointer<wl_resource>? {
-        let surface = WlSurface(compositor: self, version: version)
+        let surface = WlSurface(
+            compositor: self,
+            version: version,
+            stableObjectId: allocateSurfaceIdentity(
+                preferred: id))
         guard let resource = WaylandResource.create(
             client: client,
             interface: swift_wayland_iface_wl_surface(),

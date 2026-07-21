@@ -3,15 +3,15 @@ import Glibc
 import NucleusUI
 import NucleusUIEmbedder
 import NucleusRenderHost
+import NucleusLayers
 import NucleusCompositorOverlay
 import NucleusCompositorServer
 import NucleusCompositorWindowManager
 import Tracy
 
 /// Active per-WindowServer shell overlay controller. Production installs
-/// it during WindowServer bootstrap; package-level Swift entry points
-/// lazily install the same controller on first use for in-process callers.
-/// `nucleus_compositor_overlay_runtime_clear_host` still clears the single active
+/// it during WindowServer bootstrap with its complete initial environment.
+/// `nucleus_compositor_overlay_runtime_clear_host` clears the single active
 /// controller during teardown.
 @MainActor
 private var activeShellOverlayController: ShellOverlayController?
@@ -26,6 +26,7 @@ private enum ShellOverlayRuntimeError: Error {
 @MainActor
 public protocol OverlayPublicationHost: AnyObject {
     func notificationClosed(id: UInt32, reason: UInt32)
+    func accessibilitySceneDidPublish()
     /// A window-menu row was activated: report the chosen verb tag for the window
     /// the menu was opened on back to the compositor, which runs the matching window
     /// verb. The mirror of `notificationClosed` — the overlay's only other callback
@@ -34,14 +35,21 @@ public protocol OverlayPublicationHost: AnyObject {
 }
 
 @MainActor
-private func makeShellOverlayController() -> ShellOverlayController? {
+private func makeShellOverlayController(
+    commitSink: any CommitSink,
+    services: UIHostServices,
+    environment: UIEnvironment
+) -> ShellOverlayController? {
     do {
         return ShellOverlayController(
             scene: try ShellOverlayScene(
                 frame: nil,
                 notificationClosed: notifyHostNotificationClosed,
-                commitSink: RenderCommitSink()
+                commitSink: commitSink,
+                services: services,
+                environment: environment
             ),
+            semanticPublisher: publishAccessibilityToHost,
             scenePublisher: publishSceneToHost
         )
     } catch {
@@ -51,23 +59,25 @@ private func makeShellOverlayController() -> ShellOverlayController? {
 }
 
 @MainActor public func nucleus_compositor_overlay_runtime_install_host(
-    _ publicationHost: sending any OverlayPublicationHost
+    _ publicationHost: sending any OverlayPublicationHost,
+    commitSink: any CommitSink,
+    services: UIHostServices,
+    environment: UIEnvironment
 ) -> UInt8 {
     activePublicationHost = publicationHost
     if activeShellOverlayController != nil {
         return 1
     }
-    activeShellOverlayController = makeShellOverlayController()
+    activeShellOverlayController = makeShellOverlayController(
+        commitSink: commitSink,
+        services: services,
+        environment: environment)
     return activeShellOverlayController == nil ? 0 : 1
 }
 
 @MainActor
 @discardableResult
 private func ensureShellOverlayController() -> ShellOverlayController? {
-    if let activeShellOverlayController {
-        return activeShellOverlayController
-    }
-    activeShellOverlayController = makeShellOverlayController()
     return activeShellOverlayController
 }
 
@@ -215,10 +225,12 @@ private final class OverlaySceneRuntimeHost: OverlaySceneHost {
             logShellOverlayRuntime("dropping window menu for window=\(windowID); scene unavailable")
             return
         }
-        let menu = Menu.windowMenu(capabilities: capabilities)
-        shellOverlayController.showMenu(menu, at: Point(x: x, y: y)) { actionID in
-            notifyHostWindowMenuSelected(windowID: windowID, verb: Int32(actionID))
+        let menu = makeWindowMenu(capabilities: capabilities) { verb in
+            notifyHostWindowMenuSelected(
+                windowID: windowID,
+                verb: Int32(verb.rawValue))
         }
+        shellOverlayController.showMenu(menu, at: Point(x: x, y: y))
     }
 
     func dismissMenu() {
@@ -265,12 +277,9 @@ public enum OverlaySceneRuntime {
 
 @MainActor
 public func nucleus_compositor_overlay_scene_update_environment(
-    colorScheme: UInt32,
-    contrast: UInt32
+    _ environment: UIEnvironment
 ) {
-    ensureShellOverlayController()?.scene.updateEnvironment(
-        colorScheme: colorScheme,
-        contrast: contrast)
+    ensureShellOverlayController()?.scene.updateEnvironment(environment)
 }
 
 @MainActor public func nucleus_compositor_overlay_scene_show_window_menu(
@@ -288,6 +297,11 @@ private func publishSceneToHost(_ publication: ShellOverlayPublication) {
     Trace.zone("overlay.runtime.publish_to_host", color: Trace.Color.blue) {
         Trace.plot("swift.overlay.runtime.publish_items", UInt64(publication.scene.visualContent.count))
     }
+}
+
+@MainActor
+private func publishAccessibilityToHost() {
+    activePublicationHost?.accessibilitySceneDidPublish()
 }
 
 @MainActor

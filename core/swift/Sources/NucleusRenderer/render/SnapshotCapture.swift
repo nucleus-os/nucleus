@@ -1,10 +1,7 @@
-// Phase 10b.4h — snapshot capture: the Skia capture orchestration deferred from
-// Phase 8.10 (which ported only the SnapshotService registry). Allocate a render
-// texture, draw a device/world rect of the source into it, snapshot the result,
-// and register it in the texture registry (the live path also interns the raw
-// handle as a SnapshotHandle in the 8.10 SnapshotService — a one-liner wired with
-// the full model in 10b.4k). Mirrors `RenderTextureCapture` + `captureDeviceRect`
-// / `captureWorldRect`.
+// Renderer-owned snapshot capture: allocate a render texture, draw a
+// device/world rect of the source into it, snapshot the result, and register it
+// in the texture registry. RenderCore then interns the texture in SnapshotService
+// and owns submission/retirement ordering.
 
 import NucleusSkiaGraphiteBridge
 

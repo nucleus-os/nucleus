@@ -10,12 +10,14 @@ import NucleusUI
 /// Wayland, and this type is the only place the two vocabularies meet.
 @MainActor
 public final class ShellInputRouter: ShellSeatDelegate {
+    public var onSurfaceWillUnregister:
+        (@MainActor (_ surfaceID: UInt) -> Void)?
     private let scene: WindowScene
     /// Optional so the router can exist before — or without — a live seat. A
     /// seat comes from a real Wayland connection; the translation and routing do
     /// not depend on having one.
-    private let seat: ShellSeat?
-    private let textInput: ShellTextInput?
+    private var seat: ShellSeat?
+    private var textInput: ShellTextInput?
     /// Surfaces the router owns, mapped to the window each one presents. Events
     /// for anything else are ignored rather than misrouted.
     private var windowsBySurface: [UInt: Window] = [:]
@@ -42,6 +44,24 @@ public final class ShellInputRouter: ShellSeatDelegate {
         seat?.delegate = self
     }
 
+    /// Rebind seat-scoped input protocols after registry replacement while
+    /// preserving the scene and every surface-to-window association.
+    public func replaceSeat(
+        _ replacement: ShellSeat?,
+        client: ShellWaylandClient
+    ) {
+        seat?.delegate = nil
+        textInput?.close()
+        seat = replacement
+        textInput = replacement.flatMap {
+            ShellTextInput(client: client, seat: $0.protocolSeat)
+        }
+        replacement?.delegate = self
+        for window in windowsBySurface.values {
+            window.installTextInputAdapter(textInput)
+        }
+    }
+
     /// Associate a `wl_surface` with the window that draws it.
     public func register(window: Window, forSurface surfaceID: UInt) {
         if let replaced = windowsBySurface[surfaceID], replaced !== window {
@@ -58,11 +78,26 @@ public final class ShellInputRouter: ShellSeatDelegate {
     }
 
     public func unregister(surfaceID: UInt) {
+        onSurfaceWillUnregister?(surfaceID)
         let window = windowsBySurface.removeValue(forKey: surfaceID)
         window?.installTextInputAdapter(nil)
         if window?.surfaceAssociation?.surfaceID.rawValue == UInt64(surfaceID) {
             window?.setSurfaceAssociation(nil)
         }
+    }
+
+    /// Resolve one Wayland surface-local drag coordinate into the retained
+    /// scene. Unknown or detached surfaces are rejected at this boundary.
+    public func dragDestination(
+        forSurface surfaceID: UInt,
+        location: Point
+    ) -> (scene: WindowScene, sceneLocation: Point)? {
+        guard windowsBySurface[surfaceID]?.windowScene === scene else {
+            return nil
+        }
+        return (
+            scene,
+            rebased(location, forSurface: surfaceID))
     }
 
     /// Emit any key repeats now due. Driven from the host's event loop, which

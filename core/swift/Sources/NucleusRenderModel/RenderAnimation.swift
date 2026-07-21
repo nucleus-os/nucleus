@@ -49,9 +49,6 @@ public enum AnimationKeyPath: UInt8, Sendable {
     /// Compound rect of (left, top, right, bottom). Drives `position` and
     /// `bounds` overrides together as one retargetable record.
     case frame
-    /// Scalar 0..1 progress for an in-flight `PresentationTransition`. The
-    /// renderer feeds this into the contents-crossfade `progress` uniform.
-    case contents
 
     /// True for the nine scalar transform components (handled by transform
     /// matrix rebuild, not a direct override field). Mirrors
@@ -743,25 +740,6 @@ public struct PresentationCompletionEvent: Equatable, Sendable {
     }
 }
 
-// MARK: - Content-reveal sink
-
-/// Sink the `.contents` key path drives during a presentation transition. The
-/// store wires its `PresentationOperationService` here; the null sink drops the
-/// writes. Synchronous and single-threaded (the tick drives it on the compositor
-/// main loop) — deliberately non-isolated so the nonisolated `Layer` mutators can
-/// call it. Mirrors `RenderServer.OperationProgressSink` /
-/// `NullPresentationTransitionSink`.
-public protocol PresentationTransitionSink: AnyObject {
-    func writeContentRevealProgress(layerId: UInt64, value: Float)
-    func finishContentRevealProgress(layerId: UInt64, value: Float)
-}
-
-public final class NullPresentationTransitionSink: PresentationTransitionSink, Sendable {
-    public init() {}
-    public func writeContentRevealProgress(layerId: UInt64, value: Float) {}
-    public func finishContentRevealProgress(layerId: UInt64, value: Float) {}
-}
-
 // MARK: - Per-layer mutation (write / commit / clear / rebuild)
 
 extension Layer {
@@ -819,11 +797,11 @@ extension Layer {
     /// Seed the layer's override to the record's initial value (so a sample
     /// before the first tick already shows the animation's start). Mirrors
     /// `seedAnimationStartValueOnLayer`.
-    mutating func seedAnimationStartValue(_ record: AnimationRecord, sink: PresentationTransitionSink) {
+    mutating func seedAnimationStartValue(_ record: AnimationRecord) {
         if record.keyPath.isTransformComponent {
             rebuildTransformOverride()
         } else {
-            writeAnimatedField(record.keyPath, record.animation.initialValue, sink: sink)
+            writeAnimatedField(record.keyPath, record.animation.initialValue)
         }
     }
 
@@ -832,7 +810,7 @@ extension Layer {
     /// Mirrors `tickLayerToPresentTimeAndApplyWithSink`.
     mutating func tickAnimations(
         previousPresentTimeS: Double, presentTimeS: Double,
-        events: inout [AnimationEvent], sink: PresentationTransitionSink
+        events: inout [AnimationEvent]
     ) -> Bool {
         if animations.isEmpty { return false }
 
@@ -849,7 +827,7 @@ extension Layer {
             let isTransform = keyPath.isTransformComponent
             if result.done {
                 let record = animations[i]
-                commitModelField(keyPath, record.animation.finalValue, sink: sink)
+                commitModelField(keyPath, record.animation.finalValue)
                 if isTransform {
                     transformTouched = true
                 } else {
@@ -865,7 +843,7 @@ extension Layer {
                 if isTransform {
                     transformTouched = true
                 } else {
-                    writeAnimatedField(keyPath, result.value, sink: sink)
+                    writeAnimatedField(keyPath, result.value)
                 }
                 anyActive = true
                 i += 1
@@ -878,7 +856,7 @@ extension Layer {
     /// Write an active animation's value into the presentation override.
     /// Mirrors `writeAnimatedField`.
     private mutating func writeAnimatedField(
-        _ keyPath: AnimationKeyPath, _ value: AnimationValue, sink: PresentationTransitionSink
+        _ keyPath: AnimationKeyPath, _ value: AnimationValue
     ) {
         switch keyPath {
         case .positionX:
@@ -937,10 +915,6 @@ extension Layer {
                 ov.bounds = Bounds(w: f.right - f.left, h: f.bottom - f.top)
                 presentation.override_ = ov
             }
-        case .contents:
-            // Drives the transition progress directly; no override field. If the
-            // transition was torn down the sink silently drops the write.
-            sink.writeContentRevealProgress(layerId: id, value: value.scalarOrZero)
         case .cornerRadius:
             var ov = presentation.override_ ?? PresentationOverride()
             ov.cornerRadiusUniform = value.scalarOrZero
@@ -955,7 +929,7 @@ extension Layer {
     /// Commit an animation's final value to the model on completion. Mirrors
     /// `commitModelField`.
     private mutating func commitModelField(
-        _ keyPath: AnimationKeyPath, _ value: AnimationValue, sink: PresentationTransitionSink
+        _ keyPath: AnimationKeyPath, _ value: AnimationValue
     ) {
         switch keyPath {
         case .positionX: model.properties.position.x = value.scalarOrZero
@@ -982,10 +956,6 @@ extension Layer {
                     model.properties.clip = clip
                 }
             }
-        case .contents:
-            // Mark the transition done so the next tick (or the renderer) tears
-            // it down. There is no model side for `.contents`.
-            sink.finishContentRevealProgress(layerId: id, value: value.scalarOrZero)
         case .cornerRadius:
             // Commit the final radius uniformly to all four corners. Any prior
             // per-corner asymmetry is lost — the animation is scalar-uniform.
@@ -1017,7 +987,6 @@ extension Layer {
             ov.position = nil
             ov.bounds = nil
         case .cornerRadius: ov.cornerRadiusUniform = nil
-        case .contents: break  // transition lives in PresentationState
         case .transformScaleX, .transformScaleY, .transformScaleZ,
              .transformRotationX, .transformRotationY, .transformRotationZ,
              .transformTranslationX, .transformTranslationY, .transformTranslationZ:

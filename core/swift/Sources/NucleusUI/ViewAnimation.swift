@@ -357,7 +357,7 @@ extension View {
         animationRequests.removeAll(keepingCapacity: false)
         for handle in handles where !handle.isFinished {
             if let token = handle.presentationToken {
-                PresentationCompletionCenter.resolve(
+                uiContext.runtimeHost.presentationCompletions.resolve(
                     token,
                     result: .cancelled
                 )
@@ -389,7 +389,7 @@ extension View {
         if let completion {
             handle.onCompletion(completion)
         }
-        let token = PresentationCompletionCenter.register {
+        let token = uiContext.runtimeHost.presentationCompletions.register {
             [weak self, weak handle] result in
             let outcome = AnimationOutcome(result)
             handle?.resolve(outcome)
@@ -446,7 +446,9 @@ extension View {
             handle.resolve(AnimationOutcome(result))
             return
         }
-        PresentationCompletionCenter.resolve(token, result: result)
+        uiContext.runtimeHost.presentationCompletions.resolve(
+            token,
+            result: result)
     }
 
     private func animationHandleDidComplete(

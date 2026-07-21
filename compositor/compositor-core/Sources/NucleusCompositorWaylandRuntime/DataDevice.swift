@@ -88,6 +88,10 @@ final class WlDataDeviceManager {
     /// The current clipboard selection source (held weakly — owned by its resource).
     /// Abstracted so an ext-data-control source can become the wl clipboard too.
     private weak var selection: (any SelectionSource)?
+    /// Weak references are zeroed before their owner's `deinit`. Preserve only
+    /// identity so source teardown can still prove that the dying resource owns
+    /// the current selection without retaining it.
+    private var selectionIdentity: ObjectIdentifier?
     /// Always-on selection observers (the ext-data-control manager); notified on every
     /// selection change so its clients stay current without focus.
     private var selectionObservers: [WeakSelectionObserver] = []
@@ -129,8 +133,12 @@ final class WlDataDeviceManager {
     /// from wl_data_device.set_selection and from ext_data_control_device.set_selection.
     func setSelection(_ source: (any SelectionSource)?) {
         // The replaced source's client is told it lost the selection.
-        if let old = selection, old !== source { old.selectionCancelled() }
+        let replacementIdentity = source.map(ObjectIdentifier.init)
+        if selectionIdentity != replacementIdentity {
+            selection?.selectionCancelled()
+        }
         selection = source
+        selectionIdentity = replacementIdentity
         for box in devices {
             guard let device = box.device else { continue }
             if delegate?.dataDeviceClientFocused(device.clientKey) == true {
@@ -140,6 +148,11 @@ final class WlDataDeviceManager {
         // The always-on observers (ext-data-control) re-project regardless of focus.
         selectionObservers.removeAll { $0.observer == nil }
         for box in selectionObservers { box.observer?.clipboardSelectionChanged(source) }
+    }
+
+    func selectionSourceDestroyed(_ source: any SelectionSource) {
+        guard selectionIdentity == ObjectIdentifier(source) else { return }
+        setSelection(nil)
     }
 
     /// Deliver the current selection to one client's devices on keyboard focus
@@ -279,9 +292,7 @@ final class WlDataDeviceManager {
     }
 
     fileprivate func sourceDestroyed(_ source: WlDataSource) {
-        if selection === source {
-            setSelection(nil)
-        }
+        selectionSourceDestroyed(source)
         if activeDrag?.source === source {
             cancelActiveDrag(notifySource: false)
         }

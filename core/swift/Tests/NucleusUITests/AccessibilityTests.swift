@@ -190,6 +190,22 @@ import Testing
         #expect(!node.actions.contains(.copy))
     }
 
+    @Test func ordinaryTextExportsItsCurrentValue() throws {
+        let field = TextField(string: "initial")
+        field.frame = Rect(x: 0, y: 0, width: 180, height: 24)
+        let (scene, _) = makeScene(root: field)
+        _ = scene.accessibilityTree.publish()
+        #expect(
+            scene.accessibilityTree.snapshot.nodes[
+                field.accessibilityID]?.value == "initial")
+
+        field.stringValue = "edited"
+        _ = scene.accessibilityTree.publish()
+        #expect(
+            scene.accessibilityTree.snapshot.nodes[
+                field.accessibilityID]?.value == "edited")
+    }
+
     @Test func rangeSliderExportsTwoStableIndependentlyOperableThumbs()
         throws
     {

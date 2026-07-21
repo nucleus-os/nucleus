@@ -16,7 +16,12 @@ open class ListView: ScrollView {
         didSet { recordMutation(.accessibility) }
     }
 
+    /// Text used only for keyboard type-ahead. Content configuration remains
+    /// independent from navigation metadata.
+    public var itemSearchText: ((CollectionItem) -> String?)?
+
     public private(set) var snapshot: CollectionSnapshot = .empty
+    public private(set) var snapshotGeneration: UInt64 = 1
     public var rowCount: Int { snapshot.items.count }
 
     public var selectionMode: CollectionSelectionMode = .single {
@@ -27,6 +32,10 @@ open class ListView: ScrollView {
     }
     public private(set) var selectedItemIDs: Set<CollectionItemID> = []
     public private(set) var focusedItemID: CollectionItemID?
+
+    public var reordering: CollectionReorderingConfiguration? {
+        didSet { configureReorderingLifecycle() }
+    }
 
     private var selectionAnchorID: CollectionItemID?
 
@@ -41,8 +50,9 @@ open class ListView: ScrollView {
         }
     }
 
-    /// A per-item height. `nil` selects the allocation-free uniform-height path.
-    public var rowHeightProvider: ((CollectionItem, Int) -> Double)? {
+    /// Measures an item under the row's current width constraint. `nil`
+    /// selects the allocation-free uniform-height path.
+    public var measureRow: ((CollectionItem, Double) -> Double)? {
         didSet { invalidateRowHeights() }
     }
 
@@ -64,6 +74,18 @@ open class ListView: ScrollView {
         var view: View
     }
 
+    private struct ScrollAnchor {
+        var itemID: CollectionItemID
+        var previousIndex: Int
+        var offsetInsideItem: Double
+    }
+
+    private struct MeasurementContext: Equatable {
+        var width: Double
+        var environmentGeneration: UInt64
+        var backingScaleBits: UInt32
+    }
+
     private let document = View()
     private var rowOffsets: [Double]?
     private var activeRows: [Int: RowBinding] = [:]
@@ -73,12 +95,28 @@ open class ListView: ScrollView {
     private var materializedRange: Range<Int> = 0..<0
     private var accessibilityIDs:
         [CollectionItemID: AccessibilityID] = [:]
+    private var measurementCache =
+        CollectionMeasurementCache(capacity: 2_048)
+    private var lastMeasurementContext: MeasurementContext?
+    private var isReconcilingGeometry = false
+
+    private var typeAhead = ""
+    private var typeAheadTask: Task<Void, Never>?
+
+    private var itemTokens: [CollectionItemID: UInt64] = [:]
+    private var itemIDsByToken: [UInt64: CollectionItemID] = [:]
+    private var nextItemToken: UInt64 = 1
+    private var acceptedDropGeneration: UInt64?
+    private var proposedInsertionIndex: Int?
+    private var insertionPreview: CollectionInsertionPreview?
 
     public override init() {
         super.init()
+        scrollableAxes = .vertical
         documentView = document
-        onScroll = { [weak self] _ in
-            self?.reconcileVisibleRows(forceGeometry: false)
+        onInternalScroll = { [weak self] _ in
+            guard let self, !self.isReconcilingGeometry else { return }
+            self.reconcileVisibleRows(forceGeometry: false)
         }
         isAccessibilityElement = true
         accessibilityRole = .list
@@ -87,23 +125,61 @@ open class ListView: ScrollView {
         }
     }
 
+    isolated deinit {
+        typeAheadTask?.cancel()
+    }
+
     open override var acceptsFirstResponder: Bool { true }
+
+    open override var environmentDependencies: UIEnvironmentChanges {
+        super.environmentDependencies.union([
+            .reducedMotion,
+            .reducedTransparency,
+            .increasedContrast,
+            .appearance,
+            .textScale,
+        ])
+    }
+
+    open override func environmentDidChange(
+        _ changes: UIEnvironmentChanges
+    ) {
+        invalidateMeasuredGeometry()
+        super.environmentDidChange(changes)
+    }
+
+    open override func viewDidChangeBackingScaleFactor() {
+        invalidateMeasuredGeometry()
+        super.viewDidChangeBackingScaleFactor()
+    }
 
     /// Apply one validated state. Duplicate identity is rejected when the
     /// snapshot is constructed, before it can corrupt view or selection maps.
     public func applySnapshot(_ newSnapshot: CollectionSnapshot) {
         guard newSnapshot != snapshot else { return }
+        typeAheadTask?.cancel()
+        typeAheadTask = nil
+        typeAhead = ""
         let oldSnapshot = snapshot
+        let anchor = captureScrollAnchor()
+        let firstChanged = firstLayoutChange(
+            from: oldSnapshot,
+            to: newSnapshot)
         let oldFocusedIndex = focusedItemID.flatMap { id in
             oldSnapshot.items.firstIndex { $0.id == id }
         }
+
         snapshot = newSnapshot
+        advanceSnapshotGeneration()
+        reconcileItemTokens()
         reconcileAccessibilityIDs()
-        rebuildRowOffsets()
+        rebuildRowOffsets(from: firstChanged)
         resizeDocument()
-        clampScrollPosition()
-        reconcileSelectionAfterSnapshot(previousFocusedIndex: oldFocusedIndex)
+        restoreScrollAnchor(anchor)
+        reconcileSelectionAfterSnapshot(
+            previousFocusedIndex: oldFocusedIndex)
         reconcileVisibleRows(forceGeometry: true)
+        refreshAccessibleDragSource()
         setNeedsLayout()
         recordMutation(.accessibility)
     }
@@ -118,9 +194,15 @@ open class ListView: ScrollView {
     }
 
     public func invalidateRowHeights() {
-        rebuildRowOffsets()
+        measurementCache.removeAll()
+        invalidateMeasuredGeometry()
+    }
+
+    private func invalidateMeasuredGeometry() {
+        let anchor = captureScrollAnchor()
+        rebuildRowOffsets(from: 0)
         resizeDocument()
-        clampScrollPosition()
+        restoreScrollAnchor(anchor)
         reconcileVisibleRows(forceGeometry: true)
         setNeedsLayout()
         recordMutation(.accessibility)
@@ -128,16 +210,60 @@ open class ListView: ScrollView {
 
     // MARK: - Geometry
 
-    private func rebuildRowOffsets() {
-        guard let provider = rowHeightProvider, rowCount > 0 else {
+    private var measurementContext: MeasurementContext {
+        MeasurementContext(
+            width: max(0, clipView.frame.size.width),
+            environmentGeneration: uiContext.environmentGeneration,
+            backingScaleBits:
+                (window?.surfaceAssociation?.transform.backingScaleFactor.value
+                    ?? 1).bitPattern)
+    }
+
+    private func firstLayoutChange(
+        from old: CollectionSnapshot,
+        to new: CollectionSnapshot
+    ) -> Int {
+        let sharedCount = min(old.items.count, new.items.count)
+        for index in 0..<sharedCount
+        where old.items[index] != new.items[index] {
+            return index
+        }
+        return sharedCount
+    }
+
+    private func rebuildRowOffsets(from proposedStart: Int) {
+        let context = measurementContext
+        defer { lastMeasurementContext = context }
+        guard let measureRow, rowCount > 0 else {
             rowOffsets = nil
             return
         }
+
+        let contextChanged = lastMeasurementContext != context
+        let start = contextChanged ? 0 : min(max(0, proposedStart), rowCount)
+        let oldOffsets = rowOffsets
         var offsets = [Double](repeating: 0, count: rowCount + 1)
-        var total: Double = 0
-        for index in snapshot.items.indices {
-            let proposed = provider(snapshot.items[index], index)
-            total += proposed.isFinite ? max(0, proposed) : 0
+        if start > 0,
+           let oldOffsets,
+           oldOffsets.count > start
+        {
+            for index in 0...start {
+                offsets[index] = oldOffsets[index]
+            }
+        }
+
+        var total = offsets[start]
+        for index in start..<rowCount {
+            let item = snapshot.items[index]
+            let key = CollectionMeasurementCache.Key(
+                itemID: item.id,
+                revision: item.revision,
+                width: context.width,
+                environmentGeneration: context.environmentGeneration,
+                backingScaleBits: context.backingScaleBits)
+            total += measurementCache.value(for: key) {
+                measureRow(item, context.width)
+            }
             offsets[index + 1] = total
         }
         rowOffsets = offsets
@@ -197,18 +323,28 @@ open class ListView: ScrollView {
     }
 
     open override func layout() {
+        let anchor = captureScrollAnchor()
         super.layout()
-        if document.frame.size.width != clipView.frame.size.width {
+        if lastMeasurementContext != measurementContext {
+            rebuildRowOffsets(from: 0)
+        }
+        if document.frame.size.width != clipView.frame.size.width
+            || document.frame.size.height != contentHeight
+        {
             resizeDocument()
+            restoreScrollAnchor(anchor)
         }
         reconcileVisibleRows(forceGeometry: true)
     }
 
     public func visibleRowRange() -> Range<Int> {
-        guard rowCount > 0, clipView.frame.size.height > 0 else { return 0..<0 }
+        guard rowCount > 0, clipView.frame.size.height > 0 else {
+            return 0..<0
+        }
 
         if rowOffsets == nil {
-            let first = Int((contentOffset.y / rowHeight).rounded(.down)) - overscan
+            let first =
+                Int((contentOffset.y / rowHeight).rounded(.down)) - overscan
             let visibleCount = Int(
                 (clipView.frame.size.height / rowHeight).rounded(.up))
                 + overscan * 2 + 1
@@ -228,6 +364,35 @@ open class ListView: ScrollView {
         return start..<max(start, end)
     }
 
+    private func captureScrollAnchor() -> ScrollAnchor? {
+        guard let index = rowIndex(atDocumentY: contentOffset.y),
+              snapshot.items.indices.contains(index)
+        else { return nil }
+        return ScrollAnchor(
+            itemID: snapshot.items[index].id,
+            previousIndex: index,
+            offsetInsideItem: contentOffset.y - offset(forRow: index))
+    }
+
+    private func restoreScrollAnchor(_ anchor: ScrollAnchor?) {
+        guard let anchor, !snapshot.items.isEmpty else {
+            clampScrollPosition()
+            return
+        }
+        let index = snapshot.items.firstIndex {
+            $0.id == anchor.itemID
+        } ?? min(anchor.previousIndex, snapshot.items.count - 1)
+        let inside = min(
+            max(0, anchor.offsetInsideItem),
+            max(0, height(forRow: index).nextDown))
+        isReconcilingGeometry = true
+        contentOffset = Point(
+            x: contentOffset.x,
+            y: offset(forRow: index) + inside)
+        isReconcilingGeometry = false
+        clampScrollPosition()
+    }
+
     private func reconcileVisibleRows(forceGeometry: Bool) {
         let wanted = visibleRowRange()
         let identitiesMatch = wanted == materializedRange
@@ -239,17 +404,20 @@ open class ListView: ScrollView {
 
         var availableByID: [CollectionItemID: RowBinding] = [:]
         for binding in activeRows.values {
-            availableByID[binding.item.id] = binding
+            precondition(
+                availableByID.updateValue(binding, forKey: binding.item.id)
+                    == nil,
+                "one materialized view is allowed per item identity")
         }
         let wantedIDs = Set(wanted.map { snapshot.items[$0].id })
         for id in Array(availableByID.keys) where !wantedIDs.contains(id) {
             guard let binding = availableByID.removeValue(forKey: id) else {
                 continue
             }
-            binding.view.isHidden = true
-            reusePool.append(binding.view)
+            recycle(binding.view)
         }
         var nextActive: [Int: RowBinding] = [:]
+        nextActive.reserveCapacity(wanted.count)
 
         for index in wanted {
             let item = snapshot.items[index]
@@ -269,15 +437,17 @@ open class ListView: ScrollView {
                 row.isHidden = false
                 place(row, at: index)
                 configureRow?(row, item, index)
-                let binding = RowBinding(item: item, index: index, view: row)
+                let binding = RowBinding(
+                    item: item,
+                    index: index,
+                    view: row)
                 updateState(for: binding)
                 nextActive[index] = binding
             }
         }
 
         for binding in availableByID.values {
-            binding.view.isHidden = true
-            reusePool.append(binding.view)
+            recycle(binding.view)
         }
         activeRows = nextActive
     }
@@ -295,6 +465,16 @@ open class ListView: ScrollView {
         let row = makeRow?() ?? View()
         document.addSubview(row)
         return row
+    }
+
+    private func recycle(_ row: View) {
+        row.isHidden = true
+        let limit = max(16, materializedRange.count + overscan * 2)
+        if reusePool.count < limit {
+            reusePool.append(row)
+        } else {
+            row.removeFromSuperview()
+        }
     }
 
     // MARK: - Selection and focus
@@ -350,6 +530,9 @@ open class ListView: ScrollView {
         let valid = Set(snapshot.items.map(\.id))
         setSelectedItemIDs(selectedItemIDs.intersection(valid))
         if let focusedItemID, valid.contains(focusedItemID) {
+            if selectionAnchorID.map({ !valid.contains($0) }) == true {
+                selectionAnchorID = focusedItemID
+            }
             updateAllVisibleStates()
             return
         }
@@ -361,7 +544,7 @@ open class ListView: ScrollView {
                 previousFocusedIndex ?? 0,
                 snapshot.items.count - 1)
             focusedItemID = snapshot.items[index].id
-            if selectionAnchorID.map({ !valid.contains($0) }) == true {
+            if selectionAnchorID.map({ !valid.contains($0) }) != false {
                 selectionAnchorID = focusedItemID
             }
         }
@@ -379,6 +562,7 @@ open class ListView: ScrollView {
 
         switch selectionMode {
         case .none:
+            selectionAnchorID = id
             setSelection([])
         case .single:
             selectionAnchorID = id
@@ -405,6 +589,7 @@ open class ListView: ScrollView {
             }
         }
         updateAllVisibleStates()
+        refreshAccessibleDragSource()
     }
 
     private func setSelection(_ selection: Set<CollectionItemID>) {
@@ -439,6 +624,59 @@ open class ListView: ScrollView {
         scrollRowToVisible(target)
     }
 
+    private func handleTypeAhead(_ event: Event) -> Bool {
+        guard let itemSearchText,
+              let characters = event.characters,
+              !characters.isEmpty,
+              !characters.allSatisfy(\.isWhitespace),
+              !event.modifierFlags.contains(.command),
+              !event.modifierFlags.contains(.control),
+              !event.modifierFlags.contains(.option),
+              !snapshot.items.isEmpty
+        else { return false }
+
+        typeAhead += characters.lowercased()
+        if !selectTypeAheadMatch(
+            prefix: typeAhead,
+            text: itemSearchText)
+        {
+            typeAhead = characters.lowercased()
+            guard selectTypeAheadMatch(
+                prefix: typeAhead,
+                text: itemSearchText)
+            else { return false }
+        }
+        typeAheadTask?.cancel()
+        let clock = uiContext.clock
+        typeAheadTask = Task { @MainActor [weak self] in
+            try? await clock.sleep(for: .milliseconds(700))
+            guard !Task.isCancelled else { return }
+            self?.typeAhead = ""
+        }
+        return true
+    }
+
+    private func selectTypeAheadMatch(
+        prefix: String,
+        text: (CollectionItem) -> String?
+    ) -> Bool {
+        let start = focusedItemID.flatMap { id in
+            snapshot.items.firstIndex { $0.id == id }
+        }.map { ($0 + 1) % snapshot.items.count } ?? 0
+        for offset in snapshot.items.indices {
+            let index = (start + offset) % snapshot.items.count
+            guard text(snapshot.items[index])?
+                .lowercased().hasPrefix(prefix) == true
+            else { continue }
+            select(index: index, extending: false, toggling: false)
+            scrollRowToVisible(index)
+            return true
+        }
+        return false
+    }
+
+    // MARK: - Accessibility
+
     private func reconcileAccessibilityIDs() {
         let valid = Set(snapshot.items.map(\.id))
         accessibilityIDs = accessibilityIDs.filter {
@@ -469,6 +707,7 @@ open class ListView: ScrollView {
             var actions: Set<AccessibilityAction> = [.focus]
             if selectionMode != .none { actions.insert(.select) }
             if onActivateItem != nil { actions.insert(.press) }
+            if reordering != nil { actions.insert(.startDrag) }
             return AccessibilityVirtualElement(
                 id: id,
                 properties: properties,
@@ -490,6 +729,7 @@ open class ListView: ScrollView {
                     self.updateAllVisibleStates()
                     self.recordMutation(.accessibility)
                     self.scrollRowToVisible(current)
+                    self.refreshAccessibleDragSource()
                     _ = self.window?.makeFirstResponder(self)
                     return true
                 case .select:
@@ -504,6 +744,18 @@ open class ListView: ScrollView {
                     }
                     onActivateItem(self.snapshot.items[current], current)
                     return true
+                case .startDrag:
+                    self.select(
+                        index: current,
+                        extending: false,
+                        toggling: false)
+                    self.installDragSource(for: current)
+                    guard let scene = self.window?.windowScene else {
+                        return false
+                    }
+                    return scene.beginDrag(
+                        from: self,
+                        at: scene.dragCenter(of: self)) != nil
                 default:
                     return false
                 }
@@ -521,7 +773,9 @@ open class ListView: ScrollView {
         guard let hit = super.hitTest(point) else { return nil }
         guard hit !== self else { return self }
         // Indicators and controls embedded in a row remain interactive.
-        if hit === verticalScrollIndicator || hit === horizontalScrollIndicator {
+        if hit === verticalScrollIndicator
+            || hit === horizontalScrollIndicator
+        {
             return hit
         }
         var node: View? = hit
@@ -542,6 +796,9 @@ open class ListView: ScrollView {
                     extending: event.modifierFlags.contains(.shift),
                     toggling: event.modifierFlags.contains(.command)
                         || event.modifierFlags.contains(.control))
+                if event.pointerTool != .finger {
+                    installDragSource(for: index)
+                }
                 if event.clickCount >= 2 {
                     onActivateItem?(snapshot.items[index], index)
                 }
@@ -577,7 +834,7 @@ open class ListView: ScrollView {
                 onActivateItem?(snapshot.items[index], index)
                 return .handled
             default:
-                break
+                if handleTypeAhead(event) { return .handled }
             }
         default:
             break
@@ -594,7 +851,240 @@ open class ListView: ScrollView {
             height: height(forRow: index)))
     }
 
+    // MARK: - Reordering
+
+    private func advanceSnapshotGeneration() {
+        snapshotGeneration &+= 1
+        precondition(
+            snapshotGeneration != 0,
+            "list snapshot generation exhausted")
+    }
+
+    private func reconcileItemTokens() {
+        let valid = Set(snapshot.items.map(\.id))
+        itemTokens = itemTokens.filter { valid.contains($0.key) }
+        itemIDsByToken = itemIDsByToken.filter {
+            valid.contains($0.value)
+        }
+        for item in snapshot.items where itemTokens[item.id] == nil {
+            let token = nextItemToken
+            nextItemToken &+= 1
+            precondition(nextItemToken != 0, "list item token exhausted")
+            itemTokens[item.id] = token
+            itemIDsByToken[token] = item.id
+        }
+    }
+
+    private func configureReorderingLifecycle() {
+        hideInsertionPreview()
+        guard reordering != nil else {
+            setDragSource(nil)
+            setDropDestination(nil)
+            insertionPreview?.removeFromSuperview()
+            insertionPreview = nil
+            recordMutation(.accessibility)
+            return
+        }
+
+        setDropDestination(DropDestinationConfiguration(
+            acceptedContentTypes: [collectionReorderContentType],
+            proposal: { [weak self] info in
+                self?.reorderProposal(for: info)
+            },
+            entered: { [weak self] info in
+                self?.updateReorderTarget(info)
+            },
+            updated: { [weak self] info in
+                self?.updateReorderTarget(info)
+            },
+            exited: { [weak self] _ in
+                self?.hideInsertionPreview()
+            },
+            perform: { [weak self] info, payload in
+                self?.performReorder(info: info, payload: payload) ?? false
+            }))
+        refreshAccessibleDragSource()
+        recordMutation(.accessibility)
+    }
+
+    private func refreshAccessibleDragSource() {
+        guard reordering != nil,
+              let focusedItemID,
+              let index = snapshot.items.firstIndex(where: {
+                  $0.id == focusedItemID
+              })
+        else {
+            setDragSource(nil)
+            return
+        }
+        installDragSource(for: index)
+    }
+
+    private func installDragSource(for index: Int) {
+        guard let reordering,
+              snapshot.items.indices.contains(index),
+              let token = itemTokens[snapshot.items[index].id]
+        else {
+            setDragSource(nil)
+            return
+        }
+        let payload = CollectionReorderPayload(
+            collectionID: id.rawValue,
+            snapshotGeneration: snapshotGeneration,
+            itemToken: token,
+            sourceIndex: index).data
+        setDragSource(DragSourceConfiguration(
+            payloadProviders: [
+                collectionReorderContentType: { payload }
+            ],
+            allowedOperations: reordering.allowedOperations,
+            maximumPayloadBytes: 32,
+            completion: { [weak self] _ in
+                guard let self else { return }
+                self.hideInsertionPreview()
+                self.refreshAccessibleDragSource()
+            }))
+    }
+
+    private func reorderProposal(
+        for info: DragDropInfo
+    ) -> DragDropProposal? {
+        guard let reordering,
+              info.offer.contentTypes.contains(
+                collectionReorderContentType),
+              info.offer.allowedOperations.contains(
+                reordering.preferredOperation)
+        else { return nil }
+        acceptedDropGeneration = snapshotGeneration
+        return DragDropProposal(
+            contentType: collectionReorderContentType,
+            operation: reordering.preferredOperation)
+    }
+
+    private func updateReorderTarget(_ info: DragDropInfo) {
+        guard info.proposal != nil else {
+            hideInsertionPreview()
+            return
+        }
+        autoscrollForReorder(at: info.location)
+        let insertion = insertionIndex(at: info.location)
+        proposedInsertionIndex = insertion
+        showInsertionPreview(at: insertion)
+    }
+
+    private func insertionIndex(at point: Point) -> Int {
+        let y = min(max(0, point.y + contentOffset.y), contentHeight)
+        guard let row = rowIndex(atDocumentY: y) else {
+            return y <= 0 ? 0 : rowCount
+        }
+        return y < offset(forRow: row) + height(forRow: row) / 2
+            ? row
+            : row + 1
+    }
+
+    private func autoscrollForReorder(at point: Point) {
+        let edge = min(32, clipView.frame.size.height / 4)
+        guard edge > 0 else { return }
+        if point.y < edge {
+            contentOffset.y -= 18
+        } else if point.y > clipView.frame.size.height - edge {
+            contentOffset.y += 18
+        }
+    }
+
+    private func showInsertionPreview(at insertion: Int) {
+        let preview: CollectionInsertionPreview
+        if let insertionPreview {
+            preview = insertionPreview
+        } else {
+            preview = CollectionInsertionPreview()
+            insertionPreview = preview
+            document.addSubview(preview)
+        }
+        let y = offset(forRow: min(max(0, insertion), rowCount))
+        preview.frame = Rect(
+            x: 0,
+            y: max(0, y - 1),
+            width: document.frame.size.width,
+            height: 2)
+        preview.isHidden = false
+    }
+
+    private func hideInsertionPreview() {
+        acceptedDropGeneration = nil
+        proposedInsertionIndex = nil
+        insertionPreview?.isHidden = true
+    }
+
+    private func performReorder(
+        info: DragDropInfo,
+        payload: DragPayload
+    ) -> Bool {
+        guard let reordering,
+              payload.contentType == collectionReorderContentType,
+              let record = CollectionReorderPayload(data: payload.data),
+              record.collectionID == id.rawValue,
+              record.snapshotGeneration == snapshotGeneration,
+              acceptedDropGeneration == snapshotGeneration,
+              record.sourceIndex <= UInt64(Int.max),
+              let itemID = itemIDsByToken[record.itemToken],
+              let sourceIndex = snapshot.items.firstIndex(where: {
+                  $0.id == itemID
+              }),
+              sourceIndex == Int(record.sourceIndex),
+              let insertionIndex = proposedInsertionIndex,
+              let operation = info.proposal?.operation,
+              reordering.allowedOperations.contains(operation)
+        else {
+            hideInsertionPreview()
+            return false
+        }
+
+        var items = snapshot.items
+        switch operation {
+        case .move:
+            let item = items.remove(at: sourceIndex)
+            let destination = insertionIndex > sourceIndex
+                ? insertionIndex - 1
+                : insertionIndex
+            items.insert(item, at: min(max(0, destination), items.count))
+        case .copy:
+            guard let copy = reordering.copyItem?(items[sourceIndex]) else {
+                hideInsertionPreview()
+                return false
+            }
+            items.insert(copy, at: min(max(0, insertionIndex), items.count))
+        case .link:
+            hideInsertionPreview()
+            return false
+        }
+
+        guard let next = try? CollectionSnapshot(items: items) else {
+            hideInsertionPreview()
+            return false
+        }
+        let result = CollectionReorderResult(
+            itemID: itemID,
+            sourceIndex: sourceIndex,
+            insertionIndex: insertionIndex,
+            operation: operation)
+        hideInsertionPreview()
+        applySnapshot(next)
+        reordering.didApply?(snapshot, result)
+        return true
+    }
+
+    // MARK: - Diagnostics
+
     public var materializedRowCount: Int { activeRows.count }
+    public var reusePoolCount: Int { reusePool.count }
+    public var measurementCacheEntryCount: Int {
+        measurementCache.count
+    }
+
+    package var hasVisibleInsertionPreview: Bool {
+        insertionPreview?.isHidden == false
+    }
 
     public func rowView(at index: Int) -> View? {
         activeRows[index]?.view

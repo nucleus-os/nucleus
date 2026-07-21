@@ -27,7 +27,7 @@ import Testing
         // Presentation defaults.
         let ps0 = PresentationState()
         #expect(ps0.override_ == nil && ps0.readiness == .noBacking && ps0.content == .none &&
-              ps0.transition == .none && !ps0.backgroundEffect, "pres-state-default")
+              !ps0.backgroundEffect, "pres-state-default")
         #expect(BackgroundEffectRegions().rects.count == BackgroundEffectRegions.maxRects,
               "bg-regions-fixed-size")
 

@@ -43,8 +43,12 @@ public final class WaylandConnection {
     @discardableResult
     public func dispatchPending() -> Int32 { wl_display_dispatch_pending(display) }
 
-    /// Apply pending requests and flush them to the compositor (call at the end of each frame).
-    public func flush() { _ = wl_display_flush(display) }
+    /// Apply pending requests and flush them to the compositor.
+    ///
+    /// Returns the libwayland result so an event loop can distinguish write
+    /// backpressure (`-1`/`EAGAIN`) from a disconnected compositor.
+    @discardableResult
+    public func flush() -> Int32 { wl_display_flush(display) }
 
     /// Block until the server has processed everything issued so far. Returns -1 on error.
     @discardableResult

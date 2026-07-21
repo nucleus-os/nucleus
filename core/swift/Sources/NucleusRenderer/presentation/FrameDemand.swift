@@ -1,10 +1,7 @@
 // Phase 9.5 — Frame-demand policy snapshot (value types + pure logic).
 //
 // WindowServer owns output arming and request delivery; this owns the policy
-// snapshot that says why another frame is needed. The live `collect(composition, shell,
-// …)` assembly that drains producer/shell request latches is integration that
-// binds at the planner flip; the pure shapes + the one-shot present-probe latch
-// + the deadline coalescing are portable.
+// snapshot that says why another frame is needed.
 
 /// Why continuous (animation-driven) frames are still demanded. Mirrors
 /// `ContinuousDemand`.
@@ -20,7 +17,6 @@ struct ContinuousDemand: Equatable {
 struct Demand: Equatable {
     var overlayFrameRequested: Bool = false
     var sceneFrameRequested: Bool = false
-    var operationDeadlineNs: UInt64?
     var continuous: ContinuousDemand
 }
 
@@ -38,14 +34,4 @@ struct PresentProbe {
     mutating func markSubmitted() {
         submitted = true
     }
-}
-
-/// The earlier of two optional deadlines (nil = no deadline). Mirrors
-/// `minOptionalDeadline`.
-func minOptionalDeadline(_ lhs: UInt64?, _ rhs: UInt64?) -> UInt64? {
-    if let left = lhs {
-        if let right = rhs { return min(left, right) }
-        return left
-    }
-    return rhs
 }

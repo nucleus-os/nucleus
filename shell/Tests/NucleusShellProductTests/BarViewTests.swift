@@ -6,10 +6,7 @@ import NucleusUI
 @MainActor
 private final class TestWidget: BarWidget {
     var refreshCount = 0
-    var tickedSeconds: Double = 0
-    var ticks = 0
     private let width: Double
-    var animates = false
 
     init(width: Double = 40, capsule: Bool = true) {
         self.width = width
@@ -20,12 +17,7 @@ private final class TestWidget: BarWidget {
     }
 
     override var intrinsicContentSize: Size { Size(width: width, height: 20) }
-    override var wantsFrameTick: Bool { animates }
     override func refresh() { refreshCount += 1 }
-    override func frameTick(deltaSeconds: Double) {
-        ticks += 1
-        tickedSeconds += deltaSeconds
-    }
 }
 
 /// The bar: three sections, chrome behind them, and the widget contract.
@@ -171,28 +163,6 @@ private final class TestWidget: BarWidget {
         bar.refreshWidgets()
         #expect(a.refreshCount == 1)
         #expect(b.refreshCount == 1)
-    }
-
-    /// A bar of a dozen widgets each polling per frame never lets the compositor
-    /// idle, so ticking is opt-in and only the widgets that asked are called.
-    @Test func onlyAnimatingWidgetsAreTicked() {
-        let bar = makeBar()
-        let still = TestWidget()
-        let animating = TestWidget()
-        animating.animates = true
-        bar.setWidgets([still, animating], in: .start)
-
-        #expect(bar.wantsFrameTick)
-        bar.frameTick(deltaSeconds: 0.016)
-        #expect(animating.ticks == 1)
-        #expect(still.ticks == 0)
-        #expect(abs(animating.tickedSeconds - 0.016) < 0.0001)
-    }
-
-    @Test func aBarOfStillWidgetsWantsNoTick() {
-        let bar = makeBar()
-        bar.setWidgets([TestWidget(), TestWidget()], in: .start)
-        #expect(!bar.wantsFrameTick)
     }
 
     /// A widget reports that it was activated and the bar decides what opens —

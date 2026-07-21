@@ -31,7 +31,12 @@ final class AndroidRenderEngine {
     /// Bring up the render core (Vulkan instance/device + Graphite context) and the
     /// swapchain presenter over its device. Returns nil if the GPU stack is
     /// unavailable.
-    init?(window: UnsafeMutableRawPointer) {
+    init?(
+        window: UnsafeMutableRawPointer,
+        store: RetainedTreeStore,
+        resourceHost: SwiftResourceHost,
+        asyncRenderWakeSink: any AsyncRenderWakeSink
+    ) {
         guard let bootstrap = VulkanBootstrap.create(applicationName: "Nucleus Android"),
               let surface = bootstrap.createSurface({ context in
             let instance = context.vkInstance
@@ -46,7 +51,12 @@ final class AndroidRenderEngine {
             guard create(instance, &info, nil, &surface) == VK_SUCCESS, let surface else { return nil }
             return VulkanSurfaceHandle(surface)
         }),
-              let core = RenderCore.create(bootstrap: bootstrap, qualification: .surface(surface))
+              let core = RenderCore.create(
+                bootstrap: bootstrap,
+                qualification: .surface(surface),
+                store: store,
+                resourceHost: resourceHost,
+                asyncRenderWakeSink: asyncRenderWakeSink)
         else { return nil }
         guard let presenter = AndroidVulkanPresenter(core: core, surface: surface) else {
             core.shutdownRenderResources()

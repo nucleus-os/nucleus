@@ -1,4 +1,0 @@
-module NucleusCompositorRuntimeEntry {
-    header "NucleusCompositorRuntimeEntry.h"
-    export *
-}

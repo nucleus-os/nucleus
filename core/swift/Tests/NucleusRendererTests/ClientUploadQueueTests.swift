@@ -1,7 +1,7 @@
 import Testing
 @testable import NucleusRenderer
 
-@Suite struct ClientUploadQueueTests {
+@Suite struct PendingShmUploadTests {
     private func upload(_ byte: UInt8, generation: UInt64, bytes: Int = 16) -> PendingShmUpload {
         PendingShmUpload(
             pixels: [UInt8](repeating: byte, count: bytes),

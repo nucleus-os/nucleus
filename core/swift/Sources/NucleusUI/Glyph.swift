@@ -16,25 +16,36 @@ public final class GlyphCatalog {
 
     private var codepoints: [String: Character] = [:]
     private var aliases: [String: String] = [:]
+    private var consumers: [ViewID: WeakGlyphConsumer] = [:]
+    public private(set) var generation: UInt64 = 1
 
     public init(fontFamily: String) {
         self.fontFamily = fontFamily
     }
 
     public func register(_ name: String, _ codepoint: Character) {
+        guard codepoints[name] != codepoint else { return }
         codepoints[name] = codepoint
+        changed()
     }
 
     /// Register a whole catalog, as loaded from the font's companion metadata.
     public func register(_ entries: [String: Character]) {
-        codepoints.merge(entries) { _, new in new }
+        var didChange = false
+        for (name, codepoint) in entries where codepoints[name] != codepoint {
+            codepoints[name] = codepoint
+            didChange = true
+        }
+        if didChange { changed() }
     }
 
     /// An alternative name for an existing glyph. Icon sets rename things
     /// between releases, and a widget naming a retired icon should keep working
     /// rather than silently render nothing.
     public func alias(_ alias: String, to name: String) {
+        guard aliases[alias] != name else { return }
         aliases[alias] = name
+        changed()
     }
 
     public func contains(_ name: String) -> Bool {
@@ -50,12 +61,27 @@ public final class GlyphCatalog {
     public var names: [String] { Array(codepoints.keys).sorted() }
     public var count: Int { codepoints.count }
 
-    /// The catalog views resolve names against when given no other.
-    ///
-    /// A single default rather than an inherited environment: a shell ships one
-    /// icon font, and threading a catalog through every widget would be
-    /// ceremony for a value that never varies.
-    public static var shared: GlyphCatalog?
+    fileprivate func addConsumer(_ view: GlyphView) {
+        consumers[view.id] = WeakGlyphConsumer(view)
+    }
+
+    fileprivate func removeConsumer(_ id: ViewID) {
+        consumers[id] = nil
+    }
+
+    private func changed() {
+        generation &+= 1
+        precondition(generation != 0, "glyph catalog generation exhausted")
+        for consumer in consumers.values {
+            consumer.value?.glyphCatalogDidChange()
+        }
+    }
+}
+
+@MainActor
+package final class WeakGlyphConsumer {
+    package weak var value: GlyphView?
+    package init(_ value: GlyphView) { self.value = value }
 }
 
 /// A single icon, drawn as a glyph from an icon font.
@@ -65,9 +91,14 @@ public final class GlyphCatalog {
 /// express.
 @MainActor
 public final class GlyphView: View {
-    /// The catalog to resolve against. `nil` uses `GlyphCatalog.shared`.
+    /// The explicit per-view catalog. `nil` uses the owning UI context's catalog.
     public var catalog: GlyphCatalog? {
-        didSet { refresh() }
+        didSet {
+            guard catalog !== oldValue else { return }
+            oldValue?.removeConsumer(id)
+            resolvedCatalog?.addConsumer(self)
+            refresh()
+        }
     }
 
     /// The icon's name. Resolving to nothing renders nothing rather than
@@ -96,11 +127,31 @@ public final class GlyphView: View {
         self.pointSize = pointSize
         super.init()
         accessibilityRole = .image
+        uiContext.registerGlyphConsumer(self)
+        resolvedCatalog?.addConsumer(self)
         refresh()
     }
 
+    isolated deinit {
+        resolvedCatalog?.removeConsumer(id)
+        uiContext.unregisterGlyphConsumer(id)
+    }
+
     private var resolvedCatalog: GlyphCatalog? {
-        catalog ?? GlyphCatalog.shared
+        catalog ?? uiContext.glyphCatalog
+    }
+
+    package func contextGlyphCatalogDidChange(
+        from previous: GlyphCatalog?
+    ) {
+        guard catalog == nil else { return }
+        previous?.removeConsumer(id)
+        resolvedCatalog?.addConsumer(self)
+        refresh()
+    }
+
+    fileprivate func glyphCatalogDidChange() {
+        refresh()
     }
 
     /// The character actually drawn: an explicit one wins, then the catalog.
@@ -146,7 +197,8 @@ public final class GlyphView: View {
             containerWidth: nil,
             alignment: .leading,
             lineBreakMode: .byClipping,
-            numberOfLines: 1)
+            numberOfLines: 1,
+            textSystem: uiContext.services.textSystem)
         layoutCache = layout
         return layout
     }

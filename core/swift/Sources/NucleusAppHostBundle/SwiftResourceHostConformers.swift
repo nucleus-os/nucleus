@@ -1,7 +1,7 @@
 // Phase 10c.3 cutover — the Swift-native resource-host conformers.
 //
 // Each conforms to a `NucleusAppHostProtocols` protocol
-// and reads/writes the process-global `SwiftResourceHost.shared` (paint content,
+// and reads/writes its explicitly owned `SwiftResourceHost` (paint content,
 // images, snapshots, implicit actions) — the GPU-independent Swift stores the
 // renderer reads at frame time. The host-bundle install wires these into the
 // resource-host slots.
@@ -15,9 +15,16 @@ import NucleusRenderModel
 /// `ImageRegistrar` over `SwiftResourceHost.images`. Registration is by file
 /// path + decode bounds (the renderer decodes lazily), so it is GPU-independent.
 final class SwiftImageRegistrar: ImageRegistrar {
+    private let resourceHost: SwiftResourceHost
+
+    init(resourceHost: SwiftResourceHost) {
+        self.resourceHost = resourceHost
+    }
+
     func register(path: String, maxWidth: UInt32, maxHeight: UInt32) throws(ImageRegistrationError) -> UInt64 {
         guard !path.isEmpty else { throw ImageRegistrationError.invalidArgument }
-        return SwiftResourceHost.shared.images.register(
+        guard resourceHost.isLive else { throw .invalidHandle }
+        return resourceHost.images.register(
             ImageSource(path: path, maxWidth: maxWidth, maxHeight: maxHeight))
     }
 
@@ -27,7 +34,8 @@ final class SwiftImageRegistrar: ImageRegistrar {
         guard !encoded.isEmpty else { throw ImageRegistrationError.invalidArgument }
         var bytes = [UInt8](repeating: 0, count: encoded.count)
         for i in 0..<encoded.count { bytes[i] = encoded[i] }
-        return SwiftResourceHost.shared.images.register(
+        guard resourceHost.isLive else { throw .invalidHandle }
+        return resourceHost.images.register(
             ImageSource(content: .encoded(bytes: bytes), maxWidth: maxWidth, maxHeight: maxHeight))
     }
 
@@ -47,19 +55,26 @@ final class SwiftImageRegistrar: ImageRegistrar {
         // Reject a buffer that does not describe itself consistently here, rather
         // than registering a handle that can only ever fail to draw.
         guard buffer.isWellFormed else { throw ImageRegistrationError.invalidArgument }
-        return SwiftResourceHost.shared.images.register(ImageSource(content: .raw(buffer)))
+        guard resourceHost.isLive else { throw .invalidHandle }
+        return resourceHost.images.register(ImageSource(content: .raw(buffer)))
     }
 }
 
 /// `ImageLifecycle` over `SwiftResourceHost.images`.
 final class SwiftImageLifecycle: ImageLifecycle {
+    private let resourceHost: SwiftResourceHost
+
+    init(resourceHost: SwiftResourceHost) {
+        self.resourceHost = resourceHost
+    }
+
     func retain(resourceHostHandle: UInt64, handle: UInt64) {
-        if resourceHostHandle == 0 { return }
-        SwiftResourceHost.shared.images.retain(handle)
+        guard resourceHost.accepts(rawIdentity: resourceHostHandle) else { return }
+        resourceHost.images.retain(handle)
     }
     func release(resourceHostHandle: UInt64, handle: UInt64) {
-        if resourceHostHandle == 0 { return }
-        SwiftResourceHost.shared.images.release(handle)
+        guard resourceHost.accepts(rawIdentity: resourceHostHandle) else { return }
+        resourceHost.images.release(handle)
     }
 }
 
@@ -69,20 +84,35 @@ final class SwiftImageLifecycle: ImageLifecycle {
 /// Registration is by SkSL source (the renderer compiles lazily), so it is
 /// GPU-independent — the same posture as `SwiftImageRegistrar`.
 final class SwiftRuntimeEffectRegistrar: RuntimeEffectRegistrar {
+    private let resourceHost: SwiftResourceHost
+
+    init(resourceHost: SwiftResourceHost) {
+        self.resourceHost = resourceHost
+    }
+
     func register(sksl: String) throws(RuntimeEffectRegistrationError) -> UInt64 {
         guard !sksl.isEmpty else { throw RuntimeEffectRegistrationError.invalidArgument }
-        return SwiftResourceHost.shared.runtimeEffects.register(
+        guard resourceHost.isLive else { throw .invalidHandle }
+        return resourceHost.runtimeEffects.register(
             RuntimeEffectSource(sksl: sksl))
     }
 }
 
 /// `RuntimeEffectLifecycle` over `SwiftResourceHost.runtimeEffects`.
 final class SwiftRuntimeEffectLifecycle: RuntimeEffectLifecycle {
+    private let resourceHost: SwiftResourceHost
+
+    init(resourceHost: SwiftResourceHost) {
+        self.resourceHost = resourceHost
+    }
+
     func retain(handle: UInt64) {
-        SwiftResourceHost.shared.runtimeEffects.retain(handle)
+        guard resourceHost.isLive else { return }
+        resourceHost.runtimeEffects.retain(handle)
     }
     func release(handle: UInt64) {
-        SwiftResourceHost.shared.runtimeEffects.release(handle)
+        guard resourceHost.isLive else { return }
+        resourceHost.runtimeEffects.release(handle)
     }
 }
 
@@ -132,6 +162,12 @@ private func paintDrawBlendMode(_ blend: NucleusTypes.PaintBlendMode) -> PaintDr
 /// command span into the Swift `PaintDrawCommand` vocabulary. An unknown
 /// discriminant is no longer representable, so no draw can be silently dropped.
 final class SwiftPaintContentRegistrar: PaintContentRegistrar {
+    private let resourceHost: SwiftResourceHost
+
+    init(resourceHost: SwiftResourceHost) {
+        self.resourceHost = resourceHost
+    }
+
     func register(
         resourceHostHandle: UInt64,
         width: Float,
@@ -139,7 +175,9 @@ final class SwiftPaintContentRegistrar: PaintContentRegistrar {
         commands: Span<NucleusTypes.PaintCommand>,
         payload: Span<UInt8>
     ) throws(PaintContentRegistrationError) -> UInt64 {
-        if resourceHostHandle == 0 { throw PaintContentRegistrationError.invalidHandle }
+        guard resourceHost.accepts(rawIdentity: resourceHostHandle) else {
+            throw PaintContentRegistrationError.invalidHandle
+        }
         var decoded: [PaintDrawCommand] = []
         decoded.reserveCapacity(commands.count)
         for i in 0..<commands.count {
@@ -172,20 +210,26 @@ final class SwiftPaintContentRegistrar: PaintContentRegistrar {
         var payloadBytes = [UInt8]()
         payloadBytes.reserveCapacity(payload.count)
         for i in 0..<payload.count { payloadBytes.append(payload[i]) }
-        return SwiftResourceHost.shared.paintContents.register(
+        return resourceHost.paintContents.register(
             decoded, payload: payloadBytes, width: width, height: height).raw
     }
 }
 
 /// `PaintContentLifecycle` over `SwiftResourceHost.paintContents`.
 final class SwiftPaintContentLifecycle: PaintContentLifecycle {
+    private let resourceHost: SwiftResourceHost
+
+    init(resourceHost: SwiftResourceHost) {
+        self.resourceHost = resourceHost
+    }
+
     func retain(resourceHostHandle: UInt64, handle: UInt64) {
-        if resourceHostHandle == 0 { return }
-        SwiftResourceHost.shared.paintContents.retain(PaintContentHandle(raw: handle))
+        guard resourceHost.accepts(rawIdentity: resourceHostHandle) else { return }
+        resourceHost.paintContents.retain(PaintContentHandle(raw: handle))
     }
     func release(resourceHostHandle: UInt64, handle: UInt64) {
-        if resourceHostHandle == 0 { return }
-        SwiftResourceHost.shared.paintContents.release(PaintContentHandle(raw: handle))
+        guard resourceHost.accepts(rawIdentity: resourceHostHandle) else { return }
+        resourceHost.paintContents.release(PaintContentHandle(raw: handle))
     }
 }
 
@@ -195,13 +239,19 @@ final class SwiftPaintContentLifecycle: PaintContentLifecycle {
 /// snapshot's backing texture handle (the renderer's registry release is driven
 /// by the renderer-side `releaseSnapshot`; here we only drop the metadata ref).
 final class SwiftSnapshotLifecycle: SnapshotLifecycle {
+    private let resourceHost: SwiftResourceHost
+
+    init(resourceHost: SwiftResourceHost) {
+        self.resourceHost = resourceHost
+    }
+
     func retain(resourceHostHandle: UInt64, handle: UInt64) {
-        if resourceHostHandle == 0 { return }
-        SwiftResourceHost.shared.snapshots.retain(SnapshotHandle(raw: handle))
+        guard resourceHost.accepts(rawIdentity: resourceHostHandle) else { return }
+        resourceHost.snapshots.retain(SnapshotHandle(raw: handle))
     }
     func release(resourceHostHandle: UInt64, handle: UInt64) {
-        if resourceHostHandle == 0 { return }
-        _ = SwiftResourceHost.shared.snapshots.release(SnapshotHandle(raw: handle))
+        guard resourceHost.accepts(rawIdentity: resourceHostHandle) else { return }
+        _ = resourceHost.snapshots.release(SnapshotHandle(raw: handle))
     }
 }
 
@@ -210,6 +260,12 @@ final class SwiftSnapshotLifecycle: SnapshotLifecycle {
 /// `ImplicitActionRegistrar` over `SwiftResourceHost.implicitActions`. Decodes
 /// the wire rows into the model's implicit-action template table.
 final class SwiftImplicitActionRegistrar: ImplicitActionRegistrar {
+    private let resourceHost: SwiftResourceHost
+
+    init(resourceHost: SwiftResourceHost) {
+        self.resourceHost = resourceHost
+    }
+
     func register(rows: Span<NucleusTypes.ImplicitActionRow>) {
         var decoded: [NucleusRenderModel.ImplicitActionRow] = []
         decoded.reserveCapacity(rows.count)
@@ -225,6 +281,7 @@ final class SwiftImplicitActionRegistrar: ImplicitActionRegistrar {
         }
         var table = ImplicitActionTable()
         table.replace(decoded)
-        SwiftResourceHost.shared.replaceImplicitActions(table)
+        guard resourceHost.isLive else { return }
+        resourceHost.replaceImplicitActions(table)
     }
 }

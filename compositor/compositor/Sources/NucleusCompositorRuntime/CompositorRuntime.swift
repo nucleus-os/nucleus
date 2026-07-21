@@ -1,65 +1,74 @@
-import NucleusCompositorLoop
-import SystemPackage
-import CSystem
 import NucleusCompositorServer
 import NucleusCompositorShell
 import NucleusCompositorRenderRuntime
 import NucleusCompositorRenderSession
 import NucleusCompositorRendererLinux
 import NucleusCompositorWaylandRuntime
+import NucleusCompositorWindowScene
 import NucleusCompositorWindowManager
 import NucleusCompositorSignalC
+import NucleusAppHostBundle
+import NucleusRenderHost
+import NucleusRenderModel
+import NucleusLinuxDBus
+import NucleusLinuxReactor
 import Tracy
 import Glibc
 
-// The compositor runtime root. `CompositorRuntime` owns the io_uring event loop
-// (a Swift-owned `SystemPackage.IORing`), brings the compositor up (CompositorBringup.swift),
+// The compositor runtime root. `CompositorRuntime` owns the awaitable Linux host
+// reactor, brings the compositor up (CompositorBringup.swift),
 // and tears it down. It is the single composition root: bring-up, the loop, dispatch,
 // and teardown are all Swift, calling the platform-fd owners (DRM session + render
 // runtime in NucleusCompositorRenderRuntime, the input / xwm / router hosts in
 // NucleusCompositorWaylandRuntime, the shell sd-bus in NucleusCompositorShell) by direct Swift call.
 //
-// The compositor runs on the process's main thread, the `@MainActor` executor, so
-// the whole type is `@MainActor`: the loop body and every Swift service it owns
-// run synchronously on the main actor with no per-call `assumeIsolated`.
-// `nucleus_runtime_main` establishes that isolation once (see Runtime.swift).
-//
-// Ownership: Swift owns the ring and every platform-fd registration. Each fd uses
-// an explicit one-shot poll, rearmed after its handler drains the source. This does
-// not depend on IORING_CQE_F_MORE and bounds each source to one CQE per loop turn.
-// The loop drains completions itself
-// (error-preserving) and routes by token kind (`nucleus_loop_kind_of`, the
-// NucleusCompositorLoop.h contract) to the owning Swift handler, inline. Frame
-// pacing is the wait deadline: each turn the loop blocks up to the next frame
-// boundary, and renders when it elapses.
+// The runtime state stays main-actor isolated, while each wait suspends that actor.
+// The shared reactor owns io_uring registration, cancellation, submission, stale
+// completion rejection, and deadline/control eventfds. This type only describes
+// live interests and routes readiness to the source that owns each descriptor.
 @MainActor
 final class CompositorRuntime {
     private static weak var active: CompositorRuntime?
 
     private static let loopKindShift: UInt64 = 56
     private static let instMask: UInt64 = (UInt64(1) << 56) - 1
+    private static let shutdownDrainTimeoutNanoseconds: UInt64 = 1_000_000_000
 
-    private var ring: IORing
+    private enum LoopKind: UInt8 {
+        case drm = 1
+        case seat = 3
+        case input = 4
+        case udev = 9
+        case xwaylandListen = 14
+        case xwaylandReady = 15
+        case xwaylandXwm = 16
+        case appearancePortal = 18
+        case waylandLoop = 21
+        case exitSignal = 22
+        case renderWake = 23
+        case accessibility = 24
+    }
+
+    private let reactor: LinuxHostReactor
     private let exitSignalFD: Int32
+    let renderWake: CompositorRenderWakeSink
+    let resourceHost: SwiftResourceHost
+    let retainedStore: RetainedTreeStore
+    let hostBundle: NucleusAppHostBundle
+    let windowSceneAuthor: WindowSceneAuthor
+    let shellServices = ShellServices()
     private var exitRequested = false
     private var paused = false
+    private var sessionPausePending = false
+    private var shutdownDrainDeadlineNanoseconds: UInt64?
     // Frame pacing is deadline-driven off each output's DisplayLink (vblank-phased predicted
     // present, corrected by real page-flip timestamps); `frameIntervalNs` is only the fallback
     // wait before any output exists. There is no free-running frame clock.
 
-    /// The DRM session generation the primary-fd multishot poll is registered
-    /// under; a device re-open bumps it, so the poll is cancelled + re-armed and
-    /// stale completions (carrying the old generation in their token) are rejected
-    /// by `nucleus_loop_handle_drm`.
     /// The cursor-image generation last uploaded to the hardware cursor planes; a bump
     /// in `CursorServer.generation` triggers a re-upload.
     private var lastCursorGeneration: UInt64 = 0
 
-    private var drmGeneration: UInt64 = 0
-    /// The xwayland ready/xwm fds currently polled (-1 = none); these appear after
-    /// Xwayland spawns, so they are registered lazily once seen.
-    private var polledReadyFd: Int32 = -1
-    private var polledXwmFd: Int32 = -1
     private var loopTurns: UInt64 = 0
     private var idleWakeupWindowStartNs =
         CompositorRuntime.monotonicNowNs()
@@ -74,12 +83,30 @@ final class CompositorRuntime {
     init?() {
         let exitSignalFD = nucleus_compositor_create_exit_signal_fd()
         guard exitSignalFD >= 0 else { return nil }
-        guard let ring = try? IORing(queueDepth: 256) else {
+        guard let reactor = try? LinuxHostReactor(queueDepth: 256) else {
             close(exitSignalFD)
             return nil
         }
-        self.ring = ring
+        guard let renderWake = CompositorRenderWakeSink() else {
+            close(exitSignalFD)
+            return nil
+        }
+        self.reactor = reactor
         self.exitSignalFD = exitSignalFD
+        self.renderWake = renderWake
+        let resourceHost = SwiftResourceHost()
+        self.resourceHost = resourceHost
+        let retainedStore = RetainedTreeStore(resourceHost: resourceHost)
+        let hostBundle = NucleusAppHostBundle(resourceHost: resourceHost)
+        self.retainedStore = retainedStore
+        self.hostBundle = hostBundle
+        self.windowSceneAuthor = WindowSceneAuthor {
+            RenderCommitSink(
+                store: retainedStore,
+                resourceHost: resourceHost,
+                runtimeHost: hostBundle.layersHost,
+                requestFrame: { DisplayFrameDemand.requestFrame() })
+        }
         if let raw = getenv("NUCLEUS_SCALE"), let value = Double(String(cString: raw)), value > 0 {
             self.outputScale = value
         } else {
@@ -88,12 +115,25 @@ final class CompositorRuntime {
         Self.active = self
     }
 
+    func makeRenderCommitSink() -> RenderCommitSink {
+        RenderCommitSink(
+            store: retainedStore,
+            resourceHost: resourceHost,
+            runtimeHost: hostBundle.layersHost,
+            requestFrame: { DisplayFrameDemand.requestFrame() })
+    }
+
     deinit {
         close(exitSignalFD)
     }
 
     static func requestExit() {
         active?.exitRequested = true
+        active?.reactor.wake()
+    }
+
+    func stopReactor() {
+        reactor.shutdown()
     }
 
     static func sessionResume() -> Bool {
@@ -112,73 +152,196 @@ final class CompositorRuntime {
         return true
     }
 
-    static func sessionPause() {
-        guard let runtime = active else { return }
+    static func sessionPause() -> Bool {
+        guard let runtime = active else { return true }
         runtime.paused = true
+        runtime.outputTopology.cancelPendingReconcile()
         for display in NucleusCompositorServer.shared.layout.displays {
             display.suspendRedraws()
         }
-        if !RenderRuntime.pauseSession() {
+        switch RenderRuntime.pauseSession() {
+        case .complete:
+            runtime.sessionPausePending = false
+            return true
+        case .waitingForPageFlip:
+            runtime.sessionPausePending = true
+            return false
+        case .failed:
+            runtime.sessionPausePending = false
             logRuntime("session: failed to retire DRM state cleanly")
+            // Do not strand the VT on an unrecoverable renderer failure.
+            return true
         }
     }
 
-    // ── Token encoding (shared with loop_tokens.token / NucleusCompositorLoop.h) ──
-    private static func token(_ kind: NucleusLoopKind, _ inst: UInt64) -> UInt64 {
+    private func continuePendingSessionPause() {
+        guard sessionPausePending else { return }
+        switch RenderRuntime.pauseSession() {
+        case .waitingForPageFlip:
+            return
+        case .complete:
+            sessionPausePending = false
+            nucleus_input_host_complete_session_pause()
+        case .failed:
+            sessionPausePending = false
+            logRuntime("session: deferred DRM retirement failed")
+            nucleus_input_host_complete_session_pause()
+        }
+    }
+
+    private static func token(_ kind: LoopKind, _ inst: UInt64) -> UInt64 {
         (UInt64(kind.rawValue) << loopKindShift) | (inst & instMask)
-    }
-
-    @discardableResult
-    private func registerPoll(_ kind: NucleusLoopKind, fd: Int32, inst: UInt64) -> Bool {
-        guard fd >= 0 else { return false }
-        let prepared = ring.prepare(request: .pollAdd(
-            FileDescriptor(rawValue: fd),
-            pollEvents: .pollIn,
-            isMultiShot: false,
-            context: Self.token(kind, inst)))
-        if !prepared {
-            logRuntime("ioring poll prepare failed kind=\(kind.rawValue) fd=\(fd)")
-        }
-        return prepared
-    }
-
-    /// Register every platform event source once. The fd values are owned by their
-    /// Swift hosts; the loop borrows them for the poll. xwayland listen fds are
-    /// keyed by fd (the handler reads the fd back out of the token).
-    private func registerSources() {
-        drmGeneration = DrmSession.generation
-        registerPoll(NUCLEUS_LOOP_KIND_DRM, fd: DrmSession.fd, inst: drmGeneration)
-
-        let abstractFd = nucleus_xwm_host_abstract_fd()
-        registerPoll(NUCLEUS_LOOP_KIND_XWAYLAND_LISTEN, fd: abstractFd, inst: instOf(abstractFd))
-        let fsFd = nucleus_xwm_host_fs_fd()
-        registerPoll(NUCLEUS_LOOP_KIND_XWAYLAND_LISTEN, fd: fsFd, inst: instOf(fsFd))
-
-        registerPoll(NUCLEUS_LOOP_KIND_SEAT, fd: nucleus_input_host_seat_fd(), inst: 0)
-        registerPoll(NUCLEUS_LOOP_KIND_INPUT, fd: nucleus_input_host_libinput_fd(), inst: 0)
-        registerPoll(NUCLEUS_LOOP_KIND_DBUS, fd: nucleus_shell_dbus_notification_fd(), inst: 0)
-        registerPoll(NUCLEUS_LOOP_KIND_APPEARANCE_PORTAL, fd: nucleus_shell_dbus_appearance_fd(), inst: 0)
-        registerPoll(NUCLEUS_LOOP_KIND_UDEV, fd: nucleus_input_host_drm_hotplug_fd(), inst: 0)
-        registerPoll(NUCLEUS_LOOP_KIND_WAYLAND_LOOP, fd: WaylandRuntime.eventLoopFd(), inst: 0)
-        registerPoll(NUCLEUS_LOOP_KIND_EXIT_SIGNAL, fd: exitSignalFD, inst: 0)
-        submit()
     }
 
     private func instOf(_ fd: Int32) -> UInt64 { UInt64(UInt32(bitPattern: fd)) }
 
-    private func submit() {
-        do { try ring.submitPreparedRequests() } catch {
-            logRuntime("ioring submit failed: \(error)")
-        }
+    private func appendInterest(
+        _ kind: LoopKind,
+        fileDescriptor: Int32,
+        instance: UInt64 = 0,
+        events: Int16 = Int16(POLLIN),
+        mode: LinuxReactorPollMode = .oneShot,
+        to interests: inout [LinuxReactorInterest]
+    ) {
+        guard fileDescriptor >= 0, events != 0 else { return }
+        interests.append(LinuxReactorInterest(
+            token: Self.token(kind, instance),
+            fileDescriptor: fileDescriptor,
+            events: events,
+            mode: mode))
     }
 
-    // Drive the loop until exit. Returns when the compositor should exit, at which
-    // point `nucleus_runtime_main` tears the context down.
-    func run() {
-        registerSources()
+    private func appendLinuxSource<Source: LinuxReactorSource>(
+        _ kind: LoopKind,
+        source: Source?,
+        to interests: inout [LinuxReactorInterest]
+    ) {
+        guard let source else { return }
+        appendInterest(
+            kind,
+            fileDescriptor: source.fileDescriptor,
+            events: source.pollEvents,
+            to: &interests)
+    }
+
+    /// Rebuild the desired descriptor set from live owners each turn. The
+    /// reactor diffs this keyed snapshot, cancels replaced registrations, and
+    /// rejects completions from their old kernel contexts.
+    private func currentInterests() -> [LinuxReactorInterest] {
+        var interests: [LinuxReactorInterest] = []
+        interests.reserveCapacity(14)
+        appendInterest(
+            .drm,
+            fileDescriptor: DrmSession.fd,
+            instance: DrmSession.generation,
+            mode: .multishot,
+            to: &interests)
+        let abstractFD = nucleus_xwm_host_abstract_fd()
+        appendInterest(
+            .xwaylandListen,
+            fileDescriptor: abstractFD,
+            instance: instOf(abstractFD),
+            mode: .multishot,
+            to: &interests)
+        let fileSystemFD = nucleus_xwm_host_fs_fd()
+        appendInterest(
+            .xwaylandListen,
+            fileDescriptor: fileSystemFD,
+            instance: instOf(fileSystemFD),
+            mode: .multishot,
+            to: &interests)
+        let readyFD = nucleus_xwm_host_ready_fd()
+        appendInterest(
+            .xwaylandReady,
+            fileDescriptor: readyFD,
+            instance: instOf(readyFD),
+            to: &interests)
+        let xwmFD = nucleus_xwm_host_xwm_fd()
+        appendInterest(
+            .xwaylandXwm,
+            fileDescriptor: xwmFD,
+            instance: instOf(xwmFD),
+            to: &interests)
+        appendInterest(
+            .seat,
+            fileDescriptor: nucleus_input_host_seat_fd(),
+            mode: .multishot,
+            to: &interests)
+        appendInterest(
+            .input,
+            fileDescriptor: nucleus_input_host_libinput_fd(),
+            mode: .multishot,
+            to: &interests)
+        appendLinuxSource(
+            .appearancePortal,
+            source: Optional(shellServices.environmentReactorSource),
+            to: &interests)
+        appendLinuxSource(
+            .accessibility,
+            source: shellServices.accessibilityReactorSource,
+            to: &interests)
+        appendInterest(
+            .udev,
+            fileDescriptor: nucleus_input_host_drm_hotplug_fd(),
+            mode: .multishot,
+            to: &interests)
+        appendInterest(
+            .waylandLoop,
+            fileDescriptor: WaylandRuntime.eventLoopFd(),
+            mode: .multishot,
+            to: &interests)
+        appendInterest(
+            .exitSignal,
+            fileDescriptor: exitSignalFD,
+            mode: .multishot,
+            to: &interests)
+        appendInterest(
+            .renderWake,
+            fileDescriptor: renderWake.fileDescriptor,
+            mode: .multishot,
+            to: &interests)
+        return interests
+    }
+
+    // Drive the loop until exit. Waiting suspends the main actor, allowing
+    // process callbacks, UI tasks, and transfer continuations to run promptly.
+    func run() async {
         Trace.setThreadName("Nucleus compositor main")
 
-        while !exitRequested {
+        runtimeLoop: while true {
+            if exitRequested {
+                paused = true
+                outputTopology.cancelPendingReconcile()
+                let now = Self.monotonicNowNs()
+                if shutdownDrainDeadlineNanoseconds == nil {
+                    let deadline = now.addingReportingOverflow(
+                        Self.shutdownDrainTimeoutNanoseconds)
+                    shutdownDrainDeadlineNanoseconds = deadline.overflow
+                        ? UInt64.max
+                        : deadline.partialValue
+                    for display in NucleusCompositorServer.shared.layout.displays {
+                        display.suspendRedraws()
+                    }
+                }
+                switch RenderRuntime.prepareShutdown() {
+                case .complete:
+                    break runtimeLoop
+                case .failed:
+                    logRuntime(
+                        "shutdown: output retirement failed; preserving renderer resources")
+                    break runtimeLoop
+                case .waitingForPageFlip:
+                    if let deadline = shutdownDrainDeadlineNanoseconds,
+                       now >= deadline
+                    {
+                        logRuntime(
+                            "shutdown: page-flip drain deadline reached; preserving renderer resources")
+                        break runtimeLoop
+                    }
+                    // The normal DRM interest remains armed below. Its page-flip
+                    // event retires the borrow and the next turn retries.
+                }
+            }
             loopTurns &+= 1
             Trace.plot("swift.runtime.loop.turn", loopTurns)
             let renderZone = Trace.beginZone("runtime.render_turn", color: Trace.Color.green)
@@ -230,31 +393,60 @@ final class CompositorRuntime {
             // Block up to the earliest per-output vblank deadline. A real event — a page-flip
             // completion, a client request, input — arrives on its fd and preempts this bound, so
             // it is a ceiling, not a fixed cadence.
-            let timeout: Duration? = paused ? nil : earliestDeadlineTimeout()
+            let timeout: UInt64?
+            if exitRequested,
+               let deadline = shutdownDrainDeadlineNanoseconds
+            {
+                let now = Self.monotonicNowNs()
+                timeout = now >= deadline ? 0 : deadline - now
+            } else {
+                timeout = paused ? nil : earliestDeadlineNanoseconds()
+            }
             let waitZone = Trace.beginZone("runtime.ioring_wait", color: Trace.Color.blue)
+            let batch: LinuxReactorBatch
             do {
-                try ring.waitForCompletions(timeout: timeout)
+                batch = try await reactor.wait(
+                    interests: currentInterests(),
+                    timeoutNanoseconds: timeout)
             } catch {
-                logRuntime("ioring wait failed: \(error)")
+                logRuntime("host reactor failed: \(error)")
+                exitRequested = true
+                waitZone.end()
+                break
             }
             waitZone.end()
 
             let dispatchZone = Trace.beginZone("runtime.completion_drain", color: Trace.Color.yellow)
-            var needsPollSubmit = false
-            var completionCount: UInt64 = 0
-            while let completion = ring.tryConsumeCompletion() {
-                completionCount &+= 1
-                if dispatch(completion) { needsPollSubmit = true }
+            for event in batch.events {
+                dispatch(event)
             }
-            if needsPollSubmit { submit() }
+            let completionCount = UInt64(batch.events.count)
             dispatchZone.value(completionCount)
             dispatchZone.end()
             Trace.plot("swift.runtime.loop.completions", completionCount)
+            Trace.plot(
+                "swift.runtime.loop.completion_budget_exhausted",
+                UInt64(batch.didExhaustCompletionBudget ? 1 : 0))
+            if let latency = batch.executorResumeLatencyNanoseconds {
+                Trace.plot(
+                    "swift.runtime.loop.main_actor_resume_ms",
+                    Double(latency) / 1_000_000.0)
+            }
             recordIdleWakeupRate()
 
-            maintainDrmGeneration()
-            maintainXwayland()
             WaylandRuntime.idleTick(nowNs: Self.monotonicNowNs())
+            if let renderService =
+                NucleusCompositorServer.shared.renderService
+            {
+                renderService.pollCaptureWork()
+                if renderService.captureWorkStalled {
+                    logRuntime(
+                        "capture: GPU completion made no progress; shutting down renderer safely")
+                    exitRequested = true
+                }
+            }
+            WaylandRuntime.flushClients()
+            processDueLinuxReactorSources()
 
             // post-drain: always drain libseat — a VT-switch signal arrives as a
             // delivered EINTR with no CQE, and the io_uring wait returns on it —
@@ -294,14 +486,30 @@ final class CompositorRuntime {
 
     /// The wait ceiling until the next frame is due: the earliest predicted-present deadline across
     /// all outputs (each output's DisplayLink blends its vblank-phase prediction with any pending
-    /// operation deadline). `.zero` renders immediately when a deadline has already passed. Before any
+    /// operation deadline). Zero renders immediately when a deadline has already passed. Before any
     /// output is queued. Idle and in-flight outputs contribute no timeout.
-    private func earliestDeadlineTimeout() -> Duration? {
+    private func earliestDeadlineNanoseconds() -> UInt64? {
         let now = Self.monotonicNowNs()
         var earliest: UInt64 = .max
         if let idleDeadline = WaylandRuntime.nextIdleDeadlineNs() {
             earliest = min(earliest, idleDeadline)
         }
+        if let captureDelay =
+            NucleusCompositorServer.shared.renderService?.capturePollDelay
+        {
+            let capturePoll = now.addingReportingOverflow(captureDelay)
+            earliest = min(
+                earliest,
+                capturePoll.overflow ? UInt64.max : capturePoll.partialValue)
+        }
+        addLinuxReactorDeadline(
+            source: Optional(shellServices.environmentReactorSource),
+            nowNanoseconds: now,
+            earliest: &earliest)
+        addLinuxReactorDeadline(
+            source: shellServices.accessibilityReactorSource,
+            nowNanoseconds: now,
+            earliest: &earliest)
         for display in NucleusCompositorServer.shared.layout.displays {
             switch display.redrawState {
             case .queued:
@@ -316,144 +524,161 @@ final class CompositorRuntime {
             }
         }
         guard earliest != .max else { return nil }
-        if now >= earliest { return .zero }
-        return .nanoseconds(Int(earliest &- now))
+        if now >= earliest { return 0 }
+        return earliest - now
     }
 
-    // Route one drained completion to its Swift owner. A cancelled poll's terminal
-    // CQE (-ECANCELED, from a DRM device re-open) carries no owner work and is
-    // dropped; the cancel op's own ack carries token 0 (no kind) → `default`.
-    // On error (result < 0, non-cancel) the source is logged and skipped.
-    /// Dispatch one one-shot poll completion, then stage its replacement poll when
-    /// the source is still live. Returns true when a replacement was prepared.
-    private func dispatch(_ completion: borrowing IORing.Completion) -> Bool {
-        let token = completion.context
-        let result = completion.result
-        Trace.plot("swift.runtime.loop.last_completion_kind", UInt64(nucleus_loop_kind_of(token)))
-        if result == -ECANCELED { return false }
-        let ready = result >= 0
-        func fail(_ name: String) { if !ready { logRuntime("\(name) completion failed: \(result)") } }
+    private func dispatch(_ event: LinuxReactorEvent) {
+        let token = event.token
+        guard let kind = LoopKind(rawValue: UInt8(
+            truncatingIfNeeded: token >> Self.loopKindShift))
+        else { return }
+        Trace.plot(
+            "swift.runtime.loop.last_completion_kind",
+            UInt64(kind.rawValue))
 
-        switch nucleus_loop_kind_of(token) {
-        case UInt8(NUCLEUS_LOOP_KIND_DRM.rawValue):
-            // Reject a completion from a prior DRM session generation: the token's
-            // instance is the generation it was registered under, so a device
-            // re-open makes the old fd's in-flight completions stale.
-            guard (token & Self.instMask) == DrmSession.generation else { return false }
-            if ready { RenderRuntime.handleDrmEvents() } else { fail("drm") }
-        case UInt8(NUCLEUS_LOOP_KIND_SEAT.rawValue):
-            if ready { nucleus_input_host_seat_dispatch() } else { fail("seat") }
-        case UInt8(NUCLEUS_LOOP_KIND_INPUT.rawValue):
-            if ready { nucleus_input_host_drain_libinput() } else { fail("input") }
-        case UInt8(NUCLEUS_LOOP_KIND_DBUS.rawValue):
-            // Pump the notification bus, then re-collect frame demand (which
-            // observes any bezel/notification frame request and arms the overlay).
-            if ready { nucleus_shell_dbus_pump_notifications(); DisplayFrameDemand.sync() } else { fail("dbus") }
-        case UInt8(NUCLEUS_LOOP_KIND_APPEARANCE_PORTAL.rawValue):
-            if ready { nucleus_shell_dbus_pump_appearance(); DisplayFrameDemand.requestFrame() } else { fail("appearance_portal") }
-        case UInt8(NUCLEUS_LOOP_KIND_UDEV.rawValue):
-            // DRM connector hotplug: one root transaction reconciles renderer,
-            // server, shell policy, and Wayland protocol ownership.
-            if ready {
-                if nucleus_input_host_drain_drm_hotplug() {
+        if let failure = event.failureCode {
+            descriptorFailure(kind: kind, result: failure)
+            return
+        }
+        let result = LinuxPollResult(returnedEvents: event.returnedEvents)
+
+        switch kind {
+        case .drm:
+            guard (token & Self.instMask) == DrmSession.generation else {
+                return
+            }
+            if result.isReadable {
+                RenderRuntime.handleDrmEvents()
+                if !paused && !exitRequested {
+                    _ = outputTopology.continuePendingReconcile()
+                }
+                continuePendingSessionPause()
+            } else if result.isTerminal {
+                descriptorFailure(kind: kind, result: event.result)
+            }
+        case .seat:
+            if result.isReadable {
+                nucleus_input_host_seat_dispatch()
+            } else if result.isTerminal {
+                descriptorFailure(kind: kind, result: event.result)
+            }
+        case .input:
+            if result.isReadable {
+                nucleus_input_host_drain_libinput()
+            } else if result.isTerminal {
+                descriptorFailure(kind: kind, result: event.result)
+            }
+        case .appearancePortal:
+            processLinuxSource(
+                shellServices.environmentReactorSource,
+                pollResult: result,
+                failureOperation: "desktop settings portal descriptor closed")
+        case .accessibility:
+            processLinuxSource(
+                shellServices.accessibilityReactorSource,
+                pollResult: result,
+                failureOperation: "accessibility bus descriptor closed")
+        case .udev:
+            if result.isReadable {
+                if nucleus_input_host_drain_drm_hotplug(),
+                   !paused, !exitRequested
+                {
                     _ = outputTopology.reconcile()
                 }
-            } else {
-                fail("udev")
+            } else if result.isTerminal {
+                descriptorFailure(kind: kind, result: event.result)
             }
-        case UInt8(NUCLEUS_LOOP_KIND_XWAYLAND_LISTEN.rawValue):
-            // The listen fd is the token instance; the xwm host accepts on it.
-            if ready { _ = nucleus_xwm_host_display_readable(Int32(bitPattern: UInt32(truncatingIfNeeded: token & Self.instMask))) } else { fail("xwayland_listen") }
-        case UInt8(NUCLEUS_LOOP_KIND_XWAYLAND_READY.rawValue):
-            if ready { nucleus_xwm_host_ready_readable() } else { fail("xwayland_ready") }
-        case UInt8(NUCLEUS_LOOP_KIND_XWAYLAND_XWM.rawValue):
-            if ready { _ = nucleus_xwm_host_dispatch() } else { fail("xwayland_xwm") }
-        case UInt8(NUCLEUS_LOOP_KIND_WAYLAND_LOOP.rawValue):
-            if ready { WaylandRuntime.dispatch() } else { fail("wayland_loop") }
-        case UInt8(NUCLEUS_LOOP_KIND_EXIT_SIGNAL.rawValue):
-            if ready {
+        case .xwaylandListen:
+            if result.isReadable {
+                let descriptor = Int32(bitPattern: UInt32(
+                    truncatingIfNeeded: token & Self.instMask))
+                _ = nucleus_xwm_host_display_readable(descriptor)
+            } else if result.isTerminal {
+                logRuntime("Xwayland listen descriptor closed")
+            }
+        case .xwaylandReady:
+            if result.isReadable || result.isHungUp {
+                nucleus_xwm_host_ready_readable()
+            } else if result.isTerminal {
+                logRuntime("Xwayland readiness descriptor failed")
+            }
+        case .xwaylandXwm:
+            if result.isReadable || result.isHungUp {
+                _ = nucleus_xwm_host_dispatch()
+            } else if result.isTerminal {
+                logRuntime("Xwayland window-manager descriptor failed")
+            }
+        case .waylandLoop:
+            if result.isReadable {
+                WaylandRuntime.dispatch()
+            } else if result.isTerminal {
+                descriptorFailure(kind: kind, result: event.result)
+            }
+        case .exitSignal:
+            if result.isReadable || result.isTerminal {
                 _ = nucleus_compositor_consume_exit_signal(exitSignalFD)
                 exitRequested = true
-            } else {
-                fail("exit_signal")
             }
-        default: break
-        }
-        return ready && rearmPoll(for: token)
-    }
-
-    /// Rearm the source represented by `token` using its current live fd. Dynamic
-    /// sources are validated against the token instance so a completion from a
-    /// closed/replaced descriptor cannot register the stale integer again.
-    private func rearmPoll(for token: UInt64) -> Bool {
-        let kind = nucleus_loop_kind_of(token)
-        let inst = token & Self.instMask
-        switch kind {
-        case UInt8(NUCLEUS_LOOP_KIND_DRM.rawValue):
-            guard inst == DrmSession.generation else { return false }
-            return registerPoll(NUCLEUS_LOOP_KIND_DRM, fd: DrmSession.fd, inst: inst)
-        case UInt8(NUCLEUS_LOOP_KIND_SEAT.rawValue):
-            return registerPoll(NUCLEUS_LOOP_KIND_SEAT, fd: nucleus_input_host_seat_fd(), inst: 0)
-        case UInt8(NUCLEUS_LOOP_KIND_INPUT.rawValue):
-            return registerPoll(NUCLEUS_LOOP_KIND_INPUT, fd: nucleus_input_host_libinput_fd(), inst: 0)
-        case UInt8(NUCLEUS_LOOP_KIND_DBUS.rawValue):
-            return registerPoll(NUCLEUS_LOOP_KIND_DBUS, fd: nucleus_shell_dbus_notification_fd(), inst: 0)
-        case UInt8(NUCLEUS_LOOP_KIND_APPEARANCE_PORTAL.rawValue):
-            return registerPoll(NUCLEUS_LOOP_KIND_APPEARANCE_PORTAL, fd: nucleus_shell_dbus_appearance_fd(), inst: 0)
-        case UInt8(NUCLEUS_LOOP_KIND_UDEV.rawValue):
-            return registerPoll(NUCLEUS_LOOP_KIND_UDEV, fd: nucleus_input_host_drm_hotplug_fd(), inst: 0)
-        case UInt8(NUCLEUS_LOOP_KIND_WAYLAND_LOOP.rawValue):
-            return registerPoll(NUCLEUS_LOOP_KIND_WAYLAND_LOOP, fd: WaylandRuntime.eventLoopFd(), inst: 0)
-        case UInt8(NUCLEUS_LOOP_KIND_EXIT_SIGNAL.rawValue):
-            guard !exitRequested else { return false }
-            return registerPoll(NUCLEUS_LOOP_KIND_EXIT_SIGNAL, fd: exitSignalFD, inst: 0)
-        case UInt8(NUCLEUS_LOOP_KIND_XWAYLAND_LISTEN.rawValue):
-            let fd = Int32(bitPattern: UInt32(truncatingIfNeeded: inst))
-            return registerPoll(NUCLEUS_LOOP_KIND_XWAYLAND_LISTEN, fd: fd, inst: inst)
-        case UInt8(NUCLEUS_LOOP_KIND_XWAYLAND_READY.rawValue):
-            let fd = nucleus_xwm_host_ready_fd()
-            guard inst == instOf(fd) else { return false }
-            return registerPoll(NUCLEUS_LOOP_KIND_XWAYLAND_READY, fd: fd, inst: inst)
-        case UInt8(NUCLEUS_LOOP_KIND_XWAYLAND_XWM.rawValue):
-            let fd = nucleus_xwm_host_xwm_fd()
-            guard inst == instOf(fd) else { return false }
-            return registerPoll(NUCLEUS_LOOP_KIND_XWAYLAND_XWM, fd: fd, inst: inst)
-        default:
-            return false
-        }
-    }
-
-    /// On a DRM device re-open the session generation bumps: cancel the one-shot
-    /// poll on the old (now-closed) primary fd and arm the new fd under a
-    /// fresh generation-keyed token.
-    private func maintainDrmGeneration() {
-        let live = DrmSession.generation
-        guard live != drmGeneration else { return }
-        _ = ring.prepare(request: .cancel(.first, matchingContext: Self.token(NUCLEUS_LOOP_KIND_DRM, drmGeneration)))
-        drmGeneration = live
-        registerPoll(NUCLEUS_LOOP_KIND_DRM, fd: DrmSession.fd, inst: live)
-        submit()
-    }
-
-    /// Xwayland's readiness pipe + XWM connection fds appear after it spawns;
-    /// register each once it shows up (keyed by fd so the handler recovers it).
-    private func maintainXwayland() {
-        let readyFd = nucleus_xwm_host_ready_fd()
-        if readyFd >= 0 && polledReadyFd != readyFd {
-            registerPoll(NUCLEUS_LOOP_KIND_XWAYLAND_READY, fd: readyFd, inst: instOf(readyFd))
-            submit()
-            polledReadyFd = readyFd
-        }
-        let xwmFd = nucleus_xwm_host_xwm_fd()
-        if xwmFd >= 0 {
-            if polledXwmFd != xwmFd {
-                registerPoll(NUCLEUS_LOOP_KIND_XWAYLAND_XWM, fd: xwmFd, inst: instOf(xwmFd))
-                submit()
-                polledXwmFd = xwmFd
+        case .renderWake:
+            if result.isReadable {
+                if renderWake.drain() {
+                    DisplayFrameDemand.requestFrame()
+                }
+            } else if result.isTerminal {
+                descriptorFailure(kind: kind, result: event.result)
             }
-        } else {
-            polledXwmFd = -1
         }
+    }
+
+    private func descriptorFailure(kind: LoopKind, result: Int32) {
+        logRuntime(
+            "required descriptor kind=\(kind.rawValue) failed: \(result)")
+        exitRequested = true
+    }
+
+    private func addLinuxReactorDeadline<Source: LinuxReactorSource>(
+        source: Source?,
+        nowNanoseconds: UInt64,
+        earliest: inout UInt64
+    ) {
+        guard let microseconds = source?.timeoutMicroseconds() else { return }
+        let delta = microseconds.multipliedReportingOverflow(by: 1_000)
+        guard !delta.overflow else { return }
+        let addition = nowNanoseconds.addingReportingOverflow(
+            delta.partialValue)
+        earliest = min(
+            earliest,
+            addition.overflow ? UInt64.max : addition.partialValue)
+    }
+
+    private func processLinuxSource<Source: LinuxReactorSource>(
+        _ source: Source?,
+        pollResult: LinuxPollResult,
+        failureOperation: String
+    ) {
+        guard let source else { return }
+        if pollResult.isTerminal {
+            source.transportDidFail(operation: failureOperation)
+            return
+        }
+        if pollResult.returnedEvents != 0, source.process() {
+            DisplayFrameDemand.requestFrame()
+        }
+    }
+
+    private func processDueLinuxSource<Source: LinuxReactorSource>(
+        _ source: Source?
+    ) {
+        guard let source else { return }
+        if source.timeoutMicroseconds() == 0, source.process() {
+            DisplayFrameDemand.requestFrame()
+        }
+    }
+
+    private func processDueLinuxReactorSources() {
+        processDueLinuxSource(shellServices.environmentReactorSource)
+        processDueLinuxSource(shellServices.accessibilityReactorSource)
     }
 
     /// Build this frame's per-output direct-scanout candidates (M2) by combining the
@@ -523,6 +748,6 @@ func logRuntime(_ message: String) {
 // `NucleusCompositorServer.shared.sessionControl`, installed at bring-up.
 extension CompositorRuntime: CompositorSessionControl {
     func sessionResume() -> Bool { Self.sessionResume() }
-    func sessionPause() { Self.sessionPause() }
+    func sessionPause() -> Bool { Self.sessionPause() }
     func requestExit() { Self.requestExit() }
 }

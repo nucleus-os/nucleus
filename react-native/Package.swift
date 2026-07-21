@@ -279,6 +279,9 @@ let package = Package(
     // separate host .so). The RN Swift/C++ bridge + the host C++ impl.
     products: [
         .library(name: "NucleusReactRuntime", targets: ["NucleusReactRuntime"]),
+        .executable(
+            name: "NucleusReactThreadSanitizerHarness",
+            targets: ["NucleusReactThreadSanitizerHarness"]),
         .library(name: "NucleusReactRuntimeCxx", targets: ["NucleusReactRuntimeCxx"]),
         .library(name: "NucleusReactRuntimeHostCxx", targets: ["NucleusReactRuntimeHostCxx"]),
     ],
@@ -348,7 +351,8 @@ let package = Package(
         ),
         // Stage the core-owned C++ host archives (NucleusReactRuntimeHostCxx) into
         // .cxx-build so a downstream executable links them instead of recompiling —
-        // run after a build: swift package provision-cxx-libs --allow-writing-to-package-directory
+        // run after a build: swift package provision-cxx-libs <debug|release>
+        // --allow-writing-to-package-directory
         .plugin(
             name: "ProvisionCxxLibs",
             capability: .command(
@@ -410,6 +414,21 @@ let package = Package(
             ],
             path: "swift/Tests/NucleusReactRuntimeFabricTests",
             linkerSettings: [.unsafeFlags(rnFabricLinkFlags + skiaLinkFlags)]
+        ),
+        .executableTarget(
+            name: "NucleusReactThreadSanitizerHarness",
+            dependencies: [
+                "NucleusReactFabricSmokeC", "NucleusReactRuntimeHostCxx",
+                "NucleusReactRuntimeCxx",
+                .product(name: "NucleusTextBackend", package: "Nucleus"),
+                .product(
+                    name: "NucleusSkiaGraphiteBridge",
+                    package: "Nucleus"),
+            ],
+            path: "swift/SanitizerHarnesses/NucleusReactThreadSanitizerHarness",
+            linkerSettings: [
+                .unsafeFlags(rnFabricLinkFlags + skiaLinkFlags),
+            ]
         ),
 
         // ── The real RN runtime modules. NucleusReactRuntimeCxx (Swift) imports the
@@ -492,3 +511,22 @@ let package = Package(
         ),
     ]
 )
+
+
+for target in package.targets {
+    switch target.type {
+    case .regular, .executable, .test:
+        break
+    default:
+        continue
+    }
+    target.swiftSettings = (target.swiftSettings ?? []) + [
+        .unsafeFlags(["-warnings-as-errors"]),
+    ]
+    target.cSettings = (target.cSettings ?? []) + [
+        .unsafeFlags(["-Werror"]),
+    ]
+    target.cxxSettings = (target.cxxSettings ?? []) + [
+        .unsafeFlags(["-Werror"]),
+    ]
+}

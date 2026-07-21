@@ -115,7 +115,8 @@ public struct TextLayout: Sendable, Equatable {
         containerWidth: Double? = nil,
         alignment: TextAlignment = .leading,
         lineBreakMode: LineBreakMode = .byClipping,
-        numberOfLines: Int = 1
+        numberOfLines: Int = 1,
+        textSystem: TextSystem
     ) {
         self.text = text
         self.font = font
@@ -127,7 +128,7 @@ public struct TextLayout: Sendable, Equatable {
             maximumLineCount: numberOfLines
         )
 
-        let result = TextSystem.shared.layout(
+        let result = textSystem.layout(
             AttributedText(text, style: TextStyle(font: font)),
             containerWidth: containerWidth,
             paragraphStyle: paragraphStyle
@@ -144,7 +145,8 @@ public struct TextLayout: Sendable, Equatable {
         containerWidth: Double? = nil,
         alignment: TextAlignment = .leading,
         lineBreakMode: LineBreakMode = .byClipping,
-        numberOfLines: Int = 1
+        numberOfLines: Int = 1,
+        textSystem: TextSystem
     ) {
         let normalizedRuns = runs.filter { !$0.text.isEmpty }
         let fallbackFont = normalizedRuns.first?.font ?? .systemFont(ofSize: 14)
@@ -158,7 +160,7 @@ public struct TextLayout: Sendable, Equatable {
             maximumLineCount: numberOfLines
         )
 
-        let result = TextSystem.shared.layout(
+        let result = textSystem.layout(
             AttributedText(runs: normalizedRuns),
             containerWidth: containerWidth,
             paragraphStyle: paragraphStyle
@@ -173,7 +175,8 @@ public struct TextLayout: Sendable, Equatable {
     public init(
         attributedText: AttributedText,
         containerWidth: Double? = nil,
-        paragraphStyle: ParagraphStyle
+        paragraphStyle: ParagraphStyle,
+        textSystem: TextSystem
     ) {
         let normalized = AttributedText(runs: attributedText.runs)
         self.textRuns = normalized.runs
@@ -182,7 +185,7 @@ public struct TextLayout: Sendable, Equatable {
         self.containerWidth = containerWidth
         self.paragraphStyle = paragraphStyle
 
-        let result = TextSystem.shared.layout(
+        let result = textSystem.layout(
             normalized,
             containerWidth: containerWidth,
             paragraphStyle: paragraphStyle
@@ -223,8 +226,10 @@ public struct TextLayout: Sendable, Equatable {
     public var isEmpty: Bool { textRuns.isEmpty }
 
     @MainActor
-    package var hasBackendResource: Bool {
-        storage?.isCurrent(in: TextSystem.shared) == true
+    package func hasBackendResource(
+        in textSystem: TextSystem
+    ) -> Bool {
+        storage?.isCurrent(in: textSystem) == true
     }
 
     @MainActor
@@ -241,28 +246,36 @@ public struct TextLayout: Sendable, Equatable {
     }
 
     @MainActor
-    public static func measureWidth(_ text: String, font: Font) -> Double {
-        TextSystem.shared.measureWidth(text, font: font)
+    public static func measureWidth(
+        _ text: String,
+        font: Font,
+        in textSystem: TextSystem
+    ) -> Double {
+        textSystem.measureWidth(text, font: font)
     }
 
     @MainActor
-    public func glyphPosition(at point: Point) -> TextGlyphPosition? {
+    public func glyphPosition(
+        at point: Point,
+        in textSystem: TextSystem
+    ) -> TextGlyphPosition? {
         if let storage,
-           storage.isCurrent(in: TextSystem.shared),
+           storage.isCurrent(in: textSystem),
            let position = storage.glyphPosition(at: point)
         {
             return position
         }
-        return TextSystem.shared.fallbackGlyphPosition(at: point, in: self)
+        return textSystem.fallbackGlyphPosition(at: point, in: self)
     }
 
     @MainActor
     public func caretGeometry(
         atUTF16Offset offset: Int,
-        affinity: TextAffinity = .downstream
+        affinity: TextAffinity = .downstream,
+        in textSystem: TextSystem
     ) -> TextCaretGeometry? {
         if let storage,
-           storage.isCurrent(in: TextSystem.shared),
+           storage.isCurrent(in: textSystem),
            let geometry = storage.caretGeometry(
                atUTF16Offset: max(0, min(offset, text.utf16.count)),
                affinity: affinity
@@ -279,7 +292,7 @@ public struct TextLayout: Sendable, Equatable {
                 height: first.frame.size.height
             ))
         }
-        let rects = TextSystem.shared.fallbackSelectionRects(
+        let rects = textSystem.fallbackSelectionRects(
             forUTF16Range: 0..<clamped,
             in: self
         )
@@ -296,17 +309,20 @@ public struct TextLayout: Sendable, Equatable {
     }
 
     @MainActor
-    public func selectionRects(forUTF16Range range: Range<Int>) -> [TextSelectionRect] {
+    public func selectionRects(
+        forUTF16Range range: Range<Int>,
+        in textSystem: TextSystem
+    ) -> [TextSelectionRect] {
         let lower = max(0, min(range.lowerBound, text.utf16.count))
         let upper = max(lower, min(range.upperBound, text.utf16.count))
         let clamped = lower..<upper
         if let storage,
-           storage.isCurrent(in: TextSystem.shared),
+           storage.isCurrent(in: textSystem),
            let rects = storage.selectionRects(forUTF16Range: clamped)
         {
             return rects
         }
-        return TextSystem.shared.fallbackSelectionRects(
+        return textSystem.fallbackSelectionRects(
             forUTF16Range: clamped,
             in: self
         )

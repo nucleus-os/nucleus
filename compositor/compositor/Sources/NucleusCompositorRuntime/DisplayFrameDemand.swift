@@ -49,17 +49,17 @@ enum DisplayFrameDemand {
         // bezel latch leaves the notification latch unconsumed (and vice-versa).
         let overlayFrameRequested = BezelService.shared.takeFrameRequest()
             || NotificationService.shared.takeFrameRequest()
-        let deadlineRaw = OverlaySceneRuntime.shared.notificationDeadlineNs()
-        let operationDeadlineNs: UInt64? = deadlineRaw == 0 ? nil : deadlineRaw
+        let notificationDeadlineNs =
+            OverlaySceneRuntime.shared.notificationDeadlineNs()
         let notificationAnimationActive = BezelService.shared.hasActiveNotifications()
         let overlayRenderAnimationActive = RenderRuntime.hasActiveAnimations
 
         // Apply.
         if overlayFrameRequested { requestFrameForOverlay() }
-        if let deadline = operationDeadlineNs,
+        if notificationDeadlineNs != 0,
             let display = layout.display(id: overlayID)
         {
-            display.displayLink.requestOperationDeadline(deadline)
+            display.displayLink.requestFrameDeadline(notificationDeadlineNs)
             display.requestRedraw(.shellOverlay)
         }
         for display in layout.displays {

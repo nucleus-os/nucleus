@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 import NucleusAppHostProtocols
 @testable import NucleusRenderModel
@@ -111,6 +112,55 @@ import NucleusAppHostProtocols
         #expect(!RawPixelBuffer(width: 4, height: 0, order: .rgba, pixels: []).isWellFormed)
     }
 
+    @Test func adversarialGeometryNeverOverflowsValidationOrHashing() {
+        let cases = [
+            RawPixelBuffer(
+                width: .max, height: .max, order: .rgba, pixels: []),
+            RawPixelBuffer(
+                width: .max, height: 2, rowStride: .max,
+                order: .rgb, pixels: []),
+            RawPixelBuffer(
+                width: -1, height: -1, rowStride: .min,
+                order: .argb, pixels: []),
+        ]
+        for buffer in cases {
+            #expect(!buffer.isWellFormed)
+            #expect(buffer.normalizedRGBA() == nil)
+            _ = buffer.contentHash()
+        }
+    }
+
+    @Test func boundedRandomLayoutsNormalizeExactlyWhenWellFormed() {
+        var random = RawPixelRandom(seed: propertySeed())
+        let orders: [PixelChannelOrder] = [.rgba, .bgra, .argb, .rgb, .bgr]
+        for _ in 0..<1_024 {
+            let width = 1 + random.index(32)
+            let height = 1 + random.index(32)
+            let order = orders[random.index(orders.count)]
+            let minimumStride = width * order.sourceBytesPerPixel
+            let rowStride = minimumStride + random.index(17)
+            let exactCount = (height - 1) * rowStride + minimumStride
+            let truncate = random.index(5) == 0
+            let byteCount = truncate && exactCount > 0
+                ? exactCount - 1
+                : exactCount
+            let pixels = (0..<byteCount).map { _ in random.byte() }
+            let buffer = RawPixelBuffer(
+                width: width,
+                height: height,
+                rowStride: rowStride,
+                order: order,
+                isPremultiplied: random.index(2) == 0,
+                pixels: pixels)
+            #expect(buffer.isWellFormed == !truncate)
+            let normalized = buffer.normalizedRGBA()
+            #expect((normalized != nil) == !truncate)
+            if let normalized {
+                #expect(normalized.count == width * height * 4)
+            }
+        }
+    }
+
     // MARK: - Identity
 
     /// Raw buffers have no path to key on, and a notification re-sending an
@@ -130,6 +180,32 @@ import NucleusAppHostProtocols
     @Test func theLayoutIsPartOfTheIdentity() {
         #expect(single(.rgba, [1, 2, 3, 4]).contentHash()
                 != single(.bgra, [1, 2, 3, 4]).contentHash())
+    }
+}
+
+private func propertySeed() -> UInt64 {
+    guard let value = ProcessInfo.processInfo.environment["NUCLEUS_TEST_SEED"]
+    else { return 0x5241_5750_4958_454c }
+    let digits = value.hasPrefix("0x") ? String(value.dropFirst(2)) : value
+    return UInt64(digits, radix: 16) ?? 0x5241_5750_4958_454c
+}
+
+private struct RawPixelRandom {
+    private var state: UInt64
+
+    init(seed: UInt64) {
+        state = seed
+    }
+
+    mutating func index(_ upperBound: Int) -> Int {
+        precondition(upperBound > 0)
+        state = state &* 6_364_136_223_846_793_005
+            &+ 1_442_695_040_888_963_407
+        return Int(state % UInt64(upperBound))
+    }
+
+    mutating func byte() -> UInt8 {
+        UInt8(truncatingIfNeeded: index(256))
     }
 }
 

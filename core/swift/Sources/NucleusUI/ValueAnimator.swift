@@ -60,6 +60,7 @@ package final class ValueAnimationRecord: ~Sendable {
     package let timingCurve: AnimationCurve
     package let repeatBehavior: AnimationRepeatBehavior
     package let autoreverses: Bool
+    package let timeMode: AnimationTimeMode
     package let handle: AnimationHandle
     package let update: @MainActor (Double) -> Void
     package var startNanoseconds: UInt64?
@@ -73,6 +74,7 @@ package final class ValueAnimationRecord: ~Sendable {
         timingCurve: AnimationCurve,
         repeatBehavior: AnimationRepeatBehavior,
         autoreverses: Bool,
+        timeMode: AnimationTimeMode,
         handle: AnimationHandle,
         update: @escaping @MainActor (Double) -> Void
     ) {
@@ -84,6 +86,7 @@ package final class ValueAnimationRecord: ~Sendable {
         self.timingCurve = timingCurve
         self.repeatBehavior = repeatBehavior
         self.autoreverses = autoreverses
+        self.timeMode = timeMode
         self.handle = handle
         self.update = update
     }
@@ -173,6 +176,7 @@ extension UIContext {
             timingCurve: options.timing.curve,
             repeatBehavior: options.repeatBehavior,
             autoreverses: options.autoreverses,
+            timeMode: options.timeMode,
             handle: handle,
             update: update
         )
@@ -246,6 +250,21 @@ extension UIContext {
             valueAnimationSlots[record.slot] = nil
         }
         record.handle.resolve(outcome)
+    }
+
+    package func finishMotionScaledValueAnimationsForReducedMotion() {
+        let ids = valueAnimationRecords.keys.sorted()
+        for id in ids {
+            guard let record = valueAnimationRecords[id],
+                  record.timeMode == .motionScaled
+            else {
+                continue
+            }
+            if record.owner != nil {
+                record.update(record.to)
+            }
+            finishValueAnimation(id: id, outcome: .skippedReducedMotion)
+        }
     }
 
     private func sample(

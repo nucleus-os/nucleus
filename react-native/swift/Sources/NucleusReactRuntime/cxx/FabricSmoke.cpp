@@ -7,9 +7,21 @@
 // success; a nonzero code identifies the failing step (100 + step on a throw).
 #include <NucleusReactRuntime/ReactRuntimeHostFacade.hpp>
 
+#include <atomic>
+#include <chrono>
 #include <cstdio>
 #include <exception>
 #include <string>
+#include <thread>
+
+namespace {
+
+void countJSWorkWake(void *context) {
+    static_cast<std::atomic<int> *>(context)->fetch_add(
+        1, std::memory_order_relaxed);
+}
+
+} // namespace
 
 extern "C" int nucleus_rn_fabric_smoke(const char *hbcPath) {
     using namespace nucleus::react;
@@ -40,5 +52,42 @@ extern "C" int nucleus_rn_fabric_smoke(const char *hbcPath) {
     } catch (...) {
         std::fprintf(stderr, "nucleus_rn_fabric_smoke: step %d threw (non-std)\n", step);
         return 200 + step;
+    }
+}
+
+extern "C" int nucleus_rn_js_work_wake_smoke(const char *hbcPath) {
+    using namespace nucleus::react;
+    try {
+        auto facade = makeReactRuntimeHostFacade();
+        if (!facade) {
+            return 1;
+        }
+        std::atomic<int> wakes{0};
+        auto installed = facade->setJSWorkWakeHandler(
+            countJSWorkWake, &wakes, nullptr);
+        if (!installed.succeeded) {
+            return 2;
+        }
+        auto evaluated = facade->evaluateBytecode(std::string(hbcPath));
+        if (!evaluated.succeeded) {
+            return 3;
+        }
+        const auto deadline =
+            std::chrono::steady_clock::now() + std::chrono::seconds(2);
+        while (wakes.load(std::memory_order_relaxed) == 0
+               && std::chrono::steady_clock::now() < deadline) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        if (wakes.load(std::memory_order_relaxed) != 1) {
+            return 4;
+        }
+        auto drained = facade->drainPendingJSCalls();
+        if (!drained.succeeded || drained.unsignedValue == 0) {
+            return 5;
+        }
+        return 0;
+    } catch (...) {
+        return 6;
     }
 }

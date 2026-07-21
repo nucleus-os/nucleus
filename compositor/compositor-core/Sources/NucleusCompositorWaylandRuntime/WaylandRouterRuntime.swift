@@ -17,8 +17,10 @@
 // no wl_shm impl here — committed SHM pixels are read back through
 // wl_shm_buffer_get at commit time.
 
+import NucleusCompositorWindowScene
+
 @MainActor
-final class WaylandRouterRuntime {
+public final class WaylandRouterRuntime {
     let router: NucleusWaylandRouter
     let feeder: SceneFeeder
 
@@ -43,15 +45,16 @@ final class WaylandRouterRuntime {
     let sessionLock: SessionLockManager
     let idle: IdleManager
     let dataDevice: WlDataDeviceManager
+    let textInputManager: TextInputManagerV3
     let screencopy: ScreencopyManager
     private let gamma: ZwlrGammaControlManager
     /// The input feed queries this by surface id to clamp/freeze the cursor under an
     /// active pointer constraint (the seat owns the relative/locked motion delivery).
     let pointerConstraints: PointerConstraintsManager
 
-    init?() {
+    public init?(author: WindowSceneAuthor) {
         guard let router = NucleusWaylandRouter() else { return nil }
-        let feeder = SceneFeeder()
+        let feeder = SceneFeeder(author: author)
 
         // Protocol impls.
         let compositor = WlCompositor()
@@ -76,6 +79,8 @@ final class WaylandRouterRuntime {
         let gamma = ZwlrGammaControlManager()
         let dataDevice = WlDataDeviceManager(compositor: compositor)
         seat.dataDeviceManager = dataDevice
+        let textInputManager = TextInputManagerV3(seat: seat)
+        seat.textInputManager = textInputManager
         let sessionLock = SessionLockManager()
         let relativePointer = RelativePointerManager()
         let pointerConstraints = PointerConstraintsManager()
@@ -156,6 +161,7 @@ final class WaylandRouterRuntime {
         foreignToplevel.register(in: router)
         extWorkspace.register(in: router)
         extDataControl.register(in: router)
+        textInputManager.register(in: router)
 
         // The compositor impl owns the live-surface registry the frame/presentation
         // completion crossings iterate.
@@ -175,9 +181,29 @@ final class WaylandRouterRuntime {
         self.sessionLock = sessionLock
         self.idle = idle
         self.dataDevice = dataDevice
+        self.textInputManager = textInputManager
         self.screencopy = screencopy
         self.gamma = gamma
         self.pointerConstraints = pointerConstraints
+    }
+
+    /// Adopt one already-connected Wayland client endpoint.
+    ///
+    /// The runtime owns the descriptor after this succeeds. This is also the
+    /// deterministic connection seam used by in-process protocol fixtures.
+    public func attachClient(fileDescriptor: Int32) -> Bool {
+        router.display.createClient(fd: fileDescriptor) != nil
+    }
+
+    /// Process all currently-ready client requests and flush queued events
+    /// without waiting for new work.
+    public func dispatchClientsNonBlocking() {
+        router.display.dispatch()
+        router.display.flushClients()
+    }
+
+    func setFixtureKeyboardFocus(surfaceID: UInt32) {
+        seatDriver.setKeyboardFocus(toSurfaceId: surfaceID)
     }
 
     /// Add or update one stable connector identity.
@@ -203,6 +229,7 @@ final class WaylandRouterRuntime {
     func prepareOutputRemoval(_ outputID: UInt64) -> Bool {
         guard let output = compositor.output(id: outputID)
         else { return false }
+        feeder.outputRemoved(outputID)
         screencopy.outputRemoved(outputID)
         gamma.outputRemoved(output)
         return compositor.prepareOutputRemoval(id: outputID)

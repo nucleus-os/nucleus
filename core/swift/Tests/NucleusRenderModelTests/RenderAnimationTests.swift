@@ -10,7 +10,7 @@ import Testing
         let ctx = ContextID(raw: 1)
 
         func seededStore() -> RetainedTreeStore {
-            let store = RetainedTreeStore()
+            let store = RetainedTreeStore(resourceHost: SwiftResourceHost())
             var t = Transaction(contextId: ctx)
             var root = LayerCreated(nodeId: 1, kind: .container)
             root.bounds = Bounds(w: 200, h: 200)

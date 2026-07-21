@@ -28,7 +28,7 @@ import NucleusCompositorServer
 private let chromeGrabOutset: Double = 6
 
 /// The result of a hit-test against the window model. Computed on the main actor;
-/// the @_cdecl wrapper writes it into the caller's out-params off the isolated
+/// the request boundary writes it into the caller's out-params off the isolated
 /// closure (Swift 6 region isolation forbids writing through the borrowed pointers
 /// inside the closure). The Swift input dispatch consumes it directly.
 struct HitResult {

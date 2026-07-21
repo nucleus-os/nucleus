@@ -4,6 +4,7 @@ import Glibc
 import Darwin
 #endif
 import Foundation
+import NucleusUI
 import Testing
 @testable import NucleusShellServices
 
@@ -33,8 +34,8 @@ import Testing
             let path = "\(root)/\(theme)/\(directory)/\(category)"
             try? FileManager.default.createDirectory(
                 atPath: path, withIntermediateDirectories: true)
-            FileManager.default.createFile(
-                atPath: "\(path)/\(name).\(ext)", contents: Data([0]))
+            precondition(FileManager.default.createFile(
+                atPath: "\(path)/\(name).\(ext)", contents: Data([0])))
         }
 
         func makeResolver(theme: String = "Adwaita") -> IconThemeResolver {
@@ -118,7 +119,8 @@ import Testing
         let path = "\(fixture.root)/Adwaita/apps/48"
         try? FileManager.default.createDirectory(
             atPath: path, withIntermediateDirectories: true)
-        FileManager.default.createFile(atPath: "\(path)/thunar.png", contents: Data([0]))
+        #expect(FileManager.default.createFile(
+            atPath: "\(path)/thunar.png", contents: Data([0])))
 
         #expect(fixture.makeResolver().resolve("thunar", size: 48) != nil)
     }
@@ -149,7 +151,8 @@ import Testing
     @Test func anAbsolutePathIsUsedDirectly() {
         let fixture = Fixture()
         let direct = "\(fixture.root)/direct.png"
-        FileManager.default.createFile(atPath: direct, contents: Data([0]))
+        #expect(FileManager.default.createFile(
+            atPath: direct, contents: Data([0])))
 
         let resolver = fixture.makeResolver()
         #expect(resolver.resolve(direct) == direct)
@@ -161,24 +164,26 @@ import Testing
     /// /usr/share/pixmaps is.
     @Test func aFlatRootIsSearchedLast() {
         let fixture = Fixture()
-        FileManager.default.createFile(
-            atPath: "\(fixture.root)/legacy.png", contents: Data([0]))
+        #expect(FileManager.default.createFile(
+            atPath: "\(fixture.root)/legacy.png", contents: Data([0])))
         #expect(fixture.makeResolver().resolve("legacy", size: 22) != nil)
     }
 
     // MARK: - Caching
 
-    /// A miss is cached as a miss. A taskbar rebuilding often would otherwise
-    /// re-walk the filesystem for every icon known to be absent, which is the
-    /// expensive case rather than the cheap one.
-    @Test func missesAreCachedAndInvalidationClearsThem() {
+    /// Directory discovery is retained until the theme generation changes.
+    /// Positive and negative result caching belongs to ImageRequestPipeline.
+    @Test func invalidationRefreshesDirectoryDiscovery() {
         let fixture = Fixture()
         let resolver = fixture.makeResolver()
         #expect(resolver.resolve("appears-later", size: 48) == nil)
 
-        fixture.add(theme: "Adwaita", directory: "48x48", name: "appears-later")
+        fixture.add(
+            theme: "Adwaita",
+            directory: "48x48",
+            name: "appears-later")
         #expect(resolver.resolve("appears-later", size: 48) == nil,
-                "still the cached miss")
+                "the newly created directory is outside retained discovery")
 
         resolver.invalidate()
         #expect(resolver.resolve("appears-later", size: 48) != nil)
@@ -221,5 +226,25 @@ import Testing
             return
         }
         #expect(userIndex < systemIndex)
+    }
+
+    @Test func portableImageQueriesResolveOffTheUIActor() async {
+        let fixture = Fixture()
+        fixture.add(
+            theme: "Adwaita",
+            directory: "22x22",
+            name: "browser")
+        let owner = ShellIconSourceResolver(
+            roots: [fixture.root])
+        let source = await owner.imageSourceResolver.resolve(
+            ImageSourceQuery(
+                source: .icon(
+                    name: "browser",
+                    theme: "Adwaita"),
+                targetPixelWidth: 22,
+                targetPixelHeight: 22,
+                appearance: .dark,
+                iconThemeGeneration: 1))
+        #expect(source?.contains("22x22") == true)
     }
 }

@@ -24,7 +24,16 @@ public struct RawPixelBuffer: Equatable, Sendable {
     ) {
         self.width = width
         self.height = height
-        self.rowStride = rowStride ?? (width * order.sourceBytesPerPixel)
+        if let rowStride {
+            self.rowStride = rowStride
+        } else {
+            let packed = width.multipliedReportingOverflow(
+                by: order.sourceBytesPerPixel)
+            // Zero is always rejected below. Preserve construction as a total
+            // operation even for adversarial dimensions so validation, hashing,
+            // and diagnostics can inspect malformed wire input without trapping.
+            self.rowStride = packed.overflow ? 0 : packed.partialValue
+        }
         self.order = order
         self.isPremultiplied = isPremultiplied
         self.pixels = pixels
@@ -36,9 +45,17 @@ public struct RawPixelBuffer: Equatable, Sendable {
     /// omit the final padding, and rejecting those would reject valid buffers.
     public var isWellFormed: Bool {
         guard width > 0, height > 0 else { return false }
-        let minimumStride = width * order.sourceBytesPerPixel
+        let minimum = width.multipliedReportingOverflow(
+            by: order.sourceBytesPerPixel)
+        guard !minimum.overflow else { return false }
+        let minimumStride = minimum.partialValue
         guard rowStride >= minimumStride else { return false }
-        return pixels.count >= (height - 1) * rowStride + minimumStride
+        let precedingRows = (height - 1).multipliedReportingOverflow(
+            by: rowStride)
+        guard !precedingRows.overflow else { return false }
+        let required = precedingRows.partialValue.addingReportingOverflow(
+            minimumStride)
+        return !required.overflow && pixels.count >= required.partialValue
     }
 
     /// Convert to tightly-packed premultiplied RGBA8888, which is what the
@@ -47,8 +64,14 @@ public struct RawPixelBuffer: Equatable, Sendable {
     public func normalizedRGBA() -> [UInt8]? {
         guard isWellFormed else { return nil }
 
+        let pixelCount = width.multipliedReportingOverflow(by: height)
+        guard !pixelCount.overflow else { return nil }
+        let outputCount = pixelCount.partialValue.multipliedReportingOverflow(
+            by: 4)
+        guard !outputCount.overflow else { return nil }
+
         let sourceBytesPerPixel = order.sourceBytesPerPixel
-        var out = [UInt8](repeating: 0, count: width * height * 4)
+        var out = [UInt8](repeating: 0, count: outputCount.partialValue)
 
         for y in 0..<height {
             let rowStart = y * rowStride
@@ -103,7 +126,9 @@ public struct RawPixelBuffer: Equatable, Sendable {
             hash &*= 0x0000_0100_0000_01B3
         }
         for value in [width, height, rowStride] {
-            withUnsafeBytes(of: UInt64(value)) { $0.forEach(mix) }
+            withUnsafeBytes(of: UInt64(truncatingIfNeeded: value)) {
+                $0.forEach(mix)
+            }
         }
         mix(order.rawValue)
         mix(isPremultiplied ? 1 : 0)

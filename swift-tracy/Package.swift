@@ -47,3 +47,22 @@ let package = Package(
         ),
     ]
 )
+
+
+for target in package.targets {
+    switch target.type {
+    case .regular, .executable, .test:
+        break
+    default:
+        continue
+    }
+    target.swiftSettings = (target.swiftSettings ?? []) + [
+        .unsafeFlags(["-warnings-as-errors"]),
+    ]
+    target.cSettings = (target.cSettings ?? []) + [
+        .unsafeFlags(["-Werror"]),
+    ]
+    target.cxxSettings = (target.cxxSettings ?? []) + [
+        .unsafeFlags(["-Werror"]),
+    ]
+}

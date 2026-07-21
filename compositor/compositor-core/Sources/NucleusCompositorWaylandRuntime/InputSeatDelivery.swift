@@ -1,6 +1,6 @@
 // SeatDelivery — the callable Swift seam from the input dispatch to the router
 // WlSeat, by surface wire id. This is the direct-call form of the seat half of
-// RouterInputBridge's `nucleus_runtime_seat_*` @_cdecl thunks: the dispatch calls
+// RouterInputBridge's seat-delivery seam: the dispatch calls
 // these directly rather than through the thunks. Enter/leave key on
 // the focused surface; the per-event sends resolve that surface to its client key
 // (the router keys device resources by wl_client).

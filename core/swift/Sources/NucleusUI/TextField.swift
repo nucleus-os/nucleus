@@ -4,7 +4,13 @@
 /// the model, so a keystroke, a paste, and an input method's commit all take the
 /// same path — there is no second editing implementation for composed text.
 @MainActor
-open class TextField: Control, TextInputClient, ~Sendable {
+open class TextField:
+    Control,
+    TextInputClient,
+    TextEditingCommandHost,
+    RetainedTextEditorAccessibility,
+    ~Sendable
+{
     /// The edited text in cleartext, even when `isSecure` is true.
     ///
     /// Setting it replaces the contents and collapses the caret to the end, as
@@ -16,6 +22,7 @@ open class TextField: Control, TextInputClient, ~Sendable {
         set {
             guard newValue != model.text else { return }
             model = makeModel(text: newValue)
+            editingCommands.advanceGeneration()
             invalidateTextLayout()
             notifyInputMethodOfStateChange()
             recordMutation(.accessibility)
@@ -36,6 +43,7 @@ open class TextField: Control, TextInputClient, ~Sendable {
         set {
             guard newValue != model.isSecure else { return }
             model.setSecure(newValue)
+            editingCommands.cancelAndAdvance()
             preeditStyles = []
             invalidateTextLayout()
             notifyInputMethodOfStateChange()
@@ -92,6 +100,8 @@ open class TextField: Control, TextInputClient, ~Sendable {
     public private(set) var inputLanguage: String?
     /// Where a drag-selection began, so dragging extends from the press point.
     private var selectionDragAnchor: Int?
+    private lazy var editingCommands =
+        TextEditingCommandCoordinator(host: self)
 
     public init(string: String = "", isSecure: Bool = false) {
         model = TextEditorModel(text: string, isSecure: isSecure)
@@ -99,30 +109,13 @@ open class TextField: Control, TextInputClient, ~Sendable {
         model.setCaret(at: model.utf16Count)
         accessibilityRole = .textField
         isEnabled = true
-        installStandardEditingActions()
+        editingCommands.installStandardActions(on: self)
     }
 
     private func makeModel(text: String) -> TextEditorModel {
         var replacement = TextEditorModel(text: text, isSecure: model.isSecure)
         replacement.maximumLength = model.maximumLength
         return replacement
-    }
-
-    private func installStandardEditingActions() {
-        setAction(.copy) { [weak self] _ in _ = self?.copySelection() }
-        setAction(.cut) { [weak self] _ in _ = self?.cutSelection() }
-        setAction(.paste) { [weak self] _ in _ = self?.paste() }
-        setAction(.selectAll) { [weak self] _ in self?.selectAllText() }
-        setAction(.undo) { [weak self] _ in
-            guard var model = self?.model, model.undo() else { return }
-            self?.model = model
-            self?.afterEdit()
-        }
-        setAction(.redo) { [weak self] _ in
-            guard var model = self?.model, model.redo() else { return }
-            self?.model = model
-            self?.afterEdit()
-        }
     }
 
     // MARK: - Focus
@@ -144,6 +137,7 @@ open class TextField: Control, TextInputClient, ~Sendable {
 
     open override func becomeFirstResponder() -> Bool {
         guard super.becomeFirstResponder() else { return false }
+        editingCommands.advanceGeneration()
         window?.textInputContext.activate(self)
         restartCaretBlink()
         setNeedsDisplay()
@@ -152,6 +146,7 @@ open class TextField: Control, TextInputClient, ~Sendable {
 
     open override func resignFirstResponder() -> Bool {
         guard super.resignFirstResponder() else { return false }
+        editingCommands.cancelAndAdvance()
         // An abandoned composition must not leave provisional text behind that
         // the user never agreed to.
         if model.hasMarkedText { model.unmarkText() }
@@ -168,35 +163,33 @@ open class TextField: Control, TextInputClient, ~Sendable {
         afterSelectionChange()
     }
 
-    @discardableResult
-    public func copySelection(to pasteboard: Pasteboard = .general) -> Bool {
-        guard isFocused, let selected = model.copyableSelection() else {
-            return false
-        }
-        pasteboard.string = selected
-        return true
+    public func copySelection() async -> Bool {
+        await copySelection(to: uiContext.services.pasteboard)
     }
 
-    @discardableResult
-    public func cutSelection(to pasteboard: Pasteboard = .general) -> Bool {
-        guard copySelection(to: pasteboard), model.deleteSelection() else {
-            return false
-        }
-        afterEdit()
-        return true
+    public func copySelection(to pasteboard: Pasteboard) async -> Bool {
+        await editingCommands.copy(to: pasteboard)
     }
 
-    @discardableResult
-    public func paste(from pasteboard: Pasteboard = .general) -> Bool {
-        guard isFocused, let string = pasteboard.string, !string.isEmpty else {
-            return false
-        }
-        let insertion = allowsMultilineText
-            ? string
-            : string.replacingOccurrences(of: "\n", with: " ")
-        model.insert(insertion)
-        afterEdit()
-        return true
+    public func cutSelection() async -> Bool {
+        await cutSelection(to: uiContext.services.pasteboard)
+    }
+
+    public func cutSelection(to pasteboard: Pasteboard) async -> Bool {
+        await editingCommands.cut(to: pasteboard)
+    }
+
+    public func paste() async -> Bool {
+        await paste(from: uiContext.services.pasteboard)
+    }
+
+    public func paste(from pasteboard: Pasteboard) async -> Bool {
+        await editingCommands.paste(from: pasteboard)
+    }
+
+    open override func retainedHierarchyWillDetach() {
+        editingCommands.cancelAndAdvance()
+        super.retainedHierarchyWillDetach()
     }
 
     /// Drop the undo and redo history. Clearing a secure field's text leaves the
@@ -211,6 +204,7 @@ open class TextField: Control, TextInputClient, ~Sendable {
     /// `String` that outlives the call, which a `stringValue` read would.
     public func takeSecureCredential() -> SecureBytes {
         let bytes = model.takeSecureBytes()
+        editingCommands.advanceGeneration()
         invalidateTextLayout()
         notifyInputMethodOfStateChange()
         onChange?(self)
@@ -287,7 +281,8 @@ open class TextField: Control, TextInputClient, ~Sendable {
                 ? textRect.size.width : nil,
             alignment: .leading,
             lineBreakMode: allowsMultilineText ? .byWordWrapping : .byClipping,
-            numberOfLines: allowsMultilineText ? 0 : 1)
+            numberOfLines: allowsMultilineText ? 0 : 1,
+            textSystem: uiContext.services.textSystem)
         cachedLayout = layout
         return layout
     }
@@ -325,12 +320,15 @@ open class TextField: Control, TextInputClient, ~Sendable {
         let layout = textLayout()
         if let caret = layout.caretGeometry(
             atUTF16Offset: offset,
-            affinity: model.affinity
+            affinity: model.affinity,
+            in: uiContext.services.textSystem
         ) {
             return caret.rect.origin.x
         }
         guard offset > 0 else { return 0 }
-        let rects = layout.selectionRects(forUTF16Range: 0..<offset)
+        let rects = layout.selectionRects(
+            forUTF16Range: 0..<offset,
+            in: uiContext.services.textSystem)
         guard let last = rects.last else {
             return layout.intrinsicSize.width
         }
@@ -345,7 +343,10 @@ open class TextField: Control, TextInputClient, ~Sendable {
             y: min(max(0, point.y - textRect.origin.y), max(0, layout.intrinsicSize.height - 1)))
         if local.x <= 0 { return 0 }
         if local.x >= layout.intrinsicSize.width { return model.utf16Count }
-        guard let position = layout.glyphPosition(at: local) else { return model.utf16Count }
+        guard let position = layout.glyphPosition(
+            at: local,
+            in: uiContext.services.textSystem
+        ) else { return model.utf16Count }
         return model.alignedOffset(position.utf16Offset)
     }
 
@@ -355,7 +356,8 @@ open class TextField: Control, TextInputClient, ~Sendable {
         let layout = textLayout()
         if let caret = layout.caretGeometry(
             atUTF16Offset: model.selection.head,
-            affinity: model.affinity
+            affinity: model.affinity,
+            in: uiContext.services.textSystem
         ) {
             return Rect(
                 x: textRect.origin.x + caret.rect.origin.x - scrollOffset,
@@ -387,7 +389,10 @@ open class TextField: Control, TextInputClient, ~Sendable {
 
         if !model.selection.isCollapsed {
             context.fillColor = selectionColor
-            for selectionRect in layout.selectionRects(forUTF16Range: model.selection.range) {
+            for selectionRect in layout.selectionRects(
+                forUTF16Range: model.selection.range,
+                in: uiContext.services.textSystem
+            ) {
                 var path = Path()
                 path.addRect(Rect(
                     x: origin.x + selectionRect.rect.origin.x,
@@ -406,7 +411,8 @@ open class TextField: Control, TextInputClient, ~Sendable {
                         by: uiContext.environment.textScale),
                     color: placeholderColor)],
                 containerWidth: nil, alignment: .leading,
-                lineBreakMode: .byTruncatingTail, numberOfLines: 1)
+                lineBreakMode: .byTruncatingTail, numberOfLines: 1,
+                textSystem: uiContext.services.textSystem)
             context.fillColor = placeholderColor
             context.draw(placeholder, in: Rect(
                 origin: Point(x: textRect.origin.x, y: origin.y),
@@ -437,7 +443,8 @@ open class TextField: Control, TextInputClient, ~Sendable {
                 let thickness: Double = span.style == .selected
                     || span.style == .highlighted ? 2 : 1
                 for rect in layout.selectionRects(
-                    forUTF16Range: lower..<upper
+                    forUTF16Range: lower..<upper,
+                    in: uiContext.services.textSystem
                 ) {
                     var underline = Path()
                     underline.addRect(Rect(
@@ -600,6 +607,7 @@ open class TextField: Control, TextInputClient, ~Sendable {
     }
 
     private func afterEdit(cause: TextInputChangeCause = .other) {
+        editingCommands.advanceGeneration()
         invalidateTextLayout()
         restartCaretBlink()
         notifyInputMethodOfStateChange(cause: cause)
@@ -608,6 +616,7 @@ open class TextField: Control, TextInputClient, ~Sendable {
     }
 
     private func afterSelectionChange() {
+        editingCommands.advanceGeneration()
         revealCaret()
         restartCaretBlink()
         notifyInputMethodOfStateChange()
@@ -693,5 +702,59 @@ open class TextField: Control, TextInputClient, ~Sendable {
         }
         // Secure entry overrides every learning-related hint.
         return [.sensitiveData]
+    }
+
+    // MARK: - Shared editing command host
+
+    package var editorModel: TextEditorModel {
+        get { model }
+        set { model = newValue }
+    }
+
+    package var editorAllowsMultilineText: Bool {
+        allowsMultilineText
+    }
+
+    package var editorIsFocused: Bool {
+        isFocused
+    }
+
+    package var editorPasteboard: Pasteboard {
+        uiContext.services.pasteboard
+    }
+
+    package var editorSceneIsConnected: Bool {
+        window?.windowScene?.activationState != .disconnected
+    }
+
+    package func editorDidEdit(cause: TextInputChangeCause) {
+        afterEdit(cause: cause)
+    }
+
+    package func editorDidChangeSelection() {
+        afterSelectionChange()
+    }
+
+    package var accessibilityEditorText: String {
+        get { stringValue }
+        set { stringValue = newValue }
+    }
+
+    package var accessibilityEditorSelection: Range<Int> {
+        selectedRange
+    }
+
+    package var accessibilityEditorIsSecure: Bool {
+        isSecure
+    }
+
+    package var accessibilityEditorIsMultiline: Bool {
+        false
+    }
+
+    package func setAccessibilityEditorSelection(
+        _ range: Range<Int>
+    ) {
+        setSelectedRange(range)
     }
 }

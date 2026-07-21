@@ -181,7 +181,7 @@ Zero-copy end-to-end: `SCFrame.texture` (Vulkan + DMA-BUF) → FD exported once 
 
 **D-Bus transport** — Nucleus already pumps a shell D-Bus connection (`server.pumpShellDbus()`, main loop). The portal backend registers additional objects on the session bus. Library: sd-bus (already linked via `dbus_bridge.zig`).
 
-**PipeWire dependency** — `pipewire` + `libspa-0.2` added to the dev shell. The C headers are bound through a SwiftPM `.systemLibrary` C target (`pkgConfig: "libpipewire-0.3"`) with a module map that pulls in `<pipewire/pipewire.h>` — the same shape as the existing `NucleusCompositorDrmC` / `NucleusCompositorSystemdC` C façades in `compositor-core/Package.swift`. If PipeWire's headers need pre-processing before Swift's clang importer can consume them cleanly, a small first-party C shim target wraps them instead.
+**PipeWire dependency** — `pipewire` + `libspa-0.2` added to the dev shell. The C headers are bound through a SwiftPM `.systemLibrary` C target (`pkgConfig: "libpipewire-0.3"`) with a module map that pulls in `<pipewire/pipewire.h>` — the same shape as `NucleusCompositorDrmC` and the shared `NucleusLinuxDBusC` façade. If PipeWire's headers need pre-processing before Swift's clang importer can consume them cleanly, a small first-party C shim target wraps them instead.
 
 **Format negotiation** — PipeWire's format-fixation callback fires once per stream. The backend advertises BGRA8888 + linear / DMA-BUF modifier list from the Vulkan runtime, converges on one, allocates `SCStream` destination textures to match. Single-format (BGRA) is sufficient for all current portal clients (Chrome/Firefox/Electron convert to YUV internally from whatever the compositor provides).
 

@@ -8,6 +8,28 @@
 // generation changes (resize / rotation / re-create). There is no CPU rendering path.
 
 import NucleusAndroidC
+@_spi(NucleusPlatform) internal import NucleusRenderer
+import NucleusRenderModel
+import Synchronization
+
+/// Android already owns a continuously posted Choreographer callback while the
+/// surface is live. The renderer wake records demand across the pthread boundary;
+/// the next callback consumes it before rendering.
+private final class AndroidRenderWakeSink: AsyncRenderWakeSink, Sendable {
+    private let pending = Mutex(false)
+
+    nonisolated func signalRenderWork() {
+        pending.withLock { $0 = true }
+    }
+
+    func consume() -> Bool {
+        pending.withLock {
+            let result = $0
+            $0 = false
+            return result
+        }
+    }
+}
 
 enum RenderStatus: Int32 {
     case none = 0
@@ -60,7 +82,10 @@ struct AndroidRenderer {
     // Reference type held by the value renderer; created on the first frame with a
     // live surface, torn down on detach.
     private var engine: AndroidRenderEngine? = nil
+    private var resourceHost: SwiftResourceHost? = nil
+    private var retainedStore: RetainedTreeStore? = nil
     private var engineSurfaceGeneration: UInt64? = nil
+    private let asyncRenderWake = AndroidRenderWakeSink()
 
     @discardableResult
     mutating func attach(_ surface: SurfaceBinding, _ assetProviderAvailable: Bool) -> Bool {
@@ -117,6 +142,9 @@ struct AndroidRenderer {
         last_render_status = .none
         if let engine { MainActor.assumeIsolated { engine.shutdown() } }
         engine = nil  // releases the render core + swapchain presenter
+        retainedStore = nil
+        resourceHost?.invalidate()
+        resourceHost = nil
         engineSurfaceGeneration = nil
         detach_count &+= 1
         return true
@@ -152,6 +180,7 @@ struct AndroidRenderer {
         if surface.width <= 0 || surface.height <= 0 { return .invalid_surface }
         let width = surface.width, height = surface.height
         let generation = surface.generation, frameTime = last_frame_time_nanos
+        _ = asyncRenderWake.consume()
         // The ANativeWindow pointer is not Sendable; pass it as a bit pattern across
         // the main-actor closure boundary and reconstruct inside.
         let windowBits = UInt(bitPattern: window)
@@ -160,6 +189,8 @@ struct AndroidRenderer {
         // commit sink are). Drive it through assumeIsolated, seeding a local so the
         // non-escaping closure does not capture `self` mutably.
         var localEngine = engine
+        var localResourceHost = resourceHost
+        var localRetainedStore = retainedStore
         let previousGeneration = engineSurfaceGeneration
         let result: (status: RenderStatus, width: Int32, height: Int32) =
             MainActor.assumeIsolated {
@@ -170,7 +201,18 @@ struct AndroidRenderer {
                     oldEngine.shutdown()
                     localEngine = nil
                 }
-                if localEngine == nil { localEngine = AndroidRenderEngine(window: window) }
+                if localEngine == nil {
+                    let host = localResourceHost ?? SwiftResourceHost()
+                    let store = localRetainedStore
+                        ?? RetainedTreeStore(resourceHost: host)
+                    localResourceHost = host
+                    localRetainedStore = store
+                    localEngine = AndroidRenderEngine(
+                        window: window,
+                        store: store,
+                        resourceHost: host,
+                        asyncRenderWakeSink: asyncRenderWake)
+                }
                 guard let engine = localEngine else { return (.invalid_surface, 0, 0) }
                 let status = engine.frame(
                     width: width, height: height,
@@ -178,6 +220,8 @@ struct AndroidRenderer {
                 return (status, engine.lastExtentWidth, engine.lastExtentHeight)
             }
         engine = localEngine
+        resourceHost = localResourceHost
+        retainedStore = localRetainedStore
         engineSurfaceGeneration = localEngine == nil ? nil : generation
         last_buffer_width = result.width
         last_buffer_height = result.height

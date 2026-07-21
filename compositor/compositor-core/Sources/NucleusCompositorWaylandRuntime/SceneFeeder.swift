@@ -3,11 +3,12 @@
 // (`WindowSceneAuthor` in `NucleusCompositorWindowScene`). This is the live,
 // sole scene authority for managed windows.
 //
-// Division of labor: the feeder is a stateless policy→scene translator — it knows
+// Division of labor: the feeder is a policy→scene translator — it knows
 // the window model, not layers; the author knows layers, not the model. The author
 // owns every layer-id allocation and the compositor-root hosting; the feeder only
-// supplies which windows exist, their back-to-front order, and their geometry. So
-// the feeder holds no layer ids.
+// supplies which windows exist, their back-to-front order, geometry, and the
+// snapshot handle owned by the current model transition. The feeder holds no
+// layer ids and never owns renderer resources independently of that transition.
 //
 // Lifecycle hooks (`windowMapped`/`windowUnmapped`/`surfaceContent`) are called by
 // `RouterWindowDriver`; `authorFrame` is called once per output per frame by the
@@ -15,13 +16,12 @@
 // per-frame eased layout samples the compositor-owned presentation state on the
 // Swift model — the tiling spring (`Window.presentationActor`), the predicted-present
 // clock (`Display.predictedPresentNs`), and the committed buffer geometry
-// (`Window.committedBufferSize`/`contentOffsetInSlot`). The closing fade +
-// content-crossfade *snapshot* are not yet driven from here (the opacity-animation
-// primitive already lives on the author, awaiting a feeder call-site).
+// (`Window.committedBufferSize`/`contentOffsetInSlot`).
 
 @_spi(NucleusCompositor) import NucleusLayers
 import NucleusCompositorServer
 import NucleusCompositorWindowScene
+import Tracy
 import Glibc
 
 @MainActor
@@ -33,24 +33,39 @@ final class SceneFeeder: BackgroundEffectDelegate, KdeBlurDelegate {
         let frame: PresentationRect
     }
 
+    struct TransitionMetrics: Sendable, Equatable {
+        var acceptedRemovals: UInt64 = 0
+        var snapshotRetirements: UInt64 = 0
+    }
+
     /// The live scene author (the installed `WindowSceneHost` conformer). The
     /// feeder calls it directly, Swift→Swift, with no cross-language hop. The author owns
     /// every layer id + the compositor-root hosting; the feeder supplies only the
     /// surface id, geometry, content, and order.
     private let author: WindowSceneAuthor
+    private let injectedRenderService: (any CompositorRenderService)?
     private var reportedAuthorFailures: Set<String> = []
     /// Front-to-back input geometry from the same samples successfully authored
     /// for each output. Input never re-samples the presentation animation.
     private var presentedWindowsByOutput: [UInt64: [PresentedWindow]] = [:]
     private var pendingWindowsByOutput: [UInt64: [PresentedWindow]] = [:]
+    private(set) var transitionMetrics = TransitionMetrics()
 
     /// Resolves router surfaces by wire id so the per-frame walk can push output
     /// membership (`wl_surface.enter`/`leave` + preferred scale) directly to the
     /// surface model. Weak: the runtime owns the compositor.
     weak var compositor: WlCompositor?
 
-    init(author: WindowSceneAuthor = currentWindowSceneAuthor()) {
+    init(
+        author: WindowSceneAuthor,
+        renderService: (any CompositorRenderService)? = nil
+    ) {
         self.author = author
+        self.injectedRenderService = renderService
+    }
+
+    private var renderService: (any CompositorRenderService)? {
+        injectedRenderService ?? NucleusCompositorServer.shared.renderService
     }
 
     func presentedWindows(atX x: Double, y: Double) -> [PresentedWindow] {
@@ -121,11 +136,219 @@ final class SceneFeeder: BackgroundEffectDelegate, KdeBlurDelegate {
         }
     }
 
-    /// A window's surface unmapped or destroyed: unhost + tear its scene down.
+    /// Tear a window scene down immediately. Normal app-window unmap/close first
+    /// goes through `beginClosing`; this is the failure, security, and special-
+    /// surface path.
     func windowUnmapped(surfaceID: UInt32) {
         authoring("destroy window", surfaceID: UInt64(surfaceID)) {
             try author.surfaceDestroyed(surfaceID: UInt64(surfaceID))
         }
+    }
+
+    /// Capture the accepted live content, atomically replace any old overlay,
+    /// install the new model generation, and begin the tile spring. Capture is
+    /// synchronous and renderer-owned, so a client-content replacement after this
+    /// call cannot mutate the transition image.
+    func beginTileTransition(
+        window: Window,
+        finalRect: PresentationRect,
+        slotGeneration: UInt64,
+        iosurfaceID explicitIOSurfaceID: UInt32? = nil
+    ) {
+        guard !window.presentationActor.targetMatches(finalRect) else { return }
+        defer {
+            window.beginPresentationTileAnimation(
+                finalRect: finalRect,
+                slotGeneration: slotGeneration)
+            RenderBridge.requestFrame(forWindowID: window.id)
+        }
+        guard window.surfaceObjectId != 0,
+              let service = renderService,
+              let iosurfaceID = explicitIOSurfaceID
+                ?? compositor?.surface(
+                    id: window.surfaceObjectId)?.renderIosurfaceId,
+              iosurfaceID != 0,
+              let snapshot = service.captureSurfaceSnapshot(
+                iosurfaceID: iosurfaceID)
+        else { return }
+
+        let surfaceID = UInt64(window.surfaceObjectId)
+        guard authoring("begin tile crossfade", surfaceID: surfaceID, {
+            try author.beginContentCrossfade(
+                surfaceID: surfaceID,
+                snapshotHandle: snapshot.handle)
+        }) else {
+            service.releaseSnapshot(snapshot.handle)
+            return
+        }
+
+        let installed = window.installTileCrossfade(
+            snapshotHandle: snapshot.handle)
+        Trace.plot(
+            "swift.compositor.transition_generation",
+            installed.generation)
+        if let replaced = installed.replaced {
+            service.releaseSnapshot(replaced.snapshotHandle)
+            transitionMetrics.snapshotRetirements &+= 1
+            Trace.plot(
+                "swift.compositor.transition_snapshot_retirements",
+                transitionMetrics.snapshotRetirements)
+        }
+    }
+
+    /// Begin a frozen closing presentation before the client IOSurface is
+    /// detached. Returns false when no safe snapshot could be installed, in which
+    /// case the caller must perform immediate topology teardown.
+    @discardableResult
+    func beginClosing(
+        window: Window,
+        iosurfaceID explicitIOSurfaceID: UInt32? = nil,
+        destroyWindowOnCompletion: Bool
+    ) -> Bool {
+        if window.hasActiveClosingFade() {
+            if destroyWindowOnCompletion {
+                window.requireWindowDestructionAfterClosing()
+            }
+            return true
+        }
+        guard window.visibleInScene(),
+              window.source == .xdg || window.source == .xwayland,
+              window.surfaceObjectId != 0,
+              let service = renderService
+        else { return false }
+        let iosurfaceID = explicitIOSurfaceID
+            ?? compositor?.surface(id: window.surfaceObjectId)?.renderIosurfaceId
+            ?? 0
+        guard iosurfaceID != 0,
+              let snapshot = service.captureSurfaceSnapshot(
+                iosurfaceID: iosurfaceID)
+        else { return false }
+
+        let surfaceID = UInt64(window.surfaceObjectId)
+        guard authoring("begin closing fade", surfaceID: surfaceID, {
+            try author.beginContentCrossfade(
+                surfaceID: surfaceID,
+                snapshotHandle: snapshot.handle)
+        }) else {
+            service.releaseSnapshot(snapshot.handle)
+            return false
+        }
+
+        let installed = window.installClosingFade(
+            snapshotHandle: snapshot.handle,
+            destroyWindowOnCompletion: destroyWindowOnCompletion)
+        Trace.plot(
+            "swift.compositor.transition_generation",
+            installed.generation)
+        if let replaced = installed.replaced {
+            service.releaseSnapshot(replaced.snapshotHandle)
+            transitionMetrics.snapshotRetirements &+= 1
+            Trace.plot(
+                "swift.compositor.transition_snapshot_retirements",
+                transitionMetrics.snapshotRetirements)
+        }
+        RenderBridge.requestFrame(forWindowID: window.id)
+        return true
+    }
+
+    /// Cancel a close because the same protocol object mapped again. The retained
+    /// scene stays attached; only the overlay resource and transition generation
+    /// are retired.
+    func cancelClosingForRemap(window: Window) {
+        guard window.hasActiveClosingFade() else { return }
+        _ = finishTransition(window: window, preserveScene: true)
+    }
+
+    /// Security transition: no non-lock snapshot may remain retained after the
+    /// lock gate activates. Mapped tile transitions keep their ordinary scene;
+    /// closing scenes are removed immediately.
+    func cancelTransitionsForSessionLock() {
+        for window in NucleusCompositorServer.shared.windows.windows
+        where window.source != .lock && window.presentationActor.transition != nil {
+            window.presentationActor.cancelTileAnimation()
+            _ = finishTransition(
+                window: window,
+                preserveScene: !window.hasActiveClosingFade())
+        }
+    }
+
+    /// An output that owned the transition clock disappeared. Tile overlays are
+    /// cancelled and closing scenes complete immediately so no transition waits
+    /// forever for a presentation timestamp that can no longer arrive.
+    func outputRemoved(_ outputID: UInt64) {
+        for window in NucleusCompositorServer.shared.windows.windows
+        where window.currentOutputID == outputID
+            && window.presentationActor.transition != nil
+        {
+            window.presentationActor.cancelTileAnimation()
+            _ = finishTransition(
+                window: window,
+                preserveScene: !window.hasActiveClosingFade())
+        }
+        presentedWindowsByOutput[outputID] = nil
+        pendingWindowsByOutput[outputID] = nil
+    }
+
+    /// Tear down retained scene state while the renderer service is still alive.
+    /// Compositor shutdown calls this before renderer shutdown so snapshot handles
+    /// are retired through their normal owner instead of being orphaned by process
+    /// teardown order.
+    func shutdown() {
+        let windows = NucleusCompositorServer.shared.windows.windows
+        for window in windows {
+            window.presentationActor.cancelTileAnimation()
+            if window.presentationActor.transition != nil {
+                _ = finishTransition(
+                    window: window,
+                    preserveScene: false)
+            } else if window.surfaceObjectId != 0 {
+                windowUnmapped(
+                    surfaceID: window.surfaceObjectId)
+            }
+        }
+        presentedWindowsByOutput.removeAll()
+        pendingWindowsByOutput.removeAll()
+    }
+
+    /// Remove the currently-authored overlay/topology, then retire exactly the
+    /// matching model generation and renderer resource. Failed author commits
+    /// leave the model obligation live so the next frame can retry.
+    @discardableResult
+    private func finishTransition(
+        window: Window,
+        preserveScene: Bool
+    ) -> Bool {
+        guard let generation = window.activeTransitionGeneration(),
+              window.surfaceObjectId != 0
+        else { return true }
+        let surfaceID = UInt64(window.surfaceObjectId)
+        guard authoring("end snapshot transition", surfaceID: surfaceID, {
+            try author.endContentCrossfade(surfaceID: surfaceID)
+        }) else { return false }
+        if !preserveScene {
+            guard authoring("remove closing scene", surfaceID: surfaceID, {
+                try author.surfaceDestroyed(surfaceID: surfaceID)
+            }) else { return false }
+        }
+        guard let retirement = window.takePresentationTransition(
+            generation: generation)
+        else { return false }
+        transitionMetrics.acceptedRemovals &+= 1
+        Trace.plot(
+            "swift.compositor.transition_accepted_removals",
+            transitionMetrics.acceptedRemovals)
+        renderService?.releaseSnapshot(retirement.snapshotHandle)
+        transitionMetrics.snapshotRetirements &+= 1
+        Trace.plot(
+            "swift.compositor.transition_snapshot_retirements",
+            transitionMetrics.snapshotRetirements)
+        if retirement.wasClosing {
+            window.mapped = false
+        }
+        if retirement.destroyWindow {
+            _ = NucleusCompositorServer.shared.destroyWindow(id: window.id)
+        }
+        return true
     }
 
     /// Repaint a window's traffic-light cluster (keyed by its root surface id) for a
@@ -166,12 +389,16 @@ final class SceneFeeder: BackgroundEffectDelegate, KdeBlurDelegate {
     /// backing-layer content. Replaces option-b's `nucleus_render_layer_set_content`
     /// `@c` round-trip with a direct author call — the author resolves the surface's
     /// backing layer from its scene map.
-    func surfaceContent(surfaceID: UInt32, iosurfaceID: UInt32, generation: UInt64, sample: ContentSample? = nil) {
+    func surfaceContent(
+        surfaceID: UInt32,
+        iosurfaceID: UInt32,
+        sample: ContentSample? = nil
+    ) {
         guard iosurfaceID != 0 else { return }
         authoring("publish content", surfaceID: UInt64(surfaceID)) {
             try author.setContent(
                 surfaceID: UInt64(surfaceID),
-                content: LayerContent(kind: .external, handle: UInt64(iosurfaceID), generation: UInt64(generation)),
+                content: LayerContent(kind: .external, handle: UInt64(iosurfaceID)),
                 contentSample: sample)
         }
     }
@@ -194,7 +421,7 @@ final class SceneFeeder: BackgroundEffectDelegate, KdeBlurDelegate {
     func subsurfaceCommitted(
         surfaceID: UInt32, parentSurfaceID: UInt32,
         x: Double, y: Double, width: Double, height: Double,
-        iosurfaceID: UInt32, generation: UInt64, sample: ContentSample? = nil
+        iosurfaceID: UInt32, sample: ContentSample? = nil
     ) {
         guard iosurfaceID != 0 else { return }
         let frame = GeometryRect(x: x, y: y, width: max(1, width), height: max(1, height))
@@ -205,7 +432,7 @@ final class SceneFeeder: BackgroundEffectDelegate, KdeBlurDelegate {
             try author.layoutChildSurface(surfaceID: UInt64(surfaceID), frame: frame)
             try author.setContent(
                 surfaceID: UInt64(surfaceID),
-                content: LayerContent(kind: .external, handle: UInt64(iosurfaceID), generation: UInt64(generation)),
+                content: LayerContent(kind: .external, handle: UInt64(iosurfaceID)),
                 contentSample: sample)
         }
     }
@@ -216,7 +443,7 @@ final class SceneFeeder: BackgroundEffectDelegate, KdeBlurDelegate {
     func popupCommitted(
         surfaceID: UInt32, parentSurfaceID: UInt32,
         x: Double, y: Double, width: Double, height: Double,
-        iosurfaceID: UInt32, generation: UInt64, sample: ContentSample? = nil
+        iosurfaceID: UInt32, sample: ContentSample? = nil
     ) {
         guard iosurfaceID != 0 else { return }
         let frame = GeometryRect(x: x, y: y, width: max(1, width), height: max(1, height))
@@ -227,7 +454,7 @@ final class SceneFeeder: BackgroundEffectDelegate, KdeBlurDelegate {
             try author.layoutChildSurface(surfaceID: UInt64(surfaceID), frame: frame)
             try author.setContent(
                 surfaceID: UInt64(surfaceID),
-                content: LayerContent(kind: .external, handle: UInt64(iosurfaceID), generation: UInt64(generation)),
+                content: LayerContent(kind: .external, handle: UInt64(iosurfaceID)),
                 contentSample: sample)
         }
     }
@@ -338,10 +565,8 @@ final class SceneFeeder: BackgroundEffectDelegate, KdeBlurDelegate {
     /// Ordering is output-independent — every output composes the same compositor
     /// root. The spring is sampled fresh per
     /// output (closed-form, no integration state), so multiple per-frame calls are
-    /// safe. Returns whether any window's tile animation is still in flight, so the
-    /// frame loop keeps requesting frames (the `actor_geometry_changed` signal). The
-    /// render-server-coupled closing fade + content-crossfade *snapshot* still land
-    /// at the swap (the opacity primitive already lives in the author).
+    /// safe. Returns whether any geometry, tile-overlay, or closing opacity can
+    /// still change, so the frame loop keeps requesting frames.
     @discardableResult
     func authorFrame(outputID: UInt64, predictedPresentNs: UInt64) -> Bool {
         // Refresh this output's predicted-present clock; the spring samples it.
@@ -371,8 +596,17 @@ final class SceneFeeder: BackgroundEffectDelegate, KdeBlurDelegate {
         for window in windows {
             let surfaceID = UInt64(window.surfaceObjectId)
             guard surfaceID != 0 else { continue }
-            // Ease the presented frame one step toward the tile target, then author it.
-            if window.advanceTileAnimation(presentTimeSeconds: presentSeconds) {
+            let hadTileTransition: Bool
+            if case .tile = window.presentationActor.transition {
+                hadTileTransition = true
+            } else {
+                hadTileTransition = false
+            }
+            let tileInFlight = window.advanceTileAnimation(
+                presentTimeSeconds: presentSeconds)
+            let closingInFlight = window.advanceClosingFade(
+                presentTimeSeconds: presentSeconds)
+            if tileInFlight || closingInFlight {
                 anyInFlight = true
             }
             let presented = window.currentAnimatedRect()
@@ -402,10 +636,26 @@ final class SceneFeeder: BackgroundEffectDelegate, KdeBlurDelegate {
                 chromeInsets: NucleusCompositorWindowScene.WindowEdgeInsets(
                     top: insets.top, left: insets.left, bottom: insets.bottom, right: insets.right),
                 chromeFocused: window.id == focusedID,
-                // Snapshot-overlay opacity for an in-flight content crossfade (1 = inert).
-                overlayOpacity: window.tileCrossfadeOpacity())
+                windowOpacity: window.windowPresentationOpacity(),
+                overlayOpacity: window.transitionOverlayOpacity())
             }
             if authored {
+                if window.hasActiveClosingFade(), !closingInFlight {
+                    if !finishTransition(
+                        window: window,
+                        preserveScene: false)
+                    {
+                        anyInFlight = true
+                    }
+                    continue
+                }
+                if hadTileTransition, !tileInFlight,
+                   !finishTransition(
+                    window: window,
+                    preserveScene: true)
+                {
+                    anyInFlight = true
+                }
                 authoredWindows.append(PresentedWindow(
                     windowID: window.id,
                     surfaceID: window.surfaceObjectId,

@@ -5,6 +5,7 @@ enum WorkspaceComponent: String, CaseIterable, Hashable, Sendable {
     case vulkan
     case wayland
     case core
+    case linux
     case rn
     case compositor
     case shell
@@ -15,6 +16,7 @@ enum WorkspaceComponent: String, CaseIterable, Hashable, Sendable {
         case .vulkan: "swift-vulkan"
         case .wayland: "swift-wayland"
         case .core: "core"
+        case .linux: "platform-linux"
         case .rn: "react-native"
         case .compositor: "compositor"
         case .shell: "shell"
@@ -32,14 +34,14 @@ struct Orchestrator {
 
     func bootstrap(_ selection: String?) throws {
         let selected = try components(selection)
-        if !Set(selected).isDisjoint(with: [.tracy, .core, .rn, .compositor, .shell]) {
+        if !Set(selected).isDisjoint(with: [.tracy, .core, .linux, .rn, .compositor, .shell]) {
             try context.run(
                 "git",
                 ["submodule", "update", "--init", "--recursive", "swift-tracy/third-party/tracy"],
                 directory: context.root
             )
         }
-        let runtimeComponents = Set(selected).intersection([.core, .rn, .compositor, .shell])
+        let runtimeComponents = Set(selected).intersection([.core, .linux, .rn, .compositor, .shell])
         if runtimeComponents.isEmpty {
             for component in selected {
                 print("==> resolve \(component.rawValue)")
@@ -57,7 +59,7 @@ struct Orchestrator {
         let core = context.repository("core")
         let rn = context.repository("react-native")
         let shell = context.repository("shell")
-        let needsCore = !selected.isDisjoint(with: [.core, .rn, .compositor, .shell])
+        let needsCore = !selected.isDisjoint(with: [.core, .linux, .rn, .compositor, .shell])
         let needsRN = !selected.isDisjoint(with: [.rn, .shell])
         var stages: [BootstrapStage] = []
 
@@ -89,8 +91,14 @@ struct Orchestrator {
             stages.append(BootstrapStage(name: "rn-sdk", run: {
                 for command in ["build-hermes", "build-rn-support", "build-rn-cxx"] { try context.run("swift", ["package", command, "--allow-writing-to-package-directory"], directory: rn) }
                 try context.run("swift", ["build", "--target", "NucleusReactRuntimeCxx"], directory: rn)
-                try context.run("swift", ["build"], directory: rn)
-                try context.run("swift", ["package", "provision-cxx-libs", "--allow-writing-to-package-directory"], directory: rn)
+                try context.run(
+                    "swift",
+                    ["build", "--product", "NucleusReactRuntimeHostCxx"],
+                    directory: rn)
+                try context.run(
+                    "swift",
+                    ["package", "provision-cxx-libs", "debug", "--allow-writing-to-package-directory"],
+                    directory: rn)
             }))
         }
 
@@ -136,7 +144,7 @@ struct Orchestrator {
             switch component {
             case .tracy, .vulkan, .wayland:
                 try context.run("swift", ["build"], directory: context.repository(component.directoryName))
-            case .core:
+            case .core, .linux:
                 try context.run("swift", ["build"], directory: context.repository(component.directoryName))
             case .rn:
                 try context.run("swift", ["build", "--target", "NucleusReactRuntimeCxx"], directory: context.repository(component.directoryName))
@@ -152,28 +160,237 @@ struct Orchestrator {
     }
 
     func test(_ selection: String?) throws {
-        for component in try components(selection) {
-            print("==> test \(component.rawValue)")
-            let directory = context.repository(component.directoryName)
-            switch component {
-            case .tracy, .wayland:
-                try context.run("swift", ["test", "-Xswiftc", "-cxx-interoperability-mode=default"], directory: directory)
-            case .vulkan:
-                try context.run("swift", ["test"], directory: directory)
-            case .core, .rn:
-                try context.run("swift", ["test", "-Xswiftc", "-cxx-interoperability-mode=default"], directory: directory)
-            case .compositor:
-                try context.run("swift", ["test", "--package-path", "compositor-core", "-Xswiftc", "-cxx-interoperability-mode=default"], directory: directory)
-            case .shell:
-                try context.run("swift", ["build"], directory: directory)
+        guard selection == nil || selection == "all" else {
+            for component in try components(selection) {
+                try testDebug(component)
+            }
+            return
+        }
+
+        // The order is part of the repository contract: foundational packages
+        // establish their modules before downstream C++ import graphs are built.
+        for component in WorkspaceComponent.allCases {
+            try testDebug(component)
+            if component == .rn {
+                // Shell debug products link this archive. Provision it from the
+                // exact debug product before any downstream package is tested.
+                try provisionHostArchive(configuration: "debug")
             }
         }
+
+        try provisionHostArchive(configuration: "release")
+        for suite in releaseStructuralSuites {
+            try testReleaseSuite(suite)
+        }
+        try PublicAPIAudit(context: context).run()
+    }
+
+    private struct ReleaseStructuralSuite {
+        let component: WorkspaceComponent
+        let packagePath: String?
+        let name: String
+    }
+
+    private var releaseStructuralSuites: [ReleaseStructuralSuite] {
+        [
+            ReleaseStructuralSuite(
+                component: .core, packagePath: nil,
+                name: "NucleusFoundationPublicationStressTests"),
+            ReleaseStructuralSuite(
+                component: .core, packagePath: nil,
+                name: "NucleusFoundationLifecycleStressTests"),
+            ReleaseStructuralSuite(
+                component: .core, packagePath: nil,
+                name: "NucleusTextEditorStressTests"),
+            ReleaseStructuralSuite(
+                component: .core, packagePath: nil,
+                name: "NucleusCollectionStressTests"),
+            ReleaseStructuralSuite(
+                component: .shell, packagePath: nil,
+                name: "NucleusPlatformTransportStressTests"),
+            ReleaseStructuralSuite(
+                component: .compositor, packagePath: "compositor-core",
+                name: "NucleusCompositorTransitionStressTests"),
+        ]
+    }
+
+    private func testDebug(_ component: WorkspaceComponent) throws {
+        let directory = context.repository(component.directoryName)
+        switch component {
+        case .tracy, .vulkan, .wayland, .core, .linux, .rn, .shell:
+            try runTest(
+                component: component.rawValue,
+                package: component.directoryName,
+                configuration: "debug",
+                suite: "all",
+                arguments: ["test"],
+                directory: directory)
+        case .compositor:
+            try runTest(
+                component: component.rawValue,
+                package: "compositor/compositor-core",
+                configuration: "debug",
+                suite: "all",
+                arguments: ["test", "--package-path", "compositor-core"],
+                directory: directory)
+            try runTest(
+                component: component.rawValue,
+                package: "compositor/compositor",
+                configuration: "debug",
+                suite: "all",
+                arguments: [
+                    "test", "--package-path", "compositor",
+                ],
+                directory: directory)
+        }
+    }
+
+    private func testReleaseSuite(_ suite: ReleaseStructuralSuite) throws {
+        var arguments = [
+            "test", "-c", "release",
+        ]
+        if let packagePath = suite.packagePath {
+            arguments += ["--package-path", packagePath]
+        }
+        arguments += ["--filter", suite.name]
+        let package = suite.packagePath.map {
+            suite.component.directoryName + "/" + $0
+        } ?? suite.component.directoryName
+        try runTest(
+            component: suite.component.rawValue,
+            package: package,
+            configuration: "release",
+            suite: suite.name,
+            arguments: arguments,
+            directory: context.repository(suite.component.directoryName))
+    }
+
+    private func runTest(
+        component: String,
+        package: String,
+        configuration: String,
+        suite: String,
+        arguments: [String],
+        directory: URL
+    ) throws {
+        let identity = "component=\(component) package=\(package) "
+            + "configuration=\(configuration) suite=\(suite)"
+        print("==> test \(identity)")
+        do {
+            try context.run("swift", arguments, directory: directory)
+        } catch {
+            throw WorkspaceFailure.message("test failed [\(identity)]: \(error)")
+        }
+    }
+
+    private struct HostArchiveMetadata: Decodable {
+        let schemaVersion: Int
+        let configuration: String
+        let productDirectory: String
+        let archive: String
+        let byteCount: UInt64
+        let fingerprint: String
+    }
+
+    private func provisionHostArchive(configuration: String) throws {
+        let directory = context.repository("react-native")
+        let identity = "component=rn package=react-native configuration=\(configuration)"
+        print("==> provision \(identity) archive=libNucleusReactRuntimeHostCxx.a")
+        do {
+            try context.run(
+                "swift",
+                [
+                    "build", "-c", configuration,
+                    "--target", "NucleusReactRuntimeCxx",
+                ],
+                directory: directory)
+            try context.run(
+                "swift",
+                [
+                    "build", "-c", configuration,
+                    "--product", "NucleusReactRuntimeHostCxx",
+                ],
+                directory: directory)
+            try context.run(
+                "swift",
+                [
+                    "package", "provision-cxx-libs", configuration,
+                    "--allow-writing-to-package-directory",
+                ],
+                directory: directory)
+            try verifyHostArchive(configuration: configuration, directory: directory)
+        } catch {
+            throw WorkspaceFailure.message("archive provisioning failed [\(identity)]: \(error)")
+        }
+    }
+
+    private func verifyHostArchive(configuration: String, directory: URL) throws {
+        let archiveName = "libNucleusReactRuntimeHostCxx.a"
+        let output = directory
+            .appendingPathComponent(".cxx-build", isDirectory: true)
+            .appendingPathComponent(configuration, isDirectory: true)
+        let archive = output.appendingPathComponent(archiveName)
+        let metadataURL = output.appendingPathComponent("\(archiveName).metadata.json")
+        guard FileManager.default.fileExists(atPath: archive.path),
+              FileManager.default.fileExists(atPath: metadataURL.path)
+        else {
+            throw WorkspaceFailure.message(
+                "missing staged \(configuration) archive or metadata under \(output.path)")
+        }
+        let metadata = try JSONDecoder().decode(
+            HostArchiveMetadata.self,
+            from: Data(contentsOf: metadataURL))
+        let stagedByteCount = try fileSize(archive)
+        let stagedFingerprint = try fnv1a64(archive)
+        guard metadata.schemaVersion == 1,
+              metadata.configuration == configuration,
+              metadata.archive == archiveName,
+              metadata.byteCount == stagedByteCount,
+              metadata.fingerprint == stagedFingerprint
+        else {
+            throw WorkspaceFailure.message(
+                "staged \(configuration) archive metadata does not match its bytes")
+        }
+        let source = directory
+            .appendingPathComponent(".build/out/Products", isDirectory: true)
+            .appendingPathComponent(metadata.productDirectory, isDirectory: true)
+            .appendingPathComponent(archiveName)
+        let sourceByteCount = try fileSize(source)
+        let sourceFingerprint = try fnv1a64(source)
+        guard FileManager.default.fileExists(atPath: source.path),
+              sourceByteCount == metadata.byteCount,
+              sourceFingerprint == metadata.fingerprint
+        else {
+            throw WorkspaceFailure.message(
+                "staged \(configuration) archive fingerprint differs from \(source.path)")
+        }
+    }
+
+    private func fileSize(_ url: URL) throws -> UInt64 {
+        let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+        guard let size = attributes[.size] as? NSNumber else {
+            throw WorkspaceFailure.message("could not read archive size: \(url.path)")
+        }
+        return size.uint64Value
+    }
+
+    private func fnv1a64(_ url: URL) throws -> String {
+        let handle = try FileHandle(forReadingFrom: url)
+        defer { try? handle.close() }
+        var hash: UInt64 = 0xcbf29ce484222325
+        while let data = try handle.read(upToCount: 1024 * 1024), !data.isEmpty {
+            for byte in data {
+                hash ^= UInt64(byte)
+                hash &*= 0x100000001b3
+            }
+        }
+        return String(format: "%016llx", hash)
     }
 
     private func components(_ selection: String?) throws -> [WorkspaceComponent] {
         guard let selection, selection != "all" else { return WorkspaceComponent.allCases }
         guard let component = WorkspaceComponent(rawValue: selection) else {
-            throw WorkspaceFailure.message("unknown component '\(selection)'; expected all, tracy, vulkan, wayland, core, rn, compositor, or shell")
+            throw WorkspaceFailure.message("unknown component '\(selection)'; expected all, tracy, vulkan, wayland, core, linux, rn, compositor, or shell")
         }
         return [component]
     }

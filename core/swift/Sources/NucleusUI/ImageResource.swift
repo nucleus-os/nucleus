@@ -22,6 +22,25 @@ public final class ImageResource {
     public let decodeSize: Size
 
     private let resourceHostHandle: UInt64
+    private let resourceLifetime: LayerResourceLifetime
+
+    /// Adopt a registration already created by the request/cache owner.
+    package init(
+        registeredHandle: UInt64,
+        source: String,
+        decodeSize: Size,
+        resourceHostHandle: UInt64,
+        runtimeHost: LayerRuntimeHost
+    ) {
+        precondition(
+            registeredHandle != 0 && resourceHostHandle != 0,
+            "an adopted image registration must be owned")
+        self.handle = ImageHandle(id: registeredHandle)
+        self.path = DataURI.parse(source) == nil ? source : ""
+        self.decodeSize = decodeSize
+        self.resourceHostHandle = resourceHostHandle
+        self.resourceLifetime = runtimeHost.resourceLifetime
+    }
 
     /// Register `path`, or fail.
     ///
@@ -32,9 +51,13 @@ public final class ImageResource {
     ///
     /// - Parameter decodeSize: the box to decode within. Zero on an axis means
     ///   unbounded there, which decodes at full size.
-    public init?(path: String, decodeSize: Size = .zero, resourceHostHandle: UInt64) {
+    public init?(
+        path: String, decodeSize: Size = .zero,
+        resourceHostHandle: UInt64,
+        runtimeHost: LayerRuntimeHost
+    ) {
         guard !path.isEmpty, resourceHostHandle != 0 else { return nil }
-        guard let registrar = currentHost()?.imageRegistrar else { return nil }
+        let registrar = runtimeHost.operations.imageRegistrar
 
         let raw: UInt64
         do {
@@ -51,6 +74,7 @@ public final class ImageResource {
         self.path = path
         self.decodeSize = decodeSize
         self.resourceHostHandle = resourceHostHandle
+        self.resourceLifetime = runtimeHost.resourceLifetime
     }
 
     /// Register an image given by a path *or* a `data:` URI.
@@ -58,23 +82,31 @@ public final class ImageResource {
     /// Callers receive icon strings from applications and desktop entries and
     /// cannot know which they hold, so deciding here means no caller has to.
     public convenience init?(
-        source: String, decodeSize: Size = .zero, resourceHostHandle: UInt64
+        source: String, decodeSize: Size = .zero,
+        resourceHostHandle: UInt64,
+        runtimeHost: LayerRuntimeHost
     ) {
         if let uri = DataURI.parse(source) {
             self.init(
                 encoded: uri.bytes, decodeSize: decodeSize,
-                resourceHostHandle: resourceHostHandle)
+                resourceHostHandle: resourceHostHandle,
+                runtimeHost: runtimeHost)
         } else {
             self.init(
                 path: source, decodeSize: decodeSize,
-                resourceHostHandle: resourceHostHandle)
+                resourceHostHandle: resourceHostHandle,
+                runtimeHost: runtimeHost)
         }
     }
 
     /// Register encoded bytes already in memory.
-    public init?(encoded bytes: [UInt8], decodeSize: Size = .zero, resourceHostHandle: UInt64) {
+    public init?(
+        encoded bytes: [UInt8], decodeSize: Size = .zero,
+        resourceHostHandle: UInt64,
+        runtimeHost: LayerRuntimeHost
+    ) {
         guard !bytes.isEmpty, resourceHostHandle != 0 else { return nil }
-        guard let registrar = currentHost()?.imageRegistrar else { return nil }
+        let registrar = runtimeHost.operations.imageRegistrar
 
         let raw: UInt64
         do {
@@ -93,6 +125,7 @@ public final class ImageResource {
         self.path = ""
         self.decodeSize = decodeSize
         self.resourceHostHandle = resourceHostHandle
+        self.resourceLifetime = runtimeHost.resourceLifetime
     }
 
     /// Register decoded pixels, as notifications deliver them over D-Bus.
@@ -102,10 +135,11 @@ public final class ImageResource {
     public init?(
         pixels: [UInt8], width: Int, height: Int, rowStride: Int? = nil,
         order: PixelChannelOrder, isPremultiplied: Bool = false,
-        resourceHostHandle: UInt64
+        resourceHostHandle: UInt64,
+        runtimeHost: LayerRuntimeHost
     ) {
         guard !pixels.isEmpty, width > 0, height > 0, resourceHostHandle != 0 else { return nil }
-        guard let registrar = currentHost()?.imageRegistrar else { return nil }
+        let registrar = runtimeHost.operations.imageRegistrar
 
         let stride = rowStride ?? (width * order.sourceBytesPerPixel)
         let raw: UInt64
@@ -126,6 +160,7 @@ public final class ImageResource {
         self.path = ""
         self.decodeSize = Size(width: Double(width), height: Double(height))
         self.resourceHostHandle = resourceHostHandle
+        self.resourceLifetime = runtimeHost.resourceLifetime
     }
 
     /// A non-integral or non-positive size is unbounded. Rounding up rather than
@@ -137,9 +172,7 @@ public final class ImageResource {
     }
 
     deinit {
-        // `currentLifecycleHost` is deliberately nonisolated — release runs from
-        // deinits that are not on the main actor.
-        currentLifecycleHost()?.imageLifecycle.release(
+        resourceLifetime.lifecycle.imageLifecycle.release(
             resourceHostHandle: resourceHostHandle, handle: handle.id)
     }
 }

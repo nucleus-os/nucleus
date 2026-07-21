@@ -70,7 +70,7 @@ extension RendererRuntime {
         }
 
         if bindings[outputId] != nil {
-            guard retireOutputs(Set([outputId])) else {
+            guard retireOutputs(Set([outputId])) == .complete else {
                 logRendererDrm(
                     "output \(outputId): replacement deferred; prior flip did not retire")
                 return false
@@ -302,29 +302,30 @@ extension RendererRuntime {
     }
 
     @discardableResult
-    public func retireOutput(_ outputID: UInt64) -> Bool {
+    public func retireOutput(
+        _ outputID: UInt64
+    ) -> RendererRetirementResult {
         retireOutputs(Set([outputID]))
     }
 
-    /// Retire a topology change set with one device-wide blocking atomic disable.
-    /// Resource owners are released only after the entire disable succeeds.
+    /// Retire a topology change set with one device-wide atomic disable. This
+    /// method never waits: accepted page flips remain owned by the normal DRM
+    /// reactor path, and callers retry after their completion event.
     @discardableResult
     public func retireOutputs(
         _ outputIDs: Set<UInt64>
-    ) -> Bool {
+    ) -> RendererRetirementResult {
         let retiring = outputIDs.sorted().compactMap {
             bindings[$0]
         }
-        guard !retiring.isEmpty else { return true }
-        for binding in retiring {
-            guard drainPendingFlip(binding) else {
-                logRendererDrm(
-                    "output \(binding.outputId): retirement deferred; presentation still in flight")
-                return false
-            }
+        guard !retiring.isEmpty else { return .complete }
+        if let pending = retiring.first(where: { $0.drm.pageFlipPending }) {
+            logRendererDrm(
+                "output \(pending.outputId): retirement deferred; presentation still in flight")
+            return .waitingForPageFlip
         }
         guard var builder = AtomicRequestBuilder() else {
-            return false
+            return .failed
         }
         for binding in retiring {
             binding.drm.addDisableState(into: &builder)
@@ -338,7 +339,7 @@ extension RendererRuntime {
             for line in builder.diagnosticLines() {
                 logRendererDrm(line)
             }
-            return false
+            return .failed
         }
         for binding in retiring {
             binding.drm.noteScanoutDisabled()
@@ -346,7 +347,7 @@ extension RendererRuntime {
             retiredFlipTokens.append(binding.drm.flipToken)
             removeRetiredBinding(binding)
         }
-        return true
+        return .complete
     }
 
     private func removeRetiredBinding(

@@ -112,6 +112,7 @@ let package = Package(
         .library(name: "NucleusCompositorRendererLinux", targets: ["NucleusCompositorRendererLinux"]),
         .library(name: "NucleusCompositorRenderRuntime", targets: ["NucleusCompositorRenderRuntime"]),
         .library(name: "NucleusCompositorWaylandRuntime", targets: ["NucleusCompositorWaylandRuntime"]),
+        .library(name: "NucleusCompositorWindowScene", targets: ["NucleusCompositorWindowScene"]),
         .library(name: "NucleusCompositorOverlayTypes", targets: ["NucleusCompositorOverlayTypes"]),
         .library(name: "NucleusCompositorOverlayScene", targets: ["NucleusCompositorOverlayScene"]),
         .library(name: "NucleusCompositorServer", targets: ["NucleusCompositorServer"]),
@@ -132,6 +133,9 @@ let package = Package(
         // shared marshalling); this package no longer generates a Wayland module of its own.
         .package(name: "swift-wayland", path: "../../swift-wayland"),
         .package(name: "swift-tracy", path: "../../swift-tracy"),
+        .package(
+            name: "NucleusLinuxPlatform",
+            path: "../../platform-linux"),
     ],
     targets: [
         // ── Shared value-type / policy leaves ────────────────────────────────────
@@ -139,11 +143,6 @@ let package = Package(
         .target(name: "NucleusCompositorOverlayTypes", path: "Sources/NucleusCompositorOverlayTypes"),
 
         // ── OS-substrate C façades (the pkg-config that used to force into root) ──
-        .systemLibrary(
-            name: "NucleusCompositorSystemdC",
-            path: "Sources/NucleusCompositorSystemdC",
-            pkgConfig: "libsystemd"
-        ),
         .systemLibrary(
             name: "NucleusCompositorDrmC",
             path: "Sources/NucleusCompositorDrmC",
@@ -218,12 +217,12 @@ let package = Package(
             name: "NucleusCompositorShellSurface",
             path: "Sources/NucleusCompositorShell",
             exclude: [
-                "AppearancePortal.swift", "BezelService.swift", "CursorTheme.swift",
-                "CursorThemeHost.swift", "DBusService.swift", "IdlePolicy.swift",
+                "BezelService.swift", "CursorTheme.swift",
+                "CursorThemeHost.swift", "IdlePolicy.swift",
                 "KeybindService.swift", "LauncherService.swift", "NotificationService.swift",
                 "ScreenshotService.swift", "ShellOverlayPublicationHost.swift",
                 "ShellPolicyHost.swift", "ShellServiceHost.swift", "ShellServices.swift",
-                "SystemdBus.swift", "XCursor.swift",
+                "XCursor.swift",
             ],
             sources: ["DesktopApplicationIndex.swift"]
         ),
@@ -261,7 +260,15 @@ let package = Package(
                 .product(name: "NucleusRenderModel", package: "Nucleus"),
                 "NucleusCompositorOverlayScene",
                 .product(name: "Tracy", package: "swift-tracy"),
-                "NucleusCompositorSystemdC",
+                .product(
+                    name: "NucleusLinuxDBus",
+                    package: "NucleusLinuxPlatform"),
+                .product(
+                    name: "NucleusLinuxAccessibility",
+                    package: "NucleusLinuxPlatform"),
+                .product(
+                    name: "NucleusLinuxEnvironment",
+                    package: "NucleusLinuxPlatform"),
             ],
             path: "Sources/NucleusCompositorShell",
             exclude: ["DesktopApplicationIndex.swift"],
@@ -299,6 +306,7 @@ let package = Package(
                 .product(name: "NucleusRenderModel", package: "Nucleus"),
                 .product(name: "VulkanC", package: "swift-vulkan"),
                 .product(name: "Vulkan", package: "swift-vulkan"),
+                .product(name: "Tracy", package: "swift-tracy"),
                 "NucleusCompositorDrmC",
             ],
             path: "Sources/NucleusCompositorRendererLinux",
@@ -320,6 +328,7 @@ let package = Package(
                 "NucleusCompositorDrmC",
                 .product(name: "NucleusSkiaGraphiteBridge", package: "Nucleus"),
                 .product(name: "Tracy", package: "swift-tracy"),
+                "NucleusCompositorServer",
             ],
             path: "Sources/NucleusCompositorRenderRuntime",
             swiftSettings: [
@@ -333,6 +342,7 @@ let package = Package(
             name: "NucleusCompositorRendererLinuxTests",
             dependencies: [
                 "NucleusCompositorRendererLinux",
+                .product(name: "NucleusRenderModel", package: "Nucleus"),
                 .product(name: "NucleusTypes", package: "Nucleus"),
                 .product(name: "Vulkan", package: "swift-vulkan"),
             ],
@@ -348,6 +358,8 @@ let package = Package(
             dependencies: [
                 "NucleusCompositorRenderRuntime",
                 "NucleusCompositorRendererLinux",
+                "NucleusCompositorServer",
+                .product(name: "NucleusRenderModel", package: "Nucleus"),
                 .product(name: "NucleusRenderer", package: "Nucleus"),
             ],
             path: "Tests/NucleusCompositorRenderRuntimeTests",
@@ -385,6 +397,8 @@ let package = Package(
             name: "NucleusCompositorWaylandRuntimeTests",
             dependencies: [
                 "NucleusCompositorWaylandRuntime", "NucleusCompositorServer",
+                "NucleusCompositorWindowScene",
+                .product(name: "NucleusLayers", package: "Nucleus"),
                 // Direct deps on the C façades so their systemLibrary pkgConfig cflags
                 // (xcb/libinput include dirs) reach this target's @testable recompile.
                 "NucleusCompositorXcbC", "NucleusCompositorInputC",
@@ -419,6 +433,8 @@ let package = Package(
                 "XdgConfigureLedgerTests.swift",
                 "XdgPositionerTests.swift",
                 "DmabufLayoutValidatorTests.swift",
+                "CompositorRenderServiceTests.swift",
+                "SceneTransitionTests.swift",
                 "DndActionNegotiationTests.swift",
             ],
             swiftSettings: [
@@ -447,6 +463,25 @@ let package = Package(
             swiftSettings: [.interoperabilityMode(.Cxx)],
             linkerSettings: [.unsafeFlags(skiaLinkFlags)]
         ),
+        .testTarget(
+            name: "NucleusCompositorShellTests",
+            dependencies: [
+                "NucleusCompositorShell",
+                "NucleusCompositorOverlayScene",
+                .product(
+                    name: "NucleusLinuxAccessibility",
+                    package: "NucleusLinuxPlatform"),
+                .product(name: "NucleusUI", package: "Nucleus"),
+                .product(name: "NucleusLayers", package: "Nucleus"),
+                .product(name: "NucleusTextBackend", package: "Nucleus"),
+                .product(
+                    name: "NucleusSkiaGraphiteBridge",
+                    package: "Nucleus"),
+            ],
+            path: "Tests/NucleusCompositorShellTests",
+            swiftSettings: [.interoperabilityMode(.Cxx)],
+            linkerSettings: [.unsafeFlags(skiaLinkFlags)]
+        ),
         // Compositor-root self-hosting topology the scene feeder drives (relocated
         // from the core repo's test tree; covers NucleusCompositorWindowScene).
         .testTarget(
@@ -459,3 +494,22 @@ let package = Package(
         ),
     ]
 )
+
+
+for target in package.targets {
+    switch target.type {
+    case .regular, .executable, .test:
+        break
+    default:
+        continue
+    }
+    target.swiftSettings = (target.swiftSettings ?? []) + [
+        .unsafeFlags(["-warnings-as-errors"]),
+    ]
+    target.cSettings = (target.cSettings ?? []) + [
+        .unsafeFlags(["-Werror"]),
+    ]
+    target.cxxSettings = (target.cxxSettings ?? []) + [
+        .unsafeFlags(["-Werror"]),
+    ]
+}

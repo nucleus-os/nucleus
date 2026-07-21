@@ -75,6 +75,18 @@ public struct ShellModifierState: Sendable, Equatable {
     public init() {}
 }
 
+public struct ShellDragAuthorization: Sendable, Equatable {
+    public let serial: UInt32
+    public let surface: UInt
+
+    public init(serial: UInt32, surface: UInt) {
+        precondition(serial != 0)
+        precondition(surface != 0)
+        self.serial = serial
+        self.surface = surface
+    }
+}
+
 @MainActor
 public protocol ShellSeatDelegate: AnyObject {
     func seat(_ seat: ShellSeat, didProduce event: ShellInputEvent)
@@ -92,6 +104,7 @@ public final class ShellSeat {
     public private(set) var repeatDelayMs: Int32 = 600
 
     private let seat: OpaquePointer
+    private let client: ShellWaylandClient
 
     /// Borrowed seat proxy used to create seat-scoped protocol extensions.
     public var protocolSeat: OpaquePointer { seat }
@@ -122,6 +135,7 @@ public final class ShellSeat {
     private var lastPointerY: Double = 0
     private var pendingAxisSource: UInt32 = 0
     private var pressedPointerButtons: Set<UInt32> = []
+    private var dragAuthorization: ShellDragAuthorization?
 
     /// The held key awaiting repeat, and when its next repeat is due.
     private var heldKeycode: UInt32?
@@ -136,9 +150,10 @@ public final class ShellSeat {
     public init?(client: ShellWaylandClient) {
         guard let seat = client.proxy(.seat) else { return nil }
         self.seat = seat
+        self.client = client
         cursorShapeManager = client.proxy(.cursorShape)
         xkbContext = xkb_context_new(XKB_CONTEXT_NO_FLAGS)
-        WlSeatClient.addListener(seat, owner: self)
+        guard client.attachSeatConsumer(self) else { return nil }
     }
 
     private func bindCursorShapeDevice(for pointer: OpaquePointer) {
@@ -150,6 +165,16 @@ public final class ShellSeat {
     // release runs on the actor that owns them rather than crossing an isolation
     // boundary with non-Sendable pointers.
     isolated deinit {
+        client.detachSeatConsumer(self)
+        if let cursorShapeDevice {
+            wp_cursor_shape_device_v1_destroy(cursorShapeDevice)
+        }
+        if let pointer {
+            wl_pointer_release(pointer)
+        }
+        if let keyboard {
+            wl_keyboard_release(keyboard)
+        }
         if let xkbState { xkb_state_unref(xkbState) }
         if let xkbKeymap { xkb_keymap_unref(xkbKeymap) }
         if let xkbContext { xkb_context_unref(xkbContext) }
@@ -246,10 +271,16 @@ public final class ShellSeat {
         let size = xkb_state_key_get_utf8(xkbState, xkbKeycode, nil, 0)
         guard size > 0 else { return nil }
         var buffer = [CChar](repeating: 0, count: Int(size) + 1)
-        _ = buffer.withUnsafeMutableBufferPointer { pointer in
+        let written = buffer.withUnsafeMutableBufferPointer { pointer in
             xkb_state_key_get_utf8(xkbState, xkbKeycode, pointer.baseAddress, pointer.count)
         }
-        guard let text = String(validatingCString: buffer), !text.isEmpty else { return nil }
+        guard written == size else { return nil }
+        let bytes = buffer.prefix(Int(written)).map {
+            UInt8(bitPattern: $0)
+        }
+        guard let text = String(validating: bytes, as: UTF8.self),
+              !text.isEmpty
+        else { return nil }
         guard let scalar = text.unicodeScalars.first,
               text.unicodeScalars.count > 1 || !(scalar.value < 0x20 || scalar.value == 0x7F)
         else { return nil }
@@ -379,11 +410,38 @@ public final class ShellSeat {
             pressedPointerButtons.insert(button)
         } else {
             pressedPointerButtons.remove(button)
+            if pressedPointerButtons.isEmpty {
+                dragAuthorization = nil
+            }
         }
+    }
+
+    func noteDragAuthorization(serial: UInt32) {
+        guard serial != 0, pointerSurface != 0 else { return }
+        dragAuthorization = ShellDragAuthorization(
+            serial: serial,
+            surface: pointerSurface)
+    }
+
+    /// Consumes the pointer-down authority required by
+    /// `wl_data_device.start_drag`. It is intentionally one-shot, matching the
+    /// compositor's serial ledger.
+    public func takeDragAuthorization(
+        for surface: OpaquePointer
+    ) -> ShellDragAuthorization? {
+        guard !pressedPointerButtons.isEmpty,
+              let authorization = dragAuthorization,
+              authorization.surface == UInt(bitPattern: surface)
+        else {
+            return nil
+        }
+        dragAuthorization = nil
+        return authorization
     }
 
     func clearPointerButtons() {
         pressedPointerButtons.removeAll(keepingCapacity: true)
+        dragAuthorization = nil
     }
 
     /// Detents accumulate across `axis_value120` and are consumed by the `axis`
@@ -443,17 +501,6 @@ public final class ShellSeat {
 // Swift signatures, so one type cannot conform to both protocols. The seat owns
 // these boxes for the proxies' lifetime, which is also what `addListener`'s
 // unretained owner requires.
-extension ShellSeat: WlSeatEvents {
-    public nonisolated func capabilities(_ proxy: OpaquePointer, capabilities: UInt32) {
-        MainActor.assumeIsolated {
-            bindPointerIfNeeded(capabilities)
-            bindKeyboardIfNeeded(capabilities)
-        }
-    }
-
-    public nonisolated func name(_ proxy: OpaquePointer, name: UnsafePointer<CChar>?) {}
-}
-
 @MainActor
 final class ShellPointerListener: WlPointerEvents {
     // Unowned: the seat owns this box, so it cannot outlive the seat.
@@ -514,6 +561,9 @@ final class ShellPointerListener: WlPointerEvents {
         MainActor.assumeIsolated {
             let pressed = state == UInt32(WL_POINTER_BUTTON_STATE_PRESSED.rawValue)
             seat.notePointerButton(button, pressed: pressed)
+            if pressed {
+                seat.noteDragAuthorization(serial: serial)
+            }
             var event = seat.makeEvent(pressed ? .pointerButtonDown : .pointerButtonUp)
             event.surface = seat.currentPointerSurface
             event.button = button

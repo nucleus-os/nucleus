@@ -20,8 +20,10 @@ public struct FontDescriptor: Sendable, Equatable {
     }
 
     @MainActor
-    public var resolved: ResolvedFontDescriptor {
-        TextSystem.shared.resolve(self)
+    public func resolved(
+        in textSystem: TextSystem
+    ) -> ResolvedFontDescriptor {
+        textSystem.resolve(self)
     }
 }
 
@@ -116,13 +118,15 @@ public struct Font: Sendable, Equatable {
     }
 
     @MainActor
-    public var metrics: FontMetrics {
-        TextSystem.shared.metrics(for: descriptor)
+    public func metrics(in textSystem: TextSystem) -> FontMetrics {
+        textSystem.metrics(for: descriptor)
     }
 
     @MainActor
-    public var resolvedDescriptor: ResolvedFontDescriptor {
-        descriptor.resolved
+    public func resolvedDescriptor(
+        in textSystem: TextSystem
+    ) -> ResolvedFontDescriptor {
+        descriptor.resolved(in: textSystem)
     }
 }
 

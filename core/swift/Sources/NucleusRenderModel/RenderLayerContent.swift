@@ -1,15 +1,4 @@
-// Phase 8.2 — Swift render-layer content + backdrop-attachment vocabulary.
-//
-// The second slice of the render-server retained-layer model: the per-node
-// content union (`LayerContent` and its wire-level `InitialContent`/
-// `ContentDelta` siblings), the opaque render-server-owned handles those carry,
-// the structural-role `LayerKind`, the geometric `EffectShape`/`BackdropMask`,
-// and the per-layer `BackdropAttachment`.
-//
-// These are the node-state value types that the render-server tree collapses
-// into. Nothing imports this yet. The
-// per-node `ModelState`/`PresentationState` and the tree itself follow in
-// later 8.x slices.
+// Retained-layer content, structural role, and backdrop-attachment value types.
 
 // MARK: - Geometry aliases
 
@@ -22,9 +11,9 @@ public func float4Equal(_ a: Float4, _ b: Float4) -> Bool {
     a.0 == b.0 && a.1 == b.1 && a.2 == b.2 && a.3 == b.3
 }
 
-// MARK: - Opaque render-server handles
+// MARK: - Opaque render-resource handles
 
-/// Render-server-owned immutable snapshot handle. The render server resolves it
+/// Renderer-owned immutable snapshot handle. The renderer resolves it
 /// to a `*Texture` at draw time and owns the refcount. Mirrors `SnapshotHandle`
 /// (`enum(u64)`, `none = 0`).
 public struct SnapshotHandle: Equatable, Hashable, Sendable {
@@ -58,24 +47,6 @@ public struct IOSurfaceID: Equatable, Hashable, Sendable {
 public struct ContextID: Equatable, Hashable, Sendable {
     public var raw: UInt32 = 0
     public init(raw: UInt32 = 0) { self.raw = raw }
-}
-
-/// Wire-shaped presentation-transition operation id. Mirrors `OperationID`
-/// (`enum(u64)`, `none = 0`).
-public struct OperationID: Equatable, Hashable, Sendable {
-    public var raw: UInt64 = 0
-    public init(raw: UInt64 = 0) { self.raw = raw }
-    public static let none = OperationID(raw: 0)
-    public var isNone: Bool { raw == 0 }
-}
-
-/// Identity matching an incoming `to` content commit to an in-flight transition.
-/// Mirrors `ContentGeneration` (`enum(u64)`, `none = 0`).
-public struct ContentGeneration: Equatable, Hashable, Sendable {
-    public var raw: UInt64 = 0
-    public init(raw: UInt64 = 0) { self.raw = raw }
-    public static let none = ContentGeneration(raw: 0)
-    public var isNone: Bool { raw == 0 }
 }
 
 // MARK: - Effect geometry
@@ -212,8 +183,7 @@ public struct BackdropAttachment: Equatable, Sendable {
 
 // MARK: - Structural kind
 
-/// Backdrop-kind payload for the transitional `LayerKind.backdrop` variant.
-/// Mirrors the anonymous struct in `LayerKind.backdrop`.
+/// Backdrop-kind payload for `LayerKind.backdrop`.
 public struct BackdropKindParams: Equatable, Sendable {
     public var materialRole: BackdropMaterialRole = .default
     public var appearance: AppearanceMode = .auto
@@ -246,9 +216,7 @@ public struct BackdropKindParams: Equatable, Sendable {
 }
 
 /// Structural layer roles carrying only role-typed payload. Content is split off
-/// into `LayerContent`. Mirrors `LayerKind`. The `.backdrop` variant is
-/// transitional (removed in Phase 9 once producers allocate `.container` +
-/// `BackdropAttachment`).
+/// into `LayerContent`.
 public enum LayerKind: Equatable, Sendable {
     case container
     case backdrop(BackdropKindParams)

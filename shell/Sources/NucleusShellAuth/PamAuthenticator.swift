@@ -32,6 +32,7 @@ public final class PamAuthenticator: LockAuthenticator {
     /// Path to the helper. Resolved next to the running executable so a
     /// development build uses its own helper rather than an installed one.
     private let helperPath: String
+    private let pollSetDidChange: @MainActor () -> Void
 
     private struct Attempt {
         var readFD: Int32
@@ -41,8 +42,12 @@ public final class PamAuthenticator: LockAuthenticator {
 
     private var attempt: Attempt?
 
-    public init(helperPath: String? = nil) {
+    public init(
+        helperPath: String? = nil,
+        pollSetDidChange: @escaping @MainActor () -> Void = {}
+    ) {
         self.helperPath = helperPath ?? PamAuthenticator.defaultHelperPath()
+        self.pollSetDidChange = pollSetDidChange
     }
 
     /// The fd carrying a verdict, for the host to poll. `nil` when idle.
@@ -88,6 +93,7 @@ public final class PamAuthenticator: LockAuthenticator {
         }
 
         attempt = Attempt(readFD: spawned.readFD, pid: spawned.pid, completion: completion)
+        pollSetDidChange()
     }
 
     /// Read the verdict and complete the attempt. Called by the host when
@@ -98,6 +104,7 @@ public final class PamAuthenticator: LockAuthenticator {
     public func drainPendingAttempt() {
         guard let attempt else { return }
         self.attempt = nil
+        pollSetDidChange()
 
         let outcome = readOutcome(from: attempt.readFD)
         close(attempt.readFD)
@@ -118,9 +125,21 @@ public final class PamAuthenticator: LockAuthenticator {
     public func cancelPendingAttempt() {
         guard let attempt else { return }
         self.attempt = nil
+        pollSetDidChange()
         kill(attempt.pid, SIGKILL)
         close(attempt.readFD)
         _ = reap(attempt.pid)
+    }
+
+    /// Fail a poll source that became invalid before producing a verdict.
+    public func failPendingAttempt(_ message: String) {
+        guard let attempt else { return }
+        self.attempt = nil
+        pollSetDidChange()
+        kill(attempt.pid, SIGKILL)
+        close(attempt.readFD)
+        _ = reap(attempt.pid)
+        attempt.completion(.unavailable(message))
     }
 
     // MARK: - Helper process

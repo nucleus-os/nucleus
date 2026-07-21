@@ -11,30 +11,39 @@ import NucleusAppHostProtocols
 /// exists rather than compiling at each draw.
 public final class RuntimeEffect: Sendable {
     public let handle: UInt64
+    private let resourceLifetime: LayerResourceLifetime?
 
-    public init(handle: UInt64, retain: Bool = true) {
+    public init(
+        handle: UInt64,
+        resourceLifetime: LayerResourceLifetime? = nil,
+        retain: Bool = true
+    ) {
         self.handle = handle
+        self.resourceLifetime = resourceLifetime
         if retain && handle != 0 {
-            currentLifecycleHost()?.runtimeEffectLifecycle.retain(handle: handle)
+            resourceLifetime?.lifecycle.runtimeEffectLifecycle.retain(handle: handle)
         }
     }
 
     deinit {
         if handle != 0 {
-            currentLifecycleHost()?.runtimeEffectLifecycle.release(handle: handle)
+            resourceLifetime?.lifecycle.runtimeEffectLifecycle.release(handle: handle)
         }
     }
 
     /// Register an SkSL program, or share the handle of an identical one
     /// already registered.
     @MainActor
-    public static func register(sksl: String) throws(LayerError) -> RuntimeEffect {
-        guard let registrar = currentHost()?.runtimeEffectRegistrar else {
-            throw LayerError.backendFailure(detail: "register runtime effect: layers host not installed")
-        }
+    public static func register(
+        sksl: String, in context: Context
+    ) throws(LayerError) -> RuntimeEffect {
+        let registrar = context.runtimeHost.operations.runtimeEffectRegistrar
         do {
             let handle = try registrar.register(sksl: sksl)
-            return RuntimeEffect(handle: handle, retain: false)
+            return RuntimeEffect(
+                handle: handle,
+                resourceLifetime: context.runtimeHost.resourceLifetime,
+                retain: false)
         } catch let err {
             switch err {
             case .invalidHandle:

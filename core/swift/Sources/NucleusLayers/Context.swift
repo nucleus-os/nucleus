@@ -76,9 +76,10 @@ package final class ActiveGroup: ~Sendable {
 public final class Context: ~Sendable {
     public let id: ContextID
     public var commitSink: any CommitSink
+    public let runtimeHost: LayerRuntimeHost
+    private nonisolated let lifecycleHost: LifecycleHost
     private let releasesContextOnDeinit: Bool
     package var nextLayerOrdinal: UInt32
-    package var nextContentGenerationValue: UInt64
     package var nextTransactionIDValue: UInt64
     package var revision: UInt32
     @_spi(NucleusCompositor) public var layers: [LayerID: Layer]
@@ -98,9 +99,10 @@ public final class Context: ~Sendable {
         }
         self.id = id
         self.commitSink = commitSink
+        self.runtimeHost = commitSink.runtimeHost
+        self.lifecycleHost = commitSink.runtimeHost.lifecycle
         self.releasesContextOnDeinit = releasesContextOnDeinit
         self.nextLayerOrdinal = 1
-        self.nextContentGenerationValue = 1
         self.nextTransactionIDValue = 1
         self.revision = 1
         self.layers = [:]
@@ -113,9 +115,7 @@ public final class Context: ~Sendable {
     }
 
     public convenience init(commitSink: any CommitSink) throws(LayerError) {
-        guard let allocator = currentHost()?.contextIDAllocator else {
-            throw LayerError.backendFailure(detail: "reserve context id: layers host not installed")
-        }
+        let allocator = commitSink.runtimeHost.operations.contextIDAllocator
         let contextID: UInt32
         do {
             contextID = try allocator.reserve()
@@ -136,14 +136,12 @@ public final class Context: ~Sendable {
 
     deinit {
         if releasesContextOnDeinit {
-            currentLifecycleHost()?.contextIDAllocator.release(id.rawValue)
+            lifecycleHost.contextIDAllocator.release(id.rawValue)
         }
     }
 
     public func queryDisplayLink() throws(LayerError) -> PresentReport {
-        guard let displayLink = currentHost()?.displayLinkSource else {
-            throw LayerError.backendFailure(detail: "display link query: layers host not installed")
-        }
+        let displayLink = runtimeHost.operations.displayLinkSource
         do {
             let report = try displayLink.query(contextID: id.rawValue)
             return PresentReport(report)
@@ -232,15 +230,6 @@ public final class Context: ~Sendable {
         revision &+= 1
         if revision == 0 {
             revision = 1
-        }
-        return current
-    }
-
-    package func nextContentGeneration() -> UInt64 {
-        let current = nextContentGenerationValue
-        nextContentGenerationValue &+= 1
-        if nextContentGenerationValue == 0 {
-            nextContentGenerationValue = 1
         }
         return current
     }

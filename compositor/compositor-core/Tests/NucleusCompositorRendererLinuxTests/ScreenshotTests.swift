@@ -60,9 +60,13 @@ import NucleusSkiaGraphiteBridge
             red.r = 1; red.g = 0; red.b = 0; red.a = 1
             canvas.clear(red)
             let recording = recorder.snapRecording()
-            _ = context.submit(recording)
+            guard submitGraphiteAndWait(
+                context: context, recording: recording, serial: 1)
+            else { return }
 
-            guard let pixels = Screenshot.readback(context: context, surface: surface) else {
+            guard let pixels = readGraphiteSurfaceRGBA(
+                context: context, surface: surface)
+            else {
                 return
             }
             // Exercise the BGRA conversion of the read frame.

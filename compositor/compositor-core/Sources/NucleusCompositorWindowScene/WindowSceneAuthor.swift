@@ -34,6 +34,7 @@ private struct AuthoredWindowLayout: Equatable {
     let backingFrame: GeometryRect?
     let chromeInsets: WindowEdgeInsets
     let chromeFocused: Bool
+    let windowOpacity: Double
     let overlayOpacity: Double
 }
 
@@ -68,8 +69,84 @@ public final class WindowSceneAuthor {
     // parent window's root/content/popup tree.
     private var childSurfaces: Set<UInt64> = []
 
-    public init(commitSinkFactory: @escaping CommitSinkFactory = { RenderCommitSink() }) {
+    /// Layer transactions update the local model eagerly even when a commit sink
+    /// rejects the encoded transaction. Destructive author operations therefore
+    /// snapshot and restore their local topology on failure so a retry emits the
+    /// same removal instead of silently accepting an empty mutation.
+    private struct LocalLayerTopology {
+        let id: LayerID
+        let descriptor: LayerDescriptor
+        let parentID: LayerID?
+        let index: UInt32
+    }
+
+    public init(commitSinkFactory: @escaping CommitSinkFactory) {
         self.commitSinkFactory = commitSinkFactory
+    }
+
+    private func captureTopology(
+        in context: Context,
+        layerIDs: Set<LayerID>
+    ) -> [LocalLayerTopology] {
+        layerIDs.compactMap { id in
+            guard let layer = context.layers[id] else { return nil }
+            let index = layer.parent?.sublayers.firstIndex {
+                $0 === layer
+            }.map(UInt32.init) ?? UInt32.max
+            return LocalLayerTopology(
+                id: id,
+                descriptor: layer.descriptor,
+                parentID: layer.parent?.id,
+                index: index)
+        }
+    }
+
+    private func restoreTopology(
+        _ topology: [LocalLayerTopology],
+        in context: Context,
+        removing createdIDs: Set<LayerID> = []
+    ) {
+        var rollback = LayerTransaction(context: context)
+        for id in createdIDs {
+            if let layer = context.layers[id] {
+                try? rollback.remove(layer)
+            }
+        }
+        for item in topology where context.layers[item.id] == nil {
+            _ = rollback.createLayer(
+                id: item.id,
+                item.descriptor)
+        }
+        let byID = Dictionary(
+            uniqueKeysWithValues: topology.map { ($0.id, $0) })
+        func depth(_ item: LocalLayerTopology) -> Int {
+            var result = 0
+            var parent = item.parentID
+            var visited: Set<LayerID> = []
+            while let id = parent,
+                  visited.insert(id).inserted,
+                  let next = byID[id]
+            {
+                result += 1
+                parent = next.parentID
+            }
+            return result
+        }
+        for item in topology.sorted(by: {
+            let left = depth($0)
+            let right = depth($1)
+            return left == right
+                ? $0.index < $1.index
+                : left < right
+        }) {
+            guard let layer = context.layers[item.id] else { continue }
+            let parent = item.parentID.flatMap { context.layers[$0] }
+            try? rollback.insert(
+                layer,
+                into: parent,
+                at: item.index)
+        }
+        rollback.abort()
     }
 
     /// Ensure the compositor-root context (`.compositor`) and its root container exist.
@@ -226,9 +303,17 @@ public final class WindowSceneAuthor {
 
     public func surfaceDestroyed(surfaceID: UInt64) throws {
         if let hosting = hostingBySurface[surfaceID], let rootContext {
-            try rootContext.transaction { transaction in
-                if let host = rootContext.layers[hosting.host] { try transaction.remove(host) }
-                if let container = rootContext.layers[hosting.container] { try transaction.remove(container) }
+            let topology = captureTopology(
+                in: rootContext,
+                layerIDs: [hosting.host, hosting.container])
+            do {
+                try rootContext.transaction { transaction in
+                    if let host = rootContext.layers[hosting.host] { try transaction.remove(host) }
+                    if let container = rootContext.layers[hosting.container] { try transaction.remove(container) }
+                }
+            } catch {
+                restoreTopology(topology, in: rootContext)
+                throw error
             }
             hostingBySurface[surfaceID] = nil
             lastWindowOrder = nil
@@ -236,19 +321,27 @@ public final class WindowSceneAuthor {
         guard let context = contexts[surfaceID], let scene = scenes[surfaceID] else {
             return
         }
-        try context.transaction { transaction in
-            if let backingID = scene.backingLayer, let backing = context.layers[backingID] {
-                try transaction.detach(backing)
+        let topology = captureTopology(
+            in: context,
+            layerIDs: Set(context.layers.keys))
+        do {
+            try context.transaction { transaction in
+                if let backingID = scene.backingLayer, let backing = context.layers[backingID] {
+                    try transaction.detach(backing)
+                }
+                if let popup = context.layers[scene.popupLayer] {
+                    try transaction.remove(popup)
+                }
+                if let content = context.layers[scene.contentLayer] {
+                    try transaction.remove(content)
+                }
+                if let root = context.layers[scene.rootLayer] {
+                    try transaction.remove(root)
+                }
             }
-            if let popup = context.layers[scene.popupLayer] {
-                try transaction.remove(popup)
-            }
-            if let content = context.layers[scene.contentLayer] {
-                try transaction.remove(content)
-            }
-            if let root = context.layers[scene.rootLayer] {
-                try transaction.remove(root)
-            }
+        } catch {
+            restoreTopology(topology, in: context)
+            throw error
         }
         contexts[surfaceID] = nil
         if !contexts.values.contains(where: { $0 === context }) {
@@ -324,8 +417,16 @@ public final class WindowSceneAuthor {
             let context = contexts[surfaceID], let scene = scenes[surfaceID]
         else { return }
         if let backingID = scene.backingLayer, let backing = context.layers[backingID] {
-            try context.transaction { transaction in
-                try transaction.remove(backing)
+            let topology = captureTopology(
+                in: context,
+                layerIDs: [backingID])
+            do {
+                try context.transaction { transaction in
+                    try transaction.remove(backing)
+                }
+            } catch {
+                restoreTopology(topology, in: context)
+                throw error
             }
         }
         childSurfaces.remove(surfaceID)
@@ -342,6 +443,7 @@ public final class WindowSceneAuthor {
         backingFrame: GeometryRect?,
         chromeInsets: WindowEdgeInsets = .zero,
         chromeFocused: Bool = false,
+        windowOpacity: Double = 1,
         overlayOpacity: Double = 1
     ) throws {
         guard let context = contexts[surfaceID], var scene = scenes[surfaceID] else {
@@ -350,10 +452,11 @@ public final class WindowSceneAuthor {
         let layout = AuthoredWindowLayout(
             frame: frame, baseSize: baseSize, backingFrame: backingFrame,
             chromeInsets: chromeInsets, chromeFocused: chromeFocused,
+            windowOpacity: windowOpacity,
             overlayOpacity: overlayOpacity)
         guard authoredLayouts[surfaceID] != layout else { return }
         try context.transaction { transaction in
-            try applyGeometry(frame: frame, baseSize: baseSize, backingFrame: backingFrame, chromeInsets: chromeInsets, chromeFocused: chromeFocused, overlayOpacity: overlayOpacity, scene: &scene, context: context, transaction: &transaction)
+            try applyGeometry(frame: frame, baseSize: baseSize, backingFrame: backingFrame, chromeInsets: chromeInsets, chromeFocused: chromeFocused, windowOpacity: windowOpacity, overlayOpacity: overlayOpacity, scene: &scene, context: context, transaction: &transaction)
         }
         scene.frame = frame
         scenes[surfaceID] = scene
@@ -370,20 +473,38 @@ public final class WindowSceneAuthor {
         surfaceID: UInt64,
         snapshotHandle: UInt64
     ) throws(HostCallError) {
-        guard let context = contexts[surfaceID], var scene = scenes[surfaceID] else { return }
+        guard let context = contexts[surfaceID], var scene = scenes[surfaceID]
+        else { throw .failed }
         do {
-            // Defensive: a re-tile mid-crossfade — tear down the prior overlay first.
-            if let existing = scene.overlaySnapshotLayer, let layer = context.layers[existing] {
-                try context.transaction { transaction in try transaction.remove(layer) }
-            }
+            let previousTopology = scene.overlaySnapshotLayer.map {
+                captureTopology(in: context, layerIDs: [$0])
+            } ?? []
             var overlayID: LayerID? = nil
-            try context.transaction { transaction in
-                guard context.layers[scene.contentLayer] != nil else { return }
-                let overlay = transaction.createLayer(.init(
-                    initialContent: LayerContent(kind: .snapshot, handle: snapshotHandle)
-                ))
-                try transaction.insert(overlay, into: context.layers[scene.contentLayer]!, at: 1)
-                overlayID = overlay.id
+            do {
+                try context.transaction { transaction in
+                    guard context.layers[scene.contentLayer] != nil else {
+                        throw HostCallError.failed
+                    }
+                    // Replacement is one accepted topology mutation: there is never a
+                    // committed state with neither the old nor new overlay because a
+                    // superseding transition happened to fail halfway through.
+                    if let existing = scene.overlaySnapshotLayer,
+                       let layer = context.layers[existing]
+                    {
+                        try transaction.remove(layer)
+                    }
+                    let overlay = transaction.createLayer(.init(
+                        initialContent: LayerContent(kind: .snapshot, handle: snapshotHandle)
+                    ))
+                    overlayID = overlay.id
+                    try transaction.insert(overlay, into: context.layers[scene.contentLayer]!, at: 1)
+                }
+            } catch {
+                restoreTopology(
+                    previousTopology,
+                    in: context,
+                    removing: Set(overlayID.map { [$0] } ?? []))
+                throw error
             }
             scene.overlaySnapshotLayer = overlayID
             scenes[surfaceID] = scene
@@ -397,8 +518,16 @@ public final class WindowSceneAuthor {
     public func endContentCrossfade(surfaceID: UInt64) throws(HostCallError) {
         guard let context = contexts[surfaceID], var scene = scenes[surfaceID] else { return }
         do {
-            if let overlayID = scene.overlaySnapshotLayer, let overlay = context.layers[overlayID] {
-                try context.transaction { transaction in try transaction.remove(overlay) }
+            let topology = scene.overlaySnapshotLayer.map {
+                captureTopology(in: context, layerIDs: [$0])
+            } ?? []
+            do {
+                if let overlayID = scene.overlaySnapshotLayer, let overlay = context.layers[overlayID] {
+                    try context.transaction { transaction in try transaction.remove(overlay) }
+                }
+            } catch {
+                restoreTopology(topology, in: context)
+                throw error
             }
             scene.overlaySnapshotLayer = nil
             scenes[surfaceID] = scene
@@ -470,23 +599,6 @@ public final class WindowSceneAuthor {
                     height: Float(scene.titlebarHeight),
                     for: buttonLayer
                 )
-            }
-        } catch {
-            throw .failed
-        }
-    }
-
-    public func clearTransition(surfaceID: UInt64) throws(HostCallError) {
-        guard let context = contexts[surfaceID], let scene = scenes[surfaceID] else {
-            return
-        }
-        let targetID = scene.backingLayer ?? scene.contentLayer
-        guard let target = context.layers[targetID] else {
-            return
-        }
-        do {
-            try context.transaction { transaction in
-                try transaction.clearTransition(layer: target)
             }
         } catch {
             throw .failed
@@ -570,6 +682,7 @@ public final class WindowSceneAuthor {
         backingFrame: GeometryRect?,
         chromeInsets: WindowEdgeInsets,
         chromeFocused: Bool,
+        windowOpacity: Double,
         overlayOpacity: Double,
         scene: inout WindowScene,
         context: Context,
@@ -612,6 +725,7 @@ public final class WindowSceneAuthor {
             update.borderRight = border
             update.borderBottom = border
             update.borderLeft = border
+            update.opacity = windowOpacity
             try transaction.setProperties(update, for: root)
         }
         // Content: the inset content viewport within the frame, no scale, rounded-corner

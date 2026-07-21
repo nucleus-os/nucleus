@@ -19,10 +19,16 @@ import NucleusTypes
         return (try Context(id: ContextID(rawValue: id), commitSink: sink), sink)
     }
 
+    private func makeServices() -> UIHostServices {
+        .inMemory()
+    }
+
     @Test func publishingThroughTheEmbedderDoesNotRecurse() throws {
         let sink = InMemoryCommitSink()
         let publication = try WindowScenePublicationContext(
-            visualContextID: ContextID(rawValue: 900), commitSink: sink)
+            visualContextID: ContextID(rawValue: 900),
+            commitSink: sink,
+            services: makeServices())
         let scene = publication.makeWindowScene(windows: [])
 
         // The regression: this used to overflow the stack rather than return.
@@ -31,10 +37,11 @@ import NucleusTypes
     }
 
     @Test func publishingInterleavesPlacementsWithWindows() throws {
-        installStubHost()
         let sink = InMemoryCommitSink()
         let publication = try WindowScenePublicationContext(
-            visualContextID: ContextID(rawValue: 901), commitSink: sink)
+            visualContextID: ContextID(rawValue: 901),
+            commitSink: sink,
+            services: makeServices())
         let window = publication.withSemanticContext { () -> Window in
             let window = Window(title: "Native")
             let root = View()
@@ -59,7 +66,9 @@ import NucleusTypes
     @Test func aSceneRootIsCreatedOnceAndReused() throws {
         let sink = InMemoryCommitSink()
         let publication = try WindowScenePublicationContext(
-            visualContextID: ContextID(rawValue: 902), commitSink: sink)
+            visualContextID: ContextID(rawValue: 902),
+            commitSink: sink,
+            services: makeServices())
         let scene = publication.makeWindowScene(windows: [])
 
         let first = try scene.attachedRootLayer()
@@ -68,10 +77,11 @@ import NucleusTypes
     }
 
     @Test func sublayerIndexRisesWithLevel() throws {
-        installStubHost()
         let sink = InMemoryCommitSink()
         let publication = try WindowScenePublicationContext(
-            visualContextID: ContextID(rawValue: 903), commitSink: sink)
+            visualContextID: ContextID(rawValue: 903),
+            commitSink: sink,
+            services: makeServices())
         let window = publication.withSemanticContext { () -> Window in
             let window = Window(title: "Native")
             let root = View()
@@ -86,10 +96,12 @@ import NucleusTypes
     }
 
     @Test func recordingAndRegisteringADrawingRoundTrips() throws {
-        installStubHost()
         let (context, _) = try makeContext(904)
+        let uiContext = UIContext(
+            services: makeServices(),
+            resourceHostHandle: context.commitSink.resourceHostHandle)
 
-        let graphics = GraphicsContext.makeEmbedderContext()
+        let graphics = GraphicsContext.makeEmbedderContext(in: uiContext)
         graphics.fillColor = Color(1, 0, 0, 1)
         graphics.fill(Rect(x: 0, y: 0, width: 10, height: 10))
 
@@ -97,12 +109,16 @@ import NucleusTypes
         #expect(recording.paintCommands.count == 1)
         #expect(!recording.isEmptyDrawing)
 
-        let registered = try registerPaint(recording, width: 10, height: 10, in: context)
+        let registered = try registerPaint(
+            recording,
+            width: 10,
+            height: 10,
+            in: context,
+            uiContext: uiContext)
         #expect(registered.update.content != nil)
     }
 
     @Test func aViewsRecordedDrawingIsReadableThroughTheEmbedder() throws {
-        installStubHost()
         let (context, _) = try makeContext(905)
         let view = EmbedderApplication.withContext(context) { () -> View in
             let view = View()
@@ -120,7 +136,6 @@ import NucleusTypes
     /// Direct layer clients still use the registration seam without creating a
     /// second semantic-View publication path.
     @Test func bindingAppliesAndAppendsTheUpdate() throws {
-        installStubHost()
         let (context, sink) = try makeContext(906)
         let view = EmbedderApplication.withContext(context) { () -> View in
             let view = View()
@@ -136,7 +151,11 @@ import NucleusTypes
         try creation.insert(layer)
         try creation.commit()
         let registered = try registerPaint(
-            view.recordedDrawing, width: 20, height: 10, in: context)
+            view.recordedDrawing,
+            width: 20,
+            height: 10,
+            in: context,
+            uiContext: view.uiContext)
         registered.bind(to: layer)
         try LayerTransaction.flushImplicit(in: context)
 

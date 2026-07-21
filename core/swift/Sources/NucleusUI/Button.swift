@@ -13,6 +13,9 @@ open class Button: Control, ~Sendable {
             invalidateLayoutCache()
             invalidateIntrinsicContentSize()
             setNeedsDisplay()
+            if accessibilityLabel == nil {
+                recordMutation(.accessibility)
+            }
         }
     }
     public var glyph: Glyph {
@@ -168,7 +171,8 @@ open class Button: Control, ~Sendable {
                     .scaled(by: uiContext.environment.textScale),
                 color: foregroundColor)],
             containerWidth: containerWidth,
-            lineBreakMode: .byTruncatingTail
+            lineBreakMode: .byTruncatingTail,
+            textSystem: uiContext.services.textSystem
         )
         layoutCache[containerWidth] = layout
         return layout

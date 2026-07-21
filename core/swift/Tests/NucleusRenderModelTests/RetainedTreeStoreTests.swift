@@ -5,7 +5,7 @@ import Testing
 @Suite struct RetainedTreeStoreTests {
     @Test func retainedTreeStore() {
         let ctx = ContextID(raw: 1)
-        let store = RetainedTreeStore()
+        let store = RetainedTreeStore(resourceHost: SwiftResourceHost())
 
         // --- fresh store: empty, clean, revision 0 ---
         #expect(store.revision == 0, "initial-revision")

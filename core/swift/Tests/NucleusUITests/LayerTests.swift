@@ -4,7 +4,6 @@ import Testing
 
 @MainActor
 @Suite(.uiContext) struct LayerTests {
-    init() { installStubHost() }
 
     @Test func contextLayerTransactionAppliesPropertiesThroughInMemorySink() throws {
         let sink = InMemoryCommitSink()

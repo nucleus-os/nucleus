@@ -24,6 +24,13 @@ public struct ImageHandle: Hashable, Sendable {
     }
 }
 
+private extension ImageRequestSource {
+    var isIcon: Bool {
+        if case .icon = self { return true }
+        return false
+    }
+}
+
 /// How an image fills a frame that is not its own shape.
 ///
 /// The frame is authoritative — layout decides how big an image is, and the mode
@@ -37,6 +44,13 @@ public enum ImageContentMode: Sendable, Equatable {
     case contain
     /// Cover the frame entirely, cropping the overflow.
     case cover
+}
+
+public enum ImageLoadState: Sendable, Equatable {
+    case idle
+    case loading
+    case loaded
+    case failed(ImageRequestFailure)
 }
 
 @MainActor
@@ -93,22 +107,59 @@ public final class ImageView: View, ~Sendable {
         }
     }
 
-    /// What this view shows: a file path, or a `data:` URI.
-    ///
-    /// Both because callers get icon strings from applications and desktop
-    /// entries and cannot know which they hold.
-    ///
-    /// Registration is deferred until the view has a size, and repeats when the
-    /// size it needs changes — the decode bounds are part of a registration's
-    /// identity, so a view that grew is a different decode rather than an upscale
-    /// of the old one.
-    public var sourcePath: String? {
+    /// Retained source request. Direct files/data and named platform icons use
+    /// the same bounded, coalescing context pipeline.
+    public var source: ImageRequestSource? {
         didSet {
-            guard sourcePath != oldValue else { return }
-            resource = nil
-            updateSourceRegistration()
+            guard source != oldValue else { return }
+            invalidateSourceRequest()
         }
     }
+
+    /// Generation supplied by the host's icon-theme owner.
+    public var iconThemeGeneration: UInt64 = 0 {
+        didSet {
+            guard iconThemeGeneration != oldValue else { return }
+            if case .icon = source {
+                invalidateSourceRequest()
+            }
+        }
+    }
+
+    /// Optional projection scale for a detached embedder. Ordinary retained
+    /// scenes derive scale from their presenting window.
+    public var requestBackingScaleFactor: BackingScaleFactor? {
+        didSet {
+            guard requestBackingScaleFactor != oldValue else { return }
+            invalidateSourceRequest()
+        }
+    }
+
+    /// Consumer policy while a request is pending or has failed.
+    public var placeholderImage: ImageHandle? {
+        didSet {
+            if loadState == .loading { image = placeholderImage }
+        }
+    }
+    public var failureImage: ImageHandle? {
+        didSet {
+            if case .failed = loadState { image = failureImage }
+        }
+    }
+
+    public private(set) var loadState: ImageLoadState = .idle
+
+    private struct RequestInputs: Equatable {
+        var source: ImageRequestSource
+        var size: Size
+        var scale: BackingScaleFactor
+        var appearance: Appearance
+        var iconThemeGeneration: UInt64
+    }
+
+    private var activeRequestInputs: RequestInputs?
+    private var requestToken: ImageRequestToken?
+    private var requestGeneration: UInt64 = 0
 
     public init(image: ImageHandle? = nil, imageSize: Size = .zero) {
         self.image = image
@@ -119,10 +170,13 @@ public final class ImageView: View, ~Sendable {
         accessibilityTraits.insert(.image)
     }
 
-    public convenience init(path: String, imageSize: Size = .zero) {
+    public convenience init(
+        source: ImageRequestSource,
+        imageSize: Size = .zero
+    ) {
         self.init(image: nil, imageSize: imageSize)
-        self.sourcePath = path
-        updateSourceRegistration()
+        self.source = source
+        updateSourceRequest()
     }
 
     public override var intrinsicContentSize: Size {
@@ -131,23 +185,108 @@ public final class ImageView: View, ~Sendable {
 
     public override func arrange(in rect: Rect) {
         super.arrange(in: rect)
-        updateSourceRegistration()
+        updateSourceRequest()
     }
 
-    /// Register (or re-register) the source at the size this view now needs.
-    private func updateSourceRegistration() {
-        guard let sourcePath else { return }
-        let needed = bounds.size
-        guard needed.width > 0, needed.height > 0 else { return }
-        // Same file at the same bounds is the same decode; the store would dedupe
-        // to the same handle anyway, so do not churn the registration.
-        if let resource, resource.path == sourcePath, resource.decodeSize == needed {
+    public override func layout() {
+        super.layout()
+        updateSourceRequest()
+    }
+
+    public override func viewDidChangeEffectiveAppearance() {
+        if case .icon = source {
+            invalidateSourceRequest()
+        }
+        super.viewDidChangeEffectiveAppearance()
+    }
+
+    public override func viewDidChangeBackingScaleFactor() {
+        invalidateSourceRequest()
+        super.viewDidChangeBackingScaleFactor()
+    }
+
+    public override func retainedHierarchyWillDetach() {
+        requestToken?.cancel()
+        requestToken = nil
+        activeRequestInputs = nil
+        resource = nil
+        loadState = source == nil ? .idle : .loading
+        image = source == nil ? nil : placeholderImage
+        super.retainedHierarchyWillDetach()
+    }
+
+    private var effectiveRequestScale: BackingScaleFactor {
+        requestBackingScaleFactor
+            ?? window?.surfaceAssociation?.transform.backingScaleFactor
+            ?? .one
+    }
+
+    private func invalidateSourceRequest() {
+        requestToken?.cancel()
+        requestToken = nil
+        activeRequestInputs = nil
+        resource = nil
+        guard source != nil else {
+            loadState = .idle
+            image = nil
             return
         }
-        resource = ImageResource(
-            source: sourcePath,
-            decodeSize: needed,
-            resourceHostHandle: uiContext.resourceHostHandle)
+        loadState = .loading
+        image = placeholderImage
+        updateSourceRequest()
+    }
+
+    /// Resolve and register at the exact point size/backing scale this consumer
+    /// needs. The renderer performs the actual decode through its existing
+    /// queue after publication.
+    private func updateSourceRequest() {
+        guard let source else { return }
+        let needed = bounds.size
+        guard needed.width > 0, needed.height > 0 else { return }
+        let inputs = RequestInputs(
+            source: source,
+            size: needed,
+            scale: effectiveRequestScale,
+            appearance: source.isIcon ? effectiveAppearance : .dark,
+            iconThemeGeneration:
+                source.isIcon ? iconThemeGeneration : 0)
+        guard inputs != activeRequestInputs else { return }
+
+        requestToken?.cancel()
+        resource = nil
+        image = placeholderImage
+        loadState = .loading
+        activeRequestInputs = inputs
+        requestGeneration &+= 1
+        precondition(
+            requestGeneration != 0,
+            "image view request generation exhausted")
+        let generation = requestGeneration
+        let request = ImageRequest(
+            id: ImageRequestID(rawValue: id.rawValue),
+            source: source,
+            targetSize: needed,
+            backingScaleFactor: inputs.scale,
+            appearance: inputs.appearance,
+            iconThemeGeneration: inputs.iconThemeGeneration,
+            cancellationGeneration: generation)
+        requestToken = uiContext.imageRequests.request(request) {
+            [weak self] result in
+            guard let self,
+                  result.requestID.rawValue == self.id.rawValue,
+                  result.cancellationGeneration == self.requestGeneration,
+                  self.activeRequestInputs == inputs
+            else { return }
+            switch result.outcome {
+            case .success(let resource):
+                self.resource = resource
+                self.loadState = .loaded
+            case .failure(let failure):
+                self.resource = nil
+                self.image = self.failureImage
+                self.loadState = .failed(failure)
+            }
+        }
     }
 
     /// Where the image lands inside `bounds`, given the mode.

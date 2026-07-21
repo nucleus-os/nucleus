@@ -15,16 +15,15 @@ import VulkanC
 import NucleusRenderModel
 
 /// Per-frame render demand. `shouldRenderThisVblank` is the render predicate:
-/// render when any continuous animation is active, a frame is explicitly due, an
-/// operation deadline has arrived, or new work is plausible since the last sample.
+/// render when any continuous animation is active, a frame is explicitly due,
+/// or new work is plausible since the last sample.
 struct FrameDemand {
     var continuousActive: Bool = false
     var frameDue: Bool = false
-    var operationDeadlineNs: UInt64? = nil
     var workPlausible: Bool = false
 
     var shouldRenderThisVblank: Bool {
-        continuousActive || frameDue || operationDeadlineNs != nil || workPlausible
+        continuousActive || frameDue || workPlausible
     }
 }
 
@@ -104,6 +103,7 @@ struct FrameRenderResult {
 /// Owns the per-frame GPU state — the Graphite context + recorder, the texture
 /// registry/producer, and per-output accumulators — and renders one frame.
 final class FrameDriver {
+    let resourceHost: SwiftResourceHost
     let context: nucleus.skia.GraphiteContext
     let recorder: nucleus.skia.Recorder
     /// Client uploads are recorded independently from frame drawing. They are
@@ -117,7 +117,7 @@ final class FrameDriver {
     private var submittedLayerSnapshots: [UInt64: [UInt64: LayerFrameSnapshot]] = [:]
     private var decodedImages: [UInt64: nucleus.skia.Image] = [:]
     /// Decodes off the render thread; results are adopted at the top of a frame.
-    let decodeQueue = ImageDecodeQueue()
+    let decodeQueue: ImageDecodeQueue
     /// Compiled SkSL programs keyed by runtime-effect handle. Compilation is
     /// the expensive half and is uniform-independent, so it is cached here
     /// while uniforms are re-bound per draw.
@@ -126,14 +126,20 @@ final class FrameDriver {
     private var uploadsStaged = false
     private(set) var sawCallbackWhileRecording = false
 
-    init?(context: nucleus.skia.GraphiteContext) {
+    init?(
+        context: nucleus.skia.GraphiteContext,
+        resourceHost: SwiftResourceHost,
+        wakeSink: any AsyncRenderWakeSink
+    ) {
         guard context.isValid() else { return nil }
         let recorder = context.makeRecorder()
         let uploadRecorder = context.makeRecorder()
         guard recorder.isValid(), uploadRecorder.isValid() else { return nil }
         self.context = context
+        self.resourceHost = resourceHost
         self.recorder = recorder
         self.uploadRecorder = uploadRecorder
+        self.decodeQueue = ImageDecodeQueue(wakeSink: wakeSink)
         self.producer = TextureProducer(registry: registry)
     }
 
@@ -157,6 +163,40 @@ final class FrameDriver {
         guard updated else { return nil }
         uploadsStaged = true
         return texture
+    }
+
+    /// Submit a standalone renderer-owned copy outside the presentation loop.
+    /// Pending SHM upload work is ordered before it. An explicit-sync client
+    /// acquire semaphore, when present, is consumed by this submission.
+    func submitImmediate(
+        _ recording: nucleus.skia.Recording,
+        waitSemaphores: [VkSemaphore],
+        submissionSerial: UInt64
+    ) -> nucleus.skia.Status {
+        let uploadRecording = uploadsStaged
+            ? uploadRecorder.snapRecording()
+            : nil
+        uploadsStaged = false
+        let waits: [UnsafeMutableRawPointer?] = waitSemaphores.map {
+            UnsafeMutableRawPointer($0)
+        }
+        return waits.withUnsafeBufferPointer { waits in
+            if let uploadRecording, uploadRecording.isValid() {
+                return context.submitWithUploadAndSemaphores(
+                    uploadRecording,
+                    recording,
+                    waits.baseAddress,
+                    waits.count,
+                    nil,
+                    submissionSerial)
+            }
+            return context.submitWithSemaphores(
+                recording,
+                waits.baseAddress,
+                waits.count,
+                nil,
+                submissionSerial)
+        }
     }
 
     /// Drop GPU-backed images before the context tears down (lifetime invariant).
@@ -212,7 +252,7 @@ final class FrameDriver {
     /// Resolve a paint command's effect handle to a compiled program, compiling
     /// and caching on first use. Mirrors `resolvePaintImage`.
     func resolvePaintEffect(_ handle: UInt64) -> nucleus.skia.RuntimeEffect? {
-        guard let source = SwiftResourceHost.shared.runtimeEffects.source(handle) else { return nil }
+        guard let source = resourceHost.runtimeEffects.source(handle) else { return nil }
         return compiledEffect(handle: handle, source: source)
     }
 
@@ -303,8 +343,8 @@ final class FrameDriver {
         var handle: TextureHandle
     }
 
-    /// Collect every texture handle a plan references (content + shadow + both
-    /// transition materials) so they can be resolved before recording.
+    /// Collect every texture handle a plan references so they can be resolved
+    /// before recording.
     private func referencedHandles(_ plan: FramePlan) -> [TextureReference] {
         var handles: [TextureReference] = []
         for op in plan.ops {
@@ -313,9 +353,6 @@ final class FrameDriver {
                 if let t = q.texture { handles.append(TextureReference(role: q.role, handle: t)) }
             case .shadowQuad(let q):
                 if let t = q.texture { handles.append(TextureReference(role: .shadow, handle: t)) }
-            case .transitionQuad(let q):
-                if let p = q.texturePrev { handles.append(TextureReference(role: .content, handle: p)) }
-                if let n = q.textureNext { handles.append(TextureReference(role: .content, handle: n)) }
             case .fillQuad, .visualStyle, .backdrop: break
             }
         }
@@ -330,9 +367,6 @@ final class FrameDriver {
             switch op {
             case .textureQuad(let quad):
                 if quad.role == .content, let texture = quad.texture { ids.insert(texture.raw) }
-            case .transitionQuad(let quad):
-                if let texture = quad.texturePrev { ids.insert(texture.raw) }
-                if let texture = quad.textureNext { ids.insert(texture.raw) }
             case .fillQuad, .visualStyle, .shadowQuad, .backdrop:
                 break
             }
@@ -421,18 +455,26 @@ final class FrameDriver {
         var signalSemaphore: VkSemaphore
     }
 
+    /// Every frame chooses one explicit asynchronous submission contract. Keeping
+    /// offscreen work as a real case prevents a missing platform presenter from
+    /// silently falling back to a CPU-synchronous Graphite submit.
+    enum SubmissionMode {
+        case swapchain(PresentSubmit)
+        case drm(DrmSubmit)
+        case offscreen
+    }
+
     /// Render one frame for `target`'s output into `scanout`. `resolveContent`
     /// maps the emit's role-spaced texture handle to a GPU image; it is called
     /// only in the pre-resolve phase, never during recording or submit. When
-    /// `present` submits for WSI; `drmSubmit` signals an exportable semaphore for
-    /// KMS explicit synchronization. The no-presenter form exists only for isolated
-    /// renderer tests and offscreen work. Returns nil if the accumulator could not be prepared.
+    /// `submissionMode` makes the WSI, DRM, or offscreen completion contract
+    /// explicit. All three paths submit asynchronously and advance `frameSerial`.
+    /// Returns nil if the accumulator could not be prepared.
     func renderFrame(
         tree: LayerTree, target: RenderTarget, frame: FrameInfo,
         scanout: nucleus.skia.Surface,
-        present: PresentSubmit? = nil,
-        drmSubmit: DrmSubmit? = nil,
-        acquireWaitSemaphores: [UInt64: VkSemaphore] = [:],
+        submissionMode: SubmissionMode,
+        acquireWaitSemaphore: (UInt64) -> VkSemaphore? = { _ in nil },
         rootContexts: [ContextID] = [compositorContextId],
         lockContexts: Set<ContextID>? = nil,
         resolvePaintContent: (PaintContentHandle) -> PaintContentStore.Content?,
@@ -454,10 +496,15 @@ final class FrameDriver {
             lockContexts: lockContexts
         )
         let referencedSurfaceIDs = Self.referencedClientSurfaceIDs(plan)
-        let acquiredSurfaceIDs = referencedSurfaceIDs.filter {
-            acquireWaitSemaphores[$0] != nil
+        var acquiredSurfaceIDs: [UInt64] = []
+        var frameAcquireWaits: [VkSemaphore] = []
+        acquiredSurfaceIDs.reserveCapacity(referencedSurfaceIDs.count)
+        frameAcquireWaits.reserveCapacity(referencedSurfaceIDs.count)
+        for surfaceID in referencedSurfaceIDs {
+            guard let semaphore = acquireWaitSemaphore(surfaceID) else { continue }
+            acquiredSurfaceIDs.append(surfaceID)
+            frameAcquireWaits.append(semaphore)
         }
-        let frameAcquireWaits = acquiredSurfaceIDs.compactMap { acquireWaitSemaphores[$0] }
         var timings = RenderFrameTimings()
         timings.planNs = elapsedNanoseconds(phaseStart, clock.now)
 
@@ -566,7 +613,8 @@ final class FrameDriver {
         let submitStatus: nucleus.skia.Status
         phaseStart = clock.now
         var waits: [UnsafeMutableRawPointer?] = frameAcquireWaits.map { UnsafeMutableRawPointer($0) }
-        if let present {
+        switch submissionMode {
+        case .swapchain(let present):
             if let wait = present.waitSemaphore { waits.append(UnsafeMutableRawPointer(wait)) }
             let signal = present.signalSemaphore.map { UnsafeMutableRawPointer($0) }
             submitStatus = waits.withUnsafeBufferPointer { waits in
@@ -580,7 +628,7 @@ final class FrameDriver {
                     scanout, recordingHandle, waits.baseAddress, waits.count,
                     signal, present.queueFamily, frame.frameSerial)
             }
-        } else if let drmSubmit {
+        case .drm(let drmSubmit):
             let signal = UnsafeMutableRawPointer(drmSubmit.signalSemaphore)
             submitStatus = waits.withUnsafeBufferPointer { waits in
                 if let uploadRecording, uploadRecording.isValid() {
@@ -592,22 +640,16 @@ final class FrameDriver {
                     recordingHandle, waits.baseAddress, waits.count,
                     signal, frame.frameSerial)
             }
-        } else {
-            if !waits.isEmpty {
-                submitStatus = waits.withUnsafeBufferPointer { waits in
-                    if let uploadRecording, uploadRecording.isValid() {
-                        return context.submitWithUploadAndSemaphores(
-                            uploadRecording, recordingHandle, waits.baseAddress, waits.count,
-                            nil, frame.frameSerial)
-                    }
-                    return context.submitWithSemaphores(
-                        recordingHandle, waits.baseAddress, waits.count,
+        case .offscreen:
+            submitStatus = waits.withUnsafeBufferPointer { waits in
+                if let uploadRecording, uploadRecording.isValid() {
+                    return context.submitWithUploadAndSemaphores(
+                        uploadRecording, recordingHandle, waits.baseAddress, waits.count,
                         nil, frame.frameSerial)
                 }
-            } else if let uploadRecording, uploadRecording.isValid() {
-                submitStatus = context.submitWithUpload(uploadRecording, recordingHandle)
-            } else {
-                submitStatus = context.submit(recordingHandle)
+                return context.submitWithSemaphores(
+                    recordingHandle, waits.baseAddress, waits.count,
+                    nil, frame.frameSerial)
             }
         }
         timings.submitNs = elapsedNanoseconds(phaseStart, clock.now)

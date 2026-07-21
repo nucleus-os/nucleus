@@ -1,5 +1,6 @@
 // The render/DRM execution driver. Router protocol delegates call the Swift
-// `RenderBridge`, which owns the live renderer/runtime integration.
+// server's typed render service. `RenderBridge` retains only compositor-owned
+// redraw and output-intersection policy.
 //
 // Isolation: libwayland invokes request handlers on the compositor's single
 // main-actor thread, so each
@@ -20,7 +21,10 @@ final class RouterRenderDriver {
 // wp_presentation: advertise the renderer-selected normalized clock domain.
 extension RouterRenderDriver: PresentationDelegate {
     nonisolated var presentationClockId: UInt32 {
-        MainActor.assumeIsolated { RenderBridge.presentationClockID() }
+        MainActor.assumeIsolated {
+            NucleusCompositorServer.shared.renderService?
+                .presentationClockID ?? UInt32(CLOCK_MONOTONIC)
+        }
     }
 }
 
@@ -28,7 +32,8 @@ extension RouterRenderDriver: GammaControlDelegate {
     nonisolated func gammaRampSize(output: WlOutput?) -> UInt32 {
         let outputID = output?.outputId ?? 0
         return MainActor.assumeIsolated {
-            RenderBridge.gammaRampSize(outputID: outputID)
+            NucleusCompositorServer.shared.renderService?
+                .gammaRampSize(outputID: outputID) ?? 0
         }
     }
 
@@ -40,11 +45,12 @@ extension RouterRenderDriver: GammaControlDelegate {
     ) {
         let outputID = output?.outputId ?? 0
         MainActor.assumeIsolated {
-            if RenderBridge.applyGamma(
-                outputID: outputID,
-                red: red,
-                green: green,
-                blue: blue)
+            if NucleusCompositorServer.shared.renderService?.applyGamma(
+                RenderGammaRamp(
+                    outputID: outputID,
+                    red: red,
+                    green: green,
+                    blue: blue)) == true
             {
                 RenderBridge.requestFrame(
                     outputId: outputID,
@@ -56,7 +62,10 @@ extension RouterRenderDriver: GammaControlDelegate {
     nonisolated func gammaClear(output: WlOutput?) {
         let outputID = output?.outputId ?? 0
         MainActor.assumeIsolated {
-            RenderBridge.clearGamma(outputID: outputID)
+            guard let renderService =
+                NucleusCompositorServer.shared.renderService
+            else { return }
+            renderService.clearGamma(outputID: outputID)
             RenderBridge.requestFrame(
                 outputId: outputID,
                 reason: .outputChange)
@@ -69,17 +78,39 @@ extension RouterRenderDriver: GammaControlDelegate {
 // commit-time import still handles device loss and allocation failure.
 extension RouterRenderDriver: DmabufDelegate {
     nonisolated func dmabufSupportedFormats() -> [DmabufFormat] {
-        MainActor.assumeIsolated { RenderBridge.dmabufSupportedFormats() }
+        MainActor.assumeIsolated {
+            NucleusCompositorServer.shared.renderService?
+                .dmabufFormats()
+                .map {
+                    DmabufFormat(
+                        format: $0.format,
+                        modifier: $0.modifier)
+                } ?? []
+        }
     }
 
     nonisolated func dmabufMainDevice() -> UInt64 {
-        MainActor.assumeIsolated { RenderBridge.dmabufMainDevice() }
+        MainActor.assumeIsolated {
+            NucleusCompositorServer.shared.renderService?
+                .dmabufMainDevice ?? 0
+        }
     }
 
     nonisolated func dmabufImport(_ attrs: DmabufAttrs) -> Bool {
         guard let snapshot = DmabufProbeSnapshot(attrs) else { return false }
         return MainActor.assumeIsolated {
-            RenderBridge.probeDmabuf(snapshot)
+            NucleusCompositorServer.shared.renderService?.probeDmabuf(
+                RenderDmabufProbe(
+                    width: snapshot.width,
+                    height: snapshot.height,
+                    drmFormat: snapshot.format,
+                    modifier: snapshot.modifier,
+                    planes: snapshot.planes.map {
+                        RenderDmabufPlane(
+                            fd: $0.fd,
+                            offset: $0.offset,
+                            stride: $0.stride)
+                    })) ?? false
         }
     }
 }
@@ -89,11 +120,17 @@ extension RouterRenderDriver: DmabufDelegate {
 // Syncobj.swift, then travel with the committed DMABUF upload to the renderer.
 extension RouterRenderDriver: DrmSyncobjDelegate {
     nonisolated func importSyncobjTimeline(fd: Int32) -> UInt32? {
-        MainActor.assumeIsolated { RenderBridge.syncobjImportTimeline(fd: fd) }
+        MainActor.assumeIsolated {
+            NucleusCompositorServer.shared.renderService?
+                .importSyncobjTimeline(fd: fd)
+        }
     }
 
     nonisolated func destroySyncobjTimeline(handle: UInt32) {
-        MainActor.assumeIsolated { RenderBridge.syncobjDestroyTimeline(handle: handle) }
+        MainActor.assumeIsolated {
+            NucleusCompositorServer.shared.renderService?
+                .destroySyncobjTimeline(handle: handle)
+        }
     }
 
 }
@@ -107,142 +144,301 @@ extension ScreencopyResult {
 // composited accumulator into the client's wl_buffer. The bound wl_output resolves
 // to its live DRM output by the DisplayID it carries (WlOutput.info.outputId); the
 // client buffer (shm, or the router's own DmabufBuffer) is resolved here and handed
-// across as plain values, so no transport type crosses the `@c` boundary. A copy
+// across as plain values, so no transport type crosses the render-service seam. A copy
 // queues its target output and runs only from that output's accepted-submission
 // callback, when the accumulator contains the newly produced frame.
 extension RouterRenderDriver: ScreencopyDelegate {
-    nonisolated func screencopyParams(output: WlOutput?, region: WlRect?) -> ScreencopyParams? {
-        guard let id = output?.info.outputId, id != 0 else { return nil }
-        return MainActor.assumeIsolated {
-            guard var p = RenderBridge.screencopyParams(outputId: id) else { return nil }
-            // A region capture advertises the clipped rect; otherwise the
-            // full-output params stand. The requested region is clipped to the
-            // output's extents (spec: "clipped to the output's extents") so a client
-            // cannot force an oversized allocation or an out-of-bounds read — the
-            // full-output dimensions are `p.width`/`p.height` before this override.
-            if let region {
-                let outW = Int32(bitPattern: p.width)
-                let outH = Int32(bitPattern: p.height)
-                let x = min(max(0, region.x), outW)
-                let y = min(max(0, region.y), outH)
-                let w = max(0, min(region.width, outW - x))
-                let h = max(0, min(region.height, outH - y))
-                p.width = UInt32(w)
-                p.height = UInt32(h)
-                p.stride = p.width * 4
-            }
-            return p
+    func screencopyConfiguration(
+        output: WlOutput?, region: WlRect?
+    ) -> ScreencopyConfiguration? {
+        guard let output, output.info.outputId != 0,
+              var params = RenderBridge.screencopyParams(
+                outputId: output.info.outputId)
+        else { return nil }
+        guard let region else {
+            return ScreencopyConfiguration(
+                params: params, sourceRegion: nil)
         }
+
+        // The protocol region is output-local logical geometry. Project its
+        // clipped intersection into the actual pixel extent once, then retain
+        // that exact source rectangle with the advertised frame parameters.
+        let logical = output.logicalRect
+        guard let projectedX = Self.projectCaptureAxis(
+                origin: region.x,
+                length: region.width,
+                logicalExtent: logical.width,
+                pixelExtent: params.width),
+              let projectedY = Self.projectCaptureAxis(
+                origin: region.y,
+                length: region.height,
+                logicalExtent: logical.height,
+                pixelExtent: params.height)
+        else { return nil }
+        let sourceRegion = WlRect(
+            x: projectedX.origin,
+            y: projectedY.origin,
+            width: projectedX.length,
+            height: projectedY.length)
+        params.width = UInt32(projectedX.length)
+        params.height = UInt32(projectedY.length)
+        let stride = params.width.multipliedReportingOverflow(by: 4)
+        guard !stride.overflow else { return nil }
+        params.stride = stride.partialValue
+        return ScreencopyConfiguration(
+            params: params,
+            sourceRegion: sourceRegion)
     }
 
-    nonisolated func screencopyRequestFrame(output: WlOutput?) {
+    static func projectCaptureAxis(
+        origin: Int32,
+        length: Int32,
+        logicalExtent: Int32,
+        pixelExtent: UInt32
+    ) -> (origin: Int32, length: Int32)? {
+        guard length > 0,
+              logicalExtent > 0,
+              let pixelExtent = Int32(exactly: pixelExtent)
+        else { return nil }
+        let requestedStart = Int64(origin)
+        let requestedEnd = requestedStart + Int64(length)
+        let logicalExtent64 = Int64(logicalExtent)
+        let clippedStart = min(max(0, requestedStart), logicalExtent64)
+        let clippedEnd = min(max(0, requestedEnd), logicalExtent64)
+        guard clippedEnd > clippedStart else { return nil }
+
+        let pixelExtent64 = Int64(pixelExtent)
+        let startProduct = clippedStart * pixelExtent64
+        let endProduct = clippedEnd * pixelExtent64
+        let pixelStart = startProduct / logicalExtent64
+        var pixelEnd = endProduct / logicalExtent64
+        if endProduct % logicalExtent64 != 0 { pixelEnd += 1 }
+        guard pixelEnd > pixelStart,
+              let projectedStart = Int32(exactly: pixelStart),
+              let projectedLength = Int32(exactly: pixelEnd - pixelStart)
+        else { return nil }
+        return (projectedStart, projectedLength)
+    }
+
+    func screencopyRequestFrame(output: WlOutput?) {
         let outputID = output?.outputId ?? 0
-        MainActor.assumeIsolated {
-            RenderBridge.requestFrame(
-                outputId: outputID, reason: .screencopy)
-        }
+        RenderBridge.requestFrame(
+            outputId: outputID, reason: .screencopy)
     }
 
-    nonisolated func screencopyCapture(
-        output: WlOutput?, region: WlRect?, overlayCursor: Bool,
-        buffer: UnsafeMutablePointer<wl_resource>, withDamage _: Bool
-    ) -> ScreencopyResult {
-        guard let id = output?.info.outputId, id != 0 else { return .failed }
+    func screencopyCapture(
+        output: WlOutput?, configuration: ScreencopyConfiguration,
+        overlayCursor: Bool,
+        buffer: UnsafeMutablePointer<wl_resource>, withDamage _: Bool,
+        preferRegionReadback: Bool,
+        completion: @escaping @MainActor (ScreencopyResult) -> Void
+    ) -> UInt64? {
+        guard let id = output?.info.outputId, id != 0 else { return nil }
         let bufferBits = UInt(bitPattern: buffer)
-        return MainActor.assumeIsolated {
-            self.captureImpl(
-                outputId: id, region: region,
-                overlayCursor: overlayCursor, bufferBits: bufferBits)
-        }
+        return captureImpl(
+            outputId: id, configuration: configuration,
+            overlayCursor: overlayCursor,
+            preferRegionReadback: preferRegionReadback,
+            bufferBits: bufferBits,
+            completion: completion)
+    }
+
+    func screencopyCancelCapture(_ requestID: UInt64) {
+        NucleusCompositorServer.shared.renderService?
+            .cancelCapture(requestID)
     }
 
     /// Resolve the client wl_buffer (shm via libwayland, dmabuf via the router's
     /// DmabufBuffer) and copy the accumulator region into it. A nil region captures
     /// the whole output. Runs on the main actor (libwayland resource access).
     private func captureImpl(
-        outputId: UInt64, region: WlRect?, overlayCursor: Bool, bufferBits: UInt
-    ) -> ScreencopyResult {
-        guard let buffer = UnsafeMutablePointer<wl_resource>(bitPattern: bufferBits) else { return .failed }
+        outputId: UInt64,
+        configuration: ScreencopyConfiguration,
+        overlayCursor: Bool,
+        preferRegionReadback: Bool,
+        bufferBits: UInt,
+        completion: @escaping @MainActor (ScreencopyResult) -> Void
+    ) -> UInt64? {
+        guard let buffer = UnsafeMutablePointer<wl_resource>(
+            bitPattern: bufferBits)
+        else { return nil }
+        guard let currentParams = RenderBridge.screencopyParams(
+            outputId: outputId)
+        else { return nil }
+        if let source = configuration.sourceRegion {
+            let endX = Int64(source.x) + Int64(source.width)
+            let endY = Int64(source.y) + Int64(source.height)
+            guard source.x >= 0,
+                  source.y >= 0,
+                  source.width > 0,
+                  source.height > 0,
+                  UInt32(source.width) == configuration.params.width,
+                  UInt32(source.height) == configuration.params.height,
+                  endX <= Int64(currentParams.width),
+                  endY <= Int64(currentParams.height)
+            else { return nil }
+        } else {
+            guard currentParams.width == configuration.params.width,
+                  currentParams.height == configuration.params.height
+            else { return nil }
+        }
 
         // dmabuf target: blit the composited frame straight into the client buffer on the
         // GPU (no CPU round-trip), sampling either the whole accumulator or the
         // requested clipped source region into the client-sized target.
         if let dmabuf = WaylandResource.owner(of: buffer, as: DmabufBuffer.self) {
             let attrs = dmabuf.attrs
-            var sx: Int32 = 0, sy: Int32 = 0, sw: Int32 = 0, sh: Int32 = 0
-            if let region,
-               let display = NucleusCompositorServer.shared.layout.display(id: outputId) {
-                let outW = Int32(bitPattern: display.pixelSize.width)
-                let outH = Int32(bitPattern: display.pixelSize.height)
-                sx = min(max(0, region.x), outW)
-                sy = min(max(0, region.y), outH)
-                sw = max(0, min(region.width, outW - sx))
-                sh = max(0, min(region.height, outH - sy))
+            let sourceRegion = configuration.sourceRegion.map {
+                RenderCaptureRegion(
+                    x: $0.x, y: $0.y,
+                    width: $0.width, height: $0.height)
             }
-            let fds = attrs.planes.map { $0.fd }
-            let offsets = attrs.planes.map { $0.offset }
-            let strides = attrs.planes.map { $0.stride }
-            guard !fds.isEmpty else { return .failed }
-            let ok = fds.withUnsafeBufferPointer { fp in
-                offsets.withUnsafeBufferPointer { op in
-                    strides.withUnsafeBufferPointer { sp in
-                        RenderBridge.screencopyCaptureDmabuf(
-                            outputId: outputId,
-                            width: UInt32(bitPattern: attrs.width), height: UInt32(bitPattern: attrs.height),
-                            drmFormat: attrs.format, modifier: attrs.modifier, nPlanes: UInt32(fds.count),
-                            fds: fp.baseAddress!, offsets: op.baseAddress!, strides: sp.baseAddress!,
-                            sourceX: sx, sourceY: sy, sourceWidth: sw, sourceHeight: sh,
-                            overlayCursor: overlayCursor)
-                    }
-                }
+            guard !attrs.planes.isEmpty else { return nil }
+            return NucleusCompositorServer.shared.renderService?.beginCaptureOutput(
+                to: Self.renderDmabufCapture(
+                    outputID: outputId,
+                    attrs: attrs,
+                    sourceRegion: sourceRegion,
+                    overlaysCursor: overlayCursor)
+            ) { succeeded in
+                completion(succeeded ? Self.captureResult() : .failed)
             }
-            return ok ? Self.captureResult() : .failed
         }
 
         // SHM target: read the composited frame back (whole output, BGRA8888 = the wl_shm
         // XRGB8888 byte order — the block forces composition so this is current content),
         // then copy the requested region into the client buffer.
-        guard let shm = wl_shm_buffer_get(buffer) else { return .failed }
-        guard var capture = RenderBridge.screencopyCapture(outputId: outputId) else { return .failed }
-        if overlayCursor {
-            Self.compositeCursor(into: &capture.pixels, outputId: outputId,
-                                 width: capture.width, height: capture.height)
+        guard wl_shm_buffer_get(buffer) != nil else { return nil }
+        let sourceRegion = preferRegionReadback
+            ? configuration.sourceRegion.map {
+                RenderCaptureRegion(
+                    x: $0.x, y: $0.y,
+                    width: $0.width, height: $0.height)
+            }
+            : nil
+        return NucleusCompositorServer.shared.renderService?.beginCaptureOutput(
+            outputID: outputId,
+            sourceRegion: sourceRegion
+        ) { capture in
+            guard var capture else {
+                completion(.failed)
+                return
+            }
+            if overlayCursor {
+                Self.compositeCursor(
+                    into: &capture.pixels,
+                    outputId: outputId,
+                    width: capture.width,
+                    height: capture.height,
+                    captureOriginX: capture.originX,
+                    captureOriginY: capture.originY)
+            }
+            let copied = Self.copyCapture(
+                capture,
+                configuration: configuration,
+                toShmResourceBits: bufferBits)
+            completion(copied ? Self.captureResult() : .failed)
         }
+    }
+
+    private static func copyCapture(
+        _ capture: RenderPixelCapture,
+        configuration: ScreencopyConfiguration,
+        toShmResourceBits bufferBits: UInt
+    ) -> Bool {
+        guard let buffer = UnsafeMutablePointer<wl_resource>(
+                bitPattern: bufferBits),
+              let shm = wl_shm_buffer_get(buffer)
+        else { return false }
         let outW = capture.width
         let outH = capture.height
-        guard outW > 0, outH > 0, capture.pixels.count >= outW * outH * 4 else { return .failed }
+        let pixelCount = outW.multipliedReportingOverflow(by: outH)
+        let byteCount = pixelCount.partialValue.multipliedReportingOverflow(by: 4)
+        guard outW > 0,
+              outH > 0,
+              !pixelCount.overflow,
+              !byteCount.overflow,
+              capture.pixels.count >= byteCount.partialValue
+        else { return false }
 
-        // The region within the output, clipped to its extents (matching the advertised
-        // params); a nil region is the whole output.
-        let rx = Int(min(max(0, region?.x ?? 0), Int32(outW)))
-        let ry = Int(min(max(0, region?.y ?? 0), Int32(outH)))
-        let rw = region.map { Int(max(0, min($0.width, Int32(outW) - Int32(rx)))) } ?? outW
-        let rh = region.map { Int(max(0, min($0.height, Int32(outH) - Int32(ry)))) } ?? outH
+        guard let copyWidth = Int(exactly: configuration.params.width),
+              let copyHeight = Int(exactly: configuration.params.height)
+        else { return false }
+        let sourceRegion = configuration.sourceRegion ?? WlRect(
+            x: 0, y: 0,
+            width: Int32(clamping: outW),
+            height: Int32(clamping: outH))
+        let rx = Int(sourceRegion.x) - capture.originX
+        let ry = Int(sourceRegion.y) - capture.originY
+        guard rx >= 0,
+              ry >= 0,
+              Int(sourceRegion.width) == copyWidth,
+              Int(sourceRegion.height) == copyHeight,
+              rx <= outW - copyWidth,
+              ry <= outH - copyHeight
+        else { return false }
 
         wl_shm_buffer_begin_access(shm)
         defer { wl_shm_buffer_end_access(shm) }
-        guard let dst = wl_shm_buffer_get_data(shm) else { return .failed }
-        let dstStride = Int(wl_shm_buffer_get_stride(shm))
-        let dstH = Int(wl_shm_buffer_get_height(shm))
-        let copyW = min(rw, Int(wl_shm_buffer_get_width(shm)))
-        let copyH = min(rh, dstH)
-        guard copyW > 0, copyH > 0 else { return .failed }
-        let rowBytes = copyW * 4
-        let dstCount = dstStride * dstH
-        capture.pixels.withUnsafeBytes { src in
-            guard let srcBase = src.baseAddress else { return }
-            for row in 0..<copyH {
-                let srcOff = ((ry + row) * outW + rx) * 4
-                let dstOff = row * dstStride
-                guard srcOff + rowBytes <= src.count, dstOff + rowBytes <= dstCount else { break }
-                dst.advanced(by: dstOff).copyMemory(from: srcBase.advanced(by: srcOff), byteCount: rowBytes)
-            }
+        guard let destination = wl_shm_buffer_get_data(shm) else {
+            return false
         }
-        return Self.captureResult()
+        let destinationStride = Int(wl_shm_buffer_get_stride(shm))
+        let destinationHeight = Int(wl_shm_buffer_get_height(shm))
+        guard copyWidth == Int(wl_shm_buffer_get_width(shm)),
+              copyHeight == destinationHeight,
+              copyWidth > 0,
+              copyHeight > 0,
+              destinationStride >= copyWidth * 4
+        else { return false }
+        let rowBytes = copyWidth * 4
+        let destinationCount = destinationStride.multipliedReportingOverflow(
+            by: destinationHeight)
+        guard !destinationCount.overflow else { return false }
+        return capture.pixels.withUnsafeBytes { source in
+            guard let sourceBase = source.baseAddress else { return false }
+            for row in 0..<copyHeight {
+                let sourceOffset = ((ry + row) * outW + rx) * 4
+                let destinationOffset = row * destinationStride
+                guard sourceOffset + rowBytes <= source.count,
+                      destinationOffset + rowBytes
+                        <= destinationCount.partialValue
+                else { return false }
+                destination.advanced(by: destinationOffset).copyMemory(
+                    from: sourceBase.advanced(by: sourceOffset),
+                    byteCount: rowBytes)
+            }
+            return true
+        }
+    }
+
+    /// Translate a Wayland-owned destination buffer into the neutral capture
+    /// request without losing plane order or confusing crop and cursor fields.
+    static func renderDmabufCapture(
+        outputID: UInt64,
+        attrs: DmabufAttrs,
+        sourceRegion: RenderCaptureRegion?,
+        overlaysCursor: Bool
+    ) -> RenderDmabufCapture {
+        RenderDmabufCapture(
+            outputID: outputID,
+            width: UInt32(bitPattern: attrs.width),
+            height: UInt32(bitPattern: attrs.height),
+            drmFormat: attrs.format,
+            modifier: attrs.modifier,
+            planes: attrs.planes.map {
+                RenderDmabufPlane(
+                    fd: $0.fd,
+                    offset: $0.offset,
+                    stride: $0.stride)
+            },
+            sourceRegion: sourceRegion,
+            overlaysCursor: overlaysCursor)
     }
 
     private static func compositeCursor(
-        into pixels: inout [UInt8], outputId: UInt64, width: Int, height: Int
+        into pixels: inout [UInt8], outputId: UInt64, width: Int, height: Int,
+        captureOriginX: Int, captureOriginY: Int
     ) {
         let server = NucleusCompositorServer.shared
         guard let output = server.layout.display(id: outputId) else { return }
@@ -251,9 +447,9 @@ extension RouterRenderDriver: ScreencopyDelegate {
         guard cw > 0, ch > 0, cursor.pixels.count >= cw * ch * 4 else { return }
         let scale = output.fractionalScale
         let originX = Int(((server.events.cursorX - output.logicalRect.x) * scale).rounded())
-            - Int(cursor.hotSpotX)
+            - Int(cursor.hotSpotX) - captureOriginX
         let originY = Int(((server.events.cursorY - output.logicalRect.y) * scale).rounded())
-            - Int(cursor.hotSpotY)
+            - Int(cursor.hotSpotY) - captureOriginY
         for cy in 0..<ch {
             let dy = originY + cy
             guard dy >= 0, dy < height else { continue }

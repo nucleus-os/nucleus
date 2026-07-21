@@ -45,6 +45,18 @@ RuntimeJSCallInvoker::RuntimeJSCallInvoker(
     std::thread::id jsThreadId)
     : runtime_(runtime), jsThreadId_(jsThreadId) {}
 
+RuntimeJSCallInvoker::WakeEntry::WakeEntry(
+    WakeCallback callback,
+    void *context,
+    WakeContextRelease release)
+    : callback(callback), context(context), release(release) {}
+
+RuntimeJSCallInvoker::WakeEntry::~WakeEntry() {
+  if (release != nullptr) {
+    release(context);
+  }
+}
+
 void RuntimeJSCallInvoker::invokeAsync(
     facebook::react::CallFunc &&func) noexcept {
   if (shutdown_.load(std::memory_order_acquire)) {
@@ -54,11 +66,21 @@ void RuntimeJSCallInvoker::invokeAsync(
     runOrLogException("invokeAsync", func, runtime_);
     return;
   }
-  std::lock_guard<std::mutex> lock(queueMutex_);
-  if (shutdown_.load(std::memory_order_acquire)) {
-    return;
+  std::shared_ptr<WakeEntry> wake;
+  {
+    std::lock_guard<std::mutex> lock(queueMutex_);
+    if (shutdown_.load(std::memory_order_acquire)) {
+      return;
+    }
+    const bool wasEmpty = queue_.empty();
+    queue_.push_back(std::move(func));
+    if (wasEmpty) {
+      wake = wakeEntry_;
+    }
   }
-  queue_.push_back(std::move(func));
+  if (wake != nullptr && wake->callback != nullptr) {
+    wake->callback(wake->context);
+  }
 }
 
 void RuntimeJSCallInvoker::invokeSync(facebook::react::CallFunc &&func) {
@@ -85,10 +107,30 @@ std::size_t RuntimeJSCallInvoker::drainPending() {
   return drained;
 }
 
+void RuntimeJSCallInvoker::setWakeHandler(
+    WakeCallback callback,
+    void *context,
+    WakeContextRelease release) {
+  std::shared_ptr<WakeEntry> next;
+  if (callback != nullptr || context != nullptr || release != nullptr) {
+    next = std::make_shared<WakeEntry>(callback, context, release);
+  }
+  bool hasPending = false;
+  {
+    std::lock_guard<std::mutex> lock(queueMutex_);
+    wakeEntry_ = next;
+    hasPending = !queue_.empty();
+  }
+  if (hasPending && next != nullptr && next->callback != nullptr) {
+    next->callback(next->context);
+  }
+}
+
 void RuntimeJSCallInvoker::shutdown() {
   shutdown_.store(true, std::memory_order_release);
   std::lock_guard<std::mutex> lock(queueMutex_);
   queue_.clear();
+  wakeEntry_.reset();
 }
 
 } // namespace nucleus::react

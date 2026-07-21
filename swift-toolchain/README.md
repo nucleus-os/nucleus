@@ -161,7 +161,7 @@ them locally.
 
 ## Patches
 
-[`patches/`](patches) currently contains **eleven** patches across
+[`patches/`](patches) currently contains **twelve** patches across
 `swift/`, `swift-driver/`, and `swift-build/`. The build otherwise runs
 against upstream `release/6.4.x` unmodified. See
 [`patches/README.md`](patches/README.md) for the file format and
@@ -198,6 +198,13 @@ authoring guide.
   (e.g. `macosx-arm64`) onto the NDK's prebuilt-clang directory tag
   instead of the NDK's own `darwin-x86_64` convention (`0007`). See
   each patch's own header for the full rationale. *Filed-upstream-TODO.*
+
+* **`swift/0008-linux-futex-mutex-tsan.patch`** — annotates the Linux
+  `Synchronization.Mutex` futex implementation with weak ThreadSanitizer
+  acquire/release hooks. The synchronization is correct without the hooks, but
+  TSan cannot infer a happens-before edge from Swift atomics plus direct futex
+  syscalls and otherwise reports false access races for correctly locked state.
+  Weak imports preserve ordinary, non-TSan toolchain links. *Filed-upstream-TODO.*
 
 * **`swift-driver/0001-android-swiftrt-resource-dir-fallback.patch`** —
   Swift's new driver prefers `swiftrt.o` from `-sdk` when an SDK is

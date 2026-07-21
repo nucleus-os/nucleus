@@ -3,7 +3,7 @@
 //
 // A wl_surface commit with a newly attached buffer imports it (SHM via
 // libwayland's wl_shm_buffer_*, DMA-BUF via the router's DmabufBuffer) through
-// `RenderBridge`. State-only commits republish the retained content without
+// the server's typed render service. State-only commits republish the retained content without
 // touching client memory. A subsurface/popup composites within its parent's scene,
 // a window/root surface publishes to its own backing layer, and a zwlr layer
 // surface is authored as its own output-anchored model window from the map commit.
@@ -54,7 +54,7 @@ final class RouterSurfaceSceneDriver {
     /// Import the committed buffer to the surface's IOSurface and publish it to the
     /// surface's backing scene layer. SHM buffers are read through libwayland's
     /// `wl_shm_buffer_*`; DMA-BUF buffers carry their planes on the router's own
-    /// `DmabufBuffer`. The `@c` upload swaps the GPU texture with one-frame deferred
+    /// `DmabufBuffer`. The render service swaps the GPU texture with one-frame deferred
     /// release and returns the (stable) IOSurfaceID the surface holds across commits.
     func importCommit(_ commit: SurfaceCommit) {
         let surfaceId = commit.surfaceID
@@ -82,8 +82,21 @@ final class RouterSurfaceSceneDriver {
         }
         defer { requestRedraw(for: surface) }
         guard let buffer = UnsafeMutablePointer<wl_resource>(bitPattern: commit.bufferResourceBits) else {
+            // Capture before releasing the renderer texture. The role callback
+            // that follows this scene commit flips `mapped` off and clears input;
+            // this preserves only immutable visual content for the close fade.
+            if let windowID = windowID(forSurfaceId: surfaceId),
+               let window = WindowManager.shared.server.window(id: windowID),
+               window.mapped
+            {
+                _ = feeder?.beginClosing(
+                    window: window,
+                    iosurfaceID: surface.renderIosurfaceId,
+                    destroyWindowOnCompletion: false)
+            }
             if surface.renderIosurfaceId != 0 {
-                RenderBridge.releaseIosurface(surface.renderIosurfaceId)
+                NucleusCompositorServer.shared.renderService?
+                    .releaseIOSurface(surface.renderIosurfaceId)
                 surface.renderIosurfaceId = 0
             }
             surface.committedLogicalWidth = 0
@@ -93,18 +106,46 @@ final class RouterSurfaceSceneDriver {
         }
 
         if let shm = wl_shm_buffer_get(buffer) {
+            let signedWidth = wl_shm_buffer_get_width(shm)
+            let signedHeight = wl_shm_buffer_get_height(shm)
+            let signedStride = wl_shm_buffer_get_stride(shm)
+            guard signedWidth > 0, signedHeight > 0, signedStride > 0 else {
+                importFailed(surface)
+                return
+            }
+            let width = UInt32(signedWidth)
+            let height = UInt32(signedHeight)
+            let stride = UInt32(signedStride)
+            let (sourceByteCount, sourceByteCountOverflow) =
+                UInt64(stride).multipliedReportingOverflow(by: UInt64(height))
+            guard
+                !sourceByteCountOverflow,
+                let boundedSourceByteCount = Int(exactly: sourceByteCount)
+            else {
+                importFailed(surface)
+                return
+            }
+
             wl_shm_buffer_begin_access(shm)
             defer { wl_shm_buffer_end_access(shm) }
-            guard let data = wl_shm_buffer_get_data(shm) else { return }
-            let width = UInt32(wl_shm_buffer_get_width(shm))
-            let height = UInt32(wl_shm_buffer_get_height(shm))
-            let newId = RenderBridge.uploadShm(
-                prevIosurfaceId: surface.renderIosurfaceId,
-                width: width,
-                height: height,
-                drmFormat: Self.drmFormat(fromShm: wl_shm_buffer_get_format(shm)),
-                stride: UInt32(wl_shm_buffer_get_stride(shm)),
-                pixels: data.assumingMemoryBound(to: UInt8.self))
+            guard
+                let data = wl_shm_buffer_get_data(shm),
+                let renderService = NucleusCompositorServer.shared.renderService
+            else {
+                importFailed(surface)
+                return
+            }
+            let newId = renderService.importShm(
+                RenderShmImport(
+                    previousIOSurfaceID: surface.renderIosurfaceId,
+                    width: width,
+                    height: height,
+                    drmFormat: Self.drmFormat(
+                        fromShm: wl_shm_buffer_get_format(shm)),
+                    stride: stride,
+                    pixels: UnsafeRawBufferPointer(
+                        start: data,
+                        count: boundedSourceByteCount)))
             guard newId != 0 else {
                 importFailed(surface)
                 return
@@ -124,24 +165,19 @@ final class RouterSurfaceSceneDriver {
 
         if let dmabuf = WaylandResource.owner(of: buffer, as: DmabufBuffer.self) {
             let attrs = dmabuf.attrs
-            // The plane fds are borrowed (owned by DmabufBuffer); the upload dups them.
-            let fds = attrs.planes.map { $0.fd }
-            let offsets = attrs.planes.map { $0.offset }
-            let strides = attrs.planes.map { $0.stride }
-            let newId = fds.withUnsafeBufferPointer { fp in
-                offsets.withUnsafeBufferPointer { op in
-                    strides.withUnsafeBufferPointer { sp in
-                        RenderBridge.uploadDmabuf(
-                            prevIosurfaceId: surface.renderIosurfaceId,
-                            width: UInt32(attrs.width), height: UInt32(attrs.height),
-                            drmFormat: attrs.format, drmModifier: attrs.modifier,
-                            nPlanes: UInt32(attrs.planes.count),
-                            fds: fp.baseAddress!, offsets: op.baseAddress!, strides: sp.baseAddress!,
-                            acquireFenceFd: -1,
-                            acquire: commit.aux.syncAcquire, release: commit.aux.syncRelease)
-                    }
-                }
+            // The plane fds are borrowed (owned by DmabufBuffer); the renderer
+            // duplicates them before this synchronous call returns.
+            guard let renderService = NucleusCompositorServer.shared.renderService
+            else {
+                importFailed(surface)
+                return
             }
+            let newId = renderService.importDmabuf(
+                Self.renderDmabufImport(
+                    previousIOSurfaceID: surface.renderIosurfaceId,
+                    attrs: attrs,
+                    acquire: commit.aux.syncAcquire,
+                    release: commit.aux.syncRelease))
             guard newId != 0 else {
                 importFailed(surface)
                 return
@@ -158,13 +194,42 @@ final class RouterSurfaceSceneDriver {
         importFailed(surface)
     }
 
+    /// Translate the Wayland-owned buffer snapshot into the neutral render-service
+    /// request. Plane descriptors and sync points remain in wire order.
+    static func renderDmabufImport(
+        previousIOSurfaceID: UInt32,
+        attrs: DmabufAttrs,
+        acquire: SyncPoint?,
+        release: SyncPoint?
+    ) -> RenderDmabufImport {
+        RenderDmabufImport(
+            previousIOSurfaceID: previousIOSurfaceID,
+            width: UInt32(attrs.width),
+            height: UInt32(attrs.height),
+            drmFormat: attrs.format,
+            modifier: attrs.modifier,
+            planes: attrs.planes.map {
+                RenderDmabufPlane(
+                    fd: $0.fd,
+                    offset: $0.offset,
+                    stride: $0.stride)
+            },
+            acquire: acquire.map {
+                RenderSyncPoint(handle: $0.handle, point: $0.point)
+            },
+            release: release.map {
+                RenderSyncPoint(handle: $0.handle, point: $0.point)
+            })
+    }
+
     /// Reject a committed buffer that could not become renderer content. Any old
     /// IOSurface is retired through the normal serial-safe renderer path, while the
     /// new wl_buffer is immediately reusable because no GPU submission references it.
     /// The scene is detached so stale pixels cannot masquerade as the failed commit.
     private func importFailed(_ surface: WlSurface) {
         if surface.renderIosurfaceId != 0 {
-            RenderBridge.releaseIosurface(surface.renderIosurfaceId)
+            NucleusCompositorServer.shared.renderService?
+                .releaseIOSurface(surface.renderIosurfaceId)
             surface.renderIosurfaceId = 0
         }
         surface.releaseCurrentBufferImmediately()
@@ -215,13 +280,39 @@ final class RouterSurfaceSceneDriver {
     /// child-surface (subsurface/popup) scene layer, and tear down a layer surface's
     /// model window + scene. The seat/model unmap stays on RouterWindowDriver.
     func surfaceDestroyed(surfaceId: UInt32, iosurfaceId: UInt32) {
-        RenderBridge.releaseIosurface(iosurfaceId)
+        // A client may destroy wl_surface without first issuing the ordinary
+        // null-buffer unmap. Capture while the IOSurface is still registered;
+        // root app-window topology is retained by the close transition.
+        var retainedRootWindow = false
+        if let windowID = windowID(forSurfaceId: surfaceId),
+           let window = WindowManager.shared.server.window(id: windowID),
+           window.source == .xdg || window.source == .xwayland
+        {
+            retainedRootWindow = feeder?.beginClosing(
+                window: window,
+                iosurfaceID: iosurfaceId,
+                destroyWindowOnCompletion: true) ?? false
+            window.mapped = false
+        }
+        NucleusCompositorServer.shared.renderService?
+            .releaseIOSurface(iosurfaceId)
         // Tear down a child-surface (subsurface/popup) scene layer; no-ops for a
         // window or unknown id. xdg-toplevel teardown runs through `willDestroyImpl`.
         feeder?.childSurfaceDestroyed(surfaceID: surfaceId)
-        // A layer surface is its own window (no toplevelWillDestroy), so its model
-        // window + scene tear down here.
-        destroyLayerSurface(surfaceId: surfaceId)
+        if !retainedRootWindow {
+            // A layer surface is its own window (no toplevelWillDestroy), so its
+            // model window + scene tear down here. A failed app-window capture
+            // takes this immediate path too.
+            if let windowID = windowID(forSurfaceId: surfaceId),
+               let window = WindowManager.shared.server.window(id: windowID),
+               window.source == .xdg || window.source == .xwayland
+            {
+                feeder?.windowUnmapped(surfaceID: surfaceId)
+                _ = WindowManager.shared.server.destroyWindow(id: windowID)
+            } else {
+                destroyLayerSurface(surfaceId: surfaceId)
+            }
+        }
     }
 
     /// Record the committed buffer's pixel extent onto the surface's model window
@@ -257,7 +348,6 @@ final class RouterSurfaceSceneDriver {
                 x: Double(surface.subsurfaceX), y: Double(surface.subsurfaceY),
                 width: logicalW, height: logicalH,
                 iosurfaceID: surface.renderIosurfaceId,
-                generation: surface.renderContentGeneration,
                 sample: subsurfaceContentSample(
                     for: surface, bufferWidth: bufferWidth, bufferHeight: bufferHeight,
                     logicalW: logicalW, logicalH: logicalH))
@@ -277,7 +367,6 @@ final class RouterSurfaceSceneDriver {
                 x: Double(place.x), y: Double(place.y),
                 width: logicalW, height: logicalH,
                 iosurfaceID: surface.renderIosurfaceId,
-                generation: surface.renderContentGeneration,
                 sample: subsurfaceContentSample(
                     for: surface, bufferWidth: bufferWidth, bufferHeight: bufferHeight,
                     logicalW: logicalW, logicalH: logicalH))
@@ -293,7 +382,6 @@ final class RouterSurfaceSceneDriver {
         feeder?.surfaceContent(
             surfaceID: surface.objectId,
             iosurfaceID: surface.renderIosurfaceId,
-            generation: surface.renderContentGeneration,
             sample: contentSample(for: surface))
     }
 
@@ -331,7 +419,6 @@ final class RouterSurfaceSceneDriver {
         feeder?.surfaceContent(
             surfaceID: surface.objectId,
             iosurfaceID: surface.renderIosurfaceId,
-            generation: surface.renderContentGeneration,
             sample: contentSample(for: surface))
     }
 

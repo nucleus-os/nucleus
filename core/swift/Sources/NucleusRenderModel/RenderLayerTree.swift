@@ -1,17 +1,4 @@
-// Phase 8.5 — Swift render-layer node + tree store.
-//
-// The fifth slice of the render-server retained-layer model: the `Layer` node
-// (composing the 8.1–8.3 state) and the `LayerTree` store with its structural
-// operations — attach/detach, cycle-safe re-parenting, insert/remove.
-//
-// The node carries the producer/renderer state ported in earlier slices plus
-// the `effective*` override-precedence accessors and `layerContributesOwnExtent`
-// (the `Layer`-fed half of the 8.4 extent walk). The per-layer `animations` list
-// lands in 10c.4 (the Swift animation tick advances it each frame). One node
-// field stays deferred: `BackingStore`/`BackingKind` (renderer-owned backing
-// bookkeeping whose `AtlasRegion` payload lands with the renderer move, 10b);
-// it participates in neither tree management, the effective accessors, nor
-// extent contribution.
+// Retained-layer nodes and the authoritative structural tree store.
 
 // MARK: - Node identity + role
 
@@ -165,16 +152,9 @@ public struct Layer: Sendable {
         presentation.content
     }
 
-    /// True when a presentation transition is in flight. Mirrors
-    /// `hasPresentationTransition`.
-    public func hasPresentationTransition() -> Bool {
-        presentation.transition != .none
-    }
-
     /// Whether this layer draws anything that contributes its own extent (vs
     /// being a pure structural container). Mirrors `layerContributesOwnExtent`.
     public func contributesOwnExtent() -> Bool {
-        if hasPresentationTransition() { return true }
         if model.visualStyle != nil { return true }
         if case .backdrop = kind { return true }
         switch presentedContent() {

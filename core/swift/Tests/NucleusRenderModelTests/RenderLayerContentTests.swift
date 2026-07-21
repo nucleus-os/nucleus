@@ -8,7 +8,6 @@ import Testing
         #expect(SnapshotHandle.none.isNone && !SnapshotHandle(raw: 7).isNone, "snapshot-none")
         #expect(PaintContentHandle.none.isNone && !PaintContentHandle(raw: 1).isNone, "paint-none")
         #expect(IOSurfaceID.none.isNone && !IOSurfaceID(raw: 3).isNone, "iosurface-none")
-        #expect(OperationID.none.isNone && ContentGeneration.none.isNone, "op-gen-none")
 
         // Content union equality is by case + payload.
         #expect(LayerContent.paint(PaintContentHandle(raw: 5)) == .paint(PaintContentHandle(raw: 5)),

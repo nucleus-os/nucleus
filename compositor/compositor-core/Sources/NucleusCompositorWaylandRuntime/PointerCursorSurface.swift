@@ -24,8 +24,11 @@ enum PointerCursorSurface {
     private(set) static var surfaceId: UInt32 = 0
     private(set) static var hotspotX: Int32 = 0
     private(set) static var hotspotY: Int32 = 0
+    private static var pendingCaptureID: UInt64?
+    private static var captureGeneration: UInt64 = 0
 
     static func bind(surfaceId: UInt32, hotspotX: Int32, hotspotY: Int32) {
+        cancelPendingCapture()
         self.surfaceId = surfaceId
         self.hotspotX = hotspotX
         self.hotspotY = hotspotY
@@ -34,6 +37,7 @@ enum PointerCursorSurface {
     /// Clear the binding (nil surface, or focus left the client). Does not itself change
     /// the cursor image — the caller applies the default/hidden cursor.
     static func clear() {
+        cancelPendingCapture()
         surfaceId = 0
     }
 
@@ -65,24 +69,52 @@ enum PointerCursorSurface {
     /// the format is not a 32-bit ARGB/XRGB variant.
     static func applyCommittedImage(_ surface: WlSurface) {
         guard surface.objectId == surfaceId, surfaceId != 0 else { return }
-        let image: (pixels: [UInt8], width: UInt32, height: UInt32)?
-        let copiedShm: Bool
+        cancelPendingCapture()
         if let buffer = surface.currentBuffer, let shm = cursorImageFromShm(buffer) {
-            image = shm
-            copiedShm = true
-        } else if surface.renderIosurfaceId != 0,
-                  let gpu = RenderBridge.surfaceReadback(iosurfaceId: surface.renderIosurfaceId) {
-            image = (gpu.pixels, UInt32(gpu.width), UInt32(gpu.height))
-            copiedShm = false
-        } else {
-            image = nil
-            copiedShm = false
+            surface.releaseCurrentBufferImmediately()
+            NucleusCompositorServer.shared.cursor.setImage(
+                pixels: shm.pixels,
+                width: shm.width,
+                height: shm.height,
+                hotSpotX: hotspotX,
+                hotSpotY: hotspotY)
+            return
         }
-        guard let image else { return }
-        if copiedShm { surface.releaseCurrentBufferImmediately() }
-        NucleusCompositorServer.shared.cursor.setImage(
-            pixels: image.pixels, width: image.width, height: image.height,
-            hotSpotX: hotspotX, hotSpotY: hotspotY)
+        let iosurfaceID = surface.renderIosurfaceId
+        guard iosurfaceID != 0,
+              let service = NucleusCompositorServer.shared.renderService
+        else { return }
+        let generation = captureGeneration
+        pendingCaptureID = service.beginReadSurface(
+            iosurfaceID: iosurfaceID
+        ) { [weak surface] capture in
+            guard generation == captureGeneration else { return }
+            pendingCaptureID = nil
+            guard let surface,
+                  surface.objectId == surfaceId,
+                  surface.renderIosurfaceId == iosurfaceID,
+                  let capture,
+                  let width = UInt32(exactly: capture.width),
+                  let height = UInt32(exactly: capture.height)
+            else { return }
+            NucleusCompositorServer.shared.cursor.setImage(
+                pixels: capture.pixels,
+                width: width,
+                height: height,
+                hotSpotX: hotspotX,
+                hotSpotY: hotspotY)
+            RenderBridge.requestCursorFrame()
+        }
+    }
+
+    private static func cancelPendingCapture() {
+        captureGeneration &+= 1
+        precondition(captureGeneration != 0, "cursor capture generation exhausted")
+        if let pendingCaptureID {
+            NucleusCompositorServer.shared.renderService?
+                .cancelCapture(pendingCaptureID)
+            self.pendingCaptureID = nil
+        }
     }
 
     /// Read an SHM buffer into tightly-packed ARGB8888 pixels. Accepts the 32-bit

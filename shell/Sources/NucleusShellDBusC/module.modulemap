@@ -1,5 +1,0 @@
-// Importer façade over libsystemd's sd-bus for the shell's *client* side.
-module NucleusShellDBusC {
-    header "NucleusShellDBusC.h"
-    export *
-}

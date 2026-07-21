@@ -34,42 +34,6 @@ import Vulkan
         #expect(vulkanFormatForDrm(DrmFourcc.xrgb8888) == VK_FORMAT_B8G8R8A8_UNORM, "drm-format-map")
     }
 
-    @Test func clientShmConversion() {
-        // Client SHM conversion: DRM AR24/XR24 memory is little-endian BGRA/BGRX,
-        // while the Skia raster façade consumes RGBA bytes.
-        let argbWithPadding: [UInt8] = [
-            0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70, 0x80, 0xee, 0xee, 0xee, 0xee,
-            0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0xee, 0xee, 0xee, 0xee,
-        ]
-        #expect(
-            convertClientShmToRGBA(
-                pixels: argbWithPadding, width: 2, height: 2,
-                drmFormat: DrmFourcc.argb8888, stride: 12
-            ) == [
-                0x30, 0x20, 0x10, 0x40, 0x70, 0x60, 0x50, 0x80,
-                0x03, 0x02, 0x01, 0x04, 0x07, 0x06, 0x05, 0x08,
-            ],
-            "shm-argb-to-rgba")
-        #expect(
-            convertClientShmToRGBA(
-                pixels: [0x10, 0x20, 0x30, 0x00], width: 1, height: 1,
-                drmFormat: DrmFourcc.xrgb8888, stride: 4
-            ) == [0x30, 0x20, 0x10, 0xff],
-            "shm-xrgb-opaque")
-        #expect(
-            convertClientShmToRGBA(
-                pixels: [0, 0, 0], width: 1, height: 1,
-                drmFormat: DrmFourcc.argb8888, stride: 4
-            ) == nil,
-            "shm-truncated-fails")
-        #expect(
-            convertClientShmToRGBA(
-                pixels: [0, 0, 0, 0], width: 1, height: 1,
-                drmFormat: 0xffff_ffff, stride: 4
-            ) == nil,
-            "shm-unsupported-format-fails")
-    }
-
     @Test func dmaBufImportChain() {
         // DMA-BUF import chain: VkImageCreateInfo → external-memory → modifier.
         let descriptor = DmaBufImageDescriptor(

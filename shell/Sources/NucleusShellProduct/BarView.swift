@@ -116,19 +116,6 @@ public final class BarView: View {
         for widget in allWidgets { widget.refresh() }
     }
 
-    /// Whether any widget wants a per-frame callback. The frame loop asks this
-    /// rather than ticking unconditionally, so an idle bar stays idle.
-    public var wantsFrameTick: Bool {
-        allWidgets.contains { $0.wantsFrameTick }
-    }
-
-    /// Tick the widgets that asked for it, and nothing else.
-    public func frameTick(deltaSeconds: Double) {
-        for widget in allWidgets where widget.wantsFrameTick {
-            widget.frameTick(deltaSeconds: deltaSeconds)
-        }
-    }
-
     // MARK: - Layout
 
     public override var intrinsicContentSize: Size {

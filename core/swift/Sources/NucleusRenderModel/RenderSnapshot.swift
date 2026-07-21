@@ -1,12 +1,8 @@
 // Phase 8.10 — Swift snapshot handle registry.
 //
-// `SnapshotService` owns immutable snapshot handles used by presentation
-// transitions and `.snapshot` layer contents. Entries carry an opaque
-// `TextureHandle` plus size + provenance — no GPU-resource pointers cross this
-// boundary. The Skia capture
-// orchestration (`captureDeviceRect`/`captureWorldRect`, `RenderTextureCapture`)
-// is renderer-owned and co-lands with the renderer move (10b); only the
-// already-allocated-handle bookkeeping ports here. Nothing imports this yet.
+// `SnapshotService` owns immutable handles used by `.snapshot` layer contents.
+// Entries carry an opaque `TextureHandle` plus size and provenance; GPU-resource
+// pointers never cross this boundary.
 //
 // `TextureHandle` (canonically `composition_plan.TextureHandle`) is defined here
 // as its first Swift consumer.
@@ -18,25 +14,6 @@ import Synchronization
 public struct TextureHandle: Equatable, Hashable, Sendable {
     public var raw: UInt64 = 0
     public init(raw: UInt64 = 0) { self.raw = raw }
-}
-
-/// Typed source for a snapshot capture. Mirrors `SnapshotSource`.
-public enum SnapshotSource: Equatable, Sendable {
-    case layerId(UInt64)
-    case contextRoot(ContextID)
-    case iosurface(IOSurfaceID)
-}
-
-/// Result of a capture: the registered handle + its pixel size. Mirrors
-/// `CaptureResult`.
-public struct CaptureResult: Equatable, Sendable {
-    public var handle: SnapshotHandle
-    public var size: Bounds
-
-    public init(handle: SnapshotHandle, size: Bounds) {
-        self.handle = handle
-        self.size = size
-    }
 }
 
 /// How a snapshot's backing texture was produced. Mirrors `SnapshotProvenance`.
@@ -84,6 +61,13 @@ public final class SnapshotService: Sendable {
     public var backdropCaptureBlocks: UInt64 {
         get { state.withLock { $0.backdropCaptureBlocks } }
         set { state.withLock { $0.backdropCaptureBlocks = newValue } }
+    }
+
+    /// Number of live snapshot resources. This is an ownership counter, not a
+    /// frame-timing metric: structural lifecycle tests use it to prove that
+    /// transition teardown returns the registry to baseline.
+    public var liveCount: Int {
+        state.withLock { $0.entries.count }
     }
 
     public init() {}

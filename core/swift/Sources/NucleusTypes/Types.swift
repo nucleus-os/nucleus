@@ -88,34 +88,6 @@ public enum EffectShape: Swift.UInt8, Swift.Sendable {
   case rrect = 2
 }
 
-public enum FenceField: Swift.UInt32, Swift.Sendable {
-  case none = 0
-  case hidden = 1
-  case opacity = 2
-  case visualEffect = 3
-  case shadow = 4
-  case position = 5
-  case bounds = 6
-  case anchorPoint = 7
-  case transform = 8
-  case scrollOffset = 9
-  case clip = 10
-  case cornerRadii = 11
-  case borderTop = 12
-  case borderRight = 13
-  case borderBottom = 14
-  case borderLeft = 15
-  case foregroundVibrancy = 16
-  case content = 17
-}
-
-public enum FenceKind: Swift.UInt32, Swift.Sendable {
-  case none = 0
-  case fieldHold = 1
-  case contentGenerationHold = 2
-  case actionHold = 3
-}
-
 public enum ForegroundVibrancyMode: Swift.UInt8, Swift.Sendable {
   case inherit = 0
   case none = 1
@@ -196,12 +168,6 @@ public struct PaintCommandFlags: Swift.OptionSet, Swift.Sendable {
   public static let hasTransform = PaintCommandFlags(rawValue: 1 << 8)
 
   public static let `default`: PaintCommandFlags = [.antialias]
-}
-
-public enum TransitionKind: Swift.UInt32, Swift.Sendable {
-  case none = 0
-  case crossfade = 1
-  case clear = 2
 }
 
 public enum ImplicitActionKeyPath: Swift.UInt8, Swift.Sendable {
@@ -661,11 +627,9 @@ public struct VisualEffect: Swift.Equatable, Swift.Sendable {
 public struct LayerContent: Swift.Equatable, Swift.Sendable {
   public var _kind: Swift.UInt32
   public var handle: Swift.UInt64
-  public var generation: Swift.UInt64
-  public init(kind: ContentKind = .none, handle: Swift.UInt64 = Swift.UInt64(), generation: Swift.UInt64 = Swift.UInt64()) {
+  public init(kind: ContentKind = .none, handle: Swift.UInt64 = Swift.UInt64()) {
     self._kind = kind.rawValue
     self.handle = handle
-    self.generation = generation
   }
   public var kind: ContentKind {
     get { ContentKind(rawValue: _kind) ?? .none }
@@ -1151,45 +1115,3 @@ public struct PaintCommand: Swift.Equatable, Swift.Sendable {
 }
 
 extension PaintCommandFlags: Swift.Equatable {}
-
-public struct FenceRecord: Swift.Equatable, Swift.Sendable {
-  public var _kind: Swift.UInt32
-  public var _scopeField: Swift.UInt32
-  public var scopeNodeId: Swift.UInt64
-  public var generation: Swift.UInt64
-  public init(kind: FenceKind = .none, scopeField: FenceField = .none, scopeNodeId: Swift.UInt64 = Swift.UInt64(), generation: Swift.UInt64 = Swift.UInt64()) {
-    self._kind = kind.rawValue
-    self._scopeField = scopeField.rawValue
-    self.scopeNodeId = scopeNodeId
-    self.generation = generation
-  }
-  public var kind: FenceKind {
-    get { FenceKind(rawValue: _kind) ?? .none }
-    set { _kind = newValue.rawValue }
-  }
-  public var scopeField: FenceField {
-    get { FenceField(rawValue: _scopeField) ?? .none }
-    set { _scopeField = newValue.rawValue }
-  }
-}
-
-public struct TransitionRecord: Swift.Equatable, Swift.Sendable {
-  public var _kind: Swift.UInt32
-  public var layerId: Swift.UInt64
-  public var operationId: Swift.UInt64
-  public var generation: Swift.UInt64
-  public var duration: Swift.Double
-  public var curve: NucleusTypes.AnimationCurve
-  public init(kind: TransitionKind = .none, layerId: Swift.UInt64 = Swift.UInt64(), operationId: Swift.UInt64 = Swift.UInt64(), generation: Swift.UInt64 = Swift.UInt64(), duration: Swift.Double = 0, curve: NucleusTypes.AnimationCurve = NucleusTypes.AnimationCurve()) {
-    self._kind = kind.rawValue
-    self.layerId = layerId
-    self.operationId = operationId
-    self.generation = generation
-    self.duration = duration
-    self.curve = curve
-  }
-  public var kind: TransitionKind {
-    get { TransitionKind(rawValue: _kind) ?? .none }
-    set { _kind = newValue.rawValue }
-  }
-}

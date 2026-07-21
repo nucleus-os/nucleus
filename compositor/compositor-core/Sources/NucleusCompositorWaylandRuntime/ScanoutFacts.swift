@@ -117,7 +117,11 @@ public extension WaylandRuntime {
             var animating = false
             var fullscreenWindow: Window?
             for window in server.windows.windows where window.currentOutputID == outputID {
-                if window.hasActiveTileAnimation() { animating = true }
+                if window.hasActiveTileAnimation()
+                    || window.presentationActor.transition != nil
+                {
+                    animating = true
+                }
                 if window.activeFullscreen, fullscreenWindow == nil { fullscreenWindow = window }
             }
             facts.toplevelAnimationActiveOnOutput = animating

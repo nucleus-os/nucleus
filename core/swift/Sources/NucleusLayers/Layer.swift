@@ -268,6 +268,11 @@ extension LayerMutation {
 
 @MainActor
 open class Layer: ~Sendable {
+    /// Borrowed owning context.
+    ///
+    /// The context retains every live layer. A layer must not be used after its
+    /// context is released; keeping only a layer reference does not extend the
+    /// native commit sink or context lifetime.
     public unowned let context: Context
     public let id: LayerID
     public private(set) var descriptor: LayerDescriptor

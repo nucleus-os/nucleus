@@ -64,7 +64,8 @@ final class ReactParagraphView: View {
             containerWidth: containerWidth,
             alignment: alignment,
             lineBreakMode: lineBreakMode,
-            numberOfLines: numberOfLines
+            numberOfLines: numberOfLines,
+            textSystem: uiContext.services.textSystem
         )
     }
 }

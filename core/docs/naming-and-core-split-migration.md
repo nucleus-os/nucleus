@@ -145,7 +145,7 @@ rename lands later (Phases 3–6).
 | `ValenceOverlayTypes` | `NucleusCompositorOverlayTypes` | |
 | `ValenceOverlayReactRuntime` | `NucleusCompositorOverlayReactRuntime` | |
 | `ValenceOverlayScene` | `NucleusCompositorOverlayScene` | |
-| `ValenceShell` | `NucleusCompositorShell` | drops `NucleusSystemdC` → `NucleusCompositorSystemdC` |
+| `ValenceShell` | `NucleusCompositorShell` | consumes shared `NucleusLinuxDBus` |
 | `ValenceShellSurface` | `NucleusCompositorShellSurface` | |
 | `ValenceWindowManager` | `NucleusCompositorWindowManager` | |
 | `ValenceWindowScene` | `NucleusCompositorWindowScene` | |
@@ -156,7 +156,7 @@ rename lands later (Phases 3–6).
 | `NucleusInputC` | `NucleusCompositorInputC` | libinput/libseat/libudev/xkb |
 | `NucleusDrmC` | `NucleusCompositorDrmC` | `pkgConfig: libdrm` |
 | `NucleonRendererLinux` | `NucleusCompositorRendererLinux` | DRM/KMS presentation backend |
-| `NucleusSystemdC` | `NucleusCompositorSystemdC` | `pkgConfig: libsystemd` |
+| `NucleusSystemdC` | `NucleusLinuxDBusC` | shared `platform-linux` façade; `pkgConfig: libsystemd` |
 | `WaylandGen` | `NucleusCompositorWaylandGen` | codegen tool |
 | `GenerateWaylandC` | `NucleusCompositorGenerateWaylandC` | codegen plugin |
 

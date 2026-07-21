@@ -11,8 +11,11 @@ import Testing
         list.frame = Rect(x: 0, y: 0, width: 200, height: 100)
         list.overscan = 0
         list.makeRow = { View() }
-        list.rowHeightProvider = { _, index in
-            Double(20 + (index % 3) * 20)
+        let heights = Dictionary(uniqueKeysWithValues: (0..<rowCount).map {
+            (CollectionItemID($0), Double(20 + ($0 % 3) * 20))
+        })
+        list.measureRow = { item, _ in
+            heights[item.id] ?? 0
         }
         list.applySnapshot(try! CollectionSnapshot(ids: Array(0..<rowCount)))
         list.layoutIfNeeded()
@@ -87,7 +90,7 @@ import Testing
         let list = makeList(rowCount: 3)
         #expect(list.contentHeight == 120)
 
-        list.rowHeightProvider = { _, _ in 10 }
+        list.measureRow = { _, _ in 10 }
         #expect(list.contentHeight == 30)
         #expect(list.offset(forRow: 2) == 20)
     }
@@ -97,7 +100,7 @@ import Testing
     @Test func clearingTheProviderReturnsToUniformRows() {
         let list = makeList(rowCount: 4)
         list.rowHeight = 25
-        list.rowHeightProvider = nil
+        list.measureRow = nil
         #expect(list.contentHeight == 100)
         #expect(list.offset(forRow: 2) == 50)
         #expect(list.rowIndex(at: Point(x: 0, y: 60)) == 2)
@@ -109,7 +112,9 @@ import Testing
         let list = ListView()
         list.frame = Rect(x: 0, y: 0, width: 100, height: 100)
         list.makeRow = { View() }
-        list.rowHeightProvider = { _, index in index == 1 ? -50 : 20 }
+        list.measureRow = { item, _ in
+            item.id == CollectionItemID(1) ? -50 : 20
+        }
         list.applySnapshot(try! CollectionSnapshot(ids: Array(0..<3)))
         #expect(list.contentHeight == 40)
         #expect(list.height(forRow: 1) == 0)

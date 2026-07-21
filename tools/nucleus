@@ -9,4 +9,6 @@ export NUCLEUS_WORKSPACE_ROOT="$workspace_root"
 # canonical toolchain selection when it is present.
 source "$workspace_root/core/tools/host-env.sh"
 
-exec swift run --package-path "$workspace_root" nucleus-workspace "$@"
+swift build --package-path "$workspace_root" --product nucleus-workspace
+workspace_bin="$(swift build --package-path "$workspace_root" --show-bin-path)"
+exec "$workspace_bin/nucleus-workspace" "$@"

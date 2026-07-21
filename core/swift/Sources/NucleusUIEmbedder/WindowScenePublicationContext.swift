@@ -17,13 +17,22 @@ public final class WindowScenePublicationContext: ~Sendable {
 
     public init(
         visualContextID: ContextID = .shellOverlay,
-        commitSink: any CommitSink
+        commitSink: any CommitSink,
+        services: UIHostServices,
+        environment: UIEnvironment = UIEnvironment()
     ) throws(UIError) {
+        guard services.validateForRetainedMaterialization() else {
+            throw UIError.backendFailure(
+                detail: "a production text backend is required before retained UI materialization")
+        }
         do {
             let visualContext = try Context(id: visualContextID, commitSink: commitSink)
             self.visualContext = visualContext
             self.semanticContext = UIContext(
-                resourceHostHandle: visualContext.commitSink.resourceHostHandle)
+                services: services,
+                environment: environment,
+                resourceHostHandle: visualContext.commitSink.resourceHostHandle,
+                runtimeHost: visualContext.runtimeHost)
         } catch let error {
             throw UIError.invalidArgument(detail: String(describing: error))
         }

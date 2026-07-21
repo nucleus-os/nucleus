@@ -1,4 +1,5 @@
 import Testing
+import NucleusRenderModel
 @testable import NucleusCompositorRendererLinux
 
 // Converted from RendererModuleSmokeFixture — module + link proof for the
@@ -20,6 +21,13 @@ import Testing
     // public API compiles + links and the failure path is clean. The live
     // compositor passes the real DRM master fd at bring-up.
     @Test(.disabled("creates a real Vulkan instance (flaky on partial-ICD hosts)")) @MainActor func bringUpFailsClosed() {
-        #expect(RendererRuntime.create(drmDeviceFd: -1) == nil, "runtime-failed-closed")
+        let resourceHost = SwiftResourceHost()
+        let store = RetainedTreeStore(resourceHost: resourceHost)
+        #expect(RendererRuntime.create(
+            drmDeviceFd: -1,
+            store: store,
+            resourceHost: resourceHost,
+            asyncRenderWakeSink: RendererTestWakeSink()) == nil,
+            "runtime-failed-closed")
     }
 }

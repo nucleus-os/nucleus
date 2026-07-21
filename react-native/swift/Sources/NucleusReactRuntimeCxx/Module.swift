@@ -24,6 +24,13 @@ final class CommandHandlerBox {
     init(_ handler: @escaping (String, String) -> Void) { self.handler = handler }
 }
 
+final class JSWorkWakeHandlerBox: Sendable {
+    let handler: @Sendable () -> Void
+    init(_ handler: @escaping @Sendable () -> Void) {
+        self.handler = handler
+    }
+}
+
 @MainActor
 public final class RuntimeHost {
     private var facade: nucleus.react.ReactRuntimeHostFacade
@@ -104,6 +111,33 @@ public final class RuntimeHost {
         return UInt32(result.unsignedValue)
     }
 
+    /// Install the embedding event loop's cross-thread JS-work wake.
+    public func setJSWorkWakeHandler(
+        _ handler: @escaping @Sendable () -> Void
+    ) throws {
+        let box = JSWorkWakeHandlerBox(handler)
+        // Ownership transfers to the C++ WakeEntry. Its release callback
+        // balances passRetained on replacement, shutdown, or setup failure.
+        let callback: @convention(c) (UnsafeMutableRawPointer?) -> Void = {
+            context in
+            guard let context else { return }
+            Unmanaged<JSWorkWakeHandlerBox>
+                .fromOpaque(context)
+                .takeUnretainedValue()
+                .handler()
+        }
+        let release: @convention(c) (UnsafeMutableRawPointer?) -> Void = {
+            context in
+            guard let context else { return }
+            Unmanaged<JSWorkWakeHandlerBox>.fromOpaque(context).release()
+        }
+        try requireSuccess(facade.setJSWorkWakeHandler(
+            callback,
+            Unmanaged.passRetained(box).toOpaque(),
+            release
+        ))
+    }
+
     /// Thread-safe. Schedules a JS-thread dispatch of a device event with the
     /// given name and optional JSON-encoded payload. The dispatch runs the next
     /// time `drainPendingJSCalls` runs on the JS thread, or immediately if
@@ -118,7 +152,9 @@ public final class RuntimeHost {
 
     /// Install the JS→native command handler. JS `NucleusHostCommand.invoke(command,
     /// argsJson)` reaches `handler(command, argsJson)` (on the JS thread). Bridges the Swift
-    /// closure to the facade's C callback via an Unmanaged box (retained here).
+    /// closure to the facade's C callback via an Unmanaged box. The C++ shared
+    /// handler owns the retained context and invokes `release` on replacement,
+    /// teardown, or setup failure.
     public func setCommandHandler(_ handler: @escaping (String, String) -> Void) throws {
         let box = CommandHandlerBox(handler)
         let callback: @convention(c) (

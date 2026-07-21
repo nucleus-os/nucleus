@@ -4,7 +4,7 @@ import NucleusRenderModel
 
 // Converted from FramePlanFixture (Phase 9.8): the FramePlan container (ordered
 // ops, counters, inline backdrop commands, capacity-retaining reset, scanout/
-// callbacks/ops) and the pure plan-command lowering (textured quad native vs fill
+// callbacks) and the pure plan-command lowering (textured quad native vs fill
 // sizing, source-rect basis, opaque coverage, rounded clip mask).
 // Hardware-independent.
 @Suite struct FramePlanTests {
@@ -116,21 +116,17 @@ import NucleusRenderModel
         let plan = FramePlan()
         plan.appendTextureQuad(TextureQuad(texture: nil, dst: PlanRect(), src: PlanRect(), alpha: 1))
         plan.appendFrameCallback(42)
-        plan.appendPresentationOperation(OperationID(raw: 9))
         plan.directScanout = DirectScanoutPlan(candidateLayerId: 3, eligible: true)
         plan.reset(FrameInfo(outputId: 7, planSerial: 11))
-        #expect(plan.ops.isEmpty && plan.frameCallbacks.isEmpty && plan.presentationOperations.isEmpty, "reset-clears")
+        #expect(plan.ops.isEmpty && plan.frameCallbacks.isEmpty, "reset-clears")
         #expect(plan.directScanout == nil && plan.frame.outputId == 7 && plan.frame.planSerial == 11, "reset-identity")
         #expect(plan.counters == PlanCounters(), "reset-counters")
     }
 
-    @Test func frameCallbacksAndOperations() {
+    @Test func frameCallbacks() {
         let plan = FramePlan()
         plan.appendFrameCallback(1); plan.appendFrameCallback(2)
-        plan.appendPresentationOperation(OperationID(raw: 5))
-        plan.operationDeadlineNs = 1000
         #expect(plan.frameCallbacks == [1, 2], "callbacks")
-        #expect(plan.presentationOperations.count == 1 && plan.operationDeadlineNs == 1000, "operations")
     }
 
     @Test func lowerTextureQuadNative() {

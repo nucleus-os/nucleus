@@ -1,5 +1,5 @@
 import Testing
-import NucleusShellDBus
+import NucleusLinuxDBus
 @testable import NucleusShellServices
 
 /// UPower, against the real system bus where one is reachable.

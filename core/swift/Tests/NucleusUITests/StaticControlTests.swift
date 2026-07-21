@@ -21,7 +21,10 @@ import Testing
 
     @Test func labelIsGenericViewWithTextIntrinsicSize() throws {
         let label = Label("Nucleus")
-        let layout = TextLayout(text: "Nucleus", font: label.font)
+        let layout = TextLayout(
+            text: "Nucleus",
+            font: label.font,
+            textSystem: testTextSystem())
 
         #expect(label.alignment == .leading)
         #expect(label.intrinsicContentSize == layout.intrinsicSize)

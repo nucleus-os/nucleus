@@ -93,6 +93,15 @@ func pkgConfig(_ args: [String]) -> [String] {
 
 // Wayland *client* + xkb (the client keyboard map for input on shell surfaces).
 let waylandClientLinkFlags = pkgConfig(["--libs", "wayland-client", "xkbcommon"])
+let compositorWaylandRuntimePackages = [
+    "xcb-ewmh", "xcb", "xcb-icccm", "xcb-composite", "xcb-xfixes",
+    "xcb-res", "libinput", "libudev", "libseat", "xkbcommon",
+]
+let compositorWaylandRuntimeLinkFlags =
+    pkgConfig(["--libs"] + compositorWaylandRuntimePackages)
+    + pkgConfig(["--libs-only-L"] + compositorWaylandRuntimePackages)
+        .compactMap { $0.hasPrefix("-L") ? String($0.dropFirst(2)) : nil }
+        .flatMap { ["-Xlinker", "-rpath", "-Xlinker", $0] }
 // The client xkb façade #includes <xkbcommon/xkbcommon.h>; its include dir must be
 // on the importer path for every target that imports NucleusShellInputC.
 let xkbClientCcFlags = pkgConfig(["--cflags", "xkbcommon"]).flatMap { ["-Xcc", $0] }
@@ -208,12 +217,27 @@ let package = Package(
         // marshalling); this package no longer generates a Wayland module of its own.
         .package(name: "swift-wayland", path: "../swift-wayland"),
         .package(name: "swift-tracy", path: "../swift-tracy"),
+        .package(
+            name: "NucleusLinuxPlatform",
+            path: "../platform-linux"),
+        // Production server runtime used by the deterministic data-control
+        // client/server conformance fixture.
+        .package(name: "compositor-core", path: "../compositor/compositor-core"),
     ],
     targets: [
         .target(
             name: "NucleusShellSignalC",
             path: "Sources/NucleusShellSignalC",
             publicHeadersPath: "include"
+        ),
+        .target(
+            name: "NucleusShellLoop",
+            path: "Sources/NucleusShellLoop"
+        ),
+        .testTarget(
+            name: "NucleusShellLoopTests",
+            dependencies: ["NucleusShellLoop", "NucleusShellSignalC"],
+            path: "Tests/NucleusShellLoopTests"
         ),
         // ── The Swift Wayland client: connection, registry, and the layer-shell /
         //    foreign-toplevel / session-lock / screencopy client drivers.
@@ -243,6 +267,41 @@ let package = Package(
                 .unsafeFlags(xkbClientCcFlags),
             ]
         ),
+        // The privileged Wayland clipboard client. Kept separate from the
+        // generic Wayland target because it implements NucleusUI's pasteboard
+        // service and owns asynchronous transfer pipes.
+        .target(
+            name: "NucleusShellPasteboard",
+            dependencies: [
+                "NucleusShellWayland",
+                "NucleusShellLoop",
+                .product(name: "WaylandClientC", package: "swift-wayland"),
+                .product(name: "WaylandClientDispatch", package: "swift-wayland"),
+                .product(name: "WaylandProtocolsC", package: "swift-wayland"),
+                .product(name: "NucleusUI", package: "Nucleus"),
+            ],
+            path: "Sources/NucleusShellPasteboard",
+            swiftSettings: [.interoperabilityMode(.Cxx)]
+        ),
+        .testTarget(
+            name: "NucleusShellPasteboardTests",
+            dependencies: [
+                "NucleusShellPasteboard",
+                "NucleusShellLoop",
+                .product(name: "NucleusUI", package: "Nucleus"),
+                .product(
+                    name: "NucleusCompositorWaylandRuntime",
+                    package: "compositor-core"),
+                .product(
+                    name: "NucleusCompositorWindowScene",
+                    package: "compositor-core"),
+                .product(name: "NucleusLayers", package: "Nucleus"),
+            ],
+            path: "Tests/NucleusShellPasteboardTests",
+            swiftSettings: [.interoperabilityMode(.Cxx)],
+            linkerSettings: [.unsafeFlags(
+                waylandClientLinkFlags + compositorWaylandRuntimeLinkFlags)]
+        ),
 
         // ── The client render backend: a VK_KHR_wayland_surface Vulkan swapchain that
         //    presents the render core's output onto each client wl_surface. Models the
@@ -250,6 +309,7 @@ let package = Package(
         .target(
             name: "NucleusShellRender",
             dependencies: [
+                "NucleusShellLoop",
                 .product(name: "WaylandClientC", package: "swift-wayland"),
                 .product(name: "NucleusRenderer", package: "Nucleus"),
                 .product(name: "NucleusRenderModel", package: "Nucleus"),
@@ -292,56 +352,22 @@ let package = Package(
         //    modules themselves are only ever loaded by the helper executable.
         .systemLibrary(
             name: "NucleusShellPamC",
-            path: "Sources/NucleusShellPamC",
-            pkgConfig: "pam"
+            // PAM's distro pkg-config file names an optional `audit.pc` that is
+            // absent on valid non-audit hosts. The module map supplies headers
+            // and the helper links `-lpam` explicitly below.
+            path: "Sources/NucleusShellPamC"
         ),
-        // ── D-Bus, client side. Every shell service worth having — UPower,
-        //    BlueZ, NetworkManager, MPRIS, logind, the tray — is a bus peer, so
-        //    this seam is the substrate under all of them.
-        .systemLibrary(
-            name: "NucleusShellDBusC",
-            path: "Sources/NucleusShellDBusC",
-            pkgConfig: "libsystemd"
-        ),
-        .target(
-            name: "NucleusShellDBus",
-            dependencies: ["NucleusShellDBusC"],
-            path: "Sources/NucleusShellDBus",
-            swiftSettings: [.interoperabilityMode(.Cxx)]
-        ),
-        // AT-SPI is a Linux host adapter over NucleusUI's platform-neutral
-        // accessibility tree. The portable framework never imports sd-bus.
-        .target(
-            name: "NucleusShellAccessibility",
-            dependencies: [
-                "NucleusShellDBusC",
-                .product(name: "NucleusUI", package: "Nucleus"),
-            ],
-            path: "Sources/NucleusShellAccessibility",
-            swiftSettings: [.interoperabilityMode(.Cxx)]
-        ),
-        .testTarget(
-            name: "NucleusShellAccessibilityTests",
-            dependencies: [
-                "NucleusShellAccessibility",
-                .product(name: "NucleusUI", package: "Nucleus"),
-            ],
-            path: "Tests/NucleusShellAccessibilityTests",
-            swiftSettings: [.interoperabilityMode(.Cxx)]
-        ),
-        .testTarget(
-            name: "NucleusShellDBusTests",
-            dependencies: ["NucleusShellDBus"],
-            path: "Tests/NucleusShellDBusTests",
-            swiftSettings: [.interoperabilityMode(.Cxx)]
-        ),
-
         // ── System services. Each one maps a bus peer onto a plain value type;
         //    no service knows what a view is, and no product view knows what a
         //    bus is. The runtime composes them.
         .target(
             name: "NucleusShellServices",
-            dependencies: ["NucleusShellDBus"],
+            dependencies: [
+                .product(
+                    name: "NucleusLinuxDBus",
+                    package: "NucleusLinuxPlatform"),
+                .product(name: "NucleusUI", package: "Nucleus"),
+            ],
             path: "Sources/NucleusShellServices",
             swiftSettings: [.interoperabilityMode(.Cxx)]
         ),
@@ -402,18 +428,40 @@ let package = Package(
                 .product(name: "NucleusUIEmbedder", package: "Nucleus"),
                 .product(name: "NucleusLayers", package: "Nucleus"),
                 .product(name: "NucleusTextBackend", package: "Nucleus"),
+                .product(
+                    name: "NucleusCompositorWaylandRuntime",
+                    package: "compositor-core"),
+                .product(
+                    name: "NucleusCompositorWindowScene",
+                    package: "compositor-core"),
             ],
             path: "Tests/NucleusShellInputTests",
             swiftSettings: [.interoperabilityMode(.Cxx)],
-            linkerSettings: [.unsafeFlags(skiaLinkFlags + waylandClientLinkFlags)]
+            linkerSettings: [.unsafeFlags(
+                skiaLinkFlags
+                    + waylandClientLinkFlags
+                    + compositorWaylandRuntimeLinkFlags)]
         ),
 
         .target(
             name: "NucleusShellRuntime",
             dependencies: [
                 "NucleusShellWayland", "NucleusShellRender", "NucleusShellSignalC",
+                "NucleusShellLoop", "NucleusShellPasteboard",
                 "NucleusShellProduct", "NucleusShellInput", "NucleusShellAuth",
-                "NucleusShellServices", "NucleusShellAccessibility",
+                "NucleusShellServices",
+                .product(
+                    name: "NucleusLinuxAccessibility",
+                    package: "NucleusLinuxPlatform"),
+                .product(
+                    name: "NucleusLinuxEnvironment",
+                    package: "NucleusLinuxPlatform"),
+                .product(
+                    name: "NucleusLinuxDBus",
+                    package: "NucleusLinuxPlatform"),
+                .product(
+                    name: "NucleusLinuxReactor",
+                    package: "NucleusLinuxPlatform"),
                 .product(name: "NucleusReactRuntime", package: "NucleusReactNative"),
                 .product(name: "NucleusReactRuntimeCxx", package: "NucleusReactNative"),
                 .product(name: "NucleusRenderer", package: "Nucleus"),
@@ -421,6 +469,7 @@ let package = Package(
                 .product(name: "NucleusRenderHost", package: "Nucleus"),
                 .product(name: "NucleusLayers", package: "Nucleus"),
                 .product(name: "NucleusUI", package: "Nucleus"),
+                .product(name: "NucleusTextBackend", package: "Nucleus"),
                 .product(name: "NucleusUIEmbedder", package: "Nucleus"),
                 .product(name: "NucleusAppHostBundle", package: "Nucleus"),
                 .product(name: "NucleusAppHostProtocols", package: "Nucleus"),
@@ -497,3 +546,22 @@ let package = Package(
         ),
     ]
 )
+
+
+for target in package.targets {
+    switch target.type {
+    case .regular, .executable, .test:
+        break
+    default:
+        continue
+    }
+    target.swiftSettings = (target.swiftSettings ?? []) + [
+        .unsafeFlags(["-warnings-as-errors"]),
+    ]
+    target.cSettings = (target.cSettings ?? []) + [
+        .unsafeFlags(["-Werror"]),
+    ]
+    target.cxxSettings = (target.cxxSettings ?? []) + [
+        .unsafeFlags(["-Werror"]),
+    ]
+}

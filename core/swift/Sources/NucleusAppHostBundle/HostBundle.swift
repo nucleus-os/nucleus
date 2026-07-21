@@ -1,8 +1,13 @@
 import NucleusLayers
 import NucleusAppHostProtocols
+import NucleusRenderModel
 
+/// One host runtime's concrete Swift resource and runtime-protocol graph. The
+/// compositor, shell, Android host, or fixture owns this value and passes its
+/// `layersHost` to every context it creates. Nothing is installed process-wide.
 @MainActor
-public struct NucleusAppHostBundle {
+public final class NucleusAppHostBundle: ~Sendable {
+    public let resourceHost: SwiftResourceHost
     public let imageRegistrar: any ImageRegistrar
     public let imageLifecycle: any ImageLifecycle
     public let displayLinkSource: any DisplayLinkSource
@@ -15,21 +20,29 @@ public struct NucleusAppHostBundle {
     public let iosurfaceLifecycle: any IOSurfaceLifecycle
     public let contextIDAllocator: any ContextIDAllocator
     public let implicitActionRegistrar: any ImplicitActionRegistrar
+    public let layersHost: LayerRuntimeHost
 
-    public init(
-        imageRegistrar: any ImageRegistrar,
-        imageLifecycle: any ImageLifecycle,
-        displayLinkSource: any DisplayLinkSource,
-        paintContentRegistrar: any PaintContentRegistrar,
-        runtimeEffectRegistrar: any RuntimeEffectRegistrar,
-        paintContentLifecycle: any PaintContentLifecycle,
-        runtimeEffectLifecycle: any RuntimeEffectLifecycle,
-        snapshotLifecycle: any SnapshotLifecycle,
-        iosurfaceBinder: any IOSurfaceBinder,
-        iosurfaceLifecycle: any IOSurfaceLifecycle,
-        contextIDAllocator: any ContextIDAllocator,
-        implicitActionRegistrar: any ImplicitActionRegistrar
-    ) {
+    public init(resourceHost: SwiftResourceHost) {
+        let imageRegistrar = SwiftImageRegistrar(resourceHost: resourceHost)
+        let imageLifecycle = SwiftImageLifecycle(resourceHost: resourceHost)
+        let displayLinkSource = SwiftDisplayLinkSource()
+        let paintContentRegistrar = SwiftPaintContentRegistrar(
+            resourceHost: resourceHost)
+        let runtimeEffectRegistrar = SwiftRuntimeEffectRegistrar(
+            resourceHost: resourceHost)
+        let paintContentLifecycle = SwiftPaintContentLifecycle(
+            resourceHost: resourceHost)
+        let runtimeEffectLifecycle = SwiftRuntimeEffectLifecycle(
+            resourceHost: resourceHost)
+        let snapshotLifecycle = SwiftSnapshotLifecycle(
+            resourceHost: resourceHost)
+        let iosurfaceBinder = SwiftIOSurfaceBinder()
+        let iosurfaceLifecycle = SwiftIOSurfaceLifecycle()
+        let contextIDAllocator = SwiftContextIDAllocator()
+        let implicitActionRegistrar = SwiftImplicitActionRegistrar(
+            resourceHost: resourceHost)
+
+        self.resourceHost = resourceHost
         self.imageRegistrar = imageRegistrar
         self.imageLifecycle = imageLifecycle
         self.displayLinkSource = displayLinkSource
@@ -42,92 +55,32 @@ public struct NucleusAppHostBundle {
         self.iosurfaceLifecycle = iosurfaceLifecycle
         self.contextIDAllocator = contextIDAllocator
         self.implicitActionRegistrar = implicitActionRegistrar
+        self.layersHost = LayerRuntimeHost(
+            operations: Host(
+                imageRegistrar: imageRegistrar,
+                paintContentRegistrar: paintContentRegistrar,
+                runtimeEffectRegistrar: runtimeEffectRegistrar,
+                iosurfaceBinder: iosurfaceBinder,
+                contextIDAllocator: contextIDAllocator,
+                displayLinkSource: displayLinkSource,
+                implicitActionRegistrar: implicitActionRegistrar),
+            lifecycle: LifecycleHost(
+                imageLifecycle: imageLifecycle,
+                paintContentLifecycle: paintContentLifecycle,
+                runtimeEffectLifecycle: runtimeEffectLifecycle,
+                snapshotLifecycle: snapshotLifecycle,
+                iosurfaceLifecycle: iosurfaceLifecycle,
+                contextIDAllocator: contextIDAllocator))
+
+        registerImplicitActionSettings(
+            Settings(), using: implicitActionRegistrar)
     }
 
-    public static func makeProduction(
-        imageRegistrar: any ImageRegistrar,
-        imageLifecycle: any ImageLifecycle,
-        displayLinkSource: any DisplayLinkSource,
-        paintContentRegistrar: any PaintContentRegistrar,
-        runtimeEffectRegistrar: any RuntimeEffectRegistrar,
-        paintContentLifecycle: any PaintContentLifecycle,
-        runtimeEffectLifecycle: any RuntimeEffectLifecycle,
-        snapshotLifecycle: any SnapshotLifecycle,
-        iosurfaceBinder: any IOSurfaceBinder,
-        iosurfaceLifecycle: any IOSurfaceLifecycle,
-        contextIDAllocator: any ContextIDAllocator,
-        implicitActionRegistrar: any ImplicitActionRegistrar
-    ) -> NucleusAppHostBundle {
-        return NucleusAppHostBundle(
-            imageRegistrar: imageRegistrar,
-            imageLifecycle: imageLifecycle,
-            displayLinkSource: displayLinkSource,
-            paintContentRegistrar: paintContentRegistrar,
-            runtimeEffectRegistrar: runtimeEffectRegistrar,
-            paintContentLifecycle: paintContentLifecycle,
-            runtimeEffectLifecycle: runtimeEffectLifecycle,
-            snapshotLifecycle: snapshotLifecycle,
-            iosurfaceBinder: iosurfaceBinder,
-            iosurfaceLifecycle: iosurfaceLifecycle,
-            contextIDAllocator: contextIDAllocator,
-            implicitActionRegistrar: implicitActionRegistrar
-        )
+    /// Invalidates the raw boundary identity before late callbacks can reach any
+    /// store. Contexts and content leases retain their conformers long enough to
+    /// reject those callbacks deterministically.
+    public func invalidate() {
+        layersHost.presentationCompletions.invalidate()
+        resourceHost.invalidate()
     }
-}
-
-@MainActor
-private var activeProductionHostBundle: NucleusAppHostBundle?
-
-@MainActor
-public func currentProductionHostBundle() -> NucleusAppHostBundle? {
-    activeProductionHostBundle
-}
-
-/// Install the production host bundle. Every slot is a Swift-native conformer:
-/// the resource-host slots (image / paint / snapshot / implicit-action) are backed
-/// by `SwiftResourceHost.shared`; the runtime slots (display link, IOSurface
-/// bind/lifecycle, context-id) are the `SwiftRuntimeHostConformers`.
-@MainActor
-public func nucleus_app_host_bundle_install_production() -> UInt8 {
-    let bundle = NucleusAppHostBundle.makeProduction(
-        imageRegistrar: SwiftImageRegistrar(),
-        imageLifecycle: SwiftImageLifecycle(),
-        displayLinkSource: SwiftDisplayLinkSource(),
-        paintContentRegistrar: SwiftPaintContentRegistrar(),
-        runtimeEffectRegistrar: SwiftRuntimeEffectRegistrar(),
-        paintContentLifecycle: SwiftPaintContentLifecycle(),
-        runtimeEffectLifecycle: SwiftRuntimeEffectLifecycle(),
-        snapshotLifecycle: SwiftSnapshotLifecycle(),
-        iosurfaceBinder: SwiftIOSurfaceBinder(),
-        iosurfaceLifecycle: SwiftIOSurfaceLifecycle(),
-        contextIDAllocator: SwiftContextIDAllocator(),
-        implicitActionRegistrar: SwiftImplicitActionRegistrar()
-    )
-    activeProductionHostBundle = bundle
-    installHost(Host(
-        imageRegistrar: bundle.imageRegistrar,
-        paintContentRegistrar: bundle.paintContentRegistrar,
-        runtimeEffectRegistrar: bundle.runtimeEffectRegistrar,
-        iosurfaceBinder: bundle.iosurfaceBinder,
-        contextIDAllocator: bundle.contextIDAllocator,
-        displayLinkSource: bundle.displayLinkSource,
-        implicitActionRegistrar: bundle.implicitActionRegistrar
-    ))
-    registerImplicitActionSettings()
-    installLifecycleHost(LifecycleHost(
-        imageLifecycle: bundle.imageLifecycle,
-        paintContentLifecycle: bundle.paintContentLifecycle,
-        runtimeEffectLifecycle: bundle.runtimeEffectLifecycle,
-        snapshotLifecycle: bundle.snapshotLifecycle,
-        iosurfaceLifecycle: bundle.iosurfaceLifecycle,
-        contextIDAllocator: bundle.contextIDAllocator
-    ))
-    return 1
-}
-
-@MainActor
-public func nucleus_app_host_bundle_clear_production() {
-    activeProductionHostBundle = nil
-    clearHost()
-    clearLifecycleHost()
 }

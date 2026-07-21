@@ -5,7 +5,7 @@ import Testing
 @Suite struct RenderModelSmokeTests {
     @Test func renderModelSmoke() {
         let ctx = ContextID(raw: 1)
-        let store = RetainedTreeStore()
+        let store = RetainedTreeStore(resourceHost: SwiftResourceHost())
 
         // Fresh store starts clean.
         #expect(store.revision == 0, "initial-revision")

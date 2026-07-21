@@ -153,13 +153,13 @@ import Testing
         let menu = Menu(items: [
             MenuItem(id: "one", title: "One") {},
         ])
-        let popover = menu.makePopover(
+        let presentation = scene.present(
+            menu,
             anchor: Rect(x: 20, y: 20, width: 1, height: 1))
-        scene.present(popover)
-        #expect(scene.keyWindow === popover.window)
-        #expect(popover.window.firstResponder is Button)
+        #expect(scene.keyWindow !== window)
+        #expect(scene.keyWindow?.firstResponder != nil)
 
-        scene.dismiss(popover)
+        presentation.dismiss()
         #expect(scene.keyWindow === window)
         #expect(window.firstResponder === field)
         #expect(field.isFocused)

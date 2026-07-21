@@ -4,7 +4,7 @@
 open class View: Responder, Accessible, ~Sendable {
     public let id: ViewID
     public let accessibilityID: AccessibilityID
-    package let uiContext: UIContext
+    public let uiContext: UIContext
     package let semanticLayerKind: LayerKind
     package var semanticBackdropMaterial: BackdropMaterial
     package weak var parentView: View?
@@ -23,7 +23,7 @@ open class View: Responder, Accessible, ~Sendable {
     package var subtreeDisplayNeedsUpdate: Bool
     package var cachedRecording: PaintRecording
     package var cachedPaintDamage: Rect?
-    private var pendingDisplayDamage: Rect?
+    package var pendingDisplayDamage: Rect?
     package var storedStyle: ViewStyle
     package var storedAccessibilityProperties: AccessibilityProperties
     package var storedAccessibilityChildren: [any Accessible]?
@@ -36,9 +36,14 @@ open class View: Responder, Accessible, ~Sendable {
     package var storedLayerPresentation: ViewLayerPresentation
     package var storedMutationActionPolicies: [ViewDirtyDomain: ActionPolicy]
     package var storedContextMenuProvider: (@MainActor () -> Menu)?
+    package var storedDragSource: DragSourceConfiguration?
+    package var storedDropDestination: DropDestinationConfiguration?
+    package var storedDropDestinationGeneration: UInt64
     package var animationRequests: [AnimationKeyPath: ViewAnimationRequest]
     package var animationHandles: [UInt64: AnimationHandle]
     package var currentAnimationHandleIDs: [AnimationKeyPath: UInt64]
+    package var ownedObservationTokens:
+        [ObjectIdentifier: RetainedObservationToken]
     package var storedFadeTargetOpacity: Double?
     package var dirtyGenerations: ViewDirtyGenerations
     package var subtreeDirtyGenerations: ViewDirtyGenerations
@@ -49,6 +54,24 @@ open class View: Responder, Accessible, ~Sendable {
     private var storedBoundsOrigin: Point
     private var storedClipsToBounds: Bool
     private var storedShadow: Shadow
+    private var storedIsHitTestingEnabled: Bool
+    package var storedGrowFactor: Double = 0
+    package var storedShrinkFactor: Double = 1
+    package var storedLayoutBasis: Double?
+    package var storedMinimumLayoutExtent: Double = 0
+    package var storedMaximumLayoutExtent: Double = .infinity
+    public var appearance: Appearance? {
+        didSet {
+            guard appearance != oldValue else { return }
+            notifyEffectiveAppearanceChanged()
+        }
+    }
+    public var palette: Palette? {
+        didSet {
+            guard palette != oldValue else { return }
+            notifyEffectiveAppearanceChanged()
+        }
+    }
 
     public override init() {
         let uiContext = Application.currentUIContext
@@ -78,9 +101,13 @@ open class View: Responder, Accessible, ~Sendable {
         self.storedLayerPresentation = .default
         self.storedMutationActionPolicies = [:]
         self.storedContextMenuProvider = nil
+        self.storedDragSource = nil
+        self.storedDropDestination = nil
+        self.storedDropDestinationGeneration = 1
         self.animationRequests = [:]
         self.animationHandles = [:]
         self.currentAnimationHandleIDs = [:]
+        self.ownedObservationTokens = [:]
         self.storedFadeTargetOpacity = nil
         self.dirtyGenerations = ViewDirtyGenerations()
         self.subtreeDirtyGenerations = ViewDirtyGenerations()
@@ -90,6 +117,7 @@ open class View: Responder, Accessible, ~Sendable {
         self.storedBoundsOrigin = .zero
         self.storedClipsToBounds = false
         self.storedShadow = .none
+        self.storedIsHitTestingEnabled = true
         super.init()
         uiContext.registerEnvironmentConsumer(self)
     }
@@ -122,9 +150,13 @@ open class View: Responder, Accessible, ~Sendable {
         self.storedLayerPresentation = .default
         self.storedMutationActionPolicies = [:]
         self.storedContextMenuProvider = nil
+        self.storedDragSource = nil
+        self.storedDropDestination = nil
+        self.storedDropDestinationGeneration = 1
         self.animationRequests = [:]
         self.animationHandles = [:]
         self.currentAnimationHandleIDs = [:]
+        self.ownedObservationTokens = [:]
         self.storedFadeTargetOpacity = nil
         self.dirtyGenerations = ViewDirtyGenerations()
         self.subtreeDirtyGenerations = ViewDirtyGenerations()
@@ -139,27 +171,39 @@ open class View: Responder, Accessible, ~Sendable {
         self.storedBoundsOrigin = .zero
         self.storedClipsToBounds = false
         self.storedShadow = Shadow(layerDescriptor.shadow)
+        self.storedIsHitTestingEnabled = true
         super.init()
         uiContext.registerEnvironmentConsumer(self)
     }
 
     isolated deinit {
+        cancelOwnedObservations()
         uiContext.unregisterEnvironmentConsumer(id)
         uiContext.cancelAnimations(owner: self)
         cancelOwnedAnimationHandles()
     }
 
     public func addSubview(_ child: View) {
-        if child.parentView === self, childViews.last === child {
+        insertSubview(child, at: childViews.count)
+    }
+
+    public func insertSubview(_ child: View, at requestedIndex: Int) {
+        let currentIndex = child.parentView === self
+            ? childViewIndices[child.id]
+            : nil
+        let finalCount = childViews.count
+            - (currentIndex == nil ? 0 : 1)
+        let index = min(max(0, requestedIndex), finalCount)
+        if currentIndex == index {
             return
         }
         precondition(
             child.uiContext === uiContext,
             "a view cannot adopt a child from another UIContext")
         child.detachFromSwiftTree()
-        childViews.append(child)
+        childViews.insert(child, at: index)
         childViewsByID[child.id] = child
-        childViewIndices[child.id] = childViews.count - 1
+        reindexChildren()
         child.parentView = self
         // The new child carries its own dirty state; the ancestors that will run
         // the next pass have to learn there is now work under them.
@@ -170,6 +214,13 @@ open class View: Responder, Accessible, ~Sendable {
 
     public func removeFromSuperview() {
         detachFromSwiftTree()
+    }
+
+    /// Called before this view leaves a retained hierarchy or its owning scene
+    /// disconnects. Subclasses cancel work whose result must not outlive that
+    /// attachment. The callback runs parent-before-child.
+    open func retainedHierarchyWillDetach() {
+        window?.windowScene?.dragParticipantWillDetach(self)
     }
 
     /// Apply a batched semantic update. Publication diffs the resulting model
@@ -425,27 +476,36 @@ open class View: Responder, Accessible, ~Sendable {
             branch = current
             ancestor = current.parentView
         }
+        if domain == .geometry
+            || domain == .scrolling
+            || domain == .transform
+            || domain == .structure
+        {
+            invalidateActiveTextInputGeometry()
+        }
         return generation
+    }
+
+    private func invalidateActiveTextInputGeometry() {
+        guard let window,
+              let activeClient = window.textInputContext.activeClient,
+              let activeView = activeClient as? View,
+              activeView === self || activeView.isDescendant(of: self)
+        else { return }
+        window.textInputContext.invalidateState(for: activeClient)
     }
 
     public var stableHandle: Handle {
         Handle(view: self)
     }
 
-    public var isAccessibilityElement: Bool {
-        get { storedAccessibilityProperties.isElement }
+    public var accessibilityValue: String? {
+        get { storedAccessibilityProperties.value }
         set {
-            guard newValue != storedAccessibilityProperties.isElement else { return }
-            storedAccessibilityProperties.isElement = newValue
-            recordMutation(.accessibility)
-        }
-    }
-
-    public var accessibilityLabel: String? {
-        get { storedAccessibilityProperties.label }
-        set {
-            guard newValue != storedAccessibilityProperties.label else { return }
-            storedAccessibilityProperties.label = newValue
+            guard newValue != storedAccessibilityProperties.value else {
+                return
+            }
+            storedAccessibilityProperties.value = newValue
             recordMutation(.accessibility)
         }
     }
@@ -557,230 +617,21 @@ open class View: Responder, Accessible, ~Sendable {
         trackingAreas.last { $0.contains(point, in: self) }
     }
 
-    public var accessibilityHint: String? {
-        get { storedAccessibilityProperties.hint }
-        set {
-            guard newValue != storedAccessibilityProperties.hint else { return }
-            storedAccessibilityProperties.hint = newValue
-            recordMutation(.accessibility)
-        }
-    }
-
-    public var accessibilityValue: String? {
-        get { storedAccessibilityProperties.value }
-        set {
-            guard newValue != storedAccessibilityProperties.value else { return }
-            storedAccessibilityProperties.value = newValue
-            recordMutation(.accessibility)
-        }
-    }
-
-    public var accessibilityRole: AccessibilityRole? {
-        get { storedAccessibilityProperties.role }
-        set {
-            guard newValue != storedAccessibilityProperties.role else { return }
-            storedAccessibilityProperties.role = newValue
-            recordMutation(.accessibility)
-        }
-    }
-
-    public var accessibilityTraits: AccessibilityTraits {
-        get { storedAccessibilityProperties.traits }
-        set {
-            guard newValue != storedAccessibilityProperties.traits else { return }
-            storedAccessibilityProperties.traits = newValue
-            recordMutation(.accessibility)
-        }
-    }
-
-    public var accessibilityChildren: [any Accessible]? {
-        get { storedAccessibilityChildren }
-        set {
-            storedAccessibilityChildren = newValue
-            recordMutation(.accessibility)
-        }
-    }
-
-    public var accessibilityProperties: AccessibilityProperties {
-        get { storedAccessibilityProperties }
-        set {
-            guard newValue != storedAccessibilityProperties else { return }
-            storedAccessibilityProperties = newValue
-            recordMutation(.accessibility)
-        }
-    }
-
-    /// Supplies semantic children that are not retained visual views.
-    public var accessibilityVirtualChildrenProvider:
-        (@MainActor () -> [AccessibilityVirtualElement])?
-    {
-        get { storedAccessibilityVirtualChildrenProvider }
-        set {
-            storedAccessibilityVirtualChildrenProvider = newValue
-            recordMutation(.accessibility)
-        }
-    }
-
-    public func setAccessibilityAction(
-        _ action: AccessibilityAction,
-        handler:
-            @escaping @MainActor (AccessibilityActionRequest) -> Bool
-    ) {
-        storedAccessibilityActions[action] = handler
-        recordMutation(.accessibility)
-    }
-
-    public func clearAccessibilityAction(_ action: AccessibilityAction) {
-        guard storedAccessibilityActions.removeValue(forKey: action) != nil
-        else { return }
-        recordMutation(.accessibility)
-    }
-
-    public func postAccessibilityAnnouncement(
-        _ announcement: String,
-        priority: AccessibilityLiveRegion = .polite
-    ) {
-        guard !announcement.isEmpty else { return }
-        uiContext.postAccessibilityNotification(
-            AccessibilityNotification(
-                kind: priority == .assertive ? .announcement : .liveRegion,
-                target: accessibilityID,
-                announcement: announcement))
-    }
-
-    package func detachFromSwiftTree(clearOwningViewController: Bool = true) {
-        window?.windowScene?.cancelInputSequences(capturedBy: self)
-        if let parentView {
-            parentView.childViews.removeAll { $0 === self }
-            parentView.childViewsByID[id] = nil
-            parentView.reindexChildren()
-            parentView.recordMutation(.structure)
-            parentView.markSubtreeNeedsLayout()
-            parentView.markSubtreeNeedsDisplay()
-        }
-        if let parentWindow, parentWindow.rootView === self {
-            parentWindow.rootView = nil
-        }
-        if clearOwningViewController, let owningViewController, owningViewController.rootView === self {
-            owningViewController.clearLoadedView()
-        }
-        parentView = nil
-        parentWindow = nil
-        if clearOwningViewController {
-            owningViewController = nil
-        }
-    }
-
-    public var superview: View? {
-        parentView
-    }
-
-    package func reindexChildren() {
-        childViewIndices.removeAll(keepingCapacity: true)
-        childViewIndices.reserveCapacity(childViews.count)
-        for (index, child) in childViews.enumerated() {
-            childViewsByID[child.id] = child
-            childViewIndices[child.id] = index
-        }
-    }
-
-    package func isDescendant(of ancestor: View) -> Bool {
-        var node = parentView
-        while let current = node {
-            if current === ancestor { return true }
-            node = current.parentView
-        }
-        return false
-    }
-
-    package func defaultButton() -> Button? {
-        if let button = self as? Button,
-           button.isDefaultButton,
-           button.isEnabled,
-           !button.isHidden
-        {
-            return button
-        }
-        for child in childViews {
-            if let button = child.defaultButton() { return button }
-        }
-        return nil
-    }
-
-    /// The window this view is installed in, found by walking up the view tree.
-    /// `parentWindow` is only set on a window's root view, so a nested view has
-    /// to climb. This matches `NSView.window` behavior.
-    public var window: Window? {
-        var node: View? = self
-        while let current = node {
-            if let window = current.parentWindow { return window }
-            node = current.parentView
-        }
-        return nil
-    }
-
-    public var subviews: [View] {
-        childViews
-    }
-
-    /// Per-view appearance override. `nil` (the default) means inherit from
-    /// the nearest ancestor that specifies one, then from the owning
-    /// `UIContext` environment.
-    public var appearance: Appearance? {
-        didSet {
-            guard appearance != oldValue else { return }
-            notifyEffectiveAppearanceChanged()
-        }
-    }
-
-    /// Per-view palette override. `nil` inherits from the nearest ancestor that
-    /// specifies one, then from the scene, then from the appearance's standard
-    /// palette.
+    /// Whether this view and its subtree participate in semantic hit testing.
     ///
-    /// Scoped rather than global. The reference keeps one process-wide palette
-    /// and a global signal; scoping it means a preview swatch, or a surface that
-    /// must stay legible against arbitrary wallpaper, can differ without
-    /// pretending the whole shell retheme.
-    public var palette: Palette? {
-        didSet {
-            guard palette != oldValue else { return }
-            notifyEffectiveAppearanceChanged()
-        }
-    }
-
-    /// The palette this view paints under.
-    public var effectivePalette: Palette {
-        var current: View? = self
-        while let view = current {
-            if let palette = view.palette { return palette }
-            current = view.parentView
-        }
-        let base = parentWindow?.windowScene?.palette
-            ?? Palette.standard(for: effectiveAppearance)
-        return uiContext.environment.increasesContrast
-            ? base.increasedContrast()
-            : base
-    }
-
-    /// Resolve a spec against this view's palette. The call every `draw`
-    /// makes — a view stores intent and resolves at paint time, which is what
-    /// lets a retheme change the picture without touching the tree.
-    public func resolve(_ spec: ColorSpec) -> Color {
-        spec.resolve(in: effectivePalette)
+    /// Drag previews disable this while remaining visible, so they cannot
+    /// become their own drop target.
+    public var isHitTestingEnabled: Bool {
+        get { storedIsHitTestingEnabled }
+        set { storedIsHitTestingEnabled = newValue }
     }
 
     /// Environment domains this view consumes.
-    ///
-    /// Appearance and contrast are the safe default because every custom view
-    /// can call `resolve(_:)` and every focusable view can draw the framework
-    /// focus ring. Subclasses add only the extra domains they actually consume.
     open var environmentDependencies: UIEnvironmentChanges {
         [.appearance, .increasedContrast]
     }
 
-    open func environmentDidChange(
-        _ changes: UIEnvironmentChanges
-    ) {
+    open func environmentDidChange(_ changes: UIEnvironmentChanges) {
         if changes.contains(.appearance)
             || changes.contains(.increasedContrast)
         {
@@ -788,493 +639,64 @@ open class View: Responder, Accessible, ~Sendable {
         }
     }
 
-    /// Called when the appearance or palette this view paints under changes.
-    ///
-    /// Corresponds to `NSView.viewDidChangeEffectiveAppearance`. Overriding is for
-    /// views holding *derived* state — a resolved colour cached on a sublayer.
-    /// A view that resolves its specs in `draw` needs only the default repaint.
     open func viewDidChangeEffectiveAppearance() {
         setNeedsDisplay()
     }
 
-    /// Notify this view and its subtree. Stops at any descendant that overrides
-    /// the changed value, since nothing below it is affected.
-    func notifyEffectiveAppearanceChanged() {
-        viewDidChangeEffectiveAppearance()
-        for child in childViews where child.palette == nil && child.appearance == nil {
-            child.notifyEffectiveAppearanceChanged()
-        }
+    open func viewDidChangeBackingScaleFactor() {
+        setNeedsDisplay()
     }
 
-    /// The appearance this view actually paints under. Walks the parent
-    /// chain to the nearest non-nil `appearance`, then uses the owning
-    /// `UIContext` environment.
-    public var effectiveAppearance: Appearance {
-        var current: View? = self
-        while let view = current {
-            if let appearance = view.appearance {
-                return appearance
-            }
-            current = view.parentView
-        }
-        return uiContext.environment.appearance
-    }
+    /// This view's natural unconstrained size. Reading it is side-effect free.
+    open var intrinsicContentSize: Size { .zero }
 
-    public var needsIntrinsicContentSizeUpdate: Bool {
-        intrinsicContentSizeNeedsUpdate
-    }
-
-    public var needsLayout: Bool {
-        layoutNeedsUpdate
-    }
-
-    public var needsDisplay: Bool {
-        displayNeedsUpdate
-    }
-
-    /// This view's natural size with no constraint applied. The unconstrained
-    /// case of `measure(_:)`; anything whose size depends on the space offered
-    /// — wrapped text above all — must override `measure(_:)` too, because this
-    /// question cannot express the answer.
-    ///
-    /// A pure read. It used to clear `intrinsicContentSizeNeedsUpdate` as a side
-    /// effect, which meant merely *asking* a view its size silently marked it
-    /// clean; the flag is now cleared by the layout pass that consumed it.
-    open var intrinsicContentSize: Size {
-        .zero
-    }
-
-    /// The size this view wants within `constraints`.
-    ///
-    /// The first half of two-phase layout: a parent measures children to decide
-    /// how much room each gets, then `arrange(in:)` assigns final geometry.
-    /// Measuring must not mutate geometry — a parent may measure the same child
-    /// several times while resolving flexible space.
     open func measure(_ constraints: LayoutConstraints) -> Size {
         constraints.constrain(intrinsicContentSize)
     }
 
-    /// Place this view at `rect` and lay its subtree out within it. The second
-    /// half of two-phase layout.
     open func arrange(in rect: Rect) {
-        if frame != rect {
-            frame = rect
-        }
+        if frame != rect { frame = rect }
         layoutIfNeeded()
-    }
-
-    // MARK: - Flexible sizing
-
-    /// Share of a container's *surplus* main-axis space this view absorbs,
-    /// relative to its siblings. `0` (the default) means "stay at measured size".
-    private var storedGrowFactor: Double = 0
-    public var growFactor: Double {
-        get { storedGrowFactor }
-        set {
-            let value = newValue.isFinite ? max(0, newValue) : 0
-            guard value != storedGrowFactor else { return }
-            storedGrowFactor = value
-            parentView?.setNeedsLayout()
-        }
-    }
-
-    /// Share of a container's main-axis *overflow* this view gives back, weighted
-    /// by measured size. `1` by default, so children shrink together rather than
-    /// letting the last one overflow.
-    private var storedShrinkFactor: Double = 1
-    public var shrinkFactor: Double {
-        get { storedShrinkFactor }
-        set {
-            let value = newValue.isFinite ? max(0, newValue) : 0
-            guard value != storedShrinkFactor else { return }
-            storedShrinkFactor = value
-            parentView?.setNeedsLayout()
-        }
-    }
-
-    /// Main-axis starting size, overriding the measured one. `nil` means measure.
-    private var storedLayoutBasis: Double?
-    public var layoutBasis: Double? {
-        get { storedLayoutBasis }
-        set {
-            let value = newValue.map { $0.isFinite ? max(0, $0) : 0 }
-            guard value != storedLayoutBasis else { return }
-            storedLayoutBasis = value
-            parentView?.setNeedsLayout()
-        }
-    }
-
-    /// Minimum main-axis extent used by flex, stack, list, and grid containers.
-    private var storedMinimumLayoutExtent: Double = 0
-    public var minimumLayoutExtent: Double {
-        get { storedMinimumLayoutExtent }
-        set {
-            let value = newValue.isFinite ? max(0, newValue) : 0
-            guard value != storedMinimumLayoutExtent else { return }
-            storedMinimumLayoutExtent = value
-            if storedMaximumLayoutExtent < value {
-                storedMaximumLayoutExtent = value
-            }
-            parentView?.setNeedsLayout()
-        }
-    }
-
-    /// Maximum main-axis extent. Positive infinity means no upper bound.
-    private var storedMaximumLayoutExtent: Double = .infinity
-    public var maximumLayoutExtent: Double {
-        get { storedMaximumLayoutExtent }
-        set {
-            let value: Double
-            if newValue == .infinity {
-                value = .infinity
-            } else if newValue.isFinite {
-                value = max(storedMinimumLayoutExtent, max(0, newValue))
-            } else {
-                value = storedMinimumLayoutExtent
-            }
-            guard value != storedMaximumLayoutExtent else { return }
-            storedMaximumLayoutExtent = value
-            parentView?.setNeedsLayout()
-        }
     }
 
     open func invalidateIntrinsicContentSize() {
         intrinsicContentSizeNeedsUpdate = true
-        // Both: this view's own layout depends on its size, and its container's
-        // arrangement of siblings does too.
         setNeedsLayout()
         parentView?.setNeedsLayout()
     }
 
     open func setNeedsLayout() {
-        guard !layoutNeedsUpdate else {
-            return
-        }
+        guard !layoutNeedsUpdate else { return }
         layoutNeedsUpdate = true
         parentView?.markSubtreeNeedsLayout()
-    }
-
-    /// Record that *something below* needs layout, without dirtying this view's
-    /// own arrangement. A child moving does not mean its parent must re-run
-    /// `layout()`; it only means the pass has to reach that child.
-    package func markSubtreeNeedsLayout() {
-        var node: View? = self
-        while let current = node, !current.subtreeLayoutNeedsUpdate {
-            current.subtreeLayoutNeedsUpdate = true
-            node = current.parentView
-        }
-    }
-
-    package func markSubtreeNeedsDisplay() {
-        var node: View? = self
-        while let current = node, !current.subtreeDisplayNeedsUpdate {
-            current.subtreeDisplayNeedsUpdate = true
-            node = current.parentView
-        }
     }
 
     open func setNeedsDisplay() {
         setNeedsDisplay(bounds)
     }
 
-    /// Invalidate a view-local region. Local damage is preserved through
-    /// publication and rasterized under an outer clip when the recording is
-    /// localizable. Runtime effects and backing-size changes automatically
-    /// promote the update to a complete repaint.
     open func setNeedsDisplay(_ rect: Rect) {
-        guard let damage = normalizedDisplayDamage(rect) else {
-            return
-        }
-        if !displayNeedsUpdate {
-            pendingDisplayDamage = damage
-        } else if damage == .zero {
-            pendingDisplayDamage = .zero
-        } else if let pendingDisplayDamage,
-                  pendingDisplayDamage != .zero
-        {
-            self.pendingDisplayDamage = pendingDisplayDamage.union(damage)
-        }
-        displayNeedsUpdate = true
-        parentView?.markSubtreeNeedsDisplay()
+        invalidateDisplay(rect)
     }
 
-    /// Convert an AppKit-shaped bounds-space invalidation to the zero-origin
-    /// backing coordinates used by paint textures. A complete-bounds request
-    /// returns `nil`; `.zero` is the sentinel used internally for that case
-    /// while a display pass is pending.
-    private func normalizedDisplayDamage(_ rect: Rect) -> Rect? {
-        guard rect.isFinite, !rect.isEmpty,
-              bounds.isFinite, !bounds.isEmpty
-        else {
-            return nil
-        }
-        let left = max(rect.origin.x, bounds.origin.x)
-        let top = max(rect.origin.y, bounds.origin.y)
-        let right = min(
-            rect.origin.x + rect.size.width,
-            bounds.origin.x + bounds.size.width)
-        let bottom = min(
-            rect.origin.y + rect.size.height,
-            bounds.origin.y + bounds.size.height)
-        guard right > left, bottom > top else { return nil }
-        let clipped = Rect(
-            x: left - bounds.origin.x,
-            y: top - bounds.origin.y,
-            width: right - left,
-            height: bottom - top)
-        if clipped.origin == .zero, clipped.size == bounds.size {
-            // A zero rect distinguishes complete damage from an invalid/no-op
-            // request while `displayNeedsUpdate` is true.
-            return .zero
-        }
-        return clipped
-    }
+    open func layout() {}
 
-    open func layout() {
-    }
-
-    /// Draw this view's content. The framework paints `style` underneath
-    /// first, so an override adds to the styled background rather than
-    /// replacing it.
-    ///
-    /// Nucleus records the complete drawing each time, then replays it under the
-    /// invalidated local clip while preserving unchanged backing pixels. This
-    /// keeps the immediate drawing contract deterministic and avoids requiring
-    /// subclasses to branch on a dirty rectangle.
     open func draw(in context: GraphicsContext) {
         _ = context
     }
 
-    /// Run layout over the dirty part of this subtree. Clean subtrees are
-    /// skipped outright: with a per-frame layout pass over a whole shell, walking
-    /// every view to discover that nothing changed is the dominant cost.
-    public func layoutIfNeeded() {
-        var work: [View] = [self]
-        while let view = work.popLast() {
-            guard view.layoutNeedsUpdate || view.subtreeLayoutNeedsUpdate else {
-                continue
-            }
-            if view.layoutNeedsUpdate {
-                view.layoutNeedsUpdate = false
-                view.intrinsicContentSizeNeedsUpdate = false
-                view.layout()
-            }
-            // Cleared before descending: `layout()` places children, which
-            // re-marks this flag through their frame setters, and those children
-            // are exactly the nodes queued below.
-            view.subtreeLayoutNeedsUpdate = false
-            for child in view.childViews.reversed() {
-                work.append(child)
-            }
-        }
-    }
-
-    public func displayIfNeeded() {
-        var work: [View] = [self]
-        while let view = work.popLast() {
-            guard view.displayNeedsUpdate || view.subtreeDisplayNeedsUpdate
-            else {
-                continue
-            }
-            if view.displayNeedsUpdate {
-                let requestedDamage = view.pendingDisplayDamage
-                view.displayNeedsUpdate = false
-                view.pendingDisplayDamage = nil
-                let context = GraphicsContext()
-                view.storedStyle.draw(in: context, bounds: view.bounds)
-                view.draw(in: context)
-                view.drawFocusRing(in: context)
-                let recording = context.recording
-                if recording != view.cachedRecording {
-                    view.cachedRecording = recording
-                    view.cachedPaintDamage =
-                        requestedDamage == .zero ? nil : requestedDamage
-                    view.recordMutation(.content)
-                }
-            }
-            view.subtreeDisplayNeedsUpdate = false
-            for child in view.childViews.reversed() {
-                work.append(child)
-            }
-        }
-    }
-
     open override var nextResponder: Responder? {
-        get { parentView ?? owningViewController ?? parentWindow ?? explicitNextResponder }
+        get {
+            parentView
+                ?? owningViewController
+                ?? parentWindow
+                ?? explicitNextResponder
+        }
         set { setExplicitNextResponder(newValue) }
     }
 
-    /// Hit-test `event.location` in this subtree and deliver the event to the
-    /// view found, then up its responder chain. The location is rebased into
-    /// each view's own coordinates on the way down.
-    ///
-    /// This is single-tree dispatch with no pointer capture. `WindowScene`
-    /// dispatch adds capture and enter/exit tracking, which need scene-wide
-    /// state; a view alone cannot know the pointer left it for a sibling.
-    /// Convert `point` from `view`'s coordinate system into this view's.
-    /// A `nil` view means window coordinates. Corresponds to `NSView.convert(_:from:)`.
-    ///
-    /// Both sides route through the window, and the terms for any shared
-    /// ancestor cancel, so this is also correct for two views in a tree that has
-    /// no window yet.
-    public func convert(_ point: Point, from view: View?) -> Point {
-        convertFromWindowSpace(view?.convertToWindowSpace(point) ?? point)
-    }
-
-    /// Convert `point` from this view's coordinate system into `view`'s.
-    /// A `nil` view means window coordinates.
-    public func convert(_ point: Point, to view: View?) -> Point {
-        view?.convert(point, from: self) ?? convertToWindowSpace(point)
-    }
-
-    /// Convert a rectangle, as the bounding box of its converted corners.
-    ///
-    /// All four corners, not the origin and the size: under a rotation or a
-    /// scale a rectangle does not map to a rectangle of the same size, and
-    /// passing the size through unchanged — which this used to do — cannot
-    /// express either.
-    public func convert(_ rect: Rect, from view: View?) -> Rect {
-        View.boundingBox(rect.corners.map { convert($0, from: view) })
-    }
-
-    public func convert(_ rect: Rect, to view: View?) -> Rect {
-        View.boundingBox(rect.corners.map { convert($0, to: view) })
-    }
-
-    static func boundingBox(_ points: [Point]) -> Rect {
-        guard let first = points.first else { return .zero }
-        var minX = first.x, maxX = first.x
-        var minY = first.y, maxY = first.y
-        for point in points.dropFirst() {
-            minX = min(minX, point.x); maxX = max(maxX, point.x)
-            minY = min(minY, point.y); maxY = max(maxY, point.y)
-        }
-        return Rect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
-    }
-
-    /// A point in this view's own coordinates, from its parent's.
-    ///
-    /// **The single definition of the step between a view and its parent.** It
-    /// used to be open-coded in four places — `hitTest`, both window-space
-    /// walks, and `dispatchEvent` — and they drifted: none of them applied
-    /// `transform`, so a scaled or rotated view drew transformed and hit-tested
-    /// untransformed.
-    ///
-    /// The transform is applied about the anchor point, matching the renderer,
-    /// which composes `translate(position) · pivot · transform · unpivot`. The
-    /// anchor is the layer default of (0.5, 0.5), so a view scales about its
-    /// own centre — the Core Animation convention, and the one the compositor
-    /// is already using to draw.
-    func convertFromParent(_ point: Point) -> Point {
-        let ownFrame = frame
-        var local = Point(x: point.x - ownFrame.origin.x, y: point.y - ownFrame.origin.y)
-
-        if let inverse = transformAboutAnchor()?.inverted() {
-            local = inverse.apply(local)
-        }
-        return Point(x: local.x + boundsOrigin.x, y: local.y + boundsOrigin.y)
-    }
-
-    /// A point in this view's parent's coordinates, from its own. The exact
-    /// inverse of `convertFromParent`.
-    func convertToParent(_ point: Point) -> Point {
-        var local = Point(x: point.x - boundsOrigin.x, y: point.y - boundsOrigin.y)
-        if let transform = transformAboutAnchor() {
-            local = transform.apply(local)
-        }
-        let ownFrame = frame
-        return Point(x: local.x + ownFrame.origin.x, y: local.y + ownFrame.origin.y)
-    }
-
-    /// This view's transform, expressed about its anchor point rather than its
-    /// origin. `nil` when there is nothing to apply, which is the common case
-    /// and skips the work entirely.
-    private func transformAboutAnchor() -> AffineTransform? {
-        let transform = storedTransform
-        guard transform != .identity else { return nil }
-
-        let affine = transform.affine2D
-        let size = frame.size
-        let anchorX = size.width * View.anchorPoint.x
-        let anchorY = size.height * View.anchorPoint.y
-        // `concatenating(other)` is "self after other", so this reads
-        // right-to-left: move the anchor to the origin, transform, move it back.
-        return AffineTransform.translation(x: anchorX, y: anchorY)
-            .concatenating(affine)
-            .concatenating(AffineTransform.translation(x: -anchorX, y: -anchorY))
-    }
-
-    /// The anchor every view transforms about. Fixed rather than per-view: the
-    /// layer model's default, and nothing has yet needed to vary it.
-    static let anchorPoint = Point(x: 0.5, y: 0.5)
-
-    /// Up the tree, one `convertToParent` per level.
-    private func convertToWindowSpace(_ point: Point) -> Point {
-        var result = point
-        var node: View? = self
-        while let current = node {
-            result = current.convertToParent(result)
-            node = current.parentView
-        }
-        return result
-    }
-
-    private func convertFromWindowSpace(_ point: Point) -> Point {
-        var chain: [View] = []
-        var node: View? = self
-        while let current = node {
-            chain.append(current)
-            node = current.parentView
-        }
-        var result = point
-        for current in chain.reversed() {
-            result = current.convertFromParent(result)
-        }
-        return result
-    }
-
-    /// Hit-test `event.location` and deliver to the view found, then up its
-    /// responder chain.
-    ///
-    /// `event.location` is in *this view's parent's* coordinates, matching
-    /// `hitTest`. The delivered event carries the location in the target's own
-    /// coordinates.
-    @discardableResult
-    public func dispatchEvent(_ event: Event) -> EventHandling {
-        guard let target = hitTest(event.location) else { return .notHandled }
-        // Into this view's own coordinates first, since the incoming location is
-        // in its parent's; `convert(_:from:)` then speaks view-to-view.
-        let localInSelf = convertFromParent(event.location)
-        let local = target.convert(localInSelf, from: self)
-        return target.deliverEvent(event.relocated(to: local))
-    }
-
     open func hitTest(_ point: Point) -> View? {
-        guard !isHidden else {
-            return nil
-        }
-
-        // A transform that collapses the plane has no preimage. The view is
-        // drawn as nothing, so nothing hits it — whereas falling back to the
-        // untransformed mapping would make an invisible view swallow input
-        // across its whole frame.
-        if let transform = transformAboutAnchor(), transform.inverted() == nil {
-            return nil
-        }
-
-        // Map into this view's own coordinates *first*, then test. Testing the
-        // frame in the parent's space would be testing an axis-aligned box that
-        // a rotated view does not occupy.
-        let localPoint = convertFromParent(point)
-        guard bounds.contains(localPoint) else {
-            return nil
-        }
-
-        for child in childViews.reversed() {
-            if let hit = child.hitTest(localPoint) {
-                return hit
-            }
-        }
-        return self
+        semanticHitTest(point)
     }
+
 }

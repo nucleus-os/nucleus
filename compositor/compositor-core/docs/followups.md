@@ -11,13 +11,15 @@ Ranked roughly by value.
 
 ### A1. Implement screencopy capture — DONE (shm + dmabuf)
 `RouterRenderDriver.captureImpl` captures the output's composited frame into the client buffer:
-- **SHM** — read back the accumulator (`RenderBridge.screencopyCapture` →
-  `RendererRuntime.captureOutputBGRA` → `RenderCore.captureOutputBGRA` via `Screenshot.readback`)
-  and copy the requested region into the client buffer.
+- **SHM** — begin an asynchronous accumulator readback
+  (`CompositorRenderService.beginCaptureOutput` →
+  `RendererRuntime.beginCaptureOutputBGRA` → `RenderCore.beginCaptureOutputBGRA`)
+  and copy the requested region into the client buffer after GPU completion.
 - **dmabuf** — blit the accumulator directly into the client dmabuf render target on the GPU
-  (`RenderBridge.screencopyCaptureDmabuf` → `RenderCore.captureOutputToDmabuf`: import the dmabuf
+  (`CompositorRenderService.beginCaptureOutput(to:)` →
+  `RenderCore.beginCaptureOutputToDmabuf`: import the dmabuf
   as a color-attachment image, `ScanoutSurface.wrap` it, `OutputAccumulator.present(onto:)`,
-  synchronous `context.submit`). No CPU round-trip.
+  asynchronous `context.submit`). No CPU round-trip or main-actor GPU wait.
 
 The `ScreencopyActivity` block forces composition so the accumulator is current. Region dma-buf
 captures use a source-rect blit, and `overlay_cursor` composites the hardware-cursor image into

@@ -3,7 +3,7 @@ import Glibc
 // The per-output frame scheduler. Owned by `Display` (one per
 // output); the compositor display registry (`DesktopLayout`) drives it. The
 // behavioral contract — frame-demand consumption, present-id issuance,
-// predicted-present / deadline math, and continuous-demand bits — is preserved
+// predicted-present timing, and continuous-demand bits — is preserved
 // exactly against the frame-pacing fixtures.
 //
 // The composition root publishes the scheduler's samples to Tracy because this
@@ -129,7 +129,7 @@ public struct DisplayLink: Sendable {
     public var submittedFrameOpen: Bool = false
     public var requested: Bool = false
     public var frameDue: Bool = false
-    public var operationDeadlineNs: UInt64? = nil
+    public var frameDeadlineNs: UInt64? = nil
     public var continuous: ContinuousDemand = .init()
 
     public init(refreshIntervalNs: UInt64, outputTag: String = "bootstrap") {
@@ -153,7 +153,7 @@ public struct DisplayLink: Sendable {
     public mutating func suspend() {
         requested = false
         frameDue = false
-        operationDeadlineNs = nil
+        frameDeadlineNs = nil
         cancelSubmittedFrame()
     }
 
@@ -174,28 +174,30 @@ public struct DisplayLink: Sendable {
         frameDue = true
     }
 
-    public mutating func requestOperationDeadline(_ deadlineNs: UInt64) {
-        if let current = operationDeadlineNs {
-            operationDeadlineNs = min(current, deadlineNs)
+    /// Schedule a one-shot frame for the earliest requested monotonic deadline.
+    public mutating func requestFrameDeadline(_ deadlineNs: UInt64) {
+        if let current = frameDeadlineNs {
+            frameDeadlineNs = min(current, deadlineNs)
         } else {
-            operationDeadlineNs = deadlineNs
+            frameDeadlineNs = deadlineNs
         }
     }
 
     /// Consume scheduler demand for a frame accepted by the present primitive.
-    /// Returns whether demand was present (transient, continuous, or
-    /// deadline-driven) and clears transient state.
+    /// Returns whether transient, continuous, or due scheduled demand was
+    /// present and clears transient state.
     public mutating func consumeFrameDemand() -> Bool {
         let nowNs = Int64(bitPattern: nsNow())
-        let operationDue = operationDeadlineDue(nowNs)
-        let had = frameDue || continuous.any() || operationDue
+        let scheduledFrameDue = frameDeadlineDue(nowNs)
+        let had = frameDue || continuous.any() || scheduledFrameDue
         frameDue = false
-        if operationDue { operationDeadlineNs = nil }
+        if scheduledFrameDue { frameDeadlineNs = nil }
         return had
     }
 
     public func hasFrameRequest() -> Bool {
-        frameDue || continuous.any() || operationDeadlineDue(Int64(bitPattern: nsNow()))
+        frameDue || continuous.any()
+            || frameDeadlineDue(Int64(bitPattern: nsNow()))
     }
 
     public mutating func nextPresentID() -> UInt64 {
@@ -259,7 +261,7 @@ public struct DisplayLink: Sendable {
 
     private func currentDeadlineNs() -> UInt64 {
         let vsyncDeadline = predictedPresentNs(0)
-        if let deadline = operationDeadlineNs {
+        if let deadline = frameDeadlineNs {
             return min(vsyncDeadline, deadline)
         }
         return vsyncDeadline
@@ -294,8 +296,9 @@ public struct DisplayLink: Sendable {
         )
     }
 
-    private func operationDeadlineDue(_ nowNs: Int64) -> Bool {
-        guard let deadline = operationDeadlineNs else { return false }
+    private func frameDeadlineDue(_ nowNs: Int64) -> Bool {
+        guard let deadline = frameDeadlineNs else { return false }
         return nowNs >= Int64(bitPattern: deadline)
     }
+
 }

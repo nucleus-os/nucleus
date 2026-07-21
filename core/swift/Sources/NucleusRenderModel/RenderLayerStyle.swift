@@ -1,13 +1,4 @@
-// Phase 8.1 — Swift render-layer visual-style + backdrop vocabulary.
-//
-// The first slice of the render-server retained-layer model ported to Swift: the
-// self-contained visual-style value types (`VisualStyle`, `BorderEdge`,
-// `LayerShadow`) and the macOS-shaped backdrop enums. These are pure data + the
-// shadow extent computation; the per-node
-// `ModelState`/`PresentationState`, the backdrop attachment, content, and the
-// tree itself follow in later 8.x slices. This is the dormant Swift authority
-// the render-server tree collapses into. Nothing
-// imports this yet.
+// Retained-layer visual-style and backdrop value types.
 
 // MARK: - Color
 

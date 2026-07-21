@@ -175,4 +175,54 @@ import Testing
         #expect(first.usedRect.size.width > 0)
         #expect(issues == [.missingBackend])
     }
+
+    @Test
+    func replacingOneContextsBackendDoesNotInvalidateAnotherContext() {
+        let firstSystem = TextSystem()
+        let secondSystem = TextSystem()
+        let firstBackend = RecordingBackend()
+        let secondBackend = RecordingBackend()
+        firstSystem.installBackend(firstBackend)
+        secondSystem.installBackend(secondBackend)
+
+        let firstLayout = TextLayout(
+            text: "first",
+            font: .systemFont(ofSize: 12),
+            textSystem: firstSystem)
+        let secondLayout = TextLayout(
+            text: "second",
+            font: .systemFont(ofSize: 12),
+            textSystem: secondSystem)
+
+        firstSystem.installBackend(RecordingBackend())
+
+        _ = firstLayout.glyphPosition(
+            at: Point(x: 4, y: 2),
+            in: firstSystem)
+        _ = secondLayout.glyphPosition(
+            at: Point(x: 4, y: 2),
+            in: secondSystem)
+
+        #expect(firstBackend.glyphQueryCount == 0)
+        #expect(secondBackend.glyphQueryCount == 1)
+    }
+
+    @Test
+    func aLayoutReleasesThroughItsCreatingBackendAfterReplacement() {
+        let system = TextSystem()
+        let creatingBackend = RecordingBackend()
+        system.installBackend(creatingBackend)
+
+        do {
+            let layout = TextLayout(
+                text: "owned",
+                font: .systemFont(ofSize: 12),
+                textSystem: system)
+            system.installBackend(RecordingBackend())
+            withExtendedLifetime(layout) {}
+            #expect(creatingBackend.releaseCount == 0)
+        }
+
+        #expect(creatingBackend.releaseCount == 1)
+    }
 }

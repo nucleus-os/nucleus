@@ -9,9 +9,12 @@ import Testing
         viewport: Size = Size(width: 100, height: 100),
         content: Size = Size(width: 100, height: 400)
     ) -> ScrollView {
-        Application.withContexts(
-            uiContext: UIContext(),
-            visualContext: Application.makeInMemoryVisualContext()
+        let visualContext = Application.makeInMemoryVisualContext()
+        return Application.withContexts(
+            uiContext: UIContext(
+                services: .inMemory(),
+                runtimeHost: visualContext.runtimeHost),
+            visualContext: visualContext
         ) {
             let scroll = ScrollView()
             scroll.frame = Rect(origin: .zero, size: viewport)
@@ -231,9 +234,8 @@ import Testing
     @Test func reducedMotionSuppressesKineticScrolling() {
         let scroll = makeScrollView()
         let oldEnvironment = scroll.uiContext.environment
-        var environment = oldEnvironment
-        environment.reducesMotion = true
-        scroll.uiContext.updateEnvironment(environment)
+        scroll.uiContext.updateEnvironment(
+            oldEnvironment.replacing(reducesMotion: true))
         defer { scroll.uiContext.updateEnvironment(oldEnvironment) }
 
         _ = scroll.handleEvent(Event(

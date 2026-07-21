@@ -53,7 +53,8 @@ swift package build-rn-cxx --allow-writing-to-package-directory
 swift package generate-rn-spec --allow-writing-to-package-directory
 
 # 5. Stage host-cxx archives for downstream linking
-swift package provision-cxx-libs --allow-writing-to-package-directory
+swift package provision-cxx-libs debug --allow-writing-to-package-directory
+swift package provision-cxx-libs release --allow-writing-to-package-directory
 ```
 
 ### Third-party dependencies

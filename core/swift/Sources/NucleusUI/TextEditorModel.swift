@@ -440,16 +440,53 @@ public struct TextEditorModel: Equatable, Sendable {
     /// Secure fields report nothing. A password must not reach an input method,
     /// which may log, learn from, or display it as a candidate.
     public func surroundingText(maximumBytes: Int = 4000) -> (text: String, cursor: Int, anchor: Int)? {
-        guard !isSecure else { return nil }
-        guard text.utf8.count <= maximumBytes else {
-            // Oversized content is reported as empty rather than truncated at an
-            // arbitrary point, which would desynchronize the IME's offsets.
-            return ("", 0, 0)
+        guard !isSecure, maximumBytes > 0 else { return nil }
+        let cursor = utf8Offset(forUTF16: selection.head)
+        let anchor = utf8Offset(forUTF16: selection.anchor)
+        let utf8 = text.utf8
+        guard utf8.count > maximumBytes else {
+            return (text, cursor, anchor)
         }
+
+        // The protocol requires the complete selection. If that alone cannot
+        // fit, report no context rather than lie about its boundaries.
+        let lower = min(cursor, anchor)
+        let upper = max(cursor, anchor)
+        guard upper - lower <= maximumBytes else { return nil }
+
+        let spare = maximumBytes - (upper - lower)
+        var startOffset = max(0, lower - spare / 2)
+        var endOffset = min(utf8.count, startOffset + maximumBytes)
+        if endOffset - startOffset < maximumBytes {
+            startOffset = max(0, endOffset - maximumBytes)
+        }
+        while startOffset < lower,
+              utf8Index(at: startOffset) == nil
+        {
+            startOffset += 1
+        }
+        while endOffset > upper,
+              utf8Index(at: endOffset) == nil
+        {
+            endOffset -= 1
+        }
+        guard let start = utf8Index(at: startOffset),
+              let end = utf8Index(at: endOffset)
+        else { return nil }
         return (
-            text,
-            utf8Offset(forUTF16: selection.head),
-            utf8Offset(forUTF16: selection.anchor))
+            String(text[start..<end]),
+            cursor - startOffset,
+            anchor - startOffset)
+    }
+
+    private func utf8Index(at offset: Int) -> String.Index? {
+        guard offset >= 0, offset <= text.utf8.count else {
+            return nil
+        }
+        let index = text.utf8.index(
+            text.utf8.startIndex,
+            offsetBy: offset)
+        return index.samePosition(in: text)
     }
 
     // MARK: - Undo

@@ -15,10 +15,12 @@ enum class MountEventType : int {
   Update = 5,
 };
 
-enum class LayoutDirection : int {
-  Undefined = 0,
-  LeftToRight = 1,
-  RightToLeft = 2,
+enum class MountComponentKind : int {
+  Other = 0,
+  Root = 1,
+  View = 2,
+  Text = 3,
+  Image = 4,
 };
 
 enum class TextAlignment : int {
@@ -71,11 +73,11 @@ struct MountMutation {
   std::int32_t oldTag;
   std::int32_t newTag;
   int index;
+  MountComponentKind componentKind;
   std::string componentName;
   std::optional<std::string> nativeId;
   Rect frame;
   std::optional<Color> backgroundColor;
-  LayoutDirection layoutDirection;
   std::optional<std::string> text;
   std::optional<TextAttributes> textAttributes;
   // Source URI for `<Image>` components. The Swift consumer

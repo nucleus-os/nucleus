@@ -164,6 +164,12 @@ let package = Package(
         .library(name: "NucleusUIEmbedder", targets: ["NucleusUIEmbedder"]),
         .library(name: "NucleusApp", targets: ["NucleusApp"]),
         .library(name: "NucleusSkiaGraphiteBridge", targets: ["NucleusSkiaGraphiteBridge"]),
+        .executable(
+            name: "NucleusHeadlessBenchmarks",
+            targets: ["NucleusHeadlessBenchmarks"]),
+        .executable(
+            name: "NucleusCoreThreadSanitizerHarness",
+            targets: ["NucleusCoreThreadSanitizerHarness"]),
     ],
     dependencies: [
         // The Vulkan bindings (VulkanGen generator + generated typed API + the raw-C
@@ -338,12 +344,21 @@ let package = Package(
             dependencies: ["NucleusRenderHost", "NucleusTypes", "NucleusLayers", "NucleusRenderModel"],
             path: "swift/Tests/NucleusRenderHostTests"
         ),
+        .testTarget(
+            name: "NucleusRuntimeGraphTests",
+            dependencies: [
+                "NucleusAppHostBundle", "NucleusRenderHost",
+                "NucleusRenderModel", "NucleusLayers", "NucleusUI",
+                "NucleusAppHostProtocols",
+            ],
+            path: "swift/Tests/NucleusRuntimeGraphTests"
+        ),
         // (NucleusCompositorRenderRuntime + the libdrm/gbm (NucleusCompositorDrmC), xcb (NucleusCompositorXcbC),
         // and libinput/seat (NucleusCompositorInputC) C façades moved to compositor-core/ with
         // the DRM/KMS renderer backend — migration Phase 2.)
 
-        // (The NucleusCompositorRuntimeEntry / NucleusCompositorLoop / NucleusCompositorReactor @c
-        // façades moved to the compositor app package with the composition root.)
+        // (Linux host waiting now lives in the shared platform-linux reactor;
+        // the compositor app package owns only its Swift composition root.)
         // ── NucleusRenderer: the platform-agnostic render core — Vulkan/Graphite
         // scanout, the presentation plan, the retained-tree store, client surface/
         // texture registration, and per-output frame recording behind the
@@ -392,6 +407,23 @@ let package = Package(
             dependencies: ["NucleusRenderModel"],
             path: "swift/Tests/NucleusRenderModelTests"
         ),
+        .target(
+            name: "NucleusRetainedSceneTestSupport",
+            dependencies: ["NucleusUI"],
+            path: "swift/Tests/Support/RetainedScene"
+        ),
+        .target(
+            name: "NucleusHostProjectionTestSupport",
+            path: "swift/Tests/Support/HostProjection"
+        ),
+        .target(
+            name: "NucleusRendererTestSupport",
+            path: "swift/Tests/Support/Renderer"
+        ),
+        .target(
+            name: "NucleusResourceTestSupport",
+            path: "swift/Tests/Support/Resources"
+        ),
         // (VulkanTests moved to the extracted swift-vulkan package.)
         // (NucleusCompositorWaylandCTests, NucleusCompositorServerTests, and NucleusCompositorWindowManagerTests
         // moved to compositor-core/ with the modules they cover — migration Phase 2.)
@@ -423,6 +455,10 @@ let package = Package(
                 "NucleusSkiaGraphiteBridge",
                 "NucleusRenderHost",
                 "NucleusRenderModel",
+                "NucleusRetainedSceneTestSupport",
+                "NucleusHostProjectionTestSupport",
+                "NucleusRendererTestSupport",
+                "NucleusResourceTestSupport",
             ],
             path: "swift/Tests/NucleusUITests",
             swiftSettings: [.interoperabilityMode(.Cxx)],
@@ -431,5 +467,44 @@ let package = Package(
             // resolver at this runner's final link.
             linkerSettings: [.unsafeFlags(skiaLinkFlags)]
         ),
+        .executableTarget(
+            name: "NucleusHeadlessBenchmarks",
+            dependencies: [
+                "NucleusTypes",
+                "NucleusLayers",
+                "NucleusUI",
+                "NucleusRenderModel",
+            ],
+            path: "swift/Benchmarks/NucleusHeadlessBenchmarks"
+        ),
+        .executableTarget(
+            name: "NucleusCoreThreadSanitizerHarness",
+            dependencies: [
+                "NucleusRenderModel",
+                "NucleusRenderer",
+            ],
+            path: "swift/SanitizerHarnesses/NucleusCoreThreadSanitizerHarness",
+            swiftSettings: [.interoperabilityMode(.Cxx)],
+            linkerSettings: [.unsafeFlags(skiaLinkFlags)]
+        ),
     ]
 )
+
+
+for target in package.targets {
+    switch target.type {
+    case .regular, .executable, .test:
+        break
+    default:
+        continue
+    }
+    target.swiftSettings = (target.swiftSettings ?? []) + [
+        .unsafeFlags(["-warnings-as-errors"]),
+    ]
+    target.cSettings = (target.cSettings ?? []) + [
+        .unsafeFlags(["-Werror"]),
+    ]
+    target.cxxSettings = (target.cxxSettings ?? []) + [
+        .unsafeFlags(["-Werror"]),
+    ]
+}

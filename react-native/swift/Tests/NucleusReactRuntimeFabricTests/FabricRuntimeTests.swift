@@ -15,26 +15,27 @@ import NucleusReactFabricSmokeC
         .deletingLastPathComponent().deletingLastPathComponent().path
 
     /// Compile a trivial JS bundle to Hermes bytecode with the built hermesc.
-    static func makeTinyBytecode() throws -> String {
+    static func makeTinyBytecode(
+        source: String = "var nucleusFabricProbe = 1 + 1;\n"
+    ) throws -> String {
         let tmp = "\(NSTemporaryDirectory())nucleus-rn-fabric-\(getpid())-\(UInt.random(in: 0..<(.max)))"
         try FileManager.default.createDirectory(atPath: tmp, withIntermediateDirectories: true)
         let js = "\(tmp)/tiny.js"
         let hbc = "\(tmp)/tiny.hbc"
-        try "var nucleusFabricProbe = 1 + 1;\n".write(toFile: js, atomically: true, encoding: .utf8)
+        try source.write(toFile: js, atomically: true, encoding: .utf8)
 
-        let hermesc = Process()
-        hermesc.executableURL = URL(fileURLWithPath: "\(repoRoot)/.rn-build/hermes/bin/hermesc")
-        hermesc.arguments = ["-emit-binary", "-out", hbc, js]
+        let hermesc = "\(repoRoot)/.rn-build/hermes/bin/hermesc"
         // hermesc links libc++ (clang default); put its dir on the loader path —
         // the same fix BuildHermes applies for the build-time hermesc invocation.
         var env = ProcessInfo.processInfo.environment
-        if let dir = libcxxDir() {
+        if let dir = try libcxxDir() {
             env["LD_LIBRARY_PATH"] = [dir, env["LD_LIBRARY_PATH"]].compactMap { $0 }.joined(separator: ":")
         }
-        hermesc.environment = env
-        try hermesc.run()
-        hermesc.waitUntilExit()
-        guard hermesc.terminationStatus == 0 else {
+        let result = try SpawnedCommand.run(
+            executable: hermesc,
+            arguments: ["-emit-binary", "-out", hbc, js],
+            environment: env)
+        guard result.status == 0 else {
             throw NSError(domain: "FabricRuntimeTests", code: 1,
                           userInfo: [NSLocalizedDescriptionKey: "hermesc failed to emit bytecode"])
         }
@@ -64,18 +65,43 @@ import NucleusReactFabricSmokeC
         #expect(rc == 2, "runtime failure should return through Swift instead of aborting")
     }
 
+    @Test func crossThreadJSTimerWorkWakesOncePerPendingBurst() throws {
+        let hbc = try Self.makeTinyBytecode(source:
+            """
+            setTimeout(function () {}, 1);
+            setTimeout(function () {}, 1);
+            """)
+        let result = hbc.withCString {
+            nucleus_rn_js_work_wake_smoke($0)
+        }
+        #expect(result == 0)
+    }
+
+    @Test func mountTransactionsShareOneOrderedDrainPerBurst() {
+        #expect(nucleus_rn_mount_batching_smoke() == 0)
+    }
+
+    @Test func mountRetirementRejectsPriorGenerationsAndReclaimsState() {
+        #expect(nucleus_rn_mount_lifecycle_smoke() == 0)
+    }
+
+    @Test func mountEventsRetainOnlyMutationSpecificPayloads() {
+        #expect(nucleus_rn_mount_event_payload_smoke() == 0)
+    }
 
     /// `dirname $(clang++ -print-file-name=libc++.so.1)` — the toolchain libc++.
-    static func libcxxDir() -> String? {
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        p.arguments = ["clang++", "-print-file-name=libc++.so.1"]
-        let pipe = Pipe()
-        p.standardOutput = pipe
-        guard (try? p.run()) != nil else { return nil }
-        p.waitUntilExit()
-        let out = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        return out.isEmpty ? nil : (out as NSString).deletingLastPathComponent
+    static func libcxxDir() throws -> String? {
+        let result = try SpawnedCommand.run(
+            executable: "/usr/bin/env",
+            arguments: [
+                "clang++",
+                "-print-file-name=libc++.so.1",
+            ],
+            environment: ProcessInfo.processInfo.environment,
+            captureOutput: true)
+        guard result.status == 0 else { return nil }
+        return result.output.isEmpty
+            ? nil
+            : (result.output as NSString).deletingLastPathComponent
     }
 }

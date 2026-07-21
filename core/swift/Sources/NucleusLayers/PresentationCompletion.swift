@@ -17,21 +17,26 @@ public struct PresentationCompletionToken: RawRepresentable, Hashable, Sendable,
     }
 }
 
-/// Main-actor completion rendezvous shared by layer producers and the installed
-/// render commit sink.
+/// One runtime graph's main-actor completion rendezvous, shared by its layer
+/// producers and render commit sink.
 ///
 /// Registration retains the callback until exactly one terminal result arrives.
-/// Tokens are process-unique and never reused.
+/// Tokens are unique within this registry and never reused. Raw tokens cross
+/// only the matching runtime's producer/store boundary.
 @MainActor
-public enum PresentationCompletionCenter {
-    private static var nextToken: UInt64 = 1
-    private static var callbacks: [
+public final class PresentationCompletionRegistry: ~Sendable {
+    private var nextToken: UInt64 = 1
+    private var callbacks: [
         PresentationCompletionToken: @MainActor (PresentationCompletionResult) -> Void
     ] = [:]
+    private var isLive = true
 
-    public static func register(
+    public init() {}
+
+    public func register(
         _ callback: @escaping @MainActor (PresentationCompletionResult) -> Void
     ) -> PresentationCompletionToken {
+        precondition(isLive, "cannot register completion after runtime teardown")
         let token = PresentationCompletionToken(rawValue: nextToken)
         nextToken &+= 1
         precondition(nextToken != 0, "presentation completion token space exhausted")
@@ -39,7 +44,7 @@ public enum PresentationCompletionCenter {
         return token
     }
 
-    public static func resolve(
+    public func resolve(
         _ token: PresentationCompletionToken,
         result: PresentationCompletionResult
     ) {
@@ -47,7 +52,7 @@ public enum PresentationCompletionCenter {
         callback(result)
     }
 
-    public static func resolve(
+    public func resolve(
         rawToken: UInt64,
         result: PresentationCompletionResult
     ) {
@@ -55,11 +60,25 @@ public enum PresentationCompletionCenter {
         resolve(PresentationCompletionToken(rawValue: rawToken), result: result)
     }
 
-    public static func discard(_ token: PresentationCompletionToken) {
+    public func discard(_ token: PresentationCompletionToken) {
         callbacks[token] = nil
     }
 
-    package static var pendingCount: Int {
+    /// Tear down the rendezvous without retaining producer callback state.
+    /// Any later native/store acknowledgement is rejected as an unknown token.
+    public func invalidate(
+        result: PresentationCompletionResult = .cancelled
+    ) {
+        guard isLive else { return }
+        isLive = false
+        let pending = callbacks.values
+        callbacks.removeAll(keepingCapacity: false)
+        for callback in pending {
+            callback(result)
+        }
+    }
+
+    package var pendingCount: Int {
         callbacks.count
     }
 }

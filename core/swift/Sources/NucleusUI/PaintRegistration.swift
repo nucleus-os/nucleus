@@ -51,7 +51,8 @@ package enum PaintRegistration {
         _ recording: PaintRecording,
         width: Float,
         height: Float,
-        in context: Context
+        in context: Context,
+        textSystem: TextSystem
     ) throws(LayerError) -> RegisteredPaint {
         guard !recording.isEmpty else {
             return RegisteredPaint(
@@ -73,7 +74,7 @@ package enum PaintRegistration {
                 continue
             }
             let layout = recording.textLayouts[index - 1]
-            guard let lease = TextSystem.shared.makeLayoutLease(for: layout) else {
+            guard let lease = textSystem.makeLayoutLease(for: layout) else {
                 commands[i].textLayoutHandle = 0
                 continue
             }

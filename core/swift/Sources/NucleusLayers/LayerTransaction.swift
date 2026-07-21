@@ -9,7 +9,6 @@ public struct EncodedTransaction: Sendable {
     public var predictedPresentationNanoseconds: UInt64
     public var targetPresentationNanoseconds: UInt64
     public var completionToken: UInt64
-    public var fences: [FenceRecord]
     public var created: [(LayerID, LayerDescriptor)]
     public var inserted: [(layer: LayerID, parent: LayerID?, index: UInt32)]
     public var removed: [LayerID]
@@ -17,12 +16,12 @@ public struct EncodedTransaction: Sendable {
     public var propertyUpdates: [(layer: LayerID, properties: LayerPropertyUpdate)]
     public var animationsAdded: [(layer: LayerID, animation: Animation)]
     public var animationsRemoved: [(layer: LayerID, keyPath: AnimationKeyPath)]
-    public var transitions: [TransitionRecord]
 }
 
 @MainActor
 public protocol CommitSink: AnyObject {
     var resourceHostHandle: UInt64 { get }
+    var runtimeHost: LayerRuntimeHost { get }
 
     func commit(_ transaction: EncodedTransaction) throws(LayerError)
 }
@@ -31,8 +30,10 @@ public protocol CommitSink: AnyObject {
 public final class InMemoryCommitSink: CommitSink, ~Sendable {
     public private(set) var transactions: [EncodedTransaction] = []
     public let resourceHostHandle: UInt64 = 0
+    public let runtimeHost: LayerRuntimeHost
 
-    public init() {
+    public init(runtimeHost: LayerRuntimeHost = .inMemory()) {
+        self.runtimeHost = runtimeHost
     }
 
     public func commit(_ transaction: EncodedTransaction) throws(LayerError) {
@@ -63,8 +64,6 @@ public struct LayerTransaction: ~Copyable, ~Sendable {
     public var predictedPresentationNanoseconds: UInt64
     public var targetPresentationNanoseconds: UInt64
     public var completionToken: UInt64
-    public var fences: [FenceRecord]
-    public var transitions: [TransitionRecord]
     package var mutations: [LayerMutation]
     private var completed: Bool
 
@@ -75,9 +74,7 @@ public struct LayerTransaction: ~Copyable, ~Sendable {
         groupSequence: UInt32 = 0,
         predictedPresentationNanoseconds: UInt64 = 0,
         targetPresentationNanoseconds: UInt64 = 0,
-        completionToken: UInt64 = 0,
-        fences: [FenceRecord] = [],
-        transitions: [TransitionRecord] = []
+        completionToken: UInt64 = 0
     ) {
         self.context = context
         self.transactionID = transactionID == 0
@@ -93,8 +90,6 @@ public struct LayerTransaction: ~Copyable, ~Sendable {
         self.predictedPresentationNanoseconds = predictedPresentationNanoseconds
         self.targetPresentationNanoseconds = targetPresentationNanoseconds
         self.completionToken = completionToken
-        self.fences = fences
-        self.transitions = transitions
         self.mutations = []
         self.completed = false
     }
@@ -102,88 +97,6 @@ public struct LayerTransaction: ~Copyable, ~Sendable {
     deinit {
         // Pending journals own no committed renderer state. Destroying this
         // single-consumption value drops the journal and is the abort path.
-    }
-
-    /// Adds a per-field hold on `layer.field`. Subsequent property writes
-    /// to that field on that layer are deferred at the consumer until the
-    /// producer signals the matching `generation` token. Pillar F: typed
-    /// per-field gating instead of a transaction-wide bitmask.
-    public mutating func addFenceHold(
-        field: FenceField, layer: Layer, generation: UInt64
-    ) throws(LayerError) {
-        try requireSameContext(layer)
-        fences.append(FenceRecord(
-            kind: .fieldHold,
-            scopeField: field,
-            scopeNodeId: layer.id.rawValue,
-            generation: generation
-        ))
-    }
-
-    /// Adds a content-generation hold. Presentation defers reading new
-    /// content for `layer` until a content commit with `generation`
-    /// arrives — the to-content-readiness gate that keeps a slow client's
-    /// late commit from popping in instead of crossfading.
-    public mutating func addContentGenerationHold(
-        layer: Layer, generation: UInt64
-    ) throws(LayerError) {
-        try requireSameContext(layer)
-        fences.append(FenceRecord(
-            kind: .contentGenerationHold,
-            scopeField: .content,
-            scopeNodeId: layer.id.rawValue,
-            generation: generation
-        ))
-    }
-
-    /// Adds an action hold on the targeted scope. Default-action expansion
-    /// for `field` on `layer` is suppressed until release — used when a
-    /// producer authors a value but wants to suppress the implicit
-    /// animation that would otherwise expand for that update.
-    public mutating func addActionHold(
-        field: FenceField, layer: Layer, generation: UInt64
-    ) throws(LayerError) {
-        try requireSameContext(layer)
-        fences.append(FenceRecord(
-            kind: .actionHold,
-            scopeField: field,
-            scopeNodeId: layer.id.rawValue,
-            generation: generation
-        ))
-    }
-
-    @discardableResult
-    public mutating func beginTransition(
-        layer: Layer,
-        kind: TransitionKind = .crossfade,
-        operationID: UInt64 = 0,
-        generation: UInt64? = nil,
-        duration: Double,
-        curve: AnimationCurve = .bezier(.default)
-    ) throws(LayerError) -> UInt64 {
-        try requireSameContext(layer)
-        let generation = generation ?? context.nextContentGeneration()
-        transitions.append(TransitionRecord(
-            kind: kind,
-            layerId: layer.id.rawValue,
-            operationId: operationID,
-            generation: generation,
-            duration: duration,
-            curve: curve
-        ))
-        return generation
-    }
-
-    public mutating func clearTransition(layer: Layer) throws(LayerError) {
-        try requireSameContext(layer)
-        transitions.append(TransitionRecord(
-            kind: .clear,
-            layerId: layer.id.rawValue,
-            operationId: 0,
-            generation: 0,
-            duration: 0,
-            curve: .linear
-        ))
     }
 
     public mutating func createLayer(_ descriptor: LayerDescriptor = LayerDescriptor()) -> Layer {
@@ -257,9 +170,6 @@ public struct LayerTransaction: ~Copyable, ~Sendable {
     public mutating func setContent(_ content: LayerContent, for layer: Layer) throws(LayerError) {
         try requireSameContext(layer)
         let update = LayerPropertyUpdate(content: content)
-        if content.generation != 0 {
-            try addContentGenerationHold(layer: layer, generation: content.generation)
-        }
         try setProperties(update, for: layer)
     }
 
@@ -351,15 +261,13 @@ public struct LayerTransaction: ~Copyable, ~Sendable {
             predictedPresentationNanoseconds: predictedPresentationNanoseconds,
             targetPresentationNanoseconds: targetPresentationNanoseconds,
             completionToken: completionToken,
-            fences: fences,
             created: created,
             inserted: inserted,
             removed: removed,
             detached: detached,
             propertyUpdates: properties,
             animationsAdded: animationsAdded,
-            animationsRemoved: animationsRemoved,
-            transitions: transitions
+            animationsRemoved: animationsRemoved
         )
     }
 

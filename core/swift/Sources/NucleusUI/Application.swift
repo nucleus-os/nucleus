@@ -1,9 +1,6 @@
 import NucleusLayers
 
 public enum Application {
-    @MainActor
-    private static var nextInMemoryContextID: UInt32 = 0xf000_0000
-
     private struct Scope: @unchecked Sendable {
         var uiContext: UIContext
     }
@@ -27,16 +24,12 @@ public enum Application {
     }
 
     @MainActor
-    package static func makeInMemoryVisualContext() -> Context {
-        let id = nextInMemoryContextID
-        nextInMemoryContextID &+= 1
-        precondition(
-            nextInMemoryContextID != 0,
-            "in-memory visual context identity exhausted")
+    package static func makeInMemoryVisualContext(
+        runtimeHost: LayerRuntimeHost = .inMemory()
+    ) -> Context {
         do {
             return try Context(
-                id: ContextID(rawValue: id),
-                commitSink: InMemoryCommitSink())
+                commitSink: InMemoryCommitSink(runtimeHost: runtimeHost))
         } catch {
             preconditionFailure(
                 "in-memory visual context must be constructible: \(error)")
@@ -48,7 +41,10 @@ public enum Application {
         _ context: Context,
         _ body: () throws -> T
     ) rethrows -> T {
-        let uiContext = UIContext(resourceHostHandle: context.commitSink.resourceHostHandle)
+        let uiContext = UIContext(
+            services: .inMemory(),
+            resourceHostHandle: context.commitSink.resourceHostHandle,
+            runtimeHost: context.runtimeHost)
         return try withContexts(
             uiContext: uiContext,
             visualContext: context,
@@ -67,6 +63,9 @@ public enum Application {
                 || uiContext.resourceHostHandle
                     == visualContext.commitSink.resourceHostHandle,
             "UIContext and visual Context belong to different resource hosts")
+        precondition(
+            uiContext.runtimeHost === visualContext.runtimeHost,
+            "UIContext and visual Context belong to different runtime hosts")
         return try $constructionScope.withValue(
             Scope(uiContext: uiContext),
             operation: body

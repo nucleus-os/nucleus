@@ -223,9 +223,7 @@ public func renderRectsNearlyEqual(_ a: PresentationRect, _ b: PresentationRect)
     abs(a.x - b.x) < 0.01 && abs(a.y - b.y) < 0.01 && abs(a.w - b.w) < 0.01 && abs(a.h - b.h) < 0.01
 }
 
-/// Compositor-owned presentation animation timing — the tiling spring constants.
-/// Lifecycle open/close fade durations stay with the render-coupled closing-fade
-/// slice (deferred to the swap), not here.
+/// Compositor-owned presentation timing for the tiling spring and closing fade.
 public enum PresentationTiming {
     /// Angular frequency (rad/s) of the critically-damped tiling spring. Higher =
     /// snappier; ~26 settles a typical move in roughly a quarter second.
@@ -240,6 +238,8 @@ public enum PresentationTiming {
     /// After motion is done, how long (seconds) to wait for an unresponsive client's
     /// final buffer before settling on whatever size it last committed.
     public static let tileSettleGraceSeconds: Double = 0.5
+    /// Presentation-clock duration of the compositor-owned closing fade.
+    public static let closingFadeSeconds: Double = 0.18
 }
 
 /// Closed-form critically-damped spring: position and velocity at `t` seconds since
@@ -311,6 +311,81 @@ public struct TileAnimation: Sendable, Equatable {
     }
 }
 
+public struct WindowTileCrossfade: Sendable, Equatable {
+    public let generation: UInt64
+    public let snapshotHandle: UInt64
+
+    public init(generation: UInt64, snapshotHandle: UInt64) {
+        self.generation = generation
+        self.snapshotHandle = snapshotHandle
+    }
+}
+
+public struct WindowClosingFade: Sendable, Equatable {
+    public let generation: UInt64
+    public let snapshotHandle: UInt64
+    public let frozenRect: PresentationRect
+    public var startTimeSeconds: Double?
+    public var opacity: Double
+    public var destroyWindowOnCompletion: Bool
+
+    public init(
+        generation: UInt64,
+        snapshotHandle: UInt64,
+        frozenRect: PresentationRect,
+        startTimeSeconds: Double? = nil,
+        opacity: Double = 1,
+        destroyWindowOnCompletion: Bool = false
+    ) {
+        self.generation = generation
+        self.snapshotHandle = snapshotHandle
+        self.frozenRect = frozenRect
+        self.startTimeSeconds = startTimeSeconds
+        self.opacity = opacity
+        self.destroyWindowOnCompletion = destroyWindowOnCompletion
+    }
+}
+
+public enum WindowPresentationTransition: Sendable, Equatable {
+    case tile(WindowTileCrossfade)
+    case closing(WindowClosingFade)
+
+    public var generation: UInt64 {
+        switch self {
+        case .tile(let state): state.generation
+        case .closing(let state): state.generation
+        }
+    }
+
+    public var snapshotHandle: UInt64 {
+        switch self {
+        case .tile(let state): state.snapshotHandle
+        case .closing(let state): state.snapshotHandle
+        }
+    }
+}
+
+/// The resource obligation returned exactly once when a presentation transition
+/// is replaced, cancelled, or completed.
+public struct WindowTransitionRetirement: Sendable, Equatable {
+    public let generation: UInt64
+    public let snapshotHandle: UInt64
+    public let wasClosing: Bool
+    public let destroyWindow: Bool
+
+    public init(
+        generation: UInt64,
+        snapshotHandle: UInt64,
+        wasClosing: Bool,
+        destroyWindow: Bool
+    ) {
+        self.generation = generation
+        self.snapshotHandle = snapshotHandle
+        self.wasClosing = wasClosing
+        self.destroyWindow = destroyWindow
+    }
+}
+
 /// The compositor-owned presentation state for one window: the PRESENTED frame
 /// (what is actually drawn, eased by the tiling spring independent of the client's
 /// commit cadence) plus the active tile animation. Authoritative for render, damage,
@@ -326,6 +401,11 @@ public struct WindowPresentationActor: Sendable {
     public var latestLatchedSlotGeneration: UInt64 = 0
     /// Current presentation target slot; may lead the latched slot.
     public var currentSlotGeneration: UInt64 = 0
+    /// The single snapshot-backed transition. Tile crossfade and closing fade are
+    /// mutually exclusive, so supersession has one generation and one retirement
+    /// obligation.
+    public private(set) var transition: WindowPresentationTransition?
+    private var nextTransitionGeneration: UInt64 = 1
 
     public init() {}
 
@@ -396,17 +476,128 @@ public struct WindowPresentationActor: Sendable {
     public func targetMatches(_ rect: PresentationRect) -> Bool {
         renderRectsNearlyEqual(targetRect(), rect)
     }
+
+    @discardableResult
+    public mutating func installTileCrossfade(
+        snapshotHandle: UInt64
+    ) -> (generation: UInt64, replaced: WindowTransitionRetirement?) {
+        let replaced = takeTransition()
+        let generation = allocateTransitionGeneration()
+        transition = .tile(WindowTileCrossfade(
+            generation: generation,
+            snapshotHandle: snapshotHandle))
+        mapState = .mapped
+        return (generation, replaced)
+    }
+
+    @discardableResult
+    public mutating func installClosingFade(
+        snapshotHandle: UInt64,
+        frozenRect: PresentationRect,
+        destroyWindowOnCompletion: Bool
+    ) -> (generation: UInt64, replaced: WindowTransitionRetirement?) {
+        let replaced = takeTransition()
+        let generation = allocateTransitionGeneration()
+        transition = .closing(WindowClosingFade(
+            generation: generation,
+            snapshotHandle: snapshotHandle,
+            frozenRect: frozenRect,
+            destroyWindowOnCompletion: destroyWindowOnCompletion))
+        presentedRect = frozenRect
+        initialized = true
+        tileAnimation = nil
+        mapState = .closing
+        return (generation, replaced)
+    }
+
+    /// Preserve an already-captured close while upgrading an unmap into permanent
+    /// window destruction. No new generation or capture is needed.
+    public mutating func requireWindowDestructionAfterClosing() {
+        guard case .closing(var state) = transition else { return }
+        state.destroyWindowOnCompletion = true
+        transition = .closing(state)
+    }
+
+    /// Sample closing opacity from the presentation clock. Returns true while a
+    /// future sample can change the value.
+    public mutating func advanceClosingFade(
+        presentTimeSeconds: Double
+    ) -> Bool {
+        guard case .closing(var state) = transition else { return false }
+        if state.startTimeSeconds == nil {
+            state.startTimeSeconds = presentTimeSeconds
+        }
+        let elapsed = max(0, presentTimeSeconds - (state.startTimeSeconds ?? presentTimeSeconds))
+        let progress = min(1, elapsed / PresentationTiming.closingFadeSeconds)
+        // Smoothstep keeps both ends stationary without introducing a second
+        // animation system.
+        let eased = progress * progress * (3 - 2 * progress)
+        state.opacity = 1 - eased
+        transition = .closing(state)
+        return state.opacity > 0
+    }
+
+    public func transitionGeneration() -> UInt64? {
+        transition?.generation
+    }
+
+    public func closingOpacity() -> Double {
+        guard case .closing(let state) = transition else { return 1 }
+        return state.opacity
+    }
+
+    public func hasClosingFade() -> Bool {
+        if case .closing = transition { return true }
+        return false
+    }
+
+    /// Take only the expected generation. A late completion from a superseded
+    /// transition therefore cannot retire the replacement's resource.
+    public mutating func takeTransition(
+        generation expectedGeneration: UInt64? = nil
+    ) -> WindowTransitionRetirement? {
+        guard let transition else { return nil }
+        if let expectedGeneration, transition.generation != expectedGeneration {
+            return nil
+        }
+        self.transition = nil
+        switch transition {
+        case .tile(let state):
+            return WindowTransitionRetirement(
+                generation: state.generation,
+                snapshotHandle: state.snapshotHandle,
+                wasClosing: false,
+                destroyWindow: false)
+        case .closing(let state):
+            mapState = .unmapped
+            return WindowTransitionRetirement(
+                generation: state.generation,
+                snapshotHandle: state.snapshotHandle,
+                wasClosing: true,
+                destroyWindow: state.destroyWindowOnCompletion)
+        }
+    }
+
+    private mutating func allocateTransitionGeneration() -> UInt64 {
+        let generation = nextTransitionGeneration
+        nextTransitionGeneration &+= 1
+        if nextTransitionGeneration == 0 {
+            nextTransitionGeneration = 1
+        }
+        return generation
+    }
 }
 
 @MainActor
 public final class Window {
     public let id: WindowID
     public var source: WindowSource
-    /// The wire object id of the window's backing `wl_surface` on the live Wayland
-    /// router (0 when unlinked). The single home for surface→window identity: the
-    /// router driver sets it when the role is created, and focus/scene/activation
-    /// resolve a `Window` back to its surface through it. Xwayland windows carry
-    /// the surface id of their paired Wayland surface once associated.
+    /// The compositor-stable identity of the window's backing `wl_surface` on the
+    /// live Wayland router (0 when unlinked). Wire object ids are client-scoped;
+    /// `WlCompositor` resolves collisions before this value reaches the model. This
+    /// is the single home for surface→window identity: the router driver sets it
+    /// when the role is created, and focus/scene/activation resolve a `Window` back
+    /// to its surface through it.
     public var surfaceObjectId: UInt32 = 0 {
         didSet {
             if surfaceObjectId != oldValue { onSurfaceObjectIdChange?(self, oldValue) }
@@ -427,8 +618,17 @@ public final class Window {
     /// these, not the per-source role objects.
     public var title: String = "" { didSet { if title != oldValue { changeRecorder?(.windowChanged(id)) } } }
     public var appId: String = "" { didSet { if appId != oldValue { changeRecorder?(.windowChanged(id)) } } }
-    public var mapped: Bool = false { didSet { if mapped != oldValue { changeRecorder?(.windowChanged(id)) } } }
-    public var closingAnimationActive: Bool = false
+    public var mapped: Bool = false {
+        didSet {
+            guard mapped != oldValue else { return }
+            if mapped {
+                presentationActor.mapState = .mapped
+            } else if !presentationActor.hasClosingFade() {
+                presentationActor.mapState = .unmapped
+            }
+            changeRecorder?(.windowChanged(id))
+        }
+    }
     public var protocolState: WindowProtocolState = .init()
     public var policyState: WindowPolicyState = .init()
     /// Geometry the compositor has requested but the client may not have committed.
@@ -594,6 +794,69 @@ public final class Window {
 
     public func hasActiveTileAnimation() -> Bool { presentationActor.hasActiveTileAnimation() }
 
+    public func hasActiveClosingFade() -> Bool {
+        presentationActor.hasClosingFade()
+    }
+
+    public func activeTransitionGeneration() -> UInt64? {
+        presentationActor.transitionGeneration()
+    }
+
+    @discardableResult
+    public func installTileCrossfade(
+        snapshotHandle: UInt64
+    ) -> (generation: UInt64, replaced: WindowTransitionRetirement?) {
+        presentationActor.installTileCrossfade(snapshotHandle: snapshotHandle)
+    }
+
+    @discardableResult
+    public func installClosingFade(
+        snapshotHandle: UInt64,
+        destroyWindowOnCompletion: Bool
+    ) -> (generation: UInt64, replaced: WindowTransitionRetirement?) {
+        presentationActor.installClosingFade(
+            snapshotHandle: snapshotHandle,
+            frozenRect: currentAnimatedRect(),
+            destroyWindowOnCompletion: destroyWindowOnCompletion)
+    }
+
+    public func requireWindowDestructionAfterClosing() {
+        presentationActor.requireWindowDestructionAfterClosing()
+    }
+
+    @discardableResult
+    public func advanceClosingFade(presentTimeSeconds: Double) -> Bool {
+        presentationActor.advanceClosingFade(
+            presentTimeSeconds: presentTimeSeconds)
+    }
+
+    public func windowPresentationOpacity() -> Double {
+        presentationActor.closingOpacity()
+    }
+
+    /// Opacity of the transient snapshot overlay. A close fades the entire root,
+    /// so its frozen overlay stays opaque within that root; a tile dissolves only
+    /// the snapshot over live client content.
+    public func transitionOverlayOpacity() -> Double {
+        switch presentationActor.transition {
+        case .tile:
+            return presentationActor.tileAnimation == nil
+                ? 0
+                : tileCrossfadeOpacity()
+        case .closing:
+            return 1
+        case nil:
+            return 1
+        }
+    }
+
+    @discardableResult
+    public func takePresentationTransition(
+        generation: UInt64? = nil
+    ) -> WindowTransitionRetirement? {
+        presentationActor.takeTransition(generation: generation)
+    }
+
     /// Advance the tiling animation once for the frame predicted to present at
     /// `presentTimeSeconds`: ease the presented rect toward the final tile, settling
     /// once the client's buffer lands (transform on identity) or after the grace
@@ -657,7 +920,7 @@ public final class Window {
     /// Eligible to appear in the rendered scene: mapped (or animating closed) and
     /// not hidden by minimize or an inactive space.
     public func visibleInScene() -> Bool {
-        (mapped || closingAnimationActive) && !minimized && !spaceHidden
+        (mapped || presentationActor.hasClosingFade()) && !minimized && !spaceHidden
     }
     /// Eligible to receive pointer/keyboard input: mapped, not minimized, not
     /// space-hidden.

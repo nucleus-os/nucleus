@@ -6,7 +6,6 @@
 // fields directly; the layer commit path picks them up via the applier flow.
 // Foreground-vibrancy `inherit` propagation is structural and lives on the
 // layer, not here.
-// Nothing imports this yet.
 
 /// macOS-shaped visual-effect helper namespace. Mirrors `VisualEffect`.
 public enum VisualEffect: Sendable {

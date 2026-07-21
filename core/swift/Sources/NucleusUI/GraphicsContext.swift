@@ -86,6 +86,7 @@ public struct PaintRecording: Sendable, Equatable {
 @MainActor
 public final class GraphicsContext {
     private var storedRecording = PaintRecording()
+    private let textSystem: TextSystem
 
     /// The recorded drawing, with any unbalanced `saveGState` closed off.
     ///
@@ -120,7 +121,9 @@ public final class GraphicsContext {
     /// Host-facing: product code receives a context in `View.draw(in:)` rather
     /// than constructing one. Publication paths that record outside the normal
     /// display pass construct their own.
-    package init() {}
+    package init(textSystem: TextSystem) {
+        self.textSystem = textSystem
+    }
 
     // MARK: - Graphics state
 
@@ -279,7 +282,7 @@ public final class GraphicsContext {
     /// operation, not publication plumbing.
     public func draw(_ layout: TextLayout, in rect: Rect) {
         guard !layout.isEmpty, rect.isFinite, !rect.isEmpty else { return }
-        guard layout.hasBackendResource else {
+        guard layout.hasBackendResource(in: textSystem) else {
             // A host/backend failure is recoverable, but invisible text is not
             // diagnosable. Render an unmistakable missing-text box while
             // TextSystem reports the underlying issue through its diagnostic

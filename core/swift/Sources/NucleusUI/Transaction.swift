@@ -172,6 +172,26 @@ public enum Transaction {
             throw .unknown(code: 1, detail: String(describing: error))
         }
     }
+
+    /// Nonthrowing package path for retained mechanisms whose update closure
+    /// cannot fail. Keeping this separate avoids converting an impossible
+    /// error into a force-try at every lifecycle-bound caller.
+    package static func runNonThrowing(
+        in uiContext: UIContext,
+        configuration: TransactionConfiguration,
+        requestsPresentationCompletion: Bool,
+        _ body: () -> Void
+    ) -> TransactionCompletionHandle? {
+        let scope = SemanticTransactionScope(
+            uiContext: uiContext,
+            configuration: configuration)
+        body()
+        scope.finish()
+        guard requestsPresentationCompletion else { return nil }
+        let handle = TransactionCompletionHandle(completion: nil)
+        uiContext.enqueueTransactionCompletion(handle)
+        return handle
+    }
 }
 
 extension ViewProperties {

@@ -5,6 +5,74 @@ import NucleusUI
 /// entry, and the input-method client contract.
 @MainActor
 @Suite(.uiContext) struct TextFieldTests {
+    private final class ControlledPasteboardAdapter: PasteboardAdapter {
+        private var reads:
+            [CheckedContinuation<Result<String?, PasteboardFailure>, Never>] = []
+        private var writes:
+            [CheckedContinuation<Result<Void, PasteboardFailure>, Never>] = []
+        var delaysWrites = false
+        var immediateWriteFailure: PasteboardFailure?
+        private(set) var isShutdown = false
+
+        var pendingReadCount: Int { reads.count }
+        var pendingWriteCount: Int { writes.count }
+
+        func readString() async throws(PasteboardFailure) -> String? {
+            guard !isShutdown else { throw .unavailable }
+            let result = await withCheckedContinuation { continuation in
+                reads.append(continuation)
+            }
+            return try result.get()
+        }
+
+        func writeString(
+            _ string: String
+        ) async throws(PasteboardFailure) {
+            _ = string
+            guard !isShutdown else { throw .unavailable }
+            if let immediateWriteFailure {
+                throw immediateWriteFailure
+            }
+            guard delaysWrites else { return }
+            let result: Result<Void, PasteboardFailure> =
+                await withCheckedContinuation { continuation in
+                    writes.append(continuation)
+                }
+            return try result.get()
+        }
+
+        func clear() async throws(PasteboardFailure) {
+            guard !isShutdown else { throw .unavailable }
+        }
+
+        func completeNextRead(
+            with result: Result<String?, PasteboardFailure>
+        ) {
+            reads.removeFirst().resume(returning: result)
+        }
+
+        func completeNextWrite(
+            with result: Result<Void, PasteboardFailure>
+        ) {
+            writes.removeFirst().resume(returning: result)
+        }
+
+        func shutdown() {
+            guard !isShutdown else { return }
+            isShutdown = true
+            let pendingReads = reads
+            reads.removeAll()
+            for continuation in pendingReads {
+                continuation.resume(returning: .failure(.cancelled))
+            }
+            let pendingWrites = writes
+            writes.removeAll()
+            for continuation in pendingWrites {
+                continuation.resume(returning: .failure(.cancelled))
+            }
+        }
+    }
+
     init() {
         installTestTextBackend()
     }
@@ -365,25 +433,96 @@ import NucleusUI
         #expect(field.textLayout().text == "•••••••")
     }
 
-    @Test func standardPasteboardActionsRespectFocusAndSecureEntry() {
-        let pasteboard = Pasteboard()
+    @Test func standardPasteboardActionsRespectFocusAndSecureEntry() async throws {
+        let adapter = InMemoryPasteboardAdapter()
+        let pasteboard = Pasteboard(adapter: adapter)
         let (field, window) = makeField("copy me")
         field.setSelectedRange(0..<4)
-        #expect(!field.copySelection(to: pasteboard), "unfocused fields do not act")
+        #expect(!(await field.copySelection(to: pasteboard)), "unfocused fields do not act")
 
         #expect(window.makeFirstResponder(field))
-        #expect(field.copySelection(to: pasteboard))
-        #expect(pasteboard.string == "copy")
+        #expect(await field.copySelection(to: pasteboard))
+        #expect(try await pasteboard.readString() == "copy")
 
         field.isSecure = true
         field.selectAllText()
-        #expect(!field.copySelection(to: pasteboard))
-        #expect(!field.cutSelection(to: pasteboard))
+        #expect(!(await field.copySelection(to: pasteboard)))
+        #expect(!(await field.cutSelection(to: pasteboard)))
         #expect(field.stringValue == "copy me")
 
-        pasteboard.string = "replacement"
-        #expect(field.paste(from: pasteboard))
+        try await pasteboard.writeString("replacement")
+        #expect(await field.paste(from: pasteboard))
         #expect(field.stringValue == "replacement")
+    }
+
+    @Test
+    func latePasteIsDiscardedAfterTextMutation() async {
+        let adapter = ControlledPasteboardAdapter()
+        let pasteboard = Pasteboard(adapter: adapter)
+        let (field, window) = makeField("original")
+        #expect(window.makeFirstResponder(field))
+
+        let paste = Task { await field.paste(from: pasteboard) }
+        await Task.yield()
+        #expect(adapter.pendingReadCount == 1)
+
+        field.stringValue = "newer"
+        adapter.completeNextRead(with: .success("stale"))
+
+        #expect(!(await paste.value))
+        #expect(field.stringValue == "newer")
+    }
+
+    @Test
+    func lateCutDoesNotDeleteAChangedSelection() async {
+        let adapter = ControlledPasteboardAdapter()
+        adapter.delaysWrites = true
+        let pasteboard = Pasteboard(adapter: adapter)
+        let (field, window) = makeField("copy me")
+        #expect(window.makeFirstResponder(field))
+        field.setSelectedRange(0..<4)
+
+        let cut = Task { await field.cutSelection(to: pasteboard) }
+        await Task.yield()
+        #expect(adapter.pendingWriteCount == 1)
+
+        field.setSelectedRange(5..<7)
+        adapter.completeNextWrite(with: .success(()))
+
+        #expect(!(await cut.value))
+        #expect(field.stringValue == "copy me")
+        #expect(field.selectedRange == 5..<7)
+    }
+
+    @Test
+    func failedCutLeavesTextAndSelectionUntouched() async {
+        let adapter = ControlledPasteboardAdapter()
+        adapter.immediateWriteFailure = .transport("rejected")
+        let pasteboard = Pasteboard(adapter: adapter)
+        let (field, window) = makeField("copy me")
+        #expect(window.makeFirstResponder(field))
+        field.setSelectedRange(0..<4)
+
+        #expect(!(await field.cutSelection(to: pasteboard)))
+        #expect(field.stringValue == "copy me")
+        #expect(field.selectedRange == 0..<4)
+    }
+
+    @Test
+    func latePasteIsDiscardedAfterFocusLoss() async {
+        let adapter = ControlledPasteboardAdapter()
+        let pasteboard = Pasteboard(adapter: adapter)
+        let (field, window) = makeField("original")
+        #expect(window.makeFirstResponder(field))
+
+        let paste = Task { await field.paste(from: pasteboard) }
+        await Task.yield()
+        #expect(adapter.pendingReadCount == 1)
+        #expect(window.makeFirstResponder(nil))
+        adapter.completeNextRead(with: .success("stale"))
+
+        #expect(!(await paste.value))
+        #expect(field.stringValue == "original")
     }
 
     @Test func textViewAcceptsNewlinesAndUsesMultilineInputHints() {
@@ -397,7 +536,9 @@ import NucleusUI
         #expect(view.handleEvent(key(.return)) == .handled)
         #expect(view.stringValue == "first\n")
         #expect(view.textInputHints.contains(.multiline))
-        #expect(view.textLayout().numberOfLines == 0)
+        view.layoutIfNeeded()
+        #expect(view.scrollView.documentView != nil)
+        #expect(view.scrollView.superview === view)
     }
 
     // MARK: - Input method
