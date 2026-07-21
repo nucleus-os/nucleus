@@ -200,10 +200,25 @@ open class View: Responder, Accessible, ~Sendable {
         precondition(
             child.uiContext === uiContext,
             "a view cannot adopt a child from another UIContext")
+
+        if let currentIndex {
+            childViews.remove(at: currentIndex)
+            childViews.insert(child, at: index)
+            reindexChildren(startingAt: min(currentIndex, index))
+            markSubtreeNeedsLayout()
+            markSubtreeNeedsDisplay()
+            recordMutation(.structure)
+            return
+        }
+
         child.detachFromSwiftTree()
-        childViews.insert(child, at: index)
+        if index == childViews.endIndex {
+            childViews.append(child)
+        } else {
+            childViews.insert(child, at: index)
+        }
         childViewsByID[child.id] = child
-        reindexChildren()
+        reindexChildren(startingAt: index)
         child.parentView = self
         // The new child carries its own dirty state; the ancestors that will run
         // the next pass have to learn there is now work under them.

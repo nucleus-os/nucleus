@@ -437,8 +437,11 @@ func intersectDamageRects(_ a: DamageRect, _ b: DamageRect) -> DamageRect? {
     let right = min(Int64(a.x) + Int64(a.width), Int64(b.x) + Int64(b.width))
     let bottom = min(Int64(a.y) + Int64(a.height), Int64(b.y) + Int64(b.height))
     if right <= left || bottom <= top { return nil }
-    return DamageRect(x: Int32(left), y: Int32(top),
-                      width: UInt32(right - left), height: UInt32(bottom - top))
+    return DamageRect(
+        x: Int32(clamping: left),
+        y: Int32(clamping: top),
+        width: UInt32(clamping: right - left),
+        height: UInt32(clamping: bottom - top))
 }
 
 func clampDamageRectToTarget(_ rect: DamageRect, _ width: UInt32, _ height: UInt32) -> DamageRect? {
@@ -448,16 +451,19 @@ func clampDamageRectToTarget(_ rect: DamageRect, _ width: UInt32, _ height: UInt
     let right = min(Int64(rect.x) + Int64(rect.width), Int64(width))
     let bottom = min(Int64(rect.y) + Int64(rect.height), Int64(height))
     if right <= left || bottom <= top { return nil }
-    return DamageRect(x: Int32(left), y: Int32(top),
-                      width: UInt32(right - left), height: UInt32(bottom - top))
+    return DamageRect(
+        x: Int32(clamping: left),
+        y: Int32(clamping: top),
+        width: UInt32(clamping: right - left),
+        height: UInt32(clamping: bottom - top))
 }
 
 func damageBoundsCoverTarget(_ bounds: DamageRect, _ width: UInt32, _ height: UInt32) -> Bool {
     if width == 0 || height == 0 { return false }
     if bounds.x > 0 || bounds.y > 0 { return false }
-    let right = bounds.x + Int32(bounds.width)
-    let bottom = bounds.y + Int32(bounds.height)
-    return right >= Int32(width) && bottom >= Int32(height)
+    let right = Int64(bounds.x) + Int64(bounds.width)
+    let bottom = Int64(bounds.y) + Int64(bounds.height)
+    return right >= Int64(width) && bottom >= Int64(height)
 }
 
 func damageBoundsFraction(_ bounds: DamageRect?, _ width: UInt32, _ height: UInt32) -> Double {
@@ -478,12 +484,16 @@ func planRectsIntersect(_ a: PlanRect, _ b: PlanRect) -> Bool {
 
 /// True if any rect in `region` overlaps `rect`. Mirrors `regionOverlapsRect`.
 func regionOverlapsRect(_ region: [DamageRect], _ rect: DamageRect) -> Bool {
-    let rx2 = rect.x &+ Int32(rect.width)
-    let ry2 = rect.y &+ Int32(rect.height)
+    let rx1 = Int64(rect.x)
+    let ry1 = Int64(rect.y)
+    let rx2 = rx1 + Int64(rect.width)
+    let ry2 = ry1 + Int64(rect.height)
     for box in region {
-        let bx2 = box.x &+ Int32(box.width)
-        let by2 = box.y &+ Int32(box.height)
-        if box.x < rx2 && rect.x < bx2 && box.y < ry2 && rect.y < by2 { return true }
+        let bx1 = Int64(box.x)
+        let by1 = Int64(box.y)
+        let bx2 = bx1 + Int64(box.width)
+        let by2 = by1 + Int64(box.height)
+        if bx1 < rx2 && rx1 < bx2 && by1 < ry2 && ry1 < by2 { return true }
     }
     return false
 }

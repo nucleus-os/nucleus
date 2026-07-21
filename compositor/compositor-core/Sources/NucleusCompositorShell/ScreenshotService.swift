@@ -65,8 +65,6 @@ public struct ScreenshotRequest: Sendable, Equatable {
 
 @MainActor
 public final class ScreenshotService {
-    public static let shared = ScreenshotService()
-
     public struct EventResult: Sendable, Equatable {
         public enum ThumbnailUpdate: UInt8, Sendable {
             case none = 0
@@ -82,16 +80,19 @@ public final class ScreenshotService {
     private let fileManager: FileManager
     private let environment: [String: String]
     private let clock: @Sendable () -> Date
+    private unowned let notifications: NotificationService
     private var nextID: UInt32 = 1
     private var queue: [ScreenshotRequestID] = []
     private var inflight: Set<ScreenshotRequestID> = []
     private var requests: [ScreenshotRequestID: ScreenshotRequest] = [:]
 
     public init(
+        notifications: NotificationService,
         fileManager: FileManager = .default,
         environment: [String: String] = ProcessInfo.processInfo.environment,
         clock: @escaping @Sendable () -> Date = { Date() }
     ) {
+        self.notifications = notifications
         self.fileManager = fileManager
         self.environment = environment
         self.clock = clock
@@ -259,7 +260,7 @@ public final class ScreenshotService {
             }
             let previous = request.thumbnailHandle
             request.thumbnailHandle = event.thumbnailHandle
-            let changed = NotificationService.shared.presentScreenshot(
+            let changed = notifications.presentScreenshot(
                 id: id.rawValue,
                 outcome: .saved,
                 path: path,
@@ -279,7 +280,7 @@ public final class ScreenshotService {
             if request.state == .previewReady {
                 inflight.remove(id)
             }
-            let changed = NotificationService.shared.presentScreenshot(
+            let changed = notifications.presentScreenshot(
                 id: id.rawValue,
                 outcome: .saved,
                 path: path,
@@ -294,7 +295,7 @@ public final class ScreenshotService {
             inflight.remove(id)
             let previous = request.thumbnailHandle
             request.thumbnailHandle = 0
-            let changed = NotificationService.shared.presentScreenshot(
+            let changed = notifications.presentScreenshot(
                 id: id.rawValue,
                 outcome: .failed,
                 path: path,
@@ -350,7 +351,7 @@ public final class ScreenshotService {
         request.state = .failed
         requests[id] = request
         queue.removeAll { $0 == id }
-        _ = NotificationService.shared.presentScreenshot(
+        _ = notifications.presentScreenshot(
             id: id.rawValue,
             outcome: .failed,
             path: path,

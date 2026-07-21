@@ -11,18 +11,15 @@ struct NucleusCompositorTransitionStressTests {
 
 @MainActor
 @Test func closingTransitionRetainsSnapshotAndDestroysExactlyOnce() throws {
-    let server = NucleusCompositorServer.shared
-    server.reset()
-    defer {
-        server.reset()
-        server.renderService = nil
-    }
+    let graph = WaylandTestGraph()
+    let server = graph.server
 
     let sink = InMemoryCommitSink()
     let author = WindowSceneAuthor(commitSinkFactory: { sink })
     let renderService = RenderServiceSpy()
     let feeder = SceneFeeder(
         author: author,
+        host: graph.host,
         renderService: renderService)
 
     let window = server.createWindow(source: .xdg, id: 9001)
@@ -95,18 +92,15 @@ struct NucleusCompositorTransitionStressTests {
 
 @MainActor
 @Test func secondTileAtomicallySupersedesAndRetiresFirstSnapshot() throws {
-    let server = NucleusCompositorServer.shared
-    server.reset()
-    defer {
-        server.reset()
-        server.renderService = nil
-    }
+    let graph = WaylandTestGraph()
+    let server = graph.server
 
     let sink = InMemoryCommitSink()
     let author = WindowSceneAuthor(commitSinkFactory: { sink })
     let renderService = RenderServiceSpy()
     let feeder = SceneFeeder(
         author: author,
+        host: graph.host,
         renderService: renderService)
     let window = server.createWindow(source: .xdg, id: 9002)
     window.surfaceObjectId = 78
@@ -184,18 +178,15 @@ struct NucleusCompositorTransitionStressTests {
 
 @MainActor
 @Test func sessionLockCancellationRetiresTileSnapshotAndMotion() {
-    let server = NucleusCompositorServer.shared
-    server.reset()
-    defer {
-        server.reset()
-        server.renderService = nil
-    }
+    let graph = WaylandTestGraph()
+    let server = graph.server
 
     let author = WindowSceneAuthor(
         commitSinkFactory: { InMemoryCommitSink() })
     let renderService = RenderServiceSpy()
     let feeder = SceneFeeder(
         author: author,
+        host: graph.host,
         renderService: renderService)
     let window = server.createWindow(source: .xdg, id: 9003)
     window.surfaceObjectId = 79

@@ -7,9 +7,13 @@ extension View {
         }
         window?.windowScene?.cancelInputSequences(capturedBy: self)
         if let parentView {
-            parentView.childViews.removeAll { $0 === self }
+            guard let index = parentView.childViewIndices[id] else {
+                preconditionFailure("attached child is absent from its parent index")
+            }
+            parentView.childViews.remove(at: index)
             parentView.childViewsByID[id] = nil
-            parentView.reindexChildren()
+            parentView.childViewIndices[id] = nil
+            parentView.reindexChildren(startingAt: index)
             parentView.recordMutation(.structure)
             parentView.markSubtreeNeedsLayout()
             parentView.markSubtreeNeedsDisplay()
@@ -55,10 +59,11 @@ extension View {
         return nil
     }
 
-    package func reindexChildren() {
-        childViewIndices.removeAll(keepingCapacity: true)
+    package func reindexChildren(startingAt start: Int) {
+        guard start < childViews.endIndex else { return }
         childViewIndices.reserveCapacity(childViews.count)
-        for (index, child) in childViews.enumerated() {
+        for index in start..<childViews.endIndex {
+            let child = childViews[index]
             childViewsByID[child.id] = child
             childViewIndices[child.id] = index
         }

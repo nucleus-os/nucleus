@@ -8,8 +8,6 @@ public final class WindowManager {
         public var startRect: WindowRect
     }
 
-    public static let shared = WindowManager(server: .shared)
-
     public let server: NucleusCompositorServer
     public var interaction = InteractionState()
     public var layerShellPolicy = LayerShellPolicy()

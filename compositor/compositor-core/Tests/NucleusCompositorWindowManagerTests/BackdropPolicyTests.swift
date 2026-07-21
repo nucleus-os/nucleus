@@ -2,6 +2,7 @@ import Testing
 import NucleusTypes
 import NucleusCompositorServerTypes
 import NucleusLayers
+import NucleusCompositorServer
 @testable import NucleusCompositorWindowManager
 
 @MainActor
@@ -228,6 +229,7 @@ import NucleusLayers
     }
 
     @Test func hostBackdropPolicyResolveReturnsDraws() throws {
+        let manager = WindowManager(server: NucleusCompositorServer())
         var input = WireBackdropLayerInput(
             layerId: 77,
             frameX: 10,
@@ -240,7 +242,7 @@ import NucleusLayers
             reserved2: 0,
             producerGroupId: 0,
         )
-        let draws = try WindowManager.shared.backdropPolicyResolve(
+        let draws = try manager.backdropPolicyResolve(
             inputs: &input,
             inputsLen: 1
         )

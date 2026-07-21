@@ -94,8 +94,8 @@ public struct OutputPixelRect: Equatable, Sendable {
         self.height = height
     }
 
-    public var maxX: Int32 { x &+ Int32(bitPattern: width) }
-    public var maxY: Int32 { y &+ Int32(bitPattern: height) }
+    public var maxX: Int64 { Int64(x) + Int64(width) }
+    public var maxY: Int64 { Int64(y) + Int64(height) }
     public var isEmpty: Bool { width == 0 || height == 0 }
 }
 
@@ -121,10 +121,40 @@ public struct GlobalToOutputTransform: Equatable, Sendable {
     }
 
     public func rect(_ global: GlobalLogicalRect) -> OutputPixelRect {
-        OutputPixelRect(
-            x: Int32(x(global.x).rounded(.down)),
-            y: Int32(y(global.y).rounded(.down)),
-            width: UInt32(max(0, (global.width * scale).rounded(.up))),
-            height: UInt32(max(0, (global.height * scale).rounded(.up))))
+        guard outputLogicalOriginX.isFinite,
+            outputLogicalOriginY.isFinite,
+            scale.isFinite,
+            scale > 0,
+            global.x.isFinite,
+            global.y.isFinite,
+            global.width.isFinite,
+            global.height.isFinite
+        else { return OutputPixelRect() }
+
+        return OutputPixelRect(
+            x: saturatedInt32(x(global.x), rounding: .down),
+            y: saturatedInt32(y(global.y), rounding: .down),
+            width: saturatedExtent(global.width * scale),
+            height: saturatedExtent(global.height * scale))
     }
+}
+
+private func saturatedInt32(
+    _ value: Double,
+    rounding rule: FloatingPointRoundingRule
+) -> Int32 {
+    guard !value.isNaN else { return 0 }
+    let rounded = value.rounded(rule)
+    if rounded <= Double(Int32.min) { return .min }
+    if rounded >= Double(Int32.max) { return .max }
+    return Int32(rounded)
+}
+
+private func saturatedExtent(_ value: Double) -> UInt32 {
+    guard value.isFinite, value > 0 else {
+        return value == .infinity ? .max : 0
+    }
+    let rounded = value.rounded(.up)
+    if rounded >= Double(UInt32.max) { return .max }
+    return UInt32(rounded)
 }

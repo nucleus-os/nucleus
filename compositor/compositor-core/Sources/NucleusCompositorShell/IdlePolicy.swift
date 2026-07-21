@@ -1,6 +1,6 @@
 @MainActor
 public final class IdlePolicy {
-    public static let shared = IdlePolicy()
+    public init() {}
 
     private struct Notification {
         var id: UInt64

@@ -278,6 +278,7 @@ open class Layer: ~Sendable {
     public private(set) var descriptor: LayerDescriptor
     public private(set) weak var parent: Layer?
     public private(set) var sublayers: [Layer]
+    private var sublayerIndices: [LayerID: Int]
 
     package init(context: Context, id: LayerID, descriptor: LayerDescriptor) {
         self.context = context
@@ -285,6 +286,7 @@ open class Layer: ~Sendable {
         self.descriptor = descriptor
         self.descriptor.initialContent.retainHandle()
         self.sublayers = []
+        self.sublayerIndices = [:]
     }
 
     deinit {
@@ -392,13 +394,31 @@ open class Layer: ~Sendable {
             return
         }
         let clamped = min(Int(index), parent.sublayers.count)
-        parent.sublayers.insert(self, at: clamped)
+        if clamped == parent.sublayers.endIndex {
+            parent.sublayers.append(self)
+        } else {
+            parent.sublayers.insert(self, at: clamped)
+        }
+        parent.reindexSublayers(startingAt: clamped)
     }
 
     package func detach() {
         if let parent {
-            parent.sublayers.removeAll { $0 === self }
+            guard let index = parent.sublayerIndices[id] else {
+                preconditionFailure("attached layer is absent from its parent index")
+            }
+            parent.sublayers.remove(at: index)
+            parent.sublayerIndices[id] = nil
+            parent.reindexSublayers(startingAt: index)
         }
         parent = nil
+    }
+
+    private func reindexSublayers(startingAt start: Int) {
+        guard start < sublayers.endIndex else { return }
+        sublayerIndices.reserveCapacity(sublayers.count)
+        for index in start..<sublayers.endIndex {
+            sublayerIndices[sublayers[index].id] = index
+        }
     }
 }

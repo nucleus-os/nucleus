@@ -25,37 +25,52 @@ private func flatPublicationWorkload(nodeCount: Int) -> BenchmarkWorkload {
             .exact("dirty_nodes_visited", 2),
             .exact("dirty_snapshots_authored", 1),
             .exact("dirty_property_updates", 1),
+            .exact("reorder_topology_mutations", 1),
             .maximum("allocation_units", UInt64(nodeCount + 2)),
             .exact("retained_after_teardown", 0),
         ],
         body: {
+            var phases = BenchmarkPhaseRecorder()
             let visualContext = Application.makeInMemoryVisualContext()
             return try Application.withContext(visualContext) {
-                let root = View()
-                var children: [View] = []
-                children.reserveCapacity(nodeCount - 1)
-                for _ in 1..<nodeCount {
-                    let child = View()
-                    root.addSubview(child)
-                    children.append(child)
+                let (root, children, publisher) = phases.measure("setup") {
+                    let root = View()
+                    var children: [View] = []
+                    children.reserveCapacity(nodeCount - 1)
+                    for _ in 1..<nodeCount {
+                        let child = View()
+                        root.addSubview(child)
+                        children.append(child)
+                    }
+                    return (
+                        root,
+                        children,
+                        ViewLayerPublisher(context: visualContext))
                 }
-                let publisher = ViewLayerPublisher(context: visualContext)
 
-                _ = try publisher.publish(roots: [root])
+                _ = try phases.measure("initial_publication") {
+                    try publisher.publish(roots: [root])
+                }
                 let initial = publisher.lastMetrics
 
-                _ = try publisher.publish(roots: [root])
+                _ = try phases.measure("clean_publication") {
+                    try publisher.publish(roots: [root])
+                }
                 let clean = publisher.lastMetrics
 
                 let dirtyTarget = children[nodeCount / 2]
                 dirtyTarget.alphaValue = 0.5
-                _ = try publisher.publish(roots: [root])
+                _ = try phases.measure("dirty_publication") {
+                    try publisher.publish(roots: [root])
+                }
                 let dirty = publisher.lastMetrics
 
                 // A retained reorder must preserve the existing visual object.
                 let targetLayer = publisher.visualLayer(for: dirtyTarget)
                 root.addSubview(dirtyTarget)
-                _ = try publisher.publish(roots: [root])
+                _ = try phases.measure("reorder_publication") {
+                    try publisher.publish(roots: [root])
+                }
                 guard publisher.visualLayer(for: dirtyTarget) === targetLayer else {
                     throw BenchmarkFailure.semantic(
                         "flat publication replaced a retained visual during reorder")
@@ -66,7 +81,9 @@ private func flatPublicationWorkload(nodeCount: Int) -> BenchmarkWorkload {
                         + publisher.retainedPaintRegistrationCount
                         + 1)
 
-                try publisher.invalidate()
+                try phases.measure("teardown") {
+                    try publisher.invalidate()
+                }
                 let retainedAfterTeardown = UInt64(
                     publisher.publishedVisualLayerCount
                         + publisher.retainedPaintRegistrationCount
@@ -94,7 +111,8 @@ private func flatPublicationWorkload(nodeCount: Int) -> BenchmarkWorkload {
                         "copied_bytes": 0,
                         "retained_after_teardown": retainedAfterTeardown,
                     ],
-                    semanticChecksum: checksum)
+                    semanticChecksum: checksum,
+                    phaseNanoseconds: phases.phaseNanoseconds)
             }
         })
 }
@@ -116,25 +134,39 @@ private func deepPublicationWorkload(nodeCount: Int) -> BenchmarkWorkload {
             .exact("retained_after_teardown", 0),
         ],
         body: {
+            var phases = BenchmarkPhaseRecorder()
             let visualContext = Application.makeInMemoryVisualContext()
             return try Application.withContext(visualContext) {
-                let root = View()
-                var leaf = root
-                for _ in 1..<nodeCount {
-                    let child = View()
-                    leaf.addSubview(child)
-                    leaf = child
+                let (root, leaf, publisher) = phases.measure("setup") {
+                    let root = View()
+                    var leaf = root
+                    for _ in 1..<nodeCount {
+                        let child = View()
+                        leaf.addSubview(child)
+                        leaf = child
+                    }
+                    return (
+                        root,
+                        leaf,
+                        ViewLayerPublisher(context: visualContext))
                 }
-                let publisher = ViewLayerPublisher(context: visualContext)
-                _ = try publisher.publish(roots: [root])
+                _ = try phases.measure("initial_publication") {
+                    try publisher.publish(roots: [root])
+                }
                 let initial = publisher.lastMetrics
-                _ = try publisher.publish(roots: [root])
+                _ = try phases.measure("clean_publication") {
+                    try publisher.publish(roots: [root])
+                }
                 let clean = publisher.lastMetrics
                 leaf.alphaValue = 0.25
-                _ = try publisher.publish(roots: [root])
+                _ = try phases.measure("dirty_publication") {
+                    try publisher.publish(roots: [root])
+                }
                 let dirty = publisher.lastMetrics
                 let allocationUnits = UInt64(publisher.publishedVisualLayerCount + 1)
-                try publisher.invalidate()
+                try phases.measure("teardown") {
+                    try publisher.invalidate()
+                }
                 let retained = UInt64(
                     publisher.publishedVisualLayerCount + visualContext.layers.count)
                 var checksum = UInt64(nodeCount)
@@ -154,7 +186,8 @@ private func deepPublicationWorkload(nodeCount: Int) -> BenchmarkWorkload {
                         "copied_bytes": 0,
                         "retained_after_teardown": retained,
                     ],
-                    semanticChecksum: checksum)
+                    semanticChecksum: checksum,
+                    phaseNanoseconds: phases.phaseNanoseconds)
             }
         })
 }

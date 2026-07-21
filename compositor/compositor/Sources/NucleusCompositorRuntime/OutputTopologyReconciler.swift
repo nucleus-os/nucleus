@@ -83,6 +83,7 @@ final class OutputTopologyReconciler {
     private unowned let renderRuntime: RenderRuntime
     private unowned let frameDemand: DisplayFrameDemand
     private unowned let waylandRuntime: WaylandRuntime
+    private unowned let overlayScene: OverlaySceneRuntime
     private var reconcilePending = false
     private var forceReattachPending = false
 
@@ -92,7 +93,8 @@ final class OutputTopologyReconciler {
         windowManager: WindowManager,
         renderRuntime: RenderRuntime,
         frameDemand: DisplayFrameDemand,
-        waylandRuntime: WaylandRuntime
+        waylandRuntime: WaylandRuntime,
+        overlayScene: OverlaySceneRuntime
     ) {
         self.defaultScale = max(0.01, defaultScale)
         self.server = server
@@ -100,6 +102,7 @@ final class OutputTopologyReconciler {
         self.renderRuntime = renderRuntime
         self.frameDemand = frameDemand
         self.waylandRuntime = waylandRuntime
+        self.overlayScene = overlayScene
     }
 
     @discardableResult
@@ -330,7 +333,7 @@ final class OutputTopologyReconciler {
             .flatMap({ server.layout.display(id: $0) })
         else { return }
         frameDemand.requestFrame(reason: .outputChange)
-        OverlaySceneRuntime.shared.frameUpdated(FrameInfo(
+        overlayScene.frameUpdated(FrameInfo(
             outputWidth: UInt32(max(1, primary.logicalRect.width.rounded())),
             outputHeight: UInt32(max(1, primary.logicalRect.height.rounded())),
             devicePixelRatio: Float(primary.fractionalScale),

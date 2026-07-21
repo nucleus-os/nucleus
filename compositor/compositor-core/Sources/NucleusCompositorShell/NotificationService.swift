@@ -3,8 +3,6 @@ import NucleusCompositorOverlayScene
 
 @MainActor
 public final class NotificationService {
-    public static let shared = NotificationService()
-
     public enum ScreenshotOutcome: UInt32 {
         case saved = 1
         case failed = 2
@@ -30,8 +28,11 @@ public final class NotificationService {
     private var order: [UInt32] = []
     private var nextID: UInt32 = 1
     private var frameRequested = false
+    private unowned let overlayScene: OverlaySceneRuntime
 
-    private init() {}
+    public init(overlayScene: OverlaySceneRuntime) {
+        self.overlayScene = overlayScene
+    }
 
     public func reset() {
         records.removeAll(keepingCapacity: true)
@@ -68,7 +69,7 @@ public final class NotificationService {
 
     public func dismiss(id: UInt32, reason: UInt32) {
         guard records[id] != nil else { return }
-        OverlaySceneRuntime.shared.notificationDismissed(id: id, reason: reason == 0 ? 2 : reason)
+        overlayScene.notificationDismissed(id: id, reason: reason == 0 ? 2 : reason)
         frameRequested = true
     }
 
@@ -146,7 +147,7 @@ public final class NotificationService {
         withStringView(record.appName) { appName in
             withStringView(record.summary) { summary in
                 withStringView(record.body) { body in
-                    OverlaySceneRuntime.shared.notificationAdded(NucleusCompositorOverlayTypes.NotificationInfo(
+                    overlayScene.notificationAdded(NucleusCompositorOverlayTypes.NotificationInfo(
                         id: record.id,
                         appName: appName,
                         summary: summary,

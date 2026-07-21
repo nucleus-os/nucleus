@@ -108,7 +108,7 @@ public extension WaylandRuntime {
             facts.layerShellActiveOnOutput = compositor.hasMappedLayerSurface(on: outputID)
             // notificationCount / hotkeyHasContent are the native-overlay inputs; the
             // overlay scene lives in the shell module (not reachable here), so the
-            // composition root sets them from `nucleus_compositor_shell_overlay_active`
+            // composition root supplies the runtime-owned shell overlay activity
             // when it builds the candidate (they gate only the shell output).
 
             // The topmost fullscreen toplevel on this output + whether any toplevel on

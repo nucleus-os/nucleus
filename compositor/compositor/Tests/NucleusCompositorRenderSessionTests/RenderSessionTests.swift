@@ -3,10 +3,10 @@ import NucleusCompositorRenderSession
 
 @MainActor
 @Test func drmSessionOwnsOneSeatDeviceAndClosesItExactlyOnce() {
-    DrmSession.close()
+    let session = DrmSession()
     var openedPaths: [String] = []
     var closedFDs: [Int32] = []
-    DrmSession.installDeviceSeat(
+    session.installDeviceSeat(
         open: {
             guard let path = $0 else { return -1 }
             openedPaths.append(String(cString: path))
@@ -14,17 +14,24 @@ import NucleusCompositorRenderSession
         },
         close: { closedFDs.append($0) })
 
-    #expect(DrmSession.open(path: nil) == -1)
+    #expect(session.open(path: nil) == -1)
+    #expect(session.generation == 0)
     #expect(openedPaths.isEmpty)
     let fd = "/dev/dri/card-test".withCString {
-        DrmSession.open(path: $0)
+        session.open(path: $0)
     }
     #expect(fd == 73)
-    #expect(DrmSession.fd == 73)
+    #expect(session.fd == 73)
+    #expect(session.generation == 1)
     #expect(openedPaths == ["/dev/dri/card-test"])
 
-    DrmSession.close()
-    DrmSession.close()
-    #expect(DrmSession.fd == -1)
+    session.close()
+    session.close()
+    #expect(session.fd == -1)
     #expect(closedFDs == [73])
+
+    #expect("/dev/dri/card-test".withCString { session.open(path: $0) } == 73)
+    #expect(session.generation == 2)
+    session.close()
+    #expect(closedFDs == [73, 73])
 }

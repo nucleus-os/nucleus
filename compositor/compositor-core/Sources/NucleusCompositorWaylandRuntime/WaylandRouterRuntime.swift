@@ -79,7 +79,9 @@ public final class WaylandRouterRuntime {
         let screencopy = ScreencopyManager()
         let gamma = ZwlrGammaControlManager()
         let dataDevice = WlDataDeviceManager(
-            compositor: compositor, host: host)
+            compositor: compositor,
+            host: host,
+            dataExchange: host.server.dataExchange)
         seat.dataDeviceManager = dataDevice
         let textInputManager = TextInputManagerV3(seat: seat)
         seat.textInputManager = textInputManager

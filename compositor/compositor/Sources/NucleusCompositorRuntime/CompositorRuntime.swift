@@ -49,6 +49,7 @@ final class CompositorRuntime {
 
     private let reactor: LinuxHostReactor
     private let exitSignalFD: Int32
+    let drmSession = DrmSession()
     let renderWake: CompositorRenderWakeSink
     let resourceHost: SwiftResourceHost
     let retainedStore: RetainedTreeStore
@@ -59,7 +60,7 @@ final class CompositorRuntime {
     let waylandRuntime: WaylandRuntime
     let renderRuntime: RenderRuntime
     let frameDemand: DisplayFrameDemand
-    let shellServices = ShellServices()
+    let shellServices: ShellServices
     private var exitRequested = false
     private var paused = false
     private var sessionPausePending = false
@@ -86,7 +87,8 @@ final class CompositorRuntime {
         windowManager: windowManager,
         renderRuntime: renderRuntime,
         frameDemand: frameDemand,
-        waylandRuntime: waylandRuntime)
+        waylandRuntime: waylandRuntime,
+        overlayScene: shellServices.overlayScene)
 
     init?() {
         let exitSignalFD = nucleus_compositor_create_exit_signal_fd()
@@ -113,12 +115,18 @@ final class CompositorRuntime {
         let waylandRuntime = WaylandRuntime(
             server: server, windowManager: windowManager)
         let renderRuntime = RenderRuntime(server: server)
+        let shellServices = ShellServices(
+            server: server,
+            windowManager: windowManager)
         let frameDemand = DisplayFrameDemand(
-            server: server, renderRuntime: renderRuntime)
+            server: server,
+            renderRuntime: renderRuntime,
+            shellServices: shellServices)
         self.server = server
         self.windowManager = windowManager
         self.waylandRuntime = waylandRuntime
         self.renderRuntime = renderRuntime
+        self.shellServices = shellServices
         self.frameDemand = frameDemand
         self.windowSceneAuthor = WindowSceneAuthor {
             RenderCommitSink(
@@ -249,8 +257,8 @@ final class CompositorRuntime {
         interests.reserveCapacity(14)
         appendInterest(
             .drm,
-            fileDescriptor: DrmSession.fd,
-            instance: DrmSession.generation,
+            fileDescriptor: drmSession.fd,
+            instance: drmSession.generation,
             mode: .multishot,
             to: &interests)
         let abstractFD = waylandRuntime.xwaylandAbstractFileDescriptor
@@ -562,7 +570,7 @@ final class CompositorRuntime {
 
         switch kind {
         case .drm:
-            guard (token & Self.instMask) == DrmSession.generation else {
+            guard (token & Self.instMask) == drmSession.generation else {
                 return
             }
             if result.isReadable {
@@ -710,7 +718,7 @@ final class CompositorRuntime {
         // output only; when it has content that output must composite over any
         // fullscreen client. The overlay scene lives in the shell module, reachable
         // here but not from the facts gather, so fold it in as the notification input.
-        let overlayActive = nucleus_compositor_shell_overlay_active()
+        let overlayActive = shellServices.shellPolicy.overlayActive()
         var result: [UInt64: ScanoutCandidate] = [:]
         for display in server.layout.displays {
             guard let f = facts[display.id] else { continue }

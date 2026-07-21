@@ -25,7 +25,7 @@ import Glibc
 // Cursor + shell/overlay reach-up runs through the inverted `shellPolicy` seam
 // (CompositorShellPolicy, defined in `.server`; the shell conforms + installs it).
 // The area DAG forbids the input dispatch from importing `.shell`, so these are not
-// direct calls — they go through `NucleusCompositorServer.shared.shellPolicy`. A nil seam
+// direct calls — they go through the runtime server's `shellPolicy`. A nil seam
 // (before the shell installs it) yields the inert default (no overlay, 0, false).
 
 /// Left/right evdev pointer button codes the chrome path keys on.

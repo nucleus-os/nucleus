@@ -11,21 +11,29 @@ import NucleusUI
 /// calls land on `NotificationService` / the input host directly.
 @MainActor
 final class ShellOverlayPublicationHost: OverlayPublicationHost {
-    private weak var services: ShellServices?
+    private unowned let services: ShellServices
+    private unowned let notifications: NotificationService
+    private unowned let server: NucleusCompositorServer
 
-    init(services: ShellServices) {
+    init(
+        services: ShellServices,
+        notifications: NotificationService,
+        server: NucleusCompositorServer
+    ) {
         self.services = services
+        self.notifications = notifications
+        self.server = server
     }
 
     func notificationClosed(id: UInt32, reason: UInt32) {
-        NotificationService.shared.notificationClosedFromOverlay(id: id, reason: reason)
+        notifications.notificationClosedFromOverlay(id: id, reason: reason)
     }
 
     func accessibilitySceneDidPublish() {
-        services?.publishAccessibility()
+        services.publishAccessibility()
     }
 
     func windowMenuSelected(windowID: UInt64, verb: Int32) {
-        NucleusCompositorServer.shared.inputControl?.windowMenuSelected(windowID: windowID, verb: verb)
+        server.inputControl?.windowMenuSelected(windowID: windowID, verb: verb)
     }
 }

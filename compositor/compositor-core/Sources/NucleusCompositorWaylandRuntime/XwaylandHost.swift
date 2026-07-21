@@ -6,7 +6,7 @@
 // xwayland_listen token's first-client edge spawns Xwayland; the xwayland_ready token
 // hands the WM fd to the XWM; the xwayland_xwm token pumps XCB events. The live XWM is
 // reachable for the router's reverse crossings (configure, set_serial) via
-// RouterHost.shared.xwaylandHost.
+// the owning RouterHost's `xwaylandHost`.
 
 import Glibc
 import NucleusCompositorServer

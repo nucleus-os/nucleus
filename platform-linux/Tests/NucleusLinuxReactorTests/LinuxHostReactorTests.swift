@@ -24,6 +24,35 @@ struct LinuxHostReactorTests {
         #expect(batch.wasExplicitlyWoken)
         #expect(!batch.didReachDeadline)
         #expect(batch.executorResumeLatencyNanoseconds != nil)
+        let metrics = reactor.metrics
+        #expect(metrics.waitCalls == 1)
+        #expect(metrics.batchesReturned == 1)
+        #expect(metrics.pollsPrepared == 2)
+        #expect(metrics.submissionCalls == 1)
+        #expect(metrics.requestsSubmitted == 2)
+        #expect(metrics.completionsConsumed >= 1)
+        #expect(metrics.completionSourceWakeups >= 1)
+        #expect(metrics.controlSignalWriteFailures == 0)
+    }
+
+    @Test
+    func explicitWakeBurstsCoalesceBeforeEnteringTheKernel() async throws {
+        let reactor = try LinuxHostReactor(queueDepth: 16)
+        defer { reactor.shutdown() }
+
+        for _ in 0..<32 {
+            reactor.wake()
+        }
+        let batch = try await reactor.wait(
+            interests: [],
+            timeoutNanoseconds: 1_000_000_000)
+
+        #expect(batch.wasExplicitlyWoken)
+        let metrics = reactor.metrics
+        #expect(metrics.explicitWakeRequests == 32)
+        #expect(metrics.controlSignalWrites == 1)
+        #expect(metrics.coalescedControlWakeRequests == 31)
+        #expect(metrics.controlSignalWriteFailures == 0)
     }
 
     @Test
@@ -171,6 +200,7 @@ struct LinuxHostReactorTests {
         }
         #expect(delivered == Set([100, 101, 102]))
         #expect(observedBoundedBacklog)
+        #expect(reactor.metrics.completionBudgetExhaustions >= 1)
     }
 
     @Test

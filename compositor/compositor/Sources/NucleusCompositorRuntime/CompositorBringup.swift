@@ -52,11 +52,13 @@ extension CompositorRuntime {
         // Install the inverted session seams. The render service installs itself
         // only after successful GPU bring-up below.
         server.sessionControl = self
-        DrmSession.installDeviceSeat(
+        drmSession.installDeviceSeat(
             open: { [weak waylandRuntime] in waylandRuntime?.openDevice($0) ?? -1 },
             close: { [weak waylandRuntime] in waylandRuntime?.closeDevice($0) })
 
-        let primaryFd = primaryPathBuf.withUnsafeBufferPointer { DrmSession.open(path: $0.baseAddress!) }
+        let primaryFd = primaryPathBuf.withUnsafeBufferPointer {
+            drmSession.open(path: $0.baseAddress!)
+        }
         guard primaryFd >= 0 else {
             logRuntime("session: failed to open DRM primary node through the seat")
             return false
@@ -186,7 +188,7 @@ extension CompositorRuntime {
 
         // Seed the overlay scene's initial output geometry.
         if let primary = server.layout.displays.first {
-            OverlaySceneRuntime.shared.frameUpdated(FrameInfo(
+            shellServices.overlayScene.frameUpdated(FrameInfo(
                 outputWidth: UInt32(primary.logicalRect.width),
                 outputHeight: UInt32(primary.logicalRect.height),
                 devicePixelRatio: Float(scale),
@@ -232,7 +234,7 @@ extension CompositorRuntime {
         }
 
         // ── Hardware cursor + first frame ─────────────────────────────────
-        nucleus_compositor_cursor_apply_default()
+        shellServices.cursorTheme.applyDefault()
         frameDemand.requestFrame(reason: .outputChange)
         return true
     }
@@ -251,7 +253,7 @@ extension CompositorRuntime {
         // after scanout teardown. Xwayland/D-Bus/client cleanup must not be able to
         // delay restoring the VT if one of those services blocks during shutdown.
         logRuntime("shutdown: DRM session")
-        DrmSession.close()
+        drmSession.close()
         logRuntime("shutdown: Xwayland")
         waylandRuntime.shutdownXwayland()
         logRuntime("shutdown: app hosts")

@@ -16,7 +16,7 @@ import NucleusCompositorServer
 // The composition root owns process exit + VT session lifecycle. The area DAG
 // forbids the input host (`.nucleus_compositor_substrate`) from importing the runtime
 // (`.nucleus_compositor_runtime`), so it reaches them through the inverted
-// `NucleusCompositorServer.shared.sessionControl` seam the root installs at bring-up.
+// runtime server's `sessionControl` seam the root installs at bring-up.
 
 @MainActor
 final class InputHost {

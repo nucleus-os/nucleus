@@ -3,6 +3,7 @@ import Testing
 
 @MainActor
 @Suite struct SurfaceTransactionTests {
+    private let graph = WaylandTestGraph()
     private final class Observer: WlSurfaceCommitObserver {
         var pendingValue: Int?
         var applied: [Int] = []
@@ -26,9 +27,9 @@ import Testing
         parent: WlSurface,
         child: WlSurface
     ) {
-        let compositor = WlCompositor()
-        let parent = WlSurface(compositor: compositor, version: 7)
-        let child = WlSurface(compositor: compositor, version: 7)
+        let compositor = graph.compositor()
+        let parent = graph.surface(compositor: compositor)
+        let child = graph.surface(compositor: compositor)
         #expect(child.claimSubsurfaceRole())
         child.attachAsSubsurface(to: parent)
         return (parent, child)

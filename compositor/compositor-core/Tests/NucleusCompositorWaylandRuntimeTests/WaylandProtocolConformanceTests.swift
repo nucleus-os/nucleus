@@ -26,6 +26,7 @@ private final class AcceptingDmabufDelegate: DmabufDelegate {
 
 @MainActor @Suite(.serialized)
 struct WaylandProtocolConformanceTests {
+private let graph = WaylandTestGraph()
 
 /// A decoded `wl_display.error` (object 1, opcode 0): offending object id, code, message.
 private struct WireError {
@@ -56,9 +57,10 @@ private func bind(
 /// observable behavior Nucleus implements. This wire-visible contract prevents
 /// an inert protocol object from becoming discoverable accidentally.
 @Test func productionRegistryMatchesSupportedProtocolContract() throws {
+    let graph = WaylandTestGraph()
     let sink = InMemoryCommitSink()
     let author = WindowSceneAuthor(commitSinkFactory: { sink })
-    let runtime = try #require(WaylandRouterRuntime(author: author))
+    let runtime = try #require(graph.routerRuntime(author: author))
     let client = try #require(WaylandTestClient(display: runtime.router.display))
 
     let actual = Dictionary(
@@ -110,7 +112,7 @@ private func bind(
 @Test func surfaceRejectsInvalidScaleAndTransform() throws {
     func run(opcode: UInt16, value: Int32, expectedCode: UInt32) throws {
         let router = try #require(NucleusWaylandRouter())
-        WlCompositor().register(in: router)
+        graph.compositor().register(in: router)
         let client = try #require(
             WaylandTestClient(display: router.display))
         let globals = client.globals()
@@ -139,7 +141,7 @@ private func bind(
 
 @Test func xdgToplevelRejectsSelfParent() throws {
     let router = try #require(NucleusWaylandRouter())
-    WlCompositor().register(in: router)
+    graph.compositor().register(in: router)
     XdgShell().register(in: router)
     let client = try #require(
         WaylandTestClient(display: router.display))
@@ -178,7 +180,7 @@ private func bind(
 
 @Test func decorationModeIsBatchedIntoXdgConfigureCycle() throws {
     let router = try #require(NucleusWaylandRouter())
-    WlCompositor().register(in: router)
+    graph.compositor().register(in: router)
     XdgShell().register(in: router)
     XdgDecorationManager().register(in: router)
     let client = try #require(
@@ -253,7 +255,7 @@ private func bind(
         decorationID: UInt32
     ) {
         let router = try #require(NucleusWaylandRouter())
-        WlCompositor().register(in: router)
+        graph.compositor().register(in: router)
         XdgShell().register(in: router)
         XdgDecorationManager().register(in: router)
         let client = try #require(
@@ -331,9 +333,12 @@ private func bind(
 
 @Test func dataDeviceDragNegotiatesAndFinishesOnTheWire() throws {
     let router = try #require(NucleusWaylandRouter())
-    let compositor = WlCompositor()
-    let seat = WlSeat()
-    let dataDevice = WlDataDeviceManager(compositor: compositor)
+    let compositor = graph.compositor()
+    let seat = graph.seat()
+    let dataDevice = WlDataDeviceManager(
+        compositor: compositor,
+        host: graph.host,
+        dataExchange: graph.server.dataExchange)
     compositor.register(in: router)
     seat.updateCapabilities(
         pointer: true, keyboard: false, touch: false)
@@ -470,7 +475,7 @@ private func bind(
 /// (value 2 on the layer_surface). Regression guard for the `set_anchor` validation.
 @Test func layerShellRejectsInvalidAnchor() throws {
     let router = try #require(NucleusWaylandRouter())
-    WlCompositor().register(in: router)
+    graph.compositor().register(in: router)
     WlOutput(info: OutputInfo(
         physicalWidthMm: 600, physicalHeightMm: 340, pixelWidth: 1920, pixelHeight: 1080,
         refreshMhz: 60000, scale: 1, name: "DP-1", description: "Out")).register(in: router)
@@ -501,7 +506,7 @@ private func bind(
 /// invalid_anchor. Regression guard for the corrected error code.
 @Test func layerShellRejectsInvalidLayer() throws {
     let router = try #require(NucleusWaylandRouter())
-    WlCompositor().register(in: router)
+    graph.compositor().register(in: router)
     WlOutput(info: OutputInfo(
         physicalWidthMm: 600, physicalHeightMm: 340, pixelWidth: 1920, pixelHeight: 1080,
         refreshMhz: 60000, scale: 1, name: "DP-1", description: "Out")).register(in: router)
@@ -533,7 +538,7 @@ private func bind(
 /// the compositor and client disagree about the role's arranged size.
 @Test func layerShellRejectsBufferBeforeAckConfigure() throws {
     let router = try #require(NucleusWaylandRouter())
-    WlCompositor().register(in: router)
+    graph.compositor().register(in: router)
     WlOutput(info: OutputInfo(
         physicalWidthMm: 600, physicalHeightMm: 340,
         pixelWidth: 1920, pixelHeight: 1080,
@@ -621,11 +626,10 @@ private func stateSet(_ m: WireMessage) -> [UInt32] {
 /// previously never reported (so taskbars rendered minimized windows as un-minimized),
 /// and the reconcile path the unminimize fix drives.
 @MainActor @Test func foreignToplevelReportsMinimizedState() throws {
+    let graph = WaylandTestGraph()
     let router = try #require(NucleusWaylandRouter())
-    let compositor = WlCompositor(); compositor.register(in: router)
-    let server = NucleusCompositorServer.shared
-    for w in server.windows.windows { _ = server.destroyWindow(id: w.id) }  // isolate the shared model
-    defer { for w in server.windows.windows { _ = server.destroyWindow(id: w.id) } }
+    let compositor = graph.compositor(); compositor.register(in: router)
+    let server = graph.server
 
     let window = server.createWindow(source: .xdg)
     window.managedAppWindow = true
@@ -634,7 +638,8 @@ private func stateSet(_ m: WireMessage) -> [UInt32] {
     window.mapped = true
     window.minimized = true
 
-    let manager = ZwlrForeignToplevelManager(compositor: compositor); manager.register(in: router)
+    let manager = ZwlrForeignToplevelManager(compositor: compositor, server: server)
+    manager.register(in: router)
     let client = try #require(WaylandTestClient(display: router.display))
     let globals = client.globals()
     let mgrId: UInt32 = 3
@@ -879,7 +884,7 @@ private final class SuccessfulScreencopyStub: ScreencopyDelegate {
 /// guard for the validation that pre-empts an out-of-bounds copy.
 @Test func screencopyRejectsMismatchedBuffer() throws {
     let router = try #require(NucleusWaylandRouter())
-    WlCompositor().register(in: router)
+    graph.compositor().register(in: router)
     WlOutput(info: OutputInfo(
         physicalWidthMm: 600, physicalHeightMm: 340, pixelWidth: 64, pixelHeight: 48,
         refreshMhz: 60000, scale: 1, name: "DP-1", description: "Out")).register(in: router)
@@ -966,7 +971,7 @@ private final class RecordingSurfaceScene: SurfaceSceneDelegate {
 /// upload and can dereference a wl_buffer the client has already destroyed.
 @Test func stateOnlySurfaceCommitPreservesBufferWithoutReattaching() throws {
     let router = try #require(NucleusWaylandRouter())
-    let compositor = WlCompositor()
+    let compositor = graph.compositor()
     let scene = RecordingSurfaceScene()
     compositor.sceneDelegate = scene
     compositor.register(in: router)
@@ -1038,7 +1043,7 @@ private final class PreferredScaleProbe: PreferredScaleSink {
 /// surfaces cover only part of the physical output.
 @Test func fractionalOutputPreservesLogicalGeometryAndPreferredScale() throws {
     let router = try #require(NucleusWaylandRouter())
-    let compositor = WlCompositor()
+    let compositor = graph.compositor()
     compositor.register(in: router)
     let output = WlOutput(info: OutputInfo(
         outputId: 822,
@@ -1069,7 +1074,7 @@ private final class PreferredScaleProbe: PreferredScaleSink {
 
 @Test func outputUpdateRefreshesBindingsAndRemovalWithdrawsGlobal() throws {
     let router = try #require(NucleusWaylandRouter())
-    let compositor = WlCompositor()
+    let compositor = graph.compositor()
     compositor.register(in: router)
     let xdgOutputManager = XdgOutputManager()
     xdgOutputManager.register(in: router)
@@ -1182,7 +1187,7 @@ private final class PreferredScaleProbe: PreferredScaleSink {
 /// Regression guard for the profile-session SIGSEGV in wl_resource_post_event.
 @Test func replacingDestroyedCurrentBufferDoesNotUseFreedResource() throws {
     let router = try #require(NucleusWaylandRouter())
-    let compositor = WlCompositor()
+    let compositor = graph.compositor()
     compositor.register(in: router)
 
     let client = try #require(WaylandTestClient(display: router.display))
@@ -1241,7 +1246,7 @@ private final class PreferredScaleProbe: PreferredScaleSink {
 /// exact-once failure transition independently of any hardware import backend.
 @Test func immediatelyReusableBufferIsReleasedExactlyOnce() throws {
     let router = try #require(NucleusWaylandRouter())
-    let compositor = WlCompositor()
+    let compositor = graph.compositor()
     compositor.register(in: router)
 
     let client = try #require(WaylandTestClient(display: router.display))
@@ -1299,7 +1304,7 @@ private final class PreferredScaleProbe: PreferredScaleSink {
 
 @Test func importedDmabufReleaseWaitsForRendererRetirement() throws {
     let router = try #require(NucleusWaylandRouter())
-    let compositor = WlCompositor()
+    let compositor = graph.compositor()
     compositor.register(in: router)
     let dmabuf = ZwpLinuxDmabuf()
     let dmabufDelegate = AcceptingDmabufDelegate()
@@ -1368,7 +1373,7 @@ private final class PreferredScaleProbe: PreferredScaleSink {
 /// already_constructed (value 2 on the zwlr_layer_shell_v1). Regression guard.
 @Test func layerShellRejectsBufferedSurface() throws {
     let router = try #require(NucleusWaylandRouter())
-    WlCompositor().register(in: router)
+    graph.compositor().register(in: router)
     WlOutput(info: OutputInfo(
         physicalWidthMm: 600, physicalHeightMm: 340, pixelWidth: 1920, pixelHeight: 1080,
         refreshMhz: 60000, scale: 1, name: "DP-1", description: "Out")).register(in: router)
@@ -1410,12 +1415,15 @@ private final class PreferredScaleProbe: PreferredScaleSink {
 /// directly — before the fix, the `false` branch was a no-op and `window.minimized`
 /// had no path back, so this would leave the window stranded.
 @MainActor @Test func foreignToplevelUnminimizeRestoresWindow() throws {
-    let compositor = WlCompositor()
+    let graph = WaylandTestGraph()
+    let compositor = graph.compositor()
+    let seat = graph.seat()
     let driver = RouterWindowDriver(
-        seatDriver: RouterSeatDriver(seat: WlSeat(), compositor: compositor), compositor: compositor)
-    let server = NucleusCompositorServer.shared
-    for w in server.windows.windows { _ = server.destroyWindow(id: w.id) }
-    defer { for w in server.windows.windows { _ = server.destroyWindow(id: w.id) } }
+        seatDriver: RouterSeatDriver(
+            seat: seat, compositor: compositor, server: graph.server),
+        compositor: compositor,
+        host: graph.host)
+    let server = graph.server
 
     let window = server.createWindow(source: .xdg)
     window.managedAppWindow = true
@@ -1442,7 +1450,7 @@ private final class LockGateStub: SessionLockDelegate {
 /// behind the granted lock. The granted first lock still configures normally.
 @Test func sessionLockSecondLockerIsInert() throws {
     let router = try #require(NucleusWaylandRouter())
-    let compositor = WlCompositor(); compositor.register(in: router)
+    let compositor = graph.compositor(); compositor.register(in: router)
     WlOutput(info: OutputInfo(
         physicalWidthMm: 600, physicalHeightMm: 340, pixelWidth: 64, pixelHeight: 48,
         refreshMhz: 60000, scale: 1, name: "LOCK-1", description: "Lock")).register(in: router)
@@ -1483,7 +1491,7 @@ private final class LockGateStub: SessionLockDelegate {
 /// rejected with dimensions_mismatch (value 2). Regression guard.
 @Test func sessionLockRejectsMismatchedBuffer() throws {
     let router = try #require(NucleusWaylandRouter())
-    WlCompositor().register(in: router)
+    graph.compositor().register(in: router)
     WlOutput(info: OutputInfo(
         physicalWidthMm: 600, physicalHeightMm: 340, pixelWidth: 64, pixelHeight: 48,
         refreshMhz: 60000, scale: 1, name: "LOCK-1", description: "Lock")).register(in: router)
@@ -1531,7 +1539,7 @@ private final class LockGateStub: SessionLockDelegate {
 /// matching page flip completes its callback and presentation feedback.
 @MainActor @Test func presentTickDeliversFrameCallbackAndFeedback() throws {
     let router = try #require(NucleusWaylandRouter())
-    let compositor = WlCompositor()
+    let compositor = graph.compositor()
     compositor.register(in: router)
     router.compositor = compositor  // wired by WaylandRouterRuntime live; the present tick routes through it
     WpPresentation().register(in: router)
@@ -1589,7 +1597,7 @@ private final class LockGateStub: SessionLockDelegate {
 
 @MainActor @Test func presentationFeedbackWaitsForEverySampledOutput() throws {
     let router = try #require(NucleusWaylandRouter())
-    let compositor = WlCompositor()
+    let compositor = graph.compositor()
     compositor.register(in: router)
     router.compositor = compositor
     WpPresentation().register(in: router)

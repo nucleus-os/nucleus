@@ -203,8 +203,6 @@ public protocol DataSelectionObserver: AnyObject {
 
 @MainActor
 public final class DataExchangeService {
-    public static let shared = DataExchangeService()
-
     public struct Snapshot: Equatable, Sendable {
         public var sourceCount: Int
         public var offerCount: Int

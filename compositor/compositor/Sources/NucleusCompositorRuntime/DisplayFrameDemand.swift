@@ -15,10 +15,16 @@ import Glibc
 final class DisplayFrameDemand {
     private unowned let server: NucleusCompositorServer
     private unowned let renderRuntime: RenderRuntime
+    private unowned let shellServices: ShellServices
 
-    init(server: NucleusCompositorServer, renderRuntime: RenderRuntime) {
+    init(
+        server: NucleusCompositorServer,
+        renderRuntime: RenderRuntime,
+        shellServices: ShellServices
+    ) {
         self.server = server
         self.renderRuntime = renderRuntime
+        self.shellServices = shellServices
     }
 
     /// Mark a one-shot frame need on every output.
@@ -54,11 +60,12 @@ final class DisplayFrameDemand {
 
         // Collect. The `||` short-circuits, so a satisfied
         // bezel latch leaves the notification latch unconsumed (and vice-versa).
-        let overlayFrameRequested = BezelService.shared.takeFrameRequest()
-            || NotificationService.shared.takeFrameRequest()
+        let overlayFrameRequested = shellServices.bezel.takeFrameRequest()
+            || shellServices.notifications.takeFrameRequest()
         let notificationDeadlineNs =
-            OverlaySceneRuntime.shared.notificationDeadlineNs()
-        let notificationAnimationActive = BezelService.shared.hasActiveNotifications()
+            shellServices.overlayScene.notificationDeadlineNs()
+        let notificationAnimationActive =
+            shellServices.bezel.hasActiveNotifications()
         let overlayRenderAnimationActive = renderRuntime.hasActiveAnimations
 
         // Apply.

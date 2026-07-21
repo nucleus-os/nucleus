@@ -4,7 +4,7 @@
 // serial. `get_xwayland_surface` attaches an xwayland_surface_v1 role to a
 // wl_surface; `set_serial` records the serial (double-buffered); the surface's
 // first post-serial commit reports the (serial, surfaceObjectId) pairing directly
-// to the Swift XWM (RouterHost.shared.xwaylandHost.xwm.tryAssociateRouterSurfaceBySerial),
+// to the owning runtime's Swift XWM,
 // which resolves it against the X11 window the XWM parked under the same serial and
 // drives router Window creation.
 //

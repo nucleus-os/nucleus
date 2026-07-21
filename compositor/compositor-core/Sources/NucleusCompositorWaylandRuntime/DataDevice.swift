@@ -13,6 +13,13 @@ import Glibc
 import WaylandServerC
 import WaylandServer
 import WaylandServerDispatch
+
+@MainActor
+private func dataExchange(at bits: UInt) -> DataExchangeService {
+    Unmanaged<DataExchangeService>
+        .fromOpaque(UnsafeRawPointer(bitPattern: bits)!)
+        .takeUnretainedValue()
+}
 import NucleusCompositorServer
 
 /// The compositor-policy seam for data-device. Focus decides selection delivery;
@@ -81,6 +88,7 @@ final class WlDataDeviceManager {
     weak var delegate: DataDeviceDelegate?
     private unowned let compositor: WlCompositor
     fileprivate unowned let host: RouterHost
+    fileprivate let dataExchangeBits: UInt
 
     private var devices: [WeakDataDevice] = []
     private var display: OpaquePointer?
@@ -100,9 +108,15 @@ final class WlDataDeviceManager {
     /// The current selection source, for an observer's bind-time projection.
     var currentSelection: (any SelectionSource)? { selection }
 
-    init(compositor: WlCompositor, host: RouterHost) {
+    init(
+        compositor: WlCompositor,
+        host: RouterHost,
+        dataExchange: DataExchangeService
+    ) {
         self.compositor = compositor
         self.host = host
+        self.dataExchangeBits = UInt(
+            bitPattern: Unmanaged.passUnretained(dataExchange).toOpaque())
     }
 
     func addSelectionObserver(_ observer: any SelectionObserver) {
@@ -192,8 +206,9 @@ final class WlDataDeviceManager {
         let sourceHandle = source.exchangeHandle
         let originID = UInt64(origin.objectId)
         let iconID = UInt64(icon?.objectId ?? 0)
+        let dataExchangeBits = self.dataExchangeBits
         _ = MainActor.assumeIsolated {
-            DataExchangeService.shared.startDrag(
+            dataExchange(at: dataExchangeBits).startDrag(
                 source: sourceHandle,
                 origin: originID,
                 icon: iconID,
@@ -265,8 +280,9 @@ final class WlDataDeviceManager {
         if let source = drag.source {
             let handle = source.exchangeHandle
             let mime = offers.compactMap(\.acceptedMimeType).first
+            let dataExchangeBits = self.dataExchangeBits
             _ = MainActor.assumeIsolated {
-                DataExchangeService.shared.dropDrag(
+                dataExchange(at: dataExchangeBits).dropDrag(
                     source: handle,
                     acceptedMimeType: mime)
             }
@@ -284,8 +300,9 @@ final class WlDataDeviceManager {
             drag.source?.sendDndCancelled()
             if let source = drag.source {
                 let handle = source.exchangeHandle
+                let dataExchangeBits = self.dataExchangeBits
                 MainActor.assumeIsolated {
-                    DataExchangeService.shared.cancelDrag(
+                    dataExchange(at: dataExchangeBits).cancelDrag(
                         source: handle)
                 }
             }
@@ -407,6 +424,7 @@ final class WlDataSource {
     }
 
     private weak var manager: WlDataDeviceManager?
+    private let dataExchangeBits: UInt
     let exchangeHandle: DataSourceHandle
     private(set) var mimes: [String] = []
     private(set) var actions: UInt32 = 0
@@ -416,8 +434,10 @@ final class WlDataSource {
 
     init(manager: WlDataDeviceManager, clientKey: UInt) {
         self.manager = manager
+        let dataExchangeBits = manager.dataExchangeBits
+        self.dataExchangeBits = dataExchangeBits
         exchangeHandle = MainActor.assumeIsolated {
-            let service = DataExchangeService.shared
+            let service = dataExchange(at: dataExchangeBits)
             let handle = DataSourceHandle(rawValue: service.allocateHandle())
             service.sourceCreated(
                 handle,
@@ -431,8 +451,10 @@ final class WlDataSource {
         self.resource = resource
         let handle = exchangeHandle
         let resourceAddress = UInt(bitPattern: resource)
+        let dataExchangeBits = self.dataExchangeBits
         MainActor.assumeIsolated {
-            DataExchangeService.shared.registerSourceEvents(
+            let service = dataExchange(at: dataExchangeBits)
+            service.registerSourceEvents(
                 handle,
                 onSend: { mime, fd in
                     guard let resource = UnsafeMutablePointer<wl_resource>(
@@ -464,8 +486,9 @@ final class WlDataSource {
     deinit {
         manager?.sourceDestroyed(self)
         let handle = exchangeHandle
+        let dataExchangeBits = self.dataExchangeBits
         MainActor.assumeIsolated {
-            _ = DataExchangeService.shared.sourceDestroyed(handle)
+            _ = dataExchange(at: dataExchangeBits).sourceDestroyed(handle)
         }
     }
 
@@ -523,9 +546,9 @@ extension WlDataSource: WlDataSourceRequests {
         let mime = String(cString: mime_type)
         mimes.append(mime)
         let handle = exchangeHandle
+        let dataExchangeBits = self.dataExchangeBits
         MainActor.assumeIsolated {
-            DataExchangeService.shared.addMimeType(
-                mime, to: handle)
+            dataExchange(at: dataExchangeBits).addMimeType(mime, to: handle)
         }
     }
 

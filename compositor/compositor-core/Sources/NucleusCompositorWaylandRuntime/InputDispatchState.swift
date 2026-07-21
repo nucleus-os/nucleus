@@ -140,7 +140,7 @@ extension InputDispatch: CompositorInputControl {
     func currentPressedEvdevKeys() -> [UInt32] { xkb.pressedEvdevKeys() }
 
     /// Run a window-menu verb the overlay reported to the shell. Reached from the
-    /// shell's overlay-publication conformer through `NucleusCompositorServer.shared.inputControl`.
+    /// shell's overlay-publication conformer through the runtime server's `inputControl`.
     func windowMenuSelected(windowID: UInt64, verb: Int32) {
         guard windowID != 0, let runtime = host.runtime else { return }
         let driver = runtime.windowDriver

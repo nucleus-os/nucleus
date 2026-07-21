@@ -368,8 +368,8 @@ public struct KeybindOutcome: Sendable {
 /// services that live in the `.shell` layer above it. The import-audit area DAG
 /// forbids the compositor from importing `NucleusCompositorShell`/`NucleusCompositorOverlay` directly,
 /// so the dependency is inverted: this protocol is defined here in `.server`, the
-/// shell conforms to it, and injects the instance into `NucleusCompositorServer.shared` at
-/// startup. The dispatch calls through `NucleusCompositorServer.shared.shellPolicy`.
+/// shell conforms to it, and injects the instance into its runtime-owned server
+/// at startup. Input dispatch calls through that server's `shellPolicy` seam.
 @MainActor
 public protocol CompositorShellPolicy: AnyObject {
     /// Session keybind policy (Super-prefixed combos, the launcher table, hotkey
@@ -427,8 +427,6 @@ public protocol CompositorInputControl: AnyObject {
 
 @MainActor
 public final class NucleusCompositorServer {
-    public static let shared = NucleusCompositorServer()
-
     /// The shell-policy seam, injected by the shell layer at startup (nil until
     /// then; the dispatch treats a nil seam as "no compositor keybind matched").
     public weak var shellPolicy: CompositorShellPolicy?
@@ -447,6 +445,7 @@ public final class NucleusCompositorServer {
     public let events = EventServer()
     public let cursor = CursorServer()
     public let seatFocus = SeatFocus()
+    public let dataExchange = DataExchangeService()
     public lazy var displayServer = DisplayServer(layout: layout)
 
     private var nextWindowID: WindowID = 1

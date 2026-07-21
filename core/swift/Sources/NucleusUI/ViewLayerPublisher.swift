@@ -273,9 +273,7 @@ package final class ViewLayerPublisher: ~Sendable {
         }
 
         var transaction = LayerTransaction(context: context)
-        let orderedViewIDs = visualLayers.keys.sorted {
-            removalDepth(of: $0) > removalDepth(of: $1)
-        }
+        let orderedViewIDs = removalOrder(for: visualLayers.keys)
         for viewID in orderedViewIDs {
             if let state = visualLayers[viewID] {
                 transaction.mutations.append(.removed(state.layer.id))
@@ -429,6 +427,59 @@ package final class ViewLayerPublisher: ~Sendable {
                 state.siblingIndex = placement.siblingIndex
                 cacheDelta.upsertPlacement(state, for: placement.id)
                 didMutate = true
+            }
+        }
+
+        var siblingReorders: [(
+            parentLayer: Layer,
+            desired: [ViewID],
+            moves: [(viewID: ViewID, index: UInt32)]
+        )] = []
+        for snapshot in snapshots {
+            guard let acceptedParent = visualLayers[snapshot.viewID] else {
+                continue
+            }
+            let desired = snapshot.view.childViews.map(\.id)
+            guard desired != acceptedParent.childViewIDs,
+                  let moves = retainedSiblingReorderMoves(
+                    from: acceptedParent.childViewIDs,
+                    to: desired),
+                  desired.allSatisfy({ childID in
+                      guard let child = visualLayers[childID] else {
+                          return false
+                      }
+                      return child.parentViewID == snapshot.viewID
+                          && child.rootPlacementID == nil
+                  })
+            else {
+                continue
+            }
+            siblingReorders.append((
+                parentLayer: acceptedParent.layer,
+                desired: desired,
+                moves: moves))
+        }
+        for reorder in siblingReorders {
+            for (index, viewID) in reorder.desired.enumerated() {
+                guard var state = cacheDelta.visual(
+                    viewID,
+                    base: visualLayers
+                ) else { continue }
+                state.siblingIndex = UInt32(clamping: index)
+                cacheDelta.upsertVisual(state, for: viewID)
+            }
+            for move in reorder.moves {
+                guard let state = cacheDelta.visual(
+                    move.viewID,
+                    base: visualLayers
+                ) else { continue }
+                transaction.mutations.append(.inserted(
+                    layer: state.layer.id,
+                    parent: reorder.parentLayer.id,
+                    index: move.index
+                ))
+                didMutate = true
+                metrics.layersReparented &+= 1
             }
         }
 

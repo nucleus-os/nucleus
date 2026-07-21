@@ -136,11 +136,9 @@ final class RenderServiceSpy: CompositorRenderService {
 
 @MainActor
 @Test func typedRenderServicePreservesValuesAndBorrowedOwnership() {
-    let server = NucleusCompositorServer.shared
-    server.renderService = nil
-    defer { server.renderService = nil }
+    let server = WaylandTestGraph().server
 
-    let driver = RouterRenderDriver()
+    let driver = RouterRenderDriver(server: server)
     #expect(driver.presentationClockId == UInt32(CLOCK_MONOTONIC))
     #expect(driver.dmabufSupportedFormats().isEmpty)
     #expect(driver.importSyncobjTimeline(fd: 17) == nil)
@@ -284,8 +282,7 @@ final class RenderServiceSpy: CompositorRenderService {
 
 @MainActor
 @Test func serverDoesNotOwnRenderServiceLifetime() {
-    let server = NucleusCompositorServer.shared
-    server.renderService = nil
+    let server = WaylandTestGraph().server
     #expect(server.renderService == nil)
 
     weak var releasedService: RenderServiceSpy?

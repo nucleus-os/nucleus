@@ -3,15 +3,16 @@ import Testing
 
 @MainActor
 @Suite struct SubsurfaceTopologyTests {
-    private func surface(_ compositor: WlCompositor) -> WlSurface {
-        WlSurface(compositor: compositor, version: 7)
+    private func surface(_ compositor: WlCompositor, graph: WaylandTestGraph) -> WlSurface {
+        graph.surface(compositor: compositor)
     }
 
     @Test func positionAndStackApplyOnlyWithParentCommit() {
-        let compositor = WlCompositor()
-        let parent = surface(compositor)
-        let first = surface(compositor)
-        let second = surface(compositor)
+        let graph = WaylandTestGraph()
+        let compositor = graph.compositor()
+        let parent = surface(compositor, graph: graph)
+        let first = surface(compositor, graph: graph)
+        let second = surface(compositor, graph: graph)
         #expect(first.claimSubsurfaceRole())
         #expect(second.claimSubsurfaceRole())
         first.attachAsSubsurface(to: parent)
@@ -36,10 +37,11 @@ import Testing
     }
 
     @Test func ancestryCycleAndInheritedSynchronizationAreExplicit() {
-        let compositor = WlCompositor()
-        let root = surface(compositor)
-        let child = surface(compositor)
-        let grandchild = surface(compositor)
+        let graph = WaylandTestGraph()
+        let compositor = graph.compositor()
+        let root = surface(compositor, graph: graph)
+        let child = surface(compositor, graph: graph)
+        let grandchild = surface(compositor, graph: graph)
         #expect(child.claimSubsurfaceRole())
         #expect(grandchild.claimSubsurfaceRole())
         child.attachAsSubsurface(to: root)

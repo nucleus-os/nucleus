@@ -278,16 +278,6 @@ extension ViewLayerPublisher {
         }
     }
 
-    func removalDepth(of viewID: ViewID) -> Int {
-        var depth = 0
-        var parent = visualLayers[viewID]?.parentViewID
-        while let current = parent {
-            depth += 1
-            parent = visualLayers[current]?.parentViewID
-        }
-        return depth
-    }
-
     func removedCachedSubtrees(
         rootedAt roots: Set<ViewID>
     ) -> [ViewID] {
@@ -299,9 +289,109 @@ extension ViewLayerPublisher {
             pending.append(
                 contentsOf: visualLayers[viewID]?.childViewIDs ?? [])
         }
-        return removed.sorted {
-            removalDepth(of: $0) > removalDepth(of: $1)
+        return removalOrder(for: removed)
+    }
+
+    func removalOrder<S: Sequence>(
+        for viewIDs: S
+    ) -> [ViewID] where S.Element == ViewID {
+        let requested = Set(viewIDs)
+        var preorder: [ViewID] = []
+        preorder.reserveCapacity(visualLayers.count)
+        var work = Array(publishedRootViewIDs.reversed())
+        while let viewID = work.popLast() {
+            guard let state = visualLayers[viewID] else { continue }
+            preorder.append(viewID)
+            for childID in state.childViewIDs.reversed() {
+                work.append(childID)
+            }
         }
+        precondition(
+            preorder.count == visualLayers.count,
+            "published view cache is not one tree rooted at its published roots")
+        return preorder.reversed().filter(requested.contains)
+    }
+
+    func retainedSiblingReorderMoves(
+        from old: [ViewID],
+        to desired: [ViewID]
+    ) -> [(viewID: ViewID, index: UInt32)]? {
+        guard old.count == desired.count,
+              Set(old) == Set(desired),
+              old != desired
+        else {
+            return nil
+        }
+
+        var oldIndices: [ViewID: Int] = [:]
+        oldIndices.reserveCapacity(old.count)
+        for (index, viewID) in old.enumerated() {
+            oldIndices[viewID] = index
+        }
+        let sequence = desired.compactMap { oldIndices[$0] }
+        precondition(sequence.count == desired.count)
+
+        var tailValues: [Int] = []
+        var tailPositions: [Int] = []
+        var predecessors = Array(repeating: -1, count: sequence.count)
+        tailValues.reserveCapacity(sequence.count)
+        tailPositions.reserveCapacity(sequence.count)
+        for (position, value) in sequence.enumerated() {
+            var lower = 0
+            var upper = tailValues.count
+            while lower < upper {
+                let middle = lower + (upper - lower) / 2
+                if tailValues[middle] < value {
+                    lower = middle + 1
+                } else {
+                    upper = middle
+                }
+            }
+            if lower > 0 {
+                predecessors[position] = tailPositions[lower - 1]
+            }
+            if lower == tailValues.count {
+                tailValues.append(value)
+                tailPositions.append(position)
+            } else {
+                tailValues[lower] = value
+                tailPositions[lower] = position
+            }
+        }
+
+        var retainedPositions: Set<Int> = []
+        var retained = tailPositions.last ?? -1
+        while retained >= 0 {
+            retainedPositions.insert(retained)
+            retained = predecessors[retained]
+        }
+
+        var current = old
+        var moves: [(viewID: ViewID, index: UInt32)] = []
+        moves.reserveCapacity(desired.count - retainedPositions.count)
+        for desiredIndex in desired.indices.reversed()
+        where !retainedPositions.contains(desiredIndex) {
+            let viewID = desired[desiredIndex]
+            guard let currentIndex = current.firstIndex(of: viewID) else {
+                preconditionFailure("retained sibling disappeared during reorder")
+            }
+            current.remove(at: currentIndex)
+            let insertionIndex: Int
+            if desiredIndex + 1 < desired.endIndex {
+                guard let anchor = current.firstIndex(
+                    of: desired[desiredIndex + 1])
+                else {
+                    preconditionFailure("retained sibling reorder lost its anchor")
+                }
+                insertionIndex = anchor
+            } else {
+                insertionIndex = current.endIndex
+            }
+            current.insert(viewID, at: insertionIndex)
+            moves.append((viewID, UInt32(clamping: insertionIndex)))
+        }
+        precondition(current == desired, "retained sibling reorder was incomplete")
+        return moves
     }
 
     func animationKeyPath(

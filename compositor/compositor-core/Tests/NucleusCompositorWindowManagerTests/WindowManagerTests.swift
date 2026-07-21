@@ -5,6 +5,18 @@ import NucleusCompositorServerTypes
 @testable import NucleusCompositorWindowManager
 
 @MainActor
+@Suite(.serialized)
+struct WindowManagerBehaviorTests {
+private let server: NucleusCompositorServer
+private let windowManager: WindowManager
+
+init() {
+    let server = NucleusCompositorServer()
+    self.server = server
+    self.windowManager = WindowManager(server: server)
+}
+
+@MainActor
 private func seedConfigurePolicyDisplay(id: UInt64 = 7, x: Double = 0) throws {
     var mode = WireDisplayMode()
     mode.pixelWidth = 1600
@@ -17,7 +29,7 @@ private func seedConfigurePolicyDisplay(id: UInt64 = 7, x: Double = 0) throws {
     config.fractionalScale = 1
     config.logicalX = x
     config.mode = mode
-    try NucleusCompositorServer.shared.displayAdd(id: id, configuration: config)
+    try server.displayAdd(id: id, configuration: config)
 }
 
 private func layerSurfaceRecord(
@@ -50,7 +62,7 @@ private func nucleus_compositor_window_manager_record_configure_sent(
     _ serial: UInt32,
     _ plan: ConfigurePlan
 ) -> WindowPendingConfigure? {
-    WindowManager.shared.recordConfigureSent(windowID: windowID, serial: serial, plan: plan)
+    windowManager.recordConfigureSent(windowID: windowID, serial: serial, plan: plan)
 }
 
 @MainActor
@@ -58,12 +70,12 @@ private func nucleus_compositor_window_manager_report_configure_ack(
     _ windowID: UInt64,
     _ ackedSerial: UInt32
 ) -> WindowPendingConfigure? {
-    WindowManager.shared.reportConfigureAck(windowID: windowID, ackedSerial: ackedSerial)
+    windowManager.reportConfigureAck(windowID: windowID, ackedSerial: ackedSerial)
 }
 
 @MainActor
 private func nucleus_compositor_window_manager_report_configure_commit(_ report: ConfigureCommitReport) -> UInt8 {
-    WindowManager.shared.reportConfigureCommit(report) ? 1 : 0
+    windowManager.reportConfigureCommit(report) ? 1 : 0
 }
 
 @MainActor
@@ -77,7 +89,7 @@ private func nucleus_compositor_window_manager_normalize_output_state(
     let restore = hasTranslatedRestore != 0
         ? RestoreTranslation(rect: WindowRect(wireValue: translatedRestore), outputID: translatedRestoreOutputID)
         : nil
-    return WindowManager.shared.normalizeOutputState(
+    return windowManager.normalizeOutputState(
         windowID: windowID,
         fallbackOutputID: fallbackOutputID,
         translatedRestore: restore
@@ -102,7 +114,7 @@ private func nucleus_compositor_window_manager_migrate_off_output(
     _ outChanged: UnsafeMutablePointer<UInt8>?,
     _ outSpecialChanged: UnsafeMutablePointer<UInt8>?
 ) -> UInt8 {
-    guard let result = try? WindowManager.shared.migrateOffOutput(
+    guard let result = try? windowManager.migrateOffOutput(
         windowID: windowID,
         removedOutputID: removedOutputID,
         hasFallbackOutputID: hasFallbackOutputID != 0,
@@ -124,22 +136,22 @@ private func nucleus_compositor_window_manager_migrate_off_output(
 
 @MainActor
 @Test func interactionStateHostMethodsRoundTrip() throws {
-    WindowManager.shared.reset()
+    windowManager.reset()
 
-    #expect(WindowManager.shared.nextLayoutTransitionID() == 1)
-    #expect(WindowManager.shared.nextLayoutTransitionID() == 2)
+    #expect(windowManager.nextLayoutTransitionID() == 1)
+    #expect(windowManager.nextLayoutTransitionID() == 2)
 
     var rect = WireWindowRect()
     rect.x = 10
     rect.y = 20
     rect.width = 100
     rect.height = 80
-    WindowManager.shared.seedInteractiveStartContext(windowID: 77, cursorX: 5, cursorY: 5, startRect: rect)
-    WindowManager.shared.beginInteractiveMove(windowID: 77, serial: 44)
-    #expect(WindowManager.shared.interactiveGrabActive() == true)
+    windowManager.seedInteractiveStartContext(windowID: 77, cursorX: 5, cursorY: 5, startRect: rect)
+    windowManager.beginInteractiveMove(windowID: 77, serial: 44)
+    #expect(windowManager.interactiveGrabActive() == true)
 
     let moveUpdate = try #require(
-        WindowManager.shared.updateInteractiveGrab(cursorX: 15, cursorY: 25))
+        windowManager.updateInteractiveGrab(cursorX: 15, cursorY: 25))
     #expect(moveUpdate.mode == .move)
     #expect(moveUpdate.windowId == 77)
     #expect(moveUpdate.rect.x == 20)
@@ -147,33 +159,33 @@ private func nucleus_compositor_window_manager_migrate_off_output(
     #expect(moveUpdate.rect.width == 100)
     #expect(moveUpdate.needsResizeConfigure == false)
 
-    WindowManager.shared.clearGrabFor(windowID: 99)
-    #expect(WindowManager.shared.interactiveGrabActive() == true)
-    WindowManager.shared.clearGrabFor(windowID: 77)
-    #expect(WindowManager.shared.interactiveGrabActive() == false)
+    windowManager.clearGrabFor(windowID: 99)
+    #expect(windowManager.interactiveGrabActive() == true)
+    windowManager.clearGrabFor(windowID: 77)
+    #expect(windowManager.interactiveGrabActive() == false)
 
     var edges = WireResizeEdges()
     edges.right = true
     edges.bottom = true
-    WindowManager.shared.seedInteractiveStartContext(windowID: 88, cursorX: 0, cursorY: 0, startRect: rect)
-    WindowManager.shared.beginInteractiveResize(windowID: 88, serial: 45, edges: edges)
+    windowManager.seedInteractiveStartContext(windowID: 88, cursorX: 0, cursorY: 0, startRect: rect)
+    windowManager.beginInteractiveResize(windowID: 88, serial: 45, edges: edges)
     let resizeUpdate = try #require(
-        WindowManager.shared.updateInteractiveGrab(cursorX: 20, cursorY: 30))
+        windowManager.updateInteractiveGrab(cursorX: 20, cursorY: 30))
     #expect(resizeUpdate.mode == .resize)
     #expect(resizeUpdate.windowId == 88)
     #expect(resizeUpdate.rect.width == 120)
     #expect(resizeUpdate.rect.height == 110)
     #expect(resizeUpdate.needsResizeConfigure == true)
 
-    WindowManager.shared.endInteractiveGrab()
-    #expect(WindowManager.shared.interactiveGrabActive() == false)
+    windowManager.endInteractiveGrab()
+    #expect(windowManager.interactiveGrabActive() == false)
 }
 
 @MainActor
 @Test func tileRegionPolicyComesFromWindowManager() {
     let output = LogicalRect(x: 100, y: 50, width: 1200, height: 800)
 
-    let leftTile = WindowManager.shared.tileRegion(command: TileCommand(rawValue: 1)!, output: output)
+    let leftTile = windowManager.tileRegion(command: TileCommand(rawValue: 1)!, output: output)
     #expect(leftTile.action == .tile)
     #expect(leftTile.rect.x == 100)
     #expect(leftTile.rect.y == 50)
@@ -184,7 +196,7 @@ private func nucleus_compositor_window_manager_migrate_off_output(
     #expect(leftTile.edges.top == true)
     #expect(leftTile.edges.bottom == true)
 
-    let cornerTile = WindowManager.shared.tileRegion(command: TileCommand(rawValue: 6)!, output: output)
+    let cornerTile = windowManager.tileRegion(command: TileCommand(rawValue: 6)!, output: output)
     #expect(cornerTile.action == .tile)
     #expect(cornerTile.rect.x == 700)
     #expect(cornerTile.rect.y == 50)
@@ -195,7 +207,7 @@ private func nucleus_compositor_window_manager_migrate_off_output(
     #expect(cornerTile.edges.top == true)
     #expect(cornerTile.edges.bottom == false)
 
-    let maximize = WindowManager.shared.tileRegion(command: TileCommand(rawValue: 9)!, output: output)
+    let maximize = windowManager.tileRegion(command: TileCommand(rawValue: 9)!, output: output)
     #expect(maximize.action == .maximize)
     #expect(maximize.rect.x == 100)
     #expect(maximize.rect.y == 50)
@@ -209,34 +221,34 @@ private func nucleus_compositor_window_manager_migrate_off_output(
 
 @MainActor
 @Test func nativeCommandPolicyMatchesWindowIdentity() {
-    NucleusCompositorServer.shared.serverReset()
-    WindowManager.shared.reset()
+    server.serverReset()
+    windowManager.reset()
 
     // xdg toplevel with a native-Command app-id resolves to native. This is the
     // case the Zig side could not see — the app-id lives here — so these clients
     // were previously always translated.
-    let kitty = WindowManager.shared.xdgCreated(xdgToplevelID: 1)
-    NucleusCompositorServer.shared.window(id: kitty)?.appId = "kitty"
-    #expect(WindowManager.shared.nativeCommandPolicy(windowID: kitty) == true)
+    let kitty = windowManager.xdgCreated(xdgToplevelID: 1)
+    server.window(id: kitty)?.appId = "kitty"
+    #expect(windowManager.nativeCommandPolicy(windowID: kitty) == true)
 
     // The match is case-insensitive.
-    let gnome = WindowManager.shared.xdgCreated(xdgToplevelID: 2)
-    NucleusCompositorServer.shared.window(id: gnome)?.appId = "org.GNOME.Terminal"
-    #expect(WindowManager.shared.nativeCommandPolicy(windowID: gnome) == true)
+    let gnome = windowManager.xdgCreated(xdgToplevelID: 2)
+    server.window(id: gnome)?.appId = "org.GNOME.Terminal"
+    #expect(windowManager.nativeCommandPolicy(windowID: gnome) == true)
 
     // A non-native xdg app is translated (Command → Control).
-    let editor = WindowManager.shared.xdgCreated(xdgToplevelID: 3)
-    NucleusCompositorServer.shared.window(id: editor)?.appId = "com.example.editor"
-    #expect(WindowManager.shared.nativeCommandPolicy(windowID: editor) == false)
+    let editor = windowManager.xdgCreated(xdgToplevelID: 3)
+    server.window(id: editor)?.appId = "com.example.editor"
+    #expect(windowManager.nativeCommandPolicy(windowID: editor) == false)
 
     // Xwayland windows match on either X11 class or instance.
-    let xfox = WindowManager.shared.xwaylandCreated(
+    let xfox = windowManager.xwaylandCreated(
         x11WindowID: 100, overrideRedirect: false, wantsKeyboardFocus: true)
-    WindowManager.shared.xwaylandSetClass(windowID: xfox, windowClass: "firefox", instance: "Navigator")
-    #expect(WindowManager.shared.nativeCommandPolicy(windowID: xfox) == true)
+    windowManager.xwaylandSetClass(windowID: xfox, windowClass: "firefox", instance: "Navigator")
+    #expect(windowManager.nativeCommandPolicy(windowID: xfox) == true)
 
     // An unknown window id is not native.
-    #expect(WindowManager.shared.nativeCommandPolicy(windowID: 999_999) == false)
+    #expect(windowManager.nativeCommandPolicy(windowID: 999_999) == false)
 }
 
 @MainActor
@@ -248,39 +260,39 @@ final class RecordingDesktopObserver: DesktopModelObserver {
 
 @MainActor
 @Test func desktopModelObservationReplaysSnapshotAndStreamsCoalesced() {
-    NucleusCompositorServer.shared.serverReset()
-    WindowManager.shared.reset()
+    server.serverReset()
+    windowManager.reset()
 
     // A window that exists before registration is replayed as a snapshot add.
-    let pre = WindowManager.shared.xdgCreated(xdgToplevelID: 1)
+    let pre = windowManager.xdgCreated(xdgToplevelID: 1)
     let observer = RecordingDesktopObserver()
-    NucleusCompositorServer.shared.addObserver(observer)
+    server.addObserver(observer)
     #expect(observer.flat.contains(.windowAdded(pre)))
 
     // Live changes accumulate and dispatch on drain, not synchronously.
-    let live = WindowManager.shared.xdgCreated(xdgToplevelID: 2)
-    NucleusCompositorServer.shared.window(id: live)?.title = "A"
-    NucleusCompositorServer.shared.window(id: live)?.title = "B"
-    NucleusCompositorServer.shared.window(id: live)?.appId = "app"
+    let live = windowManager.xdgCreated(xdgToplevelID: 2)
+    server.window(id: live)?.title = "A"
+    server.window(id: live)?.title = "B"
+    server.window(id: live)?.appId = "app"
     let batchesBeforeDrain = observer.batches.count
     #expect(observer.batches.count == batchesBeforeDrain)
 
-    NucleusCompositorServer.shared.drainChanges()
+    server.drainChanges()
     let batch = observer.batches.last ?? []
     #expect(batch.contains(.windowAdded(live)))
     // The two title sets + app-id set in one iteration coalesce to one change.
     #expect(batch.filter { $0 == .windowChanged(live) }.count == 1)
 
     // Focus + removal stream as their own events.
-    _ = WindowManager.shared.server.windows.focus(id: live)
-    NucleusCompositorServer.shared.drainChanges()
+    _ = windowManager.server.windows.focus(id: live)
+    server.drainChanges()
     #expect((observer.batches.last ?? []).contains(.focusChanged(live)))
 
-    _ = NucleusCompositorServer.shared.destroyWindow(id: live)
-    NucleusCompositorServer.shared.drainChanges()
+    _ = server.destroyWindow(id: live)
+    server.drainChanges()
     #expect((observer.batches.last ?? []).contains(.windowRemoved(live)))
 
-    NucleusCompositorServer.shared.removeObserver(observer)
+    server.removeObserver(observer)
 }
 
 @MainActor
@@ -289,19 +301,19 @@ final class RecordingDesktopObserver: DesktopModelObserver {
     // restreams title/app_id/state/output whenever the model reports the window
     // changed. This pins the model→observer contract it stands on — that every
     // field the projection mirrors records a change, idempotently and coalesced.
-    NucleusCompositorServer.shared.serverReset()
-    WindowManager.shared.reset()
+    server.serverReset()
+    windowManager.reset()
 
-    let id = WindowManager.shared.xdgCreated(xdgToplevelID: 1)
+    let id = windowManager.xdgCreated(xdgToplevelID: 1)
     let observer = RecordingDesktopObserver()
-    NucleusCompositorServer.shared.addObserver(observer)
-    guard let window = NucleusCompositorServer.shared.window(id: id) else {
+    server.addObserver(observer)
+    guard let window = server.window(id: id) else {
         Issue.record("missing created window")
         return
     }
 
     func changedCountAfterDrain() -> Int {
-        NucleusCompositorServer.shared.drainChanges()
+        server.drainChanges()
         return (observer.batches.last ?? []).filter { $0 == .windowChanged(id) }.count
     }
 
@@ -326,7 +338,7 @@ final class RecordingDesktopObserver: DesktopModelObserver {
     let batchesBefore = observer.batches.count
     window.title = "Editor"
     window.appId = "org.example.Editor"
-    NucleusCompositorServer.shared.drainChanges()
+    server.drainChanges()
     #expect(observer.batches.count == batchesBefore)
 
     // Several mirrored fields changing in one iteration coalesce to one change —
@@ -336,7 +348,7 @@ final class RecordingDesktopObserver: DesktopModelObserver {
     window.currentOutputID = 9
     #expect(changedCountAfterDrain() == 1)
 
-    NucleusCompositorServer.shared.removeObserver(observer)
+    server.removeObserver(observer)
 }
 
 @MainActor
@@ -345,76 +357,76 @@ final class RecordingDesktopObserver: DesktopModelObserver {
     // Removed/Activated and windowSpaceChanged onto per-output group + workspace
     // handles. This pins the model→observer contract it stands on — that each space
     // mutation records the change the projection needs, with no spurious traffic.
-    NucleusCompositorServer.shared.serverReset()
-    WindowManager.shared.reset()
+    server.serverReset()
+    windowManager.reset()
 
     let observer = RecordingDesktopObserver()
-    NucleusCompositorServer.shared.addObserver(observer)
+    server.addObserver(observer)
 
     // Adding a display creates its initial workspace → spaceAdded streams on drain.
     try seedConfigurePolicyDisplay(id: 7)
-    NucleusCompositorServer.shared.drainChanges()
-    let firstSpace = NucleusCompositorServer.shared.spacesActiveForDisplay(displayID: 7)
+    server.drainChanges()
+    let firstSpace = server.spacesActiveForDisplay(displayID: 7)
     #expect(firstSpace != 0)
     #expect((observer.batches.last ?? []).contains(.spaceAdded(firstSpace)))
 
     // Appending a workspace streams another spaceAdded.
-    let second = NucleusCompositorServer.shared.spacesAppend(outputID: 7)
-    NucleusCompositorServer.shared.drainChanges()
+    let second = server.spacesAppend(outputID: 7)
+    server.drainChanges()
     #expect((observer.batches.last ?? []).contains(.spaceAdded(second)))
 
     // Switching the active workspace streams spaceActivated for that output/space.
-    #expect(NucleusCompositorServer.shared.spacesSetActive(displayID: 7, spaceID: second))
-    NucleusCompositorServer.shared.drainChanges()
+    #expect(server.spacesSetActive(displayID: 7, spaceID: second))
+    server.drainChanges()
     #expect((observer.batches.last ?? []).contains(.spaceActivated(output: 7, space: second)))
 
     // Re-activating the already-active workspace records nothing — no spurious done.
     let batchesBefore = observer.batches.count
-    #expect(NucleusCompositorServer.shared.spacesSetActive(displayID: 7, spaceID: second))
-    NucleusCompositorServer.shared.drainChanges()
+    #expect(server.spacesSetActive(displayID: 7, spaceID: second))
+    server.drainChanges()
     #expect(observer.batches.count == batchesBefore)
 
     // Assigning a window to a workspace streams windowSpaceChanged.
-    let windowID = WindowManager.shared.xdgCreated(xdgToplevelID: 1)
-    #expect(NucleusCompositorServer.shared.spacesAssignWindowToSpace(windowID: windowID, spaceID: firstSpace))
-    NucleusCompositorServer.shared.drainChanges()
+    let windowID = windowManager.xdgCreated(xdgToplevelID: 1)
+    #expect(server.spacesAssignWindowToSpace(windowID: windowID, spaceID: firstSpace))
+    server.drainChanges()
     #expect((observer.batches.last ?? []).contains(.windowSpaceChanged(window: windowID, space: firstSpace)))
 
     // Removing an empty, inactive workspace streams spaceRemoved; the active one is
     // refused (still streams nothing).
-    let third = NucleusCompositorServer.shared.spacesAppend(outputID: 7)
-    NucleusCompositorServer.shared.drainChanges()
-    #expect(NucleusCompositorServer.shared.spacesRemove(spaceID: third))
-    NucleusCompositorServer.shared.drainChanges()
+    let third = server.spacesAppend(outputID: 7)
+    server.drainChanges()
+    #expect(server.spacesRemove(spaceID: third))
+    server.drainChanges()
     #expect((observer.batches.last ?? []).contains(.spaceRemoved(third)))
     // `second` is active → removal refused → no event.
     let beforeRefused = observer.batches.count
-    #expect(NucleusCompositorServer.shared.spacesRemove(spaceID: second) == false)
-    NucleusCompositorServer.shared.drainChanges()
+    #expect(server.spacesRemove(spaceID: second) == false)
+    server.drainChanges()
     #expect(observer.batches.count == beforeRefused)
 
-    NucleusCompositorServer.shared.removeObserver(observer)
+    server.removeObserver(observer)
 }
 
 @MainActor
 @Test func fullscreenAndPopupPoliciesUseWindowMechanismHostMethods() throws {
-    NucleusCompositorServer.shared.serverReset()
-    WindowManager.shared.reset()
+    server.serverReset()
+    windowManager.reset()
     try seedConfigurePolicyDisplay()
 
     var exceptID: UInt64 = 0
     var firstID: UInt64 = 0
     var secondID: UInt64 = 0
     var parentID: UInt64 = 0
-    exceptID = try NucleusCompositorServer.shared.windowCreate(source: .xdg)
-    firstID = try NucleusCompositorServer.shared.windowCreate(source: .xdg)
-    secondID = try NucleusCompositorServer.shared.windowCreate(source: .xdg)
-    parentID = try NucleusCompositorServer.shared.windowCreate(source: .xdg)
+    exceptID = try server.windowCreate(source: .xdg)
+    firstID = try server.windowCreate(source: .xdg)
+    secondID = try server.windowCreate(source: .xdg)
+    parentID = try server.windowCreate(source: .xdg)
 
-    guard let except = NucleusCompositorServer.shared.window(id: exceptID),
-          let first = NucleusCompositorServer.shared.window(id: firstID),
-          let second = NucleusCompositorServer.shared.window(id: secondID),
-          let parent = NucleusCompositorServer.shared.window(id: parentID)
+    guard let except = server.window(id: exceptID),
+          let first = server.window(id: firstID),
+          let second = server.window(id: secondID),
+          let parent = server.window(id: parentID)
     else {
         Issue.record("missing created windows")
         return
@@ -429,13 +441,13 @@ final class RecordingDesktopObserver: DesktopModelObserver {
     first.activeFullscreen = true
     second.requestedFullscreen = true
 
-    let ids = try WindowManager.shared.fullscreenRelinquishPlan(outputID: 7, exceptID: exceptID)
+    let ids = try windowManager.fullscreenRelinquishPlan(outputID: 7, exceptID: exceptID)
     #expect(ids == [firstID, secondID])
 
     var parentRect = WireWindowRect()
     parentRect.width = 200
     parentRect.height = 100
-    try NucleusCompositorServer.shared.windowSetGeometry(id: parentID, rect: parentRect)
+    try server.windowSetGeometry(id: parentID, rect: parentRect)
 
     var positioner = WirePopupPositioner()
     positioner.sizeW = 50
@@ -449,7 +461,7 @@ final class RecordingDesktopObserver: DesktopModelObserver {
     positioner.offsetX = 5
     positioner.offsetY = -3
 
-    let resolved = try #require(WindowManager.shared.resolvePopup(parentID: parentID, positioner: positioner))
+    let resolved = try #require(windowManager.resolvePopup(parentID: parentID, positioner: positioner))
     #expect(resolved.x == 115)
     #expect(resolved.y == 57)
     #expect(resolved.w == 50)
@@ -458,11 +470,11 @@ final class RecordingDesktopObserver: DesktopModelObserver {
 
 @MainActor
 @Test func configureQueueSlotGenerationIsWindowManagerOwned() throws {
-    NucleusCompositorServer.shared.serverReset()
-    WindowManager.shared.reset()
+    server.serverReset()
+    windowManager.reset()
 
     var windowID: UInt64 = 0
-    windowID = try NucleusCompositorServer.shared.windowCreate(source: .xdg)
+    windowID = try server.windowCreate(source: .xdg)
 
     let plan = ConfigurePlan(
         shouldConfigure: true,
@@ -484,31 +496,31 @@ final class RecordingDesktopObserver: DesktopModelObserver {
 
     let queued2 = try #require(nucleus_compositor_window_manager_record_configure_sent(windowID, 102, plan))
     #expect(queued2.slotGeneration == 2)
-    #expect(NucleusCompositorServer.shared.windowPendingConfigureCount(id: windowID) == 2)
+    #expect(server.windowPendingConfigureCount(id: windowID) == 2)
 }
 
 @MainActor
 @Test func configurePlanInitialConfigureAckAndFirstCommit() throws {
-    NucleusCompositorServer.shared.serverReset()
-    WindowManager.shared.reset()
+    server.serverReset()
+    windowManager.reset()
     try seedConfigurePolicyDisplay()
 
     var windowID: UInt64 = 0
-    windowID = try NucleusCompositorServer.shared.windowCreate(source: .xdg)
+    windowID = try server.windowCreate(source: .xdg)
 
     let request = ConfigureRequest(windowID: windowID, reason: .initialMap)
 
-    let plan = try #require(WindowManager.shared.planConfigure(request))
+    let plan = try #require(windowManager.planConfigure(request))
     #expect(plan.shouldConfigure == true)
     #expect(plan.targetRect.width > 1)
 
     let pending = try #require(nucleus_compositor_window_manager_record_configure_sent(windowID, 101, plan))
     #expect(pending.serial == 101)
     #expect(pending.slotGeneration == 1)
-    #expect(NucleusCompositorServer.shared.windowPendingConfigureCount(id: windowID) == 1)
+    #expect(server.windowPendingConfigureCount(id: windowID) == 1)
 
     #expect(nucleus_compositor_window_manager_report_configure_ack(windowID, 101) != nil)
-    #expect(NucleusCompositorServer.shared.windowPendingConfigureCount(id: windowID) == 0)
+    #expect(server.windowPendingConfigureCount(id: windowID) == 0)
 
     let report = ConfigureCommitReport(
         windowID: windowID,
@@ -524,17 +536,17 @@ final class RecordingDesktopObserver: DesktopModelObserver {
 
 @MainActor
 @Test func firstMapPlacementCentersFloatingWindowOnItsOutput() throws {
-    NucleusCompositorServer.shared.serverReset()
-    WindowManager.shared.reset()
+    server.serverReset()
+    windowManager.reset()
     try seedConfigurePolicyDisplay()
 
     var windowID: UInt64 = 0
-    windowID = try NucleusCompositorServer.shared.windowCreate(source: .xdg)
-    NucleusCompositorServer.shared.window(id: windowID)?.currentOutputID = 7
+    windowID = try server.windowCreate(source: .xdg)
+    server.window(id: windowID)?.currentOutputID = 7
 
     // A floating window's committed size is centered on its 1600x900 output:
     // (1600-800)/2 = 400, (900-600)/2 = 150.
-    let rect = WindowManager.shared.centeredFirstMapRect(windowID: windowID, contentWidth: 800, contentHeight: 600)
+    let rect = windowManager.centeredFirstMapRect(windowID: windowID, contentWidth: 800, contentHeight: 600)
     #expect(rect?.x == 400)
     #expect(rect?.y == 150)
     #expect(rect?.width == 800)
@@ -543,16 +555,16 @@ final class RecordingDesktopObserver: DesktopModelObserver {
 
 @MainActor
 @Test func firstMapPlacementCentersDialogOverParentAndSkipsSpecial() throws {
-    NucleusCompositorServer.shared.serverReset()
-    WindowManager.shared.reset()
+    server.serverReset()
+    windowManager.reset()
     try seedConfigurePolicyDisplay()
 
     var parentID: UInt64 = 0
     var dialogID: UInt64 = 0
-    parentID = try NucleusCompositorServer.shared.windowCreate(source: .xdg)
-    dialogID = try NucleusCompositorServer.shared.windowCreate(source: .xdg)
-    guard let parent = NucleusCompositorServer.shared.window(id: parentID),
-          let dialog = NucleusCompositorServer.shared.window(id: dialogID)
+    parentID = try server.windowCreate(source: .xdg)
+    dialogID = try server.windowCreate(source: .xdg)
+    guard let parent = server.window(id: parentID),
+          let dialog = server.window(id: dialogID)
     else {
         Issue.record("missing created windows")
         return
@@ -564,28 +576,28 @@ final class RecordingDesktopObserver: DesktopModelObserver {
 
     // A dialog is centered over its parent's rect, not its output:
     // 200 + (1000-400)/2 = 500, 100 + (700-300)/2 = 300.
-    let rect = WindowManager.shared.centeredFirstMapRect(windowID: dialogID, contentWidth: 400, contentHeight: 300)
+    let rect = windowManager.centeredFirstMapRect(windowID: dialogID, contentWidth: 400, contentHeight: 300)
     #expect(rect?.x == 500)
     #expect(rect?.y == 300)
 
     // A special (fullscreen) window owns its placement — no centering.
     dialog.requestedFullscreen = true
-    #expect(WindowManager.shared.centeredFirstMapRect(windowID: dialogID, contentWidth: 400, contentHeight: 300) == nil)
+    #expect(windowManager.centeredFirstMapRect(windowID: dialogID, contentWidth: 400, contentHeight: 300) == nil)
 }
 
 @MainActor
 @Test func mapFocusPolicyComesFromWindowManager() throws {
-    NucleusCompositorServer.shared.serverReset()
-    WindowManager.shared.reset()
+    server.serverReset()
+    windowManager.reset()
     try seedConfigurePolicyDisplay()
 
     var targetID: UInt64 = 0
     var fullscreenID: UInt64 = 0
-    targetID = try NucleusCompositorServer.shared.windowCreate(source: .xdg)
-    fullscreenID = try NucleusCompositorServer.shared.windowCreate(source: .xdg)
+    targetID = try server.windowCreate(source: .xdg)
+    fullscreenID = try server.windowCreate(source: .xdg)
 
-    guard let target = NucleusCompositorServer.shared.window(id: targetID),
-          let fullscreen = NucleusCompositorServer.shared.window(id: fullscreenID)
+    guard let target = server.window(id: targetID),
+          let fullscreen = server.window(id: fullscreenID)
     else {
         Issue.record("missing created windows")
         return
@@ -598,24 +610,24 @@ final class RecordingDesktopObserver: DesktopModelObserver {
     fullscreen.activeFullscreen = true
     fullscreen.managedAppWindow = true
 
-    #expect(WindowManager.shared.evaluateFocusOnMap(windowID: targetID) == false)
+    #expect(windowManager.evaluateFocusOnMap(windowID: targetID) == false)
 
     target.level = 1
-    #expect(WindowManager.shared.evaluateFocusOnMap(windowID: targetID) == true)
+    #expect(windowManager.evaluateFocusOnMap(windowID: targetID) == true)
 
     target.level = 0
     target.wantsKeyboardFocus = false
-    #expect(WindowManager.shared.evaluateFocusOnMap(windowID: targetID) == false)
+    #expect(windowManager.evaluateFocusOnMap(windowID: targetID) == false)
 }
 
 @MainActor
 @Test func resizeConfigureWaitsForDelayedAckBeforeConsumingPending() throws {
-    NucleusCompositorServer.shared.serverReset()
-    WindowManager.shared.reset()
+    server.serverReset()
+    windowManager.reset()
     try seedConfigurePolicyDisplay()
 
     var windowID: UInt64 = 0
-    windowID = try NucleusCompositorServer.shared.windowCreate(source: .xdg)
+    windowID = try server.windowCreate(source: .xdg)
 
     let request = ConfigureRequest(
         windowID: windowID,
@@ -624,47 +636,47 @@ final class RecordingDesktopObserver: DesktopModelObserver {
         resizing: true
     )
 
-    let plan = try #require(WindowManager.shared.planConfigure(request))
+    let plan = try #require(windowManager.planConfigure(request))
     #expect(plan.stateMask.contains(.resizing))
 
     #expect(nucleus_compositor_window_manager_record_configure_sent(windowID, 200, plan) != nil)
     #expect(nucleus_compositor_window_manager_report_configure_ack(windowID, 199) == nil)
-    #expect(NucleusCompositorServer.shared.windowPendingConfigureCount(id: windowID) == 1)
+    #expect(server.windowPendingConfigureCount(id: windowID) == 1)
     #expect(nucleus_compositor_window_manager_report_configure_ack(windowID, 200) != nil)
-    #expect(NucleusCompositorServer.shared.windowPendingConfigureCount(id: windowID) == 0)
+    #expect(server.windowPendingConfigureCount(id: windowID) == 0)
 }
 
 @MainActor
 @Test func fullscreenExitPreservesSwiftRestoreRect() throws {
-    NucleusCompositorServer.shared.serverReset()
-    WindowManager.shared.reset()
+    server.serverReset()
+    windowManager.reset()
     try seedConfigurePolicyDisplay()
 
     var windowID: UInt64 = 0
-    windowID = try NucleusCompositorServer.shared.windowCreate(source: .xdg)
+    windowID = try server.windowCreate(source: .xdg)
     var rect = WireWindowRect()
     rect.x = 80
     rect.y = 90
     rect.width = 640
     rect.height = 480
-    try NucleusCompositorServer.shared.windowSetGeometry(id: windowID, rect: rect)
+    try server.windowSetGeometry(id: windowID, rect: rect)
 
-    guard let window = NucleusCompositorServer.shared.window(id: windowID) else {
+    guard let window = server.window(id: windowID) else {
         Issue.record("missing created window")
         return
     }
     window.requestedFullscreen = true
     window.currentOutputID = 7
 
-    var plan = try #require(WindowManager.shared.planConfigure(
+    var plan = try #require(windowManager.planConfigure(
         ConfigureRequest(windowID: windowID, reason: .fullscreen)
     ))
     #expect(plan.stateMask.contains(.fullscreen))
 
     #expect(window.restoreRect?.x == 80)
 
-    NucleusCompositorServer.shared.windowClearRequestedSpecial(id: windowID)
-    plan = try #require(WindowManager.shared.planConfigure(
+    server.windowClearRequestedSpecial(id: windowID)
+    plan = try #require(windowManager.planConfigure(
         ConfigureRequest(windowID: windowID, reason: .restore)
     ))
     #expect(!plan.stateMask.contains(.fullscreen))
@@ -674,14 +686,14 @@ final class RecordingDesktopObserver: DesktopModelObserver {
 
 @MainActor
 @Test func maximizePlanSurvivesOutputMigration() throws {
-    NucleusCompositorServer.shared.serverReset()
-    WindowManager.shared.reset()
+    server.serverReset()
+    windowManager.reset()
     try seedConfigurePolicyDisplay()
     try seedConfigurePolicyDisplay(id: 9, x: 1600)
 
     var windowID: UInt64 = 0
-    windowID = try NucleusCompositorServer.shared.windowCreate(source: .xdg)
-    guard let window = NucleusCompositorServer.shared.window(id: windowID) else {
+    windowID = try server.windowCreate(source: .xdg)
+    guard let window = server.window(id: windowID) else {
         Issue.record("missing created window")
         return
     }
@@ -689,7 +701,7 @@ final class RecordingDesktopObserver: DesktopModelObserver {
     window.currentOutputID = 7
     window.specialOutputID = 7
 
-    let plan = try #require(WindowManager.shared.planConfigure(
+    let plan = try #require(windowManager.planConfigure(
         ConfigureRequest(windowID: windowID, reason: .maximize)
     ))
     #expect(plan.stateMask.contains(.maximized))
@@ -721,12 +733,12 @@ final class RecordingDesktopObserver: DesktopModelObserver {
 
 @MainActor
 @Test func tileConfigurePlanOwnsEdgesAndGeometry() throws {
-    NucleusCompositorServer.shared.serverReset()
-    WindowManager.shared.reset()
+    server.serverReset()
+    windowManager.reset()
     try seedConfigurePolicyDisplay()
 
     var windowID: UInt64 = 0
-    windowID = try NucleusCompositorServer.shared.windowCreate(source: .xdg)
+    windowID = try server.windowCreate(source: .xdg)
     let request = ConfigureRequest(
         windowID: windowID,
         reason: .tile,
@@ -735,7 +747,7 @@ final class RecordingDesktopObserver: DesktopModelObserver {
         tileEdges: TileEdges(left: true, top: true, bottom: true)
     )
 
-    let plan = try #require(WindowManager.shared.planConfigure(request))
+    let plan = try #require(windowManager.planConfigure(request))
     #expect(plan.shouldConfigure == true)
     #expect(plan.stateMask.contains(.tiledLeft))
     #expect(plan.stateMask.contains(.tiledTop))
@@ -744,21 +756,21 @@ final class RecordingDesktopObserver: DesktopModelObserver {
 
 @MainActor
 @Test func xwaylandStateRequestsUseConfigurePlanGeometry() throws {
-    NucleusCompositorServer.shared.serverReset()
-    WindowManager.shared.reset()
+    server.serverReset()
+    windowManager.reset()
     try seedConfigurePolicyDisplay()
 
-    let windowID = WindowManager.shared.xwaylandCreated(x11WindowID: 0x70001, overrideRedirect: false, wantsKeyboardFocus: true)
+    let windowID = windowManager.xwaylandCreated(x11WindowID: 0x70001, overrideRedirect: false, wantsKeyboardFocus: true)
     let request = XwaylandStateRequest(
         windowID: windowID,
         action: 1,
         stateMask: UInt64(xwaylandNetStateFullscreen),
         sourceIndication: 0
     )
-    let statePlan = WindowManager.shared.xwaylandHandleStateRequest(request)
+    let statePlan = windowManager.xwaylandHandleStateRequest(request)
     #expect(statePlan.requestConfigure == true)
 
-    let plan = try #require(WindowManager.shared.planConfigure(
+    let plan = try #require(windowManager.planConfigure(
         ConfigureRequest(windowID: windowID, reason: .xwaylandStateRequest)
     ))
     #expect(plan.activeFullscreen == true)
@@ -768,27 +780,27 @@ final class RecordingDesktopObserver: DesktopModelObserver {
 
 @MainActor
 @Test func staleConfigureAckIsIgnored() throws {
-    NucleusCompositorServer.shared.serverReset()
-    WindowManager.shared.reset()
+    server.serverReset()
+    windowManager.reset()
     try seedConfigurePolicyDisplay()
 
     var windowID: UInt64 = 0
-    windowID = try NucleusCompositorServer.shared.windowCreate(source: .xdg)
-    let plan = try #require(WindowManager.shared.planConfigure(
+    windowID = try server.windowCreate(source: .xdg)
+    let plan = try #require(windowManager.planConfigure(
         ConfigureRequest(windowID: windowID, reason: .initialMap)
     ))
     #expect(nucleus_compositor_window_manager_record_configure_sent(windowID, 300, plan) != nil)
     #expect(nucleus_compositor_window_manager_report_configure_ack(windowID, 299) == nil)
-    #expect(NucleusCompositorServer.shared.windowPendingConfigureCount(id: windowID) == 1)
+    #expect(server.windowPendingConfigureCount(id: windowID) == 1)
 }
 
 @MainActor
 @Test func configureAckAppliesCanonicalWindowGeometryAndState() throws {
-    NucleusCompositorServer.shared.serverReset()
-    WindowManager.shared.reset()
+    server.serverReset()
+    windowManager.reset()
 
     var windowID: UInt64 = 0
-    windowID = try NucleusCompositorServer.shared.windowCreate(source: .xdg)
+    windowID = try server.windowCreate(source: .xdg)
 
     let plan = ConfigurePlan(
         shouldConfigure: true,
@@ -805,11 +817,11 @@ final class RecordingDesktopObserver: DesktopModelObserver {
     )
 
     #expect(nucleus_compositor_window_manager_record_configure_sent(windowID, 501, plan) != nil)
-    #expect(NucleusCompositorServer.shared.windowPendingConfigureCount(id: windowID) == 1)
+    #expect(server.windowPendingConfigureCount(id: windowID) == 1)
     #expect(nucleus_compositor_window_manager_report_configure_ack(windowID, 501) != nil)
-    #expect(NucleusCompositorServer.shared.windowPendingConfigureCount(id: windowID) == 0)
+    #expect(server.windowPendingConfigureCount(id: windowID) == 0)
 
-    let geometry = try NucleusCompositorServer.shared.windowGetGeometry(id: windowID)
+    let geometry = try server.windowGetGeometry(id: windowID)
     // Placement comes from the configure; size does not. The client owns its
     // size (a fixed-size window acks a configure it won't honor), so the
     // configured 640x480 is intentionally ignored and the window keeps its
@@ -818,34 +830,34 @@ final class RecordingDesktopObserver: DesktopModelObserver {
     #expect(geometry.y == 50)
     #expect(geometry.width == 1)
     #expect(geometry.height == 1)
-    #expect(NucleusCompositorServer.shared.windowGetActiveMaximized(id: windowID))
-    #expect(!NucleusCompositorServer.shared.windowGetActiveFullscreen(id: windowID))
-    #expect(NucleusCompositorServer.shared.window(id: windowID)?.specialOutputID == 7)
+    #expect(server.windowGetActiveMaximized(id: windowID))
+    #expect(!server.windowGetActiveFullscreen(id: windowID))
+    #expect(server.window(id: windowID)?.specialOutputID == 7)
 }
 
 @MainActor
 @Test func windowDestroyDuringInFlightConfigureDropsPendingState() throws {
-    NucleusCompositorServer.shared.serverReset()
-    WindowManager.shared.reset()
+    server.serverReset()
+    windowManager.reset()
     try seedConfigurePolicyDisplay()
 
-    let windowID = WindowManager.shared.xdgCreated(xdgToplevelID: 0x5501)
+    let windowID = windowManager.xdgCreated(xdgToplevelID: 0x5501)
     #expect(windowID != 0)
 
-    let plan = try #require(WindowManager.shared.planConfigure(
+    let plan = try #require(windowManager.planConfigure(
         ConfigureRequest(windowID: windowID, reason: .initialMap)
     ))
     #expect(nucleus_compositor_window_manager_record_configure_sent(windowID, 401, plan) != nil)
-    #expect(NucleusCompositorServer.shared.windowPendingConfigureCount(id: windowID) == 1)
+    #expect(server.windowPendingConfigureCount(id: windowID) == 1)
 
-    WindowManager.shared.xdgDestroyed(windowID: windowID)
-    try NucleusCompositorServer.shared.windowDestroy(id: windowID)
-    #expect(WindowManager.shared.xdgRole(windowID: windowID) == nil)
-    #expect(NucleusCompositorServer.shared.window(id: windowID) == nil)
+    windowManager.xdgDestroyed(windowID: windowID)
+    try server.windowDestroy(id: windowID)
+    #expect(windowManager.xdgRole(windowID: windowID) == nil)
+    #expect(server.window(id: windowID) == nil)
 
-    #expect(NucleusCompositorServer.shared.windowPendingConfigureCount(id: windowID) == 0)
-    #expect(NucleusCompositorServer.shared.window(id: windowID)?.protocolState.latest == nil)
-    #expect(NucleusCompositorServer.shared.window(id: windowID)?.protocolState.configure(forAckSerial: 401) == nil)
+    #expect(server.windowPendingConfigureCount(id: windowID) == 0)
+    #expect(server.window(id: windowID)?.protocolState.latest == nil)
+    #expect(server.window(id: windowID)?.protocolState.configure(forAckSerial: 401) == nil)
     #expect(nucleus_compositor_window_manager_report_configure_ack(windowID, 401) == nil)
 
     let report = ConfigureCommitReport(
@@ -862,8 +874,8 @@ final class RecordingDesktopObserver: DesktopModelObserver {
 
 @MainActor
 @Test func outputNormalizationPolicyComesFromWindowManager() throws {
-    NucleusCompositorServer.shared.serverReset()
-    WindowManager.shared.reset()
+    server.serverReset()
+    windowManager.reset()
 
     var mode = WireDisplayMode()
     mode.pixelWidth = 1000
@@ -873,12 +885,12 @@ final class RecordingDesktopObserver: DesktopModelObserver {
     config.primary = true
     config.scale = 1
     config.mode = mode
-    try NucleusCompositorServer.shared.displayAdd(id: 9, configuration: config)
+    try server.displayAdd(id: 9, configuration: config)
 
     var windowID: UInt64 = 0
-    windowID = try NucleusCompositorServer.shared.windowCreate(source: .xdg)
+    windowID = try server.windowCreate(source: .xdg)
 
-    guard let window = NucleusCompositorServer.shared.window(id: windowID) else {
+    guard let window = server.window(id: windowID) else {
         Issue.record("missing created window")
         return
     }
@@ -905,8 +917,8 @@ final class RecordingDesktopObserver: DesktopModelObserver {
 
 @MainActor
 @Test func outputMigrationPolicyMutatesWindowManagerStateAndPendingConfigures() throws {
-    NucleusCompositorServer.shared.serverReset()
-    WindowManager.shared.reset()
+    server.serverReset()
+    windowManager.reset()
 
     var mode = WireDisplayMode()
     mode.pixelWidth = 1600
@@ -917,13 +929,13 @@ final class RecordingDesktopObserver: DesktopModelObserver {
     config.primary = true
     config.scale = 1
     config.mode = mode
-    try NucleusCompositorServer.shared.displayAdd(id: 7, configuration: config)
+    try server.displayAdd(id: 7, configuration: config)
     config.logicalX = 1600
-    try NucleusCompositorServer.shared.displayAdd(id: 9, configuration: config)
+    try server.displayAdd(id: 9, configuration: config)
 
     var windowID: UInt64 = 0
-    windowID = try NucleusCompositorServer.shared.windowCreate(source: .xdg)
-    guard let window = NucleusCompositorServer.shared.window(id: windowID) else {
+    windowID = try server.windowCreate(source: .xdg)
+    guard let window = server.window(id: windowID) else {
         Issue.record("missing created window")
         return
     }
@@ -982,15 +994,15 @@ final class RecordingDesktopObserver: DesktopModelObserver {
     #expect(window.specialOutputID == 9)
     #expect(window.restoreOutputID == 9)
 
-    let queriedPending = try #require(NucleusCompositorServer.shared.window(id: windowID)?.protocolState.latest)
+    let queriedPending = try #require(server.window(id: windowID)?.protocolState.latest)
     #expect(queriedPending.specialOutputID == 9)
     #expect(queriedPending.rect.x == 1600)
 }
 
 @MainActor
 @Test func layerShellPolicyComputesExclusiveZones() throws {
-    NucleusCompositorServer.shared.serverReset()
-    WindowManager.shared.reset()
+    server.serverReset()
+    windowManager.reset()
     try seedConfigurePolicyDisplay()
     try seedConfigurePolicyDisplay(id: 9, x: 1600)
 
@@ -1009,94 +1021,94 @@ final class RecordingDesktopObserver: DesktopModelObserver {
         marginLeft: 2
     )
 
-    #expect(WindowManager.shared.layerShellPolicy.register(top) == true)
-    #expect(WindowManager.shared.layerShellPolicy.register(left) == true)
+    #expect(windowManager.layerShellPolicy.register(top) == true)
+    #expect(windowManager.layerShellPolicy.register(left) == true)
 
-    let zones = try #require(WindowManager.shared.layerShellPolicy.recalcZones(outputID: 7))
+    let zones = try #require(windowManager.layerShellPolicy.recalcZones(outputID: 7))
     #expect(zones.top == 25)
     #expect(zones.left == 12)
-    #expect(WindowManager.shared.layerShellPolicy.hasMappedSurface(outputID: 7) == true)
+    #expect(windowManager.layerShellPolicy.hasMappedSurface(outputID: 7) == true)
 
     var topUnmapped = top
     topUnmapped.mapped = false
-    WindowManager.shared.layerShellPolicy.update(topUnmapped)
-    let zonesAfterUnmap = try #require(WindowManager.shared.layerShellPolicy.recalcZones(outputID: 7))
+    windowManager.layerShellPolicy.update(topUnmapped)
+    let zonesAfterUnmap = try #require(windowManager.layerShellPolicy.recalcZones(outputID: 7))
     #expect(zonesAfterUnmap.top == 0)
     #expect(zonesAfterUnmap.left == 12)
 
-    WindowManager.shared.layerShellPolicy.unregister(id: 10)
+    windowManager.layerShellPolicy.unregister(id: 10)
 
-    let resolvedOutput = WindowManager.shared.layerShellPolicy.resolveOutput(requestedID: 0, namespace: "panel", server: .shared)
+    let resolvedOutput = windowManager.layerShellPolicy.resolveOutput(requestedID: 0, namespace: "panel", server: server)
     #expect(resolvedOutput != nil)
     #expect((resolvedOutput ?? 0) != 0)
 }
 
 @MainActor
 @Test func xdgRoleStateSurfaceMutatesWindowManagerRecords() {
-    NucleusCompositorServer.shared.serverReset()
-    WindowManager.shared.reset()
+    server.serverReset()
+    windowManager.reset()
 
-    let windowID = WindowManager.shared.xdgCreated(xdgToplevelID: 0xabc)
+    let windowID = windowManager.xdgCreated(xdgToplevelID: 0xabc)
     #expect(windowID != 0)
-    #expect(NucleusCompositorServer.shared.window(id: windowID)?.source == .xdg)
+    #expect(server.window(id: windowID)?.source == .xdg)
 
     // Title/app-id are normalized onto the Window model (the single metadata
     // home); parent + special-mode requests still flow through the role surface.
-    NucleusCompositorServer.shared.window(id: windowID)?.title = "Terminal"
-    NucleusCompositorServer.shared.window(id: windowID)?.appId = "org.example.Terminal"
-    WindowManager.shared.xdgSetParent(windowID: windowID, parentWindowID: 42)
-    WindowManager.shared.xdgRequestFullscreen(windowID: windowID, target: 7)
-    WindowManager.shared.xdgRequestMaximize(windowID: windowID, requested: true)
+    server.window(id: windowID)?.title = "Terminal"
+    server.window(id: windowID)?.appId = "org.example.Terminal"
+    windowManager.xdgSetParent(windowID: windowID, parentWindowID: 42)
+    windowManager.xdgRequestFullscreen(windowID: windowID, target: 7)
+    windowManager.xdgRequestMaximize(windowID: windowID, requested: true)
 
-    let role = WindowManager.shared.xdgRole(windowID: windowID)
-    #expect(NucleusCompositorServer.shared.window(id: windowID)?.title == "Terminal")
-    #expect(NucleusCompositorServer.shared.window(id: windowID)?.appId == "org.example.Terminal")
+    let role = windowManager.xdgRole(windowID: windowID)
+    #expect(server.window(id: windowID)?.title == "Terminal")
+    #expect(server.window(id: windowID)?.appId == "org.example.Terminal")
     #expect(role?.parentWindowID == 42)
     #expect(role?.requestedFullscreenTarget == 7)
-    #expect(NucleusCompositorServer.shared.window(id: windowID)?.requestedFullscreen == true)
-    #expect(NucleusCompositorServer.shared.window(id: windowID)?.requestedMaximized == true)
+    #expect(server.window(id: windowID)?.requestedFullscreen == true)
+    #expect(server.window(id: windowID)?.requestedMaximized == true)
 
-    WindowManager.shared.xdgUnsetFullscreen(windowID: windowID)
-    WindowManager.shared.xdgRequestMaximize(windowID: windowID, requested: false)
-    #expect(NucleusCompositorServer.shared.window(id: windowID)?.requestedFullscreen == false)
-    #expect(NucleusCompositorServer.shared.window(id: windowID)?.requestedMaximized == false)
+    windowManager.xdgUnsetFullscreen(windowID: windowID)
+    windowManager.xdgRequestMaximize(windowID: windowID, requested: false)
+    #expect(server.window(id: windowID)?.requestedFullscreen == false)
+    #expect(server.window(id: windowID)?.requestedMaximized == false)
 
-    WindowManager.shared.xdgDestroyed(windowID: windowID)
-    #expect(WindowManager.shared.xdgRole(windowID: windowID) == nil)
+    windowManager.xdgDestroyed(windowID: windowID)
+    #expect(windowManager.xdgRole(windowID: windowID) == nil)
 }
 
 @MainActor
 @Test func xdgRoleIdentityIsWindowPrimaryWithToplevelIndex() throws {
-    NucleusCompositorServer.shared.serverReset()
-    WindowManager.shared.reset()
+    server.serverReset()
+    windowManager.reset()
 
-    let first = WindowManager.shared.xdgCreated(xdgToplevelID: 0xabc)
-    let duplicate = WindowManager.shared.xdgCreated(xdgToplevelID: 0xabc)
+    let first = windowManager.xdgCreated(xdgToplevelID: 0xabc)
+    let duplicate = windowManager.xdgCreated(xdgToplevelID: 0xabc)
     #expect(duplicate == first)
-    #expect(WindowManager.shared.xdgRole(windowID: first)?.xdgToplevelID == 0xabc)
+    #expect(windowManager.xdgRole(windowID: first)?.xdgToplevelID == 0xabc)
 
-    WindowManager.shared.xdgDestroyed(windowID: first)
-    #expect(WindowManager.shared.xdgRole(windowID: first) == nil)
-    try NucleusCompositorServer.shared.windowDestroy(id: first)
+    windowManager.xdgDestroyed(windowID: first)
+    #expect(windowManager.xdgRole(windowID: first) == nil)
+    try server.windowDestroy(id: first)
 
-    let second = WindowManager.shared.xdgCreated(xdgToplevelID: 0xabc)
+    let second = windowManager.xdgCreated(xdgToplevelID: 0xabc)
     #expect(second != 0)
     #expect(second != first)
-    #expect(WindowManager.shared.xdgRole(windowID: second)?.xdgToplevelID == 0xabc)
+    #expect(windowManager.xdgRole(windowID: second)?.xdgToplevelID == 0xabc)
 }
 
 @MainActor
 @Test func xwaylandRoleStateSurfaceMutatesWindowManagerRecords() {
-    NucleusCompositorServer.shared.serverReset()
-    WindowManager.shared.reset()
+    server.serverReset()
+    windowManager.reset()
 
-    let windowID = WindowManager.shared.xwaylandCreated(x11WindowID: 0x12004, overrideRedirect: false, wantsKeyboardFocus: true)
+    let windowID = windowManager.xwaylandCreated(x11WindowID: 0x12004, overrideRedirect: false, wantsKeyboardFocus: true)
     #expect(windowID != 0)
-    #expect(NucleusCompositorServer.shared.window(id: windowID)?.source == .xwayland)
-    #expect(NucleusCompositorServer.shared.window(id: windowID)?.wantsKeyboardFocus == true)
+    #expect(server.window(id: windowID)?.source == .xwayland)
+    #expect(server.window(id: windowID)?.wantsKeyboardFocus == true)
 
-    WindowManager.shared.xwaylandSetTitle(windowID: windowID, title: "XTerm")
-    WindowManager.shared.xwaylandSetClass(windowID: windowID, windowClass: "XTermClass")
+    windowManager.xwaylandSetTitle(windowID: windowID, title: "XTerm")
+    windowManager.xwaylandSetClass(windowID: windowID, windowClass: "XTermClass")
     let metadata = XwaylandWindowMetadata(
         x11WindowID: 0x12004,
         transientForX11: 0,
@@ -1110,31 +1122,31 @@ final class RecordingDesktopObserver: DesktopModelObserver {
         urgent: false,
         decorationsOff: false
     )
-    WindowManager.shared.xwaylandApplyMetadata(windowID: windowID, metadata: metadata)
+    windowManager.xwaylandApplyMetadata(windowID: windowID, metadata: metadata)
 
-    let role = WindowManager.shared.xwaylandRole(windowID: windowID)
+    let role = windowManager.xwaylandRole(windowID: windowID)
     #expect(role?.x11WindowID == 0x12004)
     #expect(role?.title == "XTerm")
     #expect(role?.windowClass == "XTermClass")
     #expect(role?.focusModel == .globallyActive)
     #expect(role?.windowTypes.contains(.dialog) == true)
     #expect(role?.wantsKeyboardFocus == true)
-    #expect(NucleusCompositorServer.shared.window(id: windowID)?.wantsKeyboardFocus == true)
+    #expect(server.window(id: windowID)?.wantsKeyboardFocus == true)
 
-    WindowManager.shared.xwaylandDestroyed(windowID: windowID)
-    #expect(WindowManager.shared.xwaylandRole(windowID: windowID) == nil)
+    windowManager.xwaylandDestroyed(windowID: windowID)
+    #expect(windowManager.xwaylandRole(windowID: windowID) == nil)
 }
 
 @MainActor
 @Test func xwaylandRoleIdentityIsWindowPrimaryWithXIDIndex() throws {
-    NucleusCompositorServer.shared.serverReset()
-    WindowManager.shared.reset()
+    server.serverReset()
+    windowManager.reset()
 
-    let parent = WindowManager.shared.xwaylandCreated(x11WindowID: 0x12004, overrideRedirect: false, wantsKeyboardFocus: true)
-    let duplicate = WindowManager.shared.xwaylandCreated(x11WindowID: 0x12004, overrideRedirect: false, wantsKeyboardFocus: true)
+    let parent = windowManager.xwaylandCreated(x11WindowID: 0x12004, overrideRedirect: false, wantsKeyboardFocus: true)
+    let duplicate = windowManager.xwaylandCreated(x11WindowID: 0x12004, overrideRedirect: false, wantsKeyboardFocus: true)
     #expect(duplicate == parent)
 
-    let child = WindowManager.shared.xwaylandCreated(x11WindowID: 0x12005, overrideRedirect: false, wantsKeyboardFocus: true)
+    let child = windowManager.xwaylandCreated(x11WindowID: 0x12005, overrideRedirect: false, wantsKeyboardFocus: true)
     let childMetadata = XwaylandWindowMetadata(
         x11WindowID: 0x12005,
         transientForX11: 0x12004,
@@ -1148,27 +1160,27 @@ final class RecordingDesktopObserver: DesktopModelObserver {
         urgent: false,
         decorationsOff: false
     )
-    WindowManager.shared.xwaylandApplyMetadata(windowID: child, metadata: childMetadata)
-    #expect(WindowManager.shared.xwaylandRole(windowID: child)?.parentWindowID == parent)
+    windowManager.xwaylandApplyMetadata(windowID: child, metadata: childMetadata)
+    #expect(windowManager.xwaylandRole(windowID: child)?.parentWindowID == parent)
 
-    WindowManager.shared.xwaylandDestroyed(windowID: parent)
-    #expect(WindowManager.shared.xwaylandRole(windowID: parent) == nil)
-    try NucleusCompositorServer.shared.windowDestroy(id: parent)
+    windowManager.xwaylandDestroyed(windowID: parent)
+    #expect(windowManager.xwaylandRole(windowID: parent) == nil)
+    try server.windowDestroy(id: parent)
 
-    let replacement = WindowManager.shared.xwaylandCreated(x11WindowID: 0x12004, overrideRedirect: false, wantsKeyboardFocus: true)
+    let replacement = windowManager.xwaylandCreated(x11WindowID: 0x12004, overrideRedirect: false, wantsKeyboardFocus: true)
     #expect(replacement != 0)
     #expect(replacement != parent)
-    WindowManager.shared.xwaylandApplyMetadata(windowID: child, metadata: childMetadata)
-    #expect(WindowManager.shared.xwaylandRole(windowID: child)?.parentWindowID == replacement)
+    windowManager.xwaylandApplyMetadata(windowID: child, metadata: childMetadata)
+    #expect(windowManager.xwaylandRole(windowID: child)?.parentWindowID == replacement)
 }
 
 @MainActor
 @Test func xwaylandMetadataLateUpdatesFlowThroughSwift() {
-    NucleusCompositorServer.shared.serverReset()
-    WindowManager.shared.reset()
+    server.serverReset()
+    windowManager.reset()
 
-    let windowID = WindowManager.shared.xwaylandCreated(x11WindowID: 0x20001, overrideRedirect: false, wantsKeyboardFocus: true)
-    WindowManager.shared.xwaylandApplyMetadata(
+    let windowID = windowManager.xwaylandCreated(x11WindowID: 0x20001, overrideRedirect: false, wantsKeyboardFocus: true)
+    windowManager.xwaylandApplyMetadata(
         windowID: windowID,
         metadata: XwaylandWindowMetadata(
             x11WindowID: 0x20001,
@@ -1185,7 +1197,7 @@ final class RecordingDesktopObserver: DesktopModelObserver {
         )
     )
 
-    WindowManager.shared.xwaylandApplyMetadata(
+    windowManager.xwaylandApplyMetadata(
         windowID: windowID,
         metadata: XwaylandWindowMetadata(
             x11WindowID: 0x20001,
@@ -1202,7 +1214,7 @@ final class RecordingDesktopObserver: DesktopModelObserver {
         )
     )
 
-    let role = WindowManager.shared.xwaylandRole(windowID: windowID)
+    let role = windowManager.xwaylandRole(windowID: windowID)
     #expect(role?.windowTypes.contains(.dialog) == true)
     #expect(role?.urgent == true)
     #expect(role?.decorationsOff == true)
@@ -1210,11 +1222,11 @@ final class RecordingDesktopObserver: DesktopModelObserver {
 
 @MainActor
 @Test func xwaylandNetWmStateRequestsMutateSwiftPolicy() throws {
-    NucleusCompositorServer.shared.serverReset()
-    WindowManager.shared.reset()
+    server.serverReset()
+    windowManager.reset()
 
-    let windowID = WindowManager.shared.xwaylandCreated(x11WindowID: 0x20002, overrideRedirect: false, wantsKeyboardFocus: true)
-    WindowManager.shared.xwaylandApplyMetadata(
+    let windowID = windowManager.xwaylandCreated(x11WindowID: 0x20002, overrideRedirect: false, wantsKeyboardFocus: true)
+    windowManager.xwaylandApplyMetadata(
         windowID: windowID,
         metadata: XwaylandWindowMetadata(
             x11WindowID: 0x20002,
@@ -1231,7 +1243,7 @@ final class RecordingDesktopObserver: DesktopModelObserver {
         )
     )
 
-    var plan = WindowManager.shared.xwaylandHandleStateRequest(XwaylandStateRequest(
+    var plan = windowManager.xwaylandHandleStateRequest(XwaylandStateRequest(
         windowID: windowID,
         action: 1,
         stateMask: UInt64(xwaylandNetStateFullscreen) | UInt64(xwaylandNetStateMaximizedVert),
@@ -1241,18 +1253,18 @@ final class RecordingDesktopObserver: DesktopModelObserver {
     #expect(plan.requestConfigure == true)
     #expect(plan.requestedFullscreen == true)
     #expect(plan.requestedMaximized == false)
-    #expect(NucleusCompositorServer.shared.window(id: windowID)?.requestedFullscreen == true)
+    #expect(server.window(id: windowID)?.requestedFullscreen == true)
 
-    plan = WindowManager.shared.xwaylandHandleStateRequest(XwaylandStateRequest(
+    plan = windowManager.xwaylandHandleStateRequest(XwaylandStateRequest(
         windowID: windowID,
         action: 0,
         stateMask: UInt64(xwaylandNetStateFullscreen),
         sourceIndication: 0
     ))
     #expect(plan.requestedFullscreen == false)
-    #expect(NucleusCompositorServer.shared.window(id: windowID)?.requestedFullscreen == false)
+    #expect(server.window(id: windowID)?.requestedFullscreen == false)
 
-    plan = WindowManager.shared.xwaylandHandleStateRequest(XwaylandStateRequest(
+    plan = windowManager.xwaylandHandleStateRequest(XwaylandStateRequest(
         windowID: windowID,
         action: 2,
         stateMask: UInt64(xwaylandNetStateMaximizedHorz),
@@ -1265,14 +1277,14 @@ final class RecordingDesktopObserver: DesktopModelObserver {
 
 @MainActor
 @Test func xwaylandFocusPlansCoverICCCMModelsAndOverrideRedirect() throws {
-    NucleusCompositorServer.shared.serverReset()
-    WindowManager.shared.reset()
+    server.serverReset()
+    windowManager.reset()
 
-    let passive = WindowManager.shared.xwaylandCreated(x11WindowID: 0x30001, overrideRedirect: false, wantsKeyboardFocus: true)
-    let locallyActive = WindowManager.shared.xwaylandCreated(x11WindowID: 0x30002, overrideRedirect: false, wantsKeyboardFocus: true)
-    let globallyActive = WindowManager.shared.xwaylandCreated(x11WindowID: 0x30003, overrideRedirect: false, wantsKeyboardFocus: true)
-    let noInput = WindowManager.shared.xwaylandCreated(x11WindowID: 0x30004, overrideRedirect: false, wantsKeyboardFocus: true)
-    let passiveOR = WindowManager.shared.xwaylandCreated(x11WindowID: 0x30005, overrideRedirect: true, wantsKeyboardFocus: true)
+    let passive = windowManager.xwaylandCreated(x11WindowID: 0x30001, overrideRedirect: false, wantsKeyboardFocus: true)
+    let locallyActive = windowManager.xwaylandCreated(x11WindowID: 0x30002, overrideRedirect: false, wantsKeyboardFocus: true)
+    let globallyActive = windowManager.xwaylandCreated(x11WindowID: 0x30003, overrideRedirect: false, wantsKeyboardFocus: true)
+    let noInput = windowManager.xwaylandCreated(x11WindowID: 0x30004, overrideRedirect: false, wantsKeyboardFocus: true)
+    let passiveOR = windowManager.xwaylandCreated(x11WindowID: 0x30005, overrideRedirect: true, wantsKeyboardFocus: true)
 
     func apply(_ windowID: UInt64, xid: UInt64, input: UInt8, takeFocus: Bool, overrideRedirect: UInt8 = 0, types: UInt64 = 0) {
         let metadata = XwaylandWindowMetadata(
@@ -1288,7 +1300,7 @@ final class RecordingDesktopObserver: DesktopModelObserver {
             urgent: false,
             decorationsOff: false
         )
-        WindowManager.shared.xwaylandApplyMetadata(windowID: windowID, metadata: metadata)
+        windowManager.xwaylandApplyMetadata(windowID: windowID, metadata: metadata)
     }
 
     apply(passive, xid: 0x30001, input: 1, takeFocus: false)
@@ -1297,39 +1309,39 @@ final class RecordingDesktopObserver: DesktopModelObserver {
     apply(noInput, xid: 0x30004, input: 0, takeFocus: false)
     apply(passiveOR, xid: 0x30005, input: 1, takeFocus: true, overrideRedirect: 1, types: UInt64(xwaylandWindowTypeTooltip))
 
-    var focusPlan = WindowManager.shared.xwaylandFocusPlan(windowID: passive)
+    var focusPlan = windowManager.xwaylandFocusPlan(windowID: passive)
     #expect((focusPlan.actions & UInt32(xwaylandFocusSetInput)) != 0)
     #expect((focusPlan.actions & UInt32(xwaylandFocusTakeFocus)) == 0)
 
-    focusPlan = WindowManager.shared.xwaylandFocusPlan(windowID: locallyActive)
+    focusPlan = windowManager.xwaylandFocusPlan(windowID: locallyActive)
     #expect((focusPlan.actions & UInt32(xwaylandFocusSetInput)) != 0)
     #expect((focusPlan.actions & UInt32(xwaylandFocusTakeFocus)) != 0)
 
-    focusPlan = WindowManager.shared.xwaylandFocusPlan(windowID: globallyActive)
+    focusPlan = windowManager.xwaylandFocusPlan(windowID: globallyActive)
     #expect((focusPlan.actions & UInt32(xwaylandFocusSetInput)) == 0)
     #expect((focusPlan.actions & UInt32(xwaylandFocusTakeFocus)) != 0)
 
-    focusPlan = WindowManager.shared.xwaylandFocusPlan(windowID: noInput)
+    focusPlan = windowManager.xwaylandFocusPlan(windowID: noInput)
     #expect(focusPlan.actions == 0)
 
-    focusPlan = WindowManager.shared.xwaylandFocusPlan(windowID: passiveOR)
+    focusPlan = windowManager.xwaylandFocusPlan(windowID: passiveOR)
     #expect((focusPlan.actions & UInt32(xwaylandFocusDenied)) != 0)
 
-    focusPlan = WindowManager.shared.xwaylandClearFocusPlan()
+    focusPlan = windowManager.xwaylandClearFocusPlan()
     #expect((focusPlan.actions & UInt32(xwaylandFocusClear)) != 0)
     #expect(focusPlan.activeX11Window == 0)
 }
 
 @MainActor
 @Test func xwaylandCloseAndClientListPoliciesComeFromSwift() throws {
-    NucleusCompositorServer.shared.serverReset()
-    WindowManager.shared.reset()
+    server.serverReset()
+    windowManager.reset()
 
-    let managed = WindowManager.shared.xwaylandCreated(x11WindowID: 0x40001, overrideRedirect: false, wantsKeyboardFocus: true)
-    let directDestroy = WindowManager.shared.xwaylandCreated(x11WindowID: 0x40002, overrideRedirect: false, wantsKeyboardFocus: true)
-    let overrideRedirect = WindowManager.shared.xwaylandCreated(x11WindowID: 0x40003, overrideRedirect: true, wantsKeyboardFocus: true)
+    let managed = windowManager.xwaylandCreated(x11WindowID: 0x40001, overrideRedirect: false, wantsKeyboardFocus: true)
+    let directDestroy = windowManager.xwaylandCreated(x11WindowID: 0x40002, overrideRedirect: false, wantsKeyboardFocus: true)
+    let overrideRedirect = windowManager.xwaylandCreated(x11WindowID: 0x40003, overrideRedirect: true, wantsKeyboardFocus: true)
 
-    WindowManager.shared.xwaylandApplyMetadata(
+    windowManager.xwaylandApplyMetadata(
         windowID: managed,
         metadata: XwaylandWindowMetadata(
             x11WindowID: 0x40001,
@@ -1346,7 +1358,7 @@ final class RecordingDesktopObserver: DesktopModelObserver {
         )
     )
 
-    WindowManager.shared.xwaylandApplyMetadata(
+    windowManager.xwaylandApplyMetadata(
         windowID: directDestroy,
         metadata: XwaylandWindowMetadata(
             x11WindowID: 0x40002,
@@ -1363,7 +1375,7 @@ final class RecordingDesktopObserver: DesktopModelObserver {
         )
     )
 
-    WindowManager.shared.xwaylandApplyMetadata(
+    windowManager.xwaylandApplyMetadata(
         windowID: overrideRedirect,
         metadata: XwaylandWindowMetadata(
             x11WindowID: 0x40003,
@@ -1380,15 +1392,16 @@ final class RecordingDesktopObserver: DesktopModelObserver {
         )
     )
 
-    var closePlan = WindowManager.shared.xwaylandClosePlan(windowID: managed)
+    var closePlan = windowManager.xwaylandClosePlan(windowID: managed)
     #expect(closePlan.action == UInt32(xwaylandCloseDeleteWindow))
-    closePlan = WindowManager.shared.xwaylandClosePlan(windowID: directDestroy)
+    closePlan = windowManager.xwaylandClosePlan(windowID: directDestroy)
     #expect(closePlan.action == UInt32(xwaylandCloseDestroy))
 
-    #expect(WindowManager.shared.xwaylandClientListIncludes(windowID: managed) == true)
-    #expect(WindowManager.shared.xwaylandClientListIncludes(windowID: overrideRedirect) == false)
-    #expect(WindowManager.shared.xwaylandClientXIDs() == [0x40001, 0x40002])
+    #expect(windowManager.xwaylandClientListIncludes(windowID: managed) == true)
+    #expect(windowManager.xwaylandClientListIncludes(windowID: overrideRedirect) == false)
+    #expect(windowManager.xwaylandClientXIDs() == [0x40001, 0x40002])
 
-    #expect(WindowManager.shared.server.windows.raise(id: managed))
-    #expect(WindowManager.shared.xwaylandClientXIDs() == [0x40002, 0x40001])
+    #expect(windowManager.server.windows.raise(id: managed))
+    #expect(windowManager.xwaylandClientXIDs() == [0x40002, 0x40001])
+}
 }

@@ -397,7 +397,7 @@ let package = Package(
             name: "NucleusCompositorWaylandRuntimeTests",
             dependencies: [
                 "NucleusCompositorWaylandRuntime", "NucleusCompositorServer",
-                "NucleusCompositorWindowScene",
+                "NucleusCompositorWindowManager", "NucleusCompositorWindowScene",
                 .product(name: "NucleusLayers", package: "Nucleus"),
                 // Direct deps on the C façades so their systemLibrary pkgConfig cflags
                 // (xcb/libinput include dirs) reach this target's @testable recompile.
@@ -424,7 +424,8 @@ let package = Package(
                 "XwaylandXSettingsFixture.swift",
             ],
             sources: [
-                "WaylandWireTest.swift", "WaylandProtocolConformanceTests.swift",
+                "WaylandTestGraph.swift", "WaylandWireTest.swift",
+                "WaylandProtocolConformanceTests.swift",
                 "CursorShapeNameTests.swift", "CursorShmRepackTests.swift",
                 "CursorRequestSerialTests.swift", "CursorIntentTests.swift",
                 "SurfaceCommitGeometryTests.swift", "SurfaceTransactionTests.swift",

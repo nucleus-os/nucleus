@@ -107,7 +107,7 @@ import NucleusCompositorServerTypes
 
 @MainActor
 @Test func displayAndWindowABIRoundTrip() throws {
-    let server = NucleusCompositorServer.shared
+    let server = NucleusCompositorServer()
     server.serverReset()
 
     var mode = WireDisplayMode()
@@ -247,7 +247,7 @@ import NucleusCompositorServerTypes
 
 @MainActor
 @Test func spacesHideWindowsOnInactiveWorkspace() throws {
-    let server = NucleusCompositorServer.shared
+    let server = NucleusCompositorServer()
     server.serverReset()
 
     var mode = WireDisplayMode()
@@ -302,7 +302,7 @@ import NucleusCompositorServerTypes
     // per-window `spaceHidden` mirror, which the server must keep in sync with the
     // authoritative Spaces.isSpaceHidden on every workspace change — otherwise the
     // mirror stays permanently false and windows are never hidden by workspace.
-    let server = NucleusCompositorServer.shared
+    let server = NucleusCompositorServer()
     server.serverReset()
 
     var mode = WireDisplayMode()
@@ -344,7 +344,7 @@ import NucleusCompositorServerTypes
 
 @MainActor
 @Test func spacesEnsureCreatesWorkspacesOnDemand() throws {
-    let server = NucleusCompositorServer.shared
+    let server = NucleusCompositorServer()
     server.serverReset()
 
     var mode = WireDisplayMode()
@@ -395,7 +395,7 @@ final class RecordingSelectionObserver: DataSelectionObserver {
     // wl_data_device's in the shared maps), a source-event registry (so a transfer
     // or cancel crosses to the owning source's router), and a selection-change
     // broadcast (so the always-on clipboard view stays current). This pins them.
-    let service = DataExchangeService.shared
+    let service = NucleusCompositorServer().dataExchange
     service.reset()
 
     // Handles are unique and non-zero.
@@ -459,7 +459,7 @@ final class RecordingSelectionObserver: DataSelectionObserver {
 
 @MainActor
 @Test func eventDispatchAdvancesState() throws {
-    let server = NucleusCompositorServer.shared
+    let server = NucleusCompositorServer()
     server.serverReset()
 
     var event = WireEventRecord()
@@ -482,7 +482,7 @@ final class RecordingSelectionObserver: DataSelectionObserver {
 
 @MainActor
 @Test func seatFocusABIRoundTrip() throws {
-    let server = NucleusCompositorServer.shared
+    let server = NucleusCompositorServer()
     server.serverReset()
 
     server.seatFocusSetPointer(surfaceID: 0x111)
@@ -537,7 +537,7 @@ final class RecordingSelectionObserver: DataSelectionObserver {
 
 @MainActor
 @Test func fullscreenOcclusionPredicate() throws {
-    let server = NucleusCompositorServer.shared
+    let server = NucleusCompositorServer()
     server.serverReset()
 
     var mode = WireDisplayMode()

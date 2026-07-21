@@ -28,6 +28,15 @@ import Testing
         }
     }
 
+    final class DetachmentProbeView: View {
+        var detachmentCount = 0
+
+        override func retainedHierarchyWillDetach() {
+            detachmentCount += 1
+            super.retainedHierarchyWillDetach()
+        }
+    }
+
     @Test func windowDeinitReleasesRoot() throws {
         weak var weakRoot: View?
         do {
@@ -69,6 +78,24 @@ import Testing
 
         #expect(child.superview == nil)
         #expect(parent.subviews.isEmpty)
+    }
+
+    @Test func reorderingWithinParentPreservesAttachment() {
+        let parent = View()
+        let first = DetachmentProbeView()
+        let second = DetachmentProbeView()
+        let third = DetachmentProbeView()
+        parent.addSubview(first)
+        parent.addSubview(second)
+        parent.addSubview(third)
+
+        parent.addSubview(first)
+
+        #expect(parent.subviews[0] === second)
+        #expect(parent.subviews[1] === third)
+        #expect(parent.subviews[2] === first)
+        #expect(first.superview === parent)
+        #expect(first.detachmentCount == 0)
     }
 
     @Test func attachedViewTransferMovesSwiftOwnership() throws {

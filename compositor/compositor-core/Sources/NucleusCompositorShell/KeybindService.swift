@@ -6,13 +6,11 @@ import NucleusCompositorWindowManager
 ///
 /// Apple-shape analog: loginwindow/SkyLight's global hotkey policy layered on
 /// top of WindowServer event taps. The reactor's event tap forwards every
-/// keyboard event to `KeybindService.shared.dispatch` and acts on the
+/// keyboard event to its runtime-owned `KeybindService` and acts on the
 /// returned `Dispatch`. Window-management keybinds (tile, VT switch, exit)
 /// stay in the reactor — those are not session policy.
 @MainActor
 public final class KeybindService {
-    public static let shared = KeybindService()
-
     public struct ModifierFlags: OptionSet, Hashable, Sendable {
         public let rawValue: UInt32
         public init(rawValue: UInt32) { self.rawValue = rawValue }
@@ -139,8 +137,15 @@ public final class KeybindService {
 
     private var bindings: [Shortcut: Action]
     private var globallyCapturedKeys: Set<KeyCode> = []
+    private let launcher: LauncherService
+    private unowned let windowManager: WindowManager
 
-    private init() {
+    public init(
+        launcher: LauncherService,
+        windowManager: WindowManager
+    ) {
+        self.launcher = launcher
+        self.windowManager = windowManager
         bindings = [
             // App launchers
             .init(key: .t, modifiers: .command):
@@ -258,11 +263,11 @@ public final class KeybindService {
     private func run(_ action: Action) -> Dispatch {
         switch action {
         case .launchApp(let ids, let fallback):
-            _ = LauncherService.shared.launchPreferred(ids: ids, fallback: fallback)
+            _ = launcher.launchPreferred(ids: ids, fallback: fallback)
             return .consume
 
         case .noctaliaMessage(let args):
-            _ = LauncherService.shared.spawn(["noctalia", "msg"] + args)
+            _ = launcher.spawn(["noctalia", "msg"] + args)
             return .consume
 
         case .closeFocusedWindow:
@@ -281,9 +286,9 @@ public final class KeybindService {
             return .deferred(DeferredAction(
                 kind: KeybindAction.tile.rawValue, value: direction.rawValue))
         case .adjustBackdropIntensity(let delta):
-            let dynamics = WindowManager.shared.backdropResolver.dynamics
-            let next = dynamics.target.resolvedIntensity + delta
-            _ = WindowManager.shared.backdropResolver.dynamics.setIntensity(next)
+            let next = windowManager.backdropResolver.dynamics
+                .target.resolvedIntensity + delta
+            _ = windowManager.backdropResolver.dynamics.setIntensity(next)
             return .deferred(DeferredAction(
                 kind: KeybindAction.backdropChanged.rawValue, value: 0))
         case .activateWorkspace(let index):
@@ -302,14 +307,14 @@ extension KeybindService {
     /// `ModifierFlags`, runs `dispatch`, and packs the result into the
     /// C decision struct.
     @inline(__always)
-    static func bridgeDispatch(
+    func bridgeDispatch(
         keycode: UInt32,
         modifierBits: UInt64,
         pressed: Bool
     ) -> NucleusCompositorOverlayTypes.KeybindDecision {
-        let modifiers = decode(modifierBits: modifierBits)
+        let modifiers = Self.decode(modifierBits: modifierBits)
         let phase: Phase = pressed ? .down : .up
-        let decision = shared.dispatch(keycode: keycode, modifiers: modifiers, phase: phase)
+        let decision = dispatch(keycode: keycode, modifiers: modifiers, phase: phase)
 
         switch decision {
         case .pass:

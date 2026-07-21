@@ -2,6 +2,8 @@ import Foundation
 import Glibc
 @_spi(NucleusCompositor) import NucleusLayers
 import NucleusCompositorOverlayScene
+import NucleusCompositorServer
+import NucleusCompositorWindowManager
 import NucleusTextBackend
 import NucleusUI
 import Testing
@@ -291,6 +293,49 @@ private struct ScopedEnvironmentVariable {
 @Suite(.serialized)
 struct ShellServicesAccessibilityTests {
     @Test
+    func runtimeOwnedShellGraphsDoNotShareMutableState() {
+        let serverA = NucleusCompositorServer()
+        let serverB = NucleusCompositorServer()
+        let servicesA = ShellServices(
+            server: serverA,
+            windowManager: WindowManager(server: serverA))
+        let servicesB = ShellServices(
+            server: serverB,
+            windowManager: WindowManager(server: serverB))
+
+        let shortcut = KeybindService.Shortcut(
+            key: .e,
+            modifiers: .command)
+        servicesA.keybinds.register(shortcut, action: .closeFocusedWindow)
+
+        let dispatchA = servicesA.keybinds.dispatch(
+            keycode: KeybindService.KeyCode.e.rawValue,
+            modifiers: .command,
+            phase: .down)
+        let dispatchB = servicesB.keybinds.dispatch(
+            keycode: KeybindService.KeyCode.e.rawValue,
+            modifiers: .command,
+            phase: .down)
+        if case .deferred = dispatchA {} else {
+            Issue.record("runtime A did not observe its custom keybind")
+        }
+        if case .pass = dispatchB {} else {
+            Issue.record("runtime B observed runtime A's custom keybind")
+        }
+
+        #expect(serverA.dataExchange.allocateHandle() == 1)
+        #expect(serverA.dataExchange.allocateHandle() == 2)
+        #expect(serverB.dataExchange.allocateHandle() == 1)
+
+        _ = servicesA.screenshots.request(
+            origin: .internalTest,
+            previewWidth: 64,
+            previewHeight: 64)
+        #expect(servicesA.screenshots.pendingCount() == 1)
+        #expect(servicesB.screenshots.pendingCount() == 0)
+    }
+
+    @Test
     func overlayCompositionRegistersPublishesAndTearsDownOneApplication()
         throws
     {
@@ -312,8 +357,10 @@ struct ShellServicesAccessibilityTests {
             diagnosticSink: { _ in }))
 
         try context.construct {
-            _ = nucleus_compositor_overlay_runtime_clear_host()
-            let shellServices = ShellServices()
+            let server = NucleusCompositorServer()
+            let shellServices = ShellServices(
+                server: server,
+                windowManager: WindowManager(server: server))
             defer { shellServices.shutdown() }
             #expect(shellServices.installOverlay(
                 commitSink: InMemoryCommitSink(),
@@ -344,7 +391,7 @@ struct ShellServicesAccessibilityTests {
             #expect(name.status == 0)
             #expect(name.standardOutput.contains("Nucleus Compositor"))
 
-            publishGlobalShellOverlayScene()
+            shellServices.overlayScene.publishScene()
             let role = try privateBus.call(
                 destination: application.name,
                 path: "/org/a11y/atspi/accessible/root",

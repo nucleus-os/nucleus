@@ -13,7 +13,7 @@ struct NucleusHeadlessBenchmarks {
             let results = try await BenchmarkRunner(iterations: options.iterations)
                 .run(workloads)
             let report = BenchmarkReport(
-                metricSchema: "nucleus.headless.v1",
+                metricSchema: "nucleus.headless.v2",
                 deterministicSeedPolicy:
                     "Every workload uses the recorded fixed seed; repeated structural "
                         + "samples must be byte-for-byte equivalent.",

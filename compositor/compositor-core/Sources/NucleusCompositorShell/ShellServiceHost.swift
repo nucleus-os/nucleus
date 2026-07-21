@@ -143,8 +143,6 @@ extension NotificationService: NotificationHost {
     /// state alongside notifications.
     public func notificationReset() {
         reset()
-        ScreenshotService.shared.reset()
-        DataExchangeService.shared.reset()
     }
 
     // `notificationClosedFromOverlay(id:reason:)` and `notificationCount() -> UInt`

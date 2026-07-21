@@ -7,8 +7,6 @@ import NucleusCompositorShellSurface
 
 @MainActor
 public final class LauncherService {
-  public static let shared = LauncherService()
-
   private var applicationIndex: DesktopApplicationIndex
   private var launched: [Process] = []
 

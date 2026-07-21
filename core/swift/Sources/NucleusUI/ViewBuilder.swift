@@ -74,15 +74,14 @@ extension View {
         reorderSubviews(toMatch: desired)
     }
 
-    /// Put `childViews` into `desired`'s order, moving only what is out of place.
+    /// Put `childViews` into `desired`'s order without detaching retained views.
     private func reorderSubviews(toMatch desired: [View]) {
         guard childViews.count == desired.count else { return }
-        for (index, view) in desired.enumerated() where childViews[index] !== view {
-            guard let current = childViews.firstIndex(where: { $0 === view }) else { continue }
-            childViews.remove(at: current)
-            childViews.insert(view, at: index)
+        guard zip(childViews, desired).contains(where: { $0 !== $1 }) else {
+            return
         }
-        reindexChildren()
+        childViews = desired
+        reindexChildren(startingAt: childViews.startIndex)
         recordMutation(.structure)
         markSubtreeNeedsLayout()
         markSubtreeNeedsDisplay()

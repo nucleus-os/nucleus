@@ -18,17 +18,19 @@ import Testing
 
     @MainActor
     @Test func committedSurfaceOffsetMovesHotspotByInverseDelta() {
-        PointerCursorSurface.bind(
+        let graph = WaylandTestGraph()
+        let cursor = graph.host.pointerCursorSurface
+        cursor.bind(
             surfaceId: 42, hotspotX: 10, hotspotY: 20)
-        PointerCursorSurface.applyCommittedOffset(
+        cursor.applyCommittedOffset(
             surfaceID: 42, x: 3, y: -4)
-        #expect(PointerCursorSurface.hotspotX == 7)
-        #expect(PointerCursorSurface.hotspotY == 24)
+        #expect(cursor.hotspotX == 7)
+        #expect(cursor.hotspotY == 24)
 
-        PointerCursorSurface.applyCommittedOffset(
+        cursor.applyCommittedOffset(
             surfaceID: 99, x: 50, y: 50)
-        #expect(PointerCursorSurface.hotspotX == 7)
-        #expect(PointerCursorSurface.hotspotY == 24)
-        PointerCursorSurface.clear()
+        #expect(cursor.hotspotX == 7)
+        #expect(cursor.hotspotY == 24)
+        cursor.clear()
     }
 }

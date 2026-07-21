@@ -1,55 +1,99 @@
 import Foundation
 import NucleusCompositorOverlayScene
+import NucleusCompositorServer
+import NucleusCompositorWindowManager
+import NucleusLayers
 import NucleusLinuxAccessibility
 import NucleusLinuxEnvironment
 import NucleusUI
-import NucleusLayers
 
-/// Compositor composition owner for shell policy, portal state, and overlay
-/// environment propagation.
-///
-/// This object is retained by `CompositorRuntime`. It deliberately has no
-/// process-global instance: its environment subscription and bus resources
-/// follow the compositor runtime's acquisition and teardown order.
+/// Compositor-owned shell service graph. Every stateful shell subsystem is
+/// constructed here and tied to the lifetime of one compositor runtime.
 @MainActor
 public final class ShellServices {
+    public let overlayScene: OverlaySceneRuntime
+    public let notifications: NotificationService
+    public let screenshots: ScreenshotService
+    public let bezel: BezelService
+    public let launcher: LauncherService
+    public let idlePolicy: IdlePolicy
+    public let cursorTheme: CursorThemeService
+    public let keybinds: KeybindService
     public let shellPolicy: ShellPolicyService
 
+    private unowned let server: NucleusCompositorServer
     private let environmentAdapter: PortalEnvironmentAdapter
     private var accessibilityService: AtSPIService?
     private var accessibilityBridge: AtSPIBridge?
+    private var publicationHost: ShellOverlayPublicationHost?
 
-    public init() {
-        self.shellPolicy = ShellPolicyService()
+    public init(
+        server: NucleusCompositorServer,
+        windowManager: WindowManager
+    ) {
+        self.server = server
+
+        let overlayScene = OverlaySceneRuntime(server: server)
+        let notifications = NotificationService(overlayScene: overlayScene)
+        let launcher = LauncherService()
+        let idlePolicy = IdlePolicy()
+        let cursorTheme = CursorThemeService(server: server)
+        let bezel = BezelService(
+            overlayScene: overlayScene,
+            notifications: notifications)
+        let keybinds = KeybindService(
+            launcher: launcher,
+            windowManager: windowManager)
+
+        self.overlayScene = overlayScene
+        self.notifications = notifications
+        self.screenshots = ScreenshotService(notifications: notifications)
+        self.bezel = bezel
+        self.launcher = launcher
+        self.idlePolicy = idlePolicy
+        self.cursorTheme = cursorTheme
+        self.keybinds = keybinds
+        self.shellPolicy = ShellPolicyService(
+            keybinds: keybinds,
+            launcher: launcher,
+            idle: idlePolicy,
+            cursorTheme: cursorTheme,
+            bezel: bezel,
+            notifications: notifications,
+            overlayScene: overlayScene)
         self.environmentAdapter = PortalEnvironmentAdapter()
     }
 
-    /// Open the portal and return the current normalized snapshot immediately.
-    /// The event loop applies the nonblocking portal reply after installation.
     public func prepareEnvironment() -> UIEnvironment {
         environmentAdapter.start()
     }
 
-    /// Construct the overlay with the already-acquired snapshot, then attach
-    /// the sole runtime subscription.
     public func installOverlay(
         commitSink: any CommitSink,
         services: UIHostServices
     ) -> Bool {
         environmentAdapter.onChange = nil
-        let installed = nucleus_compositor_overlay_runtime_install_host(
-            ShellOverlayPublicationHost(services: self),
+        let publicationHost = ShellOverlayPublicationHost(
+            services: self,
+            notifications: notifications,
+            server: server)
+        self.publicationHost = publicationHost
+        guard overlayScene.installHost(
+            publicationHost,
             commitSink: commitSink,
             services: services,
-            environment: environmentAdapter.environment) != 0
-        guard installed else { return false }
-        guard installAccessibility() else {
-            _ = nucleus_compositor_overlay_runtime_clear_host()
+            environment: environmentAdapter.environment)
+        else {
+            self.publicationHost = nil
             return false
         }
-        environmentAdapter.onChange = {
-            environment in
-            nucleus_compositor_overlay_scene_update_environment(environment)
+        guard installAccessibility() else {
+            overlayScene.clearHost()
+            self.publicationHost = nil
+            return false
+        }
+        environmentAdapter.onChange = { [weak overlayScene] environment in
+            overlayScene?.updateEnvironment(environment)
         }
         return true
     }
@@ -59,7 +103,7 @@ public final class ShellServices {
         accessibilityService = nil
         accessibilityBridge = nil
         do {
-            return try withGlobalShellOverlayScene { scene in
+            return try overlayScene.withScene { scene in
                 let service = AtSPIService(
                     applicationName: "Nucleus Compositor")
                 service.diagnosticHandler = { failure, generation in
@@ -95,13 +139,15 @@ public final class ShellServices {
         accessibilityService
     }
 
-    /// Stop environment callbacks before destroying the overlay context, then
-    /// release every sd-bus slot and connection.
     public func shutdown() {
         environmentAdapter.stop()
         accessibilityService?.close()
         accessibilityService = nil
         accessibilityBridge = nil
-        _ = nucleus_compositor_overlay_runtime_clear_host()
+        publicationHost = nil
+        overlayScene.clearHost()
+        notifications.reset()
+        screenshots.reset()
+        server.dataExchange.reset()
     }
 }

@@ -2,9 +2,7 @@ import Foundation
 
 @MainActor
 public final class CursorTheme {
-    public static let shared = CursorTheme()
-
-    private init() {}
+    public init() {}
 
     func load(name: String, size: UInt32) -> XCursorImage {
         let theme = ProcessInfo.processInfo.environment["XCURSOR_THEME"].flatMap { $0.isEmpty ? nil : $0 } ?? "default"

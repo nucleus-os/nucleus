@@ -3,6 +3,12 @@ import Foundation
 struct BenchmarkSample: Equatable {
     var metrics: [String: UInt64]
     var semanticChecksum: UInt64
+    var phaseNanoseconds: [String: UInt64] = [:]
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.metrics == rhs.metrics
+            && lhs.semanticChecksum == rhs.semanticChecksum
+    }
 }
 
 struct MetricBudget: Codable, Equatable {
@@ -50,6 +56,7 @@ struct BenchmarkResult: Codable {
     var structuralMetrics: [String: UInt64]
     var budgets: [MetricBudget]
     var timing: BenchmarkTiming
+    var phaseTimings: [String: BenchmarkTiming]
 }
 
 struct BenchmarkReport: Codable {
@@ -81,6 +88,11 @@ enum BenchmarkFailure: Error, CustomStringConvertible {
         expected: BenchmarkSample,
         actual: BenchmarkSample)
     case missingMetric(workload: String, metric: String)
+    case phaseSchema(
+        workload: String,
+        iteration: Int,
+        expected: [String],
+        actual: [String])
     case budget(
         workload: String,
         metric: String,
@@ -98,6 +110,10 @@ enum BenchmarkFailure: Error, CustomStringConvertible {
                 + "\(iteration): expected \(expected), actual \(actual)"
         case .missingMetric(let workload, let metric):
             "\(workload) did not publish budgeted metric '\(metric)'"
+        case .phaseSchema(
+            let workload, let iteration, let expected, let actual):
+            "\(workload) changed phase schema at iteration \(iteration): "
+                + "expected \(expected), actual \(actual)"
         case .budget(
             let workload, let metric, let kind, let expected, let actual):
             "\(workload) exceeded its \(kind.rawValue) budget for \(metric): "
@@ -124,12 +140,27 @@ struct BenchmarkRunner {
         var baseline: BenchmarkSample?
         var elapsed: [UInt64] = []
         elapsed.reserveCapacity(iterations)
+        var phaseSamples: [String: [UInt64]] = [:]
 
         for iteration in 0..<iterations {
             let start = clock.now
             let sample = try await workload.body()
             let duration = start.duration(to: clock.now)
             elapsed.append(Self.nanoseconds(duration))
+            if let baseline {
+                let expected = baseline.phaseNanoseconds.keys.sorted()
+                let actual = sample.phaseNanoseconds.keys.sorted()
+                guard expected == actual else {
+                    throw BenchmarkFailure.phaseSchema(
+                        workload: workload.name,
+                        iteration: iteration,
+                        expected: expected,
+                        actual: actual)
+                }
+            }
+            for (phase, nanoseconds) in sample.phaseNanoseconds {
+                phaseSamples[phase, default: []].append(nanoseconds)
+            }
             if let baseline, baseline != sample {
                 throw BenchmarkFailure.nondeterministic(
                     workload: workload.name,
@@ -144,10 +175,6 @@ struct BenchmarkRunner {
             throw BenchmarkFailure.argument("benchmark iteration count must be positive")
         }
         try validate(workload.budgets, sample: baseline, workload: workload.name)
-        let sorted = elapsed.sorted()
-        let tailIndex = min(
-            sorted.count - 1,
-            Int((Double(sorted.count) * 0.95).rounded(.up)) - 1)
         return BenchmarkResult(
             category: workload.category,
             name: workload.name,
@@ -157,11 +184,8 @@ struct BenchmarkRunner {
             semanticChecksum: baseline.semanticChecksum,
             structuralMetrics: baseline.metrics,
             budgets: workload.budgets,
-            timing: BenchmarkTiming(
-                samplesNanoseconds: elapsed,
-                medianNanoseconds: sorted[sorted.count / 2],
-                tailNanoseconds: sorted[max(0, tailIndex)],
-                totalNanoseconds: elapsed.reduce(0, &+)))
+            timing: Self.timing(for: elapsed),
+            phaseTimings: phaseSamples.mapValues(Self.timing(for:)))
     }
 
     private func validate(
@@ -204,8 +228,25 @@ struct BenchmarkRunner {
             by: 1_000_000_000)
         if secondsNanoseconds.overflow { return .max }
         let subsecondNanoseconds = attoseconds / 1_000_000_000
-        return secondsNanoseconds.partialValue.addingReportingOverflow(
-            subsecondNanoseconds).partialValue
+        let total = secondsNanoseconds.partialValue.addingReportingOverflow(
+            subsecondNanoseconds)
+        return total.overflow ? .max : total.partialValue
+    }
+
+    private static func timing(for samples: [UInt64]) -> BenchmarkTiming {
+        precondition(!samples.isEmpty)
+        let sorted = samples.sorted()
+        let tailIndex = min(
+            sorted.count - 1,
+            Int((Double(sorted.count) * 0.95).rounded(.up)) - 1)
+        return BenchmarkTiming(
+            samplesNanoseconds: samples,
+            medianNanoseconds: sorted[sorted.count / 2],
+            tailNanoseconds: sorted[max(0, tailIndex)],
+            totalNanoseconds: samples.reduce(into: 0) { total, sample in
+                let sum = total.addingReportingOverflow(sample)
+                total = sum.overflow ? .max : sum.partialValue
+            })
     }
 }
 
@@ -257,11 +298,54 @@ enum BenchmarkReportWriter {
                 "\(result.category)/\(result.name): input=\(result.inputSize) "
                     + "iterations=\(result.iterations) median_ms="
                     + String(format: "%.3f", milliseconds)
-                    + " structural=pass")
+                    + " structural=pass"
+                    + phaseSummary(result.phaseTimings))
         }
         lines.append("")
         return lines.joined(separator: "\n")
     }
+
+    private static func phaseSummary(
+        _ timings: [String: BenchmarkTiming]
+    ) -> String {
+        guard !timings.isEmpty else { return "" }
+        return " phases_ms=" + timings.keys.sorted().map { phase in
+            let milliseconds = Double(
+                timings[phase]?.medianNanoseconds ?? 0) / 1_000_000
+            return "\(phase):" + String(format: "%.3f", milliseconds)
+        }.joined(separator: ",")
+    }
+}
+
+struct BenchmarkPhaseRecorder {
+    private let clock = ContinuousClock()
+    private(set) var phaseNanoseconds: [String: UInt64] = [:]
+
+    mutating func measure<T>(
+        _ phase: String,
+        _ body: () throws -> T
+    ) rethrows -> T {
+        precondition(phaseNanoseconds[phase] == nil, "benchmark phase recorded twice")
+        let start = clock.now
+        defer {
+            phaseNanoseconds[phase] = durationNanoseconds(
+                start.duration(to: clock.now))
+        }
+        return try body()
+    }
+}
+
+private func durationNanoseconds(_ duration: Duration) -> UInt64 {
+    let components = duration.components
+    let seconds = UInt64(max(0, components.seconds))
+    let attoseconds = UInt64(max(0, components.attoseconds))
+    let secondsNanoseconds = seconds.multipliedReportingOverflow(
+        by: 1_000_000_000)
+    guard !secondsNanoseconds.overflow else { return .max }
+    let subsecondNanoseconds = attoseconds / 1_000_000_000
+    let total = secondsNanoseconds.partialValue.addingReportingOverflow(
+        subsecondNanoseconds)
+    return total.overflow ? .max : total.partialValue
 }
 
 extension UInt64 {
