@@ -339,22 +339,86 @@ public func withDmaBufImportImageInfo<R>(
 /// VkOwned image (which frees the bound memory on destruction via the closure)
 /// or nil on any failure. Consumes ownership of every fd in `descriptor` on
 /// success or failure.
+struct DmaBufImportOperations {
+    let createImage: PFN_vkCreateImage
+    let destroyImage: PFN_vkDestroyImage
+    let allocateMemory: PFN_vkAllocateMemory
+    let freeMemory: PFN_vkFreeMemory
+    let bindImageMemory: PFN_vkBindImageMemory
+    let bindImageMemory2: PFN_vkBindImageMemory2
+    let getMemoryFdProperties: PFN_vkGetMemoryFdPropertiesKHR
+    let getImageMemoryRequirements: PFN_vkGetImageMemoryRequirements
+    let getImageMemoryRequirements2: PFN_vkGetImageMemoryRequirements2
+
+    init?(_ dispatch: VK.DeviceDispatch) {
+        guard let createImage = dispatch.vkCreateImage,
+              let destroyImage = dispatch.vkDestroyImage,
+              let allocateMemory = dispatch.vkAllocateMemory,
+              let freeMemory = dispatch.vkFreeMemory,
+              let bindImageMemory = dispatch.vkBindImageMemory,
+              let bindImageMemory2 = dispatch.vkBindImageMemory2,
+              let getMemoryFdProperties = dispatch.vkGetMemoryFdPropertiesKHR,
+              let getImageMemoryRequirements =
+                dispatch.vkGetImageMemoryRequirements,
+              let getImageMemoryRequirements2 =
+                dispatch.vkGetImageMemoryRequirements2
+        else { return nil }
+        self.init(
+            createImage: createImage,
+            destroyImage: destroyImage,
+            allocateMemory: allocateMemory,
+            freeMemory: freeMemory,
+            bindImageMemory: bindImageMemory,
+            bindImageMemory2: bindImageMemory2,
+            getMemoryFdProperties: getMemoryFdProperties,
+            getImageMemoryRequirements: getImageMemoryRequirements,
+            getImageMemoryRequirements2: getImageMemoryRequirements2)
+    }
+
+    init(
+        createImage: @escaping PFN_vkCreateImage,
+        destroyImage: @escaping PFN_vkDestroyImage,
+        allocateMemory: @escaping PFN_vkAllocateMemory,
+        freeMemory: @escaping PFN_vkFreeMemory,
+        bindImageMemory: @escaping PFN_vkBindImageMemory,
+        bindImageMemory2: @escaping PFN_vkBindImageMemory2,
+        getMemoryFdProperties: @escaping PFN_vkGetMemoryFdPropertiesKHR,
+        getImageMemoryRequirements:
+            @escaping PFN_vkGetImageMemoryRequirements,
+        getImageMemoryRequirements2:
+            @escaping PFN_vkGetImageMemoryRequirements2
+    ) {
+        self.createImage = createImage
+        self.destroyImage = destroyImage
+        self.allocateMemory = allocateMemory
+        self.freeMemory = freeMemory
+        self.bindImageMemory = bindImageMemory
+        self.bindImageMemory2 = bindImageMemory2
+        self.getMemoryFdProperties = getMemoryFdProperties
+        self.getImageMemoryRequirements = getImageMemoryRequirements
+        self.getImageMemoryRequirements2 = getImageMemoryRequirements2
+    }
+}
+
 public func importDmaBufImage(
     device: VkDevice,
     dispatch: VK.DeviceDispatch,
     descriptor: DmaBufImageDescriptor
 ) -> VkOwned<VkImage>? {
-    guard let createImage = dispatch.vkCreateImage,
-          let destroyImage = dispatch.vkDestroyImage,
-          let allocateMemory = dispatch.vkAllocateMemory,
-          let freeMemory = dispatch.vkFreeMemory,
-          let bindImageMemory = dispatch.vkBindImageMemory,
-          let bindImageMemory2 = dispatch.vkBindImageMemory2,
-          let getMemoryFdProperties = dispatch.vkGetMemoryFdPropertiesKHR,
-          let getImageMemoryRequirements = dispatch.vkGetImageMemoryRequirements,
-          let getImageMemoryRequirements2 = dispatch.vkGetImageMemoryRequirements2
-    else { return nil }
+    importDmaBufImage(
+        device: device,
+        operations: DmaBufImportOperations(dispatch),
+        descriptor: descriptor)
+}
 
+/// The operation-table overload is intentionally internal. Tests inject Vulkan
+/// failures through it without a loader, while production always constructs the
+/// table from the generated device dispatch above.
+func importDmaBufImage(
+    device: VkDevice,
+    operations: DmaBufImportOperations?,
+    descriptor: DmaBufImageDescriptor
+) -> VkOwned<VkImage>? {
     var ownedPlaneFds = descriptor.planes.map { $0.fd >= 0 ? $0.fd : descriptor.fd }
     if ownedPlaneFds.isEmpty { ownedPlaneFds = [descriptor.fd] }
     // Ownership is per *unique fd value*: several planes of one buffer can share a
@@ -376,6 +440,34 @@ public func importDmaBufImage(
         }
     }
 
+    // A DRM-modifier image has one to three planes. Every plane must resolve to
+    // an owned descriptor, and a multi-plane layout must either alias one fd or
+    // provide one distinct fd per plane. Partially aliased layouts cannot be
+    // represented by the Vulkan disjoint-plane binding model and would attempt
+    // to import the same consumed fd twice.
+    let distinctPlaneFds = Set(ownedPlaneFds)
+    guard descriptor.width > 0,
+          descriptor.height > 0,
+          (1...3).contains(descriptor.planes.count),
+          ownedPlaneFds.allSatisfy({ $0 >= 0 }),
+          distinctPlaneFds.count == 1
+            || distinctPlaneFds.count == ownedPlaneFds.count,
+          let operations
+    else {
+        logDmaBufImportFailure(descriptor, "invalid-layout-or-dispatch")
+        return nil
+    }
+
+    let createImage = operations.createImage
+    let destroyImage = operations.destroyImage
+    let allocateMemory = operations.allocateMemory
+    let freeMemory = operations.freeMemory
+    let bindImageMemory = operations.bindImageMemory
+    let bindImageMemory2 = operations.bindImageMemory2
+    let getMemoryFdProperties = operations.getMemoryFdProperties
+    let getImageMemoryRequirements = operations.getImageMemoryRequirements
+    let getImageMemoryRequirements2 = operations.getImageMemoryRequirements2
+
     var image: VkImage? = nil
     let createResult = withDmaBufImportImageInfo(descriptor) { infoPtr in
         createImage(device, infoPtr, nil, &image)
@@ -391,7 +483,7 @@ public func importDmaBufImage(
     var memories: [VkDeviceMemory] = []
     // Distinct fds ⇒ each plane imports its own dedicated memory; a shared fd ⇒ one
     // memory covers every plane (imported once, below).
-    let separatePlaneMemory = uniqueOwnedFds.count > 1
+    let separatePlaneMemory = distinctPlaneFds.count > 1
 
     func allocateImportedMemory(fdIndex: Int, requirements: VkMemoryRequirements) -> VkDeviceMemory? {
         var fdProps = VkMemoryFdPropertiesKHR()

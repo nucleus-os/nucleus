@@ -1,5 +1,40 @@
+import Glibc
 import Testing
 @testable import NucleusLinuxDBus
+
+@MainActor
+private final class InjectedDBusEventLoop {
+    var processResults: [Int32]
+    var flushResult: Int32
+    var processCalls = 0
+    var flushCalls = 0
+    var closeCalls = 0
+
+    init(
+        processResults: [Int32],
+        flushResult: Int32 = 0
+    ) {
+        self.processResults = processResults
+        self.flushResult = flushResult
+    }
+
+    var operations: SDBusEventLoopOperations {
+        SDBusEventLoopOperations(
+            fileDescriptor: { 73 },
+            pollEvents: { 5 },
+            timeoutMicroseconds: { 11 },
+            process: { [self] in
+                processCalls += 1
+                return processResults.isEmpty
+                    ? 0 : processResults.removeFirst()
+            },
+            flush: { [self] in
+                flushCalls += 1
+                return flushResult
+            },
+            close: { [self] in closeCalls += 1 })
+    }
+}
 
 /// The shared Linux D-Bus client seam, against a real bus where one is reachable.
 ///
@@ -98,6 +133,66 @@ import Testing
             }
         }
         #expect(settled)
+    }
+
+    @Test func injectedTransportProcessesUntilIdleAndClosesExactlyOnce() throws {
+        let eventLoop = InjectedDBusEventLoop(
+            processResults: [1, 1, 0])
+        let transport = SDBusConnection(
+            testing: eventLoop.operations)
+        let connection = DBusConnection(
+            .session, testing: transport)
+
+        #expect(connection.isOpen)
+        #expect(connection.fileDescriptor == 73)
+        #expect(connection.pollEvents == 5)
+        #expect(connection.timeoutMicroseconds() == 11)
+        #expect(try connection.process())
+        #expect(eventLoop.processCalls == 3)
+        #expect(eventLoop.flushCalls == 1)
+
+        connection.close()
+        connection.close()
+        #expect(!connection.isOpen)
+        #expect(connection.fileDescriptor == -1)
+        #expect(eventLoop.flushCalls == 2)
+        #expect(eventLoop.closeCalls == 1)
+    }
+
+    @Test func injectedProcessAndFlushFailuresRemainTyped() {
+        let processFailure = InjectedDBusEventLoop(
+            processResults: [-ECONNRESET])
+        let processConnection = DBusConnection(
+            .session,
+            testing: SDBusConnection(
+                testing: processFailure.operations))
+        do {
+            _ = try processConnection.process()
+            Issue.record("injected process failure unexpectedly succeeded")
+        } catch {
+            #expect(error.systemCode == -ECONNRESET)
+            #expect(error.message.contains("processing D-Bus"))
+        }
+        #expect(processFailure.flushCalls == 0)
+        processConnection.close()
+
+        let flushFailure = InjectedDBusEventLoop(
+            processResults: [0],
+            flushResult: -EPIPE)
+        let flushConnection = DBusConnection(
+            .session,
+            testing: SDBusConnection(
+                testing: flushFailure.operations))
+        do {
+            _ = try flushConnection.process()
+            Issue.record("injected flush failure unexpectedly succeeded")
+        } catch {
+            #expect(error.systemCode == -EPIPE)
+            #expect(error.message.contains("flushing D-Bus"))
+        }
+        #expect(flushFailure.processCalls == 1)
+        #expect(flushFailure.flushCalls == 1)
+        flushConnection.close()
     }
 
     // MARK: - Properties

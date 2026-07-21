@@ -703,6 +703,7 @@ private final class SuccessfulScreencopyStub: ScreencopyDelegate {
     var captureCount = 0
     var cancelledRequestIDs: [UInt64] = []
     var pendingCompletion: (@MainActor (ScreencopyResult) -> Void)?
+    var lastCompletion: (@MainActor (ScreencopyResult) -> Void)?
 
     func screencopyConfiguration(
         output: WlOutput?, region: WlRect?
@@ -729,6 +730,7 @@ private final class SuccessfulScreencopyStub: ScreencopyDelegate {
     ) -> UInt64? {
         captureCount += 1
         pendingCompletion = completion
+        lastCompletion = completion
         return 88
     }
     func screencopyCancelCapture(_ requestID: UInt64) {
@@ -739,9 +741,17 @@ private final class SuccessfulScreencopyStub: ScreencopyDelegate {
     func complete() {
         let completion = pendingCompletion
         pendingCompletion = nil
-        completion?(ScreencopyResult(
+        completion?(success)
+    }
+
+    func repeatLastCompletion() {
+        lastCompletion?(success)
+    }
+
+    private var success: ScreencopyResult {
+        ScreencopyResult(
             ok: true, tvSecHi: 0, tvSecLo: 73,
-            tvNsec: 19, flags: 0))
+            tvNsec: 19, flags: 0)
     }
 }
 
@@ -851,6 +861,9 @@ private final class SuccessfulScreencopyStub: ScreencopyDelegate {
     #expect(ready.u32(4) == 73)
     #expect(ready.u32(8) == 19)
     #expect(stub.pendingCompletion == nil)
+    stub.repeatLastCompletion()
+    client.pump()
+    #expect(client.drainEvents().isEmpty)
 
     // Destroying a frame after its GPU capture begins must cancel that exact
     // request and discard its completion before the retained wl_buffer dies.
@@ -877,6 +890,9 @@ private final class SuccessfulScreencopyStub: ScreencopyDelegate {
     client.pump()
     #expect(stub.cancelledRequestIDs == [88])
     #expect(stub.pendingCompletion == nil)
+    stub.repeatLastCompletion()
+    client.pump()
+    #expect(client.drainEvents().isEmpty)
 }
 
 /// `copy` with a buffer whose format/size/stride doesn't match the advertised params

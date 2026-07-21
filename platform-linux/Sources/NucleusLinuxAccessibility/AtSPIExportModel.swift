@@ -93,50 +93,123 @@ struct AtSPIExportUpdate: Sendable, Equatable {
     var events: [AtSPIEvent]
 }
 
-struct AtSPIExportModel: Sendable {
+package struct AtSPIProjectionResult: Sendable, Equatable {
+    package var exportedObjects: UInt64
+    package var addedPaths: UInt64
+    package var removedPaths: UInt64
+    package var emittedEvents: UInt64
+    package var objectsProjected: UInt64
+    package var objectsReused: UInt64
+}
+
+package struct AtSPIExportModel: Sendable {
     static let rootPath = "/org/a11y/atspi/accessible/root"
     static let nullPath = "/org/a11y/atspi/null"
 
     private(set) var objects: [String: AtSPIExportedObject] = [:]
     private(set) var idToPath: [AccessibilityID: String] = [:]
-    var applicationName: String
+    private var rootIDs: [AccessibilityID] = []
+    private var objectsProjected: UInt64 = 0
+    private var objectsReused: UInt64 = 0
+    let applicationName: String
 
-    init(applicationName: String) {
+    package init(applicationName: String) {
         self.applicationName = applicationName
+    }
+
+    package mutating func project(
+        snapshot: AccessibilityTreeSnapshot,
+        update: AccessibilityTreeUpdate
+    ) -> AtSPIProjectionResult {
+        let result = apply(snapshot: snapshot, update: update)
+        return AtSPIProjectionResult(
+            exportedObjects: UInt64(result.objects.count),
+            addedPaths: UInt64(result.addedPaths.count),
+            removedPaths: UInt64(result.removedPaths.count),
+            emittedEvents: UInt64(result.events.count),
+            objectsProjected: objectsProjected,
+            objectsReused: objectsReused)
     }
 
     mutating func apply(
         snapshot: AccessibilityTreeSnapshot,
         update: AccessibilityTreeUpdate
     ) -> AtSPIExportUpdate {
-        let oldObjects = objects
-        let oldPaths = Set(oldObjects.keys)
-        var next: [String: AtSPIExportedObject] = [:]
-        var nextIDToPath: [AccessibilityID: String] = [:]
+        let wasEmpty = objects.isEmpty
+        let oldRootIDs = rootIDs
+        var added: [String] = []
+        var removed: [String] = []
+        var removedObjects: [String: AtSPIExportedObject] = [:]
+        var changedObjects: [String: AtSPIExportedObject] = [:]
 
-        for node in snapshot.nodes.values {
-            let path = Self.path(for: node.id)
-            nextIDToPath[node.id] = path
-        }
-        let rootChildren = snapshot.rootIDs.compactMap {
-            nextIDToPath[$0]
-        }
-        next[Self.rootPath] = applicationObject(children: rootChildren)
-        for node in snapshot.nodes.values {
-            let path = nextIDToPath[node.id]!
-            next[path] = object(
-                for: node,
-                path: path,
-                idToPath: nextIDToPath)
+        if wasEmpty {
+            idToPath.reserveCapacity(snapshot.nodes.count)
+            objects.reserveCapacity(snapshot.nodes.count + 1)
+            for node in snapshot.nodes.values {
+                idToPath[node.id] = Self.path(for: node.id)
+            }
+            objects[Self.rootPath] = applicationObject(
+                children: snapshot.rootIDs.compactMap { idToPath[$0] })
+            for node in snapshot.nodes.values {
+                guard let path = idToPath[node.id] else { continue }
+                objects[path] = object(
+                    for: node,
+                    path: path,
+                    idToPath: idToPath)
+            }
+            added = objects.keys.sorted()
+            objectsProjected = UInt64(objects.count)
+            objectsReused = 0
+        } else {
+            for id in update.removed {
+                guard let path = idToPath.removeValue(forKey: id) else {
+                    continue
+                }
+                if let object = objects.removeValue(forKey: path) {
+                    removedObjects[path] = object
+                    removed.append(path)
+                }
+            }
+
+            for node in update.inserted {
+                idToPath[node.id] = Self.path(for: node.id)
+            }
+
+            let insertedIDs = Set(update.inserted.map(\.id))
+            let changedIDs = insertedIDs.union(update.updated.map(\.id))
+            var projectedCount = 0
+            for id in changedIDs.sorted() {
+                guard let node = snapshot.nodes[id],
+                      let path = idToPath[id]
+                else { continue }
+                if let previous = objects[path] {
+                    changedObjects[path] = previous
+                } else {
+                    added.append(path)
+                }
+                objects[path] = object(
+                    for: node,
+                    path: path,
+                    idToPath: idToPath)
+                projectedCount += 1
+            }
+
+            if snapshot.rootIDs != oldRootIDs {
+                objects[Self.rootPath] = applicationObject(
+                    children: snapshot.rootIDs.compactMap { idToPath[$0] })
+                projectedCount += 1
+            }
+            objectsProjected = UInt64(projectedCount)
+            objectsReused = UInt64(max(0, objects.count - projectedCount))
+            added.sort()
+            removed.sort()
         }
 
-        let nextPaths = Set(next.keys)
-        let added = nextPaths.subtracting(oldPaths).sorted()
-        let removed = oldPaths.subtracting(nextPaths).sorted()
+        rootIDs = snapshot.rootIDs
         var events: [AtSPIEvent] = []
 
         for path in added where path != Self.rootPath {
-            guard let object = next[path] else { continue }
+            guard let object = objects[path] else { continue }
             if Self.isWindowRole(object.role) {
                 events.append(.init(
                     kind: .windowCreated,
@@ -149,7 +222,7 @@ struct AtSPIExportModel: Sendable {
                 detail: "add"))
         }
         for path in removed where path != Self.rootPath {
-            guard let object = oldObjects[path] else { continue }
+            guard let object = removedObjects[path] else { continue }
             events.append(.init(
                 kind: .childrenRemoved,
                 sourcePath: object.parentPath ?? Self.rootPath,
@@ -161,9 +234,9 @@ struct AtSPIExportModel: Sendable {
                     sourcePath: path))
             }
         }
-        for path in nextPaths.intersection(oldPaths).sorted() {
-            guard let old = oldObjects[path],
-                  let current = next[path],
+        for path in changedObjects.keys.sorted() {
+            guard let old = changedObjects[path],
+                  let current = objects[path],
                   old != current
             else { continue }
             if old.states != current.states {
@@ -187,7 +260,10 @@ struct AtSPIExportModel: Sendable {
                     detail: "accessible-description",
                     text: current.description))
             }
-            if !current.isSecure, old.text != current.text {
+            if current.interfaces.contains(AtSPIInterface.text),
+               !current.isSecure,
+               old.text != current.text
+            {
                 events.append(.init(
                     kind: .textChanged,
                     sourcePath: path,
@@ -199,10 +275,10 @@ struct AtSPIExportModel: Sendable {
         }
         for notification in update.notifications {
             let currentPath = notification.target.flatMap {
-                nextIDToPath[$0]
+                idToPath[$0]
             }
             let oldPath = notification.target.flatMap {
-                idToPath[$0]
+                removedObjects[Self.path(for: $0)]?.path
             }
             guard let path = currentPath ?? oldPath else { continue }
             switch notification.kind {
@@ -216,7 +292,7 @@ struct AtSPIExportModel: Sendable {
                     kind: .valueChanged,
                     sourcePath: path,
                     detail: "accessible-value",
-                    text: next[path]?.valueText))
+                    text: objects[path]?.valueText))
             case .selection:
                 events.append(.init(
                     kind: .selectionChanged,
@@ -241,10 +317,8 @@ struct AtSPIExportModel: Sendable {
             }
         }
 
-        objects = next
-        idToPath = nextIDToPath
         return AtSPIExportUpdate(
-            objects: next,
+            objects: objects,
             addedPaths: added,
             removedPaths: removed,
             events: deduplicate(events))

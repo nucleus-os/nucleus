@@ -16,6 +16,9 @@ let package = Package(
             name: "NucleusLinuxAccessibility",
             targets: ["NucleusLinuxAccessibility"]),
         .executable(
+            name: "NucleusLinuxBenchmarks",
+            targets: ["NucleusLinuxBenchmarks"]),
+        .executable(
             name: "NucleusLinuxThreadSanitizerHarness",
             targets: ["NucleusLinuxThreadSanitizerHarness"]),
     ],
@@ -77,6 +80,17 @@ let package = Package(
                 .product(name: "NucleusUI", package: "Nucleus"),
             ],
             path: "Sources/NucleusLinuxEnvironment",
+            swiftSettings: [.interoperabilityMode(.Cxx)]),
+        .executableTarget(
+            name: "NucleusLinuxBenchmarks",
+            dependencies: [
+                "NucleusLinuxAccessibility",
+                .product(
+                    name: "NucleusBenchmarkSupport",
+                    package: "Nucleus"),
+                .product(name: "NucleusUI", package: "Nucleus"),
+            ],
+            path: "Benchmarks/NucleusLinuxBenchmarks",
             swiftSettings: [.interoperabilityMode(.Cxx)]),
         .testTarget(
             name: "NucleusLinuxReactorTests",

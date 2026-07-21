@@ -11,7 +11,6 @@
 import WaylandServerC
 import WaylandServer
 import WaylandServerDispatch
-import Synchronization
 
 /// Buffer the client must allocate to receive a capture.
 struct ScreencopyParams {
@@ -59,17 +58,17 @@ protocol ScreencopyDelegate: AnyObject {
 /// the composited output, so while any client holds a screencopy frame (from the
 /// capture request until it destroys the frame) the affected outputs must composite
 /// rather than direct-scanout, or the copy would read a stale/absent framebuffer. The
-/// eligibility gather reads `isCapturing`. Resource teardown can run from deinit,
-/// so the counter owns its synchronization instead of asserting an executor there.
+/// eligibility gather reads `isCapturing`. Frames, their isolated deinits, and
+/// scanout-fact gathering are all main-actor-owned, so the counter shares that
+/// semantic owner instead of introducing cross-thread mutable state.
+@MainActor
 enum ScreencopyActivity {
-    private static let liveFrames = Mutex(0)
-    static var isCapturing: Bool { liveFrames.withLock { $0 > 0 } }
-    static func retainFrame() { liveFrames.withLock { $0 += 1 } }
+    private static var liveFrames = 0
+    static var isCapturing: Bool { liveFrames > 0 }
+    static func retainFrame() { liveFrames += 1 }
     static func releaseFrame() {
-        liveFrames.withLock {
-            precondition($0 > 0, "unbalanced screencopy frame lifetime")
-            $0 -= 1
-        }
+        precondition(liveFrames > 0, "unbalanced screencopy frame lifetime")
+        liveFrames -= 1
     }
 }
 
@@ -331,6 +330,8 @@ final class ScreencopyFrame {
     private var pendingBuffer: WaylandResourceReference?
     private var pendingWithDamage = false
     private var pendingCaptureID: UInt64?
+    private var captureGeneration: UInt64 = 0
+    private var activeCaptureGeneration: UInt64?
     private var admittedOutputID: UInt64?
 
     init(
@@ -443,6 +444,12 @@ final class ScreencopyFrame {
             return
         }
         let withDamage = pendingWithDamage
+        captureGeneration &+= 1
+        precondition(
+            captureGeneration != 0,
+            "screencopy capture generation exhausted")
+        let generation = captureGeneration
+        activeCaptureGeneration = generation
         let callState = CaptureCallState()
         let requestID = manager?.capture(
             output: output, configuration: configuration,
@@ -457,26 +464,32 @@ final class ScreencopyFrame {
                 }
                 self?.finishQueuedCopy(
                     result: result,
-                    withDamage: withDamage)
+                    withDamage: withDamage,
+                    generation: generation)
             })
         callState.hasReturned = true
         if let inlineResult = callState.inlineResult {
             finishQueuedCopy(
                 result: inlineResult,
-                withDamage: withDamage)
+                withDamage: withDamage,
+                generation: generation)
             return
         }
         guard let requestID else {
             failQueuedCopy()
             return
         }
+        guard activeCaptureGeneration == generation else { return }
         pendingCaptureID = requestID
     }
 
     private func finishQueuedCopy(
         result: ScreencopyResult,
-        withDamage: Bool
+        withDamage: Bool,
+        generation: UInt64
     ) {
+        guard activeCaptureGeneration == generation else { return }
+        activeCaptureGeneration = nil
         pendingCaptureID = nil
         releaseAdmission()
         guard let res = resource, pendingBuffer?.resource != nil else {
@@ -499,6 +512,7 @@ final class ScreencopyFrame {
     }
 
     fileprivate func failQueuedCopy() {
+        activeCaptureGeneration = nil
         if let pendingCaptureID {
             manager?.delegate?.screencopyCancelCapture(pendingCaptureID)
             self.pendingCaptureID = nil

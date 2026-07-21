@@ -1,15 +1,21 @@
 import NucleusLinuxDBus
 import NucleusUI
+import Synchronization
 @testable import NucleusLinuxEnvironment
 import Testing
 
 @MainActor
 @Suite struct PortalEnvironmentAdapterTests {
-    private final class Clock: @unchecked Sendable {
-        var now: UInt64
+    private final class Clock: Sendable {
+        private let storage: Mutex<UInt64>
+
+        var now: UInt64 {
+            get { storage.withLock { $0 } }
+            set { storage.withLock { $0 = newValue } }
+        }
 
         init(now: UInt64) {
-            self.now = now
+            storage = Mutex(now)
         }
     }
 

@@ -293,6 +293,9 @@ let package = Package(
                     name: "NucleusCompositorWaylandRuntime",
                     package: "compositor-core"),
                 .product(
+                    name: "NucleusCompositorWaylandTestSupport",
+                    package: "compositor-core"),
+                .product(
                     name: "NucleusCompositorWindowScene",
                     package: "compositor-core"),
                 .product(name: "NucleusLayers", package: "Nucleus"),
@@ -430,6 +433,9 @@ let package = Package(
                 .product(name: "NucleusTextBackend", package: "Nucleus"),
                 .product(
                     name: "NucleusCompositorWaylandRuntime",
+                    package: "compositor-core"),
+                .product(
+                    name: "NucleusCompositorWaylandTestSupport",
                     package: "compositor-core"),
                 .product(
                     name: "NucleusCompositorWindowScene",

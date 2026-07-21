@@ -290,21 +290,17 @@ private final class ReactorControlSignal: Sendable {
     }
 
     func signal() {
-        let shouldWrite = state.withLock { state in
+        state.withLock { state in
             incrementSaturating(&state.wakeRequests)
-            guard state.isOpen else { return false }
+            guard state.isOpen else { return }
             if state.isPending {
                 incrementSaturating(&state.coalescedRequests)
-                return false
+                return
             }
             state.isPending = true
             incrementSaturating(&state.writes)
-            return true
-        }
-        guard shouldWrite else { return }
-        let result = nucleus_linux_reactor_signal(fileDescriptor)
-        if result != 0 {
-            state.withLock { state in
+            let result = nucleus_linux_reactor_signal(fileDescriptor)
+            if result != 0 {
                 state.isPending = false
                 incrementSaturating(&state.writeFailures)
             }

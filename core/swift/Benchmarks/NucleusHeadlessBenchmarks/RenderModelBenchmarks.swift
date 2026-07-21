@@ -1,3 +1,4 @@
+import NucleusBenchmarkSupport
 import NucleusRenderModel
 
 @MainActor

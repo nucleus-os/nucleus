@@ -200,11 +200,14 @@ authoring guide.
   each patch's own header for the full rationale. *Filed-upstream-TODO.*
 
 * **`swift/0008-linux-futex-mutex-tsan.patch`** — annotates the Linux
-  `Synchronization.Mutex` futex implementation with weak ThreadSanitizer
-  acquire/release hooks. The synchronization is correct without the hooks, but
-  TSan cannot infer a happens-before edge from Swift atomics plus direct futex
-  syscalls and otherwise reports false access races for correctly locked state.
-  Weak imports preserve ordinary, non-TSan toolchain links. *Filed-upstream-TODO.*
+  `Synchronization.Mutex` futex implementation with libswiftCore's
+  ThreadSanitizer acquire/release hook pointers. The synchronization is correct
+  without the hooks, but TSan cannot infer a happens-before edge from Swift
+  atomics plus direct futex syscalls and otherwise reports false access races
+  for correctly locked state. Runtime-populated nullable hooks preserve
+  ordinary, non-TSan toolchain links without allowing the non-TSan stdlib build
+  to fold the annotations out of `@_alwaysEmitIntoClient` bodies.
+  *Filed-upstream-TODO.*
 
 * **`swift-driver/0001-android-swiftrt-resource-dir-fallback.patch`** —
   Swift's new driver prefers `swiftrt.o` from `-sdk` when an SDK is

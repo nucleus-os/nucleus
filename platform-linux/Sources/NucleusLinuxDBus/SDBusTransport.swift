@@ -489,9 +489,19 @@ public final class SDBusPendingCall {
 /// It centralizes raw handles, slot lifetime, callbacks, polling, async calls,
 /// object registration, and message construction. Protocol-specific services
 /// retain this owner but never import libsystemd themselves.
+struct SDBusEventLoopOperations {
+    var fileDescriptor: @MainActor () -> Int32
+    var pollEvents: @MainActor () -> Int16
+    var timeoutMicroseconds: @MainActor () -> UInt64?
+    var process: @MainActor () -> Int32
+    var flush: @MainActor () -> Int32
+    var close: @MainActor () -> Void
+}
+
 @MainActor
 public final class SDBusConnection {
     private var bus: OpaquePointer?
+    private var injectedEventLoop: SDBusEventLoopOperations?
     private var registrations: [ObjectIdentifier: SDBusObjectRegistration] = [:]
     private var pendingCalls: [ObjectIdentifier: SDBusPendingCall] = [:]
 
@@ -531,11 +541,15 @@ public final class SDBusConnection {
         }
     }
 
+    init(testing eventLoop: SDBusEventLoopOperations) {
+        injectedEventLoop = eventLoop
+    }
+
     isolated deinit {
         close()
     }
 
-    public var isOpen: Bool { bus != nil }
+    public var isOpen: Bool { bus != nil || injectedEventLoop != nil }
 
     public var uniqueName: String? {
         guard let bus else { return nil }
@@ -547,18 +561,27 @@ public final class SDBusConnection {
     }
 
     public var fileDescriptor: Int32 {
+        if let injectedEventLoop {
+            return injectedEventLoop.fileDescriptor()
+        }
         guard let bus else { return -1 }
         let descriptor = sd_bus_get_fd(bus)
         return descriptor >= 0 ? descriptor : -1
     }
 
     public var pollEvents: Int16 {
+        if let injectedEventLoop {
+            return injectedEventLoop.pollEvents()
+        }
         guard let bus else { return 0 }
         let events = sd_bus_get_events(bus)
         return events >= 0 ? Int16(truncatingIfNeeded: events) : 0
     }
 
     public func timeoutMicroseconds() -> UInt64? {
+        if let injectedEventLoop {
+            return injectedEventLoop.timeoutMicroseconds()
+        }
         guard let bus else { return nil }
         var deadline: UInt64 = 0
         guard sd_bus_get_timeout(bus, &deadline) >= 0,
@@ -570,6 +593,26 @@ public final class SDBusConnection {
 
     @discardableResult
     public func process() throws(DBusError) -> Bool {
+        if let injectedEventLoop {
+            var handled = false
+            while true {
+                let result = injectedEventLoop.process()
+                if result < 0 {
+                    throw DBusError(
+                        errno: result,
+                        while: "processing D-Bus")
+                }
+                if result == 0 { break }
+                handled = true
+            }
+            let flushed = injectedEventLoop.flush()
+            if flushed < 0 {
+                throw DBusError(
+                    errno: flushed,
+                    while: "flushing D-Bus")
+            }
+            return handled
+        }
         guard let bus else { return false }
         var handled = false
         while true {
@@ -692,6 +735,11 @@ public final class SDBusConnection {
             sd_bus_unref(bus)
         }
         bus = nil
+        if let injectedEventLoop {
+            if flush { _ = injectedEventLoop.flush() }
+            injectedEventLoop.close()
+            self.injectedEventLoop = nil
+        }
     }
 
     fileprivate func registrationDidCancel(

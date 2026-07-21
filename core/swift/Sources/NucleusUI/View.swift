@@ -231,6 +231,43 @@ open class View: Responder, Accessible, ~Sendable {
         detachFromSwiftTree()
     }
 
+    /// Remove direct children as one structural mutation. Hosts that receive a
+    /// transaction-sized teardown use this instead of repeatedly shifting and
+    /// reindexing the same sibling array.
+    public func removeSubviews(_ children: [View]) {
+        let removedIDs = Set(children.lazy.compactMap { child in
+            child.parentView === self ? child.id : nil
+        })
+        guard !removedIDs.isEmpty else { return }
+
+        var retained: [View] = []
+        retained.reserveCapacity(childViews.count - removedIDs.count)
+        for child in childViews {
+            guard removedIDs.contains(child.id) else {
+                retained.append(child)
+                continue
+            }
+            child.notifyRetainedHierarchyWillDetach()
+            child.window?.windowScene?.cancelInputSequences(capturedBy: child)
+            if let owningViewController = child.owningViewController,
+               owningViewController.rootView === child
+            {
+                owningViewController.clearLoadedView()
+            }
+            child.parentView = nil
+            child.parentWindow = nil
+            child.owningViewController = nil
+            childViewsByID[child.id] = nil
+            childViewIndices[child.id] = nil
+        }
+        childViews = retained
+        childViewIndices.removeAll(keepingCapacity: true)
+        reindexChildren(startingAt: 0)
+        markSubtreeNeedsLayout()
+        markSubtreeNeedsDisplay()
+        recordMutation(.structure)
+    }
+
     /// Called before this view leaves a retained hierarchy or its owning scene
     /// disconnects. Subclasses cancel work whose result must not outlive that
     /// attachment. The callback runs parent-before-child.

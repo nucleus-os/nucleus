@@ -80,6 +80,32 @@ import Testing
         #expect(parent.subviews.isEmpty)
     }
 
+    @Test func removeSubviewsDetachesOnlyRequestedDirectChildrenOnce() {
+        let parent = View()
+        let first = DetachmentProbeView()
+        let retained = DetachmentProbeView()
+        let last = DetachmentProbeView()
+        let otherParent = View()
+        let unrelated = DetachmentProbeView()
+        parent.addSubview(first)
+        parent.addSubview(retained)
+        parent.addSubview(last)
+        otherParent.addSubview(unrelated)
+
+        parent.removeSubviews([last, first, last, unrelated])
+
+        #expect(parent.subviews.count == 1)
+        #expect(parent.subviews[0] === retained)
+        #expect(retained.superview === parent)
+        #expect(retained.detachmentCount == 0)
+        #expect(first.superview == nil)
+        #expect(first.detachmentCount == 1)
+        #expect(last.superview == nil)
+        #expect(last.detachmentCount == 1)
+        #expect(unrelated.superview === otherParent)
+        #expect(unrelated.detachmentCount == 0)
+    }
+
     @Test func reorderingWithinParentPreservesAttachment() {
         let parent = View()
         let first = DetachmentProbeView()

@@ -1,4 +1,5 @@
 @_spi(NucleusCompositor) import NucleusLayers
+import NucleusBenchmarkSupport
 import NucleusUI
 
 @MainActor

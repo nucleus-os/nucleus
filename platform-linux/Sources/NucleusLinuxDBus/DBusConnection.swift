@@ -107,6 +107,11 @@ public final class DBusConnection {
         transport = try SDBusConnection(kind)
     }
 
+    init(_ kind: DBusBus, testing transport: SDBusConnection) {
+        self.kind = kind
+        self.transport = transport
+    }
+
     isolated deinit {
         close()
     }

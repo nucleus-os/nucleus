@@ -1,4 +1,5 @@
 import Observation
+import NucleusBenchmarkSupport
 import NucleusUI
 
 @MainActor

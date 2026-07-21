@@ -53,7 +53,7 @@ public final class WaylandRouterRuntime {
     /// active pointer constraint (the seat owns the relative/locked motion delivery).
     let pointerConstraints: PointerConstraintsManager
 
-    init?(author: WindowSceneAuthor, host: RouterHost) {
+    package init?(author: WindowSceneAuthor, host: RouterHost) {
         guard let router = NucleusWaylandRouter() else { return nil }
         let feeder = SceneFeeder(author: author, host: host)
 

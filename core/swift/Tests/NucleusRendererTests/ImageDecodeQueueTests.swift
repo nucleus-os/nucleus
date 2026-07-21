@@ -2,6 +2,7 @@
 import Glibc
 #endif
 import Foundation
+import Synchronization
 import Testing
 @testable import NucleusRenderer
 import NucleusSkiaGraphiteBridge
@@ -13,20 +14,15 @@ import NucleusRenderModel
 /// under test *is* that work happens on another thread and comes back safely, and
 /// a fake would test the fake.
 @Suite struct ImageDecodeQueueTests {
-    private final class TestWakeSink: AsyncRenderWakeSink, @unchecked Sendable {
-        private let lock = NSLock()
-        private var count = 0
+    private final class TestWakeSink: AsyncRenderWakeSink, Sendable {
+        private let count = Mutex(0)
 
         nonisolated func signalRenderWork() {
-            lock.lock()
-            count += 1
-            lock.unlock()
+            count.withLock { $0 += 1 }
         }
 
         var signalCount: Int {
-            lock.lock()
-            defer { lock.unlock() }
-            return count
+            count.withLock { $0 }
         }
     }
 

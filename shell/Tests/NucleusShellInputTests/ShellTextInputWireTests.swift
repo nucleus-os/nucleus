@@ -1,4 +1,5 @@
 import Glibc
+import NucleusCompositorWaylandTestSupport
 import NucleusShellWayland
 import NucleusUI
 import Testing
@@ -69,7 +70,9 @@ struct ShellTextInputWireTests {
     @Test func productionClientAndServerHonorTheCompleteSessionLifecycle()
         throws
     {
-        let runtime = try #require(makeTestWaylandRouterRuntime())
+        let fixture = try #require(WaylandRouterTestFixture())
+        defer { withExtendedLifetime(fixture) {} }
+        let runtime = fixture.runtime
         runtime.seat.updateCapabilities(
             pointer: false,
             keyboard: true,

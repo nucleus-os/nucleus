@@ -1,5 +1,6 @@
 import Glibc
 import NucleusCompositorWaylandRuntime
+import NucleusCompositorWaylandTestSupport
 import NucleusShellLoop
 import NucleusShellWayland
 import NucleusUI
@@ -58,7 +59,9 @@ struct DataControlClientServerTests {
     }
 
     @Test func productionEndpointsCopyReplaceClearAndReleaseResources() async throws {
-        let runtime = try #require(makeTestWaylandRouterRuntime())
+        let fixture = try #require(WaylandRouterTestFixture())
+        defer { withExtendedLifetime(fixture) {} }
+        let runtime = fixture.runtime
         let source = try Peer(runtime: runtime)
         let destination = try Peer(runtime: runtime)
         pump(runtime, peers: [source, destination])
@@ -98,7 +101,9 @@ struct DataControlClientServerTests {
     }
 
     @Test func productionEndpointsRejectOversizedTransferAndRecover() async throws {
-        let runtime = try #require(makeTestWaylandRouterRuntime())
+        let fixture = try #require(WaylandRouterTestFixture())
+        defer { withExtendedLifetime(fixture) {} }
+        let runtime = fixture.runtime
         let source = try Peer(runtime: runtime)
         let destination = try Peer(
             runtime: runtime,
@@ -131,7 +136,9 @@ struct DataControlClientServerTests {
     }
 
     @Test func unsupportedMIMESetDoesNotCreateATransfer() async throws {
-        let runtime = try #require(makeTestWaylandRouterRuntime())
+        let fixture = try #require(WaylandRouterTestFixture())
+        defer { withExtendedLifetime(fixture) {} }
+        let runtime = fixture.runtime
         let source = try Peer(runtime: runtime)
         let destination = try Peer(runtime: runtime)
         pump(runtime, peers: [source, destination])
@@ -156,7 +163,9 @@ struct DataControlClientServerTests {
     }
 
     @Test func deviceRebindAndClientReconnectReprojectLiveSelection() async throws {
-        let runtime = try #require(makeTestWaylandRouterRuntime())
+        let fixture = try #require(WaylandRouterTestFixture())
+        defer { withExtendedLifetime(fixture) {} }
+        let runtime = fixture.runtime
         var source: Peer? = try Peer(runtime: runtime)
         let destination = try Peer(runtime: runtime)
         do {

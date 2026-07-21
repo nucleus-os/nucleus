@@ -5,11 +5,28 @@ import NucleusLinuxReactorC
 
 @main
 enum NucleusLinuxThreadSanitizerHarness {
-    static func main() {
+    @MainActor
+    static func main() async {
         do {
-            let reactor = try MainActor.assumeIsolated {
-                try LinuxHostReactor(queueDepth: 16)
+            let reactor = try LinuxHostReactor(queueDepth: 16)
+
+            for _ in 0..<256 {
+                DispatchQueue.global().async {
+                    reactor.wake()
+                }
+                let batch = try await reactor.wait(
+                    interests: [],
+                    timeoutNanoseconds: 1_000_000_000)
+                guard batch.wasExplicitlyWoken else { exit(4) }
             }
+
+            let waitMetrics = reactor.metrics
+            guard waitMetrics.waitCalls == 256,
+                  waitMetrics.batchesReturned == 256,
+                  waitMetrics.completionSourceWakeups > 0,
+                  waitMetrics.controlSignalWriteFailures == 0
+            else { exit(5) }
+
             let group = DispatchGroup()
             for _ in 0..<8 {
                 group.enter()
@@ -21,9 +38,7 @@ enum NucleusLinuxThreadSanitizerHarness {
                 }
             }
 
-            MainActor.assumeIsolated {
-                reactor.shutdown()
-            }
+            reactor.shutdown()
             group.wait()
 
             var replacements: [Int32] = []

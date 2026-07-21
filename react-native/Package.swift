@@ -282,6 +282,9 @@ let package = Package(
         .executable(
             name: "NucleusReactThreadSanitizerHarness",
             targets: ["NucleusReactThreadSanitizerHarness"]),
+        .executable(
+            name: "NucleusReactBenchmarks",
+            targets: ["NucleusReactBenchmarks"]),
         .library(name: "NucleusReactRuntimeCxx", targets: ["NucleusReactRuntimeCxx"]),
         .library(name: "NucleusReactRuntimeHostCxx", targets: ["NucleusReactRuntimeHostCxx"]),
     ],
@@ -426,6 +429,33 @@ let package = Package(
                     package: "Nucleus"),
             ],
             path: "swift/SanitizerHarnesses/NucleusReactThreadSanitizerHarness",
+            linkerSettings: [
+                .unsafeFlags(rnFabricLinkFlags + skiaLinkFlags),
+            ]
+        ),
+        .executableTarget(
+            name: "NucleusReactBenchmarks",
+            dependencies: [
+                "NucleusReactFabricSmokeC",
+                "NucleusReactRuntimeHostCxx",
+                "NucleusReactRuntimeCxx",
+                .product(
+                    name: "NucleusBenchmarkSupport",
+                    package: "Nucleus"),
+                .product(name: "NucleusUI", package: "Nucleus"),
+                .product(name: "NucleusTextBackend", package: "Nucleus"),
+                .product(
+                    name: "NucleusSkiaGraphiteBridge",
+                    package: "Nucleus"),
+            ],
+            path: "swift/Benchmarks/NucleusReactBenchmarks",
+            swiftSettings: [
+                .interoperabilityMode(.Cxx),
+                .unsafeFlags([
+                    "-Xcc", "-fmodule-map-file=" + repoRoot
+                        + "/swiftpm/cmodules/NucleusReactRuntimeCxxBridge/module.modulemap",
+                ] + rnRuntimeXccFlags),
+            ],
             linkerSettings: [
                 .unsafeFlags(rnFabricLinkFlags + skiaLinkFlags),
             ]

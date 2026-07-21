@@ -112,6 +112,9 @@ let package = Package(
         .library(name: "NucleusCompositorRendererLinux", targets: ["NucleusCompositorRendererLinux"]),
         .library(name: "NucleusCompositorRenderRuntime", targets: ["NucleusCompositorRenderRuntime"]),
         .library(name: "NucleusCompositorWaylandRuntime", targets: ["NucleusCompositorWaylandRuntime"]),
+        .library(
+            name: "NucleusCompositorWaylandTestSupport",
+            targets: ["NucleusCompositorWaylandTestSupport"]),
         .library(name: "NucleusCompositorWindowScene", targets: ["NucleusCompositorWindowScene"]),
         .library(name: "NucleusCompositorOverlayTypes", targets: ["NucleusCompositorOverlayTypes"]),
         .library(name: "NucleusCompositorOverlayScene", targets: ["NucleusCompositorOverlayScene"]),
@@ -296,6 +299,18 @@ let package = Package(
                 .interoperabilityMode(.Cxx),
                 .unsafeFlags(waylandRuntimeCcFlags),
             ]
+        ),
+        .target(
+            name: "NucleusCompositorWaylandTestSupport",
+            dependencies: [
+                "NucleusCompositorWaylandRuntime",
+                "NucleusCompositorServer",
+                "NucleusCompositorWindowManager",
+                "NucleusCompositorWindowScene",
+                .product(name: "NucleusLayers", package: "Nucleus"),
+            ],
+            path: "Sources/NucleusCompositorWaylandTestSupport",
+            swiftSettings: [.interoperabilityMode(.Cxx)]
         ),
 
         // ── The DRM/KMS renderer backend + the render-runtime facade ─────────────

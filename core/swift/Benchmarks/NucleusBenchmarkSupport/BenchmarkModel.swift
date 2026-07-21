@@ -1,42 +1,68 @@
 import Foundation
 
-struct BenchmarkSample: Equatable {
-    var metrics: [String: UInt64]
-    var semanticChecksum: UInt64
-    var phaseNanoseconds: [String: UInt64] = [:]
+public struct BenchmarkSample: Equatable, Sendable {
+    public var metrics: [String: UInt64]
+    public var semanticChecksum: UInt64
+    public var phaseNanoseconds: [String: UInt64]
 
-    static func == (lhs: Self, rhs: Self) -> Bool {
+    public init(
+        metrics: [String: UInt64],
+        semanticChecksum: UInt64,
+        phaseNanoseconds: [String: UInt64] = [:]
+    ) {
+        self.metrics = metrics
+        self.semanticChecksum = semanticChecksum
+        self.phaseNanoseconds = phaseNanoseconds
+    }
+
+    public static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.metrics == rhs.metrics
             && lhs.semanticChecksum == rhs.semanticChecksum
     }
 }
 
-struct MetricBudget: Codable, Equatable {
-    enum Kind: String, Codable {
+public struct MetricBudget: Codable, Equatable, Sendable {
+    public enum Kind: String, Codable, Sendable {
         case exact
         case maximum
     }
 
-    var metric: String
-    var kind: Kind
-    var value: UInt64
+    public var metric: String
+    public var kind: Kind
+    public var value: UInt64
 
-    static func exact(_ metric: String, _ value: UInt64) -> Self {
+    public static func exact(_ metric: String, _ value: UInt64) -> Self {
         Self(metric: metric, kind: .exact, value: value)
     }
 
-    static func maximum(_ metric: String, _ value: UInt64) -> Self {
+    public static func maximum(_ metric: String, _ value: UInt64) -> Self {
         Self(metric: metric, kind: .maximum, value: value)
     }
 }
 
-struct BenchmarkWorkload {
-    var category: String
-    var name: String
-    var inputSize: UInt64
-    var seed: UInt64
-    var budgets: [MetricBudget]
-    var body: @MainActor () async throws -> BenchmarkSample
+public struct BenchmarkWorkload {
+    public var category: String
+    public var name: String
+    public var inputSize: UInt64
+    public var seed: UInt64
+    public var budgets: [MetricBudget]
+    public var body: @MainActor () async throws -> BenchmarkSample
+
+    public init(
+        category: String,
+        name: String,
+        inputSize: UInt64,
+        seed: UInt64,
+        budgets: [MetricBudget],
+        body: @escaping @MainActor () async throws -> BenchmarkSample
+    ) {
+        self.category = category
+        self.name = name
+        self.inputSize = inputSize
+        self.seed = seed
+        self.budgets = budgets
+        self.body = body
+    }
 }
 
 struct BenchmarkTiming: Codable {
@@ -79,7 +105,7 @@ struct BenchmarkReport: Codable {
     var workloads: [BenchmarkResult]
 }
 
-enum BenchmarkFailure: Error, CustomStringConvertible {
+public enum BenchmarkFailure: Error, CustomStringConvertible {
     case argument(String)
     case semantic(String)
     case nondeterministic(
@@ -100,7 +126,7 @@ enum BenchmarkFailure: Error, CustomStringConvertible {
         expected: UInt64,
         actual: UInt64)
 
-    var description: String {
+    public var description: String {
         switch self {
         case .argument(let message), .semantic(let message):
             message
@@ -123,8 +149,12 @@ enum BenchmarkFailure: Error, CustomStringConvertible {
 }
 
 @MainActor
-struct BenchmarkRunner {
-    var iterations: Int
+public struct BenchmarkRunner {
+    public var iterations: Int
+
+    public init(iterations: Int) {
+        self.iterations = iterations
+    }
 
     func run(_ workloads: [BenchmarkWorkload]) async throws -> [BenchmarkResult] {
         var results: [BenchmarkResult] = []
@@ -317,11 +347,121 @@ enum BenchmarkReportWriter {
     }
 }
 
-struct BenchmarkPhaseRecorder {
-    private let clock = ContinuousClock()
-    private(set) var phaseNanoseconds: [String: UInt64] = [:]
+public enum BenchmarkProgram {
+    @MainActor
+    public static func run(
+        workloads: [BenchmarkWorkload],
+        arguments: [String],
+        productName: String
+    ) async throws {
+        let options = try Options.parse(
+            arguments,
+            productName: productName)
+        let results = try await BenchmarkRunner(
+            iterations: options.iterations).run(workloads)
+        let report = BenchmarkReport(
+            metricSchema: "nucleus.headless.v2",
+            deterministicSeedPolicy:
+                "Every workload uses the recorded fixed seed; repeated structural "
+                    + "samples must be byte-for-byte equivalent.",
+            environment: .init(
+                architecture: architecture,
+                buildConfiguration: buildConfiguration,
+                swiftToolchain: ProcessInfo.processInfo.environment[
+                    "NUCLEUS_BENCHMARK_SWIFT_VERSION"] ?? "unknown"),
+            metricSemantics: .init(
+                allocationUnits:
+                    "Deterministic first-party objects, entries, or buffers retained "
+                        + "by the workload; this is a structural allocation proxy, "
+                        + "not allocator implementation metadata.",
+                copiedBytes:
+                    "Payload bytes deliberately materialized or copied by the "
+                        + "workload's first-party algorithm.",
+                timing:
+                    "ContinuousClock diagnostics only; wall-clock values never fail "
+                        + "a benchmark budget."),
+            workloads: results)
+        try BenchmarkReportWriter.write(
+            report,
+            to: options.outputDirectory)
+    }
 
-    mutating func measure<T>(
+    private struct Options {
+        var outputDirectory: URL
+        var iterations: Int
+
+        static func parse(
+            _ arguments: [String],
+            productName: String
+        ) throws -> Self {
+            var output = URL(
+                fileURLWithPath:
+                    FileManager.default.currentDirectoryPath)
+                .appendingPathComponent(
+                    ".build/nucleus-benchmarks",
+                    isDirectory: true)
+            var iterations = 3
+            var index = 0
+            while index < arguments.count {
+                switch arguments[index] {
+                case "--output":
+                    index += 1
+                    guard index < arguments.count else {
+                        throw BenchmarkFailure.argument(
+                            "--output requires a path")
+                    }
+                    output = URL(
+                        fileURLWithPath: arguments[index],
+                        isDirectory: true)
+                case "--iterations":
+                    index += 1
+                    guard index < arguments.count,
+                          let value = Int(arguments[index]),
+                          value > 1
+                    else {
+                        throw BenchmarkFailure.argument(
+                            "--iterations requires an integer greater than one")
+                    }
+                    iterations = value
+                default:
+                    throw BenchmarkFailure.argument(
+                        "usage: \(productName) "
+                            + "[--output <directory>] [--iterations <count>]")
+                }
+                index += 1
+            }
+            return Self(
+                outputDirectory: output,
+                iterations: iterations)
+        }
+    }
+
+    private static var architecture: String {
+        #if arch(x86_64)
+        "x86_64"
+        #elseif arch(arm64)
+        "arm64"
+        #else
+        "unknown"
+        #endif
+    }
+
+    private static var buildConfiguration: String {
+        #if DEBUG
+        "debug"
+        #else
+        "release"
+        #endif
+    }
+}
+
+public struct BenchmarkPhaseRecorder {
+    private let clock = ContinuousClock()
+    public private(set) var phaseNanoseconds: [String: UInt64] = [:]
+
+    public init() {}
+
+    public mutating func measure<T>(
         _ phase: String,
         _ body: () throws -> T
     ) rethrows -> T {
@@ -348,13 +488,13 @@ private func durationNanoseconds(_ duration: Duration) -> UInt64 {
     return total.overflow ? .max : total.partialValue
 }
 
-extension UInt64 {
+public extension UInt64 {
     mutating func mix(_ value: UInt64) {
         self ^= value &+ 0x9e37_79b9_7f4a_7c15 &+ (self << 6) &+ (self >> 2)
     }
 }
 
 @inline(never)
-func consume<T>(_ value: T) {
+public func consume<T>(_ value: T) {
     withExtendedLifetime(value) {}
 }

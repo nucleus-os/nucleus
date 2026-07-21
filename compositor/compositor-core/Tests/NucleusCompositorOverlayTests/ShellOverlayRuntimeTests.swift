@@ -4,6 +4,7 @@ import NucleusUI
 import NucleusUIEmbedder
 import NucleusTextBackend
 @testable import NucleusCompositorOverlay
+import Synchronization
 import Testing
 
 // Behavioral coverage for the shell overlay runtime (ShellOverlayScene /
@@ -24,11 +25,16 @@ import Testing
     init() {
     }
 
-    final class ManualClock: @unchecked Sendable {
-        var now: UInt64
+    final class ManualClock: Sendable {
+        private let storage: Mutex<UInt64>
+
+        var now: UInt64 {
+            get { storage.withLock { $0 } }
+            set { storage.withLock { $0 = newValue } }
+        }
 
         init(_ now: UInt64) {
-            self.now = now
+            storage = Mutex(now)
         }
     }
 

@@ -304,13 +304,13 @@ public struct TextAttributesSnapshot: Sendable {
 // matching context's registry and rootView.
 @MainActor
 package final class MountSurfaceContext {
-    let surfaceID: Int
-    let rootView: View
-    let registry: ViewComponentViewRegistry
-    var environment: ReactSurfaceEnvironment
-    var onMaterialize: ((ViewComponentViewRegistry) -> Void)?
+    package let surfaceID: Int
+    package let rootView: View
+    package let registry: ViewComponentViewRegistry
+    package var environment: ReactSurfaceEnvironment
+    package var onMaterialize: ((ViewComponentViewRegistry) -> Void)?
 
-    init(
+    package init(
         surfaceID: Int,
         rootView: View,
         registry: ViewComponentViewRegistry,
@@ -337,28 +337,31 @@ private struct MountCopiedBytes: Sendable {
     var image: UInt64 = 0
 }
 
-struct MountDrainMetrics: Sendable, Equatable {
-    var completedBatchesQueued: UInt64 = 0
-    var drainTasksScheduled: UInt64 = 0
-    var batchesDrained: UInt64 = 0
-    var mutationsMaterialized: UInt64 = 0
-    var staleBatchesRejected: UInt64 = 0
-    var copiedComponentNameBytes: UInt64 = 0
-    var copiedTextBytes: UInt64 = 0
-    var copiedNativeIDBytes: UInt64 = 0
-    var copiedImageBytes: UInt64 = 0
-    var lastBatchesDrainedPerTask: UInt64 = 0
+package struct MountDrainMetrics: Sendable, Equatable {
+    package var completedBatchesQueued: UInt64 = 0
+    package var drainTasksScheduled: UInt64 = 0
+    package var batchesDrained: UInt64 = 0
+    package var mutationsMaterialized: UInt64 = 0
+    package var staleBatchesRejected: UInt64 = 0
+    package var pureRemovalBatches: UInt64 = 0
+    package var bulkRemovalGroups: UInt64 = 0
+    package var bulkRemovedChildren: UInt64 = 0
+    package var copiedComponentNameBytes: UInt64 = 0
+    package var copiedTextBytes: UInt64 = 0
+    package var copiedNativeIDBytes: UInt64 = 0
+    package var copiedImageBytes: UInt64 = 0
+    package var lastBatchesDrainedPerTask: UInt64 = 0
 }
 
-struct MountBookkeepingCounts: Sendable, Equatable {
-    var queuedBatches: Int
-    var generations: Int
-    var retiredSurfaces: Int
-    var inFlightSurfaces: Int
+package struct MountBookkeepingCounts: Sendable, Equatable {
+    package var queuedBatches: Int
+    package var generations: Int
+    package var retiredSurfaces: Int
+    package var inFlightSurfaces: Int
 }
 
-typealias MountDrainOperation = @MainActor @Sendable () -> Void
-typealias MountDrainScheduler =
+package typealias MountDrainOperation = @MainActor @Sendable () -> Void
+package typealias MountDrainScheduler =
     @Sendable (@escaping MountDrainOperation) -> Void
 
 public final class MountConsumer: MountingObserverHandler, Sendable {
@@ -394,7 +397,7 @@ public final class MountConsumer: MountingObserverHandler, Sendable {
         })
     }
 
-    init(scheduleDrain: @escaping MountDrainScheduler) {
+    package init(scheduleDrain: @escaping MountDrainScheduler) {
         self.scheduleDrain = scheduleDrain
     }
 
@@ -432,7 +435,7 @@ public final class MountConsumer: MountingObserverHandler, Sendable {
         }
     }
 
-    func enqueue(_ event: MountEvent) {
+    package func enqueue(_ event: MountEvent) {
         let accepted = incoming.withLock { state in
             guard
                 state.activeSurfaces.contains(event.surfaceID),
@@ -498,11 +501,11 @@ public final class MountConsumer: MountingObserverHandler, Sendable {
         pendingBySurface[surfaceID] ?? []
     }
 
-    func metricsSnapshot() -> MountDrainMetrics {
+    package func metricsSnapshot() -> MountDrainMetrics {
         incoming.withLock { $0.metrics }
     }
 
-    func bookkeepingCounts() -> MountBookkeepingCounts {
+    package func bookkeepingCounts() -> MountBookkeepingCounts {
         incoming.withLock {
             MountBookkeepingCounts(
                 queuedBatches:
@@ -516,7 +519,7 @@ public final class MountConsumer: MountingObserverHandler, Sendable {
         }
     }
 
-    func queuedBatchSurfaceIDs() -> [Int] {
+    package func queuedBatchSurfaceIDs() -> [Int] {
         incoming.withLock {
             guard $0.completedHead < $0.completedBatches.count
             else { return [] }
@@ -543,11 +546,73 @@ public final class MountConsumer: MountingObserverHandler, Sendable {
         }
         Trace.plot("swift.rn.mounting.events", UInt64(events.count))
         Trace.zone("rn.mounting.materialize", color: Trace.Color.yellow) {
-            for event in events {
-                apply(event, to: registry)
+            if let removal = applyPureRemovalBatch(events, to: registry) {
+                incoming.withLock {
+                    $0.metrics.pureRemovalBatches &+= 1
+                    $0.metrics.bulkRemovalGroups &+= removal.groups
+                    $0.metrics.bulkRemovedChildren &+= removal.children
+                }
+            } else {
+                for event in events {
+                    apply(event, to: registry)
+                }
             }
         }
         context.onMaterialize?(registry)
+    }
+
+    /// Fabric teardown transactions contain only remove/delete mutations. Their
+    /// relative order has no observable intermediate state, so detach each
+    /// parent's children in one linear pass instead of repeatedly shifting the
+    /// same sibling array from the front.
+    @MainActor
+    private func applyPureRemovalBatch(
+        _ events: [MountEvent],
+        to registry: ViewComponentViewRegistry
+    ) -> (groups: UInt64, children: UInt64)? {
+        struct RemovalGroup {
+            var parent: View
+            var children: [View]
+        }
+
+        guard !events.isEmpty,
+              events.allSatisfy({ event in
+                  switch event {
+                  case .remove, .delete: true
+                  default: false
+                  }
+              })
+        else { return nil }
+
+        var groupIndices: [ObjectIdentifier: Int] = [:]
+        var removalGroups: [RemovalGroup] = []
+        for event in events {
+            guard case .remove(_, let childTag) = event,
+                  let child = registry.component(for: childTag)?.view,
+                  let parent = child.superview
+            else { continue }
+            let key = ObjectIdentifier(parent)
+            if let index = groupIndices[key] {
+                removalGroups[index].children.append(child)
+            } else {
+                groupIndices[key] = removalGroups.count
+                removalGroups.append(
+                    RemovalGroup(parent: parent, children: [child]))
+            }
+        }
+        for group in removalGroups {
+            group.parent.removeSubviews(group.children)
+        }
+        for event in events {
+            if case .delete(_, let tag) = event {
+                registry.unregister(tag: tag)
+            }
+        }
+        return (
+            groups: UInt64(removalGroups.count),
+            children: removalGroups.reduce(into: 0) {
+                $0 += UInt64($1.children.count)
+            })
     }
 
     @MainActor
@@ -655,6 +720,12 @@ public final class MountConsumer: MountingObserverHandler, Sendable {
         Trace.plot(
             "swift.rn.mounting.stale_batches_rejected",
             metrics.staleBatchesRejected)
+        Trace.plot(
+            "swift.rn.mounting.pure_removal_batches",
+            metrics.pureRemovalBatches)
+        Trace.plot(
+            "swift.rn.mounting.bulk_removed_children",
+            metrics.bulkRemovedChildren)
         Trace.plot(
             "swift.rn.mounting.copied_text_bytes",
             metrics.copiedTextBytes)

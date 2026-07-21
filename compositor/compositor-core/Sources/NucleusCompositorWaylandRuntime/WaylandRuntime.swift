@@ -28,9 +28,7 @@ public final class WaylandRuntime {
         guard host.runtime == nil,
               let runtime = WaylandRouterRuntime(author: author, host: host)
         else { return }
-        host.runtime = runtime
-        host.router = runtime.router
-        host.feeder = runtime.feeder
+        host.install(runtime)
         runtime.idle.noteUserInput(atMs: monotonicNowNs() / 1_000_000)
     }
 

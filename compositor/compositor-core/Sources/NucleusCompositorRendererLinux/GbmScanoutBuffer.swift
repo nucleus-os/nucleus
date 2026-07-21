@@ -109,6 +109,10 @@ public struct GbmScanoutBuffer: ~Copyable {
         dispatch: VK.DeviceDispatch,
         keepDmaBufFdForKms: Bool = false
     ) -> GbmScanoutBuffer? {
+        guard width > 0,
+              height > 0,
+              let modifierCount = UInt32(exactly: modifiers.count)
+        else { return nil }
         // a. Allocate the BO. Prefer the modifier-explicit path when modifiers are
         // supplied; else the usage-flag path.
         let bo: OpaquePointer?
@@ -116,7 +120,7 @@ public struct GbmScanoutBuffer: ~Copyable {
             bo = modifiers.withUnsafeBufferPointer { mods in
                 gbm_bo_create_with_modifiers(
                     gbmDevice, width, height, drmFormat,
-                    mods.baseAddress, UInt32(mods.count))
+                    mods.baseAddress, modifierCount)
             }
         } else {
             let flags: UInt32
@@ -134,7 +138,11 @@ public struct GbmScanoutBuffer: ~Copyable {
 
         // b. Read the plane layout + modifier, then export the dmabuf fd.
         let planeCount = Int(gbm_bo_get_plane_count(bo))
-        guard planeCount >= 1 else { logRendererDrm("GBM BO reported no planes"); gbm_bo_destroy(bo); return nil }
+        guard (1...3).contains(planeCount) else {
+            logRendererDrm("GBM BO reported unsupported plane count=\(planeCount)")
+            gbm_bo_destroy(bo)
+            return nil
+        }
         var planes: [GbmPlaneLayout] = []
         planes.reserveCapacity(planeCount)
         for plane in 0..<planeCount {
@@ -166,7 +174,18 @@ public struct GbmScanoutBuffer: ~Copyable {
         guard exportedFd >= 0 else { logRendererDrm("gbm_bo_get_fd failed errno=\(rendererErrno())"); gbm_bo_destroy(bo); return nil }
 
         // Optionally retain a dup for KMS before the import consumes the original.
-        let keptFd: Int32 = keepDmaBufFdForKms ? dup(exportedFd) : -1
+        let keptFd: Int32
+        if keepDmaBufFdForKms {
+            keptFd = dup(exportedFd)
+            guard keptFd >= 0 else {
+                logRendererDrm("dup of GBM DMA-BUF failed errno=\(rendererErrno())")
+                close(exportedFd)
+                gbm_bo_destroy(bo)
+                return nil
+            }
+        } else {
+            keptFd = -1
+        }
 
         // c. Build the descriptor and import. `importDmaBufImage` consumes ownership
         // of `exportedFd` on success AND on failure (its cleanup `defer` closes every

@@ -5,7 +5,7 @@ import NucleusCompositorServer
 import NucleusCompositorWindowManager
 
 @MainActor
-final class RouterHost {
+package final class RouterHost {
     unowned let server: NucleusCompositorServer
     unowned let windowManager: WindowManager
 
@@ -36,9 +36,18 @@ final class RouterHost {
 
     private var presentationSequence: UInt64 = 0
 
-    init(server: NucleusCompositorServer, windowManager: WindowManager) {
+    package init(
+        server: NucleusCompositorServer,
+        windowManager: WindowManager
+    ) {
         self.server = server
         self.windowManager = windowManager
+    }
+
+    package func install(_ runtime: WaylandRouterRuntime) {
+        self.runtime = runtime
+        router = runtime.router
+        feeder = runtime.feeder
     }
 
     func nextPresentationSequence() -> UInt64 {

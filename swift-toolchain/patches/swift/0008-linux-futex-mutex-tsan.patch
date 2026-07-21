@@ -5,12 +5,15 @@ futex syscalls rather than an intercepted pthread primitive. The installed
 ThreadSanitizer runtime therefore cannot observe the mutex acquire/release
 edges and reports every correctly protected inout access as a race.
 
-Expose weak TSan hooks through _SynchronizationShims and invoke them after a
-successful lock acquisition and before release. The weak symbols are absent in
-normal processes; a predicted-cold symbol check preserves ordinary links and
-the futex fast path without a runtime dependency. Instrumented clients now
-receive the same happens-before relation that TSan derives automatically for
-pthread_mutex_lock/unlock.
+Use libswiftCore's process-wide TSan hook pointers through
+_SynchronizationShims and invoke them after a successful lock acquisition and
+before release. A direct weak import is not sufficient: because Mutex is
+@_alwaysEmitIntoClient, the non-TSan standard-library build can fold that weak
+symbol check away before the body reaches an instrumented client. The runtime
+hook pointers remain externally visible and are populated by
+__tsan_on_initialize, so a predicted-cold null check preserves ordinary links
+while instrumented clients receive the same happens-before relation that TSan
+derives automatically for pthread_mutex_lock/unlock.
 
 Sentinel: NUCLEUS_SWIFT_SOURCE_LINUX_MUTEX_TSAN
 
@@ -20,29 +23,30 @@ index bb3477bca56..b08c113db30 100644
 +++ b/stdlib/public/SwiftShims/swift/shims/_SynchronizationShims.h
 @@ -24,0 +25,27 @@
 +// NUCLEUS_SWIFT_SOURCE_LINUX_MUTEX_TSAN: The Linux Mutex is implemented
-+// directly with atomics and futex syscalls, so
-+// ThreadSanitizer cannot infer its acquire/release edges from an intercepted
-+// pthread primitive. Weak runtime hooks and a predicted-cold symbol check keep
-+// the ordinary path cheap while teaching instrumented clients about the
-+// mutex's happens-before relation.
++// directly with atomics and futex syscalls, so ThreadSanitizer cannot infer
++// its acquire/release edges from an intercepted pthread primitive. Use the
++// libswiftCore hook pointers rather than weak direct imports: this header is
++// serialized into @_alwaysEmitIntoClient bodies during a non-TSan stdlib
++// build, where a weak direct-symbol check can be folded away before an
++// instrumented client sees it.
 +#if defined(__cplusplus)
 +extern "C" {
 +#endif
-+extern void __tsan_acquire(void *) __attribute__((weak));
-+extern void __tsan_release(void *) __attribute__((weak));
++extern void (*_swift_tsan_acquire)(const void *);
++extern void (*_swift_tsan_release)(const void *);
 +#if defined(__cplusplus)
 +} // extern "C"
 +#endif
 +
 +static inline void _swift_stdlib_tsan_acquire(void *addr) {
-+  if (__builtin_expect(!!__tsan_acquire, 0)) {
-+    __tsan_acquire(addr);
++  if (__builtin_expect(!!_swift_tsan_acquire, 0)) {
++    _swift_tsan_acquire(addr);
 +  }
 +}
 +
 +static inline void _swift_stdlib_tsan_release(void *addr) {
-+  if (__builtin_expect(!!__tsan_release, 0)) {
-+    __tsan_release(addr);
++  if (__builtin_expect(!!_swift_tsan_release, 0)) {
++    _swift_tsan_release(addr);
 +  }
 +}
 +

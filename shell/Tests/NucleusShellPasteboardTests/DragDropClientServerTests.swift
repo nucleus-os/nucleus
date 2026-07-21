@@ -1,5 +1,6 @@
 import Foundation
 import Glibc
+import NucleusCompositorWaylandTestSupport
 @testable import NucleusCompositorWaylandRuntime
 import NucleusShellLoop
 import NucleusShellWayland
@@ -121,7 +122,9 @@ struct DragDropClientServerTests {
     func productionEndpointsNegotiateTransferAndPreserveClipboard()
         async throws
     {
-        let runtime = try #require(makeTestWaylandRouterRuntime())
+        let fixture = try #require(WaylandRouterTestFixture())
+        defer { withExtendedLifetime(fixture) {} }
+        let runtime = fixture.runtime
         runtime.seat.updateCapabilities(
             pointer: true,
             keyboard: false,
@@ -224,7 +227,9 @@ struct DragDropClientServerTests {
 
     @Test
     func cancellationAndSurfaceTeardownFinishEachSessionOnce() async throws {
-        let runtime = try #require(makeTestWaylandRouterRuntime())
+        let fixture = try #require(WaylandRouterTestFixture())
+        defer { withExtendedLifetime(fixture) {} }
+        let runtime = fixture.runtime
         runtime.seat.updateCapabilities(
             pointer: true,
             keyboard: false,

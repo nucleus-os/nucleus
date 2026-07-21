@@ -163,6 +163,9 @@ let package = Package(
         .library(name: "NucleusUI", targets: ["NucleusUI"]),
         .library(name: "NucleusUIEmbedder", targets: ["NucleusUIEmbedder"]),
         .library(name: "NucleusApp", targets: ["NucleusApp"]),
+        .library(
+            name: "NucleusBenchmarkSupport",
+            targets: ["NucleusBenchmarkSupport"]),
         .library(name: "NucleusSkiaGraphiteBridge", targets: ["NucleusSkiaGraphiteBridge"]),
         .executable(
             name: "NucleusHeadlessBenchmarks",
@@ -470,12 +473,17 @@ let package = Package(
         .executableTarget(
             name: "NucleusHeadlessBenchmarks",
             dependencies: [
+                "NucleusBenchmarkSupport",
                 "NucleusTypes",
                 "NucleusLayers",
                 "NucleusUI",
                 "NucleusRenderModel",
             ],
             path: "swift/Benchmarks/NucleusHeadlessBenchmarks"
+        ),
+        .target(
+            name: "NucleusBenchmarkSupport",
+            path: "swift/Benchmarks/NucleusBenchmarkSupport"
         ),
         .executableTarget(
             name: "NucleusCoreThreadSanitizerHarness",

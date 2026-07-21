@@ -1,4 +1,5 @@
 import Foundation
+import NucleusBenchmarkSupport
 import NucleusUI
 
 @MainActor

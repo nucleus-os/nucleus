@@ -394,7 +394,13 @@ private func mountEventPayloadSmoke() -> Int32 {
                 == metrics.copiedTextBytes,
             copyMetricsBeforeStructural.3
                 == metrics.copiedImageBytes,
-            context.registry.component(for: 611) == nil
+            metrics.pureRemovalBatches == 1,
+            metrics.bulkRemovalGroups == 1,
+            metrics.bulkRemovedChildren == 1,
+            context.registry.component(for: 611) == nil,
+            context.rootView.subviews.count == 1,
+            context.rootView.subviews[0]
+                === context.registry.component(for: 612)?.view
         else { return 5 }
 
         let updatedText = "Updated"
@@ -440,6 +446,29 @@ private func mountEventPayloadSmoke() -> Int32 {
                 == copyMetricsBeforeStructural.3
                     + UInt64(updatedText.utf8.count)
         else { return 7 }
+
+        consumer.enqueue(.remove(
+            surfaceID: surfaceID,
+            childTag: 612))
+        consumer.enqueue(.delete(
+            surfaceID: surfaceID,
+            tag: 612))
+        consumer.enqueue(.delete(
+            surfaceID: surfaceID,
+            tag: 610))
+        consumer.didFinishTransaction(
+            surfaceID: Int32(surfaceID))
+        guard scheduler.runNext()
+        else { return 8 }
+        metrics = consumer.metricsSnapshot()
+        guard
+            context.rootView.subviews.isEmpty,
+            context.registry.component(for: 610) == nil,
+            context.registry.component(for: 612) == nil,
+            metrics.pureRemovalBatches == 2,
+            metrics.bulkRemovalGroups == 2,
+            metrics.bulkRemovedChildren == 2
+        else { return 9 }
         return 0
 }
 
