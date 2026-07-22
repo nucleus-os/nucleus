@@ -173,10 +173,6 @@ public final class ShellWaylandClient {
     /// The display fd registered with the Linux host reactor.
     public var fd: Int32 { connection.fd }
 
-    /// Drain queued events after the reactor reports the fd readable.
-    @discardableResult
-    public func dispatch() -> Int32 { connection.dispatch() }
-
     /// Apply pending requests and flush them to the compositor (call at end of each frame).
     @discardableResult
     public func flush() -> Int32 { connection.flush() }

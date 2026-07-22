@@ -135,7 +135,12 @@ extension ShellHost {
                     outcome.shouldStop = true
                 } else {
                     if result.isReadable {
-                        if client.dispatch() < 0 {
+                        // Multishot poll may return more than one readable CQE
+                        // for a readiness transition. Never enter libwayland's
+                        // blocking dispatch path from one of those snapshots:
+                        // an earlier CQE in this batch may already have drained
+                        // the socket.
+                        if client.pumpNonBlocking() < 0 {
                             writeErr("nucleus-shell: Wayland dispatch failed")
                             outcome.shouldStop = true
                         } else {
