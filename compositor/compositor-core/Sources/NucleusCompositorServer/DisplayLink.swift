@@ -129,6 +129,11 @@ public struct DisplayLink: Sendable {
     public var submittedFrameOpen: Bool = false
     public var requested: Bool = false
     public var frameDue: Bool = false
+    /// The vblank selected when transient frame demand first becomes pending.
+    /// This must remain fixed until the demand is consumed: recomputing the next
+    /// predicted vblank during the reactor's due check moves the target forward
+    /// after every deadline wake and makes a queued frame impossible to render.
+    private var frameTargetPresentNs: UInt64? = nil
     public var frameDeadlineNs: UInt64? = nil
     public var continuous: ContinuousDemand = .init()
 
@@ -153,6 +158,7 @@ public struct DisplayLink: Sendable {
     public mutating func suspend() {
         requested = false
         frameDue = false
+        frameTargetPresentNs = nil
         frameDeadlineNs = nil
         cancelSubmittedFrame()
     }
@@ -162,6 +168,7 @@ public struct DisplayLink: Sendable {
     public mutating func resetPresentationPhase() {
         lastPresentationNs = Int64(bitPattern: nsNow())
         lastAckedPresentID = lastPresentID
+        frameTargetPresentNs = nil
         cancelSubmittedFrame()
     }
 
@@ -171,6 +178,9 @@ public struct DisplayLink: Sendable {
 
     /// Mark a one-shot frame need. Idempotent within a frame.
     public mutating func requestFrame() {
+        if frameTargetPresentNs == nil {
+            frameTargetPresentNs = predictedPresentNs(0)
+        }
         frameDue = true
     }
 
@@ -191,6 +201,7 @@ public struct DisplayLink: Sendable {
         let scheduledFrameDue = frameDeadlineDue(nowNs)
         let had = frameDue || continuous.any() || scheduledFrameDue
         frameDue = false
+        frameTargetPresentNs = nil
         if scheduledFrameDue { frameDeadlineNs = nil }
         return had
     }
@@ -260,7 +271,8 @@ public struct DisplayLink: Sendable {
     }
 
     private func currentDeadlineNs() -> UInt64 {
-        let vsyncDeadline = predictedPresentNs(0)
+        let vsyncDeadline = frameTargetPresentNs
+            ?? predictedPresentNs(0)
         if let deadline = frameDeadlineNs {
             return min(vsyncDeadline, deadline)
         }

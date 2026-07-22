@@ -79,6 +79,24 @@ import NucleusCompositorServerTypes
     ]))
 }
 
+@Test func queuedFrameKeepsItsSelectedVblankUntilConsumed() {
+    var link = DisplayLink(refreshIntervalNs: 16_666_667)
+    link.requestFrame()
+    let selectedVblank = link.targetPresentNs()
+    #expect(selectedVblank != nil)
+
+    // Simulate the presentation timeline advancing past the selected target
+    // before the reactor rechecks it after waking. A dynamic prediction now
+    // points at a later vblank, while queued demand must keep the original one.
+    link.lastPresentationNs = Int64(bitPattern: selectedVblank!)
+    #expect(link.predictedPresentNs(0) > selectedVblank!)
+    #expect(link.targetPresentNs() == selectedVblank)
+
+    let consumed = link.consumeFrameDemand()
+    #expect(consumed)
+    #expect(link.targetPresentNs() == nil)
+}
+
 @MainActor
 @Test func desktopLayoutPlacesOutputsWithoutOverlapAndNormalizesPrimary() {
     let layout = DesktopLayout()
