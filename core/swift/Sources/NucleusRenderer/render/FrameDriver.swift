@@ -231,8 +231,7 @@ final class FrameDriver {
         guard decodeQueue.hasWorkers else {
             let image = ImageDecodeQueue.decode(source)
             guard image.isValid() else { return nil }
-            decodedImages[handle] = image
-            return image
+            return adoptDecodedImage(image, handle: handle)
         }
 
         decodeQueue.submit(handle: handle, source: source)
@@ -243,9 +242,29 @@ final class FrameDriver {
     /// frame, which is the only point the cache may be written.
     func drainDecodedImages() {
         for result in decodeQueue.drain() {
-            decodedImages[result.handle] = result.image
-            decodedImageGenerations[result.handle] = result.completionGeneration
+            _ = adoptDecodedImage(
+                result.image,
+                handle: result.handle,
+                completionGeneration: result.completionGeneration)
         }
+    }
+
+    /// Decode workers intentionally produce CPU images. Graphite's default
+    /// image provider does not promote those during a draw, so adoption on the
+    /// render thread is the single CPU-image -> recorder-backed-image boundary.
+    @discardableResult
+    private func adoptDecodedImage(
+        _ image: nucleus.skia.Image,
+        handle: UInt64,
+        completionGeneration: UInt64? = nil
+    ) -> nucleus.skia.Image? {
+        let textureImage = recorder.makeTextureImage(image)
+        guard textureImage.isValid() else { return nil }
+        decodedImages[handle] = textureImage
+        if let completionGeneration {
+            decodedImageGenerations[handle] = completionGeneration
+        }
+        return textureImage
     }
 
     func paintImageDependencyGeneration(

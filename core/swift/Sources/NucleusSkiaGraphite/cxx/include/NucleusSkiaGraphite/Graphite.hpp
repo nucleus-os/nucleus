@@ -478,6 +478,10 @@ public:
     explicit Recorder(std::shared_ptr<Impl> impl);
     bool isValid() const;
     Surface makeOffscreenSurface(int32_t width, int32_t height) const;
+    /// Copy a CPU/lazy image into a Graphite-backed texture owned by this
+    /// recorder. The upload is ordered before later draws in the same recording.
+    /// Returned invalid when `image` is invalid or the texture cannot be made.
+    Image makeTextureImage(const Image &image) const;
     /// Allocate a non-renderable sampled RGBA8 texture. `updateRGBA` records its
     /// transfer into this recorder; callers must snap and submit before sampling.
     UploadTexture makeUploadTextureRGBA(int32_t width, int32_t height) const;

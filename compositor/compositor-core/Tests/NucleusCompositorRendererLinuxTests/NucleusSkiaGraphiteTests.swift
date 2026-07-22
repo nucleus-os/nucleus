@@ -110,6 +110,32 @@ import NucleusSkiaGraphiteBridge
             let recorder = context.makeRecorder()
             guard recorder.isValid() else { return }
 
+            // CPU decode results cross onto the Graphite recorder before draw;
+            // Graphite's default image provider deliberately drops raster images.
+            let textureImage = recorder.makeTextureImage(rasterImage)
+            #expect(textureImage.isValid(), "raster-image-promoted-to-graphite")
+
+            let imageProbe = recorder.makeOffscreenSurface(2, 2)
+            #expect(imageProbe.isValid(), "texture-image-probe-surface")
+            var imageProbeRect = nucleus.skia.RectF()
+            imageProbeRect.width = 2
+            imageProbeRect.height = 2
+            imageProbe.getCanvas().drawImage(textureImage, imageProbeRect, 1)
+            #expect(submitGraphiteAndWait(
+                context: context,
+                recording: recorder.snapRecording(),
+                serial: 1), "texture-image-upload-and-draw-submit")
+            guard let pixels = readGraphiteSurfaceRGBA(
+                context: context,
+                surface: imageProbe)
+            else {
+                Issue.record("promoted-image-readback")
+                return
+            }
+            #expect(
+                Array(pixels.prefix(4)) == Array(srcPixels.prefix(4)),
+                "promoted-image-draws-decoded-pixels")
+
             let surface = recorder.makeOffscreenSurface(256, 128)
             guard surface.isValid() else { return }
 
@@ -142,7 +168,7 @@ import NucleusSkiaGraphiteBridge
             srcRect.x = 0; srcRect.y = 0; srcRect.width = 2; srcRect.height = 2
             var dstRect = nucleus.skia.RectF()
             dstRect.x = 20; dstRect.y = 20; dstRect.width = 64; dstRect.height = 64
-            canvas.drawImageRect(rasterImage, srcRect, dstRect, blurred)
+            canvas.drawImageRect(textureImage, srcRect, dstRect, blurred)
             canvas.restore()
 
             "half4 main(float2 c) { return half4(0.2, 0.4, 0.6, 1.0); }".withCString { src in
@@ -159,7 +185,7 @@ import NucleusSkiaGraphiteBridge
 
             let recording = recorder.snapRecording()
             _ = submitGraphiteAndWait(
-                context: context, recording: recording, serial: 1)
+                context: context, recording: recording, serial: 2)
 
             // Dedicated mutable-upload recorder: two consecutive updates must
             // submit ahead of frames without converting a raster image during draw
@@ -186,7 +212,7 @@ import NucleusSkiaGraphiteBridge
                 let frame = recorder.snapRecording()
                 #expect(submitGraphiteWithUploadAndWait(
                     context: context, upload: upload, frame: frame,
-                    serial: UInt64(generation + 1)),
+                    serial: UInt64(generation + 2)),
                         "upload-generation-submit-\(generation)")
             }
         }

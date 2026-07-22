@@ -1144,6 +1144,14 @@ Surface Recorder::makeOffscreenSurface(int32_t width, int32_t height) const {
     return Surface(std::move(impl));
 }
 
+Image Recorder::makeTextureImage(const Image &image) const {
+    if (!isValid()) return Image(nullptr);
+    Image::Impl *source = image.raw();
+    if (source == nullptr || source->image == nullptr) return Image(nullptr);
+    return wrapImage(SkImages::TextureFromImage(
+        impl_->recorder.get(), source->image.get(), {/*fMipmapped=*/false}));
+}
+
 UploadTexture Recorder::makeUploadTextureRGBA(int32_t width, int32_t height) const {
     if (!isValid() || width <= 0 || height <= 0) return UploadTexture(nullptr);
     skgpu::graphite::VulkanTextureInfo info;
