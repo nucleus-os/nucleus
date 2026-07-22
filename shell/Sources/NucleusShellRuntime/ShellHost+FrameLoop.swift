@@ -129,16 +129,28 @@ extension ShellHost {
         if nativeSceneDirty {
             nativeSceneDirty = false
             do {
-                _ = try inputScene?.publish()
+                let published = try inputScene?.publish()
                 _ = accessibilityBridge?.publish()
+                if startupFrameDiagnosticsRemaining > 0 {
+                    writeErr(
+                        "nucleus-shell: scene published windows="
+                            + "\(inputScene?.windows.count ?? 0) "
+                            + "roots=\(published?.visualContent.count ?? 0)")
+                }
             } catch {
                 writeErr(
                     "nucleus-shell: native scene publication failed: \(error)")
             }
         }
 
-        _ = engine.renderFrame(
+        let posted = engine.renderFrame(
             presentTimeNs: predictedPresentationNanoseconds)
+        if startupFrameDiagnosticsRemaining > 0 {
+            startupFrameDiagnosticsRemaining -= 1
+            writeErr(
+                "nucleus-shell: render turn posted=\(posted) "
+                    + "interval_ns=\(interval)")
+        }
         counters.recordRenderedFrame()
         nextPresentationDeadlineNs = ShellPresentationTiming.nextDeadline(
             previous: scheduledDeadline,

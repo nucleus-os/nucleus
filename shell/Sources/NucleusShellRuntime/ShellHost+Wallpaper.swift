@@ -78,6 +78,9 @@ extension ShellHost {
                 product: wallpaperProduct)
             wallpaperSurfaces[outputID] = record
             layerSurface.onConfigure = { [weak self] width, height in
+                self?.writeErr(
+                    "shell: wallpaper configure received output=\(outputID) "
+                        + "size=\(width)x\(height)")
                 self?.configureWallpaperSurface(
                     outputID: outputID,
                     width: width,
@@ -121,6 +124,8 @@ extension ShellHost {
         if !configured {
             writeErr(
                 "shell: failed to configure wallpaper on output \(outputID)")
+        } else {
+            writeErr("shell: native wallpaper ready on output \(outputID)")
         }
     }
 

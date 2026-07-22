@@ -2,6 +2,9 @@ public import NucleusRenderer
 import NucleusRenderModel
 import NucleusShellLoop
 import Tracy
+#if canImport(Glibc)
+import Glibc
+#endif
 
 // Owns the shared render core and one Vulkan-WSI presenter per shell surface, and drives the
 // per-frame record/present. Mirrors the Android host's AndroidRenderEngine, generalized to N
@@ -24,6 +27,7 @@ public final class ShellRenderEngine {
     private var refreshMillihertzByOutput: [UInt64: Int32] = [:]
     private let display: OpaquePointer
     private var nextOutputID: UInt64 = 1
+    private var startupFrameDiagnosticsRemaining = 8
 
     public init?(
         display: OpaquePointer,
@@ -61,12 +65,39 @@ public final class ShellRenderEngine {
         let id = nextOutputID
         nextOutputID &+= 1
         let display = self.display
+        Self.log(
+            "shell-render: add surface output=\(id) extent=\(width)x\(height)")
         guard let surface = core.createSurface({
             WaylandVulkanSurface.make(instance: $0, display: display, surface: waylandSurface)
-        }),
-              let presenter = SwapchainPresenter(core: core, outputID: id, surface: surface),
-              presenter.configure(width: width, height: height, hasAlpha: true)
-        else { return nil }
+        }) else {
+            Self.log("shell-render: output=\(id) Vulkan surface creation failed")
+            return nil
+        }
+        Self.log("shell-render: output=\(id) Vulkan surface ready")
+        guard let presenter = SwapchainPresenter(
+            core: core,
+            outputID: id,
+            surface: surface)
+        else {
+            Self.log("shell-render: output=\(id) presenter creation failed")
+            return nil
+        }
+        Self.log("shell-render: output=\(id) configuring swapchain")
+        guard presenter.configure(
+            width: width,
+            height: height,
+            hasAlpha: true)
+        else {
+            Self.log(
+                "shell-render: output=\(id) swapchain configuration failed "
+                    + "status=\(presenter.lastStatus)")
+            presenter.teardown()
+            return nil
+        }
+        Self.log(
+            "shell-render: output=\(id) swapchain ready "
+                + "extent=\(presenter.lastExtentWidth)x"
+                + "\(presenter.lastExtentHeight)")
         presenters[id] = presenter
         surfaces[id] = waylandSurface
         refreshMillihertzByOutput[id] = refreshMillihertz
@@ -150,13 +181,30 @@ public final class ShellRenderEngine {
     @discardableResult
     public func renderFrame(presentTimeNs: UInt64) -> Bool {
         Trace.zone("shell.renderer.frame", color: Trace.Color.green) {
+            if startupFrameDiagnosticsRemaining > 0 {
+                Self.log(
+                    "shell-render: frame begin presenters=\(presenters.count) "
+                        + "revision=\(core.store.revision) "
+                        + "damage=\(core.store.hasPendingDamage)")
+            }
             core.store.tick(presentTimeNs: presentTimeNs)
             var posted = false
             for (_, presenter) in presenters {
                 if core.renderReady(backend: presenter) { posted = true }
             }
+            if startupFrameDiagnosticsRemaining > 0 {
+                startupFrameDiagnosticsRemaining -= 1
+                Self.log("shell-render: frame end posted=\(posted)")
+            }
             return posted
         }
+    }
+
+    private static func log(_ message: String) {
+        #if canImport(Glibc)
+        let line = message + "\n"
+        line.withCString { _ = write(STDERR_FILENO, $0, strlen($0)) }
+        #endif
     }
 
     /// Ordered teardown: presenters (their swapchains/surfaces live on the core's device) →

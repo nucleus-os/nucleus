@@ -31,6 +31,8 @@ extension ShellHost {
             return
         }
 
+        writeErr(
+            "nucleus-shell: entering reactor loop outputs=\(client.outputs.count)")
         running = true
         await loop()
     }

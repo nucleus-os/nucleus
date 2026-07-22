@@ -110,6 +110,7 @@ public final class ShellHost {
     var animationDemand = false
     var nextPresentationDeadlineNs: UInt64?
     var nextClockUpdateNanoseconds: UInt64?
+    var startupFrameDiagnosticsRemaining = 8
     let clockFormatter: DateFormatter
 
     /// Bar height in logical px (reserved as work area via the layer-shell exclusive zone).

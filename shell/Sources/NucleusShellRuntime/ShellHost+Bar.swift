@@ -111,6 +111,9 @@ extension ShellHost {
                 product: barProduct)
             barSurfaces[outputID] = record
             layerSurface.onConfigure = { [weak self] width, height in
+                self?.writeErr(
+                    "shell: bar configure received output=\(outputID) "
+                        + "size=\(width)x\(height)")
                 self?.configureBarSurface(
                     outputID: outputID,
                     width: width,
@@ -151,6 +154,8 @@ extension ShellHost {
             refreshMillihertz: output.refreshMillihertz)
         if !configured {
             writeErr("shell: failed to configure native bar on output \(outputID)")
+        } else {
+            writeErr("shell: native bar ready on output \(outputID)")
         }
     }
 
