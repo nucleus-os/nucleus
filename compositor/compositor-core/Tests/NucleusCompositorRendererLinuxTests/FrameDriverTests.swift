@@ -38,16 +38,21 @@ struct RendererTestWakeSink: AsyncRenderWakeSink {
         ledger.attach(2)
         #expect(ledger.needsTreeRevision(7, outputID: 1))
         #expect(ledger.needsTreeRevision(7, outputID: 2))
+        #expect(ledger.needsResourceGeneration(5, outputID: 1))
+        #expect(ledger.needsResourceGeneration(5, outputID: 2))
 
-        ledger.acknowledge(1, treeRevision: 7, lockGeneration: 3)
+        ledger.acknowledge(1, treeRevision: 7, lockGeneration: 3, resourceGeneration: 5)
         #expect(!ledger.needsTreeRevision(7, outputID: 1))
         #expect(ledger.needsTreeRevision(7, outputID: 2))
         #expect(!ledger.allPresented([1, 2], treeRevision: 7))
         #expect(!ledger.needsLockGeneration(3, outputID: 1))
         #expect(ledger.needsLockGeneration(3, outputID: 2))
+        #expect(!ledger.needsResourceGeneration(5, outputID: 1))
+        #expect(ledger.needsResourceGeneration(5, outputID: 2))
 
-        ledger.acknowledge(2, treeRevision: 7, lockGeneration: 3)
+        ledger.acknowledge(2, treeRevision: 7, lockGeneration: 3, resourceGeneration: 5)
         #expect(ledger.allPresented([1, 2], treeRevision: 7))
+        #expect(!ledger.needsResourceGeneration(5, outputID: 2))
     }
 
     @Test func retainedDamageTracksOldAndNewPerOutputFootprints() {

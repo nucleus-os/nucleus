@@ -245,6 +245,10 @@ final class FrameDriver {
         }
     }
 
+    var imageDecodeCompletionGeneration: UInt64 {
+        decodeQueue.completionGeneration
+    }
+
     /// Resolve a paint command's effect handle to a compiled program, compiling
     /// and caching on first use. Mirrors `resolvePaintImage`.
     func resolvePaintEffect(_ handle: UInt64) -> nucleus.skia.RuntimeEffect? {

@@ -181,6 +181,8 @@ extension RenderCore {
         let outputIDs = backend.presentableOutputIDs()
         let targetRevision = store.revision
         let targetLockGeneration = lockCompositionGeneration
+        let targetResourceGeneration =
+            frameDriver?.imageDecodeCompletionGeneration ?? 0
         if outputIDs.contains(where: { backend.isReadyToPresent($0) }) {
             drainPendingShmUploads()
         }
@@ -202,6 +204,8 @@ extension RenderCore {
             let forced = lockComposition != nil
                 || outputPresentationLedger.needsLockGeneration(
                     targetLockGeneration, outputID: outputID)
+                || outputPresentationLedger.needsResourceGeneration(
+                    targetResourceGeneration, outputID: outputID)
             guard Self.shouldRenderOutput(
                 hasPendingDamage: hasPendingDamage,
                 forced: forced,
@@ -214,7 +218,8 @@ extension RenderCore {
             if backend.tryDirectScanout(outputID) {
                 outputPresentationLedger.acknowledge(
                     outputID, treeRevision: targetRevision,
-                    lockGeneration: targetLockGeneration)
+                    lockGeneration: targetLockGeneration,
+                    resourceGeneration: targetResourceGeneration)
                 outputsNeedingInitialFrame.remove(outputID)
                 any = true
                 continue
@@ -259,7 +264,8 @@ extension RenderCore {
                 pendingFrameTelemetry.append(lastFrameTelemetry)
                 outputPresentationLedger.acknowledge(
                     outputID, treeRevision: targetRevision,
-                    lockGeneration: targetLockGeneration)
+                    lockGeneration: targetLockGeneration,
+                    resourceGeneration: targetResourceGeneration)
                 outputsNeedingInitialFrame.remove(outputID)
                 presentedCommitsAwaitingRevisionAck.merge(
                     lastFrameReferencedCommitInstants, uniquingKeysWith: { _, newest in newest })

@@ -61,6 +61,7 @@ package final class ImageDecodeQueue {
         private var nextGeneration: UInt64 = 1
         private var running = true
         private var latestCompletionToFrameDemandNs: UInt64?
+        private var completionGeneration: UInt64 = 0
 
         private var mutex = pthread_mutex_t()
         private var condition = pthread_cond_t()
@@ -141,6 +142,12 @@ package final class ImageDecodeQueue {
             return latestCompletionToFrameDemandNs
         }
 
+        func currentCompletionGeneration() -> UInt64 {
+            lock()
+            defer { unlock() }
+            return completionGeneration
+        }
+
         func workerLoop() {
             while true {
                 lock()
@@ -178,6 +185,10 @@ package final class ImageDecodeQueue {
                     completed.append(Completion(
                         generation: request.generation,
                         result: DecodedImageResult(handle: request.handle, image: image)))
+                    completionGeneration &+= 1
+                    precondition(
+                        completionGeneration != 0,
+                        "image decode completion generation exhausted")
                 } else if known[request.handle] == request.generation {
                     known[request.handle] = nil
                 }
@@ -246,6 +257,13 @@ package final class ImageDecodeQueue {
     /// invoking the host's frame-demand sink.
     package var completionToFrameDemandNanoseconds: UInt64? {
         state.completionToFrameDemandNanoseconds()
+    }
+
+    /// Monotonic generation of valid results made available to the render
+    /// thread. Draining does not clear it because every output must acknowledge
+    /// the resource change independently.
+    package var completionGeneration: UInt64 {
+        state.currentCompletionGeneration()
     }
 
     /// Queue a decode. Returns false if this handle is already queued or done,

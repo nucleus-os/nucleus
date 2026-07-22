@@ -164,6 +164,10 @@ import NucleusRenderModel
         while wakeSink.signalCount == 0 && Date() < deadline { usleep(1000) }
         #expect(wakeSink.signalCount == 1)
         #expect(queue.completionToFrameDemandNanoseconds != nil)
+        let generation = queue.completionGeneration
+        #expect(generation > 0)
+        _ = queue.drain()
+        #expect(queue.completionGeneration == generation)
     }
 
     @Test func aCompletionBurstCoalescesItsWake() {
