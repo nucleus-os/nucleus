@@ -1,4 +1,5 @@
 import Testing
+import NucleusLinuxSession
 @testable import NucleusWorkspace
 
 @Test
@@ -35,6 +36,28 @@ func runParsesAUnifiedInstrumentedCapture() throws {
     #expect(options.configuration == "release")
     #expect(options.compositorArguments == ["--fixture-output", "DP-1"])
     #expect(options.buildOptions.identity == "release-tracy-address")
+}
+
+@Test
+func runProducesOneTypedConfigurationForBothSessionChildren() throws {
+    let options = try #require(try RunOptions.parse([
+        "--tracy",
+        "--scale", "1.5",
+        "--present-mode", "mailbox_latest_wins",
+        "--vk-validation",
+        "--trace-diagnostics",
+        "--drm-device", "/dev/dri/renderD129",
+        "--wallpaper", "~/Pictures/typed.jpeg",
+    ]))
+    let configuration = try options.sessionConfiguration
+
+    #expect(configuration.outputScale == 1.5)
+    #expect(configuration.presentMode == .mailboxLatestWins)
+    #expect(configuration.enableVulkanValidation)
+    #expect(configuration.traceProtocol)
+    #expect(configuration.traceDrmDemand)
+    #expect(configuration.drmDevicePath == "/dev/dri/renderD129")
+    #expect(configuration.wallpaperPath == "~/Pictures/typed.jpeg")
 }
 
 @Test

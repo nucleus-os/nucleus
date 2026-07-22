@@ -15,11 +15,7 @@ import Tracy
 /// wallpaper, one to read the pixels out and one to build the image again.
 package struct DecodedImageResult: @unchecked Sendable {
     package var handle: UInt64
-    package var image: nucleus.skia.Image
-    /// Queue-wide generation assigned when this result becomes drainable.
-    /// Consumers use it to invalidate only paint caches that reference this
-    /// image rather than every image-backed layer in the process.
-    package var completionGeneration: UInt64
+    package var image: nucleus.skia.RasterImage
 
     // Plain-typed accessors. The C++ `Image` type does not resolve through a
     // `@testable` import, so anything that wants to assert about a result
@@ -65,7 +61,6 @@ package final class ImageDecodeQueue {
         private var nextGeneration: UInt64 = 1
         private var running = true
         private var latestCompletionToFrameDemandNs: UInt64?
-        private var completionGeneration: UInt64 = 0
 
         private var mutex = pthread_mutex_t()
         private var condition = pthread_cond_t()
@@ -146,12 +141,6 @@ package final class ImageDecodeQueue {
             return latestCompletionToFrameDemandNs
         }
 
-        func currentCompletionGeneration() -> UInt64 {
-            lock()
-            defer { unlock() }
-            return completionGeneration
-        }
-
         func workerLoop() {
             while true {
                 lock()
@@ -186,16 +175,11 @@ package final class ImageDecodeQueue {
                     if shouldWake {
                         completionInstant = clock.now
                     }
-                    completionGeneration &+= 1
-                    precondition(
-                        completionGeneration != 0,
-                        "image decode completion generation exhausted")
                     completed.append(Completion(
                         generation: request.generation,
                         result: DecodedImageResult(
                             handle: request.handle,
-                            image: image,
-                            completionGeneration: completionGeneration)))
+                            image: image)))
                 } else if known[request.handle] == request.generation {
                     known[request.handle] = nil
                 }
@@ -266,13 +250,6 @@ package final class ImageDecodeQueue {
         state.completionToFrameDemandNanoseconds()
     }
 
-    /// Monotonic generation of valid results made available to the render
-    /// thread. Draining does not clear it because every output must acknowledge
-    /// the resource change independently.
-    package var completionGeneration: UInt64 {
-        state.currentCompletionGeneration()
-    }
-
     /// Queue a decode. Returns false if this handle is already queued or done,
     /// so a caller can tell "waiting" from "just asked".
     @discardableResult
@@ -304,7 +281,7 @@ package final class ImageDecodeQueue {
     }
 
     /// The decode itself — the same work the render thread used to do inline.
-    static func decode(_ source: ImageSource) -> nucleus.skia.Image {
+    static func decode(_ source: ImageSource) -> nucleus.skia.RasterImage {
         let maxWidth = Int32(clamping: source.maxWidth)
         let maxHeight = Int32(clamping: source.maxHeight)
 

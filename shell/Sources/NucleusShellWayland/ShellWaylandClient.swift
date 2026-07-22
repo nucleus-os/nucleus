@@ -129,7 +129,7 @@ public final class ShellWaylandClient {
 
     /// Adopt a connected endpoint without a blocking setup roundtrip.
     ///
-    /// The caller drives `pumpNonBlocking()` until the registry has arrived.
+    /// The caller drives prepared reads until the registry has arrived.
     /// This is the deterministic in-process fixture seam; production socket
     /// connections use `init(socketName:)`.
     public convenience init?(connectedFileDescriptor: Int32) {
@@ -158,8 +158,8 @@ public final class ShellWaylandClient {
         if performInitialRoundtrips {
             // The first roundtrip surfaces globals; the second drains initial
             // per-global state such as output geometry.
-            connection.roundtrip()
-            connection.roundtrip()
+            connection.bootstrapRoundtrip()
+            connection.bootstrapRoundtrip()
             onReady?()
         }
     }
@@ -177,14 +177,10 @@ public final class ShellWaylandClient {
     @discardableResult
     public func flush() -> Int32 { connection.flush() }
 
-    /// Flush, read, and dispatch only work already available on the connection.
-    @discardableResult
-    public func pumpNonBlocking() -> Int32 {
-        connection.pumpNonBlocking()
+    /// Prepare the one display read that the host reactor must complete or cancel.
+    public func prepareRead() -> WaylandReadPreparation? {
+        connection.prepareRead()
     }
-
-    /// Block until the server has processed all issued requests (used at setup time).
-    public func roundtrip() { _ = connection.roundtrip() }
 
     public func proxy(_ kind: WaylandGlobalKind) -> OpaquePointer? { globals[kind]?.proxy }
 

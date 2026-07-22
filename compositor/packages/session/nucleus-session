@@ -3,7 +3,7 @@ set -euo pipefail
 
 if [ "${1:-}" = "--help" ]; then
   cat <<'USAGE'
-usage: nucleus-session [nucleus-compositor [args...]]
+usage: nucleus-session [--status-file PATH] [--configuration HEX] [--] [nucleus-compositor [args...]]
 
 Construct the Nucleus Linux session environment and run the compositor inside a
 private session bus. The compositor consumes the resulting environment; it does
@@ -17,6 +17,36 @@ fi
 # when the prefix is not globally present in the login environment's PATH.
 session_bin_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 export PATH="$session_bin_dir:$PATH"
+
+status_file=""
+configuration_hex=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --status-file)
+      [ "$#" -ge 2 ] || {
+        echo "nucleus-session: --status-file requires a path" >&2
+        exit 64
+      }
+      status_file="$2"
+      shift 2
+      ;;
+    --configuration)
+      [ "$#" -ge 2 ] || {
+        echo "nucleus-session: --configuration requires an encoding" >&2
+        exit 64
+      }
+      configuration_hex="$2"
+      shift 2
+      ;;
+    --)
+      shift
+      break
+      ;;
+    *)
+      break
+      ;;
+  esac
+done
 
 uid="$(id -u)"
 parent_runtime_dir="${XDG_RUNTIME_DIR:-/run/user/$uid}"
@@ -207,9 +237,9 @@ session_runner_pid=0
 forward_session_signal() {
   local signal="$1"
   if [ "$session_runner_pid" -gt 0 ] && kill -0 "$session_runner_pid" 2>/dev/null; then
-    # dbus-run-session keeps both its bus daemon and the compositor as direct
-    # children. Signal them before the runner so the application cannot be
-    # orphaned when the launcher itself is stopped by systemd or a terminal.
+    # dbus-run-session keeps its bus daemon and the native supervisor as direct
+    # children. Signal both so the supervisor can retire its compositor/shell
+    # process group before the private bus disappears.
     local child
     local children=""
     if [ -r "/proc/$session_runner_pid/task/$session_runner_pid/children" ]; then
@@ -302,8 +332,23 @@ if [ -n "${NUCLEUS_DBUS_SESSION_CONFIG:-}" ]; then
   dbus_run_session+=("--config-file=$NUCLEUS_DBUS_SESSION_CONFIG")
 fi
 
+session_supervisor="$session_bin_dir/nucleus-session-supervisor"
+if [ ! -x "$session_supervisor" ]; then
+  echo "nucleus-session: native supervisor is missing: $session_supervisor" >&2
+  exit 127
+fi
+supervisor_arguments=(--shell "$session_bin_dir/nucleus-shell")
+if [ -n "$status_file" ]; then
+  supervisor_arguments+=(--status-file "$status_file")
+fi
+if [ -n "$configuration_hex" ]; then
+  supervisor_arguments+=(--configuration "$configuration_hex")
+fi
+supervisor_arguments+=(-- "$compositor" "$@")
+
 set +e
-"${dbus_run_session[@]}" -- "$compositor" "$@" &
+"${dbus_run_session[@]}" -- "$session_supervisor" \
+  "${supervisor_arguments[@]}" &
 session_runner_pid=$!
 wait "$session_runner_pid"
 session_status=$?

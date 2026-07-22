@@ -1,4 +1,4 @@
-public import NucleusRenderer
+@_spi(NucleusPlatform) public import NucleusRenderer
 import NucleusRenderModel
 import NucleusShellLoop
 import Tracy
@@ -17,6 +17,13 @@ import Glibc
 // RenderCore.renderReady per presenter, which composites the retained tree into that surface's
 // acquired swapchain image and presents it.
 
+package enum ShellImageResidency: Sendable, Equatable {
+    case unknown
+    case pending
+    case resident
+    case failed
+}
+
 @MainActor
 public final class ShellRenderEngine {
     public let core: RenderCore
@@ -31,6 +38,7 @@ public final class ShellRenderEngine {
 
     public init?(
         display: OpaquePointer,
+        enableValidation: Bool = false,
         store: RetainedTreeStore,
         resourceHost: SwiftResourceHost,
         asyncRenderWakeSink: any AsyncRenderWakeSink
@@ -39,7 +47,9 @@ public final class ShellRenderEngine {
         // and VK_KHR_swapchain (device). Selected via the core's presentation mode (the core
         // enablement change — otherwise a non-Android Linux process builds the DRM/dmabuf set).
         guard let bootstrap = VulkanBootstrap.create(
-            applicationName: "Nucleus Shell", presentation: .waylandClientWSI),
+            applicationName: "Nucleus Shell",
+            presentation: .waylandClientWSI,
+            enableValidation: enableValidation),
               let core = RenderCore.create(
             bootstrap: bootstrap,
             qualification: .platformProbe({ instance, physicalDevice, queueFamily in
@@ -179,7 +189,7 @@ public final class ShellRenderEngine {
 
     /// Advance animations and render every dirty surface for this frame's predicted present.
     @discardableResult
-    public func renderFrame(presentTimeNs: UInt64) -> Bool {
+    public func renderFrame(presentTimeNs: UInt64) -> Set<UInt64> {
         Trace.zone("shell.renderer.frame", color: Trace.Color.green) {
             if startupFrameDiagnosticsRemaining > 0 {
                 Self.log(
@@ -188,15 +198,30 @@ public final class ShellRenderEngine {
                         + "damage=\(core.store.hasPendingDamage)")
             }
             core.store.tick(presentTimeNs: presentTimeNs)
-            var posted = false
-            for (_, presenter) in presenters {
-                if core.renderReady(backend: presenter) { posted = true }
+            var postedOutputIDs = Set<UInt64>()
+            for (outputID, presenter) in presenters {
+                if core.renderReady(backend: presenter) {
+                    postedOutputIDs.insert(outputID)
+                }
             }
             if startupFrameDiagnosticsRemaining > 0 {
                 startupFrameDiagnosticsRemaining -= 1
-                Self.log("shell-render: frame end posted=\(posted)")
+                Self.log(
+                    "shell-render: frame end posted_outputs="
+                        + "\(postedOutputIDs.sorted())")
             }
-            return posted
+            return postedOutputIDs
+        }
+    }
+
+    package func imageResidency(
+        for handle: UInt64
+    ) -> ShellImageResidency {
+        switch core.imageResidency(for: handle) {
+        case .unknown: .unknown
+        case .pending: .pending
+        case .resident: .resident
+        case .failed: .failed
         }
     }
 

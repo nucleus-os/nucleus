@@ -25,16 +25,19 @@ import NucleusRenderer
 /// recycled handle number could then alias a different buffer). This owns the
 /// import/close and closes a handle only when its last holder releases it.
 final class GemHandleTable {
-    private let deviceFd: Int32
+    let device: DrmDeviceLifetime
     private var refcount: [UInt32: Int] = [:]
 
-    init(deviceFd: Int32) { self.deviceFd = deviceFd }
+    init(device: DrmDeviceLifetime) { self.device = device }
 
     /// Import a dmabuf fd to a (possibly shared) GEM handle, bumping its refcount.
     /// Returns 0 on failure.
     func importHandle(fd: Int32) -> UInt32 {
         var handle: UInt32 = 0
-        guard drmPrimeFDToHandle(deviceFd, fd, &handle) == 0, handle != 0 else { return 0 }
+        guard let deviceFd = device.availableFileDescriptor,
+              drmPrimeFDToHandle(deviceFd, fd, &handle) == 0,
+              handle != 0
+        else { return 0 }
         refcount[handle, default: 0] += 1
         return handle
     }
@@ -44,7 +47,9 @@ final class GemHandleTable {
         guard handle != 0, let count = refcount[handle] else { return }
         if count <= 1 {
             refcount.removeValue(forKey: handle)
-            _ = drmCloseBufferHandle(deviceFd, handle)
+            if let deviceFd = device.availableFileDescriptor {
+                _ = drmCloseBufferHandle(deviceFd, handle)
+            }
         } else {
             refcount[handle] = count - 1
         }
@@ -52,7 +57,7 @@ final class GemHandleTable {
 }
 
 final class ClientScanoutBuffer {
-    private let deviceFd: Int32
+    private let device: DrmDeviceLifetime
     private let gemTable: GemHandleTable
     let width: UInt32
     let height: UInt32
@@ -78,12 +83,12 @@ final class ClientScanoutBuffer {
     var onDestroy: (() -> Void)?
 
     private init(
-        deviceFd: Int32, gemTable: GemHandleTable,
+        device: DrmDeviceLifetime, gemTable: GemHandleTable,
         width: UInt32, height: UInt32, format: UInt32, modifier: UInt64,
         dupedFds: [Int32], planes: [(fd: Int32, offset: UInt32, stride: UInt32)],
         acquireFenceFd: Int32
     ) {
-        self.deviceFd = deviceFd
+        self.device = device
         self.gemTable = gemTable
         self.width = width
         self.height = height
@@ -99,7 +104,7 @@ final class ClientScanoutBuffer {
     /// planes sharing a source fd share a single dup. Returns nil (closing any dup made)
     /// if a `dup` fails or there are no planes.
     static func retain(
-        deviceFd: Int32, gemTable: GemHandleTable, fd: Int32, width: UInt32, height: UInt32,
+        device: DrmDeviceLifetime, gemTable: GemHandleTable, fd: Int32, width: UInt32, height: UInt32,
         format: UInt32, modifier: UInt64, planes sourcePlanes: [DmaBufPlane],
         acquireFenceFd: Int32 = -1
     ) -> ClientScanoutBuffer? {
@@ -127,7 +132,7 @@ final class ClientScanoutBuffer {
                            stride: UInt32(truncatingIfNeeded: plane.rowPitch)))
         }
         return ClientScanoutBuffer(
-            deviceFd: deviceFd, gemTable: gemTable,
+            device: device, gemTable: gemTable,
             width: width, height: height, format: format, modifier: modifier,
             dupedFds: duped, planes: layout, acquireFenceFd: acquireFenceFd)
     }
@@ -166,6 +171,10 @@ final class ClientScanoutBuffer {
         let pitches = planes.map { $0.stride }
         let offsets = planes.map { $0.offset }
         let fb: DrmFramebuffer?
+        guard let deviceFd = device.availableFileDescriptor else {
+            releaseHandles()
+            return 0
+        }
         if modifier == drmFormatModInvalid {
             fb = DrmFramebuffer(
                 deviceFd: deviceFd, width: width, height: height, pixelFormat: format,
@@ -194,7 +203,12 @@ final class ClientScanoutBuffer {
     func destroy() {
         guard !destroyed else { return }
         destroyed = true
-        if fbId != 0 { _ = drmModeRmFB(deviceFd, fbId); fbId = 0 }
+        if fbId != 0 {
+            if let deviceFd = device.availableFileDescriptor {
+                _ = drmModeRmFB(deviceFd, fbId)
+            }
+            fbId = 0
+        }
         releaseHandles()
         for fd in dupedFds where fd >= 0 { close(fd) }
         if acquireFenceFd >= 0 { close(acquireFenceFd); acquireFenceFd = -1 }

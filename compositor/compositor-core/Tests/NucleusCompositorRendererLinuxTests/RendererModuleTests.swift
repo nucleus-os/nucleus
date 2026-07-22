@@ -86,9 +86,10 @@ import NucleusRenderModel
                 pixels[i * 4 + 2] = 0
                 pixels[i * 4 + 3] = 255
             }
-            let sourceImage = pixels.withUnsafeBufferPointer { buf in
+            let decodedSource = pixels.withUnsafeBufferPointer { buf in
                 nucleus.skia.makeRasterImageRGBA(16, 16, buf.baseAddress, buf.count)
             }
+            let sourceImage = context.makeRecorder().makeTextureImage(decodedSource)
 
             _ = NucleusRenderer.renderOffscreen(
                 context: context, plan: plan, width: 256, height: 128,

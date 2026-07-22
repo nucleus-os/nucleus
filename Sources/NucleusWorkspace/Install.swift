@@ -33,6 +33,9 @@ struct RuntimeInstallation {
     let prefix: URL
 
     var session: URL { prefix.appendingPathComponent("bin/nucleus-session") }
+    var sessionSupervisor: URL {
+        prefix.appendingPathComponent("bin/nucleus-session-supervisor")
+    }
     var compositor: URL { prefix.appendingPathComponent("bin/nucleus-compositor") }
     var shell: URL { prefix.appendingPathComponent("bin/nucleus-shell") }
     var pamHelper: URL { prefix.appendingPathComponent("bin/nucleus-pam-helper") }
@@ -82,6 +85,7 @@ struct RuntimeInstaller {
         let installation = RuntimeInstallation(prefix: prefix)
         for executable in [
             installation.session,
+            installation.sessionSupervisor,
             installation.compositor,
             installation.shell,
             installation.pamHelper,
@@ -110,6 +114,13 @@ struct RuntimeInstaller {
             component: "compositor",
             options: options)
         try copyExecutable(executable, to: installation.compositor)
+
+        let supervisor = try buildProduct(
+            "NucleusSessionSupervisor",
+            packagePath: "platform-linux",
+            component: "session-supervisor",
+            options: options)
+        try copyExecutable(supervisor, to: installation.sessionSupervisor)
 
         let sessionPackage = context.root.appendingPathComponent(
             "compositor/packages/session")

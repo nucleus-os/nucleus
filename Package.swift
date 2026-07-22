@@ -7,9 +7,25 @@ let package = Package(
     products: [
         .executable(name: "nucleus-workspace", targets: ["NucleusWorkspace"]),
     ],
+    dependencies: [
+        .package(name: "NucleusLinuxPlatform", path: "platform-linux"),
+    ],
     targets: [
-        .executableTarget(name: "NucleusWorkspace"),
-        .testTarget(name: "NucleusWorkspaceTests", dependencies: ["NucleusWorkspace"]),
+        .executableTarget(
+            name: "NucleusWorkspace",
+            dependencies: [
+                .product(
+                    name: "NucleusLinuxSession",
+                    package: "NucleusLinuxPlatform"),
+            ]),
+        .testTarget(
+            name: "NucleusWorkspaceTests",
+            dependencies: [
+                "NucleusWorkspace",
+                .product(
+                    name: "NucleusLinuxSession",
+                    package: "NucleusLinuxPlatform"),
+            ]),
     ]
 )
 

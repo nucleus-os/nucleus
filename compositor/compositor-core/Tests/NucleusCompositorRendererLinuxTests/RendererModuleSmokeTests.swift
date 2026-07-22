@@ -25,6 +25,8 @@ import NucleusRenderModel
         let store = RetainedTreeStore(resourceHost: resourceHost)
         #expect(RendererRuntime.create(
             drmDeviceFd: -1,
+            enableValidation: false,
+            presentPolicy: .vsync,
             store: store,
             resourceHost: resourceHost,
             asyncRenderWakeSink: RendererTestWakeSink()) == nil,

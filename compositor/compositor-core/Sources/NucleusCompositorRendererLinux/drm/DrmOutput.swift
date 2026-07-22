@@ -15,9 +15,25 @@ import Glibc
 /// The cursor-plane state one commit programs: the framebuffer to scan out and its
 /// placement. A nil placement (or `fbId == 0`) clears the plane — the pointer is off
 /// this output or no cursor image is loaded.
-struct CursorCommitState {
+struct CursorCommitState: Sendable, Equatable {
     var fbId: UInt32
     var placement: CursorPlacement?
+}
+
+/// Complete desired KMS state for one output pipeline. Every modeset, scanout,
+/// and retirement request flows through this vocabulary so a transition cannot
+/// accidentally omit a connector, CRTC, or plane property that belongs to the
+/// state being requested.
+enum DrmAtomicOutputState: Sendable, Equatable {
+    struct Active: Sendable, Equatable {
+        var framebufferID: UInt32
+        var inFenceFD: Int32 = -1
+        var vrrEnabled: Bool
+        var cursor: CursorCommitState?
+    }
+
+    case disabled
+    case active(Active)
 }
 
 /// The complete userspace view of one output's kernel scanout ownership.
@@ -64,7 +80,8 @@ enum DrmRetirementCommitResult: Sendable, Equatable {
 
 final class DrmOutput {
     /// Borrowed primary-node DRM fd (the seat / device owner keeps it).
-    let deviceFd: Int32
+    let device: DrmDeviceLifetime
+    var deviceFd: Int32 { device.fileDescriptor }
     let connectorId: UInt32
     let crtcId: UInt32
     let planeId: UInt32
@@ -108,7 +125,7 @@ final class DrmOutput {
     private var pendingScanout: AnyObject?
 
     init(
-        deviceFd: Int32,
+        device: DrmDeviceLifetime,
         connectorId: UInt32,
         crtcId: UInt32,
         planeId: UInt32,
@@ -119,10 +136,10 @@ final class DrmOutput {
         props: AtomicProps,
         cursorProps: CursorPlaneProps = CursorPlaneProps(),
         vrrCapable: Bool = false,
-        presentPolicy: PresentPolicy = .vsync,
+        presentPolicy: RendererPresentPolicy = .vsync,
         onPageFlip: @escaping @MainActor @Sendable (DrmPageFlipEvent) -> Void = { _ in }
     ) {
-        self.deviceFd = deviceFd
+        self.device = device
         self.connectorId = connectorId
         self.crtcId = crtcId
         self.planeId = planeId
@@ -144,6 +161,7 @@ final class DrmOutput {
         // Destroy every kernel property blob this output owns: the GAMMA_LUT blob
         // (if a ramp was staged) and the MODE_ID blob. Sole owner of each, so no
         // double-free.
+        guard let deviceFd = device.availableFileDescriptor else { return }
         gamma.destroyBlob(fd: deviceFd)
         if modeBlobId != 0 { _ = drmModeDestroyPropertyBlob(deviceFd, modeBlobId) }
     }
@@ -151,7 +169,7 @@ final class DrmOutput {
     /// Discover the pipeline's atomic + cursor property ids live, then build the
     /// aggregate. Returns nil if the required scanout props are absent.
     static func discover(
-        deviceFd: Int32,
+        device: DrmDeviceLifetime,
         connectorId: UInt32,
         crtcId: UInt32,
         planeId: UInt32,
@@ -160,17 +178,17 @@ final class DrmOutput {
         width: UInt32,
         height: UInt32,
         vrrCapable: Bool = false,
-        presentPolicy: PresentPolicy = .vsync,
+        presentPolicy: RendererPresentPolicy = .vsync,
         onPageFlip: @escaping @MainActor @Sendable (DrmPageFlipEvent) -> Void = { _ in }
     ) -> DrmOutput? {
         let props = AtomicPropsDiscovery.discover(
-            fd: deviceFd, connectorId: connectorId, crtcId: crtcId, planeId: planeId)
+            fd: device.fileDescriptor, connectorId: connectorId, crtcId: crtcId, planeId: planeId)
         guard props.hasRequired else { return nil }
         let cursor = cursorPlaneId != 0
-            ? CursorPlaneProps.discover(fd: deviceFd, planeId: cursorPlaneId)
+            ? CursorPlaneProps.discover(fd: device.fileDescriptor, planeId: cursorPlaneId)
             : CursorPlaneProps()
         return DrmOutput(
-            deviceFd: deviceFd, connectorId: connectorId, crtcId: crtcId, planeId: planeId,
+            device: device, connectorId: connectorId, crtcId: crtcId, planeId: planeId,
             cursorPlaneId: cursorPlaneId, modeBlobId: modeBlobId, width: width, height: height,
             props: props, cursorProps: cursor, vrrCapable: vrrCapable, presentPolicy: presentPolicy,
             onPageFlip: onPageFlip)
@@ -230,35 +248,96 @@ final class DrmOutput {
         }
     }
 
-    /// Assemble a full scanout/modeset commit into `builder`: connector routing,
-    /// CRTC active + mode, primary-plane state, the gamma/color pipeline, VRR, and the
-    /// cursor plane. Returns false if the required props are absent. COLOR_RANGE is
-    /// added once, by the plane state.
+    /// Emit one complete desired output state. This is the sole connector/CRTC/
+    /// plane property assembly path for presentation and retirement.
     @discardableResult
-    func assembleScanoutCommit(
-        into builder: inout AtomicRequestBuilder,
-        fbId: UInt32,
-        requestedVrr: Bool,
-        inFenceFd: Int32 = -1,
-        cursor: CursorCommitState? = nil
+    func addAtomicState(
+        _ state: DrmAtomicOutputState,
+        into builder: inout AtomicRequestBuilder
     ) -> Bool {
         guard props.hasRequired else { return false }
-        guard gamma.ensureBlob(
-            fd: deviceFd, gammaLutProp: props.crtcGammaLut)
-        else { return false }
-        builder.add(objectId: connectorId, propertyId: props.connCrtcId, value: UInt64(crtcId), label: "connector.CRTC_ID")
-        builder.add(objectId: crtcId, propertyId: props.crtcActive, value: 1, label: "crtc.ACTIVE")
-        builder.add(objectId: crtcId, propertyId: props.crtcModeId, value: UInt64(modeBlobId), label: "crtc.MODE_ID")
-        addFullPlaneState(into: &builder, fbId: fbId, inFenceFd: inFenceFd)
-        addCursorPlaneState(into: &builder, cursor: cursor)
-        gamma.addToAtomicState(
-            into: &builder, connectorId: connectorId, planeId: planeId, crtcId: crtcId,
-            props: props, includePlaneState: false)
-        if props.crtcVrrEnabled != 0 {
-            builder.add(objectId: crtcId, propertyId: props.crtcVrrEnabled,
-                        value: requestedVrr ? 1 : 0, label: "crtc.VRR_ENABLED")
+        switch state {
+        case .disabled:
+            builder.add(
+                objectId: connectorId, propertyId: props.connCrtcId,
+                value: 0, label: "connector.CRTC_ID")
+            builder.add(
+                objectId: crtcId, propertyId: props.crtcActive,
+                value: 0, label: "crtc.ACTIVE")
+            builder.add(
+                objectId: crtcId, propertyId: props.crtcModeId,
+                value: 0, label: "crtc.MODE_ID")
+            let plane = props.primaryPlaneProps
+            builder.add(
+                objectId: planeId, propertyId: plane.fbId,
+                value: 0, label: "plane.FB_ID")
+            builder.add(
+                objectId: planeId, propertyId: plane.crtcId,
+                value: 0, label: "plane.CRTC_ID")
+            addCursorPlaneState(into: &builder, cursor: nil)
+            addOptionalAtomicProperty(
+                into: &builder, objectId: crtcId,
+                propertyId: props.crtcVrrEnabled,
+                value: 0, label: "crtc.VRR_ENABLED")
+            addOptionalAtomicProperty(
+                into: &builder, objectId: crtcId,
+                propertyId: props.crtcGammaLut,
+                value: 0, label: "crtc.GAMMA_LUT")
+            addOptionalAtomicProperty(
+                into: &builder, objectId: crtcId,
+                propertyId: props.crtcDegammaLut,
+                value: 0, label: "crtc.DEGAMMA_LUT")
+            addOptionalAtomicProperty(
+                into: &builder, objectId: crtcId,
+                propertyId: props.crtcCtm,
+                value: 0, label: "crtc.CTM")
+        case .active(let active):
+            guard gamma.ensureBlob(
+                fd: deviceFd, gammaLutProp: props.crtcGammaLut)
+            else { return false }
+            builder.add(
+                objectId: connectorId, propertyId: props.connCrtcId,
+                value: UInt64(crtcId), label: "connector.CRTC_ID")
+            builder.add(
+                objectId: crtcId, propertyId: props.crtcActive,
+                value: 1, label: "crtc.ACTIVE")
+            builder.add(
+                objectId: crtcId, propertyId: props.crtcModeId,
+                value: UInt64(modeBlobId), label: "crtc.MODE_ID")
+            addFullPlaneState(
+                into: &builder,
+                fbId: active.framebufferID,
+                inFenceFd: active.inFenceFD)
+            addCursorPlaneState(into: &builder, cursor: active.cursor)
+            gamma.addToAtomicState(
+                into: &builder,
+                connectorId: connectorId,
+                planeId: planeId,
+                crtcId: crtcId,
+                props: props,
+                includePlaneState: false)
+            addOptionalAtomicProperty(
+                into: &builder, objectId: crtcId,
+                propertyId: props.crtcVrrEnabled,
+                value: active.vrrEnabled ? 1 : 0,
+                label: "crtc.VRR_ENABLED")
         }
         return true
+    }
+
+    private func addOptionalAtomicProperty(
+        into builder: inout AtomicRequestBuilder,
+        objectId: UInt32,
+        propertyId: UInt32,
+        value: UInt64,
+        label: String
+    ) {
+        guard propertyId != 0 else { return }
+        builder.add(
+            objectId: objectId,
+            propertyId: propertyId,
+            value: value,
+            label: label)
     }
 
     /// The atomic-commit flags for a scanout: live event-producing flips are
@@ -283,8 +362,16 @@ final class DrmOutput {
     /// (DRM_MODE_ATOMIC_TEST_ONLY). The dormant-stack verification path.
     func testScanoutCommit(fbId: UInt32) -> Bool {
         guard var builder = AtomicRequestBuilder() else { return false }
-        guard assembleScanoutCommit(into: &builder, fbId: fbId, requestedVrr: false) else { return false }
-        return builder.validates(fd: deviceFd)
+        guard addAtomicState(
+            .active(DrmAtomicOutputState.Active(
+                framebufferID: fbId,
+                vrrEnabled: false,
+                cursor: nil)),
+            into: &builder)
+        else { return false }
+        return builder.validates(
+            fd: deviceFd,
+            flags: drmModeAtomicAllowModeset)
     }
 
     /// Submit a real scanout commit (page-flip event delivery, user_data = the
@@ -300,9 +387,22 @@ final class DrmOutput {
     ) -> Int32 {
         guard lifecycleState.admitsScanoutCommit else { return -EBUSY }
         guard var builder = AtomicRequestBuilder() else { return -22 }
-        guard assembleScanoutCommit(
-            into: &builder, fbId: fbId, requestedVrr: requestedVrr,
-            inFenceFd: inFenceFd, cursor: cursor) else { return -22 }
+        guard addAtomicState(
+            .active(DrmAtomicOutputState.Active(
+                framebufferID: fbId,
+                inFenceFD: inFenceFd,
+                vrrEnabled: requestedVrr,
+                cursor: cursor)),
+            into: &builder)
+        else { return -EINVAL }
+        if modeset,
+           !builder.validates(
+               fd: deviceFd,
+               flags: drmModeAtomicAllowModeset)
+        {
+            let code = rendererErrno()
+            return -(code == 0 ? EINVAL : code)
+        }
         let flags = commitFlags(requestedVrr: requestedVrr, pageFlipEvent: true, modeset: modeset)
         // The output owns the callback token; the runtime preserves tokens from
         // replaced bindings until the DRM device itself is torn down.
@@ -365,33 +465,6 @@ final class DrmOutput {
             return false
         case .drainingPageFlip:
             return false
-        }
-    }
-
-    /// Add this output's complete disabled state to a device-wide atomic request.
-    /// Callers can combine several outputs so a topology generation is retired in
-    /// one KMS transaction.
-    func addDisableState(into builder: inout AtomicRequestBuilder) {
-        let p = props.primaryPlaneProps
-        builder.add(
-            objectId: connectorId, propertyId: props.connCrtcId,
-            value: 0, label: "connector.CRTC_ID")
-        builder.add(
-            objectId: crtcId, propertyId: props.crtcActive,
-            value: 0, label: "crtc.ACTIVE")
-        builder.add(
-            objectId: planeId, propertyId: p.fbId,
-            value: 0, label: "plane.FB_ID")
-        builder.add(
-            objectId: planeId, propertyId: p.crtcId,
-            value: 0, label: "plane.CRTC_ID")
-        if cursorPlaneId != 0, cursorProps.fbId != 0 {
-            builder.add(
-                objectId: cursorPlaneId, propertyId: cursorProps.fbId,
-                value: 0, label: "cursor.FB_ID")
-            builder.add(
-                objectId: cursorPlaneId, propertyId: cursorProps.crtcId,
-                value: 0, label: "cursor.CRTC_ID")
         }
     }
 

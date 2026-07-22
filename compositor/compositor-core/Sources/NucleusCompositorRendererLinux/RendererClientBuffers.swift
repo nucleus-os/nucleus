@@ -82,7 +82,7 @@ extension RendererRuntime {
         if isOpaqueScanoutFormat(drmFormat) {
             clientScanoutBuffers[iosurfaceID] =
                 ClientScanoutBuffer.retain(
-                    deviceFd: drmDeviceFd,
+                    device: drmDevice,
                     gemTable: gemHandleTable,
                     fd: fd,
                     width: width,
@@ -356,7 +356,9 @@ extension RendererRuntime {
     public func importSyncobjTimeline(
         fd: Int32
     ) -> UInt32? {
-        guard drmDeviceFd >= 0, fd >= 0 else {
+        guard let drmDeviceFd = drmDevice.availableFileDescriptor,
+              fd >= 0
+        else {
             return nil
         }
         var handle: UInt32 = 0
@@ -370,7 +372,9 @@ extension RendererRuntime {
     public func destroySyncobjTimeline(
         handle: UInt32
     ) {
-        if drmDeviceFd >= 0, handle != 0 {
+        if let drmDeviceFd = drmDevice.availableFileDescriptor,
+           handle != 0
+        {
             _ = drmSyncobjDestroy(
                 drmDeviceFd, handle)
         }
@@ -379,7 +383,8 @@ extension RendererRuntime {
     private func exportSyncPoint(
         _ sync: DmaBufSyncPoint
     ) -> Int32? {
-        guard drmDeviceFd >= 0, sync.handle != 0
+        guard let drmDeviceFd = drmDevice.availableFileDescriptor,
+              sync.handle != 0
         else { return nil }
         var temporary: UInt32 = 0
         guard drmSyncobjCreate(
@@ -407,7 +412,8 @@ extension RendererRuntime {
     }
 
     func signalSyncPoint(_ sync: DmaBufSyncPoint) {
-        guard drmDeviceFd >= 0, sync.handle != 0
+        guard let drmDeviceFd = drmDevice.availableFileDescriptor,
+              sync.handle != 0
         else { return }
         var handle = sync.handle
         var point = sync.point

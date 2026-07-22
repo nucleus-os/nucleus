@@ -2,6 +2,7 @@ import Glibc
 import NucleusLinuxReactor
 import NucleusShellLoop
 import NucleusShellSignalC
+import WaylandClient
 
 @MainActor
 extension ShellHost {
@@ -116,9 +117,36 @@ extension ShellHost {
 
     func dispatchReactorBatch(
         _ batch: LinuxReactorBatch,
+        preparedDisplayRead: WaylandPreparedRead,
         nowNanoseconds: UInt64
     ) -> ShellReactorBatchOutcome {
         var outcome = ShellReactorBatchOutcome()
+        var displayReturnedEvents: Int16 = 0
+        for event in batch.events where
+            event.token >> Self.reactorKindShift == ReactorKind.display.rawValue
+        {
+            displayReturnedEvents |= event.failureCode == nil
+                ? event.returnedEvents
+                : Int16(POLLERR)
+        }
+        let displayResult = ShellPollResult(revents: displayReturnedEvents)
+
+        let displayDispatch = preparedDisplayRead.complete(
+            readable: displayResult.isReadable)
+        if displayDispatch < 0 {
+            writeErr("nucleus-shell: Wayland dispatch failed")
+            outcome.shouldStop = true
+        } else if displayDispatch > 0 || displayResult.isReadable {
+            outcome.hadHostEvent = true
+            requestRender(nativeSceneChanged: true)
+        }
+        if displayResult.isTerminal {
+            writeErr("nucleus-shell: Wayland compositor disconnected")
+            outcome.shouldStop = true
+        } else if displayResult.isWritable {
+            outcome.hadHostEvent = true
+        }
+
         for event in batch.events {
             guard let kind = ReactorKind(
                 rawValue: event.token >> Self.reactorKindShift)
@@ -130,26 +158,7 @@ extension ShellHost {
                     : Int16(POLLERR))
             switch kind {
             case .display:
-                if result.isTerminal {
-                    writeErr("nucleus-shell: Wayland compositor disconnected")
-                    outcome.shouldStop = true
-                } else {
-                    if result.isReadable {
-                        // Multishot poll may return more than one readable CQE
-                        // for a readiness transition. Never enter libwayland's
-                        // blocking dispatch path from one of those snapshots:
-                        // an earlier CQE in this batch may already have drained
-                        // the socket.
-                        if client.pumpNonBlocking() < 0 {
-                            writeErr("nucleus-shell: Wayland dispatch failed")
-                            outcome.shouldStop = true
-                        } else {
-                            outcome.hadHostEvent = true
-                            requestRender(nativeSceneChanged: true)
-                        }
-                    }
-                    if result.isWritable { outcome.hadHostEvent = true }
-                }
+                continue
             case .exitSignal:
                 if result.isTerminal || result.isReadable {
                     _ = nucleus_shell_consume_exit_signal(exitSignalFD)

@@ -15,6 +15,12 @@ let package = Package(
         .library(
             name: "NucleusLinuxAccessibility",
             targets: ["NucleusLinuxAccessibility"]),
+        .library(
+            name: "NucleusLinuxSession",
+            targets: ["NucleusLinuxSession"]),
+        .executable(
+            name: "NucleusSessionSupervisor",
+            targets: ["NucleusSessionSupervisor"]),
         .executable(
             name: "NucleusLinuxBenchmarks",
             targets: ["NucleusLinuxBenchmarks"]),
@@ -81,6 +87,21 @@ let package = Package(
             ],
             path: "Sources/NucleusLinuxEnvironment",
             swiftSettings: [.interoperabilityMode(.Cxx)]),
+        .target(
+            name: "NucleusLinuxSession",
+            path: "Sources/NucleusLinuxSession"),
+        .target(
+            name: "NucleusLinuxSessionC",
+            path: "Sources/NucleusLinuxSessionC",
+            publicHeadersPath: "include"),
+        .executableTarget(
+            name: "NucleusSessionSupervisor",
+            dependencies: ["NucleusLinuxSession", "NucleusLinuxSessionC"],
+            path: "Sources/NucleusSessionSupervisor"),
+        .executableTarget(
+            name: "NucleusSessionFixture",
+            dependencies: ["NucleusLinuxSession"],
+            path: "Tests/Fixtures/NucleusSessionFixture"),
         .executableTarget(
             name: "NucleusLinuxBenchmarks",
             dependencies: [
@@ -128,6 +149,14 @@ let package = Package(
             ],
             path: "Tests/NucleusLinuxEnvironmentTests",
             swiftSettings: [.interoperabilityMode(.Cxx)]),
+        .testTarget(
+            name: "NucleusLinuxSessionTests",
+            dependencies: [
+                "NucleusLinuxSession",
+                "NucleusSessionSupervisor",
+                "NucleusSessionFixture",
+            ],
+            path: "Tests/NucleusLinuxSessionTests"),
     ]
 )
 

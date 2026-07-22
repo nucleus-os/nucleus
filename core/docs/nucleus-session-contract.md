@@ -96,9 +96,22 @@ The compositor owns:
   `nucleus-<id>` directory and matches `NUCLEUS_SESSION_RUNTIME_DIR` /
   `NUCLEUS_SESSION_ID` when those variables are present
 
-The compositor must not grow new launcher/session-manager policy. Temporary
-compatibility code in `src/compositor/session_isolation.zig` is migration debt
-until the launcher/unit path is the only production entrypoint.
+The compositor does not own launcher/session-manager policy. The installed
+launcher and native supervisor are the production session entrypoint.
+
+Runtime policy is a versioned `SessionConfiguration` created by
+`tools/nucleus run`, forwarded through `nucleus-session`, and inherited by both
+native children from a supervisor-owned descriptor. Scale, present policy, DRM
+selection, Vulkan validation, diagnostics, and wallpaper selection are members
+of that one record. The environment remains responsible only for standard
+process/session coordinates such as XDG paths, D-Bus, Wayland, PipeWire, and
+sanitizer runtime variables.
+
+The native supervisor publishes typed readiness. Compositor readiness follows
+the first physical KMS presentation; shell readiness follows a GPU-resident
+wallpaper and accepted wallpaper/bar presentation on every live output. Startup
+is bounded, and either required sibling exiting terminates the other process
+group.
 
 ## Modes
 

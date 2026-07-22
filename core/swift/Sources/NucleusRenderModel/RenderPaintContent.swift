@@ -196,18 +196,27 @@ public struct PaintDrawCommand: Equatable, Sendable {
 /// The renderer reads `commands(_:)` at frame time. Mirrors `PaintContentStore`.
 public final class PaintContentStore: Sendable {
     public struct Content: Sendable {
-        public var commands: [PaintDrawCommand]
+        public let commands: [PaintDrawCommand]
+        /// Unique image resources referenced by this immutable command list.
+        /// The renderer consumes this directly instead of rescanning commands
+        /// every frame to infer cache dependencies.
+        public let imageDependencies: [UInt64]
         /// Variable-length data the commands index into via
         /// `payloadOffset`/`payloadLength`. Opaque to this store.
-        public var payload: [UInt8]
-        public var width: Float
-        public var height: Float
+        public let payload: [UInt8]
+        public let width: Float
+        public let height: Float
 
         public init(
             commands: [PaintDrawCommand], payload: [UInt8] = [],
             width: Float, height: Float
         ) {
             self.commands = commands
+            self.imageDependencies = Array(Set(commands.compactMap {
+                $0.kind == .image && $0.imageHandle != 0
+                    ? $0.imageHandle
+                    : nil
+            })).sorted()
             self.payload = payload
             self.width = width
             self.height = height

@@ -37,7 +37,7 @@ struct DataControlClientServerTests {
             client = try #require(ShellWaylandClient(
                 connectedFileDescriptor: sockets[1]))
             for _ in 0..<16 {
-                _ = client.pumpNonBlocking()
+                _ = pumpWaylandFixtureClient(client)
                 runtime.dispatchClientsNonBlocking()
             }
             seat = try #require(ShellSeat(client: client))
@@ -259,11 +259,11 @@ struct DataControlClientServerTests {
     ) {
         for _ in 0..<cycles {
             for peer in peers {
-                _ = peer.client.pumpNonBlocking()
+                _ = pumpWaylandFixtureClient(peer.client)
             }
             runtime.dispatchClientsNonBlocking()
             for peer in peers {
-                _ = peer.client.pumpNonBlocking()
+                _ = pumpWaylandFixtureClient(peer.client)
             }
         }
     }

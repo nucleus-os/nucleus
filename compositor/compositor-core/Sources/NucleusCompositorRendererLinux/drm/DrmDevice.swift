@@ -14,6 +14,26 @@ import Foundation
 
 // MARK: - Noncopyable resource owners
 
+/// Shared validity token for every object borrowing the compositor's primary
+/// DRM descriptor. The session remains the descriptor owner; this token prevents
+/// resource destructors from issuing ioctls after that owner has revoked it.
+final class DrmDeviceLifetime {
+    let fileDescriptor: Int32
+    private(set) var isRevoked = false
+
+    init(fileDescriptor: Int32) {
+        self.fileDescriptor = fileDescriptor
+    }
+
+    var availableFileDescriptor: Int32? {
+        isRevoked ? nil : fileDescriptor
+    }
+
+    func revoke() {
+        isRevoked = true
+    }
+}
+
 /// Owns a DRM device file descriptor and closes it on destruction. Noncopyable:
 /// exactly one owner, no implicit duplication of the fd. `release()` hands the
 /// raw fd to another owner (the seat, or the Swift DRM backend)
@@ -239,7 +259,7 @@ private func logDrmDiscover(_ message: String) {
 
 /// Discover the DRM device for compositor bring-up: enumerate PCI GPUs via libdrm
 /// (`drmGetDevices2` through `NucleusCompositorDrmC`), apply the Nucleus selection policy
-/// (`NUCLEUS_DRM_PATH` override, then connected-output/boot-VGA policy), require a
+/// (typed preferred render path, then connected-output/boot-VGA policy), require a
 /// primary node, and return both device-node paths. Discovery does not open the
 /// render node: DMA-BUF feedback needs only its `dev_t`, which the composition
 /// root obtains with `stat(2)`.
@@ -247,18 +267,21 @@ public func nucleus_drm_discover(
     _ primaryPathOut: UnsafeMutablePointer<CChar>,
     _ primaryPathCap: Int,
     _ renderPathOut: UnsafeMutablePointer<CChar>,
-    _ renderPathCap: Int
+    _ renderPathCap: Int,
+    preferredRenderPath: String? = nil
 ) -> Bool {
     if primaryPathCap > 0 { primaryPathOut.pointee = 0 }
     if renderPathCap > 0 { renderPathOut.pointee = 0 }
 
-    let override = getenv("NUCLEUS_DRM_PATH").map { String(cString: $0) }
     guard case .success(let candidates) = DrmDeviceEnumerator.enumerate() else {
         logDrmDiscover("DRM enumeration failed")
         return false
     }
     let selected: DrmDeviceCandidate
-    switch selectDrmDevice(from: candidates, overrideRenderPath: override) {
+    switch selectDrmDevice(
+        from: candidates,
+        overrideRenderPath: preferredRenderPath)
+    {
     case .success(let candidate):
         selected = candidate
     case .failure(let error):

@@ -120,6 +120,8 @@ func logScanout(_ message: String) {
 extension RendererRuntime {
     public static func create(
         drmDeviceFd: Int32,
+        enableValidation: Bool,
+        presentPolicy: RendererPresentPolicy,
         store: RetainedTreeStore,
         resourceHost: SwiftResourceHost,
         asyncRenderWakeSink: any AsyncRenderWakeSink
@@ -134,19 +136,15 @@ extension RendererRuntime {
         let targetMinor = Int64(
             (deviceID & 0xff)
                 | ((deviceID >> 12) & ~0xff))
-        let validationEnabled =
-            getenv("NUCLEUS_VK_VALIDATE").map {
-                String(cString: $0) == "1"
-            } ?? false
         logRendererDrm(
             "selecting Vulkan device matching DRM primary \(targetMajor):\(targetMinor) " +
-            "validation=\(validationEnabled)")
+            "validation=\(enableValidation)")
         guard let bootstrap = VulkanBootstrap.create(
             applicationName: "Nucleus Compositor",
-            enableValidation: validationEnabled)
+            enableValidation: enableValidation)
         else {
             logRendererDrm(
-                "Vulkan instance bootstrap failed validation=\(validationEnabled)")
+                "Vulkan instance bootstrap failed validation=\(enableValidation)")
             return nil
         }
         guard let core = RenderCore.create(
@@ -208,11 +206,14 @@ extension RendererRuntime {
         logRendererDrm(
             "Vulkan and GBM initialized on selected DRM device " +
             "kernel_timestamp_monotonic=\(caps.timestampMonotonic)")
+        let drmDevice = DrmDeviceLifetime(
+            fileDescriptor: drmDeviceFd)
         return RendererRuntime(
             core: core,
             gbm: consume gbm,
             gbmHandle: gbmHandle,
-            drmDeviceFd: drmDeviceFd,
-            drmCaps: caps)
+            drmDevice: drmDevice,
+            drmCaps: caps,
+            presentPolicy: presentPolicy)
     }
 }

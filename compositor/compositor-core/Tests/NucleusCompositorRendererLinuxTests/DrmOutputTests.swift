@@ -21,7 +21,8 @@ import Glibc
 
     static func makeOutput(vrrCapable: Bool = false) -> DrmOutput {
         DrmOutput(
-            deviceFd: -1, connectorId: 100, crtcId: 200, planeId: 300,
+            device: DrmDeviceLifetime(fileDescriptor: -1),
+            connectorId: 100, crtcId: 200, planeId: 300,
             modeBlobId: 0xabc, width: 1920, height: 1080, props: syntheticProps(),
             vrrCapable: vrrCapable)
     }
@@ -34,8 +35,13 @@ import Glibc
             Issue.record("builder-alloc")
             return
         }
-        let assembled = output.assembleScanoutCommit(
-            into: &builder, fbId: 0xfb, requestedVrr: false, inFenceFd: 42)
+        let assembled = output.addAtomicState(
+            .active(DrmAtomicOutputState.Active(
+                framebufferID: 0xfb,
+                inFenceFD: 42,
+                vrrEnabled: false,
+                cursor: nil)),
+            into: &builder)
         #expect(assembled, "assemble-ok")
 
         func value(_ label: String) -> UInt64? { builder.entries.first { $0.label == label }?.value }
@@ -63,11 +69,17 @@ import Glibc
         var props = Self.syntheticProps()
         props.planeInFenceFd = 0
         let output = DrmOutput(
-            deviceFd: -1, connectorId: 100, crtcId: 200, planeId: 300,
+            device: DrmDeviceLifetime(fileDescriptor: -1),
+            connectorId: 100, crtcId: 200, planeId: 300,
             modeBlobId: 1, width: 640, height: 480, props: props)
         var builder = AtomicRequestBuilder()!
-        #expect(output.assembleScanoutCommit(
-            into: &builder, fbId: 1, requestedVrr: false, inFenceFd: 42))
+        #expect(output.addAtomicState(
+            .active(DrmAtomicOutputState.Active(
+                framebufferID: 1,
+                inFenceFD: 42,
+                vrrEnabled: false,
+                cursor: nil)),
+            into: &builder))
         #expect(!output.supportsInFence)
         #expect(!builder.entries.contains { $0.label == "plane.IN_FENCE_FD" })
     }
@@ -76,7 +88,12 @@ import Glibc
         // VRR-capable output adds VRR_ENABLED and the toggle forces a modeset.
         let vrrOut = Self.makeOutput(vrrCapable: true)
         var vb = AtomicRequestBuilder()!
-        vrrOut.assembleScanoutCommit(into: &vb, fbId: 1, requestedVrr: true)
+        vrrOut.addAtomicState(
+            .active(DrmAtomicOutputState.Active(
+                framebufferID: 1,
+                vrrEnabled: true,
+                cursor: nil)),
+            into: &vb)
         #expect(vb.entries.contains { $0.label == "crtc.VRR_ENABLED" && $0.value == 1 }, "assemble-vrr-enabled")
         #expect(vrrOut.requestedVrr(directScanoutEligible: true), "vrr-requested-when-eligible")
         #expect(!vrrOut.requestedVrr(directScanoutEligible: false), "vrr-not-requested-otherwise")
@@ -93,10 +110,35 @@ import Glibc
         // hasRequired gating: drop a required plane prop → assembly refuses.
         var incomplete = Self.syntheticProps(); incomplete.planeFbId = 0
         let badOutput = DrmOutput(
-            deviceFd: -1, connectorId: 1, crtcId: 2, planeId: 3, modeBlobId: 0,
+            device: DrmDeviceLifetime(fileDescriptor: -1),
+            connectorId: 1, crtcId: 2, planeId: 3, modeBlobId: 0,
             width: 100, height: 100, props: incomplete)
         var bb = AtomicRequestBuilder()!
-        #expect(!badOutput.assembleScanoutCommit(into: &bb, fbId: 1, requestedVrr: false), "assemble-refuses-incomplete")
+        #expect(!badOutput.addAtomicState(
+            .active(DrmAtomicOutputState.Active(
+                framebufferID: 1,
+                vrrEnabled: false,
+                cursor: nil)),
+            into: &bb), "assemble-refuses-incomplete")
+    }
+
+    @Test func disabledStateIsComplete() {
+        let output = Self.makeOutput()
+        var builder = AtomicRequestBuilder()!
+        #expect(output.addAtomicState(.disabled, into: &builder))
+
+        func value(_ label: String) -> UInt64? {
+            builder.entries.first { $0.label == label }?.value
+        }
+        #expect(value("connector.CRTC_ID") == 0)
+        #expect(value("crtc.ACTIVE") == 0)
+        #expect(value("crtc.MODE_ID") == 0)
+        #expect(value("plane.FB_ID") == 0)
+        #expect(value("plane.CRTC_ID") == 0)
+        #expect(value("crtc.VRR_ENABLED") == 0)
+        #expect(value("crtc.GAMMA_LUT") == 0)
+        #expect(value("crtc.DEGAMMA_LUT") == 0)
+        #expect(value("crtc.CTM") == 0)
     }
 
     @Test func retirementWaitsForFlipAndRetriesKernelBusyWithoutReleasingOwner() {

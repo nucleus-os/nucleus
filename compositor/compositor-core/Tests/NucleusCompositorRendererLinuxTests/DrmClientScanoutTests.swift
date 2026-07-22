@@ -14,8 +14,9 @@ import NucleusRenderer  // DmaBufPlane
         let otherEnd = fds[1]
         defer { close(clientFd); close(otherEnd) }
 
+        let device = DrmDeviceLifetime(fileDescriptor: -1)
         let buffer = ClientScanoutBuffer.retain(
-            deviceFd: -1, gemTable: GemHandleTable(deviceFd: -1),
+            device: device, gemTable: GemHandleTable(device: device),
             fd: clientFd, width: 1920, height: 1080,
             format: drmFormatXRGB8888, modifier: drmFormatModInvalid,
             planes: [DmaBufPlane(fd: -1, offset: 0, rowPitch: 1920 * 4)])
@@ -40,8 +41,9 @@ import NucleusRenderer  // DmaBufPlane
 
         // Two planes sharing the descriptor's primary fd (fd == -1 → primary). Retain
         // must succeed and, on destroy, leave the client's fd open.
+        let device = DrmDeviceLifetime(fileDescriptor: -1)
         let buffer = ClientScanoutBuffer.retain(
-            deviceFd: -1, gemTable: GemHandleTable(deviceFd: -1),
+            device: device, gemTable: GemHandleTable(device: device),
             fd: clientFd, width: 64, height: 64,
             format: drmFormatXRGB8888, modifier: 0,
             planes: [
@@ -58,8 +60,9 @@ import NucleusRenderer  // DmaBufPlane
         #expect(pipe(&fds) == 0)
         defer { close(fds[0]); close(fds[1]) }
         let ownedFence = dup(fds[0])
+        let device = DrmDeviceLifetime(fileDescriptor: -1)
         let buffer = ClientScanoutBuffer.retain(
-            deviceFd: -1, gemTable: GemHandleTable(deviceFd: -1),
+            device: device, gemTable: GemHandleTable(device: device),
             fd: fds[0], width: 16, height: 16,
             format: drmFormatXRGB8888, modifier: drmFormatModInvalid,
             planes: [DmaBufPlane(fd: -1, offset: 0, rowPitch: 64)],

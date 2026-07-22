@@ -148,10 +148,30 @@ class Recorder;
 class Recording;
 class Surface;
 class Canvas;
+class RasterImage;
 class Image;
 class UploadTexture;
 
-/// A GPU-backed image snapshot. Holds a graphite-backed SkImage privately.
+/// An immutable CPU-decoded image. It cannot be passed to a canvas; callers
+/// must explicitly cross a recorder upload boundary to obtain an `Image`.
+class RasterImage {
+public:
+    struct Impl;
+    explicit RasterImage(std::shared_ptr<Impl> impl);
+    bool isValid() const;
+    int32_t width() const;
+    int32_t height() const;
+    bool readPixelsRGBA(uint8_t *dst, size_t byteLength, int32_t rowBytes) const;
+
+    // Internal: Recorder::makeTextureImage reads the held raster SkImage.
+    Impl *raw() const;
+
+private:
+    std::shared_ptr<Impl> impl_;
+};
+
+/// A canvas-sampleable image. Graphite render paths only receive this type;
+/// decoded CPU pixels use `RasterImage` until a recorder uploads them.
 class Image {
 public:
     struct Impl;
@@ -159,11 +179,6 @@ public:
     bool isValid() const;
     int32_t width() const;
     int32_t height() const;
-
-    /// Read the image's pixels into `dst` as tightly-packed (or `rowBytes`-strided)
-    /// RGBA8888 premultiplied. Synchronous; valid for raster images. Returns false on
-    /// a size mismatch or an unreadable GPU-only image.
-    bool readPixelsRGBA(uint8_t *dst, size_t byteLength, int32_t rowBytes) const;
 
     // Internal: the canvas draw path reads the held SkImage.
     Impl *raw() const;
@@ -378,7 +393,8 @@ private:
 
 /// Make a raster RGBA8888 image from CPU pixels (tightly packed, premultiplied).
 /// Returned invalid on a size/argument error.
-Image makeRasterImageRGBA(int32_t width, int32_t height, const uint8_t *pixels, size_t byteLength);
+RasterImage makeRasterImageRGBA(
+    int32_t width, int32_t height, const uint8_t *pixels, size_t byteLength);
 
 /// Decode an encoded image file into an SkImage, at most `maxWidth` x
 /// `maxHeight`. Returned invalid on missing, unreadable, or unsupported files.
@@ -390,12 +406,13 @@ Image makeRasterImageRGBA(int32_t width, int32_t height, const uint8_t *pixels, 
 ///
 /// Aspect ratio is preserved — the bound is a box the result fits inside, not
 /// the result's size.
-Image makeEncodedImageFromFile(const char *path, int32_t maxWidth, int32_t maxHeight);
+RasterImage makeEncodedImageFromFile(
+    const char *path, int32_t maxWidth, int32_t maxHeight);
 
 /// Decode encoded image bytes already in memory — a `data:` URI, or any blob
 /// with no path to point at. Same formats, same bounds behaviour, same SVG
 /// detection as the file entry point.
-Image makeEncodedImageFromMemory(
+RasterImage makeEncodedImageFromMemory(
     const uint8_t *bytes, size_t byteLength, int32_t maxWidth, int32_t maxHeight);
 
 /// A borrowed Vulkan image to wrap as a Graphite-sampleable `Image` (an imported
@@ -481,7 +498,7 @@ public:
     /// Copy a CPU/lazy image into a Graphite-backed texture owned by this
     /// recorder. The upload is ordered before later draws in the same recording.
     /// Returned invalid when `image` is invalid or the texture cannot be made.
-    Image makeTextureImage(const Image &image) const;
+    Image makeTextureImage(const RasterImage &image) const;
     /// Allocate a non-renderable sampled RGBA8 texture. `updateRGBA` records its
     /// transfer into this recorder; callers must snap and submit before sampling.
     UploadTexture makeUploadTextureRGBA(int32_t width, int32_t height) const;

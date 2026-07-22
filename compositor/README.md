@@ -119,9 +119,9 @@ protocols (`wlr-layer-shell`, `wlr-foreign-toplevel-management`,
 `ext-session-lock`, `wlr-screencopy`). Any layer-shell client can connect.
 
 On multi-GPU hosts, startup selects the unique GPU driving a connected display,
-then uses the PCI boot-VGA hint as a tie-breaker. Set
-`NUCLEUS_DRM_PATH=/dev/dri/renderD…` only when multiple display GPUs remain
-genuinely ambiguous or an explicit device is required.
+then uses the PCI boot-VGA hint as a tie-breaker. Use
+`tools/nucleus run --drm-device /dev/dri/renderD…` only when multiple display
+GPUs remain genuinely ambiguous or an explicit device is required.
 
 ## Profile
 
@@ -136,8 +136,8 @@ desktop session that already owns the seat.
 The first Tracy run builds the capture and CSV tools from the exact revision
 recorded by the resolved `swift-tracy` package. Captures and summaries are
 written under `profiles/` by default.
-Captures wait for the compositor's Wayland-ready milestone and fail
-when bring-up stalls, the compositor exits unsuccessfully, or a Tracy-enabled
+Captures wait for the native compositor-and-shell readiness protocol and fail
+when bring-up stalls, either required process exits, or a Tracy-enabled
 run contains no events or plots. The retained profile directory contains the
 receiver log and a `nucleus_drm.log` symlink to the unified run log for
 diagnosis. Every invocation writes the build and complete compositor/shell

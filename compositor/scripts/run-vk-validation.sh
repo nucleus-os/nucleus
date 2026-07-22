@@ -20,15 +20,14 @@
 #   4. grep -E 'VUID|SYNC-HAZARD|Validation Error' nucleus.log | head -50
 #
 # Install the distro Vulkan validation-layer package. This script discovers its
-# standard manifest directory and enables validation via a private
-# NUCLEUS_VK_VALIDATE flag that the compositor reads at instance-create
-# time; the layer is appended to the instance's pp_enabled_layer_names
+# standard manifest directory and enables validation through the typed session
+# configuration; the layer is appended to the instance's pp_enabled_layer_names
 # directly, not via VK_INSTANCE_LAYERS. That distinction matters
 # because VK_INSTANCE_LAYERS is read by the Vulkan loader in *every*
 # child process the compositor spawns (Chrome, kitty, anything Vulkan-
 # using), causing them to also attach validation and emit unrelated
-# VUIDs into our log. NUCLEUS_VK_VALIDATE means nothing to the loader,
-# so child inheritance is harmless.
+# VUIDs into our log. The typed configuration is delivered over private inherited
+# descriptors and means nothing to the loader, so child inheritance is harmless.
 
 set -euo pipefail
 
@@ -75,15 +74,5 @@ if [[ "${1:-}" == "--check" ]]; then
     exit 0
 fi
 
-compositor_bin="${NUCLEUS_COMPOSITOR_BIN:-compositor/.build/out/Products/Debug-linux-x86_64/NucleusCompositor}"
-
-if [[ ! -x "$compositor_bin" ]]; then
-    echo "error: $compositor_bin not built — run 'tools/nucleus build' first" >&2
-    exit 1
-fi
-
-# `1>&2` merges the compositor + validation layer stdout into stderr
-# so a single `2>` redirect by the caller captures both.
-exec env \
-    NUCLEUS_VK_VALIDATE=1 \
-    "$compositor_bin" "$@" 1>&2
+workspace_root="$(cd "$repo_root/.." && pwd)"
+exec "$workspace_root/tools/nucleus" run --vk-validation -- "$@"

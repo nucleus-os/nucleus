@@ -4,8 +4,8 @@ import Vulkan
 import NucleusSkiaGraphiteBridge
 @testable import NucleusRenderer
 
-// allocator + atlas + texture registry (handle/refcount/content-revision/SHM
-// upload), all hardware-independent via raster images; plus a best-effort check
+// allocator + atlas + texture registry (handle/refcount/content-revision), all
+// hardware-independent via raster-surface snapshots; plus a best-effort check
 // that the façade backend-texture wrap fails closed on a null descriptor (the GPU
 // stages assert nothing hardware-conditional).
 @Suite struct TextureRegistryTests {
@@ -45,16 +45,16 @@ import NucleusSkiaGraphiteBridge
     }
 
     @Test func textureRegistry() {
-        // TextureRegistry: handles, content-revision, refcount, SHM upload.
+        // TextureRegistry: handles, content-revision, and refcount.
         let registry = TextureRegistry()
         #expect(registry.count == 0, "registry-empty")
-        let pixels: [UInt8] = [
-            255, 0, 0, 255, 0, 255, 0, 255,
-            0, 0, 255, 255, 255, 255, 255, 255,
-        ]
-        guard let h1 = registry.uploadShm(pixels: pixels, width: 2, height: 2, contentRevision: 1) else {
-            #expect(Bool(false), "registry-upload"); return
-        }
+        let surface = nucleus.skia.makeRasterSurface(2, 2)
+        let image = surface.snapshotImage()
+        #expect(image.isValid())
+        let h1 = registry.allocHandle()
+        registry.register(
+            handle: h1, image: image,
+            width: 2, height: 2, contentRevision: 1)
         #expect(h1 != 0, "registry-handle-nonzero")
         #expect(registry.count == 1, "registry-count-after-upload")
         // resolve() returns the C++ nucleus.skia.Image (unreachable via cross-module
@@ -76,10 +76,16 @@ import NucleusSkiaGraphiteBridge
         #expect(registry.count == 0, "registry-count-after-evict")
         #expect(!registry.release(h1), "registry-release-unknown")
 
-        // Handles are distinct + non-zero across uploads.
-        let h2 = registry.uploadShm(pixels: pixels, width: 2, height: 2, contentRevision: 1)
-        let h3 = registry.uploadShm(pixels: pixels, width: 2, height: 2, contentRevision: 1)
-        #expect(h2 != nil && h3 != nil && h2 != h3, "registry-distinct-handles")
+        // Handles are distinct + non-zero across registrations.
+        let h2 = registry.allocHandle()
+        let h3 = registry.allocHandle()
+        registry.register(
+            handle: h2, image: image,
+            width: 2, height: 2, contentRevision: 1)
+        registry.register(
+            handle: h3, image: image,
+            width: 2, height: 2, contentRevision: 1)
+        #expect(h2 != 0 && h3 != 0 && h2 != h3, "registry-distinct-handles")
     }
 
     // Best-effort: exercise the façade backend-texture wrap on a real Graphite

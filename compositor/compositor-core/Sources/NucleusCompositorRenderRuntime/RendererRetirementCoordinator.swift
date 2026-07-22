@@ -5,6 +5,11 @@ import NucleusCompositorRendererLinux
 /// renderer; this value only makes retry/deadline decisions explicit and
 /// deterministic.
 public struct RendererRetirementCoordinator: Sendable {
+    public enum ShutdownDisposition: Sendable, Equatable {
+        case outputsDisabled
+        case drmDeviceCloseRequired
+    }
+
     public enum Phase: Sendable, Equatable {
         case active
         case pausing(retryAtNanoseconds: UInt64)
@@ -12,7 +17,7 @@ public struct RendererRetirementCoordinator: Sendable {
         case shuttingDown(
             deadlineNanoseconds: UInt64,
             retryAtNanoseconds: UInt64)
-        case finished(preservingRenderer: Bool)
+        case finished(ShutdownDisposition)
     }
 
     public enum PauseDecision: Sendable, Equatable {
@@ -24,7 +29,7 @@ public struct RendererRetirementCoordinator: Sendable {
         case waiting(
             retryAtNanoseconds: UInt64,
             deadlineNanoseconds: UInt64)
-        case readyToExit(preservingRenderer: Bool)
+        case readyToExit(ShutdownDisposition)
     }
 
     public private(set) var phase: Phase = .active
@@ -94,8 +99,8 @@ public struct RendererRetirementCoordinator: Sendable {
         _ result: RendererRetirementResult,
         nowNanoseconds: UInt64
     ) -> ShutdownDecision {
-        if case .finished(let preservingRenderer) = phase {
-            return .readyToExit(preservingRenderer: preservingRenderer)
+        if case .finished(let disposition) = phase {
+            return .readyToExit(disposition)
         }
         let deadline: UInt64
         if case .shuttingDown(let existingDeadline, _) = phase {
@@ -107,14 +112,14 @@ public struct RendererRetirementCoordinator: Sendable {
 
         switch result {
         case .complete:
-            phase = .finished(preservingRenderer: false)
-            return .readyToExit(preservingRenderer: false)
+            phase = .finished(.outputsDisabled)
+            return .readyToExit(.outputsDisabled)
         case .failed:
-            phase = .finished(preservingRenderer: true)
-            return .readyToExit(preservingRenderer: true)
+            phase = .finished(.drmDeviceCloseRequired)
+            return .readyToExit(.drmDeviceCloseRequired)
         case .draining where nowNanoseconds >= deadline:
-            phase = .finished(preservingRenderer: true)
-            return .readyToExit(preservingRenderer: true)
+            phase = .finished(.drmDeviceCloseRequired)
+            return .readyToExit(.drmDeviceCloseRequired)
         case .draining:
             let retryAt = min(
                 addingClamped(nowNanoseconds, retryDelayNanoseconds),

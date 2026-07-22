@@ -17,6 +17,24 @@ import WaylandClientDispatch
 // SOCK_NONBLOCK: reads never block, so the pump can advance both peers without deadlocking.
 private let sockNonblock: Int32 = 0o4000
 
+@discardableResult
+private func pumpClient(_ client: WaylandConnection) -> Int32 {
+    guard let preparation = client.prepareRead() else { return -1 }
+    let flushResult = client.flush()
+    if flushResult < 0, errno != EAGAIN {
+        preparation.read.cancel()
+        return -1
+    }
+    var descriptor = pollfd(
+        fd: client.fd,
+        events: Int16(POLLIN),
+        revents: 0)
+    let pollResult = poll(&descriptor, 1, 0)
+    let readable = pollResult > 0
+        && descriptor.revents & Int16(POLLIN) != 0
+    return preparation.read.complete(readable: readable)
+}
+
 // The values the server's bind callback sends; the client must decode exactly these.
 private enum Sent {
     static let modeWidth: Int32 = 1920, modeHeight: Int32 = 1080, refresh: Int32 = 60000
@@ -92,7 +110,7 @@ private final class OutputReceiver: WlOutputEvents {
 
         // ── Pump both peers until the output burst has arrived (or give up). ──
         for _ in 0..<50 {
-            client.pumpNonBlocking()          // flush client requests, read+dispatch client events
+            pumpClient(client)                // flush client requests, read+dispatch client events
             server.dispatch()                 // process client requests (get_registry, bind)
             server.flushClients()             // push server events to the socket
             if receiver.doneCount > 0 { break }

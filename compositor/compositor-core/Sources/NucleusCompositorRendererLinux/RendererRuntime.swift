@@ -41,8 +41,10 @@ public final class RendererRuntime: PresentationBackend {
 
     /// The DRM master fd handed across `@c` at bring-up. Borrowed — the seat /
     /// device owner keeps the close obligation; the backend never closes it.
-    let drmDeviceFd: Int32
+    let drmDevice: DrmDeviceLifetime
+    var drmDeviceFd: Int32 { drmDevice.fileDescriptor }
     let drmCaps: DrmCaps
+    let presentPolicy: RendererPresentPolicy
     let presentationClock: DrmPresentationClock
     public var presentationClockID: UInt32 {
         DrmPresentationClock.clockID
@@ -168,16 +170,18 @@ public final class RendererRuntime: PresentationBackend {
         core: RenderCore,
         gbm: consuming GbmDevice,
         gbmHandle: OpaquePointer,
-        drmDeviceFd: Int32,
-        drmCaps: DrmCaps
+        drmDevice: DrmDeviceLifetime,
+        drmCaps: DrmCaps,
+        presentPolicy: RendererPresentPolicy
     ) {
         self.core = core
         self.gbmHandle = gbmHandle
-        self.drmDeviceFd = drmDeviceFd
+        self.drmDevice = drmDevice
         self.drmCaps = drmCaps
+        self.presentPolicy = presentPolicy
         self.presentationClock = DrmPresentationClock(
             kernelUsesMonotonic: drmCaps.timestampMonotonic)
-        self.gemHandleTable = GemHandleTable(deviceFd: drmDeviceFd)
+        self.gemHandleTable = GemHandleTable(device: drmDevice)
         self.gbmBox = consume gbm
         // The core fires this when a client surface's previous backing is dropped
         // (shm upload over a dmabuf, or surface release) so the buffer's release
@@ -267,32 +271,44 @@ public final class RendererRuntime: PresentationBackend {
 
     // MARK: - Teardown
 
-    /// Tear down in GPU-lifetime order: the core drops its render resources
-    /// (accumulators + registry + imported client images) → every binding's scanout
-    /// ring (images + BOs + KMS fbs) → the core drops Graphite and then the device.
-    /// Returns `false` when kernel presentation has not retired. In that case the
-    /// caller must keep this runtime alive until process exit: destroying Vulkan,
-    /// GBM, or KMS resources which the kernel may still reference is unsafe, but
-    /// returning promptly is required so the compositor can release its DRM
-    /// session and seat.
-    public func shutdown() -> Bool {
+    /// Tear down after a successful transactional output retirement. The reactor
+    /// must have driven `prepareShutdown()` to `.complete`, so no kernel scanout
+    /// owner may remain here.
+    public func shutdown() {
         logRendererDrm("shutdown: validating kernel scanout retirement")
-        guard !bindings.values.contains(where: { $0.drm.active }) else {
-            logRendererDrm(
-                "shutdown: kernel scanout did not retire; abandoning GPU/KMS resources so the DRM session can close"
-            )
-            return false
-        }
+        precondition(
+            !bindings.values.contains(where: { $0.drm.active }),
+            "active KMS scanout requires device revocation before renderer teardown")
         // Queue-idle is the final device-lifetime barrier. Normal operation retires
         // unpresented submission semaphores by completion serial without blocking.
         core.waitForGpuIdle()
         unpresentedRenderSyncs.removeAll()
-        guard retireOutputs(Set(bindings.keys)) == .complete else {
-            logRendererDrm(
-                "shutdown: scanout disable failed; preserving GPU/KMS resources")
-            return false
-        }
+        precondition(retireOutputs(Set(bindings.keys)) == .complete)
         logRendererDrm("shutdown: scanout disabled")
+        finishResourceShutdown()
+    }
+
+    /// Tear down after the session owner has revoked the primary DRM device.
+    /// Device close is the terminal kernel lifetime barrier when an atomic
+    /// disable cannot complete; it replaces the old process-lifetime leak.
+    public func shutdownAfterDrmDeviceLoss() {
+        precondition(drmDevice.isRevoked)
+        logRendererDrm("shutdown: DRM device revoked; releasing renderer resources")
+        core.waitForGpuIdle()
+        unpresentedRenderSyncs.removeAll()
+        releaseBindingsAfterDrmDeviceLoss()
+        finishResourceShutdown()
+    }
+
+    /// Stop every renderer-owned DRM object from issuing further ioctls. The
+    /// composition root calls this immediately before returning the fd to
+    /// libseat; object ownership itself remains intact until close has ended the
+    /// kernel's scanout references.
+    public func revokeDrmDevice() {
+        drmDevice.revoke()
+    }
+
+    private func finishResourceShutdown() {
         core.shutdownRenderResources()
         pendingClientAcquireFenceDiagnostics.removeAll()
         primaryPlaneFormats.removeAll()
@@ -309,6 +325,5 @@ public final class RendererRuntime: PresentationBackend {
         gbmBox = nil
         core.teardownDevice()
         logRendererDrm("shutdown: complete")
-        return true
     }
 }

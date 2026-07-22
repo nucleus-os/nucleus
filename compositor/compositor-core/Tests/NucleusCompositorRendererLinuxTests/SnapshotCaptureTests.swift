@@ -58,9 +58,10 @@ import NucleusSkiaGraphiteBridge
                 pixels[i * 4 + 1] = 255  // green
                 pixels[i * 4 + 3] = 255
             }
-            let source = pixels.withUnsafeBufferPointer {
+            let decodedSource = pixels.withUnsafeBufferPointer {
                 nucleus.skia.makeRasterImageRGBA(32, 32, $0.baseAddress, $0.count)
             }
+            let source = recorder.makeTextureImage(decodedSource)
 
             // begin() allocates a render texture of the requested size.
             guard let target = SnapshotCapture.begin(recorder: recorder, width: 16, height: 16) else {

@@ -37,7 +37,11 @@ import NucleusTypes
             layerId: 5, revision: 1, width: 2, height: 3, kind: .paint),
             "raster-height-is-cache-identity")
         #expect(key != ProducerCacheKey(
-            layerId: 5, revision: 1, dependencyRevision: 9,
+            layerId: 5, revision: 1,
+            imageDependencies: PaintImageDependencies(versions: [
+                ImageDependencyVersion(
+                    handle: 9, version: 1, phase: .resident)
+            ]),
             width: 2, height: 2, kind: .paint),
             "resolved-image-generation-is-cache-identity")
         let trafficLightsAtOnePointFive = ProducerCacheKey(
@@ -58,7 +62,11 @@ import NucleusTypes
             replacing: current) == [oldAtOnePointFive, oldAtTwo])
 
         let decoded = ProducerCacheKey(
-            layerId: 5, revision: 2, dependencyRevision: 9,
+            layerId: 5, revision: 2,
+            imageDependencies: PaintImageDependencies(versions: [
+                ImageDependencyVersion(
+                    handle: 9, version: 1, phase: .resident)
+            ]),
             width: 108, height: 42, kind: .paint)
         #expect(TextureProducer.supersededKeys(
             in: [current, decoded], replacing: decoded) == [current])
@@ -139,9 +147,10 @@ import NucleusTypes
                 PaintDrawCommand(kind: .image, x: 2, y: 2, w: 8, h: 8, imageHandle: 77),
                 PaintDrawCommand(kind: .textLayout, x: 1, y: 1, w: 20, h: 10, color: (1, 1, 1, 1), textLayoutHandle: 123),
             ]
-            let paintImage = pixels.withUnsafeBufferPointer {
+            let decodedPaintImage = pixels.withUnsafeBufferPointer {
                 nucleus.skia.makeRasterImageRGBA(2, 2, $0.baseAddress, $0.count)
             }
+            let paintImage = recorder.makeTextureImage(decodedPaintImage)
             let paintHandle = producer.producePaintCommands(
                 recorder: recorder, layerId: 12, revision: 1,
                 commands: paintCommands, payload: linePayload,

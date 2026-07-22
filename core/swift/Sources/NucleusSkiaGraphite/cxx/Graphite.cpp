@@ -271,6 +271,10 @@ struct Canvas::Impl {
     SkCanvas *canvas = nullptr;  // owned by the surface
 };
 
+struct RasterImage::Impl {
+    sk_sp<SkImage> image;
+};
+
 struct Image::Impl {
     sk_sp<SkImage> image;
     // Optional owner for images that wrap a facade-owned backend allocation.
@@ -311,21 +315,29 @@ struct Recording::Impl {
 
 // MARK: - Image
 
+RasterImage::RasterImage(std::shared_ptr<Impl> impl) : impl_(std::move(impl)) {}
+bool RasterImage::isValid() const { return impl_ && impl_->image != nullptr; }
+int32_t RasterImage::width() const { return isValid() ? impl_->image->width() : 0; }
+int32_t RasterImage::height() const { return isValid() ? impl_->image->height() : 0; }
+RasterImage::Impl *RasterImage::raw() const { return impl_.get(); }
+
+bool RasterImage::readPixelsRGBA(
+    uint8_t *dst, size_t byteLength, int32_t rowBytes) const {
+    if (!isValid() || dst == nullptr) return false;
+    SkImageInfo info = SkImageInfo::Make(
+        impl_->image->width(), impl_->image->height(),
+        kRGBA_8888_SkColorType, kPremul_SkAlphaType);
+    const size_t stride =
+        rowBytes > 0 ? static_cast<size_t>(rowBytes) : info.minRowBytes();
+    if (byteLength < stride * static_cast<size_t>(info.height())) return false;
+    return impl_->image->readPixels(nullptr, info, dst, stride, 0, 0);
+}
+
 Image::Image(std::shared_ptr<Impl> impl) : impl_(std::move(impl)) {}
 bool Image::isValid() const { return impl_ && impl_->image != nullptr; }
 int32_t Image::width() const { return isValid() ? impl_->image->width() : 0; }
 int32_t Image::height() const { return isValid() ? impl_->image->height() : 0; }
 Image::Impl *Image::raw() const { return impl_.get(); }
-
-bool Image::readPixelsRGBA(uint8_t *dst, size_t byteLength, int32_t rowBytes) const {
-    if (!isValid() || dst == nullptr) return false;
-    SkImageInfo info = SkImageInfo::Make(
-        impl_->image->width(), impl_->image->height(),
-        kRGBA_8888_SkColorType, kPremul_SkAlphaType);
-    const size_t stride = rowBytes > 0 ? static_cast<size_t>(rowBytes) : info.minRowBytes();
-    if (byteLength < stride * static_cast<size_t>(info.height())) return false;
-    return impl_->image->readPixels(nullptr, info, dst, stride, 0, 0);
-}
 
 // MARK: - UploadTexture
 
@@ -559,14 +571,15 @@ Shader makeRuntimeShaderWithImage(
     return makeRuntimeEffect(sksl).makeShaderWithImage(uniforms, uniformFloatCount, child);
 }
 
-Image makeRasterImageRGBA(int32_t width, int32_t height, const uint8_t *pixels, size_t byteLength) {
-    if (width <= 0 || height <= 0 || pixels == nullptr) return Image(nullptr);
+RasterImage makeRasterImageRGBA(
+    int32_t width, int32_t height, const uint8_t *pixels, size_t byteLength) {
+    if (width <= 0 || height <= 0 || pixels == nullptr) return RasterImage(nullptr);
     SkImageInfo info = SkImageInfo::Make(width, height, kRGBA_8888_SkColorType, kPremul_SkAlphaType);
-    if (byteLength < info.computeMinByteSize()) return Image(nullptr);
+    if (byteLength < info.computeMinByteSize()) return RasterImage(nullptr);
     SkPixmap pixmap(info, pixels, info.minRowBytes());
-    auto impl = std::make_shared<Image::Impl>();
+    auto impl = std::make_shared<RasterImage::Impl>();
     impl->image = SkImages::RasterFromPixmapCopy(pixmap);
-    return Image(std::move(impl));
+    return RasterImage(std::move(impl));
 }
 
 namespace {
@@ -576,6 +589,13 @@ Image wrapImage(sk_sp<SkImage> image) {
     auto impl = std::make_shared<Image::Impl>();
     impl->image = std::move(image);
     return Image(std::move(impl));
+}
+
+RasterImage wrapRasterImage(sk_sp<SkImage> image) {
+    if (!image) return RasterImage(nullptr);
+    auto impl = std::make_shared<RasterImage::Impl>();
+    impl->image = std::move(image);
+    return RasterImage(std::move(impl));
 }
 
 // Decode target: RGBA8888, and explicitly sRGB.
@@ -689,12 +709,13 @@ constexpr int32_t kDefaultSvgRasterSize = 512;
 // This is where decode bounds stop being an optimization and become
 // correctness: rasterizing at the wrong size and rescaling throws away the one
 // advantage a vector has.
-Image rasterizeSvg(const sk_sp<SkData> &data, int32_t maxWidth, int32_t maxHeight) {
+RasterImage rasterizeSvg(
+    const sk_sp<SkData> &data, int32_t maxWidth, int32_t maxHeight) {
     auto stream = SkMemoryStream::Make(data);
     sk_sp<SkSVGDOM> dom = SkSVGDOM::Builder()
                               .setFontManager(svgFontManager())
                               .make(*stream);
-    if (!dom) return Image(nullptr);
+    if (!dom) return RasterImage(nullptr);
 
     // The document's own size, when it states one in absolute units. Relative
     // units ("100%") resolve to zero here, which is the document saying it will
@@ -729,7 +750,7 @@ Image rasterizeSvg(const sk_sp<SkData> &data, int32_t maxWidth, int32_t maxHeigh
     SkImageInfo info = SkImageInfo::Make(pixelWidth, pixelHeight, kRGBA_8888_SkColorType,
                                          kPremul_SkAlphaType, SkColorSpace::MakeSRGB());
     sk_sp<SkSurface> surface = SkSurfaces::Raster(info);
-    if (!surface) return Image(nullptr);
+    if (!surface) return RasterImage(nullptr);
     // Transparent, not opaque: an icon is a shape on whatever is behind it.
     surface->getCanvas()->clear(SK_ColorTRANSPARENT);
 
@@ -748,7 +769,7 @@ Image rasterizeSvg(const sk_sp<SkData> &data, int32_t maxWidth, int32_t maxHeigh
         dom->setContainerSize(SkSize::Make(width, height));
     }
     dom->render(surface->getCanvas());
-    return wrapImage(surface->makeImageSnapshot());
+    return wrapRasterImage(surface->makeImageSnapshot());
 }
 
 }  // namespace
@@ -758,8 +779,9 @@ namespace {
 // The shared body of every encoded decode, whether the bytes came from a file or
 // from memory. A `data:` URI holds exactly what a file holds, so it must decode
 // exactly the same way.
-Image decodeEncodedData(sk_sp<SkData> data, int32_t maxWidth, int32_t maxHeight) {
-    if (!data) return Image(nullptr);
+RasterImage decodeEncodedData(
+    sk_sp<SkData> data, int32_t maxWidth, int32_t maxHeight) {
+    if (!data) return RasterImage(nullptr);
 
     // SVG has its own path: there is nothing to decode, only something to draw,
     // and it must be drawn at the size it will be shown.
@@ -768,14 +790,14 @@ Image decodeEncodedData(sk_sp<SkData> data, int32_t maxWidth, int32_t maxHeight)
     // Unbounded stays deferred: nothing is known about the draw size, so there
     // is nothing to decide and no reason to decode before the first draw.
     if (maxWidth <= 0 || maxHeight <= 0) {
-        return wrapImage(SkImages::DeferredFromEncodedData(std::move(data)));
+        return wrapRasterImage(SkImages::DeferredFromEncodedData(std::move(data)));
     }
 
     std::unique_ptr<SkCodec> codec = SkCodec::MakeFromData(std::move(data));
-    if (!codec) return Image(nullptr);
+    if (!codec) return RasterImage(nullptr);
 
     SkISize full = codec->dimensions();
-    if (full.isEmpty()) return Image(nullptr);
+    if (full.isEmpty()) return RasterImage(nullptr);
     float scale = std::min(static_cast<float>(maxWidth) / static_cast<float>(full.width()),
                            static_cast<float>(maxHeight) / static_cast<float>(full.height()));
 
@@ -783,11 +805,13 @@ Image decodeEncodedData(sk_sp<SkData> data, int32_t maxWidth, int32_t maxHeight)
     if (scale >= 1.0f) {
         SkBitmap bitmap;
         if (!bitmap.tryAllocPixels(decodeInfo(*codec, full.width(), full.height()))) {
-            return Image(nullptr);
+            return RasterImage(nullptr);
         }
-        if (codec->getPixels(bitmap.pixmap()) != SkCodec::kSuccess) return Image(nullptr);
+        if (codec->getPixels(bitmap.pixmap()) != SkCodec::kSuccess) {
+            return RasterImage(nullptr);
+        }
         bitmap.setImmutable();
-        return wrapImage(SkImages::RasterFromBitmap(bitmap));
+        return wrapRasterImage(SkImages::RasterFromBitmap(bitmap));
     }
 
     // Ask the codec what it can decode natively — JPEG scales during the DCT,
@@ -796,36 +820,39 @@ Image decodeEncodedData(sk_sp<SkData> data, int32_t maxWidth, int32_t maxHeight)
     SkISize decoded = codec->getScaledDimensions(scale);
     SkBitmap bitmap;
     if (!bitmap.tryAllocPixels(decodeInfo(*codec, decoded.width(), decoded.height()))) {
-        return Image(nullptr);
+        return RasterImage(nullptr);
     }
-    if (codec->getPixels(bitmap.pixmap()) != SkCodec::kSuccess) return Image(nullptr);
+    if (codec->getPixels(bitmap.pixmap()) != SkCodec::kSuccess) {
+        return RasterImage(nullptr);
+    }
     bitmap.setImmutable();
 
     sk_sp<SkImage> image = SkImages::RasterFromBitmap(bitmap);
-    if (!image) return Image(nullptr);
+    if (!image) return RasterImage(nullptr);
 
     int32_t targetWidth = std::max(1, static_cast<int32_t>(std::lround(full.width() * scale)));
     int32_t targetHeight = std::max(1, static_cast<int32_t>(std::lround(full.height() * scale)));
     if (decoded.width() <= targetWidth && decoded.height() <= targetHeight) {
-        return wrapImage(std::move(image));
+        return wrapRasterImage(std::move(image));
     }
 
     sk_sp<SkImage> resized = linearDownscale(image, targetWidth, targetHeight);
     // A failed resample is a memory failure, not a decode failure — the
     // correctly-decoded oversized image beats showing nothing.
-    return wrapImage(resized ? std::move(resized) : std::move(image));
+    return wrapRasterImage(resized ? std::move(resized) : std::move(image));
 }
 
 }  // namespace
 
-Image makeEncodedImageFromFile(const char *path, int32_t maxWidth, int32_t maxHeight) {
-    if (path == nullptr || path[0] == '\0') return Image(nullptr);
+RasterImage makeEncodedImageFromFile(
+    const char *path, int32_t maxWidth, int32_t maxHeight) {
+    if (path == nullptr || path[0] == '\0') return RasterImage(nullptr);
     return decodeEncodedData(SkData::MakeFromFileName(path), maxWidth, maxHeight);
 }
 
-Image makeEncodedImageFromMemory(
+RasterImage makeEncodedImageFromMemory(
     const uint8_t *bytes, size_t byteLength, int32_t maxWidth, int32_t maxHeight) {
-    if (bytes == nullptr || byteLength == 0) return Image(nullptr);
+    if (bytes == nullptr || byteLength == 0) return RasterImage(nullptr);
     return decodeEncodedData(
         SkData::MakeWithCopy(bytes, byteLength), maxWidth, maxHeight);
 }
@@ -1144,9 +1171,9 @@ Surface Recorder::makeOffscreenSurface(int32_t width, int32_t height) const {
     return Surface(std::move(impl));
 }
 
-Image Recorder::makeTextureImage(const Image &image) const {
+Image Recorder::makeTextureImage(const RasterImage &image) const {
     if (!isValid()) return Image(nullptr);
-    Image::Impl *source = image.raw();
+    RasterImage::Impl *source = image.raw();
     if (source == nullptr || source->image == nullptr) return Image(nullptr);
     return wrapImage(SkImages::TextureFromImage(
         impl_->recorder.get(), source->image.get(), {/*fMipmapped=*/false}));

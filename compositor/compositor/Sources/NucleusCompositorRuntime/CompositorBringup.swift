@@ -35,7 +35,8 @@ extension CompositorRuntime {
             renderPathBuf.withUnsafeMutableBufferPointer { render in
                 nucleus_drm_discover(
                     primary.baseAddress!, primary.count,
-                    render.baseAddress!, render.count)
+                    render.baseAddress!, render.count,
+                    preferredRenderPath: configuration.drmDevicePath)
             }
         }
         guard discovered else {
@@ -103,6 +104,10 @@ extension CompositorRuntime {
         guard renderRuntime.bringUp(
             drmDeviceFd: primaryFd,
             dmabufMainDevice: renderMainDevice,
+            enableValidation: configuration.enableVulkanValidation,
+            presentPolicy: configuration.presentMode == .mailboxLatestWins
+                ? .mailboxLatestWins
+                : .vsync,
             store: retainedStore,
             resourceHost: resourceHost,
             asyncRenderWakeSink: renderWake)
@@ -115,6 +120,10 @@ extension CompositorRuntime {
         }
         guard outputTopology.reconcile() else {
             logRuntime("render runtime: initial output topology discovery failed")
+            return false
+        }
+        guard !server.layout.displays.isEmpty else {
+            logRuntime("render runtime: no physical DRM outputs attached")
             return false
         }
         logRuntime(
@@ -164,6 +173,7 @@ extension CompositorRuntime {
                 self.waylandRuntime.notePresented(
                     outputID, outputGeneration, submissionID,
                     presentationNs, refreshNs, sequence)
+                self.reportCompositorReadyAfterPresentation()
             },
             discarded: { [weak self]
                 outputID, outputGeneration, submissionID in
@@ -225,9 +235,6 @@ extension CompositorRuntime {
         logRuntime("Wayland compositor listening on the libwayland router")
         shellServices.activateEnvironment()
 
-        // ── Shell D-Bus services + desktop shell ──────────────────────────
-        spawnShellClient()
-
         // ── XWayland (lazy spawn) ─────────────────────────────────────────
         if !waylandRuntime.bringUpXwayland() {
             logRuntime("[xwayland] init failed — continuing without X11 support")
@@ -245,16 +252,24 @@ extension CompositorRuntime {
     /// and seat/libinput.
     func teardown() async {
         await stopReactor()
-        await stopShellClient()
         logRuntime("shutdown: Wayland scene")
         waylandRuntime.prepareShutdown()
-        logRuntime("shutdown: render runtime")
-        renderRuntime.shutdown()
-        // Release DRM master and return the primary fd to libseat immediately
-        // after scanout teardown. Xwayland/D-Bus/client cleanup must not be able to
-        // delay restoring the VT if one of those services blocks during shutdown.
-        logRuntime("shutdown: DRM session")
-        drmSession.close()
+        switch shutdownDisposition {
+        case .outputsDisabled:
+            logRuntime("shutdown: render runtime")
+            renderRuntime.shutdown()
+            logRuntime("shutdown: DRM session")
+            drmSession.close()
+        case .drmDeviceCloseRequired:
+            // Closing the primary device is the terminal kernel lifetime barrier
+            // when an atomic disable failed or exceeded its bounded grace period.
+            // Only then release framebuffer/GBM/Vulkan owners.
+            logRuntime("shutdown: revoking DRM session")
+            renderRuntime.revokeDrmDevice()
+            drmSession.close()
+            logRuntime("shutdown: render runtime after DRM device loss")
+            renderRuntime.shutdownAfterDrmDeviceLoss()
+        }
         logRuntime("shutdown: Xwayland")
         waylandRuntime.shutdownXwayland()
         logRuntime("shutdown: app hosts")
@@ -287,85 +302,4 @@ extension CompositorRuntime {
         }
     }
 
-    /// Spawn the Nucleus desktop shell as a supervised Wayland client on the
-    /// compositor's WAYLAND_DISPLAY. The command (NUCLEUS_SHELL_CMD, default
-    /// "nucleus-shell") is whitespace-split into argv; empty disables spawning.
-    /// `posix_spawn` is required here: the compositor is already multithreaded,
-    /// so running Swift between `fork` and `exec` can deadlock on inherited
-    /// runtime locks.
-    private func spawnShellClient() {
-        let command: String
-        if let raw = getenv("NUCLEUS_SHELL_CMD") {
-            command = String(cString: raw)
-        } else {
-            command = "nucleus-shell"
-        }
-        let tokens = command.split(whereSeparator: { $0 == " " || $0 == "\t" || $0 == "\r" || $0 == "\n" }).map(String.init)
-        guard !tokens.isEmpty else {
-            logRuntime("shell: NUCLEUS_SHELL_CMD is empty; not spawning a desktop shell")
-            return
-        }
-
-        var attributes = posix_spawnattr_t()
-        guard posix_spawnattr_init(&attributes) == 0 else {
-            logRuntime("shell: failed to initialize spawn attributes")
-            return
-        }
-        defer { posix_spawnattr_destroy(&attributes) }
-
-        var defaultSignals = sigset_t()
-        var emptyMask = sigset_t()
-        sigemptyset(&defaultSignals)
-        sigemptyset(&emptyMask)
-        for signal in [SIGINT, SIGQUIT, SIGTERM, SIGHUP, SIGPIPE] {
-            sigaddset(&defaultSignals, signal)
-        }
-        guard posix_spawnattr_setsigdefault(
-            &attributes, &defaultSignals) == 0,
-              posix_spawnattr_setsigmask(&attributes, &emptyMask) == 0,
-              posix_spawnattr_setflags(
-                &attributes,
-                Int16(POSIX_SPAWN_SETSIGDEF | POSIX_SPAWN_SETSIGMASK)) == 0
-        else {
-            logRuntime("shell: failed to configure spawn signal state")
-            return
-        }
-
-        let argv: [UnsafeMutablePointer<CChar>?] =
-            (["/usr/bin/env"] + tokens).map { strdup($0) } + [nil]
-        defer { argv.forEach { free($0) } }
-        var child = pid_t()
-        let result = argv.withUnsafeBufferPointer { buffer in
-            posix_spawn(
-                &child,
-                "/usr/bin/env",
-                nil,
-                &attributes,
-                UnsafeMutablePointer(mutating: buffer.baseAddress!),
-                environ)
-        }
-        guard result == 0 else {
-            logRuntime(
-                "shell: posix_spawn failed (\(result)); not spawning '\(command)'")
-            return
-        }
-        shellProcessID = child
-        logRuntime(
-            "shell: spawned '\(command)' pid=\(child) on the compositor display")
-    }
-
-    private func stopShellClient() async {
-        let child = shellProcessID
-        guard child > 0 else { return }
-        shellProcessID = 0
-
-        if waitpid(child, nil, WNOHANG) == child { return }
-        _ = kill(child, SIGTERM)
-        for _ in 0..<50 {
-            if waitpid(child, nil, WNOHANG) == child { return }
-            try? await Task.sleep(nanoseconds: 10_000_000)
-        }
-        _ = kill(child, SIGKILL)
-        while waitpid(child, nil, 0) == -1, errno == EINTR {}
-    }
 }

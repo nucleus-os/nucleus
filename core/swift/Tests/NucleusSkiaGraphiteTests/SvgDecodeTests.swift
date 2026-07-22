@@ -34,7 +34,7 @@ import NucleusSkiaGraphiteBridge
         """
 
     private func decode(_ fixture: Fixture, _ maxWidth: Int32, _ maxHeight: Int32)
-        -> nucleus.skia.Image
+        -> nucleus.skia.RasterImage
     {
         nucleus.skia.makeEncodedImageFromFile(fixture.path, maxWidth, maxHeight)
     }
@@ -42,7 +42,7 @@ import NucleusSkiaGraphiteBridge
     /// Read the whole image and return one pixel. Reading must be whole-image —
     /// `readPixelsRGBA` rejects a buffer too small for the full surface, and a
     /// rejected read leaves zeroes that look exactly like a transparent pixel.
-    private func pixel(_ image: nucleus.skia.Image, x: Int, y: Int)
+    private func pixel(_ image: nucleus.skia.RasterImage, x: Int, y: Int)
         -> (UInt8, UInt8, UInt8, UInt8)
     {
         let width = Int(image.width())

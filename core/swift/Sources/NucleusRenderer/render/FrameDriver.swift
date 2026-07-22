@@ -111,10 +111,9 @@ final class FrameDriver {
     private var accumulators: [UInt64: OutputAccumulator] = [:]
     private var previousLayerSnapshots: [UInt64: [UInt64: LayerFrameSnapshot]] = [:]
     private var submittedLayerSnapshots: [UInt64: [UInt64: LayerFrameSnapshot]] = [:]
-    private var decodedImages: [UInt64: nucleus.skia.Image] = [:]
-    private var decodedImageGenerations: [UInt64: UInt64] = [:]
-    /// Decodes off the render thread; results are adopted at the top of a frame.
-    let decodeQueue: ImageDecodeQueue
+    /// Owns CPU decode, Graphite upload, resident images, dependency versions,
+    /// and the exact outputs waiting on each resource.
+    let imageResources: ImageResourceManager
     /// Compiled SkSL programs keyed by runtime-effect handle. Compilation is
     /// the expensive half and is uniform-independent, so it is cached here
     /// while uniforms are re-bound per draw.
@@ -136,7 +135,9 @@ final class FrameDriver {
         self.resourceHost = resourceHost
         self.recorder = recorder
         self.uploadRecorder = uploadRecorder
-        self.decodeQueue = ImageDecodeQueue(wakeSink: wakeSink)
+        self.imageResources = ImageResourceManager(
+            recorder: recorder,
+            wakeSink: wakeSink)
         self.producer = TextureProducer(registry: registry)
     }
 
@@ -204,10 +205,8 @@ final class FrameDriver {
             _ = uploadRecorder.snapRecording()
             uploadsStaged = false
         }
-        decodeQueue.shutdown()
+        imageResources.shutdown()
         registry.clear()
-        decodedImages.removeAll()
-        decodedImageGenerations.removeAll()
         compiledEffects.removeAll()
         accumulators.removeAll()
     }
@@ -222,64 +221,29 @@ final class FrameDriver {
     /// The bounds are the handle's identity, not a hint: `ImageStore` dedupes on
     /// `"WxH:path"`, so two handles for one path at different bounds are two
     /// distinct decodes and must stay that way.
-    func decodedImage(handle: UInt64, source: ImageSource) -> nucleus.skia.Image? {
-        if let existing = decodedImages[handle], existing.isValid() { return existing }
-
-        // Without a worker there is nothing to wait for, so decode inline — the
-        // behaviour before the queue existed, and the behaviour if a thread
-        // could not be spawned.
-        guard decodeQueue.hasWorkers else {
-            let image = ImageDecodeQueue.decode(source)
-            guard image.isValid() else { return nil }
-            return adoptDecodedImage(image, handle: handle)
-        }
-
-        decodeQueue.submit(handle: handle, source: source)
-        return nil
+    func decodedImage(
+        handle: UInt64,
+        source: ImageSource,
+        outputID: UInt64
+    ) -> nucleus.skia.Image? {
+        imageResources.image(
+            handle: handle,
+            source: source,
+            outputID: outputID)
     }
 
     /// Adopt everything decoded since the last frame. Called at the top of a
     /// frame, which is the only point the cache may be written.
     func drainDecodedImages() {
-        for result in decodeQueue.drain() {
-            _ = adoptDecodedImage(
-                result.image,
-                handle: result.handle,
-                completionGeneration: result.completionGeneration)
-        }
+        imageResources.drainCompletions()
     }
 
-    /// Decode workers intentionally produce CPU images. Graphite's default
-    /// image provider does not promote those during a draw, so adoption on the
-    /// render thread is the single CPU-image -> recorder-backed-image boundary.
-    @discardableResult
-    private func adoptDecodedImage(
-        _ image: nucleus.skia.Image,
-        handle: UInt64,
-        completionGeneration: UInt64? = nil
-    ) -> nucleus.skia.Image? {
-        let textureImage = recorder.makeTextureImage(image)
-        guard textureImage.isValid() else { return nil }
-        decodedImages[handle] = textureImage
-        if let completionGeneration {
-            decodedImageGenerations[handle] = completionGeneration
-        }
-        return textureImage
+    func imageResourceRevision(outputID: UInt64) -> UInt64 {
+        imageResources.outputRevision(outputID)
     }
 
-    func paintImageDependencyGeneration(
-        _ commands: [PaintDrawCommand]
-    ) -> UInt64 {
-        commands.reduce(into: UInt64(0)) { generation, command in
-            guard command.kind == .image else { return }
-            generation = max(
-                generation,
-                decodedImageGenerations[command.imageHandle] ?? 0)
-        }
-    }
-
-    var imageDecodeCompletionGeneration: UInt64 {
-        decodeQueue.completionGeneration
+    func imageResidency(handle: UInt64) -> RenderImageResidency {
+        imageResources.residency(for: handle)
     }
 
     /// Resolve a paint command's effect handle to a compiled program, compiling
@@ -307,12 +271,7 @@ final class FrameDriver {
     /// source store's eviction queue, so the decoded GPU image does not outlive
     /// its source. No-op for an unknown handle.
     func evictDecodedImage(_ handle: UInt64) {
-        decodedImages[handle] = nil
-        decodedImageGenerations[handle] = nil
-        // A decode already in flight for this handle is now for a source that no
-        // longer exists, and the handle may be re-registered — delivering the
-        // stale result would draw the wrong picture.
-        decodeQueue.cancel(handle: handle)
+        imageResources.evict(handle)
     }
 
     /// Reclaim producer cache textures for layers no longer in the retained tree.
@@ -423,12 +382,19 @@ final class FrameDriver {
                   let content = resolvePaintContent(PaintContentHandle(raw: handle.raw))
             else { continue }
 
+            var paintImages: [UInt64: nucleus.skia.Image] = [:]
+            for imageHandle in content.imageDependencies {
+                if let image = resolvePaintImage(imageHandle) {
+                    paintImages[imageHandle] = image
+                }
+            }
+
             let produced = producer.producePaintCommands(
                 recorder: recorder,
                 layerId: quad.layerId,
                 revision: handle.raw,
-                dependencyRevision:
-                    paintImageDependencyGeneration(content.commands),
+                imageDependencies: imageResources.dependencies(
+                    for: content.imageDependencies),
                 commands: content.commands,
                 payload: content.payload,
                 authoredWidth: content.width,
@@ -436,7 +402,7 @@ final class FrameDriver {
                 contentWidth: pixelExtent(content.width * Float(target.fractionalScale)),
                 contentHeight: pixelExtent(content.height * Float(target.fractionalScale)),
                 localDamage: quad.localPaintDamage,
-                resolveImage: resolvePaintImage,
+                resolveImage: { paintImages[$0] },
                 resolveEffect: resolvePaintEffect)
             if let produced, let image = registry.resolve(produced) {
                 resolved[handle.raw] = image
@@ -520,10 +486,6 @@ final class FrameDriver {
         let clock = ContinuousClock()
         let totalStart = clock.now
         var phaseStart = totalStart
-        // Adopt finished decodes before anything reads the cache. This is the one
-        // point in the frame where the decoded-image cache may be written, which
-        // is what keeps it safe to leave unsynchronized.
-        drainDecodedImages()
         let plan = PresentationWalk.buildFramePlan(
             tree: tree,
             target: target,

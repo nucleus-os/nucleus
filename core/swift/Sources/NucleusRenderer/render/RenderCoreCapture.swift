@@ -245,10 +245,11 @@ extension RenderCore {
         if let overlay,
            overlay.width > 0, overlay.height > 0,
            overlay.rgbaPixels.count >= Int(overlay.width) * Int(overlay.height) * 4 {
-            let image = overlay.rgbaPixels.withUnsafeBufferPointer {
+            let decoded = overlay.rgbaPixels.withUnsafeBufferPointer {
                 nucleus.skia.makeRasterImageRGBA(
                     overlay.width, overlay.height, $0.baseAddress, $0.count)
             }
+            let image = recorder.makeTextureImage(decoded)
             if image.isValid() {
                 var src = nucleus.skia.RectF()
                 src.width = Float(overlay.width); src.height = Float(overlay.height)

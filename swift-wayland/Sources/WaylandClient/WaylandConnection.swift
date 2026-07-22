@@ -1,7 +1,6 @@
 // Owner of a wl_display client connection and its event-loop integration — the client mirror of the
-// server's WaylandDisplay. Connect, hand `fd` to your poll/reactor loop, `dispatch()` when it reports
-// readable, and `flush()` at the end of each frame. `roundtrip()` blocks until the server has answered
-// everything issued so far (used at setup, e.g. before reading the registry's initial globals).
+// server's WaylandDisplay. Runtime reads are prepared here and completed by the process's one reactor;
+// the only blocking operation is the explicitly setup-only bootstrap roundtrip.
 
 import WaylandClientC
 #if canImport(Glibc)
@@ -10,6 +9,7 @@ import Glibc
 
 public final class WaylandConnection {
     public let display: OpaquePointer
+    private weak var activeRead: WaylandPreparedRead?
 
     /// Connect to a compositor. `socket` names an explicit Wayland socket; nil uses $WAYLAND_DISPLAY
     /// (then the default). Returns nil if no compositor is reachable.
@@ -34,11 +34,6 @@ public final class WaylandConnection {
     /// The registry proxy (each call returns a fresh wl_registry). A WaylandRegistry owns one.
     public func getRegistry() -> OpaquePointer? { wl_display_get_registry(display) }
 
-    /// Drain queued events — call after poll() reports the fd readable. Returns the number of events
-    /// dispatched, or -1 on error.
-    @discardableResult
-    public func dispatch() -> Int32 { wl_display_dispatch(display) }
-
     /// Dispatch only events already buffered, without blocking on the socket.
     @discardableResult
     public func dispatchPending() -> Int32 { wl_display_dispatch_pending(display) }
@@ -50,29 +45,88 @@ public final class WaylandConnection {
     @discardableResult
     public func flush() -> Int32 { wl_display_flush(display) }
 
-    /// Block until the server has processed everything issued so far. Returns -1 on error.
+    /// Block until the server has processed everything issued so far during bootstrap.
+    /// Runtime event loops must use `prepareRead()` instead.
     @discardableResult
-    public func roundtrip() -> Int32 { wl_display_roundtrip(display) }
+    public func bootstrapRoundtrip() -> Int32 {
+        precondition(activeRead == nil, "cannot roundtrip during a prepared read")
+        return wl_display_roundtrip(display)
+    }
 
-    /// One non-blocking read+dispatch cycle — never blocks on the socket. Flushes pending requests,
-    /// polls the fd with a zero timeout, and reads + dispatches whatever events are already available.
-    /// Use to pump an in-process loopback where a blocking roundtrip would deadlock (the peer server
-    /// only advances when you pump it too). Returns the number of events dispatched, or -1 on error.
-    @discardableResult
-    public func pumpNonBlocking() -> Int32 {
+    /// Dispatch buffered events until libwayland grants one socket-read transaction.
+    /// The caller must then flush requests, wait for `fd` in its reactor, and complete
+    /// or cancel the returned read exactly once.
+    public func prepareRead() -> WaylandReadPreparation? {
+        precondition(activeRead == nil, "only one Wayland read may be prepared")
+        var dispatched: Int32 = 0
         while wl_display_prepare_read(display) != 0 {
-            if wl_display_dispatch_pending(display) < 0 { return -1 }
+            let result = wl_display_dispatch_pending(display)
+            if result < 0 { return nil }
+            dispatched &+= result
         }
-        _ = wl_display_flush(display)
-        var pfd = pollfd(fd: fd, events: Int16(POLLIN), revents: 0)
-        let ready = withUnsafeMutablePointer(to: &pfd) { poll($0, 1, 0) }
-        if ready > 0 {
-            if wl_display_read_events(display) < 0 { return -1 }
+        let read = WaylandPreparedRead(connection: self)
+        activeRead = read
+        return WaylandReadPreparation(
+            dispatchedEventCount: dispatched,
+            read: read)
+    }
+
+    fileprivate func finishRead(_ read: WaylandPreparedRead, readable: Bool)
+        -> Int32
+    {
+        precondition(activeRead === read, "finishing an inactive Wayland read")
+        activeRead = nil
+        if readable {
+            guard wl_display_read_events(display) >= 0 else { return -1 }
         } else {
             wl_display_cancel_read(display)
         }
         return wl_display_dispatch_pending(display)
     }
 
-    deinit { wl_display_disconnect(display) }
+    fileprivate func cancelRead(_ read: WaylandPreparedRead) {
+        guard activeRead === read else { return }
+        activeRead = nil
+        wl_display_cancel_read(display)
+    }
+
+    deinit {
+        precondition(activeRead == nil, "disconnecting during a prepared Wayland read")
+        wl_display_disconnect(display)
+    }
+}
+
+public struct WaylandReadPreparation {
+    /// Events that were already buffered and dispatched before the socket read was prepared.
+    public let dispatchedEventCount: Int32
+    public let read: WaylandPreparedRead
+}
+
+/// One granted libwayland read transaction. It must be completed after the owning
+/// reactor wait or explicitly cancelled when that wait does not happen.
+public final class WaylandPreparedRead {
+    private let connection: WaylandConnection
+    private var isActive = true
+
+    fileprivate init(connection: WaylandConnection) {
+        self.connection = connection
+    }
+
+    /// Read the display socket when the reactor reported it readable, or cancel
+    /// the prepared read for every other wakeup. Then dispatch buffered events.
+    @discardableResult
+    public func complete(readable: Bool) -> Int32 {
+        precondition(isActive, "Wayland read completed more than once")
+        isActive = false
+        return connection.finishRead(self, readable: readable)
+    }
+
+    /// Cancel a prepared read when its reactor wait cannot run or throws.
+    public func cancel() {
+        guard isActive else { return }
+        isActive = false
+        connection.cancelRead(self)
+    }
+
+    deinit { cancel() }
 }

@@ -3,11 +3,13 @@
 
 import NucleusCompositorServer
 import NucleusCompositorWindowManager
+import Glibc
 
 @MainActor
 package final class RouterHost {
     unowned let server: NucleusCompositorServer
     unowned let windowManager: WindowManager
+    let diagnostics: WaylandRuntimeDiagnostics
 
     /// The live router, nil before compositor bring-up constructs it.
     var router: NucleusWaylandRouter?
@@ -38,10 +40,20 @@ package final class RouterHost {
 
     package init(
         server: NucleusCompositorServer,
-        windowManager: WindowManager
+        windowManager: WindowManager,
+        diagnostics: WaylandRuntimeDiagnostics = WaylandRuntimeDiagnostics()
     ) {
         self.server = server
         self.windowManager = windowManager
+        self.diagnostics = diagnostics
+    }
+
+    func traceProtocol(_ message: String) {
+        guard diagnostics.traceProtocolEffects else { return }
+        let line = "wayland-protocol: \(message)\n"
+        _ = line.withCString {
+            write(STDERR_FILENO, $0, strlen($0))
+        }
     }
 
     package func install(_ runtime: WaylandRouterRuntime) {

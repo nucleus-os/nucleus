@@ -96,7 +96,7 @@ import NucleusSkiaGraphiteBridge
     }
 
     private func decode(_ fixture: Fixture, maxWidth: Int32, maxHeight: Int32)
-        -> nucleus.skia.Image
+        -> nucleus.skia.RasterImage
     {
         nucleus.skia.makeEncodedImageFromFile(fixture.path, maxWidth, maxHeight)
     }

@@ -57,7 +57,7 @@ struct PresentationTiming: Sendable, Equatable {
 
 // MARK: - Present policy
 
-enum PresentPolicy: Sendable, Equatable {
+public enum RendererPresentPolicy: Sendable, Equatable {
     case vsync
     case mailboxLatestWins
 
@@ -68,14 +68,6 @@ enum PresentPolicy: Sendable, Equatable {
         }
     }
 
-    /// Parse the configured policy; unknown/legacy values (incl. "unlimited")
-    /// fall back to vsync. Mirrors `presentPolicyFromConfig`.
-    static func fromConfig(_ value: String?) -> PresentPolicy {
-        switch value {
-        case "mailbox_latest_wins": return .mailboxLatestWins
-        default: return .vsync
-        }
-    }
 }
 
 // MARK: - Mailbox queue
@@ -96,12 +88,12 @@ struct PendingMailboxFrame: Sendable, Equatable {
 struct MailboxQueue: Sendable {
     static let renderTargetCount = 2
 
-    var policy: PresentPolicy = .vsync
+    var policy: RendererPresentPolicy = .vsync
     private(set) var pending: [PendingMailboxFrame] = []
     private(set) var cursor: Int = 0
     private(set) var generation: UInt64 = 0
 
-    init(policy: PresentPolicy = .vsync) { self.policy = policy }
+    init(policy: RendererPresentPolicy = .vsync) { self.policy = policy }
 
     var pendingCount: Int { pending.count }
 

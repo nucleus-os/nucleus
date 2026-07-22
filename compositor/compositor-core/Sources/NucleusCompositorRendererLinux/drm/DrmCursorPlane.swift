@@ -7,7 +7,7 @@
 // Vulkan import here — this is the light, compositor-owned path, distinct from the
 // GPU-rendered scanout ring. The placement math (`cursorPlanePlacement`) and packing
 // (`packCursorPixels`) live in DrmColorCursor.swift and are unit-tested; this owns
-// the buffers and the KMS objects. `DrmOutput.assembleScanoutCommit` adds the cursor
+// the buffers and the KMS objects. `DrmOutput.addAtomicState` adds the cursor
 // plane's atomic state, referencing this plane's `frontFbId` each commit.
 //
 // Image changes are rare (theme / shape); pointer motion re-places the plane every
@@ -16,7 +16,7 @@
 import NucleusCompositorDrmC
 
 final class DrmCursorPlane {
-    private let deviceFd: Int32
+    private let device: DrmDeviceLifetime
     let planeId: UInt32
     let crtcId: UInt32
     let props: CursorPlaneProps
@@ -35,10 +35,10 @@ final class DrmCursorPlane {
     private(set) var hasImage = false
 
     private init(
-        deviceFd: Int32, planeId: UInt32, crtcId: UInt32, props: CursorPlaneProps,
+        device: DrmDeviceLifetime, planeId: UInt32, crtcId: UInt32, props: CursorPlaneProps,
         width: UInt32, height: UInt32, buffers: [Buffer]
     ) {
-        self.deviceFd = deviceFd
+        self.device = device
         self.planeId = planeId
         self.crtcId = crtcId
         self.props = props
@@ -51,14 +51,19 @@ final class DrmCursorPlane {
     /// props or any BO/fb allocation fails (the compositor then runs without a hardware
     /// cursor on this output).
     static func create(
-        gbmDevice: OpaquePointer, deviceFd: Int32, planeId: UInt32, crtcId: UInt32,
+        gbmDevice: OpaquePointer, device: DrmDeviceLifetime, planeId: UInt32, crtcId: UInt32,
         props: CursorPlaneProps, width: UInt32, height: UInt32
     ) -> DrmCursorPlane? {
         guard planeId != 0, props.fbId != 0, width > 0, height > 0 else { return nil }
 
         var buffers: [Buffer] = []
         func rollback() {
-            for b in buffers { _ = drmModeRmFB(deviceFd, b.fbId); gbm_bo_destroy(b.bo) }
+            for b in buffers {
+                if let fd = device.availableFileDescriptor {
+                    _ = drmModeRmFB(fd, b.fbId)
+                }
+                gbm_bo_destroy(b.bo)
+            }
         }
 
         for _ in 0..<2 {
@@ -70,14 +75,14 @@ final class DrmCursorPlane {
             let handle = gbm_bo_get_handle_for_plane(bo, 0).u32
             let stride = gbm_bo_get_stride(bo)
             guard let fb = DrmFramebuffer(
-                deviceFd: deviceFd, width: width, height: height, pixelFormat: drmFormatARGB8888,
+                deviceFd: device.fileDescriptor, width: width, height: height, pixelFormat: drmFormatARGB8888,
                 handles: [handle], pitches: [stride], offsets: [0]
             ) else { gbm_bo_destroy(bo); rollback(); return nil }
             buffers.append(Buffer(bo: bo, fbId: fb.release(), stride: stride))
         }
 
         return DrmCursorPlane(
-            deviceFd: deviceFd, planeId: planeId, crtcId: crtcId, props: props,
+            device: device, planeId: planeId, crtcId: crtcId, props: props,
             width: width, height: height, buffers: buffers)
     }
 
@@ -122,7 +127,12 @@ final class DrmCursorPlane {
     /// Remove the KMS framebuffers and destroy the BOs. Called on output teardown,
     /// BEFORE the GBM device drops, so the kernel stops scanning them first.
     func destroy() {
-        for b in buffers { _ = drmModeRmFB(deviceFd, b.fbId); gbm_bo_destroy(b.bo) }
+        for b in buffers {
+            if let fd = device.availableFileDescriptor {
+                _ = drmModeRmFB(fd, b.fbId)
+            }
+            gbm_bo_destroy(b.bo)
+        }
         buffers = []
         hasImage = false
     }

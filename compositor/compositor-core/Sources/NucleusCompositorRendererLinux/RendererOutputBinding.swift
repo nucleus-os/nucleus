@@ -186,7 +186,7 @@ final class RenderOutputBinding {
     }
 
     /// Drop userspace owners only after KMS has synchronously stopped scanning
-    /// this binding.
+    /// this binding or the session owner has revoked the whole DRM device.
     func releaseAfterScanoutDisabled() {
         currentSlot = nil
         currentRenderSync = nil

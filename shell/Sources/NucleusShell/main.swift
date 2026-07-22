@@ -1,4 +1,5 @@
 import NucleusShellRuntime
+import NucleusLinuxSession
 #if canImport(Glibc)
 import Glibc
 #endif
@@ -10,12 +11,26 @@ import Glibc
 func main() async -> Int32 {
     let socket = getenv("WAYLAND_DISPLAY").map { String(cString: $0) }
 
-    guard let host = ShellHost(socketName: socket) else {
+    let configuration: SessionConfiguration
+    let readiness: SessionReadinessReporter?
+    do {
+        configuration = try SessionConfiguration.inherited()
+        readiness = try SessionReadinessReporter.inherited(role: .shell)
+    } catch {
+        FileHandle_stderr(
+            "nucleus-shell: invalid session readiness channel: \(error)\n")
+        return 1
+    }
+
+    guard let host = ShellHost(
+        socketName: socket,
+        configuration: configuration)
+    else {
         FileHandle_stderr("nucleus-shell: could not connect to the compositor "
             + "(WAYLAND_DISPLAY=\(socket ?? "<default>")) or bring up the render device\n")
         return 1
     }
-    await host.run()
+    await host.run(readinessReporter: readiness)
     return 0
 }
 

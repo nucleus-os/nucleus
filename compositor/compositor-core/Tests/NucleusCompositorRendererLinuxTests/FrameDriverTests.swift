@@ -170,9 +170,10 @@ struct RendererTestWakeSink: AsyncRenderWakeSink {
             // A small green source image stands in for resolved content.
             var pixels = [UInt8](repeating: 0, count: 16 * 16 * 4)
             for i in 0..<(16 * 16) { pixels[i * 4 + 1] = 255; pixels[i * 4 + 3] = 255 }
-            let source = pixels.withUnsafeBufferPointer {
+            let decodedSource = pixels.withUnsafeBufferPointer {
                 nucleus.skia.makeRasterImageRGBA(16, 16, $0.baseAddress, $0.count)
             }
+            let source = driver.recorder.makeTextureImage(decodedSource)
 
             let scanout = driver.recorder.makeOffscreenSurface(400, 400)
 

@@ -53,7 +53,7 @@ location. `tools/nucleus install shell` installs only the two shell executables.
 
 `nucleus-shell` connects to the compositor named by `WAYLAND_DISPLAY`. The
 Nucleus compositor starts the installed shell automatically; a development
-binary can be selected with `NUCLEUS_SHELL_CMD` when launching the compositor.
+binary is launched and supervised as a required peer by `nucleus-session`.
 
 Against any already-running conformant compositor:
 

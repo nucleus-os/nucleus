@@ -1,4 +1,5 @@
 import Testing
+import Glibc
 import WaylandClientC
 import WaylandClient
 
@@ -15,5 +16,23 @@ import WaylandClient
         let want = DesiredGlobal(swift_wayland_iface_wl_compositor(), maxVersion: 6)
         #expect(want.interfaceName == "wl_compositor")
         #expect(want.allowsMultiple == false)
+    }
+
+    @Test func cancelledPreparedReadLeavesConnectionReusable() throws {
+        var sockets: [Int32] = [0, 0]
+        try #require(socketpair(
+            AF_UNIX,
+            Int32(SOCK_STREAM.rawValue),
+            0,
+            &sockets) == 0)
+        defer { close(sockets[0]) }
+        let connection = try #require(WaylandConnection(fd: sockets[1]))
+
+        let first = try #require(connection.prepareRead())
+        first.read.cancel()
+
+        let second = try #require(connection.prepareRead())
+        #expect(second.dispatchedEventCount == 0)
+        #expect(second.read.complete(readable: false) == 0)
     }
 }

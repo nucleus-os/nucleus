@@ -10,7 +10,7 @@ Changing `FB_ID` in DRM atomic commits between different GBM BOs causes every-ot
 
 **Single-buffer mode with blocking wait** has been the conservative path and matches gamescope's "one frame in flight" pattern. See `src/compositor/drm/output.zig` `PresentationCompletion` enum (`.page_flip_event` is force-enabled on Nvidia).
 
-This does not block `NUCLEUS_PRESENT_MODE=mailbox_latest_wins`. Mailbox/latest-wins is allowed on Nvidia so current driver behavior can be measured directly. Treat the notes below as things to verify in logs and profiles, not as a reason to refuse the mode before running it.
+This does not block `tools/nucleus run --present-mode mailbox_latest_wins`. Mailbox/latest-wins is allowed on Nvidia so current driver behavior can be measured directly. Treat the notes below as things to verify in logs and profiles, not as a reason to refuse the mode before running it.
 
 ### KWin's multi-buffer pattern (for future reference)
 

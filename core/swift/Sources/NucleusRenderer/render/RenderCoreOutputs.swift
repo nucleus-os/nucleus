@@ -10,6 +10,15 @@ import Android
 #endif
 @MainActor
 extension RenderCore {
+    /// Observe whether an image handle has crossed the renderer's typed
+    /// decode/upload boundary. This is an acceptance signal, not a draw API.
+    @_spi(NucleusPlatform)
+    public func imageResidency(
+        for handle: UInt64
+    ) -> RenderImageResidency {
+        frameDriver?.imageResidency(handle: handle) ?? .unknown
+    }
+
     /// Publish the session-lock composition. A change forces a redraw; while locked,
     /// `renderReady` also redraws every ready output each pass so the blank appears
     /// immediately and stays up regardless of tree damage.

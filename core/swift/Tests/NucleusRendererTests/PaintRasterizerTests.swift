@@ -85,13 +85,12 @@ import NucleusTypes
     // MARK: - Geometry
 
     @Test func imageCommandDrawsResolvedPixels() {
-        let rgba: [UInt8] = [
-            255, 0, 0, 255, 255, 0, 0, 255,
-            255, 0, 0, 255, 255, 0, 0, 255,
-        ]
-        let image = rgba.withUnsafeBufferPointer {
-            nucleus.skia.makeRasterImageRGBA(2, 2, $0.baseAddress, $0.count)
-        }
+        let imageSurface = nucleus.skia.makeRasterSurface(2, 2)
+        var red = nucleus.skia.Color()
+        red.r = 1
+        red.a = 1
+        imageSurface.getCanvas().clear(red)
+        let image = imageSurface.snapshotImage()
         let command = PaintDrawCommand(
             kind: .image, x: 0, y: 0, w: 20, h: 20,
             imageHandle: 7, antialias: false)

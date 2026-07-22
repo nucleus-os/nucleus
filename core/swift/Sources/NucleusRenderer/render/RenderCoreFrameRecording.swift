@@ -75,7 +75,10 @@ extension RenderCore {
             resolvePaintContent: { resourceHost.paintContents.content($0) },
             resolvePaintImage: { handle in
                 guard let source = resourceHost.images.source(handle) else { return nil }
-                return driver.decodedImage(handle: handle, source: source)
+                return driver.decodedImage(
+                    handle: handle,
+                    source: source,
+                    outputID: outputID)
             }
         ) { [snapshots] handle in
             if let entry = snapshots.resolve(SnapshotHandle(raw: handle.raw)) {
@@ -179,10 +182,9 @@ extension RenderCore {
         // page flip is pending the queue continues coalescing instead of growing
         // unsnapped transfer work on the upload recorder.
         let outputIDs = backend.presentableOutputIDs()
+        frameDriver?.drainDecodedImages()
         let targetRevision = store.revision
         let targetLockGeneration = lockCompositionGeneration
-        let targetResourceGeneration =
-            frameDriver?.imageDecodeCompletionGeneration ?? 0
         if outputIDs.contains(where: { backend.isReadyToPresent($0) }) {
             drainPendingShmUploads()
         }
@@ -199,6 +201,8 @@ extension RenderCore {
         var any = false
         for outputID in outputIDs {
             if !backend.isReadyToPresent(outputID) { continue }
+            let targetResourceGeneration =
+                frameDriver?.imageResourceRevision(outputID: outputID) ?? 0
             let hasPendingDamage = outputPresentationLedger.needsTreeRevision(
                 targetRevision, outputID: outputID)
             let forced = lockComposition != nil

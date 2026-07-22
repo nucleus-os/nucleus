@@ -21,7 +21,17 @@ extension ShellHost {
         var counters = ShellLoopCounters()
 
         while running {
-            guard flushDisplay(needsWrite: &displayNeedsWrite) else { break }
+            guard let preparation = client.prepareRead() else {
+                writeErr("nucleus-shell: Wayland read preparation failed")
+                break
+            }
+            if preparation.dispatchedEventCount > 0 {
+                requestRender(nativeSceneChanged: true)
+            }
+            guard flushDisplay(needsWrite: &displayNeedsWrite) else {
+                preparation.read.cancel()
+                break
+            }
             let waitPlan = makeReactorWaitPlan(
                 displayFileDescriptor: displayFileDescriptor,
                 displayNeedsWrite: displayNeedsWrite,
@@ -33,6 +43,7 @@ extension ShellHost {
                     interests: waitPlan.interests,
                     timeoutNanoseconds: waitPlan.timeoutNanoseconds)
             } catch {
+                preparation.read.cancel()
                 writeErr("nucleus-shell: host reactor failed: \(error)")
                 break
             }
@@ -40,6 +51,7 @@ extension ShellHost {
 
             let outcome = dispatchReactorBatch(
                 batch,
+                preparedDisplayRead: preparation.read,
                 nowNanoseconds: monotonicNowNs())
             if outcome.shouldStop { break }
 
@@ -143,12 +155,14 @@ extension ShellHost {
             }
         }
 
-        let posted = engine.renderFrame(
+        let postedOutputIDs = engine.renderFrame(
             presentTimeNs: predictedPresentationNanoseconds)
+        noteStartupPresentations(postedOutputIDs)
         if startupFrameDiagnosticsRemaining > 0 {
             startupFrameDiagnosticsRemaining -= 1
             writeErr(
-                "nucleus-shell: render turn posted=\(posted) "
+                "nucleus-shell: render turn posted_outputs="
+                    + "\(postedOutputIDs.sorted()) "
                     + "interval_ns=\(interval)")
         }
         counters.recordRenderedFrame()
@@ -156,6 +170,54 @@ extension ShellHost {
             previous: scheduledDeadline,
             now: nowNanoseconds,
             interval: interval)
+    }
+
+    private func noteStartupPresentations(
+        _ postedOutputIDs: Set<UInt64>
+    ) {
+        guard readinessReporter != nil, !postedOutputIDs.isEmpty,
+              let surfaceRegistry
+        else { return }
+
+        let liveOutputIDs = Set(client.outputs.keys)
+        let wallpapers = wallpaperSurfaces.values.map { record in
+            ShellStartupSurface(
+                outputID: record.outputID,
+                surfaceID: UInt64(record.surfaceID),
+                renderOutputID: surfaceRegistry.renderOutputID(
+                    for: record.surfaceID),
+                contentReady: record.product.imageView.image.map {
+                    engine.imageResidency(for: $0.id) == .resident
+                } ?? false)
+        }
+        let bars = barSurfaces.values.map { record in
+            ShellStartupSurface(
+                outputID: record.outputID,
+                surfaceID: UInt64(record.surfaceID),
+                renderOutputID: surfaceRegistry.renderOutputID(
+                    for: record.surfaceID),
+                contentReady: true)
+        }
+        guard startupReadiness.observe(
+            postedRenderOutputIDs: postedOutputIDs,
+            liveOutputIDs: liveOutputIDs,
+            wallpapers: wallpapers,
+            bars: bars),
+              let reporter = readinessReporter
+        else { return }
+
+        do {
+            try reporter.report(.shellReady)
+            readinessReporter = nil
+            writeErr(
+                "nucleus-shell: rendered shell ready outputs="
+                    + "\(liveOutputIDs.count)")
+        } catch {
+            writeErr(
+                "nucleus-shell: session supervisor readiness failed: \(error)")
+            readinessReporter = nil
+            running = false
+        }
     }
 
     func writeErr(_ message: String) {

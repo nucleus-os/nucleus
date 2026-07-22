@@ -21,9 +21,6 @@ import Testing
     }
 
     @Test func presentPolicy() {
-        #expect(PresentPolicy.fromConfig(nil) == .vsync, "policy-default")
-        #expect(PresentPolicy.fromConfig("mailbox_latest_wins") == .mailboxLatestWins, "policy-mailbox")
-        #expect(PresentPolicy.fromConfig("unlimited") == .vsync, "policy-legacy-vsync")
     }
 
     @Test func presentationTiming() {

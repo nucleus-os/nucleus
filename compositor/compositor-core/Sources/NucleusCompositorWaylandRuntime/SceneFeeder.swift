@@ -505,7 +505,10 @@ final class SceneFeeder: BackgroundEffectDelegate, KdeBlurDelegate {
     }
 
     nonisolated func backgroundBlurRegionUpdated(surfaceID: UInt32, region: RegionSnapshot?) {
-        _ = MainActor.assumeIsolated {
+        MainActor.assumeIsolated {
+            host.traceProtocol(
+                "ext-background-effect surface=\(surfaceID) "
+                    + "rectangles=\(region?.rectangleCount ?? 0)")
             authoring("update background effect", surfaceID: UInt64(surfaceID)) {
                 try author.setBackgroundEffect(
                     surfaceID: UInt64(surfaceID),
@@ -521,7 +524,10 @@ final class SceneFeeder: BackgroundEffectDelegate, KdeBlurDelegate {
         wholeSurface: Bool
     ) {
         let surfaceID = surface.objectId
-        _ = MainActor.assumeIsolated {
+        MainActor.assumeIsolated {
+            host.traceProtocol(
+                "kde-blur surface=\(surfaceID) whole=\(wholeSurface) "
+                    + "rectangles=\(region?.rectangleCount ?? 0)")
             authoring("update KDE blur", surfaceID: UInt64(surfaceID)) {
                 try author.setBackgroundEffect(
                     surfaceID: UInt64(surfaceID),
@@ -536,7 +542,8 @@ final class SceneFeeder: BackgroundEffectDelegate, KdeBlurDelegate {
 
     nonisolated func kdeBlurCleared(_ surface: WlSurface) {
         let surfaceID = surface.objectId
-        _ = MainActor.assumeIsolated {
+        MainActor.assumeIsolated {
+            host.traceProtocol("kde-blur-clear surface=\(surfaceID)")
             authoring("clear KDE blur", surfaceID: UInt64(surfaceID)) {
                 try author.setBackgroundEffect(
                     surfaceID: UInt64(surfaceID),

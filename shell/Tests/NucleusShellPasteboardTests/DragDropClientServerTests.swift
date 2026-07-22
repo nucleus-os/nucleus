@@ -18,11 +18,11 @@ private func pumpDragFixtureSetup(
 ) {
     for _ in 0..<cycles {
         for client in clients {
-            _ = client.pumpNonBlocking()
+            _ = pumpWaylandFixtureClient(client)
         }
         runtime.dispatchClientsNonBlocking()
         for client in clients {
-            _ = client.pumpNonBlocking()
+            _ = pumpWaylandFixtureClient(client)
         }
     }
 }
@@ -417,11 +417,11 @@ struct DragDropClientServerTests {
     ) {
         for _ in 0..<cycles {
             for client in clients {
-                _ = client.pumpNonBlocking()
+                _ = pumpWaylandFixtureClient(client)
             }
             runtime.dispatchClientsNonBlocking()
             for client in clients {
-                _ = client.pumpNonBlocking()
+                _ = pumpWaylandFixtureClient(client)
             }
         }
     }

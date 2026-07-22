@@ -62,8 +62,12 @@ struct AtomicRequestBuilder: ~Copyable {
 
     /// Validate the staged request as a kernel test-only commit (no scanout
     /// change). True when the kernel would accept it.
-    borrowing func validates(fd: Int32) -> Bool {
-        drmModeAtomicCommit(fd, req, UInt32(DRM_MODE_ATOMIC_TEST_ONLY), nil) == 0
+    borrowing func validates(fd: Int32, flags: UInt32 = 0) -> Bool {
+        drmModeAtomicCommit(
+            fd,
+            req,
+            flags | UInt32(DRM_MODE_ATOMIC_TEST_ONLY),
+            nil) == 0
     }
 
     /// The labelled property dump for a rejected commit — the recorded

@@ -44,13 +44,21 @@ screen), and `data-control` (clipboard history). Lock-screen password entry
 
 ## The shell process
 
-The compositor spawns a shell client at startup — `NUCLEUS_SHELL_CMD` (default `nucleus-shell`;
-empty disables it) — as a detached Wayland client on the compositor's `WAYLAND_DISPLAY`,
-double-forked so it reparents to init. Window-management and system keybinds (tile, VT switch,
-exit) stay compositor-owned. Shell-panel shortcuts land only with a shell IPC contract; the
-compositor does not invoke a shell-specific command line. Pointing `NUCLEUS_SHELL_CMD` at a
-third-party shell swaps the shell without touching the compositor — the shell-agnostic invariant
-made operational.
+`nucleus-session` constructs the isolated login environment and delegates both
+native children to `nucleus-session-supervisor`. The launcher creates one
+validated, immutable session configuration and the supervisor sends the same
+binary record to each child over a private inherited descriptor. Runtime policy
+does not come from ambient `NUCLEUS_*` strings.
+
+The supervisor launches the shell only after the compositor completes a real
+KMS presentation. Shell readiness means every live output has configured
+wallpaper and bar surfaces and accepted a frame after the wallpaper image became
+GPU-resident. A bounded startup deadline turns a stalled child into a typed
+failure. Either sibling exiting retires both process groups, so a partially
+alive desktop is never considered a session. The compositor remains
+shell-agnostic: it serves standard Wayland protocols and never invokes a shell
+command line. Window-management and system keybinds (tile, VT switch, exit)
+stay compositor-owned.
 
 ## The global application menu bar — not in the compositor
 

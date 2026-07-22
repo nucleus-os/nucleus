@@ -229,21 +229,6 @@ final class TextureRegistry {
         return false
     }
 
-    /// Upload client SHM (or compositor-rasterized) RGBA8888 premultiplied pixels
-    /// as a sampleable image, register it under a fresh handle, and return the
-    /// handle. Graphite resolves the raster image when recording the frame.
-    func uploadShm(
-        pixels: [UInt8], width: Int32, height: Int32, contentRevision: UInt64
-    ) -> UInt64? {
-        let image = pixels.withUnsafeBufferPointer {
-            nucleus.skia.makeRasterImageRGBA(width, height, $0.baseAddress, $0.count)
-        }
-        guard image.isValid() else { return nil }
-        let handle = allocHandle()
-        register(handle: handle, image: image, width: width, height: height, contentRevision: contentRevision)
-        return handle
-    }
-
     /// Wrap a borrowed Vulkan image (an imported DMA-BUF / compositor render
     /// texture) as a Graphite-sampleable image. The caller owns the underlying
     /// `VkImage`'s lifetime and must keep it alive while the registry entry lives

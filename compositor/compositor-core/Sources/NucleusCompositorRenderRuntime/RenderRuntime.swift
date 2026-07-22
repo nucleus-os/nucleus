@@ -59,6 +59,8 @@ public final class RenderRuntime {
     public func bringUp(
         drmDeviceFd: Int32,
         dmabufMainDevice: UInt64,
+        enableValidation: Bool,
+        presentPolicy: RendererPresentPolicy,
         store: RetainedTreeStore,
         resourceHost: SwiftResourceHost,
         asyncRenderWakeSink: any AsyncRenderWakeSink
@@ -69,6 +71,8 @@ public final class RenderRuntime {
         }
         guard let runtime = RendererRuntime.create(
                 drmDeviceFd: drmDeviceFd,
+                enableValidation: enableValidation,
+                presentPolicy: presentPolicy,
                 store: store,
                 resourceHost: resourceHost,
                 asyncRenderWakeSink: asyncRenderWakeSink)
@@ -436,16 +440,33 @@ public final class RenderRuntime {
         retainedStore?.hasActiveAnimations ?? false
     }
 
-    /// Tear down the render runtime in GPU-lifetime order at compositor shutdown.
+    /// Tear down after every KMS output retired transactionally.
     public func shutdown() {
         server.renderService = nil
         guard let runtime = renderer else { return }
-        if !runtime.shutdown() {
-            // A presentation still owned by the kernel makes the runtime's normal
-            // destructors unsafe. Intentionally retain it until process exit; the
-            // compositor teardown can now continue and release the seat/VT.
-            _ = Unmanaged.passRetained(runtime)
-        }
+        runtime.shutdown()
+        clearRuntimeOwner()
+    }
+
+    /// Tear down after the composition root has closed/revoked the primary DRM
+    /// device. Kernel scanout references ended at close, so the full renderer
+    /// graph is released instead of intentionally leaked.
+    public func shutdownAfterDrmDeviceLoss() {
+        server.renderService = nil
+        guard let runtime = renderer else { return }
+        runtime.shutdownAfterDrmDeviceLoss()
+        clearRuntimeOwner()
+    }
+
+    /// Revoke renderer access to the borrowed primary-node descriptor before
+    /// the session owner closes it. Resource destructors subsequently skip DRM
+    /// ioctls while retaining their userspace objects until kernel close ends
+    /// scanout ownership.
+    public func revokeDrmDevice() {
+        renderer?.revokeDrmDevice()
+    }
+
+    private func clearRuntimeOwner() {
         renderer = nil
         retainedStore = nil
         telemetryCorrelator = PresentationTelemetryCorrelator()

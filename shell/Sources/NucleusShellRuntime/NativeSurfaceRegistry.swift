@@ -158,6 +158,10 @@ final class NativeSurfaceRegistry {
         records[surfaceID] != nil
     }
 
+    func renderOutputID(for surfaceID: UInt) -> UInt64? {
+        records[surfaceID]?.renderOutputID
+    }
+
     private static func pixelExtent(
         _ logicalExtent: Double,
         scale: Double

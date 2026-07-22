@@ -33,13 +33,14 @@ import NucleusRenderModel
                 "vibrancy-light-lt-dark")
 
         // --- Vibrancy shader compiles over a raster content image ---
-        let pixels: [UInt8] = [
-            10, 20, 30, 255, 40, 50, 60, 255,
-            70, 80, 90, 255, 100, 110, 120, 255,
-        ]
-        let content = pixels.withUnsafeBufferPointer {
-            nucleus.skia.makeRasterImageRGBA(2, 2, $0.baseAddress, $0.count)
-        }
+        let contentSurface = nucleus.skia.makeRasterSurface(2, 2)
+        var contentColor = nucleus.skia.Color()
+        contentColor.r = 0.2
+        contentColor.g = 0.4
+        contentColor.b = 0.6
+        contentColor.a = 1
+        contentSurface.getCanvas().clear(contentColor)
+        let content = contentSurface.snapshotImage()
         #expect(content.isValid(), "vibrancy-content-image")
         #expect(Backdrop.makeVibrancyShader(variant: .light, content: content) != nil,
                 "vibrancy-shader-light")

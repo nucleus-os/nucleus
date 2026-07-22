@@ -13,12 +13,27 @@ import NucleusCompositorServer
 import NucleusCompositorWindowScene
 import NucleusCompositorWindowManager
 
+public struct WaylandRuntimeDiagnostics: Sendable, Equatable {
+    public var traceProtocolEffects: Bool
+
+    public init(traceProtocolEffects: Bool = false) {
+        self.traceProtocolEffects = traceProtocolEffects
+    }
+}
+
 @MainActor
 public final class WaylandRuntime {
     let host: RouterHost
 
-    public init(server: NucleusCompositorServer, windowManager: WindowManager) {
-        self.host = RouterHost(server: server, windowManager: windowManager)
+    public init(
+        server: NucleusCompositorServer,
+        windowManager: WindowManager,
+        diagnostics: WaylandRuntimeDiagnostics = WaylandRuntimeDiagnostics()
+    ) {
+        self.host = RouterHost(
+            server: server,
+            windowManager: windowManager,
+            diagnostics: diagnostics)
     }
 
     // MARK: - Router lifecycle

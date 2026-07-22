@@ -1,4 +1,5 @@
 import Foundation
+import NucleusLinuxSession
 #if canImport(Glibc)
 import Glibc
 #else
@@ -59,6 +60,7 @@ struct ProfileCapture {
         try FileManager.default.createDirectory(at: runDirectory, withIntermediateDirectories: true)
         let capture = runDirectory.appendingPathComponent("capture.tracy")
         let captureLog = runDirectory.appendingPathComponent("tracy-capture.log")
+        let sessionStatus = runDirectory.appendingPathComponent("session-status.bin")
         let profileCompositorLog = runDirectory.appendingPathComponent(
             "nucleus_drm.log")
         let compositorLog: URL
@@ -81,12 +83,14 @@ struct ProfileCapture {
         let compositorProcess = try launchSession(
             options,
             installation: installation,
+            statusFile: sessionStatus,
             fallbackLog: sessionLog == nil ? compositorLog : nil,
             environment: environment,
             directory: compositor)
         defer { stop(compositorProcess) }
-        try waitForCompositorReady(
+        try waitForSessionReady(
             compositorProcess,
+            statusFile: sessionStatus,
             log: compositorLog,
             environment: environment)
         let captureProcess = try launch(receiver.path, arguments: captureArguments(options, port: port, capture: capture), log: captureLog, environment: context.environment, directory: compositor)
@@ -133,11 +137,17 @@ struct ProfileCapture {
     private func launchSession(
         _ options: RunOptions,
         installation: RuntimeInstallation,
+        statusFile: URL,
         fallbackLog: URL?,
         environment: [String: String],
         directory: URL
     ) throws -> ProfileProcess {
-        let arguments = [installation.compositor.path]
+        let configuration = try options.sessionConfiguration
+        let arguments = [
+            "--status-file", statusFile.path,
+            "--configuration", configuration.hexEncoded,
+            "--", installation.compositor.path,
+        ]
             + options.compositorArguments
         let process: Process
         if let fallbackLog {
@@ -182,14 +192,30 @@ struct ProfileCapture {
         return compositorExited
     }
 
-    private func waitForCompositorReady(_ managed: ProfileProcess, log: URL, environment: [String: String]) throws {
-        let readyMessage = "Wayland compositor listening on the libwayland router"
+    private func waitForSessionReady(
+        _ managed: ProfileProcess,
+        statusFile: URL,
+        log: URL,
+        environment: [String: String]
+    ) throws {
         for _ in 0..<150 {
-            if let contents = try? String(contentsOf: log, encoding: .utf8) {
-                if contents.contains("render runtime: Swift render path active for 0 output(s)") {
-                    throw WorkspaceFailure.message("compositor initialized but attached no physical DRM outputs; see \(log.path)")
+            if let data = try? Data(contentsOf: statusFile),
+               let message = SessionReadinessMessage(encoded: Array(data)) {
+                switch message.milestone {
+                case .shellReady:
+                    guard message.role == .shell else { break }
+                    return
+                case .failed:
+                    let reason = SessionFailureReason(
+                        rawValue: message.detail)
+                        .map { String(describing: $0) }
+                        ?? "unknown failure detail \(message.detail)"
+                    throw WorkspaceFailure.message(
+                        "native session supervisor reported startup failure "
+                            + "(\(reason)); see \(log.path)")
+                case .compositorReady, .terminating:
+                    break
                 }
-                if contents.contains(readyMessage) { return }
             }
             if !managed.process.isRunning {
                 managed.process.waitUntilExit()
@@ -201,7 +227,9 @@ struct ProfileCapture {
         let hint = graphicalSession
             ? " The current graphical session likely owns the DRM seat; switch to a free virtual terminal and run tools/nucleus run there."
             : " Check the compositor log for the blocked bring-up stage."
-        throw WorkspaceFailure.message("compositor did not finish Wayland/DRM bring-up within 15 seconds.\(hint) See \(log.path)")
+        throw WorkspaceFailure.message(
+            "compositor and shell did not report native readiness within 15 seconds."
+                + "\(hint) See \(log.path)")
     }
 
     private func stop(_ managed: ProfileProcess) {
@@ -229,6 +257,8 @@ struct ProfileCapture {
             "host=\(options.host)", "port=\(port)", "seconds=\(options.seconds.map(String.init) ?? "until-client-exit")",
             "optimize=\(options.configuration)", "tracy=true", "launch=true",
             "session=true", "vk_validation=\(options.validation)",
+            "output_scale=\(options.scale ?? 1)",
+            "present_mode=\(options.presentMode ?? "vsync")",
             "sanitizer=\(options.sanitizer?.rawValue ?? "none")",
             "compositor=\(binary.path)",
         ]

@@ -46,7 +46,7 @@ enum ProducerKind: Hashable {
 struct ProducerCacheKey: Hashable {
     var layerId: UInt64
     var revision: UInt64
-    var dependencyRevision: UInt64 = 0
+    var imageDependencies = PaintImageDependencies()
     var width: Int32
     var height: Int32
     var kind: ProducerKind
@@ -85,7 +85,7 @@ final class TextureProducer {
         Set(keys.filter {
             $0.kind == key.kind
                 && ($0.revision != key.revision
-                    || $0.dependencyRevision != key.dependencyRevision)
+                    || $0.imageDependencies != key.imageDependencies)
         })
     }
 
@@ -125,14 +125,14 @@ final class TextureProducer {
     /// rasterization could not allocate a surface (no GPU).
     func produce(
         recorder: nucleus.skia.Recorder, layerId: UInt64, revision: UInt64,
-        dependencyRevision: UInt64 = 0,
+        imageDependencies: PaintImageDependencies = PaintImageDependencies(),
         width: Int32, height: Int32, kind: ProducerKind,
         damage: PlanRect? = nil,
         draw: (nucleus.skia.Canvas) -> Void
     ) -> UInt64? {
         let key = ProducerCacheKey(
             layerId: layerId, revision: revision,
-            dependencyRevision: dependencyRevision,
+            imageDependencies: imageDependencies,
             width: width, height: height, kind: kind)
         if let existing = handlesByKey[key] {
             // Cache hit: nothing to repaint.
@@ -151,7 +151,7 @@ final class TextureProducer {
             let oldKey = keysByLayer[layerId]?.first {
                 $0.kind == kind
                     && ($0.revision != revision
-                        || $0.dependencyRevision != dependencyRevision)
+                        || $0.imageDependencies != imageDependencies)
                     && $0.width == width
                     && $0.height == height
             }
@@ -201,7 +201,7 @@ final class TextureProducer {
             !($0.layerId == layerId
                 && $0.kind == kind
                 && ($0.revision != revision
-                    || $0.dependencyRevision != dependencyRevision))
+                    || $0.imageDependencies != imageDependencies))
         })
 
         let handle = registry.allocHandle()
@@ -271,7 +271,7 @@ final class TextureProducer {
         recorder: nucleus.skia.Recorder,
         layerId: UInt64,
         revision: UInt64,
-        dependencyRevision: UInt64 = 0,
+        imageDependencies: PaintImageDependencies = PaintImageDependencies(),
         commands: [PaintDrawCommand],
         payload: [UInt8],
         authoredWidth: Float,
@@ -297,7 +297,7 @@ final class TextureProducer {
 
         return produce(
             recorder: recorder, layerId: layerId, revision: revision,
-            dependencyRevision: dependencyRevision,
+            imageDependencies: imageDependencies,
             width: width, height: height, kind: .paint,
             damage: rasterDamage
         ) { canvas in

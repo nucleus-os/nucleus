@@ -19,6 +19,8 @@ private struct LifecycleTestWakeSink: AsyncRenderWakeSink {
     #expect(!runtime.bringUp(
         drmDeviceFd: -1,
         dmabufMainDevice: 0,
+        enableValidation: false,
+        presentPolicy: .vsync,
         store: store,
         resourceHost: resourceHost,
         asyncRenderWakeSink: LifecycleTestWakeSink()))

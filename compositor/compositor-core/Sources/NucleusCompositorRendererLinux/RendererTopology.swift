@@ -26,7 +26,7 @@ extension RendererRuntime {
         let generation = nextBindingGeneration
         nextBindingGeneration &+= 1
         guard let drm = DrmOutput.discover(
-            deviceFd: drmDeviceFd,
+            device: drmDevice,
             connectorId: connectorId,
             crtcId: crtcId,
             planeId: planeId,
@@ -35,6 +35,7 @@ extension RendererRuntime {
             width: pixelWidth,
             height: pixelHeight,
             vrrCapable: vrrCapable,
+            presentPolicy: presentPolicy,
             onPageFlip: { [weak self] event in
                 self?.notePageFlipComplete(
                     outputId, generation, event)
@@ -79,7 +80,7 @@ extension RendererRuntime {
         scanoutSurfaces.removeOutput(outputId)
         let cursorPlane = DrmCursorPlane.create(
             gbmDevice: gbmHandle,
-            deviceFd: drmDeviceFd,
+            device: drmDevice,
             planeId: cursorPlaneId,
             crtcId: crtcId,
             props: drm.cursorProps,
@@ -164,7 +165,7 @@ extension RendererRuntime {
         }
         let framebufferID = framebuffer.fbId
         let owner = buffer.makeOwner(
-            framebufferFd: drmDeviceFd,
+            framebufferDevice: drmDevice,
             framebufferId: framebuffer.release())
         return ScanoutSlot(
             imageHandle: imageHandle,
@@ -328,14 +329,27 @@ extension RendererRuntime {
                 return .rejected(errno: commitErrno)
             }
             for output in disabling {
-                output.addDisableState(into: &builder)
+                guard output.addAtomicState(.disabled, into: &builder) else {
+                    commitErrno = EINVAL
+                    return .rejected(errno: commitErrno)
+                }
+            }
+            guard builder.validates(
+                fd: drmDeviceFd,
+                flags: drmModeAtomicAllowModeset)
+            else {
+                let code = rendererErrno()
+                commitErrno = code == 0 ? EINVAL : code
+                diagnosticLines = builder.diagnosticLines()
+                return .rejected(errno: commitErrno)
             }
             let rc = builder.commit(
                 fd: drmDeviceFd,
                 flags: drmModeAtomicAllowModeset)
             diagnosticLines = builder.diagnosticLines()
             guard rc == 0 else {
-                commitErrno = rendererErrno()
+                let code = rendererErrno()
+                commitErrno = code == 0 ? EINVAL : code
                 return .rejected(errno: commitErrno)
             }
             return .accepted
@@ -376,6 +390,23 @@ extension RendererRuntime {
         forcedPresentOutputIDs.remove(outputID)
         scanoutSurfaces.removeOutput(outputID)
         core.detachOutputGeometry(outputID: outputID)
+    }
+
+    /// End every binding after the primary DRM device has been revoked by the
+    /// session owner. Closing the device is the kernel-side lifetime barrier:
+    /// no CRTC can retain a framebuffer after it. Userspace owners can therefore
+    /// be released without requiring another atomic request on the lost fd.
+    func releaseBindingsAfterDrmDeviceLoss() {
+        let lost = bindings.values.sorted { $0.outputId < $1.outputId }
+        for binding in lost {
+            binding.drm.noteDeviceLost()
+            binding.releaseAfterScanoutDisabled()
+            retiredFlipTokens.append(binding.drm.flipToken)
+            removeRetiredBinding(binding)
+        }
+        pendingTopology = nil
+        appliedTopologySnapshot = nil
+        backendState = .failed("DRM device revoked during shutdown")
     }
 
     public func commitProposedTopology(

@@ -360,6 +360,10 @@ let package = Package(
                 .product(
                     name: "NucleusLinuxReactor",
                     package: "NucleusLinuxPlatform"),
+                .product(
+                    name: "NucleusLinuxSession",
+                    package: "NucleusLinuxPlatform"),
+                .product(name: "WaylandClient", package: "swift-wayland"),
                 .product(name: "NucleusRenderer", package: "Nucleus"),
                 .product(name: "NucleusRenderModel", package: "Nucleus"),
                 .product(name: "NucleusRenderHost", package: "Nucleus"),
@@ -417,6 +421,9 @@ let package = Package(
             name: "NucleusShell",
             dependencies: [
                 "NucleusShellRuntime",
+                .product(
+                    name: "NucleusLinuxSession",
+                    package: "NucleusLinuxPlatform"),
                 // The Skia text backend, compiled once in the core and linked here (no
                 // symlink target) — same product the compositor links.
                 .product(name: "NucleusTextBackend", package: "Nucleus"),

@@ -12,6 +12,7 @@ import NucleusRenderHost
 import NucleusRenderModel
 import NucleusLinuxDBus
 import NucleusLinuxReactor
+import NucleusLinuxSession
 import Tracy
 import Glibc
 
@@ -60,12 +61,15 @@ final class CompositorRuntime {
     let renderRuntime: RenderRuntime
     let frameDemand: DisplayFrameDemand
     let shellServices: ShellServices
-    var shellProcessID: pid_t = 0
+    var readinessReporter: SessionReadinessReporter?
+    let configuration: SessionConfiguration
     private var exitRequested = false
     private var paused = false
     private var retirement = RendererRetirementCoordinator(
         retryDelayNanoseconds: 5_000_000,
         shutdownGraceNanoseconds: 1_000_000_000)
+    var shutdownDisposition =
+        RendererRetirementCoordinator.ShutdownDisposition.outputsDisabled
     // Frame pacing is deadline-driven off each output's DisplayLink (vblank-phased predicted
     // present, corrected by real page-flip timestamps); `frameIntervalNs` is only the fallback
     // wait before any output exists. There is no free-running frame clock.
@@ -79,8 +83,8 @@ final class CompositorRuntime {
         CompositorRuntime.monotonicNowNs()
     private var idleWakeupsInWindow: UInt64 = 0
 
-    /// Output fractional scale (from `NUCLEUS_SCALE`); the udev DRM-hotplug
-    /// handler re-enumerates outputs at this scale.
+    /// Output fractional scale supplied by the immutable session configuration;
+    /// the udev DRM-hotplug handler re-enumerates outputs at this scale.
     let outputScale: Double
     private(set) lazy var outputTopology = OutputTopologyReconciler(
         defaultScale: outputScale,
@@ -91,7 +95,10 @@ final class CompositorRuntime {
         waylandRuntime: waylandRuntime,
         overlayScene: shellServices.overlayScene)
 
-    init?() {
+    init?(
+        configuration: SessionConfiguration = .defaults,
+        readinessReporter: SessionReadinessReporter? = nil
+    ) {
         let exitSignalFD = nucleus_compositor_create_exit_signal_fd()
         guard exitSignalFD >= 0 else { return nil }
         guard let reactor = try? LinuxHostReactor(queueDepth: 256) else {
@@ -105,6 +112,8 @@ final class CompositorRuntime {
         self.reactor = reactor
         self.exitSignalFD = exitSignalFD
         self.renderWake = renderWake
+        self.configuration = configuration
+        self.readinessReporter = readinessReporter
         let resourceHost = SwiftResourceHost()
         self.resourceHost = resourceHost
         let retainedStore = RetainedTreeStore(resourceHost: resourceHost)
@@ -114,7 +123,10 @@ final class CompositorRuntime {
         let server = NucleusCompositorServer()
         let windowManager = WindowManager(server: server)
         let waylandRuntime = WaylandRuntime(
-            server: server, windowManager: windowManager)
+            server: server,
+            windowManager: windowManager,
+            diagnostics: WaylandRuntimeDiagnostics(
+                traceProtocolEffects: configuration.traceProtocol))
         let renderRuntime = RenderRuntime(server: server)
         let shellServices = ShellServices(
             server: server,
@@ -136,11 +148,7 @@ final class CompositorRuntime {
                 runtimeHost: hostBundle.layersHost,
                 requestFrame: { frameDemand.requestFrame() })
         }
-        if let raw = getenv("NUCLEUS_SCALE"), let value = Double(String(cString: raw)), value > 0 {
-            self.outputScale = value
-        } else {
-            self.outputScale = 1.0
-        }
+        self.outputScale = configuration.outputScale
     }
 
     func makeRenderCommitSink() -> RenderCommitSink {
@@ -158,6 +166,20 @@ final class CompositorRuntime {
     func requestExit() {
         exitRequested = true
         reactor.wake()
+    }
+
+    func reportCompositorReadyAfterPresentation() {
+        guard let readinessReporter else { return }
+        do {
+            try readinessReporter.report(.compositorReady)
+            self.readinessReporter = nil
+            logRuntime(
+                "session: compositor ready after first physical presentation")
+        } catch {
+            self.readinessReporter = nil
+            logRuntime("session supervisor readiness failed: \(error)")
+            requestExit()
+        }
     }
 
     func stopReactor() async {
@@ -355,10 +377,11 @@ final class CompositorRuntime {
                     renderRuntime.prepareShutdown(),
                     nowNanoseconds: now)
                 {
-                case .readyToExit(let preservingRenderer):
-                    if preservingRenderer {
+                case .readyToExit(let disposition):
+                    shutdownDisposition = disposition
+                    if disposition == .drmDeviceCloseRequired {
                         logRuntime(
-                            "shutdown: preserving renderer resources while kernel presentation remains active")
+                            "shutdown: atomic retirement did not complete; DRM device close will terminate kernel scanout ownership")
                     }
                     break runtimeLoop
                 case .waiting:
@@ -381,6 +404,15 @@ final class CompositorRuntime {
                             ?? display.displayLink.predictedPresentNs(0)) <= nowNs
                     }
                 let dueOutputIDs = Set(dueDisplays.map(\.id))
+                if configuration.traceDrmDemand, !dueDisplays.isEmpty {
+                    let demand = dueDisplays.map { display -> String in
+                        if case .queued(let reasons) = display.redrawState {
+                            return "\(display.id):0x\(String(reasons.rawValue, radix: 16))"
+                        }
+                        return "\(display.id):state-changed"
+                    }.joined(separator: ",")
+                    logRuntime("frame-demand: due=[\(demand)]")
+                }
                 for display in dueDisplays {
                     _ = display.beginRedraw(frameBuildID: loopTurns)
                     display.noteSceneAuthorPass()
@@ -407,7 +439,12 @@ final class CompositorRuntime {
                     let events = server.events
                     renderRuntime.setCursorPosition(
                         x: events.cursorX, y: events.cursorY)
-                    _ = renderRuntime.renderOutputs(dueOutputIDs)
+                    let submitted = renderRuntime.renderOutputs(dueOutputIDs)
+                    if configuration.traceDrmDemand {
+                        logRuntime(
+                            "frame-demand: outputs=\(dueOutputIDs.sorted()) "
+                                + "submitted=\(submitted)")
+                    }
                     for display in dueDisplays {
                         display.redrawDidNotSubmit()
                     }

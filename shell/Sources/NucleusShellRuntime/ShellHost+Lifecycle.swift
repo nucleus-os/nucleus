@@ -1,10 +1,13 @@
 import NucleusUIEmbedder
+import NucleusLinuxSession
 
 @MainActor
 extension ShellHost {
     /// Bring up the native Swift product and drive it until the compositor
     /// disconnects or a process signal requests exit.
-    public func run() async {
+    public func run(
+        readinessReporter: SessionReadinessReporter? = nil
+    ) async {
         client.onOutputsChanged = { [weak self] in
             self?.outputsChanged()
         }
@@ -33,6 +36,7 @@ extension ShellHost {
 
         writeErr(
             "nucleus-shell: entering reactor loop outputs=\(client.outputs.count)")
+        self.readinessReporter = readinessReporter
         running = true
         await loop()
     }
@@ -55,6 +59,7 @@ extension ShellHost {
         destroyAllWallpaperSurfaces()
         surfaceRegistry?.unregisterAll()
         surfaceRegistry = nil
+        readinessReporter = nil
         do {
             try inputScene?.disconnect()
         } catch {

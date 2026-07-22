@@ -1,4 +1,5 @@
 import Foundation
+import NucleusLinuxSession
 #if canImport(Glibc)
 import Glibc
 #else
@@ -13,7 +14,8 @@ struct RunOptions: Equatable {
     var seconds: Int?
     var scale: Double?
     var presentMode: String?
-    var renderBenchmark: String?
+    var drmDevice: String?
+    var wallpaper: String?
     var build = true
     var validation = false
     var diagnostics = false
@@ -28,6 +30,21 @@ struct RunOptions: Equatable {
             configuration: configuration,
             tracy: tracy,
             sanitizer: sanitizer)
+    }
+
+    var sessionConfiguration: SessionConfiguration {
+        get throws {
+            try SessionConfiguration(
+                outputScale: scale ?? 1,
+                presentMode: presentMode == "mailbox_latest_wins"
+                    ? .mailboxLatestWins
+                    : .vsync,
+                enableVulkanValidation: validation,
+                traceProtocol: diagnostics,
+                traceDrmDemand: diagnostics,
+                drmDevicePath: drmDevice,
+                wallpaperPath: wallpaper)
+        }
     }
 
     static func parse(_ input: [String]) throws -> RunOptions? {
@@ -81,9 +98,10 @@ struct RunOptions: Equatable {
                 value.scale = scale
             case "--present-mode":
                 value.presentMode = try argument("--present-mode")
-            case "--render-benchmark":
-                value.renderBenchmark = try argument("--render-benchmark")
-                tracyOnlyOption = true
+            case "--drm-device":
+                value.drmDevice = try argument("--drm-device")
+            case "--wallpaper":
+                value.wallpaper = try argument("--wallpaper")
             case "--optimize":
                 value.configuration = try argument("--optimize")
                 optimizationOption = true
@@ -135,9 +153,6 @@ struct RunOptions: Equatable {
             throw WorkspaceFailure.message(
                 "--present-mode must be vsync or mailbox_latest_wins")
         }
-        if let renderBenchmark, renderBenchmark != "uncapped" {
-            throw WorkspaceFailure.message("--render-benchmark must be uncapped")
-        }
         if outputOption && !tracy && !valgrind {
             throw WorkspaceFailure.message(
                 "capture options require --tracy (or --valgrind for --output/--name)")
@@ -145,9 +160,6 @@ struct RunOptions: Equatable {
         if tracyOnlyOption && !tracy {
             throw WorkspaceFailure.message(
                 "Tracy capture options require --tracy")
-        }
-        if renderBenchmark != nil && !tracy {
-            throw WorkspaceFailure.message("--render-benchmark requires --tracy")
         }
         if valgrind && tracy {
             throw WorkspaceFailure.message("--valgrind and --tracy cannot be combined")
@@ -158,6 +170,11 @@ struct RunOptions: Equatable {
         var value = self
         if tracy && !optimizationOption {
             value.configuration = "release"
+        }
+        do {
+            _ = try value.sessionConfiguration
+        } catch {
+            throw WorkspaceFailure.message("invalid session configuration: \(error)")
         }
         return value
     }
@@ -174,6 +191,8 @@ struct RunCommand {
       --seconds N              stop the run after N seconds
       --scale N                output scale (default: 1)
       --present-mode vsync|mailbox_latest_wins
+      --drm-device /dev/dri/renderD...
+      --wallpaper PATH
       --vk-validation
       --trace-diagnostics
       --sanitize address|undefined|thread
@@ -182,7 +201,6 @@ struct RunCommand {
     Tracy capture:
       --tracy
       --output DIR --name NAME --host HOST --port PORT
-      --render-benchmark uncapped
 
     Logs:
       logs/nucleus-<UTC timestamp>-<pid>.log
@@ -224,11 +242,11 @@ struct RunCommand {
             return
         }
 
-        var sessionArguments: [String]
+        let compositorCommand: [String]
         if options.valgrind {
             let directory = try createOutputDirectory(options)
             let log = directory.appendingPathComponent("valgrind.log")
-            sessionArguments = [
+            compositorCommand = [
                 "valgrind",
                 "--tool=memcheck",
                 "--error-exitcode=70",
@@ -240,9 +258,13 @@ struct RunCommand {
             ] + options.compositorArguments
             print("valgrind log: \(log.path)")
         } else {
-            sessionArguments = [installation.compositor.path]
+            compositorCommand = [installation.compositor.path]
                 + options.compositorArguments
         }
+        let sessionArguments = [
+            "--configuration", try options.sessionConfiguration.hexEncoded,
+            "--",
+        ] + compositorCommand
         if let seconds = options.seconds {
             try runForDuration(
                 seconds,
@@ -271,24 +293,10 @@ struct RunCommand {
         _ options: RunOptions,
         environment: inout [String: String]
     ) throws {
-        if let scale = options.scale {
-            environment["NUCLEUS_SCALE"] = String(scale)
-        }
-        if let mode = options.presentMode {
-            environment["NUCLEUS_PRESENT_MODE"] = mode
-        }
-        if options.renderBenchmark != nil {
-            environment["NUCLEUS_PROFILE_RENDER_MODE"] = "uncapped_offscreen"
-        }
-        if options.diagnostics {
-            environment["NUCLEUS_TRACE_BLUR_PROTOCOL"] = "1"
-            environment["NUCLEUS_TRACE_DRM_DEMAND"] = "1"
-        }
         if options.validation {
             let script = context.root.appendingPathComponent(
                 "compositor/scripts/run-vk-validation.sh")
             try context.run(script.path, ["--check"])
-            environment["NUCLEUS_VK_VALIDATE"] = "1"
         }
         switch options.sanitizer {
         case .address:

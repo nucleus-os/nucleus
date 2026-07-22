@@ -10,7 +10,7 @@ struct RendererRetirementCoordinatorTests {
 
     private func makeOutput(id: UInt32) -> DrmOutput {
         DrmOutput(
-            deviceFd: -1,
+            device: DrmDeviceLifetime(fileDescriptor: -1),
             connectorId: id,
             crtcId: id + 100,
             planeId: id + 200,
@@ -170,7 +170,7 @@ struct RendererRetirementCoordinatorTests {
     }
 
     @Test
-    func shutdownDeadlinePreservesOwnersUntilDeviceTeardown() {
+    func shutdownDeadlineRequiresDeviceCloseBeforeOwnerTeardown() {
         var coordinator = RendererRetirementCoordinator(
             retryDelayNanoseconds: 5,
             shutdownGraceNanoseconds: 12)
@@ -185,9 +185,36 @@ struct RendererRetirementCoordinatorTests {
                 deadlineNanoseconds: 112))
         #expect(coordinator.applyShutdownResult(
             .draining, nowNanoseconds: 112) == .readyToExit(
-                preservingRenderer: true))
+                .drmDeviceCloseRequired))
         #expect(coordinator.phase == .finished(
-            preservingRenderer: true))
+            .drmDeviceCloseRequired))
+    }
+
+    @Test
+    func successfulShutdownUsesCleanOutputRetirementDisposition() {
+        var coordinator = RendererRetirementCoordinator(
+            retryDelayNanoseconds: 5,
+            shutdownGraceNanoseconds: 12)
+
+        #expect(coordinator.applyShutdownResult(
+            .complete, nowNanoseconds: 100) == .readyToExit(
+                .outputsDisabled))
+        #expect(coordinator.phase == .finished(.outputsDisabled))
+        #expect(coordinator.applyShutdownResult(
+            .failed, nowNanoseconds: 101) == .readyToExit(
+                .outputsDisabled))
+    }
+
+    @Test
+    func terminalRetirementFailureRequiresDeviceClose() {
+        var coordinator = RendererRetirementCoordinator(
+            retryDelayNanoseconds: 5,
+            shutdownGraceNanoseconds: 12)
+
+        #expect(coordinator.applyShutdownResult(
+            .failed, nowNanoseconds: 100) == .readyToExit(
+                .drmDeviceCloseRequired))
+        #expect(coordinator.phase == .finished(.drmDeviceCloseRequired))
     }
 
     @Test

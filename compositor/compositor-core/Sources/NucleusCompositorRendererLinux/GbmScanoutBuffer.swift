@@ -229,8 +229,8 @@ public struct GbmScanoutBuffer: ~Copyable {
     /// explicit nil-out) drops the image. The KMS framebuffer (also `~Copyable`)
     /// is taken by raw fb id + device fd so its removal is a plain `drmModeRmFB`
     /// closure rather than moving the noncopyable owner in.
-    public consuming func makeOwner(
-        framebufferFd: Int32 = -1,
+    consuming func makeOwner(
+        framebufferDevice: DrmDeviceLifetime? = nil,
         framebufferId: UInt32 = 0
     ) -> OutputBufferOwner {
         let bo = self.bo
@@ -241,7 +241,6 @@ public struct GbmScanoutBuffer: ~Copyable {
         // release. `VkOwned.deinit` frees the image + its imported memory.
         let imageBox = VkOwnedImageBox(consuming: self.image)
 
-        let fbFd = framebufferFd
         let fbId = framebufferId
 
         return OutputBufferOwner(
@@ -249,7 +248,11 @@ public struct GbmScanoutBuffer: ~Copyable {
             height: h,
             destroyFramebuffer: {
                 // No-op when no fb was created (render node has no DRM master).
-                if fbId != 0 && fbFd >= 0 { _ = drmModeRmFB(fbFd, fbId) }
+                if fbId != 0,
+                   let fd = framebufferDevice?.availableFileDescriptor
+                {
+                    _ = drmModeRmFB(fd, fbId)
+                }
             },
             destroyImage: {
                 // Dropping the box runs `VkOwned.deinit` → destroys image + memory.

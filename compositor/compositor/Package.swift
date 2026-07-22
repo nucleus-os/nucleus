@@ -173,6 +173,9 @@ let package = Package(
                 .product(
                     name: "NucleusLinuxReactor",
                     package: "NucleusLinuxPlatform"),
+                .product(
+                    name: "NucleusLinuxSession",
+                    package: "NucleusLinuxPlatform"),
                 .product(name: "Tracy", package: "swift-tracy"),
                 "NucleusCompositorSignalC",
             ],
@@ -214,6 +217,9 @@ let package = Package(
             name: "NucleusCompositor",
             dependencies: [
                 "NucleusCompositorRuntime",
+                .product(
+                    name: "NucleusLinuxSession",
+                    package: "NucleusLinuxPlatform"),
             ],
             path: "Sources/NucleusCompositor",
             swiftSettings: [.interoperabilityMode(.Cxx)],
