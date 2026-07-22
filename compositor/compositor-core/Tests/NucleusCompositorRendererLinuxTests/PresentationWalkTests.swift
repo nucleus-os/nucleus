@@ -211,4 +211,39 @@ import NucleusRenderModel
 
         #expect(layerIDs == [200])
     }
+
+    @Test func presentationSurfaceWalksOnlyItsPublishedRootWithinAContext() throws {
+        var tree = LayerTree()
+        let sceneRoot = Self.layer(50, x: 0, y: 0, w: 100, h: 100)
+        var wallpaper = Self.layer(100, x: 0, y: 0, w: 100, h: 100)
+        wallpaper.presentation.content = .paint(PaintContentHandle(raw: 1000))
+        var bar = Self.layer(200, x: 0, y: 0, w: 100, h: 28)
+        bar.presentation.content = .paint(PaintContentHandle(raw: 2000))
+        tree.insertLayer(sceneRoot)
+        tree.insertLayer(wallpaper)
+        tree.insertLayer(bar)
+        try tree.attachRoot(50, index: 0, contextId: ContextID(raw: 8))
+        try tree.attachChild(parentId: 50, childId: 100, index: 0)
+        try tree.attachChild(parentId: 50, childId: 200, index: 1)
+
+        let target = RenderTarget(
+            outputId: 2,
+            logicalRect: LogicalRect(x: 0, y: 0, width: 100, height: 28),
+            pixelSize: PixelSize(width: 100, height: 28),
+            scale: 1,
+            fractionalScale: 1,
+            overlayUsableArea: UsableArea())
+        let plan = PresentationWalk.buildFramePlan(
+            tree: tree,
+            target: target,
+            frame: FrameInfo(outputId: 2),
+            rootContexts: [ContextID(raw: 8)],
+            rootLayerIDs: [200])
+        let layerIDs = plan.ops.compactMap { operation -> UInt64? in
+            guard case .textureQuad(let quad) = operation else { return nil }
+            return quad.layerId
+        }
+
+        #expect(layerIDs == [200])
+    }
 }

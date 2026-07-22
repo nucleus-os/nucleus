@@ -94,10 +94,20 @@ public enum VkRequirements {
         ]
         switch mode {
         case .waylandClientWSI:
-            exts += [VK.Ext.khrSurface, VK.Ext.khrSurfaceMaintenance1, VK.Ext.khrWaylandSurface]
+            exts += [
+                VK.Ext.khrSurface,
+                VK.Ext.khrGetSurfaceCapabilities2,
+                VK.Ext.khrSurfaceMaintenance1,
+                VK.Ext.khrWaylandSurface,
+            ]
         case .platformDefault:
             #if os(Android)
-            exts += [VK.Ext.khrSurface, VK.Ext.khrSurfaceMaintenance1, VK.Ext.khrAndroidSurface]
+            exts += [
+                VK.Ext.khrSurface,
+                VK.Ext.khrGetSurfaceCapabilities2,
+                VK.Ext.khrSurfaceMaintenance1,
+                VK.Ext.khrAndroidSurface,
+            ]
             #endif
         }
         return exts

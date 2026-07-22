@@ -98,6 +98,27 @@ struct RendererTestWakeSink: AsyncRenderWakeSink {
         #expect(FrameDriver.referencedClientSurfaceIDs(plan) == [41])
     }
 
+    @Test func textureResolutionKeepsEqualRawHandlesDistinctByRole() {
+        let plan = FramePlan()
+        plan.appendTextureQuad(TextureQuad(
+            role: .content, texture: TextureHandle(raw: 1),
+            dst: PlanRect(x: 0, y: 0, w: 10, h: 10),
+            src: PlanRect(x: 0, y: 0, w: 10, h: 10), alpha: 1))
+        plan.appendTextureQuad(TextureQuad(
+            role: .paint, texture: TextureHandle(raw: 1),
+            dst: PlanRect(x: 0, y: 0, w: 10, h: 10),
+            src: PlanRect(x: 0, y: 0, w: 10, h: 10), alpha: 1))
+
+        let references = FrameDriver.referencedTextures(plan)
+        #expect(references.count == 2)
+        #expect(Set(references) == [
+            PlanTextureReference(
+                role: .content, handle: TextureHandle(raw: 1)),
+            PlanTextureReference(
+                role: .paint, handle: TextureHandle(raw: 1)),
+        ])
+    }
+
     static func layer(_ id: UInt64, kind: LayerKind = .container,
                       x: Float, y: Float, w: Float, h: Float) -> Layer {
         var l = Layer(id: id, kind: kind)

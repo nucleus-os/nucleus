@@ -32,6 +32,8 @@ public final class ShellRenderEngine {
     // re-supply the makeSurface closure (a no-op after first create, which caches the surface).
     private var surfaces: [UInt64: OpaquePointer] = [:]
     private var refreshMillihertzByOutput: [UInt64: Int32] = [:]
+    private var presentationContextIDByOutput: [UInt64: UInt32] = [:]
+    private var presentationRootLayerIDByOutput: [UInt64: UInt64] = [:]
     private let display: OpaquePointer
     private var nextOutputID: UInt64 = 1
     private var startupFrameDiagnosticsRemaining = 8
@@ -111,6 +113,7 @@ public final class ShellRenderEngine {
         presenters[id] = presenter
         surfaces[id] = waylandSurface
         refreshMillihertzByOutput[id] = refreshMillihertz
+        presentationContextIDByOutput[id] = presentationContextID
         core.attachOutputGeometry(
             outputID: id, logicalX: 0, logicalY: 0,
             logicalWidth: Double(presenter.lastExtentWidth) / scale,
@@ -118,20 +121,41 @@ public final class ShellRenderEngine {
             pixelWidth: UInt32(max(0, presenter.lastExtentWidth)),
             pixelHeight: UInt32(max(0, presenter.lastExtentHeight)),
             fractionalScale: scale)
-        core.setOutputRootContexts(
+        core.setOutputRoots(
             outputID: id,
-            contextIDs: [presentationContextID]
+            contextID: presentationContextID,
+            rootLayerIDs: []
         )
         return id
     }
 
-    /// Place a surface's logical rectangle within the shell's shared logical space.
-    ///
-    /// `addSurface` and `resizeSurface` both assume the origin, which is right
-    /// for a single presentation target. A shell with more than one — a bar and
-    /// a lock screen — needs them in disjoint regions, because the render core
-    /// composites one logical plane and any two targets whose rectangles overlap
-    /// show the same content.
+    /// Route one WSI swapchain to the exact window root published for its
+    /// Wayland surface. A missing root intentionally blanks the target until
+    /// publication catches up with surface configuration.
+    public func setSurfaceRoot(
+        _ rootLayerID: UInt64?,
+        forSurface id: UInt64,
+        label: String
+    ) {
+        guard presenters[id] != nil,
+              let contextID = presentationContextIDByOutput[id]
+        else { return }
+        let normalizedRootLayerID = rootLayerID ?? 0
+        guard presentationRootLayerIDByOutput[id] != normalizedRootLayerID
+        else { return }
+        presentationRootLayerIDByOutput[id] = normalizedRootLayerID
+        Self.log(
+            "shell-render: route output=\(id) context=\(contextID) "
+                + "root=\(normalizedRootLayerID) label=\(label)")
+        core.setOutputRoots(
+            outputID: id,
+            contextID: contextID,
+            rootLayerIDs: rootLayerID.map { [$0] } ?? [])
+    }
+
+    /// Place a surface's target rectangle within the shell's shared logical
+    /// coordinate space. Content identity is selected independently by
+    /// `setSurfaceRoot`; geometry controls projection, never surface routing.
     public func placeSurface(
         _ id: UInt64,
         logicalX: Double, logicalY: Double,
@@ -166,6 +190,8 @@ public final class ShellRenderEngine {
         presenters[id] = nil
         surfaces[id] = nil
         refreshMillihertzByOutput[id] = nil
+        presentationContextIDByOutput[id] = nil
+        presentationRootLayerIDByOutput[id] = nil
         core.detachOutputGeometry(outputID: id)
     }
 

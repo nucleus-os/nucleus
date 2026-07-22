@@ -22,6 +22,7 @@ final class NativeSurfaceRegistry {
     private weak var inputRouter: ShellInputRouter?
     private let didChange: () -> Void
     private var records: [UInt: Record] = [:]
+    private var publishedRootLayerIDByWindowID: [UInt64: UInt64] = [:]
 
     init(
         engine: ShellRenderEngine,
@@ -115,6 +116,10 @@ final class NativeSurfaceRegistry {
                 logicalWidth: logicalWidth,
                 logicalHeight: logicalHeight,
                 scale: scale)
+            engine.setSurfaceRoot(
+                publishedRootLayerIDByWindowID[record.window.id.rawValue],
+                forSurface: renderOutputID,
+                label: record.window.title)
         }
         record.refreshMillihertz = refresh
         records[surfaceID] = record
@@ -160,6 +165,26 @@ final class NativeSurfaceRegistry {
 
     func renderOutputID(for surfaceID: UInt) -> UInt64? {
         records[surfaceID]?.renderOutputID
+    }
+
+    /// Apply the scene publisher's authoritative window-to-root mapping to
+    /// every presentable native surface. Surface routing is identity-based;
+    /// overlapping global geometry never decides which window a swapchain sees.
+    func updatePublishedScene(_ published: PublishedScene) {
+        publishedRootLayerIDByWindowID = published.visualContent.reduce(
+            into: [:]
+        ) { roots, content in
+            guard content.visible, content.id != 0, content.rootLayerID != 0
+            else { return }
+            roots[content.id] = content.rootLayerID
+        }
+        for record in records.values {
+            guard let renderOutputID = record.renderOutputID else { continue }
+            engine.setSurfaceRoot(
+                publishedRootLayerIDByWindowID[record.window.id.rawValue],
+                forSurface: renderOutputID,
+                label: record.window.title)
+        }
     }
 
     private static func pixelExtent(

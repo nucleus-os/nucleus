@@ -94,7 +94,9 @@ import NucleusRenderModel
             _ = NucleusRenderer.renderOffscreen(
                 context: context, plan: plan, width: 256, height: 128,
                 submissionSerial: 1,
-                resolveTexture: { handle in handle.raw == 1 ? sourceImage : nil })
+                resolveTexture: {
+                    $0.handle.raw == 1 ? sourceImage : nil
+                })
 
             // The richer composite: src-blend fill, a masked textured quad with a
             // source rect and a shadow with a resolvable texture. Each op type
@@ -117,7 +119,9 @@ import NucleusRenderModel
             _ = NucleusRenderer.renderOffscreen(
                 context: context, plan: rich, width: 256, height: 128,
                 submissionSerial: 2,
-                resolveTexture: { handle in handle.raw == 1 ? sourceImage : nil })
+                resolveTexture: {
+                    $0.handle.raw == 1 ? sourceImage : nil
+                })
         }
     }
 }

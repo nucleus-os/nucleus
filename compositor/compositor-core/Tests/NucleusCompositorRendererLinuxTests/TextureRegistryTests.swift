@@ -51,41 +51,58 @@ import NucleusSkiaGraphiteBridge
         let surface = nucleus.skia.makeRasterSurface(2, 2)
         let image = surface.snapshotImage()
         #expect(image.isValid())
-        let h1 = registry.allocHandle()
+        let h1 = registry.allocRendererHandle()
+        let rendererKey = TextureRegistryKey.renderer(h1)
         registry.register(
-            handle: h1, image: image,
+            key: rendererKey, image: image,
             width: 2, height: 2, contentRevision: 1)
         #expect(h1 != 0, "registry-handle-nonzero")
         #expect(registry.count == 1, "registry-count-after-upload")
         // resolve() returns the C++ nucleus.skia.Image (unreachable via cross-module
         // @testable); size() is a Swift-typed proxy for the same entry lookup.
-        #expect(registry.size(h1) != nil, "registry-present")
-        #expect(registry.size(h1)?.width == 2 && registry.size(h1)?.height == 2, "registry-size")
+        #expect(registry.size(rendererKey) != nil, "registry-present")
+        #expect(
+            registry.size(rendererKey)?.width == 2
+                && registry.size(rendererKey)?.height == 2,
+            "registry-size")
 
         // Content revision gates re-upload.
-        #expect(!registry.needsUpdate(h1, revision: 1), "registry-revision-current")
-        #expect(registry.needsUpdate(h1, revision: 2), "registry-revision-stale")
-        #expect(registry.needsUpdate(999, revision: 1), "registry-unknown-needs-update")
+        #expect(!registry.needsUpdate(rendererKey, revision: 1), "registry-revision-current")
+        #expect(registry.needsUpdate(rendererKey, revision: 2), "registry-revision-stale")
+        #expect(
+            registry.needsUpdate(.renderer(999), revision: 1),
+            "registry-unknown-needs-update")
 
         // Refcount lifecycle: retain → 2 releases to evict.
-        registry.retain(h1)
-        #expect(!registry.release(h1), "registry-release-still-held")
-        #expect(registry.size(h1) != nil, "registry-present-after-partial-release")
-        #expect(registry.release(h1), "registry-release-evicts")
-        #expect(registry.size(h1) == nil, "registry-evicted")
+        registry.retain(rendererKey)
+        #expect(!registry.release(rendererKey), "registry-release-still-held")
+        #expect(registry.size(rendererKey) != nil, "registry-present-after-partial-release")
+        #expect(registry.release(rendererKey), "registry-release-evicts")
+        #expect(registry.size(rendererKey) == nil, "registry-evicted")
         #expect(registry.count == 0, "registry-count-after-evict")
-        #expect(!registry.release(h1), "registry-release-unknown")
+        #expect(!registry.release(rendererKey), "registry-release-unknown")
 
         // Handles are distinct + non-zero across registrations.
-        let h2 = registry.allocHandle()
-        let h3 = registry.allocHandle()
+        let h2 = registry.allocRendererHandle()
+        let h3 = registry.allocRendererHandle()
         registry.register(
-            handle: h2, image: image,
+            key: .renderer(h2), image: image,
             width: 2, height: 2, contentRevision: 1)
         registry.register(
-            handle: h3, image: image,
+            key: .renderer(h3), image: image,
             width: 2, height: 2, contentRevision: 1)
         #expect(h2 != 0 && h3 != 0 && h2 != h3, "registry-distinct-handles")
+
+        // Client IDs are an independent namespace. A client surface whose ID
+        // equals a live renderer handle must coexist without replacing it.
+        registry.register(
+            key: .clientSurface(h2), image: image,
+            width: 3840, height: 28, contentRevision: 7)
+        #expect(registry.count == 3, "registry-namespaces-coexist")
+        #expect(registry.size(.renderer(h2))?.height == 2)
+        #expect(registry.size(.clientSurface(h2))?.height == 28)
+        #expect(registry.release(.clientSurface(h2)))
+        #expect(registry.size(.renderer(h2)) != nil)
     }
 
     // Best-effort: exercise the façade backend-texture wrap on a real Graphite

@@ -103,7 +103,7 @@ extension RenderCore {
         }
         importedSurfaceImages[iosurfaceID] = VkOwnedImageBox(consuming: imported)
         driver.registry.register(
-            handle: iosurfaceID, image: image,
+            key: .clientSurface(iosurfaceID), image: image,
             width: Int32(width), height: Int32(height), contentRevision: contentGeneration)
         pendingClientAcquireSemaphores[iosurfaceID] = acquireSemaphore
         _ = pendingShmUploads.remove(iosurfaceID)
@@ -269,7 +269,7 @@ extension RenderCore {
                 old))
         }
         driver.registry.register(
-            handle: iosurfaceID,
+            key: .clientSurface(iosurfaceID),
             image: image,
             width: pending.width,
             height: pending.height,
@@ -281,7 +281,7 @@ extension RenderCore {
     public func releaseSurfaceTexture(iosurfaceID: UInt64) {
         clientCommitInstants[iosurfaceID] = nil
         pendingClientAcquireSemaphores[iosurfaceID] = nil
-        _ = frameDriver?.registry.release(iosurfaceID)
+        _ = frameDriver?.registry.release(.clientSurface(iosurfaceID))
         _ = pendingShmUploads.remove(iosurfaceID)
         clientUploadStats.pendingBytes = pendingShmUploads.byteCount
         if let old = clientUploadTextures.removeValue(forKey: iosurfaceID) {

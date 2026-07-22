@@ -74,14 +74,14 @@ import NucleusSkiaGraphiteBridge
                 recorder: recorder, source: source, srcX: 8, srcY: 8, width: 16, height: 16,
                 into: registry, contentRevision: 1)
             else { registry.clear(); return }
-            _ = registry.resolve(handle)
-            _ = registry.size(handle)
+            _ = registry.resolve(.renderer(handle))
+            _ = registry.size(.renderer(handle))
 
             // captureWorldRect maps through scale then captures.
             let worldHandle = SnapshotCapture.captureWorldRect(
                 recorder: recorder, source: source, originX: 0, originY: 0, scale: 0.5,
                 localWidth: 32, localHeight: 32, into: registry, contentRevision: 1)
-            _ = registry.size(worldHandle ?? 0)
+            _ = registry.size(.renderer(worldHandle ?? 0))
 
             let recording = recorder.snapRecording()
             _ = submitGraphiteAndWait(

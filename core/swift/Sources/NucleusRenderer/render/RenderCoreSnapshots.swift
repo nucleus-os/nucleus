@@ -50,7 +50,7 @@ extension RenderCore {
             drainPendingShmUpload(iosurfaceID: iosurfaceID)
             guard iosurfaceID != 0,
                   let driver = frameDriver,
-                  let source = driver.registry.resolve(iosurfaceID),
+                  let source = driver.registry.resolve(.clientSurface(iosurfaceID)),
                   source.isValid()
             else { return nil }
             let width = source.width()
@@ -90,7 +90,7 @@ extension RenderCore {
                     submissionSerial: captureSerial)
                     == nucleus.skia.Status.ok
             else {
-                _ = driver.registry.release(textureHandle)
+                _ = driver.registry.release(.renderer(textureHandle))
                 return nil
             }
             lastSubmittedSerial = captureSerial
@@ -142,7 +142,7 @@ extension RenderCore {
     /// texture too.
     public func releaseSnapshot(_ snapshotHandle: UInt64) {
         if let texture = snapshots.release(SnapshotHandle(raw: snapshotHandle)) {
-            _ = frameDriver?.registry.release(texture.raw)
+            _ = frameDriver?.registry.release(.renderer(texture.raw))
             snapshotTelemetry.retirements &+= 1
             Trace.plot(
                 "swift.nucleus.renderer.snapshot_retirements",

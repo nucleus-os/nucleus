@@ -1,3 +1,16 @@
+struct OutputPresentationInvalidation: Sendable, Equatable {
+    var treeRevisionChanged: Bool
+    var lockGenerationChanged: Bool
+    var resourceGenerationChanged: Bool
+
+    /// Composition-time state and asynchronously resolved resources are not
+    /// represented by retained layer damage. Until they carry exact dirty
+    /// regions, their transition must repaint the complete output accumulator.
+    var forceFullDamage: Bool {
+        lockGenerationChanged || resourceGenerationChanged
+    }
+}
+
 struct OutputPresentationLedger {
     struct Entry: Equatable {
         var treeRevision: UInt64 = 0
@@ -28,6 +41,21 @@ struct OutputPresentationLedger {
         outputID: UInt64
     ) -> Bool {
         entries[outputID, default: Entry()].resourceGeneration < generation
+    }
+
+    func invalidation(
+        outputID: UInt64,
+        treeRevision: UInt64,
+        lockGeneration: UInt64,
+        resourceGeneration: UInt64
+    ) -> OutputPresentationInvalidation {
+        OutputPresentationInvalidation(
+            treeRevisionChanged: needsTreeRevision(
+                treeRevision, outputID: outputID),
+            lockGenerationChanged: needsLockGeneration(
+                lockGeneration, outputID: outputID),
+            resourceGenerationChanged: needsResourceGeneration(
+                resourceGeneration, outputID: outputID))
     }
 
     mutating func acknowledge(

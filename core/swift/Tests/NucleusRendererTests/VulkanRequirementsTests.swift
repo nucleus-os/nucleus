@@ -25,6 +25,7 @@ struct VulkanRequirementsTests {
         #expect(contract.requiresSamplerYcbcrConversion)
         #expect(contract.requiresSwapchainMaintenance1)
         #expect(instance.contains("VK_KHR_surface"))
+        #expect(instance.contains("VK_KHR_get_surface_capabilities2"))
         #expect(instance.contains("VK_KHR_surface_maintenance1"))
         #expect(instance.contains("VK_KHR_wayland_surface"))
         #expect(device.contains("VK_KHR_swapchain"))

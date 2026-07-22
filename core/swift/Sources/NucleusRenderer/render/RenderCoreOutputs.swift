@@ -55,10 +55,38 @@ extension RenderCore {
         contextIDs: [UInt32]
     ) {
         var seen = Set<ContextID>()
-        outputRootContexts[outputID] = contextIDs.compactMap { rawValue in
+        let contexts = contextIDs.compactMap { rawValue in
             let id = ContextID(raw: rawValue)
             return rawValue != 0 && seen.insert(id).inserted ? id : nil
         }
+        guard outputRootContexts[outputID] != contexts
+                || outputRootLayerIDs[outputID] != nil
+        else { return }
+        outputRootContexts[outputID] = contexts
+        outputRootLayerIDs[outputID] = nil
+        outputsNeedingInitialFrame.insert(outputID)
+    }
+
+    /// Associate a standalone presentation surface with exact entry roots in
+    /// one retained context. Root IDs are layer identities returned by scene
+    /// publication. An empty list deliberately clears the target until its
+    /// owning window has published a root.
+    @_spi(NucleusPlatform)
+    public func setOutputRoots(
+        outputID: UInt64,
+        contextID: UInt32,
+        rootLayerIDs: [UInt64]
+    ) {
+        let contexts = contextID == 0 ? [] : [ContextID(raw: contextID)]
+        var seenRoots = Set<UInt64>()
+        let roots = rootLayerIDs.filter {
+            $0 != 0 && seenRoots.insert($0).inserted
+        }
+        guard outputRootContexts[outputID] != contexts
+                || outputRootLayerIDs[outputID] != roots
+        else { return }
+        outputRootContexts[outputID] = contexts
+        outputRootLayerIDs[outputID] = roots
         outputsNeedingInitialFrame.insert(outputID)
     }
 
@@ -67,6 +95,7 @@ extension RenderCore {
     public func detachOutputGeometry(outputID: UInt64) {
         outputTargets[outputID] = nil
         outputRootContexts[outputID] = nil
+        outputRootLayerIDs[outputID] = nil
         outputsNeedingInitialFrame.remove(outputID)
         outputPresentationLedger.detach(outputID)
         frameDriver?.dropAccumulator(output: outputID)

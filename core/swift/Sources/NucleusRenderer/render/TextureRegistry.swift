@@ -1,7 +1,7 @@
-// `TextureRegistry` maps an opaque texture handle (the raw
-// `FramePlan` `TextureHandle.raw`) to a sampleable Skia `Image`, with a content
-// revision (so a producer can skip re-upload of unchanged content) and a
-// refcount (governing eviction). Small paint/decoration nodes pack into a
+// `TextureRegistry` maps an ownership-namespaced opaque texture handle to a
+// sampleable Skia `Image`, with a content revision (so a producer can skip
+// re-upload of unchanged content) and a refcount (governing eviction). Small
+// paint/decoration nodes pack into a
 // guillotine atlas; live client SHM content uses Graphite-owned mutable backend
 // textures staged by FrameDriver; client DMA-BUFs wrap borrowed backend textures.
 //
@@ -161,8 +161,16 @@ struct TextureAtlas {
     }
 }
 
-/// Maps opaque texture handles to sampleable Skia images with content-revision
-/// reuse + refcounting. Reference type; one per renderer.
+/// The ownership namespace is part of registry identity. Renderer allocations
+/// and client surface IDs are independent counters and routinely share the same
+/// raw value; storing them under a bare UInt64 lets one replace the other.
+enum TextureRegistryKey: Equatable, Hashable {
+    case renderer(UInt64)
+    case clientSurface(UInt64)
+}
+
+/// Maps namespaced texture handles to sampleable Skia images with
+/// content-revision reuse + refcounting. Reference type; one per renderer.
 final class TextureRegistry {
     struct Entry {
         var image: nucleus.skia.Image
@@ -172,8 +180,8 @@ final class TextureRegistry {
         var refcount: Int
     }
 
-    private var entries: [UInt64: Entry] = [:]
-    private var nextHandle: UInt64 = 1  // 0 is the invalid sentinel
+    private var entries: [TextureRegistryKey: Entry] = [:]
+    private var nextRendererHandle: UInt64 = 1  // 0 is the invalid sentinel
 
     var count: Int { entries.count }
 
@@ -184,48 +192,54 @@ final class TextureRegistry {
     func clear() { entries.removeAll(keepingCapacity: true) }
 
     /// Allocate a fresh non-zero handle (u64 wrap, skipping 0).
-    func allocHandle() -> UInt64 {
-        let h = nextHandle
-        nextHandle &+= 1
-        if nextHandle == 0 { nextHandle = 1 }
+    func allocRendererHandle() -> UInt64 {
+        let h = nextRendererHandle
+        nextRendererHandle &+= 1
+        if nextRendererHandle == 0 { nextRendererHandle = 1 }
         return h
     }
 
-    /// Register (or replace) `handle`'s texture at `contentRevision`, refcount 1.
-    func register(handle: UInt64, image: nucleus.skia.Image, width: Int32, height: Int32, contentRevision: UInt64) {
-        entries[handle] = Entry(
+    /// Register (or replace) `key`'s texture at `contentRevision`, refcount 1.
+    func register(
+        key: TextureRegistryKey,
+        image: nucleus.skia.Image,
+        width: Int32,
+        height: Int32,
+        contentRevision: UInt64
+    ) {
+        entries[key] = Entry(
             image: image, width: width, height: height,
             contentRevision: contentRevision, refcount: 1)
     }
 
-    /// The image to sample for `handle`, or nil if not registered.
-    func resolve(_ handle: UInt64) -> nucleus.skia.Image? { entries[handle]?.image }
+    /// The image to sample for `key`, or nil if not registered.
+    func resolve(_ key: TextureRegistryKey) -> nucleus.skia.Image? { entries[key]?.image }
 
-    /// The pixel size registered for `handle`.
-    func size(_ handle: UInt64) -> (width: Int32, height: Int32)? {
-        guard let e = entries[handle] else { return nil }
+    /// The pixel size registered for `key`.
+    func size(_ key: TextureRegistryKey) -> (width: Int32, height: Int32)? {
+        guard let e = entries[key] else { return nil }
         return (e.width, e.height)
     }
 
-    /// True when `handle` is unregistered or its content predates `revision` — a
+    /// True when `key` is unregistered or its content predates `revision` — a
     /// producer uses this to skip re-upload of unchanged content.
-    func needsUpdate(_ handle: UInt64, revision: UInt64) -> Bool {
-        guard let e = entries[handle] else { return true }
+    func needsUpdate(_ key: TextureRegistryKey, revision: UInt64) -> Bool {
+        guard let e = entries[key] else { return true }
         return e.contentRevision < revision
     }
 
-    func retain(_ handle: UInt64) { entries[handle]?.refcount += 1 }
+    func retain(_ key: TextureRegistryKey) { entries[key]?.refcount += 1 }
 
     /// Decrement the refcount; evict (and return true) at zero.
     @discardableResult
-    func release(_ handle: UInt64) -> Bool {
-        guard var e = entries[handle] else { return false }
+    func release(_ key: TextureRegistryKey) -> Bool {
+        guard var e = entries[key] else { return false }
         e.refcount -= 1
         if e.refcount <= 0 {
-            entries[handle] = nil
+            entries[key] = nil
             return true
         }
-        entries[handle] = e
+        entries[key] = e
         return false
     }
 

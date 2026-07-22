@@ -259,10 +259,15 @@ public final class RenderCore {
     /// The retained layer contexts each presentation target is allowed to walk.
     ///
     /// A compositor output defaults to the compositor context. Standalone
-    /// clients explicitly associate their own scene context with each
-    /// swapchain surface, which prevents unrelated surface roots from leaking
-    /// into one another merely because they share a render store.
+    /// clients associate their scene context here and install exact traversal
+    /// entry roots below for each swapchain surface.
     var outputRootContexts: [UInt64: [ContextID]] = [:]
+    /// Optional traversal-entry allowlist for each presentation target. `nil` means
+    /// every root in `outputRootContexts`; a present-but-empty set intentionally
+    /// renders only the opaque ground. Standalone multi-surface clients install
+    /// the published window root belonging to each native surface here, so overlapping
+    /// windows in one retained context cannot leak into another swapchain.
+    var outputRootLayerIDs: [UInt64: [UInt64]] = [:]
 
     /// Set when `lockComposition` last changed and a forced redraw has not yet
     /// presented. A lock beginning need not damage the retained tree (non-lock windows

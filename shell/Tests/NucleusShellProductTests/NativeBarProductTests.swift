@@ -60,6 +60,7 @@ struct NativeBarProductTests {
         #expect(first.barView.widgets(in: .start).first === first.taskbarWidget)
         #expect(first.barView.widgets(in: .center).first === first.clockWidget)
         #expect(first.barView.widgets(in: .end).first === first.batteryWidget)
+        #expect(first.barView.backgroundColor == Color(0, 0, 0, 1))
         #expect(first.taskbarWidget.windows.map(\.id) == [7])
         #expect(second.clockWidget.displayText == "10:08 PM")
         #expect(second.batteryWidget.level.fraction == 0.62)

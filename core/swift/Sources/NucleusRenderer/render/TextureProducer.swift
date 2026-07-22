@@ -95,7 +95,7 @@ final class TextureProducer {
     func evict(layerId: UInt64) {
         for key in keysByLayer.removeValue(forKey: layerId) ?? [] {
             if let handle = handlesByKey.removeValue(forKey: key) {
-                _ = registry.release(handle)
+                _ = registry.release(.renderer(handle))
             }
         }
         failedKeys = Set(failedKeys.filter { $0.layerId != layerId })
@@ -160,7 +160,7 @@ final class TextureProducer {
             else {
                 return nil
             }
-            return registry.resolve(oldHandle)
+            return registry.resolve(.renderer(oldHandle))
         }()
         let localized = Self.repaint(
             canvas: canvas,
@@ -192,7 +192,7 @@ final class TextureProducer {
             in: keysByLayer[layerId, default: []], replacing: key)
         for oldKey in superseded {
             if let oldHandle = handlesByKey.removeValue(forKey: oldKey) {
-                _ = registry.release(oldHandle)
+                _ = registry.release(.renderer(oldHandle))
             }
             keysByLayer[layerId]?.remove(oldKey)
             failedKeys.remove(oldKey)
@@ -204,8 +204,10 @@ final class TextureProducer {
                     || $0.imageDependencies != imageDependencies))
         })
 
-        let handle = registry.allocHandle()
-        registry.register(handle: handle, image: image, width: width, height: height, contentRevision: revision)
+        let handle = registry.allocRendererHandle()
+        registry.register(
+            key: .renderer(handle), image: image,
+            width: width, height: height, contentRevision: revision)
         handlesByKey[key] = handle
         keysByLayer[layerId, default: []].insert(key)
         failedKeys.remove(key)

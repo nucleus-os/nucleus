@@ -42,12 +42,12 @@ enum NucleusRenderer {
     }
 
     /// Composite `plan`'s ordered ops onto `canvas`. `resolveTexture` maps a plan
-    /// texture handle to a façade source image (the renderer-owned texture
+    /// texture reference to a façade source image (the renderer-owned texture
     /// registry in the live path). Returns the number of ops drawn. Pure
     /// recording — no submit, no Swift callback beyond `resolveTexture`.
     static func composite(
         plan: FramePlan, onto canvas: nucleus.skia.Canvas,
-        resolveTexture: (TextureHandle) -> nucleus.skia.Image?
+        resolveTexture: (PlanTextureReference) -> nucleus.skia.Image?
     ) -> Int {
         var drawn = 0
         for op in plan.ops {
@@ -60,7 +60,7 @@ enum NucleusRenderer {
     /// inline because it must snapshot the accumulator at that precise z point.
     static func composite(
         op: PlanOp, onto canvas: nucleus.skia.Canvas,
-        resolveTexture: (TextureHandle) -> nucleus.skia.Image?,
+        resolveTexture: (PlanTextureReference) -> nucleus.skia.Image?,
         resolveShadow: (UInt64) -> nucleus.skia.Image? = { _ in nil }
     ) -> Int {
             switch op {
@@ -97,7 +97,10 @@ enum NucleusRenderer {
                 return 1
 
             case .textureQuad(let quad):
-                guard let handle = quad.texture, let image = resolveTexture(handle) else { return 0 }
+                guard let handle = quad.texture,
+                      let image = resolveTexture(PlanTextureReference(
+                        role: quad.role, handle: handle))
+                else { return 0 }
                 var paint = nucleus.skia.Paint()
                 paint.alpha = quad.alpha
                 paint.blend = blend(quad.blendMode)
@@ -112,7 +115,10 @@ enum NucleusRenderer {
                 return 1
 
             case .shadowQuad(let quad):
-                let image = quad.texture.flatMap(resolveTexture)
+                let image = quad.texture.flatMap {
+                    resolveTexture(PlanTextureReference(
+                        role: .shadow, handle: $0))
+                }
                     ?? quad.material.flatMap { resolveShadow($0.layerId) }
                 guard let image else { return 0 }
                 var paint = nucleus.skia.Paint()
@@ -126,7 +132,7 @@ enum NucleusRenderer {
     }
 
     /// Render `plan` into a fresh offscreen target (the standalone tail the
-    /// renderer fixture drives). `resolveTexture` maps a plan texture handle to a
+    /// renderer fixture drives). `resolveTexture` maps a plan texture reference to a
     /// façade source image. Returns nil if the recorder/surface could not be
     /// created.
     static func renderOffscreen(
@@ -135,7 +141,7 @@ enum NucleusRenderer {
         width: Int32,
         height: Int32,
         submissionSerial: UInt64,
-        resolveTexture: (TextureHandle) -> nucleus.skia.Image?
+        resolveTexture: (PlanTextureReference) -> nucleus.skia.Image?
     ) -> RenderResult? {
         let recorder = context.makeRecorder()
         guard recorder.isValid() else { return nil }

@@ -60,6 +60,14 @@ shell-agnostic: it serves standard Wayland protocols and never invokes a shell
 command line. Window-management and system keybinds (tile, VT switch, exit)
 stay compositor-owned.
 
+The shell retains one shared scene and render device, but every Wayland
+presentation surface selects the exact window root returned by scene
+publication. Wallpaper, bar, lock, and future panel swapchains therefore cannot
+sample one another merely because their rectangles overlap. Asynchronous image
+residency is also presentation state: when a decoded image becomes GPU-resident,
+each consuming output repaints its accumulator before acknowledging that
+resource generation.
+
 ## The global application menu bar — not in the compositor
 
 A macOS-style global menu bar is shell chrome, so it does not live in the compositor. The

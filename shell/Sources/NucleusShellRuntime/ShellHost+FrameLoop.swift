@@ -142,6 +142,9 @@ extension ShellHost {
             nativeSceneDirty = false
             do {
                 let published = try inputScene?.publish()
+                if let published {
+                    surfaceRegistry?.updatePublishedScene(published)
+                }
                 _ = accessibilityBridge?.publish()
                 if startupFrameDiagnosticsRemaining > 0 {
                     writeErr(

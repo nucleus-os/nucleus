@@ -10,7 +10,11 @@ import Android
 #endif
 @MainActor
 extension RenderCore {
-    public func recordFrame(outputID: UInt64, target: AcquiredFrameTarget) -> Bool {
+    public func recordFrame(
+        outputID: UInt64,
+        target: AcquiredFrameTarget,
+        forceFullDamage: Bool = false
+    ) -> Bool {
         let renderStarted = telemetryClock.now
         lastFrameRenderStarted = renderStarted
         lastFrameAcquiredSurfaceIDs.removeAll(keepingCapacity: true)
@@ -25,7 +29,8 @@ extension RenderCore {
         let frame = FrameInfo(
             outputId: outputID, width: UInt32(target.width), height: UInt32(target.height),
             scale: renderTarget.scale, frameSerial: frameSerial,
-            fullDamage: outputsNeedingInitialFrame.contains(outputID))
+            fullDamage: forceFullDamage
+                || outputsNeedingInitialFrame.contains(outputID))
 
         // Wrap a TRANSIENT surface over the borrowed image, render into it, and let
         // it drop at the end of this scope. No long-lived surface outlives the image.
@@ -64,6 +69,7 @@ extension RenderCore {
         // the normal, unrestricted composition.
         let lockContexts: Set<ContextID>? = lockComposition.map { $0[outputID] ?? [] }
         let rootContexts = outputRootContexts[outputID] ?? [compositorContextId]
+        let rootLayerIDs = outputRootLayerIDs[outputID]
         let result = driver.renderFrame(
             tree: tree, target: renderTarget, frame: frame, scanout: surface,
             submissionMode: submissionMode,
@@ -71,6 +77,7 @@ extension RenderCore {
                 pendingClientAcquireSemaphores[surfaceID]?.semaphore
             },
             rootContexts: rootContexts,
+            rootLayerIDs: rootLayerIDs,
             lockContexts: lockContexts,
             resolvePaintContent: { resourceHost.paintContents.content($0) },
             resolvePaintImage: { handle in
@@ -80,11 +87,18 @@ extension RenderCore {
                     source: source,
                     outputID: outputID)
             }
-        ) { [snapshots] handle in
-            if let entry = snapshots.resolve(SnapshotHandle(raw: handle.raw)) {
-                return driver.registry.resolve(entry.texture.raw)
+        ) { [snapshots] reference in
+            if reference.role == .snapshot {
+                guard let entry = snapshots.resolve(
+                    SnapshotHandle(raw: reference.handle.raw))
+                else { return nil }
+                return driver.registry.resolve(.renderer(entry.texture.raw))
             }
-            return driver.registry.resolve(handle.raw)
+            if reference.role == .content {
+                return driver.registry.resolve(
+                    .clientSurface(reference.handle.raw))
+            }
+            return driver.registry.resolve(.renderer(reference.handle.raw))
         }
         guard let result else { return false }
         lastFrameAcquiredSurfaceIDs = result.acquiredSurfaceIDs
@@ -203,15 +217,15 @@ extension RenderCore {
             if !backend.isReadyToPresent(outputID) { continue }
             let targetResourceGeneration =
                 frameDriver?.imageResourceRevision(outputID: outputID) ?? 0
-            let hasPendingDamage = outputPresentationLedger.needsTreeRevision(
-                targetRevision, outputID: outputID)
+            let invalidation = outputPresentationLedger.invalidation(
+                outputID: outputID,
+                treeRevision: targetRevision,
+                lockGeneration: targetLockGeneration,
+                resourceGeneration: targetResourceGeneration)
             let forced = lockComposition != nil
-                || outputPresentationLedger.needsLockGeneration(
-                    targetLockGeneration, outputID: outputID)
-                || outputPresentationLedger.needsResourceGeneration(
-                    targetResourceGeneration, outputID: outputID)
+                || invalidation.forceFullDamage
             guard Self.shouldRenderOutput(
-                hasPendingDamage: hasPendingDamage,
+                hasPendingDamage: invalidation.treeRevisionChanged,
                 forced: forced,
                 wantsPresent: backend.wantsPresent(outputID),
                 needsInitialFrame: outputsNeedingInitialFrame.contains(outputID)
@@ -236,7 +250,11 @@ extension RenderCore {
                 outputAcquisitionCount)
             let acquireTargetNs = elapsedNanoseconds(acquireStarted, telemetryClock.now)
             let recordStarted = telemetryClock.now
-            guard recordFrame(outputID: outputID, target: target) else {
+            guard recordFrame(
+                outputID: outputID,
+                target: target,
+                forceFullDamage: invalidation.forceFullDamage)
+            else {
                 // The acquire succeeded but the frame could not be recorded. Let the
                 // backend undo the acquire (WSI: consume the acquire semaphore +
                 // return the image via a blank present), so the next acquire does not

@@ -69,6 +69,11 @@ public final class BarView: View {
 
     public override init() {
         super.init()
+        // A layer-shell panel owns its complete visual surface. Relying on the
+        // render accumulator's fallback clear leaves the Wayland buffer
+        // transparent wherever no widget paints and exposes the background
+        // surface beneath it.
+        backgroundColor = Color(0, 0, 0, 1)
         addSubview(underlay)
         for section in Section.allCases {
             let stack = StackView(axis: .horizontal, spacing: widgetSpacing, alignment: .center)

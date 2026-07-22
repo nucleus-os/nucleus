@@ -9,6 +9,9 @@
 import NucleusSkiaGraphiteBridge
 import VulkanC
 import NucleusRenderModel
+#if canImport(Glibc)
+import Glibc
+#endif
 
 /// Per-frame render demand. `shouldRenderThisVblank` is the render predicate:
 /// render when any continuous animation is active, a frame is explicitly due,
@@ -121,6 +124,7 @@ final class FrameDriver {
     private var recording = false
     private var uploadsStaged = false
     private(set) var sawCallbackWhileRecording = false
+    private var presentationPlanDiagnosticsRemaining: [UInt64: Int] = [:]
 
     init?(
         context: nucleus.skia.GraphiteContext,
@@ -331,21 +335,22 @@ final class FrameDriver {
         return created
     }
 
-    private struct TextureReference {
-        var role: TextureQuadRole
-        var handle: TextureHandle
-    }
-
     /// Collect every texture handle a plan references so they can be resolved
     /// before recording.
-    private func referencedHandles(_ plan: FramePlan) -> [TextureReference] {
-        var handles: [TextureReference] = []
+    static func referencedTextures(_ plan: FramePlan) -> [PlanTextureReference] {
+        var handles: [PlanTextureReference] = []
         for op in plan.ops {
             switch op {
             case .textureQuad(let q):
-                if let t = q.texture { handles.append(TextureReference(role: q.role, handle: t)) }
+                if let t = q.texture {
+                    handles.append(PlanTextureReference(
+                        role: q.role, handle: t))
+                }
             case .shadowQuad(let q):
-                if let t = q.texture { handles.append(TextureReference(role: .shadow, handle: t)) }
+                if let t = q.texture {
+                    handles.append(PlanTextureReference(
+                        role: .shadow, handle: t))
+                }
             case .fillQuad, .visualStyle, .backdrop: break
             }
         }
@@ -372,13 +377,14 @@ final class FrameDriver {
         target: RenderTarget,
         resolvePaintContent: (PaintContentHandle) -> PaintContentStore.Content?,
         resolvePaintImage: (UInt64) -> nucleus.skia.Image?
-    ) -> [UInt64: nucleus.skia.Image] {
-        var resolved: [UInt64: nucleus.skia.Image] = [:]
+    ) -> [PlanTextureReference: nucleus.skia.Image] {
+        var resolved: [PlanTextureReference: nucleus.skia.Image] = [:]
         for op in plan.ops {
             guard case .textureQuad(let quad) = op,
                   quad.role == .paint,
                   let handle = quad.texture,
-                  resolved[handle.raw] == nil,
+                  resolved[PlanTextureReference(
+                    role: .paint, handle: handle)] == nil,
                   let content = resolvePaintContent(PaintContentHandle(raw: handle.raw))
             else { continue }
 
@@ -404,8 +410,11 @@ final class FrameDriver {
                 localDamage: quad.localPaintDamage,
                 resolveImage: { paintImages[$0] },
                 resolveEffect: resolvePaintEffect)
-            if let produced, let image = registry.resolve(produced) {
-                resolved[handle.raw] = image
+            if let produced,
+               let image = registry.resolve(.renderer(produced))
+            {
+                resolved[PlanTextureReference(
+                    role: .paint, handle: handle)] = image
             }
         }
         return resolved
@@ -430,7 +439,7 @@ final class FrameDriver {
             guard let handle = producer.produceShadow(
                 recorder: recorder, layerId: material.layerId,
                 revision: material.revision, shadow: decoration),
-                let image = registry.resolve(handle)
+                let image = registry.resolve(.renderer(handle))
             else { continue }
             resolved[material.layerId] = image
         }
@@ -466,8 +475,8 @@ final class FrameDriver {
         case offscreen
     }
 
-    /// Render one frame for `target`'s output into `scanout`. `resolveContent`
-    /// maps the emit's role-spaced texture handle to a GPU image; it is called
+    /// Render one frame for `target`'s output into `scanout`. `resolveTexture`
+    /// maps the emit's complete texture reference to a GPU image; it is called
     /// only in the pre-resolve phase, never during recording or submit. When
     /// `submissionMode` makes the WSI, DRM, or offscreen completion contract
     /// explicit. All three paths submit asynchronously and advance `frameSerial`.
@@ -478,10 +487,11 @@ final class FrameDriver {
         submissionMode: SubmissionMode,
         acquireWaitSemaphore: (UInt64) -> VkSemaphore? = { _ in nil },
         rootContexts: [ContextID] = [compositorContextId],
+        rootLayerIDs: [UInt64]? = nil,
         lockContexts: Set<ContextID>? = nil,
         resolvePaintContent: (PaintContentHandle) -> PaintContentStore.Content?,
         resolvePaintImage: (UInt64) -> nucleus.skia.Image?,
-        resolveContent: (TextureHandle) -> nucleus.skia.Image?
+        resolveTexture: (PlanTextureReference) -> nucleus.skia.Image?
     ) -> FrameRenderResult? {
         let clock = ContinuousClock()
         let totalStart = clock.now
@@ -491,8 +501,13 @@ final class FrameDriver {
             target: target,
             frame: frame,
             rootContexts: rootContexts,
+            rootLayerIDs: rootLayerIDs,
             lockContexts: lockContexts
         )
+        logPresentationPlan(
+            plan,
+            rootLayerIDs: rootLayerIDs,
+            resolvePaintContent: resolvePaintContent)
         let referencedSurfaceIDs = Self.referencedClientSurfaceIDs(plan)
         var acquiredSurfaceIDs: [UInt64] = []
         var frameAcquireWaits: [VkSemaphore] = []
@@ -516,13 +531,18 @@ final class FrameDriver {
             resolvePaintContent: resolvePaintContent,
             resolvePaintImage: resolvePaintImage)
         let resolvedShadows = produceShadowTextures(plan: plan)
-        func trackedResolve(_ handle: TextureHandle) -> nucleus.skia.Image? {
+        func trackedResolve(
+            _ reference: PlanTextureReference
+        ) -> nucleus.skia.Image? {
             if recording { sawCallbackWhileRecording = true }
-            return resolveContent(handle)
+            return resolveTexture(reference)
         }
-        for reference in referencedHandles(plan) where resolved[reference.handle.raw] == nil {
+        for reference in Self.referencedTextures(plan)
+        where resolved[reference] == nil {
             if reference.role == .paint { continue }
-            if let image = trackedResolve(reference.handle) { resolved[reference.handle.raw] = image }
+            if let image = trackedResolve(reference) {
+                resolved[reference] = image
+            }
         }
         timings.resolveNs = elapsedNanoseconds(phaseStart, clock.now)
 
@@ -571,7 +591,7 @@ final class FrameDriver {
             } else {
                 drawn += NucleusRenderer.composite(
                     op: op, onto: canvas,
-                    resolveTexture: { handle in resolved[handle.raw] },
+                    resolveTexture: { resolved[$0] },
                     resolveShadow: { layerId in resolvedShadows[layerId] })
             }
         }
@@ -673,6 +693,61 @@ final class FrameDriver {
             referencedSurfaceIDs: referencedSurfaceIDs,
             callbackDuringRecord: sawCallbackWhileRecording,
             timings: timings)
+    }
+
+    private func logPresentationPlan(
+        _ plan: FramePlan,
+        rootLayerIDs: [UInt64]?,
+        resolvePaintContent: (PaintContentHandle) -> PaintContentStore.Content?
+    ) {
+        #if canImport(Glibc)
+        let outputID = plan.frame.outputId
+        let remaining = presentationPlanDiagnosticsRemaining[outputID] ?? 4
+        guard remaining > 0 else { return }
+        presentationPlanDiagnosticsRemaining[outputID] = remaining - 1
+        let operations = plan.ops.map { operation -> String in
+            switch operation {
+            case .textureQuad(let quad):
+                let role: String
+                switch quad.role {
+                case .content: role = "content"
+                case .paint: role = "paint"
+                case .snapshot: role = "snapshot"
+                case .remoteHost: role = "remote-host"
+                case .shadow: role = "shadow"
+                case .fill: role = "fill"
+                case .shell: role = "shell"
+                case .unknown: role = "unknown"
+                }
+                let handle = quad.texture?.raw ?? 0
+                let imageCount: Int
+                if quad.role == .paint,
+                   let content = resolvePaintContent(
+                    PaintContentHandle(raw: handle))
+                {
+                    imageCount = content.imageDependencies.count
+                } else {
+                    imageCount = 0
+                }
+                return "\(role):layer=\(quad.layerId),handle=\(handle),"
+                    + "images=\(imageCount),dst="
+                    + "\(quad.dst.x),\(quad.dst.y),\(quad.dst.w)x\(quad.dst.h)"
+            case .fillQuad:
+                return "fill"
+            case .visualStyle:
+                return "style"
+            case .shadowQuad(let quad):
+                return "shadow:layer=\(quad.material?.layerId ?? 0)"
+            case .backdrop:
+                return "backdrop"
+            }
+        }
+        let roots = rootLayerIDs.map { String(describing: $0) }
+            ?? "context-default"
+        let line = "render-plan: output=\(outputID) roots=\(roots) "
+            + "ops=[\(operations.joined(separator: ";"))]\n"
+        line.withCString { _ = write(STDERR_FILENO, $0, strlen($0)) }
+        #endif
     }
 
     struct FrameDamage {

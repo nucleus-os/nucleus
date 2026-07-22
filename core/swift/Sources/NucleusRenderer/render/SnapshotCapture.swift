@@ -24,9 +24,9 @@ final class CaptureTarget {
     func finish(into registry: TextureRegistry, contentRevision: UInt64) -> UInt64? {
         let image = surface.snapshotImage()
         guard image.isValid() else { return nil }
-        let handle = registry.allocHandle()
+        let handle = registry.allocRendererHandle()
         registry.register(
-            handle: handle, image: image, width: width, height: height,
+            key: .renderer(handle), image: image, width: width, height: height,
             contentRevision: contentRevision)
         return handle
     }

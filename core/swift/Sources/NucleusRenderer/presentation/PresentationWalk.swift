@@ -24,6 +24,7 @@ enum PresentationWalk {
     static func buildFramePlan(
         tree: LayerTree, target: RenderTarget, frame: FrameInfo,
         rootContexts: [ContextID] = [compositorContextId],
+        rootLayerIDs: [UInt64]? = nil,
         lockContexts: Set<ContextID>? = nil
     ) -> FramePlan {
         let plan = FramePlan()
@@ -32,7 +33,10 @@ enum PresentationWalk {
         for rootContext in rootContexts {
             guard !contextStack.contains(rootContext) else { continue }
             contextStack.append(rootContext)
-            for rootId in tree.roots(for: rootContext) {
+            let entryRoots = rootLayerIDs?.filter {
+                tree.contains($0, in: rootContext)
+            } ?? tree.roots(for: rootContext)
+            for rootId in entryRoots {
                 walk(
                     tree, rootId, .identity, 1.0, .none, [], target, plan,
                     &contextStack, lockContexts

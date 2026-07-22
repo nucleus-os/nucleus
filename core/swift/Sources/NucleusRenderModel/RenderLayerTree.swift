@@ -258,6 +258,22 @@ public struct LayerTree: Sendable {
         contextRoots[contextId] ?? []
     }
 
+    /// Whether `id` is attached beneath a root owned by `contextId`. Explicit
+    /// presentation entry roots may be nested placement layers, so ownership is
+    /// established by walking their parent chain to the context root.
+    public func contains(_ id: UInt64, in contextId: ContextID) -> Bool {
+        var cursor: UInt64? = id
+        var visited = Set<UInt64>()
+        while let current = cursor,
+              visited.insert(current).inserted,
+              let layer = layers[current]
+        {
+            if layer.rootContext == contextId { return true }
+            cursor = layer.parent
+        }
+        return false
+    }
+
     /// Attach `childId` under `parentId` at `index` (clamped), refusing to
     /// create a cycle. Both nodes must exist. Mirrors `attachChild`.
     public mutating func attachChild(parentId: UInt64, childId: UInt64, index: Int) throws {

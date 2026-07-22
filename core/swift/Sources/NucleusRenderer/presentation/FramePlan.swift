@@ -11,7 +11,7 @@
 /// (`enum(u64)`, `invalid = 0`).
 import NucleusRenderModel
 
-struct TextureHandle: Equatable {
+struct TextureHandle: Equatable, Hashable {
     var raw: UInt64 = 0
     static let invalid = TextureHandle(raw: 0)
     var isValid: Bool { raw != 0 }
@@ -19,7 +19,7 @@ struct TextureHandle: Equatable {
 }
 
 /// Which sampler/pipeline a textured draw uses. Mirrors `TextureQuadRole`.
-enum TextureQuadRole {
+enum TextureQuadRole: Hashable {
     case content
     case paint
     case snapshot
@@ -28,6 +28,14 @@ enum TextureQuadRole {
     case fill
     case shell
     case unknown
+}
+
+/// Complete identity of a texture reference in a frame plan. Numeric handles
+/// are allocated independently by paint, client-surface, and snapshot owners;
+/// the role is therefore part of the identity rather than draw-only metadata.
+struct PlanTextureReference: Equatable, Hashable {
+    var role: TextureQuadRole
+    var handle: TextureHandle
 }
 
 /// Composite blend. Mirrors `BlendMode`.

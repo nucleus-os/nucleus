@@ -114,7 +114,8 @@ extension RenderCore {
             return nil
         }
         guard let driver = frameDriver,
-              let image = driver.registry.resolve(iosurfaceID), image.isValid()
+              let image = driver.registry.resolve(.clientSurface(iosurfaceID)),
+              image.isValid()
         else { return nil }
         let width = image.width()
         let height = image.height()
