@@ -323,6 +323,14 @@ struct ShellServicesAccessibilityTests {
             Issue.record("runtime B observed runtime A's custom keybind")
         }
 
+        let formerShellPanelShortcut = servicesA.keybinds.dispatch(
+            keycode: 57,
+            modifiers: .command,
+            phase: .down)
+        if case .pass = formerShellPanelShortcut {} else {
+            Issue.record("obsolete shell-specific panel shortcut was captured")
+        }
+
         #expect(serverA.dataExchange.allocateHandle() == 1)
         #expect(serverA.dataExchange.allocateHandle() == 2)
         #expect(serverB.dataExchange.allocateHandle() == 1)

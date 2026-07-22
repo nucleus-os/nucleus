@@ -1,59 +1,7 @@
-@_spi(NucleusCompositor) import NucleusReactRuntime
-import NucleusUI
-import NucleusTextBackend
-import NucleusUIEmbedder
-import NucleusLayers
-import NucleusRenderModel
-import NucleusRenderHost
-import NucleusAppHostBundle
-import NucleusShellWayland
-import NucleusShellPasteboard
-import NucleusShellInput
-import NucleusShellAuth
-import NucleusLinuxDBus
-import NucleusLinuxAccessibility
-import NucleusShellServices
-import NucleusLinuxEnvironment
-import NucleusLinuxReactor
-import NucleusShellProduct
-import NucleusShellRender
 import NucleusShellLoop
-import NucleusRenderer
-import NucleusShellSignalC
-import Foundation
-import Synchronization
+import NucleusLinuxReactor
 import Tracy
-#if canImport(Glibc)
 import Glibc
-#endif
-
-/// Thread-safe hand-off from the JS thread (the facade's command callback) to the main-actor
-/// frame loop. The Wayland client is single-threaded, so commands are queued here and applied
-/// on the loop rather than touched from the JS thread.
-final class CommandInbox: Sendable {
-    private let pending = Mutex<[(String, String)]>([])
-    private let wakeSink: any AsyncRenderWakeSink
-
-    init(wakeSink: any AsyncRenderWakeSink) {
-        self.wakeSink = wakeSink
-    }
-
-    func push(_ command: String, _ argsJson: String) {
-        let shouldWake = pending.withLock {
-            let wasEmpty = $0.isEmpty
-            $0.append((command, argsJson))
-            return wasEmpty
-        }
-        if shouldWake { wakeSink.signalRenderWork() }
-    }
-    func drain() -> [(String, String)] {
-        pending.withLock {
-            let output = $0
-            $0.removeAll(keepingCapacity: true)
-            return output
-        }
-    }
-}
 
 struct ShellLoopCounters {
     private var pollWakeCount: UInt64 = 0

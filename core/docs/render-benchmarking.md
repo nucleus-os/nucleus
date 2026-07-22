@@ -17,4 +17,4 @@ plan, producer preparation, and Vulkan scene execution path, but renders into
 rotating offscreen textures instead of submitting DRM atomic commits. It keeps
 the output size, scale, and format from the active KMS output, and reports
 240/360/500 Hz budget misses through Tracy events and
-`tools/nucleus profile --render-benchmark uncapped`.
+`tools/nucleus run --tracy --render-benchmark uncapped`.

@@ -31,10 +31,10 @@ public final class KeybindService {
         case one = 2, two = 3, three = 4, four = 5, five = 6
         case six = 7, seven = 8, eight = 9, nine = 10
         case q = 16, e = 18
-        case b = 48, c = 46, m = 50
+        case c = 46, m = 50
         case t = 20, p = 25, s = 31, f = 33
         case k = 37, l = 38, v = 47
-        case slash = 53, space = 57
+        case slash = 53
         // Tiling: arrow keys for half-tiles, u/i/j/k for the four corners (a
         // positional 2×2 cluster), Return to maximize. These are evdev
         // (physical) codes, like every bind here.
@@ -64,12 +64,6 @@ public final class KeybindService {
     /// the caller as `.deferred(action)`.
     public enum Action: Sendable {
         case launchApp(ids: [String], fallback: [String])
-        /// Fire-and-forget a Noctalia IPC command (`noctalia msg <args>`). The
-        /// compositor owns global hotkeys, so it binds the keys and drives
-        /// Noctalia's panels/actions over IPC; Noctalia is a layer-shell client
-        /// and cannot grab keys itself.
-        case noctaliaMessage([String])
-
         // Deferred — executed reactor-side.
         case closeFocusedWindow
         case showWindowMenu
@@ -160,18 +154,10 @@ public final class KeybindService {
             .init(key: .c, modifiers: .command):
                 .launchApp(ids: ["google-chrome.desktop", "chromium.desktop"],
                            fallback: ["google-chrome"]),
-            // Noctalia shell panels. The compositor must bind these (Noctalia
-            // can't grab global keys) and drive them over `noctalia msg`. Keys
-            // are placeholders — re-bind freely.
-            .init(key: .space, modifiers: .command):
-                .noctaliaMessage(["panel-toggle", "launcher"]),
-            .init(key: .b, modifiers: .command):
-                .noctaliaMessage(["panel-toggle", "control-center"]),
-
             // Session actions
             .init(key: .q, modifiers: .command): .closeFocusedWindow,
             .init(key: .m, modifiers: [.command, .shift]): .showWindowMenu,
-            // Screenshots are owned by the shell (Noctalia) via wlr-screencopy; the
+            // Screenshots are owned by the shell via wlr-screencopy; the
             // compositor no longer binds a screenshot key.
             .init(key: .slash, modifiers: .command): .toggleHotkeyOverlay,
             .init(key: .escape, modifiers: []): .dismissHotkeyOverlay,
@@ -264,10 +250,6 @@ public final class KeybindService {
         switch action {
         case .launchApp(let ids, let fallback):
             _ = launcher.launchPreferred(ids: ids, fallback: fallback)
-            return .consume
-
-        case .noctaliaMessage(let args):
-            _ = launcher.spawn(["noctalia", "msg"] + args)
             return .consume
 
         case .closeFocusedWindow:

@@ -1,35 +1,37 @@
-@_spi(NucleusCompositor) import NucleusReactRuntime
-import NucleusUI
-import NucleusTextBackend
-import NucleusUIEmbedder
-import NucleusLayers
-import NucleusRenderModel
-import NucleusRenderHost
-import NucleusAppHostBundle
-import NucleusShellWayland
-import NucleusShellPasteboard
-import NucleusShellInput
-import NucleusShellAuth
-import NucleusLinuxDBus
-import NucleusLinuxAccessibility
-import NucleusShellServices
-import NucleusLinuxEnvironment
-import NucleusLinuxReactor
-import NucleusShellProduct
-import NucleusShellRender
-import NucleusShellLoop
-import NucleusRenderer
-import NucleusShellSignalC
 import Foundation
-import Synchronization
-import Tracy
-#if canImport(Glibc)
-import Glibc
-#endif
+import NucleusLinuxDBus
+import NucleusShellProduct
+import NucleusShellServices
+import NucleusShellWayland
+import NucleusUI
+
+@MainActor
+struct NativeBarSurface {
+    let outputID: UInt32
+    let layerSurface: LayerSurface
+    let surfaceID: UInt
+    let window: Window
+    let product: ShellBarProduct
+}
 
 @MainActor
 extension ShellHost {
-    // MARK: - Services
+    // MARK: - Product and services
+
+    func setupProduct() {
+        guard let nativePublicationContext else {
+            writeErr("shell: native product requires a publication context")
+            return
+        }
+        let product = nativePublicationContext.withSemanticContext {
+            ShellProductController()
+        }
+        product.onWindowAction = { [weak self] id, action in
+            self?.applyWindowAction(action, id: id)
+        }
+        productController = product
+        refreshClock(nowNanoseconds: monotonicNowNs(), force: true)
+    }
 
     func setupServices() {
         guard let bus = try? DBusConnection(.system) else {
@@ -40,7 +42,7 @@ extension ShellHost {
 
         let upower = UPowerService(connection: bus)
         upower.onChange = { [weak self] reading in
-            self?.batteryWidget.update(BatteryLevel(
+            self?.productController?.updateBattery(BatteryLevel(
                 fraction: reading.percentage / 100,
                 isCharging: reading.state.isPluggedIn,
                 isPresent: reading.isPresent,
@@ -55,157 +57,211 @@ extension ShellHost {
         self.upower = upower
     }
 
-    // MARK: - Bar surface
+    // MARK: - Native bars
 
-    func createBarSurface() {
-        let config = LayerSurfaceConfig.topBar(height: barHeight)
-        // Anchor to the first output (compositor picks if nil).
-        let output = client.outputs.values.first
-        guard let surface = LayerSurface(client: client, config: config, output: output) else {
-            writeErr("shell: failed to create bar layer surface")
-            return
+    func reconcileBarSurfaces() {
+        guard let productController, let nativePublicationContext,
+              let surfaceRegistry
+        else { return }
+
+        let liveOutputIDs = Set(client.outputs.keys)
+        for outputID in Array(barSurfaces.keys)
+            where !liveOutputIDs.contains(outputID)
+        {
+            destroyBarSurface(outputID: outputID)
         }
-        surface.onConfigure = { [weak self] w, h in
-            self?.onBarConfigured(width: Int32(w == 0 ? 1920 : w), height: Int32(h))
+
+        for output in client.outputs.values
+            where barSurfaces[output.registryName] == nil
+        {
+            let outputID = output.registryName
+            let (barProduct, window) = nativePublicationContext
+                .withSemanticContext {
+                let barProduct = productController.makeBar(
+                    forOutput: outputID)
+                barProduct.barView.thickness = Double(barHeight)
+                let window = Window(
+                    title: "Nucleus Bar",
+                    role: .layer,
+                    level: .shellChrome)
+                window.setContentView(barProduct.barView)
+                return (barProduct, window)
+            }
+            let config = LayerSurfaceConfig.topBar(
+                height: barHeight,
+                namespace: "nucleus-shell.bar.\(outputID)")
+            guard let layerSurface = LayerSurface(
+                client: client,
+                config: config,
+                output: output)
+            else {
+                productController.removeBar(forOutput: outputID)
+                writeErr("shell: failed to create bar for output \(outputID)")
+                continue
+            }
+            let surfaceID = surfaceRegistry.register(
+                window: window,
+                waylandSurface: layerSurface.wlSurface,
+                refreshMillihertz: output.refreshMillihertz)
+            let record = NativeBarSurface(
+                outputID: outputID,
+                layerSurface: layerSurface,
+                surfaceID: surfaceID,
+                window: window,
+                product: barProduct)
+            barSurfaces[outputID] = record
+            layerSurface.onConfigure = { [weak self] width, height in
+                self?.configureBarSurface(
+                    outputID: outputID,
+                    width: width,
+                    height: height)
+            }
+            layerSurface.onClosed = { [weak self] in
+                self?.destroyBarSurface(outputID: outputID)
+            }
         }
-        surface.onClosed = { [weak self] in self?.running = false }
-        barSurface = surface
-        client.flush()
+        updateSceneDisplayBounds()
+        _ = client.flush()
     }
 
-    func onBarConfigured(width: Int32, height: Int32) {
-        let scale = Double(client.outputs.values.first?.scale ?? 1)
-        guard let surface = barSurface, let renderContext else {
-            writeErr("shell: bar configured without a render context")
+    func configureBarSurface(
+        outputID: UInt32,
+        width: UInt32,
+        height: UInt32
+    ) {
+        guard let record = barSurfaces[outputID],
+              let output = client.outputs[outputID],
+              let surfaceRegistry
+        else { return }
+
+        let logicalWidth = Double(width != 0
+            ? width
+            : UInt32(max(1, output.logicalWidth)))
+        let logicalHeight = Double(height != 0 ? height : barHeight)
+        let scale = Double(max(1, output.scale))
+        record.product.barView.thickness = logicalHeight
+        let configured = surfaceRegistry.configure(
+            surfaceID: record.surfaceID,
+            logicalOrigin: Point(
+                x: Double(output.logicalX),
+                y: Double(output.logicalY)),
+            logicalWidth: logicalWidth,
+            logicalHeight: logicalHeight,
+            scale: scale,
+            refreshMillihertz: output.refreshMillihertz)
+        if !configured {
+            writeErr("shell: failed to configure native bar on output \(outputID)")
+        }
+    }
+
+    func destroyBarSurface(outputID: UInt32) {
+        guard let record = barSurfaces.removeValue(forKey: outputID) else {
             return
         }
+        surfaceRegistry?.unregister(surfaceID: record.surfaceID)
+        record.layerSurface.destroy()
+        productController?.removeBar(forOutput: outputID)
+    }
 
-        // Popovers place themselves inside the display, so the scene needs the
-        // output's logical size. The bar's own configure is the first point at
-        // which it is known; a popover opened before this would resolve inside a
-        // zero rect.
-        if let output = client.outputs.values.first, output.logicalWidth > 0 {
-            inputScene?.displayBounds = Rect(
-                x: 0, y: 0,
-                width: Double(output.logicalWidth),
-                height: Double(output.logicalHeight))
-        }
-        if let id = barOutputID {
-            engine.resizeSurface(id, width: width, height: height, scale: scale)
-        } else if let id = engine.addSurface(
-            waylandSurface: surface.wlSurface,
-            width: width,
-            height: height,
-            scale: scale,
-            presentationContextID: renderContext.id.rawValue,
-            refreshMillihertz:
-                surface.output?.refreshMillihertz
-                ?? client.outputs.values.first?.refreshMillihertz
-                ?? 0
-        ) {
-            barOutputID = id
-            bootReactBar(width: Double(width) / scale, height: Double(height) / scale, scale: scale)
+    func destroyAllBarSurfaces() {
+        for outputID in Array(barSurfaces.keys) {
+            destroyBarSurface(outputID: outputID)
         }
     }
 
     func outputsChanged() {
-        if let barOutputID {
-            let refresh = barSurface?.output?.refreshMillihertz
-                ?? client.outputs.values.first?.refreshMillihertz
-                ?? 0
-            engine.setRefreshMillihertz(refresh, forSurface: barOutputID)
+        reconcileBarSurfaces()
+        for record in barSurfaces.values {
+            guard let output = client.outputs[record.outputID] else { continue }
+            surfaceRegistry?.updateRefreshRate(
+                output.refreshMillihertz,
+                surfaceID: record.surfaceID)
         }
-        lockController?.updateOutputRefreshRates()
+        lockController?.outputsChanged()
+        updateSceneDisplayBounds()
         requestRender(nativeSceneChanged: true)
     }
 
-    // MARK: - React boot (the NucleusReactRuntime.Host facade)
-
-    func bootReactBar(width: Double, height: Double, scale: Double) {
-        guard let renderContext, let nativePublicationContext else { return }
-        do {
-            let rootView = nativePublicationContext.withSemanticContext {
-                View()
+    func updateSceneDisplayBounds() {
+        let rects = client.outputs.values.compactMap { output -> Rect? in
+            guard output.logicalWidth > 0, output.logicalHeight > 0 else {
+                return nil
             }
-            let host = try NucleusReactRuntime.Host()
-            try host.installFabricRuntime()
-            let surfaceID = 1
-            try host.registerSurface(id: surfaceID)
-            try host.configureSurface(id: surfaceID, width: width, height: height)
-            try host.setDisplayMetrics(width: width, height: height, scale: scale, fontScale: 1.0)
-            try host.evaluateBundle(at: bundleURL)
-            try host.runApplication(surfaceID: surfaceID, appKey: "bar")
-            _ = try host.attachSurface(
-                rootView: rootView, surfaceID: surfaceID,
-                visualContext: renderContext,
-                backingScaleFactor: BackingScaleFactor(Float(scale)), at: 0)
-            // JS→native taskbar actions: NucleusHostCommand.invoke(command, argsJson) fires
-            // on the JS thread → push onto the thread-safe inbox the frame loop drains onto
-            // the main actor (the Wayland client is single-threaded / @MainActor).
-            let inbox = commandInbox
-            try host.setCommandHandler { command, argsJson in inbox.push(command, argsJson) }
-            let renderWake = self.renderWake
-            try host.setJSWorkWakeHandler {
-                renderWake.signalRenderWork()
-            }
-            rnHost = host
-            barRootView = rootView
-            barSurfaceID = surfaceID
-        } catch {
-            writeErr("shell: RN boot failed: \(error)")
+            return Rect(
+                x: Double(output.logicalX),
+                y: Double(output.logicalY),
+                width: Double(output.logicalWidth),
+                height: Double(output.logicalHeight))
+        }
+        guard let first = rects.first else { return }
+        inputScene?.displayBounds = rects.dropFirst().reduce(first) {
+            $0.union($1)
         }
     }
 
-    // MARK: - Foreign-toplevel → taskbar
+    // MARK: - Clock
+
+    func refreshClock(
+        nowNanoseconds: UInt64,
+        force: Bool = false
+    ) {
+        if !force, let deadline = nextClockUpdateNanoseconds,
+           nowNanoseconds < deadline
+        {
+            return
+        }
+        let now = Date()
+        productController?.updateClock(
+            displayText: clockFormatter.string(from: now))
+
+        let secondsIntoMinute = now.timeIntervalSince1970
+            .truncatingRemainder(dividingBy: 60)
+        let untilNextMinute = max(0.05, 60 - secondsIntoMinute)
+        let delta = UInt64(
+            min(Double(UInt64.max), untilNextMinute * 1_000_000_000))
+        nextClockUpdateNanoseconds = clampedAdd(nowNanoseconds, delta)
+        requestRender(nativeSceneChanged: true)
+    }
+
+    // MARK: - Foreign toplevels
 
     func setupForeignToplevel() {
-        guard let manager = ForeignToplevelManager(client: client) else { return }
-        manager.onChanged = { [weak self] in self?.pushWindowsToJS() }
+        guard let manager = ForeignToplevelManager(client: client) else {
+            productController?.updateWindows([])
+            return
+        }
+        manager.onChanged = { [weak self] in
+            self?.publishWindowSnapshots()
+        }
         toplevels = manager
+        publishWindowSnapshots()
     }
 
-    func pushWindowsToJS() {
-        guard let windows = toplevels?.windows, let host = rnHost else { return }
-        // Serialize the window snapshot and push it to JS via the facade (native→JS). The bar's
-        // taskbar subscribes with DeviceEventEmitter.addListener("nucleusShellWindows", …).
-        let snapshot: [[String: Any]] = windows.map { window in
-            [
-                // A 64-bit handle exceeds JS's precise integer range.
-                "id": String(window.id),
-                "title": window.title,
-                "appId": window.appID,
-                "activated": window.activated,
-                "minimized": window.minimized,
-            ]
-        }
-        do {
-            let data = try JSONSerialization.data(withJSONObject: snapshot)
-            guard let json = String(data: data, encoding: .utf8) else {
-                writeErr("nucleus-shell: window snapshot was not UTF-8")
-                return
-            }
-            try host.emitDeviceEvent(name: "nucleusShellWindows", payloadJson: json)
-        } catch {
-            writeErr("nucleus-shell: failed to publish window snapshot: \(error)")
-        }
+    func publishWindowSnapshots() {
+        let snapshots = toplevels?.windows.map {
+            ShellWindowSnapshot(
+                id: $0.id,
+                title: $0.title,
+                applicationID: $0.appID,
+                isActive: $0.activated,
+                isMinimized: $0.minimized)
+        } ?? []
+        productController?.updateWindows(snapshots)
+        requestRender(nativeSceneChanged: true)
     }
 
-    /// Route a JS→native taskbar command (drained from the inbox on the main actor) to the
-    /// foreign-toplevel client. `argsJson` is `{"id": <n|"n">, …}`; ids may be strings to
-    /// survive JS's 2^53 number precision (a toplevel id is a 64-bit handle).
-    func applyCommand(_ command: String, _ argsJson: String) {
-        guard let data = argsJson.data(using: .utf8),
-              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-        else { return }
-        let id: UInt64
-        if let n = obj["id"] as? NSNumber { id = n.uint64Value }
-        else if let s = obj["id"] as? String, let v = UInt64(s) { id = v }
-        else { return }
-        switch command {
-        case "activate": toplevels?.activate(id: id)
-        case "close": toplevels?.close(id: id)
-        case "setMinimized": toplevels?.setMinimized(id: id, (obj["minimized"] as? Bool) ?? false)
-        default: break
+    func applyWindowAction(
+        _ action: ShellWindowAction,
+        id: UInt64
+    ) {
+        switch action {
+        case .activate:
+            toplevels?.activate(id: id)
+        case .close:
+            toplevels?.close(id: id)
+        case .setMinimized(let minimized):
+            toplevels?.setMinimized(id: id, minimized)
         }
+        _ = client.flush()
     }
 }

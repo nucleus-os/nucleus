@@ -76,7 +76,6 @@ extension CompositorRuntime {
             diagnosticSink: { diagnostic in
                 logRuntime("UI service failure: \(diagnostic)")
             })
-        _ = shellServices.prepareEnvironment()
         guard textSystem.hasInstalledBackend,
               shellServices.installOverlay(
                 commitSink: makeRenderCommitSink(),
@@ -224,6 +223,7 @@ extension CompositorRuntime {
             return false
         }
         logRuntime("Wayland compositor listening on the libwayland router")
+        shellServices.activateEnvironment()
 
         // ── Shell D-Bus services + desktop shell ──────────────────────────
         spawnShellClient()
@@ -245,6 +245,7 @@ extension CompositorRuntime {
     /// and seat/libinput.
     func teardown() async {
         await stopReactor()
+        await stopShellClient()
         logRuntime("shutdown: Wayland scene")
         waylandRuntime.prepareShutdown()
         logRuntime("shutdown: render runtime")
@@ -286,17 +287,18 @@ extension CompositorRuntime {
         }
     }
 
-    /// Spawn the desktop shell (Noctalia) as a detached Wayland client on the
+    /// Spawn the Nucleus desktop shell as a supervised Wayland client on the
     /// compositor's WAYLAND_DISPLAY. The command (NUCLEUS_SHELL_CMD, default
-    /// "noctalia -d") is whitespace-split into argv; empty disables spawning. We
-    /// double-fork so the shell reparents to init: the compositor neither blocks on
-    /// it nor leaks a zombie.
+    /// "nucleus-shell") is whitespace-split into argv; empty disables spawning.
+    /// `posix_spawn` is required here: the compositor is already multithreaded,
+    /// so running Swift between `fork` and `exec` can deadlock on inherited
+    /// runtime locks.
     private func spawnShellClient() {
         let command: String
         if let raw = getenv("NUCLEUS_SHELL_CMD") {
             command = String(cString: raw)
         } else {
-            command = "noctalia -d"
+            command = "nucleus-shell"
         }
         let tokens = command.split(whereSeparator: { $0 == " " || $0 == "\t" || $0 == "\r" || $0 == "\n" }).map(String.init)
         guard !tokens.isEmpty else {
@@ -304,28 +306,66 @@ extension CompositorRuntime {
             return
         }
 
-        let child = fork()
-        if child < 0 {
-            logRuntime("shell: fork failed; not spawning '\(command)'")
+        var attributes = posix_spawnattr_t()
+        guard posix_spawnattr_init(&attributes) == 0 else {
+            logRuntime("shell: failed to initialize spawn attributes")
             return
         }
-        if child == 0 {
-            // Middle process: detach into a new session, then fork the shell so it
-            // reparents to init when this process exits immediately below.
-            _ = setsid()
-            let grandchild = fork()
-            if grandchild == 0 {
-                let cArgs: [UnsafeMutablePointer<CChar>?] = tokens.map { strdup($0) } + [nil]
-                if let file = cArgs[0] { _ = execvp(file, cArgs) }
-                _exit(127)
-            }
-            _exit(0)
+        defer { posix_spawnattr_destroy(&attributes) }
+
+        var defaultSignals = sigset_t()
+        var emptyMask = sigset_t()
+        sigemptyset(&defaultSignals)
+        sigemptyset(&emptyMask)
+        for signal in [SIGINT, SIGQUIT, SIGTERM, SIGHUP, SIGPIPE] {
+            sigaddset(&defaultSignals, signal)
+        }
+        guard posix_spawnattr_setsigdefault(
+            &attributes, &defaultSignals) == 0,
+              posix_spawnattr_setsigmask(&attributes, &emptyMask) == 0,
+              posix_spawnattr_setflags(
+                &attributes,
+                Int16(POSIX_SPAWN_SETSIGDEF | POSIX_SPAWN_SETSIGMASK)) == 0
+        else {
+            logRuntime("shell: failed to configure spawn signal state")
+            return
         }
 
-        // Parent: reap the short-lived middle process so it never lingers as a
-        // zombie. The shell itself is now a child of init.
-        var status: Int32 = 0
-        _ = waitpid(child, &status, 0)
-        logRuntime("shell: spawned '\(command)' on the compositor display")
+        let argv: [UnsafeMutablePointer<CChar>?] =
+            (["/usr/bin/env"] + tokens).map { strdup($0) } + [nil]
+        defer { argv.forEach { free($0) } }
+        var child = pid_t()
+        let result = argv.withUnsafeBufferPointer { buffer in
+            posix_spawn(
+                &child,
+                "/usr/bin/env",
+                nil,
+                &attributes,
+                UnsafeMutablePointer(mutating: buffer.baseAddress!),
+                environ)
+        }
+        guard result == 0 else {
+            logRuntime(
+                "shell: posix_spawn failed (\(result)); not spawning '\(command)'")
+            return
+        }
+        shellProcessID = child
+        logRuntime(
+            "shell: spawned '\(command)' pid=\(child) on the compositor display")
+    }
+
+    private func stopShellClient() async {
+        let child = shellProcessID
+        guard child > 0 else { return }
+        shellProcessID = 0
+
+        if waitpid(child, nil, WNOHANG) == child { return }
+        _ = kill(child, SIGTERM)
+        for _ in 0..<50 {
+            if waitpid(child, nil, WNOHANG) == child { return }
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+        _ = kill(child, SIGKILL)
+        while waitpid(child, nil, 0) == -1, errno == EINTR {}
     }
 }

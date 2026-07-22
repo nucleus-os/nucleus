@@ -55,20 +55,19 @@ renderer backend, window management, output management, the composition root, an
 animations — draws on the render core, in Swift, with no React. Consumes `nucleus` and the
 render SDK only. Serves the standard shell-facing protocols. Links zero React.
 
-**`nucleus-shell` — the first-party shell.** An RN app built on `react-native-nucleus`, plus
-the shell-bindings module it consumes (layer-shell, foreign-toplevel, session-lock, screencopy
-native modules — a library layered on the platform, not part of it). A standard layer-shell
-client: it draws its own surfaces and drives windows over standard protocols. It has no build
-dependency on the compositor and is one of potentially several shells.
+**`nucleus-shell` — the first-party shell.** A native Swift product built against public
+`NucleusUI`, with focused Wayland client modules for layer-shell, foreign-toplevel,
+session-lock, and screencopy. It draws its own surfaces and drives windows over standard
+protocols. It has no build dependency on the compositor and is one of potentially several
+shells.
 
 ## The seams
 
-**The React/render seam is the layer tree, and it stays in-process.** Every consumer — an app,
-the shell — runs its own React reconciler that produces a `NucleusLayers` tree, rendered
-in-process by the core renderer. There is no cross-process scene protocol and no serialized
-layer tree: a shell is a normal client that renders its own buffers, not a description the
-compositor renders on its behalf. This is the direct consequence of dropping "React lays out
-app windows" — the compositor owns window layout, so nothing needs to hand it a scene.
+**The UI/render seam is the retained layer tree, and it stays in-process.** RN applications
+produce it through their React reconciler; the native shell publishes it from an authoritative
+`WindowScene`. There is no cross-process scene protocol and no serialized layer tree: a shell
+is a normal client that renders its own buffers, not a description the compositor renders on
+its behalf.
 
 **The compositor/shell seam is standard Wayland protocols.** The compositor implements the
 server side of layer-shell (panels, docks, backgrounds, overlays, exclusive zones),
@@ -117,18 +116,11 @@ Both compositor manifests point at `../nucleus`, and the diamond that forced the
 longer exists for the compositor. `nucleus-compositor` is now a pure Wayland/DRM compositor
 consuming only the render core.
 
-**Phase 4's `nucleus-shell` skeleton + bar vertical slice is built** (new `nucleus-shell`
-repo). It stands up the out-of-process layer-shell RN client end to end: the client Wayland
-bindings (the client twin of the compositor's codegen — connection, registry, layer-shell,
-foreign-toplevel, session-lock/screencopy drivers), a `VK_KHR_wayland_surface` Vulkan-WSI
-render backend (`PresentationBackend` conformer modeled on the Android presenter), the RN app
-host booting via the `NucleusReactRuntime.Host` facade, and the bar RN component (clock +
-foreign-toplevel taskbar) with its native module. Three small **additive** core changes land in
-`nucleus` for it: a Wayland-WSI Vulkan header include, a `VkRequirements.PresentationMode`
-`.waylandClientWSI` extension set, and a defaulted `RenderCore.create(presentation:)` param.
-The whole package graph resolves (`swift package dump-package`, nine targets); runtime behaviour
-is compositor/hardware-gated. Session-lock/screencopy clients and the desktop-services sort are
-scaffolded (real shapes) beyond the one-surface slice. See `nucleus-shell/docs/shell-architecture.md`.
+**Phase 4's `nucleus-shell` runtime is native Swift.** The client Wayland bindings,
+`VK_KHR_wayland_surface` renderer, shared `NativeSurfaceRegistry`, authoritative `WindowScene`,
+multi-output bar, typed foreign-toplevel actions, and native session lock form the sole shell
+execution path. The former RN host, JavaScript bundle, plugin, SDK dependency, and bridge
+plumbing are deleted. See `shell/docs/shell-architecture.md`.
 
 Phases 3–5's remaining work (the full shell breadth + the Phase-5 tail) continues from here. A survey of
 the compositor reframes them from what an earlier draft assumed: **the shell-facing protocols
@@ -219,12 +211,11 @@ policy or desktop-shell backend:
 | screenshot (the screencopy *producer* side) | appearance portal |
 | | notification/menu D-Bus relays |
 
-`nucleus-shell` is an RN app on `react-native-nucleus` plus the shell-bindings module it consumes
-— the client-side counterparts to Phase 3's server protocols (layer-shell client, foreign-
-toplevel client, session-lock client, screencopy consumer), a library layered on the platform,
-not part of it. The **RN in-process hosting path** — the overlay's React runtime and the
-`.hbc`-bundle attach driven by `NUCLEUS_RN_SHELL_BUNDLE` — is not carried forward; a layer-shell
-client is not mounted into the compositor's overlay scene. Wallpaper is the one open call: it
+`nucleus-shell` is a native Swift application on public `NucleusUI` plus the client-side
+counterparts to Phase 3's server protocols (layer-shell, foreign-toplevel, session-lock, and
+screencopy). Its product state and actions remain typed Swift values. No React or JavaScript
+hosting path is carried forward, and a layer-shell client is not mounted into the compositor's
+overlay scene. Wallpaper is the one open call: it
 currently draws on the compositor's layer tree through `@_spi(NucleusCompositor)`, which argues
 compositor-side, while standard-protocol purity argues for a shell-drawn layer-shell background
 surface; decide it explicitly when the phase reaches it.

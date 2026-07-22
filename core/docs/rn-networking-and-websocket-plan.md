@@ -325,10 +325,10 @@ depends on.
 - `swift build` green.
 - `swift test -Xswiftc -cxx-interoperability-mode=default --filter NucleusReactRuntimeCxxTests` green
   with the two new tests.
-- Topbar bundle continues to render under
-  `capture-compositor --launch --rn-shell-bundle` — no behavioral
-  regression for existing surfaces. Mount events, timers, EventBeat
-  all continue to fire correctly.
+- The RN fixture continues to render as a Wayland client during a
+  `tools/nucleus run --tracy` session — no behavioral regression for
+  existing surfaces. Mount events, timers, and EventBeat all continue
+  to fire correctly.
 - `rg -n "ImmediateCallInvoker"` returns no matches in the active
   tree.
 
@@ -495,7 +495,7 @@ proof.
 - `nm` on the final binary shows both BoringSSL symbol sets
   (NIOSSL's `CNIOBoringSSL_*` and Skia's BoringSSL) without
   collision.
-- Capture a `tools/profile/capture-compositor` run to confirm the
+- Capture a `tools/nucleus run --tracy` session to confirm the
   enlarged binary still loads in the compositor's existing memory
   budget.
 
@@ -1074,7 +1074,8 @@ RN tree; resolve the JS-side module routing (`Platform.OS` →
   - `new FormData(); fd.append("name", "value");
     fetch(url, { method: "POST", body: fd })` and logs the
     response.
-- Runs via `tools/profile/capture-compositor --launch --rn-shell-bundle=networking-smoke`.
+- Runs as an RN Wayland client inside a `tools/nucleus run --tracy`
+  session.
 - Verify in `nucleus_drm.log`: each native event arrives on the JS
   thread; no thread-mismatch assertions fire; the bundle completes
   without errors.
@@ -1088,8 +1089,8 @@ RN tree; resolve the JS-side module routing (`Platform.OS` →
 
 ### Verification
 
-- `capture-compositor --launch --rn-shell-bundle=networking-smoke
-  --seconds 30` shows all three operations succeed.
+- `tools/nucleus run --tracy --seconds 30` with the networking-smoke RN
+  client running shows all three operations succeed.
 - Hermes inspector (Phase 7) shows fetch / WS as proper network
   entries.
 
@@ -1580,10 +1581,9 @@ registry consults the flag at construction.
   contains `DevServerHelper`.
 - `swift test -Xswiftc -cxx-interoperability-mode=default
   --filter NucleusNetworkingTests --filter NucleusReactRuntimeCxxTests` green.
-- `NUCLEUS_RN_DEV=1 ./tools/profile/capture-compositor --launch
-  --rn-shell-bundle=topbar --seconds 30` boots against a running
-  `metro start` instance; bundle loads from Metro, not from the
-  pre-compiled HBC.
+- `tools/nucleus run --tracy --seconds 30` with the RN development
+  client pointed at a running `metro start` instance loads the bundle
+  from Metro rather than precompiled HBC.
 - Edit `bundles/shell/topbar/index.jsx`, save; Fast Refresh
   patches the running surface without a compositor restart.
 - Trigger a JS exception (`throw new Error("test")` in the

@@ -1,15 +1,7 @@
 import Foundation
 
-struct ProfilingCommand {
+struct TracyTools {
     let context: WorkspaceContext
-
-    func run(_ arguments: ArraySlice<String>) throws {
-        if arguments.first == "receivers" {
-            try buildReceivers()
-            return
-        }
-        try ProfileCapture(context: context).run(Array(arguments))
-    }
 
     func buildReceivers() throws {
         let compositor = context.root.appendingPathComponent("compositor")

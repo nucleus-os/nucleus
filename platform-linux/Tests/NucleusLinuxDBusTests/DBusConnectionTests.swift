@@ -135,6 +135,30 @@ private final class InjectedDBusEventLoop {
         #expect(settled)
     }
 
+    @Test func anAsyncCompletionMayCloseItsProcessingConnection() throws {
+        guard let connection = try? SDBusConnection(.session) else { return }
+        var completed = false
+        let pending = try connection.callAsync(
+            service: "org.freedesktop.DBus",
+            path: "/org/freedesktop/DBus",
+            interface: "org.freedesktop.DBus.Peer",
+            member: "Ping"
+        ) { result in
+            if case .failure(let error) = result {
+                Issue.record("bus daemon Ping failed: \(error)")
+            }
+            completed = true
+            connection.close(flush: false)
+        }
+
+        for _ in 0..<100 where !completed {
+            _ = try connection.process()
+        }
+        #expect(completed)
+        #expect(!connection.isOpen)
+        _ = pending
+    }
+
     @Test func injectedTransportProcessesUntilIdleAndClosesExactlyOnce() throws {
         let eventLoop = InjectedDBusEventLoop(
             processResults: [1, 1, 0])

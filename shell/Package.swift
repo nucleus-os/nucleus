@@ -1,10 +1,9 @@
 // swift-tools-version:6.4
 //
-// The Nucleus shell — an out-of-process Wayland layer-shell client, built as a React
-// Native app on the Nucleus RN platform, rendering with the shared render core.
+// The Nucleus shell — an out-of-process native Swift Wayland layer-shell
+// client authored with NucleusUI and rendered by the shared render core.
 //
-// The shell consumes the monorepo core and React Native platform, plus both native SDKs (render = Skia,
-// rn = Hermes/Fabric/folly), and links the RN runtime statically. Where the compositor is
+// The shell consumes the monorepo core and render SDK (Skia Graphite). Where the compositor is
 // a Wayland *server* over DRM/KMS, the shell is a Wayland *client* over the WSI swapchain:
 // it binds wlr-layer-shell / foreign-toplevel / session-lock / screencopy on the client
 // side, and presents the render core's output onto client-owned wl_surfaces via
@@ -18,9 +17,9 @@ import Foundation
 
 let repoRoot = URL(fileURLWithPath: #filePath).deletingLastPathComponent().path
 
-// ── The Nucleus native SDKs (render + rn) ──────────────────────────────────────
-// Same provisioning the compositor uses; the shell consumes both (it links the RN
-// runtime). Provisioned by the root `tools/nucleus bootstrap` stage graph;
+// ── The Nucleus render SDK ─────────────────────────────────────────────────────
+// Same provisioning the compositor uses. Provisioned by the root
+// `tools/nucleus bootstrap` stage graph;
 // the link lists here point at monorepo-owned sources.
 func provisionSDK(_ name: String, links: [(String, String)]) -> String {
     let home = ProcessInfo.processInfo.environment["HOME"] ?? ""
@@ -46,35 +45,8 @@ let renderSDK = provisionSDK("render", links: [
     ("lib/skia-graphite", repoRoot + "/../core/.skia-build/graphite"),
     ("include/skia-text", repoRoot + "/../core/render-cxx/skia"),
 ])
-let rnSDK = provisionSDK("rn", links: [
-    ("include/hermes", repoRoot + "/../react-native/third-party/hermes"),
-    ("include/folly", repoRoot + "/../react-native/third-party/folly"),
-    ("include/boost", repoRoot + "/../react-native/third-party/boost"),
-    ("include/glog", repoRoot + "/../react-native/third-party/glog"),
-    ("include/glog-gen", repoRoot + "/../react-native/.rn-build/glog"),
-    ("include/rn-gen", repoRoot + "/../react-native/.rn-build/include"),
-    ("include/fmt", repoRoot + "/../react-native/third-party/fmt"),
-    ("include/fast_float", repoRoot + "/../react-native/third-party/fast_float"),
-    ("include/react-native", repoRoot + "/../react-native/third-party/react-native"),
-    ("lib/rn", repoRoot + "/../react-native/.rn-build"),
-    ("include/react-bridge", repoRoot + "/../react-native/swiftpm/cmodules/NucleusReactRuntimeCxxBridge"),
-    ("include/react-runtime", repoRoot + "/../react-native/swift/Sources/NucleusReactRuntime/cxx"),
-])
-let reactBridgeInc = rnSDK + "/include/react-bridge"
-let reactRuntimeInc = rnSDK + "/include/react-runtime"
-let nucleusCxxLibs = rnSDK + "/lib/nucleus-cxx-libs"
 let skiaRoot = renderSDK + "/include/skia"
 let skiaLibDir = renderSDK + "/lib/skia-graphite"
-let hermesInc = rnSDK + "/include/hermes"
-let follyInc = rnSDK + "/include/folly"
-let boostInc = rnSDK + "/include/boost"
-let glogSrcInc = rnSDK + "/include/glog/src"
-let glogGenInc = rnSDK + "/include/glog-gen"
-let rnGenInc = rnSDK + "/include/rn-gen"
-let fmtInc = rnSDK + "/include/fmt/include"
-let fastFloatInc = rnSDK + "/include/fast_float/include"
-let rnPkg = rnSDK + "/include/react-native/packages/react-native"
-let rnLibDir = rnSDK + "/lib/rn"
 
 func pkgConfig(_ args: [String]) -> [String] {
     let p = Process()
@@ -106,35 +78,7 @@ let compositorWaylandRuntimeLinkFlags =
 // on the importer path for every target that imports NucleusShellInputC.
 let xkbClientCcFlags = pkgConfig(["--cflags", "xkbcommon"]).flatMap { ["-Xcc", $0] }
 
-// The React Native runtime, linked statically into the shell (mirrors the compositor's
-// system shared lib.
-let icuLinkFlags = pkgConfig(["--libs", "icu-uc", "icu-i18n"])
-let icuRpathFlags = pkgConfig(["--variable=libdir", "icu-uc"]).flatMap { ["-Xlinker", "-rpath", "-Xlinker", $0] }
-let rnLinkFlags: [String] = [
-    "-Xlinker", "--start-group",
-    rnLibDir + "/hermes/libhermes_lean_combined.a",
-    rnLibDir + "/reactnative/libreact_native.a",
-    rnLibDir + "/reactnative/libreact_cxx_platform.a",
-    rnLibDir + "/reactnative/libyogacore.a",
-    rnLibDir + "/reactnative/libfolly_runtime.a",
-    rnLibDir + "/glog/libglog.a",
-    rnLibDir + "/fmt/libfmt.a",
-    rnLibDir + "/double-conversion/src/libdouble-conversion.a",
-    "-Xlinker", "--end-group",
-    "-latomic",
-] + icuLinkFlags + icuRpathFlags + ["-lpthread", "-ldl", "-lm"]
-
-// Skia compile flags for the text backend + the Skia archive link set.
-let skiaBridgeCxxFlags: [String] = [
-    "-std=c++20", "-DNDEBUG", "-DSK_GRAPHITE", "-DSK_VULKAN",
-    "-DSK_GAMMA_APPLY_TO_A8", "-DSK_ALLOW_STATIC_GLOBAL_INITIALIZERS=1",
-    "-I", skiaRoot,
-    "-I", skiaRoot + "/src",
-    "-I", skiaRoot + "/include/third_party/vulkan",
-    "-I", skiaRoot + "/src/gpu/vk/vulkanmemoryallocator",
-    "-I", skiaRoot + "/third_party/externals/vulkanmemoryallocator/include",
-    "-I", skiaRoot + "/third_party/externals/vulkan-headers/include",
-]
+// Skia archive link set shared by shell products and tests.
 let skiaLinkFlags: [String] = [
     "-L", skiaLibDir,
     "-Xlinker", "--start-group",
@@ -146,51 +90,6 @@ let skiaLinkFlags: [String] = [
     "-lvulkan", "-lfontconfig", "-lfreetype", "-lz", "-ldl", "-lpthread", "-lm",
 ]
 
-// The RN facade include set (+ Skia + folly) for the RN-consuming targets — the runtime
-// bridge imports the NucleusReactRuntimeCxxBridge clang module under C++ interop, which
-// cross-includes the full fabric + Skia header set. Mirrors the compositor's rnRuntime*.
-private let rn = rnPkg
-private let rc = rn + "/ReactCommon"
-private let sk = skiaRoot
-let rnRuntimeIncludeDirs: [String] = [
-    reactBridgeInc,
-    reactRuntimeInc + "/include",
-    // The core text-layout vocabulary — the RN facade's TextLayoutManager.hpp includes
-    // <nucleus/text/TextLayoutBuilder.hpp>, now core-owned. Read repo-relative from the
-    // nested nucleus (not the shared render-SDK skia-text cache).
-    repoRoot + "/../core/render-cxx/skia/include",
-    rc + "/jsi",
-    rc, rn + "/React", rn + "/React/FBReactNativeSpec",
-    rc + "/callinvoker", rc + "/jsiexecutor", rc + "/yoga", rc + "/runtimeexecutor",
-    rc + "/react/nativemodule/core", rn,
-    hermesInc + "/API", hermesInc + "/API/jsi", hermesInc + "/public",
-    rc + "/react/renderer/components/view/platform/cxx",
-    rc + "/react/renderer/components/scrollview/platform/cxx",
-    rc + "/react/renderer/graphics/platform/cxx",
-    rc + "/react/renderer/imagemanager", rc + "/react/renderer/imagemanager/platform/cxx",
-    rc + "/react/utils/platform/cxx",
-    rc + "/react/renderer/components/text/platform/cxx",
-    rc + "/react/renderer/textlayoutmanager/platform/cxx",
-    rc + "/reactperflogger", rn + "/ReactCxxPlatform",
-    follyInc, boostInc,
-    glogGenInc, glogSrcInc,
-    rnGenInc, fmtInc,
-    fastFloatInc,
-    sk, sk + "/src", sk + "/third_party/externals/vulkan-headers/include",
-    sk + "/src/gpu/vk/vulkanmemoryallocator",
-    sk + "/third_party/externals/vulkanmemoryallocator/include",
-]
-let rnRuntimeXccFlags: [String] =
-    rnRuntimeIncludeDirs.flatMap { ["-Xcc", "-I", "-Xcc", $0] } + [
-        "-Xcc", "-DJS_RUNTIME_HERMES=1", "-Xcc", "-DHERMES_V1_ENABLED=1",
-        "-Xcc", "-DREACT_NATIVE_DEBUG=1", "-Xcc", "-DFOLLY_NO_CONFIG=1",
-        "-Xcc", "-DFOLLY_MOBILE=0", "-Xcc", "-DFOLLY_CFG_NO_COROUTINES=1",
-        "-Xcc", "-DFMT_USE_CONSTEVAL=0", "-Xcc", "-DSK_GRAPHITE", "-Xcc", "-DSK_VULKAN",
-        "-Xcc", "-std=c++20",
-    ]
-let rnRuntimeBridgeModulemapFlag: [String] = [
-    "-Xcc", "-fmodule-map-file=" + reactBridgeInc + "/module.modulemap",
-]
 // Enable the Wayland WSI Vulkan surface in VulkanC (the render backend needs
 // VkWaylandSurfaceCreateInfoKHR / vkCreateWaylandSurfaceKHR). The core header includes
 // <vulkan/vulkan_wayland.h> guarded on this define (see the core enablement change).
@@ -204,8 +103,6 @@ let package = Package(
     dependencies: [
         // The shared monorepo render/UI core.
         .package(name: "Nucleus", path: "../core"),
-        // The React Native platform — the shell is an RN app.
-        .package(name: "NucleusReactNative", path: "../react-native"),
         // The Vulkan bindings, extracted from Nucleus into their own package. The shell's
         // render backend imports Vulkan / VulkanC directly and injects
         // -DVK_USE_PLATFORM_WAYLAND_KHR at its import site (honoured because VulkanC
@@ -327,16 +224,12 @@ let package = Package(
             ]
         ),
 
-        // ── The app host: installs the Swift host bundle, boots the RN runtime, wires the
-        //    RN-produced layer tree to the render backend, and drives the frame loop off
-        //    the wl_display fd. The composition root's brain. Native↔JS goes through the
-        //    facade (emitDeviceEvent for the window list); no custom native-module C++ bridge.
         // ── The native shell product: views, controllers, and product composition
         //    for the Swift Noctalia port. This is the first out-of-package client
         //    authoring against NucleusUI's public API, so its dependency list is the
-        //    boundary being proven — it must stay NucleusUI-only. No NucleusLayers,
-        //    no NucleusRenderer, no React Native: if product code ever needs one of
-        //    those, the missing capability belongs in NucleusUI instead.
+        //    boundary being proven — it must stay NucleusUI-only. If product code
+        //    needs a renderer-private capability, that capability belongs in
+        //    NucleusUI instead.
         .target(
             name: "NucleusShellProduct",
             dependencies: [
@@ -348,8 +241,8 @@ let package = Package(
 
         // ── The input adapter: the single place the shell's Wayland input
         //    vocabulary and NucleusUI's event vocabulary meet. Its own target so
-        //    the translation is testable without linking React Native, Vulkan, or
-        //    the render backend — none of which a keycode mapping needs.
+        //    the translation is testable without linking Vulkan or the render
+        //    backend — neither of which a keycode mapping needs.
         // ── Authentication. The wire format and the client live here; the PAM
         //    modules themselves are only ever loaded by the helper executable.
         .systemLibrary(
@@ -467,8 +360,6 @@ let package = Package(
                 .product(
                     name: "NucleusLinuxReactor",
                     package: "NucleusLinuxPlatform"),
-                .product(name: "NucleusReactRuntime", package: "NucleusReactNative"),
-                .product(name: "NucleusReactRuntimeCxx", package: "NucleusReactNative"),
                 .product(name: "NucleusRenderer", package: "Nucleus"),
                 .product(name: "NucleusRenderModel", package: "Nucleus"),
                 .product(name: "NucleusRenderHost", package: "Nucleus"),
@@ -483,8 +374,7 @@ let package = Package(
             path: "Sources/NucleusShellRuntime",
             swiftSettings: [
                 .interoperabilityMode(.Cxx),
-                .unsafeFlags(vulkanHeadersInclude + vulkanWaylandFlag
-                    + rnRuntimeBridgeModulemapFlag + rnRuntimeXccFlags),
+                .unsafeFlags(vulkanHeadersInclude + vulkanWaylandFlag),
             ]
         ),
 
@@ -495,22 +385,11 @@ let package = Package(
                 "NucleusShellSignalC",
             ],
             path: "SanitizerHarnesses/NucleusShellThreadSanitizerHarness",
-            swiftSettings: [
-                .interoperabilityMode(.Cxx),
-                .unsafeFlags(rnRuntimeBridgeModulemapFlag + rnRuntimeXccFlags),
-            ],
+            swiftSettings: [.interoperabilityMode(.Cxx)],
             linkerSettings: [
                 .unsafeFlags(
                     skiaLinkFlags + waylandClientLinkFlags
-                    + ["-lfontconfig", "-lfreetype", "-lz"]
-                    + rnLinkFlags
-                ),
-                .unsafeFlags(
-                    [nucleusCxxLibs + "/debug/libNucleusReactRuntimeHostCxx.a"],
-                    .when(configuration: .debug)),
-                .unsafeFlags(
-                    [nucleusCxxLibs + "/release/libNucleusReactRuntimeHostCxx.a"],
-                    .when(configuration: .release)),
+                    + ["-lfontconfig", "-lfreetype", "-lz"]),
             ]
         ),
 
@@ -533,8 +412,7 @@ let package = Package(
         ),
 
         // ── The shell executable. Hands control to NucleusShellRuntime; the final link
-        //    assembles the Swift graph + the text backend + the RN runtime (static) + the
-        //    native set: Skia, wayland-client, Vulkan, ICU.
+        //    assembles the Swift graph + text backend + Skia, Wayland, and Vulkan.
         .executableTarget(
             name: "NucleusShell",
             dependencies: [
@@ -544,36 +422,12 @@ let package = Package(
                 .product(name: "NucleusTextBackend", package: "Nucleus"),
             ],
             path: "Sources/NucleusShell",
-            swiftSettings: [
-                .interoperabilityMode(.Cxx),
-                // Importing NucleusShellRuntime drags in the RN facade clang module
-                // (NucleusReactRuntimeCxxBridge) under cxx interop, so the executable's own
-                // compile needs its modulemap + include set (as the compositor executable did).
-                .unsafeFlags(rnRuntimeBridgeModulemapFlag + rnRuntimeXccFlags),
-            ],
+            swiftSettings: [.interoperabilityMode(.Cxx)],
             linkerSettings: [
                 .unsafeFlags(
                     skiaLinkFlags + waylandClientLinkFlags
-                    + ["-lfontconfig", "-lfreetype", "-lz"]
-                    + rnLinkFlags
-                ),
-                .unsafeFlags([nucleusCxxLibs + "/debug/libNucleusReactRuntimeHostCxx.a"], .when(configuration: .debug)),
-                .unsafeFlags([nucleusCxxLibs + "/release/libNucleusReactRuntimeHostCxx.a"], .when(configuration: .release)),
+                    + ["-lfontconfig", "-lfreetype", "-lz"]),
             ]
-        ),
-
-
-        // ── JS bundling: Metro -> Hermes bytecode for the shell's RN components.
-        .plugin(
-            name: "BuildShellBundle",
-            capability: .command(
-                intent: .custom(
-                    verb: "build-shell-bundle",
-                    description: "Bundle the shell's RN app (Metro -> hermesc .hbc)"
-                ),
-                permissions: [.writeToPackageDirectory(reason: "Write .rn-build/bundles/*.hbc")]
-            ),
-            path: "Plugins/BuildShellBundle"
         ),
     ]
 )

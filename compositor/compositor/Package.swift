@@ -124,19 +124,6 @@ let package = Package(
             path: "../../platform-linux"),
     ],
     targets: [
-        // Assemble a runnable install prefix (binary + session scripts + systemd unit).
-        //   swift package install-compositor --allow-writing-to-package-directory
-        .plugin(
-            name: "InstallCompositor",
-            capability: .command(
-                intent: .custom(
-                    verb: "install-compositor",
-                    description: "Assemble a runnable compositor install prefix"
-                ),
-                permissions: [.writeToPackageDirectory(reason: "Write the install prefix (default .install/)")]
-            ),
-            path: "Plugins/InstallCompositor"
-        ),
         .target(
             name: "NucleusCompositorSignalC",
             path: "Sources/NucleusCompositorSignalC",

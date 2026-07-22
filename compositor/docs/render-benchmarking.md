@@ -21,5 +21,5 @@ the output size, scale, and format from the active KMS output and reports
 From the monorepo root, run:
 
 ```sh
-tools/nucleus profile --render-benchmark uncapped
+tools/nucleus run --tracy --render-benchmark uncapped
 ```

@@ -60,6 +60,7 @@ final class CompositorRuntime {
     let renderRuntime: RenderRuntime
     let frameDemand: DisplayFrameDemand
     let shellServices: ShellServices
+    var shellProcessID: pid_t = 0
     private var exitRequested = false
     private var paused = false
     private var retirement = RendererRetirementCoordinator(

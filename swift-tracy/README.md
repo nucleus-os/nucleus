@@ -26,6 +26,11 @@ swift build -Xcc -DTRACY_ENABLE
 
 The `-Xcc` flag reaches this package's C++ target through the build graph, so a consumer enables
 profiling the same way whether the bindings are in-tree or consumed as a dependency.
+The complete Nucleus runtime build, launch, capture, and export workflow is:
+
+```sh
+tools/nucleus run --tracy --seconds 20
+```
 
 ## Layout
 

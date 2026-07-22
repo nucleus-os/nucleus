@@ -1,6 +1,4 @@
 import NucleusShellWayland
-import NucleusShellRender
-import NucleusShellInput
 import NucleusShellProduct
 import NucleusUI
 import NucleusUIEmbedder
@@ -28,43 +26,53 @@ public final class ShellLockController {
     public private(set) var isLocked = false
 
     private let client: ShellWaylandClient
-    private let engine: ShellRenderEngine
-    private let inputRouter: ShellInputRouter?
-    private let scene: WindowScene
+    private let surfaceRegistry: NativeSurfaceRegistry
     private let publicationContext: WindowScenePublicationContext
     private let lockClient: SessionLockClient?
 
     private struct LockOutput {
+        var outputID: UInt32
         var surface: SessionLockSurface
         var window: Window
         var view: LockScreenView
-        var renderOutputID: UInt64?
         var logicalOrigin: Point
     }
 
     private var lockOutputs: [LockOutput] = []
 
-    public func updateOutputRefreshRates() {
-        for record in lockOutputs {
-            guard let renderOutputID = record.renderOutputID else { continue }
-            engine.setRefreshMillihertz(
-                record.surface.output.refreshMillihertz,
-                forSurface: renderOutputID)
+    func outputsChanged() {
+        guard isLocked else { return }
+        reconcileLockSurfaces()
+
+        for index in lockOutputs.indices {
+            let outputID = lockOutputs[index].outputID
+            guard let output = client.outputs[outputID] else { continue }
+            lockOutputs[index].logicalOrigin = Point(
+                x: Double(output.logicalX),
+                y: Double(output.logicalY))
+            surfaceRegistry.updateRefreshRate(
+                output.refreshMillihertz,
+                surfaceID: UInt(bitPattern:
+                    lockOutputs[index].surface.wlSurface))
+            if lockOutputs[index].surface.hasConfigure {
+                configureLockSurface(
+                    surfaceID: UInt(bitPattern:
+                        lockOutputs[index].surface.wlSurface),
+                    width: lockOutputs[index].surface.configuredWidth,
+                    height: lockOutputs[index].surface.configuredHeight,
+                    focusPasswordField: false)
+            }
         }
     }
 
-    public init(
+    init(
         client: ShellWaylandClient,
-        engine: ShellRenderEngine,
-        scene: WindowScene,
         publicationContext: WindowScenePublicationContext,
-        inputRouter: ShellInputRouter?
+        surfaceRegistry: NativeSurfaceRegistry
     ) {
         self.client = client
-        self.engine = engine
-        self.scene = scene
         self.publicationContext = publicationContext
-        self.inputRouter = inputRouter
+        self.surfaceRegistry = surfaceRegistry
         self.lockClient = SessionLockClient(client: client)
         lockClient?.onLocked = { [weak self] in self?.presentLockSurfaces() }
         lockClient?.onFinished = { [weak self] in self?.handleLockRefused() }
@@ -95,10 +103,27 @@ public final class ShellLockController {
     /// Until each one commits a frame the session shows the compositor's blank
     /// fallback, which is the correct thing for it to show.
     private func presentLockSurfaces() {
-        guard let lockClient else { return }
         isLocked = true
+        reconcileLockSurfaces()
+        client.flush()
+    }
 
-        for output in client.outputs.values {
+    /// Match the protocol's one-lock-surface-per-live-output requirement as
+    /// outputs appear and disappear while the session is held.
+    private func reconcileLockSurfaces() {
+        guard let lockClient else { return }
+
+        let liveOutputIDs = Set(client.outputs.keys)
+        for index in lockOutputs.indices.reversed()
+            where !liveOutputIDs.contains(lockOutputs[index].outputID)
+        {
+            tearDownLockSurface(at: index)
+        }
+
+        let hostedOutputIDs = Set(lockOutputs.map(\.outputID))
+        for output in client.outputs.values
+            where !hostedOutputIDs.contains(output.registryName)
+        {
             guard let surface = lockClient.lockSurface(for: output) else { continue }
 
             let origin = Point(
@@ -111,83 +136,61 @@ public final class ShellLockController {
                 view.onAuthenticated = { [weak self] in self?.unlock() }
 
                 let window = Window(title: "Lock")
+                window.role = .lock
+                window.level = .criticalOverlay
                 window.setContentView(view)
-                window.orderFront()
-                scene.addWindow(window)
                 return (view, window)
             }
 
             let record = LockOutput(
+                outputID: output.registryName,
                 surface: surface, window: window, view: view,
-                renderOutputID: nil, logicalOrigin: origin)
+                logicalOrigin: origin)
 
             surface.onConfigure = { [weak self] width, height in
                 self?.configureLockSurface(
                     surfaceID: UInt(bitPattern: surface.wlSurface),
                     width: width, height: height)
             }
-            inputRouter?.register(
-                window: window, forSurface: UInt(bitPattern: surface.wlSurface))
+            surfaceRegistry.register(
+                window: window,
+                waylandSurface: surface.wlSurface,
+                refreshMillihertz: output.refreshMillihertz)
             lockOutputs.append(record)
         }
-        client.flush()
     }
 
     /// Size the lock screen to exactly what the compositor requires. The
     /// protocol makes this size authoritative: attaching a differently-sized
     /// buffer is a protocol error that kills the locker.
-    private func configureLockSurface(surfaceID: UInt, width: UInt32, height: UInt32) {
+    private func configureLockSurface(
+        surfaceID: UInt,
+        width: UInt32,
+        height: UInt32,
+        focusPasswordField: Bool = true
+    ) {
         guard let index = lockOutputs.firstIndex(where: {
             UInt(bitPattern: $0.surface.wlSurface) == surfaceID
         }) else { return }
 
-        let scale = Double(lockOutputs[index].surface.output.scale)
+        let scale = Double(max(1, lockOutputs[index].surface.output.scale))
         let logicalWidth = Double(width)
         let logicalHeight = Double(height)
         let origin = lockOutputs[index].logicalOrigin
 
-        // The window owns the frame and syncs its content view, so this is the
-        // single place the lock screen's logical rectangle is set.
-        lockOutputs[index].window.setFrame(Rect(
-            x: origin.x, y: origin.y, width: logicalWidth, height: logicalHeight))
-        lockOutputs[index].window.setSurfaceAssociation(WindowSurfaceAssociation(
-            surfaceID: PresentationSurfaceID(rawValue: UInt64(surfaceID)),
-            transform: WindowSurfaceTransform(
-                windowOriginInSurface: .zero,
-                surfaceOriginInOutput: origin,
-                backingScaleFactor: BackingScaleFactor(scale)
-            )
-        ))
-
-        let pixelWidth = Int32(logicalWidth * scale)
-        let pixelHeight = Int32(logicalHeight * scale)
-        if let renderOutputID = lockOutputs[index].renderOutputID {
-            engine.resizeSurface(
-                renderOutputID, width: pixelWidth, height: pixelHeight, scale: scale)
-        } else if let renderOutputID = engine.addSurface(
-            waylandSurface: lockOutputs[index].surface.wlSurface,
-            width: pixelWidth,
-            height: pixelHeight,
+        _ = surfaceRegistry.configure(
+            surfaceID: surfaceID,
+            logicalOrigin: origin,
+            logicalWidth: logicalWidth,
+            logicalHeight: logicalHeight,
             scale: scale,
-            presentationContextID: publicationContext.visualContext.id.rawValue,
             refreshMillihertz:
-                lockOutputs[index].surface.output.refreshMillihertz
-        )
-        {
-            lockOutputs[index].renderOutputID = renderOutputID
-        }
-        // The lock's logical region is not the origin, so the geometry has to be
-        // re-registered with it — `addSurface` assumes (0, 0).
-        if let renderOutputID = lockOutputs[index].renderOutputID {
-            engine.placeSurface(
-                renderOutputID,
-                logicalX: origin.x, logicalY: origin.y,
-                logicalWidth: logicalWidth, logicalHeight: logicalHeight,
-                scale: scale)
-        }
+                lockOutputs[index].surface.output.refreshMillihertz)
 
         // Focus after the first configure, when there is something to type into.
-        lockOutputs[index].view.focusPasswordField()
+        if focusPasswordField {
+            lockOutputs[index].view.focusPasswordField()
+        }
     }
 
     /// The compositor refused the lock, or revoked it. Either way the session is
@@ -211,17 +214,23 @@ public final class ShellLockController {
     }
 
     private func tearDownLockSurfaces() {
-        for record in lockOutputs {
-            // The password field may still hold text if the lock is being torn
-            // down mid-attempt.
-            record.view.clearPassword()
-            inputRouter?.unregister(surfaceID: UInt(bitPattern: record.surface.wlSurface))
-            scene.removeWindow(record.window)
-            if let renderOutputID = record.renderOutputID {
-                engine.removeSurface(renderOutputID)
-            }
-            record.surface.destroy()
+        for index in lockOutputs.indices.reversed() {
+            tearDownLockSurface(at: index)
         }
-        lockOutputs.removeAll()
+    }
+
+    private func tearDownLockSurface(at index: Int) {
+        let record = lockOutputs.remove(at: index)
+        // The password field may still hold text if the lock is being torn
+        // down mid-attempt.
+        record.view.clearPassword()
+        surfaceRegistry.unregister(
+            surfaceID: UInt(bitPattern: record.surface.wlSurface))
+        record.surface.destroy()
+    }
+
+    func shutdown() {
+        tearDownLockSurfaces()
+        isLocked = false
     }
 }

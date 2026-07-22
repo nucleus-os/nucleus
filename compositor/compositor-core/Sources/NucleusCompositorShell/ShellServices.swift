@@ -64,8 +64,12 @@ public final class ShellServices {
         self.environmentAdapter = PortalEnvironmentAdapter()
     }
 
-    public func prepareEnvironment() -> UIEnvironment {
-        environmentAdapter.start()
+    /// Begin portal discovery only after the compositor has published its
+    /// Wayland socket. D-Bus activated portal backends inherit WAYLAND_DISPLAY
+    /// from the session daemon and may connect as soon as the first request is
+    /// queued.
+    public func activateEnvironment() {
+        overlayScene.updateEnvironment(environmentAdapter.start())
     }
 
     public func installOverlay(

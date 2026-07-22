@@ -6,8 +6,7 @@ The Nucleus compositor is a **shell-agnostic Wayland host**. It serves the stand
 protocols a desktop shell needs and draws **no desktop shell chrome of its own**. Any
 conformant shell drives it over the wire — third-party (Noctalia, DankMaterialShell) or the
 first-party **Nucleus shell** (`nucleus-shell`) — and no shell is privileged in the
-compositor. Noctalia is the recommended default today; `nucleus-shell` becomes the
-recommended shell once its UX surpasses Noctalia's. The compositor's job is to serve the
+compositor. `nucleus-shell` is the installed default. The compositor's job is to serve the
 protocols and to expose window / workspace / output / capture state through them; the
 **shell** owns the bar, dock, launcher, notifications, control center, OSDs, lock screen,
 wallpaper, and tray.
@@ -45,14 +44,13 @@ screen), and `data-control` (clipboard history). Lock-screen password entry
 
 ## The shell process
 
-The compositor spawns a shell client at startup — `NUCLEUS_SHELL_CMD` (default `noctalia -d`;
+The compositor spawns a shell client at startup — `NUCLEUS_SHELL_CMD` (default `nucleus-shell`;
 empty disables it) — as a detached Wayland client on the compositor's `WAYLAND_DISPLAY`,
-double-forked so it reparents to init. Because a layer-shell client cannot grab global keys,
-the compositor binds the keys that drive shell panels and forwards them over the shell's IPC
-(`KeybindService`'s `noctaliaMessage` → `noctalia msg …`); window-management and system
-keybinds (tile, VT switch, exit) stay compositor-owned. Pointing `NUCLEUS_SHELL_CMD` at
-`nucleus-shell` (or DankMaterialShell) swaps the shell without touching the compositor — the
-shell-agnostic invariant made operational.
+double-forked so it reparents to init. Window-management and system keybinds (tile, VT switch,
+exit) stay compositor-owned. Shell-panel shortcuts land only with a shell IPC contract; the
+compositor does not invoke a shell-specific command line. Pointing `NUCLEUS_SHELL_CMD` at a
+third-party shell swaps the shell without touching the compositor — the shell-agnostic invariant
+made operational.
 
 ## The global application menu bar — not in the compositor
 
@@ -87,7 +85,6 @@ per-frame clear), never a compositor-owned wallpaper.
 
 The model-and-projection architecture is shipped: `NucleusCompositorServer` is the one model;
 foreign-toplevel and ext-workspace project it; screencopy, session-lock, and data-control are
-served; Noctalia runs as a spawned layer-shell client with keybinds routed over IPC. The
-global menu bar removal (above) is done. Remaining shell-facing work is protocol coverage
-(lock-screen input, the broader checklist in `docs/wayland_protocol_coverage_plan.md`) and
-growing `nucleus-shell` toward the recommended-shell bar.
+served; the installed session launches the native `nucleus-shell`, whose bar and lock surfaces
+use the same public protocol set as third-party shells. The global menu bar removal (above) is
+done. Remaining shell-facing work is protocol coverage and broader product parity.

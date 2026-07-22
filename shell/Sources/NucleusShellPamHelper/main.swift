@@ -9,8 +9,8 @@
 //
 // A helper *executable* rather than a bare `fork()`: after fork in a
 // multithreaded process a child may only call async-signal-safe functions, and
-// PAM goes far beyond that. The shell holds a Vulkan device, GPU queues, and a
-// JavaScript runtime's threads, so `posix_spawn` of a fresh image is the honest
+// PAM goes far beyond that. The shell holds a Vulkan device, GPU queues, and
+// platform/runtime threads, so `posix_spawn` of a fresh image is the honest
 // way to get a single-threaded process to run PAM in.
 //
 // Protocol: request on stdin, response on stdout, both length-prefixed. Exits 0

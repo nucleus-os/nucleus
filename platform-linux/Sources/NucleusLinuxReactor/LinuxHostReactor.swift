@@ -573,9 +573,11 @@ public final class LinuxHostReactor {
 
         let ring: IORing
         do {
-            ring = try IORing(
-                queueDepth: queueDepth,
-                flags: [.singleSubmissionThread])
+            // MainActor serializes ring mutation, but its jobs may resume on a
+            // different Linux task after suspension. IORING_SETUP_SINGLE_ISSUER
+            // promises the kernel a stable task identity, so using it here makes
+            // a valid actor hop fail the next io_uring_enter with EEXIST.
+            ring = try IORing(queueDepth: queueDepth)
         } catch let error {
             throw .system(
                 operation: "creating io_uring",

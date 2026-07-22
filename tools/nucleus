@@ -5,6 +5,45 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 workspace_root="$(cd "$script_dir/.." && pwd)"
 export NUCLEUS_WORKSPACE_ROOT="$workspace_root"
 
+# A run owns one log across the workspace build, runtime staging, and the
+# compositor/shell session. Keep tee outside the exec chain: the workspace CLI
+# replaces itself with nucleus-session, so every descendant inherits this same
+# stdout/stderr pipe while signals still reach the session directly.
+if [[ "${1:-}" == run ]]; then
+  run_help=0
+  for run_argument in "${@:2}"; do
+    if [[ "$run_argument" == -h || "$run_argument" == --help ]]; then
+      run_help=1
+      break
+    fi
+  done
+  if [[ "$run_help" -eq 0 ]]; then
+    command -v tee >/dev/null 2>&1 || {
+      echo "error: tee is required to capture a Nucleus run log" >&2
+      exit 127
+    }
+    run_log_directory="$workspace_root/logs"
+    mkdir -p -- "$run_log_directory"
+    run_timestamp="$(date -u +%Y%m%dT%H%M%S.%NZ)"
+    run_log_name="nucleus-$run_timestamp-$$.log"
+    run_log_path="$run_log_directory/$run_log_name"
+    if ! (set -o noclobber; : > "$run_log_path"); then
+      echo "error: could not create run log: $run_log_path" >&2
+      exit 1
+    fi
+    latest_temporary="$run_log_directory/.latest.$$"
+    ln -s -- "$run_log_name" "$latest_temporary"
+    if ! mv -Tf -- "$latest_temporary" "$run_log_directory/latest"; then
+      unlink -- "$latest_temporary" 2>/dev/null || true
+      echo "error: could not update run log symlink: $run_log_directory/latest" >&2
+      exit 1
+    fi
+    export NUCLEUS_RUN_LOG="$run_log_path"
+    exec > >(trap '' INT TERM; exec tee -a -- "$run_log_path") 2>&1
+    echo "run log: $run_log_path"
+  fi
+fi
+
 # A first user-level platform generation can be orchestrated with a Swift 6.4
 # bootstrap compiler on PATH. Every other command requires the active Nucleus
 # generation (or an explicit toolchain override).

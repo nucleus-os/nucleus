@@ -1,11 +1,8 @@
-@_spi(NucleusCompositor) import NucleusReactRuntime
 import NucleusUI
 import NucleusTextBackend
 import NucleusUIEmbedder
 import NucleusLayers
-import NucleusRenderModel
 import NucleusRenderHost
-import NucleusAppHostBundle
 import NucleusShellWayland
 import NucleusShellPasteboard
 import NucleusShellInput
@@ -15,25 +12,13 @@ import NucleusLinuxAccessibility
 import NucleusShellServices
 import NucleusLinuxEnvironment
 import NucleusLinuxReactor
-import NucleusShellProduct
-import NucleusShellRender
-import NucleusShellLoop
-import NucleusRenderer
-import NucleusShellSignalC
-import Foundation
-import Synchronization
-import Tracy
-#if canImport(Glibc)
-import Glibc
-#endif
 
 @MainActor
 extension ShellHost {
     // MARK: - Render context
 
     func setupRenderContext(environment: UIEnvironment) {
-        // The RN layer tree flows: Context.commitSink → RenderCommitSink → runtime-owned store.
-        // RenderCommitSink defaults resourceHostHandle to the production host installed above.
+        // Native WindowScene publication commits into the runtime-owned store.
         do {
             let commitSink = RenderCommitSink(
                 store: retainedStore,
@@ -42,7 +27,6 @@ extension ShellHost {
                 requestFrame: { [weak self] in
                     self?.requestRender(nativeSceneChanged: true)
                 })
-            let context = try Context(commitSink: commitSink)
             let textSystem = TextSystem()
             SkiaTextLayoutBackend.install(in: textSystem)
             let services = UIHostServices(
@@ -59,7 +43,6 @@ extension ShellHost {
                 services: services,
                 environment: environment
             )
-            renderContext = context
             self.nativePublicationContext = nativePublicationContext
             nativePublicationContext.semanticContext
                 .setAnimationFrameRequestHandler { [weak self] in
@@ -91,6 +74,7 @@ extension ShellHost {
             return
         }
         let scene = nativePublicationContext.makeWindowScene(windows: [])
+        scene.transition(to: .active)
         let seat = ShellSeat(client: client)
         if seat == nil {
             // A seatless session (no input devices) is legitimate; the shell
@@ -111,6 +95,15 @@ extension ShellHost {
             self?.dragDropAdapter?.surfaceWillClose(surfaceID)
         }
         inputRouter = router
+        let surfaceRegistry = NativeSurfaceRegistry(
+            engine: engine,
+            scene: scene,
+            publicationContext: nativePublicationContext,
+            inputRouter: router,
+            didChange: { [weak self] in
+                self?.requestRender(nativeSceneChanged: true)
+            })
+        self.surfaceRegistry = surfaceRegistry
         configureDragDrop(for: seat)
         setupAccessibility(scene: scene)
         // PAM runs in a helper process, never in this address space: a module
@@ -121,10 +114,8 @@ extension ShellHost {
         self.authenticator = authenticator
         let controller = ShellLockController(
             client: client,
-            engine: engine,
-            scene: scene,
             publicationContext: nativePublicationContext,
-            inputRouter: router
+            surfaceRegistry: surfaceRegistry
         )
         controller.authenticator = authenticator
         lockController = controller

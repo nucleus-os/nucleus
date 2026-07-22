@@ -1,66 +1,79 @@
 # nucleus-shell
 
-The first-party Nucleus **desktop shell** — an out-of-process Wayland layer-shell client built as a React Native app.
+The first-party Nucleus desktop shell: an out-of-process Wayland layer-shell
+client written in Swift against `NucleusUI`.
 
-`nucleus-shell` is a normal Wayland client: it draws its own surfaces (bar, dock, launcher, notifications, …) with the Nucleus render core (Skia/Vulkan) onto client-owned `wl_surface`s, and drives windows over **standard protocols** — `wlr-layer-shell`, `wlr-foreign-toplevel-management`, `ext-session-lock`, `wlr-screencopy`. It has **no build-time relationship** with the compositor: the two meet only at runtime over those protocols. The compositor is swappable under the shell, and the shell is swappable under the compositor.
-
-Where the compositor is a Wayland **server** over DRM/KMS, the shell is a Wayland **client** over the WSI swapchain — it binds the same protocols on the client side and presents the render core's output onto client surfaces via `VK_KHR_wayland_surface`.
+`nucleus-shell` owns native bar and lock-screen windows, presents them through
+the shared Skia Graphite/Vulkan renderer, and drives compositor state over
+standard protocols including `wlr-layer-shell`,
+`wlr-foreign-toplevel-management`, `ext-session-lock`, and
+`wlr-screencopy`. It has no build-time relationship with the compositor and no
+React Native, Hermes, Fabric, Yoga, or JavaScript runtime dependency.
 
 ## Package layout
 
-| Target | Description |
+| Target | Responsibility |
 |---|---|
-| `NucleusShellWayland` | Swift Wayland client — connection, registry, layer-shell / foreign-toplevel / session-lock / screencopy client drivers. |
-| `NucleusShellRender` | Client render backend — `VK_KHR_wayland_surface` Vulkan swapchain presenting the render core's output onto each client `wl_surface`. Models the Android WSI presenter on `wl_display`/`wl_surface`. |
-| `NucleusShellRuntime` | App host — boots the RN runtime, installs the shell native modules (layer-shell, foreign-toplevel, session-lock, screencopy), wires the RN-produced layer tree to the render backend, drives the frame loop off the `wl_display` fd. |
-| `NucleusShell` | The executable — links the full Swift graph + text backend + RN runtime (static) + Skia + wayland-client + Vulkan + ICU. |
-| `BuildShellBundle` | Plugin — Metro → Hermes bytecode for the shell's RN components. |
-
-The shell consumes the monorepo's `../core` and `../react-native` packages directly.
+| `NucleusShellProduct` | Native Swift views, typed product state, and product composition using public `NucleusUI`. |
+| `NucleusShellWayland` | Wayland connection and shell protocol clients. |
+| `NucleusShellRender` | `VK_KHR_wayland_surface` presenters backed by the shared render core. |
+| `NucleusShellInput` | Wayland input and text-input translation into NucleusUI events. |
+| `NucleusShellServices` | Typed Linux service projections such as UPower. |
+| `NucleusShellRuntime` | Native surface registry, application lifecycle, services, and demand-driven reactor. |
+| `NucleusShell` | Thin executable composition entry point. |
+| `NucleusShellPamHelper` | Isolated PAM authentication helper used by the native lock screen. |
 
 ## Build
 
+From the monorepo root:
+
 ```sh
-# From the monorepo root
 tools/nucleus bootstrap shell
 
-# Rebuild from the monorepo root
 source core/tools/host-env.sh
 swift build --package-path shell
-
-# Wayland bindings are pre-generated and supplied by swift-wayland.
-
-# Bundle the RN app from the monorepo root
-swift package --package-path shell build-shell-bundle --allow-writing-to-package-directory
 ```
 
-The workspace bootstrap provisions both native SDKs, builds the shell, and creates the JS bundle.
+The shell consumes the render SDK provisioned by `core/`. A shell-only
+bootstrap does not provision the React Native SDK or build JavaScript bundles.
 
-The manifest resolves `swift-wayland` from its pinned Git dependency.
+## Install
+
+Install the complete compositor session into one shared prefix:
+
+```sh
+tools/nucleus install session
+```
+
+This writes the compositor, session launchers, native shell, and
+`nucleus-pam-helper` to `.install/`. Use `--prefix DIR` to choose another
+location. `tools/nucleus install shell` installs only the two shell executables.
 
 ## Run
 
-`nucleus-shell` connects to the compositor named by `WAYLAND_DISPLAY`. Under a running `nucleus-compositor` (or any compositor serving the shell-facing protocols), launch it as an ordinary client:
+`nucleus-shell` connects to the compositor named by `WAYLAND_DISPLAY`. The
+Nucleus compositor starts the installed shell automatically; a development
+binary can be selected with `NUCLEUS_SHELL_CMD` when launching the compositor.
+
+Against any already-running conformant compositor:
 
 ```sh
-WAYLAND_DISPLAY=wayland-1 ./.build/out/Products/Debug-linux-x86_64/NucleusShell
+WAYLAND_DISPLAY=wayland-1 \
+  shell/.build/out/Products/Debug-linux-x86_64/NucleusShell
 ```
 
-The event loop is `wl_display` fd + a frame timer (poll-based, in Glibc) — no `swift-system` dependency.
-
-## JS app
-
-The shell's React Native components (bar, dock, etc.) and Metro/bundle config live under `js/`. The bundled Hermes bytecode is produced by the `BuildShellBundle` plugin into `.rn-build/bundles/`.
+The runtime creates one native bar per output, maps each Wayland surface to a
+NucleusUI `Window`, and publishes the shared `WindowScene` only when state,
+input, animation, service data, or a presentation deadline requires a frame.
 
 ## Directory layout
 
-```
-Sources/NucleusShellWayland/    Swift Wayland client module
-Sources/NucleusShellRender/     Client render backend (VK_WSI)
-Sources/NucleusShellRuntime/    App host + frame loop
-Sources/NucleusShell/           Executable entry point
-js/                             RN app (components, Metro config)
-Plugins/BuildShellBundle/       Metro → hermesc bundle plugin
-tools/                          Bootstrap script
-docs/                           Shell-specific documentation
+```text
+Sources/NucleusShellProduct/   Native product views and typed state
+Sources/NucleusShellWayland/   Wayland client and shell protocols
+Sources/NucleusShellRender/    Vulkan WSI presentation
+Sources/NucleusShellInput/     NucleusUI input adapters
+Sources/NucleusShellServices/  Linux service projections
+Sources/NucleusShellRuntime/   Native application/surface host
+Sources/NucleusShell/          Executable entry point
 ```

@@ -1,6 +1,8 @@
 /.build/
+/.install/
 /Tools/.build/
 /.nucleus/
+/logs/
 **/.build/
 **/.rn-build/
 **/.skia-build/

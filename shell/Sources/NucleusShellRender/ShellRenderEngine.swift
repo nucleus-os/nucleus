@@ -9,8 +9,8 @@ import Tracy
 // swapchain, all sharing one RenderCore (one VkDevice — Skia can only draw into swapchain
 // images on the device that owns them).
 //
-// The RN runtime commits its layer tree into the engine-owned store via RenderCommitSink
-// (installed by the runtime). Each frame the engine ticks the store's animations, then calls
+// Native WindowScene publication commits into the engine-owned store through
+// the runtime's RenderCommitSink. Each frame the engine ticks animations, then calls
 // RenderCore.renderReady per presenter, which composites the retained tree into that surface's
 // acquired swapchain image and presents it.
 

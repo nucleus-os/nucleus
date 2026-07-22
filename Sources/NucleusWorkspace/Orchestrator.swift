@@ -58,9 +58,8 @@ struct Orchestrator {
     private func bootstrapStages(for selected: Set<WorkspaceComponent>) -> [BootstrapStage] {
         let core = context.repository("core")
         let rn = context.repository("react-native")
-        let shell = context.repository("shell")
         let needsCore = !selected.isDisjoint(with: [.core, .linux, .rn, .compositor, .shell])
-        let needsRN = !selected.isDisjoint(with: [.rn, .shell])
+        let needsRN = selected.contains(.rn)
         var stages: [BootstrapStage] = []
 
         if needsCore {
@@ -106,12 +105,6 @@ struct Orchestrator {
             for component in WorkspaceComponent.allCases where selected.contains(component) { try build(component.rawValue) }
         }))
 
-        if selected.contains(.shell) {
-            stages.append(BootstrapStage(name: "js-bundles", run: {
-                try context.run("bun", ["install", "--cwd", "js", "--frozen-lockfile"], directory: shell)
-                try context.run("swift", ["package", "build-shell-bundle", "--allow-writing-to-package-directory"], directory: shell)
-            }))
-        }
         return stages
     }
 
@@ -171,16 +164,10 @@ struct Orchestrator {
         // establish their modules before downstream C++ import graphs are built.
         for component in WorkspaceComponent.allCases {
             try testDebug(component)
-            if component == .rn {
-                // Shell debug products link this archive. Provision it from the
-                // exact debug product before any downstream package is tested.
-                try provisionHostArchive(configuration: "debug")
-            }
         }
 
         try CrossLanguageABIAudit(context: context).run()
 
-        try provisionHostArchive(configuration: "release")
         for suite in releaseStructuralSuites {
             try testReleaseSuite(suite)
         }
@@ -283,110 +270,6 @@ struct Orchestrator {
         } catch {
             throw WorkspaceFailure.message("test failed [\(identity)]: \(error)")
         }
-    }
-
-    private struct HostArchiveMetadata: Decodable {
-        let schemaVersion: Int
-        let configuration: String
-        let productDirectory: String
-        let archive: String
-        let byteCount: UInt64
-        let fingerprint: String
-    }
-
-    private func provisionHostArchive(configuration: String) throws {
-        let directory = context.repository("react-native")
-        let identity = "component=rn package=react-native configuration=\(configuration)"
-        print("==> provision \(identity) archive=libNucleusReactRuntimeHostCxx.a")
-        do {
-            try context.run(
-                "swift",
-                [
-                    "build", "-c", configuration,
-                    "--target", "NucleusReactRuntimeCxx",
-                ],
-                directory: directory)
-            try context.run(
-                "swift",
-                [
-                    "build", "-c", configuration,
-                    "--product", "NucleusReactRuntimeHostCxx",
-                ],
-                directory: directory)
-            try context.run(
-                "swift",
-                [
-                    "package", "provision-cxx-libs", configuration,
-                    "--allow-writing-to-package-directory",
-                ],
-                directory: directory)
-            try verifyHostArchive(configuration: configuration, directory: directory)
-        } catch {
-            throw WorkspaceFailure.message("archive provisioning failed [\(identity)]: \(error)")
-        }
-    }
-
-    private func verifyHostArchive(configuration: String, directory: URL) throws {
-        let archiveName = "libNucleusReactRuntimeHostCxx.a"
-        let output = directory
-            .appendingPathComponent(".cxx-build", isDirectory: true)
-            .appendingPathComponent(configuration, isDirectory: true)
-        let archive = output.appendingPathComponent(archiveName)
-        let metadataURL = output.appendingPathComponent("\(archiveName).metadata.json")
-        guard FileManager.default.fileExists(atPath: archive.path),
-              FileManager.default.fileExists(atPath: metadataURL.path)
-        else {
-            throw WorkspaceFailure.message(
-                "missing staged \(configuration) archive or metadata under \(output.path)")
-        }
-        let metadata = try JSONDecoder().decode(
-            HostArchiveMetadata.self,
-            from: Data(contentsOf: metadataURL))
-        let stagedByteCount = try fileSize(archive)
-        let stagedFingerprint = try fnv1a64(archive)
-        guard metadata.schemaVersion == 1,
-              metadata.configuration == configuration,
-              metadata.archive == archiveName,
-              metadata.byteCount == stagedByteCount,
-              metadata.fingerprint == stagedFingerprint
-        else {
-            throw WorkspaceFailure.message(
-                "staged \(configuration) archive metadata does not match its bytes")
-        }
-        let source = directory
-            .appendingPathComponent(".build/out/Products", isDirectory: true)
-            .appendingPathComponent(metadata.productDirectory, isDirectory: true)
-            .appendingPathComponent(archiveName)
-        let sourceByteCount = try fileSize(source)
-        let sourceFingerprint = try fnv1a64(source)
-        guard FileManager.default.fileExists(atPath: source.path),
-              sourceByteCount == metadata.byteCount,
-              sourceFingerprint == metadata.fingerprint
-        else {
-            throw WorkspaceFailure.message(
-                "staged \(configuration) archive fingerprint differs from \(source.path)")
-        }
-    }
-
-    private func fileSize(_ url: URL) throws -> UInt64 {
-        let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
-        guard let size = attributes[.size] as? NSNumber else {
-            throw WorkspaceFailure.message("could not read archive size: \(url.path)")
-        }
-        return size.uint64Value
-    }
-
-    private func fnv1a64(_ url: URL) throws -> String {
-        let handle = try FileHandle(forReadingFrom: url)
-        defer { try? handle.close() }
-        var hash: UInt64 = 0xcbf29ce484222325
-        while let data = try handle.read(upToCount: 1024 * 1024), !data.isEmpty {
-            for byte in data {
-                hash ^= UInt64(byte)
-                hash &*= 0x100000001b3
-            }
-        }
-        return String(format: "%016llx", hash)
     }
 
     private func components(_ selection: String?) throws -> [WorkspaceComponent] {

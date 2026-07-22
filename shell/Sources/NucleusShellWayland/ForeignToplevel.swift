@@ -4,13 +4,13 @@
 //
 // This is the client consumer of the same window model the compositor projects. The shell
 // holds only wire-handle bookkeeping; the window state and the action behavior are the
-// compositor's. The bar's taskbar renders `windows`; the native `foreign-toplevel` module
-// exposes them to JS and routes inbound actions back through the handle.
+// compositor's. The runtime projects `windows` into typed native product state and routes typed
+// taskbar actions directly back through the handle.
 
 import WaylandClientC
 import WaylandClientDispatch
 
-/// A window as seen over foreign-toplevel. Value snapshot the taskbar/native module reads.
+/// A window as seen over foreign-toplevel. Value snapshot the native taskbar reads.
 public struct ToplevelWindow: Identifiable, Sendable {
     public let id: UInt64          // stable per-handle id (the proxy pointer bits)
     public var title: String = ""
@@ -81,7 +81,7 @@ public final class ForeignToplevelManager {
         onChanged?()
     }
 
-    // MARK: - Actions (routed from the taskbar / native module → the compositor's model)
+    // MARK: - Actions (routed from the native taskbar → the compositor's model)
 
     public func activate(id: UInt64) {
         guard let box = handles[id], let seat = client?.proxy(.seat) else { return }

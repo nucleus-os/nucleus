@@ -9,7 +9,7 @@ Nucleus is one monorepo containing independently buildable Swift packages:
 | [`core`](core) | The shared **render/UI core** — React-agnostic and platform-agnostic. |
 | [`react-native`](react-native) | The **React Native platform** — Fabric, Hermes, JSI, and the RN native stack. |
 | [`compositor`](compositor) | The **Wayland/DRM compositor** — server, renderer backend, and policy; zero React. |
-| [`shell`](shell) | The first-party **desktop shell** — an out-of-process React Native layer-shell client. |
+| [`shell`](shell) | The first-party **desktop shell** — an out-of-process native Swift layer-shell client built with NucleusUI. |
 
 ## Architecture
 
@@ -26,25 +26,13 @@ Nucleus is one monorepo containing independently buildable Swift packages:
 │                     │        │                           │
 │  Wayland server     │        │  Wayland client           │
 │  DRM/KMS scanout    │        │  VK_WSI wl_surface        │
-│  Window policy      │        │  RN app (bar, dock, …)   │
-│  Shell overlay      │        │                           │
+│  Window policy      │        │  Native Swift product    │
+│  Shell overlay      │        │  NucleusUI bar + lock    │
 │  (NucleusUI)        │        │                           │
-└────┬────────┬───────┘        └───────┬──────────────────┘
-     │        │                        │
-     │        │                        │  (relative path)
-     │        │           ┌────────────▼────────────┐
-     │        │           │   nucleus-react-native   │
-     │        │           │                           │
-     │        │           │  Fabric · Hermes · JSI   │
-     │        │           │  Native module bridge     │
-     │        │           │  RN codegen · build       │
-     │        │           └───────┬──────────────────┘
-     │        │                   │
-     │        │                   │  (relative path)
-     │        └───────────────────┼───────────────────┐
-     │                            │                   │
-     │                            │  (relative path)  │
-┌────▼────────────────────────────▼───────────────────▼────┐
+└────┬────────────────┘        └────────────┬──────────────┘
+     │                                      │
+     │             (relative SwiftPM paths) │
+┌────▼──────────────────────────────────────▼──────────────┐
 │                         nucleus                           │
 │                                                           │
 │  NucleusTypes · NucleusLayers · NucleusRenderModel        │
@@ -60,8 +48,8 @@ Nucleus is one monorepo containing independently buildable Swift packages:
 - **`core/` is the single source of truth** for rendering, layout, and the UI framework. Other packages consume it through relative SwiftPM paths.
 - **The compositor links zero React.** It provides the Wayland server, DRM/KMS scanout, window management, and a shell overlay built with NucleusUI — but React Native is not part of it.
 - **The shell is out-of-process.** `nucleus-shell` is a normal Wayland client connected over `WAYLAND_DISPLAY`. The compositor and shell meet only at runtime over standard protocols — each is swappable independently.
-- **The React Native platform remains an architectural boundary.** `react-native/` owns Fabric/Hermes/folly and the Swift runtime bridge, while living in the same atomic source-control unit.
-- **Shared native SDKs.** The `render` SDK (Skia Graphite + native Vulkan) and the `rn` SDK (Hermes + ReactCommon + folly) are provisioned into `~/.cache/nucleus/nucleus-native-sdk/` by the root Swift bootstrap stage graph. All components consume from this stable cache path, decoupling build artifacts from any single source directory.
+- **The React Native platform is independent of the shell.** `react-native/` owns Fabric, Hermes, folly, and its Swift runtime bridge for RN applications; `shell/` does not depend on that package or SDK.
+- **Native SDK ownership is explicit.** Render consumers use the `render` SDK (Skia Graphite + native Vulkan), while only `react-native/` consumes the `rn` SDK (Hermes + ReactCommon + folly). The root bootstrap provisions both under `~/.cache/nucleus/nucleus-native-sdk/`.
 
 ## Supporting components
 
@@ -105,13 +93,32 @@ component shell scripts:
 ```sh
 tools/nucleus android build
 tools/nucleus toolchain rebuild
-tools/nucleus profile --launch --seconds 20
-tools/nucleus install compositor
+tools/nucleus install session
+tools/nucleus run
 ```
 
-Because Nucleus is a DRM compositor rather than a nested Wayland client, launch
-profiles must run from a free virtual terminal or a display-manager session where
-another compositor does not already own the seat.
+`tools/nucleus run` is the complete development runtime entry point. It
+incrementally builds the compositor, native Swift shell, PAM helper, and session
+launcher into `.install/`, then starts that installed session. Launch it from a
+free virtual terminal or a display-manager session because Nucleus owns the DRM
+seat rather than nesting inside an existing Wayland/X11 desktop.
+
+Runtime diagnostics use the same entry point, so the instrumented binaries and
+the session being measured cannot drift apart:
+
+```sh
+tools/nucleus run --seconds 20
+tools/nucleus run --tracy --seconds 20
+tools/nucleus run --sanitize address
+tools/nucleus run --vk-validation
+tools/nucleus run --valgrind
+```
+
+Use `tools/nucleus run --help` for capture location, presentation mode, render
+benchmark, sanitizer, optimization, and compositor-argument options.
+Every run streams the complete build and session output to a UTC-timestamped
+file under `logs/`; `logs/latest` is a symlink to the most recent run, including
+runs that fail during build or startup.
 
 Long-running Swift toolchain and Android SDK compiler recipes remain shell-based
 internals because they directly adapt upstream build systems. The top-level Swift

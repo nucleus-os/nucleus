@@ -39,6 +39,11 @@ public final class WaylandDisplay {
         return String(cString: name)
     }
 
+    @discardableResult
+    public func addSocket(named name: String) -> Bool {
+        name.withCString { wl_display_add_socket(display, $0) == 0 }
+    }
+
     /// Adopt an externally created client socket (e.g. Xwayland's) as a wl_client.
     public func createClient(fd: Int32) -> OpaquePointer? {
         wl_client_create(display, fd)

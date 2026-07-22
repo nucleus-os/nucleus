@@ -12,6 +12,12 @@ USAGE
   exit 0
 fi
 
+# An installed session keeps the compositor and its default shell in the same
+# prefix. Prepend this launcher's directory so `nucleus-shell` resolves even
+# when the prefix is not globally present in the login environment's PATH.
+session_bin_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+export PATH="$session_bin_dir:$PATH"
+
 uid="$(id -u)"
 parent_runtime_dir="${XDG_RUNTIME_DIR:-/run/user/$uid}"
 home="${HOME:-}"
@@ -180,16 +186,51 @@ fi
 chmod 700 -- "$runtime_dir"
 
 cleanup() {
-  if [ "$created_runtime" -eq 1 ]; then
-    rm -rf -- "$runtime_dir"
-  fi
+  [ "$created_runtime" -eq 1 ] || return
+
+  # xdg-document-portal may still be unwinding its FUSE mount after the
+  # private bus exits. Detach it when present and retry the validated private
+  # directory so a portal teardown race does not mask the compositor status.
+  for _ in 1 2 3 4 5 6 7 8 9 10; do
+    if command -v fusermount3 >/dev/null 2>&1 && [ -d "$runtime_dir/doc" ]; then
+      fusermount3 -u -- "$runtime_dir/doc" >/dev/null 2>&1 || true
+    fi
+    rm -rf -- "$runtime_dir" 2>/dev/null || true
+    [ ! -e "$runtime_dir" ] && return
+    sleep 0.05
+  done
+  rm -rf -- "$runtime_dir"
 }
 trap cleanup EXIT
+
+session_runner_pid=0
+forward_session_signal() {
+  local signal="$1"
+  if [ "$session_runner_pid" -gt 0 ] && kill -0 "$session_runner_pid" 2>/dev/null; then
+    # dbus-run-session keeps both its bus daemon and the compositor as direct
+    # children. Signal them before the runner so the application cannot be
+    # orphaned when the launcher itself is stopped by systemd or a terminal.
+    local child
+    local children=""
+    if [ -r "/proc/$session_runner_pid/task/$session_runner_pid/children" ]; then
+      read -r children < "/proc/$session_runner_pid/task/$session_runner_pid/children" || true
+    fi
+    for child in $children; do
+      kill -"$signal" "$child" 2>/dev/null || true
+    done
+    kill -"$signal" "$session_runner_pid" 2>/dev/null || true
+  fi
+}
+trap 'forward_session_signal TERM' TERM
+trap 'forward_session_signal INT' INT
 
 export NUCLEUS_SESSION_ID="$session_id"
 export NUCLEUS_SESSION_RUNTIME_DIR="$runtime_dir"
 export XDG_RUNTIME_DIR="$runtime_dir"
-unset WAYLAND_DISPLAY
+# The private runtime starts empty, so the compositor owns this deterministic
+# socket name. Export it before dbus-run-session starts: activated portal and
+# accessibility services then inherit the display they must connect to.
+export WAYLAND_DISPLAY=wayland-0
 unset WAYLAND_SOCKET
 unset DISPLAY
 unset XAUTHORITY
@@ -262,7 +303,15 @@ if [ -n "${NUCLEUS_DBUS_SESSION_CONFIG:-}" ]; then
 fi
 
 set +e
-"${dbus_run_session[@]}" -- "$compositor" "$@"
-status=$?
+"${dbus_run_session[@]}" -- "$compositor" "$@" &
+session_runner_pid=$!
+wait "$session_runner_pid"
+session_status=$?
+if kill -0 "$session_runner_pid" 2>/dev/null; then
+  wait "$session_runner_pid"
+  session_status=$?
+fi
+session_runner_pid=0
 set -e
-exit "$status"
+trap - TERM INT
+exit "$session_status"

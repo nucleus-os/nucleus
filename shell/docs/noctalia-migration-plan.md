@@ -84,8 +84,9 @@ NucleusUI only with reusable capability required by that slice, lands behavioral
 coverage in `core`, and then consumes the public API from `shell`. Shell-specific raw drawing,
 layout, or event backdoors are not accepted as shortcuts.
 
-The existing React Native bar remains a useful integration proof and must continue to build while
-shared APIs change. It is not the product foundation or a migration milestone.
+The former React Native bar served as an early integration proof while shared APIs changed. The
+runtime cutover deletes it, its bundle pipeline, and its shell-package dependencies; it is not a
+parallel product or regression fixture.
 
 ## Swift package and module placement
 
@@ -94,7 +95,7 @@ package:
 
 - `NucleusShellProduct` is the native product module. It owns Swift views, controllers, product
   composition, and app-facing state. It imports public `NucleusUI` and typed shell service models,
-  not `NucleusLayers`, `NucleusRenderer`, or React Native.
+  not `NucleusLayers` or `NucleusRenderer`.
 - `NucleusShellRuntime` is the privileged platform host. It owns Wayland/render integration,
   event-loop and process lifecycle, host installation, and the adapters that deliver platform
   events and service state to the product.
@@ -115,22 +116,22 @@ Nucleus already provides the destination platform's core pieces:
   foreign-toplevel, session-lock, and screencopy clients.
 - `NucleusShellRender` presents client-owned surfaces through Vulkan WSI and the shared Nucleus
   Skia Graphite renderer.
-- `NucleusShellRuntime` installs the render host, drives the Wayland/frame loop, and contains a
-  bar-specific composition-root prototype that must become a general native application host.
+- `NucleusShellRuntime` installs the render host, drives the demand-based Wayland reactor, and
+  owns the general native surface registry used by layer-shell and session-lock roles.
 - `NucleusUI`, `NucleusLayers`, `NucleusRenderHost`, and `NucleusRenderer` supply retained state,
   transactions, text, images, effects, animation primitives, resource hosting, and rendering.
-- The existing Fabric bar proves that the render host can attach an out-of-process shell surface,
-  publish a retained tree, and present it through Vulkan. The native shell reuses that lower
-  infrastructure without making Fabric its view hierarchy.
+- The retired Fabric bar proved that the render host could attach an out-of-process shell surface,
+  publish a retained tree, and present it through Vulkan. The native runtime now owns that path
+  directly through `WindowScene` and `NativeSurfaceRegistry`.
 - The workspace CEF patch stack and Noctalia integration implement the Wayland-only
   Graphite/Dawn/Vulkan producer, explicit DMA-BUF transport, external BeginFrame scheduling, and
   Vulkan/Graphite consumer contract. Final build and runtime validation remain separate from
   integrating that contract into `nucleus-shell`.
 
-The current shell is a platform vertical slice, not a usable replacement. Its host is bar-specific,
-its loop polls at a fixed cadence, input routing is incomplete, screencopy is scaffolded, and most
-services and product surfaces do not exist. The migration grows this package into the native shell;
-it does not add another shell package or retain parallel native and React product trees.
+The runtime cutover establishes the native application host, one bar per output, direct typed
+foreign-toplevel actions, the shared native lock path, and demand-driven scheduling. Later phases
+grow the remaining product surfaces and services in the same tree; they do not add another shell
+package or restore parallel product runtimes.
 
 ## Subsystem mapping
 
@@ -211,8 +212,8 @@ Finish the framework surface required to author the shell without raw layer or r
 
 - Land `GraphicsContext`, public paths, gradients, transforms, clipping, text/image drawing,
   effects, blend behavior, and the shared paint-registration seam.
-- Migrate the existing React Native committer to the same registration seam only as required to
-  delete the replaced command vocabulary and keep the repository coherent.
+- Keep the then-existing React Native committer on the shared registration seam until the native
+  runtime cutover deletes the shell's React pipeline and its replaced command vocabulary.
 - Publish the stable NucleusUI window, scene, and hosted-surface API needed by an out-of-process
   Swift shell while keeping genuinely renderer-privileged objects behind the host boundary.
 - Complete the native event vocabulary, responder chain, first-responder/key-window behavior,
@@ -420,9 +421,9 @@ criteria.
 
 This document deliberately does not choose surfaces, ordering, component boundaries, or state
 bridges for that later work. Those decisions receive a separate plan based on the completed Swift
-product and measurements available then. The existing RN prototype may continue serving as an
-integration and regression fixture; no new shell responsibility depends on it during the native
-port.
+product and measurements available then. The retired RN prototype does not remain in the shell
+package. Any future React Native adoption starts from a separately planned product boundary and
+cannot revive a parallel legacy runtime.
 
 ## Principal risks
 

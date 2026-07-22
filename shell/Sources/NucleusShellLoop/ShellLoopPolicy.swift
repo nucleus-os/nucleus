@@ -16,6 +16,17 @@ public struct ShellPollResult: Sendable, Equatable {
     public var isTerminal: Bool { isHungUp || isInvalid || hasError }
 }
 
+public enum ShellPollInterestPolicy {
+    /// A source with no requested events remains deadline-driven; submitting it
+    /// to poll/io_uring would be an invalid zero-event registration.
+    public static func shouldRegister(
+        fileDescriptor: Int32,
+        events: Int16
+    ) -> Bool {
+        fileDescriptor >= 0 && events != 0
+    }
+}
+
 public enum ShellFlushDisposition: Sendable, Equatable {
     case flushed
     case needsWrite

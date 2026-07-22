@@ -30,6 +30,18 @@ import Testing
         #expect(ShellDeadlineSet().pollTimeoutMilliseconds == -1)
     }
 
+    @Test func zeroEventSourcesRemainDeadlineDriven() {
+        #expect(!ShellPollInterestPolicy.shouldRegister(
+            fileDescriptor: 70,
+            events: 0))
+        #expect(ShellPollInterestPolicy.shouldRegister(
+            fileDescriptor: 70,
+            events: Int16(POLLIN)))
+        #expect(!ShellPollInterestPolicy.shouldRegister(
+            fileDescriptor: -1,
+            events: Int16(POLLIN)))
+    }
+
     @Test func flushBackpressureAddsWriteInterestWithoutDisconnecting() {
         #expect(ShellFlushDisposition.classify(
             result: -1, error: EAGAIN) == .needsWrite)

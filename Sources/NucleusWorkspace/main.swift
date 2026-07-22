@@ -14,7 +14,7 @@ Commands:
   benchmark    Run deterministic release-built headless performance baselines
   toolchain    Rebuild and atomically activate the paired Swift toolchain and Android SDK
   android      Build or verify the Android host
-  profile      Capture a compositor Tracy profile (`profile receivers` builds tools)
+  run          Build, install, and launch the native compositor + shell session
   install      Assemble an installable runtime prefix
   help         Show this help
 """
@@ -59,7 +59,7 @@ struct NucleusWorkspaceCommand {
             }
         case "toolchain": try ToolchainCommand(context: context).run(arguments.dropFirst())
         case "android": try AndroidCommand(context: context).run(arguments.dropFirst())
-        case "profile": try ProfilingCommand(context: context).run(arguments.dropFirst())
+        case "run": try RunCommand(context: context).run(arguments.dropFirst())
         case "install": try InstallCommand(context: context).run(arguments.dropFirst())
         case "help", "--help", "-h": print(usage)
         default: throw WorkspaceFailure.message("unknown command '\(command)'\n\n\(usage)")

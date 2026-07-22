@@ -15,8 +15,8 @@ import Glibc
 ///
 /// `posix_spawn` rather than `fork` without `exec`: after a fork in a
 /// multithreaded process the child may only call async-signal-safe functions,
-/// and PAM goes well past that. The shell holds a Vulkan device and a JavaScript
-/// runtime's threads, so spawning a fresh image is the honest way to get a
+/// and PAM goes well past that. The shell holds a Vulkan device and several
+/// platform/runtime threads, so spawning a fresh image is the honest way to get a
 /// single-threaded process to run PAM in.
 ///
 /// Non-blocking by construction: the spawn returns immediately and the verdict

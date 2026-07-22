@@ -614,16 +614,26 @@ public final class SDBusConnection {
             return handled
         }
         guard let bus else { return false }
+        // An sd-bus callback is allowed to close this Swift owner or replace
+        // the protocol service's connection. Keep the handle alive until the
+        // active sd_bus_process call unwinds, and stop advancing it as soon as
+        // ownership changes. Without this processing reference, unref'ing the
+        // connection from an async reply callback leaves libsystemd resuming
+        // against a released bus.
+        guard let processingBus = sd_bus_ref(bus) else { return false }
+        defer { sd_bus_unref(processingBus) }
         var handled = false
         while true {
-            let result = sd_bus_process(bus, nil)
+            let result = sd_bus_process(processingBus, nil)
             if result < 0 {
                 throw DBusError(errno: result, while: "processing D-Bus")
             }
             if result == 0 { break }
             handled = true
+            if self.bus != bus { break }
         }
-        let flushed = sd_bus_flush(bus)
+        guard self.bus == bus else { return handled }
+        let flushed = sd_bus_flush(processingBus)
         if flushed < 0 {
             throw DBusError(errno: flushed, while: "flushing D-Bus")
         }

@@ -86,9 +86,19 @@ public final class WaylandRuntime {
     /// Add the listen socket and export WAYLAND_DISPLAY/XDG_SESSION_TYPE. Returns true on success.
     /// (Xwayland's parent socket fd is adopted directly through `router.display.createClient(fd:)`.)
     public func addSocket() -> Bool {
-        guard let runtime = host.runtime,
-            let name = runtime.router.display.addSocketAuto()
-        else { return false }
+        guard let runtime = host.runtime else { return false }
+        let name: String
+        if let configured = getenv("WAYLAND_DISPLAY"), configured.pointee != 0 {
+            name = String(cString: configured)
+            guard runtime.router.display.addSocket(named: name) else {
+                return false
+            }
+        } else {
+            guard let automatic = runtime.router.display.addSocketAuto() else {
+                return false
+            }
+            name = automatic
+        }
         setenv("WAYLAND_DISPLAY", name, 1)
         setenv("XDG_SESSION_TYPE", "wayland", 1)
         return true

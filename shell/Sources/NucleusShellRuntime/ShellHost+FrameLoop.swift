@@ -43,10 +43,10 @@ extension ShellHost {
                 nowNanoseconds: monotonicNowNs())
             if outcome.shouldStop { break }
 
-            let hadHostEvent = processUnsignaledReactorSources(after: outcome)
+            _ = processUnsignaledReactorSources(after: outcome)
             serviceExpiredTransfers()
             advanceInputDeadlines()
-            guard drainHostWork(if: hadHostEvent) else { break }
+            refreshClock(nowNanoseconds: monotonicNowNs())
             renderFrameIfDue(counters: &counters)
         }
         await shutdown()
@@ -90,27 +90,6 @@ extension ShellHost {
             inputScene?.updateToolTip(atNanoseconds: nowNanoseconds)
             requestRender(nativeSceneChanged: true)
         }
-    }
-
-    func drainHostWork(if hadHostEvent: Bool) -> Bool {
-        guard hadHostEvent else { return true }
-        if let host = rnHost {
-            do {
-                if try host.drainPendingJSCalls() > 0 {
-                    requestRender()
-                }
-            } catch {
-                writeErr("nucleus-shell: failed to drain JS runtime: \(error)")
-                return false
-            }
-        }
-
-        let commands = commandInbox.drain()
-        for (command, argumentsJSON) in commands {
-            applyCommand(command, argumentsJSON)
-        }
-        if !commands.isEmpty { requestRender() }
-        return true
     }
 
     func renderFrameIfDue(counters: inout ShellLoopCounters) {

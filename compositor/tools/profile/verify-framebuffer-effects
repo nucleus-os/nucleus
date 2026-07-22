@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Verify framebuffer-effect evidence from capture-compositor trace summaries.
+# Verify framebuffer-effect evidence from `tools/nucleus run --tracy` summaries.
 
 set -euo pipefail
 
@@ -18,7 +18,7 @@ Options:
                      reached the framebuffer-effect path
   -h, --help         Show this help
 
-Each DIR must contain trace-summary.txt from tools/profile/capture-compositor.
+Each DIR must contain trace-summary.txt from tools/nucleus run --tracy.
 USAGE
 }
 

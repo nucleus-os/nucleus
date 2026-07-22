@@ -20,6 +20,12 @@ extension ShellHost {
         deadlines.add(relativeNanoseconds:
             inputScene?.nanosecondsUntilToolTip(
                 atNanoseconds: nowNanoseconds))
+        if let clockDeadline = nextClockUpdateNanoseconds {
+            deadlines.add(relativeNanoseconds:
+                clockDeadline > nowNanoseconds
+                    ? clockDeadline - nowNanoseconds
+                    : 0)
+        }
         if renderWorkDue, let presentationDeadline = nextPresentationDeadlineNs {
             deadlines.add(relativeNanoseconds:
                 presentationDeadline > nowNanoseconds
@@ -28,7 +34,6 @@ extension ShellHost {
         }
 
         let authFileDescriptor = authenticator?.pendingFD
-        let systemBusFileDescriptor = systemBus?.fileDescriptor ?? -1
         let pasteboardDescriptors = pasteboardAdapter?.pollDescriptors ?? []
         let dragDescriptors = dragDropAdapter?.pollDescriptors ?? []
         var interests: [LinuxReactorInterest] = []
@@ -56,11 +61,18 @@ extension ShellHost {
                 fileDescriptor: authFileDescriptor,
                 events: Int16(POLLIN)))
         }
-        if systemBusFileDescriptor >= 0, let systemBus {
-            interests.append(LinuxReactorInterest(
-                token: Self.reactorToken(.systemBus),
-                fileDescriptor: systemBusFileDescriptor,
-                events: systemBus.pollEvents))
+        if let systemBus {
+            let fileDescriptor = systemBus.fileDescriptor
+            let events = systemBus.pollEvents
+            if ShellPollInterestPolicy.shouldRegister(
+                fileDescriptor: fileDescriptor,
+                events: events)
+            {
+                interests.append(LinuxReactorInterest(
+                    token: Self.reactorToken(.systemBus),
+                    fileDescriptor: fileDescriptor,
+                    events: events))
+            }
             deadlines.add(relativeMicroseconds:
                 systemBus.timeoutMicroseconds())
         }
@@ -258,13 +270,18 @@ extension ShellHost {
     ) {
         guard let source else { return }
         deadlines.add(relativeMicroseconds: source.timeoutMicroseconds())
-        guard source.fileDescriptor >= 0, source.pollEvents != 0 else {
+        let fileDescriptor = source.fileDescriptor
+        let events = source.pollEvents
+        guard ShellPollInterestPolicy.shouldRegister(
+            fileDescriptor: fileDescriptor,
+            events: events)
+        else {
             return
         }
         interests.append(LinuxReactorInterest(
             token: token,
-            fileDescriptor: source.fileDescriptor,
-            events: source.pollEvents))
+            fileDescriptor: fileDescriptor,
+            events: events))
     }
 
     func processLinuxReactorSource<Source: LinuxReactorSource>(

@@ -55,9 +55,6 @@ The primary development path uses the host toolchain and system libraries:
 # Ubuntu-family hosts
 grep -vE '^(#|$)' packages/ubuntu.txt | xargs sudo apt-get install -y
 
-# Bun is distributed independently of Ubuntu packages.
-curl -fsSL https://bun.sh/install | bash
-
 tools/nucleus bootstrap
 tools/nucleus build
 ```
@@ -78,8 +75,8 @@ tools/nucleus bootstrap compositor
 swift build --package-path compositor-core
 swift build --package-path compositor
 
-# Install (assembles runnable prefix: binary + session scripts + systemd unit)
-tools/nucleus install compositor
+# Install the complete compositor + native shell session into one prefix
+tools/nucleus install session
 ```
 
 The root workspace CLI provisions the render SDK through `core/`, then builds
@@ -106,10 +103,17 @@ Notable test targets:
 
 ```sh
 # From a free virtual terminal or display-manager session
-swift run --package-path compositor NucleusCompositor
+tools/nucleus run
+tools/nucleus run --seconds 20
 ```
 
-The compositor serves the standard Wayland compositor protocols plus extension protocols (`wlr-layer-shell`, `wlr-foreign-toplevel-management`, `ext-session-lock`, `wlr-screencopy`). Any layer-shell client (nucleus-shell, Noctalia, or other third-party clients) can connect.
+The command incrementally builds and stages the compositor, native shell, PAM
+helper, and session launcher before starting the complete private-bus session.
+`--seconds N` cleanly stops any ordinary, profiled, sanitized, validation, or
+Valgrind run after the requested duration.
+The compositor serves the standard Wayland compositor protocols plus extension
+protocols (`wlr-layer-shell`, `wlr-foreign-toplevel-management`,
+`ext-session-lock`, `wlr-screencopy`). Any layer-shell client can connect.
 
 On multi-GPU hosts, startup selects the unique GPU driving a connected display,
 then uses the PCI boot-VGA hint as a tie-breaker. Set
@@ -119,18 +123,30 @@ genuinely ambiguous or an explicit device is required.
 ## Profile
 
 ```sh
-tools/nucleus profile --launch --seconds 20
+tools/nucleus run --tracy --seconds 20
 ```
 
-Run launch profiles from a free virtual terminal or a display-manager session.
+Run from a free virtual terminal or a display-manager session.
 Nucleus uses DRM directly and cannot launch inside an existing Wayland/X11
 desktop session that already owns the seat.
 
-`tools/profile/capture-compositor` remains as a compatibility alias. The first
-run builds the Tracy capture and CSV tools from the exact revision
+The first Tracy run builds the capture and CSV tools from the exact revision
 recorded by the resolved `swift-tracy` package. Captures and summaries are
 written under `profiles/` by default.
-Launched captures wait for the compositor's Wayland-ready milestone and fail
+Captures wait for the compositor's Wayland-ready milestone and fail
 when bring-up stalls, the compositor exits unsuccessfully, or a Tracy-enabled
 run contains no events or plots. The retained profile directory contains the
-compositor and receiver logs for diagnosis.
+receiver log and a `nucleus_drm.log` symlink to the unified run log for
+diagnosis. Every invocation writes the build and complete compositor/shell
+session stream to a timestamped file under the workspace `logs/` directory;
+`logs/latest` points to the newest run.
+
+The same runtime entry point owns the other launch-time diagnostics:
+
+```sh
+tools/nucleus run --sanitize address
+tools/nucleus run --sanitize undefined
+tools/nucleus run --sanitize thread
+tools/nucleus run --vk-validation
+tools/nucleus run --valgrind
+```
