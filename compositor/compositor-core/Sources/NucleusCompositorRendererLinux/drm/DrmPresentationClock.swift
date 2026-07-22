@@ -62,6 +62,7 @@ struct DrmSequenceExtender: Sendable, Equatable {
 struct DrmPresentationEventState: Sendable, Equatable {
     private var sequence = DrmSequenceExtender()
     private(set) var lastTimestampNs: UInt64?
+    private(set) var lastSequence: UInt64?
 
     mutating func accept(
         _ raw: DrmPageFlipEvent,
@@ -70,11 +71,32 @@ struct DrmPresentationEventState: Sendable, Equatable {
         guard let timestamp = clock.normalize(raw.timestampNs) else { return nil }
         if let lastTimestampNs, timestamp < lastTimestampNs { return nil }
         var proposedSequence = sequence
-        guard let extended = proposedSequence.extend(raw.sequence) else {
+        let extended: UInt64
+        if let kernelSequence = proposedSequence.extend(raw.sequence) {
+            if let lastSequence, kernelSequence <= lastSequence {
+                let next = lastSequence.addingReportingOverflow(1)
+                guard !next.overflow else { return nil }
+                extended = next.partialValue
+            } else {
+                extended = kernelSequence
+            }
+            sequence = proposedSequence
+        } else if raw.sequence == 0,
+            let lastTimestampNs,
+            timestamp > lastTimestampNs,
+            let lastSequence
+        {
+            // NVIDIA's proprietary KMS driver can report sequence zero for
+            // every page flip. In that case the increasing kernel timestamp is
+            // the ordering authority and we synthesize the missing sequence.
+            let next = lastSequence.addingReportingOverflow(1)
+            guard !next.overflow else { return nil }
+            extended = next.partialValue
+        } else {
             return nil
         }
-        sequence = proposedSequence
         lastTimestampNs = timestamp
+        lastSequence = extended
         return (timestamp, extended)
     }
 }

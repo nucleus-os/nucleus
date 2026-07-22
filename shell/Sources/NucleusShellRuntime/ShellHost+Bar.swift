@@ -170,7 +170,14 @@ extension ShellHost {
     }
 
     func outputsChanged() {
+        reconcileWallpaperSurfaces()
         reconcileBarSurfaces()
+        for record in wallpaperSurfaces.values {
+            guard let output = client.outputs[record.outputID] else { continue }
+            surfaceRegistry?.updateRefreshRate(
+                output.refreshMillihertz,
+                surfaceID: record.surfaceID)
+        }
         for record in barSurfaces.values {
             guard let output = client.outputs[record.outputID] else { continue }
             surfaceRegistry?.updateRefreshRate(

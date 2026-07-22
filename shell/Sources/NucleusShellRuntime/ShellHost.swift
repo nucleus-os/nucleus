@@ -74,7 +74,10 @@ public final class ShellHost {
     var nativePublicationContext: WindowScenePublicationContext?
     var surfaceRegistry: NativeSurfaceRegistry?
     var productController: ShellProductController?
+    var wallpaperSurfaces: [UInt32: NativeWallpaperSurface] = [:]
     var barSurfaces: [UInt32: NativeBarSurface] = [:]
+    let wallpaperPath: String
+    var wallpaperFailureReported = false
 
     /// The seat and the scene its input is routed into.
     ///
@@ -146,6 +149,18 @@ public final class ShellHost {
         self.resourceHost = resourceHost
         self.retainedStore = retainedStore
         self.hostBundle = hostBundle
+        let environment = ProcessInfo.processInfo.environment
+        let configuredWallpaper = environment["NUCLEUS_WALLPAPER"]?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let defaultWallpaper = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Pictures/Wallpapers/q2zr6juo2rch1.jpeg")
+            .path
+        let selectedWallpaper = configuredWallpaper.flatMap {
+            $0.isEmpty ? nil : $0
+        } ?? defaultWallpaper
+        self.wallpaperPath = NSString(
+            string: selectedWallpaper)
+            .expandingTildeInPath
         closeLocalSignalFD = false
     }
 

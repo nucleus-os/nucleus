@@ -68,4 +68,31 @@ struct NativeBarProductTests {
         #expect(product.barsByOutput[1] == nil)
         #expect(product.barsByOutput[2] === second)
     }
+
+    @Test func productCompositionOwnsCoveringWallpapersPerOutput() {
+        let product = ShellProductController()
+        let first = product.makeWallpaper(
+            forOutput: 1,
+            sourcePath: "/wallpapers/first.jpeg",
+            sourceSize: Size(width: 16, height: 9))
+        let same = product.makeWallpaper(
+            forOutput: 1,
+            sourcePath: "/wallpapers/first.jpeg",
+            sourceSize: Size(width: 16, height: 9))
+        let second = product.makeWallpaper(
+            forOutput: 2,
+            sourcePath: "/wallpapers/second.jpeg",
+            sourceSize: Size(width: 16, height: 9))
+
+        #expect(first === same)
+        #expect(first.imageView.source == .resource("/wallpapers/first.jpeg"))
+        #expect(first.imageView.contentMode == .cover)
+        #expect(first.imageView.layerPresentation.role == .wallpaper)
+        #expect(!first.imageView.isHitTestingEnabled)
+        #expect(product.wallpapersByOutput[2] === second)
+
+        product.removeWallpaper(forOutput: 1)
+        #expect(product.wallpapersByOutput[1] == nil)
+        #expect(product.wallpapersByOutput[2] === second)
+    }
 }

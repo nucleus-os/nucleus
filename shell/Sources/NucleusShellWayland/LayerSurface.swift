@@ -27,6 +27,7 @@ public struct LayerAnchor: OptionSet, Sendable {
     public static let left = LayerAnchor(rawValue: 4)
     public static let right = LayerAnchor(rawValue: 8)
     public static let bar: LayerAnchor = [.top, .left, .right]
+    public static let all: LayerAnchor = [.top, .bottom, .left, .right]
 }
 
 public enum KeyboardInteractivity: UInt32 {
@@ -42,7 +43,8 @@ public struct LayerSurfaceConfig {
     /// Logical size; 0 on an anchored axis means "span the anchored edges".
     public var width: UInt32
     public var height: UInt32
-    /// Reserve this many logical px of work area on the anchored edge (-1 = honor size).
+    /// Reserve this many logical px of work area on the anchored edge.
+    /// `-1` ignores other exclusive zones and uses the complete output.
     public var exclusiveZone: Int32
     public var keyboard: KeyboardInteractivity
     public var namespace: String
@@ -62,6 +64,20 @@ public struct LayerSurfaceConfig {
     public static func topBar(height: UInt32, namespace: String = "nucleus-shell.bar") -> LayerSurfaceConfig {
         LayerSurfaceConfig(layer: .top, anchor: .bar, width: 0, height: height,
                            exclusiveZone: Int32(height), keyboard: .none, namespace: namespace)
+    }
+
+    /// A full-output background which remains behind exclusive shell chrome.
+    public static func wallpaper(
+        namespace: String = "nucleus-shell.wallpaper"
+    ) -> LayerSurfaceConfig {
+        LayerSurfaceConfig(
+            layer: .background,
+            anchor: .all,
+            width: 0,
+            height: 0,
+            exclusiveZone: -1,
+            keyboard: .none,
+            namespace: namespace)
     }
 }
 

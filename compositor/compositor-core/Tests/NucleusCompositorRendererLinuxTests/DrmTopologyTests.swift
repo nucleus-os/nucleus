@@ -171,13 +171,13 @@ import NucleusCompositorDrmC
         #expect(second.assignments[0].primaryPlaneID == PlaneID(rawValue: 100))
     }
 
-    @Test static func modeSelectionPreservesCurrentThenUsesHighestPreferredVariant() {
+    @Test static func modeSelectionUsesHighestRefreshAtPreferredResolution() {
         let sixty = mode("1080p60", clock: 148_500, refresh: 60)
         let oneTwenty = mode("1080p120", clock: 297_000, refresh: 120, preferred: false)
         let withCurrent = connector(
             1, crtcs: [10], currentCrtc: 10, currentMode: sixty,
             modes: [sixty, oneTwenty])
-        #expect(DrmTopologyPlanner.selectMode(for: withCurrent) == sixty)
+        #expect(DrmTopologyPlanner.selectMode(for: withCurrent) == oneTwenty)
 
         let withoutCurrent = connector(
             1, crtcs: [10], modes: [sixty, oneTwenty])

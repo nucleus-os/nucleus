@@ -42,4 +42,24 @@ import Testing
         #expect(accepted?.sequence == 11)
         #expect(accepted?.timestampNs == 1_001)
     }
+
+    @Test func zeroSequenceEventsUseTimestampOrderedFallback() {
+        var state = DrmPresentationEventState()
+        let clock = DrmPresentationClock(kernelUsesMonotonic: true)
+        #expect(state.accept(
+            DrmPageFlipEvent(timestampNs: 1_000, sequence: 0, crtcId: 2),
+            clock: clock)?.sequence == 0)
+        #expect(state.accept(
+            DrmPageFlipEvent(timestampNs: 1_100, sequence: 0, crtcId: 2),
+            clock: clock)?.sequence == 1)
+        #expect(state.accept(
+            DrmPageFlipEvent(timestampNs: 1_100, sequence: 0, crtcId: 2),
+            clock: clock) == nil)
+        #expect(state.accept(
+            DrmPageFlipEvent(timestampNs: 1_050, sequence: 0, crtcId: 2),
+            clock: clock) == nil)
+        #expect(state.accept(
+            DrmPageFlipEvent(timestampNs: 1_200, sequence: 0, crtcId: 2),
+            clock: clock)?.sequence == 2)
+    }
 }

@@ -156,8 +156,7 @@ enum DrmTopologyPlanner {
         var immediateRejections: [DrmTopologyRejection] = []
         var eligible: [EligibleConnector] = []
         for connector in inventory.connectors.sorted(by: { $0.connectorID < $1.connectorID }) {
-            guard let mode = selectMode(
-                for: connector, previous: previousByConnector[connector.connectorID])
+            guard let mode = selectMode(for: connector)
             else {
                 immediateRejections.append(
                     DrmTopologyRejection(connectorID: connector.connectorID, reason: .noMode))
@@ -333,20 +332,7 @@ enum DrmTopologyPlanner {
             diagnostics: diagnostics)
     }
 
-    static func selectMode(
-        for connector: DrmConnectorCandidate,
-        previous: DrmPipelineAssignment? = nil
-    ) -> DrmModeInfo? {
-        if let current = connector.currentMode,
-            let exact = connector.modes.first(where: { $0 == current })
-        {
-            return exact
-        }
-        if let previous,
-            let exact = connector.modes.first(where: { $0 == previous.mode })
-        {
-            return exact
-        }
+    static func selectMode(for connector: DrmConnectorCandidate) -> DrmModeInfo? {
         guard let preferred = connector.modes.first(where: \.isPreferred)
             ?? connector.modes.first
         else { return nil }

@@ -18,6 +18,7 @@ extension ShellHost {
         setupProduct()
         setupForeignToplevel()
         setupServices()
+        reconcileWallpaperSurfaces()
         reconcileBarSurfaces()
 
         guard nativePublicationContext != nil,
@@ -49,6 +50,7 @@ extension ShellHost {
         lockController?.shutdown()
         lockController = nil
         destroyAllBarSurfaces()
+        destroyAllWallpaperSurfaces()
         surfaceRegistry?.unregisterAll()
         surfaceRegistry = nil
         do {
