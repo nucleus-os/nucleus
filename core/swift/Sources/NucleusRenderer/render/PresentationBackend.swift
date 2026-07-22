@@ -39,6 +39,10 @@ public struct AcquiredFrameTarget {
     /// The image's current layout when acquired (`VK_IMAGE_LAYOUT_UNDEFINED` for a
     /// fresh scanout BO or a just-acquired swapchain image).
     public var initialLayout: VkImageLayout
+    /// The exact usage flags the backend used when the image was created. The
+    /// render core forwards these unchanged to Graphite; it must not reconstruct
+    /// them from the target kind because Vulkan validates the real image contract.
+    public var usageFlags: VK.ImageUsageFlags
     public var queueFamily: UInt32
     /// Premultiplied alpha vs opaque (false for an XRGB-style scanout BO).
     public var hasAlpha: Bool
@@ -58,6 +62,7 @@ public struct AcquiredFrameTarget {
         format: VkFormat,
         tiling: VkImageTiling,
         initialLayout: VkImageLayout,
+        usageFlags: VK.ImageUsageFlags,
         queueFamily: UInt32,
         hasAlpha: Bool,
         kind: FrameTargetKind,
@@ -70,6 +75,7 @@ public struct AcquiredFrameTarget {
         self.format = format
         self.tiling = tiling
         self.initialLayout = initialLayout
+        self.usageFlags = usageFlags
         self.queueFamily = queueFamily
         self.hasAlpha = hasAlpha
         self.kind = kind

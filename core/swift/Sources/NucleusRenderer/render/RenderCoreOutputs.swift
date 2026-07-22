@@ -65,16 +65,6 @@ extension RenderCore {
 
     // MARK: - The render loop
 
-    /// Vulkan image usage flags for the borrowed frame target, by kind. Both kinds
-    /// expose `VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT` so the Graphite render-target
-    /// wrap succeeds.
-    func usageFlags(for kind: FrameTargetKind) -> VK.ImageUsageFlags {
-        switch kind {
-        case .drmScanout: return DmaBufImageDescriptor.scanoutUsage
-        case .swapchainColor: return [.colorAttachmentBit, .transferDstBit]
-        }
-    }
-
     /// Record one frame for `outputID` into the backend-acquired `target` image:
     /// wrap a transient Graphite surface over it, composite the retained tree, and
     /// submit. Returns true when a frame was presented (the backend then scans it

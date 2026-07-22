@@ -34,7 +34,7 @@ extension RenderCore {
             image: target.image, memory: nil, allocSize: 0,
             width: target.width, height: target.height, format: target.format,
             tiling: target.tiling, initialLayout: target.initialLayout,
-            usageFlags: usageFlags(for: target.kind), queueFamilyIndex: target.queueFamily,
+            usageFlags: target.usageFlags, queueFamilyIndex: target.queueFamily,
             hasAlpha: target.hasAlpha)
         let surface = ScanoutSurface.wrap(recorder: driver.recorder, params: params)
         guard surface.isValid() else { return false }

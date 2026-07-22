@@ -250,6 +250,7 @@ extension RendererRuntime {
             tiling:
                 VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT,
             initialLayout: VK_IMAGE_LAYOUT_UNDEFINED,
+            usageFlags: DmaBufImageDescriptor.scanoutUsage,
             queueFamily: binding.queueFamily,
             hasAlpha: false,
             kind: .drmScanout,

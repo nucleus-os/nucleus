@@ -18,6 +18,14 @@ public enum SwapchainStatus: Sendable {
 public final class SwapchainPresenter: PresentationBackend {
     public let outputID: UInt64
 
+    /// Graphite requires input-attachment usage on every Vulkan color render
+    /// target in addition to ordinary color-attachment usage.
+    static let requiredImageUsage: VK.ImageUsageFlags = [
+        .colorAttachmentBit,
+        .inputAttachmentBit,
+        .transferDstBit,
+    ]
+
     private final class FrameSlot {
         let acquireSemaphore: VkSemaphore
         let completionFence: VkFence
@@ -211,6 +219,11 @@ public final class SwapchainPresenter: PresentationBackend {
         }
         var imageCount = caps.minImageCount + 1
         if caps.maxImageCount > 0 { imageCount = min(imageCount, caps.maxImageCount) }
+        let requiredUsage = Self.requiredImageUsage.rawValue
+        guard caps.supportedUsageFlags & requiredUsage == requiredUsage else {
+            lastStatus = .invalidSurface
+            return false
+        }
 
         let wantPremultiplied = hasAlpha
             && (caps.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR.rawValue) != 0
@@ -222,8 +235,7 @@ public final class SwapchainPresenter: PresentationBackend {
         info.imageColorSpace = newFormat.colorSpace
         info.imageExtent = newExtent
         info.imageArrayLayers = 1
-        info.imageUsage = VK.ImageUsageFlags.colorAttachmentBit.rawValue
-            | VK.ImageUsageFlags.transferDstBit.rawValue
+        info.imageUsage = requiredUsage
         info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE
         info.preTransform = caps.currentTransform
         info.compositeAlpha = wantPremultiplied
@@ -350,7 +362,9 @@ public final class SwapchainPresenter: PresentationBackend {
         return AcquiredFrameTarget(
             image: image, width: lastExtentWidth, height: lastExtentHeight,
             format: surfaceFormat.format, tiling: VK_IMAGE_TILING_OPTIMAL,
-            initialLayout: VK_IMAGE_LAYOUT_UNDEFINED, queueFamily: queueFamily,
+            initialLayout: VK_IMAGE_LAYOUT_UNDEFINED,
+            usageFlags: Self.requiredImageUsage,
+            queueFamily: queueFamily,
             hasAlpha: hasAlpha, kind: .swapchainColor,
             waitSemaphore: slot.acquireSemaphore,
             signalSemaphore: generation.presentSemaphores[Int(imageIndex)])

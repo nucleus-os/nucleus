@@ -1,9 +1,19 @@
 import Testing
 @testable import NucleusRenderer
+import Vulkan
 import VulkanC
 
 @Suite("Vulkan WSI requirements")
 struct VulkanRequirementsTests {
+    @Test("Graphite WSI render targets carry its complete Vulkan usage contract")
+    @MainActor
+    func graphiteSwapchainImageUsage() {
+        let usage = SwapchainPresenter.requiredImageUsage
+        #expect(usage.contains(.colorAttachmentBit))
+        #expect(usage.contains(.inputAttachmentBit))
+        #expect(usage.contains(.transferDstBit))
+    }
+
     @Test("Wayland WSI hard-requires swapchain maintenance")
     func waylandMaintenanceRequirements() {
         let contract = VkRequirements.contract(for: .waylandClientWSI)
