@@ -105,12 +105,15 @@ Notable test targets:
 # From a free virtual terminal or display-manager session
 tools/nucleus run
 tools/nucleus run --seconds 20
+tools/nucleus run --scale 1.25
 ```
 
 The command incrementally builds and stages the compositor, native shell, PAM
 helper, and session launcher before starting the complete private-bus session.
 `--seconds N` cleanly stops any ordinary, profiled, sanitized, validation, or
 Valgrind run after the requested duration.
+`--scale N` sets the positive fractional output scale for every connected
+display and applies to every run mode.
 The compositor serves the standard Wayland compositor protocols plus extension
 protocols (`wlr-layer-shell`, `wlr-foreign-toplevel-management`,
 `ext-session-lock`, `wlr-screencopy`). Any layer-shell client can connect.

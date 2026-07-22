@@ -18,6 +18,7 @@ func runParsesAUnifiedInstrumentedCapture() throws {
     let options = try #require(try RunOptions.parse([
         "--tracy",
         "--seconds", "20",
+        "--scale", "1.25",
         "--sanitize", "address",
         "--vk-validation",
         "--present-mode", "mailbox_latest_wins",
@@ -27,12 +28,30 @@ func runParsesAUnifiedInstrumentedCapture() throws {
 
     #expect(options.tracy)
     #expect(options.seconds == 20)
+    #expect(options.scale == 1.25)
     #expect(options.sanitizer == .address)
     #expect(options.validation)
     #expect(options.presentMode == "mailbox_latest_wins")
     #expect(options.configuration == "release")
     #expect(options.compositorArguments == ["--fixture-output", "DP-1"])
     #expect(options.buildOptions.identity == "release-tracy-address")
+}
+
+@Test
+func scaleIsAvailableInEveryRunModeAndRejectsInvalidValues() throws {
+    #expect(try RunOptions.parse(["--scale", "2"])?.scale == 2)
+    #expect(try RunOptions.parse([
+        "--tracy", "--scale", "1.5",
+    ])?.scale == 1.5)
+    #expect(try RunOptions.parse([
+        "--sanitize", "thread", "--scale", "1.25",
+    ])?.scale == 1.25)
+
+    for invalid in ["0", "-1", "nan", "inf", "not-a-number"] {
+        #expect(throws: WorkspaceFailure.self) {
+            try RunOptions.parse(["--scale", invalid])
+        }
+    }
 }
 
 @Test

@@ -11,6 +11,7 @@ struct RunOptions: Equatable {
     var host = "127.0.0.1"
     var port = 8086
     var seconds: Int?
+    var scale: Double?
     var presentMode: String?
     var renderBenchmark: String?
     var build = true
@@ -70,6 +71,14 @@ struct RunOptions: Equatable {
                     throw WorkspaceFailure.message("--seconds must be positive")
                 }
                 value.seconds = seconds
+            case "--scale":
+                guard let scale = Double(try argument("--scale")),
+                      scale.isFinite,
+                      scale > 0
+                else {
+                    throw WorkspaceFailure.message("--scale must be a positive finite number")
+                }
+                value.scale = scale
             case "--present-mode":
                 value.presentMode = try argument("--present-mode")
             case "--render-benchmark":
@@ -163,6 +172,7 @@ struct RunCommand {
       --optimize debug|release  (default: debug; Tracy: release)
       --no-build
       --seconds N              stop the run after N seconds
+      --scale N                output scale (default: 1)
       --present-mode vsync|mailbox_latest_wins
       --vk-validation
       --trace-diagnostics
@@ -261,6 +271,9 @@ struct RunCommand {
         _ options: RunOptions,
         environment: inout [String: String]
     ) throws {
+        if let scale = options.scale {
+            environment["NUCLEUS_SCALE"] = String(scale)
+        }
         if let mode = options.presentMode {
             environment["NUCLEUS_PRESENT_MODE"] = mode
         }
