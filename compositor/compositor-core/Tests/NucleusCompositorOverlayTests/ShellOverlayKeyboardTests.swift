@@ -6,7 +6,6 @@ import NucleusUIEmbedder
 @testable import NucleusCompositorOverlay
 
 /// The compositor's keyboard adapter: composed text, modifier flags, and key
-/// repeat. These are the pieces Phase 8 left deferred and text input needs.
 @MainActor
 @Suite(.uiContext) struct ShellOverlayKeyboardTests {
     private static func keyEvent(

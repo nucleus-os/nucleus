@@ -57,7 +57,7 @@ struct BenchmarkCommand {
         let package = context.repository(suite.package)
         print(
             "==> benchmark package=\(suite.package) product=\(suite.product) "
-                + "configuration=release schema=nucleus.headless.v2")
+                + "configuration=release schema=nucleus.headless.v3")
         try context.run(
             "swift",
             [

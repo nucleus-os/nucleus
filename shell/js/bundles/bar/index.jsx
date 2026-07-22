@@ -8,7 +8,6 @@ import {
   TurboModuleRegistry,
 } from "react-native";
 
-// The Nucleus shell bar — the Phase-4 vertical slice. A layer-shell top strip rendering a
 // live clock (left) and a taskbar of the compositor's windows (center). Window snapshots
 // arrive native→JS over foreign-toplevel via the facade's "nucleusShellWindows" device event
 // (DeviceEventEmitter); tapping a task sends a JS→native action back through the facade's

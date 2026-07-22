@@ -1,4 +1,3 @@
-// Phase 10c.3 — the GPU-independent Swift paint-content store.
 //
 // Shell-authored paint (wallpaper tints, status pills, decorations) is published
 // as a list of high-level draw commands, not pixels: the producer registers a
@@ -94,7 +93,6 @@ public struct PaintDrawCommand: Equatable, Sendable {
     public var color: Float4
     public var imageHandle: UInt64
     public var textLayoutHandle: UInt64
-    /// Handle into the compiled-SkSL registry, or 0. Consumed from Phase 4.
     public var effectHandle: UInt64
     /// Slice of the recording's payload blob holding this command's
     /// variable-length data (path verbs/points, gradient stops, uniforms).

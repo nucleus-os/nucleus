@@ -1,9 +1,9 @@
 /**
- * Nucleus TextInput implementation (Phase 1).
+ * Nucleus TextInput implementation.
  *
- * This is intentionally minimal: it renders a host component named `TextInput`
- * and participates in TextInputState focus registration. Phase 2+ will add
- * full RN parity for eventCount/selection synchronization.
+ * This intentionally minimal implementation renders a host component named
+ * `TextInput` and registers focus with `TextInputState`; it does not yet provide
+ * full RN event-count or selection synchronization.
  */
 'use strict';
 

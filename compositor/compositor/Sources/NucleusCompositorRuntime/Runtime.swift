@@ -17,10 +17,10 @@ public func runNucleusCompositor() async -> Int32 {
 
     guard let runtime = CompositorRuntime() else { return Int32(1) }
     guard runtime.bringUp() else {
-        runtime.teardown()
+        await runtime.teardown()
         return Int32(1)
     }
     await runtime.run()
-    runtime.teardown()
+    await runtime.teardown()
     return Int32(0)
 }

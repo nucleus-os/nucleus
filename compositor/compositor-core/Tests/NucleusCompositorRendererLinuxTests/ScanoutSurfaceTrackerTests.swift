@@ -1,7 +1,6 @@
 import Testing
 @testable import NucleusCompositorRendererLinux
 
-// M2 Phase 4 — the scanned-surface state machine that drives deferred client-buffer
 // release. The bug this fixes: treating a surface as scanned at commit-*submit* time
 // lied about the plane during the in-flight-flip window, so a buffer could be released
 // while the kernel still scanned it (tearing). The correct rule: a surface is scanned

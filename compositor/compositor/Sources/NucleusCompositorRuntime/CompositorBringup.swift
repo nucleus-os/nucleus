@@ -243,8 +243,8 @@ extension CompositorRuntime {
     /// retire first while their renderer owner is live; GPU/scanout state then
     /// drops before the borrowed DRM master fd, followed by Xwayland, app hosts,
     /// and seat/libinput.
-    func teardown() {
-        stopReactor()
+    func teardown() async {
+        await stopReactor()
         logRuntime("shutdown: Wayland scene")
         waylandRuntime.prepareShutdown()
         logRuntime("shutdown: render runtime")

@@ -21,7 +21,6 @@ private final class StubDelegate: XdgShellDelegate {
     var lastTitle: String?
     var maximizeRequested: Bool?
     /// The serial reported by the new toplevelConfigureSent seam for the initial
-    /// configure, and how many times the seam fired (the Phase C driver records the
     /// pending configure under exactly this serial).
     var initialConfigureSentSerial: UInt32?
     var configureSentCount = 0
@@ -107,7 +106,6 @@ enum WaylandXdgShellFixture {
         }
         let initialSerial = surfConf.u32(0)
 
-        // The toplevelConfigureSent seam (the Phase C serial hand-back) must report
         // the exact serial the router minted and sent on the wire — this is the
         // serial the driver queues the pending configure under for the ack→commit
         // latch.

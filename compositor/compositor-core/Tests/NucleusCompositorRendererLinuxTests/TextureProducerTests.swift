@@ -6,7 +6,6 @@ import NucleusRenderModel
 import NucleusTypes
 @testable import NucleusRenderer
 
-// Converted from TextureProducerFixture (Phase 10b.4d): ProducerWorkStats
 // accumulation + the same-content suppression decision (hardware-independent),
 // plus the shadow rasterizer + repaint-vs-suppress
 // counting over a real Graphite recorder (best-effort GPU, asserts nothing

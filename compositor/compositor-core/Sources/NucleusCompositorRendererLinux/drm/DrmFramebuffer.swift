@@ -1,10 +1,8 @@
-// Phase 10a.4 — Swift KMS framebuffer-ID owner over real libdrm.
-//
 // A KMS framebuffer id is created from a buffer object's plane handles and
 // removed with `drmModeRmFB`. `DrmFramebuffer` makes that pairing a Swift
-// ownership invariant: the fb id is removed exactly once on `deinit`, and
-// `release()` hands the raw id off without removing it — the transitional 10a
-// seam where the Swift renderer creates the composited framebuffer and Swift
+// ownership invariant: the fb id is removed exactly once on `deinit`.
+// `release()` hands the raw id to the atomic-commit path without removing it.
+// The Swift renderer creates the composited framebuffer and Swift
 // borrows the id for the atomic commit. The fb id is a lightweight kernel handle
 // over a BO; this owner borrows the DRM fd and never owns the BO behind the fb.
 
@@ -80,9 +78,8 @@ struct DrmFramebuffer: ~Copyable {
 
     var isValid: Bool { fbId != 0 }
 
-    /// Relinquish the fb id without removing it, ending this owner — the 10a
-    /// transition seam where the renderer keeps the BO+fb lifetime and Swift only borrows
-    /// the id for the atomic commit.
+    /// Relinquish the fb id without removing it. The renderer keeps the BO and
+    /// framebuffer lifetime; Swift only borrows the id for the atomic commit.
     consuming func release() -> UInt32 {
         let taken = fbId
         discard self

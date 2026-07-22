@@ -1,4 +1,3 @@
-// Phase 10b.4b — the persistent output accumulator. The accumulator is the
 // compositor-owned framebuffer that persists across output frames: scene
 // composition draws into it, the backdrop path samples its prefix snapshot at
 // the z-order checkpoint, screenshots/captures copy from it, and the present
@@ -109,9 +108,8 @@ final class OutputAccumulator {
         surface.snapshotImage()
     }
 
-    /// Present: sample the composited accumulator into `target` (the scanout
-    /// surface, wrapping the 10b.5 output-buffer image in 10b.4c) at `alpha`,
-    /// stretched to fill. Returns false if either side is unusable.
+    /// Present: sample the composited accumulator into `target`, stretching it to
+    /// fill. Returns false if either side is unusable.
     func present(onto target: nucleus.skia.Surface, alpha: Float = 1) -> Bool {
         present(onto: target, source: nil, alpha: alpha)
     }

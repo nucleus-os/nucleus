@@ -10,7 +10,6 @@ import NucleusRenderModel
 // runs best-effort over a real device and asserts nothing hardware-conditional.
 @Suite struct RendererModuleTests {
     @Test func framePlanAssembly() {
-        // Build a representative FramePlan (Phase 9): a plain fill, a rounded
         // masked fill, a textured quad, and a shadow quad.
         let plan = FramePlan()
         plan.appendFillQuad(FillQuad(dst: PlanRect(x: 0, y: 0, w: 256, h: 128), color: (0.1, 0.1, 0.1, 1)))

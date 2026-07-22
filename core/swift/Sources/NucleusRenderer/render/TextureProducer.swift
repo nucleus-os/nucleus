@@ -1,4 +1,3 @@
-// Phase 10b.4d — the texture producers: rasterize compositor-owned paint
 // content and blurred shadows into cache textures. Each
 // rasterization is keyed by (layer, content revision) so
 // unchanged content is suppressed; the per-frame `ProducerWorkStats` count the

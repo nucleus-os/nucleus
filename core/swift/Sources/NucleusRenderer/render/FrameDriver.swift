@@ -1,11 +1,7 @@
-// The top-level per-frame renderer. `FrameDriver.renderFrame` ties the retained
-// presentation modules into one
-// frame: build the FramePlan from the retained tree (10b.4j walk), pre-resolve
-// every texture handle to a GPU image (so no Swift callback fires during
-// recording/submit), composite the ops onto the persistent
-// output accumulator (10b.4e), execute the backdrop bands (10b.4f), present the
-// accumulator into the scanout surface (10b.4b), and submit (pure C++).
-//
+// The top-level per-frame renderer. `FrameDriver.renderFrame` builds a FramePlan
+// from the retained tree, pre-resolves each texture handle to a GPU image, composites
+// the operations onto the persistent output accumulator, executes backdrop bands,
+// presents into the scanout surface, and submits through the C++ façade.
 // `FrameDemand` is the Graphite-native analog of FrameDemand.collect +
 // render_demand.shouldRenderThisVblank — the render-demand predicate the reactor
 // uses to decide whether to render a vblank.

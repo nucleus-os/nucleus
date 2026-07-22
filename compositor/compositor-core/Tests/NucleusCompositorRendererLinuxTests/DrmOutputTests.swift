@@ -2,8 +2,8 @@ import Testing
 @testable import NucleusRenderer
 @testable import NucleusCompositorRendererLinux
 import NucleusCompositorDrmC
+import Glibc
 
-// Converted from DrmOutputFixture (Phase 10a.11): the DrmOutput aggregate. The
 // commit assembly (property set, flags, VRR latch, lifecycle drain) is checked
 // against synthetic props — hardware-independent. The fixture's best-effort real
 // discover + KMS test-only commit (which asserted nothing) is dropped.
@@ -99,26 +99,127 @@ import NucleusCompositorDrmC
         #expect(!badOutput.assembleScanoutCommit(into: &bb, fbId: 1, requestedVrr: false), "assemble-refuses-incomplete")
     }
 
-    @Test func lifecycleCancel() {
+    @Test func retirementWaitsForFlipAndRetriesKernelBusyWithoutReleasingOwner() {
         let output = Self.makeOutput()
-        // Lifecycle: queue frames, cancel, confirm they're returned + state clears.
-        output.rendered = {
-            var q = RenderedFrameQueue()
-            _ = q.install(PendingRenderedFrame(bufferIndex: 0, fbId: 1, modifier: 0, generation: 1,
-                renderReadyFd: 7, timing: FrameTiming(targetPresentNs: nil, predictedPresentNs: 0, submitNs: 0)),
-                vsync: false)
-            return q
-        }()
-        output.timing.recordSubmitted(presentId: 9, targetPresentNs: 1, predictedPresentNs: 1, submitNs: 1)
-        let cancelled = output.cancelPendingPresentation()
-        #expect(cancelled.rendered.count == 1 && cancelled.rendered[0].renderReadyFd == 7, "cancel-returns-frames")
-        #expect(output.rendered.count == 0 && output.timing.presentId == nil && !output.pageFlipPending,
-                "cancel-clears-state")
+        final class Owner {}
+        var owner: Owner? = Owner()
+        weak let retainedOwner = owner
+        output.noteScanoutCommitAccepted(retaining: owner!)
+        owner = nil
+
+        #expect(output.lifecycleState == .pageFlipPending)
+        #expect(retainedOwner != nil)
+        var commitCalls = 0
+        let waiting = retireDrmOutputs([output]) { _ in
+            commitCalls += 1
+            return .accepted
+        }
+        #expect(waiting == .draining)
+        #expect(commitCalls == 0)
+        #expect(output.lifecycleState == .drainingPageFlip)
+        #expect(retainedOwner != nil)
+
+        #expect(output.notePageFlipComplete())
+        #expect(!output.notePageFlipComplete(), "duplicate completion is inert")
+        #expect(output.lifecycleState == .drainingReady)
+        #expect(retainedOwner != nil)
+
+        let busy = retireDrmOutputs([output]) { _ in
+            commitCalls += 1
+            return .rejected(errno: EBUSY)
+        }
+        #expect(busy == .draining)
+        #expect(commitCalls == 1)
+        #expect(output.lifecycleState == .drainingReady)
+        #expect(!output.lifecycleState.admitsScanoutCommit)
+        #expect(output.active, "EBUSY keeps kernel scanout ownership live")
+        #expect(retainedOwner != nil)
+
+        let complete = retireDrmOutputs([output]) { _ in
+            commitCalls += 1
+            return .accepted
+        }
+        #expect(complete == .complete)
+        #expect(commitCalls == 2)
+        #expect(output.lifecycleState == .disabled)
+        #expect(!output.active)
+        #expect(retainedOwner == nil)
+    }
+
+    @Test func deviceLossIsTheOnlyNonDisablePathThatReleasesKernelOwners() {
+        let output = Self.makeOutput()
+        final class Owner {}
+        var owner: Owner? = Owner()
+        weak let retainedOwner = owner
+        output.noteScanoutCommitAccepted(retaining: owner!)
+        owner = nil
+        #expect(!output.beginRetirement())
+        #expect(retainedOwner != nil)
+
+        output.noteDeviceLost()
+        #expect(output.lifecycleState == .deviceLost)
+        #expect(retainedOwner == nil)
+        #expect(!output.notePageFlipComplete(), "late completion after device loss is inert")
+
+        var commits = 0
+        #expect(retireDrmOutputs([output]) { _ in
+            commits += 1
+            return .accepted
+        } == .complete)
+        #expect(commits == 0, "a lost device must not receive an atomic disable")
+        #expect(output.lifecycleState == .deviceLost)
+    }
+
+    @Test func deviceWideRetirementExcludesLostOutputsFromTheDisableCommit() {
+        final class Owner {}
+        let lost = Self.makeOutput()
+        let live = Self.makeOutput()
+        lost.noteScanoutCommitAccepted(retaining: Owner())
+        live.noteScanoutCommitAccepted(retaining: Owner())
+        #expect(lost.notePageFlipComplete())
+        #expect(live.notePageFlipComplete())
+        lost.noteDeviceLost()
+
+        var disabled: [DrmOutput] = []
+        #expect(retireDrmOutputs([lost, live]) {
+            disabled = $0
+            return .accepted
+        } == .complete)
+        #expect(disabled.count == 1)
+        #expect(disabled.first === live)
+        #expect(lost.lifecycleState == .deviceLost)
+        #expect(live.lifecycleState == .disabled)
+    }
+
+    @Test func deviceWideRetirementWaitsForEveryOutputBeforeOneCommit() {
+        final class Owner {}
+        let first = Self.makeOutput()
+        let second = Self.makeOutput()
+        first.noteScanoutCommitAccepted(retaining: Owner())
+        second.noteScanoutCommitAccepted(retaining: Owner())
+        #expect(second.notePageFlipComplete())
+
+        var commits = 0
+        #expect(retireDrmOutputs([first, second]) { _ in
+            commits += 1
+            return .accepted
+        } == .draining)
+        #expect(commits == 0)
+        #expect(first.lifecycleState == .drainingPageFlip)
+        #expect(second.lifecycleState == .drainingReady)
+
+        #expect(first.notePageFlipComplete())
+        #expect(retireDrmOutputs([first, second]) { _ in
+            commits += 1
+            return .accepted
+        } == .complete)
+        #expect(commits == 1)
+        #expect(first.lifecycleState == .disabled)
+        #expect(second.lifecycleState == .disabled)
     }
 
     @Test func recoveryGating() {
         let output = Self.makeOutput()
-        // Recovery gating composes the 10a.7 backoff with idle checks.
         output.enterDegradedRecovery(nowNs: 1_000_000_000)
         #expect(!output.shouldAttemptRecovery(nowNs: 1_000_000_000), "recovery-not-due-yet")
         #expect(output.shouldAttemptRecovery(nowNs: 2_000_000_000), "recovery-due-when-idle")

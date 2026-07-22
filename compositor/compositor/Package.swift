@@ -1,7 +1,6 @@
 // swift-tools-version:6.4
 //
-// The Nucleus compositor app package (SwiftPM build-ownership migration, Phase 5).
-//
+// The Nucleus compositor application package.
 // This is the app half of an app/library split. The library package (../) holds
 // the reusable first-party modules and their broad test suites. This app package
 // retains a dependency-clean render-session test target so `swift test` validates
@@ -25,8 +24,8 @@ let repoRoot = URL(fileURLWithPath: #filePath)
 
 // ── The Nucleus render native SDK (Skia) ───────────────────────────────────────
 // Consumed from a stable cache path (core repo's docs/repo-decomposition.md). The
-// compositor links ZERO React (Phase 5): it consumes only the `render` SDK (Skia +
-// the text-backend source). Provisioned by root `tools/nucleus bootstrap`; the
+// compositor links only the `render` SDK (Skia + the text-backend source),
+// provisioned by root `tools/nucleus bootstrap`; the
 // link list here points at the monorepo core.
 func provisionSDK(_ name: String, links: [(String, String)]) -> String {
     let home = ProcessInfo.processInfo.environment["HOME"] ?? ""
@@ -106,6 +105,11 @@ let skiaLinkFlags: [String] = [
 
 let package = Package(
     name: "NucleusCompositorApp",
+    products: [
+        .executable(
+            name: "NucleusCompositorThreadSanitizerHarness",
+            targets: ["NucleusCompositorThreadSanitizerHarness"]),
+    ],
     dependencies: [
         // The Nucleus library package — the portable render/UI core. The compositor links
         // zero React, so this is its only Nucleus dependency.
@@ -114,7 +118,6 @@ let package = Package(
         // The Nucleus compositor library — the Linux OS substrate + compositor
         // policy/shell (Wayland/DRM/input, the DRM renderer backend, the window/seat
         // policy, the shell overlay). Consumes core via the @_spi(NucleusCompositor)
-        // contract. (Migration Phase 2 — the core/compositor package split.)
         .package(path: "../compositor-core"),
         .package(
             name: "NucleusLinuxPlatform",
@@ -197,11 +200,29 @@ let package = Package(
             ]
         ),
 
+        .executableTarget(
+            name: "NucleusCompositorThreadSanitizerHarness",
+            dependencies: [
+                "NucleusCompositorRuntime",
+                "NucleusCompositorSignalC",
+                .product(
+                    name: "NucleusCompositorWaylandTestSupport",
+                    package: "compositor-core"),
+            ],
+            path: "SanitizerHarnesses/NucleusCompositorThreadSanitizerHarness",
+            swiftSettings: [.interoperabilityMode(.Cxx)],
+            linkerSettings: [
+                .unsafeFlags(
+                    skiaLinkFlags + drmGbmLinkFlags + waylandRuntimeLinkFlags
+                    + ["-lfontconfig", "-lfreetype", "-lz"]
+                ),
+            ]
+        ),
+
         // The compositor executable. Awaits NucleusCompositorRuntime directly; the
         // final link assembles the whole Swift graph + the text backend + native set:
         // Skia, libdrm/gbm, wayland-server +
         // extension descriptors, xcb/input/seat/udev/xkb, vulkan, fontconfig/freetype/z.
-        // It links ZERO React (Phase 5): no Hermes/Fabric/folly, no host-cxx archive.
         .executableTarget(
             name: "NucleusCompositor",
             dependencies: [

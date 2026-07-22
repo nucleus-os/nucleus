@@ -1,7 +1,6 @@
 import Testing
 import NucleusReactNativeCxxBridge
 
-// Phase 5 link proof: this test links the full React Native C++ stack — Hermes
 // (libhermes_lean.so + libjsi.so) + folly_runtime + glog + fmt + double-conversion,
 // all built from the vendored submodules by the Build* command plugins — and runs
 // it. A Hermes JSI runtime is created and a global round-trips; folly's

@@ -30,7 +30,6 @@ import Glibc
 final class CompositorRuntime {
     private static let loopKindShift: UInt64 = 56
     private static let instMask: UInt64 = (UInt64(1) << 56) - 1
-    private static let shutdownDrainTimeoutNanoseconds: UInt64 = 1_000_000_000
 
     private enum LoopKind: UInt8 {
         case drm = 1
@@ -63,8 +62,9 @@ final class CompositorRuntime {
     let shellServices: ShellServices
     private var exitRequested = false
     private var paused = false
-    private var sessionPausePending = false
-    private var shutdownDrainDeadlineNanoseconds: UInt64?
+    private var retirement = RendererRetirementCoordinator(
+        retryDelayNanoseconds: 5_000_000,
+        shutdownGraceNanoseconds: 1_000_000_000)
     // Frame pacing is deadline-driven off each output's DisplayLink (vblank-phased predicted
     // present, corrected by real page-flip timestamps); `frameIntervalNs` is only the fallback
     // wait before any output exists. There is no free-running frame clock.
@@ -159,14 +159,16 @@ final class CompositorRuntime {
         reactor.wake()
     }
 
-    func stopReactor() {
-        reactor.shutdown()
+    func stopReactor() async {
+        await reactor.shutdown()
+        renderWake.shutdown()
     }
 
     func sessionResume() -> Bool {
-        guard renderRuntime.resumeSession(),
-            outputTopology.reconcile(forceReattach: true)
-        else {
+        let resumed = renderRuntime.resumeSession()
+            && outputTopology.reconcile(forceReattach: true)
+        retirement.noteResume(succeeded: resumed)
+        guard resumed else {
             paused = true
             logRuntime("session: DRM recovery failed; remaining suspended")
             return false
@@ -184,32 +186,32 @@ final class CompositorRuntime {
         for display in server.layout.displays {
             display.suspendRedraws()
         }
-        switch renderRuntime.pauseSession() {
-        case .complete:
-            sessionPausePending = false
+        switch retirement.applyPauseResult(
+            renderRuntime.pauseSession(),
+            nowNanoseconds: Self.monotonicNowNs())
+        {
+        case .acknowledge(let cleanlyRetired):
+            if !cleanlyRetired {
+                logRuntime("session: failed to retire DRM state cleanly")
+            }
             return true
-        case .waitingForPageFlip:
-            sessionPausePending = true
+        case .waiting:
             return false
-        case .failed:
-            sessionPausePending = false
-            logRuntime("session: failed to retire DRM state cleanly")
-            // Do not strand the VT on an unrecoverable renderer failure.
-            return true
         }
     }
 
     private func continuePendingSessionPause() {
-        guard sessionPausePending else { return }
-        switch renderRuntime.pauseSession() {
-        case .waitingForPageFlip:
+        let now = Self.monotonicNowNs()
+        guard retirement.pauseRetryIsDue(at: now) else { return }
+        switch retirement.applyPauseResult(
+            renderRuntime.pauseSession(), nowNanoseconds: now)
+        {
+        case .waiting:
             return
-        case .complete:
-            sessionPausePending = false
-            waylandRuntime.completeSessionPause()
-        case .failed:
-            sessionPausePending = false
-            logRuntime("session: deferred DRM retirement failed")
+        case .acknowledge(let cleanlyRetired):
+            if !cleanlyRetired {
+                logRuntime("session: deferred DRM retirement failed")
+            }
             waylandRuntime.completeSessionPause()
         }
     }
@@ -334,37 +336,34 @@ final class CompositorRuntime {
         Trace.setThreadName("Nucleus compositor main")
 
         runtimeLoop: while true {
+            if retirement.pauseRetryIsDue(
+                at: Self.monotonicNowNs())
+            {
+                continuePendingSessionPause()
+            }
             if exitRequested {
                 paused = true
                 outputTopology.cancelPendingReconcile()
                 let now = Self.monotonicNowNs()
-                if shutdownDrainDeadlineNanoseconds == nil {
-                    let deadline = now.addingReportingOverflow(
-                        Self.shutdownDrainTimeoutNanoseconds)
-                    shutdownDrainDeadlineNanoseconds = deadline.overflow
-                        ? UInt64.max
-                        : deadline.partialValue
+                if !retirement.hasStartedShutdown {
                     for display in server.layout.displays {
                         display.suspendRedraws()
                     }
                 }
-                switch renderRuntime.prepareShutdown() {
-                case .complete:
-                    break runtimeLoop
-                case .failed:
-                    logRuntime(
-                        "shutdown: output retirement failed; preserving renderer resources")
-                    break runtimeLoop
-                case .waitingForPageFlip:
-                    if let deadline = shutdownDrainDeadlineNanoseconds,
-                       now >= deadline
-                    {
+                switch retirement.applyShutdownResult(
+                    renderRuntime.prepareShutdown(),
+                    nowNanoseconds: now)
+                {
+                case .readyToExit(let preservingRenderer):
+                    if preservingRenderer {
                         logRuntime(
-                            "shutdown: page-flip drain deadline reached; preserving renderer resources")
-                        break runtimeLoop
+                            "shutdown: preserving renderer resources while kernel presentation remains active")
                     }
-                    // The normal DRM interest remains armed below. Its page-flip
-                    // event retires the borrow and the next turn retries.
+                    break runtimeLoop
+                case .waiting:
+                    // The normal DRM interest remains armed below. A completion
+                    // or the next bounded loop turn retries the retained disable.
+                    break
                 }
             }
             loopTurns &+= 1
@@ -420,10 +419,14 @@ final class CompositorRuntime {
             // it is a ceiling, not a fixed cadence.
             let timeout: UInt64?
             if exitRequested,
-               let deadline = shutdownDrainDeadlineNanoseconds
+               let deadline = retirement.shutdownRetryDeadlineNanoseconds
             {
                 let now = Self.monotonicNowNs()
                 timeout = now >= deadline ? 0 : deadline - now
+            } else if let retry = retirement.pauseRetryDeadlineNanoseconds
+            {
+                let now = Self.monotonicNowNs()
+                timeout = now >= retry ? 0 : retry - now
             } else {
                 timeout = paused ? nil : earliestDeadlineNanoseconds()
             }

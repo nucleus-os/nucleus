@@ -177,6 +177,94 @@ public enum LinuxHostReactorError: Error, Sendable, Equatable,
     }
 }
 
+enum LinuxReactorFaultPoint: Sendable, Hashable {
+    case preparePoll
+    case prepareCancellation
+    case submit
+    case programTimer
+}
+
+/// Deterministic syscall/SQ fault schedule used by the reactor tests. Production
+/// construction has no schedule, so the only hot-path cost is one predictable
+/// nil check at each kernel boundary.
+struct LinuxReactorFaultPlan: Sendable {
+    private var failures: [LinuxReactorFaultPoint: [Int: Int32]]
+    private var attempts: [LinuxReactorFaultPoint: Int] = [:]
+
+    init(failures: [LinuxReactorFaultPoint: [Int: Int32]]) {
+        self.failures = failures
+    }
+
+    mutating func failureCode(
+        at point: LinuxReactorFaultPoint
+    ) -> Int32? {
+        let attempt = (attempts[point] ?? 0) + 1
+        attempts[point] = attempt
+        return failures[point]?[attempt]
+    }
+}
+
+struct LinuxReactorRegistrationRecord: Sendable, Equatable {
+    var fileDescriptor: Int32
+    var events: Int16
+    var mode: LinuxReactorPollMode
+    var context: UInt64?
+}
+
+struct LinuxReactorCompletionSnapshot: Sendable, Equatable {
+    var context: UInt64
+    var result: Int32
+    var willContinue: Bool
+}
+
+enum LinuxReactorCompletionResolution: Sendable, Equatable {
+    case active(token: UInt64, result: Int32)
+    case cancellation
+    case stale
+}
+
+/// The authoritative context-generation ledger. Keeping this independent from
+/// io_uring makes stale/cancel/multishot behavior model-testable without a
+/// kernel race while production still uses direct, statically typed IORing calls.
+struct LinuxReactorContextLedger: Sendable {
+    private var tokenByContext: [UInt64: UInt64] = [:]
+
+    var count: Int { tokenByContext.count }
+
+    mutating func bind(context: UInt64, to token: UInt64) {
+        precondition(context != 0)
+        precondition(tokenByContext.updateValue(token, forKey: context) == nil)
+    }
+
+    mutating func removeAll() {
+        tokenByContext.removeAll()
+    }
+
+    mutating func resolve(
+        _ completion: LinuxReactorCompletionSnapshot,
+        registrations: inout [UInt64: LinuxReactorRegistrationRecord]
+    ) -> LinuxReactorCompletionResolution {
+        guard completion.context != 0 else { return .cancellation }
+        guard let token = tokenByContext[completion.context] else {
+            return .stale
+        }
+        if !completion.willContinue {
+            tokenByContext.removeValue(forKey: completion.context)
+        }
+        guard var registration = registrations[token],
+              registration.context == completion.context
+        else {
+            return completion.result == -ECANCELED ? .cancellation : .stale
+        }
+        if !completion.willContinue {
+            registration.context = nil
+            registrations[token] = registration
+        }
+        if completion.result == -ECANCELED { return .cancellation }
+        return .active(token: token, result: completion.result)
+    }
+}
+
 private final class ReactorWaitSignal: Sendable {
     private struct State {
         var pending = false
@@ -257,9 +345,52 @@ private func makeCompletionEventHandler(
     }
 }
 
-private func makeCloseHandler(fileDescriptor: Int32) -> DispatchWorkItem {
+/// Bridges DispatchSource's asynchronous cancellation handler into the
+/// reactor's structured-concurrency shutdown boundary.
+private final class ReactorShutdownSignal: Sendable {
+    private struct State {
+        var isComplete = false
+        var continuations: [CheckedContinuation<Void, Never>] = []
+    }
+
+    private let state = Mutex(State())
+
+    func wait() async {
+        await withCheckedContinuation { continuation in
+            let resumeImmediately = state.withLock { state in
+                guard !state.isComplete else { return true }
+                state.continuations.append(continuation)
+                return false
+            }
+            if resumeImmediately {
+                continuation.resume()
+            }
+        }
+    }
+
+    func complete() {
+        let continuations = state.withLock { state in
+            guard !state.isComplete else {
+                return [CheckedContinuation<Void, Never>]()
+            }
+            state.isComplete = true
+            let continuations = state.continuations
+            state.continuations.removeAll(keepingCapacity: false)
+            return continuations
+        }
+        for continuation in continuations {
+            continuation.resume()
+        }
+    }
+}
+
+private func makeCloseHandler(
+    fileDescriptor: Int32,
+    shutdownSignal: ReactorShutdownSignal
+) -> DispatchWorkItem {
     DispatchWorkItem {
         _ = Glibc.close(fileDescriptor)
+        shutdownSignal.complete()
     }
 }
 
@@ -352,18 +483,10 @@ public final class LinuxHostReactor {
         POLLIN | POLLPRI | POLLOUT | POLLRDNORM | POLLRDBAND
             | POLLWRNORM | POLLWRBAND)
 
-    private struct Registration {
-        var fileDescriptor: Int32
-        var events: Int16
-        var mode: LinuxReactorPollMode
-        var context: UInt64?
-    }
-
     private struct BatchBuilder {
         var events: [LinuxReactorEvent] = []
         var didReachDeadline = false
         var wasExplicitlyWoken = false
-
     }
 
     private struct Counters {
@@ -380,27 +503,45 @@ public final class LinuxHostReactor {
         var maximumExecutorResumeLatencyNanoseconds: UInt64 = 0
     }
 
-    private var ring: IORing
+    /// Optional solely so shutdown can destroy the noncopyable RAII ring before
+    /// the reactor itself leaves scope.
+    private var ring: IORing?
     private let controlSignal: ReactorControlSignal
     private let controlFileDescriptor: Int32
     private let completionFileDescriptor: Int32
     private let timerFileDescriptor: Int32
     private let waitSignal: ReactorWaitSignal
+    private let shutdownSignal: ReactorShutdownSignal
     private let completionSource: DispatchSourceRead
-    private var registrations: [UInt64: Registration] = [:]
-    private var tokenByContext: [UInt64: UInt64] = [:]
+    private var registrations: [UInt64: LinuxReactorRegistrationRecord] = [:]
+    private var contextLedger = LinuxReactorContextLedger()
     private var nextContext: UInt64 = 1
     private var preparedRequestCount = 0
     private var isStopped = false
     private var failure: LinuxHostReactorError?
     private let completionBudget: Int
-    private var deferredBatch = BatchBuilder()
-    private var deferredCompletionCount = 0
+    /// One CQE consumed only to prove that the prior host turn hit real backlog.
+    /// Processing waits until the next turn, after its desired interests have
+    /// been reconciled, so a one-shot poll cannot re-arm before its event is
+    /// returned and a removed/replaced token cannot leak a stale event.
+    private var deferredCompletion: LinuxReactorCompletionSnapshot?
     private var counters = Counters()
+    private var faultPlan: LinuxReactorFaultPlan?
 
-    public init(
+    public convenience init(
         queueDepth: UInt32 = 256,
         completionBudget: Int = 256
+    ) throws(LinuxHostReactorError) {
+        try self.init(
+            queueDepth: queueDepth,
+            completionBudget: completionBudget,
+            faultPlan: nil)
+    }
+
+    init(
+        queueDepth: UInt32,
+        completionBudget: Int,
+        faultPlan: LinuxReactorFaultPlan?
     ) throws(LinuxHostReactorError) {
         precondition(completionBudget > 0, "completion budget must be positive")
         let completionFD = nucleus_linux_reactor_create_event_fd()
@@ -440,9 +581,9 @@ public final class LinuxHostReactor {
                 operation: "creating io_uring",
                 code: -Int32(error.rawValue))
         }
-        self.ring = ring
+        self.ring = consume ring
         do {
-            try self.ring.registerEventFD(
+            try self.ring!.registerEventFD(
                 FileDescriptor(rawValue: completionFD))
         } catch {
             throw .system(
@@ -451,6 +592,7 @@ public final class LinuxHostReactor {
         }
 
         let waitSignal = ReactorWaitSignal()
+        let shutdownSignal = ReactorShutdownSignal()
         let source = DispatchSource.makeReadSource(
             fileDescriptor: completionFD,
             queue: DispatchQueue(
@@ -466,15 +608,17 @@ public final class LinuxHostReactor {
         self.completionFileDescriptor = completionFD
         self.timerFileDescriptor = timerFD
         self.waitSignal = waitSignal
+        self.shutdownSignal = shutdownSignal
         self.completionSource = source
         self.completionBudget = completionBudget
+        self.faultPlan = faultPlan
         closeCompletionFD = false
         closeControlFD = false
         closeTimerFD = false
     }
 
     isolated deinit {
-        shutdown()
+        beginShutdown()
     }
 
     /// Interrupt an outstanding wait. Safe from renderer, JS, and other worker
@@ -507,7 +651,7 @@ public final class LinuxHostReactor {
             maximumExecutorResumeLatencyNanoseconds:
                 counters.maximumExecutorResumeLatencyNanoseconds,
             activeRegistrations: UInt64(registrations.count),
-            activeContexts: UInt64(tokenByContext.count))
+            activeContexts: UInt64(contextLedger.count))
     }
 
     public func wait(
@@ -570,18 +714,27 @@ public final class LinuxHostReactor {
         }
     }
 
-    public func shutdown() {
+    /// Stops the reactor and returns only after its ring, kernel descriptors,
+    /// and dispatch-source event handler are no longer live.
+    public func shutdown() async {
+        beginShutdown()
+        await shutdownSignal.wait()
+    }
+
+    private func beginShutdown() {
         guard !isStopped else { return }
         isStopped = true
         waitSignal.signal()
-        try? ring.unregisterEventFD()
+        try? ring!.unregisterEventFD()
+        ring = nil
         completionSource.setCancelHandler(handler: makeCloseHandler(
-            fileDescriptor: completionFileDescriptor))
+            fileDescriptor: completionFileDescriptor,
+            shutdownSignal: shutdownSignal))
         completionSource.cancel()
         controlSignal.close()
         _ = Glibc.close(timerFileDescriptor)
         registrations.removeAll()
-        tokenByContext.removeAll()
+        contextLedger.removeAll()
     }
 
     private func fail(_ error: LinuxHostReactorError) {
@@ -634,7 +787,7 @@ public final class LinuxHostReactor {
             if registrations[token] != nil {
                 try removeRegistration(token: token)
             }
-            registrations[token] = Registration(
+            registrations[token] = LinuxReactorRegistrationRecord(
                 fileDescriptor: interest.fileDescriptor,
                 events: interest.events,
                 mode: interest.mode,
@@ -645,14 +798,14 @@ public final class LinuxHostReactor {
 
     private func ensureInternalRegistrations() throws(LinuxHostReactorError) {
         if registrations[Self.controlToken] == nil {
-            registrations[Self.controlToken] = Registration(
+            registrations[Self.controlToken] = LinuxReactorRegistrationRecord(
                 fileDescriptor: controlFileDescriptor,
                 events: Int16(POLLIN),
                 mode: .multishot,
                 context: nil)
         }
         if registrations[Self.timerToken] == nil {
-            registrations[Self.timerToken] = Registration(
+            registrations[Self.timerToken] = LinuxReactorRegistrationRecord(
                 fileDescriptor: timerFileDescriptor,
                 events: Int16(POLLIN),
                 mode: .multishot,
@@ -678,7 +831,7 @@ public final class LinuxHostReactor {
             context: context)
         registration.context = context
         registrations[token] = registration
-        tokenByContext[context] = token
+        contextLedger.bind(context: context, to: token)
     }
 
     private func removeRegistration(
@@ -704,12 +857,16 @@ public final class LinuxHostReactor {
                 isMultiShot: isMultiShot,
                 context: context)
         }
-        if ring.prepare(request: makeRequest()) {
+        if injectedFailure(at: .preparePoll) == nil,
+           ring!.prepare(request: makeRequest())
+        {
             recordPreparedPoll()
             return
         }
         try submitPreparedRequests()
-        guard ring.prepare(request: makeRequest()) else {
+        guard injectedFailure(at: .preparePoll) == nil,
+              ring!.prepare(request: makeRequest())
+        else {
             throw .system(operation: "preparing io_uring poll", code: -ENOSPC)
         }
         recordPreparedPoll()
@@ -718,17 +875,19 @@ public final class LinuxHostReactor {
     private func prepareCancellation(
         matchingContext context: UInt64
     ) throws(LinuxHostReactorError) {
-        if ring.prepare(request: .cancel(
-            .first,
-            matchingContext: context))
+        if injectedFailure(at: .prepareCancellation) == nil,
+           ring!.prepare(request: .cancel(
+                .first,
+                matchingContext: context))
         {
             recordPreparedCancellation()
             return
         }
         try submitPreparedRequests()
-        guard ring.prepare(request: .cancel(
-            .first,
-            matchingContext: context))
+        guard injectedFailure(at: .prepareCancellation) == nil,
+              ring!.prepare(request: .cancel(
+                .first,
+                matchingContext: context))
         else {
             throw .system(
                 operation: "preparing io_uring poll cancellation",
@@ -739,8 +898,13 @@ public final class LinuxHostReactor {
 
     private func submitPreparedRequests() throws(LinuxHostReactorError) {
         guard preparedRequestCount > 0 else { return }
+        if let code = injectedFailure(at: .submit) {
+            throw .system(
+                operation: "submitting io_uring requests",
+                code: code)
+        }
         do {
-            try ring.submitPreparedRequests()
+            try ring!.submitPreparedRequests()
             incrementSaturating(&counters.submissionCalls)
             incrementSaturating(
                 &counters.requestsSubmitted,
@@ -766,6 +930,9 @@ public final class LinuxHostReactor {
     private func programTimer(
         relativeNanoseconds: UInt64?
     ) throws(LinuxHostReactorError) {
+        if let code = injectedFailure(at: .programTimer) {
+            throw .system(operation: "programming reactor timer", code: code)
+        }
         let result = nucleus_linux_reactor_program_timer(
             timerFileDescriptor,
             relativeNanoseconds ?? 0,
@@ -778,27 +945,38 @@ public final class LinuxHostReactor {
     private func drainCompletions(
         executorResumeLatencyNanoseconds: UInt64?
     ) -> LinuxReactorBatch {
-        var batch = deferredBatch
-        deferredBatch = BatchBuilder()
-        var consumed = deferredCompletionCount
-        deferredCompletionCount = 0
+        var batch = BatchBuilder()
+        var consumed = 0
+        if let deferredCompletion {
+            self.deferredCompletion = nil
+            consumed = 1
+            process(deferredCompletion, into: &batch)
+        }
         while consumed < completionBudget,
-              let completion = ring.tryConsumeCompletion()
+              let completion = ring!.tryConsumeCompletion()
         {
             consumed += 1
             incrementSaturating(&counters.completionsConsumed)
-            process(completion, into: &batch)
+            process(
+                LinuxReactorCompletionSnapshot(
+                    context: completion.context,
+                    result: completion.result,
+                    willContinue: completion.flags.contains(.moreCompletions)),
+                into: &batch)
         }
 
         var didExhaustCompletionBudget = false
         if consumed == completionBudget,
-           let completion = ring.tryConsumeCompletion()
+           let completion = ring!.tryConsumeCompletion()
         {
             // Consume one CQE to distinguish an exactly-full batch from actual
-            // backlog. Its observable outcome is held for the next host turn.
+            // backlog. Its observable outcome and registration transition are
+            // both held for the next host turn.
             incrementSaturating(&counters.completionsConsumed)
-            process(completion, into: &deferredBatch)
-            deferredCompletionCount = 1
+            deferredCompletion = LinuxReactorCompletionSnapshot(
+                context: completion.context,
+                result: completion.result,
+                willContinue: completion.flags.contains(.moreCompletions))
             didExhaustCompletionBudget = true
             incrementSaturating(&counters.completionBudgetExhaustions)
         }
@@ -812,61 +990,40 @@ public final class LinuxHostReactor {
     }
 
     private func process(
-        _ completion: consuming IORing.Completion,
+        _ completion: LinuxReactorCompletionSnapshot,
         into batch: inout BatchBuilder
     ) {
-        let context = completion.context
-        guard context != 0 else {
+        let resolution = contextLedger.resolve(
+            completion, registrations: &registrations)
+        switch resolution {
+        case .cancellation:
             incrementSaturating(&counters.cancellationCompletions)
             return
-        }
-        guard let token = tokenByContext[context] else {
+        case .stale:
             incrementSaturating(&counters.staleCompletionsRejected)
             return
-        }
-        let willContinue = completion.flags.contains(.moreCompletions)
-        if !willContinue {
-            tokenByContext.removeValue(forKey: context)
-        }
-        guard var registration = registrations[token],
-              registration.context == context
-        else {
-            if completion.result == -ECANCELED {
-                incrementSaturating(&counters.cancellationCompletions)
-            } else {
-                incrementSaturating(&counters.staleCompletionsRejected)
-            }
-            return
-        }
-        if !willContinue {
-            registration.context = nil
-            registrations[token] = registration
-        }
-
-        if completion.result == -ECANCELED {
-            incrementSaturating(&counters.cancellationCompletions)
-            return
-        }
-        if completion.result < 0,
+        case .active(let token, let result):
+            if result < 0,
            token == Self.controlToken || token == Self.timerToken
-        {
-            fail(.system(
-                operation: token == Self.controlToken
-                    ? "polling reactor control eventfd"
-                    : "polling reactor timerfd",
-                code: completion.result))
-            return
-        }
-        if token == Self.controlToken {
-            controlSignal.drain()
-            batch.wasExplicitlyWoken = true
-        } else if token == Self.timerToken {
-            drainCounterDescriptor(timerFileDescriptor)
-            batch.didReachDeadline = true
-        } else {
-            batch.events.append(LinuxReactorEvent(
-                token: token,
-                result: completion.result))
+            {
+                fail(.system(
+                    operation: token == Self.controlToken
+                        ? "polling reactor control eventfd"
+                        : "polling reactor timerfd",
+                    code: result))
+                return
+            }
+            if token == Self.controlToken {
+                controlSignal.drain()
+                batch.wasExplicitlyWoken = true
+            } else if token == Self.timerToken {
+                drainCounterDescriptor(timerFileDescriptor)
+                batch.didReachDeadline = true
+            } else {
+                batch.events.append(LinuxReactorEvent(
+                    token: token,
+                    result: result))
+            }
         }
     }
 
@@ -879,5 +1036,11 @@ public final class LinuxHostReactor {
         nextContext &+= 1
         precondition(nextContext != 0, "io_uring context space exhausted")
         return context
+    }
+
+    private func injectedFailure(
+        at point: LinuxReactorFaultPoint
+    ) -> Int32? {
+        faultPlan?.failureCode(at: point)
     }
 }

@@ -6,8 +6,6 @@ import NucleusSkiaGraphiteBridge
 @testable import NucleusRenderer
 @testable import NucleusCompositorRendererLinux
 
-// Converted from GbmScanoutBufferFixture (Phase 10b.6e): the live GBM
-// scanout-buffer allocator. The hardware-independent floor asserts the 10b.6d
 // scanout-usage constraint is wired into the descriptor and that the plane-layout
 // packing behaves. The best-effort GPU+GBM path opens a DRM render node, creates
 // a GBM device, allocates a renderable BO, imports it as a Vulkan image over the
@@ -20,7 +18,6 @@ import NucleusSkiaGraphiteBridge
     @Test func scanoutUsageAndPlanePacking() {
         #expect(DrmFramebuffer.explicitModifierFlags == UInt32(DRM_MODE_FB_MODIFIERS),
                 "explicit framebuffer modifiers must opt in through the addfb2 flag")
-        // The descriptor a scanout BO is imported with MUST carry the 10b.6d
         // render-target constraints (color + input attachment) plus transfer-src.
         let scanoutUsage = DmaBufImageDescriptor.scanoutUsage
         #expect(scanoutUsage.contains(.colorAttachmentBit), "scanout-usage-color-attachment")

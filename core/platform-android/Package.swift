@@ -1,7 +1,6 @@
 // swift-tools-version:6.4
 //
-// The Nucleus Android host package (render-stack Phase 0 / build-harness Phase 2).
-//
+// The Nucleus Android host package.
 // Cross-compiled with the registered Swift Android SDK to produce the JNI native
 // library the Kotlin `nucleus` module loads:
 //
@@ -41,6 +40,8 @@ func swiftAndroidCxxStaticLibDir() -> String? {
     let home = ProcessInfo.processInfo.environment["HOME"] ?? ""
     let rel = "/swift-android/swift-resources/usr/lib/swift-aarch64/android"
     let candidates = [
+        home + "/.cache/nucleus/swift-platforms/release-6.4.x/current/android/swift-release-6.4.x_android.artifactbundle" + rel,
+        home + "/.cache/nucleus/swift-platforms/release-6.4.x-macos/current/android/swift-release-6.4.x-macos_android.artifactbundle" + rel,
         home + "/.swiftpm/swift-sdks/swift-release-6.4.x_android.artifactbundle" + rel,
         home + "/.cache/nucleus/swift-android-sdks/release-6.4.x/swift-release-6.4.x_android.artifactbundle" + rel,
     ]
@@ -59,9 +60,8 @@ let package = Package(
         .library(name: "nucleus-android", type: .dynamic, targets: ["NucleusAndroidJNI"]),
     ],
     dependencies: [
-        // The Nucleus library package — source of the cross-compile-clean render
-        // modules the Android host consumes. Render-stack Phase 1 takes Vulkan
-        // + VulkanC (platform-agnostic: vendored Khronos headers + the vulkan
+        // The Nucleus library package supplies cross-compile-clean render modules
+        // and VulkanC (platform-agnostic: vendored Khronos headers + the Vulkan
         // loader). `swift build --product` builds only the consumed closure, so the
         // root package's Linux-only targets never enter the Android cross-compile.
         .package(name: "Nucleus", path: ".."),

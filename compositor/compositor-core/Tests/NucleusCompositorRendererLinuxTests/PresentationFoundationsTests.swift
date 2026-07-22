@@ -2,7 +2,6 @@ import Testing
 @testable import NucleusRenderer
 @testable import NucleusCompositorRendererLinux
 
-// Converted from PresentationFoundationsFixture (Phase 9.1): the presentation
 // foundations — geometry helpers, timing constants, and the fixed-capacity
 // per-output rect table (update-in-place, FIFO eviction keeping the newest
 // findable, swap-remove). Fully hardware-independent.

@@ -27,7 +27,6 @@ private func flatPublicationWorkload(nodeCount: Int) -> BenchmarkWorkload {
             .exact("dirty_snapshots_authored", 1),
             .exact("dirty_property_updates", 1),
             .exact("reorder_topology_mutations", 1),
-            .maximum("allocation_units", UInt64(nodeCount + 2)),
             .exact("retained_after_teardown", 0),
         ],
         body: {
@@ -77,11 +76,6 @@ private func flatPublicationWorkload(nodeCount: Int) -> BenchmarkWorkload {
                         "flat publication replaced a retained visual during reorder")
                 }
                 let reorder = publisher.lastMetrics
-                let allocations = UInt64(
-                    publisher.publishedVisualLayerCount
-                        + publisher.retainedPaintRegistrationCount
-                        + 1)
-
                 try phases.measure("teardown") {
                     try publisher.invalidate()
                 }
@@ -108,7 +102,6 @@ private func flatPublicationWorkload(nodeCount: Int) -> BenchmarkWorkload {
                         "dirty_property_updates": dirty.propertyUpdates,
                         "reorder_nodes_visited": reorder.nodesVisited,
                         "reorder_topology_mutations": reorder.layersReparented,
-                        "allocation_units": allocations,
                         "copied_bytes": 0,
                         "retained_after_teardown": retainedAfterTeardown,
                     ],
@@ -164,7 +157,6 @@ private func deepPublicationWorkload(nodeCount: Int) -> BenchmarkWorkload {
                     try publisher.publish(roots: [root])
                 }
                 let dirty = publisher.lastMetrics
-                let allocationUnits = UInt64(publisher.publishedVisualLayerCount + 1)
                 try phases.measure("teardown") {
                     try publisher.invalidate()
                 }
@@ -183,7 +175,6 @@ private func deepPublicationWorkload(nodeCount: Int) -> BenchmarkWorkload {
                         "dirty_nodes_visited": dirty.nodesVisited,
                         "dirty_snapshots_authored": dirty.snapshotsAuthored,
                         "dirty_property_updates": dirty.propertyUpdates,
-                        "allocation_units": allocationUnits,
                         "copied_bytes": 0,
                         "retained_after_teardown": retained,
                     ],

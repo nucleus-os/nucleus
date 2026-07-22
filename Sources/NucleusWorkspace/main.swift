@@ -9,6 +9,7 @@ Commands:
   build        Build all runtime components, or one component
   test         Test all runtime components, or one component
   api          Emit and audit the public core Swift symbol graphs
+  abi          Compile every first-party native boundary as C and C++
   sanitize     Run focused address/leak, undefined-behavior, and thread sanitizers
   benchmark    Run deterministic release-built headless performance baselines
   toolchain    Rebuild and atomically activate the paired Swift toolchain and Android SDK
@@ -36,10 +37,26 @@ struct NucleusWorkspaceCommand {
         case "doctor": try Doctor(context: context).run()
         case "bootstrap": try Orchestrator(context: context).bootstrap(arguments.dropFirst().first)
         case "build": try Orchestrator(context: context).build(arguments.dropFirst().first)
-        case "test": try Orchestrator(context: context).test(arguments.dropFirst().first)
-        case "api": try PublicAPIAudit(context: context).run()
-        case "sanitize": try SanitizerCommand(context: context).run(arguments.dropFirst())
-        case "benchmark": try BenchmarkCommand(context: context).run(arguments.dropFirst())
+        case "test":
+            try context.withExclusiveVerification {
+                try Orchestrator(context: context).test(arguments.dropFirst().first)
+            }
+        case "api":
+            try context.withExclusiveVerification {
+                try PublicAPIAudit(context: context).run()
+            }
+        case "abi":
+            try context.withExclusiveVerification {
+                try CrossLanguageABIAudit(context: context).run()
+            }
+        case "sanitize":
+            try context.withExclusiveVerification {
+                try SanitizerCommand(context: context).run(arguments.dropFirst())
+            }
+        case "benchmark":
+            try context.withExclusiveVerification {
+                try BenchmarkCommand(context: context).run(arguments.dropFirst())
+            }
         case "toolchain": try ToolchainCommand(context: context).run(arguments.dropFirst())
         case "android": try AndroidCommand(context: context).run(arguments.dropFirst())
         case "profile": try ProfilingCommand(context: context).run(arguments.dropFirst())

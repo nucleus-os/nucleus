@@ -1,11 +1,9 @@
-// Phase 10b.6c — per-output RenderTarget assembly.
 //
 // Mirrors `DisplayServer.renderTargetForOutput` + `fullUsableArea`: derive the
 // presentation `RenderTarget` the FramePlan walk is parameterized by from a
 // single output's authoritative metadata (logical rect, pixel size, fractional
-// scale). The per-output metadata is Swift-owned — `NucleusCompositorServer.Display` holds
-// it — so at the cutover (10b.6f) the `OutputTargetMetadata` is sourced straight
-// from the Swift display layout. Here the derivation is proven in isolation.
+// scale). The per-output metadata is Swift-owned; `NucleusCompositorServer.Display`
+// supplies it from the Swift display layout. This derivation is proven in isolation.
 
 /// One output's authoritative composition metadata — the Swift-owned per-display
 /// state the cutover sources from `NucleusCompositorServer.Display`. Mirrors the fields

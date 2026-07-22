@@ -1,8 +1,7 @@
 // swift-tools-version:6.4
 //
-// The Nucleus compositor library package — the Linux platform backend (core/
-// compositor split, migration Phase 2).
-//
+// The Nucleus compositor library package — the Linux platform backend extracted
+// from the portable core.
 // This holds the Linux OS substrate + compositor policy that used to live in the
 // root library package: the Wayland/DRM/input/seat C façades, the Wayland runtime,
 // the DRM/KMS renderer backend + render-runtime facade, and the window/seat policy
@@ -426,11 +425,11 @@ let package = Package(
             exclude: [
                 "WaylandBufferFixture.swift", "WaylandCoreFixture.swift",
                 "WaylandDataDeviceFixture.swift", "WaylandDmabufFixture.swift",
-                "WaylandGammaFixture.swift", "WaylandHarnessFixture.swift",
+                "WaylandGammaFixture.swift",
                 "WaylandIdleEffectsFixture.swift", "WaylandLayerShellFixture.swift",
                 "WaylandPointerConstraintsFixture.swift", "WaylandPresentationFixture.swift",
                 "WaylandRelativePointerFixture.swift", "WaylandRouterFixture.swift",
-                "WaylandRuntimeSmoke.swift", "WaylandScreencopyFixture.swift",
+                "WaylandScreencopyFixture.swift",
                 "WaylandSeatFixture.swift", "WaylandSessionLockFixture.swift",
                 "WaylandShellAuxFixture.swift", "WaylandSubsurfaceFixture.swift",
                 "WaylandSurfaceAuxFixture.swift", "WaylandSurfaceFixture.swift",
@@ -446,6 +445,7 @@ let package = Package(
                 "SurfaceCommitGeometryTests.swift", "SurfaceTransactionTests.swift",
                 "SubsurfaceTopologyTests.swift",
                 "SeatSerialLedgerTests.swift",
+                "SeatSessionOwnershipTests.swift",
                 "XdgConfigureLedgerTests.swift",
                 "XdgPositionerTests.swift",
                 "DmabufLayoutValidatorTests.swift",

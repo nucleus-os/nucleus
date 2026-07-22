@@ -1,4 +1,3 @@
-// Phase 9.1 — Compositor-owned presentation animation timing constants.
 //
 // The single place for the tiling spring and the window lifecycle-fade
 // constants the compositor itself drives. Render-layer animation defaults (the

@@ -4,7 +4,6 @@ import Vulkan
 import NucleusSkiaGraphiteBridge
 @testable import NucleusRenderer
 
-// Converted from SnapshotCaptureFixture (Phase 10b.4h): the world→device
 // capture sizing (hardware-independent), plus the device-rect capture → register
 // → resolve lifecycle over a real Graphite recorder (best-effort, asserts nothing
 // hardware-conditional).

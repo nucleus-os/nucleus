@@ -2,7 +2,6 @@ import Testing
 @testable import NucleusRenderer
 import NucleusRenderModel
 
-// Converted from FramePlanFixture (Phase 9.8): the FramePlan container (ordered
 // ops, counters, inline backdrop commands, capacity-retaining reset, scanout/
 // callbacks) and the pure plan-command lowering (textured quad native vs fill
 // sizing, source-rect basis, opaque coverage, rounded clip mask).

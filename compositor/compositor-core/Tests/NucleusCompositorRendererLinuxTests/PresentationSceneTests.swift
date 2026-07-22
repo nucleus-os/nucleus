@@ -2,7 +2,6 @@ import Testing
 @testable import NucleusRenderer
 import NucleusRenderModel
 
-// Converted from PresentationSceneFixture (Phase 9.7): the scene-graph lowering —
 // per-layer geometry (world matrix / clip / visible rect / combined opacity),
 // remote-host inline resolution + damage fact, the damage-fact lowering family,
 // native/external tracking gates, and the visual-state signatures.

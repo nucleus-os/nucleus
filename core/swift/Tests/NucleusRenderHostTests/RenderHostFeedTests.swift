@@ -1,4 +1,3 @@
-// Converted from RenderHostFixture (Phase 10b.6b): the layers→render
 // producer feed. Drives the real layers API with a RenderCommitSink
 // installed and asserts the RetainedTreeStore tree + the lowered transaction the
 // sink captures. Hardware-independent. One ordered @Test: the invariants share a

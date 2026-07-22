@@ -7,6 +7,7 @@ import WaylandServerC
 
 public final class WaylandGlobal {
     public let global: OpaquePointer
+    private let displayOwner: WaylandDisplay
 
     public init?(
         display: WaylandDisplay,
@@ -18,6 +19,7 @@ public final class WaylandGlobal {
         guard let global = wl_global_create(display.display, interface, version, data, bind)
         else { return nil }
         self.global = global
+        self.displayOwner = display
     }
 
     deinit { wl_global_destroy(global) }

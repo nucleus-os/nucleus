@@ -3,7 +3,6 @@ import Glibc
 @testable import NucleusCompositorRendererLinux
 import NucleusRenderer  // DmaBufPlane
 
-// M2 Phase 3 — the fd lifetime of a retained client scanout buffer. The KMS import
 // (drmPrimeFDToHandle → DrmFramebuffer) needs a real DRM device and is validated on
 // hardware; what is testable headlessly is the fd bookkeeping, whose failure mode —
 // accidentally closing the client's dmabuf fd — would corrupt a live client buffer.

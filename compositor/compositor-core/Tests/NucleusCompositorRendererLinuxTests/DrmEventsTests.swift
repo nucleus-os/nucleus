@@ -3,7 +3,6 @@ import Testing
 @testable import NucleusCompositorRendererLinux
 import NucleusCompositorDrmC
 
-// Converted from DrmEventsFixture (Phase 10a.5): the page-flip dispatch path.
 // The token → user_data → trampoline → handler round-trip and the
 // timestamp/field delivery are hardware-independent. The fixture's best-effort
 // real-DRM readability probe + drain (which asserted nothing) is dropped.

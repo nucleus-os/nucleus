@@ -222,8 +222,7 @@ func parseInFormatsBlob(_ bytes: [UInt8]) -> [FormatModifierPair] {
     }
 }
 
-/// Collect a plane's advertised formats + IN_FORMATS modifiers into a FormatSet,
-/// through the Phase 10a.2 result owners. Mirrors `collectPlaneFormats`.
+/// Collect a plane's advertised formats and IN_FORMATS modifiers into a `FormatSet`.
 func collectPlaneFormats(fd: Int32, planeId: UInt32) -> FormatSet {
     var formats = FormatSet()
 

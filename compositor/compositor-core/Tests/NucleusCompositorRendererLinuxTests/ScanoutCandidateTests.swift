@@ -1,7 +1,6 @@
 import Testing
 @testable import NucleusCompositorRendererLinux
 
-// M2 Phase 1 — the per-output `ScanoutCandidate` bundle: it runs the output-level
 // block-reason gate first, then the per-surface eligibility check, against the
 // output's primary-plane format set. The raw evaluators are exhaustively covered by
 // DrmScanoutTests; this asserts the bundle wires the three inputs together and

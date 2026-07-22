@@ -1,4 +1,3 @@
-// Phase 10b.4f — backdrop blur + foreground vibrancy: execute the FramePlan
 // backdrop bands. For each backdrop draw, sample the accumulator source (the
 // prefix snapshot for `.behindWindow`, the live accumulator for `.withinWindow`),
 // blur + saturate it, composite it back into the draw's region clipped to its

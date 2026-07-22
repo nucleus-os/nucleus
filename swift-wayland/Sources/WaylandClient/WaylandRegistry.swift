@@ -41,6 +41,8 @@ public struct BoundGlobal {
 
 @MainActor
 public final class WaylandRegistry {
+    /// The registry proxy is valid only while its display connection is alive.
+    private let connection: WaylandConnection
     private let registry: OpaquePointer
     /// Desired globals keyed by interface name (the registry advertises by name).
     private let wanted: [String: DesiredGlobal]
@@ -54,11 +56,16 @@ public final class WaylandRegistry {
 
     public init?(_ connection: WaylandConnection, wanting: [DesiredGlobal]) {
         guard let reg = connection.getRegistry() else { return nil }
+        self.connection = connection
         registry = reg
         var m: [String: DesiredGlobal] = [:]
         for g in wanting { m[g.interfaceName] = g }
         wanted = m
         WlRegistryClient.addListener(registry, owner: self)
+    }
+
+    isolated deinit {
+        wl_registry_destroy(registry)
     }
 
     /// The single bound global for an interface (nil if none / not yet advertised).

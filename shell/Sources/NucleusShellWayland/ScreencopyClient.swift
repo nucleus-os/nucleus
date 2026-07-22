@@ -25,6 +25,12 @@ public final class ScreencopyClient {
         let frame: OpaquePointer
         var onReady: ((_ width: UInt32, _ height: UInt32) -> Void)?
         init(frame: OpaquePointer) { self.frame = frame }
+
+        deinit {
+            // The generated listener borrows this object. Destroy the owned
+            // proxy before ARC releases the callback target.
+            zwlr_screencopy_frame_v1_destroy(frame)
+        }
     }
 
     /// Request a capture of `output` (optionally including the cursor).

@@ -21,7 +21,6 @@ private func textDocumentWorkload(paragraphCount: Int) -> BenchmarkWorkload {
             .exact("paragraphs", UInt64(paragraphCount)),
             .maximum("initial_layout_creations", 64),
             .maximum("cached_paragraphs", 64),
-            .maximum("allocation_units", UInt64(paragraphCount + 66)),
             .exact("live_backend_layouts_after_teardown", 0),
         ],
         body: {
@@ -102,7 +101,6 @@ private func textDocumentWorkload(paragraphCount: Int) -> BenchmarkWorkload {
                     "backend_invalidation_layout_creations":
                         afterBackendInvalidation - afterScroll,
                     "cached_paragraphs": cached,
-                    "allocation_units": UInt64(editor.paragraphIDs.count) + cached + 2,
                     "copied_bytes": sourceBytes + 3,
                     "live_backend_layouts": UInt64(backend.liveLayoutCount),
                     "live_backend_layouts_after_teardown": 0,
@@ -137,7 +135,6 @@ private func collectionWorkload(itemCount: Int) -> BenchmarkWorkload {
             .maximum("grid_maximum_materialized", 80),
             .maximum("list_measurement_cache", 2_048),
             .maximum("grid_measurement_cache", 4_096),
-            .maximum("allocation_units", 6_300),
         ],
         body: {
             let uiContext = UIContext(services: .inMemory())
@@ -204,11 +201,6 @@ private func collectionWorkload(itemCount: Int) -> BenchmarkWorkload {
                 grid.applySnapshot(try CollectionSnapshot(items: movedItems))
                 grid.layoutIfNeeded()
 
-                let allocationUnits = UInt64(
-                    list.materializedRowCount + list.reusePoolCount
-                        + list.measurementCacheEntryCount
-                        + grid.materializedCellCount + grid.reusePoolCount
-                        + grid.measurementCacheEntryCount)
                 var checksum = UInt64(itemCount)
                 checksum.mix(UInt64(list.selectedItemIDs.count))
                 checksum.mix(UInt64(list.materializedRowCount))
@@ -231,7 +223,6 @@ private func collectionWorkload(itemCount: Int) -> BenchmarkWorkload {
                             UInt64(list.measurementCacheEntryCount),
                         "grid_measurement_cache":
                             UInt64(grid.measurementCacheEntryCount),
-                        "allocation_units": allocationUnits,
                         "copied_bytes": UInt64((itemCount + movedItems.count) * 16),
                     ],
                     semanticChecksum: checksum)

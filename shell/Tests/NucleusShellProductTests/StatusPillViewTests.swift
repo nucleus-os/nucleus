@@ -9,11 +9,11 @@ import NucleusTypes
 /// These run in `shell`, outside package `Nucleus`, against a view built only
 /// from NucleusUI's public API. If any of this required layer, recording, or
 /// registrar access, the capability would belong in NucleusUI rather than being
-/// reached around — which is exactly the leak this phase closes.
+/// reached around.
 ///
 /// The tests read what was drawn through `NucleusUIEmbedder`, a **test-only**
 /// dependency. `NucleusShellProduct` itself depends on NucleusUI alone, and the
-/// build enforces that — which is the boundary this phase exists to establish.
+/// build enforces that boundary.
 /// A product-tier inspection seam would be better than reaching for the
 /// embedder here, and is the honest gap these tests document.
 @MainActor

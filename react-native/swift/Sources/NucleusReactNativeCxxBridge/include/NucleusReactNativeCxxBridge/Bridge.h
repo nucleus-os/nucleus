@@ -1,6 +1,6 @@
 // C-ABI bridge over the React Native C++ runtime stack (Hermes JSI + folly), so
-// Swift can drive it without C++ interop. Phase-5 link proof: NucleusReactRuntime
-// links the GN/CMake-built Hermes + folly/glog/support libs and runs JS.
+// Swift can drive it without C++ interop. NucleusReactRuntime links the
+// GN/CMake-built Hermes + folly/glog/support libraries and runs JS.
 #ifndef NUCLEUS_REACT_RUNTIME_BRIDGE_H
 #define NUCLEUS_REACT_RUNTIME_BRIDGE_H
 

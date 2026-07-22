@@ -178,6 +178,8 @@ struct Orchestrator {
             }
         }
 
+        try CrossLanguageABIAudit(context: context).run()
+
         try provisionHostArchive(configuration: "release")
         for suite in releaseStructuralSuites {
             try testReleaseSuite(suite)

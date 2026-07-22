@@ -1,4 +1,5 @@
 import Glibc
+import Foundation
 import NucleusLinuxReactor
 import NucleusLinuxReactorC
 import Testing
@@ -9,7 +10,6 @@ struct LinuxHostReactorTests {
     @Test
     func waitingSuspendsTheMainActor() async throws {
         let reactor = try LinuxHostReactor(queueDepth: 16)
-        defer { reactor.shutdown() }
         var taskRan = false
 
         Task { @MainActor in
@@ -33,12 +33,12 @@ struct LinuxHostReactorTests {
         #expect(metrics.completionsConsumed >= 1)
         #expect(metrics.completionSourceWakeups >= 1)
         #expect(metrics.controlSignalWriteFailures == 0)
+        await reactor.shutdown()
     }
 
     @Test
     func explicitWakeBurstsCoalesceBeforeEnteringTheKernel() async throws {
         let reactor = try LinuxHostReactor(queueDepth: 16)
-        defer { reactor.shutdown() }
 
         for _ in 0..<32 {
             reactor.wake()
@@ -53,12 +53,12 @@ struct LinuxHostReactorTests {
         #expect(metrics.controlSignalWrites == 1)
         #expect(metrics.coalescedControlWakeRequests == 31)
         #expect(metrics.controlSignalWriteFailures == 0)
+        await reactor.shutdown()
     }
 
     @Test
     func readinessCarriesThePollMaskAndRearms() async throws {
         let reactor = try LinuxHostReactor(queueDepth: 16)
-        defer { reactor.shutdown() }
         var descriptors = [Int32](repeating: -1, count: 2)
         #expect(nucleus_linux_reactor_create_pipe(&descriptors) == 0)
         let descriptor = descriptors[0]
@@ -88,23 +88,23 @@ struct LinuxHostReactorTests {
         #expect(batch.events.first.map {
             $0.returnedEvents & Int16(POLLIN) != 0
         } == true)
+        await reactor.shutdown()
     }
 
     @Test
     func finiteDeadlineDoesNotNeedAnotherDescriptor() async throws {
         let reactor = try LinuxHostReactor(queueDepth: 16)
-        defer { reactor.shutdown() }
         let batch = try await reactor.wait(
             interests: [],
             timeoutNanoseconds: 1_000_000)
         #expect(batch.didReachDeadline)
         #expect(batch.events.isEmpty)
+        await reactor.shutdown()
     }
 
     @Test
     func invalidRequestedPollBitsAreRejected() async throws {
         let reactor = try LinuxHostReactor(queueDepth: 16)
-        defer { reactor.shutdown() }
         var descriptors = [Int32](repeating: -1, count: 2)
         #expect(nucleus_linux_reactor_create_pipe(&descriptors) == 0)
         defer {
@@ -125,12 +125,12 @@ struct LinuxHostReactorTests {
                 fileDescriptor: descriptors[0],
                 events: Int16(POLLERR)))
         }
+        await reactor.shutdown()
     }
 
     @Test
     func multishotPollSurvivesSeparateReadinessTransitions() async throws {
         let reactor = try LinuxHostReactor(queueDepth: 16)
-        defer { reactor.shutdown() }
         var descriptors = [Int32](repeating: -1, count: 2)
         #expect(nucleus_linux_reactor_create_pipe(&descriptors) == 0)
         defer {
@@ -153,6 +153,7 @@ struct LinuxHostReactorTests {
             })
             drain(descriptors[0])
         }
+        await reactor.shutdown()
     }
 
     @Test
@@ -160,7 +161,6 @@ struct LinuxHostReactorTests {
         let reactor = try LinuxHostReactor(
             queueDepth: 16,
             completionBudget: 1)
-        defer { reactor.shutdown() }
         var pipes = [[Int32]]()
         for _ in 0..<3 {
             var descriptors = [Int32](repeating: -1, count: 2)
@@ -172,7 +172,7 @@ struct LinuxHostReactorTests {
                 _ = Glibc.close(descriptor)
             }
         }
-        let interests = pipes.enumerated().map { index, descriptors in
+        var interests = pipes.enumerated().map { index, descriptors in
             LinuxReactorInterest(
                 token: UInt64(100 + index),
                 fileDescriptor: descriptors[0],
@@ -197,16 +197,18 @@ struct LinuxHostReactorTests {
             for event in batch.events where delivered.insert(event.token).inserted {
                 drain(pipes[Int(event.token - 100)][0])
             }
+            interests.removeAll { delivered.contains($0.token) }
         }
         #expect(delivered == Set([100, 101, 102]))
         #expect(observedBoundedBacklog)
         #expect(reactor.metrics.completionBudgetExhaustions >= 1)
+        #expect(reactor.metrics.pollsPrepared == 5)
+        await reactor.shutdown()
     }
 
     @Test
     func replacingATokenRejectsTheCancelledDescriptorsCompletion() async throws {
         let reactor = try LinuxHostReactor(queueDepth: 16)
-        defer { reactor.shutdown() }
         var firstPipe = [Int32](repeating: -1, count: 2)
         var secondPipe = [Int32](repeating: -1, count: 2)
         #expect(nucleus_linux_reactor_create_pipe(&firstPipe) == 0)
@@ -237,12 +239,12 @@ struct LinuxHostReactorTests {
         #expect(batch.events.count == 1)
         #expect(batch.events[0].token == 7)
         #expect(batch.events[0].failureCode == nil)
+        await reactor.shutdown()
     }
 
     @Test
     func removingAnInterestCancelsItsOutstandingPoll() async throws {
         let reactor = try LinuxHostReactor(queueDepth: 16)
-        defer { reactor.shutdown() }
         var descriptors = [Int32](repeating: -1, count: 2)
         #expect(nucleus_linux_reactor_create_pipe(&descriptors) == 0)
         defer {
@@ -263,6 +265,7 @@ struct LinuxHostReactorTests {
             timeoutNanoseconds: 1_000_000)
         #expect(batch.didReachDeadline)
         #expect(batch.events.isEmpty)
+        await reactor.shutdown()
     }
 
     @Test
@@ -274,7 +277,7 @@ struct LinuxHostReactorTests {
                 timeoutNanoseconds: nil)
         }
         await Task.yield()
-        reactor.shutdown()
+        await reactor.shutdown()
 
         do {
             _ = try await waiter.value
@@ -287,9 +290,9 @@ struct LinuxHostReactorTests {
     }
 
     @Test
-    func wakeAfterShutdownCannotSignalAReusedDescriptor() throws {
+    func wakeAfterShutdownCannotSignalAReusedDescriptor() async throws {
         let reactor = try LinuxHostReactor(queueDepth: 16)
-        reactor.shutdown()
+        await reactor.shutdown()
 
         var replacements: [Int32] = []
         for _ in 0..<4 {
@@ -307,6 +310,33 @@ struct LinuxHostReactorTests {
         }
     }
 
+    @Test
+    func repeatedShutdownReturnsKernelResourcesToBaseline() async throws {
+        let warmup = try LinuxHostReactor(queueDepth: 16)
+        warmup.wake()
+        _ = try await warmup.wait(
+            interests: [],
+            timeoutNanoseconds: 1_000_000_000)
+        await warmup.shutdown()
+
+        let baselineDescriptors = try processEntryCount(at: "/proc/self/fd")
+        let baselineTasks = try processEntryCount(at: "/proc/self/task")
+
+        for _ in 0..<32 {
+            let reactor = try LinuxHostReactor(queueDepth: 16)
+            reactor.wake()
+            _ = try await reactor.wait(
+                interests: [],
+                timeoutNanoseconds: 1_000_000_000)
+            await reactor.shutdown()
+            #expect(try processEntryCount(at: "/proc/self/fd")
+                == baselineDescriptors)
+        }
+
+        #expect(try processEntryCount(at: "/proc/self/task")
+            <= baselineTasks + 1)
+    }
+
     private func signal(_ descriptor: Int32) {
         var value: UInt8 = 1
         let count = withUnsafeBytes(of: &value) {
@@ -321,5 +351,9 @@ struct LinuxHostReactorTests {
             Glibc.read(descriptor, $0.baseAddress, $0.count)
         }
         #expect(count == MemoryLayout<UInt8>.size)
+    }
+
+    private func processEntryCount(at path: String) throws -> Int {
+        try FileManager.default.contentsOfDirectory(atPath: path).count
     }
 }

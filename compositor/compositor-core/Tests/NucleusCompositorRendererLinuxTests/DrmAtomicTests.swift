@@ -3,7 +3,6 @@ import Testing
 @testable import NucleusCompositorRendererLinux
 import NucleusCompositorDrmC
 
-// Converted from DrmAtomicFixture (Phase 10a.3): the Swift atomic property
 // discovery + the `hasRequired` validation gates (mirroring
 // `kms_atomic_props.zig`) and the AtomicRequestBuilder's typed-entry recording +
 // diagnostic dump — all hardware-independent. The fixture's best-effort real

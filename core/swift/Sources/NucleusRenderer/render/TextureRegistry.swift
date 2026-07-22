@@ -1,5 +1,4 @@
-// Phase 10b.4c — the texture content registry: a texture cache + atlas + owner.
-// It maps an opaque texture handle (the raw
+// `TextureRegistry` maps an opaque texture handle (the raw
 // `FramePlan` `TextureHandle.raw`) to a sampleable Skia `Image`, with a content
 // revision (so a producer can skip re-upload of unchanged content) and a
 // refcount (governing eviction). Small paint/decoration nodes pack into a
@@ -8,8 +7,8 @@
 //
 // The allocator, atlas, and registry bookkeeping are pure and tested
 // hardware-independently (raster images need no GPU). The façade backend-texture
-// wrap (`wrapBackendImage`) compiles here; the live DMA-BUF import + VkOwned
-// retention couples to the frame lifecycle in 10b.4k.
+// wrap (`wrapBackendImage`) compiles here; the live DMA-BUF import and Vulkan
+// ownership remain in the renderer.
 
 import VulkanC
 import Vulkan
@@ -248,7 +247,6 @@ final class TextureRegistry {
     /// Wrap a borrowed Vulkan image (an imported DMA-BUF / compositor render
     /// texture) as a Graphite-sampleable image. The caller owns the underlying
     /// `VkImage`'s lifetime and must keep it alive while the registry entry lives
-    /// — the live DMA-BUF retention couples to the frame lifecycle in 10b.4k.
     func wrapBackendImage(
         recorder: nucleus.skia.Recorder, descriptor: nucleus.skia.VulkanImageDescriptor
     ) -> nucleus.skia.Image? {

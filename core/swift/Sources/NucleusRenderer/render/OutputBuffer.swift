@@ -1,13 +1,11 @@
-// Phase 10b.5 — the Swift output-buffer owner: the one noncopyable value that
-// holds the three coupled scanout lifetimes (GBM BO ↔ Vulkan image ↔ KMS
-// framebuffer) and destroys them exactly once, in reverse dependency order
+// `OutputBufferOwner` holds the three coupled scanout lifetimes (GBM BO ↔ Vulkan
+// image ↔ KMS framebuffer) and destroys them exactly once, in reverse dependency order
 // (the KMS fb references the BO's planes; the Vulkan image imports them). This
-// is the buffer that replaces 10a's transitional borrowed-`fb_id` seam at the
-// cutover. Plus the mailbox render-target ring the renderer rotates through.
+// transitional borrowed-`fb_id` seam. It also owns the mailbox render-target ring
+// the renderer rotates through.
 //
 // The three lifetimes are passed as destroy closures so the owner composes over
-// the GBM (10a) + Vulkan (10b) resources without hard-coupling either here; the
-// renderer constructs it with the real teardown verbs.
+// The renderer constructs it with the real teardown verbs.
 
 /// One scanout buffer's coupled GBM/Vulkan/KMS lifetimes.
 public struct OutputBufferOwner: ~Copyable {

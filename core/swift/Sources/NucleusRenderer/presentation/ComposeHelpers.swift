@@ -1,10 +1,7 @@
-// Phase 9.4 — Pure composition-matrix + clip-scaling helpers.
 //
 // The leaf math the geometry walk needs: the
 // local-composition matrix (position/anchor/transform/presentation around a
-// pivot) and the model→effective bounds clip/backdrop rescale. The Skia canvas
-// draw routines (`applyAncestorClips`/`drawVisualStyle`/`opacityPaint`) and the
-// presentation-override merge helpers stay with the renderer / Phase-8 surface.
+// pivot) and the model→effective bounds clip/backdrop rescale.
 
 import NucleusRenderModel
 

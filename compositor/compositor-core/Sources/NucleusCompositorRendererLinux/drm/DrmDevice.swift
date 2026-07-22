@@ -1,4 +1,3 @@
-// Phase 10a.1 — Swift DRM device ownership + enumeration policy.
 //
 // Owns the two leaf DRM resources the device layer holds: a DRM device file
 // descriptor (`DrmDeviceFd`) and a GBM device created over one (`GbmDevice`),

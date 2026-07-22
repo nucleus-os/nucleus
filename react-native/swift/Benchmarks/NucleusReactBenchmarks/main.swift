@@ -223,7 +223,6 @@ private func mountWorkload(
                             UInt64(bookkeeping.retiredSurfaces),
                         "in_flight_after_teardown":
                             UInt64(bookkeeping.inFlightSurfaces),
-                        "allocation_units": UInt64(initialComponents),
                         "copied_bytes": copiedBytes,
                     ],
                     semanticChecksum: checksum,

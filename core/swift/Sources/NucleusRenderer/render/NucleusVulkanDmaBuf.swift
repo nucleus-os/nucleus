@@ -1,4 +1,3 @@
-// Phase 10b.5 — import a DRM-format-modifier DMA-BUF into the Swift Vulkan
 // device as a VkImage. Used for both committed Wayland client buffers and the
 // GBM scanout BO. The pNext chain assembly (external-memory + explicit DRM
 // modifier plane layouts) and live import bind imported memory to the image.
@@ -42,7 +41,6 @@ public struct DmaBufImageDescriptor {
     /// The image usage the import is created with. The default
     /// (`sampled | colorAttachment`) suits a sampled client buffer; a GBM scanout
     /// BO that Graphite wraps as a render target must add `inputAttachment` (Skia
-    /// binds the dst as an input attachment for blending — see 10b.6d) and
     /// `transferSrc` for readback.
     public var usage: VK.ImageUsageFlags
 

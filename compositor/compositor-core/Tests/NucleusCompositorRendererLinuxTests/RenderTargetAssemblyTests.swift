@@ -2,7 +2,6 @@ import Testing
 @testable import NucleusRenderer
 import NucleusRenderModel
 
-// Converted from RenderTargetAssemblyFixture (Phase 10b.6c): the per-output
 // RenderTarget assembly. Asserts the derivation mirrors the Zig
 // renderTargetForOutput + fullUsableArea — field passthrough, the f32 scale
 // narrowing, and the ceil/clamp full-output usable area across integer,

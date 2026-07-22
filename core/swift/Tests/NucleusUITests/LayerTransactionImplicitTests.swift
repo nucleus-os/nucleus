@@ -11,8 +11,6 @@ import Testing
         let layer = context.makeLayer(.init(frame: .init(x: 0, y: 0, width: 10, height: 10)))
 
         // Writing through the ambient append path mutates local state at
-        // the call site (Phase 1) and journals into the per-context
-        // implicit buffer (Phase 2). No FFI commit happens yet.
         let update = LayerPropertyUpdate.decomposedFrame(.init(x: 1, y: 2, width: 3, height: 4))
         layer.apply(update)
         LayerTransaction.appendAmbient(.properties(layer: layer.id, update), in: context)

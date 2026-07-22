@@ -315,7 +315,9 @@ struct MenuTests {
         await Task.yield()
         #expect(presentation.panelCountForTesting() == 1)
         testUIClock().advance(by: .milliseconds(1))
-        await Task.yield()
+        for _ in 0..<32 where presentation.panelCountForTesting() != 2 {
+            await Task.yield()
+        }
         #expect(presentation.panelCountForTesting() == 2)
         presentation.dismiss()
     }

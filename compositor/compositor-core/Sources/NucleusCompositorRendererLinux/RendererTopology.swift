@@ -309,8 +309,9 @@ extension RendererRuntime {
     }
 
     /// Retire a topology change set with one device-wide atomic disable. This
-    /// method never waits: accepted page flips remain owned by the normal DRM
-    /// reactor path, and callers retry after their completion event.
+    /// method never waits: accepted page flips and kernel-busy disables remain
+    /// owned by the normal DRM reactor path, and callers retry without allowing
+    /// another present into the retiring topology generation.
     @discardableResult
     public func retireOutputs(
         _ outputIDs: Set<UInt64>
@@ -319,30 +320,43 @@ extension RendererRuntime {
             bindings[$0]
         }
         guard !retiring.isEmpty else { return .complete }
-        if let pending = retiring.first(where: { $0.drm.pageFlipPending }) {
-            logRendererDrm(
-                "output \(pending.outputId): retirement deferred; presentation still in flight")
-            return .waitingForPageFlip
-        }
-        guard var builder = AtomicRequestBuilder() else {
-            return .failed
-        }
-        for binding in retiring {
-            binding.drm.addDisableState(into: &builder)
-        }
-        guard builder.commit(
-            fd: drmDeviceFd,
-            flags: drmModeAtomicAllowModeset) == 0
-        else {
-            logRendererDrm(
-                "outputs \(retiring.map(\.outputId)): atomic retirement failed errno=\(rendererErrno())")
-            for line in builder.diagnosticLines() {
-                logRendererDrm(line)
+        var commitErrno: Int32 = 0
+        var diagnosticLines: [String] = []
+        let result = retireDrmOutputs(retiring.map(\.drm)) { disabling in
+            guard var builder = AtomicRequestBuilder() else {
+                commitErrno = ENOMEM
+                return .rejected(errno: commitErrno)
             }
+            for output in disabling {
+                output.addDisableState(into: &builder)
+            }
+            let rc = builder.commit(
+                fd: drmDeviceFd,
+                flags: drmModeAtomicAllowModeset)
+            diagnosticLines = builder.diagnosticLines()
+            guard rc == 0 else {
+                commitErrno = rendererErrno()
+                return .rejected(errno: commitErrno)
+            }
+            return .accepted
+        }
+        switch result {
+        case .draining:
+            logRendererDrm(
+                "outputs \(retiring.map(\.outputId)): retirement draining" +
+                    (commitErrno == EBUSY
+                        ? " after kernel EBUSY"
+                        : " pending page flip"))
+            return .draining
+        case .failed:
+            logRendererDrm(
+                "outputs \(retiring.map(\.outputId)): atomic retirement failed errno=\(commitErrno)")
+            for line in diagnosticLines { logRendererDrm(line) }
             return .failed
+        case .complete:
+            break
         }
         for binding in retiring {
-            binding.drm.noteScanoutDisabled()
             binding.releaseAfterScanoutDisabled()
             retiredFlipTokens.append(binding.drm.flipToken)
             removeRetiredBinding(binding)

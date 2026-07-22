@@ -3,7 +3,6 @@ import Testing
 @testable import NucleusCompositorRendererLinux
 import NucleusCompositorDrmC
 
-// Converted from DrmResourcesFixture (Phase 10a.2): the Swift property-name
 // matching the Zig `mode_introspection.zig` implements (find id / value by name,
 // 0/nil on miss) against synthetic property entries — hardware-independent. The
 // fixture's best-effort real `drmMode*` owner + property enumeration (which

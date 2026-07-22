@@ -2,7 +2,6 @@ import Testing
 @testable import NucleusRenderer
 @testable import NucleusCompositorRendererLinux
 
-// Converted from DrmScanoutFixture (Phase 10a.10): the direct-scanout policy —
 // the compositor block-reason gate (ordering, shell-output gating) and the
 // per-surface eligibility checks (viewport, geometry, dmabuf, opaque format,
 // modifier) — against the behavior of ScanoutPlanner.zig / Scanout.zig. Fully

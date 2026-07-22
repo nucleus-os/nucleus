@@ -1,4 +1,3 @@
-// Phase 9.1 — Fixed-capacity per-output rect table.
 //
 // Window damage/animation footprint tracking keyed by output id. FIFO eviction
 // when the table fills: drops the oldest entry (index 0) and appends the new

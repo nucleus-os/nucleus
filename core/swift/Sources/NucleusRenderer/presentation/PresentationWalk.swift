@@ -1,6 +1,5 @@
-// Phase 10b.4 front-half + 10b.4j — the live presentation tree walk that builds a
-// complete FramePlan from the Phase 8 retained LayerTree. 10b.4j replaces the
-// footprint-fill skeleton with the renderer-coupled emit walker
+// The live presentation-tree walk builds a complete FramePlan from the retained
+// LayerTree. It replaces the footprint-fill skeleton with the renderer-coupled emit walker
 // (`PresentationPlanEmit`): descend the tree accumulating world matrix / clip /
 // opacity (via `lowerLayerInput`), and per visible layer emit the real op
 // vocabulary — a backdrop ExecSpec (pushing its group onto the foreground-
@@ -8,7 +7,6 @@
 // rounded-clip mask, combined opacity, and a foreground-vibrancy reference to the
 // nearest ancestor backdrop group), and a decoration shadow. Content texture
 // handles are the content's own id within its role's space; the renderer resolves
-// (role, handle) → GPU image at the frame (10b.4k).
 
 import NucleusRenderModel
 

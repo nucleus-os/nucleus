@@ -107,7 +107,6 @@ let compositorWaylandRuntimeLinkFlags =
 let xkbClientCcFlags = pkgConfig(["--cflags", "xkbcommon"]).flatMap { ["-Xcc", $0] }
 
 // The React Native runtime, linked statically into the shell (mirrors the compositor's
-// pre-Phase-5 link): the fabric + support libs + Hermes, one --start-group. ICU is a
 // system shared lib.
 let icuLinkFlags = pkgConfig(["--libs", "icu-uc", "icu-i18n"])
 let icuRpathFlags = pkgConfig(["--variable=libdir", "icu-uc"]).flatMap { ["-Xlinker", "-rpath", "-Xlinker", $0] }
@@ -486,6 +485,32 @@ let package = Package(
                 .interoperabilityMode(.Cxx),
                 .unsafeFlags(vulkanHeadersInclude + vulkanWaylandFlag
                     + rnRuntimeBridgeModulemapFlag + rnRuntimeXccFlags),
+            ]
+        ),
+
+        .executableTarget(
+            name: "NucleusShellThreadSanitizerHarness",
+            dependencies: [
+                "NucleusShellRuntime",
+                "NucleusShellSignalC",
+            ],
+            path: "SanitizerHarnesses/NucleusShellThreadSanitizerHarness",
+            swiftSettings: [
+                .interoperabilityMode(.Cxx),
+                .unsafeFlags(rnRuntimeBridgeModulemapFlag + rnRuntimeXccFlags),
+            ],
+            linkerSettings: [
+                .unsafeFlags(
+                    skiaLinkFlags + waylandClientLinkFlags
+                    + ["-lfontconfig", "-lfreetype", "-lz"]
+                    + rnLinkFlags
+                ),
+                .unsafeFlags(
+                    [nucleusCxxLibs + "/debug/libNucleusReactRuntimeHostCxx.a"],
+                    .when(configuration: .debug)),
+                .unsafeFlags(
+                    [nucleusCxxLibs + "/release/libNucleusReactRuntimeHostCxx.a"],
+                    .when(configuration: .release)),
             ]
         ),
 

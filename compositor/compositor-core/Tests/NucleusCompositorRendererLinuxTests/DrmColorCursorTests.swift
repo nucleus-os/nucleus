@@ -3,7 +3,6 @@ import Testing
 @testable import NucleusCompositorRendererLinux
 import NucleusCompositorDrmC
 
-// Converted from DrmColorCursorFixture (Phase 10a.9): the gamma LUT state machine
 // + interleave + atomic-state population, and the cursor-plane placement math +
 // pixel packing, against the behavior of the Zig GammaState / cursor.zig. The
 // pure logic is hardware-independent; the fixture's best-effort real gamma blob

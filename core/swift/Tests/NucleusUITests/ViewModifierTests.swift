@@ -145,7 +145,7 @@ import NucleusUI
 
     // MARK: - In a body
 
-    /// What the whole phase is for: structure and configuration in one
+    /// The test proves structure and configuration can live in one
     /// expression, with the views still ordinary objects afterwards.
     @Test func modifiersReadAsOneExpressionInABody() {
         final class Bar: View {

@@ -85,8 +85,9 @@ public struct UIClock: Sendable {
     }
 }
 
-/// Deterministic test clock. Waiters are resumed in insertion order and are
-/// removed exactly once by deadline advancement or task cancellation.
+/// Deterministic test clock. Ready continuations are signaled in insertion
+/// order and are removed exactly once by deadline advancement or task
+/// cancellation. The executor may run the resumed tasks in either order.
 @MainActor
 package final class ManualUIClock {
     private struct Waiter {

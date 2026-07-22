@@ -6,6 +6,13 @@
 import WaylandServerC
 
 public enum WaylandResource {
+    typealias ResourceFactory = (
+        OpaquePointer,
+        UnsafePointer<wl_interface>?,
+        Int32,
+        UInt32
+    ) -> UnsafeMutablePointer<wl_resource>?
+
     /// Create a wl_resource and bind a Swift owner to it. The owner is retained
     /// and stored as the resource's user_data; the shared destroy callback
     /// releases that retain when libwayland destroys the resource, so the owner's
@@ -21,10 +28,29 @@ public enum WaylandResource {
         vtable: UnsafeRawPointer?,
         owner: AnyObject
     ) -> UnsafeMutablePointer<wl_resource>? {
-        guard let resource = wl_resource_create(client, interface, version, id) else {
-            Unmanaged.passUnretained(owner).release()  // no-op; keep owner balanced
-            return nil
-        }
+        create(
+            client: client,
+            interface: interface,
+            version: version,
+            id: id,
+            vtable: vtable,
+            owner: owner,
+            using: wl_resource_create)
+    }
+
+    /// Internal injection point for deterministic allocation-failure coverage.
+    /// Ownership transfers only after the native resource exists.
+    static func create(
+        client: OpaquePointer,
+        interface: UnsafePointer<wl_interface>?,
+        version: Int32,
+        id: UInt32,
+        vtable: UnsafeRawPointer?,
+        owner: AnyObject,
+        using createResource: ResourceFactory
+    ) -> UnsafeMutablePointer<wl_resource>? {
+        guard let resource = createResource(client, interface, version, id)
+        else { return nil }
         let retained = Unmanaged.passRetained(owner).toOpaque()
         wl_resource_set_implementation(resource, vtable, retained, swiftWaylandResourceDestroy)
         return resource

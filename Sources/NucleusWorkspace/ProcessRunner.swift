@@ -91,8 +91,6 @@ struct WorkspaceContext: Sendable {
             }
             guard posix_spawn_file_actions_adddup2(
                 &fileActions, descriptors[1], STDOUT_FILENO) == 0,
-                  posix_spawn_file_actions_adddup2(
-                    &fileActions, descriptors[1], STDERR_FILENO) == 0,
                   posix_spawn_file_actions_addclose(
                     &fileActions, descriptors[0]) == 0,
                   posix_spawn_file_actions_addclose(
@@ -180,5 +178,55 @@ struct WorkspaceContext: Sendable {
             throw WorkspaceFailure.process(command, terminationStatus)
         }
         return value
+    }
+
+    func withExclusiveVerification<Result>(
+        _ body: () throws -> Result
+    ) throws -> Result {
+        let directory = root
+            .appendingPathComponent(".build", isDirectory: true)
+            .appendingPathComponent("nucleus-workflow-locks", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true)
+        let lock = try WorkspaceFileLock(
+            path: directory.appendingPathComponent("verification.lock").path,
+            purpose: "workspace verification")
+        return try withExtendedLifetime(lock) {
+            try body()
+        }
+    }
+}
+
+final class WorkspaceFileLock {
+    private let descriptor: Int32
+
+    init(
+        path: String,
+        purpose: String,
+        waitForExistingOwner: Bool = true
+    ) throws {
+        let openedDescriptor = open(path, O_CREAT | O_RDWR, mode_t(0o644))
+        guard openedDescriptor >= 0 else {
+            throw WorkspaceFailure.message(
+                "could not open \(purpose) lock: errno \(errno)")
+        }
+
+        let operation = LOCK_EX | (waitForExistingOwner ? 0 : LOCK_NB)
+        guard flock(openedDescriptor, operation) == 0 else {
+            let code = errno
+            _ = close(openedDescriptor)
+            if !waitForExistingOwner && (code == EWOULDBLOCK || code == EAGAIN) {
+                throw WorkspaceFailure.message("\(purpose) is already running")
+            }
+            throw WorkspaceFailure.message(
+                "could not acquire \(purpose) lock: errno \(code)")
+        }
+        descriptor = openedDescriptor
+    }
+
+    deinit {
+        _ = flock(descriptor, LOCK_UN)
+        _ = close(descriptor)
     }
 }

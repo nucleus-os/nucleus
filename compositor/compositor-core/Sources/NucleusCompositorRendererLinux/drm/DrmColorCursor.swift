@@ -1,5 +1,4 @@
-// Phase 10a.9 — Swift gamma LUT state + cursor-plane placement/packing over real
-// libdrm.
+// DRM color and cursor helpers over libdrm.
 //
 // Two pieces: the desired gamma-LUT state machine + the R/G/B→`drm_color_lut`
 // interleave + color-pipeline atomic state, and cursor-plane property discovery,
@@ -162,7 +161,6 @@ struct CursorPlaneProps: Sendable, Equatable {
     var crtcW: UInt32 = 0
     var crtcH: UInt32 = 0
 
-    /// Discover the cursor plane's property ids live (Phase 10a.2 enumeration).
     static func discover(fd: Int32, planeId: UInt32) -> CursorPlaneProps {
         let entries = DrmProperties.enumerate(fd: fd, objectId: planeId, kind: .plane)
         func id(_ name: String) -> UInt32 { DrmProperties.findId(in: entries, name: name) }

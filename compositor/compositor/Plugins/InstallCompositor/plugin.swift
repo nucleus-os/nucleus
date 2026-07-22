@@ -14,8 +14,8 @@ import Foundation
 //   bin/nucleus-session-validate      (session validator, bash -n checked)
 //   share/systemd/user/nucleus@.service   (ExecStart wired to absolute bin paths)
 //
-// The compositor links zero React (repo-decomposition Phase 5): it installs no RN
-// shell bundle. The shell is an out-of-process layer-shell client (nucleus-shell, or
+// The compositor installs no React Native shell bundle. The shell is an out-of-process
+// layer-shell client (nucleus-shell, or
 // any standard shell such as Noctalia), packaged and launched separately.
 //
 // Runtime library resolution (Swift runtime + system libs) is the packaging

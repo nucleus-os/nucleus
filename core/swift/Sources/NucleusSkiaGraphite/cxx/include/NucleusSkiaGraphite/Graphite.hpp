@@ -1,5 +1,4 @@
 // NucleusSkiaGraphite — a C++ façade over Skia Graphite (Vulkan backend)
-// designed for Swift C++ interoperability (Phase 10b.3).
 //
 // Replaces the `void *` surface of render-cxx/skia/skia_render_bridge.h
 // with concrete typed classes. `sk_sp`, `std::unique_ptr`, Skia templates, and
@@ -8,14 +7,13 @@
 // pointer to its hidden Impl). Exceptions are disabled across the boundary;
 // failures surface as `Status` / `isValid()` rather than throws.
 //
-// 10b.3 landed the context-from-Vulkan + recording round-trip (context →
-// recorder → offscreen surface → canvas → image snapshot → recording → submit).
-// 10b.4a extends the draw vocabulary the Graphite-native renderer composites
-// through: a `Paint` value type (alpha, blend mode, Gaussian blur, saturation),
+// The façade creates a Graphite context and records the full
+// recorder → offscreen surface → canvas → image snapshot → recording → submit path.
+// It supports a `Paint` value type (alpha, blend mode, Gaussian blur, saturation),
 // save/restore/saveLayer + clip rect/rrect, source-rect image draws, a
 // runtime-effect `Shader` (foreground vibrancy), and raster readback. The
-// backend-texture `Image` (wrapping an imported DMA-BUF `VkImage`) binds in
-// 10b.4c alongside the texture registry that imports it.
+// A backend-texture `Image` wraps an imported DMA-BUF `VkImage` through the
+// texture registry.
 
 #pragma once
 
@@ -163,9 +161,8 @@ public:
     int32_t height() const;
 
     /// Read the image's pixels into `dst` as tightly-packed (or `rowBytes`-strided)
-    /// RGBA8888 premultiplied. Synchronous; valid for raster images (the GPU
-    /// surface readback used for screenshots binds in 10b.4i). Returns false on a
-    /// size mismatch or an unreadable (GPU-only) image.
+    /// RGBA8888 premultiplied. Synchronous; valid for raster images. Returns false on
+    /// a size mismatch or an unreadable GPU-only image.
     bool readPixelsRGBA(uint8_t *dst, size_t byteLength, int32_t rowBytes) const;
 
     // Internal: the canvas draw path reads the held SkImage.
@@ -371,7 +368,6 @@ public:
     /// scaled from its laid-out width to `dst`'s width.
     void drawTextLayout(uint64_t handle, RectF dst, float alpha) const;
 
-    // --- Convenience overloads (color-only; preserved from 10b.3) ---
     void drawRect(RectF rect, Color color) const;
     void drawImage(const Image &image, RectF dst, float alpha) const;
     void drawRoundRect(RectF rect, float radius, Color color) const;
@@ -421,7 +417,6 @@ struct VulkanImageDescriptor {
     bool hasAlpha = true;           // premultiplied RGBA vs opaque
 };
 
-/// A Graphite render target. Offscreen here; window/scanout targets bind in 10b.5.
 class Surface {
 public:
     struct Impl;
@@ -491,9 +486,8 @@ public:
     Image wrapBackendImage(const VulkanImageDescriptor &descriptor) const;
     /// Wrap a borrowed Vulkan image as a render-target `Surface` — the GBM scanout
     /// BO the compositor composites into and KMS flips. The façade never owns the
-    /// image or its memory; the Swift owner outlives the surface. Invalid on an
-    /// unusable descriptor (10b.6d). The `VulkanImageDescriptor.imageUsageFlags`
-    /// must include `VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT`.
+    /// image or its memory; the Swift owner outlives the surface. Invalid if the
+    /// descriptor lacks `VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT`.
     Surface wrapBackendSurface(const VulkanImageDescriptor &descriptor) const;
     Recording snapRecording() const;
 

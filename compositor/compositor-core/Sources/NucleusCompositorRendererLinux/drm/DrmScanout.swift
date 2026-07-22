@@ -191,7 +191,7 @@ public struct FullscreenCandidate: Sendable, Equatable {
 
 /// Direct-scanout eligibility outcome. `.eligible` means the root surface passes
 /// every single-surface check and can scan out the primary plane; overlay
-/// plane-promotion (the multi-surface plan) is the graphics phase.
+/// plane promotion is handled by the composited graphics path.
 enum DirectScanoutResult: Sendable, Equatable {
     case eligible
     case blocked(DirectScanoutBlock)

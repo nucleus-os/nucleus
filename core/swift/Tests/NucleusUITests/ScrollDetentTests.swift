@@ -173,7 +173,7 @@ import Testing
         #expect(scrollView.contentOffset.y == 40)
     }
 
-    /// The fidelity this phase exists for: a free-spinning wheel moves by less
+    /// The intended fidelity: a free-spinning wheel moves by less
     /// than a line instead of snapping.
     @Test func aFractionalNotchScrollsProportionally() {
         let scrollView = makeScrollView()

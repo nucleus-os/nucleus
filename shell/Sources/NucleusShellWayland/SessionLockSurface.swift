@@ -26,6 +26,7 @@ public final class SessionLockSurface {
     /// Fired on each configure with the required size. The render backend sizes
     /// its swapchain to exactly this and presents.
     public var onConfigure: ((UInt32, UInt32) -> Void)?
+    private var isDestroyed = false
 
     public init?(lock: OpaquePointer, client: ShellWaylandClient, output: WaylandOutput) {
         guard let surface = client.createSurface() else { return nil }
@@ -45,8 +46,14 @@ public final class SessionLockSurface {
     }
 
     public func destroy() {
+        guard !isDestroyed else { return }
+        isDestroyed = true
         ext_session_lock_surface_v1_destroy(lockSurface)
         wl_surface_destroy(wlSurface)
+    }
+
+    isolated deinit {
+        destroy()
     }
 }
 

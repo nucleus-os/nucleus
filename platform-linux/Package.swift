@@ -85,13 +85,20 @@ let package = Package(
             name: "NucleusLinuxBenchmarks",
             dependencies: [
                 "NucleusLinuxAccessibility",
+                "NucleusLinuxReactor",
+                "NucleusLinuxReactorC",
                 .product(
                     name: "NucleusBenchmarkSupport",
                     package: "Nucleus"),
                 .product(name: "NucleusUI", package: "Nucleus"),
             ],
             path: "Benchmarks/NucleusLinuxBenchmarks",
-            swiftSettings: [.interoperabilityMode(.Cxx)]),
+            swiftSettings: [
+                .interoperabilityMode(.Cxx),
+                .unsafeFlags([
+                    "-enable-experimental-feature", "Lifetimes",
+                ]),
+            ]),
         .testTarget(
             name: "NucleusLinuxReactorTests",
             dependencies: ["NucleusLinuxReactor"],

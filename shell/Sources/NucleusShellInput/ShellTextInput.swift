@@ -73,8 +73,10 @@ public final class ShellTextInput: TextInputAdapter {
         focusedSurface = 0
         beginSessionEpoch()
         self.textInput = nil
-        listener = nil
         zwp_text_input_v3_destroy(textInput)
+        // The proxy borrows the listener through its C user_data. Release the
+        // Swift owner only after destroying that proxy.
+        listener = nil
     }
 
     // MARK: - TextInputAdapter

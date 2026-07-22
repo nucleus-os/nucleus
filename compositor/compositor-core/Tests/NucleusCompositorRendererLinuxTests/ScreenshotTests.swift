@@ -4,7 +4,6 @@ import Vulkan
 import NucleusSkiaGraphiteBridge
 @testable import NucleusRenderer
 
-// Converted from ScreenshotFixture (Phase 10b.4i): the RGBA→BGRA
 // pixel-format conversion (hardware-independent), plus the GPU surface readback
 // round-trip — clear a surface to a known color, submit, read it back, and verify
 // the pixel — over a real Graphite context (best-effort, asserts nothing

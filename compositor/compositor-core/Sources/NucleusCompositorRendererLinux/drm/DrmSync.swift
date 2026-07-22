@@ -1,5 +1,4 @@
-// Phase 10a.4 — Swift fence/syncobj ownership over real libdrm + the DMA-BUF
-// sync-file façade.
+// DRM explicit-sync owners and the DMA-BUF sync-file façade.
 //
 // Three leaf resources the explicit-sync path holds, each a noncopyable owner:
 //   - `FenceFd` — a sync_file (or out-fence) file descriptor, closed on `deinit`,
@@ -9,8 +8,8 @@
 //     destroyed via `drmSyncobjDestroy`; borrows the DRM fd and never closes it.
 //     Wraps the libdrm syncobj API (export/import sync-file, handle fd transfer,
 //     timeline signal) directly.
-//   - `DmaBufSync` — the kernel DMA-BUF implicit-sync ioctls through the 10a.0
-//     `nucleus_drm_dmabuf_{export,import}_sync_file` façade (the `_IOWR`/`_IOW`
+//   - `DmaBufSync` — the `nucleus_drm_dmabuf_{export,import}_sync_file` façade
+//     wraps the `_IOWR`/`_IOW`
 //     request numbers Swift can't fold).
 
 import NucleusCompositorDrmC

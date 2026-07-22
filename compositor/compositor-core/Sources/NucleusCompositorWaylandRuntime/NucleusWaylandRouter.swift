@@ -1,4 +1,3 @@
-// The Swift owner of every Wayland protocol implementation (boundary Phase 4).
 // It owns the wl_display/event-loop through WaylandDisplay and a lifetime-managed
 // registry of globals; each protocol plugs in by registering a global whose
 // @convention(c) bind recovers its per-protocol state through the data pointer.

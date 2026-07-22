@@ -1,4 +1,3 @@
-// Phase 10c.3 cutover — the Swift-native resource-host conformers.
 //
 // Each conforms to a `NucleusAppHostProtocols` protocol
 // and reads/writes its explicitly owned `SwiftResourceHost` (paint content,

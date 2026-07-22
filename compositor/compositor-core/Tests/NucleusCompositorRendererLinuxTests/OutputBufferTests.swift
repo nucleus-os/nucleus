@@ -3,7 +3,6 @@ import VulkanC
 import Vulkan
 @testable import NucleusRenderer
 
-// Converted from OutputBufferFixture (Phase 10b.5): the output-buffer
 // owner's three-lifetime destroy-once/ordering contract, the mailbox ring, the
 // SHM→RGBA conversion, and the DMA-BUF import VkImageCreateInfo chain
 // (external-memory + explicit DRM modifier plane layouts), walked via pNext. All

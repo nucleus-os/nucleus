@@ -93,6 +93,9 @@ struct SanitizerCommand {
         case .address:
             [
                 Invocation(
+                    id: "wayland-resource-failure", package: "swift-wayland",
+                    packagePath: nil, suite: "WaylandResourceOwnershipTests"),
+                Invocation(
                     id: "core-runtime-graph", package: "core", packagePath: nil,
                     suite: "NucleusRuntimeGraphTests"),
                 Invocation(
@@ -108,6 +111,14 @@ struct SanitizerCommand {
                     id: "compositor-wayland-lifetime", package: "compositor",
                     packagePath: "compositor-core",
                     suite: "WaylandProtocolConformanceTests"),
+                Invocation(
+                    id: "compositor-seat-open-failure", package: "compositor",
+                    packagePath: "compositor-core",
+                    suite: "SeatSessionOwnershipTests"),
+                Invocation(
+                    id: "compositor-drm-lifecycle", package: "compositor",
+                    packagePath: "compositor-core",
+                    suite: "RendererRetirementCoordinatorTests"),
                 Invocation(
                     id: "shell-transfer-lifetime", package: "shell", packagePath: nil,
                     suite: "NucleusPlatformTransportStressTests"),
@@ -143,6 +154,18 @@ struct SanitizerCommand {
                 Invocation(
                     id: "linux-reactor", package: "platform-linux",
                     executable: "NucleusLinuxThreadSanitizerHarness"),
+                // One direct executable owns both the cross-thread render-wake
+                // race and real Wayland client/resource teardown. Avoid filtered
+                // Swift Testing here: SwiftPM launches every compositor test
+                // runner, and zero-match runners abort in dispatch_main teardown
+                // under TSan before the selected suite can be evaluated.
+                Invocation(
+                    id: "compositor-callbacks", package: "compositor",
+                    packagePath: "compositor",
+                    executable: "NucleusCompositorThreadSanitizerHarness"),
+                Invocation(
+                    id: "shell-callbacks", package: "shell",
+                    executable: "NucleusShellThreadSanitizerHarness"),
                 Invocation(
                     id: "rn-runtime-workers", package: "react-native",
                     executable: "NucleusReactThreadSanitizerHarness"),

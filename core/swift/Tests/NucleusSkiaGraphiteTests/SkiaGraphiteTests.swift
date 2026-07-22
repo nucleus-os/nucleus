@@ -65,7 +65,7 @@ private let closeVerb = UInt8(nucleus.skia.PathVerb.close.rawValue)
 
 // MARK: - Stroke vs fill
 
-/// The defect this phase fixes: a paint carrying a `strokeWidth` but no stroke
+/// The defect under test: a paint carrying a `strokeWidth` but no stroke
 /// style renders as a solid fill, because Skia defaults to fill. Nothing in the
 /// tree rendered a border before, so nothing caught it. A stroked rect path must
 /// leave its interior untouched.
@@ -304,8 +304,8 @@ half4 main(float2 p) { return half4(tint); }
 // MARK: - Stroked rounded rect
 
 /// `ViewStyle` emits a border as a **rounded-rect** command carrying the stroke
-/// flag, not as a path, so the stroke has to work on that draw call too. Phase
-/// 3's coverage proved it for paths only; a border would still have filled if
+/// flag, not as a path, so the stroke has to work on that draw call too. Path
+/// coverage alone would miss a border that filled when
 /// `drawRRect` ignored the style.
 @Test func aStrokedRoundedRectLeavesItsInteriorUnpainted() {
     let pixels = render(width: 40, height: 40) { canvas in
@@ -344,4 +344,10 @@ half4 main(float2 p) { return half4(tint); }
     #expect(
         pixel(pixels, 20, 20, width: 40).0 > 200,
         "a stroke width alone does not stroke — the style is what matters")
+}
+@Test func swiftCxxImporterPreservesGraphiteValueABI() {
+    #expect(MemoryLayout<nucleus.skia.Status>.size == 4)
+    #expect(MemoryLayout<nucleus.skia.Color>.size == 16)
+    #expect(MemoryLayout<nucleus.skia.RectF>.size == 16)
+    #expect(MemoryLayout<nucleus.skia.RRectRadii>.size == 16)
 }

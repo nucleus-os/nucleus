@@ -1,4 +1,3 @@
-// Phase 10c.4 — the Swift animation engine.
 //
 // CoreAnimation-inspired native animation: BasicAnimation (timed bezier) and
 // SpringAnimation (damped harmonic oscillator), plus their compound-Frame

@@ -2,9 +2,8 @@
 // `RetainedTreeStore` is its live owner: it folds committed render-layer
 // `Transaction`s into the tree through `TransactionApplier.apply`, tracks a
 // monotonic revision and an aggregate present-dirty flag, and hands the current
-// tree to the `FrameDriver` walk. This is the owner the producer feed
-// (10b.6b — the layers→render lowering + commit sink) writes and the renderer
-// reads.
+// tree to the `FrameDriver` walk. The producer feed writes it and the renderer
+// reads it.
 //
 // It runs on the compositor's main actor, the same executor the rest of the
 // runtime services use, so ingest (driven by the producer's commit) and the

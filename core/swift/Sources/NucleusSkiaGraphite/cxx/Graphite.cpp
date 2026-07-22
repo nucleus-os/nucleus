@@ -1064,7 +1064,6 @@ void Canvas::drawTextLayout(uint64_t handle, RectF dst, float alpha) const {
     canvas->restore();
 }
 
-// --- Convenience overloads (color-only; preserved from 10b.3) ---
 
 void Canvas::drawRect(RectF rect, Color color) const {
     drawRect(rect, Paint{color, 1, BlendMode::srcOver, true, 0, 1});

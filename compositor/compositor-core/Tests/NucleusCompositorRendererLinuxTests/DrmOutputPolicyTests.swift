@@ -2,7 +2,6 @@ import Testing
 @testable import NucleusRenderer
 @testable import NucleusCompositorRendererLinux
 
-// Converted from DrmOutputPolicyFixture (Phase 10a.7): the DrmOutput policy state
 // machines (VRR, recovery backoff, telemetry) against the behavior of the Zig
 // VrrState / RecoveryState / FrameTelemetry. Fully hardware-independent.
 @Suite struct DrmOutputPolicyTests {

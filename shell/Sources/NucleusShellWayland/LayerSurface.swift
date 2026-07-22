@@ -84,6 +84,7 @@ public final class LayerSurface {
     public var onClosed: (() -> Void)?
 
     private var acked = false
+    private var isDestroyed = false
 
     public init?(client: ShellWaylandClient, config: LayerSurfaceConfig, output: WaylandOutput?) {
         guard let layerShell = client.proxy(.layerShell),
@@ -122,8 +123,14 @@ public final class LayerSurface {
     }
 
     public func destroy() {
+        guard !isDestroyed else { return }
+        isDestroyed = true
         zwlr_layer_surface_v1_destroy(layerSurface)
         wl_surface_destroy(wlSurface)
+    }
+
+    isolated deinit {
+        destroy()
     }
 }
 

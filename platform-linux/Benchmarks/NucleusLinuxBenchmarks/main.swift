@@ -9,7 +9,14 @@ struct NucleusLinuxBenchmarks {
     static func main() async {
         do {
             try await BenchmarkProgram.run(
-                workloads: [atSPIProjectionWorkload(nodeCount: 10_000)],
+                workloads: [
+                    atSPIProjectionWorkload(nodeCount: 10_000),
+                    reactorWakeCoalescingWorkload(wakeCount: 10_000),
+                    reactorReadinessBacklogWorkload(
+                        descriptorCount: 256,
+                        completionBudget: 32),
+                    reactorCancellationChurnWorkload(replacementCount: 4_096),
+                ],
                 arguments: Array(CommandLine.arguments.dropFirst()),
                 productName: "NucleusLinuxBenchmarks")
         } catch {
@@ -161,7 +168,6 @@ private func atSPIProjectionWorkload(
                     "incremental_events": incremental.emittedEvents,
                     "incremental_added_paths": incremental.addedPaths,
                     "incremental_removed_paths": incremental.removedPaths,
-                    "allocation_units": initial.exportedObjects,
                     "copied_bytes": copiedBytes,
                 ],
                 semanticChecksum: checksum,

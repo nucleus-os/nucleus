@@ -152,8 +152,11 @@ public final class ShellSeat {
         self.seat = seat
         self.client = client
         cursorShapeManager = client.proxy(.cursorShape)
-        xkbContext = xkb_context_new(XKB_CONTEXT_NO_FLAGS)
         guard client.attachSeatConsumer(self) else { return nil }
+        // Do not allocate native state until the unretained Wayland listener
+        // owner has been accepted. A failed class initializer does not run this
+        // type's deinit, so allocating first would leak the xkb context.
+        xkbContext = xkb_context_new(XKB_CONTEXT_NO_FLAGS)
     }
 
     private func bindCursorShapeDevice(for pointer: OpaquePointer) {

@@ -2,7 +2,6 @@ import Testing
 @testable import NucleusRenderer
 import NucleusRenderModel
 
-// Converted from FrameInputsFixture (Phase 9.5): the per-frame input/demand value
 // types — the present-probe latch and snapshot field carriage.
 @Suite struct FrameInputsTests {
     @Test func renderInputsSnapshotCarriage() {

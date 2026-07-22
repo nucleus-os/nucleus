@@ -23,6 +23,11 @@ extension RendererRuntime {
         guard let binding = bindings[outputID],
             binding.generation == generation
         else { return }
+        guard binding.drm.notePageFlipComplete() else {
+            logRendererDrm(
+                "output \(outputID) generation \(generation): ignored duplicate or late page flip")
+            return
+        }
         let normalizedEvent = binding.presentationEvents.accept(
             event, clock: presentationClock)
         let submissionSerial = binding.pendingSubmissionSerial
@@ -43,7 +48,6 @@ extension RendererRuntime {
         }
         retireCompletedUnpresentedRenderSyncs()
         binding.pendingRenderSync = nil
-        binding.drm.notePageFlipComplete()
         scanoutSurfaces.flipCompleted(output: outputID)
 
         guard let normalizedEvent else {

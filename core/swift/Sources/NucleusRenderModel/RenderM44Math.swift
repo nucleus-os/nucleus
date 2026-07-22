@@ -1,8 +1,6 @@
-// Phase 10c.4 — Pure 4×4 transform math over the Phase-8 `M44` value, promoted
-// into the render model.
+// Pure 4×4 transform math over the `M44` value lives in the render model.
 //
-// Phase 8 carried `M44` as opaque 16-float storage and deferred all mapping /
-// concatenation as "renderer-side" (it lived in `valence/presentation/swift/
+// Earlier code treated transform concatenation as renderer-side (it lived in `valence/presentation/swift/
 // M44Math.swift`). The model-side animation tick (`RetainedTreeStore.tick`)
 // rebuilds a layer's transform override from its animated components, so the
 // math now belongs with the model. The presentation geometry walk keeps using

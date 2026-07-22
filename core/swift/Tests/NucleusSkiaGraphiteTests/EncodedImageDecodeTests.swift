@@ -115,7 +115,7 @@ import NucleusSkiaGraphiteBridge
 
     // MARK: - Bounds
 
-    /// The defect this phase fixes: bounds were stored, deduped on, and ignored,
+    /// The defect under test: bounds were stored, deduped on, and ignored,
     /// so a wallpaper and a tray icon decoded identically.
     @Test func aBoundedDecodeShrinksTheImage() {
         let fixture = Fixture(width: 256, height: 256,

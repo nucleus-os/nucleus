@@ -108,7 +108,6 @@ public struct Layer: Sendable {
     public var damage = DamageState()
     /// In-flight animations driving this node's presentation overrides. Folded
     /// in by the producer feed and advanced each frame by `RetainedTreeStore.tick`
-    /// (10c.4). Mirrors `RenderLayer.Layer.animations`.
     public var animations: [AnimationRecord] = []
 
     public init(id: UInt64, kind: LayerKind) {

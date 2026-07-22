@@ -1,9 +1,7 @@
 /*
- * NucleusDrmC — the Swift-facing importer façade over system libdrm + Mesa GBM,
- * the upstream libraries the Phase 10a DRM/KMS owner drives directly.
- *
- * Phase 10a moves DRM device enumeration, modesetting, atomic KMS, page-flip
- * handling, session/VT, scanout policy, and physical presentation from Zig into
+ * NucleusDrmC — the Swift-facing importer façade over system libdrm + Mesa GBM.
+ * It moves DRM device enumeration, modesetting, atomic KMS, page-flip handling,
+ * session/VT, scanout policy, and physical presentation from Zig into
  * Swift on top of real libdrm and GBM. Swift consumes the upstream `drmMode*`
  * resource/property/atomic/framebuffer/event APIs, the `drm*` device/cap/syncobj
  * helpers, and the GBM device/BO API directly through the headers imported here;
@@ -19,7 +17,6 @@
  * libdrm and GBM ship clang-importable C headers (both carry their own
  * `extern "C"` guards), so — unlike NucleusWaylandC — this needs no code
  * generator: the module is this façade header plus a module map over the system
- * libraries the compositor already links (`gbm`) and the one it pins for 10a
  * (`drm`).
  */
 #ifndef NUCLEUS_DRM_C_H

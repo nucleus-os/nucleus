@@ -218,9 +218,10 @@ extension RendererRuntime {
     ) -> Bool {
         retireCompletedUnpresentedRenderSyncs()
         guard backendState.admitsPresentation,
-            let binding = bindings[outputID]
+            let binding = bindings[outputID],
+            binding.drm.lifecycleState.admitsScanoutCommit
         else { return false }
-        return !binding.drm.pageFlipPending
+        return true
     }
 
     public func acquireTarget(
@@ -228,14 +229,14 @@ extension RendererRuntime {
     ) -> AcquiredFrameTarget? {
         guard backendState.admitsPresentation,
             let binding = bindings[outputID],
-            let renderSync = DrmRenderSync(
+            binding.drm.lifecycleState.admitsScanoutCommit
+        else { return nil }
+        guard let renderSync = DrmRenderSync(
                 device: core.deviceHandle,
                 dispatch: core.deviceDispatch)
         else {
-            if bindings[outputID] != nil {
-                logScanout(
-                    "output \(outputID): failed to allocate required explicit render fence")
-            }
+            logScanout(
+                "output \(outputID): failed to allocate required explicit render fence")
             return nil
         }
         let slot = binding.nextSlot()
@@ -373,7 +374,7 @@ extension RendererRuntime {
     ) -> Bool {
         guard backendState.admitsPresentation,
             let binding = bindings[outputID],
-            !binding.drm.pageFlipPending,
+            binding.drm.lifecycleState.admitsScanoutCommit,
             case .eligible(let iosurfaceID)? =
                 evaluateScanout(outputID),
             iosurfaceID != 0,

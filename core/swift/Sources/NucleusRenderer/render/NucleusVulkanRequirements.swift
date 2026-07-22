@@ -1,4 +1,3 @@
-// Phase 10b.2 — the single Swift source of truth for the Vulkan instance/device
 // extensions and modern features Nucleus requires. Device creation fails closed
 // when a required feature is absent (no silent fallback).
 

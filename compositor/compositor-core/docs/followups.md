@@ -27,24 +27,20 @@ both SHM and dma-buf captures when requested.
 On-hardware validation: an actual screenshot / recording has correct pixels + colors.
 
 ### A2. Fix the local `NucleusCompositorWaylandRuntimeTests` bundle — DONE
-Root cause was mundane: the target has an explicit `sources:` list (the other ~26 files are
-stale orphaned fixtures that don't compile against the current API), so newly added tests were
-silently excluded → "no matching test cases". Adding a file to that list makes it run.
-`CursorShapeNameTests` now runs (3 pass). The `WaylandProtocolConformanceTests` signal-4 crash is
-separate and unrelated (it constructs a live router needing a display); pure tests run fine.
+The target now builds its current fixtures and `WaylandProtocolConformanceTests` constructs a
+headless in-process router without a display server. The compositor ThreadSanitizer executable
+also drives real client attachment, registry advertisement, resource destruction, disconnect,
+and router teardown repeatedly without launching the compositor.
 
 ### A3. Add the headless tests that A2 unblocks — DONE (cursor repack); scanoutFacts is integration-level
 - **`cursorImageFromShm`** — the format gate + stride repack were extracted into pure,
   `nonisolated` helpers (`isReadableCursorShmFormat`, `repackTightARGB`) and covered by
   `CursorShmRepackTests` (6 tests: format acceptance, stride-padding strip, verbatim tight copy,
   undersized-stride rejection, short-source per-row stop, zero dims — the over-read guards).
-- **`scanoutFacts` gathering** — NOT unit-tested: the gather reads the live router + window
-  model (`RouterHost.shared.runtime.compositor`, `WlSurface`, `WlCompositor.popupCount`), which
-  needs a real wl_display/client. The same heavy router fixtures (`WaylandProtocolConformanceTests`) crash
-  at startup in the dev shell (need a display). The eligibility *logic* it feeds is already
-  covered (`ScanoutCandidateTests`, `DrmScanoutTests`); the gather itself is integration-level
-  and validated on hardware. The pure fact→candidate mapping lives in the exe
-  (`CompositorRuntime.scanoutCandidates`), which has no test target.
+- **`scanoutFacts` gathering** — the eligibility logic it feeds is covered by
+  `ScanoutCandidateTests` and `DrmScanoutTests`. The live gather still belongs to integration
+  coverage because it joins router, popup, window-model, and surface state; validate its final
+  result on hardware alongside direct scanout.
 
 ### A4. Execute the `RouterWindowDriver` god-file split — DONE
 Landed in commit `36bc636` (predates the M2 arc; this entry was stale). The surface-import /
@@ -113,17 +109,6 @@ was extracted into pure types. On a real GPU + KMS with a fullscreen dmabuf clie
 
 ## C. Deferred / known-benign (revisit with hardware knowledge)
 
-- **`pauseSession` flip-token leak** (`DrmOutput.cancelPendingPresentation`) — one small
-  `DrmPageFlipToken` leaks per VT-switch-with-pending-flip. Intentionally not balanced: whether
-  the kernel delivers the completion after a master drop+regain is driver-dependent, and a manual
-  balance racing a late completion would be a use-after-free. Revisit only once that driver
-  behavior is known on the target hardware.
-- **`disableScanout` -EBUSY at teardown** — if a non-blocking flip is in flight when a binding is
-  torn down (hot re-enumerate / shutdown), the blank modeset can `-EBUSY` and not actually stop
-  scanout before the slots are released. Today it returns its rc and logs; a proper fix drains the
-  pending flip (poll + `drmHandleEvent`) then retries the blank. The per-binding generation guard
-  already prevents the stale-completion *misrouting* corruption; this is the narrower
-  freed-while-scanning risk.
 - **Cursor-only NONBLOCK atomic commit** — deferred as unnecessary for correctness (a cursor move
   over a scanned client re-flips the same client buffer with updated cursor-plane state, no
   recomposite). It's an efficiency win: avoid a full primary-plane re-flip per cursor move.
@@ -141,3 +126,16 @@ The direct-scanout audit findings are fixed (commit `edbd493`): release-timing a
 (the `ScanoutSurfaceTracker` rewrite, unit-tested), implicit-sync gating, live VRR capability,
 `GemHandleTable` refcounting, per-binding flip-completion generation, and deferred teardown
 release. M2 Phases 1–5 + cursor shape + `wl_pointer.set_cursor` are all landed.
+
+DRM retirement now uses one explicit per-output lifecycle. Retirement closes the presentation
+gate before draining a pending page flip, retries a blocking device-wide disable after `EBUSY`,
+and releases front/pending scanout owners only after disable succeeds or the device is definitively
+lost. Duplicate and late completions are inert. Flip callback tokens from retired bindings remain
+owned by the renderer runtime until device teardown, so VT switches do not leak one token per
+pause and late driver callbacks cannot target freed storage. Synthetic tests inject pending flips,
+`EBUSY`, success, duplicate completion, multi-output drain, and device loss.
+
+The compositor render-wake eventfd now serializes writes with close, exposes explicit idempotent
+shutdown, and cannot write through a recycled descriptor. The direct TSan harness races producer
+wakes against shutdown and repeatedly destroys real Wayland client/resource graphs. The complete
+core, Linux, compositor, and RN TSan executable matrix passes.

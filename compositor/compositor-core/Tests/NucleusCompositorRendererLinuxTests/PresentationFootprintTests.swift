@@ -2,7 +2,6 @@ import Testing
 @testable import NucleusRenderer
 import NucleusRenderModel
 
-// Converted from PresentationFootprintFixture (Phase 9.2): the presentation
 // footprint port — outward-rounded physical damage, shadow visual-outset
 // inflation, clip trimming, the plan-rect projection, and the stable model-rect
 // mapping. Mirrors the Zig PresentationFootprint tests. Hardware-independent.

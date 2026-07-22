@@ -139,7 +139,7 @@ func pkgConfig(_ args: [String]) -> [String] {
         .map(String.init)
 }
 
-// ── React Native C++ stack (Phase 5) ──────────────────────────────────────────
+// React Native C++ stack.
 // Compile flags for the Hermes-JSI + folly bridge: the Hermes API/jsi headers,
 // folly + its deps (boost headers, glog generated+source, double-conversion via a
 // prefix symlink, fmt, fast_float), and folly's mobile defines. Built by the
@@ -294,8 +294,8 @@ let package = Package(
         .package(name: "swift-tracy", path: "../swift-tracy"),
     ],
     targets: [
-        // ── RN build/provisioning command plugins (Phase 5). Provisioned out of
-        // band, NOT on every target build, so a consumer links prebuilt artifacts. ─
+        // Build/provisioning command plugins run out of band so consumers link
+        // prebuilt artifacts.
         // Regenerates RN's FBReactNativeSpec through upstream APIs into
         // .rn-build/generated. Run once per RN version bump:
         //   swift package generate-rn-spec --allow-writing-to-package-directory
@@ -310,8 +310,8 @@ let package = Package(
             ),
             path: "swiftpm/plugins/GenerateRNSpec"
         ),
-        // Phase 5: drives upstream Hermes's CMake/Ninja to build the lean JS VM
-        // runtime + hermesc (first link in the React Native C/C++ chain):
+        // Builds the Hermes JS runtime and hermesc (the first link in the React Native
+        // C/C++ chain):
         //   swift package build-hermes --allow-writing-to-package-directory
         .plugin(
             name: "BuildHermes",
@@ -324,8 +324,8 @@ let package = Package(
             ),
             path: "swiftpm/plugins/BuildHermes"
         ),
-        // Phase 5: builds the leaf RN C++ support libs with clean upstream builds
-        // (fmt + double-conversion; fast_float is header-only):
+        // Builds leaf RN support libraries (fmt + double-conversion; fast_float is
+        // header-only):
         //   swift package build-rn-support --allow-writing-to-package-directory
         .plugin(
             name: "BuildRNSupportLibs",
@@ -338,8 +338,8 @@ let package = Package(
             ),
             path: "swiftpm/plugins/BuildRNSupportLibs"
         ),
-        // Phase 5: builds the RN-curated C++ layer — glog + folly_runtime + the
-        // ReactCommon jsi (swiftpm/cmake/reactnative). Run after build-rn-support:
+        // Builds the RN-curated C++ layer and ReactCommon JSI. Run after
+        // build-rn-support:
         //   swift package build-rn-cxx --allow-writing-to-package-directory
         .plugin(
             name: "BuildReactNativeCxx",
@@ -375,8 +375,8 @@ let package = Package(
             path: "swiftpm/cmodules/NucleusReactRuntimeCxxBridge"
         ),
 
-        // ── Phase 5: the React Native C++ stack link proof. The C-ABI bridge
-        // compiles against Hermes's JSI API + folly; NucleusReactNativeCxxTests
+        // The C-ABI bridge compiles against Hermes's JSI API + folly;
+        // NucleusReactNativeCxxTests
         // links the whole GN/CMake-built native stack (Hermes + folly/glog +
         // support libs) and runs it (a Hermes JSI runtime + a folly round-trip).
         // Build the native stack first via the build-hermes / build-rn-support /

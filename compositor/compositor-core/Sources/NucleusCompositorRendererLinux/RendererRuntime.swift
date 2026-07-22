@@ -193,9 +193,9 @@ public final class RendererRuntime: PresentationBackend {
 
 
     /// Suspend the session on VT-switch-away. This never blocks the main actor.
-    /// A pending page flip leaves the backend in `.pausing`; the composition root
-    /// retries after DRM readiness and acknowledges libseat only on a terminal
-    /// result.
+    /// Outstanding kernel presentation state leaves the backend in `.pausing`;
+    /// the composition root retries without admitting new presents and
+    /// acknowledges libseat only on a terminal result.
     @discardableResult
     public func pauseSessionChecked() -> RendererRetirementResult {
         switch backendState {
@@ -209,8 +209,8 @@ public final class RendererRuntime: PresentationBackend {
             backendState = .pausing
         }
         switch retireOutputs(Set(bindings.keys)) {
-        case .waitingForPageFlip:
-            return .waitingForPageFlip
+        case .draining:
+            return .draining
         case .failed:
             backendState = .failed(
                 "output topology could not retire before DRM master loss")
@@ -258,8 +258,8 @@ public final class RendererRuntime: PresentationBackend {
     }
 
     /// Disable every live output without waiting. The compositor calls this while
-    /// its reactor still owns DRM readiness; `.waitingForPageFlip` means keep the
-    /// loop alive and retry after the next event.
+    /// its reactor still owns DRM readiness; `.draining` means keep the loop alive
+    /// and retry while every scanout owner remains retained.
     public func prepareShutdown() -> RendererRetirementResult {
         retireOutputs(Set(bindings.keys))
     }
@@ -276,10 +276,10 @@ public final class RendererRuntime: PresentationBackend {
     /// returning promptly is required so the compositor can release its DRM
     /// session and seat.
     public func shutdown() -> Bool {
-        logRendererDrm("shutdown: validating page-flip retirement")
-        guard !bindings.values.contains(where: { $0.drm.pageFlipPending }) else {
+        logRendererDrm("shutdown: validating kernel scanout retirement")
+        guard !bindings.values.contains(where: { $0.drm.active }) else {
             logRendererDrm(
-                "shutdown: page flip did not retire; abandoning GPU/KMS resources so the DRM session can close"
+                "shutdown: kernel scanout did not retire; abandoning GPU/KMS resources so the DRM session can close"
             )
             return false
         }

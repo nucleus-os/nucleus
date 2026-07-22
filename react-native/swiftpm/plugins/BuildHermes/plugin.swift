@@ -2,8 +2,8 @@ import PackagePlugin
 import Foundation
 
 // Command plugin: drives upstream Hermes's own CMake + Ninja to build the lean
-// JS VM runtime plus hermesc (the bytecode compiler). First link in the Phase-5
-// React Native C/C++ chain; the same upstream-build-system-via-plugin posture as
+// JS VM runtime plus hermesc (the bytecode compiler). It is the first link in the
+// React Native C/C++ chain and follows the same upstream-build-system posture as
 // BuildSkia (the Zig build's native Hermes compile was a reimplementation).
 //
 //   swift package build-hermes --allow-writing-to-package-directory

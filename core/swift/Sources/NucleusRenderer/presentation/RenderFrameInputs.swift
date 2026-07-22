@@ -1,4 +1,3 @@
-// Phase 9.5 — Per-frame immutable presentation inputs (value snapshot).
 //
 // The pipeline reads every WindowServer-side fact it needs through this struct;
 // nothing under the presentation walk reaches back into the server. The live

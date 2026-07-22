@@ -167,7 +167,6 @@ private func imagePipelineWorkload() -> BenchmarkWorkload {
                         UInt64(cancellationPipeline.consumerCount),
                     "cache_entries": UInt64(cachedEntries),
                     "cache_bytes": UInt64(cachedBytes),
-                    "allocation_units": UInt64(cachedEntries + negativeAfterExpiry),
                     "copied_bytes": 0,
                     "retained_after_teardown": UInt64(retained),
                 ],
@@ -233,7 +232,6 @@ private func observationWorkload(changeCount: Int) -> BenchmarkWorkload {
                     "initial_updates": 1,
                     "coalesced_updates": beforeCancellation - 1,
                     "observation_tokens": 1,
-                    "allocation_units": 2,
                     "copied_bytes": 0,
                     "live_tokens_after_cancellation":
                         UInt64(max(0, liveAfterCancellation)),

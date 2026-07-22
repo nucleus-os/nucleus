@@ -3,7 +3,6 @@ import Testing
 @testable import NucleusCompositorRendererLinux
 import NucleusCompositorDrmC
 
-// Converted from DrmSyncFixture (Phase 10a.4): the fence/syncobj owners.
 // `FenceFd` ownership (close on deinit, release hands off) and the DMA-BUF
 // sync-flag constants are hardware-independent. The fixture's best-effort real
 // syncobj round-trip on a render node (which asserted nothing) is dropped.
@@ -11,6 +10,18 @@ import NucleusCompositorDrmC
     /// Whether `fd` is still an open descriptor (fcntl F_GETFD succeeds).
     static func isOpen(_ fd: Int32) -> Bool {
         nucleus_drm_fd_is_open(fd) != 0
+    }
+
+    @Test func swiftImporterPreservesSyncSnapshotABI() {
+        #expect(MemoryLayout<nucleus_drm_sync_file_snapshot>.size == 16)
+        #expect(MemoryLayout<nucleus_drm_sync_file_snapshot>.stride == 16)
+        #expect(MemoryLayout<nucleus_drm_sync_file_snapshot>.alignment == 8)
+        #expect(MemoryLayout<nucleus_drm_sync_file_snapshot>.offset(
+            of: \nucleus_drm_sync_file_snapshot.status) == 0)
+        #expect(MemoryLayout<nucleus_drm_sync_file_snapshot>.offset(
+            of: \nucleus_drm_sync_file_snapshot.fence_count) == 4)
+        #expect(MemoryLayout<nucleus_drm_sync_file_snapshot>.offset(
+            of: \nucleus_drm_sync_file_snapshot.latest_timestamp_ns) == 8)
     }
 
     @Test func fenceOwnership() {

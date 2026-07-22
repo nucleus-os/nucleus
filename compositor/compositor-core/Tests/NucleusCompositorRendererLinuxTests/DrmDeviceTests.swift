@@ -3,7 +3,6 @@ import Testing
 @testable import NucleusCompositorRendererLinux
 import NucleusCompositorDrmC
 
-// Converted from DrmDeviceFixture (Phase 10a.1): the Swift DRM selection policy
 // parity-tested against the fail-closed rule `Device.zig` implements, using
 // synthetic candidates (no DRM hardware). The fixture's best-effort real
 // `drmGetDevices2` enumeration + ownership exercise (which asserted nothing on a

@@ -3,7 +3,7 @@ import Testing
 
 @MainActor
 @Suite struct UIClockTests {
-    @Test func deadlineAdvancementIsExactAndInsertionOrdered() async throws {
+    @Test func deadlineAdvancementIsExactAndResumesEveryWaiter() async throws {
         let manual = ManualUIClock()
         let clock = manual.clock
         var resumed: [Int] = []
@@ -25,7 +25,7 @@ import Testing
         manual.advance(by: .nanoseconds(1))
         try await first.value
         try await second.value
-        #expect(resumed == [1, 2])
+        #expect(resumed.sorted() == [1, 2])
         #expect(manual.waiterCount == 0)
     }
 

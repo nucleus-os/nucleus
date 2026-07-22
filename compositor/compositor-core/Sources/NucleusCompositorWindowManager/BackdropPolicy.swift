@@ -3,16 +3,15 @@ import NucleusCompositorServerTypes
 @_spi(NucleusCompositor) import NucleusLayers
 
 /// Swift-owned policy that turns per-layer `BackdropMaterial` intent
-/// plus current frame state into the per-frame `BackdropDraw` list the
-/// render walker (Phase 7) consumes.
+/// plus current frame state into the per-frame `BackdropDraw` list consumed by
+/// the render walker.
 ///
 /// The end-state architecture moves all backdrop policy decisions
 /// here so the render server only consumes resolved draws. See
 /// `docs/backdrop-appkit-redesign.md` for the migration order.
 ///
-/// Phase 3a (current): pure Swift policy + tests. The FFI seam
-/// (`nucleus_compositor_backdrop_policy_resolve`) and its call site
-/// land alongside Phase 7's render walker — the first consumer of the output.
+/// The FFI seam (`nucleus_compositor_backdrop_policy_resolve`) and its call site
+/// are added with the render-walker consumer.
 @MainActor
 public enum BackdropPolicy {
 

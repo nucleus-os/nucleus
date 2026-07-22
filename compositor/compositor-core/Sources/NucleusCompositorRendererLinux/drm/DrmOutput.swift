@@ -6,10 +6,11 @@
 // presentation-timing + frame queues, gamma + cursor, and the page-flip token. It
 // owns the atomic commit *assembly* — the property set a scanout/modeset commit
 // submits, built through
-// AtomicRequestBuilder — plus the page-flip arming and the pure lifecycle
-// orchestration (cancel-pending, recovery clear).
+// AtomicRequestBuilder — plus page-flip arming, explicit retirement, and
+// recovery-state orchestration.
 
 import NucleusCompositorDrmC
+import Glibc
 
 /// The cursor-plane state one commit programs: the framebuffer to scan out and its
 /// placement. A nil placement (or `fbId == 0`) clears the plane — the pointer is off
@@ -17,6 +18,48 @@ import NucleusCompositorDrmC
 struct CursorCommitState {
     var fbId: UInt32
     var placement: CursorPlacement?
+}
+
+/// The complete userspace view of one output's kernel scanout ownership.
+///
+/// `drainingPageFlip` and `drainingReady` are presentation barriers: once
+/// retirement starts, no later render turn can submit another framebuffer for
+/// this topology generation. Scanout owners remain retained until a blocking
+/// disable succeeds or the DRM device is definitively lost.
+enum DrmOutputLifecycleState: Sendable, Equatable {
+    case disabled
+    case active
+    case pageFlipPending
+    case drainingPageFlip
+    case drainingReady
+    case deviceLost
+
+    var admitsScanoutCommit: Bool {
+        switch self {
+        case .disabled, .active:
+            true
+        case .pageFlipPending, .drainingPageFlip, .drainingReady, .deviceLost:
+            false
+        }
+    }
+
+    var hasPendingPageFlip: Bool {
+        self == .pageFlipPending || self == .drainingPageFlip
+    }
+
+    var kernelScanoutActive: Bool {
+        switch self {
+        case .active, .pageFlipPending, .drainingPageFlip, .drainingReady:
+            true
+        case .disabled, .deviceLost:
+            false
+        }
+    }
+}
+
+enum DrmRetirementCommitResult: Sendable, Equatable {
+    case accepted
+    case rejected(errno: Int32)
 }
 
 final class DrmOutput {
@@ -32,12 +75,10 @@ final class DrmOutput {
     let width: UInt32
     let height: UInt32
 
-    /// Discovered atomic property ids for this pipeline (10a.3).
     let props: AtomicProps
     var supportsInFence: Bool { props.primaryPlaneProps.inFenceFd != 0 }
     let cursorProps: CursorPlaneProps
 
-    // Policy + frame state (10a.7 / 10a.8 / 10a.9).
     var vrr: VrrState
     var recovery = RecoveryState()
     var telemetry = FrameTelemetry()
@@ -49,11 +90,10 @@ final class DrmOutput {
     // A newly discovered pipeline has not yet committed this owner's MODE_ID and
     // framebuffer. The first scanout must be an ALLOW_MODESET commit even if the
     // firmware or previous compositor happened to leave the CRTC active.
-    var active = false
-    /// One armed out-fence at a time (10a.4); -1 when none in flight.
-    private(set) var pageFlipPending = false
+    private(set) var lifecycleState: DrmOutputLifecycleState = .disabled
+    var active: Bool { lifecycleState.kernelScanoutActive }
+    var pageFlipPending: Bool { lifecycleState.hasPendingPageFlip }
 
-    /// Per-output page-flip context handed to the commit's user_data (10a.5).
     let flipToken: DrmPageFlipToken
 
     /// The scanout buffers the kernel currently owns: `frontScanout` is latched
@@ -234,8 +274,7 @@ final class DrmOutput {
         return flags
     }
 
-    /// Whether this frame requests VRR given the per-frame direct-scanout
-    /// eligibility (10a.7 policy).
+    /// Whether this frame requests VRR given per-frame direct-scanout eligibility.
     func requestedVrr(directScanoutEligible: Bool) -> Bool {
         vrr.requestedFor(directScanoutEligible: directScanoutEligible)
     }
@@ -259,6 +298,7 @@ final class DrmOutput {
         inFenceFd: Int32 = -1,
         cursor: CursorCommitState? = nil
     ) -> Int32 {
+        guard lifecycleState.admitsScanoutCommit else { return -EBUSY }
         guard var builder = AtomicRequestBuilder() else { return -22 }
         guard assembleScanoutCommit(
             into: &builder, fbId: fbId, requestedVrr: requestedVrr,
@@ -269,24 +309,63 @@ final class DrmOutput {
         let userData = flipToken.commitUserData()
         let rc = builder.commit(fd: deviceFd, flags: flags, userData: userData)
         if rc == 0 {
-            active = true
-            pageFlipPending = true
-            pendingScanout = buffer
-            vrr.applyAfterCommit(requestedVrr: requestedVrr)
-            recovery.resetBusy()
+            noteScanoutCommitAccepted(
+                retaining: buffer,
+                requestedVrr: requestedVrr)
         }
         return rc
     }
 
-    /// Apply a drained page-flip completion (10a.5): clear the in-flight slot and
-    /// rotate the retained scanout buffers. The just-flipped `pendingScanout` is
+    /// Record the kernel borrow created by a successful page-flip commit. Kept
+    /// separate from the syscall so the lifecycle and owner retention can be
+    /// exercised without DRM hardware.
+    func noteScanoutCommitAccepted(
+        retaining buffer: AnyObject,
+        requestedVrr: Bool = false
+    ) {
+        precondition(lifecycleState.admitsScanoutCommit)
+        lifecycleState = .pageFlipPending
+        pendingScanout = buffer
+        vrr.applyAfterCommit(requestedVrr: requestedVrr)
+        recovery.resetBusy()
+    }
+
+    /// Apply a drained page-flip completion and rotate the retained scanout buffers.
+    /// The just-flipped `pendingScanout` is
     /// now the latched/displayed front; the previous front is no longer scanned
     /// out and is released here, returning it to the render pool.
-    func notePageFlipComplete() {
-        pageFlipPending = false
+    @discardableResult
+    func notePageFlipComplete() -> Bool {
+        switch lifecycleState {
+        case .pageFlipPending:
+            lifecycleState = .active
+        case .drainingPageFlip:
+            lifecycleState = .drainingReady
+        case .disabled, .active, .drainingReady, .deviceLost:
+            return false
+        }
         timing.clearInFlight()
         frontScanout = pendingScanout
         pendingScanout = nil
+        return true
+    }
+
+    /// Close the presentation gate and report whether a blocking disable can be
+    /// attempted now. Repeated calls are idempotent and never release owners.
+    @discardableResult
+    func beginRetirement() -> Bool {
+        switch lifecycleState {
+        case .disabled, .deviceLost, .drainingReady:
+            return true
+        case .active:
+            lifecycleState = .drainingReady
+            return true
+        case .pageFlipPending:
+            lifecycleState = .drainingPageFlip
+            return false
+        case .drainingPageFlip:
+            return false
+        }
     }
 
     /// Add this output's complete disabled state to a device-wide atomic request.
@@ -319,40 +398,25 @@ final class DrmOutput {
     /// Record the successful blocking disable before framebuffer owners are
     /// released.
     func noteScanoutDisabled() {
-        active = false
-        pageFlipPending = false
+        precondition(
+            lifecycleState == .disabled
+                || lifecycleState == .drainingReady)
+        lifecycleState = .disabled
         timing.clearInFlight()
         frontScanout = nil
         pendingScanout = nil
     }
 
-    // MARK: - Lifecycle orchestration (pure state)
-
-    /// Clear all in-flight presentation state, returning the queued frames whose
-    /// fds the caller must close. Mirrors `cancelPendingPresentation`'s state
-    /// reset (the Vulkan drain + reactor cancel are integration).
-    @discardableResult
-    func cancelPendingPresentation() -> (rendered: [PendingRenderedFrame], mailbox: [PendingMailboxFrame]) {
-        // The callback token is binding-owned rather than retained per commit, so
-        // cancelling cannot leak or race an ARC balance against a late callback.
-        pageFlipPending = false
+    /// A closed/removed DRM device can no longer hold a userspace framebuffer
+    /// reference. This is the only non-disable transition allowed to release the
+    /// retained scanout owners.
+    func noteDeviceLost() {
+        lifecycleState = .deviceLost
         timing.clearInFlight()
-        // A cancelled flip may already be latched by the kernel, so keep retaining
-        // the submitted buffer (fold it into front) rather than freeing one the
-        // CRTC might still scan. It is released by the next flip or the
-        // device-wide topology retirement commit.
-        if pendingScanout != nil {
-            frontScanout = pendingScanout
-            pendingScanout = nil
-        }
-        let droppedRendered = rendered.drain()
-        var droppedMailbox: [PendingMailboxFrame] = []
-        while let frame = mailbox.popPending() { droppedMailbox.append(frame) }
-        mailbox.bumpGenerationOnDrain()
-        return (droppedRendered, droppedMailbox)
+        frontScanout = nil
+        pendingScanout = nil
     }
 
-    /// Enter degraded recovery after a commit failure (10a.7 backoff).
     func enterDegradedRecovery(nowNs: UInt64) {
         recovery.enterDegraded(nowNs: nowNs)
     }
@@ -365,5 +429,40 @@ final class DrmOutput {
 
     func clearRecovery() {
         recovery.clear()
+    }
+}
+
+/// Run one retryable, device-wide retirement transaction. The commit closure is
+/// invoked only after every output has crossed its presentation barrier. `EBUSY`
+/// keeps the outputs in `drainingReady` with all owners retained so a later loop
+/// turn can retry the exact disable.
+func retireDrmOutputs(
+    _ outputs: [DrmOutput],
+    commit: (_ outputsRequiringDisable: [DrmOutput]) -> DrmRetirementCommitResult
+) -> RendererRetirementResult {
+    guard !outputs.isEmpty else { return .complete }
+    var ready = true
+    for output in outputs {
+        if !output.beginRetirement() { ready = false }
+    }
+    guard ready else { return .draining }
+
+    // Disabled outputs and outputs whose device is already gone have no live
+    // kernel CRTC ownership to clear. Excluding the latter is essential: issuing
+    // an atomic commit on a lost device would convert a safely released lifetime
+    // into a spurious retirement failure.
+    let requiringDisable = outputs.filter {
+        $0.lifecycleState == .drainingReady
+    }
+    guard !requiringDisable.isEmpty else { return .complete }
+
+    switch commit(requiringDisable) {
+    case .accepted:
+        for output in requiringDisable { output.noteScanoutDisabled() }
+        return .complete
+    case .rejected(let code) where code == EBUSY:
+        return .draining
+    case .rejected:
+        return .failed
     }
 }

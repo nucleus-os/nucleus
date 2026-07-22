@@ -2,7 +2,6 @@ import Testing
 @testable import NucleusRenderer
 @testable import NucleusCompositorRendererLinux
 
-// Converted from DrmFrameQueueFixture (Phase 10a.8): the frame-pacing value logic
 // — presentation timing scalars, the mailbox queue policy (round-robin slot pick,
 // newest-ready, backlog trim), and the rendered-frame commit ordering — against
 // the behavior of the Zig PresentationTiming / MailboxState / FrameQueue. Fully

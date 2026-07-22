@@ -131,7 +131,9 @@ struct ToolchainCommand {
 
         try FileManager.default.createDirectory(
             at: generations, withIntermediateDirectories: true)
-        let lock = try WorkflowLock(path: platformRoot.appendingPathComponent("rebuild.lock").path)
+        let lock = try WorkspaceFileLock(
+            path: platformRoot.appendingPathComponent("rebuild.lock").path,
+            purpose: "toolchain rebuild")
         defer { withExtendedLifetime(lock) {} }
         try? FileManager.default.removeItem(at: generation)
         try FileManager.default.createDirectory(at: generation, withIntermediateDirectories: true)
@@ -252,28 +254,5 @@ struct ToolchainCommand {
             throw WorkspaceFailure.message(
                 "could not activate Swift platform generation: errno \(code)")
         }
-    }
-}
-
-private final class WorkflowLock {
-    private let descriptor: Int32
-
-    init(path: String) throws {
-        descriptor = open(path, O_CREAT | O_RDWR, mode_t(0o644))
-        guard descriptor >= 0 else {
-            throw WorkspaceFailure.message(
-                "could not open toolchain rebuild lock: errno \(errno)")
-        }
-        guard flock(descriptor, LOCK_EX) == 0 else {
-            let code = errno
-            close(descriptor)
-            throw WorkspaceFailure.message(
-                "could not acquire toolchain rebuild lock: errno \(code)")
-        }
-    }
-
-    deinit {
-        flock(descriptor, LOCK_UN)
-        close(descriptor)
     }
 }

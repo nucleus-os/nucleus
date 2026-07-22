@@ -38,7 +38,7 @@ enum NucleusLinuxThreadSanitizerHarness {
                 }
             }
 
-            reactor.shutdown()
+            await reactor.shutdown()
             group.wait()
 
             var replacements: [Int32] = []

@@ -4,7 +4,6 @@ import Vulkan
 import NucleusSkiaGraphiteBridge
 @testable import NucleusRenderer
 
-// Converted from ScanoutSurfaceFixture (Phase 10b.6d): the GBM↔Vulkan↔Skia
 // scanout-surface bridge. The descriptor marshaling is hardware-independent and
 // asserted field-by-field; the live wrap creates a borrowed color-attachment
 // VkImage, wraps it as a Graphite render-target Surface, clears + draws into it,

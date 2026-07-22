@@ -7,8 +7,8 @@
  * - blur
  * - setTextAndSelection
  *
- * Phase 1: the native host may be a fallback/unimplemented view; this file
- * just ensures module resolution and command wiring are in place.
+ * The native host may be a fallback or unimplemented view; this file ensures
+ * module resolution and command wiring are in place.
  */
 'use strict';
 

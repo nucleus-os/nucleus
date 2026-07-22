@@ -1,4 +1,3 @@
-// Phase 10b.2 — Nucleus instance/device creation contracts + structure-chain builders.
 //
 // The generic ergonomic helpers (VkOwned, VkOwnedImageBox, withCStringArray,
 // device-child constructors) live in swift-vulkan (VulkanErgonomics.swift) and

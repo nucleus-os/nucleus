@@ -4,7 +4,6 @@ import Vulkan
 import NucleusSkiaGraphiteBridge
 @testable import NucleusRenderer
 
-// Converted from TextureRegistryFixture (Phase 10b.4c): the guillotine
 // allocator + atlas + texture registry (handle/refcount/content-revision/SHM
 // upload), all hardware-independent via raster images; plus a best-effort check
 // that the façade backend-texture wrap fails closed on a null descriptor (the GPU

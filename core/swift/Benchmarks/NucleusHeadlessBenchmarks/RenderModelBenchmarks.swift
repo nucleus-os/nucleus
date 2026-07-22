@@ -24,7 +24,6 @@ private func retainedTreeWorkload(layerCount: Int) -> BenchmarkWorkload {
             .exact("clean_pending_damage", 0),
             .exact("invalid_transactions_accepted", 0),
             .exact("remaining_layers", UInt64(layerCount - 1_000)),
-            .maximum("allocation_units", UInt64(layerCount * 4)),
         ],
         body: {
             let context = ContextID(raw: 41)
@@ -132,11 +131,6 @@ private func retainedTreeWorkload(layerCount: Int) -> BenchmarkWorkload {
                     "property_updates": 1_000,
                     "removed_layers": 1_000,
                     "remaining_layers": UInt64(remaining),
-                    "allocation_units": UInt64(
-                        creation.created.count + creation.inserted.count
-                            + updates.propertyUpdates.count
-                            + removals.removed.count
-                            + remaining),
                     "copied_bytes": copiedBytes,
                     "resource_operations": 0,
                 ],
@@ -226,11 +220,6 @@ private func animationCompletionWorkload(
                     "completion_records": UInt64(completionEvents.count),
                     "completion_callbacks": UInt64(completionEvents.count),
                     "completion_observers_after_teardown": 0,
-                    "allocation_units": UInt64(
-                        transaction.created.count
-                            + transaction.inserted.count
-                            + transaction.animationsAdded.count
-                            + terminalEvents.count),
                     "copied_bytes": UInt64(animationCount)
                         * UInt64(MemoryLayout<AnimationRecord>.stride),
                 ],
@@ -251,7 +240,6 @@ private func damageRegionWorkload(
             .exact("rectangles_before", UInt64(rectangleCount)),
             .exact("rectangles_after", 1),
             .exact("coverage_checks_failed", 0),
-            .maximum("allocation_units", UInt64(rectangleCount * 2 + 1)),
         ],
         body: {
             let rectangles = (0..<rectangleCount).map { index in
@@ -279,9 +267,6 @@ private func damageRegionWorkload(
                     "rectangles_before": UInt64(exact.rectangleCount),
                     "rectangles_after": UInt64(conservative.rectangleCount),
                     "coverage_checks_failed": failedCoverage,
-                    "allocation_units": UInt64(
-                        rectangles.count + exact.rectangleCount
-                            + conservative.rectangleCount),
                     "copied_bytes": UInt64(rectangles.count)
                         * UInt64(MemoryLayout<RegionRect>.stride),
                 ],

@@ -1,4 +1,3 @@
-// Phase 8.10 — Swift snapshot handle registry.
 //
 // `SnapshotService` owns immutable handles used by `.snapshot` layer contents.
 // Entries carry an opaque `TextureHandle` plus size and provenance; GPU-resource

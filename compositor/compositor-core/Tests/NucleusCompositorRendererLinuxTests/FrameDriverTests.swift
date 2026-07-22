@@ -9,7 +9,6 @@ struct RendererTestWakeSink: AsyncRenderWakeSink {
     nonisolated func signalRenderWork() {}
 }
 
-// Converted from FrameDriverFixture (Phase 10b.4k): the FrameDemand render
 // predicate (hardware-independent) + the end-to-end top-level frame — walk →
 // pre-resolve → composite → backdrop → present → submit — over a real Graphite
 // context (best-effort GPU, asserts nothing hardware-conditional).

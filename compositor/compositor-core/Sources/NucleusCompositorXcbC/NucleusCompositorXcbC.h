@@ -1,8 +1,7 @@
 /*
  * NucleusXcbC — the Swift-facing importer façade over system libxcb + xcb-util.
- *
- * Phase 6 moves the X window manager (the XCB connection, X event loop, atoms,
- * ICCCM/EWMH property parsing, selections, cursors, and Xwayland process
+ * It moves the X window manager, including the XCB connection, X event loop,
+ * atoms, ICCCM/EWMH property parsing, selections, cursors, and Xwayland process
  * supervision) from Zig into Swift. Swift drives XCB directly through the
  * upstream C headers imported by this module; it replaces the generated Zig
  * `xcb` binding and the hand-written `valence/xcb_extras.zig`.

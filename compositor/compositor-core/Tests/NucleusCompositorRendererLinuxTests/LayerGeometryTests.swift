@@ -2,7 +2,6 @@ import Testing
 @testable import NucleusRenderer
 import NucleusRenderModel
 
-// Converted from LayerGeometryFixture (Phase 9.4): the presentation geometry
 // port — M44 mapping/concatenation, the local-composition matrix + clip rescale,
 // rounded-clip accumulation down the tree, and logical→target-physical
 // projection. Fully hardware-independent.

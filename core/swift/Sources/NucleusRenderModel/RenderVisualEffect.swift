@@ -1,4 +1,3 @@
-// Phase 8.7 — Swift macOS-shaped vibrancy helper.
 //
 // Producers ship backdrop identity (material + appearance + state + emphasized +
 // mask); the consumer-side catalog resolves it to concrete kernel params at

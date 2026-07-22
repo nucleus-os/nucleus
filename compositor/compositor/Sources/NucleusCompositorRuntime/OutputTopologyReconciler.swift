@@ -112,9 +112,9 @@ final class OutputTopologyReconciler {
         return continuePendingReconcile()
     }
 
-    /// Retry a topology transaction that previously reached a kernel-owned page
-    /// flip. The latest DRM inventory is rediscovered at the retry point, so a
-    /// burst of hotplug changes collapses into one authoritative transaction.
+    /// Retry a topology transaction whose kernel presentation state is still
+    /// draining. The latest DRM inventory is rediscovered at the retry point, so
+    /// a burst of hotplug changes collapses into one authoritative transaction.
     @discardableResult
     func continuePendingReconcile() -> Bool {
         guard reconcilePending else { return true }
@@ -133,9 +133,9 @@ final class OutputTopologyReconciler {
             changes.removed.map(\.id)
                 + changes.changed.map { $0.old.id })
         switch renderRuntime.retireOutputs(retiring) {
-        case .waitingForPageFlip:
+        case .draining:
             logRuntime(
-                "output topology: waiting for accepted presentation to retire")
+                "output topology: waiting for kernel presentation state to retire")
             return false
         case .failed:
             logRuntime(

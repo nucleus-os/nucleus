@@ -1,4 +1,3 @@
-// Phase 9.5 — Frame-demand policy snapshot (value types + pure logic).
 //
 // WindowServer owns output arming and request delivery; this owns the policy
 // snapshot that says why another frame is needed.

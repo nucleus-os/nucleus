@@ -19,8 +19,8 @@ import Foundation
 // The Skia header search paths + feature defines to compile Graphite.cpp. Paths are
 // absolute: SwiftPM
 // runs clang with the package's PARENT as the working directory, so relative -I
-// would resolve one level too high. (A Phase-1 link spike proved the full static
-// Skia archive set + this façade + system libs link into a Swift exe and run a
+// would resolve one level too high. The full static Skia archive set, this façade,
+// and system libraries link into a Swift executable and run a
 // real Skia op; the throwaway smoke that proved it has been removed.)
 let repoRoot = URL(fileURLWithPath: #filePath).deletingLastPathComponent().path
 
@@ -68,7 +68,7 @@ func provisionSDK(_ name: String, links: [(String, String)], forceLinks: [(Strin
 }
 // The render SDK — Skia Graphite archives + headers and the Skia text-backend source.
 // Owned by this repo; consumed by the render/UI targets, platform-android, and the
-// compositor. (docs/repo-decomposition.md, Phase 1.)
+// compositor.
 let renderSDK = provisionSDK("render", links: [
     ("include/skia", repoRoot + "/third-party/skia"),
     ("lib/skia-graphite", repoRoot + "/.skia-build/graphite"),
@@ -134,9 +134,8 @@ func pkgConfig(_ args: [String]) -> [String] {
         .split(whereSeparator: { $0 == " " || $0 == "\n" || $0 == "\t" })
         .map(String.init)
 }
-// (libdrm/gbm + Wayland/xcb/input pkg-config resolution moved to compositor-core/
-// with the OS-substrate targets that used them — migration Phase 2. This package
-// is now a pure portable graph: it resolves no Wayland/DRM/xcb/input pkg-config.)
+// libdrm/gbm and Wayland/xcb/input pkg-config resolution live in compositor-core;
+// this package is a pure portable graph and resolves none of them.
 
 let package = Package(
     name: "Nucleus",
@@ -151,9 +150,8 @@ let package = Package(
         .library(name: "NucleusRenderer", targets: ["NucleusRenderer"]),
         .library(name: "NucleusTextCxxBridge", targets: ["NucleusTextCxxBridge"]),
         .library(name: "NucleusTextBackend", targets: ["NucleusTextBackend"]),
-        // Core + app-framework products the compositor-core library package consumes
-        // (migration Phase 2 product-ified these so a separate package can import
-        // them). The compositor's shell is itself a Nucleus app, so it consumes the
+        // Core + app-framework products the compositor-core library package consumes.
+        // The compositor's shell is itself a Nucleus app, so it consumes the
         // NucleusUI design system — that dependency direction (compositor → app
         // framework → core) is correct.
         .library(name: "NucleusTypes", targets: ["NucleusTypes"]),
@@ -283,10 +281,7 @@ let package = Package(
             dependencies: ["NucleusTypes", "NucleusAppHostProtocols", "NucleusLayers", "NucleusRenderModel"],
             path: "swift/Sources/NucleusAppHostBundle"
         ),
-        // (The generated Wayland C module NucleusCompositorWaylandC + NucleusCompositorWaylandCProtocols
-        // moved to compositor-core/ with the Wayland substrate — Phase 2.)
-
-        // ── Phase 5: the SkiaGraphite façade compiles the real Graphite.cpp against
+        // The generated Wayland C modules live in compositor-core with the Wayland substrate.
         // the Skia headers (from the native SDK), exposing the nucleus::skia C++ API
         // the renderer imports. Skia's archive set (.skia-build/graphite, → the SDK's
         // lib/skia-graphite) is built by the `build-skia` COMMAND plugin — provisioned
@@ -322,7 +317,6 @@ let package = Package(
             ),
             path: "swiftpm/plugins/BuildSkiaAndroid"
         ),
-        // The first real Phase-5 consumer: imports the nucleus::skia façade under
         // C++ interop and links the full GN-built Skia archive set, proving the
         // renderer's Skia link end to end (a real raster Skia op runs).
         .testTarget(
@@ -356,10 +350,8 @@ let package = Package(
             ],
             path: "swift/Tests/NucleusRuntimeGraphTests"
         ),
-        // (NucleusCompositorRenderRuntime + the libdrm/gbm (NucleusCompositorDrmC), xcb (NucleusCompositorXcbC),
-        // and libinput/seat (NucleusCompositorInputC) C façades moved to compositor-core/ with
-        // the DRM/KMS renderer backend — migration Phase 2.)
-
+        // The compositor render runtime and its libdrm/gbm, xcb, and libinput/seat
+        // C façades live in compositor-core with the DRM/KMS renderer backend.
         // (Linux host waiting now lives in the shared platform-linux reactor;
         // the compositor app package owns only its Swift composition root.)
         // ── NucleusRenderer: the platform-agnostic render core — Vulkan/Graphite
@@ -399,9 +391,7 @@ let package = Package(
             swiftSettings: [.interoperabilityMode(.Cxx)],
             linkerSettings: [.unsafeFlags(skiaLinkFlags)]
         ),
-        // (NucleusCompositorRendererLinux — the DRM/KMS presentation backend — and its
-        // NucleusCompositorRendererLinuxTests moved to compositor-core/ — migration Phase 2.)
-
+        // The DRM/KMS presentation backend and its tests live in compositor-core.
         // ── Tests: the @main render fixtures, migrated into a swift-testing
         // target (`@testable import` reaches the same internals the old loose-
         // compile fixtures did). `swift test` runs them.
@@ -428,9 +418,8 @@ let package = Package(
             path: "swift/Tests/Support/Resources"
         ),
         // (VulkanTests moved to the extracted swift-vulkan package.)
-        // (NucleusCompositorWaylandCTests, NucleusCompositorServerTests, and NucleusCompositorWindowManagerTests
-        // moved to compositor-core/ with the modules they cover — migration Phase 2.)
-        //
+        // The Wayland C, compositor server, and window-manager test targets live in
+        // compositor-core.
         // The NucleusUI behavioral suite (View/layout/control/publisher fixtures).
         // The embedder suite deliberately remains pure Swift and exercises the
         // recoverable no-backend path. The compositor-coupled fixtures that used to live alongside
@@ -483,7 +472,18 @@ let package = Package(
         ),
         .target(
             name: "NucleusBenchmarkSupport",
+            dependencies: ["NucleusBenchmarkMetricsC"],
             path: "swift/Benchmarks/NucleusBenchmarkSupport"
+        ),
+        .target(
+            name: "NucleusBenchmarkMetricsC",
+            path: "swift/Benchmarks/NucleusBenchmarkMetricsC",
+            publicHeadersPath: "include"
+        ),
+        .testTarget(
+            name: "NucleusBenchmarkSupportTests",
+            dependencies: ["NucleusBenchmarkSupport"],
+            path: "swift/Tests/NucleusBenchmarkSupportTests"
         ),
         .executableTarget(
             name: "NucleusCoreThreadSanitizerHarness",

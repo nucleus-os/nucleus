@@ -1,13 +1,11 @@
-// Phase 10b.6d — the GBM↔Vulkan↔Skia scanout-surface bridge: assemble a
-// `nucleus.skia.VulkanImageDescriptor` from a borrowed Vulkan scanout image and
-// wrap it as a Graphite render-target `Surface` — the BO the compositor
+// `ScanoutSurface` assembles a `nucleus.skia.VulkanImageDescriptor` from a borrowed
+// Vulkan scanout image and wraps it as a Graphite render-target `Surface` — the BO the compositor
 // composites into and KMS flips. This is the render-target analog of
 // `TextureRegistry.wrapBackendImage` (which produces a sampleable `Image`).
 //
 // The marshaling (`descriptor`) is hardware-independent and the verifiable unit.
 // The wrap (`wrap`) couples to a live recorder. The bridge is image-source-
 // agnostic: at the cutover the VkImage is the GBM-scanout-BO image from the
-// 10b.5 `OutputBufferOwner` / `importDmaBufImage`; here any borrowed color-
 // attachment VkImage works.
 
 import VulkanC

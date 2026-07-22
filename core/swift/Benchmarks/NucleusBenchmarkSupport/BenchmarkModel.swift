@@ -1,16 +1,85 @@
 import Foundation
+import NucleusBenchmarkMetricsC
+
+public struct BenchmarkResourceSnapshot: Sendable, Equatable {
+    public var heapLiveBytes: UInt64
+    public var allocatorMappedBytes: UInt64
+    public var maximumResidentBytes: UInt64
+    public var openFileDescriptors: UInt64
+
+    public static func capture() throws -> Self {
+        var raw = nucleus_benchmark_resource_snapshot()
+        guard nucleus_benchmark_capture_resources(&raw) == 0 else {
+            throw BenchmarkFailure.semantic(
+                "could not capture Linux process resource counters")
+        }
+        return Self(
+            heapLiveBytes: raw.heap_live_bytes,
+            allocatorMappedBytes: raw.allocator_mapped_bytes,
+            maximumResidentBytes: raw.maximum_resident_bytes,
+            openFileDescriptors: raw.open_file_descriptors)
+    }
+
+    fileprivate func measurements(
+        after: Self
+    ) -> [String: Int64] {
+        [
+            "heap_live_bytes_before": Self.clamped(heapLiveBytes),
+            "heap_live_bytes_after": Self.clamped(after.heapLiveBytes),
+            "heap_live_bytes_delta": Self.delta(
+                from: heapLiveBytes, to: after.heapLiveBytes),
+            "allocator_mapped_bytes_before": Self.clamped(
+                allocatorMappedBytes),
+            "allocator_mapped_bytes_after": Self.clamped(
+                after.allocatorMappedBytes),
+            "allocator_mapped_bytes_delta": Self.delta(
+                from: allocatorMappedBytes,
+                to: after.allocatorMappedBytes),
+            "maximum_resident_bytes_before": Self.clamped(
+                maximumResidentBytes),
+            "maximum_resident_bytes_after": Self.clamped(
+                after.maximumResidentBytes),
+            "maximum_resident_bytes_delta": Self.delta(
+                from: maximumResidentBytes,
+                to: after.maximumResidentBytes),
+            "open_file_descriptors_before": Self.clamped(
+                openFileDescriptors),
+            "open_file_descriptors_after": Self.clamped(
+                after.openFileDescriptors),
+            "open_file_descriptors_delta": Self.delta(
+                from: openFileDescriptors,
+                to: after.openFileDescriptors),
+        ]
+    }
+
+    private static func clamped(_ value: UInt64) -> Int64 {
+        value > UInt64(Int64.max) ? .max : Int64(value)
+    }
+
+    private static func delta(from: UInt64, to: UInt64) -> Int64 {
+        if to >= from { return clamped(to - from) }
+        let magnitude = from - to
+        return magnitude > UInt64(Int64.max) ? .min : -Int64(magnitude)
+    }
+}
 
 public struct BenchmarkSample: Equatable, Sendable {
     public var metrics: [String: UInt64]
+    /// Physical process counters. These are recorded per iteration but excluded
+    /// from structural determinism and exact budgets because allocator/RSS state
+    /// legitimately varies after warm-up.
+    public var measurements: [String: Int64]
     public var semanticChecksum: UInt64
     public var phaseNanoseconds: [String: UInt64]
 
     public init(
         metrics: [String: UInt64],
+        measurements: [String: Int64] = [:],
         semanticChecksum: UInt64,
         phaseNanoseconds: [String: UInt64] = [:]
     ) {
         self.metrics = metrics
+        self.measurements = measurements
         self.semanticChecksum = semanticChecksum
         self.phaseNanoseconds = phaseNanoseconds
     }
@@ -80,9 +149,17 @@ struct BenchmarkResult: Codable {
     var iterations: Int
     var semanticChecksum: UInt64
     var structuralMetrics: [String: UInt64]
+    var measuredMetrics: [String: BenchmarkMeasurement]
     var budgets: [MetricBudget]
     var timing: BenchmarkTiming
     var phaseTimings: [String: BenchmarkTiming]
+}
+
+struct BenchmarkMeasurement: Codable {
+    var samples: [Int64]
+    var median: Int64
+    var minimum: Int64
+    var maximum: Int64
 }
 
 struct BenchmarkReport: Codable {
@@ -93,7 +170,7 @@ struct BenchmarkReport: Codable {
     }
 
     struct MetricSemantics: Codable {
-        var allocationUnits: String
+        var resourceMeasurements: String
         var copiedBytes: String
         var timing: String
     }
@@ -171,11 +248,19 @@ public struct BenchmarkRunner {
         var elapsed: [UInt64] = []
         elapsed.reserveCapacity(iterations)
         var phaseSamples: [String: [UInt64]] = [:]
+        var measurementSamples: [String: [Int64]] = [:]
 
         for iteration in 0..<iterations {
+            let resourcesBefore = try BenchmarkResourceSnapshot.capture()
             let start = clock.now
-            let sample = try await workload.body()
+            var sample = try await workload.body()
             let duration = start.duration(to: clock.now)
+            let resourcesAfter = try BenchmarkResourceSnapshot.capture()
+            for (metric, value) in resourcesBefore.measurements(
+                after: resourcesAfter)
+            {
+                sample.measurements[metric] = value
+            }
             elapsed.append(Self.nanoseconds(duration))
             if let baseline {
                 let expected = baseline.phaseNanoseconds.keys.sorted()
@@ -190,6 +275,9 @@ public struct BenchmarkRunner {
             }
             for (phase, nanoseconds) in sample.phaseNanoseconds {
                 phaseSamples[phase, default: []].append(nanoseconds)
+            }
+            for (metric, value) in sample.measurements {
+                measurementSamples[metric, default: []].append(value)
             }
             if let baseline, baseline != sample {
                 throw BenchmarkFailure.nondeterministic(
@@ -213,6 +301,8 @@ public struct BenchmarkRunner {
             iterations: iterations,
             semanticChecksum: baseline.semanticChecksum,
             structuralMetrics: baseline.metrics,
+            measuredMetrics: measurementSamples.mapValues(
+                Self.measurement(for:)),
             budgets: workload.budgets,
             timing: Self.timing(for: elapsed),
             phaseTimings: phaseSamples.mapValues(Self.timing(for:)))
@@ -278,6 +368,18 @@ public struct BenchmarkRunner {
                 total = sum.overflow ? .max : sum.partialValue
             })
     }
+
+    private static func measurement(
+        for samples: [Int64]
+    ) -> BenchmarkMeasurement {
+        precondition(!samples.isEmpty)
+        let sorted = samples.sorted()
+        return BenchmarkMeasurement(
+            samples: samples,
+            median: sorted[sorted.count / 2],
+            minimum: sorted[0],
+            maximum: sorted[sorted.count - 1])
+    }
 }
 
 enum BenchmarkReportWriter {
@@ -329,10 +431,24 @@ enum BenchmarkReportWriter {
                     + "iterations=\(result.iterations) median_ms="
                     + String(format: "%.3f", milliseconds)
                     + " structural=pass"
+                    + measurementSummary(result.measuredMetrics)
                     + phaseSummary(result.phaseTimings))
         }
         lines.append("")
         return lines.joined(separator: "\n")
+    }
+
+    private static func measurementSummary(
+        _ measurements: [String: BenchmarkMeasurement]
+    ) -> String {
+        let preferred = [
+            "heap_live_bytes_delta",
+            "maximum_resident_bytes_delta",
+            "open_file_descriptors_delta",
+        ]
+        return " resources=" + preferred.compactMap { metric in
+            measurements[metric].map { "\(metric):\($0.median)" }
+        }.joined(separator: ",")
     }
 
     private static func phaseSummary(
@@ -360,7 +476,7 @@ public enum BenchmarkProgram {
         let results = try await BenchmarkRunner(
             iterations: options.iterations).run(workloads)
         let report = BenchmarkReport(
-            metricSchema: "nucleus.headless.v2",
+            metricSchema: "nucleus.headless.v3",
             deterministicSeedPolicy:
                 "Every workload uses the recorded fixed seed; repeated structural "
                     + "samples must be byte-for-byte equivalent.",
@@ -370,10 +486,10 @@ public enum BenchmarkProgram {
                 swiftToolchain: ProcessInfo.processInfo.environment[
                     "NUCLEUS_BENCHMARK_SWIFT_VERSION"] ?? "unknown"),
             metricSemantics: .init(
-                allocationUnits:
-                    "Deterministic first-party objects, entries, or buffers retained "
-                        + "by the workload; this is a structural allocation proxy, "
-                        + "not allocator implementation metadata.",
+                resourceMeasurements:
+                    "Per-iteration glibc allocator live/mapped bytes, process "
+                        + "maximum RSS, and /proc/self/fd descriptor counts. "
+                        + "Reported as physical diagnostics, not exact budgets.",
                 copiedBytes:
                     "Payload bytes deliberately materialized or copied by the "
                         + "workload's first-party algorithm.",
@@ -472,6 +588,20 @@ public struct BenchmarkPhaseRecorder {
                 start.duration(to: clock.now))
         }
         return try body()
+    }
+
+    @MainActor
+    public mutating func measure<T>(
+        _ phase: String,
+        _ body: () async throws -> T
+    ) async rethrows -> T {
+        precondition(phaseNanoseconds[phase] == nil, "benchmark phase recorded twice")
+        let start = clock.now
+        defer {
+            phaseNanoseconds[phase] = durationNanoseconds(
+                start.duration(to: clock.now))
+        }
+        return try await body()
     }
 }
 

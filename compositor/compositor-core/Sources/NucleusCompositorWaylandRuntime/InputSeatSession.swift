@@ -1,7 +1,7 @@
 // SeatSession — the compositor's libseat session/seat owner. Swift owns the seat
 // (Rule 7/9): opening it, dispatching its FD, mediating restricted device opens for
 // libinput and DRM, and acknowledging VT switches. The seat is shared between input
-// (this phase) and the DRM backend; the enable/disable
+// input and the DRM backend; the enable/disable
 // transitions fan out to both through the `onEnable`/`onDisable` hooks the owner
 // installs.
 //
@@ -13,7 +13,22 @@ import NucleusCompositorInputC
 
 @MainActor
 final class SeatSession {
+    struct NativeOperations {
+        let open: (
+            UnsafePointer<libseat_seat_listener>?,
+            UnsafeMutableRawPointer?
+        ) -> OpaquePointer?
+        let close: (OpaquePointer?) -> Int32
+        let disable: (OpaquePointer?) -> Int32
+
+        @MainActor static let live = NativeOperations(
+            open: libseat_open_seat,
+            close: libseat_close_seat,
+            disable: libseat_disable_seat)
+    }
+
     private var handle: OpaquePointer?
+    private let native: NativeOperations
     /// libseat retains the listener pointer for the session's lifetime; keep it in
     /// stable heap storage and feed the session itself as the userdata.
     private let listener: UnsafeMutablePointer<libseat_seat_listener>
@@ -32,21 +47,25 @@ final class SeatSession {
     /// fd) can close the right seat device.
     private var deviceIds: [Int32: Int32] = [:]
 
-    private init(listener: UnsafeMutablePointer<libseat_seat_listener>) {
-        self.listener = listener
+    private init(native: NativeOperations) {
+        self.native = native
+        listener = .allocate(capacity: 1)
+        listener.initialize(to: libseat_seat_listener(
+            enable_seat: { _, data in SeatSession.from(data)?.handleEnable() },
+            disable_seat: { seat, data in SeatSession.from(data)?.handleDisable(seat) }))
     }
 
     /// Open the seat. Returns nil if seatd/logind is unavailable. The session is not
     /// active until libseat fires `enable_seat` (dispatch the FD to pump it).
     static func open() -> SeatSession? {
-        let listener = UnsafeMutablePointer<libseat_seat_listener>.allocate(capacity: 1)
-        listener.pointee = libseat_seat_listener(
-            enable_seat: { _, data in SeatSession.from(data)?.handleEnable() },
-            disable_seat: { seat, data in SeatSession.from(data)?.handleDisable(seat) })
-        let session = SeatSession(listener: listener)
+        open(using: .live)
+    }
+
+    /// Internal injection point for deterministic native lifetime coverage.
+    static func open(using native: NativeOperations) -> SeatSession? {
+        let session = SeatSession(native: native)
         let userdata = Unmanaged.passUnretained(session).toOpaque()
-        guard let handle = libseat_open_seat(listener, userdata) else {
-            listener.deallocate()
+        guard let handle = native.open(session.listener, userdata) else {
             return nil
         }
         session.handle = handle
@@ -54,7 +73,8 @@ final class SeatSession {
     }
 
     isolated deinit {
-        if let handle { libseat_close_seat(handle) }
+        if let handle { _ = native.close(handle) }
+        listener.deinitialize(count: 1)
         listener.deallocate()
     }
 
@@ -76,7 +96,7 @@ final class SeatSession {
         guard disableAcknowledgementPending else { return }
         disableAcknowledgementPending = false
         // Acknowledge deactivation only after all KMS kernel borrows retired.
-        if let handle { _ = libseat_disable_seat(handle) }
+        if let handle { _ = native.disable(handle) }
     }
 
     // MARK: - FD + dispatch

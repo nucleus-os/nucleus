@@ -1,4 +1,3 @@
-// Phase 9.8 — The reusable per-output Swift FramePlan.
 //
 // One native execution plan per output: ordered draw/clip/backdrop/external
 // commands, immutable resource handles + sampling descriptors, damage
@@ -177,7 +176,6 @@ struct FrameInfo {
 
 /// The direct-scanout candidate for this frame: the root surface eligible to
 /// scan out the primary plane, or a disqualification. Mirrors the scanout slot
-/// the 10a `DrmScanout` evaluator populates; `disqualificationReason` is the
 /// `ScanoutBlockReason` code (0 = eligible).
 struct DirectScanoutPlan {
     var candidateLayerId: UInt64

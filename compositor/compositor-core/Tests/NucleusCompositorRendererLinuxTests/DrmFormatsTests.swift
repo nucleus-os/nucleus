@@ -3,7 +3,6 @@ import NucleusCompositorDrmC
 @testable import NucleusRenderer
 @testable import NucleusCompositorRendererLinux
 
-// Converted from DrmFormatsFixture (Phase 10a.6): the format/modifier model +
 // scanout intersection + IN_FORMATS blob parsing — all hardware-independent. The
 // fixture's best-effort real-KMS exercise (which asserted nothing) is dropped.
 @Suite struct DrmFormatsTests {

@@ -2,7 +2,6 @@ import Testing
 @testable import NucleusRenderer
 import NucleusRenderModel
 
-// Converted from PresentationDamageFixture (Phase 9.6): the damage core — the
 // cross-frame cache begin/commit/retire, native-layer + remote-host change
 // detection (initial / unchanged / moved / signature / animation), stale
 // retirement, sink routing, and the rect/region math. Hardware-independent.

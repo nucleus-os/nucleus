@@ -2,8 +2,6 @@ import Testing
 @testable import NucleusRenderer
 import NucleusRenderModel
 
-// Converted from PresentationWalkFixture (Phase 10b.4j): walk a constructed
-// Phase 8 LayerTree into a complete FramePlan and assert the renderer-coupled
 // emission — a backdrop ExecSpec, the resolved content TextureQuads (with
 // rounded-clip mask + opacity + the foreground-vibrancy reference to the ancestor
 // backdrop group), and a decoration shadow — plus the geometry projection. Pure

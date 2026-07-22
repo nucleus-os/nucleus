@@ -8,9 +8,8 @@
 // core VK_KHR_surface / VK_KHR_swapchain types live in vulkan_core.h already; the
 // guarded header adds vkCreateAndroidSurfaceKHR + VkAndroidSurfaceCreateInfoKHR.
 //
-// 10b.0 exposes the core registry so the dormant smoke can link the loader and
-// call a global command. Importer façades for the X-macro dispatch loading land
-// in 10b.1.
+// Loader helpers can call global commands. Importer façades provide generated
+// dispatch loading.
 #ifndef VULKAN_C_H
 #define VULKAN_C_H
 

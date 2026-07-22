@@ -1,4 +1,3 @@
-// Phase 10c.4 — the resident implicit-action table.
 //
 // Template choice is policy authored Swift-side: a `(role, key path) → action
 // template` lookup the transaction applier consults when a property update

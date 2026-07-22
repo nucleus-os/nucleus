@@ -50,12 +50,13 @@ public struct RendererTopologyProposal:
     public let outputs: [RendererOutputInfo]
 }
 
-/// Result of a nonblocking KMS lifetime transition. A pending page flip is not
-/// an error: the compositor keeps the DRM fd in its reactor and retries the
-/// transition after the normal page-flip event retires the kernel borrow.
+/// Result of a nonblocking KMS lifetime transition. Draining is not an error:
+/// the compositor keeps the DRM fd in its reactor and retries after the kernel
+/// retires the outstanding presentation state. This covers both an explicitly
+/// tracked page flip and an atomic disable rejected with `EBUSY`.
 public enum RendererRetirementResult: Sendable, Equatable {
     case complete
-    case waitingForPageFlip
+    case draining
     case failed
 }
 

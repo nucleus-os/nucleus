@@ -1,4 +1,3 @@
-// Phase 10b.4i — screenshot / screencopy readback: read the composited
 // accumulator (or any surface) back into a host buffer, then convert to the
 // client's pixel layout. The Graphite-native analog of ScreencopyGpu /
 // ScreenshotPipeline's pixel-format handling. GPU readback belongs to

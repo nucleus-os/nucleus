@@ -1,9 +1,7 @@
 // InputLatencyProbe — per-event input-delivery latency probe (Swift owner).
 //
-// It measures the libinput-ingress → seat-wire-send latency so the input-ownership
-// move can be
-// held to the Phase 1 baseline. `beginHidEvent` stamps a monotonic ingress at the
-// single dispatch choke point, but only for genuine libinput events;
+// It measures the libinput-ingress → seat-wire-send latency across the single
+// dispatch choke point, but only for genuine libinput events;
 // synthetic/replayed events `clear()` it so their sends are not attributed to a
 // stale ingress. `markDelivery` folds each hot seat send's ingress→send delta into a
 // per-kind log2 histogram dumped on a cadence and on demand.
