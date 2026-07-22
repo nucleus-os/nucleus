@@ -36,6 +36,10 @@ import NucleusTypes
         #expect(key != ProducerCacheKey(
             layerId: 5, revision: 1, width: 2, height: 3, kind: .paint),
             "raster-height-is-cache-identity")
+        #expect(key != ProducerCacheKey(
+            layerId: 5, revision: 1, dependencyRevision: 9,
+            width: 2, height: 2, kind: .paint),
+            "resolved-image-generation-is-cache-identity")
         let trafficLightsAtOnePointFive = ProducerCacheKey(
             layerId: 5, revision: 1,
             width: Int32((72.0 * 1.5).rounded(.up)),
@@ -52,6 +56,12 @@ import NucleusTypes
         #expect(TextureProducer.supersededKeys(
             in: [oldAtOnePointFive, oldAtTwo, current],
             replacing: current) == [oldAtOnePointFive, oldAtTwo])
+
+        let decoded = ProducerCacheKey(
+            layerId: 5, revision: 2, dependencyRevision: 9,
+            width: 108, height: 42, kind: .paint)
+        #expect(TextureProducer.supersededKeys(
+            in: [current, decoded], replacing: decoded) == [current])
 
         let shadow = ProducerCacheKey(
             layerId: 5, revision: 1, width: 108, height: 42, kind: .shadow)

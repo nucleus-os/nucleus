@@ -16,6 +16,10 @@ import Tracy
 package struct DecodedImageResult: @unchecked Sendable {
     package var handle: UInt64
     package var image: nucleus.skia.Image
+    /// Queue-wide generation assigned when this result becomes drainable.
+    /// Consumers use it to invalidate only paint caches that reference this
+    /// image rather than every image-backed layer in the process.
+    package var completionGeneration: UInt64
 
     // Plain-typed accessors. The C++ `Image` type does not resolve through a
     // `@testable` import, so anything that wants to assert about a result
@@ -182,13 +186,16 @@ package final class ImageDecodeQueue {
                     if shouldWake {
                         completionInstant = clock.now
                     }
-                    completed.append(Completion(
-                        generation: request.generation,
-                        result: DecodedImageResult(handle: request.handle, image: image)))
                     completionGeneration &+= 1
                     precondition(
                         completionGeneration != 0,
                         "image decode completion generation exhausted")
+                    completed.append(Completion(
+                        generation: request.generation,
+                        result: DecodedImageResult(
+                            handle: request.handle,
+                            image: image,
+                            completionGeneration: completionGeneration)))
                 } else if known[request.handle] == request.generation {
                     known[request.handle] = nil
                 }

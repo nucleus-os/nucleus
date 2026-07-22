@@ -74,6 +74,7 @@ import NucleusRenderModel
         #expect(results.first?.handle == 1)
         #expect(results[0].isValid)
         #expect(results[0].width == 8)
+        #expect(results[0].completionGeneration == queue.completionGeneration)
     }
 
     /// Nothing is ready the instant it is asked for — that is the whole point,
@@ -121,13 +122,16 @@ import NucleusRenderModel
             #expect(queue.submit(handle: UInt64(index + 1), source: source(fixture)))
         }
 
-        var handles: Set<UInt64> = []
+        var generationsByHandle: [UInt64: UInt64] = [:]
         let deadline = Date().addingTimeInterval(10)
-        while handles.count < 5 && Date() < deadline {
-            for result in queue.drain() { handles.insert(result.handle) }
+        while generationsByHandle.count < 5 && Date() < deadline {
+            for result in queue.drain() {
+                generationsByHandle[result.handle] = result.completionGeneration
+            }
             usleep(1000)
         }
-        #expect(handles == [1, 2, 3, 4, 5])
+        #expect(Set(generationsByHandle.keys) == [1, 2, 3, 4, 5])
+        #expect(Set(generationsByHandle.values).count == 5)
     }
 
     /// A file that is not an image fails on the worker and simply never arrives,

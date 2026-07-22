@@ -22,6 +22,7 @@ import NucleusTypes
         commands: [PaintDrawCommand],
         payload: [UInt8],
         scaleX: Float = 1, scaleY: Float = 1,
+        resolveImage: @escaping (UInt64) -> nucleus.skia.Image? = { _ in nil },
         resolveEffect: @escaping (UInt64) -> nucleus.skia.RuntimeEffect? = { _ in nil }
     ) -> [UInt8] {
         let surface = nucleus.skia.makeRasterSurface(width, height)
@@ -34,7 +35,7 @@ import NucleusTypes
         PaintRasterizer.draw(
             commands: commands, payload: payload, onto: canvas,
             scaleX: scaleX, scaleY: scaleY,
-            resolveImage: { _ in nil }, resolveEffect: resolveEffect)
+            resolveImage: resolveImage, resolveEffect: resolveEffect)
 
         var pixels = [UInt8](repeating: 0, count: Int(width * height) * 4)
         let ok = pixels.withUnsafeMutableBufferPointer { buf in
@@ -82,6 +83,27 @@ import NucleusTypes
     }
 
     // MARK: - Geometry
+
+    @Test func imageCommandDrawsResolvedPixels() {
+        let rgba: [UInt8] = [
+            255, 0, 0, 255, 255, 0, 0, 255,
+            255, 0, 0, 255, 255, 0, 0, 255,
+        ]
+        let image = rgba.withUnsafeBufferPointer {
+            nucleus.skia.makeRasterImageRGBA(2, 2, $0.baseAddress, $0.count)
+        }
+        let command = PaintDrawCommand(
+            kind: .image, x: 0, y: 0, w: 20, h: 20,
+            imageHandle: 7, antialias: false)
+
+        let pixels = render(
+            width: 20, height: 20, commands: [command], payload: [],
+            resolveImage: { $0 == 7 ? image : nil })
+
+        #expect(!pixels.isEmpty)
+        let center = pixel(pixels, 10, 10, width: 20)
+        #expect(center.0 > 200 && center.1 == 0 && center.2 == 0)
+    }
 
     @Test func aFilledPathPaintsWhereItWasAuthored() {
         var payload: [UInt8] = []

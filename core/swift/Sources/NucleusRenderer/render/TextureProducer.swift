@@ -1,7 +1,8 @@
 // content and blurred shadows into cache textures. Each
-// rasterization is keyed by (layer, content revision) so
-// unchanged content is suppressed; the per-frame `ProducerWorkStats` count the
-// repaints vs suppressions.
+// rasterization is keyed by layer, authored content revision, and resolved
+// resource dependency revision so unchanged content is suppressed without
+// preserving a placeholder after an asynchronous image decode completes; the
+// per-frame `ProducerWorkStats` count the repaints vs suppressions.
 //
 // The work-stats accumulation + the suppression decision are pure and tested
 // hardware-independently; the rasterization into a cache surface runs
@@ -45,6 +46,7 @@ enum ProducerKind: Hashable {
 struct ProducerCacheKey: Hashable {
     var layerId: UInt64
     var revision: UInt64
+    var dependencyRevision: UInt64 = 0
     var width: Int32
     var height: Int32
     var kind: ProducerKind
@@ -80,7 +82,11 @@ final class TextureProducer {
     static func supersededKeys(
         in keys: Set<ProducerCacheKey>, replacing key: ProducerCacheKey
     ) -> Set<ProducerCacheKey> {
-        Set(keys.filter { $0.kind == key.kind && $0.revision != key.revision })
+        Set(keys.filter {
+            $0.kind == key.kind
+                && ($0.revision != key.revision
+                    || $0.dependencyRevision != key.dependencyRevision)
+        })
     }
 
     /// Reclaim the cache texture for a single layer (its content is gone). Releases
@@ -119,12 +125,14 @@ final class TextureProducer {
     /// rasterization could not allocate a surface (no GPU).
     func produce(
         recorder: nucleus.skia.Recorder, layerId: UInt64, revision: UInt64,
+        dependencyRevision: UInt64 = 0,
         width: Int32, height: Int32, kind: ProducerKind,
         damage: PlanRect? = nil,
         draw: (nucleus.skia.Canvas) -> Void
     ) -> UInt64? {
         let key = ProducerCacheKey(
             layerId: layerId, revision: revision,
+            dependencyRevision: dependencyRevision,
             width: width, height: height, kind: kind)
         if let existing = handlesByKey[key] {
             // Cache hit: nothing to repaint.
@@ -142,7 +150,8 @@ final class TextureProducer {
             guard damage != nil else { return nil }
             let oldKey = keysByLayer[layerId]?.first {
                 $0.kind == kind
-                    && $0.revision != revision
+                    && ($0.revision != revision
+                        || $0.dependencyRevision != dependencyRevision)
                     && $0.width == width
                     && $0.height == height
             }
@@ -189,7 +198,10 @@ final class TextureProducer {
             failedKeys.remove(oldKey)
         }
         failedKeys = Set(failedKeys.filter {
-            !($0.layerId == layerId && $0.kind == kind && $0.revision != revision)
+            !($0.layerId == layerId
+                && $0.kind == kind
+                && ($0.revision != revision
+                    || $0.dependencyRevision != dependencyRevision))
         })
 
         let handle = registry.allocHandle()
@@ -259,6 +271,7 @@ final class TextureProducer {
         recorder: nucleus.skia.Recorder,
         layerId: UInt64,
         revision: UInt64,
+        dependencyRevision: UInt64 = 0,
         commands: [PaintDrawCommand],
         payload: [UInt8],
         authoredWidth: Float,
@@ -284,6 +297,7 @@ final class TextureProducer {
 
         return produce(
             recorder: recorder, layerId: layerId, revision: revision,
+            dependencyRevision: dependencyRevision,
             width: width, height: height, kind: .paint,
             damage: rasterDamage
         ) { canvas in

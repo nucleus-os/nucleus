@@ -112,6 +112,7 @@ final class FrameDriver {
     private var previousLayerSnapshots: [UInt64: [UInt64: LayerFrameSnapshot]] = [:]
     private var submittedLayerSnapshots: [UInt64: [UInt64: LayerFrameSnapshot]] = [:]
     private var decodedImages: [UInt64: nucleus.skia.Image] = [:]
+    private var decodedImageGenerations: [UInt64: UInt64] = [:]
     /// Decodes off the render thread; results are adopted at the top of a frame.
     let decodeQueue: ImageDecodeQueue
     /// Compiled SkSL programs keyed by runtime-effect handle. Compilation is
@@ -206,6 +207,7 @@ final class FrameDriver {
         decodeQueue.shutdown()
         registry.clear()
         decodedImages.removeAll()
+        decodedImageGenerations.removeAll()
         compiledEffects.removeAll()
         accumulators.removeAll()
     }
@@ -242,6 +244,18 @@ final class FrameDriver {
     func drainDecodedImages() {
         for result in decodeQueue.drain() {
             decodedImages[result.handle] = result.image
+            decodedImageGenerations[result.handle] = result.completionGeneration
+        }
+    }
+
+    func paintImageDependencyGeneration(
+        _ commands: [PaintDrawCommand]
+    ) -> UInt64 {
+        commands.reduce(into: UInt64(0)) { generation, command in
+            guard command.kind == .image else { return }
+            generation = max(
+                generation,
+                decodedImageGenerations[command.imageHandle] ?? 0)
         }
     }
 
@@ -275,6 +289,7 @@ final class FrameDriver {
     /// its source. No-op for an unknown handle.
     func evictDecodedImage(_ handle: UInt64) {
         decodedImages[handle] = nil
+        decodedImageGenerations[handle] = nil
         // A decode already in flight for this handle is now for a source that no
         // longer exists, and the handle may be re-registered — delivering the
         // stale result would draw the wrong picture.
@@ -393,6 +408,8 @@ final class FrameDriver {
                 recorder: recorder,
                 layerId: quad.layerId,
                 revision: handle.raw,
+                dependencyRevision:
+                    paintImageDependencyGeneration(content.commands),
                 commands: content.commands,
                 payload: content.payload,
                 authoredWidth: content.width,
