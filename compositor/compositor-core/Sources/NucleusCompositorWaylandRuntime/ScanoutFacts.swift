@@ -15,7 +15,7 @@
 
 import WaylandServerC
 import WaylandServer
-import NucleusCompositorServer
+internal import NucleusCompositorServer
 
 /// The dmabuf attributes of a fullscreen root's committed buffer, neutral of the
 /// DRM module's `ScanoutDmabufInfo`.

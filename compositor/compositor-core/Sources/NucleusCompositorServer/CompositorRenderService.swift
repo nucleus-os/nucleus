@@ -1,30 +1,3 @@
-/// A borrowed SHM image import. `pixels` is valid only for the synchronous
-/// `importShm` call; the render service copies it before returning.
-public struct RenderShmImport {
-    public let previousIOSurfaceID: UInt32
-    public let width: UInt32
-    public let height: UInt32
-    public let drmFormat: UInt32
-    public let stride: UInt32
-    public let pixels: UnsafeRawBufferPointer
-
-    public init(
-        previousIOSurfaceID: UInt32,
-        width: UInt32,
-        height: UInt32,
-        drmFormat: UInt32,
-        stride: UInt32,
-        pixels: UnsafeRawBufferPointer
-    ) {
-        self.previousIOSurfaceID = previousIOSurfaceID
-        self.width = width
-        self.height = height
-        self.drmFormat = drmFormat
-        self.stride = stride
-        self.pixels = pixels
-    }
-}
-
 /// One DMA-BUF plane. The file descriptor is borrowed for the synchronous
 /// service call; the render owner duplicates it before returning when retained.
 public struct RenderDmabufPlane: Equatable, Sendable {
@@ -214,7 +187,16 @@ public struct RenderSnapshotResource: Equatable, Sendable {
 /// capture work between reactor waits.
 @MainActor
 public protocol CompositorRenderService: AnyObject {
-    func importShm(_ request: RenderShmImport) -> UInt32
+    /// Copies the borrowed SHM pixels before returning. The span makes the
+    /// readable extent part of the call and cannot escape into service state.
+    func importShm(
+        previousIOSurfaceID: UInt32,
+        width: UInt32,
+        height: UInt32,
+        drmFormat: UInt32,
+        stride: UInt32,
+        pixels: Span<UInt8>
+    ) -> UInt32
     func importDmabuf(_ request: RenderDmabufImport) -> UInt32
     func releaseIOSurface(_ id: UInt32)
 

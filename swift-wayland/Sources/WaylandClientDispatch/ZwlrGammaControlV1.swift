@@ -3,7 +3,7 @@
 // Typed client dispatch for zwlr_gamma_control_v1: a handler protocol (one method per event), the
 // libwayland listener + owner recovery + arg marshalling, and an addListener that wires it.
 
-import WaylandClientC
+public import WaylandClientC
 
 public protocol ZwlrGammaControlV1Events: AnyObject {
     func gammaSize(_ proxy: OpaquePointer, size: UInt32)
@@ -26,8 +26,8 @@ public enum ZwlrGammaControlV1Client {
         zwlr_gamma_control_v1_add_listener(proxy, listener, Unmanaged.passUnretained(owner).toOpaque())
     }
 
-    private static func handler(_ data: UnsafeMutableRawPointer) -> ZwlrGammaControlV1Events? {
-        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? ZwlrGammaControlV1Events
+    private static func handler(_ data: UnsafeMutableRawPointer) -> (any ZwlrGammaControlV1Events)? {
+        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? any ZwlrGammaControlV1Events
     }
 
     private static let gammaSize_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, size in

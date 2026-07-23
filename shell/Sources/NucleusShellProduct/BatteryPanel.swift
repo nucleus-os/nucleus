@@ -1,4 +1,4 @@
-import NucleusUI
+public import NucleusUI
 
 /// The panel a battery widget opens: the same reading, spelled out.
 ///

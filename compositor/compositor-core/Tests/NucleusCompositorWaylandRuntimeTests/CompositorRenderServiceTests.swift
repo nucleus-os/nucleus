@@ -29,14 +29,26 @@ final class RenderServiceSpy: CompositorRenderService {
     var dmabufMainDevice: UInt64 = 9
     var liveSnapshotCount: Int = 0
 
-    func importShm(_ request: RenderShmImport) -> UInt32 {
+    func importShm(
+        previousIOSurfaceID: UInt32,
+        width: UInt32,
+        height: UInt32,
+        drmFormat: UInt32,
+        stride: UInt32,
+        pixels: Span<UInt8>
+    ) -> UInt32 {
+        var ownedPixels: [UInt8] = []
+        ownedPixels.reserveCapacity(pixels.count)
+        for index in 0..<pixels.count {
+            ownedPixels.append(pixels[index])
+        }
         shmSnapshot = ShmSnapshot(
-            previousIOSurfaceID: request.previousIOSurfaceID,
-            width: request.width,
-            height: request.height,
-            drmFormat: request.drmFormat,
-            stride: request.stride,
-            pixels: Array(request.pixels))
+            previousIOSurfaceID: previousIOSurfaceID,
+            width: width,
+            height: height,
+            drmFormat: drmFormat,
+            stride: stride,
+            pixels: ownedPixels)
         return 41
     }
 
@@ -173,16 +185,13 @@ final class RenderServiceSpy: CompositorRenderService {
     server.renderService = spy
 
     var shmPixels: [UInt8] = [10, 20, 30, 40, 50, 60, 70, 80]
-    let shmID = shmPixels.withUnsafeBytes {
-        spy.importShm(
-            RenderShmImport(
-                previousIOSurfaceID: 37,
-                width: 2,
-                height: 1,
-                drmFormat: 0x3432_5241,
-                stride: 8,
-                pixels: $0))
-    }
+    let shmID = spy.importShm(
+        previousIOSurfaceID: 37,
+        width: 2,
+        height: 1,
+        drmFormat: 0x3432_5241,
+        stride: 8,
+        pixels: shmPixels.span)
     shmPixels[0] = 0
     #expect(shmID == 41)
     #expect(spy.shmSnapshot == .init(

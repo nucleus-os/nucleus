@@ -3,8 +3,8 @@
 // Typed server dispatch for wl_surface: a handler protocol (one method per request), the
 // request vtable + owner recovery + arg marshalling, and typed event senders.
 
-import WaylandServerC
-import WaylandServer
+public import WaylandServerC
+public import WaylandServer
 
 public protocol WlSurfaceRequests: AnyObject {
     func destroy(_ resource: UnsafeMutablePointer<wl_resource>)
@@ -60,9 +60,9 @@ public enum WlSurfaceServer {
         wl_surface_send_preferred_buffer_transform(target, transform)
     }
 
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> WlSurfaceRequests? {
+    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> (any WlSurfaceRequests)? {
         guard let ud = wl_resource_get_user_data(res) else { return nil }
-        return Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? WlSurfaceRequests
+        return Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any WlSurfaceRequests
     }
 
     private static let destroy_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
@@ -79,7 +79,7 @@ public enum WlSurfaceServer {
     }
     private static let frame_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { client, res, callback in
         guard let res, let client, let h = handler(res) else { return }
-        h.frame(res, callback: WlNewId(client: client, id: callback, version: Swift.min(wl_resource_get_version(res), Int32(1)), interface: swift_wayland_iface_wl_callback()))
+        h.frame(res, callback: WlNewId(client: client, id: callback, version: Swift::min(wl_resource_get_version(res), Int32(1)), interface: swift_wayland_iface_wl_callback()))
     }
     private static let setOpaqueRegion_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res, region in
         guard let res, let h = handler(res) else { return }
@@ -111,6 +111,6 @@ public enum WlSurfaceServer {
     }
     private static let getRelease_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { client, res, callback in
         guard let res, let client, let h = handler(res) else { return }
-        h.getRelease(res, callback: WlNewId(client: client, id: callback, version: Swift.min(wl_resource_get_version(res), Int32(1)), interface: swift_wayland_iface_wl_callback()))
+        h.getRelease(res, callback: WlNewId(client: client, id: callback, version: Swift::min(wl_resource_get_version(res), Int32(1)), interface: swift_wayland_iface_wl_callback()))
     }
 }

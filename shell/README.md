@@ -30,7 +30,7 @@ From the monorepo root:
 ```sh
 tools/nucleus bootstrap shell
 
-source core/tools/host-env.sh
+source tools/host-env.sh
 swift build --package-path shell
 ```
 

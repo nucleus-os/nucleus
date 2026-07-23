@@ -1,4 +1,8 @@
-@_spi(NucleusCompositor) import NucleusLayers
+@_spi(NucleusCompositor) internal import NucleusLayers
+internal import enum NucleusTypes.LayerKind
+internal import struct NucleusTypes.Point
+internal import struct NucleusTypes.Rect
+internal import struct NucleusTypes.Size
 
 extension ViewLayerPublisher {
     struct AuthoredPropertyUpdate {

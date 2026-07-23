@@ -3,7 +3,7 @@
 // Typed server dispatch for xdg_toplevel_tag_manager_v1: a handler protocol (one method per request), the
 // request vtable + owner recovery + arg marshalling, and typed event senders.
 
-import WaylandServerC
+public import WaylandServerC
 import WaylandServer
 
 public protocol XdgToplevelTagManagerV1Requests: AnyObject {
@@ -29,9 +29,9 @@ public enum XdgToplevelTagManagerV1Server {
         return UnsafeRawPointer(raw)
     }()
 
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> XdgToplevelTagManagerV1Requests? {
+    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> (any XdgToplevelTagManagerV1Requests)? {
         guard let ud = wl_resource_get_user_data(res) else { return nil }
-        return Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? XdgToplevelTagManagerV1Requests
+        return Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any XdgToplevelTagManagerV1Requests
     }
 
     private static let destroy_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in

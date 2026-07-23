@@ -31,7 +31,7 @@ let package = Package(
                 .unsafeFlags(["-std=c++20"]),
             ],
             linkerSettings: [
-                .linkedLibrary("pthread"),
+                .linkedLibrary("pthread", .when(platforms: [.linux])),
                 .linkedLibrary("dl"),
             ]
         ),
@@ -56,9 +56,14 @@ for target in package.targets {
     default:
         continue
     }
-    target.swiftSettings = (target.swiftSettings ?? []) + [
+    var swiftSettings = (target.swiftSettings ?? []) + [
         .unsafeFlags(["-warnings-as-errors"]),
+        .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
     ]
+    if let feature = Context.environment["NUCLEUS_SWIFT_DIAGNOSTIC_FEATURE"] {
+        swiftSettings.append(.unsafeFlags(["-enable-upcoming-feature", feature]))
+    }
+    target.swiftSettings = swiftSettings
     target.cSettings = (target.cSettings ?? []) + [
         .unsafeFlags(["-Werror"]),
     ]

@@ -164,6 +164,7 @@ let package = Package(
                 .product(name: "NucleusCompositorWaylandRuntime", package: "compositor-core"),
                 .product(name: "NucleusCompositorOverlayTypes", package: "compositor-core"),
                 .product(name: "NucleusCompositorOverlayScene", package: "compositor-core"),
+                .product(name: "NucleusCompositorServerTypes", package: "compositor-core"),
                 .product(name: "NucleusCompositorServer", package: "compositor-core"),
                 .product(name: "NucleusCompositorWindowManager", package: "compositor-core"),
                 .product(name: "NucleusCompositorShell", package: "compositor-core"),
@@ -195,6 +196,9 @@ let package = Package(
             dependencies: [
                 "NucleusCompositorRuntime",
                 "NucleusCompositorSignalC",
+                .product(
+                    name: "NucleusCompositorWaylandRuntime",
+                    package: "compositor-core"),
                 .product(
                     name: "NucleusCompositorWaylandTestSupport",
                     package: "compositor-core"),
@@ -241,9 +245,14 @@ for target in package.targets {
     default:
         continue
     }
-    target.swiftSettings = (target.swiftSettings ?? []) + [
+    var swiftSettings = (target.swiftSettings ?? []) + [
         .unsafeFlags(["-warnings-as-errors"]),
+        .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
     ]
+    if let feature = Context.environment["NUCLEUS_SWIFT_DIAGNOSTIC_FEATURE"] {
+        swiftSettings.append(.unsafeFlags(["-enable-upcoming-feature", feature]))
+    }
+    target.swiftSettings = swiftSettings
     target.cSettings = (target.cSettings ?? []) + [
         .unsafeFlags(["-Werror"]),
     ]

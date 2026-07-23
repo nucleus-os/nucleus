@@ -3,7 +3,7 @@
 // Typed client dispatch for zxdg_surface_v6: a handler protocol (one method per event), the
 // libwayland listener + owner recovery + arg marshalling, and an addListener that wires it.
 
-import WaylandClientC
+public import WaylandClientC
 
 public protocol ZxdgSurfaceV6Events: AnyObject {
     func configure(_ proxy: OpaquePointer, serial: UInt32)
@@ -24,8 +24,8 @@ public enum ZxdgSurfaceV6Client {
         zxdg_surface_v6_add_listener(proxy, listener, Unmanaged.passUnretained(owner).toOpaque())
     }
 
-    private static func handler(_ data: UnsafeMutableRawPointer) -> ZxdgSurfaceV6Events? {
-        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? ZxdgSurfaceV6Events
+    private static func handler(_ data: UnsafeMutableRawPointer) -> (any ZxdgSurfaceV6Events)? {
+        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? any ZxdgSurfaceV6Events
     }
 
     private static let configure_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, serial in

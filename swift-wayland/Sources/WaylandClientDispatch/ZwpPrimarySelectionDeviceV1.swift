@@ -3,7 +3,7 @@
 // Typed client dispatch for zwp_primary_selection_device_v1: a handler protocol (one method per event), the
 // libwayland listener + owner recovery + arg marshalling, and an addListener that wires it.
 
-import WaylandClientC
+public import WaylandClientC
 
 public protocol ZwpPrimarySelectionDeviceV1Events: AnyObject {
     func dataOffer(_ proxy: OpaquePointer, offer: OpaquePointer?)
@@ -26,8 +26,8 @@ public enum ZwpPrimarySelectionDeviceV1Client {
         zwp_primary_selection_device_v1_add_listener(proxy, listener, Unmanaged.passUnretained(owner).toOpaque())
     }
 
-    private static func handler(_ data: UnsafeMutableRawPointer) -> ZwpPrimarySelectionDeviceV1Events? {
-        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? ZwpPrimarySelectionDeviceV1Events
+    private static func handler(_ data: UnsafeMutableRawPointer) -> (any ZwpPrimarySelectionDeviceV1Events)? {
+        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? any ZwpPrimarySelectionDeviceV1Events
     }
 
     private static let dataOffer_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, OpaquePointer?) -> Void = { data, proxy, offer in

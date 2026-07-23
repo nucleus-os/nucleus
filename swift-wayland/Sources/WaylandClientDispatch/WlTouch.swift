@@ -3,7 +3,7 @@
 // Typed client dispatch for wl_touch: a handler protocol (one method per event), the
 // libwayland listener + owner recovery + arg marshalling, and an addListener that wires it.
 
-import WaylandClientC
+public import WaylandClientC
 
 public protocol WlTouchEvents: AnyObject {
     func down(_ proxy: OpaquePointer, serial: UInt32, time: UInt32, surface: OpaquePointer?, id: Int32, x: Double, y: Double)
@@ -36,8 +36,8 @@ public enum WlTouchClient {
         wl_touch_add_listener(proxy, listener, Unmanaged.passUnretained(owner).toOpaque())
     }
 
-    private static func handler(_ data: UnsafeMutableRawPointer) -> WlTouchEvents? {
-        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? WlTouchEvents
+    private static func handler(_ data: UnsafeMutableRawPointer) -> (any WlTouchEvents)? {
+        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? any WlTouchEvents
     }
 
     private static let down_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, UInt32, OpaquePointer?, Int32, wl_fixed_t, wl_fixed_t) -> Void = { data, proxy, serial, time, surface, id, x, y in

@@ -12,7 +12,7 @@
 // the consumer never recomputes it. Deferring creation to the consumer also means a factory request
 // that fails validation simply never creates the object (no create-then-destroy on the error path).
 
-import WaylandServerC
+public import WaylandServerC
 
 public struct WlNewId {
     public let client: OpaquePointer

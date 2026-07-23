@@ -1,5 +1,5 @@
-import NucleusCompositorServerTypes
-@_spi(NucleusCompositor) import NucleusLayers
+public import NucleusCompositorServerTypes
+@_spi(NucleusCompositor) public import NucleusLayers
 
 /// A change to the observable desktop model — the typed stream the external-shell
 /// management protocols (and any other consumer) project. Identity is by id;
@@ -429,11 +429,11 @@ public protocol CompositorInputControl: AnyObject {
 public final class NucleusCompositorServer {
     /// The shell-policy seam, injected by the shell layer at startup (nil until
     /// then; the dispatch treats a nil seam as "no compositor keybind matched").
-    public weak var shellPolicy: CompositorShellPolicy?
-    public weak var inputControl: CompositorInputControl?
+    public weak var shellPolicy: (any CompositorShellPolicy)?
+    public weak var inputControl: (any CompositorInputControl)?
     /// The composition root's session lifecycle, injected at bring-up (the input
     /// host's VT enable/disable + exit reach it through here).
-    public weak var sessionControl: CompositorSessionControl?
+    public weak var sessionControl: (any CompositorSessionControl)?
     /// The render service installed after successful GPU bring-up and cleared
     /// before teardown. The weak reference does not extend renderer lifetime.
     public weak var renderService: (any CompositorRenderService)?
@@ -452,7 +452,7 @@ public final class NucleusCompositorServer {
 
     // MARK: Observation
 
-    private struct WeakObserver { weak var value: DesktopModelObserver? }
+    private struct WeakObserver { weak var value: (any DesktopModelObserver)? }
     private var observers: [WeakObserver] = []
     private var pendingChanges: [DesktopChange] = []
 
@@ -495,13 +495,13 @@ public final class NucleusCompositorServer {
         pendingChanges.append(change)
     }
 
-    public func addObserver(_ observer: DesktopModelObserver) {
+    public func addObserver(_ observer: any DesktopModelObserver) {
         observers.removeAll { $0.value == nil || $0.value === observer }
         observers.append(WeakObserver(value: observer))
         observer.desktopModelDidChange(snapshotChanges())
     }
 
-    public func removeObserver(_ observer: DesktopModelObserver) {
+    public func removeObserver(_ observer: any DesktopModelObserver) {
         observers.removeAll { $0.value == nil || $0.value === observer }
     }
 

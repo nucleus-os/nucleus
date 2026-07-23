@@ -19,8 +19,8 @@
 // `OutputBufferOwner` via `makeOwner`, which captures the three destroy verbs.
 
 import NucleusCompositorDrmC
-import VulkanC
-import Vulkan
+public import VulkanC
+public import Vulkan
 import NucleusRenderer
 
 /// One plane's GBM-reported layout, as needed for both the Vulkan import

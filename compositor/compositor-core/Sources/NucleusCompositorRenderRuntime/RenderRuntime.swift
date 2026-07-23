@@ -12,11 +12,11 @@
 // the compositor's single main-loop thread alongside the commit sink and tree.
 
 import Glibc
-@_spi(NucleusPlatform) import NucleusRenderer
-@_spi(NucleusPlatform) import NucleusCompositorRendererLinux
-import NucleusRenderModel
+@_spi(NucleusPlatform) public import NucleusRenderer
+@_spi(NucleusPlatform) public import NucleusCompositorRendererLinux
+public import NucleusRenderModel
 import NucleusRenderHost
-import NucleusCompositorServer
+public import NucleusCompositorServer
 import Tracy
 @_spi(NucleusCompositor) import NucleusLayers
 

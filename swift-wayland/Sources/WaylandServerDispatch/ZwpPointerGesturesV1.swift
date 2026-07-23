@@ -3,8 +3,8 @@
 // Typed server dispatch for zwp_pointer_gestures_v1: a handler protocol (one method per request), the
 // request vtable + owner recovery + arg marshalling, and typed event senders.
 
-import WaylandServerC
-import WaylandServer
+public import WaylandServerC
+public import WaylandServer
 
 public protocol ZwpPointerGesturesV1Requests: AnyObject {
     func getSwipeGesture(_ resource: UnsafeMutablePointer<wl_resource>, id: WlNewId, pointer: UnsafeMutablePointer<wl_resource>?)
@@ -31,18 +31,18 @@ public enum ZwpPointerGesturesV1Server {
         return UnsafeRawPointer(raw)
     }()
 
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> ZwpPointerGesturesV1Requests? {
+    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> (any ZwpPointerGesturesV1Requests)? {
         guard let ud = wl_resource_get_user_data(res) else { return nil }
-        return Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? ZwpPointerGesturesV1Requests
+        return Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any ZwpPointerGesturesV1Requests
     }
 
     private static let getSwipeGesture_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UnsafeMutablePointer<wl_resource>?) -> Void = { client, res, id, pointer in
         guard let res, let client, let h = handler(res) else { return }
-        h.getSwipeGesture(res, id: WlNewId(client: client, id: id, version: Swift.min(wl_resource_get_version(res), Int32(3)), interface: swift_wayland_iface_zwp_pointer_gesture_swipe_v1()), pointer: pointer)
+        h.getSwipeGesture(res, id: WlNewId(client: client, id: id, version: Swift::min(wl_resource_get_version(res), Int32(3)), interface: swift_wayland_iface_zwp_pointer_gesture_swipe_v1()), pointer: pointer)
     }
     private static let getPinchGesture_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UnsafeMutablePointer<wl_resource>?) -> Void = { client, res, id, pointer in
         guard let res, let client, let h = handler(res) else { return }
-        h.getPinchGesture(res, id: WlNewId(client: client, id: id, version: Swift.min(wl_resource_get_version(res), Int32(3)), interface: swift_wayland_iface_zwp_pointer_gesture_pinch_v1()), pointer: pointer)
+        h.getPinchGesture(res, id: WlNewId(client: client, id: id, version: Swift::min(wl_resource_get_version(res), Int32(3)), interface: swift_wayland_iface_zwp_pointer_gesture_pinch_v1()), pointer: pointer)
     }
     private static let release_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
         guard let res else { return }
@@ -50,6 +50,6 @@ public enum ZwpPointerGesturesV1Server {
     }
     private static let getHoldGesture_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UnsafeMutablePointer<wl_resource>?) -> Void = { client, res, id, pointer in
         guard let res, let client, let h = handler(res) else { return }
-        h.getHoldGesture(res, id: WlNewId(client: client, id: id, version: Swift.min(wl_resource_get_version(res), Int32(3)), interface: swift_wayland_iface_zwp_pointer_gesture_hold_v1()), pointer: pointer)
+        h.getHoldGesture(res, id: WlNewId(client: client, id: id, version: Swift::min(wl_resource_get_version(res), Int32(3)), interface: swift_wayland_iface_zwp_pointer_gesture_hold_v1()), pointer: pointer)
     }
 }

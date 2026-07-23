@@ -3,7 +3,7 @@
 // Typed server dispatch for zwp_primary_selection_source_v1: a handler protocol (one method per request), the
 // request vtable + owner recovery + arg marshalling, and typed event senders.
 
-import WaylandServerC
+public import WaylandServerC
 import WaylandServer
 
 public protocol ZwpPrimarySelectionSourceV1Requests: AnyObject {
@@ -34,9 +34,9 @@ public enum ZwpPrimarySelectionSourceV1Server {
         zwp_primary_selection_source_v1_send_cancelled(target)
     }
 
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> ZwpPrimarySelectionSourceV1Requests? {
+    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> (any ZwpPrimarySelectionSourceV1Requests)? {
         guard let ud = wl_resource_get_user_data(res) else { return nil }
-        return Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? ZwpPrimarySelectionSourceV1Requests
+        return Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any ZwpPrimarySelectionSourceV1Requests
     }
 
     private static let offer_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafePointer<CChar>?) -> Void = { _, res, mime_type in

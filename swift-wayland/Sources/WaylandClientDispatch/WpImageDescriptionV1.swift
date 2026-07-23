@@ -3,7 +3,7 @@
 // Typed client dispatch for wp_image_description_v1: a handler protocol (one method per event), the
 // libwayland listener + owner recovery + arg marshalling, and an addListener that wires it.
 
-import WaylandClientC
+public import WaylandClientC
 
 public protocol WpImageDescriptionV1Events: AnyObject {
     func failed(_ proxy: OpaquePointer, cause: UInt32, msg: UnsafePointer<CChar>?)
@@ -28,8 +28,8 @@ public enum WpImageDescriptionV1Client {
         wp_image_description_v1_add_listener(proxy, listener, Unmanaged.passUnretained(owner).toOpaque())
     }
 
-    private static func handler(_ data: UnsafeMutableRawPointer) -> WpImageDescriptionV1Events? {
-        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? WpImageDescriptionV1Events
+    private static func handler(_ data: UnsafeMutableRawPointer) -> (any WpImageDescriptionV1Events)? {
+        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? any WpImageDescriptionV1Events
     }
 
     private static let failed_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, UnsafePointer<CChar>?) -> Void = { data, proxy, cause, msg in

@@ -1,4 +1,4 @@
-import Foundation
+import FoundationEssentials
 
 struct BenchmarkCommand {
     private struct Suite {

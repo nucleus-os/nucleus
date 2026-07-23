@@ -3,7 +3,7 @@
 // Typed client dispatch for zwp_relative_pointer_v1: a handler protocol (one method per event), the
 // libwayland listener + owner recovery + arg marshalling, and an addListener that wires it.
 
-import WaylandClientC
+public import WaylandClientC
 
 public protocol ZwpRelativePointerV1Events: AnyObject {
     func relativeMotion(_ proxy: OpaquePointer, utime_hi: UInt32, utime_lo: UInt32, dx: Double, dy: Double, dx_unaccel: Double, dy_unaccel: Double)
@@ -24,8 +24,8 @@ public enum ZwpRelativePointerV1Client {
         zwp_relative_pointer_v1_add_listener(proxy, listener, Unmanaged.passUnretained(owner).toOpaque())
     }
 
-    private static func handler(_ data: UnsafeMutableRawPointer) -> ZwpRelativePointerV1Events? {
-        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? ZwpRelativePointerV1Events
+    private static func handler(_ data: UnsafeMutableRawPointer) -> (any ZwpRelativePointerV1Events)? {
+        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? any ZwpRelativePointerV1Events
     }
 
     private static let relativeMotion_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, UInt32, wl_fixed_t, wl_fixed_t, wl_fixed_t, wl_fixed_t) -> Void = { data, proxy, utime_hi, utime_lo, dx, dy, dx_unaccel, dy_unaccel in

@@ -1,4 +1,5 @@
-import NucleusLayers
+package import NucleusLayers
+internal import struct NucleusTypes.VisualEffect
 
 /// Internal bridge between the AppKit-shaped public API
 /// (`VisualEffectView.Material`, `BlurEffect.Style`, ...) and the
@@ -72,7 +73,7 @@ enum MaterialBridge {
     /// `VisualEffectView.effect` getter. Picks the closest adaptive
     /// style so round-tripping via `init(effect:)` does not lose the
     /// inherited-appearance default.
-    static func effect(material: VisualEffectView.Material, blendingMode: VisualEffectView.BlendingMode, isEmphasized: Bool) -> VisualEffect? {
+    static func effect(material: VisualEffectView.Material, blendingMode: VisualEffectView.BlendingMode, isEmphasized: Bool) -> (any VisualEffect)? {
         let style: BlurEffect.Style? = switch material {
         case .toolTip: .systemUltraThinMaterial
         case .headerView: .systemThinMaterial

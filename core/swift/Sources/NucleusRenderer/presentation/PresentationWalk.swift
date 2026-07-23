@@ -8,7 +8,8 @@
 // nearest ancestor backdrop group), and a decoration shadow. Content texture
 // handles are the content's own id within its role's space; the renderer resolves
 
-import NucleusRenderModel
+internal import NucleusRenderModel
+internal import struct NucleusTypes.Rect
 
 enum PresentationWalk {
     /// Walk `tree` from its roots and produce a complete FramePlan onto `target`.

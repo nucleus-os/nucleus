@@ -1,8 +1,8 @@
 // Runtime-owned holder for the live Wayland router and its services. Every object
 // that needs graph access receives this context explicitly from `WaylandRuntime`.
 
-import NucleusCompositorServer
-import NucleusCompositorWindowManager
+package import NucleusCompositorServer
+package import NucleusCompositorWindowManager
 import Glibc
 
 @MainActor

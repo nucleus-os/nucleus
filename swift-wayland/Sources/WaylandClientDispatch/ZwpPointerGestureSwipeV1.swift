@@ -3,7 +3,7 @@
 // Typed client dispatch for zwp_pointer_gesture_swipe_v1: a handler protocol (one method per event), the
 // libwayland listener + owner recovery + arg marshalling, and an addListener that wires it.
 
-import WaylandClientC
+public import WaylandClientC
 
 public protocol ZwpPointerGestureSwipeV1Events: AnyObject {
     func begin(_ proxy: OpaquePointer, serial: UInt32, time: UInt32, surface: OpaquePointer?, fingers: UInt32)
@@ -28,8 +28,8 @@ public enum ZwpPointerGestureSwipeV1Client {
         zwp_pointer_gesture_swipe_v1_add_listener(proxy, listener, Unmanaged.passUnretained(owner).toOpaque())
     }
 
-    private static func handler(_ data: UnsafeMutableRawPointer) -> ZwpPointerGestureSwipeV1Events? {
-        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? ZwpPointerGestureSwipeV1Events
+    private static func handler(_ data: UnsafeMutableRawPointer) -> (any ZwpPointerGestureSwipeV1Events)? {
+        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? any ZwpPointerGestureSwipeV1Events
     }
 
     private static let begin_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, UInt32, OpaquePointer?, UInt32) -> Void = { data, proxy, serial, time, surface, fingers in

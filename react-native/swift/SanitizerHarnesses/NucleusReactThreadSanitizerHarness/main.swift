@@ -1,4 +1,4 @@
-import Foundation
+import Foundation // FileHandle and NSString support the subprocess sanitizer harness.
 import Glibc
 import NucleusReactFabricSmokeC
 

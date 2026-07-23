@@ -49,7 +49,7 @@ extension XdgDecorationManagerBinding: ZxdgDecorationManagerV1Requests {
 }
 
 final class XdgDecorationManager {
-    weak var delegate: DecorationDelegate?
+    weak var delegate: (any DecorationDelegate)?
 
     func register(in router: NucleusWaylandRouter) {
         router.addGlobal(

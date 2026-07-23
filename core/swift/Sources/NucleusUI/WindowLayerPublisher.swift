@@ -1,4 +1,4 @@
-import NucleusLayers
+package import NucleusLayers
 
 @MainActor
 package final class WindowLayerPublisher: ~Sendable {

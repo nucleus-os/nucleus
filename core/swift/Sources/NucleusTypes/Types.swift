@@ -180,38 +180,6 @@ public enum ImplicitActionKind: Swift.UInt8, Swift.Sendable {
   case scalar = 2
 }
 
-public enum ScreenshotMode: Swift.UInt32, Swift.Sendable {
-  case fullDisplay = 1
-  case output = 2
-  case region = 3
-  case window = 4
-}
-
-public enum ScreenshotDestination: Swift.UInt32, Swift.Sendable {
-  case file = 1
-  case previewOnly = 2
-  case clipboard = 3
-}
-
-public enum ScreenshotOrigin: Swift.UInt32, Swift.Sendable {
-  case hotkey = 1
-  case shellUi = 2
-  case portal = 3
-  case internalTest = 4
-}
-
-public enum ScreenshotEventKind: Swift.UInt32, Swift.Sendable {
-  case previewReady = 1
-  case saveComplete = 2
-  case saveFailed = 3
-}
-
-public enum ScreenshotThumbnailUpdate: Swift.UInt8, Swift.Sendable {
-  case none = 0
-  case set = 1
-  case clear = 2
-}
-
 public let rootContextId: Swift.UInt32 = 1
 public let shellOverlayContextId: Swift.UInt32 = 62
 public let ok: Swift.Int32 = 0
@@ -331,87 +299,6 @@ public struct ImplicitActionRow: Swift.Equatable, Swift.Sendable {
   public var kind: ImplicitActionKind {
     get { ImplicitActionKind(rawValue: _kind) ?? .spring }
     set { _kind = newValue.rawValue }
-  }
-}
-
-public struct ScreenshotRequest: Swift.Equatable, Swift.Sendable {
-  public var requestId: Swift.UInt32
-  public var _mode: Swift.UInt32
-  public var targetOutput: Swift.UInt32
-  public var _destinationKind: Swift.UInt32
-  public var _origin: Swift.UInt32
-  public var previewWidth: Swift.UInt32
-  public var previewHeight: Swift.UInt32
-  public var preview: Swift.Bool
-  public var reserved0: Swift.UInt8
-  public var reserved1: Swift.UInt16
-  public var savePathLen: Swift.UInt
-  public init(requestId: Swift.UInt32 = Swift.UInt32(), mode: ScreenshotMode = .fullDisplay, targetOutput: Swift.UInt32 = Swift.UInt32(), destinationKind: ScreenshotDestination = .file, origin: ScreenshotOrigin = .hotkey, previewWidth: Swift.UInt32 = Swift.UInt32(), previewHeight: Swift.UInt32 = Swift.UInt32(), preview: Swift.Bool = false, reserved0: Swift.UInt8 = Swift.UInt8(), reserved1: Swift.UInt16 = Swift.UInt16(), savePathLen: Swift.UInt = 0) {
-    self.requestId = requestId
-    self._mode = mode.rawValue
-    self.targetOutput = targetOutput
-    self._destinationKind = destinationKind.rawValue
-    self._origin = origin.rawValue
-    self.previewWidth = previewWidth
-    self.previewHeight = previewHeight
-    self.preview = preview
-    self.reserved0 = reserved0
-    self.reserved1 = reserved1
-    self.savePathLen = savePathLen
-  }
-  public var mode: ScreenshotMode {
-    get { ScreenshotMode(rawValue: _mode) ?? .fullDisplay }
-    set { _mode = newValue.rawValue }
-  }
-  public var destinationKind: ScreenshotDestination {
-    get { ScreenshotDestination(rawValue: _destinationKind) ?? .file }
-    set { _destinationKind = newValue.rawValue }
-  }
-  public var origin: ScreenshotOrigin {
-    get { ScreenshotOrigin(rawValue: _origin) ?? .hotkey }
-    set { _origin = newValue.rawValue }
-  }
-}
-
-public struct ScreenshotEvent {
-  public var requestId: Swift.UInt32
-  public var _kind: Swift.UInt32
-  public var statusCode: Swift.Int32
-  public var reserved: Swift.UInt32
-  public var thumbnailHandle: Swift.UInt64
-  public var savedPathPtr: Swift.UnsafePointer<Swift.UInt8>?
-  public var savedPathLen: Swift.UInt
-  public init(requestId: Swift.UInt32 = Swift.UInt32(), kind: ScreenshotEventKind = .previewReady, statusCode: Swift.Int32 = Swift.Int32(), reserved: Swift.UInt32 = Swift.UInt32(), thumbnailHandle: Swift.UInt64 = Swift.UInt64(), savedPathPtr: Swift.UnsafePointer<Swift.UInt8>? = nil, savedPathLen: Swift.UInt = 0) {
-    self.requestId = requestId
-    self._kind = kind.rawValue
-    self.statusCode = statusCode
-    self.reserved = reserved
-    self.thumbnailHandle = thumbnailHandle
-    self.savedPathPtr = savedPathPtr
-    self.savedPathLen = savedPathLen
-  }
-  public var kind: ScreenshotEventKind {
-    get { ScreenshotEventKind(rawValue: _kind) ?? .previewReady }
-    set { _kind = newValue.rawValue }
-  }
-}
-
-public struct ScreenshotEventResult: Swift.Equatable, Swift.Sendable {
-  public var overlayDirty: Swift.Bool
-  public var _thumbnailUpdate: Swift.UInt8
-  public var reserved0: Swift.UInt16
-  public var reserved1: Swift.UInt32
-  public var thumbnailHandle: Swift.UInt64
-  public init(overlayDirty: Swift.Bool = false, thumbnailUpdate: ScreenshotThumbnailUpdate = .none, reserved0: Swift.UInt16 = Swift.UInt16(), reserved1: Swift.UInt32 = Swift.UInt32(), thumbnailHandle: Swift.UInt64 = Swift.UInt64()) {
-    self.overlayDirty = overlayDirty
-    self._thumbnailUpdate = thumbnailUpdate.rawValue
-    self.reserved0 = reserved0
-    self.reserved1 = reserved1
-    self.thumbnailHandle = thumbnailHandle
-  }
-  public var thumbnailUpdate: ScreenshotThumbnailUpdate {
-    get { ScreenshotThumbnailUpdate(rawValue: _thumbnailUpdate) ?? .none }
-    set { _thumbnailUpdate = newValue.rawValue }
   }
 }
 

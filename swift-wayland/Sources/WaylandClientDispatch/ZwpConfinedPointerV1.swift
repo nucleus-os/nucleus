@@ -3,7 +3,7 @@
 // Typed client dispatch for zwp_confined_pointer_v1: a handler protocol (one method per event), the
 // libwayland listener + owner recovery + arg marshalling, and an addListener that wires it.
 
-import WaylandClientC
+public import WaylandClientC
 
 public protocol ZwpConfinedPointerV1Events: AnyObject {
     func confined(_ proxy: OpaquePointer)
@@ -26,8 +26,8 @@ public enum ZwpConfinedPointerV1Client {
         zwp_confined_pointer_v1_add_listener(proxy, listener, Unmanaged.passUnretained(owner).toOpaque())
     }
 
-    private static func handler(_ data: UnsafeMutableRawPointer) -> ZwpConfinedPointerV1Events? {
-        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? ZwpConfinedPointerV1Events
+    private static func handler(_ data: UnsafeMutableRawPointer) -> (any ZwpConfinedPointerV1Events)? {
+        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? any ZwpConfinedPointerV1Events
     }
 
     private static let confined_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in

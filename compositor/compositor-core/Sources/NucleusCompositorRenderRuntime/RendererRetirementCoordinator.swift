@@ -1,4 +1,4 @@
-import NucleusCompositorRendererLinux
+public import NucleusCompositorRendererLinux
 
 /// Value state machine for the host-visible portion of renderer retirement.
 /// The compositor runtime remains the sole owner of libseat, topology, and the

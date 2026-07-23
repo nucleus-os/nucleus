@@ -1,6 +1,7 @@
 import WaylandServerC
 import WaylandServer
 import WaylandServerDispatch
+import NucleusRenderModel
 
 /// Protocol state for one xdg_positioner. Request validation is performed at
 /// this resource boundary; policy receives only a complete immutable snapshot.

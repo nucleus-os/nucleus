@@ -1,6 +1,6 @@
 import NucleusTypes
 import NucleusCompositorServerTypes
-import NucleusCompositorServer
+public import NucleusCompositorServer
 import Tracy
 
 public enum ConfigureReason: UInt32, Sendable {

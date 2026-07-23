@@ -1,5 +1,5 @@
-import NucleusLayers
-import NucleusTypes
+package import NucleusLayers
+internal import NucleusTypes
 
 /// Registered paint content plus the layer update that binds it.
 ///

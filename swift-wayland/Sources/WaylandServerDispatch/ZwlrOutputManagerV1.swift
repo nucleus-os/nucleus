@@ -3,8 +3,8 @@
 // Typed server dispatch for zwlr_output_manager_v1: a handler protocol (one method per request), the
 // request vtable + owner recovery + arg marshalling, and typed event senders.
 
-import WaylandServerC
-import WaylandServer
+public import WaylandServerC
+public import WaylandServer
 
 public protocol ZwlrOutputManagerV1Requests: AnyObject {
     func createConfiguration(_ resource: UnsafeMutablePointer<wl_resource>, id: WlNewId, serial: UInt32)
@@ -33,14 +33,14 @@ public enum ZwlrOutputManagerV1Server {
         zwlr_output_manager_v1_send_finished(target)
     }
 
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> ZwlrOutputManagerV1Requests? {
+    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> (any ZwlrOutputManagerV1Requests)? {
         guard let ud = wl_resource_get_user_data(res) else { return nil }
-        return Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? ZwlrOutputManagerV1Requests
+        return Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any ZwlrOutputManagerV1Requests
     }
 
     private static let createConfiguration_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UInt32) -> Void = { client, res, id, serial in
         guard let res, let client, let h = handler(res) else { return }
-        h.createConfiguration(res, id: WlNewId(client: client, id: id, version: Swift.min(wl_resource_get_version(res), Int32(4)), interface: swift_wayland_iface_zwlr_output_configuration_v1()), serial: serial)
+        h.createConfiguration(res, id: WlNewId(client: client, id: id, version: Swift::min(wl_resource_get_version(res), Int32(4)), interface: swift_wayland_iface_zwlr_output_configuration_v1()), serial: serial)
     }
     private static let stop_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
         guard let res, let h = handler(res) else { return }

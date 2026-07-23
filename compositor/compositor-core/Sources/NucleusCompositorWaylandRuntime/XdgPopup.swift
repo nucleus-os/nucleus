@@ -166,3 +166,4 @@ extension XdgPopup: XdgPopupRequests {
             roleState: .popup(placement), initial: false)
     }
 }
+import NucleusRenderModel

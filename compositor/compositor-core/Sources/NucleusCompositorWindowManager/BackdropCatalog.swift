@@ -1,4 +1,5 @@
-@_spi(NucleusCompositor) import NucleusLayers
+@_spi(NucleusCompositor) public import NucleusLayers
+public import enum NucleusTypes.BackdropMaterialKind
 
 /// Fully resolved render contract for one backdrop layer. Values in this type
 /// cross to the renderer once per frame and are executed without further policy lookup.

@@ -1,4 +1,4 @@
-import Foundation
+import FoundationEssentials
 
 enum WorkspaceComponent: String, CaseIterable, Hashable, Sendable {
     case tracy

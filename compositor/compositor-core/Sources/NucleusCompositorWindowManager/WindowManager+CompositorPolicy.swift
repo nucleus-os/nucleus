@@ -1,54 +1,8 @@
-import NucleusTypes
-import NucleusCompositorServerTypes
-import NucleusCompositorServer
-
-/// Stage B protocol that the reactor dispatches against via
-/// `std.swift.ProtocolCaller`. First slice: three primitive-in/
-/// primitive-out queries that previously had per-method `@c` exports.
-/// Additional clusters (interaction, configure, output normalization,
-/// xdg/xwayland state) join this protocol as they migrate.
-///
-/// Method names are prefixed to avoid colliding with existing
-/// `WindowManager` methods that return `Bool` / take richer types;
-/// the protocol surface returns wire-friendly primitives so the
-/// witness ABI lines up with the reactor side.
-@MainActor
-public protocol WindowMechanismHost: AnyObject {
-    func interactiveGrabActive() -> Bool
-    func nextLayoutTransitionID() -> UInt64
-    func evaluateFocusOnMap(windowID: UInt64) -> Bool
-    func seedInteractiveStartContext(windowID: UInt64, cursorX: Double, cursorY: Double, startRect: WireWindowRect)
-    func beginInteractiveMove(windowID: UInt64, serial: UInt32)
-    func beginInteractiveResize(windowID: UInt64, serial: UInt32, edges: WireResizeEdges)
-    func updateInteractiveGrab(cursorX: Double, cursorY: Double) throws(HostCallError) -> WireInteractionGrabUpdate?
-    func endInteractiveGrab()
-    func clearGrabFor(windowID: UInt64)
-    func fullscreenRelinquishPlan(outputID: UInt64, exceptID: UInt64) throws(HostCallError) -> [UInt64]
-    func migrateOffOutput(windowID: UInt64, removedOutputID: UInt64, hasFallbackOutputID: Bool, fallbackOutputID: UInt64, hasRemovedUsable: Bool, removedUsable: WireUsableArea, hasFallbackUsable: Bool, fallbackUsable: WireUsableArea, hasFullscreenRect: Bool, fullscreenRect: WireWindowRect, hasMaximizedRect: Bool, maximizedRect: WireWindowRect) throws(HostCallError) -> WireOutputMigrationResult
-    func backdropPolicyResolve(
-        inputs: UnsafePointer<WireBackdropLayerInput>?,
-        inputsLen: UInt32
-    ) throws(HostCallError) -> [WireBackdropDraw]
-    func backdropResolveMaterials(
-        inputs: UnsafePointer<WireBackdropMaterialInput>?,
-        inputsLen: UInt32,
-        keyWindowID: UInt64,
-        accessibility: WireBackdropAccessibility,
-        frameTime: Double
-    ) throws(HostCallError) -> [WireBackdropMaterialSpec]
-    /// Whether the focused window's client speaks Command/Super natively, so the
-    /// compositor must NOT rewrite its macOS-shape Command chords into Linux Ctrl
-    /// chords. Consults the window's identity — xdg app-id, Xwayland class/instance,
-    /// shell layer surfaces — and the native-Command app list, all of which live on
-    /// this side. The seat-translation mechanism calls this for the focused key.
-    func nativeCommandPolicy(windowID: UInt64) -> Bool
-    // All window-lifecycle xdg + xwayland crossings moved off this relay onto the
-    // WaylandRouter substrate (the Swift roles / xwm reach WindowManager
-    // in-process there). What remains is the mechanism→policy surface above.
-}
+public import NucleusCompositorServerTypes
+public import NucleusCompositorServer
 
 @MainActor
-extension WindowManager: WindowMechanismHost {
+extension WindowManager {
     public func interactiveGrabActive() -> Bool {
         interaction.hasGrab
     }

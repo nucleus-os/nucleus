@@ -9,8 +9,8 @@
 // the consumer's callbacks run main-actor-clean. A client dispatching off the main thread should drive
 // WaylandClientDispatch's WlRegistryClient directly instead.
 
-import WaylandClientC
-import WaylandClientDispatch
+public import WaylandClientC
+public import WaylandClientDispatch
 
 /// A global the consumer wants bound. Matched against the registry's advertised interface by name
 /// (read from the interface descriptor); bound at min(advertised, maxVersion).

@@ -65,7 +65,7 @@ final class XdgForeign {
     /// zxdg_exported_v2 is destroy-only — no generated dispatch — so its request
     /// vtable stays hand-wired here.
     let exportedVtable: UnsafeMutableRawPointer
-    weak var delegate: XdgForeignDelegate?
+    weak var delegate: (any XdgForeignDelegate)?
 
     private var handles: [String: WeakSurfaceBox] = [:]
     private var counter: UInt64 = 0

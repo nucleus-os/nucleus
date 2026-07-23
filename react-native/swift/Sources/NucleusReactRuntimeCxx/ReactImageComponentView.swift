@@ -1,4 +1,4 @@
-import NucleusUI
+public import NucleusUI
 
 /// Fabric image projection onto the same retained request/cache lifecycle used
 /// by native `ImageView`.

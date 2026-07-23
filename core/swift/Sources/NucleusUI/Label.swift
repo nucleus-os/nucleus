@@ -1,4 +1,4 @@
-import NucleusLayers
+internal import NucleusLayers
 
 @MainActor
 public final class Label: View, LayoutBaselineProviding, ~Sendable {

@@ -266,9 +266,9 @@ struct LinuxReactorContextLedger: Sendable {
 }
 
 private final class ReactorWaitSignal: Sendable {
-    private struct State {
+    private struct State: ~Copyable {
         var pending = false
-        var continuation: CheckedContinuation<UInt64?, Never>?
+        var continuation: Continuation<UInt64?, Never>?
         var completionSourceWakeups: UInt64 = 0
         var coalescedSignals: UInt64 = 0
         var immediateResumes: UInt64 = 0
@@ -282,24 +282,40 @@ private final class ReactorWaitSignal: Sendable {
 
     private let state = Mutex(State())
 
-    func wait() async -> UInt64? {
-        await withCheckedContinuation { continuation in
-            let resumeImmediately = state.withLock { state in
+    private func install(
+        _ continuation: consuming Continuation<UInt64?, Never>
+    ) -> Continuation<UInt64?, Never>? {
+        var transfer = Optional(consume continuation)
+        return state.withLock { state in
+            switch transfer.take() {
+            case .some(let continuation):
                 if state.pending {
                     state.pending = false
                     incrementSaturating(&state.immediateResumes)
-                    return true
+                    return .some(consume continuation)
                 }
                 precondition(
                     state.continuation == nil,
                     "LinuxHostReactor supports one waiter")
-                state.continuation = continuation
-                return false
+                state.continuation = consume continuation
+                return .none
+            case .none:
+                preconditionFailure(
+                    "LinuxHostReactor continuation transfer was empty")
             }
-            if resumeImmediately {
+        }
+    }
+
+    func wait() async -> UInt64? {
+        await withContinuation(of: UInt64?.self) { continuation in
+            let resumeImmediately = install(consume continuation)
+            switch consume resumeImmediately {
+            case .some(let continuation):
                 // The completion arrived before the actor actually suspended,
                 // so there is no executor-resume latency to report.
                 continuation.resume(returning: nil)
+            case .none:
+                break
             }
         }
     }
@@ -308,21 +324,25 @@ private final class ReactorWaitSignal: Sendable {
         let timestampNanoseconds = measureExecutorResume
             ? reactorMonotonicNowNanoseconds()
             : nil
-        let continuation = state.withLock { state in
+        let continuation: Continuation<UInt64?, Never>? = state.withLock { state in
             if measureExecutorResume {
                 incrementSaturating(&state.completionSourceWakeups)
             }
-            guard let continuation = state.continuation else {
+            guard state.continuation != nil else {
                 if state.pending {
                     incrementSaturating(&state.coalescedSignals)
                 }
                 state.pending = true
-                return Optional<CheckedContinuation<UInt64?, Never>>.none
+                return .none
             }
-            state.continuation = nil
-            return continuation
+            return state.continuation.take()
         }
-        continuation?.resume(returning: timestampNanoseconds)
+        switch consume continuation {
+        case .some(let continuation):
+            continuation.resume(returning: timestampNanoseconds)
+        case .none:
+            break
+        }
     }
 
     func snapshot() -> Snapshot {
@@ -512,7 +532,7 @@ public final class LinuxHostReactor {
     private let timerFileDescriptor: Int32
     private let waitSignal: ReactorWaitSignal
     private let shutdownSignal: ReactorShutdownSignal
-    private let completionSource: DispatchSourceRead
+    private let completionSource: any DispatchSourceRead
     private var registrations: [UInt64: LinuxReactorRegistrationRecord] = [:]
     private var contextLedger = LinuxReactorContextLedger()
     private var nextContext: UInt64 = 1

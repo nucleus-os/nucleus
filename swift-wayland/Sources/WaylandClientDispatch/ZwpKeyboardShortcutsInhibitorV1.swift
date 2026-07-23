@@ -3,7 +3,7 @@
 // Typed client dispatch for zwp_keyboard_shortcuts_inhibitor_v1: a handler protocol (one method per event), the
 // libwayland listener + owner recovery + arg marshalling, and an addListener that wires it.
 
-import WaylandClientC
+public import WaylandClientC
 
 public protocol ZwpKeyboardShortcutsInhibitorV1Events: AnyObject {
     func active(_ proxy: OpaquePointer)
@@ -26,8 +26,8 @@ public enum ZwpKeyboardShortcutsInhibitorV1Client {
         zwp_keyboard_shortcuts_inhibitor_v1_add_listener(proxy, listener, Unmanaged.passUnretained(owner).toOpaque())
     }
 
-    private static func handler(_ data: UnsafeMutableRawPointer) -> ZwpKeyboardShortcutsInhibitorV1Events? {
-        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? ZwpKeyboardShortcutsInhibitorV1Events
+    private static func handler(_ data: UnsafeMutableRawPointer) -> (any ZwpKeyboardShortcutsInhibitorV1Events)? {
+        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? any ZwpKeyboardShortcutsInhibitorV1Events
     }
 
     private static let active_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in

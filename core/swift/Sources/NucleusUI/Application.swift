@@ -1,4 +1,4 @@
-import NucleusLayers
+package import NucleusLayers
 
 public enum Application {
     private struct Scope: @unchecked Sendable {

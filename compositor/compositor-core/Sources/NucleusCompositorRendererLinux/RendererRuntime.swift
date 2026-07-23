@@ -17,8 +17,8 @@
 import VulkanC
 import Vulkan
 import NucleusCompositorDrmC
-import NucleusRenderModel
-@_spi(NucleusPlatform) import NucleusRenderer
+public import NucleusRenderModel
+@_spi(NucleusPlatform) public import NucleusRenderer
 import Glibc
 
 /// The DRM/KMS presentation backend. Constructed at compositor bring-up with the

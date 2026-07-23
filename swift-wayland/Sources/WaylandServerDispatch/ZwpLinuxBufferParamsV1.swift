@@ -3,8 +3,8 @@
 // Typed server dispatch for zwp_linux_buffer_params_v1: a handler protocol (one method per request), the
 // request vtable + owner recovery + arg marshalling, and typed event senders.
 
-import WaylandServerC
-import WaylandServer
+public import WaylandServerC
+public import WaylandServer
 
 public protocol ZwpLinuxBufferParamsV1Requests: AnyObject {
     func destroy(_ resource: UnsafeMutablePointer<wl_resource>)
@@ -38,9 +38,9 @@ public enum ZwpLinuxBufferParamsV1Server {
         zwp_linux_buffer_params_v1_send_failed(target)
     }
 
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> ZwpLinuxBufferParamsV1Requests? {
+    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> (any ZwpLinuxBufferParamsV1Requests)? {
         guard let ud = wl_resource_get_user_data(res) else { return nil }
-        return Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? ZwpLinuxBufferParamsV1Requests
+        return Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any ZwpLinuxBufferParamsV1Requests
     }
 
     private static let destroy_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
@@ -57,6 +57,6 @@ public enum ZwpLinuxBufferParamsV1Server {
     }
     private static let createImmed_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, Int32, Int32, UInt32, UInt32) -> Void = { client, res, buffer_id, width, height, format, flags in
         guard let res, let client, let h = handler(res) else { return }
-        h.createImmed(res, buffer_id: WlNewId(client: client, id: buffer_id, version: Swift.min(wl_resource_get_version(res), Int32(1)), interface: swift_wayland_iface_wl_buffer()), width: width, height: height, format: format, flags: flags)
+        h.createImmed(res, buffer_id: WlNewId(client: client, id: buffer_id, version: Swift::min(wl_resource_get_version(res), Int32(1)), interface: swift_wayland_iface_wl_buffer()), width: width, height: height, format: format, flags: flags)
     }
 }

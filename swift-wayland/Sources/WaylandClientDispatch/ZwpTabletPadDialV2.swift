@@ -3,7 +3,7 @@
 // Typed client dispatch for zwp_tablet_pad_dial_v2: a handler protocol (one method per event), the
 // libwayland listener + owner recovery + arg marshalling, and an addListener that wires it.
 
-import WaylandClientC
+public import WaylandClientC
 
 public protocol ZwpTabletPadDialV2Events: AnyObject {
     func delta(_ proxy: OpaquePointer, value120: Int32)
@@ -26,8 +26,8 @@ public enum ZwpTabletPadDialV2Client {
         zwp_tablet_pad_dial_v2_add_listener(proxy, listener, Unmanaged.passUnretained(owner).toOpaque())
     }
 
-    private static func handler(_ data: UnsafeMutableRawPointer) -> ZwpTabletPadDialV2Events? {
-        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? ZwpTabletPadDialV2Events
+    private static func handler(_ data: UnsafeMutableRawPointer) -> (any ZwpTabletPadDialV2Events)? {
+        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? any ZwpTabletPadDialV2Events
     }
 
     private static let delta_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, Int32) -> Void = { data, proxy, value120 in

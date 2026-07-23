@@ -6,7 +6,7 @@
 // The `.wireValue` accessor and `init(wireValue:)` initializer names
 // describe direct wire structs, not C ABI bridge values.
 
-import NucleusTypes
+package import NucleusTypes
 
 // Geometry (`GeometryPoint`/`GeometrySize`/`GeometryRect`) is now the wire
 // type itself (see Geometry.swift); no adapter arm is needed.

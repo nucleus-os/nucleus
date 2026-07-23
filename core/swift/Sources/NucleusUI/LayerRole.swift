@@ -1,4 +1,5 @@
-import NucleusLayers
+package import NucleusLayers
+internal import NucleusTypes
 
 public enum LayerRole: Sendable, Equatable {
     case generic

@@ -1,4 +1,4 @@
-import NucleusUI
+public import NucleusUI
 
 /// A thing that sits in the bar.
 ///

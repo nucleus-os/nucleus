@@ -1,4 +1,4 @@
-import NucleusUI
+public import NucleusUI
 
 /// A rounded status pill with an accent-tinted fill, a hairline outline, and a
 /// leading indicator dot — the shell bar's most repeated element.

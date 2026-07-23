@@ -3,7 +3,7 @@
 // Typed client dispatch for wp_presentation: a handler protocol (one method per event), the
 // libwayland listener + owner recovery + arg marshalling, and an addListener that wires it.
 
-import WaylandClientC
+public import WaylandClientC
 
 public protocol WpPresentationEvents: AnyObject {
     func clockId(_ proxy: OpaquePointer, clk_id: UInt32)
@@ -24,8 +24,8 @@ public enum WpPresentationClient {
         wp_presentation_add_listener(proxy, listener, Unmanaged.passUnretained(owner).toOpaque())
     }
 
-    private static func handler(_ data: UnsafeMutableRawPointer) -> WpPresentationEvents? {
-        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? WpPresentationEvents
+    private static func handler(_ data: UnsafeMutableRawPointer) -> (any WpPresentationEvents)? {
+        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? any WpPresentationEvents
     }
 
     private static let clockId_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, clk_id in

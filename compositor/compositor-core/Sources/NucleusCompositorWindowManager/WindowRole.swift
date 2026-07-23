@@ -1,4 +1,4 @@
-import NucleusCompositorServer
+public import NucleusCompositorServer
 
 public protocol WindowRole: AnyObject {
     var windowID: UInt64 { get }

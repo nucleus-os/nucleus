@@ -2,7 +2,7 @@ import NucleusSkiaGraphiteBridge
 import VulkanC
 import Vulkan
 import Tracy
-import NucleusRenderModel
+internal import NucleusRenderModel
 #if canImport(Glibc)
 import Glibc
 #elseif canImport(Android)

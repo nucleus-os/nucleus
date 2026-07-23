@@ -12,8 +12,8 @@
 // cover create/insert/property-update. Numeric narrowing is `Float(_:)`.
 
 import NucleusTypes
-import NucleusLayers
-import NucleusRenderModel
+public import NucleusLayers
+public import NucleusRenderModel
 
 public enum RenderTransactionLowering {
     /// Lower one committed layers transaction into a render-model transaction

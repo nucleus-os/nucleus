@@ -73,10 +73,13 @@ let renderSDK = provisionSDK("render", links: [
     ("include/skia", repoRoot + "/third-party/skia"),
     ("lib/skia-graphite", repoRoot + "/.skia-build/graphite"),
     ("include/skia-text", repoRoot + "/render-cxx/skia"),
+], forceLinks: [
+    ("lib/skia-graphite-android-arm64", repoRoot + "/.skia-build/android-arm64"),
 ])
 
 let skiaRoot = renderSDK + "/include/skia"          // the Skia source/header tree
 let skiaLibDir = renderSDK + "/lib/skia-graphite"   // the GN/Ninja-built archive set
+let skiaAndroidLibDir = renderSDK + "/lib/skia-graphite-android-arm64"
 
 let skiaBridgeLinuxCxxFlags: [String] = [
     "-std=c++20", "-DNDEBUG", "-DSK_GRAPHITE", "-DSK_VULKAN",
@@ -115,6 +118,17 @@ let skiaLinkFlags: [String] = [
     "-lzlib", "-lwuffs", "-ldng_sdk", "-lpiex",
     "-Xlinker", "--end-group",
     "-lvulkan", "-lfontconfig", "-lfreetype", "-lz", "-ldl", "-lpthread", "-lm",
+]
+
+let skiaAndroidLinkFlags: [String] = [
+    "-L", skiaAndroidLibDir,
+    "-Xlinker", "--start-group",
+    "-lskia", "-lskshaper", "-lskparagraph", "-lskunicode_core", "-lskunicode_icu",
+    "-lsvg", "-lskcms", "-lskresources", "-lfreetype2", "-lharfbuzz", "-licu",
+    "-lpng", "-ljpeg", "-ljpeg12", "-ljpeg16", "-lwebp", "-lwebp_sse41", "-lexpat",
+    "-lzlib", "-lwuffs", "-ldng_sdk", "-lpiex",
+    "-Xlinker", "--end-group",
+    "-lvulkan", "-landroid", "-llog", "-lz", "-ldl", "-lm",
 ]
 
 // Resolve pkg-config flags at manifest-eval time (libdrm/gbm live at dynamic host
@@ -185,13 +199,18 @@ let package = Package(
     ],
     targets: [
         // ── Shared-type leaves: public value structs + enums + constants, no deps. ─
-        .target(name: "NucleusTypes", path: "swift/Sources/NucleusTypes"),
+        .target(
+            name: "NucleusTypes",
+            path: "swift/Sources/NucleusTypes",
+            swiftSettings: [.strictMemorySafety()]
+        ),
 
         // ── First edge: the host-protocol surface imports NucleusTypes ───────────
         .target(
             name: "NucleusAppHostProtocols",
             dependencies: ["NucleusTypes"],
-            path: "swift/Sources/NucleusAppHostProtocols"
+            path: "swift/Sources/NucleusAppHostProtocols",
+            swiftSettings: [.strictMemorySafety()]
         ),
 
         // ── Mid graph: tracing/types-only modules (no prebuilt C/C++ link yet). ──
@@ -202,7 +221,10 @@ let package = Package(
             name: "NucleusLayers",
             dependencies: ["NucleusTypes", "NucleusAppHostProtocols"],
             path: "swift/Sources/NucleusLayers",
-            swiftSettings: [.define("NUCLEUS_LAYERS_PUBLIC_NAMES")]
+            swiftSettings: [
+                .define("NUCLEUS_LAYERS_PUBLIC_NAMES"),
+                .strictMemorySafety(),
+            ]
         ),
         // The first-party text-layout C++ bridge (header-only; impl in the
         // text-backend .so, linked at the executable). A SwiftPM-owned cmodule dir
@@ -245,7 +267,8 @@ let package = Package(
         .target(
             name: "NucleusUI",
             dependencies: ["NucleusTypes", "NucleusLayers", "NucleusAppHostProtocols", .product(name: "Tracy", package: "swift-tracy")],
-            path: "swift/Sources/NucleusUI"
+            path: "swift/Sources/NucleusUI",
+            swiftSettings: [.strictMemorySafety()]
         ),
         // NucleusUIEmbedder — the API for code that *embeds* a NucleusUI scene into a
         // platform and feeds it a surface, input, and a frame clock: the compositor, the
@@ -256,7 +279,8 @@ let package = Package(
         .target(
             name: "NucleusUIEmbedder",
             dependencies: ["NucleusUI", "NucleusLayers", "NucleusTypes"],
-            path: "swift/Sources/NucleusUIEmbedder"
+            path: "swift/Sources/NucleusUIEmbedder",
+            swiftSettings: [.strictMemorySafety()]
         ),
         // NucleusApp — the SwiftUI-shaped App/Scene entry vocabulary and the single-import
         // front door (`@_exported import NucleusUI`). Depends on NucleusUI (re-exported)
@@ -264,7 +288,8 @@ let package = Package(
         .target(
             name: "NucleusApp",
             dependencies: ["NucleusUI", "NucleusLayers"],
-            path: "swift/Sources/NucleusApp"
+            path: "swift/Sources/NucleusApp",
+            swiftSettings: [.strictMemorySafety()]
         ),
         // The retained render model. Its @main smoke fixtures were migrated to the
         // NucleusRenderModelTests swift-testing target, so the directory now holds
@@ -272,14 +297,16 @@ let package = Package(
         .target(
             name: "NucleusRenderModel",
             dependencies: ["NucleusAppHostProtocols"],
-            path: "swift/Sources/NucleusRenderModel"
+            path: "swift/Sources/NucleusRenderModel",
+            swiftSettings: [.strictMemorySafety()]
         ),
         // Host-side bundle: ties the shared types + host protocols to the layers/render
         // model. A clean leaf (no cxx interop) once its deps are migrated.
         .target(
             name: "NucleusAppHostBundle",
             dependencies: ["NucleusTypes", "NucleusAppHostProtocols", "NucleusLayers", "NucleusRenderModel"],
-            path: "swift/Sources/NucleusAppHostBundle"
+            path: "swift/Sources/NucleusAppHostBundle",
+            swiftSettings: [.strictMemorySafety()]
         ),
         // The generated Wayland C modules live in compositor-core with the Wayland substrate.
         // the Skia headers (from the native SDK), exposing the nucleus::skia C++ API
@@ -305,6 +332,9 @@ let package = Package(
             cxxSettings: [
                 .unsafeFlags(skiaBridgeLinuxCxxFlags, .when(platforms: [.linux])),
                 .unsafeFlags(skiaBridgeAndroidCxxFlags, .when(platforms: [.android])),
+            ],
+            linkerSettings: [
+                .unsafeFlags(skiaAndroidLinkFlags, .when(platforms: [.android])),
             ]
         ),
         // Cross-compile the Android native Vulkan Graphite archive set — the
@@ -333,7 +363,8 @@ let package = Package(
         .target(
             name: "NucleusRenderHost",
             dependencies: ["NucleusTypes", "NucleusLayers", "NucleusRenderModel"],
-            path: "swift/Sources/NucleusRenderHost"
+            path: "swift/Sources/NucleusRenderHost",
+            swiftSettings: [.strictMemorySafety()]
         ),
         // The layers→render producer feed.
         .testTarget(
@@ -488,6 +519,7 @@ let package = Package(
         .executableTarget(
             name: "NucleusCoreThreadSanitizerHarness",
             dependencies: [
+                "NucleusAppHostProtocols",
                 "NucleusRenderModel",
                 "NucleusRenderer",
             ],
@@ -506,9 +538,14 @@ for target in package.targets {
     default:
         continue
     }
-    target.swiftSettings = (target.swiftSettings ?? []) + [
+    var swiftSettings = (target.swiftSettings ?? []) + [
         .unsafeFlags(["-warnings-as-errors"]),
+        .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
     ]
+    if let feature = Context.environment["NUCLEUS_SWIFT_DIAGNOSTIC_FEATURE"] {
+        swiftSettings.append(.unsafeFlags(["-enable-upcoming-feature", feature]))
+    }
+    target.swiftSettings = swiftSettings
     target.cSettings = (target.cSettings ?? []) + [
         .unsafeFlags(["-Werror"]),
     ]

@@ -15,6 +15,7 @@
 // binding is part of the deferred on-device validation.
 
 @_spi(NucleusPlatform) internal import NucleusRenderer
+internal import NucleusRenderModel
 internal import VulkanC
 
 @MainActor

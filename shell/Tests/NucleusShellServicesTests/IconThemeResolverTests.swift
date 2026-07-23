@@ -228,6 +228,16 @@ import Testing
         #expect(userIndex < systemIndex)
     }
 
+    @Test func aMissingHomeEnvironmentUsesOnlySystemRoots() {
+        let roots = IconThemeResolver.defaultRoots(environment: [:])
+
+        #expect(roots == [
+            "/usr/local/share/icons",
+            "/usr/share/icons",
+            "/usr/share/pixmaps",
+        ])
+    }
+
     @Test func portableImageQueriesResolveOffTheUIActor() async {
         let fixture = Fixture()
         fixture.add(

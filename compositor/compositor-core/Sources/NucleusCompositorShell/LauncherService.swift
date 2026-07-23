@@ -1,5 +1,5 @@
-import Foundation
-import NucleusCompositorShellSurface
+import Foundation // Process and FileHandle implement detached application launching.
+public import NucleusCompositorShellSurface
 
 #if os(Linux)
   import Glibc
@@ -31,11 +31,6 @@ public final class LauncherService {
   public func launchApp(id: LaunchableAppID) -> Bool {
     guard let app = applicationIndex.app(id: id) else { return false }
     return launch(app)
-  }
-
-  public func playScreenshotSound() {
-    _ = spawn(
-      ["pw-play", "/usr/share/sounds/freedesktop/stereo/screen-capture.oga"], logLaunch: false)
   }
 
   @discardableResult
@@ -444,9 +439,27 @@ public final class LauncherService {
 
   private nonisolated static func loginShell() -> String? {
     #if os(Linux)
-      guard let passwd = getpwuid(getuid()), let shell = passwd.pointee.pw_shell else { return nil }
-      let value = String(cString: shell)
-      return value.isEmpty ? nil : value
+      let configuredSize = Int(sysconf(Int32(_SC_GETPW_R_SIZE_MAX)))
+      let bufferSize = configuredSize > 0 && configuredSize <= 1 << 20
+        ? configuredSize
+        : 16 * 1024
+      return withUnsafeTemporaryAllocation(
+        of: CChar.self,
+        capacity: bufferSize
+      ) { buffer in
+        var record = unsafe passwd()
+        var result: UnsafeMutablePointer<passwd>?
+        guard let baseAddress = buffer.baseAddress else { return nil }
+        let status = unsafe getpwuid_r(
+          getuid(), &record, baseAddress, buffer.count, &result)
+        guard
+          status == 0,
+          unsafe result != nil,
+          let shell = unsafe record.pw_shell
+        else { return nil }
+        let value = unsafe String(cString: shell)
+        return value.isEmpty ? nil : value
+      }
     #else
       let value = ProcessInfo.processInfo.environment["SHELL"]
       return value?.isEmpty == false ? value : nil
@@ -455,8 +468,8 @@ public final class LauncherService {
 
   private static func currentCEnvironmentValue(_ key: String) -> String? {
     #if os(Linux)
-      guard let value = getenv(key) else { return nil }
-      return String(cString: value)
+      guard let value = unsafe getenv(key) else { return nil }
+      return unsafe String(cString: value)
     #else
       return ProcessInfo.processInfo.environment[key]
     #endif

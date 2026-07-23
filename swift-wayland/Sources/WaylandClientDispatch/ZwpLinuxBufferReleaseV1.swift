@@ -3,7 +3,7 @@
 // Typed client dispatch for zwp_linux_buffer_release_v1: a handler protocol (one method per event), the
 // libwayland listener + owner recovery + arg marshalling, and an addListener that wires it.
 
-import WaylandClientC
+public import WaylandClientC
 
 public protocol ZwpLinuxBufferReleaseV1Events: AnyObject {
     func fencedRelease(_ proxy: OpaquePointer, fence: Int32)
@@ -26,8 +26,8 @@ public enum ZwpLinuxBufferReleaseV1Client {
         zwp_linux_buffer_release_v1_add_listener(proxy, listener, Unmanaged.passUnretained(owner).toOpaque())
     }
 
-    private static func handler(_ data: UnsafeMutableRawPointer) -> ZwpLinuxBufferReleaseV1Events? {
-        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? ZwpLinuxBufferReleaseV1Events
+    private static func handler(_ data: UnsafeMutableRawPointer) -> (any ZwpLinuxBufferReleaseV1Events)? {
+        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? any ZwpLinuxBufferReleaseV1Events
     }
 
     private static let fencedRelease_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, Int32) -> Void = { data, proxy, fence in

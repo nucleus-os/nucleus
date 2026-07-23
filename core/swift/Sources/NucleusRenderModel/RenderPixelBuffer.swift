@@ -1,4 +1,4 @@
-import NucleusAppHostProtocols
+public import NucleusAppHostProtocols
 
 /// A raw image as it arrives from a sender: pixels, a layout, and a stride.
 ///
@@ -126,8 +126,9 @@ public struct RawPixelBuffer: Equatable, Sendable {
             hash &*= 0x0000_0100_0000_01B3
         }
         for value in [width, height, rowStride] {
-            withUnsafeBytes(of: UInt64(truncatingIfNeeded: value)) {
-                $0.forEach(mix)
+            let word = UInt64(truncatingIfNeeded: value)
+            for shift in stride(from: 0, to: UInt64.bitWidth, by: UInt8.bitWidth) {
+                mix(UInt8(truncatingIfNeeded: word >> UInt64(shift)))
             }
         }
         mix(order.rawValue)

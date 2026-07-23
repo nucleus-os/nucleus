@@ -3,7 +3,7 @@
 // Typed client dispatch for zwp_tablet_pad_v2: a handler protocol (one method per event), the
 // libwayland listener + owner recovery + arg marshalling, and an addListener that wires it.
 
-import WaylandClientC
+public import WaylandClientC
 
 public protocol ZwpTabletPadV2Events: AnyObject {
     func group(_ proxy: OpaquePointer, pad_group: OpaquePointer?)
@@ -38,8 +38,8 @@ public enum ZwpTabletPadV2Client {
         zwp_tablet_pad_v2_add_listener(proxy, listener, Unmanaged.passUnretained(owner).toOpaque())
     }
 
-    private static func handler(_ data: UnsafeMutableRawPointer) -> ZwpTabletPadV2Events? {
-        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? ZwpTabletPadV2Events
+    private static func handler(_ data: UnsafeMutableRawPointer) -> (any ZwpTabletPadV2Events)? {
+        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? any ZwpTabletPadV2Events
     }
 
     private static let group_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, OpaquePointer?) -> Void = { data, proxy, pad_group in

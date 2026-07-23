@@ -8,7 +8,8 @@
 
 import NucleusSkiaGraphiteBridge
 import VulkanC
-import NucleusRenderModel
+internal import NucleusRenderModel
+internal import struct NucleusTypes.OutputPixelRect
 #if canImport(Glibc)
 import Glibc
 #endif

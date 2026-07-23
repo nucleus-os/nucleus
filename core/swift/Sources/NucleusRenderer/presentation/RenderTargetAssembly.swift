@@ -1,3 +1,5 @@
+internal import struct NucleusTypes.Rect
+
 //
 // Mirrors `DisplayServer.renderTargetForOutput` + `fullUsableArea`: derive the
 // presentation `RenderTarget` the FramePlan walk is parameterized by from a

@@ -1,6 +1,6 @@
-import NucleusLinuxDBus
-import NucleusLinuxReactor
-import NucleusUI
+public import NucleusLinuxDBus
+public import NucleusLinuxReactor
+public import NucleusUI
 #if canImport(Glibc)
 import Glibc
 #endif
@@ -211,7 +211,10 @@ public final class PortalEnvironmentAdapter: LinuxReactorSource {
 
     private static func monotonicNowNanoseconds() -> UInt64 {
         var time = timespec()
-        clock_gettime(CLOCK_MONOTONIC, &time)
+        // `time` is a live, correctly aligned value for the duration of the C
+        // call, and clock_gettime writes exactly one initialized timespec.
+        let result = unsafe clock_gettime(CLOCK_MONOTONIC, &time)
+        precondition(result == 0, "CLOCK_MONOTONIC is unavailable")
         let seconds = UInt64(max(0, time.tv_sec))
         let nanoseconds = UInt64(max(0, time.tv_nsec))
         let multiplied = seconds.multipliedReportingOverflow(

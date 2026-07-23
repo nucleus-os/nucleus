@@ -6,7 +6,7 @@
 /// to match the value semantics.
 public typealias Float4 = (Float, Float, Float, Float)
 
-@inline(__always)
+@inline(always)
 public func float4Equal(_ a: Float4, _ b: Float4) -> Bool {
     a.0 == b.0 && a.1 == b.1 && a.2 == b.2 && a.3 == b.3
 }

@@ -18,7 +18,7 @@
 // client key.
 
 import WaylandServerC
-import NucleusCompositorServer
+internal import NucleusCompositorServer
 
 @MainActor
 final class RouterDataDeviceDriver {

@@ -6,8 +6,8 @@
 // `RetainedTreeStore`. Nothing wires this live yet; it lands additive +
 // fixture-proven.
 
-import NucleusLayers
-import NucleusRenderModel
+public import NucleusLayers
+public import NucleusRenderModel
 
 @MainActor
 public final class RenderCommitSink: NucleusLayers.CommitSink {

@@ -1,4 +1,5 @@
-import NucleusCompositorServer
+public import NucleusCompositorServer
+public import struct NucleusCompositorServerTypes.WireLogicalRect
 import Tracy
 
 public enum TileCommand: UInt32 {

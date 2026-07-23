@@ -1,4 +1,4 @@
-import Foundation
+import Foundation // FileHandle.standardError is available only from the umbrella module.
 
 private let usage = """
 Usage: tools/nucleus <command>

@@ -1,4 +1,5 @@
-import NucleusLayers
+package import NucleusLayers
+internal import struct NucleusTypes.Color
 
 public enum Appearance: Sendable, Equatable {
     case light

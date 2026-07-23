@@ -3,7 +3,7 @@
 // Typed server dispatch for zxdg_imported_v2: a handler protocol (one method per request), the
 // request vtable + owner recovery + arg marshalling, and typed event senders.
 
-import WaylandServerC
+public import WaylandServerC
 import WaylandServer
 
 public protocol ZxdgImportedV2Requests: AnyObject {
@@ -31,9 +31,9 @@ public enum ZxdgImportedV2Server {
         zxdg_imported_v2_send_destroyed(target)
     }
 
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> ZxdgImportedV2Requests? {
+    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> (any ZxdgImportedV2Requests)? {
         guard let ud = wl_resource_get_user_data(res) else { return nil }
-        return Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? ZxdgImportedV2Requests
+        return Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any ZxdgImportedV2Requests
     }
 
     private static let destroy_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in

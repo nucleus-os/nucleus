@@ -3,7 +3,7 @@
 // Typed client dispatch for ext_transient_seat_v1: a handler protocol (one method per event), the
 // libwayland listener + owner recovery + arg marshalling, and an addListener that wires it.
 
-import WaylandClientC
+public import WaylandClientC
 
 public protocol ExtTransientSeatV1Events: AnyObject {
     func ready(_ proxy: OpaquePointer, global_name: UInt32)
@@ -26,8 +26,8 @@ public enum ExtTransientSeatV1Client {
         ext_transient_seat_v1_add_listener(proxy, listener, Unmanaged.passUnretained(owner).toOpaque())
     }
 
-    private static func handler(_ data: UnsafeMutableRawPointer) -> ExtTransientSeatV1Events? {
-        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? ExtTransientSeatV1Events
+    private static func handler(_ data: UnsafeMutableRawPointer) -> (any ExtTransientSeatV1Events)? {
+        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? any ExtTransientSeatV1Events
     }
 
     private static let ready_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, global_name in

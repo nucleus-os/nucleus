@@ -3,8 +3,8 @@
 // Typed server dispatch for wl_shm_pool: a handler protocol (one method per request), the
 // request vtable + owner recovery + arg marshalling, and typed event senders.
 
-import WaylandServerC
-import WaylandServer
+public import WaylandServerC
+public import WaylandServer
 
 public protocol WlShmPoolRequests: AnyObject {
     func createBuffer(_ resource: UnsafeMutablePointer<wl_resource>, id: WlNewId, offset: Int32, width: Int32, height: Int32, stride: Int32, format: UInt32)
@@ -29,14 +29,14 @@ public enum WlShmPoolServer {
         return UnsafeRawPointer(raw)
     }()
 
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> WlShmPoolRequests? {
+    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> (any WlShmPoolRequests)? {
         guard let ud = wl_resource_get_user_data(res) else { return nil }
-        return Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? WlShmPoolRequests
+        return Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any WlShmPoolRequests
     }
 
     private static let createBuffer_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, Int32, Int32, Int32, Int32, UInt32) -> Void = { client, res, id, offset, width, height, stride, format in
         guard let res, let client, let h = handler(res) else { return }
-        h.createBuffer(res, id: WlNewId(client: client, id: id, version: Swift.min(wl_resource_get_version(res), Int32(1)), interface: swift_wayland_iface_wl_buffer()), offset: offset, width: width, height: height, stride: stride, format: format)
+        h.createBuffer(res, id: WlNewId(client: client, id: id, version: Swift::min(wl_resource_get_version(res), Int32(1)), interface: swift_wayland_iface_wl_buffer()), offset: offset, width: width, height: height, stride: stride, format: format)
     }
     private static let destroy_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
         guard let res else { return }

@@ -10,8 +10,8 @@
 // scan out / queue-present it. The backend owns output discovery, the per-output
 // ring/slot or swapchain, page-flip / present pacing, and session lifecycle.
 
-import VulkanC
-import Vulkan
+public import VulkanC
+public import Vulkan
 
 /// What kind of GPU image the core is recording into — selects the Vulkan image
 /// usage flags the Graphite render-target wrap needs. The image itself is owned by

@@ -2,6 +2,7 @@ import Dispatch
 import Glibc
 import NucleusRenderModel
 import NucleusRenderer
+internal import enum NucleusAppHostProtocols.PixelChannelOrder
 import Synchronization
 
 private final class WakeCounter: AsyncRenderWakeSink, Sendable {

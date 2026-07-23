@@ -1,4 +1,4 @@
-import NucleusTypes
+public import NucleusTypes
 
 public struct LayerID: RawRepresentable, Hashable, Sendable, Equatable {
     public var rawValue: UInt64

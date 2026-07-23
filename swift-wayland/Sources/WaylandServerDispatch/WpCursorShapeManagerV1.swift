@@ -3,8 +3,8 @@
 // Typed server dispatch for wp_cursor_shape_manager_v1: a handler protocol (one method per request), the
 // request vtable + owner recovery + arg marshalling, and typed event senders.
 
-import WaylandServerC
-import WaylandServer
+public import WaylandServerC
+public import WaylandServer
 
 public protocol WpCursorShapeManagerV1Requests: AnyObject {
     func destroy(_ resource: UnsafeMutablePointer<wl_resource>)
@@ -29,9 +29,9 @@ public enum WpCursorShapeManagerV1Server {
         return UnsafeRawPointer(raw)
     }()
 
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> WpCursorShapeManagerV1Requests? {
+    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> (any WpCursorShapeManagerV1Requests)? {
         guard let ud = wl_resource_get_user_data(res) else { return nil }
-        return Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? WpCursorShapeManagerV1Requests
+        return Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any WpCursorShapeManagerV1Requests
     }
 
     private static let destroy_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
@@ -40,10 +40,10 @@ public enum WpCursorShapeManagerV1Server {
     }
     private static let getPointer_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UnsafeMutablePointer<wl_resource>?) -> Void = { client, res, cursor_shape_device, pointer in
         guard let res, let client, let h = handler(res) else { return }
-        h.getPointer(res, cursor_shape_device: WlNewId(client: client, id: cursor_shape_device, version: Swift.min(wl_resource_get_version(res), Int32(2)), interface: swift_wayland_iface_wp_cursor_shape_device_v1()), pointer: pointer)
+        h.getPointer(res, cursor_shape_device: WlNewId(client: client, id: cursor_shape_device, version: Swift::min(wl_resource_get_version(res), Int32(2)), interface: swift_wayland_iface_wp_cursor_shape_device_v1()), pointer: pointer)
     }
     private static let getTabletToolV2_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UnsafeMutablePointer<wl_resource>?) -> Void = { client, res, cursor_shape_device, tablet_tool in
         guard let res, let client, let h = handler(res) else { return }
-        h.getTabletToolV2(res, cursor_shape_device: WlNewId(client: client, id: cursor_shape_device, version: Swift.min(wl_resource_get_version(res), Int32(2)), interface: swift_wayland_iface_wp_cursor_shape_device_v1()), tablet_tool: tablet_tool)
+        h.getTabletToolV2(res, cursor_shape_device: WlNewId(client: client, id: cursor_shape_device, version: Swift::min(wl_resource_get_version(res), Int32(2)), interface: swift_wayland_iface_wp_cursor_shape_device_v1()), tablet_tool: tablet_tool)
     }
 }

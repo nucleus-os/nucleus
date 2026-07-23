@@ -1,5 +1,5 @@
 import NucleusTypes
-import NucleusCompositorServerTypes
+public import NucleusCompositorServerTypes
 
 /// Shared failure type for NucleusCompositorServer caller-boundary (`*Host`)
 /// requirements that surface a success/failure split as an error. One

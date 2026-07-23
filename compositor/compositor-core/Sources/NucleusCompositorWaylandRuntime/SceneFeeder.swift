@@ -19,8 +19,11 @@
 // (`Window.committedBufferSize`/`contentOffsetInSlot`).
 
 @_spi(NucleusCompositor) import NucleusLayers
-import NucleusCompositorServer
-import NucleusCompositorWindowScene
+internal import NucleusCompositorServer
+import NucleusCompositorServerTypes
+internal import NucleusCompositorWindowScene
+import struct NucleusRenderModel.TextureHandle
+import struct NucleusTypes.BufferPixelSize
 import Tracy
 import Glibc
 

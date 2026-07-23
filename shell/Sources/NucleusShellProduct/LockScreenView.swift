@@ -1,4 +1,4 @@
-import NucleusUI
+public import NucleusUI
 
 /// What a password attempt produced. The view never decides this itself — it
 /// hands the attempt to an authenticator and renders the answer.
@@ -27,7 +27,7 @@ public enum LockAuthenticationOutcome: Sendable, Equatable {
 @MainActor
 public protocol LockAuthenticator: AnyObject {
     func authenticate(
-        password: SecureBytes,
+        password: consuming SecureBytes,
         completion: @escaping (LockAuthenticationOutcome) -> Void)
 }
 

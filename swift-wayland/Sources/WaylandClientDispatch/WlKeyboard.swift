@@ -3,7 +3,7 @@
 // Typed client dispatch for wl_keyboard: a handler protocol (one method per event), the
 // libwayland listener + owner recovery + arg marshalling, and an addListener that wires it.
 
-import WaylandClientC
+public import WaylandClientC
 
 public protocol WlKeyboardEvents: AnyObject {
     func keymap(_ proxy: OpaquePointer, format: UInt32, fd: Int32, size: UInt32)
@@ -34,8 +34,8 @@ public enum WlKeyboardClient {
         wl_keyboard_add_listener(proxy, listener, Unmanaged.passUnretained(owner).toOpaque())
     }
 
-    private static func handler(_ data: UnsafeMutableRawPointer) -> WlKeyboardEvents? {
-        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? WlKeyboardEvents
+    private static func handler(_ data: UnsafeMutableRawPointer) -> (any WlKeyboardEvents)? {
+        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? any WlKeyboardEvents
     }
 
     private static let keymap_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, Int32, UInt32) -> Void = { data, proxy, format, fd, size in

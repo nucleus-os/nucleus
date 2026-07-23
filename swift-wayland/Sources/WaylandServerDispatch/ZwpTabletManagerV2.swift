@@ -3,8 +3,8 @@
 // Typed server dispatch for zwp_tablet_manager_v2: a handler protocol (one method per request), the
 // request vtable + owner recovery + arg marshalling, and typed event senders.
 
-import WaylandServerC
-import WaylandServer
+public import WaylandServerC
+public import WaylandServer
 
 public protocol ZwpTabletManagerV2Requests: AnyObject {
     func getTabletSeat(_ resource: UnsafeMutablePointer<wl_resource>, tablet_seat: WlNewId, seat: UnsafeMutablePointer<wl_resource>?)
@@ -27,14 +27,14 @@ public enum ZwpTabletManagerV2Server {
         return UnsafeRawPointer(raw)
     }()
 
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> ZwpTabletManagerV2Requests? {
+    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> (any ZwpTabletManagerV2Requests)? {
         guard let ud = wl_resource_get_user_data(res) else { return nil }
-        return Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? ZwpTabletManagerV2Requests
+        return Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any ZwpTabletManagerV2Requests
     }
 
     private static let getTabletSeat_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UnsafeMutablePointer<wl_resource>?) -> Void = { client, res, tablet_seat, seat in
         guard let res, let client, let h = handler(res) else { return }
-        h.getTabletSeat(res, tablet_seat: WlNewId(client: client, id: tablet_seat, version: Swift.min(wl_resource_get_version(res), Int32(2)), interface: swift_wayland_iface_zwp_tablet_seat_v2()), seat: seat)
+        h.getTabletSeat(res, tablet_seat: WlNewId(client: client, id: tablet_seat, version: Swift::min(wl_resource_get_version(res), Int32(2)), interface: swift_wayland_iface_zwp_tablet_seat_v2()), seat: seat)
     }
     private static let destroy_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
         guard let res else { return }

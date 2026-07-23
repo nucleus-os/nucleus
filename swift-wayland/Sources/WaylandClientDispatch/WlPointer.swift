@@ -3,7 +3,7 @@
 // Typed client dispatch for wl_pointer: a handler protocol (one method per event), the
 // libwayland listener + owner recovery + arg marshalling, and an addListener that wires it.
 
-import WaylandClientC
+public import WaylandClientC
 
 public protocol WlPointerEvents: AnyObject {
     func enter(_ proxy: OpaquePointer, serial: UInt32, surface: OpaquePointer?, surface_x: Double, surface_y: Double)
@@ -44,8 +44,8 @@ public enum WlPointerClient {
         wl_pointer_add_listener(proxy, listener, Unmanaged.passUnretained(owner).toOpaque())
     }
 
-    private static func handler(_ data: UnsafeMutableRawPointer) -> WlPointerEvents? {
-        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? WlPointerEvents
+    private static func handler(_ data: UnsafeMutableRawPointer) -> (any WlPointerEvents)? {
+        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? any WlPointerEvents
     }
 
     private static let enter_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, OpaquePointer?, wl_fixed_t, wl_fixed_t) -> Void = { data, proxy, serial, surface, surface_x, surface_y in

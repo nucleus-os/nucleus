@@ -1,8 +1,8 @@
 import Glibc
-import NucleusUI
+package import NucleusUI
 import NucleusUIEmbedder
-import class NucleusLayers.Layer
-import protocol NucleusLayers.CommitSink
+package import class NucleusLayers.Layer
+package import protocol NucleusLayers.CommitSink
 import Tracy
 
 @MainActor
@@ -598,14 +598,14 @@ public final class ShellOverlayScene: ~Sendable {
 
 private func monotonicNs() -> UInt64 {
     var ts = timespec()
-    clock_gettime(CLOCK_MONOTONIC, &ts)
+    unsafe clock_gettime(CLOCK_MONOTONIC, &ts)
     return UInt64(ts.tv_sec) * 1_000_000_000 + UInt64(ts.tv_nsec)
 }
 
 private func logShellOverlayError(_ message: String) {
     let line = "shell-overlay: \(message)\n"
     line.withCString { pointer in
-        _ = write(STDERR_FILENO, pointer, strlen(pointer))
+        _ = unsafe write(STDERR_FILENO, pointer, strlen(pointer))
     }
 }
 

@@ -54,14 +54,14 @@ if [[ "${1:-}" == toolchain && "${2:-}" == rebuild ]]; then
   user_platform="${XDG_CACHE_HOME:-$HOME/.cache}/nucleus/swift-platforms/$platform_id/current/toolchain/usr"
   if [[ ( -n "${NUCLEUS_SWIFT_TOOLCHAIN:-}" && -x "$NUCLEUS_SWIFT_TOOLCHAIN/bin/swift-build" ) ||
         -x "$user_platform/bin/swift-build" ]]; then
-    source "$workspace_root/core/tools/host-env.sh"
+    source "$workspace_root/tools/host-env.sh"
   elif ! command -v swift >/dev/null 2>&1; then
     echo "error: Swift 6.4 is required on PATH to create the first Nucleus toolchain generation" >&2
     exit 127
   fi
   unset source_id platform_id user_platform
 else
-  source "$workspace_root/core/tools/host-env.sh"
+  source "$workspace_root/tools/host-env.sh"
 fi
 
 swift build --package-path "$workspace_root" --product nucleus-workspace

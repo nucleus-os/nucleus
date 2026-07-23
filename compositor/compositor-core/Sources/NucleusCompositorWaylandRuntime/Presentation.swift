@@ -19,7 +19,7 @@ protocol PresentationDelegate: AnyObject {
 }
 
 final class WpPresentation {
-    weak var delegate: PresentationDelegate?
+    weak var delegate: (any PresentationDelegate)?
     var clockId: UInt32 {
         delegate?.presentationClockId ?? UInt32(CLOCK_MONOTONIC)
     }

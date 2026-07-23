@@ -93,7 +93,7 @@ package final class ManualUIClock {
     private struct Waiter {
         let id: UInt64
         let deadline: UIClock.Instant
-        let continuation: CheckedContinuation<Void, Error>
+        let continuation: CheckedContinuation<Void, any Error>
     }
 
     private var current = UIClock.Instant(rawValue: 0)

@@ -2,7 +2,7 @@
 // These are generic Swift-Vulkan utilities — not tied to any particular
 // application's instance/device creation contracts.
 
-import VulkanC
+public import VulkanC
 
 // MARK: - Base dispatch bootstrap
 
@@ -47,21 +47,38 @@ public enum VkEnumerate {
 
 // MARK: - C-string array borrowing
 
-/// Borrow a `[String]` as a NUL-terminated C string array for the duration of
-/// `body`. Every CString stays alive through the nested `withCString` scopes; no
-/// pointer escapes the call.
-public func withCStringArray<R>(
+/// Borrow a `[String]` as a count-delimited table of pointers to NUL-terminated
+/// C strings for the duration of `body`. Every CString stays alive through the
+/// nested `withCString` scopes; no pointer escapes the call. Vulkan contracts
+/// carry an explicit count, so the pointer table itself has no trailing sentinel.
+@unsafe public func withCStringArray<R>(
     _ strings: [String],
     _ body: (_ pointers: UnsafePointer<UnsafePointer<CChar>?>?, _ count: UInt32) -> R
 ) -> R {
-    func recurse(_ index: Int, _ acc: [UnsafePointer<CChar>?]) -> R {
+    guard !strings.isEmpty else { return body(nil, 0) }
+    precondition(strings.count <= Int(UInt32.max), "Vulkan string array exceeds UInt32 capacity")
+
+    func recurse(
+        _ index: Int,
+        _ pointers: inout OutputSpan<UnsafePointer<CChar>?>
+    ) -> R {
         if index == strings.count {
-            if acc.isEmpty { return body(nil, 0) }
-            return acc.withUnsafeBufferPointer { buf in body(buf.baseAddress, UInt32(acc.count)) }
+            return pointers.span.withUnsafeBufferPointer { buffer in
+                body(buffer.baseAddress, UInt32(buffer.count))
+            }
         }
-        return strings[index].withCString { c in recurse(index + 1, acc + [c]) }
+        return strings[index].withCString { pointer in
+            pointers.append(pointer)
+            return recurse(index + 1, &pointers)
+        }
     }
-    return recurse(0, [])
+
+    return withTemporaryAllocation(
+        of: UnsafePointer<CChar>?.self,
+        capacity: strings.count
+    ) { pointers in
+        recurse(0, &pointers)
+    }
 }
 
 // MARK: - Owned device-child handle

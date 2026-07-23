@@ -1,4 +1,4 @@
-import Foundation
+import Foundation // Process and FileHandle own profiler subprocesses and their logs.
 import NucleusLinuxSession
 #if canImport(Glibc)
 import Glibc

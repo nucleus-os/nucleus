@@ -1,5 +1,5 @@
 import NucleusCompositorServer
-import NucleusCompositorWaylandRuntime
+public import NucleusCompositorWaylandRuntime
 import NucleusCompositorWindowManager
 import NucleusCompositorWindowScene
 import NucleusLayers

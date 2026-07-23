@@ -1,4 +1,4 @@
-import Foundation
+import FoundationEssentials
 
 struct TracyTools {
     let context: WorkspaceContext
@@ -10,7 +10,7 @@ struct TracyTools {
         let source = context.root.appendingPathComponent(relativeSource)
         let commit = try context.run(
             "git", ["rev-parse", "HEAD:\(relativeSource)"], directory: context.root, capture: true
-        ).trimmingCharacters(in: .whitespacesAndNewlines)
+        )
         guard commit.wholeMatch(of: /[0-9a-f]{40}/) != nil else {
             throw WorkspaceFailure.message("could not read the pinned Tracy submodule commit")
         }
@@ -20,7 +20,7 @@ struct TracyTools {
         }
         let checkout = try context.run(
             "git", ["rev-parse", "HEAD"], directory: source, capture: true
-        ).trimmingCharacters(in: .whitespacesAndNewlines)
+        )
         guard checkout == commit else {
             throw WorkspaceFailure.message(
                 "Tracy submodule is at \(checkout), expected pinned commit \(commit); "

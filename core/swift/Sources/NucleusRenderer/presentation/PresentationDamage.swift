@@ -9,7 +9,8 @@
 
 /// A damage rectangle in device-pixel space. Mirrors `damage.Rect`
 /// (`cg_display.PhysicalRect`).
-import NucleusRenderModel
+internal import NucleusRenderModel
+internal import struct NucleusTypes.Rect
 
 typealias DamageRect = PhysicalRect
 
@@ -109,8 +110,8 @@ final class DamageAccumulator: DamageSink {
 /// The set of sinks a frame's damage feeds. Mirrors `DamageSinks` (the blur-
 /// region list is part of the deferred tree walk).
 struct DamageSinks {
-    var output: DamageSink
-    var source: DamageSink? = nil
+    var output: any DamageSink
+    var source: (any DamageSink)? = nil
 }
 
 // MARK: - Cross-frame damage cache (RenderState.FrameDamageCache)
@@ -124,7 +125,7 @@ struct RemoteHostSnapshot {
     var targetContextId: ContextID
     var rootLayerId: UInt64
     var contextRevision: UInt64
-    var sourceRect: Rect
+    var sourceRect: NucleusRenderModel.Rect
     var visibleRect: DamageRect
     var hostSignature: UInt64
 }
@@ -182,7 +183,7 @@ struct RemoteHostDamageFact {
     var targetContextId: ContextID
     var rootLayerId: UInt64
     var contextRevision: UInt64
-    var sourceRect: Rect
+    var sourceRect: NucleusRenderModel.Rect
     var visibleRect: DamageRect
     var hostSignature: UInt64
 }
@@ -297,7 +298,7 @@ final class DamageTracker {
 
     /// Retire native-layer entries not seen this frame, damaging their last rect.
     /// Mirrors `addStaleNativeLayerDamage`.
-    func addStaleNativeLayerDamage(_ state: FrameDamageCache, _ outputId: DisplayID, _ out: DamageSink) {
+    func addStaleNativeLayerDamage(_ state: FrameDamageCache, _ outputId: DisplayID, _ out: any DamageSink) {
         if !nativeLayerFrameActive { return }
         let sinks = DamageSinks(output: out)
         for (key, snapshot) in state.nativeLayers {
@@ -310,7 +311,7 @@ final class DamageTracker {
 
     /// Retire remote-host entries not seen this frame. Mirrors
     /// `addStaleRemoteHostDamage`.
-    func addStaleRemoteHostDamage(_ state: FrameDamageCache, _ outputId: DisplayID, _ out: DamageSink) {
+    func addStaleRemoteHostDamage(_ state: FrameDamageCache, _ outputId: DisplayID, _ out: any DamageSink) {
         if !remoteHostFrameActive { return }
         let sinks = DamageSinks(output: out)
         for (key, snapshot) in state.remoteHosts {
@@ -323,7 +324,7 @@ final class DamageTracker {
     }
 
     func applyLayerFacts(_ state: FrameDamageCache, _ facts: LayerDamageFacts, _ sinks: DamageSinks,
-                         _ probe: DamageAnimationProbe) {
+                         _ probe: any DamageAnimationProbe) {
         if let fact = facts.remoteHost { trackRemoteHostDamage(state, fact, sinks, probe) }
         if let fact = facts.nativeLayer { trackNativeLayerDamage(state, fact, sinks, probe) }
         if let fact = facts.external {
@@ -332,7 +333,7 @@ final class DamageTracker {
     }
 
     func trackNativeLayerDamage(_ state: FrameDamageCache, _ fact: NativeLayerDamageFact,
-                                _ sinks: DamageSinks, _ probe: DamageAnimationProbe) {
+                                _ sinks: DamageSinks, _ probe: any DamageAnimationProbe) {
         if !nativeLayerFrameActive { return }
         let key = NativeLayerKey(outputId: fact.outputId, layerId: fact.layerId)
         let current = NativeLayerSnapshot(visibleRect: fact.visibleRect, visualSignature: fact.visualSignature)
@@ -360,7 +361,7 @@ final class DamageTracker {
     }
 
     func trackRemoteHostDamage(_ state: FrameDamageCache, _ fact: RemoteHostDamageFact,
-                               _ sinks: DamageSinks, _ probe: DamageAnimationProbe) {
+                               _ sinks: DamageSinks, _ probe: any DamageAnimationProbe) {
         if !remoteHostFrameActive { return }
         remoteHostStats.seen += 1
         let key = RemoteHostKey(outputId: fact.outputId, hostLayerId: fact.hostLayerId)
@@ -422,7 +423,10 @@ func rectsEqual(_ a: DamageRect, _ b: DamageRect) -> Bool {
     a.x == b.x && a.y == b.y && a.width == b.width && a.height == b.height
 }
 
-func layerRectsNearlyEqual(_ a: Rect, _ b: Rect) -> Bool {
+func layerRectsNearlyEqual(
+    _ a: NucleusRenderModel.Rect,
+    _ b: NucleusRenderModel.Rect
+) -> Bool {
     abs(a.x - b.x) < 0.01 && abs(a.y - b.y) < 0.01 &&
         abs(a.w - b.w) < 0.01 && abs(a.h - b.h) < 0.01
 }

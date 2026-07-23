@@ -1,4 +1,4 @@
-import Foundation
+import Foundation // Process is required for detached session lifecycle management.
 import NucleusLinuxSession
 #if canImport(Glibc)
 import Glibc

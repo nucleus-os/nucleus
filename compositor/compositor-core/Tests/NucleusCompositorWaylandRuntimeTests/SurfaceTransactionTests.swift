@@ -23,6 +23,24 @@ import Testing
         }
     }
 
+    private final class ReentrantReadObserver: WlSurfaceCommitObserver {
+        var observedDestination: WlSize?
+
+        func captureSurfaceCommit(
+            _ surface: WlSurface,
+            bufferAttached: Bool,
+            attachedBufferIsNonNull: Bool,
+            attachedBufferSupportsExplicitSync: Bool,
+            aux: inout SurfaceAuxState,
+            effects: inout [() -> Void]
+        ) -> Bool {
+            effects.append {
+                self.observedDestination = surface.aux.viewportDestination
+            }
+            return true
+        }
+    }
+
     private func synchronizedPair() -> (
         parent: WlSurface,
         child: WlSurface
@@ -64,5 +82,18 @@ import Testing
         pair.parent.commit()
 
         #expect(observer.applied == [2])
+    }
+
+    @Test func appliedEffectCanReenterCommittedAuxiliaryState() {
+        let compositor = graph.compositor()
+        let surface = graph.surface(compositor: compositor)
+        let observer = ReentrantReadObserver()
+        surface.addCommitObserver(observer)
+        surface.setPendingViewportDestination(WlSize(width: 640, height: 480))
+
+        surface.commit()
+
+        #expect(observer.observedDestination == WlSize(width: 640, height: 480))
+        #expect(surface.aux.viewportDestination == observer.observedDestination)
     }
 }

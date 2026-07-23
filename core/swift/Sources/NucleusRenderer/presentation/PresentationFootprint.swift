@@ -9,7 +9,8 @@
 // `DecorationFootprintSlot`.
 
 /// Composition-plan rect (`composition_plan.Rect`): f32 target-physical space.
-import NucleusRenderModel
+internal import NucleusRenderModel
+internal import struct NucleusTypes.Rect
 
 struct PlanRect: Equatable {
     var x: Float = 0

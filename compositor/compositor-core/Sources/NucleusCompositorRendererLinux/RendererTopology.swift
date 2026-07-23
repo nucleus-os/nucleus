@@ -2,7 +2,7 @@ import VulkanC
 import Vulkan
 import NucleusCompositorDrmC
 import NucleusRenderModel
-@_spi(NucleusPlatform) import NucleusRenderer
+@_spi(NucleusPlatform) public import NucleusRenderer
 import Glibc
 
 @MainActor

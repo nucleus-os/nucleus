@@ -12,7 +12,7 @@
 // overlay adapter uses.
 
 import WaylandClientC
-import WaylandClientDispatch
+public import WaylandClientDispatch
 import WaylandClient
 import WaylandProtocolsC
 import NucleusShellInputC

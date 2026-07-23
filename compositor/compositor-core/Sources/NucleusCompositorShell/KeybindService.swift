@@ -1,6 +1,5 @@
-import Foundation
 import NucleusCompositorOverlayTypes
-import NucleusCompositorWindowManager
+public import NucleusCompositorWindowManager
 
 /// Compositor session-policy keybind table.
 ///
@@ -284,11 +283,8 @@ public final class KeybindService {
 }
 
 extension KeybindService {
-    /// Host entry called from `ShellPolicyHost.keybindDispatch`. Decomposes the
-    /// raw modifier bits (the reactor's `EventFlags.raw()`), normalises to
-    /// `ModifierFlags`, runs `dispatch`, and packs the result into the
-    /// C decision struct.
-    @inline(__always)
+    /// Converts the reactor's raw modifier bits into the shell's typed keybind
+    /// decision used by `ShellPolicyService`.
     func bridgeDispatch(
         keycode: UInt32,
         modifierBits: UInt64,

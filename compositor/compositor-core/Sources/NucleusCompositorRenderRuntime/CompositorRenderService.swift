@@ -1,19 +1,26 @@
-import NucleusCompositorServer
-@_spi(NucleusPlatform) import NucleusCompositorRendererLinux
+public import NucleusCompositorServer
+@_spi(NucleusPlatform) public import NucleusCompositorRendererLinux
 @_spi(NucleusPlatform) import NucleusRenderer
 
 extension RendererRuntime: CompositorRenderService {
-    public func importShm(_ request: RenderShmImport) -> UInt32 {
-        let id = request.previousIOSurfaceID != 0
-            ? request.previousIOSurfaceID
+    public func importShm(
+        previousIOSurfaceID: UInt32,
+        width: UInt32,
+        height: UInt32,
+        drmFormat: UInt32,
+        stride: UInt32,
+        pixels: Span<UInt8>
+    ) -> UInt32 {
+        let id = previousIOSurfaceID != 0
+            ? previousIOSurfaceID
             : allocSurfaceId()
         return registerSurfaceShm(
             iosurfaceID: UInt64(id),
-            pixels: request.pixels,
-            width: request.width,
-            height: request.height,
-            drmFormat: request.drmFormat,
-            stride: request.stride
+            pixels: pixels,
+            width: width,
+            height: height,
+            drmFormat: drmFormat,
+            stride: stride
         ) ? id : 0
     }
 

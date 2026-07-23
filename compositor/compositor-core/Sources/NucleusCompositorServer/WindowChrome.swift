@@ -8,7 +8,7 @@
 // AppKit in its Wayland clients, so it draws the chrome server-side — but the
 // model and naming read like NSWindow so the geometry is the AppKit geometry.
 
-import NucleusCompositorServerTypes
+public import NucleusCompositorServerTypes
 
 /// Window decoration intent, mirroring `NSWindow.StyleMask`. The presence of a
 /// titlebar, border, and standard buttons — and therefore the chrome geometry —

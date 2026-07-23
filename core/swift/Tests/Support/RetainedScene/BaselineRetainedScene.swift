@@ -1,4 +1,4 @@
-import NucleusUI
+public import NucleusUI
 
 public enum BaselineSemanticID: String, CaseIterable, Sendable {
     case primaryWindow

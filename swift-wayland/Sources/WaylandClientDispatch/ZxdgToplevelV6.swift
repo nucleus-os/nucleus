@@ -3,7 +3,7 @@
 // Typed client dispatch for zxdg_toplevel_v6: a handler protocol (one method per event), the
 // libwayland listener + owner recovery + arg marshalling, and an addListener that wires it.
 
-import WaylandClientC
+public import WaylandClientC
 
 public protocol ZxdgToplevelV6Events: AnyObject {
     func configure(_ proxy: OpaquePointer, width: Int32, height: Int32, states: UnsafeMutablePointer<wl_array>?)
@@ -26,8 +26,8 @@ public enum ZxdgToplevelV6Client {
         zxdg_toplevel_v6_add_listener(proxy, listener, Unmanaged.passUnretained(owner).toOpaque())
     }
 
-    private static func handler(_ data: UnsafeMutableRawPointer) -> ZxdgToplevelV6Events? {
-        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? ZxdgToplevelV6Events
+    private static func handler(_ data: UnsafeMutableRawPointer) -> (any ZxdgToplevelV6Events)? {
+        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? any ZxdgToplevelV6Events
     }
 
     private static let configure_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, Int32, Int32, UnsafeMutablePointer<wl_array>?) -> Void = { data, proxy, width, height, states in

@@ -3,7 +3,7 @@
 // Typed client dispatch for xdg_session_v1: a handler protocol (one method per event), the
 // libwayland listener + owner recovery + arg marshalling, and an addListener that wires it.
 
-import WaylandClientC
+public import WaylandClientC
 
 public protocol XdgSessionV1Events: AnyObject {
     func created(_ proxy: OpaquePointer, session_id: UnsafePointer<CChar>?)
@@ -28,8 +28,8 @@ public enum XdgSessionV1Client {
         xdg_session_v1_add_listener(proxy, listener, Unmanaged.passUnretained(owner).toOpaque())
     }
 
-    private static func handler(_ data: UnsafeMutableRawPointer) -> XdgSessionV1Events? {
-        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? XdgSessionV1Events
+    private static func handler(_ data: UnsafeMutableRawPointer) -> (any XdgSessionV1Events)? {
+        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? any XdgSessionV1Events
     }
 
     private static let created_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UnsafePointer<CChar>?) -> Void = { data, proxy, session_id in

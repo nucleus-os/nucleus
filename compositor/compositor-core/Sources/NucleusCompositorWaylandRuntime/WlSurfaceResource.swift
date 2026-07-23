@@ -1,6 +1,7 @@
 import WaylandServerC
 import WaylandServer
 import WaylandServerDispatch
+import NucleusRenderModel
 
 /// Wire request decoding for `wl_surface`. Validation that depends only on the
 /// request and negotiated protocol version stays here; accepted mutations are

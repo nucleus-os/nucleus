@@ -7,8 +7,8 @@ import Glibc
 #elseif canImport(Android)
 import Android
 #endif
-import VulkanC
-import Vulkan
+public import VulkanC
+public import Vulkan
 
 private func logDmaBufImportFailure(_ descriptor: DmaBufImageDescriptor, _ stage: String) {
     #if canImport(Glibc)
@@ -81,7 +81,7 @@ struct ClientShmConversion: Equatable, Sendable {
 /// by `makeRasterImageRGBA`. wl_shm's ARGB8888/XRGB8888 values map to DRM
 /// AR24/XR24, whose little-endian memory order is BGRA/BGRX.
 public func convertClientShmToRGBA(
-    pixels: UnsafeRawBufferPointer,
+    pixels: Span<UInt8>,
     width: UInt32,
     height: UInt32,
     drmFormat: UInt32,
@@ -97,7 +97,7 @@ public func convertClientShmToRGBA(
 }
 
 func convertClientShmToRGBAWithMetrics(
-    pixels: UnsafeRawBufferPointer,
+    pixels: Span<UInt8>,
     width: UInt32,
     height: UInt32,
     drmFormat: UInt32,
@@ -123,8 +123,7 @@ func convertClientShmToRGBAWithMetrics(
         let destinationCount = Int(exactly: destinationByteCount),
         let rowStride = Int(exactly: stride),
         let destinationRowBytes = Int(exactly: minimumStride),
-        pixels.count >= sourceCount,
-        let source = pixels.baseAddress?.assumingMemoryBound(to: UInt8.self)
+        pixels.count >= sourceCount
     else { return nil }
 
     let opaque: Bool
@@ -144,15 +143,15 @@ func convertClientShmToRGBAWithMetrics(
             return
         }
         for y in 0..<Int(height) {
-            let sourceRow = source.advanced(by: y * rowStride)
+            let sourceRow = y * rowStride
             let destinationRow = destinationBase.advanced(by: y * destinationRowBytes)
             for x in 0..<Int(width) {
-                let sourcePixel = sourceRow.advanced(by: x * 4)
+                let sourcePixel = sourceRow + x * 4
                 let destinationPixel = destinationRow.advanced(by: x * 4)
-                destinationPixel[0] = sourcePixel[2]
-                destinationPixel[1] = sourcePixel[1]
-                destinationPixel[2] = sourcePixel[0]
-                destinationPixel[3] = opaque ? 255 : sourcePixel[3]
+                destinationPixel[0] = pixels[sourcePixel + 2]
+                destinationPixel[1] = pixels[sourcePixel + 1]
+                destinationPixel[2] = pixels[sourcePixel]
+                destinationPixel[3] = opaque ? 255 : pixels[sourcePixel + 3]
             }
         }
         initializedCount = destinationCount

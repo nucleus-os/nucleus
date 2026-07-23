@@ -1,5 +1,6 @@
-@_spi(NucleusCompositor) import NucleusLayers
+@_spi(NucleusCompositor) public import NucleusLayers
 import NucleusRenderHost
+public import struct NucleusTypes.Rect
 
 /// Failure type for the scene author's rich-throwing entry points. One case: the
 /// caller maps any thrown layer/transaction error to this single tag.

@@ -1,5 +1,5 @@
 import Testing
-import NucleusUI
+@testable import NucleusUI
 
 /// `SecureBytes` and the credential exit path. These exist because a Swift
 /// `String` cannot be scrubbed, so the guarantee has to live somewhere that can.
@@ -8,7 +8,7 @@ import NucleusUI
     @Test func bytesRoundTripFromAString() {
         let secret = SecureBytes(utf8: "hunter2")
         #expect(secret.count == 7)
-        secret.withUnsafeBytes {
+        unsafe secret.withUnsafeBytes {
             #expect(String(decoding: $0, as: UTF8.self) == "hunter2")
         }
     }
@@ -19,8 +19,12 @@ import NucleusUI
     }
 
     @Test func anEmptySecretIsEmpty() {
-        #expect(SecureBytes(utf8: "").isEmpty)
-        #expect(SecureBytes(count: 0).isEmpty)
+        let textSecret = SecureBytes(utf8: "")
+        let allocatedSecret = SecureBytes(count: 0)
+        let textIsEmpty = textSecret.isEmpty
+        let allocationIsEmpty = allocatedSecret.isEmpty
+        #expect(textIsEmpty)
+        #expect(allocationIsEmpty)
     }
 
     /// Scrubbing zeroes in place — the same buffer, not a fresh one, which is
@@ -28,16 +32,62 @@ import NucleusUI
     @Test func scrubbingZeroesTheBufferInPlace() {
         let secret = SecureBytes(utf8: "hunter2")
         secret.scrub()
-        secret.withUnsafeBytes { bytes in
+        unsafe secret.withUnsafeBytes { bytes in
             #expect(bytes.allSatisfy { $0 == 0 })
         }
         #expect(secret.count == 7, "the buffer is still there, just empty of secret")
     }
 
     @Test func bytesCanBeMutatedInPlace() {
-        let secret = SecureBytes(count: 4)
-        secret.withUnsafeMutableBytes { $0.copyBytes(from: [1, 2, 3, 4]) }
-        secret.withUnsafeBytes { #expect(Array($0) == [1, 2, 3, 4]) }
+        var secret = SecureBytes(count: 4)
+        unsafe secret.withUnsafeMutableBytes { $0.copyBytes(from: [1, 2, 3, 4]) }
+        unsafe secret.withUnsafeBytes { #expect(Array($0) == [1, 2, 3, 4]) }
+    }
+
+    @Test func requestedCapacityIsAllocatedExactly() {
+        var allocatedCounts: [Int] = []
+        let observer = SecureBytesLifecycleObserver(
+            didAllocate: { allocatedCounts.append($0) })
+
+        let secret = SecureBytes(count: 37, lifecycleObserver: observer)
+
+        #expect(secret.count == 37)
+        #expect(allocatedCounts == [37])
+    }
+
+    @Test func emptyStorageOwnsNoAllocationAndNeedsNoScrub() {
+        var allocatedCounts: [Int] = []
+        var scrubbed: [[UInt8]] = []
+        var deallocations = 0
+        let observer = SecureBytesLifecycleObserver(
+            didAllocate: { allocatedCounts.append($0) },
+            didScrub: { scrubbed.append($0) },
+            didDeallocate: { deallocations += 1 })
+
+        consume(SecureBytes(count: 0, lifecycleObserver: observer))
+
+        #expect(allocatedCounts == [0])
+        #expect(scrubbed.isEmpty)
+        #expect(deallocations == 0)
+    }
+
+    @Test func movingTransfersOneAllocationAndZeroesItBeforeRelease() {
+        var scrubbed: [[UInt8]] = []
+        var deallocations = 0
+        let observer = SecureBytesLifecycleObserver(
+            didScrub: { scrubbed.append($0) },
+            didDeallocate: { deallocations += 1 })
+        var original = SecureBytes(count: 4, lifecycleObserver: observer)
+        unsafe original.withUnsafeMutableBytes { $0.copyBytes(from: [9, 8, 7, 6]) }
+
+        consume(original)
+
+        #expect(scrubbed == [[0, 0, 0, 0]])
+        #expect(deallocations == 1)
+    }
+
+    private func consume(_ secret: consuming SecureBytes) {
+        #expect(secret.count >= 0)
     }
 
     // MARK: - The credential exit path
@@ -48,7 +98,7 @@ import NucleusUI
         var model = TextEditorModel(text: "hunter2", isSecure: true)
         let secret = model.takeSecureBytes()
 
-        secret.withUnsafeBytes {
+        unsafe secret.withUnsafeBytes {
             #expect(String(decoding: $0, as: UTF8.self) == "hunter2")
         }
         #expect(model.text.isEmpty)
@@ -72,7 +122,7 @@ import NucleusUI
         let field = TextField(string: "hunter2", isSecure: true)
         let secret = field.takeSecureCredential()
 
-        secret.withUnsafeBytes {
+        unsafe secret.withUnsafeBytes {
             #expect(String(decoding: $0, as: UTF8.self) == "hunter2")
         }
         #expect(field.stringValue.isEmpty)
@@ -90,6 +140,8 @@ import NucleusUI
 
     @Test func takingFromAnEmptyFieldYieldsNothing() {
         let field = TextField(string: "", isSecure: true)
-        #expect(field.takeSecureCredential().isEmpty)
+        let secret = field.takeSecureCredential()
+        let isEmpty = secret.isEmpty
+        #expect(isEmpty)
     }
 }

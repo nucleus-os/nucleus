@@ -1,4 +1,4 @@
-import NucleusUI
+package import NucleusUI
 import NucleusUIEmbedder
 import Tracy
 

@@ -3,8 +3,8 @@
 // Typed server dispatch for zwlr_screencopy_manager_v1: a handler protocol (one method per request), the
 // request vtable + owner recovery + arg marshalling, and typed event senders.
 
-import WaylandServerC
-import WaylandServer
+public import WaylandServerC
+public import WaylandServer
 
 public protocol ZwlrScreencopyManagerV1Requests: AnyObject {
     func captureOutput(_ resource: UnsafeMutablePointer<wl_resource>, frame: WlNewId, overlay_cursor: Int32, output: UnsafeMutablePointer<wl_resource>?)
@@ -29,18 +29,18 @@ public enum ZwlrScreencopyManagerV1Server {
         return UnsafeRawPointer(raw)
     }()
 
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> ZwlrScreencopyManagerV1Requests? {
+    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> (any ZwlrScreencopyManagerV1Requests)? {
         guard let ud = wl_resource_get_user_data(res) else { return nil }
-        return Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? ZwlrScreencopyManagerV1Requests
+        return Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any ZwlrScreencopyManagerV1Requests
     }
 
     private static let captureOutput_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, Int32, UnsafeMutablePointer<wl_resource>?) -> Void = { client, res, frame, overlay_cursor, output in
         guard let res, let client, let h = handler(res) else { return }
-        h.captureOutput(res, frame: WlNewId(client: client, id: frame, version: Swift.min(wl_resource_get_version(res), Int32(3)), interface: swift_wayland_iface_zwlr_screencopy_frame_v1()), overlay_cursor: overlay_cursor, output: output)
+        h.captureOutput(res, frame: WlNewId(client: client, id: frame, version: Swift::min(wl_resource_get_version(res), Int32(3)), interface: swift_wayland_iface_zwlr_screencopy_frame_v1()), overlay_cursor: overlay_cursor, output: output)
     }
     private static let captureOutputRegion_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, Int32, UnsafeMutablePointer<wl_resource>?, Int32, Int32, Int32, Int32) -> Void = { client, res, frame, overlay_cursor, output, x, y, width, height in
         guard let res, let client, let h = handler(res) else { return }
-        h.captureOutputRegion(res, frame: WlNewId(client: client, id: frame, version: Swift.min(wl_resource_get_version(res), Int32(3)), interface: swift_wayland_iface_zwlr_screencopy_frame_v1()), overlay_cursor: overlay_cursor, output: output, x: x, y: y, width: width, height: height)
+        h.captureOutputRegion(res, frame: WlNewId(client: client, id: frame, version: Swift::min(wl_resource_get_version(res), Int32(3)), interface: swift_wayland_iface_zwlr_screencopy_frame_v1()), overlay_cursor: overlay_cursor, output: output, x: x, y: y, width: width, height: height)
     }
     private static let destroy_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
         guard let res else { return }

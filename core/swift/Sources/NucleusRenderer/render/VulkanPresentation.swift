@@ -1,5 +1,5 @@
 import Vulkan
-import VulkanC
+public import VulkanC
 
 /// Opaque, non-owning Vulkan tokens passed across the renderer's platform-host
 /// boundary. The unchecked sendability covers only immutable pointer bits:

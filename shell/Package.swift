@@ -236,7 +236,10 @@ let package = Package(
                 .product(name: "NucleusUI", package: "Nucleus"),
             ],
             path: "Sources/NucleusShellProduct",
-            swiftSettings: [.interoperabilityMode(.Cxx)]
+            swiftSettings: [
+                .interoperabilityMode(.Cxx),
+                .strictMemorySafety(),
+            ]
         ),
 
         // ── The input adapter: the single place the shell's Wayland input
@@ -264,7 +267,10 @@ let package = Package(
                 .product(name: "NucleusUI", package: "Nucleus"),
             ],
             path: "Sources/NucleusShellServices",
-            swiftSettings: [.interoperabilityMode(.Cxx)]
+            swiftSettings: [
+                .interoperabilityMode(.Cxx),
+                .strictMemorySafety(),
+            ]
         ),
         .testTarget(
             name: "NucleusShellServicesTests",
@@ -309,7 +315,10 @@ let package = Package(
                 .product(name: "NucleusUI", package: "Nucleus"),
             ],
             path: "Sources/NucleusShellInput",
-            swiftSettings: [.interoperabilityMode(.Cxx)]
+            swiftSettings: [
+                .interoperabilityMode(.Cxx),
+                .strictMemorySafety(),
+            ]
         ),
 
         .testTarget(
@@ -447,9 +456,14 @@ for target in package.targets {
     default:
         continue
     }
-    target.swiftSettings = (target.swiftSettings ?? []) + [
+    var swiftSettings = (target.swiftSettings ?? []) + [
         .unsafeFlags(["-warnings-as-errors"]),
+        .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
     ]
+    if let feature = Context.environment["NUCLEUS_SWIFT_DIAGNOSTIC_FEATURE"] {
+        swiftSettings.append(.unsafeFlags(["-enable-upcoming-feature", feature]))
+    }
+    target.swiftSettings = swiftSettings
     target.cSettings = (target.cSettings ?? []) + [
         .unsafeFlags(["-Werror"]),
     ]

@@ -3,7 +3,7 @@
 // Typed client dispatch for ext_background_effect_manager_v1: a handler protocol (one method per event), the
 // libwayland listener + owner recovery + arg marshalling, and an addListener that wires it.
 
-import WaylandClientC
+public import WaylandClientC
 
 public protocol ExtBackgroundEffectManagerV1Events: AnyObject {
     func capabilities(_ proxy: OpaquePointer, flags: UInt32)
@@ -24,8 +24,8 @@ public enum ExtBackgroundEffectManagerV1Client {
         ext_background_effect_manager_v1_add_listener(proxy, listener, Unmanaged.passUnretained(owner).toOpaque())
     }
 
-    private static func handler(_ data: UnsafeMutableRawPointer) -> ExtBackgroundEffectManagerV1Events? {
-        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? ExtBackgroundEffectManagerV1Events
+    private static func handler(_ data: UnsafeMutableRawPointer) -> (any ExtBackgroundEffectManagerV1Events)? {
+        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? any ExtBackgroundEffectManagerV1Events
     }
 
     private static let capabilities_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, flags in

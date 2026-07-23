@@ -3,7 +3,7 @@
 // Typed client dispatch for xdg_surface: a handler protocol (one method per event), the
 // libwayland listener + owner recovery + arg marshalling, and an addListener that wires it.
 
-import WaylandClientC
+public import WaylandClientC
 
 public protocol XdgSurfaceEvents: AnyObject {
     func configure(_ proxy: OpaquePointer, serial: UInt32)
@@ -24,8 +24,8 @@ public enum XdgSurfaceClient {
         xdg_surface_add_listener(proxy, listener, Unmanaged.passUnretained(owner).toOpaque())
     }
 
-    private static func handler(_ data: UnsafeMutableRawPointer) -> XdgSurfaceEvents? {
-        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? XdgSurfaceEvents
+    private static func handler(_ data: UnsafeMutableRawPointer) -> (any XdgSurfaceEvents)? {
+        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? any XdgSurfaceEvents
     }
 
     private static let configure_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, serial in

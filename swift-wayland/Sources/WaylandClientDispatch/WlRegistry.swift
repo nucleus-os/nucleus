@@ -3,7 +3,7 @@
 // Typed client dispatch for wl_registry: a handler protocol (one method per event), the
 // libwayland listener + owner recovery + arg marshalling, and an addListener that wires it.
 
-import WaylandClientC
+public import WaylandClientC
 
 public protocol WlRegistryEvents: AnyObject {
     func global(_ proxy: OpaquePointer, name: UInt32, interface: UnsafePointer<CChar>?, version: UInt32)
@@ -26,8 +26,8 @@ public enum WlRegistryClient {
         wl_registry_add_listener(proxy, listener, Unmanaged.passUnretained(owner).toOpaque())
     }
 
-    private static func handler(_ data: UnsafeMutableRawPointer) -> WlRegistryEvents? {
-        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? WlRegistryEvents
+    private static func handler(_ data: UnsafeMutableRawPointer) -> (any WlRegistryEvents)? {
+        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? any WlRegistryEvents
     }
 
     private static let global_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, UnsafePointer<CChar>?, UInt32) -> Void = { data, proxy, name, interface, version in

@@ -1,4 +1,4 @@
-import NucleusUI
+public import NucleusUI
 
 /// The bar: three sections of widgets, with chrome drawn behind them.
 ///

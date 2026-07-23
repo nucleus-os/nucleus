@@ -1,4 +1,4 @@
-import Foundation
+public import FoundationEssentials
 
 public struct DragSessionID: Hashable, Sendable, Comparable {
     public let context: UInt32

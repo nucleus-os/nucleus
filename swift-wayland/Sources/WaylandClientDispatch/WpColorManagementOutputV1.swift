@@ -3,7 +3,7 @@
 // Typed client dispatch for wp_color_management_output_v1: a handler protocol (one method per event), the
 // libwayland listener + owner recovery + arg marshalling, and an addListener that wires it.
 
-import WaylandClientC
+public import WaylandClientC
 
 public protocol WpColorManagementOutputV1Events: AnyObject {
     func imageDescriptionChanged(_ proxy: OpaquePointer)
@@ -24,8 +24,8 @@ public enum WpColorManagementOutputV1Client {
         wp_color_management_output_v1_add_listener(proxy, listener, Unmanaged.passUnretained(owner).toOpaque())
     }
 
-    private static func handler(_ data: UnsafeMutableRawPointer) -> WpColorManagementOutputV1Events? {
-        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? WpColorManagementOutputV1Events
+    private static func handler(_ data: UnsafeMutableRawPointer) -> (any WpColorManagementOutputV1Events)? {
+        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? any WpColorManagementOutputV1Events
     }
 
     private static let imageDescriptionChanged_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in

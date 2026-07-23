@@ -3,7 +3,7 @@
 // Typed client dispatch for wl_callback: a handler protocol (one method per event), the
 // libwayland listener + owner recovery + arg marshalling, and an addListener that wires it.
 
-import WaylandClientC
+public import WaylandClientC
 
 public protocol WlCallbackEvents: AnyObject {
     func done(_ proxy: OpaquePointer, callback_data: UInt32)
@@ -24,8 +24,8 @@ public enum WlCallbackClient {
         wl_callback_add_listener(proxy, listener, Unmanaged.passUnretained(owner).toOpaque())
     }
 
-    private static func handler(_ data: UnsafeMutableRawPointer) -> WlCallbackEvents? {
-        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? WlCallbackEvents
+    private static func handler(_ data: UnsafeMutableRawPointer) -> (any WlCallbackEvents)? {
+        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? any WlCallbackEvents
     }
 
     private static let done_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, callback_data in

@@ -1,23 +1,24 @@
-import NucleusUI
+public import NucleusUI
 import NucleusUIEmbedder
 import NucleusRenderModel
 import NucleusAppHostBundle
 import NucleusShellWayland
 import NucleusShellPasteboard
-import NucleusShellInput
+public import NucleusShellInput
 import NucleusShellAuth
 import NucleusLinuxDBus
 import NucleusLinuxAccessibility
-import NucleusShellServices
+public import NucleusShellServices
 import NucleusLinuxEnvironment
 import NucleusLinuxReactor
-import NucleusLinuxSession
+public import NucleusLinuxSession
 import NucleusShellProduct
 import NucleusShellRender
 import NucleusShellLoop
 import NucleusRenderer
 import NucleusShellSignalC
-import Foundation
+import FoundationEssentials
+import FoundationInternationalization
 import Tracy
 #if canImport(Glibc)
 import Glibc
@@ -114,7 +115,7 @@ public final class ShellHost {
     var startupFrameDiagnosticsRemaining = 8
     var readinessReporter: SessionReadinessReporter?
     var startupReadiness = ShellStartupReadinessTracker()
-    let clockFormatter: DateFormatter
+    let clockFormatStyle: Date.FormatStyle
 
     /// Bar height in logical px (reserved as work area via the layer-shell exclusive zone).
     public var barHeight: UInt32 = 28
@@ -137,9 +138,7 @@ public final class ShellHost {
         let resourceHost = SwiftResourceHost()
         let retainedStore = RetainedTreeStore(resourceHost: resourceHost)
         let hostBundle = NucleusAppHostBundle(resourceHost: resourceHost)
-        let clockFormatter = DateFormatter()
-        clockFormatter.dateStyle = .none
-        clockFormatter.timeStyle = .short
+        let clockFormatStyle = ShellFormatting.clockStyle()
         guard let renderWake = ShellRenderWakeSink(),
               let engine = ShellRenderEngine(
                 display: client.display,
@@ -153,18 +152,13 @@ public final class ShellHost {
         self.reactor = reactor
         self.engine = engine
         self.renderWake = renderWake
-        self.clockFormatter = clockFormatter
+        self.clockFormatStyle = clockFormatStyle
         self.resourceHost = resourceHost
         self.retainedStore = retainedStore
         self.hostBundle = hostBundle
-        let defaultWallpaper = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Pictures/Wallpapers/q2zr6juo2rch1.jpeg")
-            .path
-        let selectedWallpaper = configuration.wallpaperPath
-            ?? defaultWallpaper
-        self.wallpaperPath = NSString(
-            string: selectedWallpaper)
-            .expandingTildeInPath
+        self.wallpaperPath = ShellFormatting.wallpaperPath(
+            configuredPath: configuration.wallpaperPath,
+            homeDirectory: FileManager.default.homeDirectoryForCurrentUser)
         closeLocalSignalFD = false
     }
 

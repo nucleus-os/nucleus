@@ -1,4 +1,4 @@
-import Foundation
+import Foundation // FileHandle streams archives while computing fingerprints.
 import PackagePlugin
 
 private let archives = ["libNucleusReactRuntimeHostCxx.a"]

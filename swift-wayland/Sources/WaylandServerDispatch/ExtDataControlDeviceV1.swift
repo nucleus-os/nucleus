@@ -3,7 +3,7 @@
 // Typed server dispatch for ext_data_control_device_v1: a handler protocol (one method per request), the
 // request vtable + owner recovery + arg marshalling, and typed event senders.
 
-import WaylandServerC
+public import WaylandServerC
 import WaylandServer
 
 public protocol ExtDataControlDeviceV1Requests: AnyObject {
@@ -42,9 +42,9 @@ public enum ExtDataControlDeviceV1Server {
         ext_data_control_device_v1_send_primary_selection(target, id)
     }
 
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> ExtDataControlDeviceV1Requests? {
+    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> (any ExtDataControlDeviceV1Requests)? {
         guard let ud = wl_resource_get_user_data(res) else { return nil }
-        return Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? ExtDataControlDeviceV1Requests
+        return Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any ExtDataControlDeviceV1Requests
     }
 
     private static let setSelection_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res, source in

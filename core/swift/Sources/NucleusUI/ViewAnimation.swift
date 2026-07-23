@@ -1,4 +1,5 @@
-@_spi(NucleusCompositor) import NucleusLayers
+@_spi(NucleusCompositor) public import NucleusLayers
+public import struct NucleusTypes.AnimationCurve
 import Tracy
 
 /// A view property the compositor can interpolate without invoking main-actor
@@ -13,7 +14,7 @@ public enum AnimatableProperty: Sendable, Equatable {
     case scrollOffsetX
     case scrollOffsetY
 
-    package var keyPath: AnimationKeyPath {
+    package var keyPath: NucleusLayers.AnimationKeyPath {
         switch self {
         case .opacity: .opacity
         case .cornerRadius: .cornerRadius
@@ -29,7 +30,7 @@ public enum AnimatableProperty: Sendable, Equatable {
 
 package enum ViewAnimationOperation: Sendable, Equatable {
     case add(Animation)
-    case remove(AnimationKeyPath)
+    case remove(NucleusLayers.AnimationKeyPath)
 }
 
 package struct ViewAnimationRequest: Sendable, Equatable {
@@ -40,9 +41,12 @@ package struct ViewAnimationRequest: Sendable, Equatable {
 /// How an animation moves between its endpoints.
 public struct AnimationTiming: Sendable, Equatable {
     public var duration: Double
-    public var curve: AnimationCurve
+    public var curve: NucleusLayers.AnimationCurve
 
-    public init(duration: Double, curve: AnimationCurve = .bezier(.default)) {
+    public init(
+        duration: Double,
+        curve: NucleusLayers.AnimationCurve = .bezier(.default)
+    ) {
         precondition(
             duration.isFinite && duration >= 0,
             "animation duration must be finite and nonnegative"
@@ -369,7 +373,7 @@ extension View {
 
     private func makeAnimationHandle(
         id: UInt64,
-        keyPath: AnimationKeyPath,
+        keyPath: NucleusLayers.AnimationKeyPath,
         completion: (@MainActor (AnimationOutcome) -> Void)?
     ) -> AnimationHandle {
         precondition(id != 0, "animation id zero is reserved")
@@ -406,7 +410,7 @@ extension View {
 
     private func cancel(
         _ handle: AnimationHandle,
-        keyPath: AnimationKeyPath
+        keyPath: NucleusLayers.AnimationKeyPath
     ) {
         guard !handle.isFinished else { return }
         guard currentAnimationHandleIDs[keyPath] == handle.id else {
@@ -423,7 +427,9 @@ extension View {
         }
     }
 
-    private func removeAnimation(forKeyPath keyPath: AnimationKeyPath) {
+    private func removeAnimation(
+        forKeyPath keyPath: NucleusLayers.AnimationKeyPath
+    ) {
         let generation = recordMutation(.animation)
         animationRequests[keyPath] = ViewAnimationRequest(
             generation: generation,
@@ -453,7 +459,7 @@ extension View {
 
     private func animationHandleDidComplete(
         id: UInt64,
-        keyPath: AnimationKeyPath
+        keyPath: NucleusLayers.AnimationKeyPath
     ) {
         animationHandles[id] = nil
         if currentAnimationHandleIDs[keyPath] == id {

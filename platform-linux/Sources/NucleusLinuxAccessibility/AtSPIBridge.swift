@@ -1,4 +1,4 @@
-import NucleusUI
+public import NucleusUI
 
 /// Couples one retained scene's neutral semantic tree to a platform adapter.
 ///

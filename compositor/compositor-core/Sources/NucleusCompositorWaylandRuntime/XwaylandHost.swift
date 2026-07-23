@@ -9,7 +9,7 @@
 // the owning RouterHost's `xwaylandHost`.
 
 import Glibc
-import NucleusCompositorServer
+internal import NucleusCompositorServer
 
 @MainActor
 final class XwaylandHost {

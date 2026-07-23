@@ -1,6 +1,6 @@
 import NucleusShellAuthWire
-import NucleusShellProduct
-import NucleusUI
+public import NucleusShellProduct
+public import NucleusUI
 #if canImport(Glibc)
 import Glibc
 #endif
@@ -56,7 +56,7 @@ public final class PamAuthenticator: LockAuthenticator {
     // MARK: - LockAuthenticator
 
     public func authenticate(
-        password: SecureBytes,
+        password: consuming SecureBytes,
         completion: @escaping (LockAuthenticationOutcome) -> Void
     ) {
         guard attempt == nil else {
@@ -72,7 +72,7 @@ public final class PamAuthenticator: LockAuthenticator {
 
         var request: [UInt8] = []
         PamHelperWire.encodeField(Array(service.utf8), into: &request)
-        password.withUnsafeBytes { PamHelperWire.encodeField($0, into: &request) }
+        unsafe password.withUnsafeBytes { PamHelperWire.encodeField($0, into: &request) }
 
         guard let spawned = spawnHelper() else {
             scrub(&request)

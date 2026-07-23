@@ -3,8 +3,8 @@
 // device-child constructors) live in swift-vulkan (VulkanErgonomics.swift) and
 // are available via the re-export in NucleusVulkanSupport.
 
-import VulkanC
-import Vulkan
+public import VulkanC
+public import Vulkan
 
 // MARK: - Structure chains
 

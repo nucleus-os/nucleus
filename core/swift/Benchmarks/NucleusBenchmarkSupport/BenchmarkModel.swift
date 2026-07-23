@@ -1,4 +1,5 @@
-import Foundation
+import FoundationEssentials
+import FoundationInternationalization
 import NucleusBenchmarkMetricsC
 
 public struct BenchmarkResourceSnapshot: Sendable, Equatable {
@@ -429,7 +430,7 @@ enum BenchmarkReportWriter {
             lines.append(
                 "\(result.category)/\(result.name): input=\(result.inputSize) "
                     + "iterations=\(result.iterations) median_ms="
-                    + String(format: "%.3f", milliseconds)
+                    + milliseconds.formatted(millisecondFormat)
                     + " structural=pass"
                     + measurementSummary(result.measuredMetrics)
                     + phaseSummary(result.phaseTimings))
@@ -458,9 +459,14 @@ enum BenchmarkReportWriter {
         return " phases_ms=" + timings.keys.sorted().map { phase in
             let milliseconds = Double(
                 timings[phase]?.medianNanoseconds ?? 0) / 1_000_000
-            return "\(phase):" + String(format: "%.3f", milliseconds)
+            return "\(phase):" + milliseconds.formatted(millisecondFormat)
         }.joined(separator: ",")
     }
+
+    private static let millisecondFormat = FloatingPointFormatStyle<Double>.number
+        .locale(Locale(identifier: "en_US_POSIX"))
+        .precision(.fractionLength(3))
+        .grouping(.never)
 }
 
 public enum BenchmarkProgram {

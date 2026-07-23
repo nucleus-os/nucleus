@@ -1,5 +1,5 @@
 import PackagePlugin
-import Foundation
+import Foundation // Process executes the Skia provisioning script.
 
 // Command (provisioning) plugin: drives upstream Skia's own GN + Ninja build to
 // produce the Graphite + native Vulkan archive set the renderer links, into the

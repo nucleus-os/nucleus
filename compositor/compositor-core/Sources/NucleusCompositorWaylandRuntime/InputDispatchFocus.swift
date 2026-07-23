@@ -1,6 +1,6 @@
-import NucleusCompositorServer
+internal import NucleusCompositorServer
 import NucleusCompositorServerTypes
-import NucleusCompositorWindowManager
+internal import NucleusCompositorWindowManager
 import Glibc
 @MainActor
 extension InputDispatch {

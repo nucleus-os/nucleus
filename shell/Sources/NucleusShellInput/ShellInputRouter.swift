@@ -1,5 +1,5 @@
-import NucleusShellWayland
-import NucleusUI
+public import NucleusShellWayland
+public import NucleusUI
 
 /// Translates the shell's Wayland input records into NucleusUI events and
 /// dispatches them into a scene.
@@ -34,7 +34,7 @@ public final class ShellInputRouter: ShellSeatDelegate {
         self.scene = scene
         self.seat = seat
         if let seat, let client {
-            self.textInput = ShellTextInput(
+            self.textInput = unsafe ShellTextInput(
                 client: client,
                 seat: seat.protocolSeat
             )
@@ -54,7 +54,7 @@ public final class ShellInputRouter: ShellSeatDelegate {
         textInput?.close()
         seat = replacement
         textInput = replacement.flatMap {
-            ShellTextInput(client: client, seat: $0.protocolSeat)
+            unsafe ShellTextInput(client: client, seat: $0.protocolSeat)
         }
         replacement?.delegate = self
         for window in windowsBySurface.values {

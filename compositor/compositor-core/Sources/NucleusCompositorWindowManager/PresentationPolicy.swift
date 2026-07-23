@@ -1,4 +1,4 @@
-import NucleusCompositorServer
+public import NucleusCompositorServer
 
 @MainActor
 extension WindowManager {
@@ -45,6 +45,6 @@ extension WindowManager {
 
 // The old exported `nucleus_compositor_window_manager_should_focus_on_map`
 // wrapper previously lived here; it migrated to
-// `WindowMechanismHost.evaluateFocusOnMap` in `WindowMechanismHost.swift`.
+// `WindowManager.evaluateFocusOnMap` in `WindowManager+CompositorPolicy.swift`.
 // The Bool-returning impl on `WindowManager.shouldFocusOnMap` stays;
 // the protocol method delegates to it.

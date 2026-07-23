@@ -209,7 +209,7 @@ package final class TextEditingCommandCoordinator: ~Sendable {
     ) -> String {
         host.editorAllowsMultilineText
             ? string
-            : string.replacingOccurrences(of: "\n", with: " ")
+            : string.replacing("\n", with: " ")
     }
 
     private func isCurrent(_ candidate: UInt64) -> Bool {

@@ -11,7 +11,7 @@
 // isolation boundary. Pointer focus is driven separately by the input feed; this
 // driver owns only keyboard focus, which follows window activation.
 
-import NucleusCompositorServer
+internal import NucleusCompositorServer
 import WaylandServerC
 
 @MainActor

@@ -16,7 +16,7 @@
 // Ported from the legacy NucleusWaylandRouter/Workspace.swift.
 
 import WaylandServerC
-import NucleusCompositorServer
+internal import NucleusCompositorServer
 import WaylandServer
 import WaylandServerDispatch
 

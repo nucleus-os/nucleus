@@ -20,7 +20,7 @@ final class CursorShapeManagerBinding {
 }
 
 final class CursorShapeManager {
-    weak var delegate: CursorShapeDelegate?
+    weak var delegate: (any CursorShapeDelegate)?
 
     func register(in router: NucleusWaylandRouter) {
         router.addGlobal(

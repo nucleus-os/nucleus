@@ -1,11 +1,12 @@
-import Foundation
-import NucleusCompositorOverlayScene
-import NucleusCompositorServer
-import NucleusCompositorWindowManager
-import NucleusLayers
-import NucleusLinuxAccessibility
-import NucleusLinuxEnvironment
-import NucleusUI
+import Foundation // FileHandle.standardError is the shell diagnostics sink.
+import NucleusCompositorOverlay
+public import NucleusCompositorOverlayScene
+public import NucleusCompositorServer
+public import NucleusCompositorWindowManager
+public import NucleusLayers
+public import NucleusLinuxAccessibility
+public import NucleusLinuxEnvironment
+public import NucleusUI
 
 /// Compositor-owned shell service graph. Every stateful shell subsystem is
 /// constructed here and tied to the lifetime of one compositor runtime.
@@ -13,7 +14,6 @@ import NucleusUI
 public final class ShellServices {
     public let overlayScene: OverlaySceneRuntime
     public let notifications: NotificationService
-    public let screenshots: ScreenshotService
     public let bezel: BezelService
     public let launcher: LauncherService
     public let idlePolicy: IdlePolicy
@@ -47,7 +47,6 @@ public final class ShellServices {
 
         self.overlayScene = overlayScene
         self.notifications = notifications
-        self.screenshots = ScreenshotService(notifications: notifications)
         self.bezel = bezel
         self.launcher = launcher
         self.idlePolicy = idlePolicy
@@ -55,8 +54,6 @@ public final class ShellServices {
         self.keybinds = keybinds
         self.shellPolicy = ShellPolicyService(
             keybinds: keybinds,
-            launcher: launcher,
-            idle: idlePolicy,
             cursorTheme: cursorTheme,
             bezel: bezel,
             notifications: notifications,
@@ -151,7 +148,6 @@ public final class ShellServices {
         publicationHost = nil
         overlayScene.clearHost()
         notifications.reset()
-        screenshots.reset()
         server.dataExchange.reset()
     }
 }

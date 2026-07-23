@@ -2,7 +2,7 @@ import NucleusSkiaGraphiteBridge
 import VulkanC
 import Vulkan
 import Tracy
-import NucleusRenderModel
+internal import NucleusRenderModel
 #if canImport(Glibc)
 import Glibc
 #elseif canImport(Android)
@@ -178,7 +178,7 @@ extension RenderCore {
     /// deferred to `renderReady`, outside Wayland dispatch.
     @discardableResult
     public func registerSurfaceShm(
-        iosurfaceID: UInt64, pixels: UnsafeRawBufferPointer,
+        iosurfaceID: UInt64, pixels: Span<UInt8>,
         width: UInt32, height: UInt32, drmFormat: UInt32, stride: UInt32
     ) -> Bool {
         let commitInstant = telemetryClock.now

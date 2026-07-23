@@ -3,7 +3,7 @@
 // Typed server dispatch for ext_workspace_manager_v1: a handler protocol (one method per request), the
 // request vtable + owner recovery + arg marshalling, and typed event senders.
 
-import WaylandServerC
+public import WaylandServerC
 import WaylandServer
 
 public protocol ExtWorkspaceManagerV1Requests: AnyObject {
@@ -36,9 +36,9 @@ public enum ExtWorkspaceManagerV1Server {
         ext_workspace_manager_v1_send_finished(target)
     }
 
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> ExtWorkspaceManagerV1Requests? {
+    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> (any ExtWorkspaceManagerV1Requests)? {
         guard let ud = wl_resource_get_user_data(res) else { return nil }
-        return Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? ExtWorkspaceManagerV1Requests
+        return Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any ExtWorkspaceManagerV1Requests
     }
 
     private static let commit_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in

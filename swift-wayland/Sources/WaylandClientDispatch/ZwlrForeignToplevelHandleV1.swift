@@ -3,7 +3,7 @@
 // Typed client dispatch for zwlr_foreign_toplevel_handle_v1: a handler protocol (one method per event), the
 // libwayland listener + owner recovery + arg marshalling, and an addListener that wires it.
 
-import WaylandClientC
+public import WaylandClientC
 
 public protocol ZwlrForeignToplevelHandleV1Events: AnyObject {
     func title(_ proxy: OpaquePointer, title: UnsafePointer<CChar>?)
@@ -38,8 +38,8 @@ public enum ZwlrForeignToplevelHandleV1Client {
         zwlr_foreign_toplevel_handle_v1_add_listener(proxy, listener, Unmanaged.passUnretained(owner).toOpaque())
     }
 
-    private static func handler(_ data: UnsafeMutableRawPointer) -> ZwlrForeignToplevelHandleV1Events? {
-        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? ZwlrForeignToplevelHandleV1Events
+    private static func handler(_ data: UnsafeMutableRawPointer) -> (any ZwlrForeignToplevelHandleV1Events)? {
+        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? any ZwlrForeignToplevelHandleV1Events
     }
 
     private static let title_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UnsafePointer<CChar>?) -> Void = { data, proxy, title in

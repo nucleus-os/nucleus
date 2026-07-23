@@ -3,7 +3,7 @@
 // Typed client dispatch for zxdg_shell_v6: a handler protocol (one method per event), the
 // libwayland listener + owner recovery + arg marshalling, and an addListener that wires it.
 
-import WaylandClientC
+public import WaylandClientC
 
 public protocol ZxdgShellV6Events: AnyObject {
     func ping(_ proxy: OpaquePointer, serial: UInt32)
@@ -24,8 +24,8 @@ public enum ZxdgShellV6Client {
         zxdg_shell_v6_add_listener(proxy, listener, Unmanaged.passUnretained(owner).toOpaque())
     }
 
-    private static func handler(_ data: UnsafeMutableRawPointer) -> ZxdgShellV6Events? {
-        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? ZxdgShellV6Events
+    private static func handler(_ data: UnsafeMutableRawPointer) -> (any ZxdgShellV6Events)? {
+        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? any ZxdgShellV6Events
     }
 
     private static let ping_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, serial in

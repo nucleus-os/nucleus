@@ -1,29 +1,10 @@
-import NucleusCompositorOverlayScene
-import NucleusCompositorOverlayTypes
-import NucleusCompositorServer
+public import NucleusCompositorOverlayScene
+public import NucleusCompositorOverlayTypes
+public import NucleusCompositorServer
 
 @MainActor
-public protocol ShellPolicyHost: AnyObject {
-    func keybindDispatch(
-        keycode: UInt32,
-        modifiers: UInt64,
-        pressed: Bool
-    ) -> KeybindDecision
-    func launcherPlayScreenshotSound()
-    func idleRegisterNotification(id: UInt64, timeoutMS: UInt32)
-    func idleUnregisterNotification(id: UInt64)
-    func idleInhibitInc()
-    func idleInhibitDec()
-    func idleNoteInput(nowNS: UInt64) throws(HostCallError) -> [UInt64]
-    func idleNextDeadlineNS(nowNS: UInt64) throws(HostCallError) -> UInt64?
-    func idleTick(nowNS: UInt64) throws(HostCallError) -> [UInt64]
-}
-
-@MainActor
-public final class ShellPolicyService: ShellPolicyHost, CompositorShellPolicy {
+public final class ShellPolicyService: CompositorShellPolicy {
     private let keybinds: KeybindService
-    private let launcher: LauncherService
-    private let idle: IdlePolicy
     private let cursorTheme: CursorThemeService
     private let bezel: BezelService
     private let notifications: NotificationService
@@ -31,16 +12,12 @@ public final class ShellPolicyService: ShellPolicyHost, CompositorShellPolicy {
 
     public init(
         keybinds: KeybindService,
-        launcher: LauncherService,
-        idle: IdlePolicy,
         cursorTheme: CursorThemeService,
         bezel: BezelService,
         notifications: NotificationService,
         overlayScene: OverlaySceneRuntime
     ) {
         self.keybinds = keybinds
-        self.launcher = launcher
-        self.idle = idle
         self.cursorTheme = cursorTheme
         self.bezel = bezel
         self.notifications = notifications
@@ -163,39 +140,6 @@ public final class ShellPolicyService: ShellPolicyHost, CompositorShellPolicy {
             capabilities: capabilities)
     }
 
-    public func launcherPlayScreenshotSound() {
-        launcher.playScreenshotSound()
-    }
-
-    public func idleRegisterNotification(id: UInt64, timeoutMS: UInt32) {
-        idle.registerNotification(id: id, timeoutMS: timeoutMS)
-    }
-
-    public func idleUnregisterNotification(id: UInt64) {
-        idle.unregisterNotification(id: id)
-    }
-
-    public func idleInhibitInc() {
-        idle.inhibitInc()
-    }
-
-    public func idleInhibitDec() {
-        idle.inhibitDec()
-    }
-
-    public func idleNoteInput(nowNS: UInt64) throws(HostCallError) -> [UInt64] {
-        idle.noteInput(nowNS: nowNS, max: .max)
-    }
-
-    public func idleNextDeadlineNS(
-        nowNS: UInt64
-    ) throws(HostCallError) -> UInt64? {
-        idle.nextDeadlineNS(nowNS: nowNS)
-    }
-
-    public func idleTick(nowNS: UInt64) throws(HostCallError) -> [UInt64] {
-        idle.tick(nowNS: nowNS, max: .max)
-    }
 }
 
 private func packedOverlayResult(_ result: InputResult) -> UInt64 {

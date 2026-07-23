@@ -3,7 +3,7 @@
 // Typed client dispatch for ext_image_copy_capture_frame_v1: a handler protocol (one method per event), the
 // libwayland listener + owner recovery + arg marshalling, and an addListener that wires it.
 
-import WaylandClientC
+public import WaylandClientC
 
 public protocol ExtImageCopyCaptureFrameV1Events: AnyObject {
     func transform(_ proxy: OpaquePointer, transform: UInt32)
@@ -32,8 +32,8 @@ public enum ExtImageCopyCaptureFrameV1Client {
         ext_image_copy_capture_frame_v1_add_listener(proxy, listener, Unmanaged.passUnretained(owner).toOpaque())
     }
 
-    private static func handler(_ data: UnsafeMutableRawPointer) -> ExtImageCopyCaptureFrameV1Events? {
-        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? ExtImageCopyCaptureFrameV1Events
+    private static func handler(_ data: UnsafeMutableRawPointer) -> (any ExtImageCopyCaptureFrameV1Events)? {
+        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? any ExtImageCopyCaptureFrameV1Events
     }
 
     private static let transform_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, transform in

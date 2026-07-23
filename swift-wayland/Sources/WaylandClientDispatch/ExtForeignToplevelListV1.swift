@@ -3,7 +3,7 @@
 // Typed client dispatch for ext_foreign_toplevel_list_v1: a handler protocol (one method per event), the
 // libwayland listener + owner recovery + arg marshalling, and an addListener that wires it.
 
-import WaylandClientC
+public import WaylandClientC
 
 public protocol ExtForeignToplevelListV1Events: AnyObject {
     func toplevel(_ proxy: OpaquePointer, toplevel: OpaquePointer?)
@@ -26,8 +26,8 @@ public enum ExtForeignToplevelListV1Client {
         ext_foreign_toplevel_list_v1_add_listener(proxy, listener, Unmanaged.passUnretained(owner).toOpaque())
     }
 
-    private static func handler(_ data: UnsafeMutableRawPointer) -> ExtForeignToplevelListV1Events? {
-        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? ExtForeignToplevelListV1Events
+    private static func handler(_ data: UnsafeMutableRawPointer) -> (any ExtForeignToplevelListV1Events)? {
+        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? any ExtForeignToplevelListV1Events
     }
 
     private static let toplevel_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, OpaquePointer?) -> Void = { data, proxy, toplevel in

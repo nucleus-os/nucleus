@@ -1,5 +1,5 @@
-import NucleusCompositorOverlayTypes
-import NucleusCompositorOverlayScene
+public import NucleusCompositorOverlayTypes
+public import NucleusCompositorOverlayScene
 
 /// Host-protocol shape used by `Bezel.invoke` on the caller side.
 @MainActor

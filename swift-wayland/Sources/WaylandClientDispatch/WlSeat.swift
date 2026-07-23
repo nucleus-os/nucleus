@@ -3,7 +3,7 @@
 // Typed client dispatch for wl_seat: a handler protocol (one method per event), the
 // libwayland listener + owner recovery + arg marshalling, and an addListener that wires it.
 
-import WaylandClientC
+public import WaylandClientC
 
 public protocol WlSeatEvents: AnyObject {
     func capabilities(_ proxy: OpaquePointer, capabilities: UInt32)
@@ -26,8 +26,8 @@ public enum WlSeatClient {
         wl_seat_add_listener(proxy, listener, Unmanaged.passUnretained(owner).toOpaque())
     }
 
-    private static func handler(_ data: UnsafeMutableRawPointer) -> WlSeatEvents? {
-        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? WlSeatEvents
+    private static func handler(_ data: UnsafeMutableRawPointer) -> (any WlSeatEvents)? {
+        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? any WlSeatEvents
     }
 
     private static let capabilities_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, capabilities in

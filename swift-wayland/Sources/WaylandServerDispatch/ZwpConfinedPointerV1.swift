@@ -3,7 +3,7 @@
 // Typed server dispatch for zwp_confined_pointer_v1: a handler protocol (one method per request), the
 // request vtable + owner recovery + arg marshalling, and typed event senders.
 
-import WaylandServerC
+public import WaylandServerC
 import WaylandServer
 
 public protocol ZwpConfinedPointerV1Requests: AnyObject {
@@ -34,9 +34,9 @@ public enum ZwpConfinedPointerV1Server {
         zwp_confined_pointer_v1_send_unconfined(target)
     }
 
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> ZwpConfinedPointerV1Requests? {
+    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> (any ZwpConfinedPointerV1Requests)? {
         guard let ud = wl_resource_get_user_data(res) else { return nil }
-        return Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? ZwpConfinedPointerV1Requests
+        return Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any ZwpConfinedPointerV1Requests
     }
 
     private static let destroy_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in

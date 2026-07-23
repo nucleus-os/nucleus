@@ -3,7 +3,7 @@
 // Typed client dispatch for wl_shm: a handler protocol (one method per event), the
 // libwayland listener + owner recovery + arg marshalling, and an addListener that wires it.
 
-import WaylandClientC
+public import WaylandClientC
 
 public protocol WlShmEvents: AnyObject {
     func format(_ proxy: OpaquePointer, format: UInt32)
@@ -24,8 +24,8 @@ public enum WlShmClient {
         wl_shm_add_listener(proxy, listener, Unmanaged.passUnretained(owner).toOpaque())
     }
 
-    private static func handler(_ data: UnsafeMutableRawPointer) -> WlShmEvents? {
-        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? WlShmEvents
+    private static func handler(_ data: UnsafeMutableRawPointer) -> (any WlShmEvents)? {
+        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? any WlShmEvents
     }
 
     private static let format_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, format in

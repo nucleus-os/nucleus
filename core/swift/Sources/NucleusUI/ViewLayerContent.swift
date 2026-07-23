@@ -1,4 +1,4 @@
-import NucleusLayers
+internal import NucleusLayers
 
 public struct ViewLayerPresentation: Sendable, Equatable {
     public var role: LayerRole

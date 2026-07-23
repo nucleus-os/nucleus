@@ -3,7 +3,7 @@
 // Typed client dispatch for ext_image_copy_capture_cursor_session_v1: a handler protocol (one method per event), the
 // libwayland listener + owner recovery + arg marshalling, and an addListener that wires it.
 
-import WaylandClientC
+public import WaylandClientC
 
 public protocol ExtImageCopyCaptureCursorSessionV1Events: AnyObject {
     func enter(_ proxy: OpaquePointer)
@@ -30,8 +30,8 @@ public enum ExtImageCopyCaptureCursorSessionV1Client {
         ext_image_copy_capture_cursor_session_v1_add_listener(proxy, listener, Unmanaged.passUnretained(owner).toOpaque())
     }
 
-    private static func handler(_ data: UnsafeMutableRawPointer) -> ExtImageCopyCaptureCursorSessionV1Events? {
-        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? ExtImageCopyCaptureCursorSessionV1Events
+    private static func handler(_ data: UnsafeMutableRawPointer) -> (any ExtImageCopyCaptureCursorSessionV1Events)? {
+        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? any ExtImageCopyCaptureCursorSessionV1Events
     }
 
     private static let enter_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in

@@ -1,5 +1,5 @@
 import NucleusTypes
-import NucleusCompositorServerTypes
+public import NucleusCompositorServerTypes
 
 public struct XwaylandProtocols: OptionSet, Sendable, Equatable {
     public let rawValue: UInt32

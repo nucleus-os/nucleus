@@ -5,7 +5,7 @@
 // panel lands. The compositor is the screencopy PRODUCER; this is its client counterpart.
 
 import WaylandClientC
-import WaylandClientDispatch
+public import WaylandClientDispatch
 
 @MainActor
 public final class ScreencopyClient {

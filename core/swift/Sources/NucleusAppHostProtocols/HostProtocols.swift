@@ -1,4 +1,4 @@
-import NucleusTypes
+public import NucleusTypes
 
 public enum ImageRegistrationError: Error, Sendable, Equatable {
     case invalidHandle

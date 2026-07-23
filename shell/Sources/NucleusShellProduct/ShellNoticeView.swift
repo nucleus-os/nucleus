@@ -1,4 +1,4 @@
-import NucleusUI
+public import NucleusUI
 
 /// A panel of wrapped body text under a title — the case that cannot be laid
 /// out from `intrinsicContentSize` at all, because the body's height is a

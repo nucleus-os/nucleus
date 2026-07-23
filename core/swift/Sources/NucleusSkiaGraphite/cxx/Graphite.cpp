@@ -20,7 +20,11 @@
 
 #include "modules/svg/include/SkSVGDOM.h"
 #include "modules/svg/include/SkSVGSVG.h"
+#if defined(__ANDROID__)
+#include "include/ports/SkFontMgr_android.h"
+#else
 #include "include/ports/SkFontMgr_fontconfig.h"
+#endif
 #include "include/ports/SkFontScanner_FreeType.h"
 #include "include/core/SkFontMgr.h"
 #include "include/core/SkStream.h"
@@ -689,13 +693,17 @@ bool looksLikeSvg(const sk_sp<SkData> &data) {
     return false;
 }
 
-// One system font manager, for <text> inside SVG documents. Without it Skia
+// One platform font manager, for <text> inside SVG documents. Without it Skia
 // renders SVG text as nothing at all, silently. Most icons are pure shapes, but
-// a logo or a wallpaper is exactly where text shows up, and fontconfig is
-// already linked.
+// a logo or a wallpaper is exactly where text shows up.
 sk_sp<SkFontMgr> svgFontManager() {
+#if defined(__ANDROID__)
+    static sk_sp<SkFontMgr> manager =
+        SkFontMgr_New_Android(nullptr, SkFontScanner_Make_FreeType());
+#else
     static sk_sp<SkFontMgr> manager =
         SkFontMgr_New_FontConfig(nullptr, SkFontScanner_Make_FreeType());
+#endif
     return manager;
 }
 

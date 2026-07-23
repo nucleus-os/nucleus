@@ -1,5 +1,5 @@
 import PackagePlugin
-import Foundation
+import Foundation // Process executes React Native code generation.
 
 // Command plugin: regenerates React Native's FBReactNativeSpec codegen by
 // driving RN's own upstream generator through tools/generate-rn-spec.js. The

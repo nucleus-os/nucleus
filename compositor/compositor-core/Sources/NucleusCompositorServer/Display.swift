@@ -1,5 +1,5 @@
 import NucleusTypes
-import NucleusCompositorServerTypes
+public import NucleusCompositorServerTypes
 import Glibc
 
 public typealias DisplayID = UInt64
@@ -296,7 +296,7 @@ public final class Display {
 
     private static func monotonicNowNs() -> UInt64 {
         var timestamp = timespec()
-        clock_gettime(
+        unsafe clock_gettime(
             CLOCK_MONOTONIC, &timestamp)
         return UInt64(timestamp.tv_sec)
             &* 1_000_000_000

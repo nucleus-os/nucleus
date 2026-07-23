@@ -1,4 +1,4 @@
-import NucleusUI
+public import NucleusUI
 
 /// The native bar clock. Wall-clock ownership stays in the runtime; the
 /// product receives an already localized display value and retains one label.

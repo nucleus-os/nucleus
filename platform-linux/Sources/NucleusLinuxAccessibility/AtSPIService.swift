@@ -1,7 +1,8 @@
-import Foundation
+import FoundationEssentials
+import FoundationInternationalization
 import NucleusLinuxDBus
-import NucleusLinuxReactor
-import NucleusUI
+public import NucleusLinuxReactor
+public import NucleusUI
 #if canImport(Glibc)
 import Glibc
 #endif
@@ -371,7 +372,10 @@ public final class AtSPIService: LinuxReactorSource {
 
     private static func monotonicMicroseconds() -> UInt64 {
         var now = timespec()
-        _ = clock_gettime(CLOCK_MONOTONIC, &now)
+        // `now` is a live, correctly aligned value for the duration of the C
+        // call, and clock_gettime writes exactly one initialized timespec.
+        let result = unsafe clock_gettime(CLOCK_MONOTONIC, &now)
+        precondition(result == 0, "CLOCK_MONOTONIC is unavailable")
         let seconds = UInt64(max(0, now.tv_sec))
         let microseconds = UInt64(max(0, now.tv_nsec)) / 1_000
         return seconds.saturatingMultiply(1_000_000)

@@ -1,5 +1,5 @@
 import PackagePlugin
-import Foundation
+import Foundation // Process executes the Wayland generator tool.
 
 // Regenerates the three committed Wayland C modules from the vendored protocol XML over the full
 // set (all of Protocols/, minus core wayland.xml and the deprecated/duplicate protocol versions

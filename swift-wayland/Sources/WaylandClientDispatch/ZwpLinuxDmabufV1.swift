@@ -3,7 +3,7 @@
 // Typed client dispatch for zwp_linux_dmabuf_v1: a handler protocol (one method per event), the
 // libwayland listener + owner recovery + arg marshalling, and an addListener that wires it.
 
-import WaylandClientC
+public import WaylandClientC
 
 public protocol ZwpLinuxDmabufV1Events: AnyObject {
     func format(_ proxy: OpaquePointer, format: UInt32)
@@ -26,8 +26,8 @@ public enum ZwpLinuxDmabufV1Client {
         zwp_linux_dmabuf_v1_add_listener(proxy, listener, Unmanaged.passUnretained(owner).toOpaque())
     }
 
-    private static func handler(_ data: UnsafeMutableRawPointer) -> ZwpLinuxDmabufV1Events? {
-        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? ZwpLinuxDmabufV1Events
+    private static func handler(_ data: UnsafeMutableRawPointer) -> (any ZwpLinuxDmabufV1Events)? {
+        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? any ZwpLinuxDmabufV1Events
     }
 
     private static let format_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, format in

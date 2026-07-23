@@ -79,7 +79,7 @@ third-party/boost/          (vendored, header-only)
 tools/nucleus bootstrap rn
 
 # Rebuild
-source ../core/tools/host-env.sh
+source ../tools/host-env.sh
 swift build
 ```
 

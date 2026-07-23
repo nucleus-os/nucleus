@@ -1,5 +1,5 @@
 import NucleusShellWayland
-import NucleusShellProduct
+public import NucleusShellProduct
 import NucleusUI
 import NucleusUIEmbedder
 

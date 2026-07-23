@@ -64,20 +64,17 @@ public struct PresentReport: Sendable, Equatable {
     }
 }
 
-@inline(__always)
 private func nsNow() -> UInt64 {
     var ts = timespec()
-    clock_gettime(CLOCK_MONOTONIC, &ts)
+    unsafe clock_gettime(CLOCK_MONOTONIC, &ts)
     return UInt64(ts.tv_sec) &* 1_000_000_000 &+ UInt64(ts.tv_nsec)
 }
 
-@inline(__always)
 private func satAdd(_ a: UInt64, _ b: UInt64) -> UInt64 {
     let (sum, overflow) = a.addingReportingOverflow(b)
     return overflow ? .max : sum
 }
 
-@inline(__always)
 private func satMul(_ a: UInt64, _ b: UInt64) -> UInt64 {
     let (product, overflow) = a.multipliedReportingOverflow(by: b)
     return overflow ? .max : product

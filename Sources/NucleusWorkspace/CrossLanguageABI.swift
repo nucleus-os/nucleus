@@ -1,4 +1,4 @@
-import Foundation
+import FoundationEssentials
 
 struct CrossLanguageABIAudit {
     let context: WorkspaceContext
@@ -69,8 +69,7 @@ struct CrossLanguageABIAudit {
         _Static_assert(offsetof(struct nucleus_drm_sync_file_snapshot, latest_timestamp_ns) == 8,
                        "latest_timestamp_ns offset changed");
         """
-        let drmCxx = drmC.replacingOccurrences(
-            of: "_Static_assert", with: "static_assert")
+        let drmCxx = drmC.replacing("_Static_assert", with: "static_assert")
         let tracyC = """
         _Static_assert(sizeof(SwiftTracyZoneContext) == 8,
                        "SwiftTracyZoneContext size changed");
@@ -79,8 +78,7 @@ struct CrossLanguageABIAudit {
         _Static_assert(offsetof(SwiftTracyZoneContext, active) == 4,
                        "SwiftTracyZoneContext.active offset changed");
         """
-        let tracyCxx = tracyC.replacingOccurrences(
-            of: "_Static_assert", with: "static_assert")
+        let tracyCxx = tracyC.replacing("_Static_assert", with: "static_assert")
         let graphiteCxx = """
         #include <type_traits>
         static_assert(sizeof(nucleus::skia::Status) == sizeof(int32_t));

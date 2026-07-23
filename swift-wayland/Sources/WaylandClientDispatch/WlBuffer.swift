@@ -3,7 +3,7 @@
 // Typed client dispatch for wl_buffer: a handler protocol (one method per event), the
 // libwayland listener + owner recovery + arg marshalling, and an addListener that wires it.
 
-import WaylandClientC
+public import WaylandClientC
 
 public protocol WlBufferEvents: AnyObject {
     func release(_ proxy: OpaquePointer)
@@ -24,8 +24,8 @@ public enum WlBufferClient {
         wl_buffer_add_listener(proxy, listener, Unmanaged.passUnretained(owner).toOpaque())
     }
 
-    private static func handler(_ data: UnsafeMutableRawPointer) -> WlBufferEvents? {
-        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? WlBufferEvents
+    private static func handler(_ data: UnsafeMutableRawPointer) -> (any WlBufferEvents)? {
+        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? any WlBufferEvents
     }
 
     private static let release_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in

@@ -3,7 +3,7 @@
 // Typed client dispatch for zxdg_imported_v2: a handler protocol (one method per event), the
 // libwayland listener + owner recovery + arg marshalling, and an addListener that wires it.
 
-import WaylandClientC
+public import WaylandClientC
 
 public protocol ZxdgImportedV2Events: AnyObject {
     func destroyed(_ proxy: OpaquePointer)
@@ -24,8 +24,8 @@ public enum ZxdgImportedV2Client {
         zxdg_imported_v2_add_listener(proxy, listener, Unmanaged.passUnretained(owner).toOpaque())
     }
 
-    private static func handler(_ data: UnsafeMutableRawPointer) -> ZxdgImportedV2Events? {
-        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? ZxdgImportedV2Events
+    private static func handler(_ data: UnsafeMutableRawPointer) -> (any ZxdgImportedV2Events)? {
+        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? any ZxdgImportedV2Events
     }
 
     private static let destroyed_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in

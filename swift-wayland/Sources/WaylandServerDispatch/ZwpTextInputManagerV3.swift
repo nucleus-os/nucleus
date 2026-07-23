@@ -3,8 +3,8 @@
 // Typed server dispatch for zwp_text_input_manager_v3: a handler protocol (one method per request), the
 // request vtable + owner recovery + arg marshalling, and typed event senders.
 
-import WaylandServerC
-import WaylandServer
+public import WaylandServerC
+public import WaylandServer
 
 public protocol ZwpTextInputManagerV3Requests: AnyObject {
     func destroy(_ resource: UnsafeMutablePointer<wl_resource>)
@@ -27,9 +27,9 @@ public enum ZwpTextInputManagerV3Server {
         return UnsafeRawPointer(raw)
     }()
 
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> ZwpTextInputManagerV3Requests? {
+    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> (any ZwpTextInputManagerV3Requests)? {
         guard let ud = wl_resource_get_user_data(res) else { return nil }
-        return Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? ZwpTextInputManagerV3Requests
+        return Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any ZwpTextInputManagerV3Requests
     }
 
     private static let destroy_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
@@ -38,6 +38,6 @@ public enum ZwpTextInputManagerV3Server {
     }
     private static let getTextInput_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UnsafeMutablePointer<wl_resource>?) -> Void = { client, res, id, seat in
         guard let res, let client, let h = handler(res) else { return }
-        h.getTextInput(res, id: WlNewId(client: client, id: id, version: Swift.min(wl_resource_get_version(res), Int32(2)), interface: swift_wayland_iface_zwp_text_input_v3()), seat: seat)
+        h.getTextInput(res, id: WlNewId(client: client, id: id, version: Swift::min(wl_resource_get_version(res), Int32(2)), interface: swift_wayland_iface_zwp_text_input_v3()), seat: seat)
     }
 }

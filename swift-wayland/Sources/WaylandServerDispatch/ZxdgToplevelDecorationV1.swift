@@ -3,7 +3,7 @@
 // Typed server dispatch for zxdg_toplevel_decoration_v1: a handler protocol (one method per request), the
 // request vtable + owner recovery + arg marshalling, and typed event senders.
 
-import WaylandServerC
+public import WaylandServerC
 import WaylandServer
 
 public protocol ZxdgToplevelDecorationV1Requests: AnyObject {
@@ -33,9 +33,9 @@ public enum ZxdgToplevelDecorationV1Server {
         zxdg_toplevel_decoration_v1_send_configure(target, mode)
     }
 
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> ZxdgToplevelDecorationV1Requests? {
+    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> (any ZxdgToplevelDecorationV1Requests)? {
         guard let ud = wl_resource_get_user_data(res) else { return nil }
-        return Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? ZxdgToplevelDecorationV1Requests
+        return Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any ZxdgToplevelDecorationV1Requests
     }
 
     private static let destroy_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in

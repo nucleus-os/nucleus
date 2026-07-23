@@ -3,7 +3,7 @@
 // Typed server dispatch for ext_image_copy_capture_frame_v1: a handler protocol (one method per request), the
 // request vtable + owner recovery + arg marshalling, and typed event senders.
 
-import WaylandServerC
+public import WaylandServerC
 import WaylandServer
 
 public protocol ExtImageCopyCaptureFrameV1Requests: AnyObject {
@@ -47,9 +47,9 @@ public enum ExtImageCopyCaptureFrameV1Server {
         ext_image_copy_capture_frame_v1_send_failed(target, reason)
     }
 
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> ExtImageCopyCaptureFrameV1Requests? {
+    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> (any ExtImageCopyCaptureFrameV1Requests)? {
         guard let ud = wl_resource_get_user_data(res) else { return nil }
-        return Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? ExtImageCopyCaptureFrameV1Requests
+        return Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any ExtImageCopyCaptureFrameV1Requests
     }
 
     private static let destroy_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in

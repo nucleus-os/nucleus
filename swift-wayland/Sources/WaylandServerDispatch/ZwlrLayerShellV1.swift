@@ -3,8 +3,8 @@
 // Typed server dispatch for zwlr_layer_shell_v1: a handler protocol (one method per request), the
 // request vtable + owner recovery + arg marshalling, and typed event senders.
 
-import WaylandServerC
-import WaylandServer
+public import WaylandServerC
+public import WaylandServer
 
 public protocol ZwlrLayerShellV1Requests: AnyObject {
     func getLayerSurface(_ resource: UnsafeMutablePointer<wl_resource>, id: WlNewId, surface: UnsafeMutablePointer<wl_resource>?, output: UnsafeMutablePointer<wl_resource>?, layer: UInt32, namespace: UnsafePointer<CChar>?)
@@ -27,14 +27,14 @@ public enum ZwlrLayerShellV1Server {
         return UnsafeRawPointer(raw)
     }()
 
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> ZwlrLayerShellV1Requests? {
+    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> (any ZwlrLayerShellV1Requests)? {
         guard let ud = wl_resource_get_user_data(res) else { return nil }
-        return Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? ZwlrLayerShellV1Requests
+        return Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any ZwlrLayerShellV1Requests
     }
 
     private static let getLayerSurface_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UnsafeMutablePointer<wl_resource>?, UnsafeMutablePointer<wl_resource>?, UInt32, UnsafePointer<CChar>?) -> Void = { client, res, id, surface, output, layer, namespace in
         guard let res, let client, let h = handler(res) else { return }
-        h.getLayerSurface(res, id: WlNewId(client: client, id: id, version: Swift.min(wl_resource_get_version(res), Int32(5)), interface: swift_wayland_iface_zwlr_layer_surface_v1()), surface: surface, output: output, layer: layer, namespace: namespace)
+        h.getLayerSurface(res, id: WlNewId(client: client, id: id, version: Swift::min(wl_resource_get_version(res), Int32(5)), interface: swift_wayland_iface_zwlr_layer_surface_v1()), surface: surface, output: output, layer: layer, namespace: namespace)
     }
     private static let destroy_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
         guard let res else { return }

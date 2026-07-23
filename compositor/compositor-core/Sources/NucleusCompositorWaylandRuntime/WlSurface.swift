@@ -14,6 +14,7 @@
 import WaylandServerC
 import WaylandServer
 import WaylandServerDispatch
+import NucleusRenderModel
 import NucleusTypes
 
 final class WlSurface {
@@ -158,10 +159,7 @@ final class WlSurface {
     // lifecycle; this surface owns the state.
     weak var viewport: WpViewport?
     /// The surface-adjacent state latched at the last commit.
-    private(set) var aux: SurfaceAuxState {
-        get { current.auxiliary }
-        set { current.auxiliary = newValue }
-    }
+    private(set) var aux = SurfaceAuxState()
     /// At most one object of each surface-adjacent kind may attach to a surface;
     /// the factories raise the protocol's "<x>_exists" error otherwise.
     private var claimedAux: Set<SurfaceAuxKind> = []
@@ -174,7 +172,7 @@ final class WlSurface {
     //
     // Not buffered: the preferred scale tracks output membership and is pushed to
     // the bound object whenever it changes. Held weakly (Rule 9).
-    weak var fractionalScaleSink: PreferredScaleSink?
+    weak var fractionalScaleSink: (any PreferredScaleSink)?
     /// Preferred fractional scale ×120 (120 = 1.0). Recomputed from the surface's
     /// entered-output set in `refreshPreferredScale`; defaults to 1.0.
     private(set) var preferredFractionalScale120: UInt32 = 120
@@ -224,7 +222,7 @@ final class WlSurface {
     // A surface takes at most one such role; once taken it cannot change (xdg's
     // `role`/`already_constructed` invariants are enforced by the role factory).
     // The role is held weakly — it is owned by its own wl_resource.
-    weak var role: WlSurfaceRole?
+    weak var role: (any WlSurfaceRole)?
     private(set) var roleIdentity: SurfaceRoleIdentity?
     private var hasXdgConstructionClaim = false
     var hasRole: Bool { roleIdentity != nil }
@@ -232,7 +230,7 @@ final class WlSurface {
     /// Attach a configure-driving role. Returns false if one is already attached
     /// (the caller raises the protocol's "already has a role" error).
     @discardableResult
-    func assignRole(_ role: WlSurfaceRole) -> Bool {
+    func assignRole(_ role: any WlSurfaceRole) -> Bool {
         let identity: SurfaceRoleIdentity
         switch role {
         case is XdgSurface: identity = .xdg
@@ -399,11 +397,11 @@ final class WlSurface {
     func releaseAux(_ kind: SurfaceAuxKind) { claimedAux.remove(kind) }
 
     /// Register a double-buffered protocol object to latch on this surface's commit.
-    func addCommitObserver(_ observer: WlSurfaceCommitObserver) {
+    func addCommitObserver(_ observer: any WlSurfaceCommitObserver) {
         commitObservers.append(WeakCommitObserver(observer))
     }
 
-    func removeCommitObserver(_ observer: WlSurfaceCommitObserver) {
+    func removeCommitObserver(_ observer: any WlSurfaceCommitObserver) {
         commitObservers.removeAll {
             $0.observer == nil || $0.observer === observer
         }
@@ -849,6 +847,6 @@ final class WlSurface {
 
 /// Weak box for the surface's commit-observer list (Rule 9).
 private final class WeakCommitObserver {
-    weak var observer: WlSurfaceCommitObserver?
-    init(_ observer: WlSurfaceCommitObserver) { self.observer = observer }
+    weak var observer: (any WlSurfaceCommitObserver)?
+    init(_ observer: any WlSurfaceCommitObserver) { self.observer = observer }
 }

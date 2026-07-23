@@ -1,4 +1,4 @@
-import NucleusUI
+public import NucleusUI
 
 @MainActor
 private final class TaskbarWindowButton: Control {

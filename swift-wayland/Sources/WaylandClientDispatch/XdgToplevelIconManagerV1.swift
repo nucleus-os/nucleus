@@ -3,7 +3,7 @@
 // Typed client dispatch for xdg_toplevel_icon_manager_v1: a handler protocol (one method per event), the
 // libwayland listener + owner recovery + arg marshalling, and an addListener that wires it.
 
-import WaylandClientC
+public import WaylandClientC
 
 public protocol XdgToplevelIconManagerV1Events: AnyObject {
     func iconSize(_ proxy: OpaquePointer, size: Int32)
@@ -26,8 +26,8 @@ public enum XdgToplevelIconManagerV1Client {
         xdg_toplevel_icon_manager_v1_add_listener(proxy, listener, Unmanaged.passUnretained(owner).toOpaque())
     }
 
-    private static func handler(_ data: UnsafeMutableRawPointer) -> XdgToplevelIconManagerV1Events? {
-        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? XdgToplevelIconManagerV1Events
+    private static func handler(_ data: UnsafeMutableRawPointer) -> (any XdgToplevelIconManagerV1Events)? {
+        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? any XdgToplevelIconManagerV1Events
     }
 
     private static let iconSize_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, Int32) -> Void = { data, proxy, size in

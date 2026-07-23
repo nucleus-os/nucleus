@@ -3,7 +3,7 @@
 // Typed client dispatch for zwlr_output_configuration_v1: a handler protocol (one method per event), the
 // libwayland listener + owner recovery + arg marshalling, and an addListener that wires it.
 
-import WaylandClientC
+public import WaylandClientC
 
 public protocol ZwlrOutputConfigurationV1Events: AnyObject {
     func succeeded(_ proxy: OpaquePointer)
@@ -28,8 +28,8 @@ public enum ZwlrOutputConfigurationV1Client {
         zwlr_output_configuration_v1_add_listener(proxy, listener, Unmanaged.passUnretained(owner).toOpaque())
     }
 
-    private static func handler(_ data: UnsafeMutableRawPointer) -> ZwlrOutputConfigurationV1Events? {
-        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? ZwlrOutputConfigurationV1Events
+    private static func handler(_ data: UnsafeMutableRawPointer) -> (any ZwlrOutputConfigurationV1Events)? {
+        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? any ZwlrOutputConfigurationV1Events
     }
 
     private static let succeeded_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in

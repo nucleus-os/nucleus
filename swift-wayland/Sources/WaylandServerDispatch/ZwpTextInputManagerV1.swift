@@ -3,8 +3,8 @@
 // Typed server dispatch for zwp_text_input_manager_v1: a handler protocol (one method per request), the
 // request vtable + owner recovery + arg marshalling, and typed event senders.
 
-import WaylandServerC
-import WaylandServer
+public import WaylandServerC
+public import WaylandServer
 
 public protocol ZwpTextInputManagerV1Requests: AnyObject {
     func createTextInput(_ resource: UnsafeMutablePointer<wl_resource>, id: WlNewId)
@@ -21,13 +21,13 @@ public enum ZwpTextInputManagerV1Server {
         return UnsafeRawPointer(raw)
     }()
 
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> ZwpTextInputManagerV1Requests? {
+    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> (any ZwpTextInputManagerV1Requests)? {
         guard let ud = wl_resource_get_user_data(res) else { return nil }
-        return Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? ZwpTextInputManagerV1Requests
+        return Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any ZwpTextInputManagerV1Requests
     }
 
     private static let createTextInput_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { client, res, id in
         guard let res, let client, let h = handler(res) else { return }
-        h.createTextInput(res, id: WlNewId(client: client, id: id, version: Swift.min(wl_resource_get_version(res), Int32(1)), interface: swift_wayland_iface_zwp_text_input_v1()))
+        h.createTextInput(res, id: WlNewId(client: client, id: id, version: Swift::min(wl_resource_get_version(res), Int32(1)), interface: swift_wayland_iface_zwp_text_input_v1()))
     }
 }

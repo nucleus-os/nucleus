@@ -1,4 +1,4 @@
-import NucleusTypes
+public import NucleusTypes
 import NucleusCompositorServerTypes
 @_spi(NucleusCompositor) import NucleusLayers
 

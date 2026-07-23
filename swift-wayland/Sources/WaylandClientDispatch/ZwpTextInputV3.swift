@@ -3,7 +3,7 @@
 // Typed client dispatch for zwp_text_input_v3: a handler protocol (one method per event), the
 // libwayland listener + owner recovery + arg marshalling, and an addListener that wires it.
 
-import WaylandClientC
+public import WaylandClientC
 
 public protocol ZwpTextInputV3Events: AnyObject {
     func enter(_ proxy: OpaquePointer, surface: OpaquePointer?)
@@ -40,8 +40,8 @@ public enum ZwpTextInputV3Client {
         zwp_text_input_v3_add_listener(proxy, listener, Unmanaged.passUnretained(owner).toOpaque())
     }
 
-    private static func handler(_ data: UnsafeMutableRawPointer) -> ZwpTextInputV3Events? {
-        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? ZwpTextInputV3Events
+    private static func handler(_ data: UnsafeMutableRawPointer) -> (any ZwpTextInputV3Events)? {
+        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? any ZwpTextInputV3Events
     }
 
     private static let enter_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, OpaquePointer?) -> Void = { data, proxy, surface in

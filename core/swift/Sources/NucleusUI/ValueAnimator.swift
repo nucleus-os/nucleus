@@ -1,5 +1,12 @@
-import Foundation
-@_spi(NucleusCompositor) import NucleusLayers
+#if canImport(Glibc)
+import Glibc
+#elseif canImport(Android)
+import Android
+#elseif canImport(Darwin)
+import Darwin
+#endif
+package import enum NucleusTypes.AnimationCurveKind
+package import struct NucleusTypes.AnimationCurve
 
 /// Semantic identity for one animated value owned by an object.
 public struct AnimationPropertyKey: RawRepresentable, Hashable, Sendable {

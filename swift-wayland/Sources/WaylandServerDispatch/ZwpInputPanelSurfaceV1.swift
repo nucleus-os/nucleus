@@ -3,7 +3,7 @@
 // Typed server dispatch for zwp_input_panel_surface_v1: a handler protocol (one method per request), the
 // request vtable + owner recovery + arg marshalling, and typed event senders.
 
-import WaylandServerC
+public import WaylandServerC
 import WaylandServer
 
 public protocol ZwpInputPanelSurfaceV1Requests: AnyObject {
@@ -23,9 +23,9 @@ public enum ZwpInputPanelSurfaceV1Server {
         return UnsafeRawPointer(raw)
     }()
 
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> ZwpInputPanelSurfaceV1Requests? {
+    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> (any ZwpInputPanelSurfaceV1Requests)? {
         guard let ud = wl_resource_get_user_data(res) else { return nil }
-        return Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? ZwpInputPanelSurfaceV1Requests
+        return Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any ZwpInputPanelSurfaceV1Requests
     }
 
     private static let setToplevel_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { _, res, output, position in

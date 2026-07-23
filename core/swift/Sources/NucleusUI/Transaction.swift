@@ -1,4 +1,5 @@
-import NucleusLayers
+package import NucleusLayers
+internal import struct NucleusTypes.Rect
 
 /// Immutable mutation policy for one scoped semantic transaction.
 public struct TransactionConfiguration: Sendable, Equatable {

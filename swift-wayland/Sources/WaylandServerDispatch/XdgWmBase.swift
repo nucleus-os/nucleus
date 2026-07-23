@@ -3,8 +3,8 @@
 // Typed server dispatch for xdg_wm_base: a handler protocol (one method per request), the
 // request vtable + owner recovery + arg marshalling, and typed event senders.
 
-import WaylandServerC
-import WaylandServer
+public import WaylandServerC
+public import WaylandServer
 
 public protocol XdgWmBaseRequests: AnyObject {
     func destroy(_ resource: UnsafeMutablePointer<wl_resource>)
@@ -35,9 +35,9 @@ public enum XdgWmBaseServer {
         xdg_wm_base_send_ping(target, serial)
     }
 
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> XdgWmBaseRequests? {
+    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> (any XdgWmBaseRequests)? {
         guard let ud = wl_resource_get_user_data(res) else { return nil }
-        return Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? XdgWmBaseRequests
+        return Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any XdgWmBaseRequests
     }
 
     private static let destroy_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
@@ -46,11 +46,11 @@ public enum XdgWmBaseServer {
     }
     private static let createPositioner_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { client, res, id in
         guard let res, let client, let h = handler(res) else { return }
-        h.createPositioner(res, id: WlNewId(client: client, id: id, version: Swift.min(wl_resource_get_version(res), Int32(7)), interface: swift_wayland_iface_xdg_positioner()))
+        h.createPositioner(res, id: WlNewId(client: client, id: id, version: Swift::min(wl_resource_get_version(res), Int32(7)), interface: swift_wayland_iface_xdg_positioner()))
     }
     private static let getXdgSurface_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UnsafeMutablePointer<wl_resource>?) -> Void = { client, res, id, surface in
         guard let res, let client, let h = handler(res) else { return }
-        h.getXdgSurface(res, id: WlNewId(client: client, id: id, version: Swift.min(wl_resource_get_version(res), Int32(7)), interface: swift_wayland_iface_xdg_surface()), surface: surface)
+        h.getXdgSurface(res, id: WlNewId(client: client, id: id, version: Swift::min(wl_resource_get_version(res), Int32(7)), interface: swift_wayland_iface_xdg_surface()), surface: surface)
     }
     private static let pong_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { _, res, serial in
         guard let res, let h = handler(res) else { return }

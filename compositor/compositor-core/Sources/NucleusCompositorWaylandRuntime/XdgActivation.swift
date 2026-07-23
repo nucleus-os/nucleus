@@ -21,7 +21,7 @@ final class XdgActivationBinding {
 }
 
 final class XdgActivationManager {
-    weak var delegate: XdgActivationDelegate?
+    weak var delegate: (any XdgActivationDelegate)?
     weak var seat: WlSeat?
     private var tokenCounter: UInt64 = 0
     private var grants: [String: Bool] = [:]

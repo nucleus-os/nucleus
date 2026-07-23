@@ -3,7 +3,7 @@
 // Typed server dispatch for zwp_tablet_pad_dial_v2: a handler protocol (one method per request), the
 // request vtable + owner recovery + arg marshalling, and typed event senders.
 
-import WaylandServerC
+public import WaylandServerC
 import WaylandServer
 
 public protocol ZwpTabletPadDialV2Requests: AnyObject {
@@ -34,9 +34,9 @@ public enum ZwpTabletPadDialV2Server {
         zwp_tablet_pad_dial_v2_send_frame(target, time)
     }
 
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> ZwpTabletPadDialV2Requests? {
+    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> (any ZwpTabletPadDialV2Requests)? {
         guard let ud = wl_resource_get_user_data(res) else { return nil }
-        return Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? ZwpTabletPadDialV2Requests
+        return Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any ZwpTabletPadDialV2Requests
     }
 
     private static let setFeedback_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafePointer<CChar>?, UInt32) -> Void = { _, res, description, serial in

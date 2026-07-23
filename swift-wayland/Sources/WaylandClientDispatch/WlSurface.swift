@@ -3,7 +3,7 @@
 // Typed client dispatch for wl_surface: a handler protocol (one method per event), the
 // libwayland listener + owner recovery + arg marshalling, and an addListener that wires it.
 
-import WaylandClientC
+public import WaylandClientC
 
 public protocol WlSurfaceEvents: AnyObject {
     func enter(_ proxy: OpaquePointer, output: OpaquePointer?)
@@ -30,8 +30,8 @@ public enum WlSurfaceClient {
         wl_surface_add_listener(proxy, listener, Unmanaged.passUnretained(owner).toOpaque())
     }
 
-    private static func handler(_ data: UnsafeMutableRawPointer) -> WlSurfaceEvents? {
-        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? WlSurfaceEvents
+    private static func handler(_ data: UnsafeMutableRawPointer) -> (any WlSurfaceEvents)? {
+        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? any WlSurfaceEvents
     }
 
     private static let enter_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, OpaquePointer?) -> Void = { data, proxy, output in

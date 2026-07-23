@@ -5,7 +5,7 @@
 // backdrop content through a chroma-preserving runtime shader.
 
 import NucleusSkiaGraphiteBridge
-import NucleusRenderModel
+internal import NucleusRenderModel
 
 enum Backdrop {
     static func rectF(_ r: PlanRect) -> nucleus.skia.RectF {

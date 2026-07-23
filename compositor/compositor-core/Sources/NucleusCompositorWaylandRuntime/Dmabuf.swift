@@ -94,7 +94,7 @@ protocol DmabufDelegate: AnyObject {
 }
 
 final class ZwpLinuxDmabuf {
-    weak var delegate: DmabufDelegate?
+    weak var delegate: (any DmabufDelegate)?
 
     // wl_buffer and zwp_linux_dmabuf_feedback_v1 are destroy-only (no generated
     // dispatch): their request vtables stay hand-wired. wl_buffer's is passed to

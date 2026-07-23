@@ -1,9 +1,11 @@
-import Foundation
+import FoundationEssentials
+import FoundationInternationalization
 import NucleusLinuxDBus
 import NucleusShellProduct
 import NucleusShellServices
 import NucleusShellWayland
 import NucleusUI
+import NucleusUIEmbedder
 
 @MainActor
 struct NativeBarSurface {
@@ -224,7 +226,7 @@ extension ShellHost {
         }
         let now = Date()
         productController?.updateClock(
-            displayText: clockFormatter.string(from: now))
+            displayText: now.formatted(clockFormatStyle))
 
         let secondsIntoMinute = now.timeIntervalSince1970
             .truncatingRemainder(dividingBy: 60)

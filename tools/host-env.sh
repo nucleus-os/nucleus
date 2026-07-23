@@ -37,7 +37,7 @@ if [[ -n "${ZSH_VERSION:-}" ]]; then
 else
   nucleus_host_env_source="${BASH_SOURCE[0]}"
 fi
-nucleus_workspace_root="$(cd "$(dirname "$nucleus_host_env_source")/../.." && pwd)"
+nucleus_workspace_root="$(cd "$(dirname "$nucleus_host_env_source")/.." && pwd)"
 export SWIFT_JAVA_JNI_CORE_PATH="$nucleus_workspace_root/third-party/swift-java-jni-core"
 unset nucleus_host_env_source nucleus_workspace_root
 unset nucleus_toolchain nucleus_source_id nucleus_platform_id

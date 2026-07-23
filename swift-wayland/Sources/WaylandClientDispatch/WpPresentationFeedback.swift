@@ -3,7 +3,7 @@
 // Typed client dispatch for wp_presentation_feedback: a handler protocol (one method per event), the
 // libwayland listener + owner recovery + arg marshalling, and an addListener that wires it.
 
-import WaylandClientC
+public import WaylandClientC
 
 public protocol WpPresentationFeedbackEvents: AnyObject {
     func syncOutput(_ proxy: OpaquePointer, output: OpaquePointer?)
@@ -28,8 +28,8 @@ public enum WpPresentationFeedbackClient {
         wp_presentation_feedback_add_listener(proxy, listener, Unmanaged.passUnretained(owner).toOpaque())
     }
 
-    private static func handler(_ data: UnsafeMutableRawPointer) -> WpPresentationFeedbackEvents? {
-        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? WpPresentationFeedbackEvents
+    private static func handler(_ data: UnsafeMutableRawPointer) -> (any WpPresentationFeedbackEvents)? {
+        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? any WpPresentationFeedbackEvents
     }
 
     private static let syncOutput_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, OpaquePointer?) -> Void = { data, proxy, output in

@@ -9,7 +9,7 @@
 
 import NucleusAndroidC
 @_spi(NucleusPlatform) internal import NucleusRenderer
-import NucleusRenderModel
+internal import NucleusRenderModel
 import Synchronization
 
 /// Android already owns a continuously posted Choreographer callback while the
@@ -191,6 +191,7 @@ struct AndroidRenderer {
         var localEngine = engine
         var localResourceHost = resourceHost
         var localRetainedStore = retainedStore
+        let wakeSink = asyncRenderWake
         let previousGeneration = engineSurfaceGeneration
         let result: (status: RenderStatus, width: Int32, height: Int32) =
             MainActor.assumeIsolated {
@@ -211,7 +212,7 @@ struct AndroidRenderer {
                         window: window,
                         store: store,
                         resourceHost: host,
-                        asyncRenderWakeSink: asyncRenderWake)
+                        asyncRenderWakeSink: wakeSink)
                 }
                 guard let engine = localEngine else { return (.invalid_surface, 0, 0) }
                 let status = engine.frame(

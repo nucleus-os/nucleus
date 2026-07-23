@@ -1,4 +1,4 @@
-import Foundation
+import FoundationEssentials
 
 enum RuntimeSanitizer: String, CaseIterable, Equatable {
     case address
@@ -141,8 +141,7 @@ struct RuntimeInstaller {
             contentsOf: sessionPackage.appendingPathComponent("nucleus@.service"),
             encoding: .utf8)
         let binDirectory = installation.prefix.appendingPathComponent("bin").path
-        let unit = template.replacingOccurrences(
-            of: "@bindir@", with: binDirectory)
+        let unit = template.replacing("@bindir@", with: binDirectory)
         let unitPath = unitDirectory.appendingPathComponent("nucleus@.service")
         try Data(unit.utf8).write(to: unitPath, options: .atomic)
         try context.run(

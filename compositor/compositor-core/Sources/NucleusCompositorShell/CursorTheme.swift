@@ -1,4 +1,4 @@
-import Foundation
+import FoundationEssentials
 
 @MainActor
 public final class CursorTheme {
@@ -66,13 +66,13 @@ public final class CursorTheme {
     private func readInherits(_ url: URL) -> [String] {
         guard let text = try? String(contentsOf: url, encoding: .utf8) else { return [] }
         for line in text.split(separator: "\n") {
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            let trimmed = trimmedWhitespace(line)
             guard trimmed.hasPrefix("Inherits") else { continue }
             let parts = trimmed.split(separator: "=", maxSplits: 1)
             guard parts.count == 2 else { continue }
             return parts[1]
                 .split { $0 == "," || $0 == ";" || $0 == ":" }
-                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .map { String(trimmedWhitespace($0)) }
                 .filter { !$0.isEmpty }
         }
         return []
@@ -107,6 +107,21 @@ public final class CursorTheme {
         }
         return XCursorImage(width: 24, height: 24, hotSpotX: 1, hotSpotY: 1, pixels: Data(bytes))
     }
+}
+
+private func trimmedWhitespace(_ value: Substring) -> Substring {
+    var lowerBound = value.startIndex
+    while lowerBound < value.endIndex, value[lowerBound].isWhitespace {
+        value.formIndex(after: &lowerBound)
+    }
+
+    var upperBound = value.endIndex
+    while upperBound > lowerBound {
+        let previous = value.index(before: upperBound)
+        guard value[previous].isWhitespace else { break }
+        upperBound = previous
+    }
+    return value[lowerBound..<upperBound]
 }
 
 private let defaultPaths = "~/.icons:/usr/share/icons:/usr/share/pixmaps:~/.cursors:/usr/share/cursors/xorg-x11:/usr/X11R6/lib/X11/icons"

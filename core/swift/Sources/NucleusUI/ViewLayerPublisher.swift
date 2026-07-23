@@ -1,4 +1,5 @@
-@_spi(NucleusCompositor) import NucleusLayers
+@_spi(NucleusCompositor) package import NucleusLayers
+internal import enum NucleusTypes.LayerKind
 import Tracy
 
 package struct ViewLayerRootPlacement: Sendable, Equatable {

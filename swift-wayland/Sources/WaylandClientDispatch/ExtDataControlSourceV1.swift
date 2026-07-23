@@ -3,7 +3,7 @@
 // Typed client dispatch for ext_data_control_source_v1: a handler protocol (one method per event), the
 // libwayland listener + owner recovery + arg marshalling, and an addListener that wires it.
 
-import WaylandClientC
+public import WaylandClientC
 
 public protocol ExtDataControlSourceV1Events: AnyObject {
     func send(_ proxy: OpaquePointer, mime_type: UnsafePointer<CChar>?, fd: Int32)
@@ -26,8 +26,8 @@ public enum ExtDataControlSourceV1Client {
         ext_data_control_source_v1_add_listener(proxy, listener, Unmanaged.passUnretained(owner).toOpaque())
     }
 
-    private static func handler(_ data: UnsafeMutableRawPointer) -> ExtDataControlSourceV1Events? {
-        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? ExtDataControlSourceV1Events
+    private static func handler(_ data: UnsafeMutableRawPointer) -> (any ExtDataControlSourceV1Events)? {
+        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? any ExtDataControlSourceV1Events
     }
 
     private static let send_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UnsafePointer<CChar>?, Int32) -> Void = { data, proxy, mime_type, fd in

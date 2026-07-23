@@ -1,5 +1,12 @@
-import Foundation
-import NucleusLayers
+#if canImport(Glibc)
+import Glibc
+#elseif canImport(Android)
+import Android
+#elseif canImport(Darwin)
+import Darwin
+#endif
+package import NucleusLayers
+internal import struct NucleusTypes.Transform
 
 /// Column-major 4x4 transform used by public view APIs. The layers
 /// substrate receives `GeometryTransform` only when view state is published.

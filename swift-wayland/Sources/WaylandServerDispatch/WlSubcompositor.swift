@@ -3,8 +3,8 @@
 // Typed server dispatch for wl_subcompositor: a handler protocol (one method per request), the
 // request vtable + owner recovery + arg marshalling, and typed event senders.
 
-import WaylandServerC
-import WaylandServer
+public import WaylandServerC
+public import WaylandServer
 
 public protocol WlSubcompositorRequests: AnyObject {
     func destroy(_ resource: UnsafeMutablePointer<wl_resource>)
@@ -27,9 +27,9 @@ public enum WlSubcompositorServer {
         return UnsafeRawPointer(raw)
     }()
 
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> WlSubcompositorRequests? {
+    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> (any WlSubcompositorRequests)? {
         guard let ud = wl_resource_get_user_data(res) else { return nil }
-        return Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? WlSubcompositorRequests
+        return Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any WlSubcompositorRequests
     }
 
     private static let destroy_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
@@ -38,6 +38,6 @@ public enum WlSubcompositorServer {
     }
     private static let getSubsurface_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UnsafeMutablePointer<wl_resource>?, UnsafeMutablePointer<wl_resource>?) -> Void = { client, res, id, surface, parent in
         guard let res, let client, let h = handler(res) else { return }
-        h.getSubsurface(res, id: WlNewId(client: client, id: id, version: Swift.min(wl_resource_get_version(res), Int32(1)), interface: swift_wayland_iface_wl_subsurface()), surface: surface, parent: parent)
+        h.getSubsurface(res, id: WlNewId(client: client, id: id, version: Swift::min(wl_resource_get_version(res), Int32(1)), interface: swift_wayland_iface_wl_subsurface()), surface: surface, parent: parent)
     }
 }

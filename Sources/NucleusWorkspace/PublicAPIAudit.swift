@@ -1,4 +1,4 @@
-import Foundation
+import FoundationEssentials
 
 struct PublicAPIAudit {
     let context: WorkspaceContext
@@ -213,9 +213,9 @@ struct PublicAPIAudit {
 
     private func fileSize(_ url: URL) throws -> UInt64 {
         let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
-        guard let size = attributes[.size] as? NSNumber else {
+        guard let size = attributes[.size] as? UInt else {
             throw WorkspaceFailure.message("could not read file size: \(url.path)")
         }
-        return size.uint64Value
+        return UInt64(size)
     }
 }

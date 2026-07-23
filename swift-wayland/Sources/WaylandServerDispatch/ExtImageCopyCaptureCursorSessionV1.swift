@@ -3,8 +3,8 @@
 // Typed server dispatch for ext_image_copy_capture_cursor_session_v1: a handler protocol (one method per request), the
 // request vtable + owner recovery + arg marshalling, and typed event senders.
 
-import WaylandServerC
-import WaylandServer
+public import WaylandServerC
+public import WaylandServer
 
 public protocol ExtImageCopyCaptureCursorSessionV1Requests: AnyObject {
     func destroy(_ resource: UnsafeMutablePointer<wl_resource>)
@@ -40,9 +40,9 @@ public enum ExtImageCopyCaptureCursorSessionV1Server {
         ext_image_copy_capture_cursor_session_v1_send_hotspot(target, x, y)
     }
 
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> ExtImageCopyCaptureCursorSessionV1Requests? {
+    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> (any ExtImageCopyCaptureCursorSessionV1Requests)? {
         guard let ud = wl_resource_get_user_data(res) else { return nil }
-        return Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? ExtImageCopyCaptureCursorSessionV1Requests
+        return Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any ExtImageCopyCaptureCursorSessionV1Requests
     }
 
     private static let destroy_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
@@ -51,6 +51,6 @@ public enum ExtImageCopyCaptureCursorSessionV1Server {
     }
     private static let getCaptureSession_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { client, res, session in
         guard let res, let client, let h = handler(res) else { return }
-        h.getCaptureSession(res, session: WlNewId(client: client, id: session, version: Swift.min(wl_resource_get_version(res), Int32(1)), interface: swift_wayland_iface_ext_image_copy_capture_session_v1()))
+        h.getCaptureSession(res, session: WlNewId(client: client, id: session, version: Swift::min(wl_resource_get_version(res), Int32(1)), interface: swift_wayland_iface_ext_image_copy_capture_session_v1()))
     }
 }

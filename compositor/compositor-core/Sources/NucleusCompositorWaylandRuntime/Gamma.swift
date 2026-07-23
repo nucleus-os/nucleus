@@ -26,7 +26,7 @@ private final class WeakGammaControl {
 }
 
 final class ZwlrGammaControlManager {
-    weak var delegate: GammaControlDelegate?
+    weak var delegate: (any GammaControlDelegate)?
     /// The active control per output (output identity → control).
     private var controls: [ObjectIdentifier: WeakGammaControl] = [:]
 

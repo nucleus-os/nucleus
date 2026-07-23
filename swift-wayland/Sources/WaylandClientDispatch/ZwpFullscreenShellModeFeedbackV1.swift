@@ -3,7 +3,7 @@
 // Typed client dispatch for zwp_fullscreen_shell_mode_feedback_v1: a handler protocol (one method per event), the
 // libwayland listener + owner recovery + arg marshalling, and an addListener that wires it.
 
-import WaylandClientC
+public import WaylandClientC
 
 public protocol ZwpFullscreenShellModeFeedbackV1Events: AnyObject {
     func modeSuccessful(_ proxy: OpaquePointer)
@@ -28,8 +28,8 @@ public enum ZwpFullscreenShellModeFeedbackV1Client {
         zwp_fullscreen_shell_mode_feedback_v1_add_listener(proxy, listener, Unmanaged.passUnretained(owner).toOpaque())
     }
 
-    private static func handler(_ data: UnsafeMutableRawPointer) -> ZwpFullscreenShellModeFeedbackV1Events? {
-        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? ZwpFullscreenShellModeFeedbackV1Events
+    private static func handler(_ data: UnsafeMutableRawPointer) -> (any ZwpFullscreenShellModeFeedbackV1Events)? {
+        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? any ZwpFullscreenShellModeFeedbackV1Events
     }
 
     private static let modeSuccessful_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in

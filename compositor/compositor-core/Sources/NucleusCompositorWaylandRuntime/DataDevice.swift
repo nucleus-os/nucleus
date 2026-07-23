@@ -20,7 +20,7 @@ private func dataExchange(at bits: UInt) -> DataExchangeService {
         .fromOpaque(UnsafeRawPointer(bitPattern: bits)!)
         .takeUnretainedValue()
 }
-import NucleusCompositorServer
+internal import NucleusCompositorServer
 
 /// The compositor-policy seam for data-device. Focus decides selection delivery;
 /// start_drag hands the drag session to the compositor's grab/hit-testing.
@@ -85,7 +85,7 @@ private final class WeakSelectionObserver {
 }
 
 final class WlDataDeviceManager {
-    weak var delegate: DataDeviceDelegate?
+    weak var delegate: (any DataDeviceDelegate)?
     private unowned let compositor: WlCompositor
     fileprivate unowned let host: RouterHost
     fileprivate let dataExchangeBits: UInt

@@ -13,7 +13,7 @@
 
 import WaylandServerC
 import WaylandServer
-import NucleusCompositorServer
+internal import NucleusCompositorServer
 import Glibc
 
 /// The current client cursor-surface binding (the focused client's `set_cursor`).

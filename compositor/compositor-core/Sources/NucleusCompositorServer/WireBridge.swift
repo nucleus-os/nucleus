@@ -1,5 +1,5 @@
 import NucleusTypes
-import NucleusCompositorServerTypes
+package import NucleusCompositorServerTypes
 
 private func has(_ mask: UInt64, _ bit: UInt64) -> Bool {
     (mask & bit) != 0

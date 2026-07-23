@@ -117,6 +117,7 @@ let package = Package(
         .library(name: "NucleusCompositorWindowScene", targets: ["NucleusCompositorWindowScene"]),
         .library(name: "NucleusCompositorOverlayTypes", targets: ["NucleusCompositorOverlayTypes"]),
         .library(name: "NucleusCompositorOverlayScene", targets: ["NucleusCompositorOverlayScene"]),
+        .library(name: "NucleusCompositorServerTypes", targets: ["NucleusCompositorServerTypes"]),
         .library(name: "NucleusCompositorServer", targets: ["NucleusCompositorServer"]),
         .library(name: "NucleusCompositorWindowManager", targets: ["NucleusCompositorWindowManager"]),
         .library(name: "NucleusCompositorShell", targets: ["NucleusCompositorShell"]),
@@ -141,8 +142,16 @@ let package = Package(
     ],
     targets: [
         // ── Shared value-type / policy leaves ────────────────────────────────────
-        .target(name: "NucleusCompositorServerTypes", path: "Sources/NucleusCompositorServerTypes"),
-        .target(name: "NucleusCompositorOverlayTypes", path: "Sources/NucleusCompositorOverlayTypes"),
+        .target(
+            name: "NucleusCompositorServerTypes",
+            path: "Sources/NucleusCompositorServerTypes",
+            swiftSettings: [.strictMemorySafety()]
+        ),
+        .target(
+            name: "NucleusCompositorOverlayTypes",
+            path: "Sources/NucleusCompositorOverlayTypes",
+            swiftSettings: [.strictMemorySafety()]
+        ),
 
         // ── OS-substrate C façades (the pkg-config that used to force into root) ──
         .systemLibrary(
@@ -173,7 +182,8 @@ let package = Package(
                 .product(name: "NucleusLayers", package: "Nucleus"),
                 "NucleusCompositorServerTypes",
             ],
-            path: "Sources/NucleusCompositorServer"
+            path: "Sources/NucleusCompositorServer",
+            swiftSettings: [.strictMemorySafety()]
         ),
         .target(
             name: "NucleusCompositorWindowManager",
@@ -197,7 +207,8 @@ let package = Package(
                 .product(name: "NucleusAppHostBundle", package: "Nucleus"),
                 .product(name: "NucleusRenderModel", package: "Nucleus"),
             ],
-            path: "Sources/NucleusCompositorWindowScene"
+            path: "Sources/NucleusCompositorWindowScene",
+            swiftSettings: [.strictMemorySafety()]
         ),
         .target(
             name: "NucleusCompositorOverlay",
@@ -211,7 +222,7 @@ let package = Package(
                 .product(name: "Tracy", package: "swift-tracy"),
             ],
             path: "Sources/NucleusCompositorOverlay",
-            swiftSettings: [.interoperabilityMode(.Cxx)]
+            swiftSettings: [.interoperabilityMode(.Cxx), .strictMemorySafety()]
         ),
         // The desktop-application index — a cxx-free leaf carved out of the
         // NucleusCompositorShell directory (the rest of that dir is the NucleusCompositorShell module).
@@ -222,11 +233,11 @@ let package = Package(
                 "BezelService.swift", "CursorTheme.swift",
                 "CursorThemeHost.swift", "IdlePolicy.swift",
                 "KeybindService.swift", "LauncherService.swift", "NotificationService.swift",
-                "ScreenshotService.swift", "ShellOverlayPublicationHost.swift",
-                "ShellPolicyHost.swift", "ShellServiceHost.swift", "ShellServices.swift",
+                "ShellOverlayPublicationHost.swift", "ShellPolicyService.swift", "ShellServices.swift",
                 "XCursor.swift",
             ],
-            sources: ["DesktopApplicationIndex.swift"]
+            sources: ["DesktopApplicationIndex.swift"],
+            swiftSettings: [.strictMemorySafety()]
         ),
         .target(
             name: "NucleusCompositorOverlayScene",
@@ -244,7 +255,7 @@ let package = Package(
                 .product(name: "Tracy", package: "swift-tracy"),
             ],
             path: "Sources/NucleusCompositorOverlayScene",
-            swiftSettings: [.interoperabilityMode(.Cxx)]
+            swiftSettings: [.interoperabilityMode(.Cxx), .strictMemorySafety()]
         ),
         .target(
             name: "NucleusCompositorShell",
@@ -274,7 +285,7 @@ let package = Package(
             ],
             path: "Sources/NucleusCompositorShell",
             exclude: ["DesktopApplicationIndex.swift"],
-            swiftSettings: [.interoperabilityMode(.Cxx)]
+            swiftSettings: [.interoperabilityMode(.Cxx), .strictMemorySafety()]
         ),
 
         // ── The Wayland substrate runtime ────────────────────────────────────────
@@ -498,6 +509,11 @@ let package = Package(
             swiftSettings: [.interoperabilityMode(.Cxx)],
             linkerSettings: [.unsafeFlags(skiaLinkFlags)]
         ),
+        .testTarget(
+            name: "NucleusCompositorShellSurfaceTests",
+            dependencies: ["NucleusCompositorShellSurface"],
+            path: "Tests/NucleusCompositorShellSurfaceTests"
+        ),
         // Compositor-root self-hosting topology the scene feeder drives (relocated
         // from the core repo's test tree; covers NucleusCompositorWindowScene).
         .testTarget(
@@ -519,9 +535,14 @@ for target in package.targets {
     default:
         continue
     }
-    target.swiftSettings = (target.swiftSettings ?? []) + [
+    var swiftSettings = (target.swiftSettings ?? []) + [
         .unsafeFlags(["-warnings-as-errors"]),
+        .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
     ]
+    if let feature = Context.environment["NUCLEUS_SWIFT_DIAGNOSTIC_FEATURE"] {
+        swiftSettings.append(.unsafeFlags(["-enable-upcoming-feature", feature]))
+    }
+    target.swiftSettings = swiftSettings
     target.cSettings = (target.cSettings ?? []) + [
         .unsafeFlags(["-Werror"]),
     ]

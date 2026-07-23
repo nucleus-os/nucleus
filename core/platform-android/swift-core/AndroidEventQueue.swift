@@ -6,29 +6,29 @@
 
 // MARK: - Shared FNV mixers (identical across EventQueue/RuntimeHost/AndroidRenderer)
 
-@inline(__always)
+@inline(always)
 func nucMix(_ hash: UInt32, _ value: UInt32) -> UInt32 {
     return (hash ^ value) &* 16777619
 }
 
-@inline(__always)
+@inline(always)
 func nucMixU64(_ hash: UInt32, _ value: UInt64) -> UInt32 {
     var h = nucMix(hash, UInt32(truncatingIfNeeded: value))
     h = nucMix(h, UInt32(truncatingIfNeeded: value >> 32))
     return h
 }
 
-@inline(__always)
+@inline(always)
 func nucMixI64(_ hash: UInt32, _ value: Int64) -> UInt32 {
     return nucMixU64(hash, UInt64(bitPattern: value))
 }
 
-@inline(__always)
+@inline(always)
 func nucMixI32(_ hash: UInt32, _ value: Int32) -> UInt32 {
     return nucMix(hash, UInt32(bitPattern: value))
 }
 
-@inline(__always)
+@inline(always)
 func nucMixF32(_ hash: UInt32, _ value: Float) -> UInt32 {
     let scaled = Int32(value * 1000.0)
     return nucMixI32(hash, scaled)

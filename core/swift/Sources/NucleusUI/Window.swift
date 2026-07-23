@@ -1,4 +1,4 @@
-@_spi(NucleusCompositor) import NucleusLayers
+@_spi(NucleusCompositor) internal import NucleusLayers
 
 public enum WindowRole: Sendable, Equatable {
     case application

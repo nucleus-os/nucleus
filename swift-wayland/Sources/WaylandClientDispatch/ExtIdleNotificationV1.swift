@@ -3,7 +3,7 @@
 // Typed client dispatch for ext_idle_notification_v1: a handler protocol (one method per event), the
 // libwayland listener + owner recovery + arg marshalling, and an addListener that wires it.
 
-import WaylandClientC
+public import WaylandClientC
 
 public protocol ExtIdleNotificationV1Events: AnyObject {
     func idled(_ proxy: OpaquePointer)
@@ -26,8 +26,8 @@ public enum ExtIdleNotificationV1Client {
         ext_idle_notification_v1_add_listener(proxy, listener, Unmanaged.passUnretained(owner).toOpaque())
     }
 
-    private static func handler(_ data: UnsafeMutableRawPointer) -> ExtIdleNotificationV1Events? {
-        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? ExtIdleNotificationV1Events
+    private static func handler(_ data: UnsafeMutableRawPointer) -> (any ExtIdleNotificationV1Events)? {
+        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? any ExtIdleNotificationV1Events
     }
 
     private static let idled_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in

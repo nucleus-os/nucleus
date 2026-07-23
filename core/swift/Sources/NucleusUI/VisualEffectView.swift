@@ -1,5 +1,5 @@
-import NucleusTypes
-import NucleusLayers
+internal import NucleusTypes
+package import NucleusLayers
 
 /// AppKit-shaped semantic backdrop view. Apps name the
 /// material role (`.popover`, `.sidebar`, `.titlebar`, ...); the framework's
@@ -91,7 +91,7 @@ public final class VisualEffectView: View, ~Sendable {
     /// `BlurEffect`/`VibrancyEffect` value. Getter synthesizes one from
     /// the current `material`/`blendingMode`/`isEmphasized`; setter
     /// derives those back through `MaterialBridge`.
-    public var effect: VisualEffect? {
+    public var effect: (any VisualEffect)? {
         get { MaterialBridge.effect(material: material, blendingMode: blendingMode, isEmphasized: isEmphasized) }
         set {
             if let blur = newValue as? BlurEffect {
@@ -148,7 +148,7 @@ public final class VisualEffectView: View, ~Sendable {
     }
 
     /// UIKit-shaped convenience: `init(effect:)`.
-    public convenience init(effect: VisualEffect) {
+    public convenience init(effect: any VisualEffect) {
         self.init()
         self.effect = effect
     }

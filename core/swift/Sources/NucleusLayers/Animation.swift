@@ -1,4 +1,4 @@
-import NucleusTypes
+public import NucleusTypes
 
 // `AnimationKeyPath` is wire-owned (the generated discriminant enum). The
 // domain `Animation` is kept as the producer-side spec; its

@@ -17,6 +17,10 @@
 // Sources/VulkanC/vulkan headers are used regardless of any system Vulkan
 // on the -I path (whose version may lag). Vulkan-Headers' own internal includes
 // are already quote-form, so the whole tree resolves to the vendored copy.
+#include <stddef.h>
+#include <stdint.h>
+#define VK_NO_STDDEF_H
+#define VK_NO_STDINT_H
 #include "vulkan/vulkan_core.h"
 
 #if defined(__ANDROID__)
@@ -29,5 +33,8 @@
 #if defined(VK_USE_PLATFORM_WAYLAND_KHR)
 #include "vulkan/vulkan_wayland.h"
 #endif
+
+#undef VK_NO_STDINT_H
+#undef VK_NO_STDDEF_H
 
 #endif // VULKAN_C_H

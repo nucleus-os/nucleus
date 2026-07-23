@@ -24,6 +24,16 @@ private final class AcceptingDmabufDelegate: DmabufDelegate {
     func dmabufMainDevice() -> UInt64 { 0 }
 }
 
+private final class RecordingSyncobjDelegate: DrmSyncobjDelegate {
+    let importedHandle: UInt32 = 0x100
+    var destroyedHandles: [UInt32] = []
+
+    func importSyncobjTimeline(fd: Int32) -> UInt32? { importedHandle }
+    func destroySyncobjTimeline(handle: UInt32) {
+        destroyedHandles.append(handle)
+    }
+}
+
 @MainActor @Suite(.serialized)
 struct WaylandProtocolConformanceTests {
 private let graph = WaylandTestGraph()
@@ -966,6 +976,126 @@ private func appendShmBuffer(
         $0.newId(bufId); $0.int(0); $0.int(width); $0.int(height); $0.int(stride); $0.uint(format)
     }
     return owned
+}
+
+// MARK: - explicit synchronization
+
+@Test func syncobjPointsLatchDestroyAndRejectConflicts() throws {
+    let router = try #require(NucleusWaylandRouter())
+    let compositor = graph.compositor()
+    compositor.register(in: router)
+
+    let dmabuf = ZwpLinuxDmabuf()
+    let dmabufDelegate = AcceptingDmabufDelegate()
+    dmabuf.delegate = dmabufDelegate
+    dmabuf.register(in: router)
+
+    let syncobj = WpLinuxDrmSyncobjManager()
+    let syncobjDelegate = RecordingSyncobjDelegate()
+    syncobj.delegate = syncobjDelegate
+    syncobj.register(in: router)
+
+    let client = try #require(WaylandTestClient(display: router.display))
+    let globals = client.globals()
+    let compositorID: UInt32 = 3
+    let dmabufID: UInt32 = 4
+    let syncobjManagerID: UInt32 = 5
+    let surfaceID: UInt32 = 6
+    let paramsID: UInt32 = 7
+    let bufferID: UInt32 = 8
+    let firstTimelineID: UInt32 = 9
+    let syncobjSurfaceID: UInt32 = 10
+    let secondTimelineID: UInt32 = 11
+
+    var setup = WireBuilder()
+    try bind(&setup, "wl_compositor", compositorID, globals)
+    try bind(&setup, "zwp_linux_dmabuf_v1", dmabufID, globals)
+    try bind(&setup, "wp_linux_drm_syncobj_manager_v1", syncobjManagerID, globals)
+    setup.message(object: compositorID, opcode: 0) { $0.newId(surfaceID) }
+    #expect(client.send(setup))
+    client.pump()
+    _ = client.drainEvents()
+
+    let dmabufFDValue = memfd_create("nucleus-syncobj-dmabuf", 0)
+    try #require(dmabufFDValue >= 0)
+    let dmabufFD = OwnedTestFD(dmabufFDValue)
+    var createBuffer = WireBuilder()
+    createBuffer.message(object: dmabufID, opcode: 1) { $0.newId(paramsID) }
+    createBuffer.message(object: paramsID, opcode: 1) {
+        $0.uint(0); $0.uint(0); $0.uint(64); $0.uint(0); $0.uint(0)
+    }
+    createBuffer.message(object: paramsID, opcode: 3) {
+        $0.newId(bufferID); $0.int(4); $0.int(4)
+        $0.uint(testDrmFormatXrgb8888); $0.uint(0)
+    }
+    try client.send(createBuffer, fd: dmabufFD)
+    client.pump()
+    _ = client.drainEvents()
+
+    func importTimeline(_ id: UInt32) throws {
+        let value = memfd_create("nucleus-syncobj-timeline", 0)
+        try #require(value >= 0)
+        let fd = OwnedTestFD(value)
+        var request = WireBuilder()
+        request.message(object: syncobjManagerID, opcode: 2) { $0.newId(id) }
+        try client.send(request, fd: fd)
+        client.pump()
+        _ = client.drainEvents()
+    }
+
+    try importTimeline(firstTimelineID)
+    var createSyncobjSurface = WireBuilder()
+    createSyncobjSurface.message(object: syncobjManagerID, opcode: 1) {
+        $0.newId(syncobjSurfaceID); $0.object(surfaceID)
+    }
+    #expect(client.send(createSyncobjSurface))
+    client.pump()
+    _ = client.drainEvents()
+
+    var firstCommit = WireBuilder()
+    firstCommit.message(object: surfaceID, opcode: 1) {
+        $0.object(bufferID); $0.int(0); $0.int(0)
+    }
+    firstCommit.message(object: syncobjSurfaceID, opcode: 1) {
+        $0.object(firstTimelineID); $0.uint(0); $0.uint(5)
+    }
+    firstCommit.message(object: syncobjSurfaceID, opcode: 2) {
+        $0.object(firstTimelineID); $0.uint(0); $0.uint(10)
+    }
+    firstCommit.message(object: surfaceID, opcode: 6) { _ in }
+    #expect(client.send(firstCommit))
+    client.pump()
+    #expect(WireError.first(client.drainEvents()) == nil)
+
+    let surface = try #require(compositor.surface(id: surfaceID))
+    #expect(surface.aux.syncAcquire == SyncPoint(
+        handle: syncobjDelegate.importedHandle, point: 5))
+    #expect(surface.aux.syncRelease == SyncPoint(
+        handle: syncobjDelegate.importedHandle, point: 10))
+
+    var destroyFirstTimeline = WireBuilder()
+    destroyFirstTimeline.message(object: firstTimelineID, opcode: 0) { _ in }
+    #expect(client.send(destroyFirstTimeline))
+    client.pump()
+    #expect(syncobjDelegate.destroyedHandles == [syncobjDelegate.importedHandle])
+
+    try importTimeline(secondTimelineID)
+    var conflictingCommit = WireBuilder()
+    conflictingCommit.message(object: surfaceID, opcode: 1) {
+        $0.object(bufferID); $0.int(0); $0.int(0)
+    }
+    conflictingCommit.message(object: syncobjSurfaceID, opcode: 1) {
+        $0.object(secondTimelineID); $0.uint(0); $0.uint(10)
+    }
+    conflictingCommit.message(object: syncobjSurfaceID, opcode: 2) {
+        $0.object(secondTimelineID); $0.uint(0); $0.uint(5)
+    }
+    conflictingCommit.message(object: surfaceID, opcode: 6) { _ in }
+    #expect(client.send(conflictingCommit))
+    client.pump()
+    let error = try #require(WireError.first(client.drainEvents()))
+    #expect(error.objectID == syncobjSurfaceID)
+    #expect(error.code == 6)
 }
 
 private final class RecordingSurfaceScene: SurfaceSceneDelegate {

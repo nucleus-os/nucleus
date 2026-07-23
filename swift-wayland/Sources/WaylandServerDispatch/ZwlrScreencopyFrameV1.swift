@@ -3,7 +3,7 @@
 // Typed server dispatch for zwlr_screencopy_frame_v1: a handler protocol (one method per request), the
 // request vtable + owner recovery + arg marshalling, and typed event senders.
 
-import WaylandServerC
+public import WaylandServerC
 import WaylandServer
 
 public protocol ZwlrScreencopyFrameV1Requests: AnyObject {
@@ -51,9 +51,9 @@ public enum ZwlrScreencopyFrameV1Server {
         zwlr_screencopy_frame_v1_send_buffer_done(target)
     }
 
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> ZwlrScreencopyFrameV1Requests? {
+    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> (any ZwlrScreencopyFrameV1Requests)? {
         guard let ud = wl_resource_get_user_data(res) else { return nil }
-        return Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? ZwlrScreencopyFrameV1Requests
+        return Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any ZwlrScreencopyFrameV1Requests
     }
 
     private static let copy_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res, buffer in

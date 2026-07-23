@@ -1,6 +1,6 @@
 import NucleusTypes
-import NucleusCompositorServerTypes
-import NucleusCompositorServer
+public import NucleusCompositorServerTypes
+public import NucleusCompositorServer
 
 public enum WindowInteraction {
     case idle

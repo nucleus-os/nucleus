@@ -3,7 +3,7 @@
 // Typed client dispatch for wp_drm_lease_v1: a handler protocol (one method per event), the
 // libwayland listener + owner recovery + arg marshalling, and an addListener that wires it.
 
-import WaylandClientC
+public import WaylandClientC
 
 public protocol WpDrmLeaseV1Events: AnyObject {
     func leaseFd(_ proxy: OpaquePointer, leased_fd: Int32)
@@ -26,8 +26,8 @@ public enum WpDrmLeaseV1Client {
         wp_drm_lease_v1_add_listener(proxy, listener, Unmanaged.passUnretained(owner).toOpaque())
     }
 
-    private static func handler(_ data: UnsafeMutableRawPointer) -> WpDrmLeaseV1Events? {
-        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? WpDrmLeaseV1Events
+    private static func handler(_ data: UnsafeMutableRawPointer) -> (any WpDrmLeaseV1Events)? {
+        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? any WpDrmLeaseV1Events
     }
 
     private static let leaseFd_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, Int32) -> Void = { data, proxy, leased_fd in

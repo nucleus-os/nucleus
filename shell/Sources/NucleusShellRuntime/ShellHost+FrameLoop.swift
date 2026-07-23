@@ -1,6 +1,16 @@
 import Glibc
+import NucleusLinuxAccessibility
 import NucleusLinuxReactor
+import NucleusLinuxSession
+import NucleusShellInput
 import NucleusShellLoop
+import NucleusShellPasteboard
+import NucleusShellProduct
+import NucleusShellRender
+import NucleusShellWayland
+import NucleusUI
+import NucleusUIEmbedder
+import WaylandClient
 
 @MainActor
 extension ShellHost {

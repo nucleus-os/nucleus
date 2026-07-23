@@ -3,7 +3,7 @@
 // Typed client dispatch for zwp_fullscreen_shell_v1: a handler protocol (one method per event), the
 // libwayland listener + owner recovery + arg marshalling, and an addListener that wires it.
 
-import WaylandClientC
+public import WaylandClientC
 
 public protocol ZwpFullscreenShellV1Events: AnyObject {
     func capability(_ proxy: OpaquePointer, capability: UInt32)
@@ -24,8 +24,8 @@ public enum ZwpFullscreenShellV1Client {
         zwp_fullscreen_shell_v1_add_listener(proxy, listener, Unmanaged.passUnretained(owner).toOpaque())
     }
 
-    private static func handler(_ data: UnsafeMutableRawPointer) -> ZwpFullscreenShellV1Events? {
-        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? ZwpFullscreenShellV1Events
+    private static func handler(_ data: UnsafeMutableRawPointer) -> (any ZwpFullscreenShellV1Events)? {
+        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? any ZwpFullscreenShellV1Events
     }
 
     private static let capability_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, capability in

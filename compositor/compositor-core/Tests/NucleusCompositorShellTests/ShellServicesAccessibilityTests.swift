@@ -335,12 +335,6 @@ struct ShellServicesAccessibilityTests {
         #expect(serverA.dataExchange.allocateHandle() == 2)
         #expect(serverB.dataExchange.allocateHandle() == 1)
 
-        _ = servicesA.screenshots.request(
-            origin: .internalTest,
-            previewWidth: 64,
-            previewHeight: 64)
-        #expect(servicesA.screenshots.pendingCount() == 1)
-        #expect(servicesB.screenshots.pendingCount() == 0)
     }
 
     @Test

@@ -1,4 +1,10 @@
-@_spi(NucleusCompositor) import NucleusLayers
+@_spi(NucleusCompositor) internal import NucleusLayers
+internal import enum NucleusTypes.PaintBlendMode
+internal import enum NucleusTypes.PaintCommandKind
+internal import enum NucleusTypes.PaintShading
+internal import struct NucleusTypes.Color
+internal import struct NucleusTypes.PaintCommand
+internal import struct NucleusTypes.PaintCommandFlags
 
 extension ViewLayerPublisher {
     struct PaintCacheKey: Hashable {

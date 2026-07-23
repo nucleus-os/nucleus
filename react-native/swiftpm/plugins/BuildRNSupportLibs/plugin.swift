@@ -1,5 +1,5 @@
 import PackagePlugin
-import Foundation
+import Foundation // Process executes the package build command.
 
 // Command plugin: builds the leaf React Native C++ support libs that have clean,
 // self-contained upstream builds — fmt and double-conversion — via their own

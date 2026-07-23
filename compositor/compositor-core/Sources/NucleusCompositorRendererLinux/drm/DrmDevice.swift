@@ -10,8 +10,6 @@
 
 import NucleusCompositorDrmC
 import Glibc
-import Foundation
-
 // MARK: - Noncopyable resource owners
 
 /// Shared validity token for every object borrowing the compositor's primary
@@ -246,7 +244,11 @@ enum DrmDeviceEnumerator {
         }
         let address = "\(hex(UInt64(domain), width: 4)):\(hex(UInt64(bus), width: 2)):\(hex(UInt64(device), width: 2)).\(hex(UInt64(function), width: 1))"
         let path = "/sys/bus/pci/devices/\(address)/boot_vga"
-        return (try? String(contentsOfFile: path, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)) == "1"
+        let descriptor = path.withCString { open($0, O_RDONLY | O_CLOEXEC) }
+        guard descriptor >= 0 else { return false }
+        defer { close(descriptor) }
+        var value: UInt8 = 0
+        return read(descriptor, &value, 1) == 1 && value == 0x31
     }
 }
 

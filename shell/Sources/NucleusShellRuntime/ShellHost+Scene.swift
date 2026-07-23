@@ -1,3 +1,4 @@
+import NucleusAppHostBundle
 import NucleusUI
 import NucleusTextBackend
 import NucleusUIEmbedder

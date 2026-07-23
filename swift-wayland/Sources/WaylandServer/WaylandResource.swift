@@ -3,7 +3,7 @@
 // *borrowed* reference to the owner; it must not escape the handler call. libwayland owns the
 // resource's wire/object mechanics; the Swift owner holds the server-side semantic state for it.
 
-import WaylandServerC
+public import WaylandServerC
 
 public enum WaylandResource {
     typealias ResourceFactory = (

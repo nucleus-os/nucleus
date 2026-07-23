@@ -1,5 +1,12 @@
-import Foundation
-@_spi(NucleusCompositor) import NucleusLayers
+#if canImport(Glibc)
+import Glibc
+#elseif canImport(Android)
+import Android
+#elseif canImport(Darwin)
+import Darwin
+#endif
+@_spi(NucleusCompositor) public import NucleusLayers
+public import struct NucleusCompositorServerTypes.WireChromeInsets
 
 public enum WindowSource: UInt32, Sendable {
     case xdg = 1

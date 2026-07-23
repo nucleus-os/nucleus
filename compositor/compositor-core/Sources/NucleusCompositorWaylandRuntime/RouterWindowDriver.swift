@@ -22,9 +22,10 @@
 
 import WaylandServerC
 @_spi(NucleusCompositor) import NucleusLayers
-import NucleusCompositorServer
+internal import NucleusCompositorServer
 import NucleusCompositorServerTypes
-import NucleusCompositorWindowManager
+internal import NucleusCompositorWindowManager
+import NucleusRenderModel
 
 @MainActor
 final class RouterWindowDriver {
@@ -669,7 +670,7 @@ extension RouterWindowDriver: ForeignToplevelActions {}
 /// A stable, process-unique identity token for a toplevel's lifetime: its object
 /// pointer. Used only as the driver's table key / WindowManager role-table key —
 /// never sent on the wire and never dereferenced as a pointer.
-@inline(__always)
+@inline(always)
 private func token(_ object: AnyObject) -> UInt {
     UInt(bitPattern: Unmanaged.passUnretained(object).toOpaque())
 }

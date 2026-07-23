@@ -10,6 +10,8 @@
 import WaylandServerC
 import WaylandServer
 import WaylandServerDispatch
+import NucleusRenderModel
+import NucleusTypes
 
 /// The security-gate seam. begin arms the gate (false denies the lock → finished);
 /// end disarms it on unlock; surfaceMapped
@@ -20,7 +22,7 @@ protocol SessionLockDelegate: AnyObject {
     func sessionLockSurfaceMapped(_ surface: WlSurface, output: WlOutput?)
 }
 final class SessionLockManager {
-    weak var delegate: SessionLockDelegate?
+    weak var delegate: (any SessionLockDelegate)?
     private var display: OpaquePointer?
 
     /// At most one lock is live at a time (the gate is single-owner). The reactor

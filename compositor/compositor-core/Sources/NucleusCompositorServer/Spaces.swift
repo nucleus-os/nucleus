@@ -1,4 +1,4 @@
-import NucleusCompositorServerTypes
+public import NucleusCompositorServerTypes
 
 public struct Space: Sendable, Equatable {
     public var id: SpaceID

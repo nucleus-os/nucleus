@@ -1,5 +1,5 @@
-import NucleusLayers
-import NucleusUI
+public import NucleusLayers
+public import NucleusUI
 
 // The embedder tier may name layer-model types directly; that is what
 // distinguishes it from the product tier. NucleusUI used to re-export

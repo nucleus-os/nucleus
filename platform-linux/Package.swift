@@ -77,7 +77,10 @@ let package = Package(
                 .product(name: "NucleusUI", package: "Nucleus"),
             ],
             path: "Sources/NucleusLinuxAccessibility",
-            swiftSettings: [.interoperabilityMode(.Cxx)]),
+            swiftSettings: [
+                .interoperabilityMode(.Cxx),
+                .strictMemorySafety(),
+            ]),
         .target(
             name: "NucleusLinuxEnvironment",
             dependencies: [
@@ -86,7 +89,10 @@ let package = Package(
                 .product(name: "NucleusUI", package: "Nucleus"),
             ],
             path: "Sources/NucleusLinuxEnvironment",
-            swiftSettings: [.interoperabilityMode(.Cxx)]),
+            swiftSettings: [
+                .interoperabilityMode(.Cxx),
+                .strictMemorySafety(),
+            ]),
         .target(
             name: "NucleusLinuxSession",
             path: "Sources/NucleusLinuxSession"),
@@ -168,9 +174,14 @@ for target in package.targets {
     default:
         continue
     }
-    target.swiftSettings = (target.swiftSettings ?? []) + [
+    var swiftSettings = (target.swiftSettings ?? []) + [
         .unsafeFlags(["-warnings-as-errors"]),
+        .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
     ]
+    if let feature = Context.environment["NUCLEUS_SWIFT_DIAGNOSTIC_FEATURE"] {
+        swiftSettings.append(.unsafeFlags(["-enable-upcoming-feature", feature]))
+    }
+    target.swiftSettings = swiftSettings
     target.cSettings = (target.cSettings ?? []) + [
         .unsafeFlags(["-Werror"]),
     ]

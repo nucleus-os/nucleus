@@ -8,7 +8,7 @@
 // decision is owned by WindowManager (it keys on window identity).
 
 import Glibc
-import NucleusCompositorWindowManager
+internal import NucleusCompositorWindowManager
 
 enum ClientKeyPolicy {
     case nativeCommand

@@ -16,7 +16,7 @@ protocol BackgroundEffectDelegate: AnyObject {
 }
 
 final class ExtBackgroundEffectManager {
-    weak var delegate: BackgroundEffectDelegate?
+    weak var delegate: (any BackgroundEffectDelegate)?
     /// Advertised capability bitfield (capability.blur = 1).
     var capabilities: UInt32 = 1
 

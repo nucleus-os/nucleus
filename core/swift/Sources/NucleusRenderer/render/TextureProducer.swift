@@ -9,8 +9,8 @@
 // best-effort over a real Graphite recorder.
 
 import NucleusSkiaGraphiteBridge
-import NucleusRenderModel
-import NucleusTypes
+internal import NucleusRenderModel
+internal import NucleusTypes
 
 /// Per-frame counters of producer GPU work (a representative subset of the
 /// counting fields).

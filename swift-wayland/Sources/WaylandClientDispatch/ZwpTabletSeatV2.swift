@@ -3,7 +3,7 @@
 // Typed client dispatch for zwp_tablet_seat_v2: a handler protocol (one method per event), the
 // libwayland listener + owner recovery + arg marshalling, and an addListener that wires it.
 
-import WaylandClientC
+public import WaylandClientC
 
 public protocol ZwpTabletSeatV2Events: AnyObject {
     func tabletAdded(_ proxy: OpaquePointer, id: OpaquePointer?)
@@ -28,8 +28,8 @@ public enum ZwpTabletSeatV2Client {
         zwp_tablet_seat_v2_add_listener(proxy, listener, Unmanaged.passUnretained(owner).toOpaque())
     }
 
-    private static func handler(_ data: UnsafeMutableRawPointer) -> ZwpTabletSeatV2Events? {
-        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? ZwpTabletSeatV2Events
+    private static func handler(_ data: UnsafeMutableRawPointer) -> (any ZwpTabletSeatV2Events)? {
+        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? any ZwpTabletSeatV2Events
     }
 
     private static let tabletAdded_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, OpaquePointer?) -> Void = { data, proxy, id in

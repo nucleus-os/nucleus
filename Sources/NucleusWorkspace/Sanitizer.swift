@@ -1,4 +1,4 @@
-import Foundation
+import FoundationEssentials
 
 struct SanitizerCommand {
     let context: WorkspaceContext

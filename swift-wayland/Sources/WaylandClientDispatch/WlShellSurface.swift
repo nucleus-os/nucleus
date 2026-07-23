@@ -3,7 +3,7 @@
 // Typed client dispatch for wl_shell_surface: a handler protocol (one method per event), the
 // libwayland listener + owner recovery + arg marshalling, and an addListener that wires it.
 
-import WaylandClientC
+public import WaylandClientC
 
 public protocol WlShellSurfaceEvents: AnyObject {
     func ping(_ proxy: OpaquePointer, serial: UInt32)
@@ -28,8 +28,8 @@ public enum WlShellSurfaceClient {
         wl_shell_surface_add_listener(proxy, listener, Unmanaged.passUnretained(owner).toOpaque())
     }
 
-    private static func handler(_ data: UnsafeMutableRawPointer) -> WlShellSurfaceEvents? {
-        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? WlShellSurfaceEvents
+    private static func handler(_ data: UnsafeMutableRawPointer) -> (any WlShellSurfaceEvents)? {
+        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? any WlShellSurfaceEvents
     }
 
     private static let ping_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, serial in

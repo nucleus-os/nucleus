@@ -10,7 +10,9 @@
 
 import WaylandServerC
 import WaylandServer
-import NucleusCompositorServer
+internal import NucleusCompositorServer
+import NucleusCompositorServerTypes
+import NucleusRenderModel
 import Glibc
 
 @MainActor

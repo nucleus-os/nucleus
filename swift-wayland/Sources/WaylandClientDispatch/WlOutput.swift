@@ -3,7 +3,7 @@
 // Typed client dispatch for wl_output: a handler protocol (one method per event), the
 // libwayland listener + owner recovery + arg marshalling, and an addListener that wires it.
 
-import WaylandClientC
+public import WaylandClientC
 
 public protocol WlOutputEvents: AnyObject {
     func geometry(_ proxy: OpaquePointer, x: Int32, y: Int32, physical_width: Int32, physical_height: Int32, subpixel: Int32, make: UnsafePointer<CChar>?, model: UnsafePointer<CChar>?, transform: Int32)
@@ -34,8 +34,8 @@ public enum WlOutputClient {
         wl_output_add_listener(proxy, listener, Unmanaged.passUnretained(owner).toOpaque())
     }
 
-    private static func handler(_ data: UnsafeMutableRawPointer) -> WlOutputEvents? {
-        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? WlOutputEvents
+    private static func handler(_ data: UnsafeMutableRawPointer) -> (any WlOutputEvents)? {
+        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? any WlOutputEvents
     }
 
     private static let geometry_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, Int32, Int32, Int32, Int32, Int32, UnsafePointer<CChar>?, UnsafePointer<CChar>?, Int32) -> Void = { data, proxy, x, y, physical_width, physical_height, subpixel, make, model, transform in

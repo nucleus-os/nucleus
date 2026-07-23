@@ -228,32 +228,4 @@ import NucleusCompositorServer
         #expect(darkSystem.first?.resolvedAppearance == .dark)
     }
 
-    @Test func hostBackdropPolicyResolveReturnsDraws() throws {
-        let manager = WindowManager(server: NucleusCompositorServer())
-        var input = WireBackdropLayerInput(
-            layerId: 77,
-            frameX: 10,
-            frameY: 20,
-            frameWidth: 30,
-            frameHeight: 40,
-            isOpaqueOccluder: false,
-            reserved0: 0,
-            reserved1: 0,
-            reserved2: 0,
-            producerGroupId: 0,
-        )
-        let draws = try manager.backdropPolicyResolve(
-            inputs: &input,
-            inputsLen: 1
-        )
-
-        #expect(draws.count == 1)
-        let draw = try #require(draws.first)
-        #expect(draw.layerId == 77)
-        #expect(draw.regionX == 10)
-        #expect(draw.regionY == 20)
-        #expect(draw.regionWidth == 30)
-        #expect(draw.regionHeight == 40)
-        #expect(draw.resolvedAppearance == BackdropPolicy.ResolvedAppearance.light.rawValue)
-    }
 }

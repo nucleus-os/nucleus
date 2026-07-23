@@ -5,7 +5,7 @@
 // the session blocked); this client merely presents the lock UI and requests unlock.
 
 import WaylandClientC
-import WaylandClientDispatch
+public import WaylandClientDispatch
 
 @MainActor
 public final class SessionLockClient {

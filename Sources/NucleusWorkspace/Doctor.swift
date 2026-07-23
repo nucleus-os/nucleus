@@ -1,4 +1,4 @@
-import Foundation
+import FoundationEssentials
 
 /// Read-only validation for the host contract consumed by the complete-checkout
 /// bootstrap, build, and test entry points.

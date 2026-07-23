@@ -1,4 +1,4 @@
-import Foundation
+import Foundation // FileHandle supplies generator diagnostics.
 #if canImport(FoundationXML)
 import FoundationXML
 #endif

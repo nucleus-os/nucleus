@@ -1,5 +1,5 @@
-import NucleusAppHostProtocols
-import NucleusLayers
+public import NucleusAppHostProtocols
+public import NucleusLayers
 
 /// One registered image file, owning its registration for as long as it lives.
 ///
@@ -110,12 +110,10 @@ public final class ImageResource {
 
         let raw: UInt64
         do {
-            raw = try bytes.withUnsafeBufferPointer { pointer in
-                try registrar.register(
-                    encoded: Span(_unsafeElements: pointer),
-                    maxWidth: ImageResource.pixelBound(decodeSize.width),
-                    maxHeight: ImageResource.pixelBound(decodeSize.height))
-            }
+            raw = try registrar.register(
+                encoded: bytes.span,
+                maxWidth: ImageResource.pixelBound(decodeSize.width),
+                maxHeight: ImageResource.pixelBound(decodeSize.height))
         } catch {
             return nil
         }
@@ -144,13 +142,11 @@ public final class ImageResource {
         let stride = rowStride ?? (width * order.sourceBytesPerPixel)
         let raw: UInt64
         do {
-            raw = try pixels.withUnsafeBufferPointer { pointer in
-                try registrar.register(
-                    pixels: Span(_unsafeElements: pointer),
-                    width: UInt32(width), height: UInt32(height),
-                    rowStride: UInt32(stride), channelOrder: order.rawValue,
-                    isPremultiplied: isPremultiplied)
-            }
+            raw = try registrar.register(
+                pixels: pixels.span,
+                width: UInt32(width), height: UInt32(height),
+                rowStride: UInt32(stride), channelOrder: order.rawValue,
+                isPremultiplied: isPremultiplied)
         } catch {
             return nil
         }

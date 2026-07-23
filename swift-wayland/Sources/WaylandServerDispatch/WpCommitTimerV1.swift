@@ -3,7 +3,7 @@
 // Typed server dispatch for wp_commit_timer_v1: a handler protocol (one method per request), the
 // request vtable + owner recovery + arg marshalling, and typed event senders.
 
-import WaylandServerC
+public import WaylandServerC
 import WaylandServer
 
 public protocol WpCommitTimerV1Requests: AnyObject {
@@ -27,9 +27,9 @@ public enum WpCommitTimerV1Server {
         return UnsafeRawPointer(raw)
     }()
 
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> WpCommitTimerV1Requests? {
+    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> (any WpCommitTimerV1Requests)? {
         guard let ud = wl_resource_get_user_data(res) else { return nil }
-        return Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? WpCommitTimerV1Requests
+        return Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any WpCommitTimerV1Requests
     }
 
     private static let setTimestamp_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UInt32, UInt32) -> Void = { _, res, tv_sec_hi, tv_sec_lo, tv_nsec in

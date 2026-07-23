@@ -1,4 +1,4 @@
-@_spi(NucleusCompositor) import NucleusLayers
+@_spi(NucleusCompositor) package import NucleusLayers
 
 extension ViewLayerPublisher {
     package func ensureRootAttached() throws(UIError) -> Layer {

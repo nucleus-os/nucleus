@@ -1,5 +1,5 @@
 import NucleusTypes
-import NucleusCompositorServerTypes
+public import NucleusCompositorServerTypes
 import NucleusCompositorServer
 
 private struct PopupRect: Equatable {

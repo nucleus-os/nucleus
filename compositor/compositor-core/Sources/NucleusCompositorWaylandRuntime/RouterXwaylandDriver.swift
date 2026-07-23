@@ -21,8 +21,8 @@
 import WaylandServerC
 import NucleusCompositorXcbC
 @_spi(NucleusCompositor) import NucleusLayers
-import NucleusCompositorServer
-import NucleusCompositorWindowManager
+internal import NucleusCompositorServer
+internal import NucleusCompositorWindowManager
 
 @MainActor
 final class RouterXwaylandDriver {

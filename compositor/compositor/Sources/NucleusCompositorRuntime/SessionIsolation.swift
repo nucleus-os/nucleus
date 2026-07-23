@@ -1,5 +1,5 @@
 import Glibc
-import Foundation
+import FoundationEssentials
 
 // Compositor-side session-runtime isolation, Swift-owned. Production session
 // construction lives in the launcher/user unit; this only validates a
@@ -108,7 +108,7 @@ final class SessionIsolation {
             throw SessionIsolationError.sessionRuntimeMismatch
         }
 
-        let base = (runtimeDir as NSString).lastPathComponent
+        let base = runtimeDir.split(separator: "/").last.map(String.init) ?? ""
         let prefix = "nucleus-"
         guard base.hasPrefix(prefix), base.count > prefix.count else {
             throw SessionIsolationError.invalidRuntimeDir

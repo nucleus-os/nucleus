@@ -1,4 +1,4 @@
-import NucleusLayers
+public import NucleusLayers
 
 /// Stable identity for one retained image consumer.
 public struct ImageRequestID: RawRepresentable, Hashable, Sendable {

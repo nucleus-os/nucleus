@@ -9,7 +9,7 @@
 // buffer attach + commit). Resizes re-fire onConfigure.
 
 import WaylandClientC
-import WaylandClientDispatch
+public import WaylandClientDispatch
 
 public enum LayerShellLayer: UInt32 {
     case background = 0

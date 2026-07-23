@@ -3,7 +3,7 @@
 // Typed client dispatch for ext_workspace_handle_v1: a handler protocol (one method per event), the
 // libwayland listener + owner recovery + arg marshalling, and an addListener that wires it.
 
-import WaylandClientC
+public import WaylandClientC
 
 public protocol ExtWorkspaceHandleV1Events: AnyObject {
     func id(_ proxy: OpaquePointer, id: UnsafePointer<CChar>?)
@@ -34,8 +34,8 @@ public enum ExtWorkspaceHandleV1Client {
         ext_workspace_handle_v1_add_listener(proxy, listener, Unmanaged.passUnretained(owner).toOpaque())
     }
 
-    private static func handler(_ data: UnsafeMutableRawPointer) -> ExtWorkspaceHandleV1Events? {
-        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? ExtWorkspaceHandleV1Events
+    private static func handler(_ data: UnsafeMutableRawPointer) -> (any ExtWorkspaceHandleV1Events)? {
+        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? any ExtWorkspaceHandleV1Events
     }
 
     private static let id_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UnsafePointer<CChar>?) -> Void = { data, proxy, id in

@@ -3,7 +3,7 @@
 // Typed client dispatch for wp_color_management_surface_feedback_v1: a handler protocol (one method per event), the
 // libwayland listener + owner recovery + arg marshalling, and an addListener that wires it.
 
-import WaylandClientC
+public import WaylandClientC
 
 public protocol WpColorManagementSurfaceFeedbackV1Events: AnyObject {
     func preferredChanged(_ proxy: OpaquePointer, identity: UInt32)
@@ -26,8 +26,8 @@ public enum WpColorManagementSurfaceFeedbackV1Client {
         wp_color_management_surface_feedback_v1_add_listener(proxy, listener, Unmanaged.passUnretained(owner).toOpaque())
     }
 
-    private static func handler(_ data: UnsafeMutableRawPointer) -> WpColorManagementSurfaceFeedbackV1Events? {
-        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? WpColorManagementSurfaceFeedbackV1Events
+    private static func handler(_ data: UnsafeMutableRawPointer) -> (any WpColorManagementSurfaceFeedbackV1Events)? {
+        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? any WpColorManagementSurfaceFeedbackV1Events
     }
 
     private static let preferredChanged_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, identity in

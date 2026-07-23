@@ -270,9 +270,11 @@ public enum TransactionApplier: Sendable {
         }
         // Pass 5: sparse property updates.
         for pu in txn.propertyUpdates {
-            guard var node = tree.layers[pu.nodeId] else { continue }
-            applyPropertyUpdate(pu, to: &node)
-            tree.layers[pu.nodeId] = node
+            guard let index = tree.layers.index(forKey: pu.nodeId) else {
+                continue
+            }
+            var node = MutableRef(&tree.layers.values[index])
+            applyPropertyUpdate(pu, to: &node.value)
         }
     }
 
@@ -283,39 +285,40 @@ public enum TransactionApplier: Sendable {
         let hasPaint: Bool = { if case .paint = initialContent { return true }; return false }()
         let id = created.nodeId
 
-        if var node = tree.layers[id] {
+        if let index = tree.layers.index(forKey: id) {
             // Existing node — update properties.
-            let boundsChanged = node.model.properties.bounds.w != created.bounds.w ||
-                node.model.properties.bounds.h != created.bounds.h
-            node.kind = created.kind
-            node.role = created.role
-            node.backdropAttachment = created.backdropAttachment
-            node.model.properties.position = created.position
-            node.model.properties.anchorPoint = created.anchorPoint
-            node.model.properties.transform = created.transform
-            node.model.properties.opacity = created.opacity
-            node.model.properties.clip = created.clip
-            node.model.properties.bounds = created.bounds
-            node.model.visualStyle = created.visualStyle
+            var node = MutableRef(&tree.layers.values[index])
+            let boundsChanged =
+                node.value.model.properties.bounds.w != created.bounds.w ||
+                node.value.model.properties.bounds.h != created.bounds.h
+            node.value.kind = created.kind
+            node.value.role = created.role
+            node.value.backdropAttachment = created.backdropAttachment
+            node.value.model.properties.position = created.position
+            node.value.model.properties.anchorPoint = created.anchorPoint
+            node.value.model.properties.transform = created.transform
+            node.value.model.properties.opacity = created.opacity
+            node.value.model.properties.clip = created.clip
+            node.value.model.properties.bounds = created.bounds
+            node.value.model.visualStyle = created.visualStyle
             if boundsChanged {
-                node.model.visualRevision &+= 1
-                node.model.compositeRevision &+= 1
+                node.value.model.visualRevision &+= 1
+                node.value.model.compositeRevision &+= 1
             }
             if case .none = initialContent {
                 // No content supplied; leave existing content untouched.
             } else {
-                node.model.content = initialContent
-                node.presentation.content = initialContent
-                node.damage.markContent(nil)
+                node.value.model.content = initialContent
+                node.value.presentation.content = initialContent
+                node.value.damage.markContent(nil)
             }
-            node.damage.flags.structure = true
+            node.value.damage.flags.structure = true
             if boundsChanged {
-                node.damage.flags.backingReallocate = true
-                if case .paint = node.model.content {
-                    node.damage.markContent(nil)
+                node.value.damage.flags.backingReallocate = true
+                if case .paint = node.value.model.content {
+                    node.value.damage.markContent(nil)
                 }
             }
-            tree.layers[id] = node
         } else {
             // New node.
             var node = Layer(id: id, kind: created.kind)

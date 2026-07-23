@@ -1,5 +1,5 @@
 // `nucleus_compositor_window_manager_fullscreen_relinquish_plan` and
-// `nucleus_compositor_window_resolve_popup` migrated to `WindowMechanismHost`
+// Popup policy is implemented directly by `WindowManager`.
 // protocol methods.
 
 // wlr-layer-shell is served Swift-native (`NucleusWaylandRouter.ZwlrLayerSurface`):

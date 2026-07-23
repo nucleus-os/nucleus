@@ -9,6 +9,7 @@
 
 import WaylandServerC
 import WaylandServer
+import NucleusRenderModel
 
 /// A snapshot of one output's advertised state. Fields match wl_output's events.
 struct OutputInfo {

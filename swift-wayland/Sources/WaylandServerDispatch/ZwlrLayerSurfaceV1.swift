@@ -3,7 +3,7 @@
 // Typed server dispatch for zwlr_layer_surface_v1: a handler protocol (one method per request), the
 // request vtable + owner recovery + arg marshalling, and typed event senders.
 
-import WaylandServerC
+public import WaylandServerC
 import WaylandServer
 
 public protocol ZwlrLayerSurfaceV1Requests: AnyObject {
@@ -50,9 +50,9 @@ public enum ZwlrLayerSurfaceV1Server {
         zwlr_layer_surface_v1_send_closed(target)
     }
 
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> ZwlrLayerSurfaceV1Requests? {
+    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> (any ZwlrLayerSurfaceV1Requests)? {
         guard let ud = wl_resource_get_user_data(res) else { return nil }
-        return Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? ZwlrLayerSurfaceV1Requests
+        return Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any ZwlrLayerSurfaceV1Requests
     }
 
     private static let setSize_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UInt32) -> Void = { _, res, width, height in

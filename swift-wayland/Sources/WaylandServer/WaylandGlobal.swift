@@ -3,7 +3,7 @@
 // closure is @convention(c) and cannot capture, so per-global context travels
 // through wl_global_create's `data` pointer or process-global state.
 
-import WaylandServerC
+public import WaylandServerC
 
 public final class WaylandGlobal {
     public let global: OpaquePointer

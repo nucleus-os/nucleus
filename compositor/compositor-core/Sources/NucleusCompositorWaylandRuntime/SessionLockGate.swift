@@ -1,4 +1,4 @@
-import NucleusCompositorServer
+internal import NucleusCompositorServer
 
 @MainActor
 private struct AwaitingLockedFrame {

@@ -1,4 +1,4 @@
-import NucleusCompositorServer
+public import NucleusCompositorServer
 
 @MainActor
 public final class CursorThemeService {

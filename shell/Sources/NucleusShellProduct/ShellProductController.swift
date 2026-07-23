@@ -1,4 +1,4 @@
-import NucleusUI
+public import NucleusUI
 
 /// One output's retained wallpaper hierarchy.
 @MainActor

@@ -1,9 +1,11 @@
 #if canImport(Glibc)
 import Glibc
-#else
+#elseif canImport(Android)
+import Android
+#elseif canImport(Darwin)
 import Darwin
 #endif
-import NucleusTypes
+package import NucleusTypes
 
 /// A `CGPath`-shaped geometry value built from move, line, curve, and arc
 /// segments. It contains no rendering state; the draw call supplies paint.

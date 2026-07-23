@@ -3,7 +3,7 @@
 // local-composition matrix (position/anchor/transform/presentation around a
 // pivot) and the model→effective bounds clip/backdrop rescale.
 
-import NucleusRenderModel
+internal import NucleusRenderModel
 
 enum ComposeHelpers {
     /// Local composition matrix with presentation transform applied around a

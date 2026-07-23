@@ -1,5 +1,5 @@
 @_spi(NucleusPlatform) public import NucleusRenderer
-import NucleusRenderModel
+public import NucleusRenderModel
 import NucleusShellLoop
 import Tracy
 #if canImport(Glibc)

@@ -17,9 +17,9 @@
 // InputHost for seat/libinput bring-up while the reactor
 // still drives those lifecycle edges.
 
-import NucleusCompositorServer
+internal import NucleusCompositorServer
 import NucleusCompositorServerTypes
-import NucleusCompositorWindowManager
+internal import NucleusCompositorWindowManager
 import Glibc
 
 // Cursor + shell/overlay reach-up runs through the inverted `shellPolicy` seam

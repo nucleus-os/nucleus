@@ -3,7 +3,7 @@
 // Typed server dispatch for zxdg_positioner_v6: a handler protocol (one method per request), the
 // request vtable + owner recovery + arg marshalling, and typed event senders.
 
-import WaylandServerC
+public import WaylandServerC
 import WaylandServer
 
 public protocol ZxdgPositionerV6Requests: AnyObject {
@@ -37,9 +37,9 @@ public enum ZxdgPositionerV6Server {
         return UnsafeRawPointer(raw)
     }()
 
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> ZxdgPositionerV6Requests? {
+    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> (any ZxdgPositionerV6Requests)? {
         guard let ud = wl_resource_get_user_data(res) else { return nil }
-        return Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? ZxdgPositionerV6Requests
+        return Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any ZxdgPositionerV6Requests
     }
 
     private static let destroy_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in

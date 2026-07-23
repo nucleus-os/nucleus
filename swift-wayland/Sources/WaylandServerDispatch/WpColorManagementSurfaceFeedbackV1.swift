@@ -3,8 +3,8 @@
 // Typed server dispatch for wp_color_management_surface_feedback_v1: a handler protocol (one method per request), the
 // request vtable + owner recovery + arg marshalling, and typed event senders.
 
-import WaylandServerC
-import WaylandServer
+public import WaylandServerC
+public import WaylandServer
 
 public protocol WpColorManagementSurfaceFeedbackV1Requests: AnyObject {
     func destroy(_ resource: UnsafeMutablePointer<wl_resource>)
@@ -36,9 +36,9 @@ public enum WpColorManagementSurfaceFeedbackV1Server {
         wp_color_management_surface_feedback_v1_send_preferred_changed2(target, identity_hi, identity_lo)
     }
 
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> WpColorManagementSurfaceFeedbackV1Requests? {
+    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> (any WpColorManagementSurfaceFeedbackV1Requests)? {
         guard let ud = wl_resource_get_user_data(res) else { return nil }
-        return Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? WpColorManagementSurfaceFeedbackV1Requests
+        return Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any WpColorManagementSurfaceFeedbackV1Requests
     }
 
     private static let destroy_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
@@ -47,10 +47,10 @@ public enum WpColorManagementSurfaceFeedbackV1Server {
     }
     private static let getPreferred_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { client, res, image_description in
         guard let res, let client, let h = handler(res) else { return }
-        h.getPreferred(res, image_description: WlNewId(client: client, id: image_description, version: Swift.min(wl_resource_get_version(res), Int32(2)), interface: swift_wayland_iface_wp_image_description_v1()))
+        h.getPreferred(res, image_description: WlNewId(client: client, id: image_description, version: Swift::min(wl_resource_get_version(res), Int32(2)), interface: swift_wayland_iface_wp_image_description_v1()))
     }
     private static let getPreferredParametric_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { client, res, image_description in
         guard let res, let client, let h = handler(res) else { return }
-        h.getPreferredParametric(res, image_description: WlNewId(client: client, id: image_description, version: Swift.min(wl_resource_get_version(res), Int32(2)), interface: swift_wayland_iface_wp_image_description_v1()))
+        h.getPreferredParametric(res, image_description: WlNewId(client: client, id: image_description, version: Swift::min(wl_resource_get_version(res), Int32(2)), interface: swift_wayland_iface_wp_image_description_v1()))
     }
 }

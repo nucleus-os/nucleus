@@ -3,7 +3,7 @@
 // Typed client dispatch for ext_image_copy_capture_session_v1: a handler protocol (one method per event), the
 // libwayland listener + owner recovery + arg marshalling, and an addListener that wires it.
 
-import WaylandClientC
+public import WaylandClientC
 
 public protocol ExtImageCopyCaptureSessionV1Events: AnyObject {
     func bufferSize(_ proxy: OpaquePointer, width: UInt32, height: UInt32)
@@ -34,8 +34,8 @@ public enum ExtImageCopyCaptureSessionV1Client {
         ext_image_copy_capture_session_v1_add_listener(proxy, listener, Unmanaged.passUnretained(owner).toOpaque())
     }
 
-    private static func handler(_ data: UnsafeMutableRawPointer) -> ExtImageCopyCaptureSessionV1Events? {
-        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? ExtImageCopyCaptureSessionV1Events
+    private static func handler(_ data: UnsafeMutableRawPointer) -> (any ExtImageCopyCaptureSessionV1Events)? {
+        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? any ExtImageCopyCaptureSessionV1Events
     }
 
     private static let bufferSize_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, UInt32) -> Void = { data, proxy, width, height in

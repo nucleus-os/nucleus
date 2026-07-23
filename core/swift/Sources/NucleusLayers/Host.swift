@@ -1,5 +1,5 @@
 import NucleusTypes
-import NucleusAppHostProtocols
+public import NucleusAppHostProtocols
 import Synchronization
 
 /// Runtime registry of the host-protocol references that NucleusLayers

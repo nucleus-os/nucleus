@@ -3,7 +3,7 @@
 // Typed client dispatch for xdg_toplevel: a handler protocol (one method per event), the
 // libwayland listener + owner recovery + arg marshalling, and an addListener that wires it.
 
-import WaylandClientC
+public import WaylandClientC
 
 public protocol XdgToplevelEvents: AnyObject {
     func configure(_ proxy: OpaquePointer, width: Int32, height: Int32, states: UnsafeMutablePointer<wl_array>?)
@@ -30,8 +30,8 @@ public enum XdgToplevelClient {
         xdg_toplevel_add_listener(proxy, listener, Unmanaged.passUnretained(owner).toOpaque())
     }
 
-    private static func handler(_ data: UnsafeMutableRawPointer) -> XdgToplevelEvents? {
-        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? XdgToplevelEvents
+    private static func handler(_ data: UnsafeMutableRawPointer) -> (any XdgToplevelEvents)? {
+        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? any XdgToplevelEvents
     }
 
     private static let configure_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, Int32, Int32, UnsafeMutablePointer<wl_array>?) -> Void = { data, proxy, width, height, states in

@@ -3,8 +3,8 @@
 // Typed server dispatch for wp_color_management_output_v1: a handler protocol (one method per request), the
 // request vtable + owner recovery + arg marshalling, and typed event senders.
 
-import WaylandServerC
-import WaylandServer
+public import WaylandServerC
+public import WaylandServer
 
 public protocol WpColorManagementOutputV1Requests: AnyObject {
     func destroy(_ resource: UnsafeMutablePointer<wl_resource>)
@@ -31,9 +31,9 @@ public enum WpColorManagementOutputV1Server {
         wp_color_management_output_v1_send_image_description_changed(target)
     }
 
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> WpColorManagementOutputV1Requests? {
+    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> (any WpColorManagementOutputV1Requests)? {
         guard let ud = wl_resource_get_user_data(res) else { return nil }
-        return Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? WpColorManagementOutputV1Requests
+        return Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any WpColorManagementOutputV1Requests
     }
 
     private static let destroy_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
@@ -42,6 +42,6 @@ public enum WpColorManagementOutputV1Server {
     }
     private static let getImageDescription_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { client, res, image_description in
         guard let res, let client, let h = handler(res) else { return }
-        h.getImageDescription(res, image_description: WlNewId(client: client, id: image_description, version: Swift.min(wl_resource_get_version(res), Int32(2)), interface: swift_wayland_iface_wp_image_description_v1()))
+        h.getImageDescription(res, image_description: WlNewId(client: client, id: image_description, version: Swift::min(wl_resource_get_version(res), Int32(2)), interface: swift_wayland_iface_wp_image_description_v1()))
     }
 }

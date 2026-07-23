@@ -1,14 +1,15 @@
-import NucleusUI
+public import NucleusUI
 import NucleusUIEmbedder
 // Selective imports: this file needs the layer model's transaction vocabulary,
 // but `NucleusLayers` also defines a `Rect`, and the frames here are the UI
 // framework's. Naming what is used keeps that unambiguous without qualifying
 // every geometry mention.
-import class NucleusLayers.Context
-import class NucleusLayers.Layer
-import struct NucleusLayers.LayerTransaction
-import struct NucleusLayers.LayerPropertyUpdate
-import typealias NucleusLayers.GeometryRect
+public import class NucleusLayers.Context
+public import class NucleusLayers.Layer
+public import struct NucleusLayers.LayerTransaction
+public import struct NucleusLayers.LayerPropertyUpdate
+public import typealias NucleusLayers.GeometryRect
+internal import struct NucleusTypes.VisualEffect
 
 // Hosted surfaces: Wayland client surfaces placed inside the compositor's own
 // scene.

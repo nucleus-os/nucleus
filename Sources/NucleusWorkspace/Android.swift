@@ -1,4 +1,4 @@
-import Foundation
+import Foundation // NSRegularExpression validates generated JNI names and ELF output.
 
 struct AndroidCommand {
     let context: WorkspaceContext
@@ -9,6 +9,11 @@ struct AndroidCommand {
         switch command {
         case "build":
             try context.run("./gradlew", rest.isEmpty ? ["verifyDebug"] : rest, directory: context.root.appendingPathComponent("core/android"))
+        case "native":
+            guard rest.isEmpty else {
+                throw WorkspaceFailure.message("android native does not accept arguments\n\n\(usage)")
+            }
+            try buildHostLibrary()
         case "verify":
             try verifyHostLibrary(rest.first)
         case "help", "--help", "-h":
@@ -23,10 +28,35 @@ struct AndroidCommand {
         Usage: tools/nucleus android <command>
 
           build [gradle arguments]  Build and verify the Android host (default: verifyDebug)
+          native                    Cross-compile and verify the Swift Android host library
           verify [library]         Verify the Android host ELF and JNI contract
           Swift toolchain and Android SDK generations are managed together by:
             tools/nucleus toolchain rebuild
         """
+    }
+
+    private func buildHostLibrary() throws {
+        let sourceID = context.environment["NUCLEUS_SWIFT_SOURCE_ID"] ?? "release-6.4.x"
+        let core = context.root.appendingPathComponent("core")
+        try context.run(
+            "swift",
+            [
+                "package", "build-skia-android",
+                "--allow-writing-to-package-directory",
+                "--disable-sandbox",
+            ],
+            directory: core)
+        try context.run(
+            "swift",
+            [
+                "build",
+                "--package-path", "platform-android",
+                "--swift-sdk", "swift-\(sourceID)_android",
+                "--static-swift-stdlib",
+                "-c", "release",
+            ],
+            directory: core)
+        try verifyHostLibrary(nil)
     }
 
     private func verifyHostLibrary(_ suppliedPath: String?) throws {

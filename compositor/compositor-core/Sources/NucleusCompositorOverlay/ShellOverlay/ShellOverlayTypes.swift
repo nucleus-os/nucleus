@@ -1,6 +1,5 @@
-import NucleusCompositorOverlayTypes
-import NucleusUI
-import NucleusUIEmbedder
+public import NucleusCompositorOverlayTypes
+public import NucleusUI
 
 public struct ShellOverlayFrameInfo: Sendable, Equatable {
     public var outputWidth: UInt32
@@ -10,6 +9,34 @@ public struct ShellOverlayFrameInfo: Sendable, Equatable {
     public var overlayRegionY: Float
     public var overlayRegionW: Float
     public var overlayRegionH: Float
+
+    public init(
+        outputWidth: UInt32,
+        outputHeight: UInt32,
+        devicePixelRatio: Float,
+        overlayRegionX: Float,
+        overlayRegionY: Float,
+        overlayRegionW: Float,
+        overlayRegionH: Float
+    ) {
+        self.outputWidth = outputWidth
+        self.outputHeight = outputHeight
+        self.devicePixelRatio = devicePixelRatio
+        self.overlayRegionX = overlayRegionX
+        self.overlayRegionY = overlayRegionY
+        self.overlayRegionW = overlayRegionW
+        self.overlayRegionH = overlayRegionH
+    }
+
+    public init(_ frame: NucleusCompositorOverlayTypes.FrameInfo) {
+        outputWidth = frame.outputWidth
+        outputHeight = frame.outputHeight
+        devicePixelRatio = frame.devicePixelRatio
+        overlayRegionX = frame.overlayRegionX
+        overlayRegionY = frame.overlayRegionY
+        overlayRegionW = frame.overlayRegionW
+        overlayRegionH = frame.overlayRegionH
+    }
 
     public var backingScaleFactor: BackingScaleFactor {
         BackingScaleFactor(devicePixelRatio)
@@ -32,13 +59,6 @@ public struct ShellOverlayFrameInfo: Sendable, Equatable {
     }
 }
 
-public enum ShellOverlayEventKind: UInt32, Sendable {
-    case frame = 1
-    case notification = 2
-    case dismissNotification = 3
-    case hotkeyVisibility = 5
-}
-
 public struct ShellOverlayNotificationInfo: Sendable, Equatable {
     public var id: UInt32
     public var appName: String
@@ -47,6 +67,24 @@ public struct ShellOverlayNotificationInfo: Sendable, Equatable {
     public var thumbnailHandle: UInt64
     public var showsThumbnail: Bool
     public var expireTimeoutMs: Int32
+
+    public init(
+        id: UInt32,
+        appName: String,
+        summary: String,
+        body: String,
+        thumbnailHandle: UInt64,
+        showsThumbnail: Bool,
+        expireTimeoutMs: Int32
+    ) {
+        self.id = id
+        self.appName = appName
+        self.summary = summary
+        self.body = body
+        self.thumbnailHandle = thumbnailHandle
+        self.showsThumbnail = showsThumbnail
+        self.expireTimeoutMs = expireTimeoutMs
+    }
 }
 
 public enum ShellOverlayInputKind: UInt32, Sendable {
@@ -212,47 +250,6 @@ public enum ShellOverlayEvent: Sendable, Equatable {
     case dismissNotification(id: UInt32, reason: UInt32)
     case hotkeyVisibility(Bool)
 
-    public init(_ event: NucleusCompositorOverlayTypes.OverlayEvent) {
-        switch ShellOverlayEventKind(rawValue: event.kind.rawValue) {
-        case .frame:
-            self = .frame(.init(
-                outputWidth: event.frame.outputWidth,
-                outputHeight: event.frame.outputHeight,
-                devicePixelRatio: event.frame.devicePixelRatio,
-                overlayRegionX: event.frame.overlayRegionX,
-                overlayRegionY: event.frame.overlayRegionY,
-                overlayRegionW: event.frame.overlayRegionW,
-                overlayRegionH: event.frame.overlayRegionH
-            ))
-        case .notification:
-            self = .notification(.init(
-                id: event.notification.id,
-                appName: stringView(event.notification.appName),
-                summary: stringView(event.notification.summary),
-                body: stringView(event.notification.body),
-                thumbnailHandle: event.notification.thumbnailHandle,
-                showsThumbnail: event.notification.showThumbnail,
-                expireTimeoutMs: event.notification.expireTimeoutMs
-            ))
-        case .dismissNotification:
-            self = .dismissNotification(
-                id: event.notificationId,
-                reason: event.closeReason == 0 ? 2 : event.closeReason
-            )
-        case .hotkeyVisibility:
-            self = .hotkeyVisibility(event.visible)
-        case nil:
-            self = .frame(.init(
-                outputWidth: 0,
-                outputHeight: 0,
-                devicePixelRatio: 1,
-                overlayRegionX: 0,
-                overlayRegionY: 0,
-                overlayRegionW: 0,
-                overlayRegionH: 0
-            ))
-        }
-    }
 }
 
 public struct HostedSurfaceID: Sendable, Hashable, ExpressibleByStringLiteral {

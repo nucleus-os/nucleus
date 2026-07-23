@@ -409,7 +409,7 @@ final class RecordingDesktopObserver: DesktopModelObserver {
 }
 
 @MainActor
-@Test func fullscreenAndPopupPoliciesUseWindowMechanismHostMethods() throws {
+@Test func fullscreenAndPopupPoliciesUseWindowManagerMethods() throws {
     server.serverReset()
     windowManager.reset()
     try seedConfigurePolicyDisplay()

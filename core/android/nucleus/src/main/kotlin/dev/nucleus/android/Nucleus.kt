@@ -111,6 +111,10 @@ object Nucleus {
     fun ensureLoaded() {
     }
 
+    /** Verify that the packaged native library matches this Kotlin API. */
+    @JvmStatic
+    fun smokeValue(): Int = NucleusNative.smokeValue()
+
     @JvmStatic
     fun describeError(code: Int): String = when (code) {
         ERROR_NONE -> "no error"

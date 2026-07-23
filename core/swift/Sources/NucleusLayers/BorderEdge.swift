@@ -1,4 +1,4 @@
-import NucleusTypes
+public import NucleusTypes
 
 /// One edge of a layer's border. Corresponds to the per-edge subset of CSS
 /// `border-{top|right|bottom|left}`. Width is in points; color carries its

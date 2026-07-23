@@ -1,9 +1,10 @@
 import Glibc
-import NucleusShellLoop
-import NucleusShellWayland
-import NucleusUI
+import FoundationEssentials
+public import NucleusShellLoop
+public import NucleusShellWayland
+public import NucleusUI
 import WaylandClientC
-import WaylandClientDispatch
+public import WaylandClientDispatch
 import WaylandProtocolsC
 
 public struct ShellDataTransferLimits: Sendable, Equatable {

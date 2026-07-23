@@ -1,5 +1,5 @@
 import PackagePlugin
-import Foundation
+import Foundation // Process executes the Android Skia provisioning script.
 
 // Build-tool plugin: drive upstream Skia's GN + Ninja build cross-targeting the
 // Android NDK (arm64), producing the Vulkan-Graphite archive set the Android

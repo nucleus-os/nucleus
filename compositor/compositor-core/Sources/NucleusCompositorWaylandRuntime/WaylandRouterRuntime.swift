@@ -17,7 +17,9 @@
 // no wl_shm impl here — committed SHM pixels are read back through
 // wl_shm_buffer_get at commit time.
 
-import NucleusCompositorWindowScene
+internal import NucleusCompositorServer
+package import NucleusCompositorWindowScene
+import WaylandServer
 
 @MainActor
 public final class WaylandRouterRuntime {

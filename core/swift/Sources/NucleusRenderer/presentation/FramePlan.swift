@@ -9,7 +9,7 @@
 
 /// Opaque renderer texture handle. Mirrors `composition_plan.TextureHandle`
 /// (`enum(u64)`, `invalid = 0`).
-import NucleusRenderModel
+internal import NucleusRenderModel
 
 struct TextureHandle: Equatable, Hashable {
     var raw: UInt64 = 0

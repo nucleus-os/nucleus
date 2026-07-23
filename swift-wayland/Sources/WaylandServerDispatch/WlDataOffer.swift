@@ -3,7 +3,7 @@
 // Typed server dispatch for wl_data_offer: a handler protocol (one method per request), the
 // request vtable + owner recovery + arg marshalling, and typed event senders.
 
-import WaylandServerC
+public import WaylandServerC
 import WaylandServer
 
 public protocol WlDataOfferRequests: AnyObject {
@@ -43,9 +43,9 @@ public enum WlDataOfferServer {
         wl_data_offer_send_action(target, dnd_action)
     }
 
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> WlDataOfferRequests? {
+    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> (any WlDataOfferRequests)? {
         guard let ud = wl_resource_get_user_data(res) else { return nil }
-        return Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? WlDataOfferRequests
+        return Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any WlDataOfferRequests
     }
 
     private static let accept_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UnsafePointer<CChar>?) -> Void = { _, res, serial, mime_type in

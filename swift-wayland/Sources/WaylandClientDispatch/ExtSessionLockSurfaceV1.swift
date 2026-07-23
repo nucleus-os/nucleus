@@ -3,7 +3,7 @@
 // Typed client dispatch for ext_session_lock_surface_v1: a handler protocol (one method per event), the
 // libwayland listener + owner recovery + arg marshalling, and an addListener that wires it.
 
-import WaylandClientC
+public import WaylandClientC
 
 public protocol ExtSessionLockSurfaceV1Events: AnyObject {
     func configure(_ proxy: OpaquePointer, serial: UInt32, width: UInt32, height: UInt32)
@@ -24,8 +24,8 @@ public enum ExtSessionLockSurfaceV1Client {
         ext_session_lock_surface_v1_add_listener(proxy, listener, Unmanaged.passUnretained(owner).toOpaque())
     }
 
-    private static func handler(_ data: UnsafeMutableRawPointer) -> ExtSessionLockSurfaceV1Events? {
-        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? ExtSessionLockSurfaceV1Events
+    private static func handler(_ data: UnsafeMutableRawPointer) -> (any ExtSessionLockSurfaceV1Events)? {
+        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? any ExtSessionLockSurfaceV1Events
     }
 
     private static let configure_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, UInt32, UInt32) -> Void = { data, proxy, serial, width, height in

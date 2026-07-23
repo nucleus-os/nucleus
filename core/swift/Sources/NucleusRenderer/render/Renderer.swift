@@ -6,7 +6,7 @@
 // runs during recording/submission (the façade submit path is pure C++).
 
 import NucleusSkiaGraphiteBridge
-import NucleusRenderModel
+internal import NucleusRenderModel
 
 struct RenderResult {
     var imageWidth: Int32

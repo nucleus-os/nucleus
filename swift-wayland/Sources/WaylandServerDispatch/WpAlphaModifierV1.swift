@@ -3,8 +3,8 @@
 // Typed server dispatch for wp_alpha_modifier_v1: a handler protocol (one method per request), the
 // request vtable + owner recovery + arg marshalling, and typed event senders.
 
-import WaylandServerC
-import WaylandServer
+public import WaylandServerC
+public import WaylandServer
 
 public protocol WpAlphaModifierV1Requests: AnyObject {
     func destroy(_ resource: UnsafeMutablePointer<wl_resource>)
@@ -27,9 +27,9 @@ public enum WpAlphaModifierV1Server {
         return UnsafeRawPointer(raw)
     }()
 
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> WpAlphaModifierV1Requests? {
+    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> (any WpAlphaModifierV1Requests)? {
         guard let ud = wl_resource_get_user_data(res) else { return nil }
-        return Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? WpAlphaModifierV1Requests
+        return Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any WpAlphaModifierV1Requests
     }
 
     private static let destroy_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
@@ -38,6 +38,6 @@ public enum WpAlphaModifierV1Server {
     }
     private static let getSurface_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UnsafeMutablePointer<wl_resource>?) -> Void = { client, res, id, surface in
         guard let res, let client, let h = handler(res) else { return }
-        h.getSurface(res, id: WlNewId(client: client, id: id, version: Swift.min(wl_resource_get_version(res), Int32(1)), interface: swift_wayland_iface_wp_alpha_modifier_surface_v1()), surface: surface)
+        h.getSurface(res, id: WlNewId(client: client, id: id, version: Swift::min(wl_resource_get_version(res), Int32(1)), interface: swift_wayland_iface_wp_alpha_modifier_surface_v1()), surface: surface)
     }
 }

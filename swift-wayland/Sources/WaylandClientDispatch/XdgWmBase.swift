@@ -3,7 +3,7 @@
 // Typed client dispatch for xdg_wm_base: a handler protocol (one method per event), the
 // libwayland listener + owner recovery + arg marshalling, and an addListener that wires it.
 
-import WaylandClientC
+public import WaylandClientC
 
 public protocol XdgWmBaseEvents: AnyObject {
     func ping(_ proxy: OpaquePointer, serial: UInt32)
@@ -24,8 +24,8 @@ public enum XdgWmBaseClient {
         xdg_wm_base_add_listener(proxy, listener, Unmanaged.passUnretained(owner).toOpaque())
     }
 
-    private static func handler(_ data: UnsafeMutableRawPointer) -> XdgWmBaseEvents? {
-        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? XdgWmBaseEvents
+    private static func handler(_ data: UnsafeMutableRawPointer) -> (any XdgWmBaseEvents)? {
+        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? any XdgWmBaseEvents
     }
 
     private static let ping_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, serial in

@@ -1,5 +1,5 @@
 import PackagePlugin
-import Foundation
+import Foundation // Process executes the package build command.
 
 // Command plugin: drives upstream Hermes's own CMake + Ninja to build the lean
 // JS VM runtime plus hermesc (the bytecode compiler). It is the first link in the

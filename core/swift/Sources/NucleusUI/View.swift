@@ -1,11 +1,13 @@
-@_spi(NucleusCompositor) import NucleusLayers
+@_spi(NucleusCompositor) package import NucleusLayers
+internal import enum NucleusTypes.LayerKind
+internal import struct NucleusTypes.Rect
 
 @MainActor
 open class View: Responder, Accessible, ~Sendable {
     public let id: ViewID
     public let accessibilityID: AccessibilityID
     public let uiContext: UIContext
-    package let semanticLayerKind: LayerKind
+    package let semanticLayerKind: NucleusLayers.LayerKind
     package var semanticBackdropMaterial: BackdropMaterial
     package weak var parentView: View?
     package weak var parentWindow: Window?

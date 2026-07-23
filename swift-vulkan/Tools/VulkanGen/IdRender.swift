@@ -2,14 +2,14 @@
 // arrays so the segment/case logic matches ASCII semantics exactly
 // (all Vulkan identifiers are ASCII).
 
-@inline(__always) func isLower(_ b: UInt8) -> Bool { b >= 0x61 && b <= 0x7A }
-@inline(__always) func isUpper(_ b: UInt8) -> Bool { b >= 0x41 && b <= 0x5A }
-@inline(__always) func isDigit(_ b: UInt8) -> Bool { b >= 0x30 && b <= 0x39 }
-@inline(__always) func toLower(_ b: UInt8) -> UInt8 { isUpper(b) ? b + 0x20 : b }
-@inline(__always) func toUpper(_ b: UInt8) -> UInt8 { isLower(b) ? b - 0x20 : b }
+func isLower(_ b: UInt8) -> Bool { b >= 0x61 && b <= 0x7A }
+func isUpper(_ b: UInt8) -> Bool { b >= 0x41 && b <= 0x5A }
+func isDigit(_ b: UInt8) -> Bool { b >= 0x30 && b <= 0x39 }
+func toLower(_ b: UInt8) -> UInt8 { isUpper(b) ? b + 0x20 : b }
+func toUpper(_ b: UInt8) -> UInt8 { isLower(b) ? b - 0x20 : b }
 
-@inline(__always) func bytes(_ s: String) -> [UInt8] { Array(s.utf8) }
-@inline(__always) func str(_ b: [UInt8]) -> String { String(decoding: b, as: UTF8.self) }
+func bytes(_ s: String) -> [UInt8] { Array(s.utf8) }
+func str(_ b: [UInt8]) -> String { String(decoding: b, as: UTF8.self) }
 
 func eqlIgnoreCase(_ a: ArraySlice<UInt8>, _ b: ArraySlice<UInt8>) -> Bool {
     if a.count != b.count { return false }

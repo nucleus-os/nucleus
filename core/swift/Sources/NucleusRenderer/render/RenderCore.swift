@@ -16,10 +16,10 @@
 // Graphite before dropping the borrowed Vulkan device/instance.
 
 import NucleusSkiaGraphiteBridge
-import VulkanC
-import Vulkan
+public import VulkanC
+public import Vulkan
 import Tracy
-import NucleusRenderModel
+public import NucleusRenderModel
 #if canImport(Glibc)
 import Glibc
 #elseif canImport(Android)

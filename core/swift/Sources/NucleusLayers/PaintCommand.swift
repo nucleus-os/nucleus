@@ -1,4 +1,4 @@
-import NucleusTypes
+public import NucleusTypes
 
 // `PaintCommandKind` and `PaintCommand` are `NucleusTypes`' own types. The
 // domain `PaintCommand` used to be a field-for-field copy whose `.wireValue`

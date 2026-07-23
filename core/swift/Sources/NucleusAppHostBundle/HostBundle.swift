@@ -1,6 +1,6 @@
-import NucleusLayers
-import NucleusAppHostProtocols
-import NucleusRenderModel
+public import NucleusLayers
+public import NucleusAppHostProtocols
+public import NucleusRenderModel
 
 /// One host runtime's concrete Swift resource and runtime-protocol graph. The
 /// compositor, shell, Android host, or fixture owns this value and passes its

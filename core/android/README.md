@@ -34,19 +34,15 @@ Build and verify the AAR plus signed debug smoke APK artifacts without launching
 ```
 
 By default the root Swift orchestrator asks Gradle to cross-compile the host and
-then verifies its ELF and JNI contract. The underlying native-copy step runs:
+then verifies its ELF and JNI contract. The underlying native step runs:
 
 ```sh
-source <monorepo-root>/core/tools/host-env.sh
-swift build --package-path <monorepo-root>/core/platform-android --swift-sdk <android-sdk-id> --static-swift-stdlib -c release
-<monorepo-root>/tools/nucleus android verify
+<monorepo-root>/tools/nucleus android native
 ```
 
-Override that when already inside a configured shell:
-
-```sh
-./gradlew :nucleus:assembleDebug -Pnucleus.nativeBuildCommand='<custom command>'
-```
+This keeps toolchain selection, SwiftPM invocation, and native verification in
+the workspace entry point. Gradle owns Android packaging and consumes the
+verified native products.
 
 The signed smoke APK is:
 

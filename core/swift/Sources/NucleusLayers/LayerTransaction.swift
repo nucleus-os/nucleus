@@ -1,4 +1,4 @@
-import NucleusTypes
+public import NucleusTypes
 
 public struct EncodedTransaction: Sendable {
     public var contextID: ContextID

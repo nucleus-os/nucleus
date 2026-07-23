@@ -1,4 +1,4 @@
-import NucleusTypes
+public import NucleusTypes
 
 /// Composition-time rounded-rect clip applied to a layer's subtree.
 /// Corresponds to the rect+per-corner-radii+local-transform shape used by Skia

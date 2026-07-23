@@ -6,7 +6,8 @@
 /// Per-output composition target. The renderer and damage walker are
 /// parameterized by this; each output derives its own from its Display.
 /// Mirrors `RenderTarget`.
-import NucleusRenderModel
+internal import NucleusRenderModel
+internal import struct NucleusTypes.Rect
 
 struct RenderTarget {
     var outputId: DisplayID

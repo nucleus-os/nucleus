@@ -1,4 +1,5 @@
 import NucleusCompositorServer
+import NucleusCompositorServerTypes
 import NucleusCompositorShell
 import NucleusCompositorOverlayScene
 import NucleusCompositorOverlayTypes
@@ -12,6 +13,7 @@ import NucleusTextBackend
 import NucleusCompositorRendererLinux
 import NucleusCompositorWaylandRuntime
 import NucleusCompositorWindowScene
+import NucleusLinuxSession
 import Glibc
 
 // Compositor bring-up + teardown, Swift-owned.

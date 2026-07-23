@@ -18,8 +18,8 @@ import WaylandServerC
 import NucleusRenderModel
 import NucleusTypes
 @_spi(NucleusCompositor) import NucleusLayers
-import NucleusCompositorServer
-import NucleusCompositorWindowManager
+internal import NucleusCompositorServer
+internal import NucleusCompositorWindowManager
 import WaylandServer
 import Glibc
 
@@ -139,17 +139,20 @@ final class RouterSurfaceSceneDriver {
                 importFailed(surface)
                 return
             }
+            // wl_shm keeps this mapping readable between begin_access and
+            // end_access. Convert the C pointer to a bounded borrow exactly
+            // once; the render service synchronously copies the bytes.
+            let pixels = unsafe Span<UInt8>(
+                _unsafeStart: data.assumingMemoryBound(to: UInt8.self),
+                count: boundedSourceByteCount)
             let newId = renderService.importShm(
-                RenderShmImport(
-                    previousIOSurfaceID: surface.renderIosurfaceId,
-                    width: width,
-                    height: height,
-                    drmFormat: Self.drmFormat(
-                        fromShm: wl_shm_buffer_get_format(shm)),
-                    stride: stride,
-                    pixels: UnsafeRawBufferPointer(
-                        start: data,
-                        count: boundedSourceByteCount)))
+                previousIOSurfaceID: surface.renderIosurfaceId,
+                width: width,
+                height: height,
+                drmFormat: Self.drmFormat(
+                    fromShm: wl_shm_buffer_get_format(shm)),
+                stride: stride,
+                pixels: pixels)
             guard newId != 0 else {
                 importFailed(surface)
                 return

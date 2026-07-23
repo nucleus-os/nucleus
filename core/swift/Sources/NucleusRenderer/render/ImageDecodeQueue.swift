@@ -1,9 +1,11 @@
 #if canImport(Glibc)
 import Glibc
-#else
+#elseif canImport(Android)
+import Android
+#elseif canImport(Darwin)
 import Darwin
 #endif
-import NucleusRenderModel
+package import NucleusRenderModel
 import NucleusSkiaGraphiteBridge
 import Tracy
 

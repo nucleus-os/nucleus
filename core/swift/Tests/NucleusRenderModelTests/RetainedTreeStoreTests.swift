@@ -37,6 +37,13 @@ import Testing
         #expect(store.snapshot().get(2)?.parent == 1, "ingest-child-parent")
         #expect(store.snapshot().get(2)?.model.content == .paint(PaintContentHandle(raw: 9)), "ingest-content")
 
+        // A handed-out value snapshot remains isolated from the live store even
+        // though the store now mutates its own dictionary values in place.
+        var isolatedSnapshot = store.snapshot()
+        isolatedSnapshot.layers[2]?.model.properties.position = Point2D(x: 90, y: 45)
+        #expect(isolatedSnapshot.get(2)?.model.properties.position == Point2D(x: 90, y: 45))
+        #expect(store.snapshot().get(2)?.model.properties.position == Point2D())
+
         // --- markPresented clears the dirty flag and every node's damage ---
         store.markPresented()
         #expect(!store.presentDirty, "presented-clean")

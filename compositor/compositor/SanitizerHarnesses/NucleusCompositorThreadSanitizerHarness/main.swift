@@ -2,6 +2,7 @@ import Dispatch
 import Glibc
 import NucleusCompositorRuntime
 import NucleusCompositorSignalC
+import NucleusCompositorWaylandRuntime
 import NucleusCompositorWaylandTestSupport
 
 private let nonblockingSocket: Int32 = 0o4000

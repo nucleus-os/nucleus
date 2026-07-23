@@ -3,8 +3,8 @@
 // Typed server dispatch for wp_presentation: a handler protocol (one method per request), the
 // request vtable + owner recovery + arg marshalling, and typed event senders.
 
-import WaylandServerC
-import WaylandServer
+public import WaylandServerC
+public import WaylandServer
 
 public protocol WpPresentationRequests: AnyObject {
     func destroy(_ resource: UnsafeMutablePointer<wl_resource>)
@@ -31,9 +31,9 @@ public enum WpPresentationServer {
         wp_presentation_send_clock_id(target, clk_id)
     }
 
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> WpPresentationRequests? {
+    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> (any WpPresentationRequests)? {
         guard let ud = wl_resource_get_user_data(res) else { return nil }
-        return Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? WpPresentationRequests
+        return Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any WpPresentationRequests
     }
 
     private static let destroy_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
@@ -42,6 +42,6 @@ public enum WpPresentationServer {
     }
     private static let feedback_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { client, res, surface, callback in
         guard let res, let client, let h = handler(res) else { return }
-        h.feedback(res, surface: surface, callback: WlNewId(client: client, id: callback, version: Swift.min(wl_resource_get_version(res), Int32(2)), interface: swift_wayland_iface_wp_presentation_feedback()))
+        h.feedback(res, surface: surface, callback: WlNewId(client: client, id: callback, version: Swift::min(wl_resource_get_version(res), Int32(2)), interface: swift_wayland_iface_wp_presentation_feedback()))
     }
 }

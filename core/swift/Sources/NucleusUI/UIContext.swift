@@ -1,4 +1,5 @@
-import NucleusLayers
+public import NucleusLayers
+internal import protocol NucleusAppHostProtocols.ContextIDAllocator
 
 /// Stable semantic identity for a `View`.
 ///

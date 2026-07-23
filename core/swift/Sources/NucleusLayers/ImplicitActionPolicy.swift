@@ -1,5 +1,5 @@
-import NucleusTypes
-import NucleusAppHostProtocols
+public import NucleusTypes
+public import NucleusAppHostProtocols
 
 public struct Settings: Sendable, Equatable {
     public var reduceMotion: Bool

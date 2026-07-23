@@ -9,8 +9,8 @@
 // is verifiable headless, which is the only way to assert the pixels.
 
 import NucleusSkiaGraphiteBridge
-import NucleusRenderModel
-import NucleusTypes
+internal import NucleusRenderModel
+internal import NucleusTypes
 
 enum PaintRasterizer {
 static func paintColor(_ rgba: Float4) -> nucleus.skia.Color {

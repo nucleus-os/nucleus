@@ -3,7 +3,7 @@
 // Typed client dispatch for wp_fractional_scale_v1: a handler protocol (one method per event), the
 // libwayland listener + owner recovery + arg marshalling, and an addListener that wires it.
 
-import WaylandClientC
+public import WaylandClientC
 
 public protocol WpFractionalScaleV1Events: AnyObject {
     func preferredScale(_ proxy: OpaquePointer, scale: UInt32)
@@ -24,8 +24,8 @@ public enum WpFractionalScaleV1Client {
         wp_fractional_scale_v1_add_listener(proxy, listener, Unmanaged.passUnretained(owner).toOpaque())
     }
 
-    private static func handler(_ data: UnsafeMutableRawPointer) -> WpFractionalScaleV1Events? {
-        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? WpFractionalScaleV1Events
+    private static func handler(_ data: UnsafeMutableRawPointer) -> (any WpFractionalScaleV1Events)? {
+        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? any WpFractionalScaleV1Events
     }
 
     private static let preferredScale_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, scale in

@@ -3,8 +3,8 @@
 // Typed server dispatch for ext_image_copy_capture_manager_v1: a handler protocol (one method per request), the
 // request vtable + owner recovery + arg marshalling, and typed event senders.
 
-import WaylandServerC
-import WaylandServer
+public import WaylandServerC
+public import WaylandServer
 
 public protocol ExtImageCopyCaptureManagerV1Requests: AnyObject {
     func createSession(_ resource: UnsafeMutablePointer<wl_resource>, session: WlNewId, source: UnsafeMutablePointer<wl_resource>?, options: UInt32)
@@ -29,18 +29,18 @@ public enum ExtImageCopyCaptureManagerV1Server {
         return UnsafeRawPointer(raw)
     }()
 
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> ExtImageCopyCaptureManagerV1Requests? {
+    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> (any ExtImageCopyCaptureManagerV1Requests)? {
         guard let ud = wl_resource_get_user_data(res) else { return nil }
-        return Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? ExtImageCopyCaptureManagerV1Requests
+        return Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any ExtImageCopyCaptureManagerV1Requests
     }
 
     private static let createSession_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { client, res, session, source, options in
         guard let res, let client, let h = handler(res) else { return }
-        h.createSession(res, session: WlNewId(client: client, id: session, version: Swift.min(wl_resource_get_version(res), Int32(1)), interface: swift_wayland_iface_ext_image_copy_capture_session_v1()), source: source, options: options)
+        h.createSession(res, session: WlNewId(client: client, id: session, version: Swift::min(wl_resource_get_version(res), Int32(1)), interface: swift_wayland_iface_ext_image_copy_capture_session_v1()), source: source, options: options)
     }
     private static let createPointerCursorSession_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UnsafeMutablePointer<wl_resource>?, UnsafeMutablePointer<wl_resource>?) -> Void = { client, res, session, source, pointer in
         guard let res, let client, let h = handler(res) else { return }
-        h.createPointerCursorSession(res, session: WlNewId(client: client, id: session, version: Swift.min(wl_resource_get_version(res), Int32(1)), interface: swift_wayland_iface_ext_image_copy_capture_cursor_session_v1()), source: source, pointer: pointer)
+        h.createPointerCursorSession(res, session: WlNewId(client: client, id: session, version: Swift::min(wl_resource_get_version(res), Int32(1)), interface: swift_wayland_iface_ext_image_copy_capture_cursor_session_v1()), source: source, pointer: pointer)
     }
     private static let destroy_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
         guard let res else { return }

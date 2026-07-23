@@ -6,7 +6,7 @@
 /// Stable per-output identity. Mirrors `Display.DisplayID` (`u64`).
 typealias DisplayID = UInt64
 
-import NucleusTypes
+internal import NucleusTypes
 
 typealias PhysicalRect = OutputPixelRect
 typealias LogicalRect = GlobalLogicalRect

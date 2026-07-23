@@ -1,4 +1,4 @@
-import NucleusUI
+public import NucleusUI
 
 /// Window-menu command tags reported back to compositor input policy.
 public enum WindowMenuVerb: Int, Sendable {

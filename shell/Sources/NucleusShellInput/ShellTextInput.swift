@@ -1,7 +1,7 @@
 import WaylandClientC
 import WaylandClientDispatch
-import NucleusShellWayland
-import NucleusUI
+public import NucleusShellWayland
+public import NucleusUI
 
 /// The shell's `zwp_text_input_v3` client, wired to NucleusUI's input-method seam.
 ///
@@ -16,7 +16,11 @@ import NucleusUI
 /// echoes back in `done`. Incoming edits are always applied; only outbound
 /// client state is deferred when the serial does not match the commit count.
 @MainActor
-public final class ShellTextInput: TextInputAdapter {
+@safe public final class ShellTextInput: TextInputAdapter {
+    // The Wayland proxy is owned by this object from successful construction
+    // through `close()`. All access stays on the main actor, the generated
+    // listener borrows `listener`, and the proxy is destroyed before that
+    // listener owner is released.
     private var textInput: OpaquePointer?
     /// The surface this text input is scoped to, set from `enter`.
     private var focusedSurface: UInt = 0
@@ -47,14 +51,16 @@ public final class ShellTextInput: TextInputAdapter {
     /// compositor offers no text-input manager, which is a normal configuration —
     /// direct key events still reach fields, only composition is unavailable.
     public init?(client: ShellWaylandClient, seat: OpaquePointer) {
-        guard let manager = client.proxy(.textInputManager) else { return nil }
-        guard let textInput = zwp_text_input_manager_v3_get_text_input(manager, seat) else {
+        guard let manager = unsafe client.proxy(.textInputManager) else { return nil }
+        guard let textInput = unsafe zwp_text_input_manager_v3_get_text_input(
+            manager, seat)
+        else {
             return nil
         }
-        self.textInput = textInput
+        unsafe self.textInput = textInput
         let listener = ShellTextInputListener(owner: self)
         self.listener = listener
-        _ = ZwpTextInputV3Client.addListener(textInput, owner: listener)
+        _ = unsafe ZwpTextInputV3Client.addListener(textInput, owner: listener)
     }
 
     isolated deinit {
@@ -64,16 +70,16 @@ public final class ShellTextInput: TextInputAdapter {
     /// Destroy the protocol object. Idempotent so host teardown and actor
     /// destruction may both call it.
     public func close() {
-        guard let textInput else { return }
+        guard let textInput = unsafe textInput else { return }
         if activeClient != nil, focusedSurface != 0 {
-            zwp_text_input_v3_disable(textInput)
+            unsafe zwp_text_input_v3_disable(textInput)
             commitState()
         }
         activeClient = nil
         focusedSurface = 0
         beginSessionEpoch()
-        self.textInput = nil
-        zwp_text_input_v3_destroy(textInput)
+        unsafe self.textInput = nil
+        unsafe zwp_text_input_v3_destroy(textInput)
         // The proxy borrows the listener through its C user_data. Release the
         // Swift owner only after destroying that proxy.
         listener = nil
@@ -87,16 +93,16 @@ public final class ShellTextInput: TextInputAdapter {
         }
         activeClient = client
         beginSessionEpoch()
-        guard let textInput, focusedSurface != 0 else { return }
-        zwp_text_input_v3_enable(textInput)
+        guard let textInput = unsafe textInput, focusedSurface != 0 else { return }
+        unsafe zwp_text_input_v3_enable(textInput)
         applyState(for: client, cause: .other)
         commitState()
     }
 
     public func textInputDidDeactivate(_ client: any TextInputClient) {
         guard activeClient === client else { return }
-        if let textInput, focusedSurface != 0 {
-            zwp_text_input_v3_disable(textInput)
+        if let textInput = unsafe textInput, focusedSurface != 0 {
+            unsafe zwp_text_input_v3_disable(textInput)
             commitState()
         }
         activeClient = nil
@@ -121,7 +127,7 @@ public final class ShellTextInput: TextInputAdapter {
         cause: TextInputChangeCause,
         surroundingContext: TextInputSurroundingContext? = nil
     ) {
-        guard let textInput else { return }
+        guard let textInput = unsafe textInput else { return }
         // A refusing client — a secure field — sends no surrounding text at all.
         // Sending an empty string instead would still tell the input method the
         // caret moved, which is more than a password field should reveal.
@@ -131,21 +137,21 @@ public final class ShellTextInput: TextInputAdapter {
             context)
         {
             wireContext.text.withCString { pointer in
-                zwp_text_input_v3_set_surrounding_text(
+                unsafe zwp_text_input_v3_set_surrounding_text(
                     textInput, pointer,
                     wireContext.cursor,
                     wireContext.anchor)
             }
         }
 
-        zwp_text_input_v3_set_text_change_cause(
+        unsafe zwp_text_input_v3_set_text_change_cause(
             textInput,
             cause == .inputMethod
                 ? UInt32(ZWP_TEXT_INPUT_V3_CHANGE_CAUSE_INPUT_METHOD.rawValue)
                 : UInt32(ZWP_TEXT_INPUT_V3_CHANGE_CAUSE_OTHER.rawValue)
         )
 
-        zwp_text_input_v3_set_content_type(
+        unsafe zwp_text_input_v3_set_content_type(
             textInput,
             ShellTextInput.contentHint(client.textInputHints),
             ShellTextInput.contentPurpose(client.textInputContentType))
@@ -157,7 +163,7 @@ public final class ShellTextInput: TextInputAdapter {
         else {
             return
         }
-        zwp_text_input_v3_set_cursor_rectangle(
+        unsafe zwp_text_input_v3_set_cursor_rectangle(
             textInput,
             rectangle.x,
             rectangle.y,
@@ -166,8 +172,8 @@ public final class ShellTextInput: TextInputAdapter {
     }
 
     private func commitState() {
-        guard let textInput else { return }
-        zwp_text_input_v3_commit(textInput)
+        guard let textInput = unsafe textInput else { return }
+        unsafe zwp_text_input_v3_commit(textInput)
         committedStateSerial &+= 1
         validDoneSerials.insert(committedStateSerial)
     }
@@ -180,8 +186,8 @@ public final class ShellTextInput: TextInputAdapter {
         beginSessionEpoch()
         // A client that already has a focused field re-enables for the new
         // surface; otherwise the input method stays disabled until one is.
-        if let activeClient, let textInput {
-            zwp_text_input_v3_enable(textInput)
+        if let activeClient, let textInput = unsafe textInput {
+            unsafe zwp_text_input_v3_enable(textInput)
             applyState(for: activeClient, cause: .other)
             commitState()
         }
@@ -189,8 +195,8 @@ public final class ShellTextInput: TextInputAdapter {
 
     fileprivate func handleLeave(surfaceID: UInt) {
         guard surfaceID == focusedSurface else { return }
-        if let textInput, activeClient != nil {
-            zwp_text_input_v3_disable(textInput)
+        if let textInput = unsafe textInput, activeClient != nil {
+            unsafe zwp_text_input_v3_disable(textInput)
             commitState()
         }
         focusedSurface = 0
@@ -524,12 +530,14 @@ final class ShellTextInputListener: ZwpTextInputV3Events {
     }
 
     nonisolated func enter(_ proxy: OpaquePointer, surface: OpaquePointer?) {
-        let surfaceID = surface.map { UInt(bitPattern: $0) } ?? 0
+        // Wayland guarantees event arguments remain valid for the callback.
+        // Convert the borrowed proxy identity to a scalar before actor handoff.
+        let surfaceID = unsafe surface.map { UInt(bitPattern: $0) } ?? 0
         MainActor.assumeIsolated { owner.handleEnter(surfaceID: surfaceID) }
     }
 
     nonisolated func leave(_ proxy: OpaquePointer, surface: OpaquePointer?) {
-        let surfaceID = surface.map { UInt(bitPattern: $0) } ?? 0
+        let surfaceID = unsafe surface.map { UInt(bitPattern: $0) } ?? 0
         MainActor.assumeIsolated { owner.handleLeave(surfaceID: surfaceID) }
     }
 
@@ -537,14 +545,16 @@ final class ShellTextInputListener: ZwpTextInputV3Events {
         _ proxy: OpaquePointer, text: UnsafePointer<CChar>?,
         cursor_begin: Int32, cursor_end: Int32
     ) {
-        let value = text.map { String(cString: $0) }
+        // Protocol strings are nullable, NUL-terminated UTF-8 C strings borrowed for
+        // this callback. Copy into Swift ownership before crossing actors.
+        let value = unsafe text.map { unsafe String(cString: $0) }
         MainActor.assumeIsolated {
             owner.handlePreedit(text: value, cursorBegin: cursor_begin, cursorEnd: cursor_end)
         }
     }
 
     nonisolated func commitString(_ proxy: OpaquePointer, text: UnsafePointer<CChar>?) {
-        let value = text.map { String(cString: $0) }
+        let value = unsafe text.map { unsafe String(cString: $0) }
         MainActor.assumeIsolated { owner.handleCommitString(value) }
     }
 
@@ -564,7 +574,7 @@ final class ShellTextInputListener: ZwpTextInputV3Events {
         MainActor.assumeIsolated { owner.handleAction(action) }
     }
     nonisolated func language(_ proxy: OpaquePointer, language: UnsafePointer<CChar>?) {
-        let value = language.map { String(cString: $0) }
+        let value = unsafe language.map { unsafe String(cString: $0) }
         MainActor.assumeIsolated { owner.handleLanguage(value) }
     }
     nonisolated func preeditHint(

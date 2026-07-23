@@ -1,4 +1,4 @@
-import Foundation
+import Foundation // FileHandle.standardError reports benchmark failures.
 import NucleusBenchmarkSupport
 import NucleusReactRuntimeCxx
 import NucleusUI

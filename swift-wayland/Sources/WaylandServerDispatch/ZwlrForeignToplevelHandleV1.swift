@@ -3,7 +3,7 @@
 // Typed server dispatch for zwlr_foreign_toplevel_handle_v1: a handler protocol (one method per request), the
 // request vtable + owner recovery + arg marshalling, and typed event senders.
 
-import WaylandServerC
+public import WaylandServerC
 import WaylandServer
 
 public protocol ZwlrForeignToplevelHandleV1Requests: AnyObject {
@@ -68,9 +68,9 @@ public enum ZwlrForeignToplevelHandleV1Server {
         zwlr_foreign_toplevel_handle_v1_send_parent(target, parent)
     }
 
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> ZwlrForeignToplevelHandleV1Requests? {
+    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> (any ZwlrForeignToplevelHandleV1Requests)? {
         guard let ud = wl_resource_get_user_data(res) else { return nil }
-        return Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? ZwlrForeignToplevelHandleV1Requests
+        return Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any ZwlrForeignToplevelHandleV1Requests
     }
 
     private static let setMaximized_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in

@@ -18,7 +18,7 @@ protocol KdeBlurDelegate: AnyObject {
 }
 
 final class OrgKdeKwinBlurManager {
-    weak var delegate: KdeBlurDelegate?
+    weak var delegate: (any KdeBlurDelegate)?
 
     func register(in router: NucleusWaylandRouter) {
         router.addGlobal(

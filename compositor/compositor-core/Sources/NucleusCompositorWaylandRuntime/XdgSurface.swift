@@ -3,6 +3,7 @@
 import WaylandServerC
 import WaylandServer
 import WaylandServerDispatch
+import NucleusRenderModel
 
 final class XdgSurface: WlSurfaceRole {
     unowned let shell: XdgShell

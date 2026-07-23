@@ -1,4 +1,4 @@
-import NucleusTypes
+public import NucleusTypes
 
 // Geometry value types are the generated wire types themselves: a wire
 // `nucleus_point`/`nucleus_size`/`nucleus_rect` already carries the exact

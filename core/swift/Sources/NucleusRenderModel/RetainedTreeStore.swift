@@ -84,7 +84,7 @@ public final class RetainedTreeStore {
         let result = TransactionApplier.apply(txn, to: &tree)
         guard case .success = result else { return result }
         for record in txn.animationsAdded {
-            guard var node = tree.layers[record.layerId] else {
+            guard let index = tree.layers.index(forKey: record.layerId) else {
                 if record.completionToken.raw != 0 {
                     terminalCompletionsAwaitingPresentation[
                         record.completionToken.raw
@@ -92,19 +92,21 @@ public final class RetainedTreeStore {
                 }
                 continue
             }
-            node.addAnimation(record, events: &lifecycleEvents)
-            node.seedAnimationStartValue(record)
-            node.damage.flags.property = true
-            tree.layers[record.layerId] = node
+            var node = MutableRef(&tree.layers.values[index])
+            node.value.addAnimation(record, events: &lifecycleEvents)
+            node.value.seedAnimationStartValue(record)
+            node.value.damage.flags.property = true
         }
         for removal in txn.animationsRemoved {
-            guard var node = tree.layers[removal.layerId] else { continue }
-            node.removeAnimation(
+            guard let index = tree.layers.index(forKey: removal.layerId) else {
+                continue
+            }
+            var node = MutableRef(&tree.layers.values[index])
+            node.value.removeAnimation(
                 for: removal.keyPath,
                 events: &lifecycleEvents
             )
-            node.damage.flags.property = true
-            tree.layers[removal.layerId] = node
+            node.value.damage.flags.property = true
         }
         animationEvents.append(contentsOf: lifecycleEvents)
         processAnimationLifecycle(lifecycleEvents)
@@ -179,18 +181,18 @@ public final class RetainedTreeStore {
 
         var anyActive = false
         let firstNewEvent = animationEvents.count
-        // Snapshot the keys first: iterating `tree.layers.keys` directly holds a
-        // second reference to the dictionary storage, so each in-loop subscript
-        // assignment would trigger a full copy-on-write — O(n²) per animated frame.
-        for id in Array(tree.layers.keys) {
-            guard var node = tree.layers[id], !node.animations.isEmpty else { continue }
-            let active = node.tickAnimations(
+        // Snapshot stable indices before taking exclusive MutableRefs. Iterating
+        // the dictionary directly would keep an overlapping read access alive;
+        // the index snapshot also avoids hashing every already-known key again.
+        for index in Array(tree.layers.indices) {
+            var node = MutableRef(&tree.layers.values[index])
+            guard !node.value.animations.isEmpty else { continue }
+            let active = node.value.tickAnimations(
                 previousPresentTimeS: previous, presentTimeS: presentTimeS,
                 events: &animationEvents)
             // The tick wrote presentation overrides / model values; mark the
             // node dirty so the frame loop re-composites it.
-            node.damage.flags.property = true
-            tree.layers[id] = node
+            node.value.damage.flags.property = true
             if active { anyActive = true }
         }
         processAnimationLifecycle(Array(animationEvents[firstNewEvent...]))
@@ -204,12 +206,12 @@ public final class RetainedTreeStore {
     /// the layer is absent. Mirrors `addAnimationToLayer` +
     /// `seedAnimationStartValueOnLayer`.
     public func addAnimation(layerId: UInt64, _ record: AnimationRecord, seedStartValue: Bool = true) {
-        guard var node = tree.layers[layerId] else { return }
+        guard let index = tree.layers.index(forKey: layerId) else { return }
+        var node = MutableRef(&tree.layers.values[index])
         let firstNewEvent = animationEvents.count
-        node.addAnimation(record, events: &animationEvents)
-        if seedStartValue { node.seedAnimationStartValue(record) }
-        node.damage.flags.property = true
-        tree.layers[layerId] = node
+        node.value.addAnimation(record, events: &animationEvents)
+        if seedStartValue { node.value.seedAnimationStartValue(record) }
+        node.value.damage.flags.property = true
         processAnimationLifecycle(Array(animationEvents[firstNewEvent...]))
         presentDirty = true
     }
@@ -242,9 +244,11 @@ public final class RetainedTreeStore {
     /// frame's demand reflects only work committed after this point.
     public func markPresented() {
         presentDirty = false
-        // Array() snapshot avoids the copy-on-write-per-iteration hazard (see `tick`).
-        for id in Array(tree.layers.keys) {
-            tree.layers[id]?.damage = DamageState()
+        // As in `tick`, snapshot indices before taking exclusive references and
+        // avoid re-hashing every retained layer just to clear frame-local state.
+        for index in Array(tree.layers.indices) {
+            var node = MutableRef(&tree.layers.values[index])
+            node.value.damage = DamageState()
         }
         let completions: [PresentationCompletionEvent] =
             terminalCompletionsAwaitingPresentation.keys.sorted().compactMap { token in

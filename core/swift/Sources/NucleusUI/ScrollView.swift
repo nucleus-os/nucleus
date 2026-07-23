@@ -1,3 +1,5 @@
+internal import NucleusLayers
+
 /// Which scroll indicators a scroll view shows.
 public struct ScrollIndicators: OptionSet, Sendable {
     public let rawValue: UInt

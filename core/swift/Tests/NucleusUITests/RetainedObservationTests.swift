@@ -13,6 +13,49 @@ private final class RetainedObservationModel {
 }
 
 @MainActor
+private final class ObservationUpdateLatch {
+    private(set) var firstUpdates = 0
+    private(set) var secondUpdates = 0
+    private var expectedUpdates: (first: Int, second: Int)?
+    private var continuation: CheckedContinuation<Void, Never>?
+
+    func recordFirstUpdate() {
+        firstUpdates += 1
+        resumeIfExpected()
+    }
+
+    func recordSecondUpdate() {
+        secondUpdates += 1
+        resumeIfExpected()
+    }
+
+    func wait(
+        forFirst first: Int,
+        second: Int,
+        performing mutation: @MainActor () -> Void
+    ) async {
+        precondition(continuation == nil)
+        expectedUpdates = (first, second)
+        await withCheckedContinuation { continuation in
+            self.continuation = continuation
+            mutation()
+            resumeIfExpected()
+        }
+    }
+
+    private func resumeIfExpected() {
+        guard let expectedUpdates,
+              firstUpdates == expectedUpdates.first,
+              secondUpdates == expectedUpdates.second,
+              let continuation
+        else { return }
+        self.expectedUpdates = nil
+        self.continuation = nil
+        continuation.resume()
+    }
+}
+
+@MainActor
 @Suite(.uiContext, .serialized)
 /// Release lifecycle gate. Live-token and exactly-once teardown counts are
 /// structural invariants, not wall-clock thresholds.
@@ -209,31 +252,32 @@ struct NucleusFoundationLifecycleStressTests {
         firstParent.addSubview(firstView)
         secondParent.addSubview(secondView)
         let model = RetainedObservationModel()
-        var firstUpdates = 0
-        var secondUpdates = 0
+        let updates = ObservationUpdateLatch()
 
         _ = firstView.observe(model) { view, model in
-            firstUpdates += 1
+            updates.recordFirstUpdate()
             view.isHidden = model.primary.isMultiple(of: 2)
         }
         _ = secondView.observe(model) { view, model in
-            secondUpdates += 1
+            updates.recordSecondUpdate()
             view.isHidden = model.primary.isMultiple(of: 2)
         }
 
-        model.primary = 1
-        await settleObservationBoundary()
-        #expect(firstUpdates == 2)
-        #expect(secondUpdates == 2)
+        await updates.wait(forFirst: 2, second: 2) {
+            model.primary = 1
+        }
+        #expect(updates.firstUpdates == 2)
+        #expect(updates.secondUpdates == 2)
         #expect(!firstView.isHidden)
         #expect(!secondView.isHidden)
 
         firstView.removeFromSuperview()
-        model.primary = 2
-        await settleObservationBoundary()
+        await updates.wait(forFirst: 2, second: 3) {
+            model.primary = 2
+        }
 
-        #expect(firstUpdates == 2)
-        #expect(secondUpdates == 3)
+        #expect(updates.firstUpdates == 2)
+        #expect(updates.secondUpdates == 3)
         #expect(!firstView.isHidden)
         #expect(secondView.isHidden)
         #expect(firstView.uiContext === firstContext)

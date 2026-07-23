@@ -1,5 +1,16 @@
+import NucleusAppHostBundle
+import NucleusLinuxAccessibility
+import NucleusLinuxDBus
+import NucleusLinuxEnvironment
+import NucleusLinuxReactor
+import NucleusShellAuth
+import NucleusShellPasteboard
+import NucleusShellRender
+import NucleusShellServices
+import NucleusShellWayland
+import NucleusUI
 import NucleusUIEmbedder
-import NucleusLinuxSession
+public import NucleusLinuxSession
 
 @MainActor
 extension ShellHost {

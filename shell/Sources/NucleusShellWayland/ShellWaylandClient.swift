@@ -7,8 +7,8 @@
 // and answers binds, the shell CONNECTS, enumerates the registry, and binds the globals it consumes.
 
 import WaylandClientC
-import WaylandClientDispatch
-import WaylandClient
+public import WaylandClientDispatch
+public import WaylandClient
 import WaylandProtocolsC  // links the shared marshalling tables
 #if canImport(Glibc)
 import Glibc

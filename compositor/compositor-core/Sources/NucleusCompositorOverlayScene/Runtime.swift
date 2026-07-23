@@ -1,10 +1,11 @@
 import Glibc
-import NucleusCompositorOverlay
-import NucleusCompositorOverlayTypes
-import NucleusCompositorServer
-import NucleusLayers
+public import NucleusCompositorOverlay
+public import NucleusCompositorOverlayTypes
+public import NucleusCompositorServer
+internal import struct NucleusCompositorServerTypes.WireLogicalRect
+public import NucleusLayers
 import NucleusRenderHost
-import NucleusUI
+public import NucleusUI
 import Tracy
 
 @MainActor
@@ -17,7 +18,7 @@ public protocol OverlayPublicationHost: AnyObject {
 @MainActor
 public protocol OverlaySceneHost: AnyObject {
     func frameUpdated(_ frame: FrameInfo)
-    func notificationAdded(_ notification: NotificationInfo)
+    func notificationAdded(_ notification: ShellOverlayNotificationInfo)
     func notificationDismissed(id: UInt32, reason: UInt32)
     func hotkeyVisibilitySet(visible: Bool)
     func inputDispatched(_ event: InputEvent) -> InputResult
@@ -106,28 +107,19 @@ public final class OverlaySceneRuntime: OverlaySceneHost {
     }
 
     public func frameUpdated(_ frame: FrameInfo) {
-        var event = overlayEvent(kind: ShellOverlayEventKind.frame.rawValue)
-        event.frame = frame
-        submit(event)
+        submit(.frame(ShellOverlayFrameInfo(frame)))
     }
 
-    public func notificationAdded(_ notification: NotificationInfo) {
-        var event = overlayEvent(kind: ShellOverlayEventKind.notification.rawValue)
-        event.notification = notification
-        submit(event)
+    public func notificationAdded(_ notification: ShellOverlayNotificationInfo) {
+        submit(.notification(notification))
     }
 
     public func notificationDismissed(id: UInt32, reason: UInt32) {
-        var event = overlayEvent(kind: ShellOverlayEventKind.dismissNotification.rawValue)
-        event.notificationId = id
-        event.closeReason = reason
-        submit(event)
+        submit(.dismissNotification(id: id, reason: reason == 0 ? 2 : reason))
     }
 
     public func hotkeyVisibilitySet(visible: Bool) {
-        var event = overlayEvent(kind: ShellOverlayEventKind.hotkeyVisibility.rawValue)
-        event.visible = visible
-        submit(event)
+        submit(.hotkeyVisibility(visible))
     }
 
     public func inputDispatched(_ event: InputEvent) -> InputResult {
@@ -185,59 +177,32 @@ public final class OverlaySceneRuntime: OverlaySceneHost {
             scale: Float(display.fractionalScale))
     }
 
-    private func submit(_ event: OverlayEvent) {
+    private func submit(_ event: ShellOverlayEvent) {
         Trace.zone("overlay.runtime.submit_event", color: Trace.Color.blue) {
-            Trace.plot("swift.overlay.runtime.event_kind", UInt64(event.kind.rawValue))
+            Trace.plot("swift.overlay.runtime.event_kind", event.metricValue)
             guard let controller else {
-                logShellOverlayRuntime(
-                    "dropping event kind=\(event.kind); scene unavailable")
+                logShellOverlayRuntime("dropping overlay event; scene unavailable")
                 return
             }
-            controller.submit(event: ShellOverlayEvent(event))
+            controller.submit(event: event)
         }
     }
 }
 
-private func emptyFrameInfo() -> FrameInfo {
-    .init(
-        outputWidth: 0,
-        outputHeight: 0,
-        devicePixelRatio: 1,
-        overlayRegionX: 0,
-        overlayRegionY: 0,
-        overlayRegionW: 0,
-        overlayRegionH: 0)
-}
-
-private func emptyStringView() -> StringView {
-    .init(ptr: nil, len: 0)
-}
-
-private func emptyNotificationInfo() -> NotificationInfo {
-    .init(
-        id: 0,
-        appName: emptyStringView(),
-        summary: emptyStringView(),
-        body: emptyStringView(),
-        thumbnailHandle: 0,
-        showThumbnail: false,
-        expireTimeoutMs: 0)
-}
-
-private func overlayEvent(kind: UInt32) -> OverlayEvent {
-    .init(
-        kind: EventKind(rawValue: kind) ?? .frame,
-        reserved: 0,
-        frame: emptyFrameInfo(),
-        notification: emptyNotificationInfo(),
-        notificationId: 0,
-        closeReason: 0,
-        visible: false)
+private extension ShellOverlayEvent {
+    var metricValue: UInt64 {
+        switch self {
+        case .frame: 1
+        case .notification: 2
+        case .dismissNotification: 3
+        case .hotkeyVisibility: 5
+        }
+    }
 }
 
 private func logShellOverlayRuntime(_ message: String) {
     let line = "shell-overlay-runtime: \(message)\n"
     line.withCString { pointer in
-        _ = write(STDERR_FILENO, pointer, strlen(pointer))
+        _ = unsafe write(STDERR_FILENO, pointer, strlen(pointer))
     }
 }

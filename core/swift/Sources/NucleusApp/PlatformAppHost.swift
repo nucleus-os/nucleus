@@ -9,7 +9,7 @@
 // seams (the app-host bundle, `CompositorShellPolicy`, `CompositorRenderService`): the core owns
 // the protocol; the platform side conforms and registers.
 
-import NucleusLayers
+public import NucleusLayers
 import NucleusUI
 
 #if canImport(Glibc)
@@ -220,5 +220,9 @@ final class SceneMaterializer {
 @MainActor
 func writeStderr(_ message: String) {
     let bytes = Array(message.utf8)
-    _ = bytes.withUnsafeBytes { write(2, $0.baseAddress, $0.count) }
+    _ = bytes.withUnsafeBytes { buffer in
+        // `buffer` is initialized for exactly `count` bytes and its pointer is
+        // borrowed only for this synchronous POSIX write.
+        unsafe write(STDERR_FILENO, buffer.baseAddress, buffer.count)
+    }
 }

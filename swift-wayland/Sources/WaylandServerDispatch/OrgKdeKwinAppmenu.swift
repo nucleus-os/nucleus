@@ -3,7 +3,7 @@
 // Typed server dispatch for org_kde_kwin_appmenu: a handler protocol (one method per request), the
 // request vtable + owner recovery + arg marshalling, and typed event senders.
 
-import WaylandServerC
+public import WaylandServerC
 import WaylandServer
 
 public protocol OrgKdeKwinAppmenuRequests: AnyObject {
@@ -27,9 +27,9 @@ public enum OrgKdeKwinAppmenuServer {
         return UnsafeRawPointer(raw)
     }()
 
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> OrgKdeKwinAppmenuRequests? {
+    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> (any OrgKdeKwinAppmenuRequests)? {
         guard let ud = wl_resource_get_user_data(res) else { return nil }
-        return Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? OrgKdeKwinAppmenuRequests
+        return Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any OrgKdeKwinAppmenuRequests
     }
 
     private static let setAddress_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafePointer<CChar>?, UnsafePointer<CChar>?) -> Void = { _, res, service_name, object_path in

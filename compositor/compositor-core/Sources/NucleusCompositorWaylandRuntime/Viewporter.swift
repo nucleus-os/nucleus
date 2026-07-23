@@ -11,6 +11,7 @@
 import WaylandServerC
 import WaylandServer
 import WaylandServerDispatch
+import NucleusTypes
 
 final class WpViewporter {
     func register(in router: NucleusWaylandRouter) {

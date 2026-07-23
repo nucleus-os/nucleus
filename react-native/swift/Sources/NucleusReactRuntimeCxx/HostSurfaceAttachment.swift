@@ -1,6 +1,6 @@
-import NucleusUI
+public import NucleusUI
 import NucleusUIEmbedder
-import NucleusLayers
+public import NucleusLayers
 
 extension Host {
     @MainActor
@@ -44,7 +44,7 @@ extension Host {
         // initial registration flush rethrows to this call site. A later batch
         // has no synchronous caller, so its failure is retained on `Host` and
         // delivered through the host's diagnostic callback.
-        var thrownError: Error?
+        var thrownError: (any Error)?
         var initialAttachInProgress = true
         surfaceContext.onMaterialize = { [weak self] registry in
             guard let self else { return }

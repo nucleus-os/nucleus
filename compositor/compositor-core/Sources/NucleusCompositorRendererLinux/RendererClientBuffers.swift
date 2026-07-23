@@ -1,5 +1,5 @@
 import NucleusCompositorDrmC
-@_spi(NucleusPlatform) import NucleusRenderer
+@_spi(NucleusPlatform) public import NucleusRenderer
 import Glibc
 
 @MainActor
@@ -133,7 +133,7 @@ extension RendererRuntime {
     @discardableResult
     public func registerSurfaceShm(
         iosurfaceID: UInt64,
-        pixels: UnsafeRawBufferPointer,
+        pixels: Span<UInt8>,
         width: UInt32,
         height: UInt32,
         drmFormat: UInt32,

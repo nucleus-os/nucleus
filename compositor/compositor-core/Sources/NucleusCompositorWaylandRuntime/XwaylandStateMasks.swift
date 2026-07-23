@@ -8,7 +8,7 @@
 // AtomId→bit tail, mapped against the real model types (no ABI mirror).
 
 import NucleusCompositorXcbC
-import NucleusCompositorServer
+internal import NucleusCompositorServer
 
 extension AtomId {
     /// The _NET_WM_STATE bit this atom denotes, or nil if it isn't a state atom.

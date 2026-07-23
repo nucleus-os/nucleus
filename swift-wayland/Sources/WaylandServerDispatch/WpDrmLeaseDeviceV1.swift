@@ -3,8 +3,8 @@
 // Typed server dispatch for wp_drm_lease_device_v1: a handler protocol (one method per request), the
 // request vtable + owner recovery + arg marshalling, and typed event senders.
 
-import WaylandServerC
-import WaylandServer
+public import WaylandServerC
+public import WaylandServer
 
 public protocol WpDrmLeaseDeviceV1Requests: AnyObject {
     func createLeaseRequest(_ resource: UnsafeMutablePointer<wl_resource>, id: WlNewId)
@@ -36,14 +36,14 @@ public enum WpDrmLeaseDeviceV1Server {
         wp_drm_lease_device_v1_send_released(target)
     }
 
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> WpDrmLeaseDeviceV1Requests? {
+    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> (any WpDrmLeaseDeviceV1Requests)? {
         guard let ud = wl_resource_get_user_data(res) else { return nil }
-        return Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? WpDrmLeaseDeviceV1Requests
+        return Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any WpDrmLeaseDeviceV1Requests
     }
 
     private static let createLeaseRequest_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { client, res, id in
         guard let res, let client, let h = handler(res) else { return }
-        h.createLeaseRequest(res, id: WlNewId(client: client, id: id, version: Swift.min(wl_resource_get_version(res), Int32(1)), interface: swift_wayland_iface_wp_drm_lease_request_v1()))
+        h.createLeaseRequest(res, id: WlNewId(client: client, id: id, version: Swift::min(wl_resource_get_version(res), Int32(1)), interface: swift_wayland_iface_wp_drm_lease_request_v1()))
     }
     private static let release_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
         guard let res, let h = handler(res) else { return }

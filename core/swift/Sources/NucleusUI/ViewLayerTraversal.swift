@@ -1,4 +1,6 @@
-@_spi(NucleusCompositor) import NucleusLayers
+@_spi(NucleusCompositor) internal import NucleusLayers
+internal import enum NucleusTypes.AnimationKeyPath
+internal import struct NucleusTypes.Rect
 
 extension ViewLayerPublisher {
     struct SnapshotRect: Sendable, Equatable {

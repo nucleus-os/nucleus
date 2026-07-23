@@ -1,4 +1,4 @@
-import NucleusTypes
+package import NucleusTypes
 
 public struct ImageHandle: Hashable, Sendable {
     package let rawValue: NucleusTypes.ImageHandle

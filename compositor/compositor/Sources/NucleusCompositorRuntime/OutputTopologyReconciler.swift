@@ -1,7 +1,9 @@
 import NucleusCompositorRenderRuntime
+import NucleusCompositorRendererLinux
 import NucleusCompositorOverlayScene
 import NucleusCompositorOverlayTypes
 import NucleusCompositorServer
+import NucleusCompositorServerTypes
 import NucleusCompositorWaylandRuntime
 import NucleusCompositorWindowManager
 

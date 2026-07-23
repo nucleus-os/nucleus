@@ -9,7 +9,8 @@
 // presentation tick across every surface.
 
 import WaylandServerC
-import NucleusCompositorWindowManager
+internal import NucleusCompositorServer
+internal import NucleusCompositorWindowManager
 import WaylandServer
 import WaylandServerDispatch
 
@@ -85,7 +86,7 @@ final class WlCompositor {
     }
 
     /// Scene/render seam; surfaces report commits and destruction here.
-    weak var sceneDelegate: SurfaceSceneDelegate?
+    weak var sceneDelegate: (any SurfaceSceneDelegate)?
     /// Buffer-scale hint sent to each surface on creation (v6+). The per-output
     /// resolution is `updateEnteredOutputs`, which recomputes preferred scale from
     /// the outputs a surface currently overlaps; this is the pre-membership default.

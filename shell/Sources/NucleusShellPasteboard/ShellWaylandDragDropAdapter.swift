@@ -1,10 +1,10 @@
-import Foundation
+import FoundationEssentials
 import Glibc
-import NucleusShellLoop
-import NucleusShellWayland
-import NucleusUI
+public import NucleusShellLoop
+public import NucleusShellWayland
+public import NucleusUI
 import WaylandClientC
-import WaylandClientDispatch
+public import WaylandClientDispatch
 
 /// The `wl_data_device` projection of NucleusUI's retained drag lifecycle.
 ///

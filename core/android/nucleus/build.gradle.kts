@@ -14,8 +14,9 @@ plugins {
     alias(libs.plugins.androidLibrary)
 }
 
-val repoRoot = layout.projectDirectory.dir("../..")
-val repoRootFile = repoRoot.asFile
+val coreRoot = layout.projectDirectory.dir("../..")
+val coreRootFile = coreRoot.asFile
+val workspaceRootFile = coreRoot.dir("..").asFile
 val androidSdkRoot = providers.gradleProperty("nucleus.androidSdk")
     .orElse(providers.environmentVariable("ANDROID_HOME"))
     .orElse(providers.environmentVariable("ANDROID_SDK_ROOT"))
@@ -26,19 +27,11 @@ val ndkHome = providers.gradleProperty("nucleus.androidNdk")
     .orElse(androidSdkRoot.map { "$it/ndk/${libs.versions.ndk.get()}" })
 val nucleusSourceId = providers.gradleProperty("nucleus.swiftSourceId").orElse("release-6.4.x")
 // Cross-compile libnucleus-android.so via SwiftPM (the platform-android package)
-// using the registered Swift Android SDK, then verify the JNI export contract.
-// Replaces the deleted `zig build nucleus-android`. Override with -Pnucleus.nativeBuildCommand.
-val nativeBuildCommand = providers.gradleProperty("nucleus.nativeBuildCommand")
-    .orElse(nucleusSourceId.map { sourceId ->
-        val inner = "swift build --package-path platform-android " +
-            "--swift-sdk swift-${sourceId}_android --static-swift-stdlib -c release && " +
-            "${shellQuote(repoRootFile.resolve("tools/nucleus").absolutePath)} android verify"
-        "bash -c ${shellQuote("source ${shellQuote(repoRootFile.resolve("core/tools/host-env.sh").absolutePath)} && $inner")}"
-    })
+// using the paired Swift platform generation selected by the workspace entry
+// point, then verify the JNI export contract.
+val nucleusCommand = workspaceRootFile.resolve("tools/nucleus")
 val nucleusMinSdkVersion = providers.gradleProperty("nucleus.minSdk").orElse(libs.versions.minSdk)
 val nucleusTargetSdkVersion = providers.gradleProperty("nucleus.targetSdk").orElse(libs.versions.targetSdkApi)
-
-fun shellQuote(value: String): String = "'" + value.replace("'", "'\\''") + "'"
 
 fun String.capitalizedTaskName(): String =
     replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
@@ -147,8 +140,8 @@ extensions.configure<com.android.build.api.dsl.LibraryExtension>("android") {
     }
 
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_11
-        targetCompatibility = JavaVersion.VERSION_11
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
 
     sourceSets {
@@ -157,9 +150,9 @@ extensions.configure<com.android.build.api.dsl.LibraryExtension>("android") {
             // jextract-generated bindings (AndroidHost.java) produced by the native
             // build. The generated directory is populated by buildNucleusAndroidNative,
             // which the compile tasks depend on (wired below).
-            java.srcDir(repoRoot.dir("../third-party/swift-java/SwiftKitCore/src/main/java"))
+            java.srcDir(coreRoot.dir("../third-party/swift-java/SwiftKitCore/src/main/java"))
             java.srcDir(
-                repoRoot.dir(
+                coreRoot.dir(
                     "platform-android/.build/plugins/outputs/platform-android/" +
                         "NucleusAndroidJNI/destination/JExtractSwiftPlugin/src/generated/java"
                 )
@@ -171,10 +164,9 @@ extensions.configure<com.android.build.api.dsl.LibraryExtension>("android") {
 val buildNucleusAndroidNative = tasks.register<Exec>("buildNucleusAndroidNative") {
     group = "build"
     description = "Build libnucleus-android.so through the SwiftPM platform-android package."
-    workingDir(repoRootFile)
-    doFirst {
-        commandLine("sh", "-lc", nativeBuildCommand.get())
-    }
+    workingDir(coreRootFile)
+    commandLine(nucleusCommand, "android", "native")
+    environment("NUCLEUS_SWIFT_SOURCE_ID", nucleusSourceId.get())
 }
 
 val ndkCxxShared = ndkHome.map {
@@ -183,7 +175,13 @@ val ndkCxxShared = ndkHome.map {
 
 // The jextract-generated AndroidHost.java is produced by the native build, so all
 // Java/Kotlin compilation must run after it.
-tasks.withType<JavaCompile>().configureEach { dependsOn(buildNucleusAndroidNative) }
+tasks.withType<JavaCompile>().configureEach {
+    dependsOn(buildNucleusAndroidNative)
+    // These optional JVM annotations depend on jdk.jfr, which is not an
+    // Android API. The generated AndroidHost surface uses neither type.
+    exclude("**/annotations/ThreadSafe.java")
+    exclude("**/annotations/Unsigned.java")
+}
 tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
     dependsOn(buildNucleusAndroidNative)
 }
@@ -194,8 +192,8 @@ extensions.configure<com.android.build.api.variant.LibraryAndroidComponentsExten
         val copyJniLibs = tasks.register<CopyNucleusJniLibs>("copy${variantTaskName}JniLibs") {
             dependsOn(buildNucleusAndroidNative)
             val productDir = "platform-android/.build/out/Products/Release-android-aarch64"
-            nucleusLibrary.set(repoRoot.file("$productDir/libnucleus-android.so"))
-            swiftJavaLibrary.set(repoRoot.file("$productDir/libSwiftJava.so"))
+            nucleusLibrary.set(coreRoot.file("$productDir/libnucleus-android.so"))
+            swiftJavaLibrary.set(coreRoot.file("$productDir/libSwiftJava.so"))
             cxxRuntime.set(layout.file(ndkCxxShared.map { file(it) }))
             outputDirectory.set(layout.buildDirectory.dir("generated/jniLibs/${variant.name}"))
         }

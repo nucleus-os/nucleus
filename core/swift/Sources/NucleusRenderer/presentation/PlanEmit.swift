@@ -5,7 +5,8 @@
 // The live emit walker calls these geometry helpers directly.
 
 /// Where a layer's texture content comes from. Mirrors `TextureContentKind`.
-import NucleusRenderModel
+internal import NucleusRenderModel
+internal import struct NucleusTypes.Rect
 
 enum TextureContentKind {
     case compositorExternal

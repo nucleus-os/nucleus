@@ -9,7 +9,7 @@
 // bug.
 
 import WaylandClientC
-import WaylandClientDispatch
+public import WaylandClientDispatch
 
 @MainActor
 public final class SessionLockSurface {

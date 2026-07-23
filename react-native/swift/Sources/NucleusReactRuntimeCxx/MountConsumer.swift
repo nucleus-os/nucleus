@@ -1,5 +1,5 @@
 import CxxStdlib
-import NucleusUI
+public import NucleusUI
 import NucleusUIEmbedder
 import NucleusReactRuntimeCxxBridge
 import Synchronization

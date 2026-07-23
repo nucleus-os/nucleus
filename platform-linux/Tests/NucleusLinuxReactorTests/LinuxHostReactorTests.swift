@@ -290,6 +290,30 @@ struct LinuxHostReactorTests {
     }
 
     @Test
+    func cancellationResumesAnOutstandingWaitExactlyOnce() async throws {
+        let reactor = try LinuxHostReactor(queueDepth: 16)
+        let waiter = Task { @MainActor in
+            try await reactor.wait(
+                interests: [],
+                timeoutNanoseconds: nil)
+        }
+        await Task.yield()
+
+        waiter.cancel()
+        do {
+            _ = try await waiter.value
+            Issue.record("cancelled reactor wait unexpectedly produced a batch")
+        } catch let error as LinuxHostReactorError {
+            #expect(error == .cancelled)
+        } catch {
+            Issue.record("unexpected reactor error: \(error)")
+        }
+
+        reactor.wake()
+        await reactor.shutdown()
+    }
+
+    @Test
     func wakeAfterShutdownCannotSignalAReusedDescriptor() async throws {
         let reactor = try LinuxHostReactor(queueDepth: 16)
         await reactor.shutdown()

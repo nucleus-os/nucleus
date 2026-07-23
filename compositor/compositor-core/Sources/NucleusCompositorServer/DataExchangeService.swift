@@ -1,5 +1,3 @@
-import Foundation
-
 public struct DataSourceHandle: RawRepresentable, Hashable, Sendable {
     public var rawValue: UInt64
 
@@ -233,7 +231,7 @@ public final class DataExchangeService {
     private var nextHandle: UInt64 = 1
     private struct SourceEvents { let onSend: (String, Int32) -> Void; let onCancel: () -> Void }
     private var sourceEvents: [DataSourceHandle: SourceEvents] = [:]
-    private struct WeakSelectionObserver { weak var value: DataSelectionObserver? }
+    private struct WeakSelectionObserver { weak var value: (any DataSelectionObserver)? }
     private var selectionObservers: [WeakSelectionObserver] = []
 
     public init() {}
@@ -277,12 +275,12 @@ public final class DataExchangeService {
         sourceEvents[handle]?.onCancel()
     }
 
-    public func addSelectionObserver(_ observer: DataSelectionObserver) {
+    public func addSelectionObserver(_ observer: any DataSelectionObserver) {
         selectionObservers.removeAll { $0.value == nil || $0.value === observer }
         selectionObservers.append(WeakSelectionObserver(value: observer))
     }
 
-    public func removeSelectionObserver(_ observer: DataSelectionObserver) {
+    public func removeSelectionObserver(_ observer: any DataSelectionObserver) {
         selectionObservers.removeAll { $0.value == nil || $0.value === observer }
     }
 

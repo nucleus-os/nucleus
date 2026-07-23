@@ -2,7 +2,7 @@ import NucleusSkiaGraphiteBridge
 import VulkanC
 import Vulkan
 import Tracy
-import NucleusRenderModel
+internal import NucleusRenderModel
 #if canImport(Glibc)
 import Glibc
 #elseif canImport(Android)
@@ -189,7 +189,7 @@ extension RenderCore {
     /// ready and has pending damage, acquire the image to record into, record the
     /// retained tree, and present. Returns true if any output presented this pass.
     @discardableResult
-    public func renderReady(backend: PresentationBackend) -> Bool {
+    public func renderReady(backend: any PresentationBackend) -> Bool {
         guard frameDriver != nil else { return false }
         // Client request dispatch only copies/converts SHM. Materialize the latest
         // generation per surface only when some output can consume a frame; while a

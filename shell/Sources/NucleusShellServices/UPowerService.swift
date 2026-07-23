@@ -1,4 +1,4 @@
-import NucleusLinuxDBus
+public import NucleusLinuxDBus
 
 /// What UPower reports a battery is doing. Values match
 /// `org.freedesktop.UPower.Device.State`.

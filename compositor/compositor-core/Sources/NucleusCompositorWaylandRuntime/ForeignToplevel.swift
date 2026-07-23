@@ -20,7 +20,7 @@
 // destroyed handle self-clears from the projection with no main-actor work in deinit.
 
 import WaylandServerC
-import NucleusCompositorServer
+internal import NucleusCompositorServer
 import WaylandServer
 import WaylandServerDispatch
 
@@ -38,7 +38,7 @@ protocol ForeignToplevelActions: AnyObject {
 
 @MainActor
 final class ZwlrForeignToplevelManager {
-    weak var actions: ForeignToplevelActions?
+    weak var actions: (any ForeignToplevelActions)?
     /// Resolves a client's bound wl_output for a display id (output_enter/leave).
     private unowned let compositor: WlCompositor
     fileprivate unowned let server: NucleusCompositorServer
@@ -61,7 +61,7 @@ final class ZwlrForeignToplevelManager {
         compositor.output(id: displayID)?.resources(forClient: client).first
     }
 
-    fileprivate func runActions(_ body: (ForeignToplevelActions) -> Void) {
+    fileprivate func runActions(_ body: (any ForeignToplevelActions) -> Void) {
         if let actions { body(actions) }
     }
 
@@ -311,7 +311,7 @@ final class ForeignToplevelHandle {
     /// Re-enter the compositor main actor and run a verb against the action delegate.
     /// The generated dispatch is nonisolated but the router only drives it on the main
     /// actor, so `assumeIsolated` reasserts that.
-    private nonisolated func act(_ body: @escaping @MainActor (ForeignToplevelActions, UInt64) -> Void) {
+    private nonisolated func act(_ body: @escaping @MainActor (any ForeignToplevelActions, UInt64) -> Void) {
         MainActor.assumeIsolated {
             self.manager.runActions { body($0, self.windowID) }
         }
@@ -321,7 +321,7 @@ final class ForeignToplevelHandle {
         requiring seat: UnsafeMutablePointer<wl_resource>?,
         requestResource: UnsafeMutablePointer<wl_resource>,
         _ body: @escaping @MainActor (
-            ForeignToplevelActions, UInt64
+            any ForeignToplevelActions, UInt64
         ) -> Void
     ) {
         let seatAddress = seat.map(UInt.init(bitPattern:)) ?? 0

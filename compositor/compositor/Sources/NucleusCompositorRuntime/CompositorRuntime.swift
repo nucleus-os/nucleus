@@ -1,4 +1,5 @@
 import NucleusCompositorServer
+import NucleusCompositorServerTypes
 import NucleusCompositorShell
 import NucleusCompositorRenderRuntime
 import NucleusCompositorRenderSession

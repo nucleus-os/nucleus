@@ -14,7 +14,7 @@ public final class DefaultTextLayoutHandler: TextLayoutManagerHandler, Sendable 
 
         let hasFiniteMaxWidth = request.maximumWidth > 0
         let measuredWidth = hasFiniteMaxWidth
-            ? Swift.min(metrics.maxIntrinsicWidth, request.maximumWidth)
+            ? Swift::min(metrics.maxIntrinsicWidth, request.maximumWidth)
             : metrics.maxIntrinsicWidth
         return nucleus.react.TextMeasureResult(
             width: Swift.max(0, measuredWidth),

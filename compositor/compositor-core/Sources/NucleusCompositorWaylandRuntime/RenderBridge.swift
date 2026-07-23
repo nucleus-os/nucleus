@@ -10,7 +10,8 @@
 // retains only compositor-owned output intersection, redraw, and screencopy
 // parameter policy.
 
-import NucleusCompositorServer
+internal import NucleusCompositorServer
+import NucleusCompositorServerTypes
 
 @MainActor
 enum RenderBridge {

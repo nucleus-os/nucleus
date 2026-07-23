@@ -110,7 +110,7 @@ final class XdgShell {
         init(_ toplevel: XdgToplevel) { self.toplevel = toplevel }
     }
 
-    weak var delegate: XdgShellDelegate?
+    weak var delegate: (any XdgShellDelegate)?
     private var display: OpaquePointer?
     private var popupStacks: [UInt: [WeakPopup]] = [:]
     private var toplevels: [WeakToplevel] = []

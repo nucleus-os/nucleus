@@ -3,8 +3,8 @@
 // Typed server dispatch for wp_color_manager_v1: a handler protocol (one method per request), the
 // request vtable + owner recovery + arg marshalling, and typed event senders.
 
-import WaylandServerC
-import WaylandServer
+public import WaylandServerC
+public import WaylandServer
 
 public protocol WpColorManagerV1Requests: AnyObject {
     func destroy(_ resource: UnsafeMutablePointer<wl_resource>)
@@ -55,9 +55,9 @@ public enum WpColorManagerV1Server {
         wp_color_manager_v1_send_done(target)
     }
 
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> WpColorManagerV1Requests? {
+    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> (any WpColorManagerV1Requests)? {
         guard let ud = wl_resource_get_user_data(res) else { return nil }
-        return Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? WpColorManagerV1Requests
+        return Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any WpColorManagerV1Requests
     }
 
     private static let destroy_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
@@ -66,30 +66,30 @@ public enum WpColorManagerV1Server {
     }
     private static let getOutput_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UnsafeMutablePointer<wl_resource>?) -> Void = { client, res, id, output in
         guard let res, let client, let h = handler(res) else { return }
-        h.getOutput(res, id: WlNewId(client: client, id: id, version: Swift.min(wl_resource_get_version(res), Int32(2)), interface: swift_wayland_iface_wp_color_management_output_v1()), output: output)
+        h.getOutput(res, id: WlNewId(client: client, id: id, version: Swift::min(wl_resource_get_version(res), Int32(2)), interface: swift_wayland_iface_wp_color_management_output_v1()), output: output)
     }
     private static let getSurface_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UnsafeMutablePointer<wl_resource>?) -> Void = { client, res, id, surface in
         guard let res, let client, let h = handler(res) else { return }
-        h.getSurface(res, id: WlNewId(client: client, id: id, version: Swift.min(wl_resource_get_version(res), Int32(2)), interface: swift_wayland_iface_wp_color_management_surface_v1()), surface: surface)
+        h.getSurface(res, id: WlNewId(client: client, id: id, version: Swift::min(wl_resource_get_version(res), Int32(2)), interface: swift_wayland_iface_wp_color_management_surface_v1()), surface: surface)
     }
     private static let getSurfaceFeedback_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UnsafeMutablePointer<wl_resource>?) -> Void = { client, res, id, surface in
         guard let res, let client, let h = handler(res) else { return }
-        h.getSurfaceFeedback(res, id: WlNewId(client: client, id: id, version: Swift.min(wl_resource_get_version(res), Int32(2)), interface: swift_wayland_iface_wp_color_management_surface_feedback_v1()), surface: surface)
+        h.getSurfaceFeedback(res, id: WlNewId(client: client, id: id, version: Swift::min(wl_resource_get_version(res), Int32(2)), interface: swift_wayland_iface_wp_color_management_surface_feedback_v1()), surface: surface)
     }
     private static let createIccCreator_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { client, res, obj in
         guard let res, let client, let h = handler(res) else { return }
-        h.createIccCreator(res, obj: WlNewId(client: client, id: obj, version: Swift.min(wl_resource_get_version(res), Int32(2)), interface: swift_wayland_iface_wp_image_description_creator_icc_v1()))
+        h.createIccCreator(res, obj: WlNewId(client: client, id: obj, version: Swift::min(wl_resource_get_version(res), Int32(2)), interface: swift_wayland_iface_wp_image_description_creator_icc_v1()))
     }
     private static let createParametricCreator_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { client, res, obj in
         guard let res, let client, let h = handler(res) else { return }
-        h.createParametricCreator(res, obj: WlNewId(client: client, id: obj, version: Swift.min(wl_resource_get_version(res), Int32(2)), interface: swift_wayland_iface_wp_image_description_creator_params_v1()))
+        h.createParametricCreator(res, obj: WlNewId(client: client, id: obj, version: Swift::min(wl_resource_get_version(res), Int32(2)), interface: swift_wayland_iface_wp_image_description_creator_params_v1()))
     }
     private static let createWindowsScrgb_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { client, res, image_description in
         guard let res, let client, let h = handler(res) else { return }
-        h.createWindowsScrgb(res, image_description: WlNewId(client: client, id: image_description, version: Swift.min(wl_resource_get_version(res), Int32(2)), interface: swift_wayland_iface_wp_image_description_v1()))
+        h.createWindowsScrgb(res, image_description: WlNewId(client: client, id: image_description, version: Swift::min(wl_resource_get_version(res), Int32(2)), interface: swift_wayland_iface_wp_image_description_v1()))
     }
     private static let getImageDescription_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UnsafeMutablePointer<wl_resource>?) -> Void = { client, res, image_description, reference in
         guard let res, let client, let h = handler(res) else { return }
-        h.getImageDescription(res, image_description: WlNewId(client: client, id: image_description, version: Swift.min(wl_resource_get_version(res), Int32(2)), interface: swift_wayland_iface_wp_image_description_v1()), reference: reference)
+        h.getImageDescription(res, image_description: WlNewId(client: client, id: image_description, version: Swift::min(wl_resource_get_version(res), Int32(2)), interface: swift_wayland_iface_wp_image_description_v1()), reference: reference)
     }
 }

@@ -1,9 +1,4 @@
-#if canImport(Glibc)
-import Glibc
-#else
-import Darwin
-#endif
-import Foundation
+internal import FoundationEssentials
 
 /// One directory a theme keeps icons in, and what size they are.
 struct IconSearchDirectory: Sendable, Equatable {
@@ -48,19 +43,22 @@ public final class IconThemeResolver {
     /// The XDG icon search path: the user's own icons first, then data
     /// directories, then the legacy pixmaps location that older applications
     /// still use.
-    static func defaultRoots() -> [String] {
+    static func defaultRoots(
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> [String] {
         var result: [String] = []
-        let env = ProcessInfo.processInfo.environment
-        let home = env["HOME"] ?? NSHomeDirectory()
+        let home = environment["HOME"].flatMap { $0.isEmpty ? nil : $0 }
 
-        result.append("\(home)/.icons")
-        if let dataHome = env["XDG_DATA_HOME"], !dataHome.isEmpty {
+        if let home {
+            result.append("\(home)/.icons")
+        }
+        if let dataHome = environment["XDG_DATA_HOME"], !dataHome.isEmpty {
             result.append("\(dataHome)/icons")
-        } else {
+        } else if let home {
             result.append("\(home)/.local/share/icons")
         }
 
-        let dataDirs = env["XDG_DATA_DIRS"] ?? "/usr/local/share:/usr/share"
+        let dataDirs = environment["XDG_DATA_DIRS"] ?? "/usr/local/share:/usr/share"
         for dir in dataDirs.split(separator: ":") where !dir.isEmpty {
             result.append("\(dir)/icons")
         }
@@ -92,9 +90,11 @@ public final class IconThemeResolver {
     }
 
     private func search(_ name: String, size: Int) -> String? {
-        var bestBitmap: (path: String, size: Int)?
-
         for theme in themeChain() {
+            var exactBitmap: String?
+            var smallestAbove: (path: String, size: Int)?
+            var largestBelow: (path: String, size: Int)?
+
             for directory in searchDirectories(theme: theme) {
                 guard let path = iconFile(in: directory.path, named: name) else {
                     continue
@@ -102,21 +102,24 @@ public final class IconThemeResolver {
                 // Scalable wins outright: it is exact at every size.
                 if directory.isScalable { return path }
 
-                if directory.size == size { return path }
+                if directory.size == size {
+                    exactBitmap = exactBitmap ?? path
+                    continue
+                }
                 // Prefer the smallest size at or above the target, so any
                 // rescale is a gentle downscale.
                 if directory.size > size {
-                    if bestBitmap == nil || directory.size < bestBitmap!.size {
-                        bestBitmap = (path, directory.size)
+                    if smallestAbove == nil || directory.size < smallestAbove!.size {
+                        smallestAbove = (path, directory.size)
                     }
-                } else if bestBitmap == nil || bestBitmap!.size < size {
-                    // Nothing big enough yet: keep the largest below the target.
-                    if bestBitmap == nil || directory.size > bestBitmap!.size {
-                        bestBitmap = (path, directory.size)
-                    }
+                } else if largestBelow == nil || directory.size > largestBelow!.size {
+                    // Nothing big enough: retain the largest below the target.
+                    largestBelow = (path, directory.size)
                 }
             }
-            if let bestBitmap { return bestBitmap.path }
+            if let exactBitmap { return exactBitmap }
+            if let smallestAbove { return smallestAbove.path }
+            if let largestBelow { return largestBelow.path }
         }
 
         // Last resort: a flat directory with no theme structure, which is what
@@ -124,7 +127,7 @@ public final class IconThemeResolver {
         for root in roots {
             if let path = iconFile(in: root, named: name) { return path }
         }
-        return bestBitmap?.path
+        return nil
     }
 
     /// The theme, then `hicolor`. Inheritance beyond one level is not followed:
@@ -203,28 +206,20 @@ public final class IconThemeResolver {
     }
 
     private func fileExists(_ path: String) -> Bool {
-        var info = stat()
-        guard stat(path, &info) == 0 else { return false }
-        return info.st_mode & S_IFMT == S_IFREG
+        var isDirectory = false
+        return FileManager.default.fileExists(
+            atPath: path, isDirectory: &isDirectory)
+            && !isDirectory
     }
 
     private func subdirectories(of path: String) -> [String] {
-        guard let handle = opendir(path) else { return [] }
-        defer { closedir(handle) }
-
-        var result: [String] = []
-        while let entry = readdir(handle) {
-            let name = withUnsafeBytes(of: entry.pointee.d_name) { raw -> String in
-                guard let base = raw.baseAddress else { return "" }
-                return String(cString: base.assumingMemoryBound(to: CChar.self))
-            }
-            guard name != ".", name != ".." else { continue }
-            var info = stat()
-            guard stat("\(path)/\(name)", &info) == 0,
-                  info.st_mode & S_IFMT == S_IFDIR
-            else { continue }
-            result.append(name)
-        }
-        return result
+        guard let entries = try? FileManager.default.contentsOfDirectory(atPath: path)
+        else { return [] }
+        return entries.filter { entry in
+            var isDirectory = false
+            return FileManager.default.fileExists(
+                atPath: "\(path)/\(entry)", isDirectory: &isDirectory)
+                && isDirectory
+        }.sorted()
     }
 }

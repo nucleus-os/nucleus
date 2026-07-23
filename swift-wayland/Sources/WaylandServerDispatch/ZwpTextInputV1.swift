@@ -3,7 +3,7 @@
 // Typed server dispatch for zwp_text_input_v1: a handler protocol (one method per request), the
 // request vtable + owner recovery + arg marshalling, and typed event senders.
 
-import WaylandServerC
+public import WaylandServerC
 import WaylandServer
 
 public protocol ZwpTextInputV1Requests: AnyObject {
@@ -81,9 +81,9 @@ public enum ZwpTextInputV1Server {
         zwp_text_input_v1_send_text_direction(target, serial, direction)
     }
 
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> ZwpTextInputV1Requests? {
+    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> (any ZwpTextInputV1Requests)? {
         guard let ud = wl_resource_get_user_data(res) else { return nil }
-        return Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? ZwpTextInputV1Requests
+        return Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any ZwpTextInputV1Requests
     }
 
     private static let activate_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafeMutablePointer<wl_resource>?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res, seat, surface in

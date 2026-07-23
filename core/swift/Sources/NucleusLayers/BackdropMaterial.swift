@@ -1,4 +1,4 @@
-import NucleusTypes
+public import NucleusTypes
 
 // The backdrop discriminant enums and the visual-effect value are wire-owned:
 // `Step.SwiftInterfaceEmit` emits them into `NucleusTypes` from the wire

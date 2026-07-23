@@ -1,4 +1,5 @@
-import Foundation
+public import FoundationEssentials
+import FoundationInternationalization
 
 #if os(Linux)
   import Glibc
@@ -71,9 +72,7 @@ public struct DesktopApplicationIndex: Sendable {
   ) -> [LaunchableAppRecord] {
     var records: [LaunchableAppRecord] = []
     for directory in applicationDirectories(environment: environment) {
-      guard let enumerator = fileManager.enumerator(at: directory, includingPropertiesForKeys: nil)
-      else { continue }
-      for case let url as URL in enumerator where url.pathExtension == "desktop" {
+      for url in desktopFiles(in: directory, fileManager: fileManager) {
         if let record = parseDesktopFile(url: url, root: directory, fileManager: fileManager) {
           records.append(record)
         }
@@ -83,7 +82,34 @@ public struct DesktopApplicationIndex: Sendable {
     return
       records
       .filter { seen.insert($0.id).inserted }
-      .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+      .sorted(using: KeyPathComparator(\.name, comparator: String.Comparator(options: [.numeric])))
+  }
+
+  private static func desktopFiles(in root: URL, fileManager: FileManager) -> [URL] {
+    var pendingDirectories = [root]
+    var desktopFiles: [URL] = []
+
+    while let directory = pendingDirectories.popLast() {
+      guard
+        let entries = try? fileManager.contentsOfDirectory(atPath: directory.path).sorted()
+      else { continue }
+
+      for entry in entries {
+        let url = directory.appendingPathComponent(entry)
+        if url.pathExtension == "desktop" {
+          desktopFiles.append(url)
+          continue
+        }
+
+        guard
+          let attributes = try? fileManager.attributesOfItem(atPath: url.path),
+          attributes[.type] as? FileAttributeType == .typeDirectory
+        else { continue }
+        pendingDirectories.append(url)
+      }
+    }
+
+    return desktopFiles.sorted { $0.path < $1.path }
   }
 
   private static func applicationDirectories(environment: [String: String]) -> [URL] {
@@ -127,8 +153,11 @@ public struct DesktopApplicationIndex: Sendable {
 
   private static func currentCEnvironmentValue(_ key: String) -> String? {
     #if os(Linux)
-      guard let value = getenv(key) else { return nil }
-      return String(cString: value)
+      // Nucleus treats the process environment as immutable after bring-up.
+      // `getenv` therefore returns a live NUL-terminated value for the duration
+      // of this immediate copy; tests inject `currentValue` instead of mutating it.
+      guard let value = unsafe getenv(key) else { return nil }
+      return unsafe String(cString: value)
     #else
       return ProcessInfo.processInfo.environment[key]
     #endif
@@ -150,7 +179,7 @@ public struct DesktopApplicationIndex: Sendable {
     var inEntry = false
     var fields: [String: String] = [:]
     for rawLine in text.split(whereSeparator: \.isNewline) {
-      let line = rawLine.trimmingCharacters(in: .whitespaces)
+      let line = trimmedWhitespace(rawLine)
       if line.isEmpty || line.hasPrefix("#") { continue }
       if line.hasPrefix("[") && line.hasSuffix("]") {
         inEntry = line == "[Desktop Entry]"
@@ -194,7 +223,7 @@ public struct DesktopApplicationIndex: Sendable {
     let relative =
       path.hasPrefix(rootPath + "/")
       ? String(path.dropFirst(rootPath.count + 1)) : url.lastPathComponent
-    return relative.replacingOccurrences(of: "/", with: "-")
+    return relative.replacing("/", with: "-")
   }
 
   private static func removingDesktopFieldCodes(from exec: String) -> String {
@@ -249,4 +278,19 @@ public struct DesktopApplicationIndex: Sendable {
     }
     return words
   }
+}
+
+private func trimmedWhitespace(_ value: Substring) -> Substring {
+  var lowerBound = value.startIndex
+  while lowerBound < value.endIndex, value[lowerBound].isWhitespace {
+    value.formIndex(after: &lowerBound)
+  }
+
+  var upperBound = value.endIndex
+  while upperBound > lowerBound {
+    let previous = value.index(before: upperBound)
+    guard value[previous].isWhitespace else { break }
+    upperBound = previous
+  }
+  return value[lowerBound..<upperBound]
 }

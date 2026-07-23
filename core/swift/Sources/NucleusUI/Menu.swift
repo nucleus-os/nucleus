@@ -54,10 +54,10 @@ public struct MenuKeyEquivalent: Sendable, Equatable {
 
 @MainActor
 private final class MenuChangeSubscription {
-    private weak var source: MenuChangeSource?
+    private weak var source: (any MenuChangeSource)?
     private let id: UInt64
 
-    init(source: MenuChangeSource, id: UInt64) {
+    init(source: any MenuChangeSource, id: UInt64) {
         self.source = source
         self.id = id
     }

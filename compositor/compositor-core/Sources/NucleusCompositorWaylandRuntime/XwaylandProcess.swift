@@ -8,6 +8,7 @@
 
 import Glibc
 import NucleusCompositorXcbC
+import WaylandServer
 
 @MainActor
 final class XwaylandProcess {

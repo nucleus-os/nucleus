@@ -1,5 +1,5 @@
 import PackagePlugin
-import Foundation
+import Foundation // Process executes the Vulkan generator tool.
 
 // Command plugin: regenerates the Vulkan binding core from the vendored
 // vk.xml into its committed path (generate-once model). Run when the vendored

@@ -1,4 +1,4 @@
-import NucleusLayers
+internal import NucleusLayers
 
 @MainActor
 open class Button: Control, ~Sendable {

@@ -1,4 +1,4 @@
-import NucleusUI
+public import NucleusUI
 
 /// What a battery indicator displays.
 ///

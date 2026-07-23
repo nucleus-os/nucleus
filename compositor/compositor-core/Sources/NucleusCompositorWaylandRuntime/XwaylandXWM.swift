@@ -16,9 +16,9 @@
 
 import Glibc
 import NucleusCompositorXcbC
-import NucleusCompositorServer
+internal import NucleusCompositorServer
 import NucleusCompositorServerTypes
-import NucleusCompositorWindowManager
+internal import NucleusCompositorWindowManager
 
 private func xwmLog(_ s: String) {
     let line = "[xwm] \(s)\n"

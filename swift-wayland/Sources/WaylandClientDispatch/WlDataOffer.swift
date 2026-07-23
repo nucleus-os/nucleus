@@ -3,7 +3,7 @@
 // Typed client dispatch for wl_data_offer: a handler protocol (one method per event), the
 // libwayland listener + owner recovery + arg marshalling, and an addListener that wires it.
 
-import WaylandClientC
+public import WaylandClientC
 
 public protocol WlDataOfferEvents: AnyObject {
     func offer(_ proxy: OpaquePointer, mime_type: UnsafePointer<CChar>?)
@@ -28,8 +28,8 @@ public enum WlDataOfferClient {
         wl_data_offer_add_listener(proxy, listener, Unmanaged.passUnretained(owner).toOpaque())
     }
 
-    private static func handler(_ data: UnsafeMutableRawPointer) -> WlDataOfferEvents? {
-        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? WlDataOfferEvents
+    private static func handler(_ data: UnsafeMutableRawPointer) -> (any WlDataOfferEvents)? {
+        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? any WlDataOfferEvents
     }
 
     private static let offer_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UnsafePointer<CChar>?) -> Void = { data, proxy, mime_type in

@@ -7,7 +7,7 @@
 
 /// Resolved appearance after `auto` → `light|dark` translation at lowering time.
 /// Mirrors `composition_plan.ResolvedAppearance`.
-import NucleusRenderModel
+internal import NucleusRenderModel
 
 enum ResolvedAppearance: UInt8 {
     case light

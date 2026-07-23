@@ -1,4 +1,4 @@
-import Foundation
+import FoundationEssentials
 #if canImport(Glibc)
 import Glibc
 #elseif canImport(Darwin)
@@ -83,11 +83,11 @@ struct ToolchainCommand {
         let bundleName = "swift-\(sourceID)_android.artifactbundle"
         #endif
         let cacheRoot = context.environment["XDG_CACHE_HOME"]
-            ?? NSHomeDirectory() + "/.cache"
+            ?? homeDirectory.appendingPathComponent(".cache").path
         let platformRoot = URL(fileURLWithPath: cacheRoot)
             .appendingPathComponent("nucleus/swift-platforms/\(platformID)")
-        let generationID = ISO8601DateFormatter().string(from: Date())
-            .replacingOccurrences(of: ":", with: "-") + "-\(getpid())"
+        let generationID = Date().formatted(.iso8601)
+            .replacing(":", with: "-") + "-\(getpid())"
         let generations = platformRoot.appendingPathComponent("generations")
         let generation = generations.appendingPathComponent(generationID)
         let toolchainInstall = generation.appendingPathComponent("toolchain")
@@ -204,8 +204,7 @@ struct ToolchainCommand {
     private func ensureSDKDiscoveryLink(
         platformRoot: URL, bundleName: String
     ) throws -> SDKDiscoveryChange {
-        let directory = URL(fileURLWithPath: NSHomeDirectory())
-            .appendingPathComponent(".swiftpm/swift-sdks")
+        let directory = homeDirectory.appendingPathComponent(".swiftpm/swift-sdks")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let link = directory.appendingPathComponent(bundleName)
         let destination = platformRoot.appendingPathComponent("current/android/\(bundleName)").path
@@ -254,5 +253,12 @@ struct ToolchainCommand {
             throw WorkspaceFailure.message(
                 "could not activate Swift platform generation: errno \(code)")
         }
+    }
+
+    private var homeDirectory: URL {
+        if let home = context.environment["HOME"], !home.isEmpty {
+            return URL(fileURLWithPath: home, isDirectory: true)
+        }
+        return FileManager.default.homeDirectoryForCurrentUser
     }
 }

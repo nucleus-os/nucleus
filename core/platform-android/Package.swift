@@ -110,6 +110,7 @@ let package = Package(
             swiftSettings: [
                 .swiftLanguageMode(.v6),
                 .interoperabilityMode(.Cxx),
+                .unsafeFlags(["-warnings-as-errors", "-Werror", "StrictLanguageFeatures"]),
                 .unsafeFlags([
                     "-Xcc", "-I", "-Xcc",
                     repoRoot + "/third-party/skia/third_party/externals/vulkan-headers/include",
@@ -151,6 +152,7 @@ let package = Package(
                 // under Swift 6 strict concurrency.
                 .swiftLanguageMode(.v6),
                 .interoperabilityMode(.Cxx),
+                .unsafeFlags(["-warnings-as-errors", "-Werror", "StrictLanguageFeatures"]),
             ],
             linkerSettings: [
                 .linkedLibrary("android"),

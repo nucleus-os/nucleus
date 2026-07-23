@@ -39,7 +39,7 @@ final class ZwlrLayerShellBinding {
 }
 
 final class ZwlrLayerShell {
-    weak var delegate: LayerShellDelegate?
+    weak var delegate: (any LayerShellDelegate)?
     private var display: OpaquePointer?
 
     func register(in router: NucleusWaylandRouter) {
@@ -472,3 +472,4 @@ extension ZwlrLayerSurface: ZwlrLayerSurfaceV1Requests {
             ...index)
     }
 }
+import NucleusRenderModel

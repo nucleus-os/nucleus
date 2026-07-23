@@ -8,10 +8,11 @@
 // the compositor's main actor (the loop drives them on that thread) and crosses only Sendable values.
 
 import Glibc
+import WaylandServer
 import WaylandServerC
-import NucleusCompositorServer
-import NucleusCompositorWindowScene
-import NucleusCompositorWindowManager
+public import NucleusCompositorServer
+public import NucleusCompositorWindowScene
+public import NucleusCompositorWindowManager
 
 public struct WaylandRuntimeDiagnostics: Sendable, Equatable {
     public var traceProtocolEffects: Bool

@@ -3,7 +3,7 @@
 // Typed client dispatch for zxdg_popup_v6: a handler protocol (one method per event), the
 // libwayland listener + owner recovery + arg marshalling, and an addListener that wires it.
 
-import WaylandClientC
+public import WaylandClientC
 
 public protocol ZxdgPopupV6Events: AnyObject {
     func configure(_ proxy: OpaquePointer, x: Int32, y: Int32, width: Int32, height: Int32)
@@ -26,8 +26,8 @@ public enum ZxdgPopupV6Client {
         zxdg_popup_v6_add_listener(proxy, listener, Unmanaged.passUnretained(owner).toOpaque())
     }
 
-    private static func handler(_ data: UnsafeMutableRawPointer) -> ZxdgPopupV6Events? {
-        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? ZxdgPopupV6Events
+    private static func handler(_ data: UnsafeMutableRawPointer) -> (any ZxdgPopupV6Events)? {
+        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? any ZxdgPopupV6Events
     }
 
     private static let configure_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, Int32, Int32, Int32, Int32) -> Void = { data, proxy, x, y, width, height in

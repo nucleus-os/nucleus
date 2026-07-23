@@ -3,8 +3,8 @@
 // Typed server dispatch for xdg_toplevel_icon_manager_v1: a handler protocol (one method per request), the
 // request vtable + owner recovery + arg marshalling, and typed event senders.
 
-import WaylandServerC
-import WaylandServer
+public import WaylandServerC
+public import WaylandServer
 
 public protocol XdgToplevelIconManagerV1Requests: AnyObject {
     func destroy(_ resource: UnsafeMutablePointer<wl_resource>)
@@ -36,9 +36,9 @@ public enum XdgToplevelIconManagerV1Server {
         xdg_toplevel_icon_manager_v1_send_done(target)
     }
 
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> XdgToplevelIconManagerV1Requests? {
+    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> (any XdgToplevelIconManagerV1Requests)? {
         guard let ud = wl_resource_get_user_data(res) else { return nil }
-        return Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? XdgToplevelIconManagerV1Requests
+        return Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any XdgToplevelIconManagerV1Requests
     }
 
     private static let destroy_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
@@ -47,7 +47,7 @@ public enum XdgToplevelIconManagerV1Server {
     }
     private static let createIcon_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { client, res, id in
         guard let res, let client, let h = handler(res) else { return }
-        h.createIcon(res, id: WlNewId(client: client, id: id, version: Swift.min(wl_resource_get_version(res), Int32(1)), interface: swift_wayland_iface_xdg_toplevel_icon_v1()))
+        h.createIcon(res, id: WlNewId(client: client, id: id, version: Swift::min(wl_resource_get_version(res), Int32(1)), interface: swift_wayland_iface_xdg_toplevel_icon_v1()))
     }
     private static let setIcon_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafeMutablePointer<wl_resource>?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res, toplevel, icon in
         guard let res, let h = handler(res) else { return }

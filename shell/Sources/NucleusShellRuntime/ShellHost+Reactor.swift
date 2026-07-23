@@ -1,7 +1,13 @@
 import Glibc
+import NucleusLinuxDBus
 import NucleusLinuxReactor
+import NucleusShellAuth
+import NucleusShellInput
 import NucleusShellLoop
+import NucleusShellPasteboard
+import NucleusShellServices
 import NucleusShellSignalC
+import NucleusUI
 import WaylandClient
 
 @MainActor

@@ -1,4 +1,4 @@
-import NucleusTypes
+package import NucleusTypes
 
 public struct PresentReport: Sendable, Equatable {
     public var predictedPresentationNanoseconds: UInt64

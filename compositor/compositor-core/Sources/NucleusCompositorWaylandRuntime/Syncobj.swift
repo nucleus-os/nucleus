@@ -30,7 +30,7 @@ protocol DrmSyncobjDelegate: AnyObject {
 }
 
 final class WpLinuxDrmSyncobjManager {
-    weak var delegate: DrmSyncobjDelegate?
+    weak var delegate: (any DrmSyncobjDelegate)?
 
     // wp_linux_drm_syncobj_timeline_v1 is destroy-only (no generated dispatch): its
     // request vtable stays hand-wired and is passed to id.create when a timeline is

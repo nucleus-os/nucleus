@@ -2,10 +2,10 @@ import WaylandServerC
 import WaylandServer
 import NucleusTypes
 
-/// The complete applied content state of one wl_surface. Keeping this as one
-/// value makes the pending → transaction → current ownership progression
-/// explicit and prevents role/request code from inventing a second current-state
-/// pipeline.
+/// The applied core content state of one wl_surface. Surface-adjacent protocol
+/// state is direct `WlSurface` storage so nested mutation reaches it without a
+/// forwarding copy. The pending → transaction → current ownership progression
+/// remains singular for buffers, geometry, and render identity.
 struct SurfaceCurrentState {
     var buffer: WaylandResourceReference?
     var bufferPixelSize = BufferPixelSize()
@@ -27,6 +27,4 @@ struct SurfaceCurrentState {
     var renderIOSurfaceID: UInt32 = 0
     var renderContentGeneration: UInt64 = 0
     var bufferGeneration: UInt64 = 0
-
-    var auxiliary = SurfaceAuxState()
 }

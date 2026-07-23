@@ -3,8 +3,8 @@
 // Typed server dispatch for zwp_input_method_context_v1: a handler protocol (one method per request), the
 // request vtable + owner recovery + arg marshalling, and typed event senders.
 
-import WaylandServerC
-import WaylandServer
+public import WaylandServerC
+public import WaylandServer
 
 public protocol ZwpInputMethodContextV1Requests: AnyObject {
     func destroy(_ resource: UnsafeMutablePointer<wl_resource>)
@@ -70,9 +70,9 @@ public enum ZwpInputMethodContextV1Server {
         zwp_input_method_context_v1_send_preferred_language(target, language)
     }
 
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> ZwpInputMethodContextV1Requests? {
+    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> (any ZwpInputMethodContextV1Requests)? {
         guard let ud = wl_resource_get_user_data(res) else { return nil }
-        return Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? ZwpInputMethodContextV1Requests
+        return Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any ZwpInputMethodContextV1Requests
     }
 
     private static let destroy_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
@@ -113,7 +113,7 @@ public enum ZwpInputMethodContextV1Server {
     }
     private static let grabKeyboard_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { client, res, keyboard in
         guard let res, let client, let h = handler(res) else { return }
-        h.grabKeyboard(res, keyboard: WlNewId(client: client, id: keyboard, version: Swift.min(wl_resource_get_version(res), Int32(10)), interface: swift_wayland_iface_wl_keyboard()))
+        h.grabKeyboard(res, keyboard: WlNewId(client: client, id: keyboard, version: Swift::min(wl_resource_get_version(res), Int32(10)), interface: swift_wayland_iface_wl_keyboard()))
     }
     private static let key_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UInt32, UInt32, UInt32) -> Void = { _, res, serial, time, key, state in
         guard let res, let h = handler(res) else { return }

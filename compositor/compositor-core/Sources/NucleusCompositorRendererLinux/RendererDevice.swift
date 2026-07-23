@@ -1,7 +1,7 @@
 import VulkanC
 import Vulkan
-import NucleusRenderModel
-@_spi(NucleusPlatform) import NucleusRenderer
+public import NucleusRenderModel
+@_spi(NucleusPlatform) public import NucleusRenderer
 import Glibc
 
 public struct RendererOutputInfo:

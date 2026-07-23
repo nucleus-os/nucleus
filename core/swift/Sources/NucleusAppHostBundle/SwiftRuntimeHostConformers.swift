@@ -92,7 +92,9 @@ final class SwiftDisplayLinkSource: DisplayLinkSource {
 
     private func monotonicNowNs() -> UInt64 {
         var ts = timespec()
-        clock_gettime(CLOCK_MONOTONIC, &ts)
+        // `ts` is initialized before its bounded inout borrow and does not escape.
+        let result = unsafe clock_gettime(CLOCK_MONOTONIC, &ts)
+        precondition(result == 0, "CLOCK_MONOTONIC is unavailable")
         return UInt64(ts.tv_sec) &* 1_000_000_000 &+ UInt64(ts.tv_nsec)
     }
 

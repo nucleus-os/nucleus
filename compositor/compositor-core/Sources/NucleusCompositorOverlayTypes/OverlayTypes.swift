@@ -1,12 +1,5 @@
 import Swift
 
-public enum EventKind: Swift.UInt32, Swift.Sendable {
-  case frame = 1
-  case notification = 2
-  case dismissNotification = 3
-  case hotkeyVisibility = 5
-}
-
 public enum InputKind: Swift.UInt32, Swift.Sendable {
   case pointerMove = 1
   case pointerDown = 2
@@ -60,17 +53,6 @@ public enum KeybindAction: Swift.UInt8, Swift.Sendable {
   case moveWindowToWorkspace = 10
 }
 
-public let abiVersion: Swift.UInt32 = 8
-
-public struct StringView {
-  public var ptr: Swift.UnsafePointer<Swift.UInt8>?
-  public var len: Swift.UInt
-  public init(ptr: Swift.UnsafePointer<Swift.UInt8>? = nil, len: Swift.UInt = 0) {
-    self.ptr = ptr
-    self.len = len
-  }
-}
-
 public struct FrameInfo: Swift.Equatable, Swift.Sendable {
   public var outputWidth: Swift.UInt32
   public var outputHeight: Swift.UInt32
@@ -98,48 +80,6 @@ public struct OutputSize: Swift.Equatable, Swift.Sendable {
     self.width = width
     self.height = height
     self.scale = scale
-  }
-}
-
-public struct NotificationInfo {
-  public var id: Swift.UInt32
-  public var appName: NucleusCompositorOverlayTypes.StringView
-  public var summary: NucleusCompositorOverlayTypes.StringView
-  public var body: NucleusCompositorOverlayTypes.StringView
-  public var thumbnailHandle: Swift.UInt64
-  public var showThumbnail: Swift.Bool
-  public var expireTimeoutMs: Swift.Int32
-  public init(id: Swift.UInt32 = Swift.UInt32(), appName: NucleusCompositorOverlayTypes.StringView = NucleusCompositorOverlayTypes.StringView(), summary: NucleusCompositorOverlayTypes.StringView = NucleusCompositorOverlayTypes.StringView(), body: NucleusCompositorOverlayTypes.StringView = NucleusCompositorOverlayTypes.StringView(), thumbnailHandle: Swift.UInt64 = Swift.UInt64(), showThumbnail: Swift.Bool = false, expireTimeoutMs: Swift.Int32 = Swift.Int32()) {
-    self.id = id
-    self.appName = appName
-    self.summary = summary
-    self.body = body
-    self.thumbnailHandle = thumbnailHandle
-    self.showThumbnail = showThumbnail
-    self.expireTimeoutMs = expireTimeoutMs
-  }
-}
-
-public struct OverlayEvent {
-  public var _kind: Swift.UInt32
-  public var reserved: Swift.UInt32
-  public var frame: NucleusCompositorOverlayTypes.FrameInfo
-  public var notification: NucleusCompositorOverlayTypes.NotificationInfo
-  public var notificationId: Swift.UInt32
-  public var closeReason: Swift.UInt32
-  public var visible: Swift.Bool
-  public init(kind: EventKind = .frame, reserved: Swift.UInt32 = Swift.UInt32(), frame: NucleusCompositorOverlayTypes.FrameInfo = NucleusCompositorOverlayTypes.FrameInfo(), notification: NucleusCompositorOverlayTypes.NotificationInfo = NucleusCompositorOverlayTypes.NotificationInfo(), notificationId: Swift.UInt32 = Swift.UInt32(), closeReason: Swift.UInt32 = Swift.UInt32(), visible: Swift.Bool = false) {
-    self._kind = kind.rawValue
-    self.reserved = reserved
-    self.frame = frame
-    self.notification = notification
-    self.notificationId = notificationId
-    self.closeReason = closeReason
-    self.visible = visible
-  }
-  public var kind: EventKind {
-    get { EventKind(rawValue: _kind)! }
-    set { _kind = newValue.rawValue }
   }
 }
 
@@ -240,4 +180,3 @@ public struct KeybindDecision: Swift.Equatable, Swift.Sendable {
     set { _action = newValue.rawValue }
   }
 }
-

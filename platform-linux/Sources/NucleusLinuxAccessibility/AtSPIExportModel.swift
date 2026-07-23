@@ -1,4 +1,4 @@
-import NucleusUI
+package import NucleusUI
 
 enum AtSPIInterface {
     static let accessible = "org.a11y.atspi.Accessible"

@@ -1,9 +1,11 @@
 #if canImport(Glibc)
 import Glibc
-#else
+#elseif canImport(Android)
+import Android
+#elseif canImport(Darwin)
 import Darwin
 #endif
-import NucleusTypes
+package import NucleusTypes
 
 public struct Point: Equatable, Sendable {
     public var x: Double

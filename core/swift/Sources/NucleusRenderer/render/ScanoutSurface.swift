@@ -8,8 +8,8 @@
 // agnostic: at the cutover the VkImage is the GBM-scanout-BO image from the
 // attachment VkImage works.
 
-import VulkanC
-import Vulkan
+public import VulkanC
+public import Vulkan
 import NucleusSkiaGraphiteBridge
 
 /// A borrowed Vulkan scanout image plus the metadata the façade needs to wrap it

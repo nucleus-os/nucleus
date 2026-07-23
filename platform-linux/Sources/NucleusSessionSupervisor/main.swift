@@ -1,4 +1,4 @@
-import Foundation
+import FoundationEssentials
 import Glibc
 import NucleusLinuxSession
 import NucleusLinuxSessionC
@@ -204,7 +204,7 @@ private final class SessionSupervisor {
         }
     }
 
-    private func failureReason(_ error: Error) -> SessionFailureReason {
+    private func failureReason(_ error: any Error) -> SessionFailureReason {
         guard let failure = error as? SupervisorFailure else {
             return .internalFailure
         }

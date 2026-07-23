@@ -11,7 +11,8 @@
 
 import Glibc
 import NucleusCompositorInputC
-import NucleusCompositorServer
+internal import NucleusCompositorServer
+import NucleusCompositorServerTypes
 
 // The composition root owns process exit + VT session lifecycle. The area DAG
 // forbids the input host (`.nucleus_compositor_substrate`) from importing the runtime

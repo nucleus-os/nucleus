@@ -367,62 +367,121 @@ static inline const struct wl_interface *swift_wayland_iface_zwp_xwayland_keyboa
 static inline const struct wl_interface *swift_wayland_iface_zwp_xwayland_keyboard_grab_v1(void) { return &zwp_xwayland_keyboard_grab_v1_interface; }
 
 /* Request-handler vtable typedefs (non-colliding names for Swift). */
-typedef struct wl_display_interface swift_wayland_wl_display_requests;
-typedef struct wl_registry_interface swift_wayland_wl_registry_requests;
-/*
- * The vendored core protocol may be newer than the distribution's generated
- * wayland-server-protocol.h. Keep the request-table ABI tied to the vendored
- * XML instead of importing an older system struct that is missing tail
- * requests (Wayland 1.25 adds wl_compositor.release and
- * wl_data_device_manager.release).
- */
+typedef struct swift_wayland_wl_display_requests {
+    void (*sync)(struct wl_client *, struct wl_resource *, uint32_t);
+    void (*get_registry)(struct wl_client *, struct wl_resource *, uint32_t);
+} swift_wayland_wl_display_requests;
+typedef struct swift_wayland_wl_registry_requests {
+    void (*bind)(struct wl_client *, struct wl_resource *, uint32_t, const char *, uint32_t, uint32_t);
+} swift_wayland_wl_registry_requests;
 typedef struct swift_wayland_wl_compositor_requests {
     void (*create_surface)(struct wl_client *, struct wl_resource *, uint32_t);
     void (*create_region)(struct wl_client *, struct wl_resource *, uint32_t);
     void (*release)(struct wl_client *, struct wl_resource *);
 } swift_wayland_wl_compositor_requests;
-typedef struct wl_shm_pool_interface swift_wayland_wl_shm_pool_requests;
-typedef struct wl_shm_interface swift_wayland_wl_shm_requests;
-typedef struct wl_buffer_interface swift_wayland_wl_buffer_requests;
-typedef struct wl_data_offer_interface swift_wayland_wl_data_offer_requests;
-typedef struct wl_data_source_interface swift_wayland_wl_data_source_requests;
-typedef struct wl_data_device_interface swift_wayland_wl_data_device_requests;
+typedef struct swift_wayland_wl_shm_pool_requests {
+    void (*create_buffer)(struct wl_client *, struct wl_resource *, uint32_t, int32_t, int32_t, int32_t, int32_t, uint32_t);
+    void (*destroy)(struct wl_client *, struct wl_resource *);
+    void (*resize)(struct wl_client *, struct wl_resource *, int32_t);
+} swift_wayland_wl_shm_pool_requests;
+typedef struct swift_wayland_wl_shm_requests {
+    void (*create_pool)(struct wl_client *, struct wl_resource *, uint32_t, int32_t, int32_t);
+    void (*release)(struct wl_client *, struct wl_resource *);
+} swift_wayland_wl_shm_requests;
+typedef struct swift_wayland_wl_buffer_requests {
+    void (*destroy)(struct wl_client *, struct wl_resource *);
+} swift_wayland_wl_buffer_requests;
+typedef struct swift_wayland_wl_data_offer_requests {
+    void (*accept)(struct wl_client *, struct wl_resource *, uint32_t, const char *);
+    void (*receive)(struct wl_client *, struct wl_resource *, const char *, int32_t);
+    void (*destroy)(struct wl_client *, struct wl_resource *);
+    void (*finish)(struct wl_client *, struct wl_resource *);
+    void (*set_actions)(struct wl_client *, struct wl_resource *, uint32_t, uint32_t);
+} swift_wayland_wl_data_offer_requests;
+typedef struct swift_wayland_wl_data_source_requests {
+    void (*offer)(struct wl_client *, struct wl_resource *, const char *);
+    void (*destroy)(struct wl_client *, struct wl_resource *);
+    void (*set_actions)(struct wl_client *, struct wl_resource *, uint32_t);
+} swift_wayland_wl_data_source_requests;
+typedef struct swift_wayland_wl_data_device_requests {
+    void (*start_drag)(struct wl_client *, struct wl_resource *, struct wl_resource *, struct wl_resource *, struct wl_resource *, uint32_t);
+    void (*set_selection)(struct wl_client *, struct wl_resource *, struct wl_resource *, uint32_t);
+    void (*release)(struct wl_client *, struct wl_resource *);
+} swift_wayland_wl_data_device_requests;
 typedef struct swift_wayland_wl_data_device_manager_requests {
     void (*create_data_source)(struct wl_client *, struct wl_resource *, uint32_t);
-    void (*get_data_device)(struct wl_client *, struct wl_resource *, uint32_t,
-                            struct wl_resource *);
+    void (*get_data_device)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *);
     void (*release)(struct wl_client *, struct wl_resource *);
 } swift_wayland_wl_data_device_manager_requests;
-typedef struct wl_shell_interface swift_wayland_wl_shell_requests;
-typedef struct wl_shell_surface_interface swift_wayland_wl_shell_surface_requests;
+typedef struct swift_wayland_wl_shell_requests {
+    void (*get_shell_surface)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *);
+} swift_wayland_wl_shell_requests;
+typedef struct swift_wayland_wl_shell_surface_requests {
+    void (*pong)(struct wl_client *, struct wl_resource *, uint32_t);
+    void (*move)(struct wl_client *, struct wl_resource *, struct wl_resource *, uint32_t);
+    void (*resize)(struct wl_client *, struct wl_resource *, struct wl_resource *, uint32_t, uint32_t);
+    void (*set_toplevel)(struct wl_client *, struct wl_resource *);
+    void (*set_transient)(struct wl_client *, struct wl_resource *, struct wl_resource *, int32_t, int32_t, uint32_t);
+    void (*set_fullscreen)(struct wl_client *, struct wl_resource *, uint32_t, uint32_t, struct wl_resource *);
+    void (*set_popup)(struct wl_client *, struct wl_resource *, struct wl_resource *, uint32_t, struct wl_resource *, int32_t, int32_t, uint32_t);
+    void (*set_maximized)(struct wl_client *, struct wl_resource *, struct wl_resource *);
+    void (*set_title)(struct wl_client *, struct wl_resource *, const char *);
+    void (*set_class)(struct wl_client *, struct wl_resource *, const char *);
+} swift_wayland_wl_shell_surface_requests;
 typedef struct swift_wayland_wl_surface_requests {
     void (*destroy)(struct wl_client *, struct wl_resource *);
-    void (*attach)(struct wl_client *, struct wl_resource *, struct wl_resource *,
-                   int32_t, int32_t);
-    void (*damage)(struct wl_client *, struct wl_resource *, int32_t, int32_t,
-                   int32_t, int32_t);
+    void (*attach)(struct wl_client *, struct wl_resource *, struct wl_resource *, int32_t, int32_t);
+    void (*damage)(struct wl_client *, struct wl_resource *, int32_t, int32_t, int32_t, int32_t);
     void (*frame)(struct wl_client *, struct wl_resource *, uint32_t);
-    void (*set_opaque_region)(struct wl_client *, struct wl_resource *,
-                              struct wl_resource *);
-    void (*set_input_region)(struct wl_client *, struct wl_resource *,
-                             struct wl_resource *);
+    void (*set_opaque_region)(struct wl_client *, struct wl_resource *, struct wl_resource *);
+    void (*set_input_region)(struct wl_client *, struct wl_resource *, struct wl_resource *);
     void (*commit)(struct wl_client *, struct wl_resource *);
     void (*set_buffer_transform)(struct wl_client *, struct wl_resource *, int32_t);
     void (*set_buffer_scale)(struct wl_client *, struct wl_resource *, int32_t);
-    void (*damage_buffer)(struct wl_client *, struct wl_resource *, int32_t, int32_t,
-                          int32_t, int32_t);
+    void (*damage_buffer)(struct wl_client *, struct wl_resource *, int32_t, int32_t, int32_t, int32_t);
     void (*offset)(struct wl_client *, struct wl_resource *, int32_t, int32_t);
     void (*get_release)(struct wl_client *, struct wl_resource *, uint32_t);
 } swift_wayland_wl_surface_requests;
-typedef struct wl_seat_interface swift_wayland_wl_seat_requests;
-typedef struct wl_pointer_interface swift_wayland_wl_pointer_requests;
-typedef struct wl_keyboard_interface swift_wayland_wl_keyboard_requests;
-typedef struct wl_touch_interface swift_wayland_wl_touch_requests;
-typedef struct wl_output_interface swift_wayland_wl_output_requests;
-typedef struct wl_region_interface swift_wayland_wl_region_requests;
-typedef struct wl_subcompositor_interface swift_wayland_wl_subcompositor_requests;
-typedef struct wl_subsurface_interface swift_wayland_wl_subsurface_requests;
-typedef struct wl_fixes_interface swift_wayland_wl_fixes_requests;
+typedef struct swift_wayland_wl_seat_requests {
+    void (*get_pointer)(struct wl_client *, struct wl_resource *, uint32_t);
+    void (*get_keyboard)(struct wl_client *, struct wl_resource *, uint32_t);
+    void (*get_touch)(struct wl_client *, struct wl_resource *, uint32_t);
+    void (*release)(struct wl_client *, struct wl_resource *);
+} swift_wayland_wl_seat_requests;
+typedef struct swift_wayland_wl_pointer_requests {
+    void (*set_cursor)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *, int32_t, int32_t);
+    void (*release)(struct wl_client *, struct wl_resource *);
+} swift_wayland_wl_pointer_requests;
+typedef struct swift_wayland_wl_keyboard_requests {
+    void (*release)(struct wl_client *, struct wl_resource *);
+} swift_wayland_wl_keyboard_requests;
+typedef struct swift_wayland_wl_touch_requests {
+    void (*release)(struct wl_client *, struct wl_resource *);
+} swift_wayland_wl_touch_requests;
+typedef struct swift_wayland_wl_output_requests {
+    void (*release)(struct wl_client *, struct wl_resource *);
+} swift_wayland_wl_output_requests;
+typedef struct swift_wayland_wl_region_requests {
+    void (*destroy)(struct wl_client *, struct wl_resource *);
+    void (*add)(struct wl_client *, struct wl_resource *, int32_t, int32_t, int32_t, int32_t);
+    void (*subtract)(struct wl_client *, struct wl_resource *, int32_t, int32_t, int32_t, int32_t);
+} swift_wayland_wl_region_requests;
+typedef struct swift_wayland_wl_subcompositor_requests {
+    void (*destroy)(struct wl_client *, struct wl_resource *);
+    void (*get_subsurface)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *, struct wl_resource *);
+} swift_wayland_wl_subcompositor_requests;
+typedef struct swift_wayland_wl_subsurface_requests {
+    void (*destroy)(struct wl_client *, struct wl_resource *);
+    void (*set_position)(struct wl_client *, struct wl_resource *, int32_t, int32_t);
+    void (*place_above)(struct wl_client *, struct wl_resource *, struct wl_resource *);
+    void (*place_below)(struct wl_client *, struct wl_resource *, struct wl_resource *);
+    void (*set_sync)(struct wl_client *, struct wl_resource *);
+    void (*set_desync)(struct wl_client *, struct wl_resource *);
+} swift_wayland_wl_subsurface_requests;
+typedef struct swift_wayland_wl_fixes_requests {
+    void (*destroy)(struct wl_client *, struct wl_resource *);
+    void (*destroy_registry)(struct wl_client *, struct wl_resource *, struct wl_resource *);
+} swift_wayland_wl_fixes_requests;
 typedef struct org_kde_kwin_blur_manager_interface swift_wayland_org_kde_kwin_blur_manager_requests;
 typedef struct org_kde_kwin_blur_interface swift_wayland_org_kde_kwin_blur_requests;
 typedef struct org_kde_kwin_appmenu_manager_interface swift_wayland_org_kde_kwin_appmenu_manager_requests;

@@ -120,14 +120,12 @@ private enum FakeDmaBufImporter {
         format: UInt32,
         stride: UInt32
     ) -> [UInt8]? {
-        pixels.withUnsafeBytes {
-            convertClientShmToRGBA(
-                pixels: $0,
-                width: width,
-                height: height,
-                drmFormat: format,
-                stride: stride)
-        }
+        convertClientShmToRGBA(
+            pixels: pixels.span,
+            width: width,
+            height: height,
+            drmFormat: format,
+            stride: stride)
     }
 
     @Test func convertsPaddedARGBRowsToTightRGBA() {
@@ -204,30 +202,22 @@ private enum FakeDmaBufImporter {
 
     @Test func returnedPixelsDoNotBorrowSourceStorage() {
         var source = [UInt8]([0x10, 0x20, 0x30, 0x40])
-        let converted = source.withUnsafeBytes {
-            convertClientShmToRGBA(
-                pixels: $0,
-                width: 1,
-                height: 1,
-                drmFormat: DrmFourcc.argb8888,
-                stride: 4)
-        }
-        _ = source.withUnsafeMutableBytes {
-            $0.initializeMemory(as: UInt8.self, repeating: 0xff)
-        }
+        let converted = convertClientShmToRGBA(
+            pixels: source.span,
+            width: 1,
+            height: 1,
+            drmFormat: DrmFourcc.argb8888,
+            stride: 4)
+        source = [0xff, 0xff, 0xff, 0xff]
         #expect(converted == [0x30, 0x20, 0x10, 0x40])
     }
 
     @Test func fullResolutionDestinationSizesAreTightlyPacked() {
         for (width, height) in [(UInt32(1_920), UInt32(1_080)), (UInt32(3_840), UInt32(2_160))] {
             let byteCount = Int(width) * Int(height) * 4
-            let source = UnsafeMutableRawBufferPointer.allocate(
-                byteCount: byteCount,
-                alignment: MemoryLayout<UInt32>.alignment)
-            defer { source.deallocate() }
-            source.initializeMemory(as: UInt8.self, repeating: 0)
+            let source = [UInt8](repeating: 0, count: byteCount)
             let converted = convertClientShmToRGBAWithMetrics(
-                pixels: UnsafeRawBufferPointer(source),
+                pixels: source.span,
                 width: width,
                 height: height,
                 drmFormat: DrmFourcc.xrgb8888,

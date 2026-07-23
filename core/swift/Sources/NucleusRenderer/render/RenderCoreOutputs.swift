@@ -2,12 +2,14 @@ import NucleusSkiaGraphiteBridge
 import VulkanC
 import Vulkan
 import Tracy
-import NucleusRenderModel
+public import NucleusRenderModel
 #if canImport(Glibc)
 import Glibc
 #elseif canImport(Android)
 import Android
 #endif
+internal import struct NucleusTypes.OutputPixelSize
+internal import struct NucleusTypes.Rect
 @MainActor
 extension RenderCore {
     /// Observe whether an image handle has crossed the renderer's typed

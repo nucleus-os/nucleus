@@ -3,7 +3,7 @@
 // Typed client dispatch for zwp_linux_dmabuf_feedback_v1: a handler protocol (one method per event), the
 // libwayland listener + owner recovery + arg marshalling, and an addListener that wires it.
 
-import WaylandClientC
+public import WaylandClientC
 
 public protocol ZwpLinuxDmabufFeedbackV1Events: AnyObject {
     func done(_ proxy: OpaquePointer)
@@ -36,8 +36,8 @@ public enum ZwpLinuxDmabufFeedbackV1Client {
         zwp_linux_dmabuf_feedback_v1_add_listener(proxy, listener, Unmanaged.passUnretained(owner).toOpaque())
     }
 
-    private static func handler(_ data: UnsafeMutableRawPointer) -> ZwpLinuxDmabufFeedbackV1Events? {
-        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? ZwpLinuxDmabufFeedbackV1Events
+    private static func handler(_ data: UnsafeMutableRawPointer) -> (any ZwpLinuxDmabufFeedbackV1Events)? {
+        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? any ZwpLinuxDmabufFeedbackV1Events
     }
 
     private static let done_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in

@@ -1,4 +1,4 @@
-import NucleusUI
+public import NucleusUI
 
 /// Serializes XDG filesystem resolution off the UI actor and projects it into
 /// the portable retained image request seam.

@@ -1,4 +1,4 @@
-import NucleusLayers
+internal import NucleusLayers
 
 public struct ArrangedSubviewRemovalTransition: Sendable, Equatable {
     public enum Kind: Sendable, Equatable {

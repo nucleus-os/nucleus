@@ -14,7 +14,7 @@
 // rather than a handwritten codec.
 
 import WaylandServerC
-import NucleusCompositorServer
+internal import NucleusCompositorServer
 import WaylandServer
 import WaylandServerDispatch
 

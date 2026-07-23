@@ -3,8 +3,8 @@
 // Typed server dispatch for wp_image_description_creator_params_v1: a handler protocol (one method per request), the
 // request vtable + owner recovery + arg marshalling, and typed event senders.
 
-import WaylandServerC
-import WaylandServer
+public import WaylandServerC
+public import WaylandServer
 
 public protocol WpImageDescriptionCreatorParamsV1Requests: AnyObject {
     func create(_ resource: UnsafeMutablePointer<wl_resource>, image_description: WlNewId)
@@ -39,14 +39,14 @@ public enum WpImageDescriptionCreatorParamsV1Server {
         return UnsafeRawPointer(raw)
     }()
 
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> WpImageDescriptionCreatorParamsV1Requests? {
+    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> (any WpImageDescriptionCreatorParamsV1Requests)? {
         guard let ud = wl_resource_get_user_data(res) else { return nil }
-        return Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? WpImageDescriptionCreatorParamsV1Requests
+        return Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any WpImageDescriptionCreatorParamsV1Requests
     }
 
     private static let create_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { client, res, image_description in
         guard let res, let client, let h = handler(res) else { return }
-        h.create(res, image_description: WlNewId(client: client, id: image_description, version: Swift.min(wl_resource_get_version(res), Int32(2)), interface: swift_wayland_iface_wp_image_description_v1()))
+        h.create(res, image_description: WlNewId(client: client, id: image_description, version: Swift::min(wl_resource_get_version(res), Int32(2)), interface: swift_wayland_iface_wp_image_description_v1()))
         wl_resource_destroy(res)
     }
     private static let setTfNamed_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { _, res, tf in

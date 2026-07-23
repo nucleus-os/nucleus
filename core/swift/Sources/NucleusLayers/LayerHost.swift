@@ -1,3 +1,5 @@
+public import NucleusTypes
+
 @MainActor
 public final class LayerHost: Layer, ~Sendable {
     public init(context: Context, targetContextID: ContextID, frame: GeometryRect = .zero) {

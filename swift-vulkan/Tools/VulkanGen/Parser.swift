@@ -1,4 +1,4 @@
-import Foundation
+import Foundation // FoundationXML's XML node overlay depends on the umbrella module.
 #if canImport(FoundationXML)
 import FoundationXML
 #endif

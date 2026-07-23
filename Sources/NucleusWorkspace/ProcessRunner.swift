@@ -1,4 +1,4 @@
-import Foundation
+import Foundation // FileHandle provides descriptor-backed captured output.
 #if canImport(Glibc)
 import Glibc
 #elseif canImport(Darwin)

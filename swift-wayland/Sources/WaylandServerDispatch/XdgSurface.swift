@@ -3,8 +3,8 @@
 // Typed server dispatch for xdg_surface: a handler protocol (one method per request), the
 // request vtable + owner recovery + arg marshalling, and typed event senders.
 
-import WaylandServerC
-import WaylandServer
+public import WaylandServerC
+public import WaylandServer
 
 public protocol XdgSurfaceRequests: AnyObject {
     func destroy(_ resource: UnsafeMutablePointer<wl_resource>)
@@ -37,9 +37,9 @@ public enum XdgSurfaceServer {
         xdg_surface_send_configure(target, serial)
     }
 
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> XdgSurfaceRequests? {
+    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> (any XdgSurfaceRequests)? {
         guard let ud = wl_resource_get_user_data(res) else { return nil }
-        return Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? XdgSurfaceRequests
+        return Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any XdgSurfaceRequests
     }
 
     private static let destroy_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
@@ -48,11 +48,11 @@ public enum XdgSurfaceServer {
     }
     private static let getToplevel_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { client, res, id in
         guard let res, let client, let h = handler(res) else { return }
-        h.getToplevel(res, id: WlNewId(client: client, id: id, version: Swift.min(wl_resource_get_version(res), Int32(7)), interface: swift_wayland_iface_xdg_toplevel()))
+        h.getToplevel(res, id: WlNewId(client: client, id: id, version: Swift::min(wl_resource_get_version(res), Int32(7)), interface: swift_wayland_iface_xdg_toplevel()))
     }
     private static let getPopup_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UnsafeMutablePointer<wl_resource>?, UnsafeMutablePointer<wl_resource>?) -> Void = { client, res, id, parent, positioner in
         guard let res, let client, let h = handler(res) else { return }
-        h.getPopup(res, id: WlNewId(client: client, id: id, version: Swift.min(wl_resource_get_version(res), Int32(7)), interface: swift_wayland_iface_xdg_popup()), parent: parent, positioner: positioner)
+        h.getPopup(res, id: WlNewId(client: client, id: id, version: Swift::min(wl_resource_get_version(res), Int32(7)), interface: swift_wayland_iface_xdg_popup()), parent: parent, positioner: positioner)
     }
     private static let setWindowGeometry_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, Int32, Int32, Int32, Int32) -> Void = { _, res, x, y, width, height in
         guard let res, let h = handler(res) else { return }

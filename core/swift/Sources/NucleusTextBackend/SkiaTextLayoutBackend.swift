@@ -1,6 +1,5 @@
-import Foundation
 internal import NucleusTextCxxBridge
-import NucleusUI
+public import NucleusUI
 import Tracy
 
 /// Skia/SkParagraph implementation of NucleusUI's pure Swift text boundary.

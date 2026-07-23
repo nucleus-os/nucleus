@@ -1,5 +1,5 @@
-import NucleusLayers
-import NucleusTypes
+package import NucleusLayers
+internal import NucleusTypes
 
 /// What fills a shape. `.color` uses the context's `fillColor`; the gradients
 /// and the SkSL escape hatch are peers, so reaching for a runtime effect is not

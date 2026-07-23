@@ -3,7 +3,7 @@
 // Typed client dispatch for wp_color_manager_v1: a handler protocol (one method per event), the
 // libwayland listener + owner recovery + arg marshalling, and an addListener that wires it.
 
-import WaylandClientC
+public import WaylandClientC
 
 public protocol WpColorManagerV1Events: AnyObject {
     func supportedIntent(_ proxy: OpaquePointer, render_intent: UInt32)
@@ -32,8 +32,8 @@ public enum WpColorManagerV1Client {
         wp_color_manager_v1_add_listener(proxy, listener, Unmanaged.passUnretained(owner).toOpaque())
     }
 
-    private static func handler(_ data: UnsafeMutableRawPointer) -> WpColorManagerV1Events? {
-        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? WpColorManagerV1Events
+    private static func handler(_ data: UnsafeMutableRawPointer) -> (any WpColorManagerV1Events)? {
+        Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? any WpColorManagerV1Events
     }
 
     private static let supportedIntent_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, render_intent in

@@ -1,6 +1,6 @@
-@_spi(NucleusCompositor) import NucleusLayers
-import NucleusTypes
-import NucleusUI
+@_spi(NucleusCompositor) public import NucleusLayers
+public import NucleusTypes
+public import NucleusUI
 
 // The embedder-facing surface of NucleusUI.
 //

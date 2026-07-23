@@ -21,7 +21,8 @@
 // substrate scene walk.
 
 import WaylandServerC
-import NucleusCompositorServer
+internal import NucleusCompositorServer
+import NucleusCompositorServerTypes
 
 /// How far outside the frame edge the invisible resize-grab band reaches (the macOS
 /// all-edge resize border). Mirrors the substrate `chrome_grab_outset`.

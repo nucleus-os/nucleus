@@ -1,4 +1,4 @@
-import NucleusTypes
+public import NucleusTypes
 import NucleusAppHostProtocols
 
 // `ContentKind` is wire-owned (the generated discriminant enum). The domain

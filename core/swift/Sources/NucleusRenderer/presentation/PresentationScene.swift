@@ -12,11 +12,13 @@
 
 /// The hosted-context geometry the scene lowering reads. Mirrors the
 /// `root_layer_id` + `source_rect` of `rs.HostedContextGeometry`.
-import NucleusRenderModel
+internal import NucleusRenderModel
+internal import struct NucleusTypes.OutputPixelSize
+internal import struct NucleusTypes.Rect
 
 struct HostedContextGeometry {
     var rootLayerId: UInt64
-    var sourceRect: Rect
+    var sourceRect: NucleusRenderModel.Rect
 }
 
 /// Inputs for lowering a remote-host layer's damage. Mirrors
@@ -182,7 +184,10 @@ func shouldTrackNativeLayerDamage(_ layer: Layer) -> Bool {
     }
 }
 
-private func mappedLayerRect(_ matrix: M44, _ rect: Rect) -> LogicalRect {
+private func mappedLayerRect(
+    _ matrix: M44,
+    _ rect: NucleusRenderModel.Rect
+) -> LogicalRect {
     let mapped = matrix.mapRect(rect.x, rect.y, rect.w, rect.h)
     return LogicalRect(x: Double(mapped.x), y: Double(mapped.y),
                        width: Double(mapped.w), height: Double(mapped.h))

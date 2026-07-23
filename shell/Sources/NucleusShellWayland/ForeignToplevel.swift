@@ -8,7 +8,7 @@
 // taskbar actions directly back through the handle.
 
 import WaylandClientC
-import WaylandClientDispatch
+public import WaylandClientDispatch
 
 /// A window as seen over foreign-toplevel. Value snapshot the native taskbar reads.
 public struct ToplevelWindow: Identifiable, Sendable {

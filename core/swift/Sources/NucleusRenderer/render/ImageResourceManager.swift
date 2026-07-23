@@ -1,4 +1,4 @@
-import NucleusRenderModel
+internal import NucleusRenderModel
 import NucleusSkiaGraphiteBridge
 
 /// Explicit lifecycle of one renderer image resource. CPU decode and Graphite

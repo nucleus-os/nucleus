@@ -1,5 +1,5 @@
 import PackagePlugin
-import Foundation
+import Foundation // Process executes the native dependency build.
 
 // Command plugin: builds the RN-curated C++ runtime layer on host — glog (its own
 // CMake) and the folly_runtime + ReactCommon jsi superbuild (swiftpm/cmake/

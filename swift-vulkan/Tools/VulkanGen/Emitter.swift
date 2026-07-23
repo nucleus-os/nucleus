@@ -8,11 +8,11 @@ private let header = """
 // shadow Swift stdlib or other modules; dispatch tables are typed against
 // the raw `PFN_vk*` function-pointer typedefs imported from VulkanC.
 
-import VulkanC
+public import VulkanC
 
 /// Cast a loader-returned void function pointer to a typed PFN. Returns nil
 /// when the command is unavailable (extension not enabled / not present).
-@inline(__always)
+@inline(always)
 func vkLoad<T>(_ p: PFN_vkVoidFunction?, as type: T.Type) -> T? {
     guard let p else { return nil }
     return unsafeBitCast(p, to: T.self)

@@ -1,4 +1,5 @@
-@_spi(NucleusCompositor) import NucleusLayers
+@_spi(NucleusCompositor) public import NucleusLayers
+public import enum NucleusTypes.BackdropMaterialKind
 
 /// Single Swift authority for backdrop dynamics, material identity, state,
 /// appearance, accessibility, visibility, occlusion, and grouping. The caller

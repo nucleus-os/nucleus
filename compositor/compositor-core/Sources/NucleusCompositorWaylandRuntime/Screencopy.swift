@@ -11,6 +11,7 @@
 import WaylandServerC
 import WaylandServer
 import WaylandServerDispatch
+import NucleusRenderModel
 
 /// Buffer the client must allocate to receive a capture.
 struct ScreencopyParams {
@@ -83,7 +84,7 @@ private final class WeakScreencopyFrame {
 
 @MainActor
 final class ScreencopyManager {
-    weak var delegate: ScreencopyDelegate?
+    weak var delegate: (any ScreencopyDelegate)?
     private var pendingFrames: [UInt64: [WeakScreencopyFrame]] = [:]
     private var admittedByClient: [UInt: Int] = [:]
     private var admittedByOutput: [UInt64: Int] = [:]
