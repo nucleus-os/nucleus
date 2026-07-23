@@ -32,6 +32,7 @@ final class RouterXwaylandDriver {
     private let seatDriver: RouterSeatDriver
     private let compositor: WlCompositor
     private let feeder: SceneFeeder?
+    private let sceneDriver: RouterSurfaceSceneDriver
 
     /// model window id → X11 window id, for the reverse configure crossing.
     private var x11ByWindow: [UInt64: UInt64] = [:]
@@ -40,12 +41,14 @@ final class RouterXwaylandDriver {
         seatDriver: RouterSeatDriver,
         compositor: WlCompositor,
         feeder: SceneFeeder? = nil,
+        sceneDriver: RouterSurfaceSceneDriver,
         host: RouterHost
     ) {
         self.host = host
         self.seatDriver = seatDriver
         self.compositor = compositor
         self.feeder = feeder
+        self.sceneDriver = sceneDriver
     }
 
     /// Create the model window for a freshly-paired X11 window, bound to its router
@@ -123,9 +126,12 @@ final class RouterXwaylandDriver {
             feeder?.cancelClosingForRemap(window: window)
             window.mapped = true
             let rect = window.currentRect()
-            feeder?.windowMapped(
-                surfaceID: surfaceId, x: rect.x, y: rect.y,
-                width: Double(rect.width), height: Double(rect.height))
+            sceneDriver.mapRootSurface(
+                surfaceID: surfaceId,
+                x: rect.x,
+                y: rect.y,
+                width: Double(rect.width),
+                height: Double(rect.height))
             if window.wantsKeyboardFocus {
                 wm.server.windows.focus(id: windowID)
                 seatDriver.setKeyboardFocus(toSurfaceId: surfaceId)

@@ -1,5 +1,5 @@
 /.build/
-/.install/
+/.install
 /Tools/.build/
 /.nucleus/
 /logs/

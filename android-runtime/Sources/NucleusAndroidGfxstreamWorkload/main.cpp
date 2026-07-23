@@ -8,9 +8,12 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <csignal>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <stdexcept>
@@ -2270,8 +2273,31 @@ void printFailure(const std::string &message) {
 }  // namespace
 
 int main(int argc, char **argv) {
-    if (argc == 2 &&
-        std::strcmp(argv[1], "--broker-worker") == 0) {
+    if (argc > 1 && std::strcmp(argv[1], "--broker-worker") == 0) {
+        char *end = nullptr;
+        errno = 0;
+        const long parentPID =
+            argc == 4 && std::strcmp(argv[2], "--parent-pid") == 0
+            ? std::strtol(argv[3], &end, 10)
+            : 0;
+        if (errno != 0 || !end || *end != '\0' || parentPID <= 1 ||
+            parentPID > std::numeric_limits<int32_t>::max()) {
+            std::fprintf(
+                stderr,
+                "nucleus-android-gfxstream-workload: --broker-worker "
+                "requires --parent-pid PID\n");
+            return 1;
+        }
+        if (nucleus_android_ipc_require_parent_lifetime(
+                SIGTERM,
+                static_cast<int32_t>(parentPID)) != 0) {
+            std::fprintf(
+                stderr,
+                "nucleus-android-gfxstream-workload: cannot bind worker "
+                "lifetime to broker: %s\n",
+                std::strerror(errno));
+            return 1;
+        }
         return runBrokerWorker(STDIN_FILENO);
     }
     try {

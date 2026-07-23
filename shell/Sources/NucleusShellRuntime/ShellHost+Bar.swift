@@ -260,7 +260,11 @@ extension ShellHost {
                 isActive: $0.activated,
                 isMinimized: $0.minimized)
         } ?? []
-        productController?.updateWindows(snapshots)
+        if let productController, let nativePublicationContext {
+            nativePublicationContext.withSemanticContext {
+                productController.updateWindows(snapshots)
+            }
+        }
         requestRender(nativeSceneChanged: true)
     }
 

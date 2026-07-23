@@ -3,42 +3,25 @@ struct AndroidCommand {
 
     func run(
         _ arguments: ArraySlice<String>,
-        dryRun: Bool = false,
-        explain: Bool = false,
-        verbose: Bool = false,
-        json: Bool = false
+        controls: TaskControls = TaskControls()
     ) throws {
         guard let command = arguments.first else { throw WorkspaceFailure.message(usage) }
         let rest = Array(arguments.dropFirst())
         let registry = ComponentRegistry(context: context)
         switch command {
         case "build":
-            try registry.buildAndroidHost(
-                gradleArguments: rest,
-                dryRun: dryRun,
-                explain: explain,
-                verbose: verbose,
-                json: json)
+            try registry.buildAndroidHost(gradleArguments: rest, controls: controls)
         case "native":
             guard rest.isEmpty else {
                 throw WorkspaceFailure.message("android native does not accept arguments\n\n\(usage)")
             }
-            try registry.buildAndroidNative(
-                dryRun: dryRun,
-                explain: explain,
-                verbose: verbose,
-                json: json)
+            try registry.buildAndroidNative(controls: controls)
         case "verify":
             guard rest.count <= 1 else {
                 throw WorkspaceFailure.message(
                     "android verify accepts at most one library path\n\n\(usage)")
             }
-            try registry.validateAndroidHost(
-                library: rest.first,
-                dryRun: dryRun,
-                explain: explain,
-                verbose: verbose,
-                json: json)
+            try registry.validateAndroidHost(library: rest.first, controls: controls)
         case "help", "--help", "-h":
             print(usage)
         default:

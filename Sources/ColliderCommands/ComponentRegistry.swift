@@ -64,30 +64,14 @@ struct ComponentRegistry {
         ]
     }
 
-    func build(
-        selection: String?,
-        dryRun: Bool,
-        explain: Bool,
-        verbose: Bool,
-        json: Bool
-    ) throws {
-        let report = try execute(
+    func build(selection: String?, controls: TaskControls) throws {
+        try context.execute(
             tasks: try buildTasks(),
             selected: try selectedBuildTasks(selection),
-            dryRun: dryRun,
-            explain: explain,
-            verbose: verbose,
-            json: json)
-        try render(report, dryRun: dryRun, explain: explain, json: json)
+            controls: controls)
     }
 
-    func bootstrap(
-        selection: String?,
-        dryRun: Bool,
-        explain: Bool,
-        verbose: Bool,
-        json: Bool
-    ) throws {
+    func bootstrap(selection: String?, controls: TaskControls) throws {
         let name = selection ?? "all"
         let supported = Set([
             "all", "runtime", "tracy", "vulkan", "wayland", "core",
@@ -176,40 +160,17 @@ struct ComponentRegistry {
 
         let selected = try selectedBuildTasks(
             name == "runtime" ? nil : name)
-        let report = try execute(
-            tasks: tasks,
-            selected: selected,
-            dryRun: dryRun,
-            explain: explain,
-            verbose: verbose,
-            json: json)
-        try render(report, dryRun: dryRun, explain: explain, json: json)
+        try context.execute(tasks: tasks, selected: selected, controls: controls)
     }
 
-    func test(
-        selection: String?,
-        dryRun: Bool,
-        explain: Bool,
-        verbose: Bool,
-        json: Bool
-    ) throws {
-        let report = try execute(
+    func test(selection: String?, controls: TaskControls) throws {
+        try context.execute(
             tasks: try testTasks(),
             selected: try selectedTestTasks(selection),
-            dryRun: dryRun,
-            explain: explain,
-            verbose: verbose,
-            json: json)
-        try render(report, dryRun: dryRun, explain: explain, json: json)
+            controls: controls)
     }
 
-    func generate(
-        _ component: String,
-        dryRun: Bool,
-        explain: Bool,
-        verbose: Bool,
-        json: Bool
-    ) throws {
+    func generate(_ component: String, controls: TaskControls) throws {
         let root = FilePath(context.root.path)
         let environment = context.taskEnvironment
         let task: TaskDeclaration
@@ -240,52 +201,12 @@ struct ComponentRegistry {
         default:
             throw WorkspaceFailure.message("unknown generator '\(component)'")
         }
-        let report = try execute(
-            tasks: tasks,
-            selected: [task.id],
-            dryRun: dryRun,
-            explain: explain,
-            verbose: verbose,
-            json: json)
-        try render(report, dryRun: dryRun, explain: explain, json: json)
-    }
-
-    func provisionSkia(
-        android: Bool,
-        dryRun: Bool = false,
-        explain: Bool = false,
-        verbose: Bool = false,
-        json: Bool = false
-    ) throws {
-        let root = FilePath(context.root.path).appending("core")
-        let source = try coreSourceTask(
-            root: root,
-            environment: context.taskEnvironment)
-        let task = android
-            ? CoreColliderRecipe.buildSkiaAndroid(
-                root: root, environment: context.taskEnvironment)
-            : CoreColliderRecipe.buildSkia(
-                root: root, environment: context.taskEnvironment)
-        let sdk = CoreColliderRecipe.publishRenderSDK(
-            root: root,
-            sdkRoot: nativeSDKRoot,
-            dependencies: [task.id])
-        let report = try execute(
-            tasks: [source, task, sdk],
-            selected: [sdk.id],
-            dryRun: dryRun,
-            explain: explain,
-            verbose: verbose,
-            json: json)
-        try render(report, dryRun: dryRun, explain: explain, json: json)
+        try context.execute(tasks: tasks, selected: [task.id], controls: controls)
     }
 
     func buildAndroidHost(
         gradleArguments: [String],
-        dryRun: Bool,
-        explain: Bool,
-        verbose: Bool,
-        json: Bool
+        controls: TaskControls
     ) throws {
         let tasks = try androidHostTasks()
         let android = FilePath(context.root.path).appending("core/android")
@@ -312,40 +233,21 @@ struct ComponentRegistry {
                     ? ["verifyDebug"] : gradleArguments,
                 workingDirectory: android,
                 environment: context.taskEnvironment)))
-        let report = try execute(
+        try context.execute(
             tasks: tasks + [gradle],
             selected: [gradle.id],
-            dryRun: dryRun,
-            explain: explain,
-            verbose: verbose,
-            json: json)
-        try render(report, dryRun: dryRun, explain: explain, json: json)
+            controls: controls)
     }
 
-    func buildAndroidNative(
-        dryRun: Bool,
-        explain: Bool,
-        verbose: Bool,
-        json: Bool
-    ) throws {
+    func buildAndroidNative(controls: TaskControls) throws {
         let tasks = try androidHostTasks()
         let selected = TaskID(rawValue: "core.android-host.validate")
-        let report = try execute(
-            tasks: tasks,
-            selected: [selected],
-            dryRun: dryRun,
-            explain: explain,
-            verbose: verbose,
-            json: json)
-        try render(report, dryRun: dryRun, explain: explain, json: json)
+        try context.execute(tasks: tasks, selected: [selected], controls: controls)
     }
 
     func validateAndroidHost(
         library: String?,
-        dryRun: Bool,
-        explain: Bool,
-        verbose: Bool,
-        json: Bool
+        controls: TaskControls
     ) throws {
         let core = FilePath(context.root.path).appending("core")
         let supplied = library.map {
@@ -358,137 +260,7 @@ struct ComponentRegistry {
             library: supplied,
             environment: context.taskEnvironment,
             dependencies: [])
-        let report = try execute(
-            tasks: [task],
-            selected: [task.id],
-            dryRun: dryRun,
-            explain: explain,
-            verbose: verbose,
-            json: json)
-        try render(report, dryRun: dryRun, explain: explain, json: json)
-    }
-
-    func provisionReactNativeCxx(
-        dryRun: Bool = false,
-        explain: Bool = false,
-        verbose: Bool = false,
-        json: Bool = false
-    ) throws {
-        let root = FilePath(context.root.path).appending("react-native")
-        let environment = context.taskEnvironment
-        let source = try reactNativeSourceTask(
-            root: root, environment: environment)
-        let javascript =
-            ReactNativeColliderRecipe.installJavaScriptDependencies(
-                root: root, environment: environment)
-        let types = ReactNativeColliderRecipe.generateStrictTypes(
-            root: root, environment: environment)
-        let generate = ReactNativeColliderRecipe.generate(
-            root: root, environment: environment)
-        let boost = try ReactNativeColliderRecipe.provisionBoost(
-            root: root, environment: environment)
-        let hermes = ReactNativeColliderRecipe.buildHermes(
-            root: root,
-            environment: environment,
-            host: try hermesHostDependencies())
-        let support = ReactNativeColliderRecipe.buildSupportLibraries(
-            root: root, environment: environment)
-        let runtime = ReactNativeColliderRecipe.buildCxxRuntime(
-            root: root, environment: environment)
-        let report = try execute(
-            tasks: [
-                source, javascript, types, generate, boost, hermes, support,
-                runtime,
-            ],
-            selected: [runtime.id],
-            dryRun: dryRun,
-            explain: explain,
-            verbose: verbose,
-            json: json)
-        try render(report, dryRun: dryRun, explain: explain, json: json)
-    }
-
-    func provisionHermes(
-        dryRun: Bool = false,
-        explain: Bool = false,
-        verbose: Bool = false,
-        json: Bool = false
-    ) throws {
-        let root = FilePath(context.root.path).appending("react-native")
-        let source = try reactNativeSourceTask(
-            root: root, environment: context.taskEnvironment)
-        let task = ReactNativeColliderRecipe.buildHermes(
-            root: root,
-            environment: context.taskEnvironment,
-            host: try hermesHostDependencies())
-        let report = try execute(
-            tasks: [source, task],
-            selected: [task.id],
-            dryRun: dryRun,
-            explain: explain,
-            verbose: verbose,
-            json: json)
-        try render(report, dryRun: dryRun, explain: explain, json: json)
-    }
-
-    func stageReactNativeHostArchive(
-        configuration: String,
-        dryRun: Bool = false,
-        explain: Bool = false,
-        verbose: Bool = false,
-        json: Bool = false
-    ) throws {
-        let task = try ReactNativeColliderRecipe.stageHostArchive(
-            root: FilePath(context.root.path).appending("react-native"),
-            configuration: configuration)
-        let report = try execute(
-            tasks: [task],
-            selected: [task.id],
-            dryRun: dryRun,
-            explain: explain,
-            verbose: verbose,
-            json: json)
-        try render(report, dryRun: dryRun, explain: explain, json: json)
-    }
-
-    private func execute(
-        tasks: [TaskDeclaration],
-        selected: [TaskID],
-        dryRun: Bool,
-        explain: Bool,
-        verbose: Bool,
-        json: Bool
-    ) throws -> TaskExecutionReport {
-        let graph = try TaskGraph(tasks)
-        let state = FilePath(context.root.appendingPathComponent(".nucleus/tasks").path)
-        return try waitForAsyncResult {
-            try await context.runtime.execute(
-                graph: graph,
-                selected: selected,
-                stateRoot: state,
-                options: TaskExecutionOptions(
-                    dryRun: dryRun,
-                    explain: explain,
-                    verbose: verbose,
-                    machineReadable: json))
-        }
-    }
-
-    private func render(
-        _ report: TaskExecutionReport,
-        dryRun: Bool,
-        explain: Bool,
-        json: Bool
-    ) throws {
-        if json {
-            let encoder = JSONEncoder()
-            encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-            print(String(decoding: try encoder.encode(report), as: UTF8.self))
-        } else if dryRun || explain {
-            for entry in report.plan {
-                print("\(entry.isClean ? "clean" : "dirty")  \(entry.task.rawValue)  \(entry.explanation)")
-            }
-        }
+        try context.execute(tasks: [task], selected: [task.id], controls: controls)
     }
 
     private func selectedBuildTasks(_ selection: String?) throws -> [TaskID] {
@@ -655,14 +427,11 @@ struct ComponentRegistry {
     }
 
     private var nativeSDKRoot: FilePath {
-        let environment = context.taskEnvironment
-        if let explicit = environment["NUCLEUS_NATIVE_SDK_ROOT"] {
+        if let explicit = context.taskEnvironment["NUCLEUS_NATIVE_SDK_ROOT"] {
             return FilePath(explicit)
         }
-        let cache = environment["XDG_CACHE_HOME"]
-            ?? environment["HOME"].map { $0 + "/.cache" }
-            ?? "/tmp"
-        return FilePath(cache).appending("nucleus/nucleus-native-sdk")
+        return FilePath(context.cacheRoot
+            .appendingPathComponent("nucleus/nucleus-native-sdk").path)
     }
 
     private func addingDependency(

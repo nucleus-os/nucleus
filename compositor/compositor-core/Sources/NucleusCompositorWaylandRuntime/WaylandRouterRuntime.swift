@@ -110,6 +110,7 @@ public final class WaylandRouterRuntime {
             host: host)
         let xwaylandDriver = RouterXwaylandDriver(
             seatDriver: seatDriver, compositor: compositor, feeder: feeder,
+            sceneDriver: windowDriver.sceneDriver,
             host: host)
         let renderDriver = RouterRenderDriver(server: host.server)
         let dataDeviceDriver = RouterDataDeviceDriver(

@@ -62,7 +62,10 @@ final class GfxstreamWorkerBrokerRenderBackend: BrokerRenderBackend {
         do {
             let child = Process()
             child.executableURL = executableURL
-            child.arguments = ["--broker-worker"]
+            child.arguments = [
+                "--broker-worker",
+                "--parent-pid", String(getpid()),
+            ]
             child.standardInput = FileHandle(
                 fileDescriptor: childDescriptor,
                 closeOnDealloc: false)

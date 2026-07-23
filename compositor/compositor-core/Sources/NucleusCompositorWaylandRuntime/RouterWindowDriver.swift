@@ -26,6 +26,29 @@ internal import NucleusCompositorServer
 import NucleusCompositorServerTypes
 internal import NucleusCompositorWindowManager
 import NucleusRenderModel
+import Glibc
+
+struct XdgCommittedContentSize: Equatable {
+    var width: UInt32
+    var height: UInt32
+}
+
+func xdgCommittedContentSize(
+    windowGeometry: WlRect?,
+    surfaceLogicalWidth: Double,
+    surfaceLogicalHeight: Double
+) -> XdgCommittedContentSize {
+    func positiveExtent(_ value: Double) -> UInt32 {
+        guard value.isFinite else { return 1 }
+        return UInt32(clamping: Int(max(1, value.rounded(.up))))
+    }
+
+    return XdgCommittedContentSize(
+        width: windowGeometry.map { UInt32(max(1, $0.width)) }
+            ?? positiveExtent(surfaceLogicalWidth),
+        height: windowGeometry.map { UInt32(max(1, $0.height)) }
+            ?? positiveExtent(surfaceLogicalHeight))
+}
 
 @MainActor
 final class RouterWindowDriver {
@@ -56,7 +79,7 @@ final class RouterWindowDriver {
     /// forward to it, and it shares this driver's `compositor` + `feeder`. Keeping it a
     /// composed helper (rather than reassigning `compositor.sceneDelegate`) lets the
     /// coupled `surfaceDestroyed` (scene teardown + seat unmap) stay coherent here.
-    private let sceneDriver: RouterSurfaceSceneDriver
+    let sceneDriver: RouterSurfaceSceneDriver
 
     init(
         seatDriver: RouterSeatDriver,
@@ -126,6 +149,11 @@ final class RouterWindowDriver {
 
     private func isFocused(_ windowID: WindowID) -> Bool {
         server.windows.focusedWindow?.id == windowID
+    }
+
+    private func diagnostic(_ message: String) {
+        let line = "xdg-window: \(message)\n"
+        line.withCString { _ = write(STDERR_FILENO, $0, strlen($0)) }
     }
 
     func configureImpl(token: UInt, surfaceId: UInt32, initial: Bool) -> XdgToplevelConfigure {
@@ -200,7 +228,8 @@ final class RouterWindowDriver {
 
     func didCommitImpl(
         token: UInt, surfaceId: UInt32, ackedSerial: UInt32,
-        geom: WlRect?, hasBuffer: Bool
+        geom: WlRect?, surfaceLogicalWidth: Double,
+        surfaceLogicalHeight: Double, hasBuffer: Bool
     ) {
         let wm = windowManager
         guard let entry = byToplevel[token], let window = wm.server.window(id: entry.windowID) else { return }
@@ -219,8 +248,12 @@ final class RouterWindowDriver {
         let acceptedConfigure = window.consumeAckedConfigure(serial: ackedSerial)
         // Visible content is the declared window geometry (a sub-rect of the buffer);
         // absent a geometry, the last committed logical size stands.
-        let contentW = geom.map { UInt32(max(1, $0.width)) } ?? UInt32(max(1, window.committedLogicalSize.w))
-        let contentH = geom.map { UInt32(max(1, $0.height)) } ?? UInt32(max(1, window.committedLogicalSize.h))
+        let contentSize = xdgCommittedContentSize(
+            windowGeometry: geom,
+            surfaceLogicalWidth: surfaceLogicalWidth,
+            surfaceLogicalHeight: surfaceLogicalHeight)
+        let contentW = contentSize.width
+        let contentH = contentSize.height
         window.committedLogicalSize = RenderSize(w: Double(contentW), h: Double(contentH))
 
         let firstMap = !window.mapped
@@ -260,6 +293,11 @@ final class RouterWindowDriver {
             window.setRequestedFrame(committedFrame)
         }
         if firstMap {
+            diagnostic(
+                "map surface=\(surfaceId) content=\(contentW)x\(contentH) "
+                    + "surface=\(surfaceLogicalWidth)x\(surfaceLogicalHeight) "
+                    + "frame=\(frameW)x\(frameH) "
+                    + "geometry=\(geom == nil ? "implicit" : "explicit")")
             // Snap the presentation actor to the first presented frame — no animation
             // on first appearance (the open fade covers that); subsequent re-tiles ease
             // from here. Hand the freshly-mapped window to the scene author: it self-
@@ -268,8 +306,12 @@ final class RouterWindowDriver {
             window.seedPresentationActorToRect(
                 PresentationRect(x: x, y: y, w: Double(frameW), h: Double(frameH)),
                 slotGeneration: window.presentationActor.currentSlotGeneration)
-            feeder?.windowMapped(
-                surfaceID: surfaceId, x: x, y: y, width: Double(frameW), height: Double(frameH))
+            sceneDriver.mapRootSurface(
+                surfaceID: surfaceId,
+                x: x,
+                y: y,
+                width: Double(frameW),
+                height: Double(frameH))
         } else if acceptedConfigure?.layoutTransitionID == 0 {
             window.seedPresentationActorToRect(
                 PresentationRect(x: x, y: y, w: Double(frameW), h: Double(frameH)),
@@ -691,10 +733,17 @@ extension RouterWindowDriver: XdgShellDelegate {
         let t = token(toplevel)
         let surfaceId = toplevel.xdgSurface?.surface?.objectId ?? 0
         let geom = toplevel.windowGeometry
+        let surfaceLogicalWidth =
+            toplevel.xdgSurface?.surface?.committedLogicalWidth ?? 0
+        let surfaceLogicalHeight =
+            toplevel.xdgSurface?.surface?.committedLogicalHeight ?? 0
         return MainActor.assumeIsolated {
             self.didCommitImpl(
                 token: t, surfaceId: surfaceId, ackedSerial: ackedSerial,
-                geom: geom, hasBuffer: hasBuffer)
+                geom: geom,
+                surfaceLogicalWidth: surfaceLogicalWidth,
+                surfaceLogicalHeight: surfaceLogicalHeight,
+                hasBuffer: hasBuffer)
         }
     }
     nonisolated func toplevelDidRequest(_ toplevel: XdgToplevel, _ request: XdgToplevelRequest) {

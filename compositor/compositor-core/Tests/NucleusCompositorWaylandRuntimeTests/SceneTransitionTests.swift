@@ -10,6 +10,39 @@ import NucleusCompositorWindowScene
 struct NucleusCompositorTransitionStressTests {
 
 @MainActor
+@Test func firstMapPublishesAlreadyImportedRootContent() {
+    let graph = WaylandTestGraph()
+    let sink = InMemoryCommitSink()
+    let author = WindowSceneAuthor(commitSinkFactory: { sink })
+    let feeder = SceneFeeder(author: author, host: graph.host)
+    let sample = ContentSample(
+        sourceSurfaceID: 76,
+        srcWidth: 1280,
+        srcHeight: 720,
+        logicalWidth: 1280,
+        logicalHeight: 720)
+
+    feeder.windowMapped(
+        surfaceID: 76,
+        x: 20,
+        y: 30,
+        width: 1280,
+        height: 748,
+        iosurfaceID: 42,
+        sample: sample)
+
+    let contentUpdates = sink.transactions
+        .flatMap(\.propertyUpdates)
+        .compactMap(\.properties.content)
+    let sampleUpdates = sink.transactions
+        .flatMap(\.propertyUpdates)
+        .compactMap(\.properties.contentSample)
+    #expect(contentUpdates.contains(
+        LayerContent(kind: .external, handle: 42)))
+    #expect(sampleUpdates.contains(sample))
+}
+
+@MainActor
 @Test func closingTransitionRetainsSnapshotAndDestroysExactlyOnce() throws {
     let graph = WaylandTestGraph()
     let server = graph.server

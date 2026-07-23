@@ -100,11 +100,3 @@ struct RepositoryState {
         }
     }
 }
-
-private extension JSONEncoder {
-    static var sorted: JSONEncoder {
-        let value = JSONEncoder()
-        value.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-        return value
-    }
-}

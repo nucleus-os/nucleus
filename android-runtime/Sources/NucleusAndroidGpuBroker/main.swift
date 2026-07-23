@@ -4,6 +4,7 @@ import NucleusAndroidGraphicsContract
 import NucleusAndroidGraphicsPlatform
 import NucleusAndroidGpuBrokerCore
 import NucleusAndroidIPC
+import NucleusAndroidIPCC
 import NucleusLinuxReactor
 
 private struct BrokerArguments {
@@ -11,6 +12,7 @@ private struct BrokerArguments {
     var diagnose = false
     var renderNode: String?
     var once = false
+    var parentPID: Int32?
     var guestWorkload: String?
     var diagnoseGuestWorkload: String?
 
@@ -33,6 +35,15 @@ private struct BrokerArguments {
                 result.diagnose = true
             case "--once":
                 result.once = true
+            case "--parent-pid":
+                index += 1
+                guard index < arguments.count,
+                      let parentPID = Int32(arguments[index]),
+                      parentPID > 1
+                else {
+                    throw CLIError("--parent-pid requires a process ID greater than 1")
+                }
+                result.parentPID = parentPID
             case "--guest-workload":
                 index += 1
                 guard index < arguments.count else {
@@ -53,6 +64,12 @@ private struct BrokerArguments {
                 throw CLIError("unknown argument: \(arguments[index])")
             }
             index += 1
+        }
+        if result.once, result.parentPID == nil {
+            throw CLIError("--once requires --parent-pid")
+        }
+        if !result.once, result.parentPID != nil {
+            throw CLIError("--parent-pid requires --once")
         }
         return result
     }
@@ -82,7 +99,7 @@ private func printUsage() {
       nucleus-android-gpu-broker --diagnose [--render-node /dev/dri/renderD128]
       nucleus-android-gpu-broker --diagnose-guest-workload PATH
           [--render-node /dev/dri/renderD128]
-      nucleus-android-gpu-broker --socket PATH [--once]
+      nucleus-android-gpu-broker --socket PATH --once --parent-pid PID
           [--guest-workload PATH]
     """
     print(usage)
@@ -359,6 +376,15 @@ do {
             renderNode: arguments.renderNode,
             executablePath: guestWorkload)
     } else {
+        if let parentPID = arguments.parentPID,
+           nucleus_android_ipc_require_parent_lifetime(
+               SIGTERM,
+               parentPID) != 0
+        {
+            throw CLIError(
+                "cannot bind the one-shot broker lifetime to its qualifier "
+                    + "(errno \(errno))")
+        }
         let path = try arguments.socketPath ?? defaultSocketPath()
         try await runBrokerServer(
             path: path,

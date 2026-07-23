@@ -2,7 +2,7 @@ import ColliderCore
 import FoundationEssentials
 import SystemPackage
 
-enum WorkspaceComponent: String, CaseIterable, Hashable, Sendable {
+enum WorkspaceComponent: String, Hashable, Sendable {
     case tracy
     case vulkan
     case wayland
@@ -28,27 +28,6 @@ enum WorkspaceComponent: String, CaseIterable, Hashable, Sendable {
 
 struct Orchestrator {
     let context: WorkspaceContext
-
-    func build(_ selection: String?) throws {
-        for component in try components(selection) {
-            print("==> build \(component.rawValue)")
-            switch component {
-            case .tracy, .vulkan, .wayland:
-                try context.run("swift", ["build"], directory: context.repository(component.directoryName))
-            case .core, .linux:
-                try context.run("swift", ["build"], directory: context.repository(component.directoryName))
-            case .rn:
-                try context.run("swift", ["build", "--target", "NucleusReactRuntimeCxx"], directory: context.repository(component.directoryName))
-                try context.run("swift", ["build"], directory: context.repository(component.directoryName))
-            case .compositor:
-                let directory = context.repository(component.directoryName)
-                try context.run("swift", ["build", "--package-path", "compositor-core"], directory: directory)
-                try context.run("swift", ["build", "--package-path", "compositor"], directory: directory)
-            case .shell:
-                try context.run("swift", ["build"], directory: context.repository(component.directoryName))
-            }
-        }
-    }
 
     func runRepositoryWideTestGates() throws {
         for suite in releaseStructuralSuites {
@@ -121,13 +100,5 @@ struct Orchestrator {
         } catch {
             throw WorkspaceFailure.message("test failed [\(identity)]: \(error)")
         }
-    }
-
-    private func components(_ selection: String?) throws -> [WorkspaceComponent] {
-        guard let selection, selection != "all" else { return WorkspaceComponent.allCases }
-        guard let component = WorkspaceComponent(rawValue: selection) else {
-            throw WorkspaceFailure.message("unknown component '\(selection)'; expected all, tracy, vulkan, wayland, core, linux, rn, compositor, or shell")
-        }
-        return [component]
     }
 }

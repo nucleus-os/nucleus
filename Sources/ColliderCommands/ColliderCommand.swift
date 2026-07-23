@@ -63,6 +63,11 @@ public struct ColliderCommand: ParsableCommand {
                 let wasInterrupted = try waitForAsyncResult {
                     await cancellation.wasInterrupted()
                 }
+                try? waitForAsyncResult {
+                    try await registry.appendLog(
+                        Array("Error: \(error)\n".utf8),
+                        in: run)
+                }
                 let identityChanged: Bool
                 if case .resumptionIdentityChanged = error as? RunRegistryFailure {
                     identityChanged = true
@@ -97,6 +102,10 @@ struct GlobalOptions: ParsableArguments {
 
     @Option(name: .customLong("run-id"), help: "Resume an interrupted run.")
     var runID: String?
+
+    var controls: TaskControls {
+        TaskControls(dryRun: dryRun, explain: explain, verbose: verbose, json: json)
+    }
 }
 
 private func context() throws -> WorkspaceContext { try WorkspaceContext.load() }
@@ -130,18 +139,10 @@ struct Bootstrap: ParsableCommand {
         let workspace = try context()
         if component == "browser" {
             try ChromiumCommand(context: workspace).run(
-                ["bootstrap"][...],
-                dryRun: global.dryRun,
-                explain: global.explain,
-                verbose: global.verbose,
-                json: global.json)
+                ["bootstrap"][...], controls: global.controls)
         } else {
             try ComponentRegistry(context: workspace).bootstrap(
-                selection: component,
-                dryRun: global.dryRun,
-                explain: global.explain,
-                verbose: global.verbose,
-                json: global.json)
+                selection: component, controls: global.controls)
         }
     }
 }
@@ -159,25 +160,13 @@ struct Build: ParsableCommand {
                 (["rebuild"] + taskControlArguments(global))[...])
         case "android":
             try AndroidCommand(context: workspace).run(
-                ["build"][...],
-                dryRun: global.dryRun,
-                explain: global.explain,
-                verbose: global.verbose,
-                json: global.json)
+                ["build"][...], controls: global.controls)
         case "browser":
             try ChromiumCommand(context: workspace).run(
-                ["build"][...],
-                dryRun: global.dryRun,
-                explain: global.explain,
-                verbose: global.verbose,
-                json: global.json)
+                ["build"][...], controls: global.controls)
         default:
             try ComponentRegistry(context: workspace).build(
-                selection: component,
-                dryRun: global.dryRun,
-                explain: global.explain,
-                verbose: global.verbose,
-                json: global.json)
+                selection: component, controls: global.controls)
         }
     }
 }
@@ -217,32 +206,20 @@ struct Test: ParsableCommand {
         if component == "android" {
             try workspace.withExclusiveVerification {
                 try AndroidCommand(context: workspace).run(
-                    ["build"][...],
-                    dryRun: global.dryRun,
-                    explain: global.explain,
-                    verbose: global.verbose,
-                    json: global.json)
+                    ["build"][...], controls: global.controls)
             }
             return
         }
         if component == "browser" {
             try workspace.withExclusiveVerification {
                 try ChromiumCommand(context: workspace).run(
-                    ["test"][...],
-                    dryRun: global.dryRun,
-                    explain: global.explain,
-                    verbose: global.verbose,
-                    json: global.json)
+                    ["test"][...], controls: global.controls)
             }
             return
         }
         try workspace.withExclusiveVerification {
             try ComponentRegistry(context: workspace).test(
-                selection: component,
-                dryRun: global.dryRun,
-                explain: global.explain,
-                verbose: global.verbose,
-                json: global.json)
+                selection: component, controls: global.controls)
             if component == nil || component == "all", !global.dryRun {
                 try Orchestrator(context: workspace).runRepositoryWideTestGates()
             }
@@ -309,10 +286,7 @@ struct Install: ParsableCommand {
         if component == "browser" {
             try ChromiumCommand(context: context()).run(
                 ["install"][...],
-                dryRun: global.dryRun,
-                explain: global.explain,
-                verbose: global.verbose,
-                json: global.json,
+                controls: global.controls,
                 installPrefix: prefix)
             return
         }
@@ -388,22 +362,14 @@ struct Android: ParsableCommand {
         @Argument(parsing: .captureForPassthrough) var arguments: [String] = []
         mutating func run() throws {
             try AndroidCommand(context: context()).run(
-                (["build"] + arguments)[...],
-                dryRun: global.dryRun,
-                explain: global.explain,
-                verbose: global.verbose,
-                json: global.json)
+                (["build"] + arguments)[...], controls: global.controls)
         }
     }
     struct Native: ParsableCommand {
         @OptionGroup var global: GlobalOptions
         mutating func run() throws {
             try AndroidCommand(context: context()).run(
-                ["native"][...],
-                dryRun: global.dryRun,
-                explain: global.explain,
-                verbose: global.verbose,
-                json: global.json)
+                ["native"][...], controls: global.controls)
         }
     }
     struct Verify: ParsableCommand {
@@ -412,10 +378,7 @@ struct Android: ParsableCommand {
         mutating func run() throws {
             try AndroidCommand(context: context()).run(
                 (["verify"] + [library].compactMap { $0 })[...],
-                dryRun: global.dryRun,
-                explain: global.explain,
-                verbose: global.verbose,
-                json: global.json)
+                controls: global.controls)
         }
     }
 }
@@ -454,11 +417,7 @@ protocol BrowserLeaf: ParsableCommand {
 extension BrowserLeaf {
     mutating func run() throws {
         try ChromiumCommand(context: context()).run(
-            [Self.operation][...],
-            dryRun: global.dryRun,
-            explain: global.explain,
-            verbose: global.verbose,
-            json: global.json)
+            [Self.operation][...], controls: global.controls)
     }
 }
 
@@ -505,11 +464,7 @@ struct Generate: ParsableCommand {
 
 private func runGenerator(_ component: String, global: GlobalOptions) throws {
     try ComponentRegistry(context: context()).generate(
-        component,
-        dryRun: global.dryRun,
-        explain: global.explain,
-        verbose: global.verbose,
-        json: global.json)
+        component, controls: global.controls)
 }
 
 struct Validate: ParsableCommand {

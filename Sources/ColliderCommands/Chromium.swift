@@ -34,21 +34,18 @@ struct ChromiumCommand {
 
     func run(
         _ arguments: ArraySlice<String>,
-        dryRun: Bool = false,
-        explain: Bool = false,
-        verbose: Bool = false,
-        json: Bool = false,
+        controls: TaskControls = TaskControls(),
         installPrefix: String? = nil
     ) throws {
         let operation = try Self.parse(Array(arguments))
         if operation == .doctor {
             try WorkspaceDoctor(context: context).run(
                 scope: "browser",
-                dryRun: dryRun,
-                json: json)
+                dryRun: controls.dryRun,
+                json: controls.json)
             return
         }
-        if !dryRun {
+        if !controls.dryRun {
             try WorkspaceDoctor(context: context).run(
                 scope: "browser",
                 dryRun: false,
@@ -56,9 +53,7 @@ struct ChromiumCommand {
                 quiet: true)
         }
         let root = FilePath(context.root.path)
-        let cache = context.environment["XDG_CACHE_HOME"]
-            ?? context.environment["HOME"].map { $0 + "/.cache" }
-            ?? "/tmp"
+        let cache = context.cacheRoot.path
         let prefix = installPrefix
             ?? context.environment["PREFIX"]
             ?? context.environment["HOME"].map { $0 + "/.local" }
@@ -78,29 +73,10 @@ struct ChromiumCommand {
         case .test: "browser.test"
         case .install: "browser.install"
         }
-        let selected = TaskID(rawValue: selectedName)
-        let report = try waitForAsyncResult {
-            try await context.runtime.execute(
-                graph: TaskGraph(tasks),
-                selected: [selected],
-                stateRoot: root.appending(".nucleus/tasks"),
-                options: TaskExecutionOptions(
-                    dryRun: dryRun,
-                    explain: explain,
-                    verbose: verbose,
-                    machineReadable: json))
-        }
-        if json {
-            let encoder = JSONEncoder()
-            encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-            print(String(decoding: try encoder.encode(report), as: UTF8.self))
-        } else if dryRun || explain {
-            for entry in report.plan {
-                print(
-                    "\(entry.isClean ? "clean" : "dirty")  "
-                        + "\(entry.task.rawValue)  \(entry.explanation)")
-            }
-        }
+        try context.execute(
+            tasks: tasks,
+            selected: [TaskID(rawValue: selectedName)],
+            controls: controls)
     }
 
     func sourceIdentifier() throws -> String {

@@ -4,6 +4,7 @@ import NucleusAndroidPresentationQualification
 
 private struct Arguments {
     var broker: String?
+    var brokerSocket: String?
     var workload: String?
     var expectedRenderDevice: String?
     var wayland = "wayland-0"
@@ -25,6 +26,9 @@ private struct Arguments {
             switch option {
             case "--broker":
                 result.broker = try value()
+                index += 1
+            case "--broker-socket":
+                result.brokerSocket = try value()
                 index += 1
             case "--workload":
                 result.workload = try value()
@@ -56,6 +60,7 @@ private struct Arguments {
             index += 1
         }
         guard result.broker != nil,
+              result.brokerSocket != nil,
               result.workload != nil,
               result.expectedRenderDevice != nil,
               result.output != nil,
@@ -68,7 +73,8 @@ private struct Arguments {
 
     static let usage = """
     Usage: nucleus-android-presentation-qualifier
-      --broker PATH --workload PATH --expected-render-device PATH
+      --broker PATH --broker-socket PATH
+      --workload PATH --expected-render-device PATH
       --output DIRECTORY --support-bundle PATH
       [--wayland NAME] [--frames COUNT]
     """
@@ -88,6 +94,7 @@ private struct NucleusAndroidPresentationQualifier {
             let summary = try await PresentationQualificationRunner(
                 configuration: PresentationQualificationConfiguration(
                     brokerExecutable: arguments.broker!,
+                    brokerSocket: URL(fileURLWithPath: arguments.brokerSocket!),
                     guestWorkloadExecutable: arguments.workload!,
                     expectedRenderDevice: arguments.expectedRenderDevice!,
                     waylandSocket: arguments.wayland,

@@ -4,6 +4,7 @@ import NucleusAndroidSurfaceProbeCore
 
 public struct PresentationQualificationConfiguration: Sendable {
     public var brokerExecutable: String
+    public var brokerSocket: URL
     public var guestWorkloadExecutable: String
     public var expectedRenderDevice: String
     public var waylandSocket: String
@@ -13,6 +14,7 @@ public struct PresentationQualificationConfiguration: Sendable {
 
     public init(
         brokerExecutable: String,
+        brokerSocket: URL,
         guestWorkloadExecutable: String,
         expectedRenderDevice: String,
         waylandSocket: String = "wayland-0",
@@ -21,6 +23,7 @@ public struct PresentationQualificationConfiguration: Sendable {
         frameCount: UInt64
     ) {
         self.brokerExecutable = brokerExecutable
+        self.brokerSocket = brokerSocket
         self.guestWorkloadExecutable = guestWorkloadExecutable
         self.expectedRenderDevice = expectedRenderDevice
         self.waylandSocket = waylandSocket
@@ -176,8 +179,6 @@ public final class PresentationQualificationRunner {
             at: configuration.outputDirectory,
             withIntermediateDirectories: true)
 
-        let brokerSocket = configuration.outputDirectory
-            .appendingPathComponent("android-gpu-broker.sock")
         let brokerStandardOutput = configuration.outputDirectory
             .appendingPathComponent("broker.stdout.log")
         let brokerTrace = configuration.outputDirectory
@@ -194,17 +195,17 @@ public final class PresentationQualificationRunner {
 
         do {
             broker = try launchBroker(
-                socket: brokerSocket,
+                socket: configuration.brokerSocket,
                 standardOutput: brokerStandardOutput,
                 standardError: brokerTrace)
             try await waitForSocket(
-                brokerSocket,
+                configuration.brokerSocket,
                 process: broker!.process,
                 timeout: .seconds(10))
             report = try await AndroidSurfaceProbe(configuration:
                 SurfaceProbeConfiguration(
                     waylandSocket: configuration.waylandSocket,
-                    brokerSocket: brokerSocket.path,
+                    brokerSocket: configuration.brokerSocket.path,
                     width: 1280,
                     height: 720,
                     frameCount: configuration.frameCount,
@@ -274,6 +275,7 @@ public final class PresentationQualificationRunner {
             process.arguments = [
                 "--socket", socket.path,
                 "--once",
+                "--parent-pid", String(getpid()),
                 "--guest-workload", configuration.guestWorkloadExecutable,
             ]
             process.standardOutput = outputHandle

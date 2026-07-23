@@ -112,9 +112,8 @@ struct VulkanValidation {
             directory: layer?.directory,
             searchDirectories: directories)
         if json {
-            let encoder = JSONEncoder()
-            encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-            print(String(decoding: try encoder.encode(report), as: UTF8.self))
+            print(String(
+                decoding: try JSONEncoder.sorted.encode(report), as: UTF8.self))
             return
         }
         if let layer {

@@ -36,6 +36,7 @@ final class RouterSurfaceSceneDriver {
     private let feeder: SceneFeeder?
     private var reportedImports: Set<UInt32> = []
     private var reportedLayerMaps: Set<UInt32> = []
+    private var reportedRootMaps: Set<UInt32> = []
 
     init(compositor: WlCompositor, feeder: SceneFeeder?, host: RouterHost) {
         self.host = host
@@ -333,6 +334,41 @@ final class RouterSurfaceSceneDriver {
         window.committedBufferSize = RenderSize(w: Double(width), h: Double(height))
     }
 
+    /// Create a root window scene with the surface content that was imported earlier
+    /// in the same Wayland commit. `WlSurface.applyLatch` intentionally publishes
+    /// scene state before invoking the role callback, so a first-map root has no
+    /// scene during `publishContent`; mapping must bind the retained texture itself.
+    func mapRootSurface(
+        surfaceID: UInt32,
+        x: Double,
+        y: Double,
+        width: Double,
+        height: Double
+    ) {
+        guard let surface = compositor.surface(id: surfaceID) else {
+            feeder?.windowMapped(
+                surfaceID: surfaceID,
+                x: x,
+                y: y,
+                width: width,
+                height: height)
+            return
+        }
+        if reportedRootMaps.insert(surfaceID).inserted {
+            diagnostic(
+                "root-map surface=\(surfaceID) frame=\(x),\(y) "
+                    + "\(width)x\(height) texture=\(surface.renderIosurfaceId)")
+        }
+        feeder?.windowMapped(
+            surfaceID: surfaceID,
+            x: x,
+            y: y,
+            width: width,
+            height: height,
+            iosurfaceID: surface.renderIosurfaceId,
+            sample: contentSample(for: surface))
+    }
+
     /// Publish the surface's freshly-uploaded IOSurface as its backing layer's
     /// content through the scene feeder. A subsurface composites within its parent
     /// window's scene at its offset (its own backing layer under the parent content);
@@ -422,12 +458,20 @@ final class RouterSurfaceSceneDriver {
             window.seedPresentationActorToRect(
                 PresentationRect(x: x, y: y, w: max(1, w), h: max(1, h)),
                 slotGeneration: window.presentationActor.currentSlotGeneration)
-            feeder?.windowMapped(surfaceID: surface.objectId, x: x, y: y, width: w, height: h)
+            feeder?.windowMapped(
+                surfaceID: surface.objectId,
+                x: x,
+                y: y,
+                width: w,
+                height: h,
+                iosurfaceID: surface.renderIosurfaceId,
+                sample: contentSample(for: surface))
+        } else {
+            feeder?.surfaceContent(
+                surfaceID: surface.objectId,
+                iosurfaceID: surface.renderIosurfaceId,
+                sample: contentSample(for: surface))
         }
-        feeder?.surfaceContent(
-            surfaceID: surface.objectId,
-            iosurfaceID: surface.renderIosurfaceId,
-            sample: contentSample(for: surface))
     }
 
     /// Tear down a layer surface's model window + scene on surface destruction.

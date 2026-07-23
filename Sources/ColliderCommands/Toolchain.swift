@@ -30,11 +30,7 @@ struct ToolchainStatus {
         #else
         let platformID = sourceID
         #endif
-        let cache = context.environment["XDG_CACHE_HOME"].map {
-            URL(fileURLWithPath: $0, isDirectory: true)
-        } ?? FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".cache", isDirectory: true)
-        let root = cache.appendingPathComponent(
+        let root = context.cacheRoot.appendingPathComponent(
             "nucleus/swift-platforms/\(platformID)",
             isDirectory: true)
         let current = root.appendingPathComponent("current")
@@ -68,9 +64,8 @@ struct ToolchainStatus {
             androidBundles: bundles,
             generations: generations)
         if json {
-            let encoder = JSONEncoder()
-            encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-            print(String(decoding: try encoder.encode(record), as: UTF8.self))
+            print(String(
+                decoding: try JSONEncoder.sorted.encode(record), as: UTF8.self))
             return
         }
         print("platform: \(record.platformID)")
@@ -120,6 +115,10 @@ struct ToolchainCommand {
         var json = false
         var reconfigure = false
         var arches: [String] = []
+
+        var controls: TaskControls {
+            TaskControls(dryRun: dryRun, explain: explain, verbose: verbose, json: json)
+        }
 
         init(_ arguments: [String]) throws {
             var index = arguments.startIndex
@@ -196,8 +195,7 @@ struct ToolchainCommand {
         let platformID = sourceID
         let bundleName = "swift-\(sourceID)_android.artifactbundle"
         #endif
-        let cacheRoot = context.environment["XDG_CACHE_HOME"]
-            ?? homeDirectory.appendingPathComponent(".cache").path
+        let cacheRoot = context.cacheRoot.path
         let platformRoot = URL(fileURLWithPath: cacheRoot)
             .appendingPathComponent("nucleus/swift-platforms/\(platformID)")
         let generationID = currentRunID
@@ -274,35 +272,15 @@ struct ToolchainCommand {
                         ".legacy-\(bundleName)-\(generationID)").path),
                 reconfigureHost: options.reconfigure,
                 environment: environment))
-        let report = try waitForAsyncResult {
-            try await context.runtime.execute(
-                graph: TaskGraph(taskSet.tasks),
-                selected: taskSet.selected,
-                stateRoot: FilePath(
-                    context.root.appendingPathComponent(
-                        ".nucleus/tasks").path),
-                workflowLocks: [
-                    .shared(FilePath(
-                        platformRoot.appendingPathComponent(
-                            "rebuild.lock").path)),
-                ],
-                options: TaskExecutionOptions(
-                    dryRun: options.dryRun,
-                    explain: options.explain,
-                    verbose: options.verbose,
-                    machineReadable: options.json))
-        }
-        if options.json {
-            let encoder = JSONEncoder()
-            encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-            print(String(decoding: try encoder.encode(report), as: UTF8.self))
-        } else if options.dryRun || options.explain {
-            for entry in report.plan {
-                print(
-                    "\(entry.isClean ? "clean" : "dirty")  "
-                        + "\(entry.task.rawValue)  \(entry.explanation)")
-            }
-        } else {
+        try context.execute(
+            tasks: taskSet.tasks,
+            selected: taskSet.selected,
+            controls: options.controls,
+            workflowLocks: [
+                .shared(FilePath(
+                    platformRoot.appendingPathComponent("rebuild.lock").path)),
+            ])
+        if !options.json, !options.dryRun, !options.explain {
             print("==> active Swift platform generation: \(generation.path)")
         }
     }
@@ -484,11 +462,7 @@ struct ToolchainInstallation {
     }
 
     private func defaultTarball(version: String) -> URL {
-        let cacheRoot = context.environment["XDG_CACHE_HOME"].map {
-            URL(fileURLWithPath: $0, isDirectory: true)
-        } ?? FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".cache", isDirectory: true)
-        return cacheRoot.appendingPathComponent(
+        return context.cacheRoot.appendingPathComponent(
             "nucleus/swift-platforms/\(version)/current/toolchain/"
                 + "swift-\(version)-linux.tar.gz")
     }

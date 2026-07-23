@@ -78,11 +78,7 @@ struct RepositoryCache {
     }
 
     private func cacheRoot() -> URL {
-        if let value = context.environment["XDG_CACHE_HOME"], !value.isEmpty {
-            return URL(fileURLWithPath: value).appendingPathComponent("nucleus")
-        }
-        return FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".cache/nucleus")
+        context.cacheRoot.appendingPathComponent("nucleus")
     }
 
     private func emit(_ result: PruneResult, json: Bool) throws {
@@ -123,12 +119,4 @@ private func formatted(_ bytes: UInt64) -> String {
         index += 1
     }
     return String(format: index == 0 ? "%.0f %@" : "%.1f %@", value, units[index])
-}
-
-private extension JSONEncoder {
-    static var sorted: JSONEncoder {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-        return encoder
-    }
 }

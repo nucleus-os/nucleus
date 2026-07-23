@@ -14,6 +14,9 @@ struct nucleus_android_peer_credentials {
     uint32_t gid;
 };
 
+int nucleus_android_ipc_require_parent_lifetime(
+    int signal_number,
+    int32_t expected_parent_pid);
 int nucleus_android_ipc_socket_pair(int output_fds[2]);
 int nucleus_android_ipc_listen(const char *path, uint32_t mode);
 int nucleus_android_ipc_accept(int listener_fd);

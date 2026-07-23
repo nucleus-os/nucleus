@@ -132,14 +132,31 @@ final class SceneFeeder: BackgroundEffectDelegate, KdeBlurDelegate {
     }
 
     /// A window's surface mapped: create its scene tree (self-allocating
-    /// `surfaceAttached`, which also hosts it beneath the compositor root). The
-    /// author mints the layer ids; nothing flows back to the surface (the author
-    /// owns the surface-id → backing-layer map the content publish resolves).
-    func windowMapped(surfaceID: UInt32, x: Double, y: Double, width: Double, height: Double) {
+    /// `surfaceAttached`, which also hosts it beneath the compositor root) and
+    /// publish any content imported before the role's map callback. Wayland latches
+    /// scene content before role state, so first-map content must land as part of
+    /// this operation rather than waiting for a second client commit.
+    func windowMapped(
+        surfaceID: UInt32,
+        x: Double,
+        y: Double,
+        width: Double,
+        height: Double,
+        iosurfaceID: UInt32 = 0,
+        sample: ContentSample? = nil
+    ) {
         authoring("attach window", surfaceID: UInt64(surfaceID)) {
             _ = try author.surfaceAttached(
                 surfaceID: UInt64(surfaceID),
                 frame: GeometryRect(x: x, y: y, width: width, height: height))
+            if iosurfaceID != 0 {
+                try author.setContent(
+                    surfaceID: UInt64(surfaceID),
+                    content: LayerContent(
+                        kind: .external,
+                        handle: UInt64(iosurfaceID)),
+                    contentSample: sample)
+            }
         }
     }
 

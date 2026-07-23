@@ -1,3 +1,4 @@
+import ColliderCore
 import ColliderRuntime
 import FoundationEssentials
 import SystemPackage
@@ -64,16 +65,16 @@ struct RuntimeInstaller {
             throw WorkspaceFailure.message(
                 "runtime installation path must be absent or an active-generation symlink: \(prefix.path)")
         }
-        let parent = prefix.deletingLastPathComponent()
-        let stem = prefix.lastPathComponent
-            .filter { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" }
-        let candidate = parent.appendingPathComponent(
-            ".nucleus-\(stem)-candidate-\(UUID().uuidString)",
-            isDirectory: true)
-        let generation = parent.appendingPathComponent(
-            ".nucleus-\(stem)-generation-"
-                + Date().formatted(.iso8601).replacing(":", with: "-")
-                + "-\(UUID().uuidString)",
+        // Generation and candidate directories live under the repository's
+        // already-ignored `.nucleus/` tree, keyed per active prefix, rather than
+        // as bare siblings of the prefix. They must share a parent so their
+        // publication rename is atomic; the active symlink can point anywhere.
+        let generationsRoot = generationsRoot(for: prefix)
+        try FileManager.default.createDirectory(
+            at: generationsRoot,
+            withIntermediateDirectories: true)
+        let candidate = generationsRoot.appendingPathComponent(
+            ".candidate-\(UUID().uuidString)",
             isDirectory: true)
         let installation = RuntimeInstallation(prefix: candidate)
         try? FileManager.default.removeItem(at: candidate)
@@ -104,13 +105,70 @@ struct RuntimeInstaller {
         }
         try validate(component, installation: installation)
         let identity = try ArtifactHasher.digest(tree: FilePath(candidate.path))
+        let generation = generationsRoot.appendingPathComponent(
+            hex(identity.bytes.prefix(12)), isDirectory: true)
         try GenerationPublisher.publish(
             candidate: FilePath(candidate.path),
             generation: FilePath(generation.path),
             active: FilePath(prefix.path))
         published = true
+        try DirectoryLifecycle.prune(DirectoryRetentionPlan(
+            safetyRoot: FilePath(
+                context.root.appendingPathComponent(".nucleus/runtime").path),
+            rules: [
+                DirectoryRetentionRule(
+                    root: FilePath(generationsRoot.path),
+                    current: FilePath(prefix.path),
+                    retain: 3,
+                    naming: .contentIdentity),
+            ]))
         print("runtime generation: \(identity) \(generation.path)")
         return RuntimeInstallation(prefix: prefix)
+    }
+
+    /// Per-prefix generations root under the repository's ignored `.nucleus/`
+    /// tree, e.g. `.nucleus/runtime/install/generations` for `<root>/.install`.
+    private func generationsRoot(for prefix: URL) -> URL {
+        context.root.appendingPathComponent(
+            ".nucleus/runtime/\(generationKey(for: prefix))/generations",
+            isDirectory: true)
+    }
+
+    private func generationKey(for prefix: URL) -> String {
+        let standardized = prefix.standardizedFileURL.path
+        let rootPath = context.root.standardizedFileURL.path
+        if standardized == rootPath { return "root" }
+        if standardized.hasPrefix(rootPath + "/") {
+            let sanitized = sanitizedKey(
+                String(standardized.dropFirst(rootPath.count + 1)))
+            if !sanitized.isEmpty { return sanitized }
+        }
+        return "external-" + hex(
+            ArtifactHasher.digest(bytes: Array(standardized.utf8)).bytes.prefix(8))
+    }
+
+    private func sanitizedKey(_ value: String) -> String {
+        var result = ""
+        for character in value {
+            if character.isLetter || character.isNumber {
+                result.append(character)
+            } else if character == "/" || character == "-" || character == "_" {
+                result.append("-")
+            }
+        }
+        while result.hasPrefix("-") { result.removeFirst() }
+        while result.hasSuffix("-") { result.removeLast() }
+        return result
+    }
+
+    private func hex(_ bytes: some Sequence<UInt8>) -> String {
+        let digits = Array("0123456789abcdef".utf8)
+        var encoded: [UInt8] = []
+        for byte in bytes {
+            encoded.append(digits[Int(byte >> 4)])
+            encoded.append(digits[Int(byte & 0x0f)])
+        }
+        return String(decoding: encoded, as: UTF8.self)
     }
 
     func existingSession(
@@ -176,13 +234,27 @@ struct RuntimeInstaller {
         let template = try String(
             contentsOf: sessionPackage.appendingPathComponent("nucleus@.service"),
             encoding: .utf8)
-        let binDirectory = publishedPrefix.appendingPathComponent("bin").path
-        let unit = template.replacing("@bindir@", with: binDirectory)
         let unitPath = unitDirectory.appendingPathComponent("nucleus@.service")
-        try Data(unit.utf8).write(to: unitPath, options: .atomic)
+
+        // Validate the complete candidate before publication. The active prefix
+        // intentionally does not exist on a first install, so systemd must inspect
+        // the candidate executables rather than the future active-generation link.
+        let candidateBinDirectory = installation.prefix
+            .appendingPathComponent("bin").path
+        let validationUnit = template.replacing(
+            "@bindir@",
+            with: candidateBinDirectory)
+        try Data(validationUnit.utf8).write(to: unitPath, options: .atomic)
         try context.run(
             "systemd-analyze",
             ["--user", "--recursive-errors=no", "verify", unitPath.path])
+
+        let publishedBinDirectory = publishedPrefix
+            .appendingPathComponent("bin").path
+        let publishedUnit = template.replacing(
+            "@bindir@",
+            with: publishedBinDirectory)
+        try Data(publishedUnit.utf8).write(to: unitPath, options: .atomic)
     }
 
     private func installShell(

@@ -1,31 +1,30 @@
 import FoundationEssentials
 
-struct SanitizerCommand {
-    let context: WorkspaceContext
-
-    private enum Kind: String, CaseIterable {
-        case address
-        case undefined
-        case thread
-
-        var runtimeEnvironment: [String: String] {
-            switch self {
-            case .address:
-                [
-                    "ASAN_OPTIONS": "detect_leaks=1:halt_on_error=1:abort_on_error=1:strict_string_checks=1",
-                    "LSAN_OPTIONS": "exitcode=23:report_objects=1:use_unaligned=0",
-                ]
-            case .undefined:
-                [
-                    "UBSAN_OPTIONS": "halt_on_error=1:abort_on_error=1:print_stacktrace=1",
-                ]
-            case .thread:
-                [
-                    "TSAN_OPTIONS": "halt_on_error=1:abort_on_error=1:history_size=7:second_deadlock_stack=1",
-                ]
-            }
+private extension RuntimeSanitizer {
+    /// The strict runtime option strings used when `sanitize` drives a suite or
+    /// harness (leak detection on, deterministic aborts). The interactive
+    /// `run` command uses a distinct, more permissive policy.
+    var runtimeEnvironment: [String: String] {
+        switch self {
+        case .address:
+            [
+                "ASAN_OPTIONS": "detect_leaks=1:halt_on_error=1:abort_on_error=1:strict_string_checks=1",
+                "LSAN_OPTIONS": "exitcode=23:report_objects=1:use_unaligned=0",
+            ]
+        case .undefined:
+            [
+                "UBSAN_OPTIONS": "halt_on_error=1:abort_on_error=1:print_stacktrace=1",
+            ]
+        case .thread:
+            [
+                "TSAN_OPTIONS": "halt_on_error=1:abort_on_error=1:history_size=7:second_deadlock_stack=1",
+            ]
         }
     }
+}
+
+struct SanitizerCommand {
+    let context: WorkspaceContext
 
     private struct Invocation {
         enum Workload {
@@ -72,12 +71,12 @@ struct SanitizerCommand {
 
     func run(_ arguments: ArraySlice<String>) throws {
         guard arguments.count <= 1 else { throw usageFailure() }
-        let kinds: [Kind]
+        let kinds: [RuntimeSanitizer]
         if let value = arguments.first, value != "all" {
-            guard let kind = Kind(rawValue: value) else { throw usageFailure() }
+            guard let kind = RuntimeSanitizer(rawValue: value) else { throw usageFailure() }
             kinds = [kind]
         } else {
-            kinds = Kind.allCases
+            kinds = RuntimeSanitizer.allCases
         }
 
         let seed = "0x4e55434c455553"
@@ -88,7 +87,7 @@ struct SanitizerCommand {
         }
     }
 
-    private func invocations(for kind: Kind) -> [Invocation] {
+    private func invocations(for kind: RuntimeSanitizer) -> [Invocation] {
         switch kind {
         case .address:
             [
@@ -175,7 +174,7 @@ struct SanitizerCommand {
 
     private func run(
         _ invocation: Invocation,
-        sanitizer: Kind,
+        sanitizer: RuntimeSanitizer,
         seed: String
     ) throws {
         let packageDirectory = context.repository(invocation.package)

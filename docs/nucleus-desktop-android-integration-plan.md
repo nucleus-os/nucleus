@@ -149,12 +149,12 @@ submitted buffer with ordered acquire and release points, and materializes Andro
 The Android-side client never waits for GPU completion on the CPU. Nucleus signals the
 release point only after rendering and scanout have stopped reading the allocation.
 
-### Phase 1 status — noninteractive guest qualification complete
+### Phase 1 status — complete
 
 The host foundation, gfxstream transport, guest resource-import path, synchronization
-bridge, sustained workload, and noninteractive hardware qualification are implemented
-as of July 23, 2026. Items marked complete below passed their focused tests and the
-locally applicable hardware gates:
+bridge, sustained workload, noninteractive hardware qualification, and live combined
+presentation qualification are complete as of July 23, 2026. Items marked complete
+below passed their focused tests and the locally applicable hardware gates:
 
 - [x] `android-runtime/` is a standalone SwiftPM package with warnings treated as
   errors and host-side behavioral tests.
@@ -259,22 +259,17 @@ from translating a gfxstream dma-buf request into `OPAQUE_FD`; the guest now dec
 the dma-buf external-memory extensions and handle type, and the decoder preserves that
 handle type as `DMA_BUF`.
 
-The combined presentation path is implemented but has not run against a live
-compositor. In that path one broker session owns the allocation and timelines, the
-gfxstream worker renders the broker's exact buffer IDs, and the surface probe commits
-those same dma-bufs with the returned acquire and release points. The surface probe
-paces each submission through presentation feedback and records Wayland import,
-commit, presentation, release, and teardown events.
+The combined presentation path passed on the display-connected RTX 4070 Ti at
+`/dev/dri/renderD129`. One broker session owned the allocation and timelines, the
+gfxstream worker rendered the broker's exact buffer IDs, and the surface probe
+committed those same dma-bufs with the returned acquire and release points. All 600
+submitted frames received presentation feedback, no frame was discarded, every
+reused buffer observed its compositor release point, the broker exited successfully,
+and Collider retained the complete support archive.
 
-### Phase 1 remaining execution sequence
+### Phase 1 completion sequence
 
-Every remaining Phase 1 task runs on the current workstation. Engineering setup,
-integration, diagnostics, and artifact collection are complete. The only user-owned
-action is invoking the live qualification from a free virtual terminal once per local
-GPU, with the monitor attached to the selected device. No second machine, AMD GPU,
-Intel GPU, or hybrid system is a Phase 1 prerequisite.
-
-The execution sequence and current completion state are:
+The completed execution sequence is:
 
 1. [x] Record the exact upstream gfxstream and Mesa bases, build only the required
    guest Vulkan ICD and static host backend, and integrate exact-input verification
@@ -329,61 +324,58 @@ The execution sequence and current completion state are:
     readiness, runs the broker, persistent gfxstream worker, and Wayland surface probe
     in that session, validates the shared physical-GPU and lifecycle contracts, shuts
     the session down, and retains one support archive.
-14. [ ] Run the combined path on the display-connected RTX 4070 Ti with
+14. [x] Run the combined path on the display-connected RTX 4070 Ti with
     `tools/collider qualify android-presentation --drm-device /dev/dri/renderD129`.
-    The 600 paced frames expose the alternating distinctive buffer colors as an
-    optional visual sanity check. The machine-readable gate requires compositor
-    feedback, DRM, GBM, broker Vulkan, gfxstream host Vulkan, and presentation to
-    identify the same physical GPU.
-15. [ ] Move the monitor cable to the RTX 4090 and run
-    `tools/collider qualify android-presentation --drm-device /dev/dri/renderD128`.
-    Retain both combined guest-to-presentation support archives. This completes Phase
-    1 and permits Phase 2 to begin. AMD, Intel, and hybrid-system qualification
-    remains a Phase 7 support gate.
+    The run presented all 600 paced frames with zero discards and proved that
+    compositor feedback, DRM, GBM, broker Vulkan, gfxstream host Vulkan, and
+    presentation identify the same physical GPU.
+15. [x] Close the architectural gate after one complete live Ada/NVIDIA presentation
+    run and successful noninteractive producer qualification on both local NVIDIA
+    GPUs. An independent display-connected RTX 4090 presentation run is additional
+    per-device qualification evidence under Phase 7, not a Phase 2 engineering
+    prerequisite.
 
-### Still required before Phase 1 is complete
+### Phase 1 completion evidence
 
-Two live runs remain, in order:
-
-1. From a free virtual terminal, run
-   `tools/collider qualify android-presentation --drm-device /dev/dri/renderD129`
-   while the monitor remains connected to the RTX 4070 Ti.
-2. Move the monitor cable to the RTX 4090 and run
-   `tools/collider qualify android-presentation --drm-device /dev/dri/renderD128`.
-
-Each command automatically retains its combined qualification archive after proving:
+The retained RTX 4070 Ti qualification archive proves:
 gfxstream guest submission → broker acquire timeline → Wayland commit → presentation
 feedback → compositor release timeline → gfxstream reuse.
 
-The current workstation is sufficient. Lack of access to AMD, Intel, hybrid, or a
-second NVIDIA machine does not block Phase 1 or Phase 2 engineering. Those systems are
-required only before Phase 7 claims support for them. The single monitor can be moved
-between the local GPUs; both GPUs do not need simultaneous display connections.
+The result records three broker-owned buffers, 600 submitted frames, 600 presented
+frames, zero discarded frames, successful broker teardown, NVIDIA hardware Vulkan,
+the `nvidia` GBM backend, PCI identity `0000:03:00.0`, render node
+`/dev/dri/renderD129`, primary node `/dev/dri/card2`, and matching compositor dma-buf
+feedback for device `226:129`.
+
+The RTX 4090 and RTX 4070 Ti already pass the same noninteractive producer,
+gfxstream-import, explicit-sync, and sustained-reuse path under the same proprietary
+NVIDIA userspace architecture. Repeating the presentation run on the RTX 4090 does
+not retire another Phase 1 architectural risk. AMD, Intel, hybrid-system, and
+additional per-device presentation coverage remain Phase 7 support-matrix gates.
 
 Acceptance gates:
 
 - [x] The Linux guest Vulkan test renders through gfxstream into broker-platform
   allocations on both locally available proprietary NVIDIA devices.
-- [ ] The exact guest-rendered broker allocation is imported and presented by Nucleus
+- [x] The exact guest-rendered broker allocation is imported and presented by Nucleus
   without CPU upload, readback, or intermediate image copy.
 - [x] Acquire and release ordering survives sustained buffer reuse without a CPU fence
   wait or implicit-sync dependency in the noninteractive workload.
 - [x] Unsupported extents, formats, modifiers, devices, color-buffer identities, and
   Vulkan requirements fail with a precise diagnostic; there is no software-renderer
   fallback.
-- [ ] Compositor device selection, broker Vulkan adapter selection, gfxstream host
+- [x] Compositor device selection, broker Vulkan adapter selection, gfxstream host
   Vulkan selection, GBM device selection, and dma-buf feedback identify the same
   physical GPU in the combined presentation run.
-- [ ] One qualification archive contains device identity, selected format/modifier,
+- [x] One qualification archive contains device identity, selected format/modifier,
   the complete guest and Wayland allocation lifecycle, synchronization results,
   presentation results, and actionable failure diagnostics.
 
 Risk surface: critical. This phase retires the producer-side NVIDIA problem, the
 cross-process Vulkan transport, and the end-to-end buffer synchronization contract.
-Phase 2 begins only after the complete guest-to-presentation path passes the engineering
-acceptance gates on the available hardware. Physical AMD, Intel, and hybrid-system
-testing remains mandatory under Phase 7 before support is claimed for those systems;
-the absence of those machines does not block Phase 2 engineering.
+The complete guest-to-presentation path has passed the engineering acceptance gates,
+so Phase 2 begins. Physical AMD, Intel, hybrid-system, and additional per-device
+testing remains mandatory under Phase 7 before support is claimed for those systems.
 
 ## Phase 2 — Android 17 runtime and containment
 

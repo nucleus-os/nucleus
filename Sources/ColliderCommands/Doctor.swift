@@ -63,9 +63,8 @@ struct WorkspaceDoctor {
             // Callers that compose doctor with a machine-readable task report
             // still use the same prerequisite registry without a second payload.
         } else if json {
-            let encoder = JSONEncoder()
-            encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-            print(String(decoding: try encoder.encode(report), as: UTF8.self))
+            print(String(
+                decoding: try JSONEncoder.sorted.encode(report), as: UTF8.self))
         } else {
             for check in checks {
                 let marker = switch check.status {
@@ -228,11 +227,7 @@ struct WorkspaceDoctor {
     }
 
     private func nativeSDKRoot() -> URL {
-        let cacheRoot = context.environment["XDG_CACHE_HOME"].map {
-            URL(fileURLWithPath: $0, isDirectory: true)
-        } ?? FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".cache", isDirectory: true)
-        return cacheRoot.appendingPathComponent(
+        context.cacheRoot.appendingPathComponent(
             "nucleus/nucleus-native-sdk", isDirectory: true)
     }
 }

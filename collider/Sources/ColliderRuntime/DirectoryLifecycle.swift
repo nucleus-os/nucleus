@@ -8,7 +8,7 @@ import Glibc
 import Darwin
 #endif
 
-enum DirectoryLifecycle {
+public enum DirectoryLifecycle {
     static func activate(target: String, link: FilePath) throws {
         let manager = FileManager.default
         try manager.createDirectory(
@@ -82,7 +82,7 @@ enum DirectoryLifecycle {
         }
     }
 
-    static func prune(_ plan: DirectoryRetentionPlan) throws {
+    public static func prune(_ plan: DirectoryRetentionPlan) throws {
         let safetyRoot = standardized(plan.safetyRoot)
         guard safetyRoot != "/" else {
             throw RuntimeFailure.invalidOutput(

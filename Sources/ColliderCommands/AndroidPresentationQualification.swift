@@ -96,10 +96,7 @@ struct AndroidPresentationQualificationCommand {
         if options.build {
             try ComponentRegistry(context: context).build(
                 selection: "android-runtime",
-                dryRun: false,
-                explain: false,
-                verbose: false,
-                json: false)
+                controls: TaskControls())
             installation = try RuntimeInstaller(context: context).install(
                 .session,
                 prefix: context.root.appendingPathComponent(".install"),
@@ -180,6 +177,8 @@ struct AndroidPresentationQualificationCommand {
                 products.qualifier.path,
                 [
                     "--broker", products.broker.path,
+                    "--broker-socket",
+                    runtime.directory.appendingPathComponent("gpu.sock").path,
                     "--workload", products.workload.path,
                     "--expected-render-device", options.drmDevice,
                     "--wayland", "wayland-0",
@@ -192,7 +191,9 @@ struct AndroidPresentationQualificationCommand {
                     "NUCLEUS_SESSION_RUNTIME_DIR": runtime.directory.path,
                     "NUCLEUS_SESSION_ID": runtime.identifier,
                 ])
-            qualificationStatus = try qualification.wait().status
+            qualificationStatus = try waitForQualification(
+                qualification,
+                session: session)
         } catch {
             workflowFailure = error
         }
@@ -351,5 +352,23 @@ struct AndroidPresentationQualificationCommand {
         }
         throw WorkspaceFailure.message(
             "Nucleus session did not become ready before the startup deadline")
+    }
+
+    private func waitForQualification(
+        _ qualification: WorkspaceManagedCommand,
+        session: WorkspaceManagedCommand
+    ) throws -> Int32 {
+        while qualification.isRunning {
+            guard session.isRunning else {
+                qualification.cancel()
+                _ = try? qualification.wait()
+                throw WorkspaceFailure.message(
+                    "Nucleus session exited during Android presentation "
+                        + "qualification (status "
+                        + "\(session.terminationStatus ?? -1))")
+            }
+            usleep(20_000)
+        }
+        return try qualification.wait().status
     }
 }

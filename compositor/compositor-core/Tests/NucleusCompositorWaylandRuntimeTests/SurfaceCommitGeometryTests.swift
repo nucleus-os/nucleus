@@ -16,4 +16,20 @@ import NucleusTypes
             viewportDestination: WlSize(width: 1000, height: 700))
             == SurfaceLogicalSize(width: 1000, height: 700))
     }
+
+    @Test func implicitXdgWindowGeometryUsesTheCommittedSurfaceExtent() {
+        #expect(xdgCommittedContentSize(
+            windowGeometry: nil,
+            surfaceLogicalWidth: 1280,
+            surfaceLogicalHeight: 720
+        ) == XdgCommittedContentSize(width: 1280, height: 720))
+    }
+
+    @Test func explicitXdgWindowGeometrySelectsTheVisibleSubrectangle() {
+        #expect(xdgCommittedContentSize(
+            windowGeometry: WlRect(x: 8, y: 12, width: 960, height: 540),
+            surfaceLogicalWidth: 1280,
+            surfaceLogicalHeight: 720
+        ) == XdgCommittedContentSize(width: 960, height: 540))
+    }
 }
