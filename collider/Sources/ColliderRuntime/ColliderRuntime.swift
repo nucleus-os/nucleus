@@ -50,6 +50,10 @@ public actor ColliderRuntime {
         try await downloads.download(specification, to: candidate)
     }
 
+    public func shutdown() async {
+        await downloads.shutdown()
+    }
+
     public func execute(
         _ command: CommandSpec,
         stage: TaskID?

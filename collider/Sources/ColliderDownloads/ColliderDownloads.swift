@@ -61,6 +61,10 @@ public actor ColliderDownloads {
             delegateQueue: nil)
     }
 
+    public func shutdown() async {
+        await delegate.invalidate(session)
+    }
+
     private static func configuration() -> URLSessionConfiguration {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
@@ -582,11 +586,53 @@ private final class DownloadState: @unchecked Sendable {
 private final class DownloadDelegate: NSObject, URLSessionDataDelegate,
     @unchecked Sendable
 {
+    private struct Invalidation {
+        var started = false
+        var completed = false
+        var waiters: [CheckedContinuation<Void, Never>] = []
+    }
+
     private let states = Mutex<[Int: DownloadState]>([:])
+    private let invalidation = Mutex(Invalidation())
     private let progress: @Sendable (DownloadProgress) -> Void
 
     init(progress: @escaping @Sendable (DownloadProgress) -> Void) {
         self.progress = progress
+    }
+
+    func invalidate(_ session: URLSession) async {
+        await withCheckedContinuation { continuation in
+            let shouldStart = invalidation.withLock { state -> Bool in
+                if state.completed {
+                    continuation.resume()
+                    return false
+                }
+                state.waiters.append(continuation)
+                guard !state.started else { return false }
+                state.started = true
+                return true
+            }
+            if shouldStart {
+                session.finishTasksAndInvalidate()
+            }
+        }
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        didBecomeInvalidWithError error: (any Error)?
+    ) {
+        let waiters = invalidation.withLock { state -> [
+            CheckedContinuation<Void, Never>
+        ] in
+            state.completed = true
+            let waiters = state.waiters
+            state.waiters.removeAll()
+            return waiters
+        }
+        for waiter in waiters { waiter.resume() }
+        _ = session
+        _ = error
     }
 
     func run(

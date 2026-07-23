@@ -439,6 +439,22 @@ struct DownloadPolicyTests {
             $0.receivedBytes <= $1.receivedBytes
         })
     }
+
+    @Test func completedDownloaderShutsDownIdempotently() async throws {
+        let body = Data("shutdown".utf8)
+        let fixture = try fixture(
+            response: StubHTTPResponse(
+                status: 200,
+                headers: headers(for: body),
+                body: body))
+        defer { fixture.remove() }
+
+        try await fixture.download()
+        await fixture.downloads.shutdown()
+        await fixture.downloads.shutdown()
+
+        #expect(try Data(contentsOf: fixture.candidate) == body)
+    }
 }
 
 private struct DownloadFixture {

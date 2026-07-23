@@ -263,6 +263,33 @@ struct ComponentRegistry {
         try context.execute(tasks: [task], selected: [task.id], controls: controls)
     }
 
+    func verifyAndroidRuntimeSourceLock(
+        controls: TaskControls
+    ) throws {
+        let root = FilePath(context.root.path).appending("android-runtime")
+        let tasks = try AndroidRuntimeColliderRecipe.aospSourceTasks(
+            root: root,
+            environment: context.taskEnvironment)
+        let selected = TaskID(rawValue: "android-runtime.aosp-source-lock")
+        try context.execute(
+            tasks: tasks,
+            selected: [selected],
+            controls: controls)
+    }
+
+    func prepareAndroidRuntimeSource(
+        controls: TaskControls
+    ) throws {
+        let tasks = try AndroidRuntimeColliderRecipe.aospSourceTasks(
+            root: FilePath(context.root.path).appending("android-runtime"),
+            environment: context.taskEnvironment)
+        let selected = TaskID(rawValue: "android-runtime.aosp-source")
+        try context.execute(
+            tasks: tasks,
+            selected: [selected],
+            controls: controls)
+    }
+
     private func selectedBuildTasks(_ selection: String?) throws -> [TaskID] {
         let name = selection ?? "all"
         if name == "all" || name == "runtime" {

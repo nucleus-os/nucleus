@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "platform": {
+    "release": "Android 17.0.0 Release 1",
+    "revision": "refs/tags/android-17.0.0_r1",
+    "manifestURL": "https://android.googlesource.com/platform/manifest",
+    "manifestTagObject": "7a9e46ba6ed424f922a3457f4964e67e0b966201",
+    "manifestCommit": "5bc9a7ce1cd78dd53613bbfd0ebf506e1e4adb0f",
+    "defaultManifestSHA256": "76ef74339da1e0c973d1ec7cb92045e823223a7724d9aa453b4cab4e246122c4",
+    "superprojectURL": "https://android.googlesource.com/platform/superproject",
+    "superprojectRevision": "refs/heads/android-17.0.0_r1",
+    "superprojectCommit": "28f0bbddc24d56c8ec5a8df5342ac7a292184039"
+  },
+  "repo": {
+    "launcherURL": "https://storage.googleapis.com/git-repo-downloads/repo",
+    "launcherVersion": "2.65",
+    "launcherSHA256": "1211b57b57e4122a9c546295a59b37d24068f1164d0e87bef096d5323c413e4f",
+    "repositoryURL": "https://gerrit.googlesource.com/git-repo",
+    "revision": "refs/tags/v2.65",
+    "tagObject": "2f04a7d4d2bd16170285b9b971227e8151d49f78",
+    "commit": "35bbf701d04de5c6a71937279bc3d16f6ce36808"
+  }
+}

@@ -1,1 +1,4 @@
 .gfxstream-build/
+.aosp-build/
+.aosp-source/
+.aosp-tools/

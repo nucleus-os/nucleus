@@ -11,7 +11,8 @@ public struct ColliderCommand: ParsableCommand {
         version: "0.1.0",
         subcommands: [
             Doctor.self, Bootstrap.self, Build.self, Test.self, Run.self,
-            Install.self, Toolchain.self, Android.self, Browser.self,
+            Install.self, Toolchain.self, Android.self, AndroidRuntime.self,
+            Browser.self,
             Generate.self, Sanitize.self, Benchmark.self,
             Validate.self, Qualify.self, Cache.self, Logs.self, Status.self,
         ])
@@ -379,6 +380,36 @@ struct Android: ParsableCommand {
             try AndroidCommand(context: context()).run(
                 (["verify"] + [library].compactMap { $0 })[...],
                 controls: global.controls)
+        }
+    }
+}
+
+struct AndroidRuntime: ParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "android-runtime",
+        abstract: "Build and operate the contained Android runtime.",
+        subcommands: [SourceLock.self, Source.self])
+
+    struct SourceLock: ParsableCommand {
+        static let configuration = CommandConfiguration(
+            commandName: "source-lock",
+            abstract: "Verify the pinned AOSP and Repo identities.")
+        @OptionGroup var global: GlobalOptions
+
+        mutating func run() throws {
+            try ComponentRegistry(context: context())
+                .verifyAndroidRuntimeSourceLock(controls: global.controls)
+        }
+    }
+
+    struct Source: ParsableCommand {
+        static let configuration = CommandConfiguration(
+            abstract: "Materialize the exact AOSP source checkout.")
+        @OptionGroup var global: GlobalOptions
+
+        mutating func run() throws {
+            try ComponentRegistry(context: context())
+                .prepareAndroidRuntimeSource(controls: global.controls)
         }
     }
 }
