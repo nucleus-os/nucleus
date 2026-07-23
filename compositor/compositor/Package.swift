@@ -112,7 +112,7 @@ let package = Package(
             targets: ["NucleusCompositorThreadSanitizerHarness"]),
     ],
     dependencies: [
-        .package(path: "../../collider"),
+        .package(path: "../../collider/engine"),
         // The Nucleus library package — the portable render/UI core. The compositor links
         // zero React, so this is its only Nucleus dependency.
         .package(name: "Nucleus", path: "../../core"),
@@ -128,7 +128,7 @@ let package = Package(
     targets: [
         .target(
             name: "CompositorAppColliderRecipe",
-            dependencies: [.product(name: "ColliderCore", package: "collider")]),
+            dependencies: [.product(name: "ColliderCore", package: "engine")]),
         .target(
             name: "NucleusCompositorSignalC",
             path: "Sources/NucleusCompositorSignalC",
@@ -181,7 +181,7 @@ let package = Package(
                     package: "NucleusLinuxPlatform"),
                 .product(
                     name: "NucleusSessionProtocol",
-                    package: "collider"),
+                    package: "engine"),
                 .product(name: "Tracy", package: "swift-tracy"),
                 "NucleusCompositorSignalC",
             ],
@@ -228,7 +228,7 @@ let package = Package(
                 "NucleusCompositorRuntime",
                 .product(
                     name: "NucleusSessionProtocol",
-                    package: "collider"),
+                    package: "engine"),
             ],
             path: "Sources/NucleusCompositor",
             swiftSettings: [.interoperabilityMode(.Cxx)],

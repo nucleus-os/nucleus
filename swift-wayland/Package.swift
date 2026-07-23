@@ -45,11 +45,11 @@ let package = Package(
         // bespoke protocol set; Collider drives it to regenerate this package.
         .executable(name: "SwiftWaylandGen", targets: ["SwiftWaylandGen"]),
     ],
-    dependencies: [.package(path: "../collider")],
+    dependencies: [.package(path: "../collider/engine")],
     targets: [
         .target(
             name: "WaylandColliderRecipe",
-            dependencies: [.product(name: "ColliderCore", package: "collider")]),
+            dependencies: [.product(name: "ColliderCore", package: "engine")]),
         .executableTarget(name: "SwiftWaylandGen", path: "Sources/SwiftWaylandGen"),
         // The aggregating server/client header + module.modulemap (systemLibrary so the header is
         // processed at each import site, façading <wayland-server.h> / <wayland-client.h>).

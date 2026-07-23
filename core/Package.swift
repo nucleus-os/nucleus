@@ -153,7 +153,7 @@ let package = Package(
             targets: ["NucleusCoreThreadSanitizerHarness"]),
     ],
     dependencies: [
-        .package(path: "../collider"),
+        .package(path: "../collider/engine"),
         // The Vulkan bindings (VulkanGen generator + generated typed API + the raw-C
         // façade with vendored Khronos headers) were extracted to their own package.
         // Targets that import Vulkan / VulkanC depend on it directly;
@@ -167,7 +167,7 @@ let package = Package(
     targets: [
         .target(
             name: "CoreColliderRecipe",
-            dependencies: [.product(name: "ColliderCore", package: "collider")]),
+            dependencies: [.product(name: "ColliderCore", package: "engine")]),
         // ── Shared-type leaves: public value structs + enums + constants, no deps. ─
         .target(
             name: "NucleusTypes",

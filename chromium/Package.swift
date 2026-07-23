@@ -9,13 +9,13 @@ let package = Package(
             targets: ["ChromiumColliderRecipe"]),
     ],
     dependencies: [
-        .package(path: "../collider"),
+        .package(path: "../collider/engine"),
     ],
     targets: [
         .target(
             name: "ChromiumColliderRecipe",
             dependencies: [
-                .product(name: "ColliderCore", package: "collider"),
+                .product(name: "ColliderCore", package: "engine"),
             ]),
     ])
 

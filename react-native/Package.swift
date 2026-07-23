@@ -244,14 +244,14 @@ let package = Package(
     ],
     // The monorepo render/UI core.
     dependencies: [
-        .package(path: "../collider"),
+        .package(path: "../collider/engine"),
         .package(name: "Nucleus", path: "../core"),
         .package(name: "swift-tracy", path: "../swift-tracy"),
     ],
     targets: [
         .target(
             name: "ReactNativeColliderRecipe",
-            dependencies: [.product(name: "ColliderCore", package: "collider")]),
+            dependencies: [.product(name: "ColliderCore", package: "engine")]),
         // Collider builds Hermes and hermesc as the first React Native C/C++ task.
         // Collider provisions fmt, double-conversion, glog, folly, JSI, and
         // ReactCommon through the ReactNativeColliderRecipe target.

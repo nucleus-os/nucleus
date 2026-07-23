@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "product": "nucleus_x86_64",
+  "release": "trunk_staging",
+  "variant": "userdebug",
+  "buildNumber": "nucleus-android17-r1",
+  "buildTimestamp": 1781652681,
+  "platformSDK": 37,
+  "vendorAPILevel": 202604,
+  "buildJobs": 12,
+  "minimumFreeGiB": 220
+}

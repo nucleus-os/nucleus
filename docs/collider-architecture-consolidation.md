@@ -45,7 +45,7 @@ building and the `ColliderCommandsTests` and `ColliderCoreTests` suites green.
 
 ## Phase 1 — Partition the runtime engine file
 
-`collider/Sources/ColliderRuntime/TaskEngine.swift` is one file carrying the task
+`collider/engine/Sources/ColliderRuntime/TaskEngine.swift` is one file carrying the task
 engine and two provisioning subsystems that merely happen to sit in the same
 `extension ColliderRuntime`. The engine proper — `execute`, `identity`, `assess`,
 the two `perform` overloads, and the plan/report types — is roughly a third of

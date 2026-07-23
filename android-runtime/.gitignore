@@ -1,4 +1,5 @@
 .gfxstream-build/
 .aosp-build/
+.aosp-signing/
 .aosp-source/
 .aosp-tools/

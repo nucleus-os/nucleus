@@ -124,7 +124,7 @@ let package = Package(
         .library(name: "NucleusCompositorShell", targets: ["NucleusCompositorShell"]),
     ],
     dependencies: [
-        .package(path: "../../collider"),
+        .package(path: "../../collider/engine"),
         // The Nucleus library package — portable core + app framework (the
         // NucleusUI design system this compositor's shell is built with). This is
         // the compositor's only Nucleus dependency: it links zero React.
@@ -145,7 +145,7 @@ let package = Package(
     targets: [
         .target(
             name: "CompositorColliderRecipe",
-            dependencies: [.product(name: "ColliderCore", package: "collider")]),
+            dependencies: [.product(name: "ColliderCore", package: "engine")]),
         // ── Shared value-type / policy leaves ────────────────────────────────────
         .target(
             name: "NucleusCompositorServerTypes",

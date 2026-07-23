@@ -18,11 +18,11 @@ let package = Package(
         // for the C structs / handles (VkImage, VkImportMemoryFdInfoKHR, …).
         .library(name: "VulkanC", targets: ["VulkanC"]),
     ],
-    dependencies: [.package(path: "../collider")],
+    dependencies: [.package(path: "../collider/engine")],
     targets: [
         .target(
             name: "VulkanColliderRecipe",
-            dependencies: [.product(name: "ColliderCore", package: "collider")]),
+            dependencies: [.product(name: "ColliderCore", package: "engine")]),
         // The raw Vulkan C API. A systemLibrary (not a compiled C target) so the header
         // is processed at each import site — importers can inject platform defines like
         // -DVK_USE_PLATFORM_WAYLAND_KHR to pull the guarded WSI headers. Vendors the

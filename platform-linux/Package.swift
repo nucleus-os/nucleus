@@ -28,13 +28,13 @@ let package = Package(
     ],
     dependencies: [
         .package(name: "Nucleus", path: "../core"),
-        .package(path: "../collider"),
+        .package(path: "../collider/engine"),
         .package(path: "../third-party/swift-system"),
     ],
     targets: [
         .target(
             name: "LinuxColliderRecipe",
-            dependencies: [.product(name: "ColliderCore", package: "collider")]),
+            dependencies: [.product(name: "ColliderCore", package: "engine")]),
         .target(
             name: "NucleusLinuxReactor",
             dependencies: [
@@ -103,13 +103,13 @@ let package = Package(
             name: "NucleusSessionSupervisor",
             dependencies: [
                 "NucleusLinuxSessionC",
-                .product(name: "NucleusSessionProtocol", package: "collider"),
+                .product(name: "NucleusSessionProtocol", package: "engine"),
             ],
             path: "Sources/NucleusSessionSupervisor"),
         .executableTarget(
             name: "NucleusSessionFixture",
             dependencies: [
-                .product(name: "NucleusSessionProtocol", package: "collider"),
+                .product(name: "NucleusSessionProtocol", package: "engine"),
             ],
             path: "Tests/Fixtures/NucleusSessionFixture"),
         .executableTarget(
@@ -164,7 +164,7 @@ let package = Package(
             dependencies: [
                 "NucleusSessionSupervisor",
                 "NucleusSessionFixture",
-                .product(name: "NucleusSessionProtocol", package: "collider"),
+                .product(name: "NucleusSessionProtocol", package: "engine"),
             ],
             path: "Tests/NucleusLinuxSessionTests"),
     ]

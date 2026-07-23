@@ -104,7 +104,7 @@ let package = Package(
         .library(name: "ShellColliderRecipe", targets: ["ShellColliderRecipe"]),
     ],
     dependencies: [
-        .package(path: "../collider"),
+        .package(path: "../collider/engine"),
         // The shared monorepo render/UI core.
         .package(name: "Nucleus", path: "../core"),
         // The Vulkan bindings, extracted from Nucleus into their own package. The shell's
@@ -127,7 +127,7 @@ let package = Package(
     targets: [
         .target(
             name: "ShellColliderRecipe",
-            dependencies: [.product(name: "ColliderCore", package: "collider")]),
+            dependencies: [.product(name: "ColliderCore", package: "engine")]),
         .target(
             name: "NucleusShellSignalC",
             path: "Sources/NucleusShellSignalC",
@@ -378,7 +378,7 @@ let package = Package(
                     package: "NucleusLinuxPlatform"),
                 .product(
                     name: "NucleusSessionProtocol",
-                    package: "collider"),
+                    package: "engine"),
                 .product(name: "WaylandClient", package: "swift-wayland"),
                 .product(name: "NucleusRenderer", package: "Nucleus"),
                 .product(name: "NucleusRenderModel", package: "Nucleus"),
@@ -439,7 +439,7 @@ let package = Package(
                 "NucleusShellRuntime",
                 .product(
                     name: "NucleusSessionProtocol",
-                    package: "collider"),
+                    package: "engine"),
                 // The Skia text backend, compiled once in the core and linked here (no
                 // symlink target) — same product the compositor links.
                 .product(name: "NucleusTextBackend", package: "Nucleus"),

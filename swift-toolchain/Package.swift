@@ -11,19 +11,19 @@ let package = Package(
             targets: ["SwiftPlatformColliderRecipe"]),
     ],
     dependencies: [
-        .package(path: "../collider"),
+        .package(path: "../collider/engine"),
     ],
     targets: [
         .target(
             name: "SwiftPlatformColliderRecipe",
             dependencies: [
-                .product(name: "ColliderCore", package: "collider"),
+                .product(name: "ColliderCore", package: "engine"),
             ]),
         .testTarget(
             name: "SwiftPlatformColliderRecipeTests",
             dependencies: [
                 "SwiftPlatformColliderRecipe",
-                .product(name: "ColliderCore", package: "collider"),
+                .product(name: "ColliderCore", package: "engine"),
             ]),
     ])
 

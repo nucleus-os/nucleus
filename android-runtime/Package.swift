@@ -87,14 +87,14 @@ let package = Package(
             targets: ["NucleusAndroidPresentationQualifier"]),
     ],
     dependencies: [
-        .package(path: "../collider"),
+        .package(path: "../collider/engine"),
         .package(name: "NucleusLinuxPlatform", path: "../platform-linux"),
         .package(path: "../swift-wayland"),
     ],
     targets: [
         .target(
             name: "AndroidRuntimeColliderRecipe",
-            dependencies: [.product(name: "ColliderCore", package: "collider")]),
+            dependencies: [.product(name: "ColliderCore", package: "engine")]),
         .target(
             name: "NucleusAndroidIPCC",
             path: "Sources/NucleusAndroidIPCC",

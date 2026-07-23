@@ -60,7 +60,7 @@ Nucleus is one monorepo containing independently buildable Swift packages:
   host compiler and Android Swift SDK as one user-level platform generation.
 
 The bindings are first-party SwiftPM path dependencies and participate in
-`tools/collider build all` and `tools/collider test all`. Swift platform rebuilds remain
+`collider build all` and `collider test all`. Swift platform rebuilds remain
 explicit and publish the host toolchain and Android SDK together; ordinary workspace builds
 consume the active generation.
 
@@ -73,13 +73,22 @@ git clone --recurse-submodules git@github.com:nucleus-os/nucleus.git
 cd nucleus
 ```
 
-If the repository was cloned without `--recurse-submodules`, `bootstrap` initializes the
-required third-party submodules.
+Run the setup script once on a fresh clone. It provisions the Nucleus Swift
+toolchain if needed, builds the optimized `collider` binary, installs the
+`collider` command on your PATH, and provisions the workspace (initializing the
+required third-party submodules if the clone omitted `--recurse-submodules`).
+Re-run it any time to verify and repair the installation.
 
 ```sh
-tools/collider bootstrap
-tools/collider build all
-tools/collider test all
+./collider-setup.sh
+```
+
+Thereafter, `collider` runs from any directory inside the clone (and refuses
+outside one):
+
+```sh
+collider build all
+collider test all
 ```
 
 It selects the installed Nucleus Swift toolchain and runs the component
@@ -91,13 +100,13 @@ The same Swift CLI owns the cross-component workflows that previously lived in
 component shell scripts:
 
 ```sh
-tools/collider android build
-tools/collider toolchain rebuild
-tools/collider install session
-tools/collider run
+collider android build
+collider toolchain rebuild
+collider install session
+collider run
 ```
 
-`tools/collider run` is the complete development runtime entry point. It
+`collider run` is the complete development runtime entry point. It
 incrementally builds the compositor, native Swift shell, PAM helper, and session
 launcher into `.install/`, then starts that installed session. Launch it from a
 free virtual terminal or a display-manager session because Nucleus owns the DRM
@@ -107,14 +116,14 @@ Runtime diagnostics use the same entry point, so the instrumented binaries and
 the session being measured cannot drift apart:
 
 ```sh
-tools/collider run --seconds 20
-tools/collider run --tracy --seconds 20
-tools/collider run --sanitize address
-tools/collider run --vk-validation
-tools/collider run --valgrind
+collider run --seconds 20
+collider run --tracy --seconds 20
+collider run --sanitize address
+collider run --vk-validation
+collider run --valgrind
 ```
 
-Use `tools/collider run --help` for capture location, presentation mode, render
+Use `collider run --help` for capture location, presentation mode, render
 benchmark, sanitizer, optimization, and compositor-argument options.
 Every run streams the complete build and session output to a UTC-timestamped
 file under `logs/`; `logs/latest` is a symlink to the most recent run, including
