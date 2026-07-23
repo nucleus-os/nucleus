@@ -188,7 +188,7 @@ them locally.
 ## Patches
 
 [`patches/`](patches) currently contains **fourteen** patches across
-`swift/`, `swift-driver/`, `swift-build/`, and `swiftpm/`. The build otherwise runs
+`swift/`, `swift-driver/`, and `swift-build/`. The build otherwise runs
 against upstream `release/6.4.x` unmodified. See
 [`patches/README.md`](patches/README.md) for the file format and
 authoring guide.
@@ -206,7 +206,7 @@ authoring guide.
   duplicate `wmemchr`/wide-string overload shims with NDK 30 while
   leaving the installed NDK untouched. *Filed-upstream-TODO.*
 
-* **`swift/0002`-`0007`** — six patches fixing cross-compiling to
+* **`swift/0002`-`0005` and `swift/0007`** — five patches fixing cross-compiling to
   Android *from a Darwin (macOS) build host*, a combination upstream
   Swift has never really exercised: stray Darwin-only compiler/linker
   flags (`-arch`, `-Wl,-dead_strip`) leaking into Android compiles
@@ -217,10 +217,8 @@ authoring guide.
   an empty `LIBDISPATCH_RUNTIME_DIR` breaking libdispatch's install
   step (`0004`); a Darwin-only stdlib test module
   (`StdlibUnittestFoundationExtras`) missing a `TARGET_SDKS`
-  restriction and being attempted on Android (`0005`); the same
-  libc++ `wchar.h` workaround as `0001`, forwarded via `-Xcc` for the
-  `CxxStdlib` stdlib build itself rather than the ClangImporter
-  (`0006`); and a genuine bug mapping Swift's own host-target name
+  restriction and being attempted on Android (`0005`); and a genuine
+  bug mapping Swift's own host-target name
   (e.g. `macosx-arm64`) onto the NDK's prebuilt-clang directory tag
   instead of the NDK's own `darwin-x86_64` convention (`0007`). See
   each patch's own header for the full rationale. *Filed-upstream-TODO.*

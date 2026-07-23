@@ -86,12 +86,14 @@ under `$STAGING/.deps-built/`.
 
 ## libc++ alignment
 
-This SDK is naturally libc++-flavored end-to-end without any patches:
-the Android NDK has shipped libc++ exclusively for years, and Swift's
-Android stdlib build already binds `CxxStdlib` to libc++. The
-`patches/swift/0001-libcxx-linux-cxxstdlib.patch` carried in
-`swift-toolchain` only affects the *host* Linux build path; it
-does not need a counterpart here.
+This SDK is naturally libc++-flavored end-to-end: the Android NDK has shipped
+libc++ exclusively for years, and Swift's Android stdlib build binds
+`CxxStdlib` to libc++. The host compiler carries
+`swift-toolchain/patches/swift/0001-clangimporter-libcxx-cxxstdlib.patch`, which
+supplies the NDK 30 `wchar.h` importer guard for every Android target. The
+ordered platform build always qualifies that compiler before using it to build
+the Android stdlib, so the former source-level bootstrap duplicate is not
+needed.
 
 The smoke test below still asserts `std::__1::` (libc++) symbols in
 the produced Android `libswiftCore.so` so a future upstream regression

@@ -41,11 +41,28 @@ from the executable build graph.
   behavior the patches correct. No remaining patch is superseded upstream.
   Upstream's existing Linux libc++ support assumes a system-wide libc++ and
   does not replace Nucleus's bundled-default-libc++ include-path fix.
-- [ ] Revalidate the Android `CxxStdlib` bootstrap without
-  `swift/0006-android-cxxstdlib-wchar-workaround.patch` after the candidate host
-  compiler is qualified. The rebuilt compiler already carries the same wchar
-  guard through `swift/0001`; remove `0006` if the ordered host-then-Android
-  build proves the bootstrap-only duplicate is no longer exercised.
+- [x] Removed `swift/0006-android-cxxstdlib-wchar-workaround.patch` after an
+  ordered host-then-Android control build proved it was a bootstrap-only
+  duplicate. The qualified host compiler from generation
+  `2026-07-23T00-15-15Z-1452180` contains `swift/0001`'s Android ClangImporter
+  wchar guard. With `0006` temporarily reversed and the aarch64/API 36 graph
+  forcibly reconfigured against NDK 30.0.14904198, the generated graph
+  contained no explicit workaround flag and rebuilt the Android stdlib,
+  dynamic/static Foundation, Swift Testing, and XCTest successfully. Both
+  dynamic and static resource trees then compiled fresh `CxxStdlib` consumers.
+  The durable control log is
+  `~/.cache/nucleus/swift-android-sdks/release-6.4.x/logs/0006-revalidation/build-20260722-191037.log`.
+  Strengthening the installed-SDK test to exercise `std.string` exposed a
+  separate bundle defect: upstream installs the static `libswiftCxx.a` and
+  `libswiftCxxStdlib.a` overlays only in the regular resource tree, while a
+  `--static-swift-stdlib` consumer searches only the static resource tree. The
+  Linux and macOS assemblers now require and copy both archives into the static
+  variant. A standalone bundle built from the no-`0006` graph then passed the
+  full dynamic and static SwiftPM consumer gate. That bundle's durable build
+  log is
+  `~/.cache/nucleus/swift-android-sdks/release-6.4.x/logs/0006-revalidation/build-20260722-191955.log`.
+  The installed-SDK gate permanently covers this compiler and packaging
+  contract so neither side can regress silently.
 - [x] Preserve the exact C++-interop runner behavior as a candidate-toolchain
   `swift test` smoke so the installed SwiftPM and synthesized test executable
   are exercised end to end without carrying an upstream implementation patch.

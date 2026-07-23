@@ -556,6 +556,18 @@ EOF
     ln -s ../swift/clang "$swift_dst/clang"
     ln -s ../swift/clang "$swift_static_dst/clang"
 
+    # Swift installs the C++ interoperability overlays as static archives in
+    # the regular resource tree even when it also installs a separate static
+    # stdlib tree. A --static-swift-stdlib consumer searches only the latter,
+    # while CxxStdlib's autolink metadata still requests both archives.
+    for cxx_archive in libswiftCxx.a libswiftCxxStdlib.a; do
+      if [[ ! -f "$swift_dst/android/$cxx_archive" ]]; then
+        echo "missing C++ interoperability archive for $arch: $swift_dst/android/$cxx_archive" >&2
+        return 1
+      fi
+      install -m 0644 "$swift_dst/android/$cxx_archive" "$swift_static_dst/android/$cxx_archive"
+    done
+
     # FoundationXML.swiftmodule autolinks its private C shim for both dynamic
     # and static consumers. Upstream installs the archive only in the static
     # resource tree, so stage it beside the normal Android module as well.

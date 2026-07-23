@@ -71,7 +71,10 @@ let package = Package(
     name: "AndroidSDKConsumer",
     products: [.executable(name: "hello", targets: ["hello"])],
     targets: [
-        .executableTarget(name: "hello", plugins: ["FoundationXMLHostPlugin"]),
+        .executableTarget(
+            name: "hello",
+            swiftSettings: [.interoperabilityMode(.Cxx)],
+            plugins: ["FoundationXMLHostPlugin"]),
         .plugin(name: "FoundationXMLHostPlugin", capability: .buildTool()),
     ]
 )
@@ -80,6 +83,7 @@ SWIFT
 import Foundation
 import FoundationNetworking
 import FoundationXML
+import CxxStdlib
 
 @main
 struct Hello {
@@ -87,6 +91,8 @@ struct Hello {
         let url = URL(string: "https://example.com")!
         let parser = XMLParser(data: Data("<nucleus/>".utf8))
         precondition(parser.parse())
+        let cxxString = std.string("nucleus")
+        precondition(cxxString.size() == 7)
         print(url.host ?? "missing-host")
     }
 }
