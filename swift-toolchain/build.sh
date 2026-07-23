@@ -4,8 +4,8 @@
 
 set -euo pipefail
 
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [[ "${NUCLEUS_SWIFT_PLATFORM_ORCHESTRATED:-0}" != 1 ]]; then
-  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   exec "$script_dir/../tools/nucleus" toolchain rebuild "$@"
 fi
 
@@ -32,11 +32,19 @@ run_info_file="$log_root/latest-run.env"
 package_path="$install_root/swift-${source_id}-linux.tar.gz"
 package_candidate="$install_root/.swift-${source_id}-linux.tar.gz.pending.$$"
 assembly_root="$install_root/.assembly.$$"
+# Candidate-hosted product build directories must not cache the per-process
+# private assembly path. Build into this real, stable staging directory; a
+# symlink is insufficient because the Swift driver canonicalizes its own path
+# and exposes the private target through `-print-target-info`. Move the staged
+# usr tree into the private assembly only after the upstream graph completes.
+candidate_install_root="$workspace/.nucleus-candidate-install"
 published_usr="$install_root/usr"
 published_usr_backup="$install_root/.usr.previous.$$"
 fingerprint_root="$workspace/.nucleus-fingerprints"
 phase_events="$log_root/latest-phases.tsv"
-jobs="${NUCLEUS_SWIFT_BUILD_JOBS:-$(nproc)}"
+detected_jobs="$(nproc)"
+if (( detected_jobs > 16 )); then detected_jobs=16; fi
+jobs="${NUCLEUS_SWIFT_BUILD_JOBS:-$detected_jobs}"
 # Default linker is lld. We tried mold as the default (which is 2-5×
 # faster than lld on C++ link-heavy phases) but hit a hard mold
 # internal assertion when linking SwiftPM's `libSwiftPMDataModel.so`:
@@ -193,7 +201,7 @@ build_cmd=(
   "host_cc=$host_cc"
   "host_cxx=$host_cxx"
   "cmake_overrides=$cmake_overrides_file"
-  "install_destdir=$assembly_root"
+  "install_destdir=$candidate_install_root"
   "installable_package=$package_candidate"
 )
 if (( reconfigure )); then
@@ -214,6 +222,7 @@ if (( dry_run )); then
   printf 'workspace=%q\n' "$workspace"
   printf 'install_root=%q\n' "$install_root"
   printf 'assembly_root=%q\n' "$assembly_root"
+  printf 'candidate_install_root=%q\n' "$candidate_install_root"
   printf 'log_file=%q\n' "$log_file"
   printf 'installable_package=%q\n' "$package_path"
   printf 'source_ref=%q\n' "$source_ref"
@@ -230,10 +239,10 @@ if (( dry_run )); then
   exit 0
 fi
 
-mkdir -p "$log_root" "$(dirname "$log_file")"
-exec 9>"$install_root/.build.lock"
+mkdir -p "$workspace" "$install_root" "$log_root" "$(dirname "$log_file")"
+exec 9>"$workspace/.nucleus-build.lock"
 if ! flock -n 9; then
-  echo "another swift-toolchain build is already using $install_root" >&2
+  echo "another swift-toolchain build is already using $workspace" >&2
   exit 1
 fi
 ln -sfn "$log_file" "$latest_log"
@@ -241,6 +250,7 @@ cat > "$run_info_file" <<RUNINFO
 workspace=$workspace
 install_root=$install_root
 assembly_root=$assembly_root
+candidate_install_root=$candidate_install_root
 source_ref=$source_ref
 source_scheme=$source_scheme
 source_id=$source_id
@@ -287,6 +297,22 @@ unset LDFLAGS CFLAGS CXXFLAGS
 unset CMAKE_EXE_LINKER_FLAGS CMAKE_SHARED_LINKER_FLAGS \
       CMAKE_MODULE_LINKER_FLAGS CMAKE_STATIC_LINKER_FLAGS
 
+# Some upstream product helpers render their complete inherited environment in
+# verbose command traces. Source checkout has already completed by the time the
+# compiler graph starts, and no build product needs repository/service
+# credentials. Remove credential-shaped variables before entering that graph so
+# durable toolchain logs cannot capture unrelated interactive-session secrets.
+scrub_sensitive_build_environment() {
+  local variable_name
+  while IFS='=' read -r variable_name _; do
+    case "$variable_name" in
+      *TOKEN*|*PASSWORD*|*PASSWD*|*SECRET*|*CREDENTIAL*|*PRIVATE_KEY*|*ACCESS_KEY*|*API_KEY*)
+        unset "$variable_name"
+        ;;
+    esac
+  done < <(env)
+}
+
 # Pin the toolchain SwiftBuild discovers to the just-installed one,
 # not whatever `swift` happens to be first on PATH.
 #
@@ -304,13 +330,16 @@ unset CMAKE_EXE_LINKER_FLAGS CMAKE_SHARED_LINKER_FLAGS \
 # but swiftly's `bin/` is not a `usr/bin/` layout, so SwiftBuild
 # fails its assertion as soon as PATH is searched.
 #
-# Setting SWIFT_EXEC short-circuits the PATH search. If the install
-# hasn't produced this binary yet (early phases), the env var points
-# at a non-existent path and is silently ignored by the
-# `compactMap { $0 }.first(where: fs.exists)` lookup. Once the install
-# step writes `<install>/usr/bin/swift`, SwiftBuild picks it up
+# Setting SWIFT_EXEC short-circuits the PATH search. SWIFT_EXEC is the
+# compiler-driver override, so it must select `swiftc`, not the `swift`
+# interpreter mode. Pointing it at `swift` makes SwiftPM report successful
+# manifest compilation without emitting the requested manifest executable,
+# which then surfaces as a misleading posix_spawn ENOENT. If the install has
+# not produced swiftc yet (early phases), the non-existent path is silently
+# ignored by the `compactMap { $0 }.first(where: fs.exists)` lookup. Once the
+# install step writes `<install>/usr/bin/swiftc`, SwiftBuild picks it up
 # unambiguously.
-export SWIFT_EXEC="$assembly_root/usr/bin/swift"
+export SWIFT_EXEC="$candidate_install_root/usr/bin/swiftc"
 
 # Isolate clang/swift's module cache to the workspace so a global
 # $HOME/.cache/clang/ never gets touched across builds.
@@ -358,7 +387,7 @@ python3 "$workspace/swift/utils/update-checkout" "${update_checkout_args[@]}"
 
 # Apply patches under patches/<repo>/ to each upstream subrepo via patch -p1
 # with idempotency enforced by `patch -R --dry-run`. See patches/README.md.
-patches_dir="${NUCLEUS_SWIFT_PATCHES_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/patches}"
+patches_dir="${NUCLEUS_SWIFT_PATCHES_DIR:-$script_dir/patches}"
 
 # update-checkout resets tracked files but deliberately retains untracked files.
 # Patch-created fixtures and patch(1) .orig files from an interrupted run would
@@ -485,25 +514,9 @@ test=0
 validation-test=0
 long-test=0
 stress-test=0
-lldb=0
-install-lldb=0
-skip-build-lldb
-# sourcekit-lsp and indexstore-db are disabled.
-#
-# Their build phase invokes swift-frontend's `-interpret` JIT mode on
-# swift-foundation's Package.swift, which crashes in current
-# release/6.4.x (LLVM ORC fails to materialize PackageDescription
-# symbols, then swift-backtrace crashes during the dump). Reproduces
-# in `env -i` so it isn't caused by anything we set in the build.
-# Nothing in nucleus's build depends on sourcekit-lsp or
-# indexstore-db; they're useful for editor LSP integration but not for
-# nucleus compilation.
-#
-# Revisit once 6.4 stabilizes or split out as separate SwiftPM-driven
-# builds against the installed toolchain (same plan slot as splitting
-# foundation/libdispatch).
-sourcekit-lsp=0
-indexstore-db=0
+lldb
+no-lldb-assertions
+lldb-configure-tests=0
 foundation
 libdispatch
 xctest
@@ -512,13 +525,15 @@ swiftpm
 swift-driver
 swift-testing
 swift-testing-macros
-swiftdocc=0
-swiftformat=0
-wasmkit=0
-install-sourcekit-lsp=0
+indexstore-db
+sourcekit-lsp
+swiftdocc
+swiftformat
+wasmkit
 install-llvm
 install-static-linux-config
 install-swift
+install-lldb
 install-llbuild
 install-foundation
 install-libdispatch
@@ -528,19 +543,20 @@ install-swiftpm
 install-swift-driver
 install-swift-testing
 install-swift-testing-macros
-install-swiftdocc=0
-install-swiftformat=0
-install-wasmkit=0
+install-sourcekit-lsp
+install-swiftdocc
+install-swiftformat
+install-wasmkit
 install-prefix=/usr
 install-destdir=%(install_destdir)s
 installable-package=%(installable_package)s
 relocate-xdg-cache-home-under-build-subdir
 build-ninja
 build-swift-static-stdlib=1
-build-swift-static-sdk-overlay=0
+build-swift-static-sdk-overlay=1
 build-swift-stdlib-unittest-extra=0
-build-embedded-stdlib=0
-build-embedded-stdlib-cross-compiling=0
+build-embedded-stdlib=1
+build-embedded-stdlib-cross-compiling=1
 build-wasi-stdlib=0
 stdlib-deployment-targets=linux-x86_64
 build-stdlib-deployment-targets=linux-x86_64
@@ -736,17 +752,15 @@ extra-llvm-cmake-options=
     # Listed AFTER the upstream `-DLLVM_ENABLE_ASSERTIONS=TRUE` so
     # CMake's last-wins -D semantics make ours stick.
     -DLLVM_ENABLE_ASSERTIONS:BOOL=FALSE
-    # Drop unused target backends. X86 is needed for the host Linux
-    # toolchain itself; AArch64 is needed so host swiftc can emit Android
-    # aarch64 object code for the sibling Android SDK build. The upstream
-    # preset builds X86;ARM;AArch64;PowerPC;SystemZ;Mips;RISCV;WebAssembly;
-    # AVR;BPF — 10 targets. Keeping only these two still avoids most of
-    # that cold-build cost.
-    -DLLVM_TARGETS_TO_BUILD:STRING=X86;AArch64
+    # Match the target backends shipped in the official Swift.org Linux
+    # distribution. Code generation capability is part of the compiler's
+    # installed surface, even when Nucleus itself currently targets only X86
+    # and AArch64 hosts.
+    -DLLVM_TARGETS_TO_BUILD:STRING=AArch64;ARM;AVR;BPF;Mips;PowerPC;RISCV;SystemZ;WebAssembly;X86
 extra-swift-cmake-options=
     -DSWIFT_USE_LINKER:STRING=%(linker)s
-    -DSWIFT_SHOULD_BUILD_EMBEDDED_STDLIB:BOOL=FALSE
-    -DSWIFT_SHOULD_BUILD_EMBEDDED_STDLIB_CROSS_COMPILING:BOOL=FALSE
+    -DSWIFT_SHOULD_BUILD_EMBEDDED_STDLIB:BOOL=TRUE
+    -DSWIFT_SHOULD_BUILD_EMBEDDED_STDLIB_CROSS_COMPILING:BOOL=TRUE
     # Keep swift-side assertions disabled explicitly as part of the
     # distributable configuration. Both add measurable compile time
     # and we do not iterate on Swift compiler internals here.
@@ -784,6 +798,11 @@ repo_revision() {
 patch_set_fingerprint="$(patch_fingerprint "$patches_dir")"
 configuration_fingerprint="$({
   sha256sum "$preset_file" "$cmake_overrides_file"
+  # Bump when the relationship between component identities and reusable build
+  # directories changes. This prevents a build prepared under older
+  # invalidation semantics from being resumed as if its directories were
+  # compatible.
+  printf 'build_directory_invalidation_schema=2\n'
   printf 'host_cc=%s\n' "$host_cc"
   printf 'host_cxx=%s\n' "$host_cxx"
   printf 'host_cc_version=%s\n' "$($host_cc --version | head -n 1)"
@@ -809,7 +828,13 @@ runtime_fingerprint="$({
 } | sha256sum | awk '{print $1}')"
 tools_fingerprint="$({
   printf 'runtime=%s\n' "$runtime_fingerprint"
-  for repo in llbuild swiftpm swift-driver swift-build swift-tools-support-core; do
+  # Version the stable candidate-compiler path contract independently from
+  # compiler/runtime artifacts. Schema 2 uses a real staging directory because
+  # Swift canonicalizes a symlink target into its frontend and runtime paths.
+  printf 'candidate_install_path_schema=2\n'
+  for repo in llbuild swiftpm swift-driver swift-build swift-tools-support-core \
+              indexstore-db sourcekit-lsp swift-format swift-docc \
+              swift-docc-render-artifact wasmkit; do
     repo_revision "$repo"
   done
   printf 'tool_patches=%s\n' \
@@ -857,36 +882,63 @@ reset_component_build_dirs() {
 
 prepare_component_build_dirs() {
   local previous_config="" previous_runtime="" previous_tools=""
-  [[ -f "$fingerprint_root/last-successful/configuration" ]] && \
-    previous_config="$(<"$fingerprint_root/last-successful/configuration")"
-  [[ -f "$fingerprint_root/last-successful/runtime" ]] && \
-    previous_runtime="$(<"$fingerprint_root/last-successful/runtime")"
-  [[ -f "$fingerprint_root/last-successful/tools" ]] && \
-    previous_tools="$(<"$fingerprint_root/last-successful/tools")"
+  local prepared_root="$fingerprint_root/last-prepared"
+  if [[ ! -d "$prepared_root" ]]; then
+    prepared_root="$fingerprint_root/last-successful"
+  fi
+  [[ -f "$prepared_root/configuration" ]] && \
+    previous_config="$(<"$prepared_root/configuration")"
+  [[ -f "$prepared_root/runtime" ]] && \
+    previous_runtime="$(<"$prepared_root/runtime")"
+  [[ -f "$prepared_root/tools" ]] && \
+    previous_tools="$(<"$prepared_root/tools")"
 
   # CMake options are not inputs in the generated Ninja graph. Reconfigure
-  # automatically after a known successful configuration changes; the explicit
-  # flag remains available for manual cache repair.
-  if [[ -n "$previous_config" && "$previous_config" != "$configuration_fingerprint" ]] && \
-     (( ! reconfigure )); then
-    echo "Build configuration identity changed; enabling reconfigure"
-    build_cmd+=(--reconfigure)
-    reconfigure=1
+  # automatically after a known successful configuration changes. Swift's
+  # CMake project cannot safely change CMAKE_Swift_COMPILER in place: CMake
+  # deletes its cache and re-enters without build-script-impl's generated
+  # libdispatch and cmark paths. Reset only the Swift build directory before
+  # the global reconfigure so the first configure has the complete argument
+  # set. The explicit flag remains available for manual cache repair.
+  if [[ -n "$previous_config" && "$previous_config" != "$configuration_fingerprint" ]]; then
+    reset_component_build_dirs configuration swift
+    if (( ! reconfigure )); then
+      echo "Build configuration identity changed; enabling reconfigure"
+      build_cmd+=(--reconfigure)
+      reconfigure=1
+    fi
   fi
 
   # Swift-produced modules must be rebuilt when their compiler identity changes.
-  # The nested fingerprints propagate compiler changes into runtime and tools,
-  # while retaining unaffected build directories for narrower source changes.
-  if (( ! reconfigure )); then
-    if [[ -n "$previous_runtime" && "$previous_runtime" != "$runtime_fingerprint" ]]; then
-      reset_component_build_dirs runtime \
-        libdispatch libdispatch_static foundation foundation_macros \
-        foundation_static swifttesting swifttestingmacros xctest
-    fi
-    if [[ -n "$previous_tools" && "$previous_tools" != "$tools_fingerprint" ]]; then
-      reset_component_build_dirs tools llbuild swiftpm swiftdriver
-    fi
+  # The nested fingerprints propagate configuration and compiler changes into
+  # runtime and tools, while retaining unaffected build directories for narrower
+  # source changes. `--reconfigure` only regenerates CMake products; it does not
+  # invalidate the independent SwiftPM/SwiftBuild databases used by WasmKit,
+  # swift-format, SourceKit-LSP, or the other Swift tools.
+  if [[ -n "$previous_runtime" && "$previous_runtime" != "$runtime_fingerprint" ]]; then
+    reset_component_build_dirs runtime \
+      libdispatch libdispatch_static foundation foundation_macros \
+      foundation_static swifttesting swifttestingmacros xctest
   fi
+  if [[ -n "$previous_tools" && "$previous_tools" != "$tools_fingerprint" ]]; then
+    reset_component_build_dirs tools \
+      llbuild swiftpm swiftdriver indexstore-db sourcekit-lsp \
+      swiftformat swiftdocc wasmkit
+  fi
+
+  # Record the identities whose build directories have now been prepared.
+  # Interrupted attempts can resume those directories without deleting the
+  # same partial work again. The last-successful set remains the publication
+  # record and is updated only after every validation gate passes.
+  local prepared_candidate="$fingerprint_root/last-prepared.new.$$"
+  rm -rf -- "$prepared_candidate"
+  mkdir -p "$prepared_candidate"
+  cp "$fingerprint_root/current/configuration" "$prepared_candidate/configuration"
+  cp "$fingerprint_root/current/compiler" "$prepared_candidate/compiler"
+  cp "$fingerprint_root/current/runtime" "$prepared_candidate/runtime"
+  cp "$fingerprint_root/current/tools" "$prepared_candidate/tools"
+  rm -rf -- "$fingerprint_root/last-prepared"
+  mv -- "$prepared_candidate" "$fingerprint_root/last-prepared"
 }
 
 record_phase_event() {
@@ -939,6 +991,12 @@ finish_build_script() {
   if [[ -d "${assembly_root:-}" ]]; then
     rm -rf -- "$assembly_root"
   fi
+  if [[ -d "${candidate_install_root:-}" ]] && \
+     [[ -f "$candidate_install_root/.nucleus-owned" ]]; then
+    rm -rf -- "$candidate_install_root"
+  elif [[ -L "${candidate_install_root:-}" ]]; then
+    unlink "$candidate_install_root"
+  fi
   if (( status != 0 )); then
     echo "Swift source build failed or was interrupted. Durable log: $log_file" >&2
   fi
@@ -966,6 +1024,19 @@ if [[ -e "$assembly_root" || -L "$assembly_root" ]]; then
   exit 1
 fi
 mkdir -p "$assembly_root"
+if [[ -L "$candidate_install_root" ]]; then
+  # Migrate schema 1, which used a symlink and therefore leaked the private
+  # assembly target through Swift's canonicalized executable path.
+  unlink "$candidate_install_root"
+elif [[ -e "$candidate_install_root" ]]; then
+  if [[ ! -f "$candidate_install_root/.nucleus-owned" ]]; then
+    echo "Refusing to replace unexpected candidate install path: $candidate_install_root" >&2
+    exit 1
+  fi
+  rm -rf -- "$candidate_install_root"
+fi
+mkdir -p "$candidate_install_root"
+printf 'schema=2\n' > "$candidate_install_root/.nucleus-owned"
 
 # The local llvm.py patch leaves an existing libc++ output directory intact
 # instead of trying to replace it with /usr/include/c++. On the first configure,
@@ -996,7 +1067,7 @@ llvm_build_dir="$workspace/build/buildbot_linux/llvm-linux-x86_64"
 # different prefix (Nucleus OS .deb, /opt/nucleus-swift/, etc.) still
 # resolves them.
 swift_build_linux_dir="$workspace/build/buildbot_linux/swift-linux-x86_64/lib/swift/linux"
-install_swift_linux_dir="$assembly_root/usr/lib/swift/linux"
+install_swift_linux_dir="$candidate_install_root/usr/lib/swift/linux"
 mkdir -p "$swift_build_linux_dir" "$install_swift_linux_dir"
 for lib in libc++.so libc++.so.1 libc++.so.1.0 \
            libc++abi.so libc++abi.so.1 libc++abi.so.1.0 \
@@ -1017,7 +1088,7 @@ done
 # to the directory containing the .cfg file, so the toolchain stays
 # relocatable: extract the tarball to /opt/nucleus-swift/ and the
 # -L points at /opt/nucleus-swift/usr/lib without modification.
-install_bin="$assembly_root/usr/bin"
+install_bin="$candidate_install_root/usr/bin"
 mkdir -p "$install_bin"
 for cfg in clang.cfg clang++.cfg; do
   cat > "$install_bin/$cfg" <<'CLANG_CFG'
@@ -1030,11 +1101,35 @@ done
 
 report_fingerprint_state
 prepare_component_build_dirs
+
+# The component fingerprints above own invalidation for these product build
+# directories. Upstream defaults to deleting them on every invocation because
+# it has no knowledge of that outer contract. Add the operational controls only
+# after hashing the artifact-producing preset: they change reuse policy, not
+# toolchain contents, and must not invalidate a compatible interrupted build.
+cat >> "$preset_file" <<'INCREMENTAL_PRESET'
+skip-clean-libdispatch
+skip-clean-foundation
+skip-clean-xctest
+skip-clean-llbuild
+skip-clean-swiftpm
+skip-clean-swift-driver
+INCREMENTAL_PRESET
+
+scrub_sensitive_build_environment
 : > "$phase_events"
 phase_recording=1
 record_phase_event "toolchain build"
 "${build_cmd[@]}" 2>&1 | trace_build_output
 record_phase_event "post-build assembly"
+
+if [[ ! -d "$candidate_install_root/usr" ]]; then
+  echo "Swift build completed but the stable candidate usr tree is missing: $candidate_install_root/usr" >&2
+  exit 1
+fi
+mv -- "$candidate_install_root/usr" "$assembly_root/usr"
+rm -f -- "$candidate_install_root/.nucleus-owned"
+rmdir "$candidate_install_root"
 
 install_bin="$assembly_root/usr/bin"
 install_lib="$assembly_root/usr/lib"
@@ -1100,6 +1195,62 @@ if [[ -f "$testing_interop" && -d "$install_lib/swift/linux" ]]; then
   chmod 0755 "$install_lib/swift/linux/lib_TestingInterop.so"
 fi
 
+verify_product_surface() {
+  local toolchain_root="$1"
+  local label="$2"
+  local required target target_output
+
+  for required in \
+    swift swiftc clang clang++ \
+    lldb lldb-argdumper lldb-dap lldb-server repl_swift \
+    sourcekit-lsp swift-format docc wasmkit; do
+    if [[ ! -x "$toolchain_root/bin/$required" ]]; then
+      echo "$label is missing required executable: bin/$required" >&2
+      return 1
+    fi
+  done
+
+  for required in \
+    lib/liblldb.so \
+    lib/libIndexStore.so \
+    lib/libSwiftSourceKitClientPlugin.so \
+    lib/libSwiftSourceKitPlugin.so \
+    lib/swift/linux/Foundation.swiftmodule \
+    lib/swift/linux/FoundationEssentials.swiftmodule \
+    lib/swift/linux/FoundationInternationalization.swiftmodule \
+    lib/swift/linux/FoundationNetworking.swiftmodule \
+    lib/swift/linux/FoundationXML.swiftmodule \
+    lib/swift/linux/Dispatch.swiftmodule \
+    lib/swift/linux/libFoundation.so \
+    lib/swift/linux/libdispatch.so \
+    lib/swift_static/linux/Foundation.swiftmodule \
+    lib/swift_static/linux/Dispatch.swiftmodule \
+    lib/swift_static/linux/Glibc.swiftmodule \
+    lib/swift_static/linux/libFoundation.a \
+    lib/swift_static/linux/libdispatch.a \
+    lib/swift/embedded \
+    lib/swift_static/embedded \
+    share/docc/render; do
+    if [[ ! -e "$toolchain_root/$required" ]]; then
+      echo "$label is missing required product: $required" >&2
+      return 1
+    fi
+  done
+
+  if ! compgen -G "$toolchain_root/local/lib/python*/dist-packages/lldb" >/dev/null; then
+    echo "$label is missing LLDB's installed Python package" >&2
+    return 1
+  fi
+
+  target_output="$("$toolchain_root/bin/clang" --print-targets)"
+  for target in aarch64 arm avr bpf mips ppc32 riscv32 systemz wasm32 x86; do
+    if ! grep -Eq "^[[:space:]]+$target[[:space:]]+-" <<<"$target_output"; then
+      echo "$label Clang is missing required LLVM target: $target" >&2
+      return 1
+    fi
+  done
+}
+
 candidate=""
 if [[ -x "$assembly_root/usr/bin/swiftc" ]]; then
   candidate="$assembly_root/usr/bin/swiftc"
@@ -1110,6 +1261,7 @@ if [[ -z "$candidate" ]]; then
 fi
 
 "$candidate" --version
+verify_product_surface "$assembly_root/usr" "assembled toolchain"
 
 fingerprint_manifest="$assembly_root/usr/share/nucleus/component-fingerprints.env"
 mkdir -p "$(dirname "$fingerprint_manifest")"
@@ -1148,12 +1300,7 @@ record_phase_event "package smoke"
 tar -x -z -f "$package_candidate" -C "$package_toolchain"
 
 toolchain_bin="$package_toolchain/usr/bin"
-for required in swift swiftc; do
-  if [[ ! -x "$toolchain_bin/$required" ]]; then
-    echo "Installable package smoke failed; $required is missing" >&2
-    exit 1
-  fi
-done
+verify_product_surface "$package_toolchain/usr" "installable package"
 if [[ ! -f "$package_toolchain/usr/share/nucleus/component-fingerprints.env" ]]; then
   echo "Installable package smoke failed; component fingerprints are missing" >&2
   exit 1
@@ -1183,8 +1330,38 @@ struct NucleusPackageSmoke {
 }
 SWIFT
 "${clean_env[@]}" "$toolchain_bin/swift" --version
-"${clean_env[@]}" "$toolchain_bin/swiftc" -parse-as-library "$smoke_src" -o "$smoke_bin"
+"${clean_env[@]}" "$toolchain_bin/swiftc" -g -parse-as-library "$smoke_src" -o "$smoke_bin"
 "$smoke_bin"
+
+static_smoke_bin="$smoke_root/static-main"
+"${clean_env[@]}" "$toolchain_bin/swiftc" \
+  -static-executable -parse-as-library "$smoke_src" -o "$static_smoke_bin"
+"$static_smoke_bin"
+
+embedded_smoke_src="$smoke_root/embedded.swift"
+embedded_smoke_ir="$smoke_root/embedded.ll"
+cat > "$embedded_smoke_src" <<'SWIFT'
+public func nucleusEmbeddedSmoke() -> Int { 42 }
+SWIFT
+"${clean_env[@]}" "$toolchain_bin/swiftc" \
+  -target riscv32-none-none-eabi \
+  -wmo \
+  -enable-experimental-feature Embedded \
+  -emit-ir \
+  "$embedded_smoke_src" \
+  -o "$embedded_smoke_ir"
+
+"${clean_env[@]}" "$toolchain_bin/lldb" \
+  --batch \
+  -o 'breakpoint set --name main' \
+  -o run \
+  -o 'thread backtrace' \
+  "$smoke_bin"
+
+python3 "$script_dir/validate-products.py" \
+  --toolchain "$package_toolchain/usr" \
+  --platform linux \
+  --work-directory "$smoke_root/toolchain-products"
 
 (
   cd "$package_dir"

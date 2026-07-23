@@ -840,7 +840,7 @@ Extend `NucleusCompositorRendererLinuxTests` and `NucleusCompositorRenderRuntime
 Run verification after sourcing the repository host environment:
 
 ```sh
-source core/tools/host-env.sh
+source tools/host-env.sh
 swift test \
   --package-path compositor/compositor-core \
   -Xswiftc -cxx-interoperability-mode=default \

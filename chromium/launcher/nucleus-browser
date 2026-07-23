@@ -3,7 +3,7 @@ set -euo pipefail
 
 launcher_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 prefix="$(cd -- "$launcher_dir/.." && pwd)"
-runtime_dir="$prefix/lib/nucleus-browser"
+runtime_dir="$prefix/lib/nucleus-browser/current/runtime"
 browser="$runtime_dir/nucleus-browser-bin"
 
 if [[ ! -x "$browser" ]]; then
@@ -61,24 +61,16 @@ done
 # Chromium's root-owned helper here only when an actual namespace probe fails.
 system_sandbox="/usr/local/libexec/nucleus-browser/chrome-sandbox"
 system_sandbox_dir="$(dirname -- "$system_sandbox")"
-runtime_sandbox="$runtime_dir/chrome-sandbox"
 unset CHROME_DEVEL_SANDBOX
-if [[ -e "$runtime_sandbox" ]]; then
-  if ! setuid_sandbox_is_valid "$runtime_sandbox" ||
-     ! setuid_sandbox_directory_is_valid "$runtime_dir"; then
-    echo "Nucleus Browser sandbox helper has invalid ownership or mode: $runtime_sandbox" >&2
-    exit 1
-  fi
-elif [[ -e "$system_sandbox" ]]; then
+if [[ -e "$system_sandbox" ]]; then
   if setuid_sandbox_is_valid "$system_sandbox" &&
      setuid_sandbox_directory_is_valid "$system_sandbox_dir"; then
     export CHROME_DEVEL_SANDBOX="$system_sandbox"
   fi
 fi
-if [[ ! -e "$runtime_sandbox" ]] &&
-   [[ -z "${CHROME_DEVEL_SANDBOX:-}" ]] &&
+if [[ -z "${CHROME_DEVEL_SANDBOX:-}" ]] &&
    ! user_namespace_sandbox_works; then
-  echo "Nucleus Browser has no usable process sandbox; rerun chromium/install-browser.sh" >&2
+  echo "Nucleus Browser has no usable process sandbox; run tools/nucleus chromium install" >&2
   exit 1
 fi
 

@@ -418,7 +418,7 @@ those dependencies.
 
 ### Phase 3 behavioral gate
 
-Source `core/tools/host-env.sh` and require all of the following to pass from a
+Source `tools/host-env.sh` and require all of the following to pass from a
 correctly provisioned checkout:
 
 ```sh

@@ -359,13 +359,18 @@ revision, but subsystem ownership and API direction do not change.
 
 ## Current implementation status
 
-As of 2026-07-19, all planned source, patch-stack, product, packaging, and
+As of 2026-07-22, all planned source, patch-stack, product, packaging, and
 source-level test coding is persisted in the workspace:
 
-- `chromium/build.sh` is the single product entry point for CEF, Nucleus
-  Browser, or both;
-- both products reuse CEF's pinned Chromium checkout, depot_tools, downloaded
-  dependencies, PGO profiles, Dawn checkout, and compiler cache;
+- `tools/nucleus chromium doctor|bootstrap|build|test|install` is the single
+  public workflow; internal product scripts expose no alternate build modes;
+- both products reuse one content-addressed source generation containing the
+  exact CEF, Chromium, depot_tools, patch, generated-API, and PGO inputs;
+- the complete build is sequential, caps local Siso work at 16 jobs, and
+  requires 32 GiB swap before starting either official ThinLTO output;
+- every run has a timestamped run directory, per-stage logs, a manifest, an
+  atomic `latest` link, process-group cleanup, and exclusive source/output/
+  publication locks;
 - CEF and the standalone browser retain separate GN outputs because their
   allocator and process-boundary contracts are intentionally different;
 - Chromium-wide patches live in `chromium/patches/common/`, nested Dawn work in
@@ -399,10 +404,18 @@ source-level test coding is persisted in the workspace:
   exactly-once behavior, stale responses, atomic scheduling failures,
   access-commit rollback/idempotence, color capabilities, strict renderer
   selection, and Graphite sampling of external NV12/P010 planes;
-- `chromium/install-browser.sh`, the external-only Nucleus Browser launcher and
-  desktop identity, and `chromium/diagnose-browser.sh` are ready to consume the
-  final optimized browser output. They retain Chromium's generated icon and
-  internal branding.
+- CEF SDK/tarball and browser artifacts publish as validated immutable
+  generations, while browser installation atomically switches one generation
+  containing its runtime, launcher, desktop entry, icons, Widevine payload,
+  and sandbox identity. The active and preceding installed generations are
+  retained. Chromium's generated icon and internal branding remain;
+- the replaced mutable checkout, distribution, and installed-runtime layouts
+  have been deleted. The build system contains no migration, fallback, or
+  compatibility path for them;
+- focused Swift CLI, metadata identity, retention, atomic-publication, shell
+  syntax, bootstrap-preflight, and timestamped-run-manifest checks pass. The
+  first complete build of the new generation starts after the host swap is
+  increased to the required 32 GiB.
 
 The niri fork now wires Smithay's existing
 `wp_linux_drm_syncobj_manager_v1` implementation into its TTY backend. It
@@ -430,11 +443,11 @@ additional implementation phases.
 
 ### Phase 0 — Establish the shared Chromium substrate
 
-Put shared Chromium source-build orchestration under `chromium/`, while
-retaining `cef/` as the CEF-specific build and packaging component.
-`automate-git.py` remains the authoritative provisioner for one pinned
-CEF/Chromium checkout. The shared orchestration owns layered patch selection
-and two product output directories.
+Put the public Chromium workflow in `tools/nucleus`, retain `chromium/` as its
+internal orchestrator, and retain `cef/` as the CEF-specific build/package
+stage. Exact-commit `automate-git.py` provisions a pristine, content-addressed
+source generation. The orchestrator owns layered patch application and two
+product output directories.
 
 The two output directories are necessary rather than configurable build
 profiles. Embedded CEF must retain the allocator settings required at the
@@ -471,8 +484,8 @@ and is disabled during ordinary runtime.
 One build entry point applies the complete cumulative source stack, then
 generates and builds both fixed outputs. It does not
 offer product profiles or a matrix of feature switches. The outputs share the
-source checkout, patch application, depot tools, downloaded dependencies, PGO
-profiles, and compiler cache, but not GN object files whose compile-time
+source generation, depot tools, downloaded dependencies, and PGO profiles, but
+not GN object files whose compile-time
 contracts differ. CEF packaging and Chromium browser packaging consume their
 respective outputs. The browser output sets `enable_cef=false`: both products
 still compile from the same cumulatively patched source revision, while
@@ -503,7 +516,8 @@ Phase 0 lands with:
 - an independently generated Chromium browser output ready for the focused
   presenter implementation and test phases;
 - unchanged CEF distribution contents and Noctalia compatibility;
-- no second Chromium checkout and no duplicated dependency downloads.
+- one active content-addressed Chromium source generation and bounded stale
+  generation retention.
 
 ### Phase 1 — Extract the backend-neutral Wayland presenter
 

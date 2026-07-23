@@ -1,0 +1,27 @@
+Subject: [PATCH] Linux: link the complete static libc++ closure
+
+Nucleus builds and installs libc++, libc++abi, and LLVM libunwind and configures
+Clang to use libc++ by default. Swift's upstream Linux static-executable
+response file names libstdc++, which Clang consequently translates to libc++
+without adding the separately built ABI and unwind archives. Fully static
+Swift executables then fail with unresolved C++ ABI symbols. FoundationXML's
+autolinked static libxml2 dependency also requires zlib. Encode both transitive
+closures in the installed response file so `swiftc -static-executable` works
+without caller-supplied linker flags.
+
+Sentinel: NUCLEUS_SWIFT_SOURCE_LINUX_STATIC_LIBCXX_CLOSURE
+
+diff --git a/stdlib/public/Resources/linux/static-executable-args.lnk b/stdlib/public/Resources/linux/static-executable-args.lnk
+index 7b1094ebdcf..270a7e7b8a2 100644
+--- a/stdlib/public/Resources/linux/static-executable-args.lnk
++++ b/stdlib/public/Resources/linux/static-executable-args.lnk
+@@ -11,5 +11,8 @@
+ -lBlocksRuntime
+ -lpthread
+ -ldl
+--lstdc++
++-lc++
++-lc++abi
++-lunwind
+ -lm
++-lz

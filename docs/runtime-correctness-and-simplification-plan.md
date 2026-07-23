@@ -33,7 +33,7 @@ The work excludes generated sources, the vendored React Native tree, Skia, and o
 Every build and test command starts after sourcing the host environment:
 
 ```sh
-source core/tools/host-env.sh
+source tools/host-env.sh
 ```
 
 Do not launch the compositor or shell as part of agent-run verification.

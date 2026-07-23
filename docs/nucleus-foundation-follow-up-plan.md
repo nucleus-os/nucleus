@@ -1306,7 +1306,7 @@ Correct the workspace orchestrator before relying on its final result:
 Source the actual host environment and run:
 
 ```sh
-source core/tools/host-env.sh
+source tools/host-env.sh
 tools/nucleus doctor
 tools/nucleus build
 tools/nucleus test

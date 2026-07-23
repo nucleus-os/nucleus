@@ -1,0 +1,76 @@
+Subject: [PATCH] SwiftDriver: use CMake's Swift compilation mode abstraction
+
+CMake 3.29 introduced CMP0157 and split Swift compilation from linking when
+using the Ninja generator. SwiftDriver still selects the old policy through its
+3.19 minimum, so CMake 4.x emits a combined incremental compile-and-link
+command for every executable.
+
+When Ninja needs to relink one of those executables without recompiling its
+unchanged Swift source, the Swift driver fails while resolving its synthesized
+module output:
+
+    error: cannotResolveTempPath(main-1.swiftmodule)
+
+Select the modern policy when the installed CMake supports it. This retains
+incremental compilation while giving Ninja distinct object compilation and
+link actions. Give hyphenated executable targets valid Swift module names for
+the split compilation graph. Older supported CMake releases keep the existing
+behavior.
+
+Sentinel: NUCLEUS_SWIFT_DRIVER_CMAKE_SWIFT_COMPILATION_MODE
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 21e0f99c..77edc25f 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -15,6 +15,10 @@ if(POLICY CMP0091)
+   cmake_policy(SET CMP0091 NEW)
+ endif()
+ 
++if(POLICY CMP0157)
++  cmake_policy(SET CMP0157 NEW)
++endif()
++
+ project(SwiftDriver
+   LANGUAGES C CXX Swift)
+
+diff --git a/Sources/swift-build-sdk-interfaces/CMakeLists.txt b/Sources/swift-build-sdk-interfaces/CMakeLists.txt
+index fa1cd9c1..26bd4ad7 100644
+--- a/Sources/swift-build-sdk-interfaces/CMakeLists.txt
++++ b/Sources/swift-build-sdk-interfaces/CMakeLists.txt
+@@ -8,6 +8,8 @@
+ 
+ add_executable(swift-build-sdk-interfaces
+   main.swift)
++set_target_properties(swift-build-sdk-interfaces PROPERTIES
++  Swift_MODULE_NAME swift_build_sdk_interfaces)
+ target_link_libraries(swift-build-sdk-interfaces PUBLIC
+   SwiftDriver
+   SwiftDriverExecution)
+diff --git a/Sources/swift-driver/CMakeLists.txt b/Sources/swift-driver/CMakeLists.txt
+index f4ecac18..14358d60 100644
+--- a/Sources/swift-driver/CMakeLists.txt
++++ b/Sources/swift-driver/CMakeLists.txt
+@@ -8,6 +8,8 @@
+ 
+ add_executable(swift-driver
+   main.swift)
++set_target_properties(swift-driver PROPERTIES
++  Swift_MODULE_NAME swift_driver)
+ target_link_libraries(swift-driver PUBLIC
+   SwiftDriver
+   SwiftDriverExecution)
+diff --git a/Sources/swift-help/CMakeLists.txt b/Sources/swift-help/CMakeLists.txt
+index 9c52178d..14bc3221 100644
+--- a/Sources/swift-help/CMakeLists.txt
++++ b/Sources/swift-help/CMakeLists.txt
+@@ -8,7 +8,9 @@
+ 
+ add_executable(swift-help
+   main.swift)
++set_target_properties(swift-help PROPERTIES
++  Swift_MODULE_NAME swift_help)
+ target_link_libraries(swift-help PUBLIC
+   SwiftOptions
+   ArgumentParser
+   TSCBasic)

@@ -457,6 +457,7 @@ let package = Package(
                 "SubsurfaceTopologyTests.swift",
                 "SeatSerialLedgerTests.swift",
                 "SeatSessionOwnershipTests.swift",
+                "XdgActivationTokenTests.swift",
                 "XdgConfigureLedgerTests.swift",
                 "XdgPositionerTests.swift",
                 "DmabufLayoutValidatorTests.swift",

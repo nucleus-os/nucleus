@@ -13,8 +13,8 @@
 
 set -euo pipefail
 
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [[ "${NUCLEUS_SWIFT_PLATFORM_ORCHESTRATED:-0}" != 1 ]]; then
-  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   exec "$script_dir/../tools/nucleus" toolchain rebuild "$@"
 fi
 
@@ -50,7 +50,9 @@ latest_log="$log_root/latest.log"
 run_info_file="$log_root/latest-run.env"
 package_path="$install_root/swift-${source_id}-macos-${arch}.tar.gz"
 package_candidate="$install_root/.swift-${source_id}-macos-${arch}.tar.gz.pending.$$"
-jobs="${NUCLEUS_SWIFT_BUILD_JOBS:-$(sysctl -n hw.ncpu)}"
+detected_jobs="$(sysctl -n hw.ncpu)"
+if (( detected_jobs > 16 )); then detected_jobs=16; fi
+jobs="${NUCLEUS_SWIFT_BUILD_JOBS:-$detected_jobs}"
 build_subdir="buildbot_macos"
 preset_file="$workspace/nucleus-build-presets.ini"
 
@@ -189,7 +191,7 @@ if (( dry_run )); then
   exit 0
 fi
 
-mkdir -p "$log_root" "$(dirname "$log_file")"
+mkdir -p "$install_root" "$log_root" "$(dirname "$log_file")"
 ln -sfn "$log_file" "$latest_log"
 cat > "$run_info_file" <<RUNINFO
 workspace=$workspace
@@ -221,11 +223,25 @@ unset LDFLAGS CFLAGS CXXFLAGS
 unset CMAKE_EXE_LINKER_FLAGS CMAKE_SHARED_LINKER_FLAGS \
       CMAKE_MODULE_LINKER_FLAGS CMAKE_STATIC_LINKER_FLAGS
 
-# Pin the toolchain SwiftBuild discovers to the just-installed one, not
-# whatever `swift` happens to be first on PATH. See build.sh for the full
-# explanation (SwiftBuild's Darwin/generic-Unix platform plugin asserts the
-# resolved toolchain's parent dir is usr/bin or usr/local/bin).
-export SWIFT_EXEC="$install_root/usr/bin/swift"
+# Upstream product helpers may print their complete inherited environment in
+# verbose command traces. The compiler graph does not need checkout or service
+# credentials, so keep credential-shaped variables out of durable build logs.
+scrub_sensitive_build_environment() {
+  local variable_name
+  while IFS='=' read -r variable_name _; do
+    case "$variable_name" in
+      *TOKEN*|*PASSWORD*|*PASSWD*|*SECRET*|*CREDENTIAL*|*PRIVATE_KEY*|*ACCESS_KEY*|*API_KEY*)
+        unset "$variable_name"
+        ;;
+    esac
+  done < <(env)
+}
+
+# Pin the compiler driver SwiftBuild discovers to the just-installed one, not
+# whatever `swift` happens to be first on PATH. SWIFT_EXEC must select swiftc;
+# selecting the swift interpreter prevents SwiftPM from emitting compiled
+# manifest executables. See build.sh for the complete discovery rationale.
+export SWIFT_EXEC="$install_root/usr/bin/swiftc"
 
 # Isolate clang/swift's module cache to the workspace so a global
 # $HOME/.cache/clang/ never gets touched across builds.
@@ -266,7 +282,7 @@ python3 "$workspace/swift/utils/update-checkout" "${update_checkout_args[@]}"
 # triple it targets (isOSLinux()/isAndroid()), so applying the full set
 # unconditionally is a no-op for anything that only ever compiles for
 # Darwin targets.
-patches_dir="${NUCLEUS_SWIFT_PATCHES_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/patches}"
+patches_dir="${NUCLEUS_SWIFT_PATCHES_DIR:-$script_dir/patches}"
 
 # Keep repeated patch application deterministic after interrupted runs.
 for patched_repo in swift swift-driver swift-build swiftpm indexstore-db sourcekit-lsp; do
@@ -303,10 +319,10 @@ apply_patches "$patches_dir/swiftpm" "$workspace/swiftpm"
 apply_patches "$patches_dir/indexstore-db" "$workspace/indexstore-db"
 apply_patches "$patches_dir/sourcekit-lsp" "$workspace/sourcekit-lsp"
 
-# Preset that drives the Swift build-script for a host-only macOS build:
-# just the compiler, SwiftPM, swift-driver, and swift-testing, no
-# iOS/tvOS/watchOS/xrOS SDK overlays, no lldb, no libc++ bake-in (Darwin
-# already links the SDK's libc++.tbd by default).
+# Preset that drives the Swift build-script for the official Darwin product
+# surface. Foundation and libdispatch remain OS-provided, and Darwin already
+# links the SDK's libc++.tbd by default. The compiler, LLDB, embedded runtime,
+# universal host tools, and Apple platform overlays are toolchain products.
 cat > "$preset_file" <<PRESET
 [preset: nucleus_buildbot_macos,no_test]
 host-cc=%(host_cc)s
@@ -320,29 +336,38 @@ stress-test=0
 test-installable-package=
 toolchain-benchmarks=0
 
-lldb=0
-install-lldb=0
-skip-build-lldb
+ios
+tvos
+watchos
+xros
+infer-cross-compile-hosts-on-darwin
 
-sourcekit-lsp=0
-indexstore-db=0
-swiftdocc=0
-swiftformat=0
-wasmkit=0
-install-sourcekit-lsp=0
-install-swiftdocc=0
-install-swiftformat=0
-install-wasmkit=0
+lldb
+no-lldb-assertions
+lldb-configure-tests=0
+lldb-use-system-debugserver
 
 llbuild
 swiftpm
 swift-driver
+swiftsyntax
 swift-testing
 swift-testing-macros
+indexstore-db
+sourcekit-lsp
+swiftdocc
+swiftformat
+wasmkit
+install-lldb
 install-swiftpm
 install-swift-driver
+install-swiftsyntax
 install-swift-testing
 install-swift-testing-macros
+install-sourcekit-lsp
+install-swiftdocc
+install-swiftformat
+install-wasmkit
 
 # swiftpm's bootstrap and the swift-testing-macros TestingMacros plugin
 # are self-hosted: they configure/build against a *just-built* swiftc
@@ -373,29 +398,13 @@ install-swift
 install-llbuild
 
 build-swift-stdlib-unittest-extra=0
-build-embedded-stdlib=0
-build-embedded-stdlib-cross-compiling=0
+build-embedded-stdlib=1
+build-embedded-stdlib-cross-compiling=1
 build-wasi-stdlib=0
-
-stdlib-deployment-targets=macosx-$arch
-build-stdlib-deployment-targets=macosx-$arch
 
 extra-llvm-cmake-options=
     -DLLVM_CCACHE_BUILD:BOOL=ON
     -DLLVM_ENABLE_ASSERTIONS:BOOL=FALSE
-    -DLLVM_TARGETS_TO_BUILD:STRING=AArch64
-# Without this, the stdlib/SDK-overlay build defaults to a universal
-# (arm64+x86_64) slice — Apple's own shipped toolchains are universal.
-# We only build the AArch64 LLVM target backend (see
-# extra-llvm-cmake-options below), so the x86_64 codegen for that second
-# slice fails with "unable to create target: 'No available targets are
-# compatible with triple x86_64-apple-macosx...'". build-script's own
-# driver (utils/build-script) unconditionally appends
-# -USWIFT_DARWIN_SUPPORTED_ARCHS to extra-cmake-options — which lands
-# after any -D we'd inject via extra-swift-cmake-options and undoes it —
-# unless --swift-darwin-supported-archs is passed, so that's the flag to
-# use, not a raw cmake define.
-swift-darwin-supported-archs=$arch
 extra-swift-cmake-options=
     -DSWIFT_ENABLE_ASSERTIONS:BOOL=FALSE
     -DSWIFTSYNTAX_ENABLE_ASSERTIONS:BOOL=FALSE
@@ -431,7 +440,61 @@ if [[ -d "$install_root/usr/bin" ]]; then
     "$install_root/usr/bin/swiftc-legacy-driver" \
     "$install_root/usr/bin/swift-help"
 fi
+scrub_sensitive_build_environment
 "${build_cmd[@]}"
+
+verify_product_surface() {
+  local toolchain_root="$1"
+  local label="$2"
+  local required target target_output frontend_arches
+
+  for required in \
+    swift swiftc swift-frontend clang \
+    lldb lldb-argdumper lldb-dap lldb-server repl_swift \
+    sourcekit-lsp swift-format docc wasmkit; do
+    if [[ ! -x "$toolchain_root/bin/$required" ]]; then
+      echo "$label is missing required executable: bin/$required" >&2
+      return 1
+    fi
+  done
+
+  for required in \
+    lib/libIndexStore.dylib \
+    lib/libSwiftSourceKitClientPlugin.dylib \
+    lib/libSwiftSourceKitPlugin.dylib \
+    lib/swift/macosx \
+    lib/swift/iphoneos \
+    lib/swift/iphonesimulator \
+    lib/swift/appletvos \
+    lib/swift/appletvsimulator \
+    lib/swift/watchos \
+    lib/swift/watchsimulator \
+    lib/swift/xros \
+    lib/swift/xrsimulator \
+    lib/swift/embedded \
+    share/docc/render; do
+    if [[ ! -e "$toolchain_root/$required" ]]; then
+      echo "$label is missing required product: $required" >&2
+      return 1
+    fi
+  done
+
+  frontend_arches="$(lipo -archs "$toolchain_root/bin/swift-frontend")"
+  for required in arm64 x86_64; do
+    if [[ " $frontend_arches " != *" $required "* ]]; then
+      echo "$label swift-frontend is missing Darwin architecture: $required" >&2
+      return 1
+    fi
+  done
+
+  target_output="$("$toolchain_root/bin/clang" --print-targets)"
+  for target in aarch64 arm wasm32 x86; do
+    if ! grep -Eq "^[[:space:]]+$target[[:space:]]+-" <<<"$target_output"; then
+      echo "$label Clang is missing required LLVM target: $target" >&2
+      return 1
+    fi
+  done
+}
 
 candidate=""
 if [[ -x "$install_root/usr/bin/swiftc" ]]; then
@@ -443,6 +506,7 @@ if [[ -z "$candidate" ]]; then
 fi
 
 "$candidate" --version
+verify_product_surface "$install_root/usr" "assembled toolchain"
 
 # Repackage into a same-filesystem candidate. The previously published
 # tarball remains untouched until this candidate passes every smoke test.
@@ -467,12 +531,7 @@ echo "--- Smoking installable package ---"
 tar -x -z -f "$package_candidate" -C "$package_toolchain"
 
 toolchain_bin="$package_toolchain/usr/bin"
-for required in swift swiftc; do
-  if [[ ! -x "$toolchain_bin/$required" ]]; then
-    echo "Installable package smoke failed; $required is missing" >&2
-    exit 1
-  fi
-done
+verify_product_surface "$package_toolchain/usr" "installable package"
 
 # Unlike Linux (no SDK concept — swiftc just needs glibc), macOS swiftc
 # resolves libSystem and friends via an SDK path. It normally falls
@@ -492,8 +551,33 @@ clean_env=(
 
 printf '%s\n' 'print("swift package smoke ok")' > "$smoke_src"
 "${clean_env[@]}" "$toolchain_bin/swift" --version
-"${clean_env[@]}" "$toolchain_bin/swiftc" "$smoke_src" -o "$smoke_bin"
+"${clean_env[@]}" "$toolchain_bin/swiftc" -g "$smoke_src" -o "$smoke_bin"
 "$smoke_bin"
+
+embedded_smoke_src="$smoke_root/embedded.swift"
+embedded_smoke_ir="$smoke_root/embedded.ll"
+cat > "$embedded_smoke_src" <<'SWIFT'
+public func nucleusEmbeddedSmoke() -> Int { 42 }
+SWIFT
+"${clean_env[@]}" "$toolchain_bin/swiftc" \
+  -target arm64-apple-none-macho \
+  -wmo \
+  -enable-experimental-feature Embedded \
+  -emit-ir \
+  "$embedded_smoke_src" \
+  -o "$embedded_smoke_ir"
+
+"${clean_env[@]}" "$toolchain_bin/lldb" \
+  --batch \
+  -o 'breakpoint set --name main' \
+  -o run \
+  -o 'thread backtrace' \
+  "$smoke_bin"
+
+python3 "$script_dir/validate-products.py" \
+  --toolchain "$package_toolchain/usr" \
+  --platform macos \
+  --work-directory "$smoke_root/toolchain-products"
 
 (
   cd "$package_dir"

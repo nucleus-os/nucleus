@@ -840,7 +840,7 @@ preserve the current full-tree snapshot algorithm for compatibility.
      grapheme, selection, undo, and secure-entry state.
 
 6. Run the complete host verification path.
-   - Source `core/tools/host-env.sh` from the monorepo root.
+   - Source `tools/host-env.sh` from the monorepo root.
    - Run the relevant core, compositor-core, shell-adapter, and complete
      top-level build/test commands.
    - Run optimized stress fixtures with tracing enabled.

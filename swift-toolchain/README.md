@@ -276,16 +276,18 @@ authoring guide.
   from the NDK the platform plugin already discovered, so correctness no
   longer depends on that setup step. *Filed-upstream-TODO.*
 
-* **`swiftpm/0001-swift-build-propagate-cxx-interop-to-test-runners.patch`** —
-  carries a test module's C++ interoperability mode into Swift Build's
-  synthesized test runner, matching the native build planner and allowing the
-  runner to import C++-interop test modules.
-
 ### Candidates for re-adding if upstream regresses
 
 Held in git history rather than carried as files. Three additional
 patches were dropped after the migration when they turned out to be
 unnecessary on system Ubuntu:
+
+* **SwiftPM test-runner C++ interop propagation** — current `release/6.4.x`
+  constructs the synthesized runner from the unit-test module and applies all
+  of its manifest build settings to both runner configurations. Upstream's
+  regression test covers inherited linker settings; Nucleus validates the
+  former patch's exact `.interoperabilityMode(.Cxx)` behavior through an
+  end-to-end candidate-toolchain package smoke.
 
 * **Bootstrap early-swiftdriver workaround** — needed only if the
   source-built early driver crashes (true on some main-branch
@@ -309,7 +311,7 @@ recovered from the monorepo's Git history.
 ### From Nucleus development
 
 The workspace entry point selects the active paired generation through
-`core/tools/host-env.sh`. Everything lives in the user's cache. No `/opt`
+`tools/host-env.sh`. Everything lives in the user's cache. No `/opt`
 installation or elevated privileges are required.
 
 ### From a tarball

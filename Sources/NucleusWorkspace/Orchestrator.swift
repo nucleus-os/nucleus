@@ -25,6 +25,12 @@ enum WorkspaceComponent: String, CaseIterable, Hashable, Sendable {
 }
 
 struct Orchestrator {
+    private static let boostVersion = "1.84.0"
+    private static let boostArchiveName = "boost_1_84_0.tar.gz"
+    // Published with Boost 1.84.0 at https://www.boost.org/releases/1.84.0/.
+    private static let boostArchiveSHA256 =
+        "a5800f405508f5df8114558ca9855d2640a2de8f0445f051fa1c7c3383045724"
+
     let context: WorkspaceContext
 
     private struct BootstrapStage {
@@ -115,8 +121,21 @@ struct Orchestrator {
             let temporary = manager.temporaryDirectory.appendingPathComponent("nucleus-boost-" + UUID().uuidString)
             try manager.createDirectory(at: temporary, withIntermediateDirectories: true)
             defer { try? manager.removeItem(at: temporary) }
-            let archive = temporary.appendingPathComponent("boost.tar.gz")
-            try context.run("curl", ["-fsSL", "https://archives.boost.io/release/1.84.0/source/boost_1_84_0.tar.gz", "-o", archive.path])
+            let archive = temporary.appendingPathComponent(Self.boostArchiveName)
+            let archiveURL =
+                "https://archives.boost.io/release/\(Self.boostVersion)/source/"
+                    + Self.boostArchiveName
+            try context.run(
+                "curl",
+                [
+                    "--fail", "--show-error", "--silent", "--location",
+                    "--proto", "=https", "--proto-redir", "=https",
+                    archiveURL, "--output", archive.path,
+                ])
+            try SHA256Verifier.verify(
+                archive,
+                expectedDigest: Self.boostArchiveSHA256,
+                context: context)
             try context.run("tar", ["xzf", archive.path, "-C", temporary.path])
             try manager.createDirectory(at: destination, withIntermediateDirectories: true)
             for item in try manager.contentsOfDirectory(atPath: temporary.appendingPathComponent("boost_1_84_0/boost").path) {

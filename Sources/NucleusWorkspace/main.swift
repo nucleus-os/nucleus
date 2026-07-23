@@ -14,6 +14,7 @@ Commands:
   benchmark    Run deterministic release-built headless performance baselines
   toolchain    Rebuild and atomically activate the paired Swift toolchain and Android SDK
   android      Build or verify the Android host
+  chromium     Doctor, bootstrap, build, test, or install CEF + Nucleus Browser
   run          Build, install, and launch the native compositor + shell session
   install      Assemble an installable runtime prefix
   help         Show this help
@@ -59,6 +60,7 @@ struct NucleusWorkspaceCommand {
             }
         case "toolchain": try ToolchainCommand(context: context).run(arguments.dropFirst())
         case "android": try AndroidCommand(context: context).run(arguments.dropFirst())
+        case "chromium": try ChromiumCommand(context: context).run(arguments.dropFirst())
         case "run": try RunCommand(context: context).run(arguments.dropFirst())
         case "install": try InstallCommand(context: context).run(arguments.dropFirst())
         case "help", "--help", "-h": print(usage)

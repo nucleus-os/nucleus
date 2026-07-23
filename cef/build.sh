@@ -1,186 +1,120 @@
 #!/usr/bin/env bash
-# Build the Chromium Embedded Framework (CEF) from source WITH proprietary
-# codecs (H.264/AAC), which official CEF distributions omit for patent-licensing
-# reasons. Produces a self-consistent minimal binary distribution (libcef.so +
-# libcef_dll wrapper source + resources) plus a checksummed tarball under
-# ~/.cache/nucleus/cef, consumed by the desktop shell's embedded browser.
-#
-# This is a long-running, explicit native build in the same class as
-# swift-toolchain/build.sh and swift-android-sdk/build.sh — it is NOT part of an
-# ordinary `tools/nucleus build all`. See README.md.
+# Internal CEF product stages. Use `tools/nucleus chromium ...`; the workspace
+# Chromium orchestrator owns source/output/publication locks and run logging.
 
 set -euo pipefail
+
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+workspace_root="$(cd "$script_dir/.." && pwd)"
 source "$script_dir/scripts/cef-env.sh"
-source "$script_dir/../chromium/scripts/patch-stack.sh"
+source "$workspace_root/chromium/scripts/patch-stack.sh"
 
-# ---------------------------------------------------------------------------
-# Flags
-# ---------------------------------------------------------------------------
-force_clean=0
-package_only=0
-skip_deps=0
-run_install_build_deps=0
-no_update=0
-prepare_only=0
-build_only=0
+if [[ "${NUCLEUS_CHROMIUM_ORCHESTRATED:-0}" != 1 ]]; then
+  echo "cef/build.sh is an internal product stage; use tools/nucleus chromium" >&2
+  exit 2
+fi
 
-usage() {
-  cat <<EOF
-Usage: cef/build.sh [options]
+operation="${1:-}"
+if [[ $# -ne 1 || ! "$operation" =~ ^(bootstrap|prepare|build|package|validate)$ ]]; then
+  echo "internal usage: cef/build.sh bootstrap|prepare|build|package|validate" >&2
+  exit 2
+fi
 
-Builds CEF branch ${NUCLEUS_CEF_BRANCH} (Chromium ${NUCLEUS_CEF_CHROMIUM_VERSION})
-with proprietary codecs, then packages a minimal distribution + sha256 into
-${NUCLEUS_CEF_DIST_ROOT}.
+metadata="$workspace_root/chromium/scripts/build-metadata.py"
+atomic_publish="$script_dir/scripts/atomic-publish-directory.py"
+source_manifest="$NUCLEUS_CEF_SRC_ROOT/nucleus-source-manifest.json"
 
-Options:
-  --force-clean          Wipe and re-sync the Chromium checkout before building.
-  --package-only         Skip build; just (re)package the last build's distrib.
-  --no-update            Reuse the current checkout, apply project patches,
-                         then rebuild and package it.
-  --prepare-only         Sync and apply CEF patches without building or packaging.
-  --build-only           Build and package an already-prepared source tree.
-  --skip-deps            Do not clone/update depot_tools (assume present).
-  --install-build-deps   Run Chromium's install-build-deps.sh (needs sudo) after
-                         the first sync. Do this once on a fresh host.
-  -h, --help             Show this help.
-
-Key environment overrides (see scripts/cef-env.sh):
-  NUCLEUS_CEF_BRANCH           CEF/Chromium branch          (${NUCLEUS_CEF_BRANCH})
-  NUCLEUS_CEF_CHECKOUT         exact CEF version to pin     (${NUCLEUS_CEF_CHECKOUT:-<branch head>})
-  NUCLEUS_CEF_GN_EXTRA         extra GN args appended
-  NUCLEUS_CEF_JOBS             parallel jobs                (${NUCLEUS_CEF_JOBS})
-  NUCLEUS_CEF_CACHE_ROOT       output root                  (${NUCLEUS_CEF_CACHE_ROOT})
-EOF
+source_metadata_arguments() {
+  printf '%s\n' \
+    --workspace "$workspace_root" \
+    --cef-branch "$NUCLEUS_CEF_BRANCH" \
+    --cef-checkout "$NUCLEUS_CEF_CHECKOUT" \
+    --chromium-version "$NUCLEUS_CEF_CHROMIUM_VERSION" \
+    --chromium-checkout "$NUCLEUS_CHROMIUM_CHECKOUT" \
+    --depot-tools-revision "$NUCLEUS_DEPOT_TOOLS_REVISION" \
+    --source-root "$NUCLEUS_CEF_SRC_ROOT" \
+    --depot-tools "$NUCLEUS_CEF_DEPOT_TOOLS" \
+    --manifest "$source_manifest"
 }
 
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --force-clean) force_clean=1 ;;
-    --package-only) package_only=1 ;;
-    --no-update) no_update=1 ;;
-    --prepare-only) prepare_only=1 ;;
-    --build-only) build_only=1 ;;
-    --skip-deps) skip_deps=1 ;;
-    --install-build-deps) run_install_build_deps=1 ;;
-    -h|--help) usage; exit 0 ;;
-    *) echo "unknown option: $1" >&2; usage; exit 2 ;;
-  esac
-  shift
-done
+verify_source() {
+  local arguments=()
+  mapfile -t arguments < <(source_metadata_arguments)
+  python3 "$metadata" verify-source "${arguments[@]}" >/dev/null
+}
 
-if ((package_only + prepare_only + build_only > 1)); then
-  echo "--package-only, --prepare-only, and --build-only are mutually exclusive" >&2
-  exit 2
-fi
-if [[ $build_only -eq 1 && ($force_clean -eq 1 || $no_update -eq 1 || $run_install_build_deps -eq 1) ]]; then
-  echo "--build-only cannot be combined with source-preparation options" >&2
-  exit 2
-fi
-
-# ---------------------------------------------------------------------------
-# Preconditions
-# ---------------------------------------------------------------------------
-nucleus_cef_require_tool git git
-nucleus_cef_require_tool python3 python3
-nucleus_cef_require_tool curl curl
-nucleus_cef_require_tool tar tar
-nucleus_cef_require_tool sha256sum coreutils
-nucleus_cef_require_tool ccache ccache
-
-mkdir -p "$NUCLEUS_CEF_CACHE_ROOT" "$NUCLEUS_CEF_SRC_ROOT" "$NUCLEUS_CEF_DIST_ROOT" "$NUCLEUS_CEF_LOG_DIR"
-
-log_file="$NUCLEUS_CEF_LOG_DIR/build-$(date +%Y%m%d-%H%M%S).log"
-ln -sf "$(basename "$log_file")" "$NUCLEUS_CEF_LOG_DIR/latest.log"
-# Mirror all output to the log while keeping it on the console.
-exec > >(tee -a "$log_file") 2>&1
-
-echo "== nucleus CEF build =="
-echo "branch:        $NUCLEUS_CEF_BRANCH"
-echo "chromium:      $NUCLEUS_CEF_CHROMIUM_VERSION"
-echo "checkout pin:  ${NUCLEUS_CEF_CHECKOUT:-<branch head>}"
-echo "jobs:          $NUCLEUS_CEF_JOBS"
-echo "src root:      $NUCLEUS_CEF_SRC_ROOT"
-echo "dist root:     $NUCLEUS_CEF_DIST_ROOT"
-echo "ccache dir:    $CCACHE_DIR"
-echo "log:           $log_file"
-
-# ---------------------------------------------------------------------------
-# depot_tools
-# ---------------------------------------------------------------------------
-if [[ $skip_deps -eq 0 ]]; then
+pin_depot_tools() {
   if [[ ! -d "$NUCLEUS_CEF_DEPOT_TOOLS/.git" ]]; then
-    echo "-- cloning depot_tools"
-    git clone --depth 1 https://chromium.googlesource.com/chromium/tools/depot_tools.git \
-      "$NUCLEUS_CEF_DEPOT_TOOLS"
+    if [[ -e "$NUCLEUS_CEF_DEPOT_TOOLS" ]]; then
+      echo "depot_tools path exists but is not a Git checkout: $NUCLEUS_CEF_DEPOT_TOOLS" >&2
+      exit 1
+    fi
+    mkdir -p "$(dirname -- "$NUCLEUS_CEF_DEPOT_TOOLS")"
+    (
+      local preparing
+      preparing="$(mktemp -d "$(dirname -- "$NUCLEUS_CEF_DEPOT_TOOLS")/.depot-tools.XXXXXX.preparing")"
+      trap 'rm -rf -- "$preparing"' EXIT
+      rmdir -- "$preparing"
+      echo "-- cloning pinned depot_tools $NUCLEUS_DEPOT_TOOLS_REVISION"
+      git clone --filter=blob:none --no-checkout \
+        https://chromium.googlesource.com/chromium/tools/depot_tools.git \
+        "$preparing"
+      git -C "$preparing" fetch --depth 1 origin "$NUCLEUS_DEPOT_TOOLS_REVISION"
+      git -C "$preparing" checkout --detach "$NUCLEUS_DEPOT_TOOLS_REVISION"
+      mv -- "$preparing" "$NUCLEUS_CEF_DEPOT_TOOLS"
+      trap - EXIT
+    )
   fi
-fi
+  if ! git -C "$NUCLEUS_CEF_DEPOT_TOOLS" diff --quiet -- ||
+     ! git -C "$NUCLEUS_CEF_DEPOT_TOOLS" diff --cached --quiet --; then
+    echo "depot_tools contains tracked local changes: $NUCLEUS_CEF_DEPOT_TOOLS" >&2
+    exit 1
+  fi
+  if [[ "$(git -C "$NUCLEUS_CEF_DEPOT_TOOLS" rev-parse HEAD 2>/dev/null || true)" != "$NUCLEUS_DEPOT_TOOLS_REVISION" ]]; then
+    echo "-- fetching pinned depot_tools $NUCLEUS_DEPOT_TOOLS_REVISION"
+    git -C "$NUCLEUS_CEF_DEPOT_TOOLS" fetch --depth 1 origin "$NUCLEUS_DEPOT_TOOLS_REVISION"
+    git -C "$NUCLEUS_CEF_DEPOT_TOOLS" checkout --detach "$NUCLEUS_DEPOT_TOOLS_REVISION"
+  fi
+  if [[ ! -f "$NUCLEUS_CEF_DEPOT_TOOLS/python3_bin_reldir.txt" ]]; then
+    echo "-- bootstrapping depot_tools"
+    "$NUCLEUS_CEF_DEPOT_TOOLS/ensure_bootstrap"
+  fi
+}
 
-# A fresh depot_tools checkout does not contain its pinned Python/CIPD tools.
-# Bootstrap it once before disabling self-updates; otherwise wrappers such as
-# `gn` fail because python3_bin_reldir.txt has not been generated.
-if [[ ! -f "$NUCLEUS_CEF_DEPOT_TOOLS/python3_bin_reldir.txt" ]]; then
-  echo "-- bootstrapping depot_tools"
-  "$NUCLEUS_CEF_DEPOT_TOOLS/ensure_bootstrap"
-fi
+install_bootstrap_dependencies() {
+  local packages=()
+  mapfile -t packages < <(
+    sed -E '/^[[:space:]]*(#|$)/d; s/[[:space:]]+#.*$//' "$script_dir/apt-deps.txt"
+  )
+  if [[ ${#packages[@]} -eq 0 ]]; then
+    echo "bootstrap package list is empty: $script_dir/apt-deps.txt" >&2
+    exit 1
+  fi
+  echo "-- installing Chromium bootstrap host packages"
+  sudo apt-get install -y "${packages[@]}"
+}
 
 export PATH="$NUCLEUS_CEF_DEPOT_TOOLS:$PATH"
-# We manage depot_tools ourselves; disable its self-update mid-build.
 export DEPOT_TOOLS_UPDATE=0
-
-# ---------------------------------------------------------------------------
-# automate-git.py (fetched fresh from the pinned branch)
-# ---------------------------------------------------------------------------
-automate="$NUCLEUS_CEF_SRC_ROOT/automate-git.py"
-if [[ $package_only -eq 0 && $build_only -eq 0 ]]; then
-  echo "-- fetching automate-git.py for branch $NUCLEUS_CEF_BRANCH"
-  curl -fsSL "$(nucleus_cef_automate_url)" -o "$automate"
-elif [[ $build_only -eq 1 && ! -f "$automate" ]]; then
-  echo "!! prepared automate-git.py is missing: $automate" >&2
-  echo "   Run cef/build.sh --prepare-only first." >&2
-  exit 1
-fi
-
-# ---------------------------------------------------------------------------
-# One-time Chromium host build deps (large; needs sudo).
-# ---------------------------------------------------------------------------
-if [[ $run_install_build_deps -eq 1 ]]; then
-  ibd="$NUCLEUS_CEF_SRC_ROOT/chromium/src/build/install-build-deps.sh"
-  if [[ -x "$ibd" ]]; then
-    echo "-- running Chromium install-build-deps.sh"
-    sudo "$ibd" --no-prompt --no-arm --no-chromeos-fonts
-  else
-    echo "!! install-build-deps.sh not found yet ($ibd)."
-    echo "   Run one sync first (drop --install-build-deps), then re-run with it."
-  fi
-fi
-
-# ---------------------------------------------------------------------------
-# Build via automate-git.py
-# ---------------------------------------------------------------------------
 export CEF_USE_GN=1
-export GN_DEFINES="$NUCLEUS_CEF_GN_DEFINES_BASE ${NUCLEUS_CEF_GN_EXTRA}"
-echo "-- GN_DEFINES: $GN_DEFINES"
-
-pgo_profile_name=""
-pgo_profile_path=""
+export GN_DEFINES="$NUCLEUS_CEF_GN_DEFINES_BASE"
 
 ensure_linux_pgo_profile() {
-  local chromium_root="$NUCLEUS_CEF_SRC_ROOT/chromium/src"
+  local chromium_root="$1/chromium/src"
   local descriptor="$chromium_root/chrome/build/linux.pgo.txt"
   if [[ ! -f "$descriptor" ]]; then
-    echo "!! Chromium Linux PGO descriptor is missing: $descriptor" >&2
+    echo "Chromium Linux PGO descriptor is missing: $descriptor" >&2
     exit 1
   fi
-
-  pgo_profile_name="$(tr -d '\r\n' < "$descriptor")"
-  if [[ -z "$pgo_profile_name" || "$pgo_profile_name" == */* ]]; then
-    echo "!! Chromium Linux PGO descriptor is invalid: $pgo_profile_name" >&2
+  local profile_name profile_path
+  profile_name="$(tr -d '\r\n' < "$descriptor")"
+  if [[ -z "$profile_name" || "$profile_name" == */* ]]; then
+    echo "Chromium Linux PGO descriptor is invalid: $profile_name" >&2
     exit 1
   fi
-  pgo_profile_path="$chromium_root/chrome/build/pgo_profiles/$pgo_profile_name"
-  if [[ ! -f "$pgo_profile_path" ]]; then
-    echo "-- fetching branch-matched Chromium Linux PGO profile: $pgo_profile_name"
+  profile_path="$chromium_root/chrome/build/pgo_profiles/$profile_name"
+  if [[ ! -s "$profile_path" ]]; then
+    echo "-- fetching branch-matched Chromium Linux PGO profile"
     (
       cd "$chromium_root"
       python3 tools/update_pgo_profiles.py \
@@ -188,258 +122,334 @@ ensure_linux_pgo_profile() {
         --gs-url-base=chromium-optimization-profiles/pgo_profiles
     )
   fi
-  if [[ ! -s "$pgo_profile_path" ]]; then
-    echo "!! Chromium Linux PGO profile was not provisioned: $pgo_profile_path" >&2
+  [[ -s "$profile_path" ]] || {
+    echo "Chromium Linux PGO profile was not provisioned: $profile_path" >&2
     exit 1
-  fi
-  echo "-- PGO profile ready: $pgo_profile_name"
+  }
 }
 
-ensure_v8_builtins_pgo_profiles() {
-  local chromium_root="$NUCLEUS_CEF_SRC_ROOT/chromium/src"
+ensure_v8_builtins_pgo_profile() {
+  local chromium_root="$1/chromium/src"
   local profile="$chromium_root/v8/tools/builtins-pgo/profiles/x64.profile"
   if [[ ! -s "$profile" ]]; then
     echo "-- fetching branch-matched V8 builtins PGO profiles"
     (
       cd "$chromium_root"
-      PATH="$NUCLEUS_CEF_DEPOT_TOOLS:$PATH" \
-        python3 v8/tools/builtins-pgo/download_profiles.py \
-          download \
-          --depot-tools third_party/depot_tools \
-          --check-v8-revision
+      python3 v8/tools/builtins-pgo/download_profiles.py \
+        download --depot-tools third_party/depot_tools --check-v8-revision
     )
   fi
-  if [[ ! -s "$profile" ]]; then
-    echo "!! V8 x64 builtins PGO profile was not provisioned: $profile" >&2
+  [[ -s "$profile" ]] || {
+    echo "V8 builtins PGO profile was not provisioned: $profile" >&2
     exit 1
-  fi
-  echo "-- V8 builtins PGO profile ready"
+  }
 }
 
-reverse_nucleus_cef_patches() {
-  local chromium_root="$NUCLEUS_CEF_SRC_ROOT/chromium/src"
-
-  # Every output is generated from one cumulative patched source tree. Reverse
-  # the exact previously applied stack only while refreshing the upstream CEF
-  # configuration, then restore all shared and product-facing source changes
-  # before generating either GN output.
-  nucleus_reverse_patch_stack \
-    "$chromium_root" \
-    "$script_dir/../chromium/patches/browser" \
-    "$NUCLEUS_CEF_SRC_ROOT/.nucleus-applied-browser-patches" \
-    "Chromium browser"
-
-  # Remove project changes before CEF updates its own Chromium patch stack.
-  # Several Chromium files intentionally overlap CEF's patches.
-  nucleus_reverse_patch_stack \
-    "$chromium_root" \
-    "$script_dir/patches" \
-    "$NUCLEUS_CEF_SRC_ROOT/.nucleus-applied-patches" \
-    "Chromium/CEF"
-  nucleus_reverse_patch_stack \
-    "$chromium_root" \
-    "$script_dir/../chromium/patches/common" \
-    "$NUCLEUS_CEF_SRC_ROOT/.nucleus-applied-common-patches" \
-    "Chromium common"
-  nucleus_reverse_patch_stack \
-    "$chromium_root/third_party/dawn" \
-    "$script_dir/../chromium/patches/dawn" \
-    "$NUCLEUS_CEF_SRC_ROOT/.nucleus-applied-dawn-patches" \
-    "Dawn"
-}
-
-apply_nucleus_cef_patches() {
-  local chromium_root="$NUCLEUS_CEF_SRC_ROOT/chromium/src"
-  local applied_patch_dir="$NUCLEUS_CEF_SRC_ROOT/.nucleus-applied-patches"
-  local generated_api_patch="9999-generated-cef-api-hashes.patch"
-
+apply_project_patches() {
+  local generation="$1"
+  local chromium_root="$generation/chromium/src"
   nucleus_apply_patch_stack \
-    "$chromium_root" \
-    "$script_dir/../chromium/patches/common" \
-    "$NUCLEUS_CEF_SRC_ROOT/.nucleus-applied-common-patches" \
-    "Chromium common"
+    "$chromium_root" "$workspace_root/chromium/patches/common" "Chromium common"
   nucleus_apply_patch_stack \
-    "$chromium_root" \
-    "$script_dir/patches" \
-    "$applied_patch_dir" \
-    "Chromium/CEF"
+    "$chromium_root" "$script_dir/patches" "Chromium/CEF"
   nucleus_apply_patch_stack \
-    "$chromium_root" \
-    "$script_dir/../chromium/patches/browser" \
-    "$NUCLEUS_CEF_SRC_ROOT/.nucleus-applied-browser-patches" \
-    "Chromium browser presentation"
+    "$chromium_root" "$workspace_root/chromium/patches/browser" "Chromium browser"
   nucleus_apply_patch_stack \
-    "$chromium_root/third_party/dawn" \
-    "$script_dir/../chromium/patches/dawn" \
-    "$NUCLEUS_CEF_SRC_ROOT/.nucleus-applied-dawn-patches" \
-    "Dawn"
+    "$chromium_root/third_party/dawn" "$workspace_root/chromium/patches/dawn" "Dawn"
 
-  # Public API patches must reach both sides of CEF's generated C/C++ bridge
-  # before libcef is compiled. Packaging also runs the translator, but that is
-  # too late: the shared library and the distributed wrapper would otherwise
-  # be built from different virtual-method contracts on a clean checkout.
-  echo "-- regenerating CEF C/C++ API translation"
+  echo "-- regenerating CEF C/C++ translation and API hashes"
   (
     cd "$chromium_root"
     python3 cef/tools/translator.py --root-dir cef
   )
-
-  # API hashes cover the complete public-header surface and are branch-local
-  # generated output. Always derive them from the synced CEF checkout after the
-  # source patches have landed; never carry hashes forward from another branch.
-  echo "-- regenerating CEF API hashes for branch $NUCLEUS_CEF_BRANCH"
   (
     cd "$chromium_root/cef"
     python3 tools/version_manager.py -c --force-update
+    python3 tools/version_manager.py -c
   )
-
-  git -C "$chromium_root/cef" diff \
-    --src-prefix=a/cef/ --dst-prefix=b/cef/ -- cef_api_versions.json \
-    >"$applied_patch_dir/$generated_api_patch"
-  if [[ ! -s "$applied_patch_dir/$generated_api_patch" ]]; then
-    echo "-- CEF API hashes already match the regenerated headers"
-    rm -f "$applied_patch_dir/$generated_api_patch"
-  fi
+  git -C "$chromium_root" diff --check
+  git -C "$chromium_root/cef" diff --check
+  git -C "$chromium_root/third_party/dawn" diff --check
 }
 
-if [[ $package_only -eq 0 ]]; then
-  automate_common=(
-    "--download-dir=$NUCLEUS_CEF_SRC_ROOT"
-    "--depot-tools-dir=$NUCLEUS_CEF_DEPOT_TOOLS"
-    "--branch=$NUCLEUS_CEF_BRANCH"
-    --x64-build
-    --no-debug-build          # Release only — halves build time + disk
-    --no-chromium-history     # shallow Chromium checkout — big disk saving
-    --with-pgo-profiles       # exact branch-matched production profile
-    --build-target=cefsimple  # pulls in libcef + wrapper without cefclient's extra deps
-  )
+publish_source_current() {
+  local temporary="$NUCLEUS_CHROMIUM_SOURCE_GENERATIONS/.current.$$.tmp"
+  ln -s "$NUCLEUS_CHROMIUM_SOURCE_ID" "$temporary"
+  mv -Tf "$temporary" "$NUCLEUS_CHROMIUM_SOURCE_CURRENT"
+}
 
-  chromium_root="$NUCLEUS_CEF_SRC_ROOT/chromium/src"
-
-  if [[ $build_only -eq 0 ]]; then
-    reverse_nucleus_cef_patches
-
-    if [[ $no_update -eq 0 ]]; then
-      # Force regenerate .gclient so an existing non-PGO checkout adopts
-      # checkout_pgo_profiles=true through automate-git instead of a manual edit
-      # to generated configuration.
-      sync_args=("${automate_common[@]}" --force-config --no-build --no-distrib)
-      if [[ -n "$NUCLEUS_CEF_CHECKOUT" ]]; then
-        sync_args+=("--checkout=$NUCLEUS_CEF_CHECKOUT")
-      fi
-      if [[ $force_clean -eq 1 ]]; then
-        sync_args+=(--force-clean)
-      fi
-      echo "-- automate-git.py ${sync_args[*]}"
-      python3 "$automate" "${sync_args[@]}"
+prepare_source() {
+  local install_dependencies="${1:-0}"
+  pin_depot_tools
+  mkdir -p "$NUCLEUS_CHROMIUM_SOURCE_GENERATIONS"
+  if [[ -f "$source_manifest" ]]; then
+    echo "-- verifying prepared source generation $NUCLEUS_CHROMIUM_SOURCE_ID"
+    verify_source
+    publish_source_current
+    if [[ "$install_dependencies" == 1 ]]; then
+      sudo "$NUCLEUS_CHROMIUM_SRC_ROOT/build/install-build-deps.sh" \
+        --no-prompt --no-arm --no-chromeos-fonts
     fi
-
-    ensure_linux_pgo_profile
-    ensure_v8_builtins_pgo_profiles
-
-    # Run CEF's own patch/configuration hook while the Chromium tree contains
-    # only upstream changes. Our patches deliberately overlap a few of CEF's
-    # patches, so automate-git.py cannot safely run this hook after they land.
-    echo "-- generating upstream CEF build configuration"
-    (
-      cd "$chromium_root/cef"
-      python3 tools/gclient_hook.py
-    )
-
-    apply_nucleus_cef_patches
-
-    if [[ $prepare_only -eq 1 ]]; then
-      echo
-      echo "== CEF source prepared =="
-      echo "source: $chromium_root"
-      exit 0
-    fi
-  elif [[ ! -f "$chromium_root/out/Release_GN_x64/args.gn" ]]; then
-    echo "!! prepared CEF GN output is missing under $chromium_root" >&2
-    echo "   Run cef/build.sh --prepare-only first." >&2
+    return
+  fi
+  if [[ -e "$NUCLEUS_CEF_SRC_ROOT" ]]; then
+    echo "source generation exists without valid metadata: $NUCLEUS_CEF_SRC_ROOT" >&2
     exit 1
   fi
 
-  # Regenerate Ninja after applying our BUILD.gn changes, then build directly.
-  # A second automate-git.py build pass would rerun CEF's patch hook over our
-  # modified sources and report the intentional overlap as an upstream failure.
-  release_out="$chromium_root/out/Release_GN_x64"
-  echo "-- regenerating project files after project patches"
-  (
-    cd "$chromium_root"
-    "$chromium_root/buildtools/linux64/gn" gen "$release_out"
-  )
-  echo "-- building CEF release targets"
-  PATH="$NUCLEUS_CEF_DEPOT_TOOLS:$PATH" \
-    autoninja -j "$NUCLEUS_CEF_JOBS" -C "$release_out" cefsimple chrome_sandbox
+  local preparing
+  preparing="$(mktemp -d "$NUCLEUS_CHROMIUM_SOURCE_GENERATIONS/.${NUCLEUS_CHROMIUM_SOURCE_ID}.XXXXXX.preparing")"
+  cleanup_preparing() {
+    if [[ -n "${preparing:-}" && -d "$preparing" ]]; then
+      rm -rf -- "$preparing"
+    fi
+  }
+  trap cleanup_preparing EXIT
 
-  distrib_args=(
-    "${automate_common[@]}"
+  local automate="$preparing/automate-git.py"
+  echo "-- fetching automate-git.py from exact CEF commit $NUCLEUS_CEF_CHECKOUT"
+  curl -fsSL "$(nucleus_cef_automate_url)" -o "$automate"
+  local automate_arguments=(
+    "--download-dir=$preparing"
+    "--depot-tools-dir=$NUCLEUS_CEF_DEPOT_TOOLS"
+    "--branch=$NUCLEUS_CEF_BRANCH"
+    "--checkout=$NUCLEUS_CEF_CHECKOUT"
+    --x64-build
+    --no-debug-build
+    --no-chromium-history
+    --with-pgo-profiles
+    --build-target=cefsimple
+    --force-config
+    --no-build
+    --no-distrib
+  )
+  echo "-- preparing pristine pinned Chromium/CEF checkout"
+  python3 "$automate" "${automate_arguments[@]}"
+  if [[ "$install_dependencies" == 1 ]]; then
+    sudo "$preparing/chromium/src/build/install-build-deps.sh" \
+      --no-prompt --no-arm --no-chromeos-fonts
+  fi
+  ensure_linux_pgo_profile "$preparing"
+  ensure_v8_builtins_pgo_profile "$preparing"
+
+  echo "-- generating upstream CEF build configuration"
+  (
+    cd "$preparing/chromium/src/cef"
+    python3 tools/gclient_hook.py
+  )
+  apply_project_patches "$preparing"
+
+  # The final path does not exist yet; metadata is path-independent.
+  local arguments=()
+  local original_source_root="$NUCLEUS_CEF_SRC_ROOT"
+  NUCLEUS_CEF_SRC_ROOT="$preparing"
+  source_manifest="$preparing/nucleus-source-manifest.json"
+  mapfile -t arguments < <(source_metadata_arguments)
+  python3 "$metadata" write-source "${arguments[@]}" >/dev/null
+  NUCLEUS_CEF_SRC_ROOT="$original_source_root"
+  source_manifest="$NUCLEUS_CEF_SRC_ROOT/nucleus-source-manifest.json"
+
+  mv -- "$preparing" "$NUCLEUS_CEF_SRC_ROOT"
+  preparing=""
+  trap - EXIT
+  verify_source
+  publish_source_current
+  echo "prepared source generation: $NUCLEUS_CEF_SRC_ROOT"
+}
+
+build_manifest_arguments() {
+  local mode="$1"
+  local manifest="$2"
+  local release_out="$NUCLEUS_CHROMIUM_SRC_ROOT/out/Release_GN_x64"
+  python3 "$metadata" "$mode" \
+    --product cef \
+    --source-root "$NUCLEUS_CEF_SRC_ROOT" \
+    --source-manifest "$source_manifest" \
+    --gn-args "$release_out/args.gn" \
+    --manifest "$manifest"
+}
+
+build_cef() {
+  verify_source
+  local release_out="$NUCLEUS_CHROMIUM_SRC_ROOT/out/Release_GN_x64"
+  echo "-- regenerating CEF GN output"
+  (
+    cd "$NUCLEUS_CHROMIUM_SRC_ROOT"
+    "$NUCLEUS_CHROMIUM_SRC_ROOT/buildtools/linux64/gn" gen "$release_out"
+  )
+  local expected="$release_out/.nucleus-expected-build.json"
+  build_manifest_arguments write-build "$expected" >/dev/null
+  echo "-- building CEF release targets with $NUCLEUS_CHROMIUM_JOBS local Siso jobs"
+  autoninja -j "$NUCLEUS_CHROMIUM_JOBS" -C "$release_out" cefsimple chrome_sandbox
+  local built_temporary="$release_out/.nucleus-built-build.$$.tmp"
+  install -m 0644 "$expected" "$built_temporary"
+  mv -f "$built_temporary" "$release_out/.nucleus-built-build.json"
+  build_manifest_arguments verify-build "$release_out/.nucleus-built-build.json" >/dev/null
+}
+
+validate_cef_sdk() (
+  local sdk="$1"
+  for required in \
+    Release/libcef.so \
+    Release/chrome-sandbox \
+    Release/icudtl.dat \
+    Resources \
+    include/cef_version_info.h \
+    nucleus-build-manifest.json; do
+    [[ -e "$sdk/$required" ]] || {
+      echo "CEF SDK artifact is missing: $sdk/$required" >&2
+      return 1
+    }
+  done
+  if ldd "$sdk/Release/libcef.so" | grep -F 'not found'; then
+    echo "CEF SDK has unresolved dynamic libraries" >&2
+    return 1
+  fi
+  local smoke
+  smoke="$(mktemp -d)"
+  trap 'rm -rf -- "$smoke"' EXIT
+  printf '%s\n' \
+    '#include "include/cef_version_info.h"' \
+    'int main(void) { return cef_version_info(0) > 0 ? 0 : 1; }' \
+    > "$smoke/consumer.c"
+  cc -I "$sdk" "$smoke/consumer.c" \
+    -L "$sdk/Release" -Wl,-rpath,"$sdk/Release" -lcef \
+    -o "$smoke/consumer"
+  "$smoke/consumer"
+)
+
+package_cef() {
+  verify_source
+  local release_out="$NUCLEUS_CHROMIUM_SRC_ROOT/out/Release_GN_x64"
+  local built_manifest="$release_out/.nucleus-built-build.json"
+  build_manifest_arguments verify-build "$built_manifest" >/dev/null
+  local build_id
+  build_id="$(python3 "$metadata" build-id --manifest "$built_manifest")"
+
+  local automate="$NUCLEUS_CEF_SRC_ROOT/automate-git.py"
+  local distribute_arguments=(
+    "--download-dir=$NUCLEUS_CEF_SRC_ROOT"
+    "--depot-tools-dir=$NUCLEUS_CEF_DEPOT_TOOLS"
+    "--branch=$NUCLEUS_CEF_BRANCH"
+    "--checkout=$NUCLEUS_CEF_CHECKOUT"
+    --x64-build
+    --no-debug-build
+    --no-chromium-history
+    --with-pgo-profiles
+    --build-target=cefsimple
     --no-update
     --no-build
     --force-distrib
     --minimal-distrib-only
   )
-  echo "-- automate-git.py ${distrib_args[*]}"
-  python3 "$automate" "${distrib_args[@]}"
-fi
+  echo "-- generating exact CEF minimal distribution"
+  python3 "$automate" "${distribute_arguments[@]}"
 
-# ---------------------------------------------------------------------------
-# Package: locate the produced minimal distrib, stage it, checksum it.
-# ---------------------------------------------------------------------------
-distrib_src="$NUCLEUS_CEF_SRC_ROOT/chromium/src/cef/binary_distrib"
-produced="$(find "$distrib_src" -maxdepth 1 -type d -name 'cef_binary_*_linux64_minimal' 2>/dev/null | sort | tail -1)"
-if [[ -z "$produced" ]]; then
-  echo "!! no minimal distribution found under $distrib_src" >&2
-  exit 1
-fi
+  local distribution_root="$NUCLEUS_CHROMIUM_SRC_ROOT/cef/binary_distrib"
+  local checkout_short="${NUCLEUS_CEF_CHECKOUT:0:7}"
+  local produced_matches=()
+  shopt -s nullglob
+  produced_matches=("$distribution_root"/cef_binary_*+g"$checkout_short"+chromium-"$NUCLEUS_CEF_CHROMIUM_VERSION"_linux64_minimal)
+  shopt -u nullglob
+  if [[ ${#produced_matches[@]} -ne 1 ]]; then
+    echo "expected exactly one current CEF distribution, found ${#produced_matches[@]}" >&2
+    exit 1
+  fi
+  local produced="${produced_matches[0]}"
 
-version="$(basename "$produced" | sed -E 's/^cef_binary_(.+)_linux64_minimal$/\1/')"
-staged="$NUCLEUS_CEF_DIST_ROOT/$version"
-prepared="$NUCLEUS_CEF_DIST_ROOT/.${version}.$$.prepared"
-current_link_tmp="$NUCLEUS_CEF_DIST_ROOT/.current.$$.tmp"
-trap '[[ -z "${prepared:-}" ]] || rm -rf "$prepared"; [[ -z "${current_link_tmp:-}" ]] || rm -f "$current_link_tmp"' EXIT
-echo "-- preparing $produced -> $prepared"
-rm -rf "$prepared"
-mkdir -p "$prepared"
-cp -a "$produced/." "$prepared/"
+  local releases="$NUCLEUS_CEF_DIST_ROOT/releases"
+  mkdir -p "$releases"
+  local prepared_release
+  prepared_release="$(mktemp -d "$releases/.${build_id}.XXXXXX.prepared")"
+  local prepared_sdk="$prepared_release/sdk"
+  local prepared_artifacts="$prepared_release/artifacts"
+  mkdir -p "$prepared_sdk" "$prepared_artifacts"
+  cleanup_package() {
+    [[ -z "${prepared_release:-}" || ! -d "$prepared_release" ]] || rm -rf -- "$prepared_release"
+  }
+  trap cleanup_package EXIT
+  cp -a "$produced/." "$prepared_sdk/"
+  install -m 0644 "$built_manifest" "$prepared_sdk/nucleus-build-manifest.json"
+  rm -f \
+    "$prepared_sdk/Release/libvk_swiftshader.so" \
+    "$prepared_sdk/Release/vk_swiftshader_icd.json"
+  if [[ -d "$prepared_sdk/Resources" ]]; then
+    local resource
+    for resource in "$prepared_sdk"/Resources/*; do
+      ln -sfn "../Resources/$(basename "$resource")" \
+        "$prepared_sdk/Release/$(basename "$resource")"
+    done
+  fi
+  validate_cef_sdk "$prepared_sdk"
 
-# Keep Chromium's Vulkan loader: ANGLE is built and tested against this copy,
-# and Noctalia safely shares it through the process-wide Vulkan SONAME. Remove
-# only the SwiftShader implementation and ICD so software rendering cannot be
-# selected as a fallback.
-rm -f \
-  "$prepared/Release/libvk_swiftshader.so" \
-  "$prepared/Release/vk_swiftshader_icd.json"
+  local version tarball checksum
+  version="$(basename "$produced" | sed -E 's/^cef_binary_(.+)_linux64_minimal$/\1/')"
+  tarball="cef-${version}-linux64-codecs.tar.gz"
+  tar -C "$prepared_release" -czf "$prepared_artifacts/$tarball" \
+    --transform="s,^sdk,$build_id," sdk
+  checksum="$(sha256sum "$prepared_artifacts/$tarball" | cut -d' ' -f1)"
+  printf '%s  %s\n' "$checksum" "$tarball" > "$prepared_artifacts/$tarball.sha256"
+  (cd "$prepared_artifacts" && sha256sum -c "$tarball.sha256")
+  install -m 0644 "$built_manifest" "$prepared_artifacts/nucleus-build-manifest.json"
 
-# Colocate the split Resources/ payload next to libcef.so in Release/ — ICU
-# (icudtl.dat) initializes before resource_dir settings apply, so it must sit
-# beside the library. The consuming shell points its resource paths at Release/.
-if [[ -d "$prepared/Resources" ]]; then
-  for f in "$prepared"/Resources/*; do
-    ln -sfn "../Resources/$(basename "$f")" "$prepared/Release/$(basename "$f")"
-  done
-fi
+  python3 "$atomic_publish" "$prepared_release" "$releases/$build_id"
+  prepared_release=""
+  local release_temporary="$NUCLEUS_CEF_DIST_ROOT/.current-release.$$.tmp"
+  local current_temporary="$NUCLEUS_CEF_DIST_ROOT/.current.$$.tmp"
+  local artifacts_temporary="$NUCLEUS_CEF_DIST_ROOT/.artifacts-current.$$.tmp"
+  ln -s "releases/$build_id" "$release_temporary"
+  mv -Tf "$release_temporary" "$NUCLEUS_CEF_DIST_ROOT/current-release"
+  ln -s "current-release/sdk" "$current_temporary"
+  ln -s "current-release/artifacts" "$artifacts_temporary"
+  mv -Tf "$current_temporary" "$NUCLEUS_CEF_DIST_ROOT/current"
+  mv -Tf "$artifacts_temporary" "$NUCLEUS_CEF_DIST_ROOT/artifacts-current"
+  trap - EXIT
+  echo "CEF SDK generation: $NUCLEUS_CEF_DIST_ROOT/current"
+  echo "CEF artifact generation: $NUCLEUS_CEF_DIST_ROOT/artifacts-current"
+}
 
-echo "-- atomically publishing $prepared -> $staged"
-python3 "$script_dir/scripts/atomic-publish-directory.py" "$prepared" "$staged"
+validate_cef() {
+  verify_source
+  local release_out="$NUCLEUS_CHROMIUM_SRC_ROOT/out/Release_GN_x64"
+  build_manifest_arguments verify-build "$release_out/.nucleus-built-build.json" >/dev/null
+  local build_id
+  build_id="$(python3 "$metadata" build-id --manifest "$release_out/.nucleus-built-build.json")"
+  [[ "$(readlink "$NUCLEUS_CEF_DIST_ROOT/current-release")" == "releases/$build_id" ]] || {
+    echo "published CEF SDK does not match built output $build_id" >&2
+    exit 1
+  }
+  cmp -s "$release_out/.nucleus-built-build.json" \
+    "$NUCLEUS_CEF_DIST_ROOT/current/nucleus-build-manifest.json" || {
+    echo "published CEF SDK manifest does not match built output $build_id" >&2
+    exit 1
+  }
+  cmp -s "$release_out/.nucleus-built-build.json" \
+    "$NUCLEUS_CEF_DIST_ROOT/artifacts-current/nucleus-build-manifest.json" || {
+    echo "published CEF artifact manifest does not match built output $build_id" >&2
+    exit 1
+  }
+  validate_cef_sdk "$NUCLEUS_CEF_DIST_ROOT/current"
+  (
+    cd "$NUCLEUS_CHROMIUM_SRC_ROOT/cef"
+    python3 tools/version_manager.py -c
+  )
+}
 
-tarball="$NUCLEUS_CEF_DIST_ROOT/cef-${version}-linux64-codecs.tar.gz"
-echo "-- packaging $tarball"
-tar -C "$NUCLEUS_CEF_DIST_ROOT" -czf "$tarball" "$version"
-( cd "$NUCLEUS_CEF_DIST_ROOT" && sha256sum "$(basename "$tarball")" > "$tarball.sha256" )
-
-# Publish one stable consumer path without duplicating build metadata. The
-# temporary relative symlink and rename make switching versions atomic.
-ln -s "$version" "$current_link_tmp"
-mv -Tf "$current_link_tmp" "$NUCLEUS_CEF_DIST_ROOT/current"
-
-echo
-echo "== CEF build complete =="
-echo "version:  $version"
-echo "dist:     $staged"
-echo "tarball:  $tarball"
-echo "sha256:   $(cat "$tarball.sha256")"
-echo
-echo "Verify codecs by loading the dist in Noctalia and checking"
-echo "canPlayType('audio/mp4; codecs=\"mp4a.40.2\"') is non-empty."
+case "$operation" in
+  prepare)
+    prepare_source
+    ;;
+  bootstrap)
+    install_bootstrap_dependencies
+    prepare_source 1
+    ;;
+  build)
+    build_cef
+    ;;
+  package)
+    package_cef
+    ;;
+  validate)
+    validate_cef
+    ;;
+esac

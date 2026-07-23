@@ -12,13 +12,183 @@ The complete product contract is enforced before the `current` toolchain
 pointer changes. A partial toolchain is a failed build, not a supported build
 profile.
 
-## Phase 1: Define the installed product contract
+The build system is the product contract. Preset build targets, preset install
+targets, post-assembly assertions, and functional smoke tests directly define
+the shipped surface. Do not maintain a second product manifest that can drift
+from the executable build graph.
 
-Add one machine-readable product manifest under `swift-toolchain/`. It is the
-source of truth for preset generation, component fingerprinting, installation,
-smoke tests, and packaging.
+## Progress and Decisions
 
-The manifest declares:
+- [x] Audited the Linux and macOS builders against the official distribution
+  surface.
+- [x] Confirmed upstream Linux builds and installs
+  `swift-corelibs-libdispatch` and `swift-corelibs-foundation` as toolchain
+  components. The Foundation build incorporates `swift-foundation` and
+  `swift-foundation-icu`. Darwin intentionally uses the OS Foundation and
+  libdispatch instead.
+- [x] Confirmed upstream Swift's LLDB configuration uses checked-in static
+  Python bindings, so SWIG is not a host prerequisite. Python development
+  headers are required and are declared through `libpython3-dev`.
+- [x] Chose the generated presets and mandatory validation code as the single
+  executable product contract; no parallel JSON contract is used.
+- [x] Removed the SwiftPM C++-interop test-runner patch after confirming the
+  current upstream runner applies the unit-test module's complete manifest
+  settings. Upstream's regression test covers inherited linker settings, not
+  the former Nucleus patch's exact `.interoperabilityMode(.Cxx)` case.
+- [x] Audited all 13 remaining source patches against the live `release/6.4.x`
+  and `main` branches of `swift`, `swift-driver`, and `swift-build`. Every patch
+  still applies to both branches, and the unpatched source still contains each
+  behavior the patches correct. No remaining patch is superseded upstream.
+  Upstream's existing Linux libc++ support assumes a system-wide libc++ and
+  does not replace Nucleus's bundled-default-libc++ include-path fix.
+- [ ] Revalidate the Android `CxxStdlib` bootstrap without
+  `swift/0006-android-cxxstdlib-wchar-workaround.patch` after the candidate host
+  compiler is qualified. The rebuilt compiler already carries the same wchar
+  guard through `swift/0001`; remove `0006` if the ordered host-then-Android
+  build proves the bootstrap-only duplicate is no longer exercised.
+- [x] Preserve the exact C++-interop runner behavior as a candidate-toolchain
+  `swift test` smoke so the installed SwiftPM and synthesized test executable
+  are exercised end to end without carrying an upstream implementation patch.
+  The first candidate reached this gate and exposed an error in the smoke
+  fixture itself: a public empty struct still has an internal synthesized
+  initializer. The fixture now declares its initializer public, and a control
+  run with the active toolchain built and executed the synthesized C++-interop
+  test runner successfully. The next packaged candidate repeated that test with
+  its installed SwiftPM and completed the full functional validation suite.
+- [x] Confirmed upstream already implements the candidate-hosted developer
+  product stage: it installs the compiler and core libraries before invoking
+  the unified SwiftPM product builds with that installed candidate and the
+  multiroot data file.
+- [x] Confirmed IndexStoreDB is a build dependency of SourceKit-LSP rather than
+  a separately installed official library. `libIndexStore` is the installed
+  LLVM product; validation follows that upstream boundary.
+- [x] Made configuration changes invalidate the Swift CMake directory before
+  reconfiguration. CMake's in-place compiler-change recovery discards the
+  generated libdispatch and cmark paths and cannot be used for this build.
+- [x] Moved orchestrated toolchain and Android build logs out of disposable
+  generations into the platform-level log directory. A failed generation can
+  now be removed without deleting the diagnostic log or its `latest.log` link.
+- [ ] Derive compiler, runtime, and tool artifact identities from their own
+  generated preset inputs and patches. Changes confined to validation or one
+  product group must not invalidate and rebuild every component.
+- [x] Made the existing component identities the sole owner of Linux
+  incremental-build invalidation and enabled upstream's `skip-clean-*`
+  controls for libdispatch, Foundation, XCTest, llbuild, SwiftPM, and Swift
+  Driver. These operational controls are added after hashing the
+  artifact-producing preset, so enabling reuse does not invalidate a
+  compatible interrupted build.
+- [ ] Make Swift Testing and Swift Testing Macros honor the same fingerprint
+  invariant instead of unconditionally cleaning their build directories in
+  their upstream product implementations. Establish equivalent component
+  identities before enabling skip-clean behavior in the macOS builder.
+- [ ] Route every C and C++ CMake product through the build-script's supported
+  compiler-launcher seam and the persistent Nucleus compiler cache. The
+  current LLVM-only `LLVM_CCACHE_BUILD` wiring leaves libdispatch, Foundation,
+  LLDB, and developer-tool C/C++ actions outside the cache. Keep Ninja as the
+  executor: `autoninja` is only a Chromium launcher, while Siso cannot replace
+  the SwiftPM/SwiftBuild product graph and provides no remote-execution benefit
+  without a configured REAPI service. Benchmark a Siso experiment only after
+  invalidation and cache coverage are correct.
+- [ ] Qualify Swift's native CAS compilation cache for the candidate-hosted
+  SwiftBuild products, using a stable cache path outside disposable build
+  directories with an explicit size policy and hit-rate/correctness gates.
+  This targets Swift Format, SourceKit-LSP, DocC, SwiftPM, and other Swift
+  frontend work that neither `ccache` nor Siso can cache.
+- [ ] Remove redundant product builds from install helpers and use parallel
+  gzip for the installable package. The stable-path qualification run spent
+  145.83 seconds installing DocC after a 41.09-second DocC build, 60.55 seconds
+  installing Swift Driver after a 66.94-second build, 93.73 seconds in
+  upstream's single-threaded gzip packaging phase, and another 96.11 seconds
+  repackaging the same tree for Nucleus validation.
+- [x] Removed credential-shaped environment variables before entering the
+  compiler graph because upstream verbose helpers can print their complete
+  inherited environment. Redacted the affected durable log from the first
+  qualifying run; the exposed external credential still requires rotation.
+- [x] Bound the default source-build concurrency to 16 jobs after a 32-job
+  compiler build exhausted 64 GiB of RAM and all swap. The explicit jobs
+  environment override remains available for dedicated build hosts.
+- [x] Track the component identities already prepared by an in-progress build.
+  Retrying an interrupted candidate now resumes partial build directories
+  instead of deleting them again merely because publication has not completed.
+- [x] Gave candidate-hosted developer-product builds a real stable
+  compiler/install staging directory. The earlier symlink design was
+  insufficient because the Swift driver canonicalized the target and recorded
+  the private `.assembly.<pid>` path in `-print-target-info` and SwiftBuild
+  databases. Developer-tool identity schema 2 performs the one-time migration;
+  the completed staged `usr` tree moves into the private assembly before
+  validation and atomic publication.
+- [ ] Preserve already-applied patched source trees when both the repository
+  revision and patch-set identity are unchanged. Resetting every patched file
+  to `HEAD` and reapplying identical patches changes mtimes, which relinks the
+  compiler and unnecessarily regenerates every downstream embedded runtime.
+- [x] Propagate configuration/compiler identity changes through the runtime and
+  developer-tool build directories even when CMake reconfiguration is active.
+  The previous guard reconfigured CMake products but incorrectly retained an
+  older SwiftBuild database for WasmKit. The invalidation schema now prevents
+  candidates prepared under those older reuse semantics from being resumed.
+- [x] Activated and verified the required 32 GiB swap file, then completed the
+  compiler, LLDB, shared and static Foundation, Swift Testing, and SwiftPM
+  stages without memory exhaustion.
+- [x] Reproduced WasmKit's missing manifest executable independently of its
+  build directory and identified the actual cause: the build environment set
+  `SWIFT_EXEC` to the `swift` interpreter instead of the `swiftc` compiler
+  driver. Interpreter mode returned success without emitting the requested
+  manifest binary, so SwiftPM's following spawn reported a misleading ENOENT.
+  Linux, macOS, and installed-product validation now set `SWIFT_EXEC` to
+  `swiftc`. The newly built SwiftPM binary completes the pinned WasmKit release
+  build when given that compiler-driver invariant.
+- [x] Diagnosed the first complete candidate's static-executable validation
+  failure as a mismatch between the custom Clang default of libc++ and
+  upstream Swift's Linux response file for libstdc++. The Nucleus Swift source
+  patch now records the complete installed libc++, libc++abi, LLVM libunwind,
+  and FoundationXML/zlib closure. A standalone FoundationXML static executable
+  links and runs with that exact library set.
+- [x] Replaced the unsupported `sourcekit-lsp --version` readiness probe with
+  `--help`. This SourceKit-LSP revision exposes functional protocol behavior
+  but intentionally has no version option; the full initialize, diagnostics,
+  symbols, definition, and shutdown exchange remains the actual validation.
+- [x] Replaced the unsupported `docc --version` readiness probe with `--help`.
+  This DocC revision reports its command surface but has no version option; a
+  real documentation-catalog conversion remains the functional validation.
+- [x] Reproduced the retry-only SwiftPM bootstrap failure as a deterministic
+  CMake Swift relink defect: an unchanged one-file executable built through the
+  old combined incremental compile-and-link rule fails on its second identical
+  invocation with `cannotResolveTempPath(main-1.swiftmodule)`. The Swift Driver
+  patch now selects CMake's CMP0157 compilation-mode abstraction when available,
+  assigns valid underscore module names to its hyphenated executables, and
+  preserves incremental object compilation with separate link actions. A clean
+  targeted CMake/Ninja build produced both executables, repeated direct relinks
+  succeeded, and the second Ninja build was a no-op. The complete candidate
+  rebuild then built all three Swift Driver executables through the split graph;
+  SwiftPM's install-time second invocation reported no work for the dependency
+  and passed the former failure point. The candidate subsequently built and
+  installed Swift Format, SourceKit-LSP, DocC, WasmKit, and standalone Swift
+  Driver, then passed the packaged compiler, Foundation, static-link, embedded,
+  LLDB, and tool-presence probes. Publication stopped only at the invalid
+  access-control setup in the C++-interop smoke fixture described above.
+- [x] Completed and activated Linux generation
+  `2026-07-23T00-15-15Z-1452180`. Its packaged host toolchain passed compiler,
+  dynamic and static FoundationXML, embedded target, LLDB, Swift Format, DocC,
+  WasmKit, C++-interop test-runner, SourceKit-LSP protocol, SwiftPM package, and
+  product-surface validation. Its Android artifact bundle passed both dynamic
+  and static `aarch64-unknown-linux-android36` consumer builds before the
+  combined generation's active pointer changed.
+- [x] Restore the official core compiler, debugger, backend, and runtime
+  product set.
+- [x] Build candidate-hosted developer products in dependency order.
+- [x] Enforce product, linkage, functional, and official-capability parity
+  before publication.
+- [x] Expose and verify the complete workflow through `tools/nucleus`.
+- [ ] Complete fresh Linux and macOS qualification.
+
+## Phase 1: Make the build graph the installed product contract
+
+The generated Linux and macOS presets are the source of truth for component
+selection. Every product appears as an explicit build target and install target
+in the appropriate host preset. Product source revisions participate directly
+in the existing component fingerprints.
+
+The executable contract declares:
 
 - Required command-line products: Swift, Clang, LLDB, the Swift REPL,
   `lldb-dap`, `lldb-server`, `lldb-argdumper`, SourceKit-LSP, Swift Format,
@@ -32,9 +202,10 @@ The manifest declares:
 - Nucleus additions and every intentional deviation from the matching official
   distribution.
 
-Remove duplicated product-selection decisions from build-script argument
-construction. Linux and macOS presets consume the same contract and add only
-platform-specific configuration.
+Post-assembly assertions and functional smoke tests enforce the same surface
+before packaging and publication. Linux and macOS retain separate platform
+configuration but use the same product policy: an official shipped product is
+never silently disabled.
 
 ## Phase 2: Restore compiler and runtime capability
 
@@ -75,7 +246,7 @@ not use the bootstrap toolchain.
 
 Build the following products in dependency order:
 
-1. IndexStoreDB.
+1. IndexStoreDB as SourceKit-LSP's build dependency.
 2. SourceKit-LSP and its SourceKit plugins.
 3. Swift Format.
 4. DocC.
@@ -97,7 +268,8 @@ candidate. Install:
 
 - `sourcekit-lsp`.
 - The SourceKit client and server plugins.
-- IndexStoreDB libraries and modules.
+- `libIndexStore` from LLVM. IndexStoreDB remains a build dependency, matching
+  the official upstream install boundary.
 - Supporting runtime resources in their official locations.
 
 Validate a real editor protocol exchange against a small Swift package:
@@ -129,9 +301,9 @@ Add functional validation for each product:
 
 ## Phase 6: Enforce official-distribution parity
 
-Add a validator that compares the assembled candidate with both the product
-contract and a pinned capability snapshot from the corresponding official
-Swift.org toolchain.
+Add mandatory validation that compares the assembled candidate with the
+products selected by the build graph and a captured capability report from the
+corresponding official Swift.org toolchain.
 
 Validate capabilities and installation shape rather than byte-for-byte output:
 
@@ -192,7 +364,7 @@ artifacts.
 
 The plan is complete when a fresh Linux candidate and a fresh macOS candidate:
 
-1. Satisfy the machine-readable product contract.
+1. Satisfy every build-selected product assertion and functional smoke.
 2. Match the official distribution capability snapshot.
 3. Provide LLDB and the Swift REPL.
 4. Complete the SourceKit-LSP editor protocol test.

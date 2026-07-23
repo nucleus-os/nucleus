@@ -94,6 +94,7 @@ struct ToolchainCommand {
         let toolchainRoot = toolchainInstall.appendingPathComponent("usr")
         let androidInstall = generation.appendingPathComponent("android")
         let sdkSearchRoot = androidInstall
+        let platformLogs = platformRoot.appendingPathComponent("logs")
         let toolchainRecipe = context.root.appendingPathComponent("swift-toolchain")
         let androidRecipe = context.root.appendingPathComponent("swift-android-sdk")
 
@@ -110,6 +111,10 @@ struct ToolchainCommand {
             "NUCLEUS_SWIFT_SDKS_PATH": sdkSearchRoot.path,
             "NUCLEUS_SWIFT_ANDROID_BUNDLE_NAME": bundleName,
             "NUCLEUS_SWIFT_PLATFORM_ORCHESTRATED": "1",
+            "NUCLEUS_SWIFT_SOURCE_LOG_DIR": platformLogs
+                .appendingPathComponent("toolchain").path,
+            "NUCLEUS_SWIFT_ANDROID_LOG_DIR": platformLogs
+                .appendingPathComponent("android").path,
         ]
 
         if options.dryRun {

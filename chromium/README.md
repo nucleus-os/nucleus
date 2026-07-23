@@ -1,122 +1,89 @@
 # Chromium products
 
-This directory owns the shared Chromium substrate for two fixed products:
-
-- codec-enabled CEF for Noctalia's embedded offscreen browser;
-- Nucleus Browser, a standalone native-Wayland browser built from Chromium.
-
-Run:
+The Chromium build has one supported public entry point and one production
+configuration:
 
 ```sh
-chromium/build.sh cef
-chromium/build.sh browser
-chromium/build.sh all
+tools/nucleus chromium doctor
+tools/nucleus chromium bootstrap
+tools/nucleus chromium build
+tools/nucleus chromium test
+tools/nucleus chromium install
 ```
 
-`all` performs the source sync, patching, CEF translation, and API-hash work
-once, then builds the two independent GN outputs concurrently. It splits
-`NUCLEUS_CEF_JOBS` between the two Ninja processes instead of giving each the
-full host CPU count. CEF distribution packaging remains attached to the CEF
-side and publishes atomically as before.
+`bootstrap` installs its initial apt packages, prepares the pinned source
+generation, and runs Chromium's upstream host dependency installer. It records
+the current swap size but does not require the link-time swap budget. `build`
+performs the complete production build and
+publishes both products. The scripts below `chromium/` and `cef/` are internal
+stages; product selectors, package-only modes, update bypasses, and ad-hoc GN
+overrides are not supported workflows.
 
-Both products reuse the pinned CEF/Chromium source checkout, depot_tools,
-downloaded dependencies, PGO profiles, Dawn checkout, and a source-normalized
-ccache. Matching translation units can therefore be reused across the two GN
-outputs without conflating their allocator or process contracts.
-They do not share a GN output directory. CEF embeds `libcef.so` into Noctalia
-and therefore disables Chromium's allocator shim and BackupRefPtr support.
-The browser is a standalone multi-process Chromium product and retains
-Chromium's complete PartitionAlloc configuration. Its GN output also sets
-`enable_cef=false`; CEF patches remain present in the shared source revision,
-but CEF-only runtime behavior and OSR proxy sources are excluded from the
-standalone browser.
-Both products require Graphite on Dawn's Vulkan backend. Chromium may restart a
-failed GPU process within its normal crash budget, but every restart uses that
-same renderer. Initialization failure or exhaustion of the crash budget is a
-named fatal error; Ganesh, GL, and software compositing are not recovery paths.
-The browser output also disables Chromium and ANGLE SwiftShader construction.
+## Fixed architecture
 
-Patch ownership is explicit:
+CEF and Nucleus Browser share one content-addressed prepared source generation.
+The generation identity covers the exact CEF commit, Chromium version and
+commit, depot_tools commit, exact-commit `automate-git.py`, and every common,
+CEF, browser, and Dawn patch. Preparation starts from a pristine checkout and
+never reverses patches in an existing generation.
 
-- `patches/common/` contains Chromium-wide Graphite, Vulkan, SharedImage,
-  device-selection, and media work used by both products;
-- `patches/dawn/` contains changes owned by Dawn's nested checkout;
-- `patches/browser/` contains the backend-neutral Ozone Wayland presenter,
-  its Viz adapter, browser-only on-screen integration, and browser UI defaults;
-- `../cef/patches/` contains only CEF OSR and CEF behavior changes.
+The products retain separate GN outputs because their allocator contracts are
+different. CEF embeds `libcef.so` into another process and disables Chromium's
+allocator shim and BackupRefPtr support. The standalone browser retains
+PartitionAlloc, the allocator shim, and BackupRefPtr. Both outputs are official
+PGO/ThinLTO builds using LLD, Siso, native Wayland, Graphite/Dawn/Vulkan, and no
+SwiftShader compositor fallback.
 
-Every CEF and browser preparation applies all four layers to the same Chromium
-source tree. Product ownership controls which targets consume an API; it does
-not create different patched source revisions. This lets CEF and the standalone
-browser share fixes in Viz, SharedImage, Dawn, Ozone, media, and GPU selection,
-and it makes source-level interactions visible before either output is
-generated. The generated copies under the shared cache record the exact
-last-applied patches so renames and consolidations remain reversible.
+The build order is strictly sequential:
 
-The common patch layer contains the strict renderer, device/media,
-Graphite/Dawn Ozone SharedImage, and DRM-modifier work consumed by both
-products. The browser patch layer contains only the completed presenter
-extraction, Viz adapter, on-screen Graphite hookup, browser UI feature defaults,
-and their source-level tests. The
-focused presenter targets can be rebuilt and run without constructing the full
-Chrome binary:
+1. verify the host and 32 GiB swap contract;
+2. prepare or verify the source generation;
+3. build, package, and validate CEF;
+4. build, package, and validate Nucleus Browser;
+5. apply cache retention and record final disk usage.
 
-```sh
-source chromium/scripts/chromium-env.sh
-export PATH="$NUCLEUS_CEF_DEPOT_TOOLS:$PATH"
-autoninja -C "$CHROMIUM_BROWSER_OUT" \
-  ui/ozone:ozone_unittests \
-  components/viz/service:output_presenter_ozone_unittests
-"$CHROMIUM_BROWSER_OUT/ozone_unittests" \
-  --gtest_filter='*OzonePresenter*' --single-process-tests
-"$CHROMIUM_BROWSER_OUT/output_presenter_ozone_unittests" \
-  --gtest_filter='OutputPresenterOzoneTest.*' --single-process-tests
+Chromium budgets a Linux ThinLTO link at roughly 30 GiB. Independent CEF and
+browser link pools therefore never run concurrently. Local Siso work is capped
+at 16 jobs, and `vm.max_map_count`, free disk, free inodes, and swap are checked
+before source or output mutation.
+
+## Identities and publication
+
+Each successful output contains `.nucleus-built-build.json`. It binds the
+source-generation manifest, resolved `args.gn`, Chromium clang, and exact PGO
+profiles. Packaging and installation recompute that identity and reject stale
+outputs.
+
+CEF publishes complete SDK and tarball generations beneath
+`~/.cache/nucleus/cef/dist/`. Nucleus Browser publishes validated artifact
+generations beneath `~/.cache/nucleus/cef/browser-dist/`. Prepared directories,
+tarballs, checksums, and stable `current` links are switched only after their
+validation gates pass.
+
+The installed browser uses versioned generations under
+`~/.local/lib/nucleus-browser/generations/`. A single atomic `current` symlink
+switches the runtime, launcher, desktop entry, icons, Widevine payload, and
+recorded sandbox identity together. The active and immediately preceding
+installed generations are retained; older recognized generations are removed.
+
+## Logs and validation
+
+Every command creates:
+
+```text
+~/.cache/nucleus/cef/logs/runs/<timestamp>-<pid>-<operation>/
+  manifest.json
+  run.log
+  <stage>.log
+  storage.log
+~/.cache/nucleus/cef/logs/latest -> runs/<most-recent-run>
 ```
 
-The small Viz test executable is intentional: it tests the API-neutral
-presenter without the full `viz_unittests` suite's GL bootstrap. The production
-browser output continues to omit SwiftShader and does not gain a software
-runtime fallback for the sake of tests.
+Signals terminate the active stage process group. Locks prevent concurrent
+source preparation, GN-output mutation, and publication.
 
-All planned coding is complete, but the final cumulative revision is not yet a
-supported installed browser. It still needs the single final optimized build,
-focused tests, install, validation run, and live acceptance sequence defined in
-`docs/nucleus-browser-plan.md`.
-
-After the final browser build, stage its relocatable runtime, Nucleus Browser
-launcher and desktop identity, sandbox, Widevine component, and Chromium
-resources with:
-
-```sh
-chromium/install-browser.sh
-chromium/diagnose-browser.sh
-```
-
-The installer tests whether an unprivileged user namespace can actually be
-created; it does not infer sandbox availability from a sysctl. On systems such
-as Ubuntu with AppArmor user-namespace restrictions, it uses `sudo` only to
-install Chromium's root-owned mode-4755 helper at
-`/usr/local/libexec/nucleus-browser/chrome-sandbox`. The user-owned browser
-runtime and profile remain under the selected prefix. The launcher rejects
-command-line switches that disable Chromium's process sandboxes.
-
-The external product identity is intentionally narrow: the launcher, desktop
-entry/application ID, runtime directory, and independent profile/cache roots
-use Nucleus Browser. Chromium's generated icon remains in use until a dedicated
-icon exists, and the engine keeps upstream Chromium strings, internal pages,
-resources, and `is_chrome_branded=false`.
-
-The launcher adds no renderer-selection flags. Graphite/Dawn/Vulkan and native
-Wayland are source/build invariants. It uses the package-owned private NVIDIA
-VA-API driver at
-`~/.local/lib/nvidia-vaapi-driver/current/lib/dri`. The launcher publishes
-that module's path, which is inherited through Chromium's zygote. Before
-driver loading and sandbox entry, the GPU child selects it only when Wayland's
-compositor-selected DRM node is NVIDIA. Intel and AMD main devices keep normal
-system-driver discovery, and the launcher never guesses or hard-codes
-`NVD_DRM_DEVICE`. The browser process also retains the file descriptor from
-Wayland's same `main_device` feedback for linux-drm-syncobj ioctls; it does not
-open an independently guessed node for explicit synchronization.
-When that selected node is NVIDIA, the GPU child requires the exact private
-`nvidia_drv_video.so` before entering the sandbox. This does not globally
-disable Chromium's normal driver checks for other vendors.
+Publication gates include source/build identity verification, CEF API hashes,
+CEF consumer compile/link/load, dynamic-library resolution, browser version and
+headless startup, and the focused Ozone/Viz presenter tests. The browser's live
+Wayland/120 Hz/media acceptance remains an explicit user-run validation after
+installation.

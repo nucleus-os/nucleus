@@ -13,6 +13,7 @@ struct Doctor {
         for executable in [
             "swift", "swiftc", "git", "cmake", "ninja", "pkg-config",
             "python3", "corepack", "bun", "curl", "tar",
+            SHA256Verifier.executable,
         ] {
             checkExecutable(executable, failures: &failures)
         }

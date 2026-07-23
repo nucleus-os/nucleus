@@ -23,9 +23,13 @@ final class XdgActivationBinding {
 final class XdgActivationManager {
     weak var delegate: (any XdgActivationDelegate)?
     weak var seat: WlSeat?
-    private var tokenCounter: UInt64 = 0
+    private let tokenGenerator: () -> String
     private var grants: [String: Bool] = [:]
     private var grantOrder: [String] = []
+
+    init(tokenGenerator: (() -> String)? = nil) {
+        self.tokenGenerator = tokenGenerator ?? Self.randomToken
+    }
 
     func register(in router: NucleusWaylandRouter) {
         router.addGlobal(
@@ -33,14 +37,16 @@ final class XdgActivationManager {
     }
 
     func mintToken(authorized: Bool) -> String {
-        tokenCounter += 1
-        let token = "nucleus-activation-\(tokenCounter)"
-        grants[token] = authorized
-        grantOrder.append(token)
-        while grantOrder.count > 256 {
-            grants[grantOrder.removeFirst()] = nil
+        while true {
+            let token = tokenGenerator()
+            guard grants[token] == nil else { continue }
+            grants[token] = authorized
+            grantOrder.append(token)
+            while grantOrder.count > 256 {
+                grants[grantOrder.removeFirst()] = nil
+            }
+            return token
         }
-        return token
     }
 
     func consumeToken(_ token: String) -> Bool {
@@ -49,6 +55,18 @@ final class XdgActivationManager {
         }
         grantOrder.removeAll { $0 == token }
         return authorized
+    }
+
+    /// A fixed-width 128-bit token from the standard library's operating-system
+    /// CSPRNG. Hex keeps the Wayland string free of escaping and encoding rules.
+    private static func randomToken() -> String {
+        var generator = SystemRandomNumberGenerator()
+        return hex(generator.next()) + hex(generator.next())
+    }
+
+    private static func hex(_ value: UInt64) -> String {
+        let digits = String(value, radix: 16)
+        return String(repeating: "0", count: 16 - digits.count) + digits
     }
 
     private static let bind: @convention(c) (
