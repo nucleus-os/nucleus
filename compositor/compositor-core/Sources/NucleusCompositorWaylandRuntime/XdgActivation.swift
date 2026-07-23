@@ -10,8 +10,7 @@ import WaylandServer
 import WaylandServerDispatch
 
 protocol XdgActivationDelegate: AnyObject {
-    /// Request focus for `surface` carrying `token`. The token's validity policy is
-    /// the delegate's; the router is permissive.
+    /// Request focus after the manager has consumed a valid one-shot grant.
     func activateSurface(_ surface: WlSurface?, token: String)
 }
 
