@@ -13,10 +13,15 @@ import PackageDescription
 let package = Package(
     name: "swift-tracy",
     products: [
+        .library(name: "TracyColliderRecipe", targets: ["TracyColliderRecipe"]),
         // The Swift Trace API; transitively links the C++ bridge + pinned Tracy client.
         .library(name: "Tracy", targets: ["Tracy"]),
     ],
+    dependencies: [.package(path: "../collider")],
     targets: [
+        .target(
+            name: "TracyColliderRecipe",
+            dependencies: [.product(name: "ColliderCore", package: "collider")]),
         // The C++ shim: TraceBridge.cpp (the swift_tracy::TraceBridge façade) + TracyClientShim.cpp
         // (#include "TracyClient.cpp" from the Tracy submodule). The Tracy symbols must live in the same
         // archive as the bridge the Swift side links, so the client is co-located here — not a

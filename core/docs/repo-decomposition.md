@@ -38,14 +38,14 @@ the Skia Graphite bridges, `Vulkan`/`VulkanC`, `NucleusAppHostProtocols`,
 `NucleusAppHostBundle`, `Tracy`, `NucleusTextCxxBridge` with `skia_text_backend.cpp`
 (Skia text *rendering*), and `platform-android` (the Android render host — it depends only on
 the renderer, no React). Owns and provisions the **render native SDK**: Skia Graphite over
-native Vulkan (`build-skia`, `build-skia-android`).
+native Vulkan (`tools/collider bootstrap core`, `tools/collider android native`).
 
 **`react-native-nucleus` — the out-of-tree RN platform + app SDK.** `NucleusReactRuntime`,
 `NucleusReactRuntimeCxx`, `NucleusReactRuntimeHostCxx`, the `NucleusReactRuntimeCxxBridge`
 facade, the RN paragraph registry (`TextRegistry.cpp`), and the developer-facing app SDK
 (`<Window>`, desktop APIs, the JS npm package). Owns and provisions the **RN native SDK**:
 Hermes, folly, ReactCommon/Fabric, glog, fmt, and the staged host-cxx archive
-(`build-hermes`, `build-rn-support`, `build-rn-cxx`, `generate-rn-spec`, `provision-cxx-libs`).
+(`tools/collider bootstrap rn`, `tools/collider generate rn-spec`).
 Embeds `nucleus` and consumes its render SDK. This is what an app developer targets, exactly
 as react-native-macos is what a macOS RN developer targets.
 
@@ -83,7 +83,7 @@ that `react-native-nucleus` produces and only RN consumers consume. The composit
 render SDK alone. The host-cxx archive and the RN half of provisioning leave the compositor's
 world entirely — the coupling apparatus built while the compositor still linked React is
 retired, not maintained. The monorepo root owns bootstrap ordering through
-`tools/nucleus bootstrap`; components do not carry independent bootstrap scripts.
+`tools/collider bootstrap`; components do not carry independent bootstrap scripts.
 
 **The text backend un-shares.** `skia_text_backend.cpp` is Skia text rendering and stays in the
 core; `TextRegistry.cpp` is the React paragraph registry and moves with the platform. The

@@ -1,7 +1,7 @@
 import Glibc
 import NucleusLinuxAccessibility
 import NucleusLinuxReactor
-import NucleusLinuxSession
+import NucleusSessionProtocol
 import NucleusShellInput
 import NucleusShellLoop
 import NucleusShellPasteboard

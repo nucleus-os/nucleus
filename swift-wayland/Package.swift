@@ -3,7 +3,7 @@ import PackageDescription
 
 // swift-wayland — self-contained Swift-importable Wayland protocol bindings, generated from the
 // vendored protocol XML (core wayland.xml, upstream wayland-protocols @ v1.48+2, curated kde/wlr
-// extras) by the SwiftWaylandGen tool + wayland-scanner. Unlike a fixed API (see swift-vulkan),
+// extras) by Collider through SwiftWaylandGen + wayland-scanner. Unlike a fixed API (see swift-vulkan),
 // Wayland is a menu of protocols consumed in one of two modes; this package ships BOTH pre-built,
 // over the full vendored protocol set, so a consumer just imports the module for its role:
 //
@@ -11,14 +11,15 @@ import PackageDescription
 //   * a client imports WaylandClientC (client-side proxy inlines),
 //   * both link WaylandProtocolsC (the wl_interface marshalling — identical for either mode).
 //
-// The three modules are committed (regenerate on a protocol bump via `swift package
-// generate-wayland`). The systemLibrary modules façade libwayland's own wayland-{server,client}.h,
+// The three modules are committed (regenerate on a protocol bump via
+// `tools/collider generate wayland`). The systemLibrary modules façade libwayland's own wayland-{server,client}.h,
 // so a consumer needs libwayland at build/link time but no protocol XML, no wayland-scanner, and
 // no codegen of its own — protocol selection is a runtime decision (which globals it advertises /
 // binds), not a compile-time one.
 let package = Package(
     name: "swift-wayland",
     products: [
+        .library(name: "WaylandColliderRecipe", targets: ["WaylandColliderRecipe"]),
         // Server-side bindings (event senders, request-handler vtables) + the shared marshalling.
         .library(name: "WaylandServerC", targets: ["WaylandServerC"]),
         // Client-side bindings (proxy inlines) + the shared marshalling.
@@ -41,10 +42,14 @@ let package = Package(
         // of WaylandServer — the plumbing every Swift Wayland client reimplements.
         .library(name: "WaylandClient", targets: ["WaylandClient"]),
         // The unified server/client generator, kept vended so an external consumer can generate a
-        // bespoke protocol set; the GenerateWayland plugin drives it to regenerate this package.
+        // bespoke protocol set; Collider drives it to regenerate this package.
         .executable(name: "SwiftWaylandGen", targets: ["SwiftWaylandGen"]),
     ],
+    dependencies: [.package(path: "../collider")],
     targets: [
+        .target(
+            name: "WaylandColliderRecipe",
+            dependencies: [.product(name: "ColliderCore", package: "collider")]),
         .executableTarget(name: "SwiftWaylandGen", path: "Sources/SwiftWaylandGen"),
         // The aggregating server/client header + module.modulemap (systemLibrary so the header is
         // processed at each import site, façading <wayland-server.h> / <wayland-client.h>).
@@ -86,19 +91,6 @@ let package = Package(
             dependencies: ["WaylandClientC", "WaylandClientDispatch"],
             path: "Sources/WaylandClient",
             swiftSettings: [.interoperabilityMode(.Cxx)]
-        ),
-        // Regenerates all modules from the vendored XML over the full protocol set.
-        .plugin(
-            name: "GenerateWayland",
-            capability: .command(
-                intent: .custom(
-                    verb: "generate-wayland",
-                    description: "Regenerate WaylandServerC/WaylandClientC/WaylandProtocolsC from the vendored protocol XML"
-                ),
-                permissions: [.writeToPackageDirectory(reason: "Emit generated Wayland C modules")]
-            ),
-            dependencies: ["SwiftWaylandGen"],
-            path: "Plugins/GenerateWayland"
         ),
         // Standalone proof the client module imports under C++ interop + the marshalling links
         // (the compositor build exercises the server side; the client's consumer can't build here).

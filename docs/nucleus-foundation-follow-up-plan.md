@@ -151,7 +151,7 @@ The remaining high-impact risks are:
     closing-fade lifecycle are not connected to the live scene feeder.
 13. Several stabilized mechanisms still combine unrelated responsibilities,
     including `View`, `RenderCore`, `InputDispatch`, and `XdgShell`.
-14. `tools/nucleus test` executes every first-party debug package, including
+14. `tools/collider test` executes every first-party debug package, including
     `platform-linux`, but does not yet execute the named release structural
     suites.
 
@@ -1307,9 +1307,9 @@ Source the actual host environment and run:
 
 ```sh
 source tools/host-env.sh
-tools/nucleus doctor
-tools/nucleus build
-tools/nucleus test
+tools/collider doctor
+tools/collider build
+tools/collider test
 ```
 
 While correcting the orchestrator, verify its coverage against these package
@@ -1459,7 +1459,7 @@ The follow-up foundation work is complete when:
   ownership.
 - Swift isolation, errors, cancellation, native handles, and cross-language
   lifetime are explicit.
-- `tools/nucleus doctor`, `tools/nucleus build`, and the corrected
-  `tools/nucleus test` pass.
+- `tools/collider doctor`, `tools/collider build`, and the corrected
+  `tools/collider test` pass.
 - All agent-runnable optimized structural gates pass before physical hardware
   validation is handed to the user.

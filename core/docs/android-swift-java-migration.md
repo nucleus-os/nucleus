@@ -112,7 +112,7 @@ calls invoke the retained thunks, passing `host.$memoryAddress()`.
 
 `android/nucleus/build.gradle.kts` copies `libSwiftJava.so` into
 `jniLibs/arm64-v8a` next to `libnucleus-android.so` and `libc++_shared.so`.
-The Swift runtime is already embedded in the host. `tools/nucleus android verify`
+The Swift runtime is already embedded in the host. `tools/collider android verify`
 stops parsing `Nucleus.kt` for `external fun`s and instead asserts the generated
 `Java_…AndroidHost_…` thunks plus the retained hand-written NDK-handle thunks
 are exported, that the static Swift runtime is present, and that no dynamic
@@ -122,7 +122,7 @@ are exported, that the static Swift runtime is present, and that no dynamic
 
 The Swift side is implemented and verified: `swift build --swift-sdk
 swift-release-6.4.x_android --static-swift-stdlib -c release` produces `libnucleus-android.so` (with
-`libSwiftJava.so`), and `tools/nucleus android verify` passes — 25 generated
+`libSwiftJava.so`), and `tools/collider android verify` passes — 25 generated
 `AndroidHost` thunks, the 5 hand-written `NucleusNative` thunks, `JNI_OnLoad`,
 and the Vulkan bringup probe all export; the Swift runtime is embedded and
 libSwiftJava remains `NEEDED`. The Kotlin (`Nucleus`/`NucleusHost`/`NucleusNative`), Gradle (source

@@ -20,7 +20,7 @@ Cross-compile `Vulkan` (the `vk.xml`-generated Swift Vulkan bindings) + `VulkanC
 
 ### Exit condition
 
-Met. The cross-compile builds Vulkan for Android and `libnucleus-android.so` links `libvulkan.so` (in `NEEDED`); `tools/nucleus android verify` asserts the loader dependency and JNI exports. The capability-qualified create/teardown path is runtime-verified on device/emulator once available (deferred hardware validation).
+Met. The cross-compile builds Vulkan for Android and `libnucleus-android.so` links `libvulkan.so` (in `NEEDED`); `tools/collider android verify` asserts the loader dependency and JNI exports. The capability-qualified create/teardown path is runtime-verified on device/emulator once available (deferred hardware validation).
 
 ## Phase 2 — The Android swapchain presentation backend — DONE
 
@@ -42,7 +42,7 @@ The render runtime compiles + links for Android and records a Vulkan frame into 
 
 ## Phase 4 — Skia Graphite on Android — build done (brought forward)
 
-Pulled ahead of Phase 3 because `NucleusRenderer` hard-depends on the Skia façade and cannot cross-compile without it. The `BuildSkiaAndroid` build-tool plugin drives Skia's GN/Ninja cross-targeting the NDK (arm64, `ndk_api=24`) into `.skia-build/android-arm64` — the same native **Vulkan Graphite** backend as the host (`ContextFactory::MakeVulkan`), with Android's platform font manager instead of fontconfig. The single `NucleusSkiaGraphiteBridge` target compiles `Graphite.cpp` against that shared Vulkan-only contract when cross-compiling.
+Pulled ahead of Phase 3 because `NucleusRenderer` hard-depends on the Skia façade and cannot cross-compile without it. The Collider core recipe drives Skia's GN/Ninja cross-targeting the NDK (arm64, `ndk_api=24`) into `.skia-build/android-arm64` — the same native **Vulkan Graphite** backend as the host (`ContextFactory::MakeVulkan`), with Android's platform font manager instead of fontconfig. The single `NucleusSkiaGraphiteBridge` target compiles `Graphite.cpp` against that shared Vulkan-only contract when cross-compiling.
 
 ### Exit condition
 

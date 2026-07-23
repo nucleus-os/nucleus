@@ -13,7 +13,7 @@ import NucleusRenderHost
 import NucleusRenderModel
 import NucleusLinuxDBus
 import NucleusLinuxReactor
-import NucleusLinuxSession
+import NucleusSessionProtocol
 import Tracy
 import Glibc
 

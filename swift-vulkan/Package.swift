@@ -10,6 +10,7 @@ import PackageDescription
 let package = Package(
     name: "swift-vulkan",
     products: [
+        .library(name: "VulkanColliderRecipe", targets: ["VulkanColliderRecipe"]),
         // The generated typed API (VK.* dispatch tables, scoped enums /
         // option sets / typed handles) over the raw C module.
         .library(name: "Vulkan", targets: ["Vulkan"]),
@@ -17,7 +18,11 @@ let package = Package(
         // for the C structs / handles (VkImage, VkImportMemoryFdInfoKHR, …).
         .library(name: "VulkanC", targets: ["VulkanC"]),
     ],
+    dependencies: [.package(path: "../collider")],
     targets: [
+        .target(
+            name: "VulkanColliderRecipe",
+            dependencies: [.product(name: "ColliderCore", package: "collider")]),
         // The raw Vulkan C API. A systemLibrary (not a compiled C target) so the header
         // is processed at each import site — importers can inject platform defines like
         // -DVK_USE_PLATFORM_WAYLAND_KHR to pull the guarded WSI headers. Vendors the
@@ -27,26 +32,14 @@ let package = Package(
             name: "VulkanC",
             path: "Sources/VulkanC"
         ),
-        // The generated Swift binding core (committed; regenerate on a headers bump
-        // via `swift package generate-vulkan`).
+        // The generated Swift binding core. Collider invokes VulkanGen directly
+        // when the vendored registry changes.
         .target(
             name: "Vulkan",
             dependencies: ["VulkanC"]
         ),
-        // vk.xml → Vulkan.swift generator + its command plugin.
+        // vk.xml → Vulkan.swift generator invoked by `collider generate vulkan`.
         .executableTarget(name: "VulkanGen", path: "Tools/VulkanGen"),
-        .plugin(
-            name: "GenerateVulkan",
-            capability: .command(
-                intent: .custom(
-                    verb: "generate-vulkan",
-                    description: "Regenerate the Vulkan bindings from the vendored vk.xml"
-                ),
-                permissions: [.writeToPackageDirectory(reason: "Emit generated Vulkan.swift")]
-            ),
-            dependencies: ["VulkanGen"],
-            path: "Plugins/GenerateVulkan"
-        ),
         .testTarget(name: "VulkanTests", dependencies: ["Vulkan"]),
     ]
 )

@@ -28,7 +28,7 @@ React Native, Hermes, Fabric, Yoga, or JavaScript runtime dependency.
 From the monorepo root:
 
 ```sh
-tools/nucleus bootstrap shell
+tools/collider bootstrap shell
 
 source tools/host-env.sh
 swift build --package-path shell
@@ -42,12 +42,12 @@ bootstrap does not provision the React Native SDK or build JavaScript bundles.
 Install the complete compositor session into one shared prefix:
 
 ```sh
-tools/nucleus install session
+tools/collider install session
 ```
 
 This writes the compositor, session launchers, native shell, and
 `nucleus-pam-helper` to `.install/`. Use `--prefix DIR` to choose another
-location. `tools/nucleus install shell` installs only the two shell executables.
+location. `tools/collider install shell` installs only the two shell executables.
 
 ## Run
 

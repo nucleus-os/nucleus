@@ -74,13 +74,13 @@ engine.
 | Third-party downloads | `curl` invocations and component download helpers | One in-process `ColliderDownloads` service with HTTPS, resumption, size, and digest policy |
 | Runtime assembly and launch | `Install.swift`, `Run.swift`, profiling and sanitizer helpers | `collider install session` and `collider run` |
 | Tracy, Valgrind, sanitizers, and benchmarks | `ProfileCapture.swift`, `Profiling.swift`, `Sanitizer.swift`, `Benchmark.swift` | Shared instrumentation model used by `run`, `test`, and `benchmark` |
-| API, native ABI, and linkage gates | `PublicAPIAudit.swift`, `CrossLanguageABI.swift`, API-tier and libc++ verification scripts | `collider audit api|abi|linkage` |
 | Swift host toolchain and Android SDK | `Toolchain.swift`, `swift-toolchain/*.sh`, `swift-android-sdk/*.sh` | One platform-generation graph under `collider toolchain` |
 | Android host | `Android.swift`, Gradle wrapper, Swift Android helper scripts | `collider android build|native|verify` |
 | Chromium, CEF, and browser installation | `Chromium.swift`, Chromium/CEF shell orchestrators and Python metadata tools | `collider browser doctor|bootstrap|build|test|install` |
 | Skia, Hermes, React Native, and code generation | SwiftPM command plugins and component scripts | `collider generate` and graph-owned bootstrap nodes backed by shared component recipes |
 | Vulkan and Wayland regeneration | SwiftPM command plugins and `tools/update-vendored.sh` | `collider generate vulkan|wayland` |
-| Compositor diagnostics | Vulkan validation and freeze-capture scripts | `collider diagnose compositor` and `collider validate vulkan` |
+| Compositor diagnostics | Vulkan validation script | `collider validate vulkan` |
+| Live hardware qualification | Component shell orchestration and manually paired compositor runs | `collider qualify` with Collider-owned session lifecycle and component-owned typed validators |
 | Cache inspection and retention | `.nucleus/`, Chromium pruning, toolchain fingerprints, per-script cleanup | `collider cache status|prune` with typed ownership |
 | Run discovery | Several timestamp formats and `latest` links | One run registry exposed by `collider logs` and `collider status` |
 
@@ -99,10 +99,9 @@ collider toolchain rebuild|status|install|uninstall [options]
 collider android build|native|verify [options]
 collider browser doctor|bootstrap|build|test|install
 collider generate rn-spec|vulkan|wayland [options]
-collider audit api|abi|linkage
 collider benchmark [SUITE]
-collider diagnose compositor [freeze-capture options]
 collider validate vulkan
+collider qualify android-presentation --drm-device /dev/dri/renderD...
 collider cache status|prune
 collider logs list|show|tail [RUN] [--kind KIND]
 collider status
@@ -303,13 +302,13 @@ A complete transfer accepts only status `200`; a resumed transfer accepts only
 a validated `206` with the requested `Content-Range`. Other successful-looking
 responses are typed download failures.
 
-The common Darwin and Linux implementation uses `URLSessionDownloadTask`, not
-Darwin-only asynchronous byte APIs. Foundation streams each response to a
-temporary file. The delegate validates response headers, reports progress,
-cancels when the declared size is exceeded, and immediately transfers the
-completed temporary file into a private Collider candidate. Collider then
-checks the actual file size and streams the candidate through `Crypto.SHA256`.
-A digest mismatch deletes the candidate before extraction or publication.
+The common Darwin and Linux implementation uses `URLSessionDataTask`, not
+Darwin-only asynchronous byte APIs. Its delegate streams response chunks
+directly through a Swift System file descriptor into a private Collider
+candidate. The delegate validates response headers, reports progress, and
+cancels when the declared size is exceeded. Collider then checks the actual
+file size and streams the candidate through `Crypto.SHA256`. A digest mismatch
+deletes the candidate before extraction or publication.
 
 Resumable transfers store a partial file plus non-secret metadata keyed by the
 expected artifact digest: original and final URLs, ETag, Last-Modified value,
@@ -352,7 +351,7 @@ Repository workflow state lives under `.nucleus/`:
 
 ```text
 .nucleus/
-  state/                 task identity and result records
+  tasks/                 task identity and result records
   locks/                 locks for checkout-local state and artifacts
   runs/<run-id>/
     manifest.json        command, arguments, environment identity, result
@@ -606,7 +605,7 @@ bounded retry, truncated bodies, ETag and Last-Modified resumption, invalid
 ranges, changed validators, digest mismatch rejection, temporary-file cleanup,
 and redaction of credentials from events and manifests.
 
-Run the complete doctor, bootstrap, build, test, audit, sanitizer, benchmark,
+Run the complete doctor, bootstrap, build, test, sanitizer, benchmark,
 toolchain, Android, Chromium, CEF, browser-package, and installation gates
 through Collider. Perform the compositor session and graphical browser checks
 as the final user-owned interactive validation.

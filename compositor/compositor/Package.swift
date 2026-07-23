@@ -25,7 +25,7 @@ let repoRoot = URL(fileURLWithPath: #filePath)
 // ── The Nucleus render native SDK (Skia) ───────────────────────────────────────
 // Consumed from a stable cache path (core repo's docs/repo-decomposition.md). The
 // compositor links only the `render` SDK (Skia + the text-backend source),
-// provisioned by root `tools/nucleus bootstrap`; the
+// provisioned by root `tools/collider bootstrap`; the
 // link list here points at the monorepo core.
 func provisionSDK(_ name: String, links: [(String, String)]) -> String {
     let home = ProcessInfo.processInfo.environment["HOME"] ?? ""
@@ -106,11 +106,13 @@ let skiaLinkFlags: [String] = [
 let package = Package(
     name: "NucleusCompositorApp",
     products: [
+        .library(name: "CompositorAppColliderRecipe", targets: ["CompositorAppColliderRecipe"]),
         .executable(
             name: "NucleusCompositorThreadSanitizerHarness",
             targets: ["NucleusCompositorThreadSanitizerHarness"]),
     ],
     dependencies: [
+        .package(path: "../../collider"),
         // The Nucleus library package — the portable render/UI core. The compositor links
         // zero React, so this is its only Nucleus dependency.
         .package(name: "Nucleus", path: "../../core"),
@@ -124,6 +126,9 @@ let package = Package(
             path: "../../platform-linux"),
     ],
     targets: [
+        .target(
+            name: "CompositorAppColliderRecipe",
+            dependencies: [.product(name: "ColliderCore", package: "collider")]),
         .target(
             name: "NucleusCompositorSignalC",
             path: "Sources/NucleusCompositorSignalC",
@@ -175,8 +180,8 @@ let package = Package(
                     name: "NucleusLinuxReactor",
                     package: "NucleusLinuxPlatform"),
                 .product(
-                    name: "NucleusLinuxSession",
-                    package: "NucleusLinuxPlatform"),
+                    name: "NucleusSessionProtocol",
+                    package: "collider"),
                 .product(name: "Tracy", package: "swift-tracy"),
                 "NucleusCompositorSignalC",
             ],
@@ -222,8 +227,8 @@ let package = Package(
             dependencies: [
                 "NucleusCompositorRuntime",
                 .product(
-                    name: "NucleusLinuxSession",
-                    package: "NucleusLinuxPlatform"),
+                    name: "NucleusSessionProtocol",
+                    package: "collider"),
             ],
             path: "Sources/NucleusCompositor",
             swiftSettings: [.interoperabilityMode(.Cxx)],

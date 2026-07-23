@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "gfxstream": {
+    "upstreamURL": "https://android.googlesource.com/platform/hardware/google/gfxstream",
+    "tag": "android-17.0.0_r1",
+    "tagObject": "96b03c3572e6b048648da377995736438b025efd",
+    "upstreamCommit": "b46f0d4b4545def09bdf30651d4bf848b2ba0c34",
+    "forkURL": "git@github.com:maddythewisp/platform_hardware_google_gfxstream.git",
+    "branch": "nucleus-android-17",
+    "commit": "f28ae4544cfadbc7c2d1a3f5edb0ae7d1c97d393"
+  },
+  "mesa": {
+    "upstreamURL": "https://android.googlesource.com/platform/external/mesa3d.git",
+    "upstreamCommit": "224e91e39836d3ca31f80df2e0379e55c70574f8",
+    "forkURL": "git@github.com:maddythewisp/platform_external_mesa3d.git",
+    "branch": "nucleus-android-17",
+    "commit": "6736232a53716737f30ffb7014f02aa20b4ee156"
+  }
+}

@@ -111,11 +111,10 @@ un-share; it was orphaned, not shared.)
 
 ### Phase 3 — One Wayland generator with client/server modes *(landed)*
 
-`SwiftWaylandGen` is in the core (`swiftpm/tools/`, beside the shared protocol XML) with a
-`--mode server|client` + `--module <name>` flag; it's an executable product both the
-compositor's `generate-wayland` and the shell's `generate-wayland-client` plugins invoke
-(server / client), and the local `NucleusCompositorWaylandGen` / `NucleusShellWaylandGen` twins
-are deleted. No compositor↔shell coupling — both go through the core they already embed.
+`SwiftWaylandGen` is an executable product invoked by the ordered
+`tools/collider generate wayland` task. The local
+`NucleusCompositorWaylandGen` / `NucleusShellWaylandGen` twins are deleted. No
+compositor↔shell coupling remains in generation.
 Build- and run-verified (the tool emits the correct server vtable-typedef / client-proxy
 headers). Original design below.
 
@@ -125,7 +124,7 @@ interface-dependency closure. It parses each protocol's referenced interfaces
 defines, and pulls in the defining protocol for any referenced-but-undefined interface
 (cursor-shape references `zwp_tablet_tool_v2`, so tablet is pulled in) — transitively; core
 `wl_*` are defined by `wayland.xml`/libwayland and add nothing. It writes the resolved set to
-`generated-protocols.tsv`, and **both** plugins drive `wayland-scanner` over that manifest, so
+`generated-protocols.tsv`, and Collider drives `wayland-scanner` over that manifest, so
 the aggregating header's `#include`s and the compiled marshalling `.c` always match. This fixes
 at the codegen root the class of undefined `*_interface` link errors that arises when a selected
 protocol references another protocol's interface without that protocol being generated — a
@@ -133,8 +132,8 @@ feature, not a dropped protocol.
 
 
 
-Merge `NucleusCompositorWaylandGen` and `NucleusShellWaylandGen` into one generator + one
-command plugin that takes a `--client`/`--server` mode (selecting the header include and the
+Merge `NucleusCompositorWaylandGen` and `NucleusShellWaylandGen` into one generator with
+`--client`/`--server` modes (selecting the header include and the
 `wayland-scanner` header kind) over one protocol-XML manifest sourced from the core's
 `third-party/`. It is a build-time dev tool, so both the compositor and the shell can vendor or
 reference it without a runtime dependency between them — the marshalling `.c` and the XML are
@@ -167,7 +166,7 @@ registration:
   main-actor frame loop.
 
 Both are general host-embedding seams (any embedder uses them), added to the facade and staged
-in the prebuilt host-cxx archive via `provision-cxx-libs` — the same "compile the C++ once, link
+in the prebuilt host-cxx archive via Collider's typed staging task — the same "compile the C++ once, link
 it downstream" mechanism the invariant requires. The shell links; no host reaches into RN
 internals, and no dead code remains to mislead the next reader.
 

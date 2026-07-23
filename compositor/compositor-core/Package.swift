@@ -24,7 +24,7 @@ let repoRoot = URL(fileURLWithPath: #filePath)
 // ── The Nucleus render native SDK (Skia) ───────────────────────────────────────
 // Consumed from a stable cache path (see the core repo's docs/repo-decomposition.md).
 // This package is a pure Wayland/DRM compositor library — it links zero React, so it
-// consumes only the `render` SDK (Skia). Provisioned by root `tools/nucleus bootstrap`;
+// consumes only the `render` SDK (Skia). Provisioned by root `tools/collider bootstrap`;
 // the link list points at the monorepo core.
 func provisionSDK(_ name: String, links: [(String, String)]) -> String {
     let home = ProcessInfo.processInfo.environment["HOME"] ?? ""
@@ -108,6 +108,7 @@ let package = Package(
     name: "compositor-core",
     // Products consumed by the sibling compositor executable package (compositor/).
     products: [
+        .library(name: "CompositorColliderRecipe", targets: ["CompositorColliderRecipe"]),
         .library(name: "NucleusCompositorRendererLinux", targets: ["NucleusCompositorRendererLinux"]),
         .library(name: "NucleusCompositorRenderRuntime", targets: ["NucleusCompositorRenderRuntime"]),
         .library(name: "NucleusCompositorWaylandRuntime", targets: ["NucleusCompositorWaylandRuntime"]),
@@ -123,6 +124,7 @@ let package = Package(
         .library(name: "NucleusCompositorShell", targets: ["NucleusCompositorShell"]),
     ],
     dependencies: [
+        .package(path: "../../collider"),
         // The Nucleus library package — portable core + app framework (the
         // NucleusUI design system this compositor's shell is built with). This is
         // the compositor's only Nucleus dependency: it links zero React.
@@ -141,6 +143,9 @@ let package = Package(
             path: "../../platform-linux"),
     ],
     targets: [
+        .target(
+            name: "CompositorColliderRecipe",
+            dependencies: [.product(name: "ColliderCore", package: "collider")]),
         // ── Shared value-type / policy leaves ────────────────────────────────────
         .target(
             name: "NucleusCompositorServerTypes",

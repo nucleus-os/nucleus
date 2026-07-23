@@ -1,5 +1,5 @@
 import Glibc
-import NucleusLinuxSession
+import NucleusSessionProtocol
 import Testing
 
 @Suite struct SessionReadinessTests {

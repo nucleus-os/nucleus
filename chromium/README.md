@@ -4,20 +4,19 @@ The Chromium build has one supported public entry point and one production
 configuration:
 
 ```sh
-tools/nucleus chromium doctor
-tools/nucleus chromium bootstrap
-tools/nucleus chromium build
-tools/nucleus chromium test
-tools/nucleus chromium install
+tools/collider browser doctor
+tools/collider browser bootstrap
+tools/collider browser build
+tools/collider browser test
+tools/collider browser install
 ```
 
-`bootstrap` installs its initial apt packages, prepares the pinned source
-generation, and runs Chromium's upstream host dependency installer. It records
-the current swap size but does not require the link-time swap budget. `build`
-performs the complete production build and
-publishes both products. The scripts below `chromium/` and `cef/` are internal
-stages; product selectors, package-only modes, update bypasses, and ad-hoc GN
-overrides are not supported workflows.
+`bootstrap` reports missing packages from `../cef/apt-deps.txt`, including the
+exact `sudo apt-get install` command the user may run, then prepares the pinned
+source generation. It never mutates the host package database. `build`
+performs the complete production build and publishes both products. Product
+selectors, package-only modes, update bypasses, and ad-hoc GN overrides are
+not supported workflows.
 
 ## Fixed architecture
 
@@ -36,16 +35,16 @@ SwiftShader compositor fallback.
 
 The build order is strictly sequential:
 
-1. verify the host and 32 GiB swap contract;
+1. verify required executables and declared package dependencies;
 2. prepare or verify the source generation;
 3. build, package, and validate CEF;
 4. build, package, and validate Nucleus Browser;
-5. apply cache retention and record final disk usage.
+5. apply cache retention.
 
-Chromium budgets a Linux ThinLTO link at roughly 30 GiB. Independent CEF and
-browser link pools therefore never run concurrently. Local Siso work is capped
-at 16 jobs, and `vm.max_map_count`, free disk, free inodes, and swap are checked
-before source or output mutation.
+Independent CEF and browser link pools never run concurrently. Local Siso work
+is capped at 16 jobs. Collider does not impose swap, disk-space, inode, or
+`vm.max_map_count` policy; failures from the actual build and filesystem remain
+authoritative.
 
 ## Identities and publication
 
@@ -68,22 +67,21 @@ installed generations are retained; older recognized generations are removed.
 
 ## Logs and validation
 
-Every command creates:
+Every command uses Collider's shared run registry:
 
 ```text
-~/.cache/nucleus/cef/logs/runs/<timestamp>-<pid>-<operation>/
+<workspace>/.nucleus/runs/<run-id>/
   manifest.json
   run.log
-  <stage>.log
-  storage.log
-~/.cache/nucleus/cef/logs/latest -> runs/<most-recent-run>
+  stages/<task>.log
+<workspace>/.nucleus/latest -> runs/<most-recent-run>
 ```
 
 Signals terminate the active stage process group. Locks prevent concurrent
 source preparation, GN-output mutation, and publication.
 
 Publication gates include source/build identity verification, CEF API hashes,
-CEF consumer compile/link/load, dynamic-library resolution, browser version and
-headless startup, and the focused Ozone/Viz presenter tests. The browser's live
-Wayland/120 Hz/media acceptance remains an explicit user-run validation after
+CEF consumer compile/link/load, dynamic-library resolution, launcher syntax,
+and the focused Ozone/Viz presenter tests. Browser startup and live
+Wayland/120 Hz/media acceptance remain explicit user-run validation after
 installation.

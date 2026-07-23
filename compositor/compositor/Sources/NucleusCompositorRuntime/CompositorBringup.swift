@@ -13,7 +13,7 @@ import NucleusTextBackend
 import NucleusCompositorRendererLinux
 import NucleusCompositorWaylandRuntime
 import NucleusCompositorWindowScene
-import NucleusLinuxSession
+import NucleusSessionProtocol
 import Glibc
 
 // Compositor bring-up + teardown, Swift-owned.

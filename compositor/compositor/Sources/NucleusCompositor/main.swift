@@ -1,6 +1,6 @@
 import Glibc
 import NucleusCompositorRuntime
-import NucleusLinuxSession
+import NucleusSessionProtocol
 
 let status: Int32
 do {

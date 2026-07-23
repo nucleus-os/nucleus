@@ -5,6 +5,7 @@ import PackageDescription
 let package = Package(
     name: "NucleusLinuxPlatform",
     products: [
+        .library(name: "LinuxColliderRecipe", targets: ["LinuxColliderRecipe"]),
         .library(
             name: "NucleusLinuxReactor",
             targets: ["NucleusLinuxReactor"]),
@@ -15,9 +16,6 @@ let package = Package(
         .library(
             name: "NucleusLinuxAccessibility",
             targets: ["NucleusLinuxAccessibility"]),
-        .library(
-            name: "NucleusLinuxSession",
-            targets: ["NucleusLinuxSession"]),
         .executable(
             name: "NucleusSessionSupervisor",
             targets: ["NucleusSessionSupervisor"]),
@@ -30,9 +28,13 @@ let package = Package(
     ],
     dependencies: [
         .package(name: "Nucleus", path: "../core"),
-        .package(path: "../core/third-party/swift-system"),
+        .package(path: "../collider"),
+        .package(path: "../third-party/swift-system"),
     ],
     targets: [
+        .target(
+            name: "LinuxColliderRecipe",
+            dependencies: [.product(name: "ColliderCore", package: "collider")]),
         .target(
             name: "NucleusLinuxReactor",
             dependencies: [
@@ -94,19 +96,21 @@ let package = Package(
                 .strictMemorySafety(),
             ]),
         .target(
-            name: "NucleusLinuxSession",
-            path: "Sources/NucleusLinuxSession"),
-        .target(
             name: "NucleusLinuxSessionC",
             path: "Sources/NucleusLinuxSessionC",
             publicHeadersPath: "include"),
         .executableTarget(
             name: "NucleusSessionSupervisor",
-            dependencies: ["NucleusLinuxSession", "NucleusLinuxSessionC"],
+            dependencies: [
+                "NucleusLinuxSessionC",
+                .product(name: "NucleusSessionProtocol", package: "collider"),
+            ],
             path: "Sources/NucleusSessionSupervisor"),
         .executableTarget(
             name: "NucleusSessionFixture",
-            dependencies: ["NucleusLinuxSession"],
+            dependencies: [
+                .product(name: "NucleusSessionProtocol", package: "collider"),
+            ],
             path: "Tests/Fixtures/NucleusSessionFixture"),
         .executableTarget(
             name: "NucleusLinuxBenchmarks",
@@ -158,9 +162,9 @@ let package = Package(
         .testTarget(
             name: "NucleusLinuxSessionTests",
             dependencies: [
-                "NucleusLinuxSession",
                 "NucleusSessionSupervisor",
                 "NucleusSessionFixture",
+                .product(name: "NucleusSessionProtocol", package: "collider"),
             ],
             path: "Tests/NucleusLinuxSessionTests"),
     ]

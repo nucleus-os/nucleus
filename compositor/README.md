@@ -52,12 +52,14 @@ The `NucleusCompositor` binary and composition root. Lives in a separate package
 The primary development path uses the host toolchain and system libraries:
 
 ```sh
-# Ubuntu-family hosts
-grep -vE '^(#|$)' packages/ubuntu.txt | xargs sudo apt-get install -y
-
-tools/nucleus bootstrap
-tools/nucleus build
+tools/collider doctor runtime
+tools/collider bootstrap
+tools/collider build
 ```
+
+Collider does not mutate the host package database. When a required system
+dependency is absent, it reports the missing dependency so the user can install
+it explicitly.
 
 First-party dependencies use monorepo-relative paths. Independently released bindings such
 as `swift-wayland` remain pinned package dependencies.
@@ -69,14 +71,14 @@ The lower-level commands remain available:
 
 ```sh
 # From the monorepo root
-tools/nucleus bootstrap compositor
+tools/collider bootstrap compositor
 
 # Rebuild
 swift build --package-path compositor-core
 swift build --package-path compositor
 
 # Install the complete compositor + native shell session into one prefix
-tools/nucleus install session
+tools/collider install session
 ```
 
 The root workspace CLI provisions the render SDK through `core/`, then builds
@@ -103,9 +105,9 @@ Notable test targets:
 
 ```sh
 # From a free virtual terminal or display-manager session
-tools/nucleus run
-tools/nucleus run --seconds 20
-tools/nucleus run --scale 1.25
+tools/collider run
+tools/collider run --seconds 20
+tools/collider run --scale 1.25
 ```
 
 The command incrementally builds and stages the compositor, native shell, PAM
@@ -120,13 +122,13 @@ protocols (`wlr-layer-shell`, `wlr-foreign-toplevel-management`,
 
 On multi-GPU hosts, startup selects the unique GPU driving a connected display,
 then uses the PCI boot-VGA hint as a tie-breaker. Use
-`tools/nucleus run --drm-device /dev/dri/renderD…` only when multiple display
+`tools/collider run --drm-device /dev/dri/renderD…` only when multiple display
 GPUs remain genuinely ambiguous or an explicit device is required.
 
 ## Profile
 
 ```sh
-tools/nucleus run --tracy --seconds 20
+tools/collider run --tracy --seconds 20
 ```
 
 Run from a free virtual terminal or a display-manager session.
@@ -147,9 +149,9 @@ session stream to a timestamped file under the workspace `logs/` directory;
 The same runtime entry point owns the other launch-time diagnostics:
 
 ```sh
-tools/nucleus run --sanitize address
-tools/nucleus run --sanitize undefined
-tools/nucleus run --sanitize thread
-tools/nucleus run --vk-validation
-tools/nucleus run --valgrind
+tools/collider run --sanitize address
+tools/collider run --sanitize undefined
+tools/collider run --sanitize thread
+tools/collider run --vk-validation
+tools/collider run --valgrind
 ```

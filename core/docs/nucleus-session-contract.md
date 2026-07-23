@@ -100,7 +100,7 @@ The compositor does not own launcher/session-manager policy. The installed
 launcher and native supervisor are the production session entrypoint.
 
 Runtime policy is a versioned `SessionConfiguration` created by
-`tools/nucleus run`, forwarded through `nucleus-session`, and inherited by both
+`tools/collider run`, forwarded through `nucleus-session`, and inherited by both
 native children from a supervisor-owned descriptor. Scale, present policy, DRM
 selection, Vulkan validation, diagnostics, and wallpaper selection are members
 of that one record. The environment remains responsible only for standard

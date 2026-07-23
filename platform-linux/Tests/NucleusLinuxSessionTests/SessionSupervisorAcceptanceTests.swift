@@ -1,6 +1,6 @@
 import Foundation
 import Glibc
-import NucleusLinuxSession
+import NucleusSessionProtocol
 import Testing
 
 private struct SupervisorFixture {

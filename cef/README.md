@@ -25,14 +25,15 @@ CEF branch `7922`, CEF commit
 Use the workspace entry point:
 
 ```sh
-tools/nucleus chromium doctor
-tools/nucleus chromium bootstrap
-tools/nucleus chromium build
-tools/nucleus chromium test
+tools/collider browser doctor
+tools/collider browser bootstrap
+tools/collider browser build
+tools/collider browser test
 ```
 
-`cef/build.sh` is an internal stage and intentionally exposes no independent
-update, cleanup, product, GN-extra, build-only, or package-only workflow.
+The Collider recipe calls upstream CEF automation only as a pinned leaf
+executor. There is no independent update, cleanup, product, GN-extra,
+build-only, or package-only workflow.
 
 CEF patches live in `patches/`. Generic Chromium and Dawn changes live under
 `../chromium/patches/`. They are applied once while constructing the shared,

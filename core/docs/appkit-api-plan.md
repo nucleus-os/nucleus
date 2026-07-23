@@ -8,14 +8,9 @@ Across every phase boundary the following must hold:
    `NucleusLayers` is not re-exported and is not a client dependency — through the public API
    *or* any privileged one.
 2. **Privilege is a module boundary, not an annotation.** What a client may reach is decided by
-   which module it imports, declared in `Package.swift` and checked by
-   `tools/check-api-tiers.sh`. `@_spi` marks API that is *unstable*, never API that is
+   which module it imports and the dependencies declared in `Package.swift`.
+   `@_spi` marks API that is *unstable*, never API that is
    *privileged*; it grants all-or-nothing access per group, and any client can write the import.
-
-   **SwiftPM does not enforce this on its own.** Every built module lands in one search path, so
-   once a package is depended on anywhere, all of its products are importable whether or not a
-   target declares them — verified by adding an undeclared import and watching it build. The
-   dependency list states intent; the check is what makes it hold.
 3. **NucleusUI is GPU-free to test.** `Application.defaultContext` uses
    `InMemoryCommitSink`; `installStubHost()` supplies stub registrars. Every phase is
    unit-testable with no compositor and no GPU.
@@ -164,7 +159,7 @@ caps — against public `NucleusUI` alone, and its tests are the out-of-package 
 
 Phase 6 closed the last of the parallel paint path, and Phase 7 established the tier boundary:
 `NucleusUI` is the product front door with no SPI, `NucleusUIEmbedder` is the platform-integrator
-API, and `tools/check-api-tiers.sh` enforces the split — SwiftPM does not.
+API, and out-of-package authoring tests exercise the supported public surface.
 
 The remaining phases are additive rather than structural: input (8), layout (9), then the
 text/scroll/editing stack (10–12). Each lands with a real native client, per the principle above.
@@ -178,7 +173,7 @@ target that links the full Skia closure died at `Ld` with `unable to find librar
 -lallocator_base` (plus `allocator_core`, `allocator_shim`, `raw_ptr`), which blocked all
 compositor tests and therefore Phase 1's acceptance gate.
 
-Root cause: `BuildSkia.swift` sets `skia_use_partition_alloc=false` because CEF-enabled hosts
+Root cause: `CoreColliderRecipe.swift` sets `skia_use_partition_alloc=false` because CEF-enabled hosts
 install no process-wide allocator shim, so GN correctly stops emitting those four archives.
 The matching `-l` line was removed from `core/Package.swift` but not from the four packages
 that carry a byte-identical link line.
@@ -186,7 +181,7 @@ that carry a byte-identical link line.
 - Removed the stale allocator link flags from `react-native/Package.swift`,
   `compositor/compositor/Package.swift`, `compositor/compositor-core/Package.swift`, and
   `shell/Package.swift`.
-- Corrected the rationale in `BuildSkia.swift`: the flag stays, but the reason is now that
+- Corrected the rationale in `CoreColliderRecipe.swift`: the flag stays, but the reason is now that
   *nothing* installs a shim and the process allocates through system malloc, so Skia must
   stay neutral rather than become the only PartitionAlloc owner.
 
@@ -492,16 +487,9 @@ compositor test, not by review. The `package` method is now `publishPlacing`, an
 `NucleusUIEmbedderTests` exercises every forwarder, because a module that is almost entirely
 forwarders is exposed to exactly this.
 
-**SwiftPM does not enforce declared target dependencies.** Adding `import NucleusUIEmbedder` to
-the product target built fine, despite the target not declaring it: every built module lands in
-one search path, so once a package is depended on anywhere, all its products are importable.
-The claim that the build graph enforces the boundary was wrong. `tools/check-api-tiers.sh`
-enforces it instead — product-tier code may not import embedder or SDK-internal modules,
-`NucleusUI` may not declare SPI, and nothing may SPI-import `NucleusUI`. It was verified to fail
-on an injected violation, not just to pass.
-
-The gate also caught a real violation while running: a `sed` that added the embedder dependency
-to every matching target had added it to `NucleusShellProduct` itself.
+Package dependency lists document the intended product and embedder tiers. Behavioral tests in
+out-of-package clients exercise the supported public surface without a separate source-policy
+scanner.
 
 **Landed with:** `NucleusUI` free of SPI; `HostedSurface`, `HostedVisualContent`, and
 `PublishedVisualContentKind` gone from core; the three consumers on `NucleusUIEmbedder`; and an
@@ -870,9 +858,8 @@ Tests assert **runtime behavior and contracts, never source-code shape** — no 
 - **Phase 6** — done: RN builds and the whole tree stays green with the committer deleted;
   graphics-state balancing is covered by 5 tests.
 - **Phase 7**: `NucleusShellProduct` creates and publishes its scene through plain public
-  `NucleusUI`. The mechanical gates are that `NucleusUI` contains no `@_spi` declaration, that no
-  target outside the embedder tier imports `NucleusUI` with an SPI annotation, and that
-  `tools/check-api-tiers.sh` rejects an embedder or SDK-internal import from product-tier code.
+  `NucleusUI`. Package dependencies document the product and embedder tiers, while
+  out-of-package product tests exercise the supported authoring surface.
   Publication ordering
   is asserted through the resulting id sequence rather than a content-kind discriminant. Product
   tests observe rendered output or public view state rather than recordings.

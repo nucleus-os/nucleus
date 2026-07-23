@@ -1,7 +1,7 @@
 // Swift owns the complete compositor process lifecycle. The runtime remains
 // main-actor isolated, but its reactor wait suspends that actor so unrelated
 // UI, process, and service tasks can make progress between host events.
-public import NucleusLinuxSession
+public import NucleusSessionProtocol
 
 @MainActor
 public func runNucleusCompositor(

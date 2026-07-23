@@ -9,6 +9,6 @@
 // directly. A separate target compiles fine but silently drops out of the link.
 //
 // The whole client is inert unless TRACY_ENABLE is defined; pass
-// `-Xcc -DTRACY_ENABLE` to `swift build` (`tools/nucleus run --tracy` does)
+// `-Xcc -DTRACY_ENABLE` to `swift build` (`tools/collider run --tracy` does)
 // to compile it in. Without the flag TracyClient.cpp is empty.
 #include "TracyClient.cpp"

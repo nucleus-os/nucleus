@@ -1,30 +1,66 @@
-// swift-tools-version: 6.2
+// swift-tools-version: 6.4
 import PackageDescription
 
 let package = Package(
-    name: "NucleusWorkspace",
+    name: "ColliderWorkspace",
     platforms: [.macOS(.v15)],
     products: [
-        .executable(name: "nucleus-workspace", targets: ["NucleusWorkspace"]),
+        .executable(name: "collider", targets: ["Collider"]),
     ],
     dependencies: [
+        .package(path: "collider"),
+        .package(path: "third-party/swift-argument-parser"),
+        .package(name: "NucleusSwiftPlatform", path: "swift-toolchain"),
+        .package(name: "swift-tracy", path: "swift-tracy"),
+        .package(name: "swift-vulkan", path: "swift-vulkan"),
+        .package(name: "swift-wayland", path: "swift-wayland"),
+        .package(name: "Nucleus", path: "core"),
         .package(name: "NucleusLinuxPlatform", path: "platform-linux"),
+        .package(name: "android-runtime", path: "android-runtime"),
+        .package(name: "NucleusReactNative", path: "react-native"),
+        .package(name: "compositor-core", path: "compositor/compositor-core"),
+        .package(name: "NucleusCompositorApp", path: "compositor/compositor"),
+        .package(name: "NucleusShell", path: "shell"),
+        .package(name: "NucleusBrowser", path: "chromium"),
     ],
     targets: [
         .executableTarget(
-            name: "NucleusWorkspace",
+            name: "Collider",
+            dependencies: ["ColliderCommands"]),
+        .target(
+            name: "ColliderCommands",
             dependencies: [
+                .product(name: "ArgumentParser", package: "swift-argument-parser"),
+                .product(name: "ColliderCore", package: "collider"),
+                .product(name: "ColliderRuntime", package: "collider"),
+                .product(name: "NucleusSessionProtocol", package: "collider"),
                 .product(
-                    name: "NucleusLinuxSession",
-                    package: "NucleusLinuxPlatform"),
+                    name: "SwiftPlatformColliderRecipe",
+                    package: "NucleusSwiftPlatform"),
+                .product(name: "TracyColliderRecipe", package: "swift-tracy"),
+                .product(name: "VulkanColliderRecipe", package: "swift-vulkan"),
+                .product(name: "WaylandColliderRecipe", package: "swift-wayland"),
+                .product(name: "CoreColliderRecipe", package: "Nucleus"),
+                .product(name: "LinuxColliderRecipe", package: "NucleusLinuxPlatform"),
+                .product(name: "AndroidRuntimeColliderRecipe", package: "android-runtime"),
+                .product(name: "ReactNativeColliderRecipe", package: "NucleusReactNative"),
+                .product(name: "CompositorColliderRecipe", package: "compositor-core"),
+                .product(name: "CompositorAppColliderRecipe", package: "NucleusCompositorApp"),
+                .product(name: "ShellColliderRecipe", package: "NucleusShell"),
+                .product(name: "ChromiumColliderRecipe", package: "NucleusBrowser"),
             ]),
         .testTarget(
-            name: "NucleusWorkspaceTests",
+            name: "ColliderCommandsTests",
             dependencies: [
-                "NucleusWorkspace",
-                .product(
-                    name: "NucleusLinuxSession",
-                    package: "NucleusLinuxPlatform"),
+                "ColliderCommands",
+                .product(name: "AndroidRuntimeColliderRecipe", package: "android-runtime"),
+                .product(name: "ChromiumColliderRecipe", package: "NucleusBrowser"),
+                .product(name: "ColliderCore", package: "collider"),
+                .product(name: "CoreColliderRecipe", package: "Nucleus"),
+                .product(name: "NucleusSessionProtocol", package: "collider"),
+                .product(name: "ReactNativeColliderRecipe", package: "NucleusReactNative"),
+                .product(name: "VulkanColliderRecipe", package: "swift-vulkan"),
+                .product(name: "WaylandColliderRecipe", package: "swift-wayland"),
             ]),
     ]
 )

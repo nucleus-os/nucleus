@@ -845,9 +845,9 @@ swift test \
   --package-path compositor/compositor-core \
   -Xswiftc -cxx-interoperability-mode=default \
   $(pkg-config --cflags-only-I xcb-ewmh | sed 's/-I/-Xcc -I/g')
-tools/nucleus doctor
-tools/nucleus build
-tools/nucleus test
+tools/collider doctor
+tools/collider build
+tools/collider test
 ```
 
 Use targeted filters during each phase, then run the complete compositor package suite and top-level non-interactive gates after Phase 14. Do not launch the compositor as an agent-run verification step.

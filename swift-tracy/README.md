@@ -29,7 +29,7 @@ profiling the same way whether the bindings are in-tree or consumed as a depende
 The complete Nucleus runtime build, launch, capture, and export workflow is:
 
 ```sh
-tools/nucleus run --tracy --seconds 20
+tools/collider run --tracy --seconds 20
 ```
 
 ## Layout

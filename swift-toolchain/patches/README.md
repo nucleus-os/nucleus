@@ -1,6 +1,6 @@
 # Patches
 
-`../build.sh` applies these patches to the Swift source workspace after
+The Collider Swift-platform recipe applies these patches to the source workspace after
 `update-checkout` resets each upstream repository. Without them the
 build does not complete cleanly on Ubuntu.
 
@@ -18,7 +18,8 @@ patches/
 
 Each subdirectory corresponds to a workspace repository under
 `~/.cache/nucleus/swift-source/<source-id>/<repo>/`. Patches in a
-subdirectory apply to that repo's root via `patch -p1`.
+subdirectory apply to that repository's root through Collider's typed git
+patch operation.
 
 ## File format
 
@@ -28,22 +29,20 @@ the first `diff --git` line. The header records:
 * A `Subject:` line (one-sentence summary).
 * A paragraph explaining why the patch exists.
 * A `Sentinel:` line naming the unique marker the patch adds to the
-  upstream source. The sentinel exists primarily as documentation;
-  idempotency is enforced by `patch -R --dry-run`, not by grep.
+  upstream source. The sentinel exists primarily as documentation.
 
-The header is human-only; `patch -p1` ignores everything above the
+The header is human-only; `git apply` ignores everything above the
 `diff --git` line.
 
 ## Applying
 
-`build.sh` defines `apply_patches()` and calls it once per repository
+Collider creates one ordered patch task per repository
 after `update-checkout --reset-to-remote`. The helper:
 
 1. Iterates `.patch` files in lexicographic order.
-2. Skips any patch where `patch -R -p1 --dry-run --silent` succeeds
-   (the "new" side of the diff is already present, so the patch has
-   already been applied to this checkout).
-3. Applies the remaining patches with `patch -p1 --silent`.
+2. Applies a patch when `git apply --check` succeeds.
+3. Treats the patch as already applied when
+   `git apply --reverse --check` succeeds.
 4. Fails loudly if a patch neither applies cleanly nor is already
    applied.
 
@@ -63,11 +62,11 @@ validate a patch in isolation before committing it.
    header block per the file format section above. The numeric prefix
    sets the apply order; reserve gaps so future patches can slot in
    between.
-5. Drop the changes from the workspace (`git restore`), then run `patch -p1
-   --dry-run` from the affected upstream checkout with the new patch as input.
+5. Drop the changes from the workspace (`git restore`), then run
+   `git apply --check` from the affected upstream checkout.
 
 ## Removing a patch
 
 1. Delete the `.patch` file.
-2. Run `tools/nucleus toolchain rebuild` — `update-checkout --reset-to-remote` discards the
-   change on its own.
+2. Run `tools/collider toolchain rebuild` — source synchronization discards
+   the change on its own.

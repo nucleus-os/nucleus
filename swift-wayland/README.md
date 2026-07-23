@@ -33,7 +33,7 @@ The full vendored set (62 protocols): core `wayland.xml`, upstream `wayland-prot
 The generated modules are committed. Regenerate after a protocol bump:
 
 ```sh
-swift package generate-wayland --allow-writing-to-package-directory
+tools/collider generate wayland
 ```
 
 `SwiftWaylandGen` is also vended as an executable product so an external consumer can generate a

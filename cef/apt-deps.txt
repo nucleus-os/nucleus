@@ -1,6 +1,6 @@
 # Host packages needed to bootstrap the CEF/Chromium source build.
 # The bulk of Chromium's build dependencies are installed by Chromium's own
-# build/install-build-deps.sh (run by `tools/nucleus chromium bootstrap` after
+# build/install-build-deps.sh (run by `tools/collider browser bootstrap` after
 # source preparation); these are the tools needed before that point.
 git
 curl

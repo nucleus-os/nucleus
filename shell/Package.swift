@@ -19,7 +19,7 @@ let repoRoot = URL(fileURLWithPath: #filePath).deletingLastPathComponent().path
 
 // ── The Nucleus render SDK ─────────────────────────────────────────────────────
 // Same provisioning the compositor uses. Provisioned by the root
-// `tools/nucleus bootstrap` stage graph;
+// `tools/collider bootstrap` stage graph;
 // the link lists here point at monorepo-owned sources.
 func provisionSDK(_ name: String, links: [(String, String)]) -> String {
     let home = ProcessInfo.processInfo.environment["HOME"] ?? ""
@@ -100,7 +100,11 @@ let vulkanHeadersInclude: [String] = [
 
 let package = Package(
     name: "NucleusShell",
+    products: [
+        .library(name: "ShellColliderRecipe", targets: ["ShellColliderRecipe"]),
+    ],
     dependencies: [
+        .package(path: "../collider"),
         // The shared monorepo render/UI core.
         .package(name: "Nucleus", path: "../core"),
         // The Vulkan bindings, extracted from Nucleus into their own package. The shell's
@@ -121,6 +125,9 @@ let package = Package(
         .package(name: "compositor-core", path: "../compositor/compositor-core"),
     ],
     targets: [
+        .target(
+            name: "ShellColliderRecipe",
+            dependencies: [.product(name: "ColliderCore", package: "collider")]),
         .target(
             name: "NucleusShellSignalC",
             path: "Sources/NucleusShellSignalC",
@@ -370,8 +377,8 @@ let package = Package(
                     name: "NucleusLinuxReactor",
                     package: "NucleusLinuxPlatform"),
                 .product(
-                    name: "NucleusLinuxSession",
-                    package: "NucleusLinuxPlatform"),
+                    name: "NucleusSessionProtocol",
+                    package: "collider"),
                 .product(name: "WaylandClient", package: "swift-wayland"),
                 .product(name: "NucleusRenderer", package: "Nucleus"),
                 .product(name: "NucleusRenderModel", package: "Nucleus"),
@@ -431,8 +438,8 @@ let package = Package(
             dependencies: [
                 "NucleusShellRuntime",
                 .product(
-                    name: "NucleusLinuxSession",
-                    package: "NucleusLinuxPlatform"),
+                    name: "NucleusSessionProtocol",
+                    package: "collider"),
                 // The Skia text backend, compiled once in the core and linked here (no
                 // symlink target) — same product the compositor links.
                 .product(name: "NucleusTextBackend", package: "Nucleus"),

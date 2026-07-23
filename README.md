@@ -56,11 +56,11 @@ Nucleus is one monorepo containing independently buildable Swift packages:
 - [`swift-vulkan`](swift-vulkan) — Swift Vulkan bindings (VulkanGen generator + generated typed API + vendored Khronos headers).
 - [`swift-wayland`](swift-wayland) — Swift Wayland protocol bindings (server + client C façades + Swift dispatch).
 - [`swift-tracy`](swift-tracy) — Swift bindings for the Tracy profiler.
-- [`swift-toolchain`](swift-toolchain) and [`swift-android-sdk`](swift-android-sdk) —
-  separate build recipes published as one user-level Swift platform generation.
+- [`swift-toolchain`](swift-toolchain) — the Collider recipe that publishes the
+  host compiler and Android Swift SDK as one user-level platform generation.
 
 The bindings are first-party SwiftPM path dependencies and participate in
-`tools/nucleus build all` and `tools/nucleus test all`. Swift platform rebuilds remain
+`tools/collider build all` and `tools/collider test all`. Swift platform rebuilds remain
 explicit and publish the host toolchain and Android SDK together; ordinary workspace builds
 consume the active generation.
 
@@ -77,9 +77,9 @@ If the repository was cloned without `--recurse-submodules`, `bootstrap` initial
 required third-party submodules.
 
 ```sh
-tools/nucleus bootstrap
-tools/nucleus build all
-tools/nucleus test all
+tools/collider bootstrap
+tools/collider build all
+tools/collider test all
 ```
 
 It selects the installed Nucleus Swift toolchain and runs the component
@@ -91,13 +91,13 @@ The same Swift CLI owns the cross-component workflows that previously lived in
 component shell scripts:
 
 ```sh
-tools/nucleus android build
-tools/nucleus toolchain rebuild
-tools/nucleus install session
-tools/nucleus run
+tools/collider android build
+tools/collider toolchain rebuild
+tools/collider install session
+tools/collider run
 ```
 
-`tools/nucleus run` is the complete development runtime entry point. It
+`tools/collider run` is the complete development runtime entry point. It
 incrementally builds the compositor, native Swift shell, PAM helper, and session
 launcher into `.install/`, then starts that installed session. Launch it from a
 free virtual terminal or a display-manager session because Nucleus owns the DRM
@@ -107,14 +107,14 @@ Runtime diagnostics use the same entry point, so the instrumented binaries and
 the session being measured cannot drift apart:
 
 ```sh
-tools/nucleus run --seconds 20
-tools/nucleus run --tracy --seconds 20
-tools/nucleus run --sanitize address
-tools/nucleus run --vk-validation
-tools/nucleus run --valgrind
+tools/collider run --seconds 20
+tools/collider run --tracy --seconds 20
+tools/collider run --sanitize address
+tools/collider run --vk-validation
+tools/collider run --valgrind
 ```
 
-Use `tools/nucleus run --help` for capture location, presentation mode, render
+Use `tools/collider run --help` for capture location, presentation mode, render
 benchmark, sanitizer, optimization, and compositor-argument options.
 Every run streams the complete build and session output to a UTC-timestamped
 file under `logs/`; `logs/latest` is a symlink to the most recent run, including

@@ -3,7 +3,7 @@
 // The out-of-tree React Native platform for Nucleus (`NucleusReactNative`).
 // Extracted from the `nucleus` core repo: this package owns only the RN slice —
 // the Hermes/JSI + folly C++ bridge, the Fabric runtime host, the Swift RN
-// runtime modules, and the RN build/provisioning command plugins. It consumes
+// runtime modules, and the RN native build tools. It consumes
 // the monorepo core at `../core` as a local SwiftPM package, consuming the
 // render/UI-core targets (NucleusUI, NucleusRenderer, …) as products from there.
 // The native C++ stack is consumed through the same versioned native SDKs at a
@@ -19,66 +19,19 @@ import Foundation
 let repoRoot = URL(fileURLWithPath: #filePath).deletingLastPathComponent().path
 
 // ── The Nucleus native SDKs (render + RN) ──────────────────────────────────────
-// Provision one named SDK under the shared cache root as symlinks into the tree (a
-// no-op in a consumer repo, which pre-provisions real files). `links` skip a missing
-// target; `forceLinks` tolerate a not-yet-existing target — the staged host-cxx archive
-// (.cxx-build) is produced by `provision-cxx-libs` AFTER this eval, so its symlink is
-// created dangling and resolves once staging runs.
-func provisionSDK(_ name: String, links: [(String, String)], forceLinks: [(String, String)] = []) -> String {
-    let home = ProcessInfo.processInfo.environment["HOME"] ?? ""
-    let sdk = home + "/.cache/nucleus/nucleus-native-sdk/" + name
-    let fm = FileManager.default
-    func mk(_ path: String) {
-        try? fm.createDirectory(atPath: (path as NSString).deletingLastPathComponent,
-                                withIntermediateDirectories: true)
-    }
-    for (dest, target) in links {
-        let path = sdk + "/" + dest
-        guard fm.fileExists(atPath: target) else { continue }
-        if let existing = try? fm.destinationOfSymbolicLink(atPath: path) {
-            if existing == target { continue }
-            try? fm.removeItem(atPath: path)
-        } else if fm.fileExists(atPath: path) { continue }
-        mk(path); try? fm.createSymbolicLink(atPath: path, withDestinationPath: target)
-    }
-    for (dest, target) in forceLinks {
-        let path = sdk + "/" + dest
-        if let existing = try? fm.destinationOfSymbolicLink(atPath: path) {
-            if existing == target { continue }
-            try? fm.removeItem(atPath: path)
-        } else if fm.fileExists(atPath: path) { continue }
-        mk(path); try? fm.createSymbolicLink(atPath: path, withDestinationPath: target)
-    }
-    return sdk
-}
+let environment = ProcessInfo.processInfo.environment
+let cacheRoot = environment["XDG_CACHE_HOME"]
+    ?? (environment["HOME"].map { $0 + "/.cache" } ?? "/tmp")
+let nativeSDKRoot = environment["NUCLEUS_NATIVE_SDK_ROOT"]
+    ?? cacheRoot + "/nucleus/nucleus-native-sdk"
 // The render SDK — Skia Graphite archives + headers and the Skia text-backend source.
 // Owned by the nucleus core repo; here its link targets point INTO the nucleus
 // monorepo core (repoRoot + "/../core/…").
-let renderSDK = provisionSDK("render", links: [
-    ("include/skia", repoRoot + "/../core/third-party/skia"),
-    ("lib/skia-graphite", repoRoot + "/../core/.skia-build/graphite"),
-    ("include/skia-text", repoRoot + "/../core/render-cxx/skia"),
-])
+let renderSDK = nativeSDKRoot + "/render"
 // The RN SDK — Hermes/folly/Fabric headers + built archives, the RN facade bridge +
 // runtime headers, and the staged host-cxx archive. Owned by THIS package: its link
 // targets point into this repo's own third-party/ + .rn-build/ (no /nucleus prefix).
-let rnSDK = provisionSDK("rn", links: [
-    ("include/hermes", repoRoot + "/third-party/hermes"),
-    ("include/folly", repoRoot + "/third-party/folly"),
-    ("include/boost", repoRoot + "/third-party/boost"),
-    ("include/glog", repoRoot + "/third-party/glog"),
-    ("include/glog-gen", repoRoot + "/.rn-build/glog"),
-    ("include/rn-gen", repoRoot + "/.rn-build/include"),
-    ("include/rn-codegen", repoRoot + "/.rn-build/generated"),
-    ("include/fmt", repoRoot + "/third-party/fmt"),
-    ("include/fast_float", repoRoot + "/third-party/fast_float"),
-    ("include/react-native", repoRoot + "/third-party/react-native"),
-    ("lib/rn", repoRoot + "/.rn-build"),
-    ("include/react-bridge", repoRoot + "/swiftpm/cmodules/NucleusReactRuntimeCxxBridge"),
-    ("include/react-runtime", repoRoot + "/swift/Sources/NucleusReactRuntime/cxx"),
-], forceLinks: [
-    ("lib/nucleus-cxx-libs", repoRoot + "/.cxx-build"),
-])
+let rnSDK = nativeSDKRoot + "/rn"
 
 let skiaRoot = renderSDK + "/include/skia"          // the Skia source/header tree
 let skiaLibDir = renderSDK + "/lib/skia-graphite"   // the GN/Ninja-built archive set
@@ -142,8 +95,8 @@ func pkgConfig(_ args: [String]) -> [String] {
 // React Native C++ stack.
 // Compile flags for the Hermes-JSI + folly bridge: the Hermes API/jsi headers,
 // folly + its deps (boost headers, glog generated+source, double-conversion via a
-// prefix symlink, fmt, fast_float), and folly's mobile defines. Built by the
-// Build{Hermes,RNSupportLibs,ReactNativeCxx} command plugins into .rn-build/.
+// prefix symlink, fmt, fast_float), and folly's mobile defines. Collider's
+// ReactNativeColliderRecipe tasks provision these into .rn-build/.
 let rnBridgeCxxFlags: [String] = [
     "-std=c++20",
     "-I", hermesInc + "/API",
@@ -170,7 +123,7 @@ let icuLinkFlags = pkgConfig(["--libs", "icu-uc", "icu-i18n"])
 // Hermes the consumer must.
 let icuRpathFlags = pkgConfig(["--variable=libdir", "icu-uc"]).flatMap { ["-Xlinker", "-rpath", "-Xlinker", $0] }
 // Link the GN/CMake-built RN stack fully statically: the Hermes lean VM + jsi
-// closure merged into one archive by the BuildHermes plugin, plus the static
+// closure merged into one archive by the Collider Hermes task, plus the static
 // folly/glog/fmt/double-conversion (mutually recursive → one group). No
 // libhermes_lean.so / libjsi.so, so no rpath. libc++ comes from the Swift
 // toolchain; ICU is a system shared lib.
@@ -278,6 +231,7 @@ let package = Package(
     // React Native runtime — statically linked into the compositor (no
     // separate host .so). The RN Swift/C++ bridge + the host C++ impl.
     products: [
+        .library(name: "ReactNativeColliderRecipe", targets: ["ReactNativeColliderRecipe"]),
         .library(name: "NucleusReactRuntime", targets: ["NucleusReactRuntime"]),
         .executable(
             name: "NucleusReactThreadSanitizerHarness",
@@ -290,80 +244,18 @@ let package = Package(
     ],
     // The monorepo render/UI core.
     dependencies: [
+        .package(path: "../collider"),
         .package(name: "Nucleus", path: "../core"),
         .package(name: "swift-tracy", path: "../swift-tracy"),
     ],
     targets: [
-        // Build/provisioning command plugins run out of band so consumers link
-        // prebuilt artifacts.
-        // Regenerates RN's FBReactNativeSpec through upstream APIs into
-        // .rn-build/generated. Run once per RN version bump:
-        //   swift package generate-rn-spec --allow-writing-to-package-directory
-        .plugin(
-            name: "GenerateRNSpec",
-            capability: .command(
-                intent: .custom(
-                    verb: "generate-rn-spec",
-                    description: "Regenerate FBReactNativeSpec into .rn-build/generated"
-                ),
-                permissions: [.writeToPackageDirectory(reason: "Emit FBReactNativeSpec into .rn-build/generated")]
-            ),
-            path: "swiftpm/plugins/GenerateRNSpec"
-        ),
-        // Builds the Hermes JS runtime and hermesc (the first link in the React Native
-        // C/C++ chain):
-        //   swift package build-hermes --allow-writing-to-package-directory
-        .plugin(
-            name: "BuildHermes",
-            capability: .command(
-                intent: .custom(
-                    verb: "build-hermes",
-                    description: "Build Hermes (lean VM + hermesc) via its upstream CMake"
-                ),
-                permissions: [.writeToPackageDirectory(reason: "Build Hermes into .rn-build/hermes")]
-            ),
-            path: "swiftpm/plugins/BuildHermes"
-        ),
-        // Builds leaf RN support libraries (fmt + double-conversion; fast_float is
-        // header-only):
-        //   swift package build-rn-support --allow-writing-to-package-directory
-        .plugin(
-            name: "BuildRNSupportLibs",
-            capability: .command(
-                intent: .custom(
-                    verb: "build-rn-support",
-                    description: "Build the leaf RN C++ support libs (fmt, double-conversion)"
-                ),
-                permissions: [.writeToPackageDirectory(reason: "Build RN support libs into .rn-build/")]
-            ),
-            path: "swiftpm/plugins/BuildRNSupportLibs"
-        ),
-        // Builds the RN-curated C++ layer and ReactCommon JSI. Run after
-        // build-rn-support:
-        //   swift package build-rn-cxx --allow-writing-to-package-directory
-        .plugin(
-            name: "BuildReactNativeCxx",
-            capability: .command(
-                intent: .custom(
-                    verb: "build-rn-cxx",
-                    description: "Build the RN C++ layer (glog, folly_runtime, jsi)"
-                ),
-                permissions: [.writeToPackageDirectory(reason: "Build the RN C++ layer into .rn-build/")]
-            ),
-            path: "swiftpm/plugins/BuildReactNativeCxx"
-        ),
-        // Stage the core-owned C++ host archives (NucleusReactRuntimeHostCxx) into
-        // .cxx-build so a downstream executable links them instead of recompiling —
-        // run after a build: swift package provision-cxx-libs <debug|release>
-        // --allow-writing-to-package-directory
-        .plugin(
-            name: "ProvisionCxxLibs",
-            capability: .command(
-                intent: .custom(verb: "provision-cxx-libs", description: "Stage core C++ host archives into .cxx-build for downstream linking"),
-                permissions: [.writeToPackageDirectory(reason: "Stage host-cxx archives into .cxx-build")]
-            ),
-            path: "swiftpm/plugins/ProvisionCxxLibs"
-        ),
+        .target(
+            name: "ReactNativeColliderRecipe",
+            dependencies: [.product(name: "ColliderCore", package: "collider")]),
+        // Collider builds Hermes and hermesc as the first React Native C/C++ task.
+        // Collider provisions fmt, double-conversion, glog, folly, JSI, and
+        // ReactCommon through the ReactNativeColliderRecipe target.
+        // Collider stages NucleusReactRuntimeHostCxx into .cxx-build.
 
         // ── The RN C++ facade cmodule. A SwiftPM-owned cmodule dir with the real
         // headers in place; loaded by the Swift RN modules via a manual
@@ -379,8 +271,7 @@ let package = Package(
         // NucleusReactNativeCxxTests
         // links the whole GN/CMake-built native stack (Hermes + folly/glog +
         // support libs) and runs it (a Hermes JSI runtime + a folly round-trip).
-        // Build the native stack first via the build-hermes / build-rn-support /
-        // build-rn-cxx command plugins.
+        // Collider provisions the native stack before this target builds.
         .target(
             name: "NucleusReactNativeCxxBridge",
             path: "swift/Sources/NucleusReactNativeCxxBridge",

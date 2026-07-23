@@ -195,7 +195,7 @@ from the executable build graph.
 - [x] Build candidate-hosted developer products in dependency order.
 - [x] Enforce product, linkage, functional, and official-capability parity
   before publication.
-- [x] Expose and verify the complete workflow through `tools/nucleus`.
+- [x] Expose and verify the complete workflow through `tools/collider`.
 - [ ] Complete fresh Linux and macOS qualification.
 
 ## Phase 1: Make the build graph the installed product contract
@@ -359,15 +359,15 @@ Keep validation workload separate from installed product selection:
 - An exhaustive qualification entry point runs the extended upstream suites
   without changing which products are installed.
 
-## Phase 8: Integrate the contract into `tools/nucleus`
+## Phase 8: Integrate the contract into `tools/collider`
 
 Expose the complete workflow through the existing top-level command:
 
-- `tools/nucleus doctor` verifies sources, submodules, host prerequisites,
+- `tools/collider doctor` verifies sources, submodules, host prerequisites,
   component revisions, and product-manifest consistency.
-- `tools/nucleus build` constructs, assembles, validates, and atomically
+- `tools/collider build` constructs, assembles, validates, and atomically
   publishes the complete toolchain as part of the staged bootstrap graph.
-- `tools/nucleus test` runs the functional toolchain and Nucleus integration
+- `tools/collider test` runs the functional toolchain and Nucleus integration
   gates.
 - A parity report lists required, found, mismatched, missing, and
   Nucleus-specific capabilities for the current candidate or installed
@@ -388,5 +388,5 @@ The plan is complete when a fresh Linux candidate and a fresh macOS candidate:
 5. Pass Swift Format, DocC, and WasmKit functional tests.
 6. Compile with dynamic, static, and embedded Swift runtimes.
 7. Advertise the official LLVM backend set.
-8. Build and test Nucleus through `tools/nucleus`.
+8. Build and test Nucleus through `tools/collider`.
 9. Publish atomically with no bootstrap or temporary-path references.

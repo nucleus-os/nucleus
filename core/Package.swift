@@ -9,7 +9,7 @@
 // the pure-Swift shared-type/
 // protocol leaves first, then the C-façade (systemLibrary) targets, the cxx-interop
 // render/RN modules. External C/C++ dependencies (Skia Graphite, ReactCommon/Hermes/
-// folly) are produced by command plugins into staging dirs (.skia-build/, .rn-build/)
+// folly) are produced by Collider recipes into staging dirs (.skia-build/, .rn-build/)
 // and linked from the consuming target.
 
 import PackageDescription
@@ -32,50 +32,15 @@ let repoRoot = URL(fileURLWithPath: #filePath).deletingLastPathComponent().path
 // stack was extracted to its own repo, which owns the RN SDK. The compositor consumes
 // only the render SDK. Mirrors the provisioned Swift Android SDK model (~/.cache/nucleus/…).
 //
-// In THIS (core) repo the SDK auto-provisions as symlinks into the tree on first
-// manifest eval; a consumer repo pre-provisions it with real files. Either way the
-// manifests only ever see `renderSDK + "/…"`.
-// Provision one named SDK under the shared cache root as symlinks into the tree (a
-// no-op in a consumer repo, which pre-provisions real files). `links` skip a missing
-// target; `forceLinks` tolerate a not-yet-existing target, creating the symlink dangling
-// so it resolves once the out-of-band staging that produces the target runs.
-func provisionSDK(_ name: String, links: [(String, String)], forceLinks: [(String, String)] = []) -> String {
-    let home = ProcessInfo.processInfo.environment["HOME"] ?? ""
-    let sdk = home + "/.cache/nucleus/nucleus-native-sdk/" + name
-    let fm = FileManager.default
-    func mk(_ path: String) {
-        try? fm.createDirectory(atPath: (path as NSString).deletingLastPathComponent,
-                                withIntermediateDirectories: true)
-    }
-    for (dest, target) in links {
-        let path = sdk + "/" + dest
-        guard fm.fileExists(atPath: target) else { continue }
-        if let existing = try? fm.destinationOfSymbolicLink(atPath: path) {
-            if existing == target { continue }
-            try? fm.removeItem(atPath: path)
-        } else if fm.fileExists(atPath: path) { continue }
-        mk(path); try? fm.createSymbolicLink(atPath: path, withDestinationPath: target)
-    }
-    for (dest, target) in forceLinks {
-        let path = sdk + "/" + dest
-        if let existing = try? fm.destinationOfSymbolicLink(atPath: path) {
-            if existing == target { continue }
-            try? fm.removeItem(atPath: path)
-        } else if fm.fileExists(atPath: path) { continue }
-        mk(path); try? fm.createSymbolicLink(atPath: path, withDestinationPath: target)
-    }
-    return sdk
-}
 // The render SDK — Skia Graphite archives + headers and the Skia text-backend source.
 // Owned by this repo; consumed by the render/UI targets, platform-android, and the
 // compositor.
-let renderSDK = provisionSDK("render", links: [
-    ("include/skia", repoRoot + "/third-party/skia"),
-    ("lib/skia-graphite", repoRoot + "/.skia-build/graphite"),
-    ("include/skia-text", repoRoot + "/render-cxx/skia"),
-], forceLinks: [
-    ("lib/skia-graphite-android-arm64", repoRoot + "/.skia-build/android-arm64"),
-])
+let environment = ProcessInfo.processInfo.environment
+let cacheRoot = environment["XDG_CACHE_HOME"]
+    ?? (environment["HOME"].map { $0 + "/.cache" } ?? "/tmp")
+let nativeSDKRoot = environment["NUCLEUS_NATIVE_SDK_ROOT"]
+    ?? cacheRoot + "/nucleus/nucleus-native-sdk"
+let renderSDK = nativeSDKRoot + "/render"
 
 let skiaRoot = renderSDK + "/include/skia"          // the Skia source/header tree
 let skiaLibDir = renderSDK + "/lib/skia-graphite"   // the GN/Ninja-built archive set
@@ -159,6 +124,7 @@ let package = Package(
     // dependencies so `swift test` (which builds the whole package under a global
     // C++-interop flag) is unaffected.
     products: [
+        .library(name: "CoreColliderRecipe", targets: ["CoreColliderRecipe"]),
         .library(name: "NucleusAppHostBundle", targets: ["NucleusAppHostBundle"]),
         .library(name: "NucleusRenderModel", targets: ["NucleusRenderModel"]),
         .library(name: "NucleusRenderer", targets: ["NucleusRenderer"]),
@@ -187,6 +153,7 @@ let package = Package(
             targets: ["NucleusCoreThreadSanitizerHarness"]),
     ],
     dependencies: [
+        .package(path: "../collider"),
         // The Vulkan bindings (VulkanGen generator + generated typed API + the raw-C
         // façade with vendored Khronos headers) were extracted to their own package.
         // Targets that import Vulkan / VulkanC depend on it directly;
@@ -198,6 +165,9 @@ let package = Package(
         .package(name: "swift-tracy", path: "../swift-tracy"),
     ],
     targets: [
+        .target(
+            name: "CoreColliderRecipe",
+            dependencies: [.product(name: "ColliderCore", package: "collider")]),
         // ── Shared-type leaves: public value structs + enums + constants, no deps. ─
         .target(
             name: "NucleusTypes",
@@ -310,20 +280,8 @@ let package = Package(
         ),
         // The generated Wayland C modules live in compositor-core with the Wayland substrate.
         // the Skia headers (from the native SDK), exposing the nucleus::skia C++ API
-        // the renderer imports. Skia's archive set (.skia-build/graphite, → the SDK's
-        // lib/skia-graphite) is built by the `build-skia` COMMAND plugin — provisioned
-        // once, out of band, NOT on every target build. That decoupling is what lets a
-        // consuming package/repo build against the prebuilt SDK without triggering (or
-        // being able to satisfy) a Skia build. Provision with:
-        //   swift package build-skia --allow-writing-to-package-directory
-        .plugin(
-            name: "BuildSkia",
-            capability: .command(
-                intent: .custom(verb: "build-skia", description: "Build the Skia Graphite archive set into .skia-build/graphite"),
-                permissions: [.writeToPackageDirectory(reason: "Build Skia into .skia-build/graphite")]
-            ),
-            path: "swiftpm/plugins/BuildSkia"
-        ),
+        // the renderer imports. Collider provisions the Skia archive set into
+        // .skia-build/graphite outside ordinary SwiftPM target builds.
         .target(
             name: "NucleusSkiaGraphiteBridge",
             path: "swift/Sources/NucleusSkiaGraphite/cxx",
@@ -337,16 +295,7 @@ let package = Package(
                 .unsafeFlags(skiaAndroidLinkFlags, .when(platforms: [.android])),
             ]
         ),
-        // Cross-compile the Android native Vulkan Graphite archive set — the
-        // `build-skia-android` command plugin, provisioned out of band like build-skia.
-        .plugin(
-            name: "BuildSkiaAndroid",
-            capability: .command(
-                intent: .custom(verb: "build-skia-android", description: "Cross-build the Android Skia archive set into .skia-build/android-arm64"),
-                permissions: [.writeToPackageDirectory(reason: "Build Android Skia into .skia-build/android-arm64")]
-            ),
-            path: "swiftpm/plugins/BuildSkiaAndroid"
-        ),
+        // Collider also provisions the Android Vulkan Graphite archive set.
         // C++ interop and links the full GN-built Skia archive set, proving the
         // renderer's Skia link end to end (a real raster Skia op runs).
         .testTarget(

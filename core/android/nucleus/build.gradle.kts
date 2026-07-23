@@ -29,7 +29,7 @@ val nucleusSourceId = providers.gradleProperty("nucleus.swiftSourceId").orElse("
 // Cross-compile libnucleus-android.so via SwiftPM (the platform-android package)
 // using the paired Swift platform generation selected by the workspace entry
 // point, then verify the JNI export contract.
-val nucleusCommand = workspaceRootFile.resolve("tools/nucleus")
+val nucleusCommand = workspaceRootFile.resolve("tools/collider")
 val nucleusMinSdkVersion = providers.gradleProperty("nucleus.minSdk").orElse(libs.versions.minSdk)
 val nucleusTargetSdkVersion = providers.gradleProperty("nucleus.targetSdk").orElse(libs.versions.targetSdkApi)
 

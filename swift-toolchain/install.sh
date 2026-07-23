@@ -89,7 +89,7 @@ uninstall() {
   echo " were not touched.)"
 }
 
-# Validate that static host-tool link metadata was packaged by build.sh. The
+# Validate that static host-tool link metadata was packaged by Collider. The
 # installer never repairs or augments artifacts.
 require_static_stdlib_args() {
   local usr="$1"
@@ -134,7 +134,7 @@ install() {
     echo "Tarball not found at: $tarball" >&2
     echo "" >&2
     echo "Build it first:" >&2
-    echo "  cd $script_dir && ./build.sh" >&2
+    echo "  tools/collider toolchain rebuild" >&2
     echo "or set NUCLEUS_SWIFT_TARBALL=/path/to/tarball.tar.gz" >&2
     exit 1
   fi

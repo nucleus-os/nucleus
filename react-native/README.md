@@ -37,24 +37,16 @@ This package provisions the **RN SDK** and consumes the **render SDK** from `../
 
 ### Provisioning
 
-The RN C++ stack is built by command plugins, provisioned out of band:
+Collider provisions the RN C++ stack and its generated specification:
 
 ```sh
-# 1. Build Hermes (lean VM + hermesc)
-swift package build-hermes --allow-writing-to-package-directory
+# Provision Hermes, support libraries, ReactCommon, and the native SDK.
+tools/collider bootstrap rn
 
-# 2. Build support libs (fmt, double-conversion)
-swift package build-rn-support --allow-writing-to-package-directory
+# Regenerate RN codegen independently after an RN version bump.
+tools/collider generate rn-spec
 
-# 3. Build RN C++ layer (glog, folly_runtime, jsi)
-swift package build-rn-cxx --allow-writing-to-package-directory
-
-# 4. Regenerate RN codegen (once per RN version bump)
-swift package generate-rn-spec --allow-writing-to-package-directory
-
-# 5. Stage host-cxx archives for downstream linking
-swift package provision-cxx-libs debug --allow-writing-to-package-directory
-swift package provision-cxx-libs release --allow-writing-to-package-directory
+# Host-C++ archives are staged as part of bootstrap.
 ```
 
 ### Third-party dependencies
@@ -76,7 +68,7 @@ third-party/boost/          (vendored, header-only)
 
 ```sh
 # From the monorepo root
-tools/nucleus bootstrap rn
+tools/collider bootstrap rn
 
 # Rebuild
 source ../tools/host-env.sh
@@ -104,7 +96,8 @@ Notable test targets:
 swift/Sources/          Swift library targets (NucleusReactRuntime, NucleusReactRuntimeCxx)
 swift/Tests/            Test targets (FabricTests, CxxTests)
 third-party/            RN native stack submodules + vendored deps
-swiftpm/plugins/        Command plugins (BuildHermes, BuildRNSupportLibs, BuildReactNativeCxx, …)
+Sources/ReactNativeColliderRecipe/  Collider-owned native and Swift build recipes
+swiftpm/plugins/        Temporary Hermes plugin adapter
 swiftpm/cmodules/       C module maps (NucleusReactRuntimeCxxBridge, NucleusReactFabricSmokeC)
 swiftpm/shims/          Swift→C++ header shim for the host C++ target
 tools/                  Bootstrap script

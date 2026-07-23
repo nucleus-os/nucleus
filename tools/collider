@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+workspace_root="$(cd "$script_dir/.." && pwd)"
+export NUCLEUS_WORKSPACE_ROOT="$workspace_root"
+
+# The first platform generation may be built by a Swift 6.4 bootstrap compiler.
+# Every other workflow uses the active Nucleus toolchain selected by host-env.
+if [[ "${1:-}" == toolchain && "${2:-}" == rebuild ]]; then
+  source_id="${NUCLEUS_SWIFT_SOURCE_ID:-release-6.4.x}"
+  platform_id="$source_id"
+  if [[ "$(uname -s)" == Darwin ]]; then platform_id="$source_id-macos"; fi
+  user_platform="${XDG_CACHE_HOME:-$HOME/.cache}/nucleus/swift-platforms/$platform_id/current/toolchain/usr"
+  if [[ ( -n "${NUCLEUS_SWIFT_TOOLCHAIN:-}" && -x "$NUCLEUS_SWIFT_TOOLCHAIN/bin/swift-build" ) ||
+        -x "$user_platform/bin/swift-build" ]]; then
+    source "$workspace_root/tools/host-env.sh"
+  elif ! command -v swift >/dev/null 2>&1; then
+    echo "error: Swift 6.4 is required on PATH to create the first Nucleus toolchain generation" >&2
+    exit 127
+  fi
+else
+  source "$workspace_root/tools/host-env.sh"
+fi
+
+swift build --package-path "$workspace_root" --product collider >&2
+collider_bin="$(swift build --package-path "$workspace_root" --show-bin-path)/collider"
+exec "$collider_bin" "$@"

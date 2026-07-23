@@ -26,7 +26,8 @@ import NucleusReactFabricSmokeC
 
         let hermesc = "\(repoRoot)/.rn-build/hermes/bin/hermesc"
         // hermesc links libc++ (clang default); put its dir on the loader path —
-        // the same fix BuildHermes applies for the build-time hermesc invocation.
+        // the same fix Collider's Hermes task applies during the build-time
+        // hermesc invocation.
         var env = ProcessInfo.processInfo.environment
         if let dir = try libcxxDir() {
             env["LD_LIBRARY_PATH"] = [dir, env["LD_LIBRARY_PATH"]].compactMap { $0 }.joined(separator: ":")

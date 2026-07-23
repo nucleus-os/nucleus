@@ -1,6 +1,6 @@
 import FoundationEssentials
 import Glibc
-import NucleusLinuxSession
+import NucleusSessionProtocol
 import NucleusLinuxSessionC
 
 private enum SupervisorFailure: Error, CustomStringConvertible {

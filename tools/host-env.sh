@@ -13,7 +13,7 @@ fi
 
 if [[ -z "$nucleus_toolchain" ]]; then
   echo "error: the Nucleus Swift 6.4 toolchain is not installed" >&2
-  echo "       run tools/nucleus toolchain rebuild or set NUCLEUS_SWIFT_TOOLCHAIN" >&2
+  echo "       run tools/collider toolchain rebuild or set NUCLEUS_SWIFT_TOOLCHAIN" >&2
   return 127 2>/dev/null || exit 127
 fi
 
@@ -26,6 +26,7 @@ else
   export SWIFT_LIBRARY_PATH="$nucleus_toolchain/lib/swift/linux"
 fi
 export PATH="$nucleus_toolchain/bin:$PATH"
+export SWIFTCI_USE_LOCAL_DEPS=1
 : "${SWIFT_BACKTRACE:=enable=no}"
 export SWIFT_BACKTRACE
 

@@ -70,7 +70,7 @@ if [[ -e "$system_sandbox" ]]; then
 fi
 if [[ -z "${CHROME_DEVEL_SANDBOX:-}" ]] &&
    ! user_namespace_sandbox_works; then
-  echo "Nucleus Browser has no usable process sandbox; run tools/nucleus chromium install" >&2
+  echo "Nucleus Browser has no usable process sandbox; run tools/collider browser install" >&2
   exit 1
 fi
 

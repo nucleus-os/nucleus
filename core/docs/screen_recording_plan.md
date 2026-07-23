@@ -283,7 +283,7 @@ Strictly sequential — each phase lands and is verified in isolation before the
 The widely-deployed adapter lands first because it unblocks the largest set of tools (grim, slurp+grim, current wf-recorder, kooha) with the smallest additional work — the engine already does everything; this adapter is just request handling + buffer import.
 
 - Vendor `wlr-screencopy-unstable-v1.xml` into `third-party/protocols/` (not in upstream wayland-protocols)
-- Add it to the `NucleusCompositorGenerateWaylandC` plugin's protocol list and regenerate the committed Wayland C bindings
+- Vendor the XML under `swift-wayland/Protocols` and run `tools/collider generate wayland`
 - `src/compositor/wayland/wlr_screencopy.zig` — manager + frame objects; SHM and DMA-BUF buffer import; drives `SCStream` via engine
 - Register globals in `WaylandServer.initProtocolGlobals()`
 - Verification: `grim primary.png` produces a correct screenshot; `wf-recorder -o primary.mp4` records primary output; SHM and DMA-BUF paths both work
@@ -292,7 +292,7 @@ The widely-deployed adapter lands first because it unblocks the largest set of t
 
 The modern adapter, landing alongside the legacy one so newer client builds get the standardized path.
 
-- Add `ext-image-capture-source-v1`, `ext-output-image-capture-source-v1`, `ext-image-copy-capture-v1` to the `NucleusCompositorGenerateWaylandC` plugin's protocol list and regenerate (window-side protocols to phase 7)
+- Vendor `ext-image-capture-source-v1`, `ext-output-image-capture-source-v1`, and `ext-image-copy-capture-v1` under `swift-wayland/Protocols`, then run `tools/collider generate wayland` (window-side protocols remain in phase 7)
 - `src/compositor/wayland/image_capture_source.zig` — base capture source
 - `src/compositor/wayland/output_image_capture_source.zig` — `wl_output` → source
 - `src/compositor/wayland/image_copy_capture.zig` — manager + session + frame objects; negotiates buffer formats, imports client buffers (SHM + DMA-BUF), drives `SCStream` via engine
@@ -304,7 +304,7 @@ The modern adapter, landing alongside the legacy one so newer client builds get 
 Small follow-up adapter for GPU-zero-copy OBS configurations and `gpu-screen-recorder`.
 
 - Vendor `wlr-export-dmabuf-unstable-v1.xml` into `third-party/protocols/`
-- Add it to the `NucleusCompositorGenerateWaylandC` plugin's protocol list and regenerate the Wayland C bindings
+- Vendor the XML under `swift-wayland/Protocols` and run `tools/collider generate wayland`
 - `src/compositor/wayland/wlr_export_dmabuf.zig` — manager + frame objects; exports `SCStream` destination texture's DMA-BUF FD per frame
 - Verification: OBS configured for "Wayland (DMA-BUF)" capture source records primary output zero-copy; `gpu-screen-recorder -w screen` records correctly
 
@@ -405,7 +405,7 @@ Both foreign-toplevel-list variants land, plus the window-capture sides of phase
 - `src/compositor/capture/PortalBackend.zig` (phase 9)
 - `src/compositor/capture/VideoEncoder.zig`, `ColorConvert.zig`, `Fmp4Muxer.zig`, `SCStreamOutputEncoder.zig` (phase 12)
 - `src/compositor/capture/AudioAdapter.zig` + muxer audio extension (phase 13)
-- `NucleusCompositorGenerateWaylandC` plugin protocol list — protocol XML additions (regenerate the committed bindings), protocol version bumps as each phase lands; the PipeWire `.systemLibrary` C target added to `compositor-core/Package.swift`
+- `swift-wayland/Protocols` and `WaylandColliderRecipe` — protocol XML additions and committed binding regeneration as each phase lands; the PipeWire `.systemLibrary` C target added to `compositor-core/Package.swift`
 - `src/compositor/WaylandServer.zig` — register new globals as each phase lands
 - `src/compositor/main.zig` — `UringTag` variants `.pipewire`, `.portal`, `.encoder` added as phases 8/9/12 land
 - Host prerequisites — add `pipewire`, `libspa-0.2` (phase 8), `libopus` (phase 13)

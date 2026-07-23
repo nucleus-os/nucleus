@@ -47,7 +47,7 @@ The completed foundation work leaves these concrete follow-ups:
 - `activeProductionHostBundle` is a mutable global installation point.
 - `RenderCore.swift`, `InputDispatch.swift`, and `XdgShell.swift` still combine
   several independent mechanisms in one file.
-- `tools/nucleus test` runs debug package suites but does not run the six named
+- `tools/collider test` runs debug package suites but does not run the six named
   release structural suites.
 - A release shell test requires a release
   `libNucleusReactRuntimeHostCxx.a`, but the normal debug RN build and current
@@ -333,7 +333,7 @@ Run the full behavioral suites established by the foundation plan and verify:
 
 ### One authoritative test sequence
 
-Extend `tools/nucleus test` so its unqualified invocation performs this strict
+Extend `tools/collider test` so its unqualified invocation performs this strict
 sequence:
 
 1. Test `swift-tracy`.
@@ -362,7 +362,7 @@ Make release provisioning explicit:
   exists.
 - Build the `NucleusReactRuntimeHostCxx` release product, not only its target
   object.
-- Extend `provision-cxx-libs` with a required configuration argument.
+- Require a configuration argument in Collider's host-C++ archive staging task.
 - When `release` is required, fail unless every declared archive exists in the
   release product directory and is copied successfully.
 - Verify archive fingerprints and configuration metadata before a downstream
@@ -386,7 +386,7 @@ do not reproduce six hand-written commands to obtain the release gate.
 
 ### Public API extraction
 
-Add `tools/nucleus api` and invoke it from the complete test sequence:
+Add `tools/collider api` and invoke it from the complete test sequence:
 
 - Build the public Swift targets with compiler-native `-emit-symbol-graph` and a
   dedicated output directory under `core/.build`.
@@ -422,10 +422,10 @@ Source `tools/host-env.sh` and require all of the following to pass from a
 correctly provisioned checkout:
 
 ```sh
-tools/nucleus doctor
-tools/nucleus build
-tools/nucleus test
-tools/nucleus api
+tools/collider doctor
+tools/collider build
+tools/collider test
+tools/collider api
 ```
 
 Then verify failure reporting by intentionally selecting a nonexistent component
@@ -546,7 +546,7 @@ enforce maximum input sizes and never require a compositor session.
   or calls a released owner.
 - Fuzz/property runs complete their configured deterministic corpus and seeds
   without crashes, hangs, unbounded allocation, or sanitizer findings.
-- The normal `tools/nucleus test` gate still passes after sanitizer-specific
+- The normal `tools/collider test` gate still passes after sanitizer-specific
   changes.
 
 ## Phase 5: Make portable time deterministic
@@ -626,7 +626,7 @@ baselines are recorded.
 ### Benchmark product and command
 
 Add a release-built, headless benchmark executable and expose it through
-`tools/nucleus benchmark`:
+`tools/collider benchmark`:
 
 - It imports only portable/core modules and first-party headless test support.
 - It does not initialize DRM/KMS, create a Wayland display, launch either UI
@@ -729,9 +729,9 @@ distribution.
 - Large text, collection, image, AT-SPI, RN, observation, and render-model
   workloads remain within explicit memory/resource bounds.
 - Benchmark setup and teardown return every exposed counter to baseline.
-- `tools/nucleus doctor`, `tools/nucleus build`, `tools/nucleus test`,
-  `tools/nucleus api`, the sanitizer command, and
-  `tools/nucleus benchmark` all pass without launching a UI host.
+- `tools/collider doctor`, `tools/collider build`, `tools/collider test`,
+  `tools/collider api`, the sanitizer command, and
+  `tools/collider benchmark` all pass without launching a UI host.
 
 ## Final acceptance criteria
 

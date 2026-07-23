@@ -10,7 +10,7 @@ import NucleusShellServices
 import NucleusShellWayland
 import NucleusUI
 import NucleusUIEmbedder
-public import NucleusLinuxSession
+public import NucleusSessionProtocol
 
 @MainActor
 extension ShellHost {

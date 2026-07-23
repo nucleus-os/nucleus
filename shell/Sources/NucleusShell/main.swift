@@ -1,5 +1,5 @@
 import NucleusShellRuntime
-import NucleusLinuxSession
+import NucleusSessionProtocol
 #if canImport(Glibc)
 import Glibc
 #endif

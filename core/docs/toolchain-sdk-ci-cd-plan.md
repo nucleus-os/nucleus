@@ -216,11 +216,11 @@ For each supported host, perform these steps in order:
 5. Generate its immutable subject manifest and checksum, including the parent
    toolchain subject-manifest and artifact digests.
 6. Install the artifact bundle into a clean temporary user home.
-7. Run `test-installed-sdk.sh` against the installed bundle.
+7. Run the Collider-owned installed-SDK validation against the bundle.
 8. Build both dynamic-stdlib and static-stdlib consumer packages where both
    contracts remain supported by the SDK.
 9. Build `nucleus/platform-android` using the static Swift runtime contract.
-10. Run `tools/nucleus android verify` against the resulting Android library.
+10. Run `tools/collider android verify` against the resulting Android library.
 11. Assemble the Android AAR and inspect its ABI, JNI exports, page alignment,
     native dependencies, Java classes, and metadata.
 12. Upload the validated artifact bundle, manifest, and logs as intermediate

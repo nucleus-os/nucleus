@@ -8,8 +8,8 @@ This package provides the retained render tree, the layer system, the Skia Graph
 
 ```sh
 # From the monorepo root
-tools/nucleus bootstrap core
-tools/nucleus build core
+tools/collider bootstrap core
+tools/collider build core
 ```
 
 This component owns Skia synchronization, generation, and publication of the
@@ -49,13 +49,13 @@ Consuming components (compositor and React Native) read from this stable cache p
 ### Provisioning
 
 ```sh
-swift package build-skia --allow-writing-to-package-directory
+tools/collider bootstrap core
 ```
 
 Cross-compile the same native Vulkan Graphite stack for Android:
 
 ```sh
-swift package build-skia-android --allow-writing-to-package-directory
+tools/collider android native
 ```
 
 ## Build
@@ -83,7 +83,7 @@ swift/Sources/          Swift library targets (NucleusTypes, NucleusLayers, …)
 swift/Tests/            Test targets (NucleusUITests, NucleusRendererTests, …)
 render-cxx/skia/        C++ text backend (skia_text_backend.cpp, TextRegistry.cpp)
 third-party/            Skia, swift-system submodules + vendored deps
-swiftpm/plugins/        Command plugins (BuildSkia, BuildSkiaAndroid)
+Sources/CoreColliderRecipe/  Collider-owned native and Swift build recipes
 swiftpm/cmodules/       C module maps for system library targets
 android/                Android platform integration
 platform-android/       Android host package

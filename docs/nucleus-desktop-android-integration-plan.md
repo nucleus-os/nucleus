@@ -123,7 +123,7 @@ own focus, stacking, workspaces, decoration, launcher presentation, and task-swi
 policy. Android integration adds authenticated metadata and lifecycle control around
 ordinary Wayland clients; it does not add a parallel scene graph.
 
-The top-level `tools/nucleus` workflow provisions and verifies the Android runtime in
+The top-level `tools/collider` workflow provisions and verifies the Android runtime in
 the same staged checkout build as the other first-party packages. AOSP and gfxstream
 source remain root-managed third-party inputs; generated images and native build
 outputs stay under `android-runtime/`.
@@ -149,31 +149,241 @@ submitted buffer with ordered acquire and release points, and materializes Andro
 The Android-side client never waits for GPU completion on the CPU. Nucleus signals the
 release point only after rendering and scanout have stopped reading the allocation.
 
-Components:
+### Phase 1 status — noninteractive guest qualification complete
 
-- host Vulkan broker and compositor-device selection;
-- shared-memory gfxstream transport and guest test ICD;
-- dma-buf allocation, modifier negotiation, and buffer identity;
-- syncobj timeline ownership and Android `sync_file` conversion;
-- Nucleus dma-buf import and release integration exercised by the broker;
-- graphics tracing that proves the selected hardware driver and allocation lifecycle.
+The host foundation, gfxstream transport, guest resource-import path, synchronization
+bridge, sustained workload, and noninteractive hardware qualification are implemented
+as of July 23, 2026. Items marked complete below passed their focused tests and the
+locally applicable hardware gates:
+
+- [x] `android-runtime/` is a standalone SwiftPM package with warnings treated as
+  errors and host-side behavioral tests.
+- [x] The versioned broker contract defines authenticated session sequencing, opaque
+  buffer IDs, dma-buf plane metadata, dense descriptor roles, compositor feedback,
+  and acquire/release timeline points.
+- [x] Authenticated Unix `SOCK_SEQPACKET` transport verifies `SO_PEERCRED` and carries
+  ordered `SCM_RIGHTS` descriptors.
+- [x] DRM discovery matches compositor `main_device`, render node, primary node, PCI
+  identity, GBM device, and Vulkan physical device.
+- [x] Vulkan startup rejects software devices and requires external-memory FD,
+  dma-buf, external-semaphore FD, and DRM-format-modifier support.
+- [x] The broker intersects compositor feedback with Vulkan modifier support,
+  allocates a three-buffer GBM ring, and imports each exact dma-buf as its Vulkan
+  image without an intermediate allocation.
+- [x] The host synchronization path converts Vulkan `SYNC_FD` completion into one
+  acquire syncobj timeline and imports a separate compositor release timeline for
+  every buffer as a Vulkan wait semaphore.
+- [x] Buffer release reuse is pollable through `drmSyncobjEventfd`; runtime submission
+  performs no CPU fence wait.
+- [x] The broker listener, broker-session readiness, Wayland runtime dispatch, broker
+  replies, and release notifications use `NucleusLinuxReactor`.
+- [x] The Wayland surface probe consumes linux-dmabuf feedback, imports broker
+  dma-bufs and syncobj timelines, creates an `xdg_toplevel`, commits explicit acquire
+  and release points, and records presentation feedback.
+- [x] Sealed-memfd SPSC command and response rings provide fixed packet boundaries,
+  separate data-available and space-available eventfds, independent guest/host
+  mappings, and bounded backpressure for the gfxstream transport.
+- [x] The root-managed gfxstream and Mesa upstream bases are recorded at exact
+  revisions. The staged Collider workflow verifies its declared inputs and builds the
+  static host backend and Linux guest Vulkan ICD under
+  `android-runtime/.gfxstream-build/`.
+- [x] The patched inputs are immutable fork revisions: gfxstream
+  `f28ae4544cfadbc7c2d1a3f5edb0ae7d1c97d393` and Mesa
+  `6736232a53716737f30ffb7014f02aa20b4ee156`. Both input trees are clean, the lock
+  records their upstream bases and fork locations, and the staged Android-runtime
+  build passes exact-revision validation.
+- [x] The guest ICD has a project-owned external `IOStream` factory seam. Every
+  gfxstream connection receives a fresh duplex-ring endpoint instead of opening an
+  Android transport.
+- [x] Concrete guest `IOStream` and host `RenderChannel` adapters preserve byte-stream
+  semantics across fixed-size ring packets, retain partial work across backpressure,
+  expose pollable wake FDs, and pass command, response, chunking, and backpressure
+  behavior tests.
+- [x] The real gfxstream host renderer hard-selects the broker Vulkan device by its
+  16-byte device UUID, registers broker-owned single-plane dma-bufs as Vulkan-only
+  color buffers, and releases them without an upload, readback, or intermediate copy.
+  The noninteractive import probe passes on both local NVIDIA render nodes.
+- [x] The guest ICD accepts `VkImportColorBufferGOOGLE` supplied by the client,
+  carries the color-buffer identity through gfxstream allocation, and bypasses the
+  host-visible coherent-memory path.
+- [x] The external transport initializes guest Vulkan capabilities without opening
+  virtgpu or render-control devices. Guest instance and device creation now execute
+  through the live ring-backed decoder.
+- [x] The host renderer retains process resources across all guest connections, and
+  the transport supplies an independent command/response ring pair and render channel
+  to every thread-local gfxstream connection.
+- [x] The gfxstream queue path tracks acquired and released Nucleus color buffers,
+  imports each compositor release `SYNC_FD` as a Vulkan wait semaphore, exports guest
+  completion as a new `SYNC_FD`, and imports that fence into the broker acquire
+  timeline. The Nucleus path contains no Vulkan fence wait on the submitting CPU.
+- [x] A noninteractive deterministic guest workload builds against the exact guest
+  ICD. It creates the broker allocation and timelines, imports the allocation as a
+  gfxstream color buffer, records a clear and layout transitions, submits through the
+  ring transport, and waits for the broker acquire point rather than a Vulkan CPU
+  fence.
+- [x] The live one-buffer proof passes on `/dev/dri/renderD128` and
+  `/dev/dri/renderD129`. Guest image allocation, color-buffer import, memory binding,
+  command recording, queue submission, release-fence import, completion-fence export,
+  and acquire-timeline signaling all resolve to the exact broker allocation.
+- [x] The sustained workload submits 48 distinctive frames through three buffers,
+  destroys and reallocates them across a `64x64` to `96x72` resize, reuses each
+  allocation eight times, fills the two-slot transport rings to their bound, observes
+  backpressure, and completes orderly teardown.
+- [x] Disconnects fail closed, and invalid extent, UUID, modifier, DRM format, and
+  unknown color-buffer identity cases return precise failures instead of falling back
+  to a software renderer or substitute allocation.
+- [x] Structured lifecycle records cover allocation, import, initial release,
+  reuse, guest submission, release `SYNC_FD` export, acquire `SYNC_FD` import,
+  acquire-timeline signaling, destruction, and transport shutdown. Qualification
+  records ring occupancy, backpressure, pump progress, command notifications,
+  response-space notifications, renderer wakeups, and peer disconnect.
+- [x] `android-runtime/scripts/qualify-phase1-graphics` builds the workload, runs the
+  complete Swift test suite, exercises every local DRM render node, validates every
+  result and lifecycle stream as JSON, and produces one machine-readable summary and
+  support archive.
+- [x] The broker render-backend seam exports its own three dma-bufs, acquire timeline,
+  and per-buffer release timelines to a persistent gfxstream guest worker. A
+  24-frame headless broker-session diagnostic proves exact shared-allocation import,
+  acquire signaling, release reuse, and teardown on both local GPUs.
+- [x] Host-side contract, IPC, ring, broker, feedback, DRM/Vulkan, explicit-sync, and
+  sustained three-buffer reuse tests pass. Vulkan validation-layer tests pass.
+- [x] The complete noninteractive gate qualifies both locally available proprietary
+  NVIDIA devices: the RTX 4090 at UUID
+  `95d535de37d6503654ac21b59e054f49` and the RTX 4070 Ti at UUID
+  `7891772946cfa843f972316f794618b4`.
+
+The live decoder stall is resolved. The host Vulkan loader had recursively selected
+the guest gfxstream ICD while servicing the guest's first instance request, so host
+renderer startup now excludes guest Vulkan drivers. The next allocation failure came
+from translating a gfxstream dma-buf request into `OPAQUE_FD`; the guest now declares
+the dma-buf external-memory extensions and handle type, and the decoder preserves that
+handle type as `DMA_BUF`.
+
+The combined presentation path is implemented but has not run against a live
+compositor. In that path one broker session owns the allocation and timelines, the
+gfxstream worker renders the broker's exact buffer IDs, and the surface probe commits
+those same dma-bufs with the returned acquire and release points. The surface probe
+paces each submission through presentation feedback and records Wayland import,
+commit, presentation, release, and teardown events.
+
+### Phase 1 remaining execution sequence
+
+Every remaining Phase 1 task runs on the current workstation. Engineering setup,
+integration, diagnostics, and artifact collection are complete. The only user-owned
+action is invoking the live qualification from a free virtual terminal once per local
+GPU, with the monitor attached to the selected device. No second machine, AMD GPU,
+Intel GPU, or hybrid system is a Phase 1 prerequisite.
+
+The execution sequence and current completion state are:
+
+1. [x] Record the exact upstream gfxstream and Mesa bases, build only the required
+   guest Vulkan ICD and static host backend, and integrate exact-input verification
+   and native builds into the staged Collider workflow.
+2. [x] Implement the guest gfxstream `IOStream` factory and host `RenderChannel`
+   adapter over the sealed memfd rings, including packet chunking, pollable
+   backpressure, partial-work retention, and independent endpoints per connection.
+3. [x] Bring up the real gfxstream host renderer on the broker-selected Vulkan device
+   UUID and register broker-owned allocations as gfxstream color buffers. Because
+   Vulkan object handles are device-scoped, the broker and gfxstream device contexts
+   each import the same broker-owned dma-buf and use separate `VkImage` handles over
+   that one allocation. The renderer never substitutes an internal color buffer, CPU
+   upload, readback, or copy target.
+4. [x] Bind application-provided guest color-buffer identities to registered host
+   allocations. Carry `VkImportColorBufferGOOGLE` through guest memory allocation and
+   the live ring-backed decoder without substituting a coherent host allocation.
+5. [x] Join the real gfxstream queue path to the broker explicit-sync interfaces. A
+   compositor release point supplies the Vulkan wait semaphore for reuse, and
+   gfxstream completion exports the `SYNC_FD` imported into the buffer's acquire
+   timeline point.
+6. [x] Add the first deterministic Linux guest Vulkan workload. It owns the exact
+   guest ICD dispatch, broker allocation, color-buffer registration, image import and
+   binding, command recording, queue submission, and acquire-point wait needed for a
+   one-buffer proof.
+7. [x] Diagnose the live-workload stall with operation-stage, loader, syscall, and
+   renderer diagnostics, then complete the one-buffer proof on
+   `/dev/dri/renderD128` and `/dev/dri/renderD129`. Verify at runtime that guest image
+   memory binding, command recording, and queue submission resolve to the exact
+   broker buffer ID and signal its acquire timeline.
+8. [x] Extend that passing workload with distinguishable frame content,
+   resize/reallocation, sustained three-buffer reuse, bounded backpressure,
+   disconnect, teardown, and unsupported-capability failures.
+9. [x] Add structured guest graphics lifecycle tracing and transport counters. Reject
+   qualification when allocation, import, release, reuse, submission, acquire, or
+   teardown events are missing.
+10. [x] Package the Swift tests, workload build, every local render-node run, raw
+    renderer logs, validated lifecycle JSONL, device metadata, input revisions, source
+    state, and machine-readable results as one noninteractive hardware qualification
+    command and support archive.
+11. [x] Join the existing proof paths. The broker session allocates the ring and owns
+    its timelines, the guest workload renders those exact buffer IDs through
+    gfxstream, and the surface probe attaches those same dma-bufs to Nucleus. Extend
+    the lifecycle record with Wayland commit, presentation feedback, compositor
+    release, cancellation, and surface teardown.
+12. [x] Materialize the patched gfxstream and Mesa inputs as clean immutable
+    root-managed revisions and refresh the exact-input record. The staged build
+    validates those revisions and reproduces the qualified host backend and guest ICD.
+13. [x] Move combined presentation qualification into Collider and delete the
+    standalone shell workflow. `tools/collider qualify android-presentation` now
+    verifies the selected GPU's connector state, builds the runtime and Android
+    products, starts a bounded private Nucleus session, waits for compositor and shell
+    readiness, runs the broker, persistent gfxstream worker, and Wayland surface probe
+    in that session, validates the shared physical-GPU and lifecycle contracts, shuts
+    the session down, and retains one support archive.
+14. [ ] Run the combined path on the display-connected RTX 4070 Ti with
+    `tools/collider qualify android-presentation --drm-device /dev/dri/renderD129`.
+    The 600 paced frames expose the alternating distinctive buffer colors as an
+    optional visual sanity check. The machine-readable gate requires compositor
+    feedback, DRM, GBM, broker Vulkan, gfxstream host Vulkan, and presentation to
+    identify the same physical GPU.
+15. [ ] Move the monitor cable to the RTX 4090 and run
+    `tools/collider qualify android-presentation --drm-device /dev/dri/renderD128`.
+    Retain both combined guest-to-presentation support archives. This completes Phase
+    1 and permits Phase 2 to begin. AMD, Intel, and hybrid-system qualification
+    remains a Phase 7 support gate.
+
+### Still required before Phase 1 is complete
+
+Two live runs remain, in order:
+
+1. From a free virtual terminal, run
+   `tools/collider qualify android-presentation --drm-device /dev/dri/renderD129`
+   while the monitor remains connected to the RTX 4070 Ti.
+2. Move the monitor cable to the RTX 4090 and run
+   `tools/collider qualify android-presentation --drm-device /dev/dri/renderD128`.
+
+Each command automatically retains its combined qualification archive after proving:
+gfxstream guest submission → broker acquire timeline → Wayland commit → presentation
+feedback → compositor release timeline → gfxstream reuse.
+
+The current workstation is sufficient. Lack of access to AMD, Intel, hybrid, or a
+second NVIDIA machine does not block Phase 1 or Phase 2 engineering. Those systems are
+required only before Phase 7 claims support for them. The single monitor can be moved
+between the local GPUs; both GPUs do not need simultaneous display connections.
 
 Acceptance gates:
 
-- the same guest Vulkan test renders through the broker on a qualified AMD GPU, Intel
-  GPU, and RTX GPU;
-- the exact broker allocation is imported and presented by Nucleus without CPU upload,
-  readback, or intermediate image copy;
-- acquire and release ordering survives sustained buffer reuse without a CPU fence
-  wait, implicit-sync dependency, tearing, stale content, or use-after-release;
-- unsupported formats, modifiers, devices, and Vulkan requirements fail startup with a
-  precise diagnostic; there is no software renderer fallback;
-- compositor device selection, broker Vulkan adapter selection, GBM device selection,
-  and dma-buf feedback identify the same physical GPU, including hybrid systems.
+- [x] The Linux guest Vulkan test renders through gfxstream into broker-platform
+  allocations on both locally available proprietary NVIDIA devices.
+- [ ] The exact guest-rendered broker allocation is imported and presented by Nucleus
+  without CPU upload, readback, or intermediate image copy.
+- [x] Acquire and release ordering survives sustained buffer reuse without a CPU fence
+  wait or implicit-sync dependency in the noninteractive workload.
+- [x] Unsupported extents, formats, modifiers, devices, color-buffer identities, and
+  Vulkan requirements fail with a precise diagnostic; there is no software-renderer
+  fallback.
+- [ ] Compositor device selection, broker Vulkan adapter selection, gfxstream host
+  Vulkan selection, GBM device selection, and dma-buf feedback identify the same
+  physical GPU in the combined presentation run.
+- [ ] One qualification archive contains device identity, selected format/modifier,
+  the complete guest and Wayland allocation lifecycle, synchronization results,
+  presentation results, and actionable failure diagnostics.
 
 Risk surface: critical. This phase retires the producer-side NVIDIA problem, the
 cross-process Vulkan transport, and the end-to-end buffer synchronization contract.
-No later phase begins on an unproven graphics path.
+Phase 2 begins only after the complete guest-to-presentation path passes the engineering
+acceptance gates on the available hardware. Physical AMD, Intel, and hybrid-system
+testing remains mandatory under Phase 7 before support is claimed for those systems;
+the absence of those machines does not block Phase 2 engineering.
 
 ## Phase 2 — Android 17 runtime and containment
 
@@ -434,6 +644,16 @@ multi-monitor, HDR where supported, VRR, suspend/resume, hotplug, input, audio, 
 Bluetooth, camera, storage, power management, and hybrid-GPU topology. A machine is
 supported only after its relevant matrix passes. Mainline kernel support and a
 distribution package are prerequisites, not qualification.
+
+The Phase 1 qualification command is the graphics entry gate for this matrix. It runs
+unchanged on physical AMD, Intel, NVIDIA, and hybrid systems and attaches its
+machine-readable result to the system qualification record. Borrowed systems,
+contributor-operated machines, and dedicated hardware runners are valid qualification
+hosts. Software Vulkan, containers, and virtual machines exercise protocol and failure
+paths but never substitute for physical driver, DRM, GBM, synchronization, scanout,
+and suspend/resume qualification. Lack of local AMD or Intel hardware does not block
+Phases 2 through 6; it blocks only the corresponding Phase 7 support claim until a
+physical system passes.
 
 Components:
 

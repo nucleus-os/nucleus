@@ -43,7 +43,6 @@ func swiftAndroidCxxStaticLibDir() -> String? {
         home + "/.cache/nucleus/swift-platforms/release-6.4.x/current/android/swift-release-6.4.x_android.artifactbundle" + rel,
         home + "/.cache/nucleus/swift-platforms/release-6.4.x-macos/current/android/swift-release-6.4.x-macos_android.artifactbundle" + rel,
         home + "/.swiftpm/swift-sdks/swift-release-6.4.x_android.artifactbundle" + rel,
-        home + "/.cache/nucleus/swift-android-sdks/release-6.4.x/swift-release-6.4.x_android.artifactbundle" + rel,
     ]
     return candidates.first { FileManager.default.fileExists(atPath: $0 + "/libswiftCxx.a") }
 }

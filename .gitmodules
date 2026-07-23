@@ -1,13 +1,14 @@
 [submodule "core/third-party/skia"]
 	path = core/third-party/skia
-	url = https://skia.googlesource.com/skia.git
+	url = git@github.com:maddythewisp/skia.git
+	branch = nucleus-vulkan-render-pass-dependencies
 [submodule "core/third-party/libxkbcommon"]
 	path = core/third-party/libxkbcommon
 	url = https://github.com/xkbcommon/libxkbcommon.git
-[submodule "core/third-party/swift-system"]
-	path = core/third-party/swift-system
+[submodule "third-party/swift-system"]
+	path = third-party/swift-system
 	url = git@github.com:maddythewisp/swift-system.git
-	branch = release/1.7.0
+	branch = nucleus
 [submodule "third-party/swift-java"]
 	path = third-party/swift-java
 	url = git@github.com:maddythewisp/swift-java.git
@@ -40,3 +41,24 @@
 [submodule "swift-tracy/third-party/tracy"]
 	path = swift-tracy/third-party/tracy
 	url = https://github.com/wolfpld/tracy.git
+[submodule "third-party/swift-argument-parser"]
+	path = third-party/swift-argument-parser
+	url = https://github.com/apple/swift-argument-parser.git
+[submodule "third-party/swift-subprocess"]
+	path = third-party/swift-subprocess
+	url = git@github.com:maddythewisp/swift-subprocess.git
+	branch = nucleus-local-swift-system
+[submodule "third-party/swift-crypto"]
+	path = third-party/swift-crypto
+	url = https://github.com/apple/swift-crypto.git
+[submodule "third-party/swift-asn1"]
+	path = third-party/swift-asn1
+	url = https://github.com/apple/swift-asn1.git
+[submodule "third-party/gfxstream"]
+	path = third-party/gfxstream
+	url = git@github.com:maddythewisp/platform_hardware_google_gfxstream.git
+	branch = nucleus-android-17
+[submodule "third-party/mesa"]
+	path = third-party/mesa
+	url = git@github.com:maddythewisp/platform_external_mesa3d.git
+	branch = nucleus-android-17

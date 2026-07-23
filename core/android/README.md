@@ -30,14 +30,14 @@ The `:nucleus` AAR packages:
 Build and verify the AAR plus signed debug smoke APK artifacts without launching a device:
 
 ```sh
-../../tools/nucleus android build
+../../tools/collider android build
 ```
 
 By default the root Swift orchestrator asks Gradle to cross-compile the host and
 then verifies its ELF and JNI contract. The underlying native step runs:
 
 ```sh
-<monorepo-root>/tools/nucleus android native
+<monorepo-root>/tools/collider android native
 ```
 
 This keeps toolchain selection, SwiftPM invocation, and native verification in

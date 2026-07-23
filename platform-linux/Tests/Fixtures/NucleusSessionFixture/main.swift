@@ -1,6 +1,6 @@
 import Foundation
 import Glibc
-import NucleusLinuxSession
+import NucleusSessionProtocol
 
 private enum FixtureFailure: Error {
     case missingDirectory

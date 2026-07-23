@@ -326,7 +326,7 @@ depends on.
 - `swift test -Xswiftc -cxx-interoperability-mode=default --filter NucleusReactRuntimeCxxTests` green
   with the two new tests.
 - The RN fixture continues to render as a Wayland client during a
-  `tools/nucleus run --tracy` session — no behavioral regression for
+  `tools/collider run --tracy` session — no behavioral regression for
   existing surfaces. Mount events, timers, and EventBeat all continue
   to fire correctly.
 - `rg -n "ImmediateCallInvoker"` returns no matches in the active
@@ -495,7 +495,7 @@ proof.
 - `nm` on the final binary shows both BoringSSL symbol sets
   (NIOSSL's `CNIOBoringSSL_*` and Skia's BoringSSL) without
   collision.
-- Capture a `tools/nucleus run --tracy` session to confirm the
+- Capture a `tools/collider run --tracy` session to confirm the
   enlarged binary still loads in the compositor's existing memory
   budget.
 
@@ -1074,7 +1074,7 @@ RN tree; resolve the JS-side module routing (`Platform.OS` →
   - `new FormData(); fd.append("name", "value");
     fetch(url, { method: "POST", body: fd })` and logs the
     response.
-- Runs as an RN Wayland client inside a `tools/nucleus run --tracy`
+- Runs as an RN Wayland client inside a `tools/collider run --tracy`
   session.
 - Verify in `nucleus_drm.log`: each native event arrives on the JS
   thread; no thread-mismatch assertions fire; the bundle completes
@@ -1089,7 +1089,7 @@ RN tree; resolve the JS-side module routing (`Platform.OS` →
 
 ### Verification
 
-- `tools/nucleus run --tracy --seconds 30` with the networking-smoke RN
+- `tools/collider run --tracy --seconds 30` with the networking-smoke RN
   client running shows all three operations succeed.
 - Hermes inspector (Phase 7) shows fetch / WS as proper network
   entries.
@@ -1581,7 +1581,7 @@ registry consults the flag at construction.
   contains `DevServerHelper`.
 - `swift test -Xswiftc -cxx-interoperability-mode=default
   --filter NucleusNetworkingTests --filter NucleusReactRuntimeCxxTests` green.
-- `tools/nucleus run --tracy --seconds 30` with the RN development
+- `tools/collider run --tracy --seconds 30` with the RN development
   client pointed at a running `metro start` instance loads the bundle
   from Metro rather than precompiled HBC.
 - Edit `bundles/shell/topbar/index.jsx`, save; Fast Refresh

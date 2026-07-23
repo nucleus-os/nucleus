@@ -31,20 +31,20 @@ Nucleus is a monorepo built with Swift 6.4 through SwiftPM.
 ## Build System
 
 - Single opinionated build: all integrations compile, no profiles or feature flags.
-- The build is a monorepo of SwiftPM packages: `core/` owns the portable render/UI core and Android host, `react-native/` owns the RN platform and native stack, `compositor/compositor-core` and `compositor/compositor` own the Wayland/DRM library and executable, and `shell/` owns the out-of-process desktop shell. First-party package dependencies are relative paths. Third-party source remains in root-managed submodules. The `@_spi(NucleusCompositor)` group is the single privileged seam into the render core. Use the top-level `tools/nucleus` command for complete-checkout doctor/bootstrap/build/test operations.
+- The build is a monorepo of SwiftPM packages: `core/` owns the portable render/UI core and Android host, `react-native/` owns the RN platform and native stack, `compositor/compositor-core` and `compositor/compositor` own the Wayland/DRM library and executable, and `shell/` owns the out-of-process desktop shell. First-party package dependencies are relative paths. Third-party source remains in root-managed submodules. The `@_spi(NucleusCompositor)` group is the single privileged seam into the render core. Use the top-level `tools/collider` command for complete-checkout doctor/bootstrap/build/test operations.
 - First-party C/C++ shims consumed by Swift are SwiftPM C targets plus module maps. C++ libraries (Skia Graphite, ReactCommon/Hermes/folly) are reached via C++ interop (`.interoperabilityMode(.Cxx)`). A non-cxx module must not `import` a cxx one directly — that drags the cxx module's C++ clang module graph into the importer. Instead the cxx side installs `@convention(c)` (or Swift) closures into a struct at bring-up, or conforms to a protocol seam the non-cxx side owns (e.g. `RenderUploadSink`, `CompositorShellPolicy`); the boundary carries only opaque handles and scalars. Genuine Swift→C entry points (the JNI/on-device and headless-test harnesses) use `@c` / `@c @implementation`, which type-check C-compatibility and emit the C declaration — the older free-standing `@_cdecl`/`@_silgen_name` seam was retired with the Zig loop.
 - The native C++ stack is provisioned once into `~/.cache/nucleus/nucleus-native-sdk`, split into `render` (owned by `core/`) and `rn` (owned by `react-native/`). Generated and native build outputs stay under their owning package (`core/.skia-build`, `react-native/.rn-build`, and `react-native/.cxx-build`). The top-level staged bootstrap owns the complete dependency order and artifact fingerprints.
-- The Swift toolchain source is the `swift-toolchain/` monorepo component (Swift 6.4). A full toolchain rebuild is only needed when a change affects the Swift compiler or installed toolchain shape (its patches, build preset, or LLVM/link configuration); run `swift-toolchain/build.sh`. Toolchain patches take effect on the next rebuild.
+- The Swift toolchain source is the `swift-toolchain/` monorepo component (Swift 6.4). A full toolchain rebuild is only needed when a change affects the Swift compiler or installed toolchain shape (its patches, build preset, or LLVM/link configuration); run `tools/collider toolchain rebuild`. Toolchain patches take effect on the next rebuild.
 
 ### Prerequisites
 
-A fresh clone is provisioned by `tools/nucleus bootstrap` (see the render-SDK provisioning
+A fresh clone is provisioned by `tools/collider bootstrap` (see the render-SDK provisioning
 above); it runs the steps below and builds. Run individually only when iterating.
 
-Skia third-party dependencies are synced once:
+Skia third-party dependencies are synced by Collider:
 
 ```sh
-third-party/sync-deps.sh                    # submodules + skia git-sync-deps
+tools/collider bootstrap core
 ```
 
 The React Native FBReactNativeSpec codegen (`generate-rn-spec`) and the RN native builds

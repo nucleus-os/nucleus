@@ -57,11 +57,17 @@ These were listed below as "to implement" but are now real, registered globals i
 
 ### Scanned but not implemented
 
-XML is in the generator's `waylandExtensions` list in `compositor-core/Sources/NucleusCompositorGenerateWaylandC/plugin.swift` so generated bindings exist, but no `NucleusCompositorWaylandRuntime/*.swift` router file registers a global. Treated as "to implement," not "done." Listed here so an auditor doesn't confuse scanner coverage with runtime coverage.
+XML is present under `swift-wayland/Protocols` and included by
+`tools/collider generate wayland`, so generated bindings exist, but no
+`NucleusCompositorWaylandRuntime/*.swift` router file registers a global.
+Treated as "to implement," not "done." Listed here so an auditor doesn't
+confuse scanner coverage with runtime coverage.
 
 - `tablet-v2` — scanned as `tablet_unstable_v2` (pulled in as a cursor-shape interface dependency); no router file, no integration. Moved into Batch 2.
 
-(`content-type-v1` is *not* in the generator list at all yet — neither generated nor implemented. Adding it requires an entry in `plugin.swift` plus a router file. Still tracked in Batch 1.)
+(`content-type-v1` is not vendored yet — neither generated nor implemented.
+Adding it requires the XML under `swift-wayland/Protocols`, regeneration
+through Collider, and a router file. Still tracked in Batch 1.)
 
 ### Pre-existing protocol bugs in "in tree" modules
 

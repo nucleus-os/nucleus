@@ -1,0 +1,324 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+script_directory="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+package_root="$(cd -- "$script_directory/.." && pwd)"
+repository_root="$(cd -- "$package_root/.." && pwd)"
+
+# shellcheck source=/dev/null
+source "$repository_root/tools/host-env.sh"
+
+for command_name in jq timeout; do
+    if ! command -v "$command_name" >/dev/null 2>&1; then
+        echo "required qualification command is missing: $command_name" >&2
+        exit 69
+    fi
+done
+
+json_escape() {
+    local value=$1
+    value=${value//\\/\\\\}
+    value=${value//\"/\\\"}
+    value=${value//$'\n'/\\n}
+    value=${value//$'\r'/\\r}
+    value=${value//$'\t'/\\t}
+    printf '%s' "$value"
+}
+
+output_root=""
+if [[ ${1:-} == "--output" ]]; then
+    if [[ -z ${2:-} || -n ${3:-} ]]; then
+        echo "usage: $0 [--output DIRECTORY]" >&2
+        exit 64
+    fi
+    output_root="$2"
+elif [[ $# -ne 0 ]]; then
+    echo "usage: $0 [--output DIRECTORY]" >&2
+    exit 64
+fi
+
+timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
+if [[ -z "$output_root" ]]; then
+    output_root="$package_root/.build/phase1-qualification/${timestamp}-$$"
+fi
+if [[ -e "$output_root" ]]; then
+    echo "qualification output already exists: $output_root" >&2
+    exit 73
+fi
+mkdir -p "$output_root/devices"
+output_root="$(cd -- "$output_root" && pwd)"
+overall_status="qualified"
+
+workload="$package_root/.build/debug/nucleus-android-gfxstream-workload"
+broker="$package_root/.build/debug/nucleus-android-gpu-broker"
+host_backend="$package_root/.gfxstream-build/host/host/libgfxstream_backend.a"
+guest_icd="$package_root/.gfxstream-build/guest/src/gfxstream/guest/vulkan/libvulkan_gfxstream.so"
+for required in "$host_backend" "$guest_icd"; do
+    if [[ ! -f "$required" ]]; then
+        echo "required native artifact is missing: $required" >&2
+        exit 66
+    fi
+done
+
+if swift test --package-path "$package_root" \
+    >"$output_root/tests.log" 2>&1; then
+    test_exit_code=0
+    test_status="qualified"
+else
+    test_exit_code=$?
+    test_status="rejected"
+    overall_status="rejected"
+fi
+
+if swift build \
+    --package-path "$package_root" \
+    >"$output_root/build.log" 2>&1; then
+    build_exit_code=0
+    build_status="qualified"
+else
+    build_exit_code=$?
+    build_status="rejected"
+    overall_status="rejected"
+fi
+
+mapfile -t render_nodes < <(
+    find /dev/dri -maxdepth 1 -type c -name 'renderD*' -print 2>/dev/null |
+        sort
+)
+if [[ ${#render_nodes[@]} -eq 0 ]]; then
+    echo "no DRM render nodes are available" >&2
+    exit 69
+fi
+
+result_files=()
+for render_node in "${render_nodes[@]}"; do
+    node_name="$(basename -- "$render_node")"
+    trace_path="$output_root/devices/${node_name}.trace.log"
+    lifecycle_path="$output_root/devices/${node_name}.lifecycle.jsonl"
+    result_path="$output_root/devices/${node_name}.json"
+    if [[ "$build_status" != "qualified" ]]; then
+        exit_code="$build_exit_code"
+        printf '%s\n' \
+            "workload was not run because its build failed" \
+            >"$trace_path"
+        : >"$result_path"
+    elif timeout --signal=INT --kill-after=5s 60s \
+        "$workload" "$render_node" \
+        >"$result_path" \
+        2>"$trace_path"; then
+            exit_code=0
+    else
+        exit_code=$?
+    fi
+    awk \
+        '/^\{"component":"nucleus-android-gfxstream-workload"/ {print}' \
+        "$trace_path" \
+        >"$lifecycle_path"
+    if jq -s -e '
+        (map(.stage) | index("buffer.allocate-import.begin") != null) and
+        (map(.stage) | index("buffer.allocate-import.complete") != null) and
+        (map(.stage) | index("buffer.release-ready.initial") != null) and
+        (map(.stage) | index("buffer.release-ready.reuse") != null) and
+        (map(.stage) | index("buffer.guest-submit.begin") != null) and
+        (map(.stage) | index("buffer.guest-submit.complete") != null) and
+        (map(.stage) | index("buffer.release-sync-file.export") != null) and
+        (map(.stage) | index("buffer.acquire-sync-file.import") != null) and
+        (map(.stage) | index("buffer.acquire-signaled") != null) and
+        (map(.stage) | index("buffer.release.begin") != null) and
+        (map(.stage) | index("buffer.release.complete") != null) and
+        (map(.stage) | index("guest.workload-destruction.complete") != null)
+    ' "$lifecycle_path" >/dev/null; then
+        lifecycle_status="qualified"
+    else
+        lifecycle_status="rejected"
+        overall_status="rejected"
+    fi
+    result="$(
+        awk '/^\{"status":/{line=$0} END {print line}' "$result_path"
+    )"
+    if [[ -z "$result" ]]; then
+        result="$(
+            printf \
+                '{"status":"rejected","renderNode":"%s","error":"workload exited without a result","exitCode":%d}' \
+                "$(json_escape "$render_node")" \
+                "$exit_code"
+        )"
+    fi
+    printf '%s\n' "$result" >"$result_path"
+    result_files+=("$result_path")
+    if ! jq -e . "$result_path" >/dev/null 2>&1; then
+        printf '%s\n' \
+            '{"status":"rejected","error":"workload emitted malformed JSON"}' \
+            >"$result_path"
+        overall_status="rejected"
+    elif [[ "$lifecycle_status" != "qualified" ]]; then
+        temporary_result="${result_path}.tmp"
+        jq \
+            '.status = "rejected" |
+             .lifecycleTraceQualified = false |
+             .error = "workload lifecycle trace is incomplete"' \
+            "$result_path" \
+            >"$temporary_result"
+        mv "$temporary_result" "$result_path"
+    else
+        temporary_result="${result_path}.tmp"
+        jq -c '.lifecycleTraceQualified = true' \
+            "$result_path" \
+            >"$temporary_result"
+        mv "$temporary_result" "$result_path"
+    fi
+    broker_guest_result="$output_root/devices/${node_name}.broker-guest.json"
+    broker_guest_trace="$output_root/devices/${node_name}.broker-guest.trace.log"
+    broker_guest_lifecycle="$output_root/devices/${node_name}.broker-guest.lifecycle.jsonl"
+    : >"$broker_guest_result"
+    : >"$broker_guest_trace"
+    if [[ "$build_status" == "qualified" ]] &&
+        timeout --signal=INT --kill-after=5s 60s \
+            "$broker" \
+            --diagnose-guest-workload "$workload" \
+            --render-node "$render_node" \
+            >"$broker_guest_result" \
+            2>"$broker_guest_trace"; then
+        broker_guest_exit_code=0
+    else
+        broker_guest_exit_code=$?
+    fi
+    awk \
+        '/^\{"component":"nucleus-android-gfxstream-workload"/ {print}' \
+        "$broker_guest_trace" \
+        >"$broker_guest_lifecycle"
+    if [[ "$broker_guest_exit_code" -eq 0 ]] &&
+        jq -e '
+            .status == "qualified" and
+            .bufferCount == 3 and
+            .frameCount == 24 and
+            .exactBrokerAllocation and
+            .guestAcquireTimelineSignal and
+            .releaseTimelineReuse and
+            .cpuFenceWaitCount == 0
+        ' "$broker_guest_result" >/dev/null 2>&1 &&
+        jq -s -e '
+            (map(.stage) | index("buffer.allocate-import.complete") != null) and
+            (map(.stage) | index("buffer.guest-submit.complete") != null) and
+            (map(.stage) | index("buffer.release-sync-file.export") != null) and
+            (map(.stage) | index("buffer.acquire-sync-file.import") != null) and
+            (map(.stage) | index("buffer.release-ready.reuse") != null) and
+            (map(.stage) | index("guest.workload-destruction.complete") != null)
+        ' "$broker_guest_lifecycle" >/dev/null; then
+        broker_guest_status=true
+    else
+        broker_guest_status=false
+        overall_status="rejected"
+        if ! jq -e . "$broker_guest_result" >/dev/null 2>&1; then
+            printf '%s\n' \
+                '{"status":"rejected","error":"broker guest diagnostic failed"}' \
+                >"$broker_guest_result"
+        fi
+    fi
+    temporary_result="${result_path}.tmp"
+    jq -c \
+        --argjson brokerGuestQualified "$broker_guest_status" \
+        --slurpfile brokerGuestDiagnostic "$broker_guest_result" \
+        '.sharedBrokerAllocationQualified = $brokerGuestQualified |
+         .brokerGuestDiagnostic = $brokerGuestDiagnostic[0]' \
+        "$result_path" \
+        >"$temporary_result"
+    mv "$temporary_result" "$result_path"
+    if [[ "$exit_code" -ne 0 ||
+          "$(<"$result_path")" != '{"status":"qualified"'* ]]; then
+        overall_status="rejected"
+    fi
+done
+
+{
+    uname -a
+    printf '\n'
+    if [[ -r /etc/os-release ]]; then
+        sed -n '1,200p' /etc/os-release
+    fi
+} >"$output_root/system.txt"
+
+if command -v vulkaninfo >/dev/null 2>&1; then
+    vulkaninfo --summary >"$output_root/vulkan-summary.txt" 2>&1 || true
+fi
+if command -v nvidia-smi >/dev/null 2>&1; then
+    nvidia-smi -q >"$output_root/nvidia-smi.txt" 2>&1 || true
+fi
+if command -v lspci >/dev/null 2>&1; then
+    lspci -nnk >"$output_root/pci.txt" 2>&1 || true
+fi
+
+git -C "$repository_root" rev-parse HEAD \
+    >"$output_root/repository-commit.txt"
+git -C "$repository_root" status --short --untracked-files=all \
+    >"$output_root/repository-status.txt"
+git -C "$repository_root/third-party/gfxstream" rev-parse HEAD \
+    >"$output_root/gfxstream-commit.txt"
+git -C "$repository_root/third-party/gfxstream" status --short \
+    >"$output_root/gfxstream-status.txt"
+git -C "$repository_root/third-party/mesa" rev-parse HEAD \
+    >"$output_root/mesa-commit.txt"
+git -C "$repository_root/third-party/mesa" status --short \
+    >"$output_root/mesa-status.txt"
+cp "$package_root/gfxstream.lock.json" "$output_root/gfxstream.lock.json"
+
+if [[ -s "$output_root/repository-status.txt" ]]; then
+    repository_clean=false
+else
+    repository_clean=true
+fi
+if [[ -s "$output_root/gfxstream-status.txt" ]]; then
+    gfxstream_clean=false
+else
+    gfxstream_clean=true
+fi
+if [[ -s "$output_root/mesa-status.txt" ]]; then
+    mesa_clean=false
+else
+    mesa_clean=true
+fi
+
+archive_path="${output_root}.tar.gz"
+summary_path="$output_root/summary.json"
+{
+    printf '{'
+    printf '"schemaVersion":3,'
+    printf '"status":"%s",' "$overall_status"
+    printf '"generatedAt":"%s",' "$(json_escape "$timestamp")"
+    printf '"hostname":"%s",' "$(json_escape "$(hostname)")"
+    printf '"renderNodeCount":%d,' "${#render_nodes[@]}"
+    printf '"supportBundle":"%s",' "$(json_escape "$archive_path")"
+    printf '"tests":{"status":"%s","exitCode":%d},' \
+        "$test_status" \
+        "$test_exit_code"
+    printf '"workloadBuild":{"status":"%s","exitCode":%d},' \
+        "$build_status" \
+        "$build_exit_code"
+    printf '"sourceState":{'
+    printf '"repositoryClean":%s,' "$repository_clean"
+    printf '"gfxstreamClean":%s,' "$gfxstream_clean"
+    printf '"mesaClean":%s},' "$mesa_clean"
+    printf '"devices":['
+    first=1
+    for result_path in "${result_files[@]}"; do
+        if [[ "$first" -eq 0 ]]; then
+            printf ','
+        fi
+        first=0
+        tr -d '\n' <"$result_path"
+    done
+    printf ']}\n'
+} >"$summary_path"
+
+jq -e . "$summary_path" >/dev/null
+
+tar \
+    -C "$(dirname -- "$output_root")" \
+    -czf "$archive_path" \
+    "$(basename -- "$output_root")"
+
+sed -n '1p' "$summary_path"
+if [[ "$overall_status" != "qualified" ]]; then
+    exit 2
+fi

@@ -11,7 +11,7 @@ import NucleusLinuxAccessibility
 public import NucleusShellServices
 import NucleusLinuxEnvironment
 import NucleusLinuxReactor
-public import NucleusLinuxSession
+public import NucleusSessionProtocol
 import NucleusShellProduct
 import NucleusShellRender
 import NucleusShellLoop
