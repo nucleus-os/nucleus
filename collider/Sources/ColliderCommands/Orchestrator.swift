@@ -29,9 +29,9 @@ enum WorkspaceComponent: String, Hashable, Sendable {
 struct Orchestrator {
     let context: WorkspaceContext
 
-    func runRepositoryWideTestGates() throws {
+    func runRepositoryWideTestGates() async throws {
         for suite in releaseStructuralSuites {
-            try testReleaseSuite(suite)
+            try await testReleaseSuite(suite)
         }
     }
 
@@ -64,7 +64,9 @@ struct Orchestrator {
         ]
     }
 
-    private func testReleaseSuite(_ suite: ReleaseStructuralSuite) throws {
+    private func testReleaseSuite(
+        _ suite: ReleaseStructuralSuite
+    ) async throws {
         var arguments = [
             "test", "-c", "release",
         ]
@@ -75,7 +77,7 @@ struct Orchestrator {
         let package = suite.packagePath.map {
             suite.component.directoryName + "/" + $0
         } ?? suite.component.directoryName
-        try runTest(
+        try await runTest(
             component: suite.component.rawValue,
             package: package,
             configuration: "release",
@@ -91,12 +93,15 @@ struct Orchestrator {
         suite: String,
         arguments: [String],
         directory: URL
-    ) throws {
+    ) async throws {
         let identity = "component=\(component) package=\(package) "
             + "configuration=\(configuration) suite=\(suite)"
         print("==> test \(identity)")
         do {
-            try context.run("swift", arguments, directory: directory)
+            try await context.run(
+                "swift",
+                arguments,
+                directory: directory)
         } catch {
             throw WorkspaceFailure.message("test failed [\(identity)]: \(error)")
         }

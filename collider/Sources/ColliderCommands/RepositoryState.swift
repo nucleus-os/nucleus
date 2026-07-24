@@ -99,14 +99,14 @@ struct RepositoryState {
         }
     }
 
-    func tail(_ runID: String?, kind: String?) throws {
+    func tail(_ runID: String?, kind: String?) async throws {
         let (directory, _) = try resolve(runID, kind: kind)
         let logs = try retainedLogs(in: directory)
         guard !logs.isEmpty else {
             throw WorkspaceFailure.message(
                 "run has no retained logs: \(directory.path)")
         }
-        try context.run(
+        try await context.run(
             "tail",
             ["-n", "200", "-f"] + logs.map(\.path))
     }

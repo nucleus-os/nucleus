@@ -81,7 +81,9 @@ struct DrmPresentationPreflight {
 struct AndroidPresentationQualificationCommand {
     let context: WorkspaceContext
 
-    func run(_ options: AndroidPresentationQualificationOptions) throws {
+    func run(
+        _ options: AndroidPresentationQualificationOptions
+    ) async throws {
         try requireFreeSeat()
         let connected = try DrmPresentationPreflight.connectedConnectors(
             renderDevice: options.drmDevice)
@@ -94,10 +96,10 @@ struct AndroidPresentationQualificationCommand {
         let runtimeOptions = RuntimeBuildOptions()
         let installation: RuntimeInstallation
         if options.build {
-            try ComponentRegistry(context: context).build(
+            try await ComponentRegistry(context: context).build(
                 selection: .androidRuntime,
                 controls: TaskControls())
-            installation = try RuntimeInstaller(context: context).install(
+            installation = try await RuntimeInstaller(context: context).install(
                 .session,
                 prefix: context.root.appendingPathComponent(".install"),
                 options: runtimeOptions)
@@ -106,7 +108,7 @@ struct AndroidPresentationQualificationCommand {
                 prefix: context.root.appendingPathComponent(".install"),
                 options: runtimeOptions)
         }
-        let products = try androidProducts()
+        let products = try await androidProducts()
         let output = try createOutputDirectory(options.output)
         let supportBundle = output
             .deletingLastPathComponent()
@@ -148,58 +150,54 @@ struct AndroidPresentationQualificationCommand {
             traceProtocol: options.diagnostics,
             traceDrmDemand: options.diagnostics,
             drmDevicePath: options.drmDevice)
-        let session = context.start(
-            installation.session.path,
-            [
-                "--status-file", sessionStatus.path,
-                "--configuration", configuration.hexEncoded,
-                "--", installation.compositor.path,
-            ],
-            environmentOverrides: sessionEnvironment)
-
-        var sessionStopped = false
-        func stopSession() {
-            guard !sessionStopped else { return }
-            sessionStopped = true
-            session.cancel()
-            _ = try? session.wait()
-        }
-        defer { stopSession() }
-
         var workflowFailure: (any Error)?
         var qualificationStatus: Int32?
         do {
-            try waitForSessionReadiness(
-                session: session,
-                statusFile: sessionStatus)
-            let qualification = context.start(
-                products.qualifier.path,
+            qualificationStatus = try await context.withRunningCommand(
+                installation.session.path,
                 [
-                    "--broker", products.broker.path,
-                    "--broker-socket",
-                    runtime.directory.appendingPathComponent("gpu.sock").path,
-                    "--workload", products.workload.path,
-                    "--expected-render-device", options.drmDevice,
-                    "--wayland", "wayland-0",
-                    "--output", output.path,
-                    "--support-bundle", supportBundle.path,
-                    "--frames", String(options.frames),
+                    "--status-file", sessionStatus.path,
+                    "--configuration", configuration.hexEncoded,
+                    "--", installation.compositor.path,
                 ],
-                environmentOverrides: [
-                    "XDG_RUNTIME_DIR": runtime.directory.path,
-                    "NUCLEUS_SESSION_RUNTIME_DIR": runtime.directory.path,
-                    "NUCLEUS_SESSION_ID": runtime.identifier,
-                ])
-            qualificationStatus = try waitForQualification(
-                qualification,
-                session: session)
+                environmentOverrides: sessionEnvironment
+            ) { session in
+                try await session.waitUntilReady()
+                try await waitForSessionReadiness(
+                    session: session,
+                    statusFile: sessionStatus)
+                return try await context.withRunningCommand(
+                    products.qualifier.path,
+                    [
+                        "--broker", products.broker.path,
+                        "--broker-socket",
+                        runtime.directory.appendingPathComponent(
+                            "gpu.sock").path,
+                        "--workload", products.workload.path,
+                        "--expected-render-device", options.drmDevice,
+                        "--wayland", "wayland-0",
+                        "--output", output.path,
+                        "--support-bundle", supportBundle.path,
+                        "--frames", String(options.frames),
+                    ],
+                    environmentOverrides: [
+                        "XDG_RUNTIME_DIR": runtime.directory.path,
+                        "NUCLEUS_SESSION_RUNTIME_DIR": runtime.directory.path,
+                        "NUCLEUS_SESSION_ID": runtime.identifier,
+                    ]
+                ) { qualification in
+                    try await qualification.waitUntilReady()
+                    return try await waitForQualification(
+                        qualification,
+                        session: session)
+                }
+            }
         } catch {
             workflowFailure = error
         }
 
-        stopSession()
         do {
-            try context.run(
+            try await context.run(
                 "tar",
                 [
                     "-C", output.deletingLastPathComponent().path,
@@ -229,13 +227,13 @@ struct AndroidPresentationQualificationCommand {
         }
     }
 
-    private func androidProducts() throws -> (
+    private func androidProducts() async throws -> (
         qualifier: URL,
         broker: URL,
         workload: URL
     ) {
         let package = context.root.appendingPathComponent("android-runtime")
-        let raw = try context.run(
+        let raw = try await context.run(
             "swift",
             [
                 "build",
@@ -321,9 +319,9 @@ struct AndroidPresentationQualificationCommand {
     }
 
     private func waitForSessionReadiness(
-        session: WorkspaceManagedCommand,
+        session: RunningCommand,
         statusFile: URL
-    ) throws {
+    ) async throws {
         let deadline = ContinuousClock.now.advanced(by: .seconds(45))
         while ContinuousClock.now < deadline {
             if let data = try? Data(contentsOf: statusFile),
@@ -342,32 +340,30 @@ struct AndroidPresentationQualificationCommand {
                                 ?? "reason \(message.detail)"))
                 }
             }
-            guard session.isRunning else {
+            guard await session.isRunning else {
                 throw WorkspaceFailure.message(
                     "Nucleus session exited before becoming ready "
-                        + "(status \(session.terminationStatus ?? -1))")
+                        + "(status \(await session.terminationStatus ?? -1))")
             }
-            usleep(20_000)
+            try await ContinuousClock().sleep(for: .milliseconds(20))
         }
         throw WorkspaceFailure.message(
             "Nucleus session did not become ready before the startup deadline")
     }
 
     private func waitForQualification(
-        _ qualification: WorkspaceManagedCommand,
-        session: WorkspaceManagedCommand
-    ) throws -> Int32 {
-        while qualification.isRunning {
-            guard session.isRunning else {
-                qualification.cancel()
-                _ = try? qualification.wait()
+        _ qualification: RunningCommand,
+        session: RunningCommand
+    ) async throws -> Int32 {
+        while await qualification.isRunning {
+            guard await session.isRunning else {
                 throw WorkspaceFailure.message(
                     "Nucleus session exited during Android presentation "
                         + "qualification (status "
-                        + "\(session.terminationStatus ?? -1))")
+                        + "\(await session.terminationStatus ?? -1))")
             }
-            usleep(20_000)
+            try await ContinuousClock().sleep(for: .milliseconds(20))
         }
-        return try qualification.wait().status
+        return try await qualification.wait().status
     }
 }

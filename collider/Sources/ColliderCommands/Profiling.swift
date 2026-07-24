@@ -3,12 +3,12 @@ import FoundationEssentials
 struct TracyTools {
     let context: WorkspaceContext
 
-    func buildReceivers() throws {
+    func buildReceivers() async throws {
         let compositor = context.root.appendingPathComponent("compositor")
         let build = compositor.appendingPathComponent(".tracy-build")
         let relativeSource = "swift-tracy/third-party/tracy"
         let source = context.root.appendingPathComponent(relativeSource)
-        let commit = try context.run(
+        let commit = try await context.run(
             "git", ["rev-parse", "HEAD:\(relativeSource)"], directory: context.root, capture: true
         )
         guard commit.wholeMatch(of: /[0-9a-f]{40}/) != nil else {
@@ -18,7 +18,7 @@ struct TracyTools {
             throw WorkspaceFailure.message(
                 "Tracy submodule is not initialized; run collider bootstrap tracy")
         }
-        let checkout = try context.run(
+        let checkout = try await context.run(
             "git", ["rev-parse", "HEAD"], directory: source, capture: true
         )
         guard checkout == commit else {
@@ -41,8 +41,8 @@ struct TracyTools {
             var environment = context.environment
             environment["CPM_SOURCE_CACHE"] = build.appendingPathComponent(".cpm-cache").path
             let environmentContext = WorkspaceContext(root: context.root, environment: environment)
-            try environmentContext.run("cmake", ["-S", source.appendingPathComponent(subdirectory).path, "-B", toolBuild.path, "-DCMAKE_BUILD_TYPE=Release", "-DDOWNLOAD_CAPSTONE=ON", "-DCMAKE_EXE_LINKER_FLAGS=-static-libstdc++ -static-libgcc"])
-            try environmentContext.run("cmake", ["--build", toolBuild.path, "--parallel", "--target", name])
+            try await environmentContext.run("cmake", ["-S", source.appendingPathComponent(subdirectory).path, "-B", toolBuild.path, "-DCMAKE_BUILD_TYPE=Release", "-DDOWNLOAD_CAPSTONE=ON", "-DCMAKE_EXE_LINKER_FLAGS=-static-libstdc++ -static-libgcc"])
+            try await environmentContext.run("cmake", ["--build", toolBuild.path, "--parallel", "--target", name])
             let output = build.appendingPathComponent(name)
             if FileManager.default.fileExists(atPath: output.path) { try FileManager.default.removeItem(at: output) }
             try FileManager.default.copyItem(at: toolBuild.appendingPathComponent(name), to: output)

@@ -47,7 +47,7 @@ struct ProfileCapture {
         installation: RuntimeInstallation,
         environment configuredEnvironment: [String: String],
         sessionLog: URL?
-    ) throws {
+    ) async throws {
         let compositor = context.root.appendingPathComponent("compositor")
         let receiver = compositor.appendingPathComponent(".tracy-build/tracy-capture")
         let exporter = compositor.appendingPathComponent(".tracy-build/tracy-csvexport")
@@ -55,7 +55,7 @@ struct ProfileCapture {
             throw WorkspaceFailure.message(
                 "Tracy receivers are missing; rerun without --no-build")
         }
-        let port = try availablePort(startingAt: options.port)
+        let port = try await availablePort(startingAt: options.port)
 
         let runDirectory = URL(fileURLWithPath: options.output, relativeTo: compositor).standardizedFileURL.appendingPathComponent(options.name)
         try FileManager.default.createDirectory(at: runDirectory, withIntermediateDirectories: true)
@@ -89,50 +89,87 @@ struct ProfileCapture {
 
         var environment = configuredEnvironment
         environment["TRACY_PORT"] = String(port)
-        let compositorProcess = try launchSession(
-            options,
-            installation: installation,
-            statusFile: sessionStatus,
-            fallbackLog: sessionLog == nil ? compositorLog : nil,
-            environment: environment,
-            directory: compositor)
-        defer { stop(compositorProcess) }
-        try waitForSessionReady(
-            compositorProcess,
-            statusFile: sessionStatus,
-            log: compositorLog,
-            environment: environment)
-        let captureProcess = launch(
-            receiver.path,
-            arguments: captureArguments(options, port: port, capture: capture),
-            environment: context.environment,
+        let runtimeEnvironment = environment
+        let configuration = try options.sessionConfiguration
+        let sessionArguments = [
+            "--status-file", sessionStatus.path,
+            "--configuration", configuration.hexEncoded,
+            "--", installation.compositor.path,
+        ] + options.compositorArguments
+        try await context.withRunningCommand(
+            installation.session.path,
+            sessionArguments,
             directory: compositor,
-            stage: TaskID(rawValue: "profile.capture"))
-        print("profile dir: \(runDirectory.path)")
-        let compositorExitedDuringCapture = waitForCapture(captureProcess, compositor: compositorProcess)
-        if captureProcess.isRunning { captureProcess.cancel() }
-        let captureStatus = (try? captureProcess.wait().status) ?? 130
-        if compositorExitedDuringCapture,
-           compositorProcess.terminationStatus != 0 {
-            throw WorkspaceFailure.message("launched compositor exited with status \(compositorProcess.terminationStatus ?? -1); see \(compositorLog.path)")
+            environmentOverrides: runtimeEnvironment,
+            stage: TaskID(rawValue: "profile.session")
+        ) { session in
+            try await session.waitUntilReady()
+            try await waitForSessionReady(
+                session,
+                statusFile: sessionStatus,
+                log: compositorLog,
+                environment: runtimeEnvironment)
+            let captureObservation = try await context.withRunningCommand(
+                receiver.path,
+                captureArguments(options, port: port, capture: capture),
+                directory: compositor,
+                environmentOverrides: context.environment,
+                stage: TaskID(rawValue: "profile.capture")
+            ) { captureProcess in
+                try await captureProcess.waitUntilReady()
+                print("profile dir: \(runDirectory.path)")
+                let compositorExited = try await waitForCapture(
+                    captureProcess,
+                    compositor: session)
+                let status: Int32? =
+                    if compositorExited {
+                        nil
+                    } else {
+                        try await captureProcess.wait().status
+                    }
+                return CaptureObservation(
+                    compositorExited: compositorExited,
+                    status: status)
+            }
+            let captureStatus = captureObservation.status ?? 130
+            if captureObservation.compositorExited,
+                await session.terminationStatus != 0
+            {
+                throw WorkspaceFailure.message(
+                    "launched compositor exited with status "
+                        + "\(await session.terminationStatus ?? -1); see "
+                        + compositorLog.path)
+            }
+            let captureIsEmpty: Bool
+            if FileManager.default.fileExists(atPath: capture.path) {
+                captureIsEmpty = try Data(contentsOf: capture).isEmpty
+            } else {
+                captureIsEmpty = true
+            }
+            if captureObservation.compositorExited, captureIsEmpty {
+                throw WorkspaceFailure.message(
+                    "launched compositor exited before Tracy produced a capture; "
+                        + "see \(compositorLog.path)")
+            }
+            guard FileManager.default.fileExists(atPath: capture.path),
+                (try Data(contentsOf: capture)).count > 0
+            else {
+                throw WorkspaceFailure.message(
+                    "Tracy capture exited with status \(captureStatus) and "
+                        + "produced no data; see \(captureLog.path)")
+            }
+            let summary = try await exportAndSummarize(
+                capture: capture,
+                exporter: exporter,
+                directory: runDirectory)
+            if summary.eventCount == 0, summary.plotCount == 0 {
+                throw WorkspaceFailure.message(
+                    "capture contains no Tracy events or plots; the compositor "
+                        + "likely failed during bring-up; see \(compositorLog.path) "
+                        + "and \(captureLog.path)")
+            }
+            print("profile captured: \(capture.path)")
         }
-        let captureIsEmpty: Bool
-        if FileManager.default.fileExists(atPath: capture.path) {
-            captureIsEmpty = try Data(contentsOf: capture).isEmpty
-        } else {
-            captureIsEmpty = true
-        }
-        if compositorExitedDuringCapture, captureIsEmpty {
-            throw WorkspaceFailure.message("launched compositor exited before Tracy produced a capture; see \(compositorLog.path)")
-        }
-        guard FileManager.default.fileExists(atPath: capture.path), (try Data(contentsOf: capture)).count > 0 else {
-            throw WorkspaceFailure.message("Tracy capture exited with status \(captureStatus) and produced no data; see \(captureLog.path)")
-        }
-        let summary = try exportAndSummarize(capture: capture, exporter: exporter, directory: runDirectory)
-        if summary.eventCount == 0, summary.plotCount == 0 {
-            throw WorkspaceFailure.message("capture contains no Tracy events or plots; the compositor likely failed during bring-up; see \(compositorLog.path) and \(captureLog.path)")
-        }
-        print("profile captured: \(capture.path)")
     }
 
     private func captureArguments(_ options: RunOptions, port: Int, capture: URL) -> [String] {
@@ -141,75 +178,36 @@ struct ProfileCapture {
         return value
     }
 
-    private func availablePort(startingAt requested: Int) throws -> Int {
+    private func availablePort(startingAt requested: Int) async throws -> Int {
         for candidate in requested...(requested + 32) {
-            let result = try? context.run("ss", ["-ltnH", "sport", "=", ":\(candidate)"], capture: true)
+            let result = try? await context.run(
+                "ss",
+                ["-ltnH", "sport", "=", ":\(candidate)"],
+                capture: true)
             if result?.isEmpty != false { return candidate }
         }
         throw WorkspaceFailure.message("no free Tracy port found near \(requested)")
     }
 
-    private func launchSession(
-        _ options: RunOptions,
-        installation: RuntimeInstallation,
-        statusFile: URL,
-        fallbackLog: URL?,
-        environment: [String: String],
-        directory: URL
-    ) throws -> ProfileProcess {
-        let configuration = try options.sessionConfiguration
-        let arguments = [
-            "--status-file", statusFile.path,
-            "--configuration", configuration.hexEncoded,
-            "--", installation.compositor.path,
-        ]
-            + options.compositorArguments
-        _ = fallbackLog
-        return ProfileProcess(process: context.start(
-            installation.session.path,
-            arguments,
-            directory: directory,
-            environmentOverrides: environment,
-            stage: TaskID(rawValue: "profile.session")))
-    }
-
-    private func launch(
-        _ executable: String,
-        arguments: [String],
-        environment: [String: String],
-        directory: URL,
-        stage: TaskID
-    ) -> WorkspaceManagedCommand {
-        context.start(
-            executable,
-            arguments,
-            directory: directory,
-            environmentOverrides: environment,
-            stage: stage)
-    }
-
     private func waitForCapture(
-        _ capture: WorkspaceManagedCommand,
-        compositor: ProfileProcess?
-    ) -> Bool {
-        var compositorExited = false
-        while capture.isRunning {
-            if let compositor, !compositor.process.isRunning {
-                compositorExited = true
-                capture.cancel()
-                break
+        _ capture: RunningCommand,
+        compositor: RunningCommand
+    ) async throws -> Bool {
+        while await capture.isRunning {
+            if !(await compositor.isRunning) {
+                return true
             }
-            Thread.sleep(forTimeInterval: 0.1)
+            try await ContinuousClock().sleep(for: .milliseconds(100))
         }
-        return compositorExited
+        return false
     }
 
     private func waitForSessionReady(
-        _ managed: ProfileProcess,
+        _ managed: RunningCommand,
         statusFile: URL,
         log: URL,
         environment: [String: String]
-    ) throws {
+    ) async throws {
         for _ in 0..<150 {
             if let data = try? Data(contentsOf: statusFile),
                let message = SessionReadinessMessage(encoded: Array(data)) {
@@ -229,11 +227,14 @@ struct ProfileCapture {
                     break
                 }
             }
-            if !managed.process.isRunning {
-                _ = try? managed.process.wait()
-                throw WorkspaceFailure.message("launched compositor exited with status \(managed.terminationStatus ?? -1) during bring-up; see \(log.path)")
+            if !(await managed.isRunning) {
+                _ = try? await managed.wait()
+                throw WorkspaceFailure.message(
+                    "launched compositor exited with status "
+                        + "\(await managed.terminationStatus ?? -1) during "
+                        + "bring-up; see \(log.path)")
             }
-            Thread.sleep(forTimeInterval: 0.1)
+            try await ContinuousClock().sleep(for: .milliseconds(100))
         }
         let graphicalSession = environment["WAYLAND_DISPLAY"] != nil || environment["DISPLAY"] != nil
         let hint = graphicalSession
@@ -242,12 +243,6 @@ struct ProfileCapture {
         throw WorkspaceFailure.message(
             "compositor and shell did not report native readiness within 15 seconds."
                 + "\(hint) See \(log.path)")
-    }
-
-    private func stop(_ managed: ProfileProcess) {
-        let process = managed.process
-        if process.isRunning { process.cancel() }
-        _ = try? process.wait()
     }
 
     private func writeMetadata(
@@ -270,9 +265,19 @@ struct ProfileCapture {
         try Data((values.joined(separator: "\n") + "\n").utf8).write(to: directory.appendingPathComponent("metadata.txt"), options: .atomic)
     }
 
-    private func exportAndSummarize(capture: URL, exporter: URL, directory: URL) throws -> ProfileSummaryStats {
-        let events = try context.run(exporter.path, ["-u", capture.path], capture: true)
-        let plots = try context.run(exporter.path, ["-u", "-p", capture.path], capture: true)
+    private func exportAndSummarize(
+        capture: URL,
+        exporter: URL,
+        directory: URL
+    ) async throws -> ProfileSummaryStats {
+        let events = try await context.run(
+            exporter.path,
+            ["-u", capture.path],
+            capture: true)
+        let plots = try await context.run(
+            exporter.path,
+            ["-u", "-p", capture.path],
+            capture: true)
         try Data(events.utf8).write(to: directory.appendingPathComponent("trace-events.csv"), options: .atomic)
         try Data(plots.utf8).write(to: directory.appendingPathComponent("trace-plots.csv"), options: .atomic)
         var eventCounts: [String: Int] = [:]
@@ -315,8 +320,7 @@ private struct ProfileSummaryStats {
     var plotCount: Int
 }
 
-private struct ProfileProcess {
-    var process: WorkspaceManagedCommand
-
-    var terminationStatus: Int32? { process.terminationStatus }
+private struct CaptureObservation: Sendable {
+    var compositorExited: Bool
+    var status: Int32?
 }

@@ -68,25 +68,16 @@ extension WorkspaceContext {
         selected: [TaskID],
         controls: TaskControls,
         workflowLocks: [TaskLock] = []
-    ) throws -> TaskExecutionReport {
+    ) async throws -> TaskExecutionReport {
         let graph = try TaskGraph(tasks)
         let stateRoot = FilePath(
             root.appendingPathComponent(".nucleus/tasks").path)
-        let report: TaskExecutionReport
-        do {
-            report = try waitForAsyncResult {
-                try await runtime.execute(
-                    graph: graph,
-                    selected: selected,
-                    stateRoot: stateRoot,
-                    workflowLocks: workflowLocks,
-                    options: controls.executionOptions)
-            }
-        } catch {
-            _ = try? waitForAsyncResult { await runtime.shutdown() }
-            throw error
-        }
-        try waitForAsyncResult { await runtime.shutdown() }
+        let report = try await runtime.execute(
+            graph: graph,
+            selected: selected,
+            stateRoot: stateRoot,
+            workflowLocks: workflowLocks,
+            options: controls.executionOptions)
         try controls.render(report)
         return report
     }

@@ -91,8 +91,8 @@ struct ComponentRegistry {
     func build(
         selection: ComponentSelection?,
         controls: TaskControls
-    ) throws {
-        try context.execute(
+    ) async throws {
+        try await context.execute(
             tasks: try buildTasks(),
             selected: try selectedBuildTasks(selection),
             controls: controls)
@@ -101,7 +101,7 @@ struct ComponentRegistry {
     func bootstrap(
         selection: ComponentSelection?,
         controls: TaskControls
-    ) throws {
+    ) async throws {
         let selection = selection ?? .all
         guard ![.toolchain, .android, .browser].contains(selection) else {
             throw WorkspaceFailure.message(
@@ -119,7 +119,7 @@ struct ComponentRegistry {
         ].contains(name)
         var tasks = try buildTasks()
 
-        let tracySource = try tracySourceTask(
+        let tracySource = try await tracySourceTask(
             root: root,
             environment: environment)
         tasks.append(tracySource)
@@ -130,7 +130,7 @@ struct ComponentRegistry {
 
         if needsCore {
             let coreRoot = root.appending("core")
-            let source = try coreSourceTask(
+            let source = try await coreSourceTask(
                 root: coreRoot, environment: environment)
             let skia = CoreColliderRecipe.buildSkia(
                 root: coreRoot, environment: environment)
@@ -146,7 +146,7 @@ struct ComponentRegistry {
 
         if needsRN {
             let rnRoot = root.appending("react-native")
-            let source = try reactNativeSourceTask(
+            let source = try await reactNativeSourceTask(
                 root: rnRoot, environment: environment)
             let javascript =
                 ReactNativeColliderRecipe.installJavaScriptDependencies(
@@ -160,7 +160,7 @@ struct ComponentRegistry {
             let hermes = ReactNativeColliderRecipe.buildHermes(
                 root: rnRoot,
                 environment: environment,
-                host: try hermesHostDependencies())
+                host: try await hermesHostDependencies())
             let support = ReactNativeColliderRecipe.buildSupportLibraries(
                 root: rnRoot, environment: environment)
             let cxx = ReactNativeColliderRecipe.buildCxxRuntime(
@@ -187,14 +187,17 @@ struct ComponentRegistry {
 
         let selected = try selectedBuildTasks(
             selection == .runtime ? nil : selection)
-        try context.execute(tasks: tasks, selected: selected, controls: controls)
+        try await context.execute(
+            tasks: tasks,
+            selected: selected,
+            controls: controls)
     }
 
     func test(
         selection: ComponentSelection?,
         controls: TaskControls
-    ) throws {
-        try context.execute(
+    ) async throws {
+        try await context.execute(
             tasks: try testTasks(),
             selected: try selectedTestTasks(selection),
             controls: controls)
@@ -203,14 +206,14 @@ struct ComponentRegistry {
     func generate(
         _ component: GeneratorComponent,
         controls: TaskControls
-    ) throws {
+    ) async throws {
         let root = FilePath(context.root.path)
         let environment = context.taskEnvironment
         let task: TaskDeclaration
         var tasks: [TaskDeclaration]
         switch component {
         case .reactNative:
-            let source = try reactNativeSourceTask(
+            let source = try await reactNativeSourceTask(
                 root: root.appending("react-native"),
                 environment: environment)
             let dependencies =
@@ -232,14 +235,17 @@ struct ComponentRegistry {
                 root: root.appending("swift-wayland"), environment: environment)
             tasks = [task]
         }
-        try context.execute(tasks: tasks, selected: [task.id], controls: controls)
+        try await context.execute(
+            tasks: tasks,
+            selected: [task.id],
+            controls: controls)
     }
 
     func buildAndroidHost(
         gradleArguments: [String],
         controls: TaskControls
-    ) throws {
-        let tasks = try androidHostTasks()
+    ) async throws {
+        let tasks = try await androidHostTasks()
         let android = FilePath(context.root.path).appending("core/android")
         let gradle = TaskDeclaration(
             id: TaskID(rawValue: "core.android.build"),
@@ -264,22 +270,25 @@ struct ComponentRegistry {
                     ? ["verifyDebug"] : gradleArguments,
                 workingDirectory: android,
                 environment: context.taskEnvironment)))
-        try context.execute(
+        try await context.execute(
             tasks: tasks + [gradle],
             selected: [gradle.id],
             controls: controls)
     }
 
-    func buildAndroidNative(controls: TaskControls) throws {
-        let tasks = try androidHostTasks()
+    func buildAndroidNative(controls: TaskControls) async throws {
+        let tasks = try await androidHostTasks()
         let selected = TaskID(rawValue: "core.android-host.validate")
-        try context.execute(tasks: tasks, selected: [selected], controls: controls)
+        try await context.execute(
+            tasks: tasks,
+            selected: [selected],
+            controls: controls)
     }
 
     func validateAndroidHost(
         library: String?,
         controls: TaskControls
-    ) throws {
+    ) async throws {
         let core = FilePath(context.root.path).appending("core")
         let supplied = library.map {
             FilePath(URL(
@@ -291,18 +300,21 @@ struct ComponentRegistry {
             library: supplied,
             environment: context.taskEnvironment,
             dependencies: [])
-        try context.execute(tasks: [task], selected: [task.id], controls: controls)
+        try await context.execute(
+            tasks: [task],
+            selected: [task.id],
+            controls: controls)
     }
 
     func verifyAndroidRuntimeSourceLock(
         controls: TaskControls
-    ) throws {
+    ) async throws {
         let root = FilePath(context.root.path).appending("android-runtime")
         let tasks = try AndroidRuntimeColliderRecipe.aospSourceTasks(
             root: root,
             environment: context.taskEnvironment)
         let selected = TaskID(rawValue: "android-runtime.aosp-source-lock")
-        try context.execute(
+        try await context.execute(
             tasks: tasks,
             selected: [selected],
             controls: controls)
@@ -310,12 +322,12 @@ struct ComponentRegistry {
 
     func prepareAndroidRuntimeSource(
         controls: TaskControls
-    ) throws {
+    ) async throws {
         let tasks = try AndroidRuntimeColliderRecipe.aospSourceTasks(
             root: FilePath(context.root.path).appending("android-runtime"),
             environment: context.taskEnvironment)
         let selected = TaskID(rawValue: "android-runtime.aosp-source")
-        try context.execute(
+        try await context.execute(
             tasks: tasks,
             selected: [selected],
             controls: controls)
@@ -323,12 +335,12 @@ struct ComponentRegistry {
 
     func buildAndroidRuntimeImage(
         controls: TaskControls
-    ) throws {
+    ) async throws {
         let tasks = try AndroidRuntimeColliderRecipe.aospImageTasks(
             root: FilePath(context.root.path).appending("android-runtime"),
             environment: context.taskEnvironment)
         let selected = TaskID(rawValue: "android-runtime.aosp-image")
-        try context.execute(
+        try await context.execute(
             tasks: tasks,
             selected: [selected],
             controls: controls)
@@ -381,24 +393,24 @@ struct ComponentRegistry {
         return selected.map { TaskID(rawValue: $0) }
     }
 
-    private func hermesHostDependencies() throws -> HermesHostDependencies {
-        let include = try requiredDirectory(context.run(
+    private func hermesHostDependencies() async throws -> HermesHostDependencies {
+        let include = try requiredDirectory(await context.run(
             "pkg-config",
             ["--variable=includedir", "icu-uc"],
             capture: true))
-        let libraryDirectory = try requiredDirectory(context.run(
+        let libraryDirectory = try requiredDirectory(await context.run(
             "pkg-config",
             ["--variable=libdir", "icu-uc"],
             capture: true))
         return try HermesHostDependencies(
             icuIncludeDirectory: include,
-            icuUCLibrary: resolveHostLibrary(
+            icuUCLibrary: await resolveHostLibrary(
                 "libicuuc.so", preferredDirectory: libraryDirectory),
-            icuI18NLibrary: resolveHostLibrary(
+            icuI18NLibrary: await resolveHostLibrary(
                 "libicui18n.so", preferredDirectory: libraryDirectory),
-            icuDataLibrary: resolveHostLibrary(
+            icuDataLibrary: await resolveHostLibrary(
                 "libicudata.so", preferredDirectory: libraryDirectory),
-            cxxRuntimeLibrary: requiredFile(context.run(
+            cxxRuntimeLibrary: requiredFile(await context.run(
                 "clang++",
                 ["-print-file-name=libc++.so.1"],
                 capture: true)))
@@ -407,11 +419,11 @@ struct ComponentRegistry {
     private func coreSourceTask(
         root: FilePath,
         environment: [String: String]
-    ) throws -> TaskDeclaration {
+    ) async throws -> TaskDeclaration {
         CoreColliderRecipe.synchronizeSources(
             root: root,
             repositoryRoot: FilePath(context.root.path),
-            sourceIdentity: try sourceIdentity([
+            sourceIdentity: try await sourceIdentity([
                 "core/third-party",
                 "third-party/swift-java",
                 "third-party/swift-java-jni-core",
@@ -419,10 +431,12 @@ struct ComponentRegistry {
             environment: environment)
     }
 
-    private func androidHostTasks() throws -> [TaskDeclaration] {
+    private func androidHostTasks() async throws -> [TaskDeclaration] {
         let root = FilePath(context.root.path).appending("core")
         let environment = context.taskEnvironment
-        let source = try coreSourceTask(root: root, environment: environment)
+        let source = try await coreSourceTask(
+            root: root,
+            environment: environment)
         let skia = CoreColliderRecipe.buildSkiaAndroid(
             root: root, environment: environment)
         let sdk = CoreColliderRecipe.publishRenderSDK(
@@ -446,7 +460,7 @@ struct ComponentRegistry {
     private func tracySourceTask(
         root: FilePath,
         environment: [String: String]
-    ) throws -> TaskDeclaration {
+    ) async throws -> TaskDeclaration {
         let source = root.appending("swift-tracy/third-party/tracy")
         return TaskDeclaration(
             id: TaskID(rawValue: "workspace.tracy-sources"),
@@ -455,7 +469,7 @@ struct ComponentRegistry {
                 .file(root.appending(".gitmodules")),
                 .optionalTree(
                     source,
-                    fallback: try sourceIdentity([
+                    fallback: try await sourceIdentity([
                         "swift-tracy/third-party/tracy",
                     ])),
                 .tool(.named("git")),
@@ -479,18 +493,18 @@ struct ComponentRegistry {
     private func reactNativeSourceTask(
         root: FilePath,
         environment: [String: String]
-    ) throws -> TaskDeclaration {
+    ) async throws -> TaskDeclaration {
         ReactNativeColliderRecipe.synchronizeSources(
             root: root,
             repositoryRoot: FilePath(context.root.path),
-            sourceIdentity: try sourceIdentity([
+            sourceIdentity: try await sourceIdentity([
                 "react-native/third-party",
             ]),
             environment: environment)
     }
 
-    private func sourceIdentity(_ paths: [String]) throws -> [UInt8] {
-        Array(try context.run(
+    private func sourceIdentity(_ paths: [String]) async throws -> [UInt8] {
+        Array(try await context.run(
             "git",
             ["ls-files", "--stage"] + paths,
             directory: context.root,
@@ -518,12 +532,12 @@ struct ComponentRegistry {
     private func resolveHostLibrary(
         _ name: String,
         preferredDirectory: FilePath
-    ) throws -> FilePath {
+    ) async throws -> FilePath {
         let preferred = preferredDirectory.appending(name)
         if FileManager.default.fileExists(atPath: preferred.string) {
             return preferred
         }
-        return try requiredFile(context.run(
+        return try requiredFile(await context.run(
             "clang",
             ["-print-file-name=\(name)"],
             capture: true))

@@ -101,28 +101,31 @@ struct RunOptions: Equatable {
 struct RunCommand {
     let context: WorkspaceContext
 
-    func run(_ options: RunOptions) throws {
+    func run(_ options: RunOptions) async throws {
         try requireLaunchableSeatEnvironment()
 
         let prefix = context.root.appendingPathComponent(".install")
         let installer = RuntimeInstaller(context: context)
-        let installation = options.build
-            ? try installer.install(
+        let installation =
+            if options.build {
+                try await installer.install(
                 .session,
                 prefix: prefix,
                 options: options.buildOptions)
-            : try installer.existingSession(
+            } else {
+                try installer.existingSession(
                 prefix: prefix,
                 options: options.buildOptions)
+            }
 
         var environment = context.environment
         try configureRuntimeEnvironment(options, environment: &environment)
 
         if options.tracy {
             if options.build {
-                try TracyTools(context: context).buildReceivers()
+                try await TracyTools(context: context).buildReceivers()
             }
-            try ProfileCapture(context: context).run(
+            try await ProfileCapture(context: context).run(
                 options: options,
                 installation: installation,
                 environment: environment,
@@ -156,13 +159,13 @@ struct RunCommand {
             "--",
         ] + compositorCommand
         if let seconds = options.seconds {
-            try runForDuration(
+            try await runForDuration(
                 seconds,
                 executable: installation.session,
                 arguments: sessionArguments,
                 environment: environment)
         } else {
-            try context.run(
+            try await context.run(
                 installation.session.path,
                 sessionArguments,
                 environmentOverrides: environment,
@@ -222,9 +225,9 @@ struct RunCommand {
         executable: URL,
         arguments: [String],
         environment: [String: String]
-    ) throws {
+    ) async throws {
         print("run duration: \(seconds) second\(seconds == 1 ? "" : "s")")
-        try context.run(
+        try await context.run(
             executable.path,
             arguments,
             environmentOverrides: environment,

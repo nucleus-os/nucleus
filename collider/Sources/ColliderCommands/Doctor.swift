@@ -33,7 +33,7 @@ private struct HostPrerequisite {
     let id: String
     let scope: String
     let description: String
-    let evaluate: () -> String?
+    let evaluate: () async -> String?
 }
 
 /// Read-only validation for the host contracts consumed by Collider workflows.
@@ -45,24 +45,26 @@ struct WorkspaceDoctor {
         dryRun: Bool,
         json: Bool,
         quiet: Bool = false
-    ) throws {
+    ) async throws {
         let prerequisites = selectedPrerequisites(scope: scope)
-        let checks = prerequisites.map { prerequisite in
+        var checks: [DoctorCheck] = []
+        for prerequisite in prerequisites {
             if dryRun {
-                return DoctorCheck(
+                checks.append(DoctorCheck(
                     id: prerequisite.id,
                     scope: prerequisite.scope,
                     description: prerequisite.description,
                     status: .planned,
-                    detail: nil)
+                    detail: nil))
+                continue
             }
-            let detail = prerequisite.evaluate()
-            return DoctorCheck(
+            let detail = await prerequisite.evaluate()
+            checks.append(DoctorCheck(
                 id: prerequisite.id,
                 scope: prerequisite.scope,
                 description: prerequisite.description,
                 status: detail == nil ? .failed : .passed,
-                detail: detail)
+                detail: detail))
         }
         let report = DoctorReport(
             scope: scope.rawValue,
@@ -187,7 +189,7 @@ struct WorkspaceDoctor {
             scope: scope,
             description: "Swift 6.4 toolchain"
         ) {
-            guard let output = try? context.run(
+            guard let output = try? await context.run(
                 "swift", ["--version"], capture: true),
                 let firstLine = output.split(separator: "\n").first,
                 firstLine.hasPrefix("Swift version 6.4")

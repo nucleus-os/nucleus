@@ -33,17 +33,17 @@ struct AndroidCommand {
     func run(
         _ operation: AndroidOperation,
         controls: TaskControls = TaskControls()
-    ) throws {
+    ) async throws {
         let registry = ComponentRegistry(context: context)
         switch operation {
         case .build(let gradleArguments):
-            try registry.buildAndroidHost(
+            try await registry.buildAndroidHost(
                 gradleArguments: gradleArguments,
                 controls: controls)
         case .native:
-            try registry.buildAndroidNative(controls: controls)
+            try await registry.buildAndroidNative(controls: controls)
         case .verify(let library):
-            try registry.validateAndroidHost(
+            try await registry.validateAndroidHost(
                 library: library,
                 controls: controls)
         }

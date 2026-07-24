@@ -14,36 +14,37 @@ struct AndroidFrameworkBootCommand {
     let context: WorkspaceContext
     let timeoutSeconds: UInt32
 
-    func run() throws {
+    func run() async throws {
         guard getuid() != 0 else {
             throw WorkspaceFailure.message(
                 "run Collider as the workspace user, not as root")
         }
         let layout = AndroidFrameworkBootLayout(context: context)
-        let provenance = try loadAndValidateImages(layout: layout)
-        let host = try validateHost(layout: layout)
+        let provenance = try await loadAndValidateImages(layout: layout)
+        let host = try await validateHost(layout: layout)
 
-        try context.run("sudo", ["--validate"], terminal: true)
-        var session = AndroidFrameworkBootSession(
+        try await context.run("sudo", ["--validate"], terminal: true)
+        let session = AndroidFrameworkBootSession(
             context: context,
             layout: layout,
             host: host)
         do {
-            try session.prepare()
-            try session.mountImages(provenance.images)
-            try session.mountApexes()
-            try session.createBinderDevices()
-            try session.writeConfiguration()
-            try session.startBPFDelegationBroker()
-            try session.start()
-            try session.waitForBPFDelegation()
-            try session.waitForFramework(timeoutSeconds: timeoutSeconds)
+            try await session.prepare()
+            try await session.mountImages(provenance.images)
+            try await session.mountApexes()
+            try await session.createBinderDevices()
+            try await session.writeConfiguration()
+            try await session.runProcesses(timeoutSeconds: timeoutSeconds)
         } catch {
-            session.cleanup()
-            session.printFailureDiagnostics()
+            await Task {
+                await session.cleanup()
+                await session.printFailureDiagnostics()
+            }.value
             throw error
         }
-        session.cleanup()
+        await Task {
+            await session.cleanup()
+        }.value
         print(
             "Contained Android framework boot completed; diagnostics: "
                 + layout.diagnostics.path)
@@ -51,7 +52,7 @@ struct AndroidFrameworkBootCommand {
 
     private func loadAndValidateImages(
         layout: AndroidFrameworkBootLayout
-    ) throws -> AndroidImageProvenance {
+    ) async throws -> AndroidImageProvenance {
         let provenance = try JSONDecoder().decode(
             AndroidImageProvenance.self,
             from: Data(contentsOf: layout.provenance))
@@ -106,7 +107,7 @@ struct AndroidFrameworkBootCommand {
         let avbTool = layout.hostTools.appendingPathComponent("avbtool")
         let releaseKey = layout.signingIdentity.appendingPathComponent(
             "releasekey.pem")
-        try context.run(
+        try await context.run(
             avbTool.path,
             [
                 "verify_image",
@@ -122,7 +123,7 @@ struct AndroidFrameworkBootCommand {
 
     private func validateHost(
         layout: AndroidFrameworkBootLayout
-    ) throws -> AndroidFrameworkBootHost {
+    ) async throws -> AndroidFrameworkBootHost {
         var failures: [String] = []
         for tool in [
             "sudo",
@@ -179,7 +180,7 @@ struct AndroidFrameworkBootCommand {
                         failures.append(requirement.failure)
                         continue
                     }
-                    _ = try context.run(
+                    _ = try await context.run(
                         "modinfo",
                         [requirement.module],
                         capture: true)
@@ -200,7 +201,7 @@ struct AndroidFrameworkBootCommand {
             environment: context.environment) != nil
         {
             do {
-                try context.run("aa-enabled", ["--quiet"])
+                try await context.run("aa-enabled", ["--quiet"])
             } catch {
                 failures.append("AppArmor is not enabled")
             }
@@ -252,23 +253,30 @@ struct AndroidFrameworkBootCommand {
     }
 }
 
-private struct AndroidFrameworkBootSession {
+private actor AndroidFrameworkBootSession {
     let context: WorkspaceContext
     let layout: AndroidFrameworkBootLayout
     let host: AndroidFrameworkBootHost
-    var mounted: [URL] = []
+    var mounts = AndroidFrameworkMountLedger()
     var binderMounted = false
     var containerStarted = false
-    var command: WorkspaceManagedCommand?
-    var bpfBrokerCommand: WorkspaceManagedCommand?
-    var logcatCommand: WorkspaceManagedCommand?
     var kernelLog: PseudoTerminalLog?
     var binderDevices: [AndroidContainerDevice] = []
     let startedAt = Date()
 
-    mutating func prepare() throws {
+    init(
+        context: WorkspaceContext,
+        layout: AndroidFrameworkBootLayout,
+        host: AndroidFrameworkBootHost
+    ) {
+        self.context = context
+        self.layout = layout
+        self.host = host
+    }
+
+    func prepare() async throws {
         for module in ["binder_linux", "erofs"] {
-            try context.run(
+            try await context.run(
                 "sudo",
                 [
                     "--non-interactive",
@@ -298,7 +306,7 @@ private struct AndroidFrameworkBootSession {
             throw WorkspaceFailure.message(
                 "failed to create the Android kernel-log transport")
         }
-        try context.run(
+        try await context.run(
             "sudo",
             [
                 "--non-interactive",
@@ -306,7 +314,7 @@ private struct AndroidFrameworkBootSession {
                 "\(host.subordinateUID):\(host.subordinateGID)",
                 kernelLog.slavePath,
             ])
-        try context.run(
+        try await context.run(
             "sudo",
             [
                 "--non-interactive",
@@ -314,7 +322,7 @@ private struct AndroidFrameworkBootSession {
                 "0622",
                 kernelLog.slavePath,
             ])
-        try context.run(
+        try await context.run(
             "sudo",
             [
                 "--non-interactive",
@@ -323,7 +331,7 @@ private struct AndroidFrameworkBootSession {
                 "--mode=0710",
                 layout.instance.path,
             ])
-        try context.run(
+        try await context.run(
             "sudo",
             [
                 "--non-interactive",
@@ -334,7 +342,7 @@ private struct AndroidFrameworkBootSession {
                 "--mode=0711",
                 layout.bpfBrokerDirectory.path,
             ])
-        try context.run(
+        try await context.run(
             "sudo",
             [
                 "--non-interactive",
@@ -345,7 +353,7 @@ private struct AndroidFrameworkBootSession {
                 "/dev/null",
                 layout.bpfHookExecutable.path,
             ])
-        try context.run(
+        try await context.run(
             "sudo",
             [
                 "--non-interactive",
@@ -354,8 +362,8 @@ private struct AndroidFrameworkBootSession {
                 try currentColliderExecutable(),
                 layout.bpfHookExecutable.path,
             ])
-        mounted.append(layout.bpfHookExecutable)
-        try context.run(
+        mounts.record(layout.bpfHookExecutable)
+        try await context.run(
             "sudo",
             [
                 "--non-interactive",
@@ -363,7 +371,7 @@ private struct AndroidFrameworkBootSession {
                 "--options=remount,bind,ro,nosuid,nodev,exec",
                 layout.bpfHookExecutable.path,
             ])
-        try context.run(
+        try await context.run(
             "sudo",
             [
                 "--non-interactive",
@@ -376,7 +384,7 @@ private struct AndroidFrameworkBootSession {
             ])
         let swiftRuntime =
             try currentSwiftRuntime()
-        try context.run(
+        try await context.run(
             "sudo",
             [
                 "--non-interactive",
@@ -385,8 +393,8 @@ private struct AndroidFrameworkBootSession {
                 swiftRuntime.libraryRoot.path,
                 layout.swiftRuntime.path,
             ])
-        mounted.append(layout.swiftRuntime)
-        try context.run(
+        mounts.record(layout.swiftRuntime)
+        try await context.run(
             "sudo",
             [
                 "--non-interactive",
@@ -394,7 +402,7 @@ private struct AndroidFrameworkBootSession {
                 "--options=remount,bind,ro,nosuid,nodev,exec",
                 layout.swiftRuntime.path,
             ])
-        try context.run(
+        try await context.run(
             "sudo",
             [
                 "--non-interactive",
@@ -413,7 +421,7 @@ private struct AndroidFrameworkBootSession {
         }
         let mappedSystemUser = UInt64(host.subordinateUID) + 1_000
         let mappedSystemGroup = UInt64(host.subordinateGID) + 1_000
-        try context.run(
+        try await context.run(
             "sudo",
             [
                 "--non-interactive",
@@ -421,7 +429,7 @@ private struct AndroidFrameworkBootSession {
                 "\(mappedSystemUser):\(mappedSystemGroup)",
                 layout.containerTombstones.path,
             ])
-        try context.run(
+        try await context.run(
             "sudo",
             [
                 "--non-interactive",
@@ -431,9 +439,9 @@ private struct AndroidFrameworkBootSession {
             ])
     }
 
-    mutating func mountImages(
+    func mountImages(
         _ images: [AndroidImageProvenance.Image]
-    ) throws {
+    ) async throws {
         let byName = Dictionary(
             uniqueKeysWithValues: images.map { ($0.name, $0) })
         for (name, mountPoint) in [
@@ -462,7 +470,7 @@ private struct AndroidFrameworkBootSession {
                     "system-as-root image is missing mount point "
                         + mountPoint.path)
             }
-            try context.run(
+            try await context.run(
                 "sudo",
                 [
                     "--non-interactive",
@@ -471,7 +479,7 @@ private struct AndroidFrameworkBootSession {
                     layout.images.appendingPathComponent(name).path,
                     mountPoint.path,
                 ])
-            mounted.append(mountPoint)
+            mounts.record(mountPoint)
             if name == "system.img" {
                 let initPath = layout.rootFileSystem.appendingPathComponent(
                     "system/bin/init")
@@ -487,8 +495,8 @@ private struct AndroidFrameworkBootSession {
         }
     }
 
-    mutating func createBinderDevices() throws {
-        try context.run(
+    func createBinderDevices() async throws {
+        try await context.run(
             "sudo",
             [
                 "--non-interactive",
@@ -500,7 +508,7 @@ private struct AndroidFrameworkBootSession {
         binderMounted = true
         let control = layout.binder.appendingPathComponent(
             "binder-control")
-        try context.run(
+        try await context.run(
             "sudo",
             [
                 "--non-interactive",
@@ -508,57 +516,64 @@ private struct AndroidFrameworkBootSession {
                 "\(host.userID):\(host.groupID)",
                 control.path,
             ])
-        defer {
-            _ = try? context.run(
-                "sudo",
-                [
-                    "--non-interactive",
-                    "chown",
-                    "0:0",
-                    control.path,
-                ])
+        do {
+            for name in ["binder", "hwbinder", "vndbinder"] {
+                let number = try BinderFS.addDevice(
+                    control: FilePath(control.path),
+                    name: name)
+                let device = layout.binder.appendingPathComponent(name)
+                try await context.run(
+                    "sudo",
+                    [
+                        "--non-interactive",
+                        "chown",
+                        "\(host.subordinateUID):\(host.subordinateGID)",
+                        device.path,
+                    ])
+                try await context.run(
+                    "sudo",
+                    [
+                        "--non-interactive",
+                        "chmod",
+                        "0666",
+                        device.path,
+                    ])
+                binderDevices.append(
+                    AndroidContainerDevice(
+                        name: name,
+                        source: device.path,
+                        major: number.major,
+                        minor: number.minor))
+            }
+        } catch {
+            await restoreBinderControlOwnership(control)
+            throw error
         }
-        for name in ["binder", "hwbinder", "vndbinder"] {
-            let number = try BinderFS.addDevice(
-                control: FilePath(control.path),
-                name: name)
-            let device = layout.binder.appendingPathComponent(name)
-            try context.run(
-                "sudo",
-                [
-                    "--non-interactive",
-                    "chown",
-                    "\(host.subordinateUID):\(host.subordinateGID)",
-                    device.path,
-                ])
-            try context.run(
-                "sudo",
-                [
-                    "--non-interactive",
-                    "chmod",
-                    "0666",
-                    device.path,
-                ])
-            binderDevices.append(
-                AndroidContainerDevice(
-                    name: name,
-                    source: device.path,
-                    major: number.major,
-                    minor: number.minor))
-        }
+        await restoreBinderControlOwnership(control)
     }
 
-    mutating func mountApexes() throws {
+    private func restoreBinderControlOwnership(_ control: URL) async {
+        _ = try? await context.run(
+            "sudo",
+            [
+                "--non-interactive",
+                "chown",
+                "0:0",
+                control.path,
+            ])
+    }
+
+    func mountApexes() async throws {
         let apexRoot = layout.rootFileSystem.appendingPathComponent(
             "apex",
             isDirectory: true)
-        let apexes = try discoverApexes()
+        let apexes = try await discoverApexes()
         guard !apexes.isEmpty else {
             throw WorkspaceFailure.message(
                 "signed Android image set contains no APEX packages")
         }
 
-        try context.run(
+        try await context.run(
             "sudo",
             [
                 "--non-interactive",
@@ -568,7 +583,7 @@ private struct AndroidFrameworkBootSession {
                 "tmpfs",
                 apexRoot.path,
             ])
-        mounted.append(apexRoot)
+        mounts.record(apexRoot)
 
         let colliderExecutable = try currentColliderExecutable()
         for apex in apexes {
@@ -579,7 +594,7 @@ private struct AndroidFrameworkBootSession {
             let activeMount = apexRoot.appendingPathComponent(
                 apex.name,
                 isDirectory: true)
-            try context.run(
+            try await context.run(
                 "sudo",
                 [
                     "--non-interactive",
@@ -598,10 +613,10 @@ private struct AndroidFrameworkBootSession {
             let mountInvocation = AndroidApexMountInvocation(
                 colliderExecutable: colliderExecutable,
                 request: mountRequest)
-            try context.run(
+            try await context.run(
                 mountInvocation.executable,
                 mountInvocation.arguments)
-            mounted.append(versionMount)
+            mounts.record(versionMount)
             let mountedManifest = versionMount.appendingPathComponent(
                 "apex_manifest.pb")
             guard
@@ -611,7 +626,7 @@ private struct AndroidFrameworkBootSession {
                 throw WorkspaceFailure.message(
                     "mounted APEX \(apex.name) has no apex_manifest.pb")
             }
-            try context.run(
+            try await context.run(
                 "sudo",
                 [
                     "--non-interactive",
@@ -620,8 +635,8 @@ private struct AndroidFrameworkBootSession {
                     versionMount.path,
                     activeMount.path,
                 ])
-            mounted.append(activeMount)
-            try context.run(
+            mounts.record(activeMount)
+            try await context.run(
                 "sudo",
                 [
                     "--non-interactive",
@@ -630,7 +645,7 @@ private struct AndroidFrameworkBootSession {
                     activeMount.path,
                 ])
         }
-        try context.run(
+        try await context.run(
             "sudo",
             [
                 "--non-interactive",
@@ -640,7 +655,7 @@ private struct AndroidFrameworkBootSession {
             ])
     }
 
-    private func discoverApexes() throws -> [AndroidFrameworkApex] {
+    private func discoverApexes() async throws -> [AndroidFrameworkApex] {
         let deapexer = layout.hostTools.appendingPathComponent("deapexer")
         var apexes: [AndroidFrameworkApex] = []
         var names = Set<String>()
@@ -692,7 +707,7 @@ private struct AndroidFrameworkBootSession {
                     continue
                 }
                 let payload = try AndroidApexArchive.payload(in: archive)
-                let payloadType = try context.run(
+                let payloadType = try await context.run(
                     deapexer.path,
                     ["info", "--print-payload-type", archive.path],
                     capture: true)
@@ -704,7 +719,7 @@ private struct AndroidFrameworkBootSession {
                         "Nucleus container APEX payload filesystem is "
                             + "unsupported (\(payloadType)): \(archive.path)")
                 }
-                let manifestOutput = try context.run(
+                let manifestOutput = try await context.run(
                     deapexer.path,
                     ["info", archive.path],
                     capture: true)
@@ -733,7 +748,7 @@ private struct AndroidFrameworkBootSession {
         return apexes.sorted { $0.name < $1.name }
     }
 
-    mutating func writeConfiguration() throws {
+    func writeConfiguration() throws {
         guard let kernelLog else {
             throw WorkspaceFailure.message(
                 "Android kernel-log transport is not prepared")
@@ -773,134 +788,179 @@ private struct AndroidFrameworkBootSession {
         ).write(to: layout.configuration, options: .atomic)
     }
 
-    mutating func startBPFDelegationBroker() throws {
+    func runProcesses(timeoutSeconds: UInt32) async throws {
         let invocation = AndroidBPFBrokerInvocation(
             colliderExecutable: try currentColliderExecutable(),
             socket: layout.bpfBrokerSocket.path,
-            peerUID: host.subordinateUID)
-        bpfBrokerCommand = context.start(
+            rootUID: host.subordinateUID,
+            rootGID: host.subordinateGID)
+        try await context.withRunningCommand(
             invocation.executable,
-            invocation.arguments)
-        let deadline = Date().addingTimeInterval(10)
-        while Date() < deadline {
+            invocation.arguments
+        ) { broker in
+            try await broker.waitUntilReady()
+            try await self.waitForBPFDelegationBrokerReady(broker)
+            let containerInvocation = AndroidLXCStartInvocation(
+                name: self.layout.name,
+                configuration: self.layout.configuration.path,
+                logFile: self.layout.lxcLog.path)
+            await self.markContainerStarted()
+            try await self.context.withRunningCommand(
+                containerInvocation.executable,
+                containerInvocation.arguments
+            ) { container in
+                try await container.waitUntilReady()
+                do {
+                    try await self.waitForBPFDelegation(
+                        broker: broker,
+                        container: container)
+                    try await self.waitForFramework(
+                        container: container,
+                        timeoutSeconds: timeoutSeconds)
+                } catch {
+                    await self.stopContainer()
+                    throw error
+                }
+                await self.stopContainer()
+            }
+        }
+    }
+
+    private func markContainerStarted() {
+        containerStarted = true
+    }
+
+    private func waitForBPFDelegationBrokerReady(
+        _ broker: RunningCommand
+    ) async throws {
+        let deadline = ContinuousClock.now.advanced(by: .seconds(10))
+        while ContinuousClock.now < deadline {
             if FileManager.default.fileExists(
                 atPath: layout.bpfBrokerSocket.path)
             {
                 return
             }
-            if bpfBrokerCommand?.isRunning == false {
-                let status = try bpfBrokerCommand?.wait().status ?? -1
+            if !(await broker.isRunning) {
+                let status = try await broker.wait().status
                 throw WorkspaceFailure.message(
                     "Android BPF delegation broker exited before becoming "
                         + "ready (status \(status))")
             }
-            Thread.sleep(forTimeInterval: 0.01)
+            try await ContinuousClock().sleep(for: .milliseconds(10))
         }
         throw WorkspaceFailure.message(
             "Android BPF delegation broker did not become ready")
     }
 
-    mutating func start() throws {
-        containerStarted = true
-        let invocation = AndroidLXCStartInvocation(
-            name: layout.name,
-            configuration: layout.configuration.path,
-            logFile: layout.lxcLog.path)
-        command = context.start(
-            invocation.executable,
-            invocation.arguments)
-    }
-
-    mutating func waitForBPFDelegation() throws {
-        let deadline = Date().addingTimeInterval(30)
-        while Date() < deadline {
+    private func waitForBPFDelegation(
+        broker: RunningCommand,
+        container: RunningCommand
+    ) async throws {
+        let deadline = ContinuousClock.now.advanced(by: .seconds(30))
+        while ContinuousClock.now < deadline {
             try kernelLog?.checkHealth()
-            if bpfBrokerCommand?.isRunning == false {
-                let status = try bpfBrokerCommand?.wait().status ?? -1
+            if !(await broker.isRunning) {
+                let status = try await broker.wait().status
                 guard status == 0 else {
                     throw WorkspaceFailure.message(
                         "Android BPF delegation broker failed "
                             + "(status \(status)); diagnostics: "
                             + layout.diagnostics.path)
                 }
-                bpfBrokerCommand = nil
                 return
             }
-            if command?.isRunning == false {
-                let status = try command?.wait().status ?? -1
+            if !(await container.isRunning) {
+                let status = try await container.wait().status
                 throw WorkspaceFailure.message(
                     "Android container exited before mounting its delegated "
                         + "BPF filesystem (lxc-start status \(status)); "
                         + "diagnostics: \(layout.diagnostics.path)")
             }
-            Thread.sleep(forTimeInterval: 0.05)
+            try await ContinuousClock().sleep(for: .milliseconds(50))
         }
         throw WorkspaceFailure.message(
             "Android container did not mount its delegated BPF filesystem; "
                 + "diagnostics: \(layout.diagnostics.path)")
     }
 
-    mutating func waitForFramework(timeoutSeconds: UInt32) throws {
-        let deadline = Date().addingTimeInterval(
-            TimeInterval(timeoutSeconds))
-        while Date() < deadline {
+    private func waitForFramework(
+        container: RunningCommand,
+        timeoutSeconds: UInt32
+    ) async throws {
+        let deadline = ContinuousClock.now.advanced(
+            by: .seconds(Int64(timeoutSeconds)))
+        while ContinuousClock.now < deadline {
             try kernelLog?.checkHealth()
-            if command?.isRunning == false {
-                let status = try command?.wait().status ?? -1
+            if !(await container.isRunning) {
+                let status = try await container.wait().status
                 throw WorkspaceFailure.message(
                     "Android container exited before framework boot "
                         + "(lxc-start status \(status)); diagnostics: "
                         + layout.diagnostics.path)
             }
-            try startLogcatIfReady()
-            if let property = try? containerProperty("sys.boot_completed"),
-                property == "1"
+            if let state = try? await containerProperty("init.svc.logd"),
+                state == "running"
             {
-                try validateLogcat()
+                let invocation = AndroidLogcatInvocation(
+                    name: layout.name,
+                    sinceEpochSecond:
+                        max(0, Int64(startedAt.timeIntervalSince1970) - 1))
+                try await context.withRunningCommand(
+                    invocation.executable,
+                    invocation.arguments,
+                    output: .file(FilePath(layout.androidLog.path))
+                ) { logcat in
+                    try await logcat.waitUntilReady()
+                    try await self.waitForFrameworkBoot(
+                        container: container,
+                        logcat: logcat,
+                        deadline: deadline)
+                }
                 return
             }
-            Thread.sleep(forTimeInterval: 1)
+            try await ContinuousClock().sleep(for: .milliseconds(100))
         }
         throw WorkspaceFailure.message(
             "Android framework did not publish sys.boot_completed=1; "
                 + "diagnostics: \(layout.diagnostics.path)")
     }
 
-    private mutating func startLogcatIfReady() throws {
-        if logcatCommand != nil {
-            try validateLogcat()
-            return
+    private func waitForFrameworkBoot(
+        container: RunningCommand,
+        logcat: RunningCommand,
+        deadline: ContinuousClock.Instant
+    ) async throws {
+        while ContinuousClock.now < deadline {
+            try kernelLog?.checkHealth()
+            if !(await container.isRunning) {
+                let status = try await container.wait().status
+                throw WorkspaceFailure.message(
+                    "Android container exited before framework boot "
+                        + "(lxc-start status \(status)); diagnostics: "
+                        + layout.diagnostics.path)
+            }
+            if !(await logcat.isRunning) {
+                let status = try await logcat.wait().status
+                throw WorkspaceFailure.message(
+                    "Android logcat collector exited unexpectedly "
+                        + "(status \(status)); diagnostics: "
+                        + layout.diagnostics.path)
+            }
+            if let property = try? await containerProperty(
+                "sys.boot_completed"),
+                property == "1"
+            {
+                return
+            }
+            try await ContinuousClock().sleep(for: .seconds(1))
         }
-        guard let state = try? containerProperty("init.svc.logd"),
-            state == "running"
-        else {
-            return
-        }
-        let invocation = AndroidLogcatInvocation(
-            name: layout.name,
-            sinceEpochSecond:
-                max(0, Int64(startedAt.timeIntervalSince1970) - 1))
-        logcatCommand = context.start(
-            invocation.executable,
-            invocation.arguments,
-            output: .file(FilePath(layout.androidLog.path)))
-    }
-
-    private func validateLogcat() throws {
-        guard let logcatCommand,
-            !logcatCommand.isRunning
-        else {
-            return
-        }
-        let status = try logcatCommand.wait().status
         throw WorkspaceFailure.message(
-            "Android logcat collector exited unexpectedly "
-                + "(status \(status)); diagnostics: "
-                + layout.diagnostics.path)
+            "Android framework did not publish sys.boot_completed=1; "
+                + "diagnostics: \(layout.diagnostics.path)")
     }
 
-    private func containerProperty(_ name: String) throws -> String {
-        try context.run(
+    private func containerProperty(_ name: String) async throws -> String {
+        try await context.run(
             "sudo",
             [
                 "--non-interactive",
@@ -914,9 +974,9 @@ private struct AndroidFrameworkBootSession {
             capture: true)
     }
 
-    mutating func cleanup() {
+    private func stopContainer() async {
         if containerStarted {
-            _ = try? context.run(
+            _ = try? await context.run(
                 "sudo",
                 [
                     "--non-interactive",
@@ -925,20 +985,14 @@ private struct AndroidFrameworkBootSession {
                     "--name",
                     layout.name,
                 ])
-            command?.cancel()
-            _ = try? command?.wait()
             containerStarted = false
         }
-        if logcatCommand?.isRunning == true {
-            logcatCommand?.cancel()
-        }
-        _ = try? logcatCommand?.wait()
-        logcatCommand = nil
-        bpfBrokerCommand?.cancel()
-        _ = try? bpfBrokerCommand?.wait()
-        bpfBrokerCommand = nil
-        persistTombstones()
-        captureHostAudit()
+    }
+
+    func cleanup() async {
+        await stopContainer()
+        await persistTombstones()
+        await captureHostAudit()
         kernelLog?.stop()
         if let kernelLog {
             do {
@@ -950,8 +1004,8 @@ private struct AndroidFrameworkBootSession {
             }
         }
         kernelLog = nil
-        for mountPoint in mounted.reversed() {
-            _ = try? context.run(
+        for mountPoint in mounts.takeInReverseOrder() {
+            _ = try? await context.run(
                 "sudo",
                 [
                     "--non-interactive",
@@ -959,9 +1013,8 @@ private struct AndroidFrameworkBootSession {
                     mountPoint.path,
                 ])
         }
-        mounted.removeAll()
         if binderMounted {
-            _ = try? context.run(
+            _ = try? await context.run(
                 "sudo",
                 [
                     "--non-interactive",
@@ -970,7 +1023,7 @@ private struct AndroidFrameworkBootSession {
                 ])
             binderMounted = false
         }
-        _ = try? context.run(
+        _ = try? await context.run(
             "sudo",
             [
                 "--non-interactive",
@@ -982,7 +1035,7 @@ private struct AndroidFrameworkBootSession {
             ])
     }
 
-    func printFailureDiagnostics() {
+    func printFailureDiagnostics() async {
         writeStandardError(
             "Android framework boot diagnostics: "
                 + layout.diagnostics.path + "\n")
@@ -994,7 +1047,7 @@ private struct AndroidFrameworkBootSession {
             layout.collectorErrors,
         ] {
             guard FileManager.default.fileExists(atPath: log.path),
-                let tail = try? context.run(
+                let tail = try? await context.run(
                     "tail",
                     ["--lines=80", log.path],
                     capture: true),
@@ -1007,11 +1060,11 @@ private struct AndroidFrameworkBootSession {
         }
     }
 
-    private func captureHostAudit() {
+    private func captureHostAudit() async {
         let since = max(
             0,
             Int64(startedAt.timeIntervalSince1970) - 1)
-        let collector = context.start(
+        _ = try? await context.run(
             "sudo",
             [
                 "--non-interactive",
@@ -1024,17 +1077,16 @@ private struct AndroidFrameworkBootSession {
                 "\(layout.name)|nucleus_container|apparmor=.*lxc",
             ],
             output: .file(FilePath(layout.hostAuditLog.path)))
-        _ = try? collector.wait()
     }
 
-    private func persistTombstones() {
+    private func persistTombstones() async {
         guard
             FileManager.default.fileExists(
                 atPath: layout.containerTombstones.path)
         else {
             return
         }
-        _ = try? context.run(
+        _ = try? await context.run(
             "sudo",
             [
                 "--non-interactive",
@@ -1043,7 +1095,7 @@ private struct AndroidFrameworkBootSession {
                 layout.containerTombstones.path + "/.",
                 layout.diagnosticTombstones.path,
             ])
-        _ = try? context.run(
+        _ = try? await context.run(
             "sudo",
             [
                 "--non-interactive",
@@ -1052,6 +1104,19 @@ private struct AndroidFrameworkBootSession {
                 "\(host.userID):\(host.groupID)",
                 layout.diagnosticTombstones.path,
             ])
+    }
+}
+
+struct AndroidFrameworkMountLedger {
+    private var mountPoints: [URL] = []
+
+    mutating func record(_ mountPoint: URL) {
+        mountPoints.append(mountPoint)
+    }
+
+    mutating func takeInReverseOrder() -> [URL] {
+        defer { mountPoints.removeAll(keepingCapacity: false) }
+        return mountPoints.reversed()
     }
 }
 

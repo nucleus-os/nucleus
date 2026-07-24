@@ -29,7 +29,8 @@ int32_t collider_mount_apex_in_chroot(
     uint64_t payload_offset);
 int32_t collider_android_bpf_delegation_broker(
     const char *socket_path,
-    uint32_t expected_peer_uid);
+    uint32_t container_root_uid,
+    uint32_t container_root_gid);
 int32_t collider_android_bpf_delegation_mount(
     const char *socket_path,
     const char *target_path);

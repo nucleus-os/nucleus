@@ -59,7 +59,7 @@ struct RuntimeInstaller {
         _ component: Component,
         prefix: URL,
         options: RuntimeBuildOptions = RuntimeBuildOptions()
-    ) throws -> RuntimeInstallation {
+    ) async throws -> RuntimeInstallation {
         guard !FileManager.default.fileExists(atPath: prefix.path)
             || (try? FileManager.default.destinationOfSymbolicLink(
                 atPath: prefix.path)) != nil
@@ -90,19 +90,23 @@ struct RuntimeInstaller {
 
         switch component {
         case .compositor:
-            try installCompositor(
+            try await installCompositor(
                 into: installation, publishedPrefix: prefix, options: options)
         case .shell:
-            try installShell(into: installation, options: options)
+            try await installShell(
+                into: installation,
+                options: options)
         case .session:
-            try installCompositor(
+            try await installCompositor(
                 into: installation, publishedPrefix: prefix, options: options)
             // Tracy has one capture endpoint. Instrument the compositor, which
             // owns the frame and presentation timeline, while keeping the
             // independently supervised shell on the same sanitizer policy.
             var shellOptions = options
             shellOptions.tracy = false
-            try installShell(into: installation, options: shellOptions)
+            try await installShell(
+                into: installation,
+                options: shellOptions)
             try writeMetadata(options, into: installation)
         }
         try validate(component, installation: installation)
@@ -203,15 +207,15 @@ struct RuntimeInstaller {
         into installation: RuntimeInstallation,
         publishedPrefix: URL,
         options: RuntimeBuildOptions
-    ) throws {
-        let executable = try buildProduct(
+    ) async throws {
+        let executable = try await buildProduct(
             "NucleusCompositor",
             packagePath: "compositor/compositor",
             component: "compositor",
             options: options)
         try copyExecutable(executable, to: installation.compositor)
 
-        let supervisor = try buildProduct(
+        let supervisor = try await buildProduct(
             "NucleusSessionSupervisor",
             packagePath: "platform-linux",
             component: "session-supervisor",
@@ -222,7 +226,7 @@ struct RuntimeInstaller {
             "compositor/packages/session")
         for name in ["nucleus-session", "nucleus-session-validate"] {
             let source = sessionPackage.appendingPathComponent(name)
-            try context.run("bash", ["-n", source.path])
+            try await context.run("bash", ["-n", source.path])
             try copyExecutable(
                 source,
                 to: installation.prefix.appendingPathComponent("bin/\(name)"))
@@ -247,7 +251,7 @@ struct RuntimeInstaller {
             "@bindir@",
             with: candidateBinDirectory)
         try Data(validationUnit.utf8).write(to: unitPath, options: .atomic)
-        try context.run(
+        try await context.run(
             "systemd-analyze",
             ["--user", "--recursive-errors=no", "verify", unitPath.path])
 
@@ -262,13 +266,13 @@ struct RuntimeInstaller {
     private func installShell(
         into installation: RuntimeInstallation,
         options: RuntimeBuildOptions
-    ) throws {
-        let shell = try buildProduct(
+    ) async throws {
+        let shell = try await buildProduct(
             "NucleusShell",
             packagePath: "shell",
             component: "shell",
             options: options)
-        let helper = try buildProduct(
+        let helper = try await buildProduct(
             "NucleusShellPamHelper",
             packagePath: "shell",
             component: "shell",
@@ -282,7 +286,7 @@ struct RuntimeInstaller {
         packagePath: String,
         component: String,
         options: RuntimeBuildOptions
-    ) throws -> URL {
+    ) async throws -> URL {
         var arguments = [
             "build",
             "--package-path", packagePath,
@@ -307,8 +311,8 @@ struct RuntimeInstaller {
         }
 
         print("==> build runtime product=\(product) variant=\(options.identity)")
-        try context.run("swift", arguments)
-        let binPath = try context.run(
+        try await context.run("swift", arguments)
+        let binPath = try await context.run(
             "swift", arguments + ["--show-bin-path"], capture: true)
         guard let lastLine = binPath.split(separator: "\n").last else {
             throw WorkspaceFailure.message(
@@ -393,11 +397,11 @@ struct InstallCommand {
     func run(
         _ component: RuntimeInstaller.Component,
         prefix explicitPrefix: String?
-    ) throws {
+    ) async throws {
         let prefix = resolvedPrefix(
             for: component,
             explicit: explicitPrefix)
-        _ = try RuntimeInstaller(context: context).install(
+        _ = try await RuntimeInstaller(context: context).install(
             component,
             prefix: prefix)
         print("installed \(component.rawValue) runtime → \(prefix.path)")

@@ -1,3 +1,0 @@
-import ColliderCommands
-
-ColliderCommand.main()

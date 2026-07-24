@@ -456,8 +456,8 @@ Phase 2 begins with one strict four-step bring-up sequence:
    `c968a88d517b669bb9e4ce5b3bd6ad3e4c089826`, `frameworks/native` at
    `8209059567361d914f4265149d9677ee4cee2267`, `system/vold` at
    `1a9fb2dce214cedf7f008157d639b63a698a5807`, Connectivity at
-   `838ba2a8edb0cc85055eefe7a5a83a33502aebca`, UprobeStats at
-   `71f45095c66bff61c5eaff105552ff7f057deb73`, and `system/bpf` at
+   `045ded6ef50fcae041864f2d6e5116fc09f9fe02`, UprobeStats at
+   `2ab87fc93115f7909ea281b4308c5fb2caed1e3c`, and `system/bpf` at
    `4dacaacf550614fac37d52075bffac20a4b193f2`. Build the Android 17 `cp2a`
    product with 40 uncompressed APEX packages: 39 file-backed EROFS payloads and
    AOSP's stock ext4 `com.android.apex.cts.shim`. Replace every APK and APEX
@@ -466,7 +466,7 @@ Phase 2 begins with one strict four-step bring-up sequence:
    and 40 APEX payloads directly, normalize the six published images to mountable raw
    files, and emit exact schema-free source and image provenance. Nucleus does not
    rebuild, rename, or weaken validation for the CTS shim. The retained passing run is
-   `.nucleus/runs/2026-07-24T21-24-51Z-2793327`.
+   `.nucleus/runs/2026-07-24T21-45-43Z-2922203`.
 4. [ ] Mount the four immutable images read-only, mount every immutable APEX payload
    on a host-owned `/apex` tmpfs, create a private binderfs instance, enter the
    user/id/mount/PID/network/cgroup namespace contract through LXC, boot
@@ -474,7 +474,9 @@ Phase 2 begins with one strict four-step bring-up sequence:
    `sys.boot_completed=1`. Collider owns this bounded-duration workflow, validates the
    signed image provenance and AVB chain before requesting privilege, loads the
    available signed `binder_linux` and EROFS modules, creates only instance-private
-   binder devices and uncapped tmpfs mounts, and retains LXC and init diagnostics.
+   binder devices and uncapped tmpfs mounts, maps the delegated bpffs root explicitly
+   to container uid/gid 0 through its host subordinate IDs, and retains LXC and init
+   diagnostics.
    EROFS APEXes mount directly from their archive offsets. Collider mounts the stock
    ext4 CTS-shim payload through a read-only, autoclearing host loop association,
    removes its temporary device node before Android starts, and remounts the `/apex`

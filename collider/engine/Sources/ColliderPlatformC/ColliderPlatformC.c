@@ -576,11 +576,26 @@ static int collider_android_bpf_receive_status(
 }
 
 static int collider_android_bpf_configure_context(
-    int filesystem_context) {
+    int filesystem_context,
+    uint32_t container_root_uid,
+    uint32_t container_root_gid) {
+    char root_uid[11];
+    char root_gid[11];
+    int root_uid_length = snprintf(
+        root_uid, sizeof(root_uid), "%" PRIu32, container_root_uid);
+    int root_gid_length = snprintf(
+        root_gid, sizeof(root_gid), "%" PRIu32, container_root_gid);
+    if (root_uid_length < 0
+        || (size_t)root_uid_length >= sizeof(root_uid)
+        || root_gid_length < 0
+        || (size_t)root_gid_length >= sizeof(root_gid)) {
+        errno = EOVERFLOW;
+        return -1;
+    }
     static const struct {
         const char *key;
         const char *value;
-    } options[] = {
+    } delegation_options[] = {
         {
             .key = "delegate_cmds",
             .value = "map_create:prog_load:btf_load",
@@ -598,14 +613,50 @@ static int collider_android_bpf_configure_context(
             .value = "any",
         },
     };
+    const struct {
+        const char *key;
+        const char *value;
+    } root_options[] = {
+        /*
+         * fsconfig resolves these IDs in the privileged broker's user
+         * namespace. Use the host IDs that map to root in the container's
+         * filesystem context.
+         */
+        {
+            .key = "uid",
+            .value = root_uid,
+        },
+        {
+            .key = "gid",
+            .value = root_gid,
+        },
+        {
+            .key = "mode",
+            .value = "0777",
+        },
+    };
     for (size_t index = 0U;
-        index < sizeof(options) / sizeof(options[0]);
+        index < sizeof(root_options) / sizeof(root_options[0]);
         ++index) {
         if (collider_fsconfig(
                 filesystem_context,
                 FSCONFIG_SET_STRING,
-                options[index].key,
-                options[index].value,
+                root_options[index].key,
+                root_options[index].value,
+                0) != 0) {
+            return -1;
+        }
+    }
+    for (size_t index = 0U;
+        index
+            < sizeof(delegation_options)
+                / sizeof(delegation_options[0]);
+        ++index) {
+        if (collider_fsconfig(
+                filesystem_context,
+                FSCONFIG_SET_STRING,
+                delegation_options[index].key,
+                delegation_options[index].value,
                 0) != 0) {
             return -1;
         }
@@ -621,9 +672,12 @@ static int collider_android_bpf_configure_context(
 
 int32_t collider_android_bpf_delegation_broker(
     const char *socket_path,
-    uint32_t expected_peer_uid) {
+    uint32_t container_root_uid,
+    uint32_t container_root_gid) {
 #if defined(__linux__)
-    if (geteuid() != 0 || expected_peer_uid == 0U) {
+    if (geteuid() != 0
+        || container_root_uid == 0U
+        || container_root_gid == 0U) {
         errno = EPERM;
         return -1;
     }
@@ -644,7 +698,7 @@ int32_t collider_android_bpf_delegation_broker(
             listener,
             (const struct sockaddr *)&address,
             address_length) != 0
-        || chown(socket_path, (uid_t)expected_peer_uid, (gid_t)-1) != 0
+        || chown(socket_path, (uid_t)container_root_uid, (gid_t)-1) != 0
         || chmod(socket_path, 0600) != 0
         || listen(listener, 1) != 0) {
         int saved_errno = errno;
@@ -682,7 +736,7 @@ int32_t collider_android_bpf_delegation_broker(
         return -1;
     }
     if (credentials_length != sizeof(credentials)
-        || credentials.uid != (uid_t)expected_peer_uid) {
+        || credentials.uid != (uid_t)container_root_uid) {
         (void)close(peer);
         (void)close(listener);
         (void)unlink(socket_path);
@@ -701,7 +755,9 @@ int32_t collider_android_bpf_delegation_broker(
         return -1;
     }
     int result = collider_android_bpf_configure_context(
-        filesystem_context);
+        filesystem_context,
+        container_root_uid,
+        container_root_gid);
     int configuration_errno = result == 0 ? 0 : errno;
     int32_t status = result == 0 ? 0 : -configuration_errno;
     int status_result = collider_android_bpf_send_status(peer, status);
@@ -725,7 +781,8 @@ int32_t collider_android_bpf_delegation_broker(
     return 0;
 #else
     (void)socket_path;
-    (void)expected_peer_uid;
+    (void)container_root_uid;
+    (void)container_root_gid;
     errno = ENOTSUP;
     return -1;
 #endif

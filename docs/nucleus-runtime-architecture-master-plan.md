@@ -785,6 +785,14 @@ cross-field validation.
 
 ## Phase 9: Partition the Collider runtime engine
 
+**Status: Complete.**
+
+Implemented with focused host-toolchain, Android SDK, and Git checkout workflow
+owners; bundled validation project resources and SourceKit-LSP framing; a
+byte-stable task-identity regression; and engine/root/release resource gates.
+`TaskEngine.swift` now contains only generic task execution, identity,
+dispatch, validation, state, lock, and command support.
+
 `TaskEngine.swift` combines the generic engine with host-toolchain assembly,
 Android-SDK assembly and wiring, Git synchronization, validation fixtures,
 JSON-RPC framing, and workflow-specific filesystem helpers.
@@ -865,6 +873,18 @@ Risk surface: access control, overload resolution, resource-bundle publication,
 helper ownership, and task identity stability.
 
 ## Phase 10: Make Collider command and child-process lifetimes asynchronous
+
+**Status: Complete.**
+
+Implemented with an asynchronous `@main`, one parsed normal-command path, and
+isolated exact-token privileged modes. Bounded commands now await one shared
+runtime directly. Long-lived session, capture, qualification, broker, logcat,
+and container processes use nested `withRunningCommand` scopes with local
+process-group teardown and bounded escalation. Framework cleanup is
+cancellation-shielded, completed mounts drain in reverse order, and run
+finalization preserves success, interruption, resumption-mismatch, and failure
+semantics. Both Collider package suites, focused cancellation and resource
+gates, and the release executable pass.
 
 `waitForAsyncResult` blocks a thread while a detached task enters the
 asynchronous runtime. `WorkspaceManagedCommand` separately stores a detached

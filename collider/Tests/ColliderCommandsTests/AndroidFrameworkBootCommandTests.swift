@@ -56,3 +56,19 @@ func frameworkBootRunsLXCInADelegatedSystemScope() {
         "TRACE",
     ])
 }
+
+@Test
+func frameworkBootDrainsEveryCompletedMountInReverseOrder() {
+    let mounts = [
+        URL(fileURLWithPath: "/run/nucleus/root"),
+        URL(fileURLWithPath: "/run/nucleus/root/apex"),
+        URL(fileURLWithPath: "/run/nucleus/root/apex/com.example"),
+    ]
+    var ledger = AndroidFrameworkMountLedger()
+    for mount in mounts {
+        ledger.record(mount)
+    }
+
+    #expect(ledger.takeInReverseOrder() == mounts.reversed())
+    #expect(ledger.takeInReverseOrder().isEmpty)
+}

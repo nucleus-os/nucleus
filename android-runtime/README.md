@@ -86,7 +86,7 @@ host-owned APEX mounting, instance-private delegated bpffs creation, token-aware
 Android BPF loading, and the SELinux-bypassed vold preparation path are implemented.
 The current signed image passed the complete AOSP build, package/APEX signature,
 APEX-payload, and AVB verification pipeline in
-`.nucleus/runs/2026-07-24T21-24-51Z-2793327`. The remaining Phase 2 gate is the
+`.nucleus/runs/2026-07-24T21-45-43Z-2922203`. The remaining Phase 2 gate is the
 user-run framework boot:
 
 ```sh

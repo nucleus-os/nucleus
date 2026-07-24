@@ -20,16 +20,16 @@ struct ChromiumCommand {
         _ operation: ChromiumOperation,
         controls: TaskControls = TaskControls(),
         installPrefix: String? = nil
-    ) throws {
+    ) async throws {
         if operation == .doctor {
-            try WorkspaceDoctor(context: context).run(
+            try await WorkspaceDoctor(context: context).run(
                 scope: .browser,
                 dryRun: controls.dryRun,
                 json: controls.json)
             return
         }
         if !controls.dryRun {
-            try WorkspaceDoctor(context: context).run(
+            try await WorkspaceDoctor(context: context).run(
                 scope: .browser,
                 dryRun: false,
                 json: false,
@@ -56,7 +56,7 @@ struct ChromiumCommand {
         case .test: "browser.test"
         case .install: "browser.install"
         }
-        try context.execute(
+        try await context.execute(
             tasks: tasks,
             selected: [TaskID(rawValue: selectedName)],
             controls: controls)

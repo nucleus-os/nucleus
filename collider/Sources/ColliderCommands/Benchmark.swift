@@ -9,8 +9,8 @@ struct BenchmarkCommand {
 
     let context: WorkspaceContext
 
-    func run() throws {
-        let toolchain = try context.run(
+    func run() async throws {
+        let toolchain = try await context.run(
             "swift", ["--version"], capture: true)
             .split(whereSeparator: \Character.isNewline)
             .joined(separator: " | ")
@@ -38,7 +38,7 @@ struct BenchmarkCommand {
         ]
 
         for suite in suites {
-            try run(
+            try await run(
                 suite,
                 outputRoot: outputRoot,
                 context: benchmarkContext)
@@ -49,19 +49,19 @@ struct BenchmarkCommand {
         _ suite: Suite,
         outputRoot: URL,
         context: WorkspaceContext
-    ) throws {
+    ) async throws {
         let package = context.repository(suite.package)
         print(
             "==> benchmark package=\(suite.package) product=\(suite.product) "
                 + "configuration=release schema=nucleus.headless.v3")
-        try context.run(
+        try await context.run(
             "swift",
             [
                 "build", "-c", "release",
                 "--product", suite.product,
             ],
             directory: package)
-        let binaryDirectory = try context.run(
+        let binaryDirectory = try await context.run(
             "swift", ["build", "-c", "release", "--show-bin-path"],
             directory: package,
             capture: true)
@@ -75,7 +75,7 @@ struct BenchmarkCommand {
         let output = outputRoot.appendingPathComponent(
             suite.outputDirectory,
             isDirectory: true)
-        try context.run(
+        try await context.run(
             executable.path,
             ["--output", output.path, "--iterations", "3"],
             directory: package)

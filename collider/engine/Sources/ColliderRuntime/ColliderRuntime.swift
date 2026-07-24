@@ -47,7 +47,7 @@ public actor ColliderRuntime {
     }
 
     public func execute(_ command: CommandSpec) async throws -> CommandResult {
-        try await execute(command, stage: nil)
+        try await execute(command, stage: nil, onStarted: nil)
     }
 
     public func download(
@@ -63,59 +63,88 @@ public actor ColliderRuntime {
 
     public func execute(
         _ command: CommandSpec,
-        stage: TaskID?
+        stage: TaskID?,
+        onStarted: (@Sendable () async -> Void)? = nil
     ) async throws -> CommandResult {
+        let process = CommandProcessCancellation()
         let operation = Task {
-            try await self.executeRegistered(command, stage: stage)
-        }
-        let registration = await cancellation.register { operation.cancel() }
-        defer {
-            Task { await cancellation.unregister(registration) }
+            try await self.executeRegistered(
+                command,
+                stage: stage,
+                onStarted: onStarted,
+                process: process)
         }
         let shutdown = Mutex<Task<Void, Never>?>(nil)
+        let beginShutdown: @Sendable () -> Void = {
+            shutdown.withLock { task in
+                guard task == nil else { return }
+                task = Task {
+                    process.requestTermination()
+                    await waitForProcessCompletion(
+                        process.completion,
+                        gracePeriod: .seconds(2))
+                    operation.cancel()
+                    _ = try? await operation.value
+                }
+            }
+        }
+        let registration = await cancellation.register(beginShutdown)
         do {
             let result = try await withTaskCancellationHandler {
                 try await operation.value
             } onCancel: {
-                let task = Task {
-                    #if !os(Windows)
-                    await cancellation.forward(signal: Signal.terminate.rawValue)
-                    let deadline = ContinuousClock().now.advanced(
-                        by: .seconds(2))
-                    while await cancellation.hasActiveProcessGroups(),
-                        ContinuousClock().now < deadline
-                    {
-                        try? await ContinuousClock().sleep(
-                            for: .milliseconds(10))
-                    }
-                    #endif
-                    operation.cancel()
-                    _ = try? await operation.value
-                }
-                shutdown.withLock { $0 = task }
+                beginShutdown()
             }
             try Task.checkCancellation()
+            await cancellation.unregister(registration)
             return result
         } catch {
-            let task = shutdown.withLock { $0 }
-            if let task { await task.value }
+            beginShutdown()
+            if let task = shutdown.withLock({ $0 }) {
+                await task.value
+            }
+            await cancellation.unregister(registration)
             throw error
         }
     }
 
     private func executeRegistered(
         _ command: CommandSpec,
-        stage: TaskID?
+        stage: TaskID?,
+        onStarted: (@Sendable () async -> Void)?,
+        process: CommandProcessCancellation
     ) async throws -> CommandResult {
         guard let timeout = command.timeoutNanoseconds else {
-            return try await executeWithoutTimeout(command, stage: stage)
+            do {
+                let result = try await executeWithoutTimeout(
+                    command,
+                    stage: stage,
+                    onStarted: onStarted,
+                    process: process)
+                process.finished()
+                return result
+            } catch {
+                process.finished()
+                throw error
+            }
         }
         return try await withThrowingTaskGroup(
             of: TimedExecutionOutcome.self,
             returning: CommandResult.self
         ) { group in
             group.addTask {
-                .command(try await self.executeWithoutTimeout(command, stage: stage))
+                do {
+                    let result = try await self.executeWithoutTimeout(
+                        command,
+                        stage: stage,
+                        onStarted: onStarted,
+                        process: process)
+                    process.finished()
+                    return .command(.success(result))
+                } catch {
+                    process.finished()
+                    return .command(.failure(RuntimeExecutionFailure(error)))
+                }
             }
             group.addTask {
                 try await ContinuousClock().sleep(for: .nanoseconds(Int64(timeout)))
@@ -123,19 +152,19 @@ public actor ColliderRuntime {
             }
             let first = try await group.next()!
             switch first {
-            case .command(let result):
+            case .command(let outcome):
                 group.cancelAll()
-                return result
-            case .deadline:
-                #if !os(Windows)
-                await cancellation.forward(signal: Signal.terminate.rawValue)
-                let graceDeadline = ContinuousClock().now.advanced(by: .seconds(2))
-                while await cancellation.hasActiveProcessGroups(),
-                    ContinuousClock().now < graceDeadline
-                {
-                    try? await ContinuousClock().sleep(for: .milliseconds(10))
+                switch outcome {
+                case .success(let result):
+                    return result
+                case .failure(let failure):
+                    throw failure.underlying
                 }
-                #endif
+            case .deadline:
+                process.requestTermination()
+                await waitForProcessCompletion(
+                    process.completion,
+                    gracePeriod: .seconds(2))
                 group.cancelAll()
                 return CommandResult(status: 0, timedOut: true)
             }
@@ -144,7 +173,9 @@ public actor ColliderRuntime {
 
     private func executeWithoutTimeout(
         _ command: CommandSpec,
-        stage: TaskID?
+        stage: TaskID?,
+        onStarted: (@Sendable () async -> Void)?,
+        process: CommandProcessCancellation
     ) async throws -> CommandResult {
         let executable: Subprocess.Executable =
             switch command.executable {
@@ -175,7 +206,9 @@ public actor ColliderRuntime {
                 environment: environment,
                 platform: platform,
                 input: NoInput.none,
-                stage: stage)
+                stage: stage,
+                onStarted: onStarted,
+                process: process)
         case .terminal:
             return try await execute(
                 command,
@@ -183,7 +216,9 @@ public actor ColliderRuntime {
                 environment: environment,
                 platform: platform,
                 input: FileDescriptorInput.standardInput,
-                stage: stage)
+                stage: stage,
+                onStarted: onStarted,
+                process: process)
         case .bytes(let bytes):
             return try await execute(
                 command,
@@ -191,7 +226,9 @@ public actor ColliderRuntime {
                 environment: environment,
                 platform: platform,
                 input: ArrayInput.array(bytes),
-                stage: stage)
+                stage: stage,
+                onStarted: onStarted,
+                process: process)
         }
     }
 
@@ -201,7 +238,9 @@ public actor ColliderRuntime {
         environment: Subprocess.Environment,
         platform: Subprocess.PlatformOptions,
         input: consuming Input,
-        stage: TaskID?
+        stage: TaskID?,
+        onStarted: (@Sendable () async -> Void)?,
+        process: CommandProcessCancellation
     ) async throws -> CommandResult {
         if command.output == .terminal {
             let result = try await Subprocess.run(
@@ -212,7 +251,13 @@ public actor ColliderRuntime {
                 platformOptions: platform,
                 input: input,
                 output: .currentStandardOutput,
-                error: .currentStandardError)
+                error: .currentStandardError
+            ) { execution in
+                process.started(
+                    processIdentifier: execution.processIdentifier.value,
+                    processGroup: false)
+                await onStarted?()
+            }
             return CommandResult(status: statusCode(result.terminationStatus))
         }
 
@@ -223,7 +268,9 @@ public actor ColliderRuntime {
             platform: platform,
             input: input,
             logging: logging,
-            stage: stage)
+            stage: stage,
+            onStarted: onStarted,
+            process: process)
     }
 
     private func executeStreaming<Input: InputProtocol>(
@@ -233,7 +280,9 @@ public actor ColliderRuntime {
         platform: Subprocess.PlatformOptions,
         input: consuming Input,
         logging: CommandLogging?,
-        stage: TaskID?
+        stage: TaskID?,
+        onStarted: (@Sendable () async -> Void)?,
+        process: CommandProcessCancellation
     ) async throws -> CommandResult {
         let file: FilePath? =
             switch command.output {
@@ -258,8 +307,12 @@ public actor ColliderRuntime {
                     output: .sequence,
                     error: .combinedWithOutput
                 ) { execution in
+                    process.started(
+                        processIdentifier: execution.processIdentifier.value,
+                        processGroup: true)
                     let registration = await self.cancellation.registerProcessGroup(
                         execution.processIdentifier.value)
+                    await onStarted?()
                     do {
                         let bytes = try await collect(
                             execution.standardOutput,
@@ -292,8 +345,12 @@ public actor ColliderRuntime {
                     output: .sequence,
                     error: .sequence
                 ) { execution in
+                    process.started(
+                        processIdentifier: execution.processIdentifier.value,
+                        processGroup: true)
                     let registration = await self.cancellation.registerProcessGroup(
                         execution.processIdentifier.value)
+                    await onStarted?()
                     do {
                         let bytes = try await withThrowingTaskGroup(
                             of: StreamResult.self,
@@ -349,8 +406,124 @@ public actor ColliderRuntime {
 }
 
 private enum TimedExecutionOutcome: Sendable {
-    case command(CommandResult)
+    case command(Result<CommandResult, RuntimeExecutionFailure>)
     case deadline
+}
+
+private struct RuntimeExecutionFailure: Error, @unchecked Sendable {
+    let underlying: any Error
+
+    init(_ underlying: any Error) {
+        self.underlying = underlying
+    }
+}
+
+private final class CommandProcessCancellation: Sendable {
+    private struct Target: Sendable {
+        let processIdentifier: Int32
+        let processGroup: Bool
+    }
+
+    private enum State: Sendable {
+        case starting(terminationRequested: Bool)
+        case running(Target, terminationRequested: Bool)
+        case finished
+    }
+
+    private let state = Mutex<State>(.starting(terminationRequested: false))
+    let completion: AsyncStream<Void>
+    private let completionContinuation: AsyncStream<Void>.Continuation
+
+    init() {
+        let pair = AsyncStream<Void>.makeStream(
+            bufferingPolicy: .bufferingNewest(1))
+        completion = pair.stream
+        completionContinuation = pair.continuation
+    }
+
+    func started(
+        processIdentifier: Int32,
+        processGroup: Bool
+    ) {
+        let target = Target(
+            processIdentifier: processIdentifier,
+            processGroup: processGroup)
+        let terminate = state.withLock { state -> Bool in
+            switch state {
+            case .starting(let terminationRequested):
+                state = .running(
+                    target,
+                    terminationRequested: terminationRequested)
+                return terminationRequested
+            case .running, .finished:
+                return false
+            }
+        }
+        if terminate {
+            terminateProcess(target)
+        }
+    }
+
+    func requestTermination() {
+        let target = state.withLock { state -> Target? in
+            switch state {
+            case .starting:
+                state = .starting(terminationRequested: true)
+                return nil
+            case .running(let target, _):
+                state = .running(target, terminationRequested: true)
+                return target
+            case .finished:
+                return nil
+            }
+        }
+        if let target {
+            terminateProcess(target)
+        }
+    }
+
+    func finished() {
+        let shouldFinish = state.withLock { state -> Bool in
+            guard case .finished = state else {
+                state = .finished
+                return true
+            }
+            return false
+        }
+        if shouldFinish {
+            completionContinuation.finish()
+        }
+    }
+
+    private func terminateProcess(_ target: Target) {
+        #if !os(Windows)
+        let identifier =
+            target.processGroup
+            ? -target.processIdentifier
+            : target.processIdentifier
+        _ = kill(identifier, Signal.terminate.rawValue)
+        #else
+        _ = target
+        #endif
+    }
+}
+
+private func waitForProcessCompletion(
+    _ completion: AsyncStream<Void>,
+    gracePeriod: Duration
+) async {
+    await withTaskGroup(of: Void.self) { group in
+        group.addTask {
+            for await _ in completion {
+                return
+            }
+        }
+        group.addTask {
+            try? await ContinuousClock().sleep(for: gracePeriod)
+        }
+        await group.next()
+        group.cancelAll()
+    }
 }
 
 private enum OutputStream: Sendable, Equatable { case stdout, stderr }

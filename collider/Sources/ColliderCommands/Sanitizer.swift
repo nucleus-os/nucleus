@@ -90,11 +90,14 @@ struct SanitizerCommand {
         }
     }
 
-    func run(_ selection: SanitizerSelection) throws {
+    func run(_ selection: SanitizerSelection) async throws {
         let seed = "0x4e55434c455553"
         for kind in selection.sanitizers {
             for invocation in invocations(for: kind) {
-                try run(invocation, sanitizer: kind, seed: seed)
+                try await run(
+                    invocation,
+                    sanitizer: kind,
+                    seed: seed)
             }
         }
     }
@@ -191,7 +194,7 @@ struct SanitizerCommand {
         _ invocation: Invocation,
         sanitizer: RuntimeSanitizer,
         seed: String
-    ) throws {
+    ) async throws {
         let packageDirectory = context.repository(invocation.package)
         let scratch = context.root
             .appendingPathComponent(".build/nucleus-sanitizers", isDirectory: true)
@@ -237,17 +240,17 @@ struct SanitizerCommand {
         do {
             switch invocation.workload {
             case .test(let suite):
-                try instrumentedContext.run(
+                try await instrumentedContext.run(
                     "swift",
                     ["test"] + commonArguments + ["--filter", suite],
                     directory: packageDirectory)
             case .executable(let product):
                 let buildArguments = ["build"] + commonArguments
                     + ["--product", product]
-                try instrumentedContext.run(
+                try await instrumentedContext.run(
                     "swift", buildArguments,
                     directory: packageDirectory)
-                let output = try instrumentedContext.run(
+                let output = try await instrumentedContext.run(
                     "swift", buildArguments + ["--show-bin-path"],
                     directory: packageDirectory,
                     capture: true)
@@ -263,7 +266,7 @@ struct SanitizerCommand {
                     throw WorkspaceFailure.message(
                         "sanitizer executable is missing: \(executable.path)")
                 }
-                try instrumentedContext.run(
+                try await instrumentedContext.run(
                     executable.path, [],
                     directory: packageDirectory)
             }

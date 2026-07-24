@@ -14,8 +14,11 @@ struct AndroidBPFBrokerPrivilegedCommand: ParsableCommand {
     @Option
     var socket: String
 
-    @Option(name: .customLong("peer-uid"))
-    var peerUID: UInt32
+    @Option(name: .customLong("root-uid"))
+    var rootUID: UInt32
+
+    @Option(name: .customLong("root-gid"))
+    var rootGID: UInt32
 
     mutating func validate() throws {
         do {
@@ -32,7 +35,8 @@ struct AndroidBPFBrokerPrivilegedCommand: ParsableCommand {
     private func broker() throws -> AndroidBPFDelegationBroker {
         try AndroidBPFDelegationBroker(
             socketPath: socket,
-            expectedPeerUID: peerUID)
+            containerRootUID: rootUID,
+            containerRootGID: rootGID)
     }
 }
 
@@ -78,7 +82,8 @@ struct AndroidBPFBrokerInvocation: Equatable {
     init(
         colliderExecutable: String,
         socket: String,
-        peerUID: UInt32
+        rootUID: UInt32,
+        rootGID: UInt32
     ) {
         executable = "sudo"
         arguments = [
@@ -87,8 +92,10 @@ struct AndroidBPFBrokerInvocation: Equatable {
             androidBPFBrokerCommandName,
             "--socket",
             socket,
-            "--peer-uid",
-            String(peerUID),
+            "--root-uid",
+            String(rootUID),
+            "--root-gid",
+            String(rootGID),
         ]
     }
 }

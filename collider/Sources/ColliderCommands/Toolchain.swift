@@ -106,7 +106,7 @@ struct ToolchainStatus {
 struct ToolchainCommand {
     let context: WorkspaceContext
 
-    func rebuild(_ options: RebuildOptions) throws {
+    func rebuild(_ options: RebuildOptions) async throws {
         let sourceID = context.environment["NUCLEUS_SWIFT_SOURCE_ID"] ?? "release-6.4.x"
         let sourceRef: String
         let sourceScheme: String
@@ -227,7 +227,7 @@ struct ToolchainCommand {
                         ".legacy-\(bundleName)-\(generationID)").path),
                 reconfigureHost: options.reconfigure,
                 environment: environment))
-        try context.execute(
+        try await context.execute(
             tasks: taskSet.tasks,
             selected: taskSet.selected,
             controls: options.controls,
@@ -326,7 +326,7 @@ struct ToolchainInstallation {
         prefix: String?,
         tarball: String?,
         dryRun: Bool
-    ) throws {
+    ) async throws {
         let resolvedVersion = try validatedVersion(version)
         let resolvedPrefix = try validatedPrefix(prefix)
         let resolvedTarball = URL(fileURLWithPath: tarball ?? defaultTarball(
@@ -336,7 +336,7 @@ struct ToolchainInstallation {
                 "Swift toolchain archive not found: \(resolvedTarball.path)")
         }
         let identity = try ArtifactHasher.digest(file: FilePath(resolvedTarball.path))
-        try invokeHelper(
+        try await invokeHelper(
             arguments: [],
             version: resolvedVersion,
             prefix: resolvedPrefix,
@@ -349,8 +349,8 @@ struct ToolchainInstallation {
         version: String?,
         prefix: String?,
         dryRun: Bool
-    ) throws {
-        try invokeHelper(
+    ) async throws {
+        try await invokeHelper(
             arguments: ["--uninstall"],
             version: try validatedVersion(version),
             prefix: try validatedPrefix(prefix),
@@ -366,7 +366,7 @@ struct ToolchainInstallation {
         tarball: URL?,
         identity: ArtifactDigest?,
         dryRun: Bool
-    ) throws {
+    ) async throws {
         let helper = context.root.appendingPathComponent("swift-toolchain/install.sh")
         guard FileManager.default.isExecutableFile(atPath: helper.path) else {
             throw WorkspaceFailure.message(
@@ -387,7 +387,7 @@ struct ToolchainInstallation {
             print((["sudo"] + commandArguments).joined(separator: " "))
             return
         }
-        try context.run(
+        try await context.run(
             "sudo",
             commandArguments,
             directory: context.root,

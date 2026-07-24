@@ -4,6 +4,33 @@ import SystemPackage
 import Testing
 @testable import ColliderRuntime
 
+@Test func taskIdentityEncodingRemainsByteStableAcrossWorkflowMoves() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-engine-identity-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let output = FilePath("/nucleus/identity-fixture/output")
+    let task = TaskDeclaration(
+        id: TaskID(rawValue: "fixture.identity"),
+        component: ComponentID(rawValue: "fixture"),
+        inputs: [
+            .value(name: "configuration", bytes: Array("stable-v1".utf8)),
+            .environment(name: "MODE", value: "release"),
+        ],
+        outputs: [
+            OutputDeclaration(path: output, validation: .regularFile),
+        ],
+        operation: .writeFile(output, bytes: Array("payload\n".utf8)))
+    let report = try await ColliderRuntime().execute(
+        graph: TaskGraph([task]),
+        selected: [task.id],
+        stateRoot: FilePath(directory.appendingPathComponent("state").path),
+        options: TaskExecutionOptions(dryRun: true))
+
+    #expect(
+        report.plan[0].identity.description
+            == "sha256:1692de34cf5c17d8652b5c6690407f40a23e63b2d8dc31545836d21e00ed5707")
+}
+
 @Test func taskEngineExplainsInvalidationAndThenSkipsCleanWork() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
         "collider-engine-\(UUID().uuidString)")

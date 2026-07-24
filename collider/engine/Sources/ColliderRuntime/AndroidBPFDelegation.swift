@@ -9,22 +9,26 @@ import Darwin
 
 public struct AndroidBPFDelegationBroker: Equatable, Sendable {
     public let socketPath: String
-    public let expectedPeerUID: UInt32
+    public let containerRootUID: UInt32
+    public let containerRootGID: UInt32
 
     public init(
         socketPath: String,
-        expectedPeerUID: UInt32
+        containerRootUID: UInt32,
+        containerRootGID: UInt32
     ) throws {
         try validateBPFDelegationPath(
             socketPath,
             suffix: ["bpf-broker", "broker.sock"],
             field: "BPF broker socket")
-        guard expectedPeerUID > 0 else {
-            throw AndroidBPFDelegationFailure.invalidPeerUID(
-                expectedPeerUID)
+        guard containerRootUID > 0, containerRootGID > 0 else {
+            throw AndroidBPFDelegationFailure.invalidContainerRoot(
+                userID: containerRootUID,
+                groupID: containerRootGID)
         }
         self.socketPath = socketPath
-        self.expectedPeerUID = expectedPeerUID
+        self.containerRootUID = containerRootUID
+        self.containerRootGID = containerRootGID
     }
 
     public func run() throws {
@@ -34,7 +38,8 @@ public struct AndroidBPFDelegationBroker: Equatable, Sendable {
         let status = socketPath.withCString {
             collider_android_bpf_delegation_broker(
                 $0,
-                expectedPeerUID)
+                containerRootUID,
+                containerRootGID)
         }
         guard status == 0 else {
             throw AndroidBPFDelegationFailure.system(
@@ -97,6 +102,32 @@ public struct AndroidBPFDelegationMount: Equatable, Sendable {
                 operation: "mount the delegated Android BPF filesystem",
                 code: errno)
         }
+        let attributes = try FileManager.default.attributesOfItem(
+            atPath: targetPath)
+        let owner = (attributes[.ownerAccountID] as? NSNumber)?
+            .uint32Value
+        let group = (attributes[.groupOwnerAccountID] as? NSNumber)?
+            .uint32Value
+        let permissions = (attributes[.posixPermissions] as? NSNumber)?
+            .uint16Value
+        guard attributes[.type] as? FileAttributeType == .typeDirectory,
+            let owner,
+            owner == 0,
+            let group,
+            group == 0,
+            let permissions,
+            permissions & 0o777 == 0o777
+        else {
+            throw AndroidBPFDelegationFailure.invalidMountedRoot(
+                path: targetPath,
+                owner: owner,
+                group: group,
+                permissions: permissions)
+        }
+        print(
+            "Mounted delegated Android bpffs at \(targetPath) "
+                + "(uid \(owner), gid \(group), "
+                + "mode \(String(permissions, radix: 8)))")
     }
 }
 
@@ -107,19 +138,24 @@ public enum AndroidBPFDelegationFailure:
     Sendable
 {
     case invalidPath(field: String, value: String)
-    case invalidPeerUID(UInt32)
+    case invalidContainerRoot(userID: UInt32, groupID: UInt32)
     case containerMismatch(expected: String, actual: String)
     case brokerRequiresRoot
     case mountRequiresContainerRoot
     case invalidMountHookEnvironment
+    case invalidMountedRoot(
+        path: String,
+        owner: UInt32?,
+        group: UInt32?,
+        permissions: UInt16?)
     case system(operation: String, code: Int32)
 
     public var description: String {
         switch self {
         case .invalidPath(let field, let value):
             "invalid \(field): \(value)"
-        case .invalidPeerUID(let userID):
-            "invalid Android BPF broker peer UID: \(userID)"
+        case .invalidContainerRoot(let userID, let groupID):
+            "invalid mapped Android root identity: \(userID):\(groupID)"
         case .containerMismatch(let expected, let actual):
             "BPF mount target belongs to \(expected), not \(actual)"
         case .brokerRequiresRoot:
@@ -128,6 +164,16 @@ public enum AndroidBPFDelegationFailure:
             "the Android BPF mount hook requires container root"
         case .invalidMountHookEnvironment:
             "the Android BPF mount operation requires its matching LXC mount hook"
+        case .invalidMountedRoot(
+            let path,
+            let owner,
+            let group,
+            let permissions
+        ):
+            "delegated Android bpffs root \(path) has uid "
+                + "\(owner.map { String($0) } ?? "unknown"), gid "
+                + "\(group.map { String($0) } ?? "unknown"), mode "
+                + "\(permissions.map { String($0, radix: 8) } ?? "unknown")"
         case .system(let operation, let code):
             "\(operation) failed with errno \(code)"
         }
