@@ -22,8 +22,8 @@ public:
         std::size_t bufferSize = 4 * 1024 * 1024);
 
     GuestRingStream(
-        nucleus_android_shared_ring *commands,
-        nucleus_android_shared_ring *responses,
+        nucleus_android_shared_ring_producer *commandProducer,
+        nucleus_android_shared_ring_consumer *responseConsumer,
         bool ownsRings,
         std::size_t bufferSize = 4 * 1024 * 1024);
     ~GuestRingStream() override;
@@ -43,8 +43,8 @@ private:
     int writeChunk(const std::uint8_t *bytes, std::size_t length);
     bool loadResponseChunk();
 
-    nucleus_android_shared_ring *mCommands;
-    nucleus_android_shared_ring *mResponses;
+    nucleus_android_shared_ring_producer *mCommandProducer;
+    nucleus_android_shared_ring_consumer *mResponseConsumer;
     bool mOwnsRings;
     std::vector<unsigned char> mCommitBuffer;
     std::vector<unsigned char> mResponseBuffer;

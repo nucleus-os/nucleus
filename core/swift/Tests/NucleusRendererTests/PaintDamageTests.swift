@@ -73,15 +73,27 @@ import Testing
 
     @Test func presentationProjectsLocalPaintDamageThroughPlacementAndScale() throws {
         var tree = LayerTree()
-        var layer = Layer(id: 7, kind: .container)
-        layer.model.properties.position = Point2D(x: 10, y: 20)
-        layer.model.properties.anchorPoint = Point2D(x: 0, y: 0)
-        layer.model.properties.bounds = Bounds(w: 100, h: 80)
-        layer.model.content = .paint(PaintContentHandle(raw: 9))
-        layer.presentation.content = .paint(PaintContentHandle(raw: 9))
-        layer.damage.markContent(Rect(x: 5, y: 6, w: 10, h: 12))
-        tree.insertLayer(layer)
-        tree.contextRoots[compositorContextId] = [7]
+        var transaction = Transaction(contextId: compositorContextId)
+        transaction.created = [LayerCreated(
+            nodeId: 7,
+            kind: .container,
+            position: Point2D(x: 10, y: 20),
+            anchorPoint: Point2D(x: 0, y: 0),
+            bounds: Bounds(w: 100, h: 80))]
+        transaction.inserted = [
+            LayerInserted(nodeId: 7, parentId: 0, index: 0),
+        ]
+        var content = LayerPropertyUpdate(nodeId: 7)
+        content.content = .paint(PaintContentHandle(raw: 9))
+        content.contentDamage = Rect(x: 5, y: 6, w: 10, h: 12)
+        transaction.propertyUpdates = [content]
+        guard case .success = TransactionApplier.apply(
+            transaction,
+            to: &tree)
+        else {
+            Issue.record("paint-damage tree setup was rejected")
+            return
+        }
         let target = RenderTarget(
             outputId: 1,
             logicalRect: LogicalRect(

@@ -494,7 +494,7 @@ The retained renderer exposes only behavior that reaches the live transaction pa
 ```sh
 swift test --package-path core
 swift test --package-path compositor/compositor-core
-tools/collider test all
+collider test all
 ```
 
 Phase 6 is complete when repository-wide symbol search finds no dormant queue, operation service, transition record, or null presentation sink.
@@ -568,7 +568,7 @@ Add a typed service spy and verify:
 swift test --package-path compositor/compositor-core
 swift test --package-path compositor/compositor
 swift test --package-path core
-tools/collider test all
+collider test all
 ```
 
 ## Phase 8: Batch the React Native mount handoff
@@ -698,9 +698,9 @@ swift test --package-path shell
 Then run the complete-checkout gates:
 
 ```sh
-tools/collider doctor
-tools/collider build
-tools/collider test
+collider doctor
+collider build
+collider test
 ```
 
 Do not wipe `.build` or other caches unless an independently diagnosed cache failure requires it.

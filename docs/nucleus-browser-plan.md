@@ -362,7 +362,7 @@ revision, but subsystem ownership and API direction do not change.
 As of 2026-07-22, all planned source, patch-stack, product, packaging, and
 source-level test coding is persisted in the workspace:
 
-- `tools/collider browser doctor|bootstrap|build|test|install` is the single
+- `collider browser doctor|bootstrap|build|test|install` is the single
   public workflow; internal product scripts expose no alternate build modes;
 - both products reuse one content-addressed source generation containing the
   exact CEF, Chromium, depot_tools, patch, generated-API, and PGO inputs;
@@ -442,7 +442,7 @@ additional implementation phases.
 
 ### Phase 0 — Establish the shared Chromium substrate
 
-Put the public Chromium workflow in `tools/collider`, retain `chromium/` as its
+Put the public Chromium workflow in `collider`, retain `chromium/` as its
 internal orchestrator, and retain `cef/` as the CEF-specific build/package
 stage. Exact-commit `automate-git.py` provisions a pristine, content-addressed
 source generation. The orchestrator owns layered patch application and two

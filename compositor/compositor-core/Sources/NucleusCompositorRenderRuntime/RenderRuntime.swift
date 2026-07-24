@@ -244,6 +244,9 @@ public final class RenderRuntime {
                 timing.compositeNs, timing.blitNs, timing.frameSnapNs,
                 timing.uploadSnapNs, timing.submitNs,
             ]))
+        plotMilliseconds(
+            "swift.renderer.frame.resource_summary_ms",
+            timing.resourceSummaryNs)
         plotMilliseconds("swift.renderer.frame.record_total_ms", frame.recordNs)
         plotMilliseconds(
             "swift.renderer.frame.record_residual_ms",
@@ -255,6 +258,12 @@ public final class RenderRuntime {
         plotMilliseconds("swift.renderer.frame.record_to_submit_ms", frame.recordToSubmitNs)
         Trace.plot("swift.renderer.frame.operations", frame.operationCount)
         Trace.plot("swift.renderer.frame.referenced_surfaces", frame.referencedSurfaceCount)
+        Trace.plot("swift.renderer.frame.unique_textures", frame.uniqueTextureCount)
+        Trace.plot("swift.renderer.frame.paint_requests", frame.paintRequestCount)
+        Trace.plot("swift.renderer.frame.shadow_materials", frame.shadowMaterialCount)
+        Trace.plot(
+            "swift.renderer.frame.backdrop_blur_regions",
+            frame.backdropBlurRegionCount)
         Trace.plot("swift.renderer.frame.changed_surfaces", frame.changedSurfaceCount)
         Trace.plot("swift.renderer.frame.damage_rects", frame.damageRectCount)
         Trace.plot("swift.renderer.frame.damage_pixels", frame.damagePixelCount)

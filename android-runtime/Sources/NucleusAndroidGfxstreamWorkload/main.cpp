@@ -81,8 +81,9 @@ void traceBufferStage(
 template <typename T, void (*Destroy)(T *)>
 using Owned = std::unique_ptr<T, decltype(Destroy)>;
 
-using OwnedRing =
-    Owned<nucleus_android_shared_ring, nucleus_android_shared_ring_destroy>;
+using OwnedRingMapping = Owned<
+    nucleus_android_shared_ring_mapping,
+    nucleus_android_shared_ring_mapping_destroy>;
 
 void closeEndpointDescriptors(
     nucleus_android_gfxstream_endpoint_descriptors *descriptors) {
@@ -121,36 +122,40 @@ nucleus_android_gfxstream_endpoint_descriptors emptyEndpointDescriptors() {
 }
 
 bool exportEndpointDescriptors(
-    nucleus_android_shared_ring *commands,
-    nucleus_android_shared_ring *responses,
+    nucleus_android_shared_ring_mapping *commands,
+    nucleus_android_shared_ring_mapping *responses,
     nucleus_android_gfxstream_endpoint_descriptors *output) {
     *output = emptyEndpointDescriptors();
-    output->command_memory_fd =
-        nucleus_android_shared_ring_export_memory_fd(commands);
-    output->command_data_notification_fd =
-        nucleus_android_shared_ring_export_data_notification_fd(commands);
-    output->command_space_notification_fd =
-        nucleus_android_shared_ring_export_space_notification_fd(commands);
-    output->response_memory_fd =
-        nucleus_android_shared_ring_export_memory_fd(responses);
-    output->response_data_notification_fd =
-        nucleus_android_shared_ring_export_data_notification_fd(responses);
-    output->response_space_notification_fd =
-        nucleus_android_shared_ring_export_space_notification_fd(responses);
-    const int values[] = {
-        output->command_memory_fd,
-        output->command_data_notification_fd,
-        output->command_space_notification_fd,
-        output->response_memory_fd,
-        output->response_data_notification_fd,
-        output->response_space_notification_fd,
+    nucleus_android_shared_ring_descriptors commandDescriptors = {
+        .memory_fd = -1,
+        .data_notification_fd = -1,
+        .space_notification_fd = -1,
     };
-    for (const int descriptor : values) {
-        if (descriptor < 0) {
-            closeEndpointDescriptors(output);
-            return false;
-        }
+    nucleus_android_shared_ring_descriptors responseDescriptors = {
+        .memory_fd = -1,
+        .data_notification_fd = -1,
+        .space_notification_fd = -1,
+    };
+    if (nucleus_android_shared_ring_mapping_export_descriptors(
+            commands,
+            &commandDescriptors) < 0 ||
+        nucleus_android_shared_ring_mapping_export_descriptors(
+            responses,
+            &responseDescriptors) < 0) {
+        nucleus_android_shared_ring_descriptors_close(commandDescriptors);
+        nucleus_android_shared_ring_descriptors_close(responseDescriptors);
+        return false;
     }
+    output->command_memory_fd = commandDescriptors.memory_fd;
+    output->command_data_notification_fd =
+        commandDescriptors.data_notification_fd;
+    output->command_space_notification_fd =
+        commandDescriptors.space_notification_fd;
+    output->response_memory_fd = responseDescriptors.memory_fd;
+    output->response_data_notification_fd =
+        responseDescriptors.data_notification_fd;
+    output->response_space_notification_fd =
+        responseDescriptors.space_notification_fd;
     return true;
 }
 
@@ -198,9 +203,9 @@ class RingConnection {
         std::lock_guard<std::mutex> lock(mEndpointsMutex);
         for (const auto &endpoint : mEndpoints) {
             endpoint->stopping.store(true, std::memory_order_release);
-            (void)nucleus_android_shared_ring_close(
+            (void)nucleus_android_shared_ring_mapping_close(
                 endpoint->commands.get());
-            (void)nucleus_android_shared_ring_close(
+            (void)nucleus_android_shared_ring_mapping_close(
                 endpoint->responses.get());
             signalEventFd(endpoint->stopFd);
         }
@@ -244,12 +249,12 @@ class RingConnection {
         for (const auto &endpoint : mEndpoints) {
             nucleus_android_shared_ring_diagnostic commands = {};
             nucleus_android_shared_ring_diagnostic responses = {};
-            if (nucleus_android_shared_ring_get_diagnostic(
+            if (nucleus_android_shared_ring_mapping_get_diagnostic(
                     endpoint->commands.get(),
                     &commands) == 0) {
                 total += commands.write_backpressure_count;
             }
-            if (nucleus_android_shared_ring_get_diagnostic(
+            if (nucleus_android_shared_ring_mapping_get_diagnostic(
                     endpoint->responses.get(),
                     &responses) == 0) {
                 total += responses.write_backpressure_count;
@@ -264,13 +269,13 @@ class RingConnection {
         for (const auto &endpoint : mEndpoints) {
             nucleus_android_shared_ring_diagnostic commands = {};
             nucleus_android_shared_ring_diagnostic responses = {};
-            if (nucleus_android_shared_ring_get_diagnostic(
+            if (nucleus_android_shared_ring_mapping_get_diagnostic(
                     endpoint->commands.get(),
                     &commands) == 0) {
                 maximum =
                     std::max(maximum, commands.maximum_occupancy);
             }
-            if (nucleus_android_shared_ring_get_diagnostic(
+            if (nucleus_android_shared_ring_mapping_get_diagnostic(
                     endpoint->responses.get(),
                     &responses) == 0) {
                 maximum =
@@ -315,8 +320,12 @@ class RingConnection {
   private:
     struct Endpoint {
         Endpoint()
-            : commands(nullptr, nucleus_android_shared_ring_destroy),
-              responses(nullptr, nucleus_android_shared_ring_destroy) {}
+            : commands(
+                  nullptr,
+                  nucleus_android_shared_ring_mapping_destroy),
+              responses(
+                  nullptr,
+                  nucleus_android_shared_ring_mapping_destroy) {}
 
         ~Endpoint() {
             if (stopFd >= 0) {
@@ -324,8 +333,8 @@ class RingConnection {
             }
         }
 
-        OwnedRing commands;
-        OwnedRing responses;
+        OwnedRingMapping commands;
+        OwnedRingMapping responses;
         int stopFd = -1;
         nucleus_android_gfxstream_host_connection *connection = nullptr;
         std::thread thread;
@@ -349,9 +358,13 @@ class RingConnection {
         }
         auto endpoint = std::make_unique<Endpoint>();
         endpoint->commands.reset(
-            nucleus_android_shared_ring_create(2, 64 * 1024));
+            nucleus_android_shared_ring_mapping_create(
+                2,
+                64 * 1024));
         endpoint->responses.reset(
-            nucleus_android_shared_ring_create(2, 64 * 1024));
+            nucleus_android_shared_ring_mapping_create(
+                2,
+                64 * 1024));
         endpoint->stopFd =
             eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK);
         if (!endpoint->commands || !endpoint->responses ||
@@ -477,8 +490,8 @@ class RingConnection {
                 endpoint->commandNotifications.fetch_add(
                     1,
                     std::memory_order_relaxed);
-                if (nucleus_android_shared_ring_drain_data_notification(
-                        endpoint->commands.get()) != 0) {
+                if (nucleus_android_gfxstream_host_connection_drain_command_notification(
+                        endpoint->connection) != 0) {
                     fail(
                         endpoint,
                         "failed to drain the command-ring notification");
@@ -489,8 +502,8 @@ class RingConnection {
                 endpoint->responseSpaceNotifications.fetch_add(
                     1,
                     std::memory_order_relaxed);
-                if (nucleus_android_shared_ring_drain_space_notification(
-                        endpoint->responses.get()) != 0) {
+                if (nucleus_android_gfxstream_host_connection_drain_response_space_notification(
+                        endpoint->connection) != 0) {
                     fail(
                         endpoint,
                         "failed to drain the response-ring notification");
@@ -2517,6 +2530,18 @@ int main(int argc, char **argv) {
             connection.maximumRingOccupancy();
         const auto connectionDiagnostics =
             connection.diagnostics();
+        buffers.clear();
+        if (nucleus_android_gpu_collect(gpu.get()) != 0 ||
+            nucleus_android_gpu_get_diagnostic(
+                gpu.get(),
+                &diagnostic) != 0 ||
+            diagnostic.live_buffer_count != 0 ||
+            diagnostic.retired_buffer_count != 0 ||
+            diagnostic.reclaimed_buffer_count <
+                static_cast<uint64_t>(kBufferCount * 2)) {
+            throw std::runtime_error(
+                "broker buffer reclamation did not return to baseline");
+        }
 
         std::printf(
             "{\"status\":\"qualified\","
@@ -2550,7 +2575,10 @@ int main(int argc, char **argv) {
             "\"liveRingDecoder\":true,"
             "\"releaseSyncFileWait\":true,"
             "\"acquireSyncFileSignal\":true,"
-            "\"cpuFenceWait\":false}\n",
+            "\"cpuFenceWait\":false,"
+            "\"liveBuffersAfterRelease\":%llu,"
+            "\"retiredBuffersAfterRelease\":%llu,"
+            "\"reclaimedBuffers\":%llu}\n",
             candidate->render_path,
             diagnostic.device_name,
             guestDeviceName.c_str(),
@@ -2577,7 +2605,13 @@ int main(int argc, char **argv) {
                 connectionDiagnostics.peerDisconnects),
             static_cast<unsigned long long>(
                 connectionDiagnostics.orderlyStopWakeups),
-            backpressureEvents > 0 ? "true" : "false");
+            backpressureEvents > 0 ? "true" : "false",
+            static_cast<unsigned long long>(
+                diagnostic.live_buffer_count),
+            static_cast<unsigned long long>(
+                diagnostic.retired_buffer_count),
+            static_cast<unsigned long long>(
+                diagnostic.reclaimed_buffer_count));
         return 0;
     } catch (const std::exception &exception) {
         printFailure(exception.what());

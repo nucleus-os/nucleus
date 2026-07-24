@@ -31,7 +31,10 @@ let package = Package(
         .target(
             name: "ColliderPlatformC",
             path: "Sources/ColliderPlatformC",
-            publicHeadersPath: "include"),
+            publicHeadersPath: "include",
+            linkerSettings: [
+                .linkedLibrary("dl", .when(platforms: [.linux])),
+            ]),
         .target(
             name: "ColliderRuntime",
             dependencies: [

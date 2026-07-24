@@ -8,8 +8,8 @@ archive are one immutable platform generation.
 Run the workflow from the repository root:
 
 ```sh
-tools/collider toolchain rebuild
-tools/collider toolchain status
+collider toolchain rebuild
+collider toolchain status
 ```
 
 Use `--arch aarch64` or `--arch x86_64` to select Android targets. Repeat the
@@ -36,4 +36,4 @@ The recipe inputs are:
 - `apt-deps.txt` for the Linux host capability set.
 
 `install.sh` is the narrow privileged boundary used by
-`tools/collider toolchain install|uninstall`. Do not invoke it directly.
+`collider toolchain install|uninstall`. Do not invoke it directly.

@@ -5,9 +5,121 @@ import NucleusRenderModel
 func renderModelBenchmarks() -> [BenchmarkWorkload] {
     [
         retainedTreeWorkload(layerCount: 10_000),
+        sparseTransactionValidationWorkload(layerCount: 10_000),
         animationCompletionWorkload(animationCount: 1_000),
         damageRegionWorkload(rectangleCount: 256),
     ]
+}
+
+@MainActor
+private func sparseTransactionValidationWorkload(
+    layerCount: Int
+) -> BenchmarkWorkload {
+    BenchmarkWorkload(
+        category: "render-model",
+        name: "sparse-transaction-validation-\(layerCount)",
+        inputSize: UInt64(layerCount),
+        seed: 0x5350_4152_5345_5458,
+        budgets: [
+            .exact("retained_layers", UInt64(layerCount)),
+            .exact("updated_layers", 1),
+            .exact("reparented_layers", 1),
+            .maximum("validation_nodes_visited", 2),
+            .maximum("validation_ancestor_steps", 2),
+            .maximum("apply_dictionary_probes", 1),
+            .maximum("reparent_validation_nodes_visited", 3),
+            .maximum("reparent_validation_ancestor_steps", 2),
+            .maximum("reparent_apply_dictionary_probes", 3),
+        ],
+        body: {
+            let context = ContextID(raw: 40)
+            var tree = LayerTree()
+            var creation = Transaction(contextId: context)
+            creation.created.reserveCapacity(layerCount)
+            creation.inserted.reserveCapacity(layerCount)
+            for id in 1...layerCount {
+                creation.created.append(LayerCreated(
+                    nodeId: UInt64(id),
+                    kind: .container))
+                creation.inserted.append(LayerInserted(
+                    nodeId: UInt64(id),
+                    parentId: id == 1 ? 0 : 1,
+                    index: UInt32(id - 1)))
+            }
+            guard case .success = TransactionApplier.apply(
+                creation,
+                to: &tree)
+            else {
+                throw BenchmarkFailure.semantic(
+                    "large retained tree setup was rejected")
+            }
+
+            var property = LayerPropertyUpdate(nodeId: 2)
+            property.opacity = 0.625
+            var update = Transaction(contextId: context)
+            update.propertyUpdates = [property]
+            var diagnostics = TransactionApplier.ApplyDiagnostics()
+            guard case .success = TransactionApplier.apply(
+                update,
+                to: &tree,
+                diagnostics: &diagnostics)
+            else {
+                throw BenchmarkFailure.semantic(
+                    "one-node retained-tree update was rejected")
+            }
+            guard tree.layers.count == layerCount,
+                  tree.get(2)?.model.properties.opacity == 0.625
+            else {
+                throw BenchmarkFailure.semantic(
+                    "one-node retained-tree update changed unrelated topology")
+            }
+
+            var reparent = Transaction(contextId: context)
+            reparent.inserted = [
+                LayerInserted(nodeId: 2, parentId: 3, index: 0),
+            ]
+            var reparentDiagnostics =
+                TransactionApplier.ApplyDiagnostics()
+            guard case .success = TransactionApplier.apply(
+                reparent,
+                to: &tree,
+                diagnostics: &reparentDiagnostics)
+            else {
+                throw BenchmarkFailure.semantic(
+                    "one-node retained-tree reparent was rejected")
+            }
+            guard tree.get(2)?.parent == 3,
+                  tree.get(3)?.children == [2],
+                  tree.get(1)?.children.contains(2) == false
+            else {
+                throw BenchmarkFailure.semantic(
+                    "one-node retained-tree reparent produced invalid topology")
+            }
+
+            var checksum = UInt64(tree.layers.count)
+            checksum.mix(UInt64(
+                tree.get(2)?.model.properties.opacity.bitPattern ?? 0))
+            checksum.mix(tree.get(2)?.parent ?? 0)
+            return BenchmarkSample(
+                metrics: [
+                    "retained_layers": UInt64(tree.layers.count),
+                    "updated_layers": 1,
+                    "reparented_layers": 1,
+                    "validation_nodes_visited":
+                        diagnostics.validationNodesVisited,
+                    "validation_ancestor_steps":
+                        diagnostics.validationAncestorSteps,
+                    "apply_dictionary_probes":
+                        diagnostics.applyDictionaryProbes,
+                    "reparent_validation_nodes_visited":
+                        reparentDiagnostics.validationNodesVisited,
+                    "reparent_validation_ancestor_steps":
+                        reparentDiagnostics.validationAncestorSteps,
+                    "reparent_apply_dictionary_probes":
+                        reparentDiagnostics.applyDictionaryProbes,
+                ],
+                semanticChecksum: checksum)
+        })
 }
 
 @MainActor

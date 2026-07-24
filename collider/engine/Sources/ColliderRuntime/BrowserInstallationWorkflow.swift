@@ -196,7 +196,6 @@ extension ColliderRuntime {
         }
         try DurableFile.writeJSON(
             BrowserInstallManifest(
-                schema: 1,
                 installID: installID,
                 buildID: buildID,
                 widevineSHA256: widevineID,
@@ -300,7 +299,6 @@ extension ColliderRuntime {
 }
 
 private struct BrowserInstallManifest: Codable {
-    let schema: UInt32
     let installID: String
     let buildID: String
     let widevineSHA256: String

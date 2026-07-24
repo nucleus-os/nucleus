@@ -1,6 +1,18 @@
 @testable import NucleusRenderModel
 import Testing
 
+private extension Result where Success == Void {
+    var succeeded: Bool {
+        if case .success = self { return true }
+        return false
+    }
+
+    var failure: Failure? {
+        if case .failure(let error) = self { return error }
+        return nil
+    }
+}
+
 @MainActor
 @Suite struct RenderTransactionApplyTests {
     @Test func renderTransactionApply() {
@@ -176,5 +188,173 @@ import Testing
         TransactionApplier.apply(t16, to: &tree2)
         #expect(tree2.get(50)?.model.properties.position == Point2D(x: 10, y: 20), "pu-frame-position")
         #expect(tree2.get(50)?.model.properties.bounds == Bounds(w: 100, h: 50), "pu-frame-bounds")
+    }
+
+    @Test func orderedInsertionsRejectAnIntroducedCycleAtomically() {
+        let context = ContextID(raw: 7)
+        var tree = LayerTree()
+        var transaction = Transaction(contextId: context)
+        transaction.created = [
+            LayerCreated(nodeId: 1, kind: .container),
+            LayerCreated(nodeId: 2, kind: .container),
+        ]
+        transaction.inserted = [
+            LayerInserted(nodeId: 1, parentId: 0, index: 0),
+            LayerInserted(nodeId: 2, parentId: 1, index: 0),
+            LayerInserted(nodeId: 1, parentId: 2, index: 0),
+        ]
+
+        let result = TransactionApplier.apply(transaction, to: &tree)
+
+        #expect(result.failure == .insertion(
+            nodeID: 1,
+            parentID: 2,
+            reason: .layerCycle))
+        #expect(tree.layers.isEmpty)
+        #expect(tree.roots(for: context).isEmpty)
+    }
+
+    @Test func detachmentBeforeRemovalPreservesUpdatedDescendant() {
+        let context = ContextID(raw: 8)
+        var tree = LayerTree()
+        var setup = Transaction(contextId: context)
+        setup.created = [
+            LayerCreated(nodeId: 1, kind: .container),
+            LayerCreated(nodeId: 2, kind: .container),
+        ]
+        setup.inserted = [
+            LayerInserted(nodeId: 1, parentId: 0, index: 0),
+            LayerInserted(nodeId: 2, parentId: 1, index: 0),
+        ]
+        #expect(TransactionApplier.apply(setup, to: &tree).succeeded)
+
+        var update = LayerPropertyUpdate(nodeId: 2)
+        update.opacity = 0.25
+        var transaction = Transaction(contextId: context)
+        transaction.detached = [LayerDetached(nodeId: 2)]
+        transaction.removed = [LayerRemoved(nodeId: 1)]
+        transaction.propertyUpdates = [update]
+
+        #expect(TransactionApplier.apply(transaction, to: &tree).succeeded)
+        #expect(tree.get(1) == nil)
+        #expect(tree.get(2)?.parent == nil)
+        #expect(tree.get(2)?.model.properties.opacity == 0.25)
+    }
+
+    @Test func reparentingBeforeRemovalUsesFinalTopology() {
+        let context = ContextID(raw: 9)
+        var tree = LayerTree()
+        var setup = Transaction(contextId: context)
+        setup.created = [
+            LayerCreated(nodeId: 1, kind: .container),
+            LayerCreated(nodeId: 2, kind: .container),
+            LayerCreated(nodeId: 3, kind: .container),
+        ]
+        setup.inserted = [
+            LayerInserted(nodeId: 1, parentId: 0, index: 0),
+            LayerInserted(nodeId: 3, parentId: 0, index: 1),
+            LayerInserted(nodeId: 2, parentId: 1, index: 0),
+        ]
+        #expect(TransactionApplier.apply(setup, to: &tree).succeeded)
+
+        var update = LayerPropertyUpdate(nodeId: 2)
+        update.position = Point2D(x: 17, y: 23)
+        var transaction = Transaction(contextId: context)
+        transaction.inserted = [
+            LayerInserted(nodeId: 2, parentId: 3, index: 0),
+        ]
+        transaction.removed = [LayerRemoved(nodeId: 1)]
+        transaction.propertyUpdates = [update]
+
+        #expect(TransactionApplier.apply(transaction, to: &tree).succeeded)
+        #expect(tree.get(1) == nil)
+        #expect(tree.get(2)?.parent == 3)
+        #expect(tree.get(3)?.children == [2])
+        #expect(tree.get(2)?.model.properties.position == Point2D(
+            x: 17,
+            y: 23))
+    }
+
+    @Test func propertyUpdateUnderRemovalRootRejectsAtomically() {
+        let context = ContextID(raw: 10)
+        var tree = LayerTree()
+        var setup = Transaction(contextId: context)
+        setup.created = [
+            LayerCreated(nodeId: 1, kind: .container),
+            LayerCreated(nodeId: 2, kind: .container),
+        ]
+        setup.inserted = [
+            LayerInserted(nodeId: 1, parentId: 0, index: 0),
+            LayerInserted(nodeId: 2, parentId: 1, index: 0),
+        ]
+        #expect(TransactionApplier.apply(setup, to: &tree).succeeded)
+
+        var update = LayerPropertyUpdate(nodeId: 2)
+        update.opacity = 0.4
+        var transaction = Transaction(contextId: context)
+        transaction.removed = [LayerRemoved(nodeId: 1)]
+        transaction.propertyUpdates = [update]
+
+        #expect(TransactionApplier.apply(
+            transaction,
+            to: &tree).failure == .propertyUpdateMissingLayer(nodeID: 2))
+        #expect(tree.get(1)?.children == [2])
+        #expect(tree.get(2)?.parent == 1)
+        #expect(tree.get(2)?.model.properties.opacity == 1)
+    }
+
+    @Test func malformedTopologyFailsClosed() {
+        var first = Layer(id: 1, kind: .container)
+        first.parent = 2
+        first.children = [2]
+        var second = Layer(id: 2, kind: .container)
+        second.parent = 1
+        second.children = [1]
+        var tree = LayerTree()
+        tree.insertLayer(first)
+        tree.insertLayer(second)
+
+        var transaction = Transaction(contextId: ContextID(raw: 11))
+        transaction.propertyUpdates = [LayerPropertyUpdate(nodeId: 1)]
+
+        #expect(TransactionApplier.apply(
+            transaction,
+            to: &tree).failure == .invalidTopology(nodeID: 1))
+        #expect(tree.get(1)?.parent == 2)
+        #expect(tree.get(2)?.parent == 1)
+    }
+
+    @Test func sparseValidationDoesNotVisitUnrelatedLayers() {
+        let layerCount = 2_048
+        let context = ContextID(raw: 12)
+        var tree = LayerTree()
+        var setup = Transaction(contextId: context)
+        setup.created.reserveCapacity(layerCount)
+        setup.inserted.reserveCapacity(layerCount)
+        for id in 1...layerCount {
+            setup.created.append(LayerCreated(
+                nodeId: UInt64(id),
+                kind: .container))
+            setup.inserted.append(LayerInserted(
+                nodeId: UInt64(id),
+                parentId: id == 1 ? 0 : 1,
+                index: UInt32(id - 1)))
+        }
+        #expect(TransactionApplier.apply(setup, to: &tree).succeeded)
+
+        var update = LayerPropertyUpdate(nodeId: 2)
+        update.opacity = 0.75
+        var transaction = Transaction(contextId: context)
+        transaction.propertyUpdates = [update]
+        var diagnostics = TransactionApplier.ApplyDiagnostics()
+
+        #expect(TransactionApplier.apply(
+            transaction,
+            to: &tree,
+            diagnostics: &diagnostics).succeeded)
+        #expect(diagnostics.validationNodesVisited == 2)
+        #expect(diagnostics.validationAncestorSteps == 2)
+        #expect(diagnostics.applyDictionaryProbes == 1)
+        #expect(tree.layers.count == layerCount)
     }
 }

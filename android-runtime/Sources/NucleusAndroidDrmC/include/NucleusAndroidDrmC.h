@@ -41,6 +41,12 @@ struct nucleus_android_gpu_diagnostic {
     uint32_t driver_id;
     uint32_t device_type;
     uint8_t hardware_driver;
+    uint64_t live_buffer_count;
+    uint64_t retired_buffer_count;
+    uint64_t reclaimed_buffer_count;
+    uint64_t submitted_serial;
+    uint64_t completed_serial;
+    int32_t terminal_submission_result;
 };
 
 struct nucleus_android_dmabuf_plane {
@@ -78,6 +84,7 @@ void nucleus_android_gpu_destroy(nucleus_android_gpu *gpu);
 int nucleus_android_gpu_get_diagnostic(
     nucleus_android_gpu *gpu,
     struct nucleus_android_gpu_diagnostic *output);
+int nucleus_android_gpu_collect(nucleus_android_gpu *gpu);
 int nucleus_android_gpu_supports_format_modifier(
     nucleus_android_gpu *gpu,
     uint32_t drm_format,

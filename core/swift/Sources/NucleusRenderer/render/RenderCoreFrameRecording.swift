@@ -70,44 +70,30 @@ extension RenderCore {
         let lockContexts: Set<ContextID>? = lockComposition.map { $0[outputID] ?? [] }
         let rootContexts = outputRootContexts[outputID] ?? [compositorContextId]
         let rootLayerIDs = outputRootLayerIDs[outputID]
-        let result = driver.renderFrame(
-            tree: tree, target: renderTarget, frame: frame, scanout: surface,
+        let request = FrameDriver.FrameRenderRequest(
+            tree: tree,
+            target: renderTarget,
+            frame: frame,
+            scanout: surface,
             submissionMode: submissionMode,
-            acquireWaitSemaphore: { surfaceID in
-                pendingClientAcquireSemaphores[surfaceID]?.semaphore
-            },
             rootContexts: rootContexts,
             rootLayerIDs: rootLayerIDs,
-            lockContexts: lockContexts,
-            resolvePaintContent: { resourceHost.paintContents.content($0) },
-            resolvePaintImage: { handle in
-                guard let source = resourceHost.images.source(handle) else { return nil }
-                return driver.decodedImage(
-                    handle: handle,
-                    source: source,
-                    outputID: outputID)
-            }
-        ) { [snapshots] reference in
-            if reference.role == .snapshot {
-                guard let entry = snapshots.resolve(
-                    SnapshotHandle(raw: reference.handle.raw))
-                else { return nil }
-                return driver.registry.resolve(.renderer(entry.texture.raw))
-            }
-            if reference.role == .content {
-                return driver.registry.resolve(
-                    .clientSurface(reference.handle.raw))
-            }
-            return driver.registry.resolve(.renderer(reference.handle.raw))
-        }
+            lockContexts: lockContexts)
+        let result = driver.renderFrame(
+            request,
+            resolver: frameResourceResolver)
         guard let result else { return false }
         lastFrameAcquiredSurfaceIDs = result.acquiredSurfaceIDs
         var telemetry = RenderFrameTelemetry()
         telemetry.generation = lastFrameTelemetry.generation &+ 1
         telemetry.outputID = outputID
         telemetry.frameSerial = frameSerial
-        telemetry.operationCount = UInt64(result.opsDrawn + result.backdropDraws)
+        telemetry.operationCount = UInt64(result.operationCount)
         telemetry.referencedSurfaceCount = UInt64(result.referencedSurfaceIDs.count)
+        telemetry.uniqueTextureCount = UInt64(result.uniqueTextureCount)
+        telemetry.paintRequestCount = UInt64(result.paintRequestCount)
+        telemetry.shadowMaterialCount = UInt64(result.shadowMaterialCount)
+        telemetry.backdropBlurRegionCount = UInt64(result.backdropBlurRegionCount)
         let changed = result.referencedSurfaceIDs.compactMap { clientCommitInstants[$0] }
         telemetry.changedSurfaceCount = UInt64(changed.count)
         telemetry.damageRectCount = UInt64(result.damageRectCount)

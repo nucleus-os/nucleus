@@ -117,7 +117,6 @@ extension ColliderRuntime {
             chromium.appending(
                 "v8/tools/builtins-pgo/profiles/x64.profile"))
         let identity = ChromiumBuildIdentity(
-            schema: 1,
             product: build.product.rawValue,
             sourceID: sourceID,
             sourceManifestSHA256:
@@ -185,7 +184,6 @@ private struct ChromiumProfileIdentity: Codable, Equatable {
 }
 
 private struct ChromiumBuildIdentity: Codable, Equatable {
-    let schema: UInt32
     let product: String
     let sourceID: String
     let sourceManifestSHA256: String

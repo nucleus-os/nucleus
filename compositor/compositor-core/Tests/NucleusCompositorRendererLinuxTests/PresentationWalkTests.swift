@@ -8,17 +8,29 @@ import NucleusRenderModel
 // Swift; the GPU render of the plan is covered by the NucleusRenderer suite.
 @Suite struct PresentationWalkTests {
     static func layer(_ id: UInt64, kind: LayerKind = .container,
-                      x: Float, y: Float, w: Float, h: Float, opacity: Float = 1) -> Layer {
-        var l = Layer(id: id, kind: kind)
-        l.model.properties.position = Point2D(x: x, y: y)
-        l.model.properties.bounds = Bounds(w: w, h: h)
-        l.model.properties.anchorPoint = Point2D(x: 0, y: 0)
-        l.model.properties.opacity = opacity
-        return l
+                      x: Float, y: Float, w: Float, h: Float,
+                      opacity: Float = 1) -> LayerCreated {
+        LayerCreated(
+            nodeId: id,
+            kind: kind,
+            position: Point2D(x: x, y: y),
+            anchorPoint: Point2D(x: 0, y: 0),
+            opacity: opacity,
+            bounds: Bounds(w: w, h: h))
+    }
+
+    static func apply(_ transaction: Transaction, to tree: inout LayerTree) {
+        if case .failure(let error) = TransactionApplier.apply(
+            transaction,
+            to: &tree)
+        {
+            Issue.record("tree setup transaction failed: \(error)")
+        }
     }
 
     @Test func walkLayerTreeIntoFramePlan() {
         var tree = LayerTree()
+        var transaction = Transaction(contextId: compositorContextId)
 
         // Root 1: a backdrop-bearing container (200×200), with an external-content
         // child (100×100) that opts into light vibrancy.
@@ -26,58 +38,92 @@ import NucleusRenderModel
         backdropRoot.backdropAttachment = BackdropAttachment(
             materialRole: .default, blendingMode: .behindWindow, state: .active,
             appearance: .auto, emphasized: false, mask: .none, shape: .rect((0, 0, 200, 200)))
-        backdropRoot.children = [2]
-        tree.insertLayer(backdropRoot)
 
         var contentChild = Self.layer(2, x: 10, y: 10, w: 100, h: 100)
-        contentChild.presentation.content = .external(IOSurfaceID(raw: 5))
-        contentChild.presentation.contentSample = ContentSample(
+        contentChild.initialContent = .external(IOSurfaceID(raw: 5))
+        var contentSample = LayerPropertyUpdate(nodeId: 2)
+        contentSample.contentSample = ContentSample(
             sourceSurfaceId: 2, srcOrigin: (4, 8), srcSize: (200, 200),
             logicalSize: Bounds(w: 100, h: 100), opaqueFullSurface: true)
-        contentChild.foregroundVibrancy = .light
-        tree.insertLayer(contentChild)
 
         // Root 3: paint content with rounded corners → masked texture quad.
         var painted = Self.layer(3, x: 120, y: 20, w: 80, h: 80)
-        painted.presentation.content = .paint(PaintContentHandle(raw: 9))
-        painted.model.visualStyle = VisualStyle(
+        painted.initialContent = .paint(PaintContentHandle(raw: 9))
+        painted.visualStyle = VisualStyle(
             backgroundColor: (0.1, 0.2, 0.3, 0.8),
             borderTop: BorderEdge(width: 1, color: (1, 0, 0, 1)),
             borderRight: BorderEdge(width: 2, color: (0, 1, 0, 1)),
             borderBottom: BorderEdge(width: 3, color: (0, 0, 1, 1)),
             borderLeft: BorderEdge(width: 4, color: (1, 1, 0, 1)),
             cornerRadii: (16, 12, 8, 4))
-        tree.insertLayer(painted)
 
         // Root 4: a shadow decoration, no content.
         var shadowed = Self.layer(4, x: 10, y: 120, w: 60, h: 60)
-        shadowed.model.visualStyle = VisualStyle(shadow: LayerShadow(
+        shadowed.visualStyle = VisualStyle(shadow: LayerShadow(
             offsetX: 0, offsetY: 4, blurRadius: 8, spreadRadius: 0,
             color: (0, 0, 0, 0.5)))
-        shadowed.model.visualRevision = 7
-        tree.insertLayer(shadowed)
 
         // Root 5: a pure structural container — contributes nothing.
-        tree.insertLayer(Self.layer(5, x: 130, y: 130, w: 50, h: 50))
+        let structural = Self.layer(5, x: 130, y: 130, w: 50, h: 50)
 
         // Root 6: a remote-host portal. It targets context 9, whose root has
         // content and itself hosts context 10. Neither context 9 nor 10 is a
         // compositor root; their layers render only through the remote hosts.
-        tree.insertLayer(Self.layer(6, kind: .remoteHost(ContextID(raw: 9)), x: 30, y: 40, w: 0, h: 0))
+        let remoteHost = Self.layer(
+            6,
+            kind: .remoteHost(ContextID(raw: 9)),
+            x: 30,
+            y: 40,
+            w: 0,
+            h: 0)
 
         var hostedRoot = Self.layer(20, x: 5, y: 5, w: 20, h: 20)
-        hostedRoot.presentation.content = .external(IOSurfaceID(raw: 17))
-        hostedRoot.children = [21]
-        tree.insertLayer(hostedRoot)
-        tree.insertLayer(Self.layer(21, kind: .remoteHost(ContextID(raw: 10)), x: 40, y: 0, w: 0, h: 0))
+        hostedRoot.initialContent = .external(IOSurfaceID(raw: 17))
+        let nestedHost = Self.layer(
+            21,
+            kind: .remoteHost(ContextID(raw: 10)),
+            x: 40,
+            y: 0,
+            w: 0,
+            h: 0)
 
         var nestedRoot = Self.layer(30, x: 0, y: 0, w: 10, h: 10)
-        nestedRoot.presentation.content = .paint(PaintContentHandle(raw: 31))
-        tree.insertLayer(nestedRoot)
+        nestedRoot.initialContent = .paint(PaintContentHandle(raw: 31))
 
-        tree.contextRoots[compositorContextId] = [1, 3, 4, 5, 6]
-        tree.contextRoots[ContextID(raw: 9)] = [20]
-        tree.contextRoots[ContextID(raw: 10)] = [30]
+        transaction.created = [
+            backdropRoot,
+            contentChild,
+            painted,
+            shadowed,
+            structural,
+            remoteHost,
+            hostedRoot,
+            nestedHost,
+            nestedRoot,
+        ]
+        transaction.inserted = [
+            LayerInserted(nodeId: 1, parentId: 0, index: 0),
+            LayerInserted(nodeId: 2, parentId: 1, index: 0),
+            LayerInserted(nodeId: 3, parentId: 0, index: 1),
+            LayerInserted(nodeId: 4, parentId: 0, index: 2),
+            LayerInserted(nodeId: 5, parentId: 0, index: 3),
+            LayerInserted(nodeId: 6, parentId: 0, index: 4),
+        ]
+        transaction.propertyUpdates = [contentSample]
+        Self.apply(transaction, to: &tree)
+
+        var hostedTransaction = Transaction(contextId: ContextID(raw: 9))
+        hostedTransaction.inserted = [
+            LayerInserted(nodeId: 20, parentId: 0, index: 0),
+            LayerInserted(nodeId: 21, parentId: 20, index: 0),
+        ]
+        Self.apply(hostedTransaction, to: &tree)
+
+        var nestedTransaction = Transaction(contextId: ContextID(raw: 10))
+        nestedTransaction.inserted = [
+            LayerInserted(nodeId: 30, parentId: 0, index: 0),
+        ]
+        Self.apply(nestedTransaction, to: &tree)
 
         let target = RenderTarget(
             outputId: 1,
@@ -101,6 +147,15 @@ import NucleusRenderModel
         #expect(plan.counters.textureQuads == 4, "walk-texture-quad-count")
         #expect(plan.counters.shadowQuads == 1, "walk-shadow-quad-count")
         #expect(plan.counters.fillQuads == 1, "walk-visual-style-count")
+        #expect(plan.resourceSummary.clientSurfaceIDs == [5, 17])
+        #expect(plan.resourceSummary.textureReferences.map(\.handle.raw) == [
+            5, 9, 17, 31,
+        ])
+        #expect(plan.resourceSummary.paintRequests.map(\.reference.handle.raw) == [
+            9, 31,
+        ])
+        #expect(plan.resourceSummary.shadowMaterials.map(\.layerId) == [4])
+        #expect(plan.resourceSummary.backdropBlurRegions.count == 1)
 
         // op[0] = external content of layer 2, projected (10,10,100,100)→(20,20,200,200),
         // carrying a foreground-vibrancy reference to the ancestor backdrop group.
@@ -156,7 +211,7 @@ import NucleusRenderModel
         if let q = shadow {
             #expect(q.dst == PlanRect(x: -4, y: 224, w: 168, h: 168), "walk-shadow-padded-destination")
             #expect(q.src == PlanRect(x: 0, y: 0, w: 168, h: 168), "walk-shadow-full-raster-source")
-            #expect(q.material?.layerId == 4 && q.material?.revision == 7, "walk-shadow-cache-identity")
+            #expect(q.material?.layerId == 4 && q.material?.revision == 0, "walk-shadow-cache-identity")
             #expect(q.material?.shapeRect == PlanRect(x: 24, y: 24, w: 120, h: 120), "walk-shadow-shape-inset")
             #expect(q.material?.blurSigma == 8, "walk-shadow-scaled-sigma")
             #expect(q.material?.color.3 == 0.5, "walk-shadow-material-alpha")
@@ -182,13 +237,20 @@ import NucleusRenderModel
     @Test func presentationSurfaceWalksOnlyItsAssociatedRootContext() throws {
         var tree = LayerTree()
         var first = Self.layer(100, x: 0, y: 0, w: 40, h: 40)
-        first.presentation.content = .paint(PaintContentHandle(raw: 1000))
+        first.initialContent = .paint(PaintContentHandle(raw: 1000))
         var second = Self.layer(200, x: 0, y: 0, w: 40, h: 40)
-        second.presentation.content = .paint(PaintContentHandle(raw: 2000))
-        tree.insertLayer(first)
-        tree.insertLayer(second)
-        try tree.attachRoot(100, index: 0, contextId: ContextID(raw: 7))
-        try tree.attachRoot(200, index: 0, contextId: ContextID(raw: 8))
+        second.initialContent = .paint(PaintContentHandle(raw: 2000))
+        var firstTransaction = Transaction(contextId: ContextID(raw: 7))
+        firstTransaction.created = [first, second]
+        firstTransaction.inserted = [
+            LayerInserted(nodeId: 100, parentId: 0, index: 0),
+        ]
+        Self.apply(firstTransaction, to: &tree)
+        var secondTransaction = Transaction(contextId: ContextID(raw: 8))
+        secondTransaction.inserted = [
+            LayerInserted(nodeId: 200, parentId: 0, index: 0),
+        ]
+        Self.apply(secondTransaction, to: &tree)
 
         let target = RenderTarget(
             outputId: 1,
@@ -216,15 +278,17 @@ import NucleusRenderModel
         var tree = LayerTree()
         let sceneRoot = Self.layer(50, x: 0, y: 0, w: 100, h: 100)
         var wallpaper = Self.layer(100, x: 0, y: 0, w: 100, h: 100)
-        wallpaper.presentation.content = .paint(PaintContentHandle(raw: 1000))
+        wallpaper.initialContent = .paint(PaintContentHandle(raw: 1000))
         var bar = Self.layer(200, x: 0, y: 0, w: 100, h: 28)
-        bar.presentation.content = .paint(PaintContentHandle(raw: 2000))
-        tree.insertLayer(sceneRoot)
-        tree.insertLayer(wallpaper)
-        tree.insertLayer(bar)
-        try tree.attachRoot(50, index: 0, contextId: ContextID(raw: 8))
-        try tree.attachChild(parentId: 50, childId: 100, index: 0)
-        try tree.attachChild(parentId: 50, childId: 200, index: 1)
+        bar.initialContent = .paint(PaintContentHandle(raw: 2000))
+        var transaction = Transaction(contextId: ContextID(raw: 8))
+        transaction.created = [sceneRoot, wallpaper, bar]
+        transaction.inserted = [
+            LayerInserted(nodeId: 50, parentId: 0, index: 0),
+            LayerInserted(nodeId: 100, parentId: 50, index: 0),
+            LayerInserted(nodeId: 200, parentId: 50, index: 1),
+        ]
+        Self.apply(transaction, to: &tree)
 
         let target = RenderTarget(
             outputId: 2,

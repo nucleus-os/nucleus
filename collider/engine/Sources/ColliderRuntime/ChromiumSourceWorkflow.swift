@@ -208,7 +208,6 @@ extension ColliderRuntime {
                 "prepared Chromium source revisions do not match the pins")
         }
         return ChromiumSourceManifest(
-            schema: 1,
             sourceID: preparation.sourceID,
             cefBranch: preparation.cefBranch,
             cefCheckout: preparation.cefCheckout,
@@ -348,7 +347,6 @@ extension ColliderRuntime {
 }
 
 private struct ChromiumSourceManifest: Codable, Equatable {
-    let schema: UInt32
     let sourceID: String
     let cefBranch: String
     let cefCheckout: String

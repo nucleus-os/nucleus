@@ -27,10 +27,12 @@ func chromiumSourceIdentityMatchesThePinnedMetadataContract() throws {
         .deletingLastPathComponent()
         .deletingLastPathComponent()
         .deletingLastPathComponent()
+        .deletingLastPathComponent()
     let command = ChromiumCommand(context: WorkspaceContext(
         root: root,
         environment: ProcessInfo.processInfo.environment))
-    #expect(try command.sourceIdentifier() == "bfa128bb14bb2397ef19b426")
+    let sourceIdentifier = try command.sourceIdentifier()
+    #expect(sourceIdentifier == "dd3aa8d9a86e2424505eaf23")
 }
 
 @Test

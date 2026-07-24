@@ -20,6 +20,22 @@ public struct ColliderCommand: ParsableCommand {
     public init() {}
 
     public static func main() {
+        let arguments = Array(CommandLine.arguments.dropFirst())
+        if arguments.first == androidApexMountCommandName {
+            AndroidApexMountPrivilegedCommand.main(
+                Array(arguments.dropFirst()))
+            return
+        }
+        if arguments.first == androidBPFBrokerCommandName {
+            AndroidBPFBrokerPrivilegedCommand.main(
+                Array(arguments.dropFirst()))
+            return
+        }
+        if arguments.first == androidBPFMountCommandName {
+            AndroidBPFMountPrivilegedCommand.main(
+                Array(arguments.dropFirst()))
+            return
+        }
         do {
             var command = try parseAsRoot()
             let environment = ProcessInfo.processInfo.environment
@@ -388,7 +404,12 @@ struct AndroidRuntime: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "android-runtime",
         abstract: "Build and operate the contained Android runtime.",
-        subcommands: [SourceLock.self, Source.self, Image.self])
+        subcommands: [
+            SourceLock.self,
+            Source.self,
+            Image.self,
+            FrameworkBoot.self,
+        ])
 
     struct SourceLock: ParsableCommand {
         static let configuration = CommandConfiguration(
@@ -421,6 +442,32 @@ struct AndroidRuntime: ParsableCommand {
         mutating func run() throws {
             try ComponentRegistry(context: context())
                 .buildAndroidRuntimeImage(controls: global.controls)
+        }
+    }
+
+    struct FrameworkBoot: ParsableCommand {
+        static let configuration = CommandConfiguration(
+            commandName: "framework-boot",
+            abstract:
+                "Boot the signed Android framework in its production container.")
+
+        @Option(
+            name: .customLong("timeout-seconds"),
+            help: "Maximum framework readiness wait.")
+        var timeoutSeconds: UInt32 = 180
+
+        mutating func validate() throws {
+            guard timeoutSeconds > 0 else {
+                throw ValidationError(
+                    "--timeout-seconds must be positive")
+            }
+        }
+
+        mutating func run() throws {
+            try AndroidFrameworkBootCommand(
+                context: context(),
+                timeoutSeconds: timeoutSeconds
+            ).run()
         }
     }
 }

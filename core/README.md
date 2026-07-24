@@ -8,8 +8,8 @@ This package provides the retained render tree, the layer system, the Skia Graph
 
 ```sh
 # From the monorepo root
-tools/collider bootstrap core
-tools/collider build core
+collider bootstrap core
+collider build core
 ```
 
 This component owns Skia synchronization, generation, and publication of the
@@ -49,13 +49,13 @@ Consuming components (compositor and React Native) read from this stable cache p
 ### Provisioning
 
 ```sh
-tools/collider bootstrap core
+collider bootstrap core
 ```
 
 Cross-compile the same native Vulkan Graphite stack for Android:
 
 ```sh
-tools/collider android native
+collider android native
 ```
 
 ## Build

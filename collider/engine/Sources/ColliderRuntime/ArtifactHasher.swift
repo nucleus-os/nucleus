@@ -23,7 +23,10 @@ public enum ArtifactHasher {
         return ArtifactDigest(bytes: Array(hasher.finalize()))
     }
 
-    public static func digest(tree root: FilePath) throws -> ArtifactDigest {
+    public static func digest(
+        tree root: FilePath,
+        excluding excludedRelativePaths: Set<String> = []
+    ) throws -> ArtifactDigest {
         let rootURL = URL(fileURLWithPath: root.string, isDirectory: true)
         guard let enumerator = FileManager.default.enumerator(
             at: rootURL,
@@ -33,7 +36,9 @@ public enum ArtifactHasher {
         else {
             throw CocoaError(.fileReadUnknown)
         }
-        let entries = enumerator.compactMap { $0 as? URL }.sorted {
+        let entries = enumerator.compactMap { $0 as? URL }.filter {
+            !excludedRelativePaths.contains(relativePath($0, root: rootURL))
+        }.sorted {
             relativePath($0, root: rootURL).utf8.lexicographicallyPrecedes(
                 relativePath($1, root: rootURL).utf8)
         }
@@ -43,7 +48,7 @@ public enum ArtifactHasher {
             let relative = relativePath(entry, root: rootURL)
             let path = FilePath(entry.path)
             let metadata = try path.stat(followTargetSymlink: false)
-            var framing = CanonicalDigestEncoder(schema: 1)
+            var framing = CanonicalDigestEncoder()
             framing.append(tag: 1, string: relative)
             framing.append(tag: 2, integer: metadata.permissions.contains(.ownerExecute) ? 1 : 0)
             if metadata.type == .regular {

@@ -8,15 +8,17 @@
 namespace nucleus::android::gfxstream {
 
 HostRingChannelPump::HostRingChannelPump(
-    nucleus_android_shared_ring *commands,
-    nucleus_android_shared_ring *responses,
+    nucleus_android_shared_ring_consumer *commandConsumer,
+    nucleus_android_shared_ring_producer *responseProducer,
     ::gfxstream::RenderChannelPtr channel)
-    : mCommands(commands),
-      mResponses(responses),
+    : mCommandConsumer(commandConsumer),
+      mResponseProducer(responseProducer),
       mChannel(std::move(channel)) {}
 
 HostRingPumpResult HostRingChannelPump::pumpOnce() {
-    if (mCommands == nullptr || mResponses == nullptr || mChannel == nullptr) {
+    if (mCommandConsumer == nullptr ||
+        mResponseProducer == nullptr ||
+        mChannel == nullptr) {
         return HostRingPumpResult::error;
     }
 
@@ -33,20 +35,24 @@ HostRingPumpResult HostRingChannelPump::pumpOnce() {
 
     if (mCommandBuffer.empty()) {
         const std::size_t capacity =
-            nucleus_android_shared_ring_slot_size(mCommands) - sizeof(std::uint32_t);
-        mCommandBuffer.resize(capacity);
-        const int count = nucleus_android_shared_ring_read(
-            mCommands,
-            mCommandBuffer.data(),
-            static_cast<std::uint32_t>(mCommandBuffer.size()));
-        if (count >= 0) {
-            mCommandBuffer.resize(static_cast<std::size_t>(count));
-            madeProgress = true;
-            result = flushPendingCommand(&madeProgress);
-            if (result != HostRingPumpResult::idle) {
-                return result;
+            nucleus_android_shared_ring_consumer_slot_size(
+                mCommandConsumer) -
+            sizeof(std::uint32_t);
+        while (mCommandBuffer.empty()) {
+            mCommandBuffer.resize(capacity);
+            const int count = nucleus_android_shared_ring_consumer_read(
+                mCommandConsumer,
+                mCommandBuffer.data(),
+                static_cast<std::uint32_t>(mCommandBuffer.size()));
+            if (count >= 0) {
+                mCommandBuffer.resize(static_cast<std::size_t>(count));
+                madeProgress = true;
+                result = flushPendingCommand(&madeProgress);
+                if (result != HostRingPumpResult::idle) {
+                    return result;
+                }
+                break;
             }
-        } else {
             mCommandBuffer.clear();
             if (errno == EPIPE) {
                 return HostRingPumpResult::peerClosed;
@@ -54,6 +60,19 @@ HostRingPumpResult HostRingChannelPump::pumpOnce() {
             if (errno != EAGAIN) {
                 return HostRingPumpResult::error;
             }
+            const auto preparation =
+                nucleus_android_shared_ring_consumer_prepare_data_wait(
+                    mCommandConsumer);
+            if (preparation == NUCLEUS_ANDROID_SHARED_RING_WAIT_READY) {
+                continue;
+            }
+            if (preparation == NUCLEUS_ANDROID_SHARED_RING_WAIT_CLOSED) {
+                return HostRingPumpResult::peerClosed;
+            }
+            if (preparation == NUCLEUS_ANDROID_SHARED_RING_WAIT_ERROR) {
+                return HostRingPumpResult::error;
+            }
+            break;
         }
     }
 
@@ -87,11 +106,13 @@ HostRingPumpResult HostRingChannelPump::pumpOnce() {
 }
 
 int HostRingChannelPump::commandDataNotificationFD() const {
-    return nucleus_android_shared_ring_data_notification_fd(mCommands);
+    return nucleus_android_shared_ring_consumer_data_notification_fd(
+        mCommandConsumer);
 }
 
 int HostRingChannelPump::responseSpaceNotificationFD() const {
-    return nucleus_android_shared_ring_space_notification_fd(mResponses);
+    return nucleus_android_shared_ring_producer_space_notification_fd(
+        mResponseProducer);
 }
 
 bool HostRingChannelPump::hasPendingCommand() const {
@@ -131,29 +152,44 @@ HostRingPumpResult HostRingChannelPump::flushPendingResponse(bool *madeProgress)
     }
 
     const std::size_t capacity =
-        nucleus_android_shared_ring_slot_size(mResponses) - sizeof(std::uint32_t);
-    const std::size_t count =
-        std::min(mResponseBuffer.size() - mResponseOffset, capacity);
-    if (nucleus_android_shared_ring_write(
-            mResponses,
-            mResponseBuffer.data() + mResponseOffset,
-            static_cast<std::uint32_t>(count)) < 0) {
-        if (errno == EAGAIN) {
-            return HostRingPumpResult::waitingForResponseRingSpace;
+        nucleus_android_shared_ring_producer_slot_size(
+            mResponseProducer) -
+        sizeof(std::uint32_t);
+    while (true) {
+        const std::size_t count =
+            std::min(mResponseBuffer.size() - mResponseOffset, capacity);
+        if (nucleus_android_shared_ring_producer_write(
+                mResponseProducer,
+                mResponseBuffer.data() + mResponseOffset,
+                static_cast<std::uint32_t>(count)) == 0) {
+            mResponseOffset += count;
+            *madeProgress = true;
+            if (mResponseOffset == mResponseBuffer.size()) {
+                mResponseBuffer.clear();
+                mResponseOffset = 0;
+            }
+            return HostRingPumpResult::idle;
         }
         if (errno == EPIPE) {
             return HostRingPumpResult::peerClosed;
         }
-        return HostRingPumpResult::error;
+        if (errno != EAGAIN) {
+            return HostRingPumpResult::error;
+        }
+        const auto preparation =
+            nucleus_android_shared_ring_producer_prepare_space_wait(
+                mResponseProducer);
+        if (preparation == NUCLEUS_ANDROID_SHARED_RING_WAIT_READY) {
+            continue;
+        }
+        if (preparation == NUCLEUS_ANDROID_SHARED_RING_WAIT_CLOSED) {
+            return HostRingPumpResult::peerClosed;
+        }
+        if (preparation == NUCLEUS_ANDROID_SHARED_RING_WAIT_ERROR) {
+            return HostRingPumpResult::error;
+        }
+        return HostRingPumpResult::waitingForResponseRingSpace;
     }
-
-    mResponseOffset += count;
-    *madeProgress = true;
-    if (mResponseOffset == mResponseBuffer.size()) {
-        mResponseBuffer.clear();
-        mResponseOffset = 0;
-    }
-    return HostRingPumpResult::idle;
 }
 
 }  // namespace nucleus::android::gfxstream

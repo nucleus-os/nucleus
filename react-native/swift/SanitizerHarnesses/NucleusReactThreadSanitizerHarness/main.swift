@@ -19,7 +19,8 @@ enum NucleusReactThreadSanitizerHarness {
         do {
             guard nucleus_rn_mount_batching_smoke() == 0,
                   nucleus_rn_mount_lifecycle_smoke() == 0,
-                  nucleus_rn_mount_event_payload_smoke() == 0
+                  nucleus_rn_mount_event_payload_smoke() == 0,
+                  nucleus_rn_command_handler_ownership_smoke() == 0
             else {
                 exit(2)
             }

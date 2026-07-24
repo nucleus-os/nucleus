@@ -24,7 +24,6 @@ struct RuntimeBuildOptions: Equatable {
 
     var metadata: String {
         """
-        runtime_schema=1
         configuration=\(configuration)
         tracy=\(tracy)
         sanitizer=\(sanitizer?.rawValue ?? "none")

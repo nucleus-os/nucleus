@@ -153,6 +153,9 @@ struct SanitizerCommand {
                 Invocation(
                     id: "linux-reactor", package: "platform-linux",
                     executable: "NucleusLinuxThreadSanitizerHarness"),
+                Invocation(
+                    id: "android-runtime-lifetimes", package: "android-runtime",
+                    executable: "NucleusAndroidThreadSanitizerHarness"),
                 // One direct executable owns both the cross-thread render-wake
                 // race and real Wayland client/resource teardown. Avoid filtered
                 // Swift Testing here: SwiftPM launches every compositor test

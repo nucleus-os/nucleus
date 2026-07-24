@@ -52,6 +52,19 @@ SurfaceFlinger assigns them to device composition. Nucleus applies its existing
 Wayland transaction, damage, explicit-synchronization, composition, and direct-scanout
 rules without an Android-specific render path.
 
+Nucleus adopts Android 17's desktop-windowing substrate and rejects its desktop shell.
+The runtime presents one freeform synthetic display: its root task area runs in
+`WINDOWING_MODE_FREEFORM` with enter-desktop-by-default, so every task is born a
+resizable freeform window instead of a fullscreen phone activity. The Nucleus Android
+task service is the Android `ShellTaskOrganizer`; it receives each freeform task with its
+surface leash and owns the task-to-Wayland mapping and every task bound, minimize,
+maximize, tile, focus, stack, and workspace decision. AOSP's own desktop shell
+is disabled: the WM Shell `DesktopTasksController` bounds policy, caption and handle
+window decorations, snap indicators, desktop wallpaper and scrim, education overlays, the
+Launcher taskbar, split-screen, and one-handed mode never run. Android contributes only
+the substrate that makes applications behave as desktop windows, and Nucleus remains the
+sole window manager and shell.
+
 The Android Composer3 implementation is the Wayland client. It receives ordinary
 Wayland input from Nucleus and forwards it through a privileged Android input service;
 Nucleus does not gain a second input dispatcher. A dedicated Wayland socket and peer
@@ -78,7 +91,10 @@ that and already supports individual app windows on Mesa GPUs. Nucleus differs i
 parts that follow from owning the complete OS:
 
 - Android tasks participate directly in Nucleus's normal Wayland scene and shell
-  policy rather than appearing through a separately managed nested desktop.
+  policy rather than appearing through a separately managed nested desktop. Nucleus
+  drives Android 17's freeform desktop-windowing substrate directly, so applications are
+  resizable, multi-instance desktop windows rather than the fixed phone activities of a
+  legacy multi-window layer.
 - The single host GPU broker keeps Android independent of Bionic-compatible vendor
   drivers and therefore supports the same proprietary NVIDIA stack as the rest of the
   Nucleus desktop.
@@ -123,7 +139,7 @@ own focus, stacking, workspaces, decoration, launcher presentation, and task-swi
 policy. Android integration adds authenticated metadata and lifecycle control around
 ordinary Wayland clients; it does not add a parallel scene graph.
 
-The top-level `tools/collider` workflow provisions and verifies the Android runtime in
+The installed `collider` workflow provisions and verifies the Android runtime in
 the same staged checkout build as the other first-party packages. AOSP and gfxstream
 source remain root-managed third-party inputs; generated images and native build
 outputs stay under `android-runtime/`.
@@ -237,10 +253,9 @@ below passed their focused tests and the locally applicable hardware gates:
   acquire-timeline signaling, destruction, and transport shutdown. Qualification
   records ring occupancy, backpressure, pump progress, command notifications,
   response-space notifications, renderer wakeups, and peer disconnect.
-- [x] `android-runtime/scripts/qualify-phase1-graphics` builds the workload, runs the
-  complete Swift test suite, exercises every local DRM render node, validates every
-  result and lifecycle stream as JSON, and produces one machine-readable summary and
-  support archive.
+- [x] Collider builds the workload, runs the complete Swift test suite, exercises the
+  selected DRM render node, validates every result and lifecycle stream, and produces
+  one machine-readable summary and support archive.
 - [x] The broker render-backend seam exports its own three dma-bufs, acquire timeline,
   and per-buffer release timelines to a persistent gfxstream guest worker. A
   24-frame headless broker-session diagnostic proves exact shared-allocation import,
@@ -318,14 +333,14 @@ The completed execution sequence is:
     root-managed revisions and refresh the exact-input record. The staged build
     validates those revisions and reproduces the qualified host backend and guest ICD.
 13. [x] Move combined presentation qualification into Collider and delete the
-    standalone shell workflow. `tools/collider qualify android-presentation` now
+    standalone shell workflow. `collider qualify android-presentation` now
     verifies the selected GPU's connector state, builds the runtime and Android
     products, starts a bounded private Nucleus session, waits for compositor and shell
     readiness, runs the broker, persistent gfxstream worker, and Wayland surface probe
     in that session, validates the shared physical-GPU and lifecycle contracts, shuts
     the session down, and retains one support archive.
 14. [x] Run the combined path on the display-connected RTX 4070 Ti with
-    `tools/collider qualify android-presentation --drm-device /dev/dri/renderD129`.
+    `collider qualify android-presentation --drm-device /dev/dri/renderD129`.
     The run presented all 600 paced frames with zero discards and proved that
     compositor feedback, DRM, GBM, broker Vulkan, gfxstream host Vulkan, and
     presentation identify the same physical GPU.
@@ -383,12 +398,28 @@ Phase 2 builds the complete x86-64 Android 17 product around the Phase 1 graphic
 contract. The product boots a current AOSP framework inside LXC with binderfs,
 project-owned HALs, current WebView, and the runtime services required by later phases.
 
-The container is unprivileged and user-namespaced. Android SELinux remains enforcing.
-The host exposes no DRM node, input node, arbitrary PipeWire socket, home directory, or
-host system bus. Binder devices, mounts, network interfaces, cgroups, capabilities,
-seccomp policy, and idmapped storage are created per runtime instance. The only initial
-host interfaces are the authenticated runtime-control socket, graphics transport, and
-dedicated Wayland socket.
+The container is unprivileged and user-namespaced. During bring-up, the explicit
+`nucleus_container` init entry bypasses Android SELinux setup and process transitions
+so the runtime can execute under the host's AppArmor LSM. LXC applies a generated
+AppArmor profile alongside the project seccomp policy, explicit capability allowlist,
+device allowlist, and subordinate-ID mapping. The host exposes no DRM node, input node,
+arbitrary PipeWire socket, home directory, or host system bus. Binder devices, mounts,
+network interfaces, cgroups, capabilities, seccomp policy, and idmapped storage are
+created per runtime instance. The only initial host interfaces are the authenticated
+runtime-control socket, graphics transport, and dedicated Wayland socket.
+
+This bring-up posture is not the final security contract. Phase 7 removes the SELinux
+bypass and lands one Nucleus host policy containing both host and Android domains
+before the installable OS passes its security gate. Phase 2 keeps building and
+validating the AOSP policy so that hardening changes the runtime enforcement path
+rather than reconstructing the Android policy later.
+
+Collider does not predict host free-space requirements, the product does not assign
+partition-size ceilings to its standalone filesystems, and the container does not
+impose artificial memory, swap, process-count, or private-filesystem ceilings. AOSP
+derives each signed filesystem image size from its contents. Source synchronization,
+image construction, and runtime allocation consume what they need and report actual
+filesystem or kernel failures.
 
 Android gralloc and mapper wrap dma-buf allocations owned by the host broker. The proxy
 Vulkan ICD sends Vulkan work over the Phase 1 transport, and system ANGLE implements
@@ -409,10 +440,108 @@ Components:
 - signed runtime image metadata, migration ledger, health check, and rollback;
 - crash, audit, logcat, broker, and container diagnostics surfaced to the host.
 
+### Phase 2 execution status
+
+Phase 2 begins with one strict four-step bring-up sequence:
+
+1. [x] Pin Android 17.0.0 Release 1, Repo, the manifest tag and commit, the
+   superproject commit, and the complete resolved project manifest. Collider verifies
+   every remote identity and materializes the exact source checkout.
+2. [x] Define the `nucleus_x86_64-cp2a-userdebug` product with separate system,
+   system-ext, product, and vendor images, no bootloader, kernel, recovery, boot image,
+   userdata image, or dynamic partitions, content-derived filesystem sizes, plus the
+   initial container feature and vendor policy surface.
+3. [x] Apply one deterministic forward-patch commit in each owned AOSP seam:
+   `system/core` at `9746d5e3b411ce9432550e024cd579cf68776fec`, `system/apex` at
+   `c968a88d517b669bb9e4ce5b3bd6ad3e4c089826`, `frameworks/native` at
+   `8209059567361d914f4265149d9677ee4cee2267`, `system/vold` at
+   `1a9fb2dce214cedf7f008157d639b63a698a5807`, Connectivity at
+   `838ba2a8edb0cc85055eefe7a5a83a33502aebca`, UprobeStats at
+   `71f45095c66bff61c5eaff105552ff7f057deb73`, and `system/bpf` at
+   `4dacaacf550614fac37d52075bffac20a4b193f2`. Build the Android 17 `cp2a`
+   product with 40 uncompressed APEX packages: 39 file-backed EROFS payloads and
+   AOSP's stock ext4 `com.android.apex.cts.shim`. Replace every APK and APEX
+   container/payload signing identity with the Nucleus RSA-4096 release identity,
+   reject CAPEX output, verify the complete AVB chain plus all 147 package containers
+   and 40 APEX payloads directly, normalize the six published images to mountable raw
+   files, and emit exact schema-free source and image provenance. Nucleus does not
+   rebuild, rename, or weaken validation for the CTS shim. The retained passing run is
+   `.nucleus/runs/2026-07-24T19-50-29Z-2403572`.
+4. [ ] Mount the four immutable images read-only, mount every immutable APEX payload
+   on a host-owned `/apex` tmpfs, create a private binderfs instance, enter the
+   user/id/mount/PID/network/cgroup namespace contract through LXC, boot
+   `/system/bin/init nucleus_container`, capture init and LXC diagnostics, and require
+   `sys.boot_completed=1`. Collider owns this bounded-duration workflow, validates the
+   signed image provenance and AVB chain before requesting privilege, loads the
+   available signed `binder_linux` and EROFS modules, creates only instance-private
+   binder devices and uncapped tmpfs mounts, and retains LXC and init diagnostics.
+   EROFS APEXes mount directly from their archive offsets. Collider mounts the stock
+   ext4 CTS-shim payload through a read-only, autoclearing host loop association,
+   removes its temporary device node before Android starts, and remounts the `/apex`
+   tmpfs `nodev`; Android receives neither loop-control nor a loop device. APEXd has
+   one container-specific behavior: verify and adopt the complete pre-mounted set.
+   It retains AOSP's stock CTS-shim filename, contents, hash calculation, and file
+   allowlist.
+
+   The image, APEX, binderfs, namespace, and diagnostic paths are implemented. The
+   explicit container-init entry skips SELinux transitions only for this LXC boot,
+   and the generated LXC AppArmor profile, seccomp denylist, explicit capability
+   allowlist, device allowlist, and subordinate user namespace form the Phase 2 host
+   boundary. LXC, `newuidmap`, and `newgidmap` are installed. The privileged LXC
+   manager owns the subordinate UID/GID ranges consumed by Collider, while Android root
+   remains mapped to those unprivileged host IDs. Collider runs that manager in a
+   systemd-delegated transient scope so LXC owns its cgroup subtree and installs the
+   exact cgroup-v2 device BPF allowlist. Collider consumes each complete configured
+   range without imposing a project-authored minimum. The host's AppArmor LSM is
+   enabled, and its kernel provides binderfs and file-backed EROFS.
+
+   Collider creates one raw pseudo-terminal for each runtime instance, mounts only its
+   slave endpoint as Android's `/dev/kmsg` and `/dev/kmsg_debug`, and continuously
+   drains the master into `android-kmsg.log`. Android init, `KernelLogger`,
+   `stdio_to_kmsg`, and `file /dev/kmsg w` retain their upstream behavior without
+   receiving the host-global kernel log. Once `logd` is running, Collider starts one
+   unbounded `logcat -b all` stream from the runtime start timestamp and retains it as
+   `android-logcat.log`. `lxc.log`, `host-audit.log`, and tombstones remain separate
+   artifacts. Collider completes all collectors during teardown and prints the useful
+   tail of every nonempty diagnostic on failure. No Android daemon contains
+   Nucleus-specific logger selection or stderr duplication.
+
+   Collider creates the BPF filesystem inside the container's actual user namespace.
+   Its LXC mount hook verifies the exact container name and source root, derives the
+   destination only from LXC's actual mounted-root environment, and passes that
+   filesystem context to a root-only instance broker. The broker grants only map
+   creation, program loading, and BTF loading, then the hook moves the completed mount
+   into that instance's `/sys/fs/bpf`. Android root retains `CAP_BPF` only in its
+   subordinate user namespace. Connectivity, UprobeStats, and the platform/vendor
+   loaders derive BPF tokens from that mount, use them for every delegated load path,
+   and never mutate the host-global unprivileged-BPF or JIT sysctls. The hook executes
+   from a host-owned instance staging directory with a read-only bind of Collider's
+   Swift runtime; no user-private build or toolchain path is exposed to Android.
+
+   The retained framework attempt
+   `.nucleus/runs/2026-07-24T19-11-23Z-2279548` mounted all 40 payloads and entered
+   Android init. It established the KeyMint and framework path, then identified the
+   two remaining ownership violations: Android's BPF loaders attempted to control
+   host-global BPF state, and vold attempted SELinux create-context labeling while the
+   explicit Phase 2 container entry had disabled SELinux enforcement. Both are now
+   corrected in the newly signed image. Vold performs ordinary directory and device
+   preparation without SELinux labeling only under the Nucleus container marker;
+   stock Android behavior remains unchanged. Android's platform and mainline BPF
+   loaders use their normal kernel-logging contracts through the instance-private
+   endpoint.
+
+   Step 4 completes when the newly signed image reaches
+   `sys.boot_completed=1` in one retained user-run framework-boot session:
+
+   ```sh
+   collider android-runtime framework-boot
+   ```
+
 Acceptance gates:
 
-- Android boots to a stable framework with enforcing SELinux and no host device-node
-  access beyond the declared contract;
+- Android boots to a stable framework through the explicit SELinux-bypassed container
+  entry under the generated AppArmor profile, unprivileged user namespace, seccomp
+  policy, explicit capability allowlist, and declared device-node contract;
 - a normal application renders GLES and Vulkan content only through the Phase 1 broker;
 - package installation, ART, WebView, storage, networking, suspend, resume, shutdown,
   update, failed-update rollback, and data migration pass runtime tests;
@@ -427,24 +556,52 @@ configuration exercise.
 
 ## Phase 3 — Composer3 Wayland client and input
 
-Phase 3 turns Android tasks into normal Nucleus Wayland windows. A project-owned
-Composer3 AIDL HAL replaces Waydroid's legacy HWC1 path. It connects to the dedicated
-Nucleus Wayland socket and implements xdg-shell, subsurfaces, viewporter, fractional
-scale, presentation feedback, linux-dmabuf feedback, and
-`wp_linux_drm_syncobj_manager_v1`.
+Phase 3 turns Android tasks into normal Nucleus Wayland windows and makes Nucleus the
+driver of Android 17's freeform desktop-windowing substrate. A project-owned Composer3
+AIDL HAL replaces Waydroid's legacy HWC1 path. It connects to the dedicated Nucleus
+Wayland socket and implements xdg-shell, subsurfaces, viewporter, fractional scale,
+presentation feedback, linux-dmabuf feedback, and `wp_linux_drm_syncobj_manager_v1`.
 
-An Android task service owns the authoritative mapping from task IDs and package names
-to SurfaceFlinger layers. The mapping is transmitted as typed metadata to Composer3;
-layer names are not parsed as an API. Composer3 creates one `xdg_toplevel` per task and
-preserves the ordered subsurface tree for device-composed child layers. Standard xdg
-app IDs use an `android.<package>` namespace. The dedicated socket marks the client as
+The Android runtime presents one freeform synthetic display. Its root task area runs in
+`WINDOWING_MODE_FREEFORM` with enter-desktop-by-default, so every launched task is a
+resizable freeform window. The Nucleus Android task service registers as the Android
+`ShellTaskOrganizer`, receives each freeform task with its surface leash through the
+freeform task listener, and is the authority for task bounds, minimize, maximize,
+tiling, focus, stacking, and workspace membership. The product images built in
+Phase 2 carry the configuration this requires: the freeform-display and
+enter-desktop-by-default settings, the `DesktopModeFlags` and `DesktopExperienceFlags`
+enablement, and the removal of the Launcher taskbar and SystemUI desktop surfaces that
+the handheld system-ext inheritance would otherwise supply.
+
+The task service owns the authoritative mapping from task IDs and package names to
+SurfaceFlinger layers. The mapping is transmitted as typed metadata to Composer3; layer
+names are not parsed as an API. Composer3 creates one `xdg_toplevel` per task and
+preserves the ordered subsurface tree for device-composed child layers. Standard xdg app
+IDs use an `android.<package>` namespace. The dedicated socket marks the client as
 Android-owned, so an arbitrary Wayland client cannot spoof that provenance.
 
 The xdg configure loop updates the bounds of the corresponding Android freeform task
 through the task service. It does not resize or hotplug a single global Android display
-for every host-window change. Android remains responsible for application layout,
-orientation, configuration changes, dialogs, input methods, picture-in-picture, and
-SurfaceView lifecycle inside the configured task bounds.
+for every host-window change. The runtime uses one logical display scale; per-output
+fractional scale is presented through `wp_fractional_scale_v1` and viewporter exactly as
+any other Nucleus surface, and there is no Android-specific density or scale-management
+path. Android remains responsible for application layout, orientation, configuration
+changes, dialogs, input methods, picture-in-picture, and SurfaceView lifecycle inside
+the configured task bounds.
+
+AOSP's own desktop shell is disabled rather than themed. The WM Shell
+`DesktopTasksController` bounds and stacking policy, the `windowdecor` caption and handle
+decorations, the `SnapController` snap indicators, the desktop wallpaper and scrim, the
+education overlays, the Launcher taskbar, split-screen, one-handed mode, and the
+desktop-AI surfaces never run and never reach a Wayland surface. Nucleus draws
+server-side decorations, provides the desktop background, and owns snap and tile
+affordances.
+
+Nucleus keeps the app-compatibility substrate the desktop windowing path provides.
+Fixed-orientation and non-resizable applications fill their freeform window through the
+framework's `ignoreOrientationRequest`, size-compat, letterbox, and fake-focus behavior,
+so they resize and retain input focus; the compat-UI restart, letterbox-education, and
+aspect-ratio dialogs are suppressed because Nucleus owns that presentation.
 
 Composer3 receives keyboard, pointer, touch, tablet, relative-pointer, and focus events
 through the normal Wayland seat. A privileged Android input service translates those
@@ -454,9 +611,13 @@ Android condition is added to Nucleus's libinput or seat dispatch path.
 Components:
 
 - Composer3 AIDL HAL and Wayland protocol client;
+- Nucleus `ShellTaskOrganizer` and freeform-display configuration;
+- WM Shell desktop-shell, Launcher taskbar, and SystemUI desktop-surface suppression;
 - typed task/layer metadata service;
 - per-task xdg-toplevel and subsurface-tree lifecycle;
-- configure-to-freeform-task bounds and scale mapping;
+- configure-to-freeform-task bounds and `wp_fractional_scale_v1` handling;
+- app-compatibility substrate policy (orientation, size-compat, letterbox) without
+  compat UI;
 - syncobj acquire/release integration with the Phase 1 broker;
 - Wayland-seat to Android-input service;
 - runtime provenance, app ID, title, and diagnostic metadata.
@@ -465,9 +626,16 @@ Acceptance gates:
 
 - multiple Android tasks open as independent Nucleus toplevels and retain correct
   stacking, damage, opacity, clipping, scale, and presentation feedback;
+- no AOSP caption, taskbar, snap indicator, desktop wallpaper, scrim, or education
+  surface ever reaches a Wayland surface;
 - resizing, maximizing, fullscreen, output moves, fractional scaling, rotation,
   dialogs, IME, `SurfaceView`, video layers, and picture-in-picture preserve Android
   lifecycle and geometry contracts;
+- each task's toplevel honors its output's `wp_fractional_scale_v1` preferred scale
+  through the standard protocol, with no Android-specific scaling path;
+- a fixed-orientation or non-resizable application fills its freeform window and keeps
+  input focus through the compat substrate without a letterbox-education or restart
+  dialog;
 - keyboard, pointer, touch, scroll, tablet, relative pointer, grabs, focus transitions,
   and close requests reach only the correct task;
 - every committed dma-buf carries valid acquire and release points and returns a valid
@@ -499,12 +667,20 @@ decorations, switcher, launcher, focus policy, and scene construction as any xdg
 toplevel. Android provenance adds application actions and runtime health metadata; it
 does not fork the window manager or scene graph.
 
+Nucleus workspaces are the sole authority for window grouping. The Android runtime runs
+one always-active desk; Nucleus never mirrors workspaces onto AOSP's `multidesks` model,
+and moving an Android window between workspaces is a Nucleus scene-visibility and
+lifecycle-hint operation rather than an Android desk switch. Multiple windows of one
+activity use Android 17's multi-instance and manage-windows support, so a single package
+owns several independent Nucleus toplevels with stable task tokens.
+
 Components:
 
 - Android PackageManager inventory service and icon export;
 - host runtime-control daemon and versioned protocol;
 - shell application catalog unifying `.desktop` and Android activities;
 - stable task-token correlation and lifecycle commands;
+- multi-instance and manage-windows mapping to independent toplevels on one Android desk;
 - runtime readiness, crash, restart, and per-app failure presentation;
 - Android app settings, permissions, uninstall, and force-stop actions.
 
@@ -558,7 +734,7 @@ Acceptance gates:
 - x86-64 native libraries load with the advertised ABI while ARM-only packages fail
   installation with an actionable explanation;
 - microG and F-Droid are reproducibly built, updated through the signed runtime image,
-  and do not require disabling Android signature or SELinux policy globally;
+  and do not add signature bypasses or weaken the Phase 2 container boundary;
 - unsupported Play Integrity, Widevine L1, GMS, ABI, hardware, and feature requirements
   are reported consistently in the launcher and runtime diagnostics.
 
@@ -572,12 +748,16 @@ Phase 6 replaces the remaining runtime seam with explicit services and portals.
 Clipboard uses Android ClipboardManager on one side and the Wayland data-device model
 on the other. File exchange uses document and content-provider portals with URI grants;
 the host home directory is never bind-mounted into Android and Android paths are never
-presented as host paths. Drag-and-drop uses the same MIME and portal model.
+presented as host paths. Drag-and-drop uses the same MIME and portal model, and the
+Android side binds the runtime's app-to-app drag path (`GlobalDragListener`) to that
+portal so a drag begun in an Android window and a drag begun in a Linux window share one
+bridge.
 
 Android notifications become native Nucleus notifications with action, reply, dismiss,
 progress, grouping, and application identity preserved. URL, share, and open-with
 requests cross a bidirectional intent router whose policy and defaults are owned by the
-shell.
+shell. Android's app-to-web open-by-default and generic-links resolution feed that
+router as one source of link intents instead of a second defaults UI.
 
 Audio uses a dedicated PipeWire client identity and nodes created by the host portal.
 Microphone, camera, and screen-capture access require host portal grants and expose only
@@ -630,6 +810,15 @@ The boot chain, kernel, initramfs, NVIDIA kernel modules, and recovery image are
 NVIDIA kernel and userspace versions are pinned as one tested unit; failure to load the
 qualified driver fails the session instead of selecting a software renderer.
 
+Security hardening lands before installation qualification. The Fedora policy sources
+and the still-built AOSP policy produce one Nucleus SELinux policy for the shared
+kernel. The policy defines the host, Android init, framework-service, application,
+Binder, property, file, and socket domains; the Android image retains its AOSP labels;
+and LXC enters the Android init domain without an unconfined or permissive Android
+domain. The `nucleus_container` SELinux bypass is then deleted, all Android domains run
+enforcing, and the same container escape and application-isolation corpus passes under
+the integrated policy.
+
 Hardware support is a qualification matrix beginning with RTX 4000-class NVIDIA,
 current AMD RDNA, and current Intel Xe systems. The matrix records display outputs,
 multi-monitor, HDR where supported, VRR, suspend/resume, hotplug, input, audio, Wi-Fi,
@@ -653,6 +842,7 @@ Components:
 - installer, disk layout, encryption, recovery, factory reset, and first boot;
 - greeter and Nucleus session selection;
 - coordinated host/runtime compatibility manifest and update channel;
+- integrated Nucleus host and Android SELinux policy with enforcing-domain tests;
 - Secure Boot keys, signed kernel/initramfs/modules, health checks, and rollback;
 - firmware and vendor-driver composition;
 - automated hardware qualification harness and published support matrix;
@@ -665,6 +855,9 @@ Acceptance gates:
   development checkout;
 - Secure Boot verifies the complete boot chain and rejects unsigned kernels, modules,
   runtime images, and OS updates;
+- the installed host boots one enforcing policy containing the required Nucleus and
+  Android domains, the container-init bypass is absent, and Android application and
+  service transitions match the AOSP policy contract;
 - every qualified GPU passes the Phase 1 graphics gates from the installed image;
 - suspend/resume, display hotplug, hybrid-GPU selection, audio routing, network changes,
   runtime restart, and OS rollback preserve user data and restore a coherent session;
@@ -685,6 +878,15 @@ than a packaging epilogue.
   is a reference; Nucleus owns an Android 17 product and a Composer3 AIDL HAL.
 - **There is no Android-specific scene or input pipeline in Nucleus.** Android uses the
   existing Wayland surface, window-management, and seat contracts.
+- **The Android desktop shell UI is disabled, not themed.** AOSP's taskbar, caption and
+  handle decorations, desk switcher, snap indicators, desktop wallpaper, split-screen,
+  one-handed mode, and desktop AI never run; Nucleus provides the shell. Only the
+  freeform windowing substrate is adopted.
+- **Android does not own a physical output.** The runtime presents one synthetic
+  freeform display at one logical scale; Nucleus never maps a physical monitor to an
+  Android display and never hotplugs an Android display per host output. Per-monitor
+  scale reaches applications through Wayland fractional scale, not per-app density or
+  multiple Android displays.
 - **There is no direct guest GPU access or vendor-specific guest GPU path.** The host
   broker is the only GPU authority for Android on every vendor.
 - **There is no software GPU fallback.** Missing Vulkan, external-memory, modifier,

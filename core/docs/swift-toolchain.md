@@ -7,9 +7,9 @@ build, install, or mutate toolchain state themselves.
 Use:
 
 ```sh
-tools/collider doctor toolchain
-tools/collider toolchain rebuild
-tools/collider toolchain status
+collider doctor toolchain
+collider toolchain rebuild
+collider toolchain status
 ```
 
 The build uses the component recipe in `swift-toolchain/`, invokes only the
@@ -19,8 +19,8 @@ tools and Android consumers, then atomically activates both artifacts.
 System installation crosses the privilege boundary only through:
 
 ```sh
-tools/collider toolchain install
-tools/collider toolchain uninstall
+collider toolchain install
+collider toolchain uninstall
 ```
 
 Ordinary repository work uses the user-level active generation selected by

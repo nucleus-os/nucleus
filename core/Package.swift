@@ -305,6 +305,11 @@ let package = Package(
             swiftSettings: [.interoperabilityMode(.Cxx)],
             linkerSettings: [.unsafeFlags(skiaLinkFlags)]
         ),
+        .target(
+            name: "NucleusBlockingSynchronizationC",
+            path: "swift/Sources/NucleusBlockingSynchronizationC",
+            publicHeadersPath: "include"
+        ),
 
         // ── NucleusRenderHost: the adapter layer lowering retained-model render
         // transactions into the host commit sink. Pure Swift (no C/C++ interop);
@@ -350,6 +355,7 @@ let package = Package(
             dependencies: [
                 "NucleusTypes",
                 "NucleusRenderModel",
+                "NucleusBlockingSynchronizationC",
                 .product(name: "VulkanC", package: "swift-vulkan"),
                 .product(name: "Vulkan", package: "swift-vulkan"),
                 "NucleusSkiaGraphiteBridge",

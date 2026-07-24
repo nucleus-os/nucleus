@@ -34,10 +34,10 @@ public struct ArtifactDigest: Hashable, Codable, Sendable,
 
     public init?(sha256Hex value: String) {
         guard value.utf8.count == 64,
-              value.utf8.allSatisfy({ byte in
-                  (UInt8(ascii: "0")...UInt8(ascii: "9")).contains(byte)
-                      || (UInt8(ascii: "a")...UInt8(ascii: "f")).contains(byte)
-              })
+            value.utf8.allSatisfy({ byte in
+                (UInt8(ascii: "0")...UInt8(ascii: "9")).contains(byte)
+                    || (UInt8(ascii: "a")...UInt8(ascii: "f")).contains(byte)
+            })
         else { return nil }
         var bytes: [UInt8] = []
         var index = value.startIndex
@@ -62,8 +62,8 @@ public struct ArtifactDigest: Hashable, Codable, Sendable,
         let value = try decoder.singleValueContainer().decode(String.self)
         let pieces = value.split(separator: ":", maxSplits: 1)
         guard pieces.count == 2,
-              let algorithm = Algorithm(rawValue: String(pieces[0])),
-              pieces[1].count.isMultiple(of: 2)
+            let algorithm = Algorithm(rawValue: String(pieces[0])),
+            pieces[1].count.isMultiple(of: 2)
         else {
             throw DecodingError.dataCorruptedError(
                 in: try decoder.singleValueContainer(),
@@ -105,6 +105,7 @@ public struct CommandSpec: Hashable, Sendable {
         case inherited
         case logged
         case terminal
+        case file(FilePath)
         case captured(limit: Int)
         case combined(limit: Int)
     }
@@ -184,11 +185,11 @@ public struct DownloadSpec: Hashable, Sendable {
         resumption: Resumption = .validatorRequired
     ) throws {
         guard url.scheme?.lowercased() == "https",
-              url.user == nil,
-              url.password == nil
+            url.user == nil,
+            url.password == nil
         else { throw DownloadSpecFailure.invalidURL }
         guard expectedDigest.algorithm == .sha256,
-              expectedDigest.bytes.count == 32
+            expectedDigest.bytes.count == 32
         else { throw DownloadSpecFailure.invalidDigest }
         guard maximumResponseSize > 0 else {
             throw DownloadSpecFailure.unboundedResponse
@@ -197,9 +198,9 @@ public struct DownloadSpec: Hashable, Sendable {
             throw DownloadSpecFailure.missingMediaType
         }
         guard requestTimeoutSeconds > 0,
-              inactivityTimeoutSeconds > 0,
-              maximumRedirects >= 0,
-              maximumRetries >= 0
+            inactivityTimeoutSeconds > 0,
+            maximumRedirects >= 0,
+            maximumRetries >= 0
         else { throw DownloadSpecFailure.invalidPolicy }
         self.url = url
         self.permittedRedirectOrigins = permittedRedirectOrigins

@@ -58,7 +58,7 @@ Outcome: gestures are now visible inside the compositor as `WireEventRecord`s. N
 
 ### Phase 3 — `zwp_pointer_gestures_v1` Wayland protocol
 
-New file `PointerGestures.swift` in `NucleusCompositorWaylandRuntime`, following the router protocol pattern used by `CursorShape.swift` and `RelativePointer.swift` (a manager object holding a C request vtable, registered on the router). The already-vendored `Protocols/wayland-protocols/unstable/pointer-gestures/pointer-gestures-unstable-v1.xml` is included by the component recipe; run `tools/collider generate wayland` so its `-server-protocol.h` / `-protocol.c` are emitted for the runtime to bind against.
+New file `PointerGestures.swift` in `NucleusCompositorWaylandRuntime`, following the router protocol pattern used by `CursorShape.swift` and `RelativePointer.swift` (a manager object holding a C request vtable, registered on the router). The already-vendored `Protocols/wayland-protocols/unstable/pointer-gestures/pointer-gestures-unstable-v1.xml` is included by the component recipe; run `collider generate wayland` so its `-server-protocol.h` / `-protocol.c` are emitted for the runtime to bind against.
 
 - Implement the global, the per-pointer `wp_pointer_gesture_swipe_v1` / `_pinch_v1` / `_hold_v1` resources, and the matching request handlers.
 - Emit `swipe_begin / update / end`, `pinch_begin / update / end`, `hold_begin / end` events to the focused-pointer client in response to the gesture `WireEventRecord`s from Phase 2.

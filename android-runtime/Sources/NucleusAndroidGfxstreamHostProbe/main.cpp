@@ -165,16 +165,31 @@ int main(int argc, char **argv) {
         printFailure("gfxstream failed to release the imported dma-buf");
         return 2;
     }
+    buffer.reset();
+    if (nucleus_android_gpu_collect(gpu.get()) != 0 ||
+        nucleus_android_gpu_get_diagnostic(gpu.get(), &diagnostic) != 0 ||
+        diagnostic.live_buffer_count != 0 ||
+        diagnostic.retired_buffer_count != 0 ||
+        diagnostic.reclaimed_buffer_count != 1) {
+        printFailure("broker buffer reclamation did not return to baseline");
+        return 2;
+    }
 
     std::printf(
         "{\"status\":\"qualified\",\"renderNode\":\"%s\","
         "\"vulkanDevice\":\"%s\",\"vulkanDeviceUUID\":\"%s\","
         "\"drmFormat\":\"0x%08x\",\"drmModifier\":\"0x%016llx\","
-        "\"exactDmaBufGfxstreamImport\":true}\n",
+        "\"exactDmaBufGfxstreamImport\":true,"
+        "\"liveBuffersAfterRelease\":%llu,"
+        "\"retiredBuffersAfterRelease\":%llu,"
+        "\"reclaimedBuffers\":%llu}\n",
         candidate->render_path,
         diagnostic.device_name,
         diagnostic.device_uuid,
         format,
-        static_cast<unsigned long long>(selectedModifier));
+        static_cast<unsigned long long>(selectedModifier),
+        static_cast<unsigned long long>(diagnostic.live_buffer_count),
+        static_cast<unsigned long long>(diagnostic.retired_buffer_count),
+        static_cast<unsigned long long>(diagnostic.reclaimed_buffer_count));
     return 0;
 }

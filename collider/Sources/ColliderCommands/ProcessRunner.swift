@@ -4,6 +4,7 @@ import Dispatch
 import Foundation
 import Synchronization
 import SystemPackage
+
 #if canImport(Glibc)
 import Glibc
 #elseif canImport(Darwin)
@@ -32,7 +33,8 @@ func discoverWorkspaceRoot(from start: String) -> String? {
         let marker = directory.appendingPathComponent("collider-setup.sh").path
         let manifest = directory.appendingPathComponent("collider/Package.swift").path
         if fileManager.fileExists(atPath: marker),
-           fileManager.fileExists(atPath: manifest) {
+            fileManager.fileExists(atPath: manifest)
+        {
             return directory.path
         }
         let parent = directory.deletingLastPathComponent()
@@ -50,7 +52,8 @@ func resolveWorkspaceRoot(environment: [String: String]) throws -> String {
         return root
     }
     if let discovered = discoverWorkspaceRoot(
-        from: FileManager.default.currentDirectoryPath) {
+        from: FileManager.default.currentDirectoryPath)
+    {
         return discovered
     }
     throw WorkspaceFailure.message(
@@ -89,11 +92,13 @@ struct WorkspaceContext: Sendable {
         let root = try resolveWorkspaceRoot(environment: environment)
         environment["NUCLEUS_WORKSPACE_ROOT"] = root
         let logging = activeCommandLogging.withLock { $0 }
-        let cancellation = activeCancellation.withLock { $0 }
+        let cancellation =
+            activeCancellation.withLock { $0 }
             ?? RuntimeCancellation()
         if let logging {
             environment["NUCLEUS_RUN_DIR"] = logging.run.directory.string
-            environment["NUCLEUS_RUN_LOG"] = logging.run.directory
+            environment["NUCLEUS_RUN_LOG"] =
+                logging.run.directory
                 .appending("run.log").string
         }
         return WorkspaceContext(
@@ -122,7 +127,8 @@ struct WorkspaceContext: Sendable {
     ) throws -> String {
         let childEnvironment = sanitizedEnvironment(
             environment.merging(environmentOverrides) { _, override in override })
-        let executableReference: CommandSpec.Executable = executable.contains("/")
+        let executableReference: CommandSpec.Executable =
+            executable.contains("/")
             ? .path(FilePath(executable))
             : .named(executable)
         let specification = CommandSpec(
@@ -151,18 +157,21 @@ struct WorkspaceContext: Sendable {
         _ arguments: [String],
         directory: URL? = nil,
         environmentOverrides: [String: String] = [:],
+        output: CommandSpec.Output = .inherited,
         stage: TaskID? = nil
     ) -> WorkspaceManagedCommand {
         let childEnvironment = sanitizedEnvironment(
             environment.merging(environmentOverrides) { _, override in override })
-        let executableReference: CommandSpec.Executable = executable.contains("/")
+        let executableReference: CommandSpec.Executable =
+            executable.contains("/")
             ? .path(FilePath(executable))
             : .named(executable)
         let specification = CommandSpec(
             executable: executableReference,
             arguments: arguments,
             workingDirectory: FilePath((directory ?? root).path),
-            environment: childEnvironment)
+            environment: childEnvironment,
+            output: output)
         return WorkspaceManagedCommand(
             runtime: runtime,
             specification: specification,
@@ -172,7 +181,8 @@ struct WorkspaceContext: Sendable {
     func withExclusiveVerification<Result>(
         _ body: () throws -> Result
     ) throws -> Result {
-        let directory = root
+        let directory =
+            root
             .appendingPathComponent(".nucleus/locks", isDirectory: true)
         try FileManager.default.createDirectory(
             at: directory,

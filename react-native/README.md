@@ -41,10 +41,10 @@ Collider provisions the RN C++ stack and its generated specification:
 
 ```sh
 # Provision Hermes, support libraries, ReactCommon, and the native SDK.
-tools/collider bootstrap rn
+collider bootstrap rn
 
 # Regenerate RN codegen independently after an RN version bump.
-tools/collider generate rn-spec
+collider generate rn-spec
 
 # Host-C++ archives are staged as part of bootstrap.
 ```
@@ -68,7 +68,7 @@ third-party/boost/          (vendored, header-only)
 
 ```sh
 # From the monorepo root
-tools/collider bootstrap rn
+collider bootstrap rn
 
 # Rebuild
 source ../tools/host-env.sh

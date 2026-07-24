@@ -66,6 +66,18 @@ import Testing
         // Self-parenting is a cycle.
         #expect(tree.wouldCreateCycle(childId: 5, parentId: 5), "tree-self-cycle")
 
+        // Existing malformed topology fails closed instead of looping.
+        var malformed = LayerTree()
+        var malformedA = Layer(id: 100, kind: .container)
+        malformedA.parent = 101
+        var malformedB = Layer(id: 101, kind: .container)
+        malformedB.parent = 100
+        malformed.insertLayer(malformedA)
+        malformed.insertLayer(malformedB)
+        #expect(malformed.wouldCreateCycle(
+            childId: 102,
+            parentId: 100))
+
         // detach removes from parent + clears parent pointer.
         tree.detach(11)
         #expect(tree.get(11)?.parent == nil && tree.get(10)?.children == [], "tree-detach")

@@ -5,12 +5,15 @@
 // facade header transitively pulls the emitted Swift→C++ header). Catches C++
 // exceptions (the Swift test runtime has them disabled) and returns 0 on full
 // success; a nonzero code identifies the failing step (100 + step on a throw).
+#include <NucleusReactRuntime/HostCommandBridge.hpp>
 #include <NucleusReactRuntime/ReactRuntimeHostFacade.hpp>
 
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <cstdio>
 #include <exception>
+#include <mutex>
 #include <string>
 #include <thread>
 
@@ -19,6 +22,34 @@ namespace {
 void countJSWorkWake(void *context) {
     static_cast<std::atomic<int> *>(context)->fetch_add(
         1, std::memory_order_relaxed);
+}
+
+struct CommandLifetimeState final {
+    std::mutex mutex;
+    std::condition_variable condition;
+    bool entered{false};
+    bool unblock{false};
+    std::atomic<int> invocations{0};
+    std::atomic<int> releases{0};
+};
+
+void blockingHostCommand(
+    void *context,
+    const char *,
+    const char *) {
+    auto *state = static_cast<CommandLifetimeState *>(context);
+    state->invocations.fetch_add(1, std::memory_order_relaxed);
+    std::unique_lock lock(state->mutex);
+    state->entered = true;
+    state->condition.notify_all();
+    state->condition.wait(lock, [state] {
+        return state->unblock;
+    });
+}
+
+void countHostCommandRelease(void *context) {
+    static_cast<CommandLifetimeState *>(context)
+        ->releases.fetch_add(1, std::memory_order_relaxed);
 }
 
 } // namespace
@@ -90,4 +121,108 @@ extern "C" int nucleus_rn_js_work_wake_smoke(const char *hbcPath) {
     } catch (...) {
         return 6;
     }
+}
+
+extern "C" int nucleus_rn_invoke_host_command_on_js_worker(
+    void (*callback)(void *, const char *, const char *),
+    void *context,
+    void (*release)(void *),
+    const char *hbcPath) {
+    using namespace nucleus::react;
+    int result = 0;
+    std::thread worker;
+    try {
+        worker = std::thread([&] {
+            ReactRuntimeHostFacade facade;
+            const auto installed =
+                facade.setCommandHandler(callback, context, release);
+            if (!installed.succeeded) {
+                result = 2;
+                return;
+            }
+            const auto invoked = facade.evaluateBytecode(
+                hbcPath == nullptr ? std::string() : std::string(hbcPath));
+            if (!invoked.succeeded) {
+                std::fprintf(
+                    stderr,
+                    "command-handler actor smoke bytecode invocation failed: %s\n",
+                    invoked.error.c_str());
+                result = 3;
+            }
+        });
+    } catch (...) {
+        if (release != nullptr) {
+            release(context);
+        }
+        return 1;
+    }
+    worker.join();
+    return result;
+}
+
+extern "C" int nucleus_rn_command_handler_ownership_smoke() {
+    using namespace nucleus::react;
+    CommandLifetimeState original;
+    CommandLifetimeState replacement;
+    {
+        HostCommandHandler handler;
+        handler.set(
+            blockingHostCommand,
+            &original,
+            countHostCommandRelease);
+        auto entry = handler.get();
+        if (entry == nullptr) {
+            return 1;
+        }
+        std::thread invocation([
+            entry = std::move(entry)
+        ] {
+            entry->callback(
+                entry->context,
+                "original",
+                "{}");
+        });
+
+        bool entered = false;
+        {
+            std::unique_lock lock(original.mutex);
+            entered = original.condition.wait_for(
+                lock,
+                std::chrono::seconds(2),
+                [&original] {
+                    return original.entered;
+                });
+        }
+        handler.set(
+            blockingHostCommand,
+            &replacement,
+            countHostCommandRelease);
+        const bool releasedWhileInFlight =
+            original.releases.load(std::memory_order_relaxed) != 0;
+        {
+            std::lock_guard lock(original.mutex);
+            original.unblock = true;
+        }
+        original.condition.notify_all();
+        invocation.join();
+
+        if (!entered) {
+            return 2;
+        }
+        if (releasedWhileInFlight) {
+            return 3;
+        }
+        if (original.invocations.load(std::memory_order_relaxed) != 1) {
+            return 4;
+        }
+        if (original.releases.load(std::memory_order_relaxed) != 1) {
+            return 5;
+        }
+        if (replacement.releases.load(std::memory_order_relaxed) != 0) {
+            return 6;
+        }
+    }
+    return replacement.releases.load(std::memory_order_relaxed) == 1
+        ? 0
+        : 7;
 }

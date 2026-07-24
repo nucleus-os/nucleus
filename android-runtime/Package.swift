@@ -72,6 +72,9 @@ let package = Package(
             name: "NucleusAndroidGpuBrokerCore",
             targets: ["NucleusAndroidGpuBrokerCore"]),
         .library(
+            name: "NucleusAndroidContainerContract",
+            targets: ["NucleusAndroidContainerContract"]),
+        .library(
             name: "NucleusAndroidSurfaceProbeCore",
             targets: ["NucleusAndroidSurfaceProbeCore"]),
         .executable(name: "nucleus-android-gpu-broker", targets: ["NucleusAndroidGpuBroker"]),
@@ -81,10 +84,16 @@ let package = Package(
         .executable(
             name: "nucleus-android-gfxstream-workload",
             targets: ["NucleusAndroidGfxstreamWorkload"]),
+        .executable(
+            name: "nucleus-android-shared-ring-stress",
+            targets: ["NucleusAndroidSharedRingStress"]),
         .executable(name: "nucleus-android-surface-probe", targets: ["NucleusAndroidSurfaceProbe"]),
         .executable(
             name: "nucleus-android-presentation-qualifier",
             targets: ["NucleusAndroidPresentationQualifier"]),
+        .executable(
+            name: "NucleusAndroidThreadSanitizerHarness",
+            targets: ["NucleusAndroidThreadSanitizerHarness"]),
     ],
     dependencies: [
         .package(path: "../collider/engine"),
@@ -176,6 +185,7 @@ let package = Package(
                 "NucleusAndroidGraphicsPlatform",
                 "NucleusAndroidIPC",
             ]),
+        .target(name: "NucleusAndroidContainerContract"),
         .executableTarget(
             name: "NucleusAndroidGpuBroker",
             dependencies: [
@@ -215,6 +225,10 @@ let package = Package(
                 .linkedLibrary("dl"),
                 .linkedLibrary("pthread"),
             ]),
+        .executableTarget(
+            name: "NucleusAndroidSharedRingStress",
+            dependencies: ["NucleusAndroidSharedRingC"],
+            path: "Sources/NucleusAndroidSharedRingStress"),
         .executableTarget(
             name: "NucleusAndroidSurfaceProbe",
             dependencies: ["NucleusAndroidSurfaceProbeCore"],
@@ -258,9 +272,23 @@ let package = Package(
             name: "NucleusAndroidGraphicsPlatformTests",
             dependencies: [
                 "NucleusAndroidDrmC",
+                "NucleusAndroidDrmCTestSupport",
                 "NucleusAndroidGraphicsContract",
                 "NucleusAndroidGraphicsPlatform",
             ]),
+        .target(
+            name: "NucleusAndroidDrmCTestSupport",
+            dependencies: ["NucleusAndroidDrmC"],
+            path: "Tests/Support/NucleusAndroidDrmCTestSupport",
+            publicHeadersPath: "include"),
+        .executableTarget(
+            name: "NucleusAndroidThreadSanitizerHarness",
+            dependencies: [
+                "NucleusAndroidDrmC",
+                "NucleusAndroidDrmCTestSupport",
+                "NucleusAndroidGfxstreamTransport",
+            ],
+            path: "SanitizerHarnesses/NucleusAndroidThreadSanitizerHarness"),
         .testTarget(
             name: "NucleusAndroidGpuBrokerCoreTests",
             dependencies: [

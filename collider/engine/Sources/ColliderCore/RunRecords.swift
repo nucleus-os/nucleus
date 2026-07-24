@@ -16,9 +16,6 @@ public enum RunStatus: String, Codable, Sendable {
 }
 
 public struct RunManifest: Codable, Sendable {
-    public static let schemaVersion = 1
-
-    public let schema: Int
     public let runID: RunID
     public let command: [String]
     public let startedAt: String
@@ -32,7 +29,6 @@ public struct RunManifest: Codable, Sendable {
     public var resumeCount: Int?
 
     public init(runID: RunID, command: [String], startedAt: String) {
-        schema = Self.schemaVersion
         self.runID = runID
         self.command = command
         self.startedAt = startedAt
@@ -48,9 +44,6 @@ public struct RunManifest: Codable, Sendable {
 }
 
 public struct TaskStateRecord: Codable, Sendable {
-    public static let schemaVersion = 1
-
-    public let schema: Int
     public let task: TaskID
     public let identity: ArtifactDigest
     public let outputs: [String]
@@ -62,7 +55,6 @@ public struct TaskStateRecord: Codable, Sendable {
         outputs: [String],
         completedAt: String
     ) {
-        schema = Self.schemaVersion
         self.task = task
         self.identity = identity
         self.outputs = outputs
@@ -81,7 +73,6 @@ public struct ColliderEvent: Codable, Sendable {
         case downloadProgress
     }
 
-    public let schema: Int
     public let sequence: UInt64
     public let timestamp: String
     public let kind: Kind
@@ -97,7 +88,6 @@ public struct ColliderEvent: Codable, Sendable {
         task: TaskID? = nil,
         message: String? = nil
     ) {
-        schema = 1
         self.sequence = sequence
         self.timestamp = timestamp
         self.kind = kind

@@ -34,7 +34,6 @@ public struct PresentationQualificationConfiguration: Sendable {
 }
 
 public struct PresentationQualificationSummary: Codable, Equatable, Sendable {
-    public var schemaVersion: Int
     public var status: String
     public var generatedAt: String
     public var supportBundle: String
@@ -54,7 +53,6 @@ public struct PresentationQualificationSummary: Codable, Equatable, Sendable {
         failures: [String],
         presentation: SurfaceProbeReport?
     ) {
-        self.schemaVersion = 2
         self.status = status
         self.generatedAt = generatedAt
         self.supportBundle = supportBundle

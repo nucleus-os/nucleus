@@ -64,6 +64,7 @@ import WaylandColliderRecipe
         .deletingLastPathComponent()
         .deletingLastPathComponent()
         .deletingLastPathComponent()
+        .deletingLastPathComponent()
     let task = try WaylandColliderRecipe.generate(
         root: FilePath(workspace.appendingPathComponent("swift-wayland").path),
         environment: ["PATH": "/usr/bin"])
@@ -218,6 +219,7 @@ import WaylandColliderRecipe
 
 @Test func gfxstreamRecipeUsesTypedValidationAndMesonOperations() throws {
     let workspace = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent()
         .deletingLastPathComponent()
         .deletingLastPathComponent()
         .deletingLastPathComponent()

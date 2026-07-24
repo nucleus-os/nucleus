@@ -20,6 +20,7 @@ PRODUCT_SOONG_NAMESPACES += \
     device/nucleus/nucleus_x86_64
 
 PRODUCT_PACKAGES += \
+    android.hardware.security.keymint-service.nonsecure \
     ip \
     netutils-wrapper-1.0
 

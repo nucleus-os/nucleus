@@ -25,10 +25,10 @@ CEF branch `7922`, CEF commit
 Use the workspace entry point:
 
 ```sh
-tools/collider browser doctor
-tools/collider browser bootstrap
-tools/collider browser build
-tools/collider browser test
+collider browser doctor
+collider browser bootstrap
+collider browser build
+collider browser test
 ```
 
 The Collider recipe calls upstream CEF automation only as a pinned leaf

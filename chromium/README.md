@@ -4,11 +4,11 @@ The Chromium build has one supported public entry point and one production
 configuration:
 
 ```sh
-tools/collider browser doctor
-tools/collider browser bootstrap
-tools/collider browser build
-tools/collider browser test
-tools/collider browser install
+collider browser doctor
+collider browser bootstrap
+collider browser build
+collider browser test
+collider browser install
 ```
 
 `bootstrap` reports missing packages from `../cef/apt-deps.txt`, including the

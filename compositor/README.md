@@ -52,9 +52,9 @@ The `NucleusCompositor` binary and composition root. Lives in a separate package
 The primary development path uses the host toolchain and system libraries:
 
 ```sh
-tools/collider doctor runtime
-tools/collider bootstrap
-tools/collider build
+collider doctor runtime
+collider bootstrap
+collider build
 ```
 
 Collider does not mutate the host package database. When a required system
@@ -71,14 +71,14 @@ The lower-level commands remain available:
 
 ```sh
 # From the monorepo root
-tools/collider bootstrap compositor
+collider bootstrap compositor
 
 # Rebuild
 swift build --package-path compositor-core
 swift build --package-path compositor
 
 # Install the complete compositor + native shell session into one prefix
-tools/collider install session
+collider install session
 ```
 
 The root workspace CLI provisions the render SDK through `core/`, then builds
@@ -105,9 +105,9 @@ Notable test targets:
 
 ```sh
 # From a free virtual terminal or display-manager session
-tools/collider run
-tools/collider run --seconds 20
-tools/collider run --scale 1.25
+collider run
+collider run --seconds 20
+collider run --scale 1.25
 ```
 
 The command incrementally builds and stages the compositor, native shell, PAM
@@ -122,13 +122,13 @@ protocols (`wlr-layer-shell`, `wlr-foreign-toplevel-management`,
 
 On multi-GPU hosts, startup selects the unique GPU driving a connected display,
 then uses the PCI boot-VGA hint as a tie-breaker. Use
-`tools/collider run --drm-device /dev/dri/renderD…` only when multiple display
+`collider run --drm-device /dev/dri/renderD…` only when multiple display
 GPUs remain genuinely ambiguous or an explicit device is required.
 
 ## Profile
 
 ```sh
-tools/collider run --tracy --seconds 20
+collider run --tracy --seconds 20
 ```
 
 Run from a free virtual terminal or a display-manager session.
@@ -149,9 +149,9 @@ session stream to a timestamped file under the workspace `logs/` directory;
 The same runtime entry point owns the other launch-time diagnostics:
 
 ```sh
-tools/collider run --sanitize address
-tools/collider run --sanitize undefined
-tools/collider run --sanitize thread
-tools/collider run --vk-validation
-tools/collider run --valgrind
+collider run --sanitize address
+collider run --sanitize undefined
+collider run --sanitize thread
+collider run --vk-validation
+collider run --valgrind
 ```

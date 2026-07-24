@@ -1,0 +1,149 @@
+diff --git a/Utils.cpp b/Utils.cpp
+index a55a57e..317f165 100644
+--- a/Utils.cpp
++++ b/Utils.cpp
+@@ -95,11 +95,29 @@ static const char* kMediaProviderAppCtx = "u:r:mediaprovider_app:";
+ // other between multiple threads.
+ static std::mutex kSecurityLock;
+ 
++static bool IsNucleusContainer() {
++    static const bool value = getenv("NUCLEUS_ANDROID_CONTAINER") != nullptr;
++    return value;
++}
++
+ std::string GetFuseMountPathForUser(userid_t user_id, const std::string& relative_upper_path) {
+     return StringPrintf("/mnt/user/%d/%s", user_id, relative_upper_path.c_str());
+ }
+ 
++static status_t CreateDeviceNodeWithoutSELinux(const char* path, dev_t dev) {
++    mode_t mode = 0660 | S_IFBLK;
++    if (mknod(path, mode, dev) < 0 && errno != EEXIST) {
++        PLOG(ERROR) << "Failed to create device node for " << major(dev) << ":" << minor(dev)
++                    << " at " << path;
++        return -errno;
++    }
++    return OK;
++}
++
+ status_t CreateDeviceNode(const std::string& path, dev_t dev) {
++    if (IsNucleusContainer()) {
++        return CreateDeviceNodeWithoutSELinux(path.c_str(), dev);
++    }
+     std::lock_guard<std::mutex> lock(kSecurityLock);
+     const char* cpath = path.c_str();
+     auto clearfscreatecon = android::base::make_scope_guard([] { setfscreatecon(nullptr); });
+@@ -119,15 +137,7 @@ status_t CreateDeviceNode(const std::string& path, dev_t dev) {
+         return -errno;
+     }
+ 
+-    mode_t mode = 0660 | S_IFBLK;
+-    if (mknod(cpath, mode, dev) < 0) {
+-        if (errno != EEXIST) {
+-            PLOG(ERROR) << "Failed to create device node for " << major(dev) << ":" << minor(dev)
+-                        << " at " << path;
+-            return -errno;
+-        }
+-    }
+-    return OK;
++    return CreateDeviceNodeWithoutSELinux(cpath, dev);
+ }
+ 
+ status_t DestroyDeviceNode(const std::string& path) {
+@@ -475,8 +485,16 @@ int SetAttrs(const std::string& path, unsigned int attrs) {
+     return 0;
+ }
+ 
++static status_t PrepareDirWithoutSELinux(const std::string& path, mode_t mode, uid_t uid, gid_t gid,
++                                         unsigned int attrs) {
++    if (fs_prepare_dir(path.c_str(), mode, uid, gid) != 0) return -errno;
++    if (attrs && SetAttrs(path, attrs) != 0) return -errno;
++    return OK;
++}
++
+ status_t PrepareDir(const std::string& path, mode_t mode, uid_t uid, gid_t gid,
+                     unsigned int attrs) {
++    if (IsNucleusContainer()) return PrepareDirWithoutSELinux(path, mode, uid, gid, attrs);
+     std::lock_guard<std::mutex> lock(kSecurityLock);
+     const char* cpath = path.c_str();
+     auto clearfscreatecon = android::base::make_scope_guard([] { setfscreatecon(nullptr); });
+@@ -496,9 +514,7 @@ status_t PrepareDir(const std::string& path, mode_t mode, uid_t uid, gid_t gid,
+         return -errno;
+     }
+ 
+-    if (fs_prepare_dir(cpath, mode, uid, gid) != 0) return -errno;
+-    if (attrs && SetAttrs(path, attrs) != 0) return -errno;
+-    return OK;
++    return PrepareDirWithoutSELinux(path, mode, uid, gid, attrs);
+ }
+ 
+ status_t ForceUnmount(const std::string& path) {
+diff --git a/VoldNativeService.cpp b/VoldNativeService.cpp
+index 5950926..679c03d 100644
+--- a/VoldNativeService.cpp
++++ b/VoldNativeService.cpp
+@@ -121,6 +121,7 @@ status_t VoldNativeService::start() {
+     IPCThreadState::self()->disableBackgroundScheduling(true);
+     status_t ret = BinderService<VoldNativeService>::publish();
+     if (ret != android::OK) {
++        LOG(ERROR) << "Failed to publish vold Binder service with status " << ret;
+         return ret;
+     }
+     sp<ProcessState> ps(ProcessState::self());
+diff --git a/vold_prepare_subdirs.cpp b/vold_prepare_subdirs.cpp
+index bd7ec4f..999c050 100644
+--- a/vold_prepare_subdirs.cpp
++++ b/vold_prepare_subdirs.cpp
+@@ -54,31 +54,38 @@ static bool valid_uuid(const std::string& s) {
+     return s.size() < 40 && s.find_first_not_of("0123456789abcdefABCDEF-_") == std::string::npos;
+ }
+ 
++static bool is_nucleus_container() {
++    static const bool value = getenv("NUCLEUS_ANDROID_CONTAINER") != nullptr;
++    return value;
++}
++
+ static bool prepare_dir_for_user(struct selabel_handle* sehandle, mode_t mode, uid_t uid, gid_t gid,
+                                  const std::string& path, uid_t user_id) {
+     auto clearfscreatecon = android::base::make_scope_guard([] { setfscreatecon(nullptr); });
+     auto secontext = std::unique_ptr<char, void (*)(char*)>(nullptr, freecon);
+     char* tmp_secontext;
+ 
+-    if (selabel_lookup(sehandle, &tmp_secontext, path.c_str(), S_IFDIR) == 0) {
+-        secontext.reset(tmp_secontext);
+-        if (user_id != (uid_t)-1) {
+-            if (selinux_android_context_with_level(secontext.get(), &tmp_secontext, user_id,
+-                                                   (uid_t)-1) != 0) {
+-                PLOG(ERROR) << "Unable to create context with level for: " << path;
++    if (!is_nucleus_container()) {
++        if (selabel_lookup(sehandle, &tmp_secontext, path.c_str(), S_IFDIR) == 0) {
++            secontext.reset(tmp_secontext);
++            if (user_id != (uid_t)-1) {
++                if (selinux_android_context_with_level(secontext.get(), &tmp_secontext, user_id,
++                                                       (uid_t)-1) != 0) {
++                    PLOG(ERROR) << "Unable to create context with level for: " << path;
++                    return false;
++                }
++                secontext.reset(tmp_secontext);
++            }
++            if (setfscreatecon(secontext.get()) != 0) {
++                LOG(ERROR) << "Failed to setfscreatecon for directory " << path;
+                 return false;
+             }
+-            secontext.reset(tmp_secontext);
+-        }
+-        if (setfscreatecon(secontext.get()) != 0) {
+-            LOG(ERROR) << "Failed to setfscreatecon for directory " << path;
++        } else if (errno == ENOENT) {
++            LOG(DEBUG) << "No selabel defined for directory " << path;
++        } else {
++            PLOG(ERROR) << "Failed to look up selabel for directory " << path;
+             return false;
+         }
+-    } else if (errno == ENOENT) {
+-        LOG(DEBUG) << "No selabel defined for directory " << path;
+-    } else {
+-        PLOG(ERROR) << "Failed to look up selabel for directory " << path;
+-        return false;
+     }
+ 
+     LOG(DEBUG) << "Setting up mode " << std::oct << mode << std::dec << " uid " << uid << " gid "

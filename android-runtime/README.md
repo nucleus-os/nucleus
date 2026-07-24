@@ -1,8 +1,9 @@
 # Nucleus Android Runtime
 
-This package owns the host-side Phase 1 graphics proof for the Android runtime. It
-is intentionally standalone while the repository's top-level build command is being
-migrated. It does not add an Android image, LXC runtime, or product HALs yet.
+This package owns the Android 17 product, container contract, and host-side graphics
+path. Collider materializes the pinned AOSP source, builds and release-signs the
+standalone system images, validates their provenance and AVB chain, and drives the
+bounded container and presentation workflows.
 
 ## Implemented contract
 
@@ -22,9 +23,10 @@ migrated. It does not add an Android image, LXC runtime, or product HALs yet.
   syncobj timeline. Every buffer owns a separate release timeline because compositor
   release order is not globally ordered. Release reuse is exposed through
   `drmSyncobjEventfd`; runtime code never performs a CPU fence wait.
-- `NucleusAndroidGfxstreamTransport` provides sealed-memfd, lock-free SPSC command
-  and response rings with eventfd wakeups and bounded backpressure. This is the
-  process-transport substrate for the gfxstream guest and host adapters.
+- `NucleusAndroidGfxstreamTransport` provides sealed-memfd SPSC command and
+  response rings with distinct producer/consumer endpoints, armed eventfd waits,
+  and bounded backpressure. This is the process-transport substrate for the
+  gfxstream guest and host adapters.
 - The pinned guest gfxstream Vulkan ICD and static host renderer communicate only
   through those rings. The host renderer selects the broker GPU by device UUID,
   imports the exact broker dma-buf, and bridges compositor release and guest
@@ -32,9 +34,18 @@ migrated. It does not add an Android image, LXC runtime, or product HALs yet.
 - `nucleus-android-gfxstream-workload` runs a deterministic 48-frame, three-buffer,
   two-generation Vulkan workload with resize, reuse, bounded-backpressure, failure,
   disconnect, and teardown coverage.
+- `nucleus-android-shared-ring-stress` alternates empty and full states across
+  process mappings and emits small-message and default-slot throughput plus
+  notification diagnostics.
 - `nucleus-android-surface-probe` reads real linux-dmabuf feedback, creates an
   `xdg_toplevel`, imports broker dma-bufs and syncobj timelines, commits acquire and
   release points, and records presentation feedback.
+- `NucleusAndroidContainerContract` defines the system-as-root LXC configuration,
+  generated AppArmor confinement, seccomp policy, subordinate-ID mapping, exact
+  device surface, and APEX archive validation.
+- The `nucleus_x86_64-cp2a-userdebug` Android 17 product emits separate immutable
+  system, system-ext, product, and vendor images with release-signed APKs, APEXes, and
+  AVB metadata.
 
 ## Verification
 
@@ -45,24 +56,11 @@ source tools/host-env.sh
 swift test --package-path android-runtime
 ```
 
-Produce a machine-readable qualification record for every DRM render node:
-
-```sh
-source tools/host-env.sh
-android-runtime/scripts/qualify-phase1-graphics
-```
-
-The command runs the complete Swift test suite, builds the live workload, exercises
-every local render node, validates the result and lifecycle JSON, and emits a support
-archive under `android-runtime/.build/phase1-qualification/`. It fails if device
-selection, exact dma-buf import, explicit synchronization, bounded backpressure,
-lifecycle coverage, or any unsupported-capability check fails.
-
 The combined gfxstream-to-Wayland qualification is a Collider-owned live hardware
 workflow. Run it from a free virtual terminal with an explicitly selected GPU:
 
 ```sh
-tools/collider qualify android-presentation \
+collider qualify android-presentation \
   --drm-device /dev/dri/renderD129
 ```
 
@@ -76,17 +74,32 @@ the three distinctive buffer colors for an optional visual sanity check. Present
 feedback and the recorded device and synchronization lifecycle determine the
 machine-readable result.
 
-## Remaining Phase 1 integration
+Build and verify the signed Android image:
 
-The shared-allocation path is implemented: one broker-owned allocation is rendered
-through gfxstream, committed by the surface probe, acknowledged by presentation
-feedback, released by the compositor, and reused by gfxstream. The headless portion
-passes on both local GPUs. The patched gfxstream and Mesa inputs are clean immutable
-fork revisions, and the staged build validates them. Only the combined presentation
-command against the live compositor remains.
+```sh
+collider android-runtime image
+```
 
-The combined run needs one user action: invoke the Collider qualification from a free
-virtual terminal. A monitor must be connected to the selected GPU because the same
-physical device owns Vulkan rendering, GBM allocation, and KMS presentation. The RTX
-4090 and RTX 4070 Ti in this workstation are the complete Phase 1 hardware matrix.
-AMD, Intel, and hybrid-system qualification belongs to the later support phase.
+The Phase 1 shared-allocation and combined presentation paths are complete. Phase 2
+source locking, product definition, signing, AVB validation, container configuration,
+host-owned APEX mounting, instance-private delegated bpffs creation, token-aware
+Android BPF loading, and the SELinux-bypassed vold preparation path are implemented.
+The current signed image passed the complete AOSP build, package/APEX signature,
+APEX-payload, and AVB verification pipeline in
+`.nucleus/runs/2026-07-24T19-50-29Z-2403572`. The remaining Phase 2 gate is the
+user-run framework boot:
+
+```sh
+collider android-runtime framework-boot
+```
+
+Collider gives each framework-boot instance a private `/dev/kmsg` transport and
+retains its output in `android-kmsg.log`; it never exposes the host kernel log.
+After Android `logd` starts, Collider retains every Android log buffer in
+`android-logcat.log`. LXC TRACE output, matching host kernel audit events, and
+tombstones are retained beside those streams, and failure output includes useful
+tails from every nonempty log.
+
+It must reach `sys.boot_completed=1` under the Phase 2 AppArmor, seccomp, capability,
+device, and subordinate-user-namespace contract. Enforcing Android SELinux lands with
+the integrated Nucleus host policy during Phase 7 security hardening.

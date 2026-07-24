@@ -19,9 +19,45 @@ private func requireSuccess(_ result: nucleus.react.RuntimeHostResult) throws {
 
 // Retains a JS→native command closure behind an opaque pointer for the facade's C callback
 // (a @convention(c) trampoline cannot capture).
-final class CommandHandlerBox {
-    let handler: (String, String) -> Void
-    init(_ handler: @escaping (String, String) -> Void) { self.handler = handler }
+final class CommandHandlerBox: Sendable {
+    let handler: @MainActor @Sendable (String, String) -> Void
+
+    init(
+        _ handler: @escaping @MainActor @Sendable (
+            String,
+            String
+        ) -> Void
+    ) {
+        self.handler = handler
+    }
+
+    static let callback: @convention(c) (
+        UnsafeMutableRawPointer?,
+        UnsafePointer<CChar>?,
+        UnsafePointer<CChar>?
+    ) -> Void = { context, command, argsJson in
+        guard let context, let command else { return }
+        let box = Unmanaged<CommandHandlerBox>
+            .fromOpaque(context)
+            .takeUnretainedValue()
+        let commandValue = String(cString: command)
+        let argsJsonValue = argsJson.map {
+            String(cString: $0)
+        } ?? ""
+        // C++ holds the shared callback entry through this trampoline. Capture
+        // the box into the task before returning so replacement or runtime
+        // teardown may release the entry without invalidating queued delivery.
+        Task { @MainActor [box] in
+            box.handler(commandValue, argsJsonValue)
+        }
+    }
+
+    static let release: @convention(c) (
+        UnsafeMutableRawPointer?
+    ) -> Void = { context in
+        guard let context else { return }
+        Unmanaged<CommandHandlerBox>.fromOpaque(context).release()
+    }
 }
 
 final class JSWorkWakeHandlerBox: Sendable {
@@ -150,28 +186,22 @@ public final class RuntimeHost {
         try requireSuccess(facade.setAppState(std.string(state)))
     }
 
-    /// Install the JS→native command handler. JS `NucleusHostCommand.invoke(command,
-    /// argsJson)` reaches `handler(command, argsJson)` (on the JS thread). Bridges the Swift
-    /// closure to the facade's C callback via an Unmanaged box. The C++ shared
+    /// Install the JS→native command handler. JS initiates
+    /// `NucleusHostCommand.invoke(command, argsJson)` on the JS thread; Swift
+    /// receives the copied values asynchronously on `MainActor`. The C++ shared
     /// handler owns the retained context and invokes `release` on replacement,
     /// teardown, or setup failure.
-    public func setCommandHandler(_ handler: @escaping (String, String) -> Void) throws {
+    public func setCommandHandler(
+        _ handler: @escaping @MainActor @Sendable (
+            String,
+            String
+        ) -> Void
+    ) throws {
         let box = CommandHandlerBox(handler)
-        let callback: @convention(c) (
-            UnsafeMutableRawPointer?, UnsafePointer<CChar>?, UnsafePointer<CChar>?
-        ) -> Void = { ctx, command, argsJson in
-            guard let ctx, let command else { return }
-            let box = Unmanaged<CommandHandlerBox>.fromOpaque(ctx).takeUnretainedValue()
-            box.handler(String(cString: command), argsJson.map { String(cString: $0) } ?? "")
-        }
-        let release: @convention(c) (UnsafeMutableRawPointer?) -> Void = { context in
-            guard let context else { return }
-            Unmanaged<CommandHandlerBox>.fromOpaque(context).release()
-        }
         try requireSuccess(facade.setCommandHandler(
-            callback,
+            CommandHandlerBox.callback,
             Unmanaged.passRetained(box).toOpaque(),
-            release
+            CommandHandlerBox.release
         ))
     }
 

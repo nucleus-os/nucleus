@@ -886,7 +886,6 @@ import Testing
     let automate = directory.appendingPathComponent("automate-git.py")
     try Data("automation".utf8).write(to: automate)
     let manifest: [String: Any] = [
-        "schema": 1,
         "sourceID": sourceID,
         "cefBranch": "fixture",
         "cefCheckout": cefRevision,

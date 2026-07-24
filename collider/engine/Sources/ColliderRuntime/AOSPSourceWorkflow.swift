@@ -136,7 +136,6 @@ extension ColliderRuntime {
 
         try DurableFile.writeJSON(
             AOSPSourceLockReport(
-                schemaVersion: 1,
                 status: "verified",
                 platform: AOSPSourceLockReport.Platform(
                     release: platform.release,
@@ -158,25 +157,17 @@ extension ColliderRuntime {
         _ preparation: AOSPSourcePreparation,
         stage: TaskID
     ) async throws {
-        guard preparation.minimumFreeBytes > 0,
-            preparation.syncJobs > 0,
+        guard preparation.syncJobs > 0,
             preparation.retryFetches > 0
         else {
             throw RuntimeFailure.invalidOutput(
-                "AOSP source preparation limits must be positive")
+                "AOSP source concurrency and retry counts must be positive")
         }
         let source = preparation.source
         let parent = source.removingLastComponent()
         try FileManager.default.createDirectory(
             atPath: parent.string,
             withIntermediateDirectories: true)
-        let available = try aospAvailableBytes(at: parent)
-        guard available >= preparation.minimumFreeBytes else {
-            throw RuntimeFailure.invalidOutput(
-                "\(parent) has \(available / aospGiB) GiB free; "
-                    + "\(preparation.minimumFreeBytes / aospGiB) GiB "
-                    + "is required")
-        }
         let launcherDigest = try ArtifactHasher.digest(
             file: preparation.launcher)
         guard launcherDigest == preparation.specification.repo.launcherDigest
@@ -188,6 +179,9 @@ extension ColliderRuntime {
 
         try requireEmptyOrRepo(source)
         try await requireCleanAOSPSource(preparation, stage: stage)
+        try await validateExistingAOSPSourceIdentity(
+            preparation,
+            stage: stage)
         let platform = preparation.specification.platform
         let repo = preparation.specification.repo
         _ = try await aospRepo(
@@ -230,6 +224,87 @@ extension ColliderRuntime {
             output: .logged,
             stage: stage)
         try await requireCleanAOSPSource(preparation, stage: stage)
+        let baseResolvedData = try await aospResolvedManifest(
+            preparation,
+            stage: stage)
+        let baseResolvedDigest = ArtifactHasher.digest(
+            bytes: baseResolvedData)
+        let metadata = source.appending(".nucleus")
+        try DurableFile.write(
+            baseResolvedData,
+            to: metadata.appending("base-resolved-manifest.xml"))
+        let appliedPatches = try await applyAOSPForwardPatches(
+            preparation,
+            stage: stage)
+        try await requireCleanAOSPSource(preparation, stage: stage)
+        let patchedResolvedData = try await aospResolvedManifest(
+            preparation,
+            stage: stage)
+        let patchedResolvedDigest = ArtifactHasher.digest(
+            bytes: patchedResolvedData)
+        try DurableFile.write(
+            patchedResolvedData,
+            to: metadata.appending("patched-resolved-manifest.xml"))
+        let replacedManifest = metadata.appending("resolved-manifest.xml")
+        if FileManager.default.fileExists(atPath: replacedManifest.string) {
+            try FileManager.default.removeItem(
+                atPath: replacedManifest.string)
+        }
+        try DurableFile.writeJSON(
+            AOSPSourceProvenance(
+                status: "materialized",
+                release: platform.release,
+                revision: platform.revision,
+                manifestCommit: initialized.manifestCommit,
+                superprojectCommit: initialized.superprojectCommit,
+                repoCommit: initialized.repoCommit,
+                baseResolvedManifestSHA256:
+                    baseResolvedDigest.sha256Hex,
+                resolvedManifestSHA256:
+                    patchedResolvedDigest.sha256Hex,
+                forwardPatches: appliedPatches),
+            to: metadata.appending("source-provenance.json"))
+    }
+
+    private func validateExistingAOSPSourceIdentity(
+        _ preparation: AOSPSourcePreparation,
+        stage: TaskID
+    ) async throws {
+        let manifest = preparation.source.appending(".repo/manifest.xml")
+        guard FileManager.default.fileExists(atPath: manifest.string) else {
+            return
+        }
+        let provenancePath = preparation.source.appending(
+            ".nucleus/source-provenance.json")
+        guard FileManager.default.fileExists(atPath: provenancePath.string)
+        else {
+            throw RuntimeFailure.invalidOutput(
+                "existing AOSP source has no Nucleus provenance; "
+                    + "refusing to move its clean project revisions")
+        }
+        let provenance = try JSONDecoder().decode(
+            AOSPExistingSourceProvenance.self,
+            from: Data(contentsOf: URL(
+                fileURLWithPath: provenancePath.string)))
+        guard provenance.status == "materialized" else {
+            throw RuntimeFailure.invalidOutput(
+                "existing AOSP source provenance is not materialized")
+        }
+        let current = try await aospResolvedManifest(
+            preparation,
+            stage: stage)
+        let digest = ArtifactHasher.digest(bytes: current)
+        guard digest.sha256Hex == provenance.resolvedManifestSHA256 else {
+            throw RuntimeFailure.invalidOutput(
+                "existing AOSP project revisions do not match their "
+                    + "recorded provenance; refusing to run Repo sync")
+        }
+    }
+
+    private func aospResolvedManifest(
+        _ preparation: AOSPSourcePreparation,
+        stage: TaskID
+    ) async throws -> Data {
         let resolvedManifest =
             try await aospRepo(
                 preparation,
@@ -238,23 +313,110 @@ extension ColliderRuntime {
                 stage: stage
             )
             .trimmingCharacters(in: .whitespacesAndNewlines) + "\n"
-        let resolvedData = Data(resolvedManifest.utf8)
-        let resolvedDigest = ArtifactHasher.digest(bytes: resolvedData)
-        let metadata = source.appending(".nucleus")
-        try DurableFile.write(
-            resolvedData,
-            to: metadata.appending("resolved-manifest.xml"))
-        try DurableFile.writeJSON(
-            AOSPSourceProvenance(
-                schemaVersion: 1,
-                status: "materialized",
-                release: platform.release,
-                revision: platform.revision,
-                manifestCommit: initialized.manifestCommit,
-                superprojectCommit: initialized.superprojectCommit,
-                repoCommit: initialized.repoCommit,
-                resolvedManifestSHA256: resolvedDigest.sha256Hex),
-            to: metadata.appending("source-provenance.json"))
+        return Data(resolvedManifest.utf8)
+    }
+
+    private func applyAOSPForwardPatches(
+        _ preparation: AOSPSourcePreparation,
+        stage: TaskID
+    ) async throws -> [AOSPSourceProvenance.ForwardPatchStack] {
+        var result: [AOSPSourceProvenance.ForwardPatchStack] = []
+        for stack in preparation.patchStacks {
+            let repository = preparation.source.appending(
+                stack.repositoryPath)
+            let topLevel = try await aospCaptured(
+                .named("git"),
+                ["-C", repository.string, "rev-parse", "--show-toplevel"],
+                in: preparation.source,
+                environment: preparation.environment,
+                stage: stage
+            )
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            guard URL(fileURLWithPath: topLevel).standardizedFileURL.path
+                    == URL(fileURLWithPath: repository.string)
+                        .standardizedFileURL.path
+            else {
+                throw RuntimeFailure.invalidOutput(
+                    "forward-patch repository does not resolve to its "
+                        + "declared Repo project: \(stack.repositoryPath)")
+            }
+            let baseCommit = try await aospGitRevision(
+                repository: repository,
+                revision: "HEAD",
+                environment: preparation.environment,
+                stage: stage)
+            var patches: [AOSPSourceProvenance.ForwardPatch] = []
+            for patch in stack.patches {
+                let digest = try ArtifactHasher.digest(file: patch.file)
+                try await aospChecked(
+                    .named("git"),
+                    [
+                        "-C", repository.string,
+                        "apply", "--index", "--whitespace=error-all",
+                        patch.file.string,
+                    ],
+                    in: preparation.source,
+                    environment: preparation.environment,
+                    stage: stage)
+                patches.append(AOSPSourceProvenance.ForwardPatch(
+                    path: patch.path,
+                    sha256: digest.sha256Hex))
+            }
+            let stagedFiles = try await aospCaptured(
+                .named("git"),
+                [
+                    "-C", repository.string,
+                    "diff", "--cached", "--name-only",
+                ],
+                in: preparation.source,
+                environment: preparation.environment,
+                stage: stage
+            )
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !stagedFiles.isEmpty else {
+                throw RuntimeFailure.invalidOutput(
+                    "forward-patch stack produced no changes: "
+                        + stack.repositoryPath)
+            }
+            let commitEnvironment = preparation.environment.merging([
+                "GIT_AUTHOR_NAME": "Nucleus Source Lock",
+                "GIT_AUTHOR_EMAIL": "source-lock@nucleus.invalid",
+                "GIT_AUTHOR_DATE": "2000-01-01T00:00:00Z",
+                "GIT_COMMITTER_NAME": "Nucleus Source Lock",
+                "GIT_COMMITTER_EMAIL": "source-lock@nucleus.invalid",
+                "GIT_COMMITTER_DATE": "2000-01-01T00:00:00Z",
+                "LC_ALL": "C",
+                "TZ": "UTC",
+            ]) { _, required in required }
+            try await aospChecked(
+                .named("git"),
+                [
+                    "-C", repository.string,
+                    "commit", "--quiet", "--no-gpg-sign", "--no-verify",
+                    "--message",
+                    "Nucleus forward patches: \(stack.repositoryPath)",
+                ],
+                in: preparation.source,
+                environment: commitEnvironment,
+                stage: stage)
+            let patchedCommit = try await aospGitRevision(
+                repository: repository,
+                revision: "HEAD",
+                environment: preparation.environment,
+                stage: stage)
+            let patchedTree = try await aospGitRevision(
+                repository: repository,
+                revision: "HEAD^{tree}",
+                environment: preparation.environment,
+                stage: stage)
+            result.append(AOSPSourceProvenance.ForwardPatchStack(
+                repositoryPath: stack.repositoryPath,
+                baseCommit: baseCommit,
+                patchedCommit: patchedCommit,
+                patchedTree: patchedTree,
+                patches: patches))
+        }
+        return result
     }
 
     private func aospRemoteRefs(
@@ -451,8 +613,6 @@ extension ColliderRuntime {
     }
 }
 
-private let aospGiB: UInt64 = 1_024 * 1_024 * 1_024
-
 private func requireAOSPRemoteRef(
     _ refs: [String: String],
     revision: String,
@@ -488,16 +648,6 @@ private func requireEmptyOrRepo(_ source: FilePath) throws {
             "\(source) exists without Repo metadata and is not empty; "
                 + "refusing to overwrite it")
     }
-}
-
-private func aospAvailableBytes(at path: FilePath) throws -> UInt64 {
-    let attributes = try FileManager.default.attributesOfFileSystem(
-        forPath: path.string)
-    guard let available = attributes[.systemFreeSize] as? NSNumber else {
-        throw RuntimeFailure.invalidOutput(
-            "could not determine free space for \(path)")
-    }
-    return available.uint64Value
 }
 
 private func aospRepoLauncherVersion(_ data: Data) throws -> String {
@@ -557,19 +707,37 @@ private struct AOSPSourceLockReport: Encodable {
         let launcherSHA256: String
     }
 
-    let schemaVersion: UInt32
     let status: String
     let platform: Platform
     let repo: Repo
 }
 
 private struct AOSPSourceProvenance: Encodable {
-    let schemaVersion: UInt32
+    struct ForwardPatch: Encodable {
+        let path: String
+        let sha256: String
+    }
+
+    struct ForwardPatchStack: Encodable {
+        let repositoryPath: String
+        let baseCommit: String
+        let patchedCommit: String
+        let patchedTree: String
+        let patches: [ForwardPatch]
+    }
+
     let status: String
     let release: String
     let revision: String
     let manifestCommit: String
     let superprojectCommit: String
     let repoCommit: String
+    let baseResolvedManifestSHA256: String
+    let resolvedManifestSHA256: String
+    let forwardPatches: [ForwardPatchStack]
+}
+
+private struct AOSPExistingSourceProvenance: Decodable {
+    let status: String
     let resolvedManifestSHA256: String
 }

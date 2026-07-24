@@ -83,6 +83,10 @@ int nucleus_android_gfxstream_host_connection_command_notification_fd(
     nucleus_android_gfxstream_host_connection *connection);
 int nucleus_android_gfxstream_host_connection_response_space_notification_fd(
     nucleus_android_gfxstream_host_connection *connection);
+int nucleus_android_gfxstream_host_connection_drain_command_notification(
+    nucleus_android_gfxstream_host_connection *connection);
+int nucleus_android_gfxstream_host_connection_drain_response_space_notification(
+    nucleus_android_gfxstream_host_connection *connection);
 int nucleus_android_gfxstream_host_connection_renderer_notification_fd(
     nucleus_android_gfxstream_host_connection *connection);
 int nucleus_android_gfxstream_host_connection_drain_renderer_notification(

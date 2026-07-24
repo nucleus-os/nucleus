@@ -14,5 +14,19 @@
 # limitations under the License.
 #
 
-on post-fs-data
+on early-init
+    chown system system /data
+    chmod 0771 /data
+
+    mkdir /data/anr 0775 system system
+    mkdir /data/tombstones 0775 system system
+    mkdir /data/vendor 0771 root root
+    mkdir /data/vendor/tombstones 0771 root root
+    start tombstoned
+
+    mkdir /data/misc 01771 system misc
+    mkdir /data/misc/keystore 0700 keystore keystore
+    mkdir /data/property 0700 root root
+    mkdir /data/dalvik-cache 0771 root root
+
     mkdir /data/nucleus 0700 system system

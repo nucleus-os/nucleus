@@ -29,10 +29,10 @@ import Testing
 }
 
 @Test func canonicalFramingDistinguishesFieldBoundaries() {
-    var first = CanonicalDigestEncoder(schema: 1)
+    var first = CanonicalDigestEncoder()
     first.append(tag: 1, string: "ab")
     first.append(tag: 2, string: "c")
-    var second = CanonicalDigestEncoder(schema: 1)
+    var second = CanonicalDigestEncoder()
     second.append(tag: 1, string: "a")
     second.append(tag: 2, string: "bc")
     #expect(first.bytes != second.bytes)

@@ -1,0 +1,18 @@
+2
+denylist
+[all]
+acct errno 1
+delete_module errno 1
+finit_module errno 1
+init_module errno 1
+ioperm errno 1
+iopl errno 1
+kexec_file_load errno 1
+kexec_load errno 1
+lookup_dcookie errno 1
+open_by_handle_at errno 1
+settimeofday errno 1
+stime errno 1
+swapon errno 1
+swapoff errno 1
+syslog errno 1

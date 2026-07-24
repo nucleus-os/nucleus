@@ -84,6 +84,21 @@ import NucleusRenderModel
         #expect(queue.drain().isEmpty)
     }
 
+    @Test func noWorkerReportsInlineDecodeFallback() {
+        let queue = ImageDecodeQueue(
+            wakeSink: TestWakeSink(),
+            workerCount: 0)
+        let source = ImageSource(content: .raw(RawPixelBuffer(
+            width: 2,
+            height: 3,
+            order: .rgba,
+            pixels: [UInt8](repeating: 0x80, count: 2 * 3 * 4))))
+
+        #expect(!queue.hasWorkers)
+        #expect(!queue.submit(handle: 1, source: source))
+        queue.shutdown()
+    }
+
     /// A pending decode draws nothing, so the caller asks again every frame.
     /// Without this the queue would fill with duplicates of the same work.
     @Test func resubmittingAPendingHandleIsRefused() {

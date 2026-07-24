@@ -58,3 +58,27 @@ import Testing
         withDestinationURL: URL(fileURLWithPath: "replacement"))
     #expect(try ArtifactHasher.digest(tree: path) != executable)
 }
+
+@Test func treeDigestCanExcludeOwnedMetadata() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-tree-exclusion-\(UUID().uuidString)")
+    let source = directory.appendingPathComponent("source")
+    let staged = directory.appendingPathComponent("staged")
+    try FileManager.default.createDirectory(
+        at: source, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(
+        at: staged, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    try Data("product".utf8).write(
+        to: source.appendingPathComponent("product.mk"))
+    try Data("product".utf8).write(
+        to: staged.appendingPathComponent("product.mk"))
+    try Data("owned metadata".utf8).write(
+        to: staged.appendingPathComponent(".nucleus-product-stage.json"))
+
+    #expect(
+        try ArtifactHasher.digest(tree: FilePath(source.path))
+            == ArtifactHasher.digest(
+                tree: FilePath(staged.path),
+                excluding: [".nucleus-product-stage.json"]))
+}

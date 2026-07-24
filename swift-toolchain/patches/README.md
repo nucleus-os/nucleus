@@ -68,5 +68,5 @@ validate a patch in isolation before committing it.
 ## Removing a patch
 
 1. Delete the `.patch` file.
-2. Run `tools/collider toolchain rebuild` — source synchronization discards
+2. Run `collider toolchain rebuild` — source synchronization discards
    the change on its own.

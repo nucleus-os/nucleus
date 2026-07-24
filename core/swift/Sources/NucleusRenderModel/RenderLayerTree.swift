@@ -175,24 +175,13 @@ public enum LayerTreeError: Error, Equatable, Sendable {
 /// The retained layer tree: an id→node map plus the ordered root child list.
 /// Mirrors `RenderLayer.LayerTree`.
 public struct LayerTree: Sendable {
-    public var layers: [UInt64: Layer] = [:]
+    public package(set) var layers: [UInt64: Layer] = [:]
     /// Ordered root layers per producer context. Remote-host expansion resolves
     /// the target context here, while the compositor frame starts from
     /// `compositorContextId`.
-    public var contextRoots: [ContextID: [UInt64]] = [:]
+    public package(set) var contextRoots: [ContextID: [UInt64]] = [:]
 
-    public init(
-        layers: [UInt64: Layer] = [:],
-        contextRoots: [ContextID: [UInt64]] = [:]
-    ) {
-        self.layers = layers
-        self.contextRoots = contextRoots
-        for (context, roots) in contextRoots {
-            for id in roots {
-                self.layers[id]?.rootContext = context
-            }
-        }
-    }
+    public init() {}
 
     /// Read a node by id. Mirrors `get`.
     public func get(_ id: UInt64) -> Layer? {
@@ -200,57 +189,145 @@ public struct LayerTree: Sendable {
     }
 
     /// Insert (or replace) a node keyed by its id. Mirrors `insertLayer`.
-    public mutating func insertLayer(_ node: Layer) {
+    package mutating func insertLayer(_ node: Layer) {
         layers[node.id] = node
     }
 
     /// Detach `id` from its parent (or the root list) and clear its parent
     /// pointer. No-op if absent. Mirrors `detach`.
     public mutating func detach(_ id: UInt64) {
-        let parentId = layers[id]?.parent
-        if let pid = parentId {
-            layers[pid]?.children.removeAll { $0 == id }
-        }
-        if let context = layers[id]?.rootContext {
-            contextRoots[context]?.removeAll { $0 == id }
-            if contextRoots[context]?.isEmpty == true {
-                contextRoots[context] = nil
+        var ignored: UInt64 = 0
+        detach(id, dictionaryProbes: &ignored)
+    }
+
+    package mutating func detach(
+        _ id: UInt64,
+        dictionaryProbes: inout UInt64
+    ) {
+        dictionaryProbes &+= 1
+        guard let childIndex = layers.index(forKey: id) else { return }
+        detach(
+            id,
+            at: childIndex,
+            dictionaryProbes: &dictionaryProbes)
+    }
+
+    private mutating func detach(
+        _ id: UInt64,
+        at childIndex: Dictionary<UInt64, Layer>.Index,
+        dictionaryProbes: inout UInt64
+    ) {
+        let parentID = layers.values[childIndex].parent
+        let rootContext = layers.values[childIndex].rootContext
+        if let parentID {
+            dictionaryProbes &+= 1
+            if let parentIndex = layers.index(forKey: parentID) {
+                var parent = MutableRef(&layers.values[parentIndex])
+                parent.value.children.removeAll { $0 == id }
             }
         }
-        layers[id]?.parent = nil
-        layers[id]?.rootContext = nil
+        if let rootContext {
+            dictionaryProbes &+= 1
+            if let rootIndex = contextRoots.index(forKey: rootContext) {
+                contextRoots.values[rootIndex].removeAll { $0 == id }
+                if contextRoots.values[rootIndex].isEmpty {
+                    contextRoots.remove(at: rootIndex)
+                }
+            }
+        }
+        var child = MutableRef(&layers.values[childIndex])
+        child.value.parent = nil
+        child.value.rootContext = nil
     }
 
     /// Detach `id` and remove it from the map. No-op if absent. Mirrors
     /// `removeLayer`.
     public mutating func removeLayer(_ id: UInt64) {
-        guard layers[id] != nil else { return }
+        var ignored: UInt64 = 0
+        removeLayer(id, dictionaryProbes: &ignored)
+    }
+
+    package mutating func removeLayer(
+        _ id: UInt64,
+        dictionaryProbes: inout UInt64
+    ) {
+        dictionaryProbes &+= 1
+        guard layers.index(forKey: id) != nil else { return }
         var pending = [id]
         var subtree: [UInt64] = []
         var visited: Set<UInt64> = []
         while let current = pending.popLast() {
-            guard visited.insert(current).inserted, let layer = layers[current] else { continue }
+            guard visited.insert(current).inserted else { continue }
+            dictionaryProbes &+= 1
+            guard let index = layers.index(forKey: current) else { continue }
             subtree.append(current)
-            pending.append(contentsOf: layer.children)
+            pending.append(contentsOf: layers.values[index].children)
         }
         // Detach the subtree root from external structure. Descendants are all
         // removed together, so walking each parent array would only add quadratic work.
-        detach(id)
+        detach(id, dictionaryProbes: &dictionaryProbes)
         for nodeID in subtree {
-            layers[nodeID] = nil
+            dictionaryProbes &+= 1
+            layers.removeValue(forKey: nodeID)
         }
     }
 
     /// Attach `id` as a root child at `index` (clamped). The node must exist.
     /// Mirrors `attachRoot`.
     public mutating func attachRoot(_ id: UInt64, index: Int, contextId: ContextID) throws {
-        guard layers[id] != nil else { throw LayerTreeError.missingLayer }
-        detach(id)
-        var roots = contextRoots[contextId] ?? []
-        let idx = min(index, roots.count)
-        roots.insert(id, at: idx)
-        contextRoots[contextId] = roots
-        layers[id]?.rootContext = contextId
+        guard let childIndex = layers.index(forKey: id) else {
+            throw LayerTreeError.missingLayer
+        }
+        var ignored: UInt64 = 0
+        attachRoot(
+            id,
+            at: childIndex,
+            index: index,
+            contextId: contextId,
+            dictionaryProbes: &ignored)
+    }
+
+    package mutating func attachRootValidated(
+        _ id: UInt64,
+        index: Int,
+        contextId: ContextID,
+        dictionaryProbes: inout UInt64
+    ) {
+        dictionaryProbes &+= 1
+        guard let childIndex = layers.index(forKey: id) else {
+            preconditionFailure("validated root attachment references a missing layer")
+        }
+        attachRoot(
+            id,
+            at: childIndex,
+            index: index,
+            contextId: contextId,
+            dictionaryProbes: &dictionaryProbes)
+    }
+
+    private mutating func attachRoot(
+        _ id: UInt64,
+        at childIndex: Dictionary<UInt64, Layer>.Index,
+        index: Int,
+        contextId: ContextID,
+        dictionaryProbes: inout UInt64
+    ) {
+        detach(
+            id,
+            at: childIndex,
+            dictionaryProbes: &dictionaryProbes)
+        dictionaryProbes &+= 1
+        if let rootIndex = contextRoots.index(forKey: contextId) {
+            let insertionIndex = min(
+                max(0, index),
+                contextRoots.values[rootIndex].count)
+            contextRoots.values[rootIndex].insert(id, at: insertionIndex)
+        } else {
+            dictionaryProbes &+= 1
+            contextRoots[contextId] = [id]
+        }
+        var child = MutableRef(&layers.values[childIndex])
+        child.value.rootContext = contextId
     }
 
     /// Ordered roots for a context.
@@ -277,17 +354,66 @@ public struct LayerTree: Sendable {
     /// Attach `childId` under `parentId` at `index` (clamped), refusing to
     /// create a cycle. Both nodes must exist. Mirrors `attachChild`.
     public mutating func attachChild(parentId: UInt64, childId: UInt64, index: Int) throws {
+        guard let parentIndex = layers.index(forKey: parentId) else {
+            throw LayerTreeError.missingParentLayer
+        }
+        guard let childIndex = layers.index(forKey: childId) else {
+            throw LayerTreeError.missingLayer
+        }
         if wouldCreateCycle(childId: childId, parentId: parentId) {
             throw LayerTreeError.layerCycle
         }
-        guard layers[parentId] != nil else { throw LayerTreeError.missingParentLayer }
-        guard layers[childId] != nil else { throw LayerTreeError.missingLayer }
-        detach(childId)
-        layers[childId]?.parent = parentId
-        layers[childId]?.rootContext = nil
-        let count = layers[parentId]?.children.count ?? 0
-        let idx = min(index, count)
-        layers[parentId]?.children.insert(childId, at: idx)
+        var ignored: UInt64 = 0
+        attachChild(
+            parentId: parentId,
+            at: parentIndex,
+            childId: childId,
+            at: childIndex,
+            index: index,
+            dictionaryProbes: &ignored)
+    }
+
+    package mutating func attachChildValidated(
+        parentId: UInt64,
+        childId: UInt64,
+        index: Int,
+        dictionaryProbes: inout UInt64
+    ) {
+        dictionaryProbes &+= 2
+        guard let childIndex = layers.index(forKey: childId),
+              let parentIndex = layers.index(forKey: parentId)
+        else {
+            preconditionFailure("validated child attachment references a missing layer")
+        }
+        attachChild(
+            parentId: parentId,
+            at: parentIndex,
+            childId: childId,
+            at: childIndex,
+            index: index,
+            dictionaryProbes: &dictionaryProbes)
+    }
+
+    private mutating func attachChild(
+        parentId: UInt64,
+        at parentIndex: Dictionary<UInt64, Layer>.Index,
+        childId: UInt64,
+        at childIndex: Dictionary<UInt64, Layer>.Index,
+        index: Int,
+        dictionaryProbes: inout UInt64
+    ) {
+        detach(
+            childId,
+            at: childIndex,
+            dictionaryProbes: &dictionaryProbes)
+        var child = MutableRef(&layers.values[childIndex])
+        child.value.parent = parentId
+        child.value.rootContext = nil
+        let insertionIndex = min(
+            max(0, index),
+            layers.values[parentIndex].children.count)
+        var parent = MutableRef(&layers.values[parentIndex])
+        parent.value.children.insert(childId, at: insertionIndex)
     }
 
     /// True when attaching `childId` under `parentId` would form a cycle (i.e.
@@ -295,9 +421,15 @@ public struct LayerTree: Sendable {
     public func wouldCreateCycle(childId: UInt64, parentId: UInt64) -> Bool {
         if childId == parentId { return true }
         var cursor: UInt64? = parentId
+        var visited = Set<UInt64>()
         while let id = cursor {
             if id == childId { return true }
-            cursor = layers[id]?.parent
+            guard visited.insert(id).inserted,
+                  let layer = layers[id]
+            else {
+                return true
+            }
+            cursor = layer.parent
         }
         return false
     }

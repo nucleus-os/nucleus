@@ -20,7 +20,7 @@ Cross-compile `Vulkan` (the `vk.xml`-generated Swift Vulkan bindings) + `VulkanC
 
 ### Exit condition
 
-Met. The cross-compile builds Vulkan for Android and `libnucleus-android.so` links `libvulkan.so` (in `NEEDED`); `tools/collider android verify` asserts the loader dependency and JNI exports. The capability-qualified create/teardown path is runtime-verified on device/emulator once available (deferred hardware validation).
+Met. The cross-compile builds Vulkan for Android and `libnucleus-android.so` links `libvulkan.so` (in `NEEDED`); `collider android verify` asserts the loader dependency and JNI exports. The capability-qualified create/teardown path is runtime-verified on device/emulator once available (deferred hardware validation).
 
 ## Phase 2 — The Android swapchain presentation backend — DONE
 

@@ -4,6 +4,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <gbm.h>
+#include <pthread.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -21,10 +22,13 @@ struct nucleus_android_submission {
     VkFence fence;
     VkSemaphore wait_semaphore;
     VkSemaphore signal_semaphore;
+    uint64_t serial;
     struct nucleus_android_submission *next;
 };
 
 struct nucleus_android_gpu {
+    pthread_mutex_t mutex;
+    bool mutex_initialized;
     int drm_fd;
     struct gbm_device *gbm;
     VkInstance instance;
@@ -39,6 +43,11 @@ struct nucleus_android_gpu {
     VkPhysicalDeviceMemoryProperties memory_properties;
     struct nucleus_android_submission *submissions;
     struct nucleus_android_gpu_buffer *retired_buffers;
+    uint64_t next_submission_serial;
+    uint64_t completed_submission_serial;
+    VkResult terminal_submission_result;
+    bool testing_force_fences_pending;
+    bool testing_fail_next_post_submit;
 };
 
 struct nucleus_android_gpu_buffer {
@@ -52,6 +61,7 @@ struct nucleus_android_gpu_buffer {
     uint64_t modifier;
     uint32_t plane_count;
     VkImageLayout layout;
+    uint64_t last_use_serial;
     struct nucleus_android_gpu_buffer *retired_next;
 };
 
@@ -65,6 +75,14 @@ struct nucleus_android_syncobj_waiter {
     int event_fd;
     uint32_t handle;
 };
+
+static void nucleus_android_gpu_lock(nucleus_android_gpu *gpu) {
+    (void)pthread_mutex_lock(&gpu->mutex);
+}
+
+static void nucleus_android_gpu_unlock(nucleus_android_gpu *gpu) {
+    (void)pthread_mutex_unlock(&gpu->mutex);
+}
 
 static void nucleus_android_error(char *output, size_t capacity, const char *message) {
     if (!output || capacity == 0) return;
@@ -212,27 +230,81 @@ static VkFormat nucleus_android_vk_format(uint32_t format) {
     }
 }
 
-static void nucleus_android_collect_submissions(nucleus_android_gpu *gpu) {
-    if (!gpu || !gpu->device) return;
+static void nucleus_android_destroy_submission_locked(
+    nucleus_android_gpu *gpu,
+    struct nucleus_android_submission *submission) {
+    if (submission->wait_semaphore) {
+        vkDestroySemaphore(gpu->device, submission->wait_semaphore, NULL);
+    }
+    if (submission->signal_semaphore) {
+        vkDestroySemaphore(gpu->device, submission->signal_semaphore, NULL);
+    }
+    if (submission->fence) {
+        vkDestroyFence(gpu->device, submission->fence, NULL);
+    }
+    if (submission->command_pool) {
+        vkDestroyCommandPool(gpu->device, submission->command_pool, NULL);
+    }
+    free(submission);
+}
+
+static void nucleus_android_destroy_buffer_locked(
+    nucleus_android_gpu *gpu,
+    nucleus_android_gpu_buffer *buffer) {
+    if (buffer->image) vkDestroyImage(gpu->device, buffer->image, NULL);
+    if (buffer->memory) vkFreeMemory(gpu->device, buffer->memory, NULL);
+    if (buffer->bo) gbm_bo_destroy(buffer->bo);
+    if (gpu->diagnostic.live_buffer_count > 0) {
+        --gpu->diagnostic.live_buffer_count;
+    }
+    ++gpu->diagnostic.reclaimed_buffer_count;
+    free(buffer);
+}
+
+static void nucleus_android_collect_retired_buffers_locked(
+    nucleus_android_gpu *gpu) {
+    nucleus_android_gpu_buffer **link = &gpu->retired_buffers;
+    while (*link) {
+        nucleus_android_gpu_buffer *buffer = *link;
+        if (buffer->last_use_serial > gpu->completed_submission_serial) {
+            link = &buffer->retired_next;
+            continue;
+        }
+        *link = buffer->retired_next;
+        if (gpu->diagnostic.retired_buffer_count > 0) {
+            --gpu->diagnostic.retired_buffer_count;
+        }
+        nucleus_android_destroy_buffer_locked(gpu, buffer);
+    }
+}
+
+static VkResult nucleus_android_collect_submissions_locked(
+    nucleus_android_gpu *gpu) {
+    if (!gpu || !gpu->device) return VK_SUCCESS;
     struct nucleus_android_submission **link = &gpu->submissions;
     while (*link) {
         struct nucleus_android_submission *submission = *link;
-        VkResult status = vkGetFenceStatus(gpu->device, submission->fence);
-        if (status != VK_SUCCESS) {
+        VkResult status = gpu->testing_force_fences_pending
+            ? VK_NOT_READY
+            : vkGetFenceStatus(gpu->device, submission->fence);
+        if (status == VK_NOT_READY) {
             link = &submission->next;
             continue;
         }
         *link = submission->next;
-        if (submission->wait_semaphore) {
-            vkDestroySemaphore(gpu->device, submission->wait_semaphore, NULL);
+        if (status != VK_SUCCESS &&
+            gpu->terminal_submission_result == VK_SUCCESS) {
+            gpu->terminal_submission_result = status;
+            gpu->diagnostic.terminal_submission_result = (int32_t)status;
         }
-        if (submission->signal_semaphore) {
-            vkDestroySemaphore(gpu->device, submission->signal_semaphore, NULL);
+        if (submission->serial > gpu->completed_submission_serial) {
+            gpu->completed_submission_serial = submission->serial;
+            gpu->diagnostic.completed_serial = submission->serial;
         }
-        vkDestroyFence(gpu->device, submission->fence, NULL);
-        vkDestroyCommandPool(gpu->device, submission->command_pool, NULL);
-        free(submission);
+        nucleus_android_destroy_submission_locked(gpu, submission);
     }
+    nucleus_android_collect_retired_buffers_locked(gpu);
+    return gpu->terminal_submission_result;
 }
 
 static bool nucleus_android_select_physical_device(
@@ -419,6 +491,16 @@ nucleus_android_gpu *nucleus_android_gpu_create(
         nucleus_android_error(error_message, error_capacity, "out of memory");
         return NULL;
     }
+    int mutex_result = pthread_mutex_init(&gpu->mutex, NULL);
+    if (mutex_result != 0) {
+        errno = mutex_result;
+        nucleus_android_errno_error(error_message, error_capacity, "pthread_mutex_init");
+        free(gpu);
+        return NULL;
+    }
+    gpu->mutex_initialized = true;
+    gpu->next_submission_serial = 1;
+    gpu->terminal_submission_result = VK_SUCCESS;
     gpu->drm_fd = -1;
     gpu->drm_fd = open(render_path, O_RDWR | O_CLOEXEC);
     if (gpu->drm_fd < 0) {
@@ -476,31 +558,41 @@ nucleus_android_gpu *nucleus_android_gpu_create(
 
 void nucleus_android_gpu_destroy(nucleus_android_gpu *gpu) {
     if (!gpu) return;
+    if (gpu->mutex_initialized) {
+        nucleus_android_gpu_lock(gpu);
+    }
     if (gpu->device) {
-        (void)vkDeviceWaitIdle(gpu->device);
-        nucleus_android_collect_submissions(gpu);
+        VkResult wait_result = vkDeviceWaitIdle(gpu->device);
+        if (wait_result != VK_SUCCESS &&
+            gpu->terminal_submission_result == VK_SUCCESS) {
+            gpu->terminal_submission_result = wait_result;
+            gpu->diagnostic.terminal_submission_result = (int32_t)wait_result;
+        }
+        (void)nucleus_android_collect_submissions_locked(gpu);
         while (gpu->submissions) {
             struct nucleus_android_submission *submission = gpu->submissions;
             gpu->submissions = submission->next;
-            if (submission->wait_semaphore) {
-                vkDestroySemaphore(gpu->device, submission->wait_semaphore, NULL);
+            if (submission->serial > gpu->completed_submission_serial) {
+                gpu->completed_submission_serial = submission->serial;
+                gpu->diagnostic.completed_serial = submission->serial;
             }
-            if (submission->signal_semaphore) {
-                vkDestroySemaphore(gpu->device, submission->signal_semaphore, NULL);
-            }
-            vkDestroyFence(gpu->device, submission->fence, NULL);
-            vkDestroyCommandPool(gpu->device, submission->command_pool, NULL);
-            free(submission);
+            nucleus_android_destroy_submission_locked(gpu, submission);
         }
         while (gpu->retired_buffers) {
             nucleus_android_gpu_buffer *buffer = gpu->retired_buffers;
             gpu->retired_buffers = buffer->retired_next;
-            if (buffer->image) vkDestroyImage(gpu->device, buffer->image, NULL);
-            if (buffer->memory) vkFreeMemory(gpu->device, buffer->memory, NULL);
-            if (buffer->bo) gbm_bo_destroy(buffer->bo);
-            free(buffer);
+            if (gpu->diagnostic.retired_buffer_count > 0) {
+                --gpu->diagnostic.retired_buffer_count;
+            }
+            nucleus_android_destroy_buffer_locked(gpu, buffer);
         }
         vkDestroyDevice(gpu->device, NULL);
+        gpu->device = VK_NULL_HANDLE;
+    }
+    if (gpu->mutex_initialized) {
+        nucleus_android_gpu_unlock(gpu);
+        (void)pthread_mutex_destroy(&gpu->mutex);
+        gpu->mutex_initialized = false;
     }
     if (gpu->instance) vkDestroyInstance(gpu->instance, NULL);
     if (gpu->gbm) gbm_device_destroy(gpu->gbm);
@@ -515,7 +607,24 @@ int nucleus_android_gpu_get_diagnostic(
         errno = EINVAL;
         return -1;
     }
+    nucleus_android_gpu_lock(gpu);
     *output = gpu->diagnostic;
+    nucleus_android_gpu_unlock(gpu);
+    return 0;
+}
+
+int nucleus_android_gpu_collect(nucleus_android_gpu *gpu) {
+    if (!gpu) {
+        errno = EINVAL;
+        return -1;
+    }
+    nucleus_android_gpu_lock(gpu);
+    VkResult result = nucleus_android_collect_submissions_locked(gpu);
+    nucleus_android_gpu_unlock(gpu);
+    if (result != VK_SUCCESS) {
+        errno = EIO;
+        return -1;
+    }
     return 0;
 }
 
@@ -617,15 +726,20 @@ int nucleus_android_gpu_preferred_modifier(
         errno = EINVAL;
         return -1;
     }
+    nucleus_android_gpu_lock(gpu);
     struct gbm_bo *bo = gbm_bo_create(
         gpu->gbm,
         64,
         64,
         drm_format,
         GBM_BO_USE_RENDERING);
-    if (!bo) return -1;
+    if (!bo) {
+        nucleus_android_gpu_unlock(gpu);
+        return -1;
+    }
     *output_modifier = gbm_bo_get_modifier(bo);
     gbm_bo_destroy(bo);
+    nucleus_android_gpu_unlock(gpu);
     return 0;
 }
 
@@ -650,7 +764,7 @@ static bool nucleus_android_memory_type(
     return false;
 }
 
-nucleus_android_gpu_buffer *nucleus_android_gpu_buffer_create(
+static nucleus_android_gpu_buffer *nucleus_android_gpu_buffer_create_locked(
     nucleus_android_gpu *gpu,
     uint32_t width,
     uint32_t height,
@@ -792,13 +906,52 @@ nucleus_android_gpu_buffer *nucleus_android_gpu_buffer_create(
     buffer->modifier = modifier;
     buffer->plane_count = plane_count;
     buffer->layout = VK_IMAGE_LAYOUT_UNDEFINED;
+    ++gpu->diagnostic.live_buffer_count;
+    return buffer;
+}
+
+nucleus_android_gpu_buffer *nucleus_android_gpu_buffer_create(
+    nucleus_android_gpu *gpu,
+    uint32_t width,
+    uint32_t height,
+    uint32_t drm_format,
+    uint64_t modifier,
+    int scanout,
+    char *error_message,
+    size_t error_capacity) {
+    if (!gpu) {
+        errno = EINVAL;
+        nucleus_android_error(error_message, error_capacity, "unsupported allocation request");
+        return NULL;
+    }
+    nucleus_android_gpu_lock(gpu);
+    nucleus_android_gpu_buffer *buffer =
+        nucleus_android_gpu_buffer_create_locked(
+            gpu,
+            width,
+            height,
+            drm_format,
+            modifier,
+            scanout,
+            error_message,
+            error_capacity);
+    nucleus_android_gpu_unlock(gpu);
     return buffer;
 }
 
 void nucleus_android_gpu_buffer_destroy(nucleus_android_gpu_buffer *buffer) {
     if (!buffer) return;
-    buffer->retired_next = buffer->gpu->retired_buffers;
-    buffer->gpu->retired_buffers = buffer;
+    nucleus_android_gpu *gpu = buffer->gpu;
+    nucleus_android_gpu_lock(gpu);
+    (void)nucleus_android_collect_submissions_locked(gpu);
+    if (buffer->last_use_serial <= gpu->completed_submission_serial) {
+        nucleus_android_destroy_buffer_locked(gpu, buffer);
+    } else {
+        buffer->retired_next = gpu->retired_buffers;
+        gpu->retired_buffers = buffer;
+        ++gpu->diagnostic.retired_buffer_count;
+    }
+    nucleus_android_gpu_unlock(gpu);
 }
 
 uint32_t nucleus_android_gpu_buffer_plane_count(nucleus_android_gpu_buffer *buffer) {
@@ -813,10 +966,16 @@ int nucleus_android_gpu_buffer_export_plane(
         errno = EINVAL;
         return -1;
     }
+    nucleus_android_gpu *gpu = buffer->gpu;
+    nucleus_android_gpu_lock(gpu);
     int fd = gbm_bo_get_fd_for_plane(buffer->bo, (int)plane_index);
-    if (fd < 0) return -1;
+    if (fd < 0) {
+        nucleus_android_gpu_unlock(gpu);
+        return -1;
+    }
     output_layout->offset = gbm_bo_get_offset(buffer->bo, (int)plane_index);
     output_layout->stride = gbm_bo_get_stride_for_plane(buffer->bo, (int)plane_index);
+    nucleus_android_gpu_unlock(gpu);
     return fd;
 }
 
@@ -1064,7 +1223,7 @@ static VkClearColorValue nucleus_android_frame_color(uint64_t frame) {
     return color;
 }
 
-int nucleus_android_gpu_buffer_render(
+static int nucleus_android_gpu_buffer_render_locked(
     nucleus_android_gpu_buffer *buffer,
     uint64_t frame_number,
     nucleus_android_syncobj_timeline *acquire_timeline,
@@ -1081,7 +1240,22 @@ int nucleus_android_gpu_buffer_render(
         return -1;
     }
     nucleus_android_gpu *gpu = buffer->gpu;
-    nucleus_android_collect_submissions(gpu);
+    VkResult collection_result =
+        nucleus_android_collect_submissions_locked(gpu);
+    if (collection_result != VK_SUCCESS) {
+        nucleus_android_vulkan_error(
+            error_message,
+            error_capacity,
+            "previous Vulkan submission",
+            collection_result);
+        return -1;
+    }
+    if (gpu->next_submission_serial == UINT64_MAX) {
+        errno = EOVERFLOW;
+        nucleus_android_error(
+            error_message, error_capacity, "GPU submission serial space exhausted");
+        return -1;
+    }
     struct nucleus_android_submission *submission = calloc(1, sizeof(*submission));
     if (!submission) {
         nucleus_android_error(error_message, error_capacity, "out of memory");
@@ -1245,6 +1419,25 @@ int nucleus_android_gpu_buffer_render(
         goto fail;
     }
 
+    submission->serial = gpu->next_submission_serial++;
+    submission->wait_semaphore = wait_semaphore;
+    submission->signal_semaphore = signal_semaphore;
+    submission->next = gpu->submissions;
+    gpu->submissions = submission;
+    buffer->layout = VK_IMAGE_LAYOUT_GENERAL;
+    buffer->last_use_serial = submission->serial;
+    gpu->diagnostic.submitted_serial = submission->serial;
+
+    if (gpu->testing_fail_next_post_submit) {
+        gpu->testing_fail_next_post_submit = false;
+        errno = EIO;
+        nucleus_android_error(
+            error_message,
+            error_capacity,
+            "injected failure after Vulkan queue submission");
+        return -1;
+    }
+
     VkSemaphoreGetFdInfoKHR get_fd = {
         .sType = VK_STRUCTURE_TYPE_SEMAPHORE_GET_FD_INFO_KHR,
         .semaphore = signal_semaphore,
@@ -1254,10 +1447,6 @@ int nucleus_android_gpu_buffer_render(
     if (result != VK_SUCCESS || acquire_fd < 0) {
         nucleus_android_vulkan_error(
             error_message, error_capacity, "vkGetSemaphoreFdKHR", result);
-        submission->wait_semaphore = wait_semaphore;
-        submission->signal_semaphore = signal_semaphore;
-        submission->next = gpu->submissions;
-        gpu->submissions = submission;
         return -1;
     }
     int import_result = nucleus_android_syncobj_timeline_import_sync_file(
@@ -1266,17 +1455,8 @@ int nucleus_android_gpu_buffer_render(
     if (import_result != 0) {
         nucleus_android_error(
             error_message, error_capacity, "failed to import render fence into acquire timeline");
-        submission->wait_semaphore = wait_semaphore;
-        submission->signal_semaphore = signal_semaphore;
-        submission->next = gpu->submissions;
-        gpu->submissions = submission;
         return -1;
     }
-    buffer->layout = VK_IMAGE_LAYOUT_GENERAL;
-    submission->wait_semaphore = wait_semaphore;
-    submission->signal_semaphore = signal_semaphore;
-    submission->next = gpu->submissions;
-    gpu->submissions = submission;
     return 0;
 
 fail:
@@ -1288,6 +1468,150 @@ fail_without_result:
     }
     free(submission);
     return -1;
+}
+
+int nucleus_android_gpu_buffer_render(
+    nucleus_android_gpu_buffer *buffer,
+    uint64_t frame_number,
+    nucleus_android_syncobj_timeline *acquire_timeline,
+    uint64_t acquire_point,
+    nucleus_android_syncobj_timeline *release_timeline,
+    uint64_t release_point,
+    char *error_message,
+    size_t error_capacity) {
+    if (!buffer) {
+        errno = EINVAL;
+        nucleus_android_error(
+            error_message, error_capacity, "invalid render timeline contract");
+        return -1;
+    }
+    nucleus_android_gpu *gpu = buffer->gpu;
+    nucleus_android_gpu_lock(gpu);
+    int result = nucleus_android_gpu_buffer_render_locked(
+        buffer,
+        frame_number,
+        acquire_timeline,
+        acquire_point,
+        release_timeline,
+        release_point,
+        error_message,
+        error_capacity);
+    nucleus_android_gpu_unlock(gpu);
+    return result;
+}
+
+void nucleus_android_gpu_testing_force_fences_pending(
+    nucleus_android_gpu *gpu,
+    int enabled) {
+    if (!gpu) return;
+    nucleus_android_gpu_lock(gpu);
+    gpu->testing_force_fences_pending = enabled != 0;
+    nucleus_android_gpu_unlock(gpu);
+}
+
+void nucleus_android_gpu_testing_fail_next_post_submit(
+    nucleus_android_gpu *gpu) {
+    if (!gpu) return;
+    nucleus_android_gpu_lock(gpu);
+    gpu->testing_fail_next_post_submit = true;
+    nucleus_android_gpu_unlock(gpu);
+}
+
+uint64_t nucleus_android_gpu_buffer_testing_last_use_serial(
+    nucleus_android_gpu_buffer *buffer) {
+    if (!buffer) return 0;
+    nucleus_android_gpu *gpu = buffer->gpu;
+    nucleus_android_gpu_lock(gpu);
+    uint64_t serial = buffer->last_use_serial;
+    nucleus_android_gpu_unlock(gpu);
+    return serial;
+}
+
+int nucleus_android_gpu_buffer_testing_has_general_layout(
+    nucleus_android_gpu_buffer *buffer) {
+    if (!buffer) return 0;
+    nucleus_android_gpu *gpu = buffer->gpu;
+    nucleus_android_gpu_lock(gpu);
+    int is_general = buffer->layout == VK_IMAGE_LAYOUT_GENERAL;
+    nucleus_android_gpu_unlock(gpu);
+    return is_general;
+}
+
+nucleus_android_gpu *nucleus_android_gpu_testing_lifetime_domain_create(void) {
+    nucleus_android_gpu *gpu = calloc(1, sizeof(*gpu));
+    if (!gpu) return NULL;
+    int mutex_result = pthread_mutex_init(&gpu->mutex, NULL);
+    if (mutex_result != 0) {
+        errno = mutex_result;
+        free(gpu);
+        return NULL;
+    }
+    gpu->mutex_initialized = true;
+    gpu->drm_fd = -1;
+    gpu->next_submission_serial = 1;
+    gpu->terminal_submission_result = VK_SUCCESS;
+    return gpu;
+}
+
+void nucleus_android_gpu_testing_lifetime_domain_destroy(
+    nucleus_android_gpu *gpu) {
+    if (!gpu) return;
+    nucleus_android_gpu_lock(gpu);
+    while (gpu->retired_buffers) {
+        nucleus_android_gpu_buffer *buffer = gpu->retired_buffers;
+        gpu->retired_buffers = buffer->retired_next;
+        if (gpu->diagnostic.retired_buffer_count > 0) {
+            --gpu->diagnostic.retired_buffer_count;
+        }
+        nucleus_android_destroy_buffer_locked(gpu, buffer);
+    }
+    nucleus_android_gpu_unlock(gpu);
+    (void)pthread_mutex_destroy(&gpu->mutex);
+    free(gpu);
+}
+
+nucleus_android_gpu_buffer *
+nucleus_android_gpu_buffer_testing_lifetime_domain_create(
+    nucleus_android_gpu *gpu) {
+    if (!gpu) return NULL;
+    nucleus_android_gpu_buffer *buffer = calloc(1, sizeof(*buffer));
+    if (!buffer) return NULL;
+    buffer->gpu = gpu;
+    nucleus_android_gpu_lock(gpu);
+    ++gpu->diagnostic.live_buffer_count;
+    nucleus_android_gpu_unlock(gpu);
+    return buffer;
+}
+
+uint64_t nucleus_android_gpu_buffer_testing_record_submission(
+    nucleus_android_gpu_buffer *buffer) {
+    if (!buffer) return 0;
+    nucleus_android_gpu *gpu = buffer->gpu;
+    nucleus_android_gpu_lock(gpu);
+    if (gpu->next_submission_serial == UINT64_MAX) {
+        nucleus_android_gpu_unlock(gpu);
+        errno = EOVERFLOW;
+        return 0;
+    }
+    uint64_t serial = gpu->next_submission_serial++;
+    buffer->last_use_serial = serial;
+    buffer->layout = VK_IMAGE_LAYOUT_GENERAL;
+    gpu->diagnostic.submitted_serial = serial;
+    nucleus_android_gpu_unlock(gpu);
+    return serial;
+}
+
+void nucleus_android_gpu_testing_complete_through(
+    nucleus_android_gpu *gpu,
+    uint64_t serial) {
+    if (!gpu) return;
+    nucleus_android_gpu_lock(gpu);
+    if (serial > gpu->completed_submission_serial) {
+        gpu->completed_submission_serial = serial;
+        gpu->diagnostic.completed_serial = serial;
+    }
+    nucleus_android_collect_retired_buffers_locked(gpu);
+    nucleus_android_gpu_unlock(gpu);
 }
 
 uint32_t nucleus_android_drm_format_xrgb8888(void) { return DRM_FORMAT_XRGB8888; }

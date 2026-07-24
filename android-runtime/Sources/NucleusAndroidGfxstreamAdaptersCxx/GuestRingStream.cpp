@@ -17,47 +17,51 @@ std::unique_ptr<GuestRingStream> GuestRingStream::attach(
     int responseDataNotificationFD,
     int responseSpaceNotificationFD,
     std::size_t bufferSize) {
-    auto *commands = nucleus_android_shared_ring_attach(
-        commandMemoryFD,
-        commandDataNotificationFD,
-        commandSpaceNotificationFD);
-    if (commands == nullptr) {
+    auto *commandProducer =
+        nucleus_android_shared_ring_producer_attach({
+            .memory_fd = commandMemoryFD,
+            .data_notification_fd = commandDataNotificationFD,
+            .space_notification_fd = commandSpaceNotificationFD,
+        });
+    if (commandProducer == nullptr) {
         if (responseSpaceNotificationFD >= 0) close(responseSpaceNotificationFD);
         if (responseDataNotificationFD >= 0) close(responseDataNotificationFD);
         if (responseMemoryFD >= 0) close(responseMemoryFD);
         return nullptr;
     }
-    auto *responses = nucleus_android_shared_ring_attach(
-        responseMemoryFD,
-        responseDataNotificationFD,
-        responseSpaceNotificationFD);
-    if (responses == nullptr) {
-        nucleus_android_shared_ring_destroy(commands);
+    auto *responseConsumer =
+        nucleus_android_shared_ring_consumer_attach({
+            .memory_fd = responseMemoryFD,
+            .data_notification_fd = responseDataNotificationFD,
+            .space_notification_fd = responseSpaceNotificationFD,
+        });
+    if (responseConsumer == nullptr) {
+        nucleus_android_shared_ring_producer_destroy(commandProducer);
         return nullptr;
     }
     return std::make_unique<GuestRingStream>(
-        commands,
-        responses,
+        commandProducer,
+        responseConsumer,
         true,
         bufferSize);
 }
 
 GuestRingStream::GuestRingStream(
-    nucleus_android_shared_ring *commands,
-    nucleus_android_shared_ring *responses,
+    nucleus_android_shared_ring_producer *commandProducer,
+    nucleus_android_shared_ring_consumer *responseConsumer,
     bool ownsRings,
     std::size_t bufferSize)
     : IOStream(bufferSize),
-      mCommands(commands),
-      mResponses(responses),
+      mCommandProducer(commandProducer),
+      mResponseConsumer(responseConsumer),
       mOwnsRings(ownsRings) {}
 
 GuestRingStream::~GuestRingStream() {
-    (void)nucleus_android_shared_ring_close(mResponses);
-    (void)nucleus_android_shared_ring_close(mCommands);
+    (void)nucleus_android_shared_ring_consumer_close(mResponseConsumer);
+    (void)nucleus_android_shared_ring_producer_close(mCommandProducer);
     if (mOwnsRings) {
-        nucleus_android_shared_ring_destroy(mResponses);
-        nucleus_android_shared_ring_destroy(mCommands);
+        nucleus_android_shared_ring_consumer_destroy(mResponseConsumer);
+        nucleus_android_shared_ring_producer_destroy(mCommandProducer);
     }
 }
 
@@ -137,7 +141,8 @@ int GuestRingStream::writeFully(const void *buffer, std::size_t length) {
         return 0;
     }
     const std::size_t payloadCapacity =
-        nucleus_android_shared_ring_slot_size(mCommands) - sizeof(std::uint32_t);
+        nucleus_android_shared_ring_producer_slot_size(mCommandProducer) -
+        sizeof(std::uint32_t);
     const auto *bytes = static_cast<const std::uint8_t *>(buffer);
     std::size_t offset = 0;
     while (offset < length) {
@@ -175,8 +180,8 @@ int GuestRingStream::writeChunk(
     const std::uint8_t *bytes,
     std::size_t length) {
     while (true) {
-        if (nucleus_android_shared_ring_write(
-                mCommands,
+        if (nucleus_android_shared_ring_producer_write(
+                mCommandProducer,
                 bytes,
                 static_cast<std::uint32_t>(length)) == 0) {
             return 0;
@@ -184,29 +189,36 @@ int GuestRingStream::writeChunk(
         if (errno != EAGAIN) {
             return -errno;
         }
-        if (nucleus_android_shared_ring_drain_space_notification(mCommands) < 0) {
-            return -errno;
+        const auto preparation =
+            nucleus_android_shared_ring_producer_prepare_space_wait(
+                mCommandProducer);
+        if (preparation == NUCLEUS_ANDROID_SHARED_RING_WAIT_READY) {
+            continue;
         }
-        if (nucleus_android_shared_ring_write(
-                mCommands,
-                bytes,
-                static_cast<std::uint32_t>(length)) == 0) {
-            return 0;
+        if (preparation == NUCLEUS_ANDROID_SHARED_RING_WAIT_CLOSED) {
+            errno = EPIPE;
+            return -EPIPE;
         }
-        if (errno != EAGAIN) {
+        if (preparation == NUCLEUS_ANDROID_SHARED_RING_WAIT_ERROR) {
             return -errno;
         }
         const int waitResult = waitFor(
-            nucleus_android_shared_ring_space_notification_fd(mCommands));
+            nucleus_android_shared_ring_producer_space_notification_fd(
+                mCommandProducer));
         if (waitResult < 0) {
             return waitResult;
+        }
+        if (nucleus_android_shared_ring_producer_drain_space_notification(
+                mCommandProducer) < 0) {
+            return -errno;
         }
     }
 }
 
 bool GuestRingStream::loadResponseChunk() {
     const std::size_t capacity =
-        nucleus_android_shared_ring_slot_size(mResponses) - sizeof(std::uint32_t);
+        nucleus_android_shared_ring_consumer_slot_size(mResponseConsumer) -
+        sizeof(std::uint32_t);
     try {
         mResponseBuffer.resize(capacity);
     } catch (...) {
@@ -214,8 +226,8 @@ bool GuestRingStream::loadResponseChunk() {
         return false;
     }
     while (true) {
-        const int result = nucleus_android_shared_ring_read(
-            mResponses,
+        const int result = nucleus_android_shared_ring_consumer_read(
+            mResponseConsumer,
             mResponseBuffer.data(),
             static_cast<std::uint32_t>(mResponseBuffer.size()));
         if (result >= 0) {
@@ -226,22 +238,26 @@ bool GuestRingStream::loadResponseChunk() {
         if (errno != EAGAIN) {
             return false;
         }
-        if (nucleus_android_shared_ring_drain_data_notification(mResponses) < 0) {
+        const auto preparation =
+            nucleus_android_shared_ring_consumer_prepare_data_wait(
+                mResponseConsumer);
+        if (preparation == NUCLEUS_ANDROID_SHARED_RING_WAIT_READY) {
+            continue;
+        }
+        if (preparation == NUCLEUS_ANDROID_SHARED_RING_WAIT_CLOSED) {
+            errno = EPIPE;
             return false;
         }
-        const int retry = nucleus_android_shared_ring_read(
-            mResponses,
-            mResponseBuffer.data(),
-            static_cast<std::uint32_t>(mResponseBuffer.size()));
-        if (retry >= 0) {
-            mResponseBuffer.resize(static_cast<std::size_t>(retry));
-            mResponseOffset = 0;
-            return true;
-        }
-        if (errno != EAGAIN) {
+        if (preparation == NUCLEUS_ANDROID_SHARED_RING_WAIT_ERROR) {
             return false;
         }
-        if (waitFor(nucleus_android_shared_ring_data_notification_fd(mResponses)) < 0) {
+        if (waitFor(
+                nucleus_android_shared_ring_consumer_data_notification_fd(
+                    mResponseConsumer)) < 0) {
+            return false;
+        }
+        if (nucleus_android_shared_ring_consumer_drain_data_notification(
+                mResponseConsumer) < 0) {
             return false;
         }
     }

@@ -1,0 +1,158 @@
+diff --git a/cmds/servicemanager/Access.cpp b/cmds/servicemanager/Access.cpp
+index 6e2abf65e2..59695fdc55 100644
+--- a/cmds/servicemanager/Access.cpp
++++ b/cmds/servicemanager/Access.cpp
+@@ -90,8 +90,12 @@ std::string Access::CallingContext::toDebugString() const {
+     return ss.str();
+ }
+ 
+-Access::Access() {
++Access::Access(Mode mode) : mMode(mode) {
+ #ifdef __ANDROID__
++    if (mMode == Mode::kPermissive) {
++        return;
++    }
++
+     union selinux_callback cb;
+ 
+     cb.func_audit = auditCallback;
+@@ -120,7 +124,9 @@ Access::CallingContext Access::getCallingContext() {
+     return CallingContext {
+         .debugPid = callingPid,
+         .uid = ipc->getCallingUid(),
+-        .sid = callingSid ? std::string(callingSid) : getPidcon(callingPid),
++        .sid = mMode == Mode::kPermissive
++                ? std::string()
++                : (callingSid ? std::string(callingSid) : getPidcon(callingPid)),
+     };
+ #else
+     return CallingContext();
+@@ -128,14 +134,17 @@ Access::CallingContext Access::getCallingContext() {
+ }
+ 
+ bool Access::canFind(const CallingContext& ctx,const std::string& name) {
++    if (mMode == Mode::kPermissive) return true;
+     return actionAllowedFromLookup(ctx, name, "find");
+ }
+ 
+ bool Access::canAdd(const CallingContext& ctx, const std::string& name) {
++    if (mMode == Mode::kPermissive) return true;
+     return actionAllowedFromLookup(ctx, name, "add");
+ }
+ 
+ bool Access::canList(const CallingContext& ctx) {
++    if (mMode == Mode::kPermissive) return true;
+     return actionAllowed(ctx, mThisProcessContext, "list", "service_manager");
+ }
+ 
+diff --git a/cmds/servicemanager/Access.h b/cmds/servicemanager/Access.h
+index 4ee9b907d7..e74f9449c6 100644
+--- a/cmds/servicemanager/Access.h
++++ b/cmds/servicemanager/Access.h
+@@ -24,7 +24,12 @@ namespace android {
+ // singleton
+ class Access {
+ public:
+-    Access();
++    enum class Mode {
++        kSELinux,
++        kPermissive,
++    };
++
++    explicit Access(Mode mode = Mode::kSELinux);
+     virtual ~Access();
+ 
+     Access(const Access&) = delete;
+@@ -52,6 +57,7 @@ private:
+     bool actionAllowedFromLookup(const CallingContext& sctx, const std::string& name,
+             const char *perm);
+ 
++    Mode mMode;
+     char* mThisProcessContext = nullptr;
+ };
+ 
+diff --git a/cmds/servicemanager/ServiceManager.cpp b/cmds/servicemanager/ServiceManager.cpp
+index 0697c36372..c1d2679f91 100644
+--- a/cmds/servicemanager/ServiceManager.cpp
++++ b/cmds/servicemanager/ServiceManager.cpp
+@@ -516,11 +516,14 @@ Status ServiceManager::addService(const std::string& name, const sp<IBinder>& bi
+     auto ctx = mAccess->getCallingContext();
+ 
+     if (multiuser_get_app_id(ctx.uid) >= AID_APP) {
++        LOG(ERROR) << ctx.toDebugString() << " App UID cannot add service '" << name << "'";
+         return Status::fromExceptionCode(Status::EX_SECURITY, "App UIDs cannot add services.");
+     }
+ 
+     std::optional<std::string> accessorName;
+     if (auto status = canAddService(ctx, name, &accessorName); !status.isOk()) {
++        LOG(ERROR) << ctx.toDebugString() << " Cannot add service '" << name
++                   << "': " << status.toString8().c_str();
+         return status;
+     }
+ 
+diff --git a/cmds/servicemanager/main.cpp b/cmds/servicemanager/main.cpp
+index df5a8ed0d1..0b02a78492 100644
+--- a/cmds/servicemanager/main.cpp
++++ b/cmds/servicemanager/main.cpp
+@@ -164,14 +164,23 @@ int main(int argc, char** argv) {
+ 
+     IPCThreadState::self()->disableBackgroundScheduling(true);
+ 
+-    sp<ServiceManager> manager = sp<ServiceManager>::make(std::make_unique<Access>());
+-    manager->setRequestingSid(true);
++    const bool isNucleusContainer =
++            android::base::GetBoolProperty("ro.nucleus.container", false);
++    if (isNucleusContainer) {
++        LOG(WARNING) << "Using permissive service-manager access in the Nucleus container";
++    }
++    const Access::Mode accessMode =
++            isNucleusContainer ? Access::Mode::kPermissive : Access::Mode::kSELinux;
++    const bool requestSid = !isNucleusContainer;
++    sp<ServiceManager> manager =
++            sp<ServiceManager>::make(std::make_unique<Access>(accessMode));
++    manager->setRequestingSid(requestSid);
+     if (!manager->addService("manager", manager, false /*allowIsolated*/, IServiceManager::DUMP_FLAG_PRIORITY_DEFAULT).isOk()) {
+         LOG(ERROR) << "Could not self register servicemanager";
+     }
+ 
+     IPCThreadState::self()->setTheContextObject(manager);
+-    if (!ps->becomeContextManager()) {
++    if (!ps->becomeContextManager(requestSid)) {
+         LOG(FATAL) << "Could not become context manager";
+     }
+ 
+diff --git a/libs/binder/ProcessState.cpp b/libs/binder/ProcessState.cpp
+index dd4444b9c7..bcb35de611 100644
+--- a/libs/binder/ProcessState.cpp
++++ b/libs/binder/ProcessState.cpp
+@@ -231,12 +231,13 @@ void ProcessState::startThreadPool()
+     }
+ }
+ 
+-bool ProcessState::becomeContextManager()
++bool ProcessState::becomeContextManager(bool requestSid)
+ {
+     std::unique_lock<std::mutex> _l(mLock);
+ 
+-    flat_binder_object obj {
+-        .flags = FLAT_BINDER_FLAG_TXN_SECURITY_CTX,
+-    };
++    flat_binder_object obj {};
++    if (requestSid) {
++        obj.flags = FLAT_BINDER_FLAG_TXN_SECURITY_CTX;
++    }
+ 
+     int result = ioctl(mDriverFD, BINDER_SET_CONTEXT_MGR_EXT, &obj);
+diff --git a/libs/binder/include/binder/ProcessState.h b/libs/binder/include/binder/ProcessState.h
+index d4ddacb3bb..d9cf5e6f10 100644
+--- a/libs/binder/include/binder/ProcessState.h
++++ b/libs/binder/include/binder/ProcessState.h
+@@ -89,7 +89,7 @@ public:
+     // are all called, then up to 5 threads can be started.
+     LIBBINDER_EXPORTED void startThreadPool();
+ 
+-    [[nodiscard]] LIBBINDER_EXPORTED bool becomeContextManager();
++    [[nodiscard]] LIBBINDER_EXPORTED bool becomeContextManager(bool requestSid);
+ 
+     LIBBINDER_EXPORTED sp<IBinder> getStrongProxyForHandle(int32_t handle);
+     LIBBINDER_EXPORTED void expungeHandle(int32_t handle, IBinder* binder);

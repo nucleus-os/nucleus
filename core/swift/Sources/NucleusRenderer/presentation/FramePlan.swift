@@ -11,7 +11,7 @@
 /// (`enum(u64)`, `invalid = 0`).
 internal import NucleusRenderModel
 
-struct TextureHandle: Equatable, Hashable {
+package struct TextureHandle: Equatable, Hashable {
     var raw: UInt64 = 0
     static let invalid = TextureHandle(raw: 0)
     var isValid: Bool { raw != 0 }
@@ -19,7 +19,7 @@ struct TextureHandle: Equatable, Hashable {
 }
 
 /// Which sampler/pipeline a textured draw uses. Mirrors `TextureQuadRole`.
-enum TextureQuadRole: Hashable {
+package enum TextureQuadRole: Hashable {
     case content
     case paint
     case snapshot
@@ -33,7 +33,7 @@ enum TextureQuadRole: Hashable {
 /// Complete identity of a texture reference in a frame plan. Numeric handles
 /// are allocated independently by paint, client-surface, and snapshot owners;
 /// the role is therefore part of the identity rather than draw-only metadata.
-struct PlanTextureReference: Equatable, Hashable {
+package struct PlanTextureReference: Equatable, Hashable {
     var role: TextureQuadRole
     var handle: TextureHandle
 }
@@ -220,6 +220,84 @@ struct LayerFrameSnapshot: Equatable {
     }
 }
 
+struct FramePaintRequest {
+    var layerID: UInt64
+    var reference: PlanTextureReference
+    var localDamage: Rect?
+}
+
+/// Ordered, deduplicated resource dependencies for the final operation stream.
+///
+/// The private sets are construction-only indexes. Consumers use the arrays so
+/// acquire waits and resource resolution follow deterministic presentation
+/// order without rebuilding sets from `FramePlan.ops`.
+struct FrameResourceSummary {
+    private(set) var clientSurfaceIDs: [UInt64] = []
+    private(set) var textureReferences: [PlanTextureReference] = []
+    private(set) var paintRequests: [FramePaintRequest] = []
+    private(set) var shadowMaterials: [ShadowMaterial] = []
+    private(set) var backdropBlurRegions: [PlanRect] = []
+
+    private var clientSurfaceSet: Set<UInt64> = []
+    private var textureReferenceSet: Set<PlanTextureReference> = []
+    private var paintReferenceSet: Set<PlanTextureReference> = []
+    private var shadowLayerSet: Set<UInt64> = []
+
+    mutating func reset() {
+        clientSurfaceIDs.removeAll(keepingCapacity: true)
+        textureReferences.removeAll(keepingCapacity: true)
+        paintRequests.removeAll(keepingCapacity: true)
+        shadowMaterials.removeAll(keepingCapacity: true)
+        backdropBlurRegions.removeAll(keepingCapacity: true)
+        clientSurfaceSet.removeAll(keepingCapacity: true)
+        textureReferenceSet.removeAll(keepingCapacity: true)
+        paintReferenceSet.removeAll(keepingCapacity: true)
+        shadowLayerSet.removeAll(keepingCapacity: true)
+    }
+
+    mutating func record(_ op: PlanOp) {
+        switch op {
+        case .textureQuad(let quad):
+            guard let handle = quad.texture else { return }
+            let reference = PlanTextureReference(role: quad.role, handle: handle)
+            if textureReferenceSet.insert(reference).inserted {
+                textureReferences.append(reference)
+            }
+            if quad.role == .content,
+               clientSurfaceSet.insert(handle.raw).inserted
+            {
+                clientSurfaceIDs.append(handle.raw)
+            }
+            if quad.role == .paint,
+               paintReferenceSet.insert(reference).inserted
+            {
+                paintRequests.append(FramePaintRequest(
+                    layerID: quad.layerId,
+                    reference: reference,
+                    localDamage: quad.localPaintDamage))
+            }
+        case .shadowQuad(let quad):
+            if let handle = quad.texture {
+                let reference = PlanTextureReference(
+                    role: .shadow,
+                    handle: handle)
+                if textureReferenceSet.insert(reference).inserted {
+                    textureReferences.append(reference)
+                }
+            }
+            if let material = quad.material,
+               shadowLayerSet.insert(material.layerId).inserted
+            {
+                shadowMaterials.append(material)
+            }
+        case .backdrop(let spec):
+            backdropBlurRegions.append(spec.region)
+        case .fillQuad, .visualStyle:
+            break
+        }
+    }
+}
+
 // MARK: - The plan
 
 /// One reusable per-output frame plan. Mirrors `CompositionPlan` and extends it
@@ -231,6 +309,8 @@ final class FramePlan {
     private(set) var damageRects: [PlanRect] = []
     private(set) var sourceDamageRects: [PlanRect] = []
     private(set) var layerSnapshots: [UInt64: LayerFrameSnapshot] = [:]
+    private(set) var resourceSummary = FrameResourceSummary()
+    private(set) var resourceSummaryConstructionNs: UInt64 = 0
 
     // FramePlan superset.
     var directScanout: DirectScanoutPlan?
@@ -243,6 +323,8 @@ final class FramePlan {
         damageRects.removeAll(keepingCapacity: true)
         sourceDamageRects.removeAll(keepingCapacity: true)
         layerSnapshots.removeAll(keepingCapacity: true)
+        resourceSummary.reset()
+        resourceSummaryConstructionNs = 0
         frameCallbacks.removeAll(keepingCapacity: true)
         directScanout = nil
         counters = PlanCounters()
@@ -284,7 +366,11 @@ final class FramePlan {
         counters.fillQuads = 0
         counters.shadowQuads = 0
         counters.backdropDraws = 0
+        resourceSummary.reset()
+        let summaryClock = ContinuousClock()
+        let summaryStart = summaryClock.now
         for op in ops {
+            resourceSummary.record(op)
             switch op {
             case .textureQuad: counters.textureQuads += 1
             case .fillQuad: counters.fillQuads += 1
@@ -293,6 +379,9 @@ final class FramePlan {
             case .backdrop: counters.backdropDraws += 1
             }
         }
+        resourceSummaryConstructionNs = elapsedNanoseconds(
+            summaryStart,
+            summaryClock.now)
     }
 
     private static func bounds(of op: PlanOp) -> PlanRect? {
@@ -347,7 +436,9 @@ final class FramePlan {
     }
 
     func appendTextureQuad(_ quad: TextureQuad) {
-        ops.append(.textureQuad(quad))
+        let op = PlanOp.textureQuad(quad)
+        ops.append(op)
+        resourceSummary.record(op)
         counters.textureQuads += 1
     }
 
@@ -362,21 +453,23 @@ final class FramePlan {
     }
 
     func appendShadowQuad(_ quad: ShadowQuad) {
-        ops.append(.shadowQuad(quad))
+        let op = PlanOp.shadowQuad(quad)
+        ops.append(op)
+        resourceSummary.record(op)
         counters.shadowQuads += 1
     }
 
     /// Append a backdrop at its exact scene position. Backdrops are ordered
     /// commands, never a side list executed after unrelated foreground content.
     func appendBackdropExecSpec(_ draw: ExecSpec) {
-        ops.append(.backdrop(draw))
+        let op = PlanOp.backdrop(draw)
+        ops.append(op)
+        resourceSummary.record(op)
         counters.backdropDraws += 1
     }
 
     func backdropDrawCount() -> Int {
-        ops.reduce(into: 0) { count, op in
-            if case .backdrop = op { count += 1 }
-        }
+        Int(counters.backdropDraws)
     }
 
     func appendFrameCallback(_ surfaceId: UInt64) {

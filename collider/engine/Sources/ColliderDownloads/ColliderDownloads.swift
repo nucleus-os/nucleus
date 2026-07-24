@@ -489,8 +489,6 @@ private struct DownloadStatePaths: Sendable {
 }
 
 private struct PartialMetadata: Codable, Sendable {
-    static let schemaVersion = 1
-    let schema: Int
     let originalURL: URL
     let finalURL: URL
     let etag: String?
@@ -506,7 +504,6 @@ private struct PartialMetadata: Codable, Sendable {
         receivedBytes: Int64,
         totalSize: Int64
     ) {
-        schema = Self.schemaVersion
         self.originalURL = originalURL
         self.finalURL = finalURL
         self.etag = etag
@@ -519,8 +516,6 @@ private struct PartialMetadata: Codable, Sendable {
 }
 
 private struct DownloadManifest: Codable, Sendable {
-    static let schemaVersion = 1
-    let schema: Int
     let originalURL: URL
     let finalURL: URL
     let redirects: [URL]
@@ -540,7 +535,6 @@ private struct DownloadManifest: Codable, Sendable {
         digest: ArtifactDigest,
         status: String
     ) {
-        schema = Self.schemaVersion
         self.originalURL = originalURL
         self.finalURL = finalURL
         self.redirects = redirects

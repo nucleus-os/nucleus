@@ -1,8 +1,15 @@
 import ColliderCore
 import ColliderDownloads
+import ColliderPlatformC
 import Subprocess
 import Synchronization
 import SystemPackage
+
+#if canImport(Glibc)
+import Glibc
+#elseif canImport(Darwin)
+import Darwin
+#endif
 
 public struct CommandLogging: Sendable {
     public let registry: RunRegistry
@@ -76,7 +83,7 @@ public actor ColliderRuntime {
                     let deadline = ContinuousClock().now.advanced(
                         by: .seconds(2))
                     while await cancellation.hasActiveProcessGroups(),
-                          ContinuousClock().now < deadline
+                        ContinuousClock().now < deadline
                     {
                         try? await ContinuousClock().sleep(
                             for: .milliseconds(10))
@@ -124,7 +131,7 @@ public actor ColliderRuntime {
                 await cancellation.forward(signal: Signal.terminate.rawValue)
                 let graceDeadline = ContinuousClock().now.advanced(by: .seconds(2))
                 while await cancellation.hasActiveProcessGroups(),
-                      ContinuousClock().now < graceDeadline
+                    ContinuousClock().now < graceDeadline
                 {
                     try? await ContinuousClock().sleep(for: .milliseconds(10))
                 }
@@ -139,22 +146,24 @@ public actor ColliderRuntime {
         _ command: CommandSpec,
         stage: TaskID?
     ) async throws -> CommandResult {
-        let executable: Subprocess.Executable = switch command.executable {
-        case .named(let name): .name(name)
-        case .path(let path): .path(path)
-        case .taskOutput(let path): .path(path)
-        }
+        let executable: Subprocess.Executable =
+            switch command.executable {
+            case .named(let name): .name(name)
+            case .path(let path): .path(path)
+            case .taskOutput(let path): .path(path)
+            }
         let environment = Subprocess.Environment.custom(
-            Dictionary(uniqueKeysWithValues: command.environment.map {
-                (Subprocess.Environment.Key(rawValue: $0.key)!, $0.value)
-            }))
+            Dictionary(
+                uniqueKeysWithValues: command.environment.map {
+                    (Subprocess.Environment.Key(rawValue: $0.key)!, $0.value)
+                }))
         var platform = Subprocess.PlatformOptions()
         #if !os(Windows)
         platform.processGroupID = command.output == .terminal ? nil : 0
         platform.teardownSequence = [
             .gracefulShutDown(
                 toProcessGroup: command.output != .terminal,
-                allowedDurationToNextStep: .seconds(2)),
+                allowedDurationToNextStep: .seconds(2))
         ]
         #endif
 
@@ -226,98 +235,116 @@ public actor ColliderRuntime {
         logging: CommandLogging?,
         stage: TaskID?
     ) async throws -> CommandResult {
-        let sink = CommandOutputSink(logging: logging, stage: stage)
-        switch command.output {
-        case .combined(let limit):
-            let result = try await Subprocess.run(
-                executable,
-                arguments: Arguments(command.arguments),
-                environment: environment,
-                workingDirectory: command.workingDirectory,
-                platformOptions: platform,
-                input: input,
-                output: .sequence,
-                error: .combinedWithOutput
-            ) { execution in
-                let registration = await self.cancellation.registerProcessGroup(
-                    execution.processIdentifier.value)
-                do {
-                    let bytes = try await collect(
-                        execution.standardOutput,
-                        limit: limit,
-                        mirror: nil,
-                        sink: sink)
-                    await self.cancellation.unregisterProcessGroup(registration)
-                    return bytes
-                } catch {
-                    await self.cancellation.unregisterProcessGroup(registration)
-                    throw error
-                }
-            }
-            return CommandResult(
-                status: statusCode(result.terminationStatus),
-                standardOutput: String(decoding: result.closureResult, as: UTF8.self))
-        case .inherited, .logged, .captured:
-            let captureLimit: Int? = switch command.output {
-            case .captured(let limit): limit
+        let file: FilePath? =
+            switch command.output {
+            case .file(let path): path
             default: nil
             }
-            let result = try await Subprocess.run(
-                executable,
-                arguments: Arguments(command.arguments),
-                environment: environment,
-                workingDirectory: command.workingDirectory,
-                platformOptions: platform,
-                input: input,
-                output: .sequence,
-                error: .sequence
-            ) { execution in
-                let registration = await self.cancellation.registerProcessGroup(
-                    execution.processIdentifier.value)
-                do {
-                    let bytes = try await withThrowingTaskGroup(
-                        of: StreamResult.self,
-                        returning: [UInt8].self
-                    ) { group in
-                        group.addTask {
-                            StreamResult(
-                                stream: .stdout,
-                                bytes: try await collect(
-                                    execution.standardOutput,
-                                    limit: captureLimit,
-                                    mirror: command.output == .inherited
-                                        ? .standardOutput : nil,
-                                    sink: sink))
-                        }
-                        group.addTask {
-                            StreamResult(
-                                stream: .stderr,
-                                bytes: try await collect(
-                                    execution.standardError,
-                                    limit: nil,
-                                    mirror: command.output == .logged
-                                        ? nil : .standardError,
-                                    sink: sink))
-                        }
-                        var captured: [UInt8] = []
-                        for try await result in group where result.stream == .stdout {
-                            captured = result.bytes
-                        }
-                        return captured
+        let sink = try CommandOutputSink(
+            logging: file == nil ? logging : nil,
+            stage: stage,
+            file: file)
+        let commandResult: CommandResult
+        do {
+            switch command.output {
+            case .combined(let limit):
+                let result = try await Subprocess.run(
+                    executable,
+                    arguments: Arguments(command.arguments),
+                    environment: environment,
+                    workingDirectory: command.workingDirectory,
+                    platformOptions: platform,
+                    input: input,
+                    output: .sequence,
+                    error: .combinedWithOutput
+                ) { execution in
+                    let registration = await self.cancellation.registerProcessGroup(
+                        execution.processIdentifier.value)
+                    do {
+                        let bytes = try await collect(
+                            execution.standardOutput,
+                            limit: limit,
+                            mirror: nil,
+                            sink: sink)
+                        await self.cancellation.unregisterProcessGroup(registration)
+                        return bytes
+                    } catch {
+                        await self.cancellation.unregisterProcessGroup(registration)
+                        throw error
                     }
-                    await self.cancellation.unregisterProcessGroup(registration)
-                    return bytes
-                } catch {
-                    await self.cancellation.unregisterProcessGroup(registration)
-                    throw error
                 }
+                commandResult = CommandResult(
+                    status: statusCode(result.terminationStatus),
+                    standardOutput: String(decoding: result.closureResult, as: UTF8.self))
+            case .inherited, .logged, .file, .captured:
+                let captureLimit: Int? =
+                    switch command.output {
+                    case .captured(let limit): limit
+                    default: nil
+                    }
+                let result = try await Subprocess.run(
+                    executable,
+                    arguments: Arguments(command.arguments),
+                    environment: environment,
+                    workingDirectory: command.workingDirectory,
+                    platformOptions: platform,
+                    input: input,
+                    output: .sequence,
+                    error: .sequence
+                ) { execution in
+                    let registration = await self.cancellation.registerProcessGroup(
+                        execution.processIdentifier.value)
+                    do {
+                        let bytes = try await withThrowingTaskGroup(
+                            of: StreamResult.self,
+                            returning: [UInt8].self
+                        ) { group in
+                            group.addTask {
+                                StreamResult(
+                                    stream: .stdout,
+                                    bytes: try await collect(
+                                        execution.standardOutput,
+                                        limit: captureLimit,
+                                        mirror: command.output == .inherited
+                                            ? .standardOutput : nil,
+                                        sink: sink))
+                            }
+                            group.addTask {
+                                StreamResult(
+                                    stream: .stderr,
+                                    bytes: try await collect(
+                                        execution.standardError,
+                                        limit: nil,
+                                        mirror: command.output == .logged
+                                            || file != nil
+                                            ? nil : .standardError,
+                                        sink: sink))
+                            }
+                            var captured: [UInt8] = []
+                            for try await result in group where result.stream == .stdout {
+                                captured = result.bytes
+                            }
+                            return captured
+                        }
+                        await self.cancellation.unregisterProcessGroup(registration)
+                        return bytes
+                    } catch {
+                        await self.cancellation.unregisterProcessGroup(registration)
+                        throw error
+                    }
+                }
+                commandResult = CommandResult(
+                    status: statusCode(result.terminationStatus),
+                    standardOutput: String(decoding: result.closureResult, as: UTF8.self))
+            case .terminal:
+                preconditionFailure("terminal commands are executed with inherited descriptors")
             }
-            return CommandResult(
-                status: statusCode(result.terminationStatus),
-                standardOutput: String(decoding: result.closureResult, as: UTF8.self))
-        case .terminal:
-            preconditionFailure("terminal commands are executed with inherited descriptors")
+        } catch {
+            try? await sink.finish()
+            throw error
         }
+        try await sink.finish()
+        return commandResult
     }
 }
 
@@ -336,17 +363,51 @@ private struct StreamResult: Sendable {
 private actor CommandOutputSink {
     let logging: CommandLogging?
     let stage: TaskID?
+    var file: FileDescriptor?
 
-    init(logging: CommandLogging?, stage: TaskID?) {
+    init(
+        logging: CommandLogging?,
+        stage: TaskID?,
+        file path: FilePath?
+    ) throws {
         self.logging = logging
         self.stage = stage
+        file =
+            if let path {
+                try FileDescriptor.open(
+                    path,
+                    .writeOnly,
+                    options: [.create, .truncate, .closeOnExec],
+                    permissions: .ownerReadWrite)
+            } else {
+                nil
+            }
     }
 
     func write(_ bytes: [UInt8], mirror: FileDescriptor?) async throws {
         if let logging {
             try await logging.registry.appendLog(bytes, stage: stage, in: logging.run)
         }
+        if let file {
+            try file.writeAll(CredentialScrubber.bytes(bytes))
+        }
         if let mirror { try mirror.writeAll(bytes) }
+    }
+
+    func finish() throws {
+        guard let file else {
+            return
+        }
+        self.file = nil
+        do {
+            guard collider_sync_file(file.rawValue) == 0 else {
+                throw Errno(rawValue: errno)
+            }
+            try file.close()
+        } catch {
+            try? file.close()
+            throw error
+        }
     }
 }
 
@@ -361,7 +422,7 @@ private func collect(
         let bytes = chunk.withUnsafeBytes { Array($0) }
         if let limit {
             guard captured.count <= limit,
-                  bytes.count <= limit - captured.count
+                bytes.count <= limit - captured.count
             else {
                 throw RuntimeFailure.outputLimitExceeded(limit)
             }

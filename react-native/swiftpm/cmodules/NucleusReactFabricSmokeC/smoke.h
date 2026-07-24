@@ -18,6 +18,27 @@ int nucleus_rn_js_work_wake_smoke(const char *hbcPath);
 int nucleus_rn_mount_batching_smoke(void);
 int nucleus_rn_mount_lifecycle_smoke(void);
 int nucleus_rn_mount_event_payload_smoke(void);
+// Drives the real NucleusHostCommand TurboModule on a worker-owned Hermes
+// runtime using the supplied Swift callback/context ownership pair.
+typedef void (*nucleus_rn_host_command_callback)(
+    void *context,
+    const char *command,
+    const char *argsJson);
+typedef void (*nucleus_rn_host_command_release)(void *context);
+int nucleus_rn_invoke_host_command_on_js_worker(
+    nucleus_rn_host_command_callback callback,
+    void *context,
+    nucleus_rn_host_command_release release,
+    const char *hbcPath);
+// Swift-side actor-delivery probe layered over the worker invocation above.
+// start returns zero when invocation was queued; status returns zero while
+// pending, one on success, and a negative or greater-than-one value on failure.
+int nucleus_rn_command_handler_actor_smoke_start(const char *hbcPath);
+int nucleus_rn_command_handler_actor_smoke_status(void);
+void nucleus_rn_command_handler_actor_smoke_reset(void);
+// Exercises replacement, in-flight entry retirement, and unused-handler
+// teardown directly against HostCommandHandler.
+int nucleus_rn_command_handler_ownership_smoke(void);
 #ifdef __cplusplus
 }
 #endif

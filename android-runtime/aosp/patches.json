@@ -1,0 +1,47 @@
+{
+  "repositories": [
+    {
+      "path": "system/core",
+      "patches": [
+        "aosp/patches/platform-system-core/0001-init-add-nucleus-container-entry.patch",
+        "aosp/patches/platform-system-core/0002-libprocessgroup-support-nucleus-container-cgroups.patch"
+      ]
+    },
+    {
+      "path": "system/apex",
+      "patches": [
+        "aosp/patches/platform-system-apex/0001-apexd-adopt-nucleus-container-mounts.patch"
+      ]
+    },
+    {
+      "path": "frameworks/native",
+      "patches": [
+        "aosp/patches/platform-frameworks-native/0001-servicemanager-support-nucleus-container.patch"
+      ]
+    },
+    {
+      "path": "system/vold",
+      "patches": [
+        "aosp/patches/platform-system-vold/0001-vold-support-nucleus-container.patch"
+      ]
+    },
+    {
+      "path": "packages/modules/Connectivity",
+      "patches": [
+        "aosp/patches/platform-packages-modules-connectivity/0001-netbpfload-use-nucleus-bpf-token.patch"
+      ]
+    },
+    {
+      "path": "packages/modules/UprobeStats",
+      "patches": [
+        "aosp/patches/platform-packages-modules-uprobestats/0001-bpfloader-use-nucleus-bpf-token.patch"
+      ]
+    },
+    {
+      "path": "system/bpf",
+      "patches": [
+        "aosp/patches/platform-system-bpf/0001-bpfloader-use-nucleus-bpf-token.patch"
+      ]
+    }
+  ]
+}

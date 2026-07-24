@@ -64,137 +64,130 @@ package final class ImageDecodeQueue {
         private var running = true
         private var latestCompletionToFrameDemandNs: UInt64?
 
-        private var mutex = pthread_mutex_t()
-        private var condition = pthread_cond_t()
+        private let synchronization = BlockingSynchronization()
         private let wakeSink: any AsyncRenderWakeSink
         private let clock = ContinuousClock()
 
         init(wakeSink: any AsyncRenderWakeSink) {
             self.wakeSink = wakeSink
-            pthread_mutex_init(&mutex, nil)
-            pthread_cond_init(&condition, nil)
         }
-
-        deinit {
-            pthread_cond_destroy(&condition)
-            pthread_mutex_destroy(&mutex)
-        }
-
-        private func lock() { pthread_mutex_lock(&mutex) }
-        private func unlock() { pthread_mutex_unlock(&mutex) }
 
         func submit(handle: UInt64, source: ImageSource) -> Bool {
-            lock()
-            defer { unlock() }
-            guard running, known[handle] == nil else { return false }
-            let generation = nextGeneration
-            nextGeneration &+= 1
-            if nextGeneration == 0 { nextGeneration = 1 }
-            known[handle] = generation
-            pending.append(Request(handle: handle, generation: generation, source: source))
-            pthread_cond_signal(&condition)
-            return true
+            synchronization.withLock {
+                guard running, known[handle] == nil else { return false }
+                let generation = nextGeneration
+                nextGeneration &+= 1
+                if nextGeneration == 0 { nextGeneration = 1 }
+                known[handle] = generation
+                pending.append(Request(
+                    handle: handle,
+                    generation: generation,
+                    source: source))
+                synchronization.signal()
+                return true
+            }
         }
 
         func drain() -> [DecodedImageResult] {
-            lock()
-            defer { unlock() }
-            guard !completed.isEmpty else { return [] }
-            let results = completed.map(\.result)
-            for completion in completed
-            where known[completion.result.handle] == completion.generation {
-                known[completion.result.handle] = nil
+            synchronization.withLock {
+                guard !completed.isEmpty else { return [] }
+                let results = completed.map(\.result)
+                for completion in completed
+                where known[completion.result.handle] == completion.generation {
+                    known[completion.result.handle] = nil
+                }
+                completed.removeAll(keepingCapacity: true)
+                return results
             }
-            completed.removeAll(keepingCapacity: true)
-            return results
         }
 
         func cancel(handle: UInt64) {
-            lock()
-            defer { unlock() }
-            if pendingHead < pending.count {
-                pending = pending[pendingHead...].filter { $0.handle != handle }
-                pendingHead = 0
-            } else {
-                pending.removeAll(keepingCapacity: true)
-                pendingHead = 0
+            synchronization.withLock {
+                if pendingHead < pending.count {
+                    pending = pending[pendingHead...].filter {
+                        $0.handle != handle
+                    }
+                    pendingHead = 0
+                } else {
+                    pending.removeAll(keepingCapacity: true)
+                    pendingHead = 0
+                }
+                completed.removeAll { $0.result.handle == handle }
+                known[handle] = nil
             }
-            completed.removeAll { $0.result.handle == handle }
-            known[handle] = nil
         }
 
         func stop() -> Bool {
-            lock()
-            guard running else {
-                unlock()
-                return false
+            synchronization.withLock {
+                guard running else { return false }
+                running = false
+                pending.removeAll()
+                pendingHead = 0
+                synchronization.broadcast()
+                return true
             }
-            running = false
-            pending.removeAll()
-            pendingHead = 0
-            pthread_cond_broadcast(&condition)
-            unlock()
-            return true
         }
 
         func completionToFrameDemandNanoseconds() -> UInt64? {
-            lock()
-            defer { unlock() }
-            return latestCompletionToFrameDemandNs
+            synchronization.withLock {
+                latestCompletionToFrameDemandNs
+            }
         }
 
         func workerLoop() {
             while true {
-                lock()
+                synchronization.lock()
                 while running && pendingHead == pending.count {
                     if pendingHead != 0 {
                         pending.removeAll(keepingCapacity: true)
                         pendingHead = 0
                     }
-                    pthread_cond_wait(&condition, &mutex)
+                    synchronization.wait()
                 }
                 guard running else {
-                    unlock()
+                    synchronization.unlock()
                     return
                 }
                 let request = pending[pendingHead]
                 pendingHead += 1
                 compactPendingIfNeeded()
-                unlock()
+                synchronization.unlock()
 
                 let image = ImageDecodeQueue.decode(request.source)
 
-                lock()
-                var shouldWake = false
-                var completionInstant: ContinuousClock.Instant?
-                if running,
-                   known[request.handle] == request.generation,
-                   image.isValid()
-                {
-                    // One wake covers every result waiting in this completion
-                    // burst. Draining empties the burst and permits the next wake.
-                    shouldWake = completed.isEmpty
-                    if shouldWake {
-                        completionInstant = clock.now
+                let completionInstant: ContinuousClock.Instant? =
+                    synchronization.withLock {
+                        if running,
+                           known[request.handle] == request.generation,
+                           image.isValid()
+                        {
+                            // One wake covers every result waiting in this
+                            // completion burst. Draining empties the burst and
+                            // permits the next wake.
+                            let completionInstant = completed.isEmpty
+                                ? clock.now
+                                : nil
+                            completed.append(Completion(
+                                generation: request.generation,
+                                result: DecodedImageResult(
+                                    handle: request.handle,
+                                    image: image)))
+                            return completionInstant
+                        }
+                        if known[request.handle] == request.generation {
+                            known[request.handle] = nil
+                        }
+                        return nil
                     }
-                    completed.append(Completion(
-                        generation: request.generation,
-                        result: DecodedImageResult(
-                            handle: request.handle,
-                            image: image)))
-                } else if known[request.handle] == request.generation {
-                    known[request.handle] = nil
-                }
-                unlock()
 
-                if shouldWake, let completionInstant {
+                if let completionInstant {
                     wakeSink.signalRenderWork()
                     let latency = elapsedNanoseconds(
                         completionInstant,
                         clock.now)
-                    lock()
-                    latestCompletionToFrameDemandNs = latency
-                    unlock()
+                    synchronization.withLock {
+                        latestCompletionToFrameDemandNs = latency
+                    }
                     Trace.plot(
                         "swift.renderer.image_decode.completion_to_frame_demand_ns",
                         latency)
@@ -209,18 +202,20 @@ package final class ImageDecodeQueue {
         }
     }
 
-    private let state: WorkerState
+    private var state: WorkerState?
     private var workers: [pthread_t] = []
 
     /// - Parameter workerCount: one is enough for a shell. Decodes are rare,
     ///   bursty, and individually short; more threads would mostly contend.
+    ///   Zero explicitly selects the same inline fallback used when every
+    ///   requested worker fails to start.
     package init(
         wakeSink: any AsyncRenderWakeSink,
         workerCount: Int = 1
     ) {
         let state = WorkerState(wakeSink: wakeSink)
         self.state = state
-        for _ in 0..<max(1, workerCount) {
+        for _ in 0..<max(0, workerCount) {
             let retainedState = Unmanaged.passRetained(state).toOpaque()
             var thread = pthread_t()
             let created = pthread_create(&thread, nil, { pointer in
@@ -249,20 +244,20 @@ package final class ImageDecodeQueue {
     /// Latest measured interval from making a completion drainable through
     /// invoking the host's frame-demand sink.
     package var completionToFrameDemandNanoseconds: UInt64? {
-        state.completionToFrameDemandNanoseconds()
+        state?.completionToFrameDemandNanoseconds()
     }
 
     /// Queue a decode. Returns false if this handle is already queued or done,
     /// so a caller can tell "waiting" from "just asked".
     @discardableResult
     package func submit(handle: UInt64, source: ImageSource) -> Bool {
-        guard hasWorkers else { return false }
+        guard hasWorkers, let state else { return false }
         return state.submit(handle: handle, source: source)
     }
 
     /// Take everything decoded since the last call.
     package func drain() -> [DecodedImageResult] {
-        state.drain()
+        state?.drain() ?? []
     }
 
     /// Forget a handle whose source was evicted.
@@ -272,14 +267,18 @@ package final class ImageDecodeQueue {
     /// re-registered, and delivering a stale image to a reused handle would draw
     /// the wrong picture.
     package func cancel(handle: UInt64) {
-        state.cancel(handle: handle)
+        state?.cancel(handle: handle)
     }
 
     /// Stop the workers and wait for them. Idempotent.
     package func shutdown() {
-        guard state.stop() else { return }
+        guard let state, state.stop() else { return }
         for thread in workers { pthread_join(thread, nil) }
         workers.removeAll()
+        // Joining releases the workers' retained state references. Dropping the
+        // queue's final reference destroys the C-owned condition and mutex before
+        // shutdown returns.
+        self.state = nil
     }
 
     /// The decode itself — the same work the render thread used to do inline.

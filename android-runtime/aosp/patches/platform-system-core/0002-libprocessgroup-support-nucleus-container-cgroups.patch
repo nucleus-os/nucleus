@@ -1,0 +1,76 @@
+diff --git a/libprocessgroup/profiles/Android.bp b/libprocessgroup/profiles/Android.bp
+--- a/libprocessgroup/profiles/Android.bp
++++ b/libprocessgroup/profiles/Android.bp
+@@ -19,7 +19,7 @@ package {
+ 
+ prebuilt_etc {
+     name: "cgroups.json",
+-    src: "cgroups.json",
++    src: "//device/nucleus/nucleus_x86_64:nucleus_cgroups_config",
+ }
+ 
+ prebuilt_etc {
+diff --git a/libprocessgroup/setup/cgroup_map_write.cpp b/libprocessgroup/setup/cgroup_map_write.cpp
+--- a/libprocessgroup/setup/cgroup_map_write.cpp
++++ b/libprocessgroup/setup/cgroup_map_write.cpp
+@@ -27,6 +27,7 @@
+ #include <sys/mount.h>
+ #include <sys/stat.h>
+ #include <sys/types.h>
++#include <sys/vfs.h>
+ #include <unistd.h>
+ 
+ #include <android-base/logging.h>
+@@ -125,6 +126,11 @@ static bool IsOptionalController(const CgroupController* controller) {
+     return controller->flags() & CGROUPRC_CONTROLLER_FLAG_OPTIONAL;
+ }
+ 
++static bool IsCgroup2MountedAt(const std::string& path) {
++    struct statfs filesystem{};
++    return statfs(path.c_str(), &filesystem) == 0 && filesystem.f_type == CGROUP2_SUPER_MAGIC;
++}
++
+ static bool MountV2CgroupController(const CgroupDescriptor& descriptor) {
+     const CgroupController* controller = descriptor.controller();
+ 
+@@ -135,21 +141,26 @@ static bool MountV2CgroupController(const CgroupDescriptor& descriptor) {
+         return false;
+     }
+ 
+-    // The memory_recursiveprot mount option has been introduced by kernel commit
+-    // 8a931f801340 ("mm: memcontrol: recursive memory.low protection"; v5.7). Try first to
+-    // mount with that option enabled. If mounting fails because the kernel is too old,
+-    // retry without that mount option.
+-    if (mount("none", controller->path(), "cgroup2", MS_NODEV | MS_NOEXEC | MS_NOSUID,
+-              "memory_recursiveprot") < 0) {
+-        LOG(INFO) << "Mounting memcg with memory_recursiveprot failed. Retrying without.";
+-        if (mount("none", controller->path(), "cgroup2", MS_NODEV | MS_NOEXEC | MS_NOSUID,
+-                  nullptr) < 0) {
+-            PLOG(ERROR) << "Failed to mount cgroup v2";
+-            return IsOptionalController(controller);
++    const bool is_pre_mounted = IsCgroup2MountedAt(controller->path());
++    if (is_pre_mounted) {
++        LOG(INFO) << "Adopting pre-mounted cgroup v2 hierarchy at " << controller->path();
++    } else {
++        // The memory_recursiveprot mount option has been introduced by kernel commit
++        // 8a931f801340 ("mm: memcontrol: recursive memory.low protection"; v5.7). Try first to
++        // mount with that option enabled. If mounting fails because the kernel is too old,
++        // retry without that mount option.
++        if (mount("none", controller->path(), "cgroup2", MS_NODEV | MS_NOEXEC | MS_NOSUID,
++                  "memory_recursiveprot") < 0) {
++            LOG(INFO) << "Mounting memcg with memory_recursiveprot failed. Retrying without.";
++            if (mount("none", controller->path(), "cgroup2", MS_NODEV | MS_NOEXEC | MS_NOSUID,
++                      nullptr) < 0) {
++                PLOG(ERROR) << "Failed to mount cgroup v2";
++                return IsOptionalController(controller);
++            }
+         }
+     }
+ 
+-    // selinux permissions change after mounting, so it's ok to change mode and owner now
+-    if (!ChangeDirModeAndOwner(controller->path(), descriptor.mode(), descriptor.uid(),
+-                               descriptor.gid())) {
++    // A pre-mounted hierarchy is already owned by the runtime that delegated it.
++    if (!is_pre_mounted && !ChangeDirModeAndOwner(controller->path(), descriptor.mode(),
++                                                  descriptor.uid(), descriptor.gid())) {
+         PLOG(ERROR) << "Change of ownership or mode failed for controller " << controller->name();

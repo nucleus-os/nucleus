@@ -25,42 +25,68 @@ namespace {
     } while (false)
 
 struct RingPair {
-    nucleus_android_shared_ring *owner = nullptr;
-    nucleus_android_shared_ring *peer = nullptr;
+    nucleus_android_shared_ring_mapping *mapping = nullptr;
+    nucleus_android_shared_ring_producer *producer = nullptr;
+    nucleus_android_shared_ring_consumer *consumer = nullptr;
 
     RingPair() = default;
     RingPair(const RingPair &) = delete;
     RingPair &operator=(const RingPair &) = delete;
 
     RingPair(RingPair &&other) noexcept
-        : owner(std::exchange(other.owner, nullptr)),
-          peer(std::exchange(other.peer, nullptr)) {}
+        : mapping(std::exchange(other.mapping, nullptr)),
+          producer(std::exchange(other.producer, nullptr)),
+          consumer(std::exchange(other.consumer, nullptr)) {}
 
     RingPair &operator=(RingPair &&other) noexcept {
         if (this == &other) return *this;
-        nucleus_android_shared_ring_destroy(peer);
-        nucleus_android_shared_ring_destroy(owner);
-        owner = std::exchange(other.owner, nullptr);
-        peer = std::exchange(other.peer, nullptr);
+        nucleus_android_shared_ring_consumer_destroy(consumer);
+        nucleus_android_shared_ring_producer_destroy(producer);
+        nucleus_android_shared_ring_mapping_destroy(mapping);
+        mapping = std::exchange(other.mapping, nullptr);
+        producer = std::exchange(other.producer, nullptr);
+        consumer = std::exchange(other.consumer, nullptr);
         return *this;
     }
 
     ~RingPair() {
-        nucleus_android_shared_ring_destroy(peer);
-        nucleus_android_shared_ring_destroy(owner);
+        nucleus_android_shared_ring_consumer_destroy(consumer);
+        nucleus_android_shared_ring_producer_destroy(producer);
+        nucleus_android_shared_ring_mapping_destroy(mapping);
     }
 };
 
 RingPair makeRingPair(std::uint32_t slots, std::uint32_t slotSize) {
     RingPair pair;
-    pair.owner = nucleus_android_shared_ring_create(slots, slotSize);
-    if (pair.owner == nullptr) return pair;
-    const int memoryFD = nucleus_android_shared_ring_export_memory_fd(pair.owner);
-    const int dataFD =
-        nucleus_android_shared_ring_export_data_notification_fd(pair.owner);
-    const int spaceFD =
-        nucleus_android_shared_ring_export_space_notification_fd(pair.owner);
-    pair.peer = nucleus_android_shared_ring_attach(memoryFD, dataFD, spaceFD);
+    pair.mapping =
+        nucleus_android_shared_ring_mapping_create(slots, slotSize);
+    if (pair.mapping == nullptr) return pair;
+    nucleus_android_shared_ring_descriptors producerDescriptors = {
+        .memory_fd = -1,
+        .data_notification_fd = -1,
+        .space_notification_fd = -1,
+    };
+    nucleus_android_shared_ring_descriptors consumerDescriptors = {
+        .memory_fd = -1,
+        .data_notification_fd = -1,
+        .space_notification_fd = -1,
+    };
+    if (nucleus_android_shared_ring_mapping_export_descriptors(
+            pair.mapping,
+            &producerDescriptors) < 0 ||
+        nucleus_android_shared_ring_mapping_export_descriptors(
+            pair.mapping,
+            &consumerDescriptors) < 0) {
+        nucleus_android_shared_ring_descriptors_close(
+            producerDescriptors);
+        nucleus_android_shared_ring_descriptors_close(
+            consumerDescriptors);
+        return pair;
+    }
+    pair.producer =
+        nucleus_android_shared_ring_producer_attach(producerDescriptors);
+    pair.consumer =
+        nucleus_android_shared_ring_consumer_attach(consumerDescriptors);
     return pair;
 }
 
@@ -78,34 +104,34 @@ bool waitFor(int descriptor) {
 }
 
 bool readBytes(
-    nucleus_android_shared_ring *ring,
+    nucleus_android_shared_ring_consumer *consumer,
     std::vector<std::uint8_t> *output,
     std::size_t expectedSize) {
     std::vector<std::uint8_t> chunk(
-        nucleus_android_shared_ring_slot_size(ring) - sizeof(std::uint32_t));
+        nucleus_android_shared_ring_consumer_slot_size(consumer) -
+        sizeof(std::uint32_t));
     while (output->size() < expectedSize) {
-        const int count = nucleus_android_shared_ring_read(
-            ring,
+        const int count = nucleus_android_shared_ring_consumer_read(
+            consumer,
             chunk.data(),
             static_cast<std::uint32_t>(chunk.size()));
         if (count >= 0) {
             output->insert(output->end(), chunk.begin(), chunk.begin() + count);
             continue;
         }
-        if (errno != EAGAIN ||
-            nucleus_android_shared_ring_drain_data_notification(ring) < 0) {
-            return false;
-        }
-        const int retry = nucleus_android_shared_ring_read(
-            ring,
-            chunk.data(),
-            static_cast<std::uint32_t>(chunk.size()));
-        if (retry >= 0) {
-            output->insert(output->end(), chunk.begin(), chunk.begin() + retry);
+        if (errno != EAGAIN) return false;
+        const auto preparation =
+            nucleus_android_shared_ring_consumer_prepare_data_wait(
+                consumer);
+        if (preparation == NUCLEUS_ANDROID_SHARED_RING_WAIT_READY) {
             continue;
         }
-        if (errno != EAGAIN) return false;
-        if (!waitFor(nucleus_android_shared_ring_data_notification_fd(ring))) {
+        if (preparation != NUCLEUS_ANDROID_SHARED_RING_WAIT_ARMED ||
+            !waitFor(
+                nucleus_android_shared_ring_consumer_data_notification_fd(
+                    consumer)) ||
+            nucleus_android_shared_ring_consumer_drain_data_notification(
+                consumer) < 0) {
             return false;
         }
     }
@@ -113,33 +139,34 @@ bool readBytes(
 }
 
 bool writeBytes(
-    nucleus_android_shared_ring *ring,
+    nucleus_android_shared_ring_producer *producer,
     const std::vector<std::uint8_t> &bytes) {
     const std::size_t capacity =
-        nucleus_android_shared_ring_slot_size(ring) - sizeof(std::uint32_t);
+        nucleus_android_shared_ring_producer_slot_size(producer) -
+        sizeof(std::uint32_t);
     std::size_t offset = 0;
     while (offset < bytes.size()) {
         const std::size_t count = std::min(bytes.size() - offset, capacity);
-        if (nucleus_android_shared_ring_write(
-                ring,
-                bytes.data() + offset,
-                static_cast<std::uint32_t>(count)) == 0) {
-            offset += count;
-            continue;
-        }
-        if (errno != EAGAIN ||
-            nucleus_android_shared_ring_drain_space_notification(ring) < 0) {
-            return false;
-        }
-        if (nucleus_android_shared_ring_write(
-                ring,
+        if (nucleus_android_shared_ring_producer_write(
+                producer,
                 bytes.data() + offset,
                 static_cast<std::uint32_t>(count)) == 0) {
             offset += count;
             continue;
         }
         if (errno != EAGAIN) return false;
-        if (!waitFor(nucleus_android_shared_ring_space_notification_fd(ring))) {
+        const auto preparation =
+            nucleus_android_shared_ring_producer_prepare_space_wait(
+                producer);
+        if (preparation == NUCLEUS_ANDROID_SHARED_RING_WAIT_READY) {
+            continue;
+        }
+        if (preparation != NUCLEUS_ANDROID_SHARED_RING_WAIT_ARMED ||
+            !waitFor(
+                nucleus_android_shared_ring_producer_space_notification_fd(
+                    producer)) ||
+            nucleus_android_shared_ring_producer_drain_space_notification(
+                producer) < 0) {
             return false;
         }
     }
@@ -207,12 +234,16 @@ private:
 };
 
 struct FactoryProviderContext {
-    nucleus_android_shared_ring *commands = nullptr;
-    nucleus_android_shared_ring *responses = nullptr;
+    nucleus_android_shared_ring_mapping *commands = nullptr;
+    nucleus_android_shared_ring_mapping *responses = nullptr;
+    nucleus_android_shared_ring_consumer *commandConsumer = nullptr;
+    nucleus_android_shared_ring_producer *responseProducer = nullptr;
 
     ~FactoryProviderContext() {
-        nucleus_android_shared_ring_destroy(responses);
-        nucleus_android_shared_ring_destroy(commands);
+        nucleus_android_shared_ring_producer_destroy(responseProducer);
+        nucleus_android_shared_ring_consumer_destroy(commandConsumer);
+        nucleus_android_shared_ring_mapping_destroy(responses);
+        nucleus_android_shared_ring_mapping_destroy(commands);
     }
 };
 
@@ -230,23 +261,71 @@ int provideEndpoint(
     void *context,
     nucleus_android_gfxstream_endpoint_descriptors *descriptors) {
     auto *provider = static_cast<FactoryProviderContext *>(context);
-    provider->commands = nucleus_android_shared_ring_create(2, 64);
-    provider->responses = nucleus_android_shared_ring_create(2, 64);
+    provider->commands =
+        nucleus_android_shared_ring_mapping_create(2, 64);
+    provider->responses =
+        nucleus_android_shared_ring_mapping_create(2, 64);
     if (provider->commands == nullptr || provider->responses == nullptr) {
         return -1;
     }
-    descriptors->command_memory_fd =
-        nucleus_android_shared_ring_export_memory_fd(provider->commands);
+    nucleus_android_shared_ring_descriptors commandConsumer = {
+        .memory_fd = -1,
+        .data_notification_fd = -1,
+        .space_notification_fd = -1,
+    };
+    nucleus_android_shared_ring_descriptors responseProducer = {
+        .memory_fd = -1,
+        .data_notification_fd = -1,
+        .space_notification_fd = -1,
+    };
+    nucleus_android_shared_ring_descriptors commandProducer = {
+        .memory_fd = -1,
+        .data_notification_fd = -1,
+        .space_notification_fd = -1,
+    };
+    nucleus_android_shared_ring_descriptors responseConsumer = {
+        .memory_fd = -1,
+        .data_notification_fd = -1,
+        .space_notification_fd = -1,
+    };
+    if (nucleus_android_shared_ring_mapping_export_descriptors(
+            provider->commands,
+            &commandConsumer) < 0 ||
+        nucleus_android_shared_ring_mapping_export_descriptors(
+            provider->responses,
+            &responseProducer) < 0 ||
+        nucleus_android_shared_ring_mapping_export_descriptors(
+            provider->commands,
+            &commandProducer) < 0 ||
+        nucleus_android_shared_ring_mapping_export_descriptors(
+            provider->responses,
+            &responseConsumer) < 0) {
+        nucleus_android_shared_ring_descriptors_close(commandConsumer);
+        nucleus_android_shared_ring_descriptors_close(responseProducer);
+        nucleus_android_shared_ring_descriptors_close(commandProducer);
+        nucleus_android_shared_ring_descriptors_close(responseConsumer);
+        return -1;
+    }
+    provider->commandConsumer =
+        nucleus_android_shared_ring_consumer_attach(commandConsumer);
+    provider->responseProducer =
+        nucleus_android_shared_ring_producer_attach(responseProducer);
+    if (provider->commandConsumer == nullptr ||
+        provider->responseProducer == nullptr) {
+        nucleus_android_shared_ring_descriptors_close(commandProducer);
+        nucleus_android_shared_ring_descriptors_close(responseConsumer);
+        return -1;
+    }
+    descriptors->command_memory_fd = commandProducer.memory_fd;
     descriptors->command_data_notification_fd =
-        nucleus_android_shared_ring_export_data_notification_fd(provider->commands);
+        commandProducer.data_notification_fd;
     descriptors->command_space_notification_fd =
-        nucleus_android_shared_ring_export_space_notification_fd(provider->commands);
-    descriptors->response_memory_fd =
-        nucleus_android_shared_ring_export_memory_fd(provider->responses);
+        commandProducer.space_notification_fd;
+    descriptors->response_memory_fd = responseConsumer.memory_fd;
     descriptors->response_data_notification_fd =
-        nucleus_android_shared_ring_export_data_notification_fd(provider->responses);
+        responseConsumer.data_notification_fd;
     descriptors->response_space_notification_fd =
-        nucleus_android_shared_ring_export_space_notification_fd(provider->responses);
+        responseConsumer.space_notification_fd;
     return 0;
 }
 
@@ -256,12 +335,12 @@ extern "C" int nucleus_android_test_guest_ring_stream(void) {
     RingPair commands = makeRingPair(2, 64);
     RingPair responses = makeRingPair(2, 64);
     CHECK_OR_RETURN(
-        commands.owner != nullptr && commands.peer != nullptr &&
-        responses.owner != nullptr && responses.peer != nullptr);
+        commands.producer != nullptr && commands.consumer != nullptr &&
+        responses.producer != nullptr && responses.consumer != nullptr);
 
     nucleus::android::gfxstream::GuestRingStream stream(
-        commands.owner,
-        responses.peer,
+        commands.producer,
+        responses.consumer,
         false,
         128);
 
@@ -272,7 +351,10 @@ extern "C" int nucleus_android_test_guest_ring_stream(void) {
     std::vector<std::uint8_t> receivedCommand;
     bool commandRead = false;
     std::jthread commandConsumer([&] {
-        commandRead = readBytes(commands.peer, &receivedCommand, command.size());
+        commandRead = readBytes(
+            commands.consumer,
+            &receivedCommand,
+            command.size());
     });
     CHECK_OR_RETURN(stream.writeFully(command.data(), command.size()) == 0);
     commandConsumer.join();
@@ -285,7 +367,7 @@ extern "C" int nucleus_android_test_guest_ring_stream(void) {
     }
     bool responseWritten = false;
     std::jthread responseProducer([&] {
-        responseWritten = writeBytes(responses.owner, response);
+        responseWritten = writeBytes(responses.producer, response);
     });
     std::vector<std::uint8_t> receivedResponse(response.size());
     CHECK_OR_RETURN(
@@ -316,8 +398,8 @@ extern "C" int nucleus_android_test_guest_ring_factory_registration(void) {
     CHECK_OR_RETURN(stream->writeFully(command.data(), command.size()) == 0);
     std::vector<std::uint8_t> scratch(60);
     CHECK_OR_RETURN(
-        nucleus_android_shared_ring_read(
-            provider.commands,
+        nucleus_android_shared_ring_consumer_read(
+            provider.commandConsumer,
             scratch.data(),
             static_cast<std::uint32_t>(scratch.size())) ==
         static_cast<int>(command.size()));
@@ -325,8 +407,8 @@ extern "C" int nucleus_android_test_guest_ring_factory_registration(void) {
 
     const std::vector<std::uint8_t> response = {2, 7, 1, 8};
     CHECK_OR_RETURN(
-        nucleus_android_shared_ring_write(
-            provider.responses,
+        nucleus_android_shared_ring_producer_write(
+            provider.responseProducer,
             response.data(),
             static_cast<std::uint32_t>(response.size())) == 0);
     std::vector<std::uint8_t> received(response.size());
@@ -345,19 +427,19 @@ extern "C" int nucleus_android_test_host_ring_channel_pump(void) {
     RingPair commands = makeRingPair(2, 64);
     RingPair responses = makeRingPair(2, 64);
     CHECK_OR_RETURN(
-        commands.owner != nullptr && commands.peer != nullptr &&
-        responses.owner != nullptr && responses.peer != nullptr);
+        commands.producer != nullptr && commands.consumer != nullptr &&
+        responses.producer != nullptr && responses.consumer != nullptr);
 
     auto channel = std::make_shared<FakeRenderChannel>();
     nucleus::android::gfxstream::HostRingChannelPump pump(
-        commands.peer,
-        responses.owner,
+        commands.consumer,
+        responses.producer,
         channel);
 
     const std::vector<std::uint8_t> command = {1, 2, 3, 4};
     CHECK_OR_RETURN(
-        nucleus_android_shared_ring_write(
-            commands.owner,
+        nucleus_android_shared_ring_producer_write(
+            commands.producer,
             command.data(),
             static_cast<std::uint32_t>(command.size())) == 0);
     CHECK_OR_RETURN(
@@ -371,8 +453,8 @@ extern "C" int nucleus_android_test_host_ring_channel_pump(void) {
     channel->blockWrites = true;
     const std::vector<std::uint8_t> blockedCommand = {8, 9};
     CHECK_OR_RETURN(
-        nucleus_android_shared_ring_write(
-            commands.owner,
+        nucleus_android_shared_ring_producer_write(
+            commands.producer,
             blockedCommand.data(),
             static_cast<std::uint32_t>(blockedCommand.size())) == 0);
     CHECK_OR_RETURN(
@@ -388,13 +470,13 @@ extern "C" int nucleus_android_test_host_ring_channel_pump(void) {
 
     const std::vector<std::uint8_t> filler(1, 0xee);
     CHECK_OR_RETURN(
-        nucleus_android_shared_ring_write(
-            responses.owner,
+        nucleus_android_shared_ring_producer_write(
+            responses.producer,
             filler.data(),
             static_cast<std::uint32_t>(filler.size())) == 0);
     CHECK_OR_RETURN(
-        nucleus_android_shared_ring_write(
-            responses.owner,
+        nucleus_android_shared_ring_producer_write(
+            responses.producer,
             filler.data(),
             static_cast<std::uint32_t>(filler.size())) == 0);
     channel->queueResponse(std::vector<char>(90, 0x5a));
@@ -405,8 +487,8 @@ extern "C" int nucleus_android_test_host_ring_channel_pump(void) {
 
     std::vector<std::uint8_t> scratch(60);
     CHECK_OR_RETURN(
-        nucleus_android_shared_ring_read(
-            responses.peer,
+        nucleus_android_shared_ring_consumer_read(
+            responses.consumer,
             scratch.data(),
             static_cast<std::uint32_t>(scratch.size())) == 1);
     CHECK_OR_RETURN(
@@ -421,16 +503,17 @@ extern "C" int nucleus_android_test_ring_peer_closure(void) {
         RingPair commands = makeRingPair(2, 64);
         RingPair responses = makeRingPair(2, 64);
         CHECK_OR_RETURN(
-            commands.owner != nullptr && commands.peer != nullptr &&
-            responses.owner != nullptr && responses.peer != nullptr);
+            commands.producer != nullptr && commands.consumer != nullptr &&
+            responses.producer != nullptr && responses.consumer != nullptr);
         nucleus::android::gfxstream::GuestRingStream stream(
-            commands.owner,
-            responses.peer,
+            commands.producer,
+            responses.consumer,
             false,
             128);
 
         CHECK_OR_RETURN(
-            nucleus_android_shared_ring_close(responses.owner) == 0);
+            nucleus_android_shared_ring_producer_close(
+                responses.producer) == 0);
         std::uint8_t response = 0;
         errno = 0;
         CHECK_OR_RETURN(
@@ -438,7 +521,8 @@ extern "C" int nucleus_android_test_ring_peer_closure(void) {
         CHECK_OR_RETURN(errno == EPIPE);
 
         CHECK_OR_RETURN(
-            nucleus_android_shared_ring_close(commands.peer) == 0);
+            nucleus_android_shared_ring_consumer_close(
+                commands.consumer) == 0);
         const std::uint8_t command = 1;
         errno = 0;
         CHECK_OR_RETURN(
@@ -449,15 +533,16 @@ extern "C" int nucleus_android_test_ring_peer_closure(void) {
     RingPair commands = makeRingPair(2, 64);
     RingPair responses = makeRingPair(2, 64);
     CHECK_OR_RETURN(
-        commands.owner != nullptr && commands.peer != nullptr &&
-        responses.owner != nullptr && responses.peer != nullptr);
+        commands.producer != nullptr && commands.consumer != nullptr &&
+        responses.producer != nullptr && responses.consumer != nullptr);
     auto channel = std::make_shared<FakeRenderChannel>();
     nucleus::android::gfxstream::HostRingChannelPump pump(
-        commands.peer,
-        responses.owner,
+        commands.consumer,
+        responses.producer,
         channel);
     CHECK_OR_RETURN(
-        nucleus_android_shared_ring_close(commands.owner) == 0);
+        nucleus_android_shared_ring_producer_close(
+            commands.producer) == 0);
     CHECK_OR_RETURN(
         pump.pumpOnce() ==
         nucleus::android::gfxstream::HostRingPumpResult::peerClosed);

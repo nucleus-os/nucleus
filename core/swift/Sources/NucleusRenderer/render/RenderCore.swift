@@ -60,6 +60,7 @@ public final class RenderCore {
 
     var context: nucleus.skia.GraphiteContext
     var frameDriver: FrameDriver?
+    lazy var frameResourceResolver = RenderCoreFrameResourceResolver(owner: self)
 
     // Per-output presentation geometry (the agnostic `RenderTarget` the FramePlan
     // walk is parameterized by), keyed by output id. The backend registers each

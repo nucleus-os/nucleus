@@ -46,7 +46,6 @@ import Testing
 
     let decoded = try JSONDecoder().decode(
         RunManifest.self, from: JSONEncoder().encode(manifest))
-    #expect(decoded.schema == RunManifest.schemaVersion)
     #expect(decoded.runID == runID)
     #expect(decoded.command == manifest.command)
     #expect(decoded.startedAt == manifest.startedAt)

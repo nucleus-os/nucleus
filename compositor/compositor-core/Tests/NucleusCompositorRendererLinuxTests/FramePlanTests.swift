@@ -84,6 +84,8 @@ import NucleusRenderModel
             dst: rect, src: rect, alpha: 1, opaqueRect: rect))
         plan.cullOccludedOps()
         #expect(plan.ops.count == 1)
+        #expect(plan.resourceSummary.clientSurfaceIDs == [2])
+        #expect(plan.resourceSummary.textureReferences.map(\.handle.raw) == [2])
         if case .textureQuad(let quad) = plan.ops[0] {
             #expect(quad.layerId == 2)
         } else { #expect(Bool(false)) }
@@ -120,6 +122,8 @@ import NucleusRenderModel
         #expect(plan.ops.isEmpty && plan.frameCallbacks.isEmpty, "reset-clears")
         #expect(plan.directScanout == nil && plan.frame.outputId == 7 && plan.frame.planSerial == 11, "reset-identity")
         #expect(plan.counters == PlanCounters(), "reset-counters")
+        #expect(plan.resourceSummary.textureReferences.isEmpty)
+        #expect(plan.resourceSummary.clientSurfaceIDs.isEmpty)
     }
 
     @Test func frameCallbacks() {

@@ -31,12 +31,12 @@ struct nucleus_android_gfxstream_host_renderer {
 };
 
 struct nucleus_android_gfxstream_host_connection {
-    std::unique_ptr<nucleus_android_shared_ring, decltype(
-        &nucleus_android_shared_ring_destroy)> commands{
-            nullptr, nucleus_android_shared_ring_destroy};
-    std::unique_ptr<nucleus_android_shared_ring, decltype(
-        &nucleus_android_shared_ring_destroy)> responses{
-            nullptr, nucleus_android_shared_ring_destroy};
+    std::unique_ptr<nucleus_android_shared_ring_consumer, decltype(
+        &nucleus_android_shared_ring_consumer_destroy)> commandConsumer{
+            nullptr, nucleus_android_shared_ring_consumer_destroy};
+    std::unique_ptr<nucleus_android_shared_ring_producer, decltype(
+        &nucleus_android_shared_ring_producer_destroy)> responseProducer{
+            nullptr, nucleus_android_shared_ring_producer_destroy};
     gfxstream::RenderChannelPtr channel;
     std::unique_ptr<nucleus::android::gfxstream::HostRingChannelPump> pump;
     int rendererNotificationFd = -1;
@@ -304,21 +304,29 @@ nucleus_android_gfxstream_host_connection_create(
         std::make_unique<nucleus_android_gfxstream_host_connection>();
     connection->parentRenderer = renderer;
     connection->contextId = contextId;
-    connection->commands.reset(nucleus_android_shared_ring_attach(
-        descriptors.command_memory_fd,
-        descriptors.command_data_notification_fd,
-        descriptors.command_space_notification_fd));
-    if (!connection->commands) {
+    connection->commandConsumer.reset(
+        nucleus_android_shared_ring_consumer_attach({
+            .memory_fd = descriptors.command_memory_fd,
+            .data_notification_fd =
+                descriptors.command_data_notification_fd,
+            .space_notification_fd =
+                descriptors.command_space_notification_fd,
+        }));
+    if (!connection->commandConsumer) {
         close(descriptors.response_memory_fd);
         close(descriptors.response_data_notification_fd);
         close(descriptors.response_space_notification_fd);
         return nullptr;
     }
-    connection->responses.reset(nucleus_android_shared_ring_attach(
-        descriptors.response_memory_fd,
-        descriptors.response_data_notification_fd,
-        descriptors.response_space_notification_fd));
-    if (!connection->responses) {
+    connection->responseProducer.reset(
+        nucleus_android_shared_ring_producer_attach({
+            .memory_fd = descriptors.response_memory_fd,
+            .data_notification_fd =
+                descriptors.response_data_notification_fd,
+            .space_notification_fd =
+                descriptors.response_space_notification_fd,
+        }));
+    if (!connection->responseProducer) {
         return nullptr;
     }
     retainProcessResources(connection->parentRenderer, contextId);
@@ -349,8 +357,8 @@ nucleus_android_gfxstream_host_connection_create(
         gfxstream::RenderChannel::State::CanRead);
     connection->pump =
         std::make_unique<nucleus::android::gfxstream::HostRingChannelPump>(
-            connection->commands.get(),
-            connection->responses.get(),
+            connection->commandConsumer.get(),
+            connection->responseProducer.get(),
             connection->channel);
     return connection.release();
 }
@@ -360,10 +368,10 @@ extern "C" void nucleus_android_gfxstream_host_connection_destroy(
     if (!connection) {
         return;
     }
-    (void)nucleus_android_shared_ring_close(
-        connection->commands.get());
-    (void)nucleus_android_shared_ring_close(
-        connection->responses.get());
+    (void)nucleus_android_shared_ring_consumer_close(
+        connection->commandConsumer.get());
+    (void)nucleus_android_shared_ring_producer_close(
+        connection->responseProducer.get());
     if (connection->channel) {
         connection->channel->setEventCallback(
             [](gfxstream::RenderChannel::State) {});
@@ -433,6 +441,28 @@ nucleus_android_gfxstream_host_connection_response_space_notification_fd(
     return connection && connection->pump
                ? connection->pump->responseSpaceNotificationFD()
                : -1;
+}
+
+extern "C" int
+nucleus_android_gfxstream_host_connection_drain_command_notification(
+    nucleus_android_gfxstream_host_connection *connection) {
+    if (!connection || !connection->commandConsumer) {
+        errno = EINVAL;
+        return -1;
+    }
+    return nucleus_android_shared_ring_consumer_drain_data_notification(
+        connection->commandConsumer.get());
+}
+
+extern "C" int
+nucleus_android_gfxstream_host_connection_drain_response_space_notification(
+    nucleus_android_gfxstream_host_connection *connection) {
+    if (!connection || !connection->responseProducer) {
+        errno = EINVAL;
+        return -1;
+    }
+    return nucleus_android_shared_ring_producer_drain_space_notification(
+        connection->responseProducer.get());
 }
 
 extern "C" int

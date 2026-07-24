@@ -112,7 +112,7 @@ un-share; it was orphaned, not shared.)
 ### Phase 3 — One Wayland generator with client/server modes *(landed)*
 
 `SwiftWaylandGen` is an executable product invoked by the ordered
-`tools/collider generate wayland` task. The local
+`collider generate wayland` task. The local
 `NucleusCompositorWaylandGen` / `NucleusShellWaylandGen` twins are deleted. No
 compositor↔shell coupling remains in generation.
 Build- and run-verified (the tool emits the correct server vtable-typedef / client-proxy

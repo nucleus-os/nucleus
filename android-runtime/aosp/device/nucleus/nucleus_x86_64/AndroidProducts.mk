@@ -18,4 +18,4 @@ PRODUCT_MAKEFILES := \
     nucleus_x86_64:$(LOCAL_DIR)/nucleus_x86_64.mk
 
 COMMON_LUNCH_CHOICES := \
-    nucleus_x86_64-trunk_staging-userdebug
+    nucleus_x86_64-cp2a-userdebug

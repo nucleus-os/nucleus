@@ -9,6 +9,42 @@ struct RendererTestWakeSink: AsyncRenderWakeSink {
     nonisolated func signalRenderWork() {}
 }
 
+@MainActor
+final class TestFrameResourceResolver: FrameResourceResolver {
+    var paintContents: [PaintContentHandle: PaintContentStore.Content] = [:]
+    var paintImages: [UInt64: nucleus.skia.Image] = [:]
+    var textures: [PlanTextureReference: nucleus.skia.Image] = [:]
+    var paintImageCalls: [UInt64] = []
+    var textureCalls: [PlanTextureReference] = []
+
+    func acquireWaitSemaphore(
+        forClientSurfaceID surfaceID: UInt64
+    ) -> VkSemaphore? {
+        nil
+    }
+
+    func paintContent(
+        for handle: PaintContentHandle
+    ) -> PaintContentStore.Content? {
+        paintContents[handle]
+    }
+
+    func paintImage(
+        for handle: UInt64,
+        outputID: UInt64
+    ) -> nucleus.skia.Image? {
+        paintImageCalls.append(handle)
+        return paintImages[handle]
+    }
+
+    func texture(
+        for reference: PlanTextureReference
+    ) -> nucleus.skia.Image? {
+        textureCalls.append(reference)
+        return textures[reference]
+    }
+}
+
 // predicate (hardware-independent) + the end-to-end top-level frame — walk →
 // pre-resolve → composite → backdrop → present → submit — over a real Graphite
 // context (best-effort GPU, asserts nothing hardware-conditional).
@@ -95,7 +131,15 @@ struct RendererTestWakeSink: AsyncRenderWakeSink {
             role: .paint, texture: TextureHandle(raw: 99),
             dst: PlanRect(x: 0, y: 0, w: 10, h: 10),
             src: PlanRect(x: 0, y: 0, w: 10, h: 10), alpha: 1))
-        #expect(FrameDriver.referencedClientSurfaceIDs(plan) == [41])
+        plan.appendTextureQuad(TextureQuad(
+            role: .content, texture: TextureHandle(raw: 7),
+            dst: PlanRect(x: 0, y: 0, w: 10, h: 10),
+            src: PlanRect(x: 0, y: 0, w: 10, h: 10), alpha: 1))
+        plan.appendTextureQuad(TextureQuad(
+            role: .content, texture: TextureHandle(raw: 41),
+            dst: PlanRect(x: 0, y: 0, w: 10, h: 10),
+            src: PlanRect(x: 0, y: 0, w: 10, h: 10), alpha: 1))
+        #expect(plan.resourceSummary.clientSurfaceIDs == [41, 7])
     }
 
     @Test func textureResolutionKeepsEqualRawHandlesDistinctByRole() {
@@ -109,7 +153,7 @@ struct RendererTestWakeSink: AsyncRenderWakeSink {
             dst: PlanRect(x: 0, y: 0, w: 10, h: 10),
             src: PlanRect(x: 0, y: 0, w: 10, h: 10), alpha: 1))
 
-        let references = FrameDriver.referencedTextures(plan)
+        let references = plan.resourceSummary.textureReferences
         #expect(references.count == 2)
         #expect(Set(references) == [
             PlanTextureReference(
@@ -119,18 +163,103 @@ struct RendererTestWakeSink: AsyncRenderWakeSink {
         ])
     }
 
+    @Test @MainActor
+    func missingTextureIsResolvedOncePerFrame() {
+        let plan = FramePlan()
+        let reference = PlanTextureReference(
+            role: .content,
+            handle: TextureHandle(raw: 7))
+        for layerID in 1...3 {
+            plan.appendTextureQuad(TextureQuad(
+                layerId: UInt64(layerID),
+                role: reference.role,
+                texture: reference.handle,
+                dst: PlanRect(x: 0, y: 0, w: 10, h: 10),
+                src: PlanRect(x: 0, y: 0, w: 10, h: 10),
+                alpha: 1))
+        }
+        let resolver = TestFrameResourceResolver()
+        var resolved: [PlanTextureReference: nucleus.skia.Image] = [:]
+
+        FrameDriver.resolveGenericTextures(
+            summary: plan.resourceSummary,
+            resolver: resolver,
+            into: &resolved)
+
+        #expect(resolver.textureCalls == [reference])
+        #expect(resolved.isEmpty)
+    }
+
+    @Test @MainActor
+    func missingPaintImageIsResolvedOnceAcrossPaintRequests() {
+        let resolver = TestFrameResourceResolver()
+        var attempted: Set<UInt64> = []
+        var resolved: [UInt64: nucleus.skia.Image] = [:]
+
+        _ = FrameDriver.resolvePaintImages(
+            [88, 99],
+            outputID: 1,
+            resolver: resolver,
+            attempted: &attempted,
+            resolved: &resolved)
+        _ = FrameDriver.resolvePaintImages(
+            [88],
+            outputID: 1,
+            resolver: resolver,
+            attempted: &attempted,
+            resolved: &resolved)
+
+        #expect(resolver.paintImageCalls == [88, 99])
+        #expect(resolved.isEmpty)
+    }
+
+    @Test
+    func backdropDamageUsesTheFinalResourceSummary() {
+        let old = LayerFrameSnapshot(
+            rect: PhysicalRect(x: 45, y: 45, width: 2, height: 2),
+            visualSignature: 1,
+            structural: false)
+        let changed = LayerFrameSnapshot(
+            rect: old.rect,
+            visualSignature: 2,
+            structural: false)
+        let plan = FramePlan()
+        plan.recordLayerSnapshot(1, changed)
+        plan.appendBackdropExecSpec(ExecSpec(
+            layerId: 2,
+            groupId: 2,
+            region: PlanRect(x: 40, y: 40, w: 20, h: 20),
+            shape: .rect((0, 0, 20, 20)),
+            mask: .none))
+
+        let damage = FrameDriver.planFrameDamage(
+            plan: plan,
+            previous: [1: old],
+            forceFull: false,
+            width: 100,
+            height: 100)
+
+        #expect(damage.bounds == PhysicalRect(
+            x: 40,
+            y: 40,
+            width: 20,
+            height: 20))
+    }
+
     static func layer(_ id: UInt64, kind: LayerKind = .container,
-                      x: Float, y: Float, w: Float, h: Float) -> Layer {
-        var l = Layer(id: id, kind: kind)
-        l.model.properties.position = Point2D(x: x, y: y)
-        l.model.properties.bounds = Bounds(w: w, h: h)
-        l.model.properties.anchorPoint = Point2D(x: 0, y: 0)
-        return l
+                      x: Float, y: Float, w: Float, h: Float) -> LayerCreated {
+        LayerCreated(
+            nodeId: id,
+            kind: kind,
+            position: Point2D(x: x, y: y),
+            anchorPoint: Point2D(x: 0, y: 0),
+            bounds: Bounds(w: w, h: h))
     }
 
     // Best-effort GPU: end-to-end frame. Hardware-gated, so it asserts nothing
     // hardware-conditional.
-    @Test(.disabled("requires a live GPU/Vulkan device")) func endToEndFrameBestEffort() {
+    @Test(.disabled("requires a live GPU/Vulkan device")) @MainActor
+    func endToEndFrameBestEffort() {
         // Build a tree: a backdrop root with an external-content child + a paint
         // content layer.
         var tree = LayerTree()
@@ -138,15 +267,24 @@ struct RendererTestWakeSink: AsyncRenderWakeSink {
         backdropRoot.backdropAttachment = BackdropAttachment(
             materialRole: .default, blendingMode: .behindWindow, state: .active,
             appearance: .auto, emphasized: false, mask: .none, shape: .rect((0, 0, 200, 200)))
-        backdropRoot.children = [2]
-        tree.insertLayer(backdropRoot)
         var contentChild = Self.layer(2, x: 10, y: 10, w: 100, h: 100)
-        contentChild.presentation.content = .external(IOSurfaceID(raw: 5))
-        tree.insertLayer(contentChild)
+        contentChild.initialContent = .external(IOSurfaceID(raw: 5))
         var painted = Self.layer(3, x: 120, y: 20, w: 80, h: 80)
-        painted.presentation.content = .paint(PaintContentHandle(raw: 9))
-        tree.insertLayer(painted)
-        tree.contextRoots[compositorContextId] = [1, 3]
+        painted.initialContent = .paint(PaintContentHandle(raw: 9))
+        var transaction = Transaction(contextId: compositorContextId)
+        transaction.created = [backdropRoot, contentChild, painted]
+        transaction.inserted = [
+            LayerInserted(nodeId: 1, parentId: 0, index: 0),
+            LayerInserted(nodeId: 2, parentId: 1, index: 0),
+            LayerInserted(nodeId: 3, parentId: 0, index: 1),
+        ]
+        guard case .success = TransactionApplier.apply(
+            transaction,
+            to: &tree)
+        else {
+            Issue.record("end-to-end frame tree setup was rejected")
+            return
+        }
 
         let target = RenderTarget(
             outputId: 1,
@@ -198,50 +336,50 @@ struct RendererTestWakeSink: AsyncRenderWakeSink {
 
             let scanout = driver.recorder.makeOffscreenSurface(400, 400)
 
+            let resolver = TestFrameResourceResolver()
+            resolver.paintContents[PaintContentHandle(raw: 9)] =
+                PaintContentStore.Content(commands: [
+                    PaintDrawCommand(
+                        kind: .rect, x: 0, y: 0, w: 80, h: 80,
+                        color: (0.8, 0.1, 0.1, 1)),
+                    PaintDrawCommand(
+                        kind: .image, x: 8, y: 8, w: 16, h: 16,
+                        imageHandle: 88),
+                ], width: 80, height: 80)
+            resolver.paintImages[88] = source
+            resolver.textures[PlanTextureReference(
+                role: .content,
+                handle: TextureHandle(raw: 5))] = source
+
             var resolveCalls = 0
+            let firstRequest = FrameDriver.FrameRenderRequest(
+                tree: tree,
+                target: target,
+                frame: FrameInfo(outputId: 1),
+                scanout: scanout,
+                submissionMode: .offscreen)
             let result = driver.renderFrame(
-                tree: tree, target: target, frame: FrameInfo(outputId: 1), scanout: scanout,
-                submissionMode: .offscreen,
-                resolvePaintContent: { handle in
-                    handle.raw == 9
-                        ? PaintContentStore.Content(commands: [
-                            PaintDrawCommand(
-                                kind: .rect, x: 0, y: 0, w: 80, h: 80,
-                                color: (0.8, 0.1, 0.1, 1)),
-                            PaintDrawCommand(
-                                kind: .image, x: 8, y: 8, w: 16, h: 16,
-                                imageHandle: 88),
-                        ], width: 80, height: 80)
-                        : nil
-                },
-                resolvePaintImage: { handle in
-                    handle == 88 ? source : nil
-                }
-            ) { _ in
-                resolveCalls += 1
-                return source
-            }
+                firstRequest,
+                resolver: resolver)
+            resolveCalls += resolver.textureCalls.count
             guard result != nil else { driver.shutdown(); return }
             _ = driver.producer.drainStats()
 
             // A second frame reuses the persistent accumulator (no re-create).
+            resolver.textureCalls.removeAll()
+            let secondRequest = FrameDriver.FrameRenderRequest(
+                tree: tree,
+                target: target,
+                frame: FrameInfo(outputId: 1),
+                scanout: scanout,
+                submissionMode: .offscreen)
             _ = driver.renderFrame(
-                tree: tree, target: target, frame: FrameInfo(outputId: 1), scanout: scanout,
-                submissionMode: .offscreen,
-                resolvePaintContent: { _ in
-                    PaintContentStore.Content(commands: [
-                        PaintDrawCommand(
-                            kind: .rect, x: 0, y: 0, w: 80, h: 80,
-                            color: (0.8, 0.1, 0.1, 1)),
-                        PaintDrawCommand(kind: .image, x: 8, y: 8, w: 16, h: 16, imageHandle: 88),
-                    ], width: 80, height: 80)
-                },
-                resolvePaintImage: { handle in
-                    handle == 88 ? source : nil
-                }
-            ) { _ in source }
+                secondRequest,
+                resolver: resolver)
+            resolveCalls += resolver.textureCalls.count
             _ = driver.producer.drainStats()
 
+            #expect(resolveCalls == 2)
             driver.shutdown()
         }
     }

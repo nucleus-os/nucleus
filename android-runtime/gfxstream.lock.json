@@ -1,5 +1,4 @@
 {
-  "schemaVersion": 1,
   "gfxstream": {
     "upstreamURL": "https://android.googlesource.com/platform/hardware/google/gfxstream",
     "tag": "android-17.0.0_r1",

@@ -43,6 +43,7 @@ let package = Package(
                 .product(name: "CoreColliderRecipe", package: "Nucleus"),
                 .product(name: "LinuxColliderRecipe", package: "NucleusLinuxPlatform"),
                 .product(name: "AndroidRuntimeColliderRecipe", package: "android-runtime"),
+                .product(name: "NucleusAndroidContainerContract", package: "android-runtime"),
                 .product(name: "ReactNativeColliderRecipe", package: "NucleusReactNative"),
                 .product(name: "CompositorColliderRecipe", package: "compositor-core"),
                 .product(name: "CompositorAppColliderRecipe", package: "NucleusCompositorApp"),

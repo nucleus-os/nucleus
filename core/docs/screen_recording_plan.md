@@ -283,7 +283,7 @@ Strictly sequential — each phase lands and is verified in isolation before the
 The widely-deployed adapter lands first because it unblocks the largest set of tools (grim, slurp+grim, current wf-recorder, kooha) with the smallest additional work — the engine already does everything; this adapter is just request handling + buffer import.
 
 - Vendor `wlr-screencopy-unstable-v1.xml` into `third-party/protocols/` (not in upstream wayland-protocols)
-- Vendor the XML under `swift-wayland/Protocols` and run `tools/collider generate wayland`
+- Vendor the XML under `swift-wayland/Protocols` and run `collider generate wayland`
 - `src/compositor/wayland/wlr_screencopy.zig` — manager + frame objects; SHM and DMA-BUF buffer import; drives `SCStream` via engine
 - Register globals in `WaylandServer.initProtocolGlobals()`
 - Verification: `grim primary.png` produces a correct screenshot; `wf-recorder -o primary.mp4` records primary output; SHM and DMA-BUF paths both work
@@ -292,7 +292,7 @@ The widely-deployed adapter lands first because it unblocks the largest set of t
 
 The modern adapter, landing alongside the legacy one so newer client builds get the standardized path.
 
-- Vendor `ext-image-capture-source-v1`, `ext-output-image-capture-source-v1`, and `ext-image-copy-capture-v1` under `swift-wayland/Protocols`, then run `tools/collider generate wayland` (window-side protocols remain in phase 7)
+- Vendor `ext-image-capture-source-v1`, `ext-output-image-capture-source-v1`, and `ext-image-copy-capture-v1` under `swift-wayland/Protocols`, then run `collider generate wayland` (window-side protocols remain in phase 7)
 - `src/compositor/wayland/image_capture_source.zig` — base capture source
 - `src/compositor/wayland/output_image_capture_source.zig` — `wl_output` → source
 - `src/compositor/wayland/image_copy_capture.zig` — manager + session + frame objects; negotiates buffer formats, imports client buffers (SHM + DMA-BUF), drives `SCStream` via engine
@@ -304,7 +304,7 @@ The modern adapter, landing alongside the legacy one so newer client builds get 
 Small follow-up adapter for GPU-zero-copy OBS configurations and `gpu-screen-recorder`.
 
 - Vendor `wlr-export-dmabuf-unstable-v1.xml` into `third-party/protocols/`
-- Vendor the XML under `swift-wayland/Protocols` and run `tools/collider generate wayland`
+- Vendor the XML under `swift-wayland/Protocols` and run `collider generate wayland`
 - `src/compositor/wayland/wlr_export_dmabuf.zig` — manager + frame objects; exports `SCStream` destination texture's DMA-BUF FD per frame
 - Verification: OBS configured for "Wayland (DMA-BUF)" capture source records primary output zero-copy; `gpu-screen-recorder -w screen` records correctly
 

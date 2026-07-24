@@ -220,7 +220,7 @@ For each supported host, perform these steps in order:
 8. Build both dynamic-stdlib and static-stdlib consumer packages where both
    contracts remain supported by the SDK.
 9. Build `nucleus/platform-android` using the static Swift runtime contract.
-10. Run `tools/collider android verify` against the resulting Android library.
+10. Run `collider android verify` against the resulting Android library.
 11. Assemble the Android AAR and inspect its ABI, JNI exports, page alignment,
     native dependencies, Java classes, and metadata.
 12. Upload the validated artifact bundle, manifest, and logs as intermediate

@@ -102,7 +102,6 @@ struct ChromiumCommand {
                 "the Chromium/CEF patch stack is empty")
         }
         let value: [String: Any] = [
-            "schema": 1,
             "cef_branch": ChromiumColliderRecipe.cefBranch,
             "cef_checkout": ChromiumColliderRecipe.cefCheckout,
             "chromium_version": ChromiumColliderRecipe.chromiumVersion,

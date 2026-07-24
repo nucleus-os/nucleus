@@ -67,7 +67,8 @@ class ReactRuntimeHostFacade final {
   // The JS→native command seam (counterpart to emitDeviceEvent). Installs a C callback the
   // `NucleusHostCommand` TurboModule forwards `invoke(command, argsJson)` to; the embedding
   // host routes it to its native services. A plain C callback + opaque context so a Swift
-  // closure can bridge without a C++ vtable. `callback` runs on the JS thread.
+  // closure can bridge without a C++ vtable. `callback` runs on the JS thread; the Swift
+  // trampoline copies its inputs and schedules the typed handler on MainActor.
   using HostCommandCallback = void (*)(void *ctx, const char *command, const char *argsJson);
   using HostCommandContextRelease = void (*)(void *ctx);
   // Takes ownership of `context`. The runtime calls `release` after no invocation can

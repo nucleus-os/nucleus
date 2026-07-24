@@ -138,9 +138,14 @@ public final class Host {
 
     /// Install the JS→native command handler (the counterpart to `emitDeviceEvent`). JS
     /// invokes `NucleusHostCommand.invoke(command, argsJson)`; the runtime forwards it to
-    /// `handler(command, argsJson)` on the JS thread. An embedding host (the shell) routes
-    /// these to its native services (e.g. taskbar activate/close → the Wayland client).
-    public func setCommandHandler(_ handler: @escaping (String, String) -> Void) throws {
+    /// `handler(command, argsJson)` asynchronously on `MainActor`. An embedding
+    /// host routes these to its native services.
+    public func setCommandHandler(
+        _ handler: @escaping @MainActor @Sendable (
+            String,
+            String
+        ) -> Void
+    ) throws {
         let runtimeHost = try requireHost()
         try runtimeHost.setCommandHandler(handler)
     }

@@ -22,8 +22,8 @@ enum class HostRingPumpResult : std::uint8_t {
 class HostRingChannelPump final {
 public:
     HostRingChannelPump(
-        nucleus_android_shared_ring *commands,
-        nucleus_android_shared_ring *responses,
+        nucleus_android_shared_ring_consumer *commandConsumer,
+        nucleus_android_shared_ring_producer *responseProducer,
         ::gfxstream::RenderChannelPtr channel);
 
     HostRingPumpResult pumpOnce();
@@ -37,8 +37,8 @@ private:
     HostRingPumpResult flushPendingCommand(bool *madeProgress);
     HostRingPumpResult flushPendingResponse(bool *madeProgress);
 
-    nucleus_android_shared_ring *mCommands;
-    nucleus_android_shared_ring *mResponses;
+    nucleus_android_shared_ring_consumer *mCommandConsumer;
+    nucleus_android_shared_ring_producer *mResponseProducer;
     ::gfxstream::RenderChannelPtr mChannel;
     std::vector<char> mCommandBuffer;
     std::vector<char> mResponseBuffer;

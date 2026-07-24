@@ -27,5 +27,5 @@ The generated `Sources/Vulkan/Vulkan.swift` is committed. After bumping
 the vendored headers (`Sources/VulkanC/vulkan` + `third-party/vk.xml`):
 
 ```sh
-tools/collider generate vulkan
+collider generate vulkan
 ```

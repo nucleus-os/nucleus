@@ -1,0 +1,162 @@
+diff --git a/bpf/loader/NetBpfLoad.cpp b/bpf/loader/NetBpfLoad.cpp
+index 7ba3247dcc..8329e9f8bf 100644
+--- a/bpf/loader/NetBpfLoad.cpp
++++ b/bpf/loader/NetBpfLoad.cpp
+@@ -18,6 +18,7 @@
+ 
+ #include <algorithm>
+ #include <arpa/inet.h>
++#include <bpf/bpf.h>
+ #include <bpf/btf.h>
+ #include <bpf/libbpf.h>
+ #include <dirent.h>
+@@ -117,6 +118,29 @@ static_assert(!minSupportedKernelVer, "NetBpfLoad must not assume min kver");
+ 
+ static unsigned int page_size = static_cast<unsigned int>(getpagesize());
+ 
++static bool isNucleusContainer() {
++    static const bool value = getenv("NUCLEUS_ANDROID_CONTAINER") != nullptr;
++    return value;
++}
++
++static unique_fd nucleusBpfToken;
++
++static bool initializeNucleusBpfToken() {
++    if (!isNucleusContainer()) return true;
++    unique_fd bpffs(open("/sys/fs/bpf", O_DIRECTORY | O_RDONLY | O_CLOEXEC));
++    if (!bpffs.ok()) {
++        ALOGE("Failed to open delegated Nucleus bpffs: %s", strerror(errno));
++        return false;
++    }
++    nucleusBpfToken.reset(bpf_token_create(bpffs, nullptr));
++    if (!nucleusBpfToken.ok()) {
++        ALOGE("Failed to create Nucleus BPF token: %s", strerror(errno));
++        return false;
++    }
++    ALOGI("Using the instance-private Nucleus BPF delegation");
++    return true;
++}
++
+ typedef struct {
+     const char* program_name;
+     vector<char> data;
+@@ -561,6 +585,24 @@ static int sanitizeBtf(struct btf *btf) {
+     return 0;
+ }
+ 
++static int loadBtfIntoKernel(struct btf *btf) {
++    if (!isNucleusContainer()) return btf__load_into_kernel(btf);
++
++    __u32 size = 0;
++    const void* raw = btf__raw_data(btf, &size);
++    if (!raw) return -ENOMEM;
++
++    LIBBPF_OPTS(bpf_btf_load_opts, options,
++        .btf_flags = BPF_F_TOKEN_FD,
++        .token_fd = static_cast<__u32>(nucleusBpfToken.get()),
++    );
++    int fd = bpf_btf_load(raw, size, &options);
++    if (fd < 0) return -errno;
++
++    btf__set_fd(btf, fd);
++    return 0;
++}
++
+ static int loadBtf(const ElfObject &elfObj, struct btf *btf) {
+     int ret;
+     for (unsigned int i = 1; i < btf__type_cnt(btf); ++i) {
+@@ -577,7 +619,7 @@ static int loadBtf(const ElfObject &elfObj, struct btf *btf) {
+         sanitizeBtf(btf);
+     }
+ 
+-    ret = btf__load_into_kernel(btf);
++    ret = loadBtfIntoKernel(btf);
+     if (ret) {
+         if (errno != EINVAL) {
+             ALOGE("btf__load_into_kernel failed, errno: %d", errno);
+@@ -594,7 +636,7 @@ static int loadBtf(const ElfObject &elfObj, struct btf *btf) {
+                 bt->info = (BTF_INFO_KIND(bt->info)) << 24;
+             }
+         }
+-        ret = btf__load_into_kernel(btf);
++        ret = loadBtfIntoKernel(btf);
+         if (ret) {
+             ALOGE("btf__load_into_kernel retry failed, errno: %d", errno);
+             return ret;
+@@ -852,6 +894,10 @@ static int createMaps(const ElfObject& elfObj, const span<const struct bpf_map_d
+             };
+             if (isAtLeastKernelVersion(4, 15))
+                 strlcpy(req.map_name, md[i].name(), sizeof(req.map_name));
++            if (isNucleusContainer()) {
++                req.map_flags |= BPF_F_TOKEN_FD;
++                req.map_token_fd = nucleusBpfToken.get();
++            }
+ 
+             bool haveBtf = btf && isBtfSupported(type);
+             if (haveBtf) {
+@@ -1057,6 +1103,10 @@ static int loadCodeSections(const ElfObject& elfObj, vector<codeSection>& cs,
+             };
+             if (isAtLeastKernelVersion(4, 15))
+                 strlcpy(req.prog_name, cs[i].prog_def->name(), sizeof(req.prog_name));
++            if (isNucleusContainer()) {
++                req.prog_flags |= BPF_F_TOKEN_FD;
++                req.prog_token_fd = nucleusBpfToken.get();
++            }
+ 
+             // use a copy, so that bpf() system call cannot scribble over our req,
+             // which we want to mutate (to enable logging) and reuse on failure
+@@ -1254,7 +1304,7 @@ static int loadProgByLibbpf(const char* const elfPath) {
+     int ret;
+ 
+     LIBBPF_OPTS(bpf_object_open_opts, opts,
+-        .bpf_token_path = "",
++        .bpf_token_path = isNucleusContainer() ? "/sys/fs/bpf" : "",
+     );
+     struct bpf_object* obj = bpf_object__open_file(elfPath, &opts);
+     if (!obj) return -1;
+@@ -1527,6 +1577,8 @@ static int doLoad(char** argv, char * const envp[]) {
+           libbpf_major_version(), libbpf_minor_version(), getuid(), has_platform_bpfloader_rc,
+           has_platform_netbpfload_rc, isUser, isUserdebug, isEng);
+ 
++    if (!initializeNucleusBpfToken()) return 126;
++
+     if (!has_platform_bpfloader_rc && !has_platform_netbpfload_rc) {
+         ALOGE("Unable to find platform's bpfloader & netbpfload init scripts.");
+         return 1;
+@@ -1731,7 +1783,7 @@ static int doLoad(char** argv, char * const envp[]) {
+         return 22;
+     }
+ 
+-    if (runningAsRoot) {
++    if (runningAsRoot && !isNucleusContainer()) {
+         // Note: writing this proc file requires being root (always the case on V+)
+ 
+         // Linux 5.16-rc1 changed the default to 2 (disabled but changeable),
+@@ -1742,7 +1794,7 @@ static int doLoad(char** argv, char * const envp[]) {
+             isAtLeastKernelVersion(5, 13)) return 23;
+     }
+ 
+-    if (isAtLeastU) {
++    if (isAtLeastU && !isNucleusContainer()) {
+         // Note: writing these proc files requires CAP_NET_ADMIN
+         // and sepolicy which is only present on U+,
+         // on Android T and earlier versions they're written from the 'load_bpf_programs'
+@@ -1779,7 +1831,7 @@ static int doLoad(char** argv, char * const envp[]) {
+         if (!createDir("/sys/fs/bpf/loader")) return 31;
+     }
+ 
+-    if (runningAsRoot) {  // implies U QPR3+ and kernel 4.14+
++    if (runningAsRoot && !isNucleusContainer()) {  // implies U QPR3+ and kernel 4.14+
+         // There should not be any programs or maps yet
+         errno = 0;
+         uint32_t progId = bpfGetNextProgId(0);  // expect 0 with errno == ENOENT
+@@ -1793,7 +1845,8 @@ static int doLoad(char** argv, char * const envp[]) {
+             ALOGE("bpfGetNextMapId(zero) returned %u (errno %d)", mapId, errno);
+             return 33;
+         }
+-    } else if (isAtLeastKernelVersion(4, 14)) {  // implies S through U QPR2
++    } else if (!runningAsRoot &&
++               isAtLeastKernelVersion(4, 14)) {  // implies S through U QPR2
+         // bpfGetNext{Prog,Map}Id require 4.14+
+         // furthermore since we're not running as root, we're not the initial
+         // platform bpfloader, so there may already be some maps & programs.

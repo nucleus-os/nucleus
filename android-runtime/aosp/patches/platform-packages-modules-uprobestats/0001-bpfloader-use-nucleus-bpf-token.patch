@@ -1,0 +1,68 @@
+diff --git a/bpfloader/UprobeStatsBpfLoad.cpp b/bpfloader/UprobeStatsBpfLoad.cpp
+index a46d2d6..77ac575 100644
+--- a/bpfloader/UprobeStatsBpfLoad.cpp
++++ b/bpfloader/UprobeStatsBpfLoad.cpp
+@@ -71,6 +71,30 @@ namespace bpf {
+ 
+ static unsigned int page_size = static_cast<unsigned int>(getpagesize());
+ 
++static bool isNucleusContainer() {
++  static const bool value = getenv("NUCLEUS_ANDROID_CONTAINER") != nullptr;
++  return value;
++}
++
++static unique_fd nucleusBpfToken;
++
++static bool initializeNucleusBpfToken() {
++  if (!isNucleusContainer()) return true;
++  unique_fd bpffs(open("/sys/fs/bpf", O_DIRECTORY | O_RDONLY | O_CLOEXEC));
++  if (!bpffs.ok()) {
++    ALOGE("Failed to open delegated Nucleus bpffs: %s", strerror(errno));
++    return false;
++  }
++  union bpf_attr request = {};
++  request.token_create.bpffs_fd = bpffs;
++  nucleusBpfToken.reset(bpf(BPF_TOKEN_CREATE, request));
++  if (!nucleusBpfToken.ok()) {
++    ALOGE("Failed to create Nucleus BPF token: %s", strerror(errno));
++    return false;
++  }
++  return true;
++}
++
+ static string pathToObjName(const string &path) {
+   // extract everything after the final slash, ie. this is the filename
+   // 'foo@1.o' or 'bar.o'
+@@ -671,6 +695,10 @@ static int createMaps(const char *elfPath, ifstream &elfFile,
+           .map_flags = md[i].map_flags,
+       };
+       strlcpy(req.map_name, mapNames[i].c_str(), sizeof(req.map_name));
++      if (isNucleusContainer()) {
++        req.map_flags |= BPF_F_TOKEN_FD;
++        req.map_token_fd = nucleusBpfToken.get();
++      }
+       fd.reset(bpf(BPF_MAP_CREATE, req));
+       saved_errno = errno;
+       ALOGV("bpf_create_map name %s, ret: %d", mapNames[i].c_str(), fd.get());
+@@ -841,6 +869,10 @@ static int loadCodeSections(const char *elfPath, vector<codeSection> &cs,
+           .log_size = BPF_LOAD_LOG_SZ ? static_cast<__u32>(log_buf.size()) : 0,
+       };
+       strlcpy(req.prog_name, cs[i].name.c_str(), sizeof(req.prog_name));
++      if (isNucleusContainer()) {
++        req.prog_flags |= BPF_F_TOKEN_FD;
++        req.prog_token_fd = nucleusBpfToken.get();
++      }
+       fd.reset(bpf(BPF_PROG_LOAD, req));
+ 
+       if (!fd.ok()) {
+@@ -1071,6 +1103,10 @@ const char *const platformBpfLoader = "/system/bin/bpfloader";
+ 
+ int main(int, char **, char *const envp[]) {
+   initLogging();
++  if (!android::bpf::initializeNucleusBpfToken()) {
++    ALOGE("Nucleus BPF delegation is unavailable");
++    return 2;
++  }
+   load();
+ 
+   const char *args[] = {

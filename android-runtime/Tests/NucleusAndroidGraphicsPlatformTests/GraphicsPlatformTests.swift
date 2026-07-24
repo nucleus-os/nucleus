@@ -1,8 +1,195 @@
 import Glibc
 import Testing
 import NucleusAndroidDrmC
+import NucleusAndroidDrmCTestSupport
 import NucleusAndroidGraphicsContract
 @testable import NucleusAndroidGraphicsPlatform
+
+private struct RawGraphicsTestError: Error, CustomStringConvertible {
+    let description: String
+}
+
+private final class RawGraphicsTestGPU: @unchecked Sendable {
+    let handle: OpaquePointer
+    let format = nucleus_android_drm_format_xrgb8888()
+    let modifier: UInt64
+
+    init(candidate: DrmDeviceCandidate) throws {
+        let rawFormat = nucleus_android_drm_format_xrgb8888()
+        var error = [CChar](repeating: 0, count: 1_024)
+        guard let handle = candidate.renderNode.withCString({ path in
+            nucleus_android_gpu_create(path, &error, error.count)
+        }) else {
+            throw RawGraphicsTestError(description: Self.errorString(error))
+        }
+
+        let modifierCount = nucleus_android_gpu_list_format_modifiers(
+            handle,
+            rawFormat,
+            nil,
+            0)
+        guard modifierCount > 0 else {
+            nucleus_android_gpu_destroy(handle)
+            throw RawGraphicsTestError(description: "GPU exposes no XRGB8888 modifiers")
+        }
+        var modifiers = [nucleus_android_format_modifier_properties](
+            repeating: .init(),
+            count: Int(modifierCount))
+        let returnedCount = modifiers.withUnsafeMutableBufferPointer { storage in
+            nucleus_android_gpu_list_format_modifiers(
+                handle,
+                rawFormat,
+                storage.baseAddress,
+                storage.count)
+        }
+        let selected = modifiers.prefix(max(0, min(Int(returnedCount), modifiers.count)))
+            .first {
+                nucleus_android_gpu_supports_format_modifier(
+                    handle,
+                    rawFormat,
+                    $0.modifier) == 1
+            }
+        guard let selected else {
+            nucleus_android_gpu_destroy(handle)
+            throw RawGraphicsTestError(
+                description: "GPU exposes no renderable XRGB8888 modifier")
+        }
+
+        self.handle = handle
+        modifier = selected.modifier
+    }
+
+    deinit {
+        nucleus_android_gpu_destroy(handle)
+    }
+
+    func diagnostic() throws -> nucleus_android_gpu_diagnostic {
+        var diagnostic = nucleus_android_gpu_diagnostic()
+        guard nucleus_android_gpu_get_diagnostic(handle, &diagnostic) == 0 else {
+            throw RawGraphicsTestError(description: "GPU diagnostic unavailable")
+        }
+        return diagnostic
+    }
+
+    func collect() throws {
+        guard nucleus_android_gpu_collect(handle) == 0 else {
+            throw RawGraphicsTestError(description: "GPU collection failed")
+        }
+    }
+
+    func forceFencesPending(_ enabled: Bool) {
+        nucleus_android_test_gpu_force_fences_pending(handle, enabled ? 1 : 0)
+    }
+
+    func failNextPostSubmitStep() {
+        nucleus_android_test_gpu_fail_next_post_submit(handle)
+    }
+
+    private static func errorString(_ error: [CChar]) -> String {
+        error.withUnsafeBufferPointer { storage in
+            String(cString: storage.baseAddress!)
+        }
+    }
+}
+
+private final class RawGraphicsTestTimeline: @unchecked Sendable {
+    let gpu: RawGraphicsTestGPU
+    let handle: OpaquePointer
+
+    init(gpu: RawGraphicsTestGPU) throws {
+        guard let handle = nucleus_android_syncobj_timeline_create(gpu.handle) else {
+            throw RawGraphicsTestError(description: "syncobj timeline creation failed")
+        }
+        self.gpu = gpu
+        self.handle = handle
+    }
+
+    deinit {
+        nucleus_android_syncobj_timeline_destroy(handle)
+    }
+
+    func signal(_ point: UInt64) -> Bool {
+        nucleus_android_syncobj_timeline_signal(handle, point) == 0
+    }
+
+    func isSignaled(_ point: UInt64) -> Bool {
+        nucleus_android_syncobj_timeline_is_signaled(handle, point) == 1
+    }
+}
+
+private final class RawGraphicsTestBuffer: @unchecked Sendable {
+    let gpu: RawGraphicsTestGPU
+    private var handle: OpaquePointer?
+
+    init(gpu: RawGraphicsTestGPU) throws {
+        var error = [CChar](repeating: 0, count: 1_024)
+        guard let handle = nucleus_android_gpu_buffer_create(
+            gpu.handle,
+            64,
+            64,
+            gpu.format,
+            gpu.modifier,
+            0,
+            &error,
+            error.count)
+        else {
+            throw RawGraphicsTestError(
+                description: error.withUnsafeBufferPointer {
+                    String(cString: $0.baseAddress!)
+                })
+        }
+        self.gpu = gpu
+        self.handle = handle
+    }
+
+    deinit {
+        release()
+    }
+
+    func render(
+        frame: UInt64,
+        acquire: RawGraphicsTestTimeline,
+        acquirePoint: UInt64,
+        release: RawGraphicsTestTimeline? = nil,
+        releasePoint: UInt64 = 0
+    ) throws {
+        guard let handle else {
+            throw RawGraphicsTestError(description: "buffer was already released")
+        }
+        var error = [CChar](repeating: 0, count: 1_024)
+        guard nucleus_android_gpu_buffer_render(
+            handle,
+            frame,
+            acquire.handle,
+            acquirePoint,
+            release?.handle,
+            releasePoint,
+            &error,
+            error.count) == 0
+        else {
+            throw RawGraphicsTestError(
+                description: error.withUnsafeBufferPointer {
+                    String(cString: $0.baseAddress!)
+                })
+        }
+    }
+
+    func release() {
+        guard let handle else { return }
+        self.handle = nil
+        nucleus_android_gpu_buffer_destroy(handle)
+    }
+
+    func lastUseSerial() -> UInt64 {
+        guard let handle else { return 0 }
+        return nucleus_android_test_gpu_buffer_last_use_serial(handle)
+    }
+
+    func hasGeneralLayout() -> Bool {
+        guard let handle else { return false }
+        return nucleus_android_test_gpu_buffer_has_general_layout(handle) == 1
+    }
+}
 
 @Test func drmDiscoveryReturnsStableNodeAndPciIdentity() throws {
     let candidates = try DrmDeviceDiscovery.enumerate()
@@ -144,4 +331,183 @@ import NucleusAndroidGraphicsContract
     #expect(poll(&descriptor, 1, 1_000) == 1)
     #expect(nucleus_android_syncobj_waiter_drain(waiter) == 0)
     #expect(nucleus_android_syncobj_waiter_is_signaled(waiter, 9) == 1)
+}
+
+@Test func neverSubmittedBufferIsReclaimedWhileGPUStaysAlive() throws {
+    guard let candidate = try DrmDeviceDiscovery.enumerate().first else { return }
+    let gpu = try RawGraphicsTestGPU(candidate: candidate)
+    let baseline = try gpu.diagnostic()
+    let buffer = try RawGraphicsTestBuffer(gpu: gpu)
+
+    let allocated = try gpu.diagnostic()
+    #expect(allocated.live_buffer_count == baseline.live_buffer_count + 1)
+    #expect(allocated.retired_buffer_count == baseline.retired_buffer_count)
+
+    buffer.release()
+
+    let reclaimed = try gpu.diagnostic()
+    #expect(reclaimed.live_buffer_count == baseline.live_buffer_count)
+    #expect(reclaimed.retired_buffer_count == baseline.retired_buffer_count)
+    #expect(reclaimed.reclaimed_buffer_count == baseline.reclaimed_buffer_count + 1)
+}
+
+@Test func inFlightBufferIsReclaimedOnlyAfterItsFenceSignals() throws {
+    guard let candidate = try DrmDeviceDiscovery.enumerate().first else { return }
+    let gpu = try RawGraphicsTestGPU(candidate: candidate)
+    let acquire = try RawGraphicsTestTimeline(gpu: gpu)
+    let baseline = try gpu.diagnostic()
+    let buffer = try RawGraphicsTestBuffer(gpu: gpu)
+    gpu.forceFencesPending(true)
+    defer { gpu.forceFencesPending(false) }
+
+    try buffer.render(
+        frame: 1,
+        acquire: acquire,
+        acquirePoint: 40)
+    buffer.release()
+
+    let retired = try gpu.diagnostic()
+    #expect(retired.live_buffer_count == baseline.live_buffer_count + 1)
+    #expect(retired.retired_buffer_count == baseline.retired_buffer_count + 1)
+    #expect(retired.submitted_serial == baseline.submitted_serial + 1)
+    #expect(retired.completed_serial == baseline.completed_serial)
+
+    gpu.forceFencesPending(false)
+    var acquireSignaled = acquire.isSignaled(40)
+    for _ in 0..<2_000 where !acquireSignaled {
+        _ = usleep(100)
+        acquireSignaled = acquire.isSignaled(40)
+    }
+    #expect(acquireSignaled)
+
+    var reclaimed = try gpu.diagnostic()
+    for _ in 0..<2_000 where reclaimed.live_buffer_count != baseline.live_buffer_count {
+        try gpu.collect()
+        _ = usleep(100)
+        reclaimed = try gpu.diagnostic()
+    }
+    #expect(reclaimed.live_buffer_count == baseline.live_buffer_count)
+    #expect(reclaimed.retired_buffer_count == baseline.retired_buffer_count)
+    #expect(reclaimed.reclaimed_buffer_count == baseline.reclaimed_buffer_count + 1)
+    #expect(reclaimed.completed_serial == reclaimed.submitted_serial)
+    #expect(reclaimed.terminal_submission_result == 0)
+}
+
+@Test func postSubmitFailurePreservesSubmittedBufferState() throws {
+    guard let candidate = try DrmDeviceDiscovery.enumerate().first else { return }
+    let gpu = try RawGraphicsTestGPU(candidate: candidate)
+    let acquire = try RawGraphicsTestTimeline(gpu: gpu)
+    let baseline = try gpu.diagnostic()
+    let buffer = try RawGraphicsTestBuffer(gpu: gpu)
+    gpu.forceFencesPending(true)
+    defer { gpu.forceFencesPending(false) }
+    gpu.failNextPostSubmitStep()
+
+    #expect(throws: RawGraphicsTestError.self) {
+        try buffer.render(
+            frame: 1,
+            acquire: acquire,
+            acquirePoint: 1)
+    }
+
+    let submitted = try gpu.diagnostic()
+    #expect(submitted.submitted_serial == baseline.submitted_serial + 1)
+    #expect(submitted.completed_serial == baseline.completed_serial)
+    #expect(buffer.lastUseSerial() == submitted.submitted_serial)
+    #expect(buffer.hasGeneralLayout())
+
+    buffer.release()
+    let retired = try gpu.diagnostic()
+    #expect(retired.live_buffer_count == baseline.live_buffer_count + 1)
+    #expect(retired.retired_buffer_count == baseline.retired_buffer_count + 1)
+
+    gpu.forceFencesPending(false)
+    var reclaimed = try gpu.diagnostic()
+    for _ in 0..<2_000 where reclaimed.live_buffer_count != baseline.live_buffer_count {
+        try gpu.collect()
+        _ = usleep(100)
+        reclaimed = try gpu.diagnostic()
+    }
+    #expect(reclaimed.live_buffer_count == baseline.live_buffer_count)
+    #expect(reclaimed.retired_buffer_count == baseline.retired_buffer_count)
+    #expect(reclaimed.reclaimed_buffer_count == baseline.reclaimed_buffer_count + 1)
+    #expect(reclaimed.completed_serial == reclaimed.submitted_serial)
+}
+
+@Test func repeatedRenderReleaseCyclesReturnLiveBuffersToBaseline() throws {
+    guard let candidate = try DrmDeviceDiscovery.enumerate().first else { return }
+    let gpu = try RawGraphicsTestGPU(candidate: candidate)
+    let acquire = try RawGraphicsTestTimeline(gpu: gpu)
+    let baseline = try gpu.diagnostic()
+
+    for frame in UInt64(1)...32 {
+        let buffer = try RawGraphicsTestBuffer(gpu: gpu)
+        try buffer.render(
+            frame: frame,
+            acquire: acquire,
+            acquirePoint: frame)
+        var signaled = acquire.isSignaled(frame)
+        for _ in 0..<2_000 where !signaled {
+            _ = usleep(100)
+            signaled = acquire.isSignaled(frame)
+        }
+        #expect(signaled)
+        buffer.release()
+        try gpu.collect()
+    }
+
+    let reclaimed = try gpu.diagnostic()
+    #expect(reclaimed.live_buffer_count == baseline.live_buffer_count)
+    #expect(reclaimed.retired_buffer_count == baseline.retired_buffer_count)
+    #expect(reclaimed.reclaimed_buffer_count == baseline.reclaimed_buffer_count + 32)
+    #expect(reclaimed.completed_serial == reclaimed.submitted_serial)
+}
+
+@Test func concurrentRendersAndReleasesShareOneGPULifetimeDomain() async throws {
+    guard let candidate = try DrmDeviceDiscovery.enumerate().first else { return }
+    let gpu = try RawGraphicsTestGPU(candidate: candidate)
+    let acquire = try RawGraphicsTestTimeline(gpu: gpu)
+    let baseline = try gpu.diagnostic()
+    let buffers = try (0..<24).map { _ in
+        try RawGraphicsTestBuffer(gpu: gpu)
+    }
+
+    let failures = await withTaskGroup(of: String?.self, returning: [String].self) { group in
+        for (index, buffer) in buffers.enumerated() {
+            group.addTask {
+                do {
+                    try buffer.render(
+                        frame: UInt64(index + 1),
+                        acquire: acquire,
+                        acquirePoint: UInt64(index + 1))
+                    buffer.release()
+                    return nil
+                } catch {
+                    buffer.release()
+                    return String(describing: error)
+                }
+            }
+        }
+        var failures: [String] = []
+        for await failure in group {
+            if let failure {
+                failures.append(failure)
+            }
+        }
+        return failures
+    }
+    #expect(failures.isEmpty)
+
+    var reclaimed = try gpu.diagnostic()
+    for _ in 0..<4_000 where reclaimed.live_buffer_count != baseline.live_buffer_count {
+        try gpu.collect()
+        _ = usleep(100)
+        reclaimed = try gpu.diagnostic()
+    }
+    #expect(reclaimed.live_buffer_count == baseline.live_buffer_count)
+    #expect(reclaimed.retired_buffer_count == baseline.retired_buffer_count)
+    #expect(reclaimed.reclaimed_buffer_count == baseline.reclaimed_buffer_count + 24)
+    #expect(reclaimed.submitted_serial == baseline.submitted_serial + 24)
+    #expect(reclaimed.completed_serial == reclaimed.submitted_serial)
+    #expect(reclaimed.terminal_submission_result == 0)
 }

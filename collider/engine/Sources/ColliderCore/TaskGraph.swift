@@ -493,11 +493,34 @@ public struct AOSPSourceLockVerification: Hashable, Sendable {
     }
 }
 
+public struct AOSPSourcePatch: Hashable, Sendable {
+    public let path: String
+    public let file: FilePath
+
+    public init(path: String, file: FilePath) {
+        self.path = path
+        self.file = file
+    }
+}
+
+public struct AOSPSourcePatchStack: Hashable, Sendable {
+    public let repositoryPath: String
+    public let patches: [AOSPSourcePatch]
+
+    public init(
+        repositoryPath: String,
+        patches: [AOSPSourcePatch]
+    ) {
+        self.repositoryPath = repositoryPath
+        self.patches = patches
+    }
+}
+
 public struct AOSPSourcePreparation: Hashable, Sendable {
     public let specification: AOSPSourceSpecification
     public let launcher: FilePath
     public let source: FilePath
-    public let minimumFreeBytes: UInt64
+    public let patchStacks: [AOSPSourcePatchStack]
     public let syncJobs: UInt32
     public let retryFetches: UInt32
     public let environment: [String: String]
@@ -506,7 +529,7 @@ public struct AOSPSourcePreparation: Hashable, Sendable {
         specification: AOSPSourceSpecification,
         launcher: FilePath,
         source: FilePath,
-        minimumFreeBytes: UInt64,
+        patchStacks: [AOSPSourcePatchStack] = [],
         syncJobs: UInt32,
         retryFetches: UInt32,
         environment: [String: String]
@@ -514,7 +537,7 @@ public struct AOSPSourcePreparation: Hashable, Sendable {
         self.specification = specification
         self.launcher = launcher
         self.source = source
-        self.minimumFreeBytes = minimumFreeBytes
+        self.patchStacks = patchStacks
         self.syncJobs = syncJobs
         self.retryFetches = retryFetches
         self.environment = environment
@@ -540,6 +563,7 @@ public struct AOSPSigningIdentityPreparation: Hashable, Sendable {
 public struct AOSPProductBuild: Hashable, Sendable {
     public let productSource: FilePath
     public let source: FilePath
+    public let repoLauncher: FilePath
     public let sourceProvenance: FilePath
     public let buildRoot: FilePath
     public let signingIdentity: FilePath
@@ -549,7 +573,6 @@ public struct AOSPProductBuild: Hashable, Sendable {
     public let buildNumber: String
     public let buildTimestamp: UInt64
     public let buildJobs: UInt32
-    public let minimumFreeBytes: UInt64
     public let expectedPlatformSDK: UInt32
     public let expectedVendorAPILevel: UInt32
     public let environment: [String: String]
@@ -557,6 +580,7 @@ public struct AOSPProductBuild: Hashable, Sendable {
     public init(
         productSource: FilePath,
         source: FilePath,
+        repoLauncher: FilePath,
         sourceProvenance: FilePath,
         buildRoot: FilePath,
         signingIdentity: FilePath,
@@ -566,13 +590,13 @@ public struct AOSPProductBuild: Hashable, Sendable {
         buildNumber: String,
         buildTimestamp: UInt64,
         buildJobs: UInt32,
-        minimumFreeBytes: UInt64,
         expectedPlatformSDK: UInt32,
         expectedVendorAPILevel: UInt32,
         environment: [String: String]
     ) {
         self.productSource = productSource
         self.source = source
+        self.repoLauncher = repoLauncher
         self.sourceProvenance = sourceProvenance
         self.buildRoot = buildRoot
         self.signingIdentity = signingIdentity
@@ -582,7 +606,6 @@ public struct AOSPProductBuild: Hashable, Sendable {
         self.buildNumber = buildNumber
         self.buildTimestamp = buildTimestamp
         self.buildJobs = buildJobs
-        self.minimumFreeBytes = minimumFreeBytes
         self.expectedPlatformSDK = expectedPlatformSDK
         self.expectedVendorAPILevel = expectedVendorAPILevel
         self.environment = environment
@@ -834,7 +857,6 @@ public enum TaskCachePolicy: String, Hashable, Codable, Sendable {
 public struct TaskDeclaration: Hashable, Sendable {
     public let id: TaskID
     public let component: ComponentID
-    public let schemaVersion: UInt32
     public let dependencies: [TaskID]
     public let inputs: [ArtifactInput]
     public let outputs: [OutputDeclaration]
@@ -845,7 +867,6 @@ public struct TaskDeclaration: Hashable, Sendable {
     public init(
         id: TaskID,
         component: ComponentID,
-        schemaVersion: UInt32 = 1,
         dependencies: [TaskID] = [],
         inputs: [ArtifactInput] = [],
         outputs: [OutputDeclaration] = [],
@@ -855,7 +876,6 @@ public struct TaskDeclaration: Hashable, Sendable {
     ) {
         self.id = id
         self.component = component
-        self.schemaVersion = schemaVersion
         self.dependencies = dependencies
         self.inputs = inputs
         self.outputs = outputs
@@ -870,7 +890,6 @@ public struct TaskDeclaration: Hashable, Sendable {
         TaskDeclaration(
             id: id,
             component: component,
-            schemaVersion: schemaVersion,
             dependencies: dependencies + additionalDependencies.filter {
                 !dependencies.contains($0)
             },
@@ -945,9 +964,7 @@ public struct TaskGraph: Sendable {
 public struct CanonicalDigestEncoder: Sendable {
     public private(set) var bytes: [UInt8] = []
 
-    public init(schema: UInt32) {
-        append(tag: 0, bytes: withBigEndianBytes(schema))
-    }
+    public init() {}
 
     public mutating func append(tag: UInt8, string: String) {
         append(tag: tag, bytes: Array(string.utf8))

@@ -1,0 +1,701 @@
+diff --git a/libcutils/uevent.cpp b/libcutils/uevent.cpp
+--- a/libcutils/uevent.cpp
++++ b/libcutils/uevent.cpp
+@@ -27,6 +27,20 @@
+ 
+ extern "C" {
+ 
++static void uevent_log_error(const char* operation) {
++    int saved_errno = errno;
++    fprintf(stderr, "uevent: %s failed: %s\n", operation, strerror(saved_errno));
++    errno = saved_errno;
++}
++
++static int uevent_close_after_error(int socket, const char* operation) {
++    int saved_errno = errno;
++    uevent_log_error(operation);
++    close(socket);
++    errno = saved_errno;
++    return -1;
++}
++
+ /**
+  * Like recv(), but checks that messages actually originate from the kernel.
+  */
+@@ -103,48 +117,56 @@ out:
+ int uevent_create_socket(int buf_sz, bool passcred) {
+     int s = socket(PF_NETLINK, SOCK_DGRAM | SOCK_CLOEXEC, NETLINK_KOBJECT_UEVENT);
+     if (s < 0) {
+-        return -1;
++        uevent_log_error("socket(NETLINK_KOBJECT_UEVENT)");
++        return s;
+     }
+ 
+     int buf_sz_readback = 0;
+     socklen_t optlen = sizeof(buf_sz_readback);
+ 
+-    if (setsockopt(s, SOL_SOCKET, SO_RCVBUF, &buf_sz, sizeof(buf_sz)) < 0 ||
+-          getsockopt(s, SOL_SOCKET, SO_RCVBUF, &buf_sz_readback, &optlen) < 0) {
+-        close(s);
+-        return -1;
++    if (setsockopt(s, SOL_SOCKET, SO_RCVBUF, &buf_sz, sizeof(buf_sz)) < 0) {
++        return uevent_close_after_error(s, "setsockopt(SO_RCVBUF)");
++    }
++    if (getsockopt(s, SOL_SOCKET, SO_RCVBUF, &buf_sz_readback, &optlen) < 0) {
++        return uevent_close_after_error(s, "getsockopt(SO_RCVBUF)");
+     }
++
+     /* Only if SO_RCVBUF was not effective, try SO_RCVBUFFORCE. Generally, we
+      * want to avoid SO_RCVBUFFORCE, because it generates SELinux denials in
+      * case we don't have CAP_NET_ADMIN. This is the case, for example, for
+      * healthd. */
+     if (buf_sz_readback < 2 * buf_sz) {
+         if (setsockopt(s, SOL_SOCKET, SO_RCVBUFFORCE, &buf_sz, sizeof(buf_sz)) < 0) {
+-            close(s);
+-            return -1;
++            uevent_log_error("setsockopt(SO_RCVBUFFORCE); using SO_RCVBUF");
+         }
+     }
+ 
+     int on = passcred;
+ 
+-    setsockopt(s, SOL_SOCKET, SO_PASSCRED, &on, sizeof(on));
++    if (setsockopt(s, SOL_SOCKET, SO_PASSCRED, &on, sizeof(on)) < 0) {
++        uevent_log_error("setsockopt(SO_PASSCRED)");
++    }
+ 
+     return s;
+ }
+ 
+ /*
+  * Binds a netlink socket. Binding a netlink socket makes the kernel start
+  * sending netlink messages to that netlink socket.
+  *
+  * Returns: 0 upon success; -1 upon error.
+  */
+ int uevent_bind(int socket) {
+     struct sockaddr_nl addr = {
+             .nl_family = AF_NETLINK,
+             .nl_pid = 0,
+             .nl_groups = 0xffffffff,
+     };
+-    return bind(socket, (struct sockaddr*)&addr, sizeof(addr));
++    int result = bind(socket, (struct sockaddr*)&addr, sizeof(addr));
++    if (result < 0) {
++        uevent_log_error("bind(NETLINK_KOBJECT_UEVENT)");
++    }
++    return result;
+ }
+ 
+ /*
+diff --git a/init/Android.bp b/init/Android.bp
+--- a/init/Android.bp
++++ b/init/Android.bp
+@@ -77,6 +77,7 @@ init_device_sources = [
+     "modalias_handler.cpp",
+     "mount_handler.cpp",
+     "mount_namespace.cpp",
++    "nucleus_container.cpp",
+     "ota_utils.cpp",
+     "persistent_properties.cpp",
+     "persistent_properties.proto",
+diff --git a/init/builtins.cpp b/init/builtins.cpp
+index 2e4a3b4dc..e0633eb32 100644
+--- a/init/builtins.cpp
++++ b/init/builtins.cpp
+@@ -77,6 +77,7 @@
+ #include "fscrypt_init_extensions.h"
+ #include "init.h"
+ #include "mount_namespace.h"
++#include "nucleus_container.h"
+ #include "parser.h"
+ #include "property_service.h"
+ #include "reboot.h"
+@@ -254,6 +255,14 @@ static Result<void> do_exec(const BuiltinArguments& args) {
+     return {};
+ }
+ 
++static Result<void> do_exec_device_storage(const BuiltinArguments& args) {
++    if (IsNucleusContainer()) {
++        LOG(INFO) << "Skipping device-owned storage command for host-mounted Nucleus data";
++        return {};
++    }
++    return do_exec(args);
++}
++
+ static Result<void> do_exec_background(const BuiltinArguments& args) {
+     auto service = Service::MakeTemporaryOneshotService(args.args);
+     if (!service.ok()) {
+@@ -774,7 +783,8 @@ static Result<void> do_trigger(const BuiltinArguments& args) {
+ static int MakeSymlink(const std::string& target, const std::string& linkpath) {
+     std::string secontext;
+     // Passing 0 for mode should work.
+-    if (SelabelLookupFileContext(linkpath, 0, &secontext) && !secontext.empty()) {
++    if (!IsNucleusContainer() && SelabelLookupFileContext(linkpath, 0, &secontext) &&
++        !secontext.empty()) {
+         setfscreatecon(secontext.c_str());
+     }
+ 
+@@ -1314,6 +1324,7 @@ const BuiltinFunctionMap& GetBuiltinFunctionMap() {
+         {"enable",                  {1,     1,    {false,  do_enable}}},
+         {"exec",                    {1,     kMax, {false,  do_exec}}},
+         {"exec_background",         {1,     kMax, {false,  do_exec_background}}},
++        {"exec_device_storage",     {1,     kMax, {false,  do_exec_device_storage}}},
+         {"exec_start",              {1,     1,    {false,  do_exec_start}}},
+         {"export",                  {2,     2,    {false,  do_export}}},
+         {"hostname",                {1,     1,    {true,   do_hostname}}},
+diff --git a/init/devices.cpp b/init/devices.cpp
+index 7e581c527..c8d8b5dd5 100644
+--- a/init/devices.cpp
++++ b/init/devices.cpp
+@@ -41,6 +41,7 @@
+ #include <selinux/android.h>
+ #include <selinux/selinux.h>
+ 
++#include "nucleus_container.h"
+ #include "selabel.h"
+ #include "util.h"
+ 
+@@ -448,11 +449,12 @@ void DeviceHandler::MakeDevice(const std::string& path, bool block, int major, i
+     mode |= (block ? S_IFBLK : S_IFCHR);
+ 
+     std::string secontext;
+-    if (!SelabelLookupFileContextBestMatch(path, links, mode, &secontext)) {
++    if (!IsNucleusContainer() &&
++        !SelabelLookupFileContextBestMatch(path, links, mode, &secontext)) {
+         PLOG(ERROR) << "Device '" << path << "' not created; cannot find SELinux label";
+         return;
+     }
+-    if (!secontext.empty()) {
++    if (!IsNucleusContainer() && !secontext.empty()) {
+         setfscreatecon(secontext.c_str());
+     }
+ 
+@@ -470,7 +472,8 @@ void DeviceHandler::MakeDevice(const std::string& path, bool block, int major, i
+     }
+     /* If the node already exists update its SELinux label and the file mode to handle cases when
+      * it was created with the wrong context and file mode during coldboot procedure. */
+-    if (mknod(path.c_str(), mode, dev) && (errno == EEXIST) && !secontext.empty()) {
++    if (mknod(path.c_str(), mode, dev) && (errno == EEXIST) &&
++        !IsNucleusContainer() && !secontext.empty()) {
+         char* fcon = nullptr;
+         int rc = lgetfilecon(path.c_str(), &fcon);
+         if (rc < 0) {
+@@ -509,7 +512,7 @@ out:
+         PLOG(FATAL) << "setegid(AID_ROOT) failed";
+     }
+ 
+-    if (!secontext.empty()) {
++    if (!IsNucleusContainer() && !secontext.empty()) {
+         setfscreatecon(nullptr);
+     }
+ }
+@@ -648,7 +651,8 @@ void DeviceHandler::HandleDevice(const std::string& action, const std::string& d
+             // Create symlink and make sure it's correctly labeled
+             std::string secontext;
+             // Passing 0 for mode should work.
+-            if (SelabelLookupFileContext(link, 0, &secontext) && !secontext.empty()) {
++            if (!IsNucleusContainer() && SelabelLookupFileContext(link, 0, &secontext) &&
++                !secontext.empty()) {
+                 setfscreatecon(secontext.c_str());
+             }
+ 
+diff --git a/init/init.cpp b/init/init.cpp
+index aec2688fc..509a430be 100644
+--- a/init/init.cpp
++++ b/init/init.cpp
+@@ -77,6 +77,7 @@
+ #include "lmkd_service.h"
+ #include "mount_handler.h"
+ #include "mount_namespace.h"
++#include "nucleus_container.h"
+ #include "ota_utils.h"
+ #include "property_service.h"
+ #include "proto_utils.h"
+@@ -1119,22 +1120,26 @@ int SecondStageMain(int argc, char** argv) {
+ 
+     // Umount the debug ramdisk so property service doesn't read .prop files from there, when it
+     // is not meant to.
+-    if (!load_debug_prop) {
++    if (!IsNucleusContainer() && !load_debug_prop) {
+         UmountDebugRamdisk();
+     }
+ 
+     PropertyInit();
+ 
+     // Umount second stage resources after property service has read the .prop files.
+-    UmountSecondStageRes();
++    if (!IsNucleusContainer()) {
++        UmountSecondStageRes();
++    }
+ 
+     // Umount the debug ramdisk after property service has read the .prop files when it means to.
+-    if (load_debug_prop) {
++    if (!IsNucleusContainer() && load_debug_prop) {
+         UmountDebugRamdisk();
+     }
+ 
+     // Mount extra filesystems required during second stage init
+-    MountExtraFilesystems();
++    if (!IsNucleusContainer()) {
++        MountExtraFilesystems();
++    }
+ 
+     // Now set up SELinux for second stage.
+     SelabelInitialize();
+diff --git a/init/main.cpp b/init/main.cpp
+index bb09f3073..e898196fd 100644
+--- a/init/main.cpp
++++ b/init/main.cpp
+@@ -17,6 +17,7 @@
+ #include "builtins.h"
+ #include "first_stage_init.h"
+ #include "init.h"
++#include "nucleus_container.h"
+ #include "selinux.h"
+ #include "subcontext.h"
+ #include "ueventd.h"
+@@ -77,6 +78,13 @@ int main(int argc, char** argv) {
+         if (!strcmp(argv[1], "second_stage")) {
+             return SecondStageMain(argc, argv);
+         }
++
++        if (!strcmp(argv[1], "nucleus_container")) {
++            if (auto result = EnterNucleusContainer(); !result.ok()) {
++                LOG(FATAL) << "Could not enter the Nucleus container: " << result.error();
++            }
++            return SecondStageMain(argc, argv);
++        }
+     }
+ 
+ #if defined(FIRST_STAGE_INIT) || defined(RECOVERY)
+diff --git a/init/nucleus_container.cpp b/init/nucleus_container.cpp
+new file mode 100644
+--- /dev/null
++++ b/init/nucleus_container.cpp
+@@ -0,0 +1,76 @@
++/*
++ * Copyright (C) 2026 Nucleus
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *      http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++
++#include "nucleus_container.h"
++
++#include <android-base/errors.h>
++#include <android-base/result.h>
++
++#include <array>
++#include <errno.h>
++#include <sys/stat.h>
++#include <unistd.h>
++
++namespace android {
++namespace init {
++
++using android::base::ErrnoError;
++using android::base::Error;
++using android::base::Result;
++
++namespace {
++
++Result<void> PrepareDirectory(const char* path) {
++    if (mkdir(path, 0755) != 0 && errno != EEXIST) {
++        return ErrnoError() << "mkdir(\"" << path << "\") failed";
++    }
++
++    struct stat info {};
++    if (lstat(path, &info) != 0) {
++        return ErrnoError() << "lstat(\"" << path << "\") failed";
++    }
++    if (!S_ISDIR(info.st_mode)) {
++        return Error() << "'" << path << "' is not a directory";
++    }
++    if (chown(path, 0, 0) != 0) {
++        return ErrnoError() << "chown(\"" << path << "\") failed";
++    }
++    if (chmod(path, 0755) != 0) {
++        return ErrnoError() << "chmod(\"" << path << "\") failed";
++    }
++    return {};
++}
++
++}  // namespace
++
++Result<void> EnterNucleusContainer() {
++    if (setenv(kNucleusContainerEnvironment, "1", 1) != 0) {
++        return ErrnoError() << "setenv(\"" << kNucleusContainerEnvironment << "\") failed";
++    }
++    umask(0);
++
++    for (const char* path :
++         std::array{"/dev/socket", "/dev/dm-user", "/mnt/vendor", "/mnt/product"}) {
++        auto result = PrepareDirectory(path);
++        if (!result.ok()) {
++            return result;
++        }
++    }
++    return {};
++}
++
++}  // namespace init
++}  // namespace android
+diff --git a/init/nucleus_container.h b/init/nucleus_container.h
+new file mode 100644
+index 000000000..c100320fe
+--- /dev/null
++++ b/init/nucleus_container.h
+@@ -0,0 +1,35 @@
++/*
++ * Copyright (C) 2026 Nucleus
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *      http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++
++#pragma once
++
++#include <android-base/result.h>
++
++#include <stdlib.h>
++
++namespace android {
++namespace init {
++
++inline constexpr char kNucleusContainerEnvironment[] = "NUCLEUS_ANDROID_CONTAINER";
++
++inline bool IsNucleusContainer() {
++    return getenv(kNucleusContainerEnvironment) != nullptr;
++}
++
++android::base::Result<void> EnterNucleusContainer();
++
++}  // namespace init
++}  // namespace android
+diff --git a/init/property_service.cpp b/init/property_service.cpp
+index e6fffc4da..563b53c71 100644
+--- a/init/property_service.cpp
++++ b/init/property_service.cpp
+@@ -66,6 +66,7 @@
+ #include "debug_ramdisk.h"
+ #include "epoll.h"
+ #include "init.h"
++#include "nucleus_container.h"
+ #include "persistent_properties.h"
+ #include "property_type.h"
+ #include "proto_utils.h"
+@@ -144,6 +145,9 @@ void StopSendingMessages() {
+ }
+ 
+ bool CanReadProperty(const std::string& source_context, const std::string& name) {
++    if (IsNucleusContainer()) {
++        return true;
++    }
+     const char* target_context = nullptr;
+     property_info_area->GetPropertyInfo(name.c_str(), &target_context, nullptr);
+ 
+@@ -161,6 +165,9 @@ bool CanReadProperty(const std::string& source_context, const std::string& name)
+ 
+ static bool CheckMacPerms(const std::string& name, const char* target_context,
+                           const char* source_context, const ucred& cr) {
++    if (IsNucleusContainer()) {
++        return true;
++    }
+     if (!target_context || !source_context) {
+         return false;
+     }
+@@ -632,7 +639,7 @@ static void handle_property_set_fd(int fd) {
+         prop_value[PROP_VALUE_MAX-1] = 0;
+ 
+         std::string source_context;
+-        if (!socket.GetSourceContext(&source_context)) {
++        if (!IsNucleusContainer() && !socket.GetSourceContext(&source_context)) {
+             PLOG(ERROR) << "Unable to set property '" << prop_name << "': getpeercon() failed";
+             return;
+         }
+@@ -659,7 +666,7 @@ static void handle_property_set_fd(int fd) {
+         }
+ 
+         std::string source_context;
+-        if (!socket.GetSourceContext(&source_context)) {
++        if (!IsNucleusContainer() && !socket.GetSourceContext(&source_context)) {
+             PLOG(ERROR) << "Unable to set property '" << name << "': getpeercon() failed";
+             socket.SendUint32(PROP_ERROR_PERMISSION_DENIED);
+             return;
+diff --git a/init/security.cpp b/init/security.cpp
+index 39dede60a..cd19eaa07 100644
+--- a/init/security.cpp
++++ b/init/security.cpp
+@@ -15,6 +15,7 @@
+  */
+ 
+ #include "security.h"
++#include "nucleus_container.h"
+ #include "util.h"
+ 
+ #include <errno.h>
+@@ -94,6 +95,9 @@ static bool SetMmapRndBitsMin(int start, int min, bool compat) {
+ // ec9ee4acd97c drivers: char: random: add get_random_long()
+ // 5ef11c35ce86 mm: ASLR: use get_random_long()
+ Result<void> SetMmapRndBitsAction(const BuiltinArguments&) {
++    if (IsNucleusContainer()) {
++        return {};
++    }
+ // values are arch-dependent
+ #if defined(USER_MODE_LINUX)
+     // uml does not support mmap_rnd_bits
+diff --git a/init/service.cpp b/init/service.cpp
+index d38b47ab2..f595cc34a 100644
+--- a/init/service.cpp
++++ b/init/service.cpp
+@@ -47,6 +47,7 @@
+ 
+ #include "interprocess_fifo.h"
+ #include "lmkd_service.h"
++#include "nucleus_container.h"
+ #include "service_list.h"
+ #include "util.h"
+ 
+@@ -259,7 +260,7 @@ void Service::SetProcessAttributesAndCaps(InterprocessFifo setsid_finished) {
+         LOG(FATAL) << "cannot set attribute for " << name_ << ": " << result.error();
+     }
+ 
+-    if (!seclabel_.empty()) {
++    if (!IsNucleusContainer() && !seclabel_.empty()) {
+         if (setexeccon(seclabel_.c_str()) < 0) {
+             PLOG(FATAL) << "cannot setexeccon('" << seclabel_ << "') for " << name_;
+         }
+@@ -669,7 +670,9 @@ Result<void> Service::Start() {
+     }
+ 
+     std::string scon;
+-    if (!seclabel_.empty()) {
++    if (IsNucleusContainer()) {
++        scon.clear();
++    } else if (!seclabel_.empty()) {
+         scon = seclabel_;
+     } else {
+         auto result = ComputeContextFromExecutable(args_[0]);
+diff --git a/init/subcontext.cpp b/init/subcontext.cpp
+index 37f9fadea..686b7bc6b 100644
+--- a/init/subcontext.cpp
++++ b/init/subcontext.cpp
+@@ -32,6 +32,7 @@
+ #include "action.h"
+ #include "builtins.h"
+ #include "mount_namespace.h"
++#include "nucleus_container.h"
+ #include "proto_utils.h"
+ #include "util.h"
+ 
+@@ -215,7 +216,7 @@ void Subcontext::Fork() {
+ 
+         // We don't switch contexts if we're running the unit tests.  We don't use std::optional,
+         // since we still need a real context string to pass to the builtin functions.
+-        if (context_ != kTestContext) {
++        if (!IsNucleusContainer() && context_ != kTestContext) {
+             if (setexeccon(context_.c_str()) < 0) {
+                 PLOG(FATAL) << "Could not set execcon for '" << context_ << "'";
+             }
+diff --git a/init/util.cpp b/init/util.cpp
+index 6241b6617..cdfe8bffc 100644
+--- a/init/util.cpp
++++ b/init/util.cpp
+@@ -44,6 +44,8 @@
+ #include <cutils/sockets.h>
+ #include <selinux/android.h>
+ 
++#include "nucleus_container.h"
++
+ #if defined(__ANDROID__)
+ #include <fs_mgr.h>
+ #endif
+@@ -96,7 +98,7 @@ Result<uid_t> DecodeUid(const std::string& name) {
+  */
+ Result<int> CreateSocket(const std::string& name, int type, bool passcred, bool should_listen,
+                          mode_t perm, uid_t uid, gid_t gid, const std::string& socketcon) {
+-    if (!socketcon.empty()) {
++    if (!IsNucleusContainer() && !socketcon.empty()) {
+         if (setsockcreatecon(socketcon.c_str()) == -1) {
+             return ErrnoError() << "setsockcreatecon(\"" << socketcon << "\") failed";
+         }
+@@ -107,7 +109,7 @@ Result<int> CreateSocket(const std::string& name, int type, bool passcred, bool
+         return ErrnoError() << "Failed to open socket '" << name << "'";
+     }
+ 
+-    if (!socketcon.empty()) setsockcreatecon(nullptr);
++    if (!IsNucleusContainer() && !socketcon.empty()) setsockcreatecon(nullptr);
+ 
+     struct sockaddr_un addr;
+     memset(&addr, 0 , sizeof(addr));
+@@ -119,7 +121,8 @@ Result<int> CreateSocket(const std::string& name, int type, bool passcred, bool
+     }
+ 
+     std::string secontext;
+-    if (SelabelLookupFileContext(addr.sun_path, S_IFSOCK, &secontext) && !secontext.empty()) {
++    if (!IsNucleusContainer() &&
++        SelabelLookupFileContext(addr.sun_path, S_IFSOCK, &secontext) && !secontext.empty()) {
+         setfscreatecon(secontext.c_str());
+     }
+ 
+@@ -189,7 +192,8 @@ Result<std::string> ReadFile(const std::string& path) {
+ 
+ static int OpenFile(const std::string& path, int flags, mode_t mode) {
+     std::string secontext;
+-    if (SelabelLookupFileContext(path, mode, &secontext) && !secontext.empty()) {
++    if (!IsNucleusContainer() && SelabelLookupFileContext(path, mode, &secontext) &&
++        !secontext.empty()) {
+         setfscreatecon(secontext.c_str());
+     }
+ 
+@@ -247,7 +251,8 @@ int wait_for_file(const char* filename, std::chrono::nanoseconds timeout) {
+ 
+ bool make_dir(const std::string& path, mode_t mode) {
+     std::string secontext;
+-    if (SelabelLookupFileContext(path, mode, &secontext) && !secontext.empty()) {
++    if (!IsNucleusContainer() && SelabelLookupFileContext(path, mode, &secontext) &&
++        !secontext.empty()) {
+         setfscreatecon(secontext.c_str());
+     }
+ 
+diff --git a/init/service_utils.cpp b/init/service_utils.cpp
+--- a/init/service_utils.cpp
++++ b/init/service_utils.cpp
+@@ -34,7 +34,8 @@
+ #include <fstab/fstab.h>
+ #include <processgroup/processgroup.h>
+ 
+ #include "mount_namespace.h"
++#include "nucleus_container.h"
+ #include "util.h"
+ 
+ using android::base::GetProperty;
+@@ -289,10 +290,17 @@ Result<void> SetProcessAttributes(const ProcessAttributes& attr, InterprocessFif
+ 
+     for (const auto& rlimit : attr.rlimits) {
+         if (setrlimit(rlimit.first, &rlimit.second) == -1) {
++            const int saved_errno = errno;
++            if (IsNucleusContainer() && saved_errno == EPERM) {
++                errno = saved_errno;
++                PLOG(WARNING) << "cannot apply service rlimit in Nucleus container";
++                continue;
++            }
++            errno = saved_errno;
+             return ErrnoErrorf("setrlimit({}, {{rlim_cur={}, rlim_max={}}}) failed", rlimit.first,
+                                rlimit.second.rlim_cur, rlimit.second.rlim_max);
+         }
+     }
+ 
+     if (attr.gid) {
+         if (setgid(attr.gid) != 0) {
+@@ -311,7 +319,15 @@ Result<void> SetProcessAttributes(const ProcessAttributes& attr, InterprocessFif
+ 
+     if (attr.priority != 0) {
+         if (setpriority(PRIO_PROCESS, 0, attr.priority) != 0) {
+-            return ErrnoError() << "setpriority failed";
++            const int saved_errno = errno;
++            if (IsNucleusContainer() &&
++                (saved_errno == EACCES || saved_errno == EPERM)) {
++                errno = saved_errno;
++                PLOG(WARNING) << "cannot apply service priority in Nucleus container";
++            } else {
++                errno = saved_errno;
++                return ErrnoError() << "setpriority failed";
++            }
+         }
+     }
+     return {};
+diff --git a/init/uevent_listener.cpp b/init/uevent_listener.cpp
+index 350268f74..c841c30c4 100644
+--- a/init/uevent_listener.cpp
++++ b/init/uevent_listener.cpp
+@@ -99,7 +99,7 @@ static void ParseEvent(const char* msg, Uevent* uevent) {
+ UeventListener::UeventListener(size_t uevent_socket_rcvbuf_size) {
+     device_fd_.reset(uevent_open_socket(uevent_socket_rcvbuf_size, true));
+     if (device_fd_ == -1) {
+-        LOG(FATAL) << "Could not open uevent socket";
++        PLOG(FATAL) << "Could not open uevent socket";
+     }
+ 
+     fcntl(device_fd_.get(), F_SETFL, O_NONBLOCK);
+diff --git a/rootdir/init.rc b/rootdir/init.rc
+index 5e26d127a..e21a9990b 100644
+--- a/rootdir/init.rc
++++ b/rootdir/init.rc
+@@ -553,7 +553,7 @@ on early-fs
+     start vold
+ 
+ on post-fs
+-    exec - system system -- /system/bin/vdc checkpoint markBootAttempt
++    exec_device_storage - system system -- /system/bin/vdc checkpoint markBootAttempt
+ 
+     # Once everything is setup, no need to modify /.
+     # The bind+remount combination allows this to work in containers.
+@@ -663,7 +663,7 @@ on property:ro.product.cpu.abilist64=* && property:bootreceiver.enable=1
+ on post-fs-data
+ 
+     # Start checkpoint before we touch data
+-    exec - system system -- /system/bin/vdc checkpoint prepareCheckpoint
++    exec_device_storage - system system -- /system/bin/vdc checkpoint prepareCheckpoint
+ 
+     # We chown/chmod /data again so because mount is run as root + defaults
+     chown system system /data
+@@ -712,7 +712,7 @@ on post-fs-data
+     # we can tell keystore to stop allowing use of early-boot keys,
+     # and access its database for the first time to support creation and
+     # use of MAX_BOOT_LEVEL keys.
+-    exec - system system -- /system/bin/vdc keymaster earlyBootEnded
++    exec_device_storage - system system -- /system/bin/vdc keymaster earlyBootEnded
+ 
+     # Multi-installed APEXes are selected using persist props.
+     # Load persist properties and override properties (if enabled) from /data,
+diff --git a/init/reboot.cpp b/init/reboot.cpp
+index 1f2381d85..cc56c96d4 100644
+--- a/init/reboot.cpp
++++ b/init/reboot.cpp
+@@ -67,6 +67,7 @@
+ #include "builtin_arguments.h"
+ #include "init.h"
+ #include "mount_namespace.h"
++#include "nucleus_container.h"
+ #include "property_service.h"
+ #include "reboot_utils.h"
+ #include "service.h"
+@@ -955,10 +956,14 @@ static void DoReboot(unsigned int cmd, const std::string& reason,
+     // 3. send volume abort_fuse and volume shutdown to vold
+     Service* vold_service = ServiceList::GetInstance().FindService("vold");
+     if (vold_service != nullptr && vold_service->IsRunning()) {
+-        // Manually abort FUSE connections, since the FUSE daemon is already dead
+-        // at this point, and unmounting it might hang.
+-        CallVdc("volume", "abort_fuse");
+-        CallVdc("volume", "shutdown");
++        if (IsNucleusContainer()) {
++            LOG(INFO) << "Skipping vold shutdown commands for host-mounted Nucleus data";
++        } else {
++            // Manually abort FUSE connections, since the FUSE daemon is already dead
++            // at this point, and unmounting it might hang.
++            CallVdc("volume", "abort_fuse");
++            CallVdc("volume", "shutdown");
++        }
+         vold_service->Stop();
+     } else {
+         LOG(INFO) << "vold not running, skipping vold shutdown";

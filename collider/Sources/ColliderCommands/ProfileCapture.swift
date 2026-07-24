@@ -257,7 +257,7 @@ struct ProfileCapture {
         directory: URL
     ) throws {
         let values = [
-            "profile_schema=4", "created_at=\(ISO8601DateFormatter().string(from: Date()))",
+            "created_at=\(ISO8601DateFormatter().string(from: Date()))",
             "host=\(options.host)", "port=\(port)", "seconds=\(options.seconds.map(String.init) ?? "until-client-exit")",
             "optimize=\(options.configuration)", "tracy=true", "launch=true",
             "session=true", "vk_validation=\(options.validation)",
@@ -298,7 +298,7 @@ struct ProfileCapture {
                 "\(name).max=\(value.maximum)",
             ]
         }
-        let summary = (["profile_schema=4", "framebuffer_effect_cache.create_failures=0"]
+        let summary = (["framebuffer_effect_cache.create_failures=0"]
             + eventCounts.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }
             + numericPlotLines
             + budgets.sorted()).joined(separator: "\n") + "\n"

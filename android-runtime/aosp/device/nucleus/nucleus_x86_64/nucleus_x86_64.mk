@@ -37,7 +37,9 @@ PRODUCT_CHARACTERISTICS := tablet,nosdcard
 
 PRODUCT_ENFORCE_ARTIFACT_PATH_REQUIREMENTS := true
 PRODUCT_USE_DYNAMIC_PARTITIONS := false
-PRODUCT_USE_DYNAMIC_PARTITION_SIZE := false
+# Derive each standalone filesystem image from its contents. Nucleus has no
+# physical partition table and therefore carries no product-authored size caps.
+PRODUCT_USE_DYNAMIC_PARTITION_SIZE := true
 
 PRODUCT_BUILD_SYSTEM_IMAGE := true
 PRODUCT_BUILD_VENDOR_IMAGE := true
@@ -52,6 +54,16 @@ PRODUCT_BUILD_INIT_BOOT_IMAGE := false
 PRODUCT_BUILD_RECOVERY_IMAGE := false
 PRODUCT_BUILD_VENDOR_BOOT_IMAGE := false
 PRODUCT_BUILD_SUPER_EMPTY_IMAGE := false
+
+# Collider preactivates immutable APEX payloads before entering the container.
+# EROFS payloads mount directly from their archives; the stock ext4 CTS shim
+# uses a host-owned autoclearing loop association. Collider removes the loop
+# device node before Android starts, and APEXd adopts the verified mounts
+# without receiving loop or device-mapper control surfaces.
+PRODUCT_COMPRESSED_APEX := false
+PRODUCT_DEFAULT_APEX_PAYLOAD_TYPE := erofs
+PRODUCT_PRODUCT_PROPERTIES += \
+    apexd.config.nucleus_container=true
 
 PRODUCT_SYSTEM_NAME := Nucleus
 PRODUCT_SYSTEM_BRAND := Nucleus

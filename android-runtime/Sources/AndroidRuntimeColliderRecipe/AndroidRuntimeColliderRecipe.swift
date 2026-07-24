@@ -44,7 +44,6 @@ public enum AndroidRuntimeColliderRecipe {
         return TaskDeclaration(
             id: TaskID(rawValue: "android-runtime.aosp-source-lock"),
             component: component,
-            schemaVersion: 2,
             dependencies: [
                 TaskID(rawValue: "android-runtime.aosp-repo-launcher"),
             ],
@@ -122,7 +121,6 @@ public enum AndroidRuntimeColliderRecipe {
         return TaskDeclaration(
             id: TaskID(rawValue: "android-runtime.aosp-repo-launcher"),
             component: component,
-            schemaVersion: 1,
             inputs: [
                 .file(root.appending("aosp.lock.json")),
             ],
@@ -139,6 +137,10 @@ public enum AndroidRuntimeColliderRecipe {
     ) throws -> TaskDeclaration {
         let lock = try loadAOSPSourceLock(root: root)
         let specification = try lock.specification()
+        let patchManifestPath = root.appending("aosp/patches.json")
+        let patchStacks = try loadAOSPSourcePatchStacks(
+            manifest: patchManifestPath,
+            root: root)
         let lockPath = root.appending("aosp.lock.json")
         let launcher = try aospRepoLauncherPath(root: root)
         let verification = root.appending(
@@ -147,22 +149,26 @@ public enum AndroidRuntimeColliderRecipe {
         return TaskDeclaration(
             id: TaskID(rawValue: "android-runtime.aosp-source"),
             component: component,
-            schemaVersion: 2,
             dependencies: [
                 TaskID(rawValue: "android-runtime.aosp-repo-launcher"),
                 TaskID(rawValue: "android-runtime.aosp-source-lock"),
             ],
             inputs: [
                 .file(lockPath),
+                .file(patchManifestPath),
                 .dependencyOutput(launcher),
                 .dependencyOutput(verification),
                 .tool(.named("git")),
                 .tool(.named("python3")),
-            ],
+            ] + patchStacks.flatMap(\.patches).map { .file($0.file) },
             outputs: [
                 OutputDeclaration(
                     path: source.appending(
-                        ".nucleus/resolved-manifest.xml"),
+                        ".nucleus/base-resolved-manifest.xml"),
+                    validation: .regularFile),
+                OutputDeclaration(
+                    path: source.appending(
+                        ".nucleus/patched-resolved-manifest.xml"),
                     validation: .regularFile),
                 OutputDeclaration(
                     path: source.appending(".nucleus/source-provenance.json"),
@@ -173,7 +179,7 @@ public enum AndroidRuntimeColliderRecipe {
                 specification: specification,
                 launcher: launcher,
                 source: source,
-                minimumFreeBytes: 400 * 1_024 * 1_024 * 1_024,
+                patchStacks: patchStacks,
                 syncJobs: 4,
                 retryFetches: 3,
                 environment: environment)))
@@ -188,7 +194,6 @@ public enum AndroidRuntimeColliderRecipe {
         return TaskDeclaration(
             id: TaskID(rawValue: "android-runtime.aosp-signing-identity"),
             component: component,
-            schemaVersion: 1,
             inputs: [
                 .value(
                     name: "subject",
@@ -222,6 +227,7 @@ public enum AndroidRuntimeColliderRecipe {
             from: Data(contentsOf: URL(fileURLWithPath: lockPath.string)))
         try lock.validate()
         let source = root.appending(".aosp-source")
+        let launcher = try aospRepoLauncherPath(root: root)
         let sourceProvenance = source.appending(
             ".nucleus/source-provenance.json")
         let signingIdentity = root.appending(
@@ -232,8 +238,8 @@ public enum AndroidRuntimeColliderRecipe {
         return TaskDeclaration(
             id: TaskID(rawValue: "android-runtime.aosp-image"),
             component: component,
-            schemaVersion: 1,
             dependencies: [
+                TaskID(rawValue: "android-runtime.aosp-repo-launcher"),
                 TaskID(rawValue: "android-runtime.aosp-source"),
                 TaskID(rawValue: "android-runtime.aosp-signing-identity"),
             ],
@@ -241,6 +247,7 @@ public enum AndroidRuntimeColliderRecipe {
                 .file(lockPath),
                 .tree(root.appending(
                     "aosp/device/nucleus/nucleus_x86_64")),
+                .dependencyOutput(launcher),
                 .dependencyOutput(sourceProvenance),
                 .dependencyOutput(signingIdentity.appending(
                     "signing-identity.json")),
@@ -279,6 +286,7 @@ public enum AndroidRuntimeColliderRecipe {
                 productSource: root.appending(
                     "aosp/device/nucleus/nucleus_x86_64"),
                 source: source,
+                repoLauncher: launcher,
                 sourceProvenance: sourceProvenance,
                 buildRoot: buildRoot,
                 signingIdentity: signingIdentity,
@@ -288,8 +296,6 @@ public enum AndroidRuntimeColliderRecipe {
                 buildNumber: lock.buildNumber,
                 buildTimestamp: lock.buildTimestamp,
                 buildJobs: lock.buildJobs,
-                minimumFreeBytes:
-                    lock.minimumFreeGiB * 1_024 * 1_024 * 1_024,
                 expectedPlatformSDK: lock.platformSDK,
                 expectedVendorAPILevel: lock.vendorAPILevel,
                 environment: environment)))
@@ -302,6 +308,57 @@ public enum AndroidRuntimeColliderRecipe {
             AOSPSourceLock.self,
             from: Data(contentsOf: URL(
                 fileURLWithPath: root.appending("aosp.lock.json").string)))
+    }
+
+    private static func loadAOSPSourcePatchStacks(
+        manifest: FilePath,
+        root: FilePath
+    ) throws -> [AOSPSourcePatchStack] {
+        let declaration = try JSONDecoder().decode(
+            AOSPSourcePatchManifest.self,
+            from: Data(contentsOf: URL(fileURLWithPath: manifest.string)))
+        guard !declaration.repositories.isEmpty else {
+            throw AndroidRuntimeRecipeFailure.invalidAOSPSourceLock(
+                "forward-patch manifest must declare repositories")
+        }
+        var repositories = Set<String>()
+        var patchPaths = Set<String>()
+        return try declaration.repositories.map { repository in
+            guard isSafeRelativePath(repository.path),
+                  repositories.insert(repository.path).inserted
+            else {
+                throw AndroidRuntimeRecipeFailure.invalidAOSPSourceLock(
+                    "forward-patch repository path is invalid or duplicated: "
+                        + repository.path)
+            }
+            guard !repository.patches.isEmpty else {
+                throw AndroidRuntimeRecipeFailure.invalidAOSPSourceLock(
+                    "forward-patch repository \(repository.path) has no patches")
+            }
+            let patches = try repository.patches.map { path in
+                guard path.hasPrefix("aosp/patches/"),
+                      isSafeRelativePath(path),
+                      patchPaths.insert(path).inserted
+                else {
+                    throw AndroidRuntimeRecipeFailure.invalidAOSPSourceLock(
+                        "forward-patch path is invalid or duplicated: \(path)")
+                }
+                let file = root.appending(path)
+                var isDirectory = ObjCBool(false)
+                guard FileManager.default.fileExists(
+                    atPath: file.string,
+                    isDirectory: &isDirectory),
+                      !isDirectory.boolValue
+                else {
+                    throw AndroidRuntimeRecipeFailure.invalidAOSPSourceLock(
+                        "forward patch is not a regular file: \(path)")
+                }
+                return AOSPSourcePatch(path: path, file: file)
+            }
+            return AOSPSourcePatchStack(
+                repositoryPath: repository.path,
+                patches: patches)
+        }
     }
 
     private static func aospRepoLauncherPath(
@@ -499,15 +556,10 @@ private struct AOSPSourceLock: Decodable {
         let commit: String
     }
 
-    let schemaVersion: Int
     let platform: Platform
     let repo: Repo
 
     func validate() throws {
-        guard schemaVersion == 1 else {
-            throw AndroidRuntimeRecipeFailure.invalidAOSPSourceLock(
-                "unsupported schema version \(schemaVersion)")
-        }
         guard platform.revision == "refs/tags/android-17.0.0_r1" else {
             throw AndroidRuntimeRecipeFailure.invalidAOSPSourceLock(
                 "platform revision must be refs/tags/android-17.0.0_r1")
@@ -593,8 +645,24 @@ private struct AOSPSourceLock: Decodable {
     }
 }
 
+private struct AOSPSourcePatchManifest: Decodable {
+    struct Repository: Decodable {
+        let path: String
+        let patches: [String]
+    }
+
+    let repositories: [Repository]
+}
+
+private func isSafeRelativePath(_ value: String) -> Bool {
+    !value.isEmpty
+        && !value.hasPrefix("/")
+        && !value.hasSuffix("/")
+        && value.split(separator: "/", omittingEmptySubsequences: false)
+            .allSatisfy { !$0.isEmpty && $0 != "." && $0 != ".." }
+}
+
 private struct AOSPProductLock: Decodable {
-    let schemaVersion: Int
     let product: String
     let release: String
     let variant: String
@@ -603,22 +671,16 @@ private struct AOSPProductLock: Decodable {
     let platformSDK: UInt32
     let vendorAPILevel: UInt32
     let buildJobs: UInt32
-    let minimumFreeGiB: UInt64
 
     func validate() throws {
-        guard schemaVersion == 1 else {
-            throw AndroidRuntimeRecipeFailure.invalidAOSPProductLock(
-                "unsupported schema version \(schemaVersion)")
-        }
         guard product == "nucleus_x86_64",
-              release == "trunk_staging",
+              release == "cp2a",
               variant == "userdebug",
               buildNumber == "nucleus-android17-r1",
               buildTimestamp == 1_781_652_681,
               platformSDK == 37,
               vendorAPILevel == 202604,
-              buildJobs > 0,
-              minimumFreeGiB > 0
+              buildJobs > 0
         else {
             throw AndroidRuntimeRecipeFailure.invalidAOSPProductLock(
                 "product identity does not match the Android 17 "

@@ -21,7 +21,7 @@ Phases 1–4 are done and verified. `NucleusRenderer` is the platform-agnostic c
 behind `PresentationBackend`; the Linux DRM/KMS scanout lives in `NucleusRendererLinux`;
 the render core + Skia (Vulkan Graphite) + Vulkan cross-compile and link into
 `libnucleus-android.so` for AArch64 (Swift stdlib static; `libvulkan.so`/`libandroid.so`
-in `NEEDED`; `tools/collider android verify` green). The Linux compositor builds and
+in `NEEDED`; `collider android verify` green). The Linux compositor builds and
 runs unchanged. Phase 5 (the Android backend actually recording a Nucleus scene)
 remains; its discovered requirements are noted below.
 
@@ -99,7 +99,7 @@ VK binding is shared with the Android host. (3) `--static-swift-stdlib` searches
 Met. `swift build --package-path platform-android --swift-sdk swift-release-6.4.x_android
 --static-swift-stdlib -c release` links `libnucleus-android.so` (AArch64, ~86 MB, Swift
 stdlib static, `libvulkan.so`/`libandroid.so`/`libc++_shared.so` in `NEEDED`, render-core
-+ Skia symbols present); `tools/collider android verify` green.
++ Skia symbols present); `collider android verify` green.
 
 ## Phase 5 — The Android backend records a frame — DONE (build-verified; pixels device-deferred)
 
@@ -147,7 +147,7 @@ idle waits, and releases an acquired image directly when Graphite submission fai
 
 Build half met: `libnucleus-android.so` links the render core + Skia + the swapchain
 backend; `swift build --package-path platform-android --swift-sdk swift-release-6.4.x_android
---static-swift-stdlib -c release` succeeds and `tools/collider android verify` is green.
+--static-swift-stdlib -c release` succeeds and `collider android verify` is green.
 The Linux compositor still builds (the shared `Graphite.cpp` change compiles against
 host Skia; the DRM path passes no semaphores). Rendered pixels + frame pacing + resize/
 rotation are runtime-verified on device/emulator (deferred hardware validation), as is
@@ -162,7 +162,7 @@ Make the Phase-2 `AndroidVulkanPresenter` implement `PresentationBackend`: `enum
 ## Verification
 
 - Each phase keeps `swift build` (root) + the compositor app package green before the next begins — the Linux compositor is the regression guard for Phases 1–3.
-- Android phases are build-verified by the cross-compile + `tools/collider android verify` (extended as needed); runtime verification (actual pixels, pacing, resize/rotation) is on a device/emulator via `android/smoke-app`, deferred with the rest of the render-stack plan's hardware validation.
+- Android phases are build-verified by the cross-compile + `collider android verify` (extended as needed); runtime verification (actual pixels, pacing, resize/rotation) is on a device/emulator via `android/smoke-app`, deferred with the rest of the render-stack plan's hardware validation.
 
 ## Exit condition
 

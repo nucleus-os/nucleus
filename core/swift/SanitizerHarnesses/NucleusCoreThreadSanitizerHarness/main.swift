@@ -86,7 +86,55 @@ enum NucleusCoreThreadSanitizerHarness {
         else {
             exit(3)
         }
+        guard exerciseQueueLifetimes(
+            wakeSink: wakeCounter,
+            pixels: pixels)
+        else {
+            exit(5)
+        }
         exit(0)
+    }
+
+    private static func exerciseQueueLifetimes(
+        wakeSink: WakeCounter,
+        pixels: [UInt8]
+    ) -> Bool {
+        for iteration in 0..<128 {
+            let workerCount = iteration.isMultiple(of: 8)
+                ? 0
+                : iteration.isMultiple(of: 2) ? 2 : 1
+            let queue = ImageDecodeQueue(
+                wakeSink: wakeSink,
+                workerCount: workerCount)
+            let source = ImageSource(content: .raw(RawPixelBuffer(
+                width: 32,
+                height: 32,
+                order: .rgba,
+                pixels: pixels)))
+            if workerCount == 0 {
+                guard !queue.hasWorkers,
+                      !queue.submit(
+                          handle: UInt64(iteration + 1),
+                          source: source)
+                else {
+                    return false
+                }
+            } else {
+                guard queue.hasWorkers,
+                      queue.submit(
+                          handle: UInt64(iteration + 1),
+                          source: source)
+                else {
+                    return false
+                }
+                if iteration.isMultiple(of: 3) {
+                    queue.cancel(handle: UInt64(iteration + 1))
+                }
+            }
+            queue.shutdown()
+            guard !queue.hasWorkers else { return false }
+        }
+        return true
     }
 
     private static func exerciseRegistries() -> Bool {

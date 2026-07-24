@@ -90,6 +90,31 @@ import NucleusReactFabricSmokeC
         #expect(nucleus_rn_mount_event_payload_smoke() == 0)
     }
 
+    @Test func jsThreadCommandDeliveryHopsToMainActor() async throws {
+        let hbc = try Self.makeTinyBytecode(source:
+            """
+            global.__turboModuleProxy('NucleusHostCommand')
+              .invoke('activate', '{"window":7}');
+            """)
+        let start = hbc.withCString {
+            nucleus_rn_command_handler_actor_smoke_start($0)
+        }
+        #expect(start == 0)
+        defer {
+            nucleus_rn_command_handler_actor_smoke_reset()
+        }
+        var status: Int32 = 0
+        for _ in 0..<100 where status == 0 {
+            await Task.yield()
+            status = nucleus_rn_command_handler_actor_smoke_status()
+        }
+        #expect(status == 1)
+    }
+
+    @Test func commandHandlerReplacementAndTeardownBalanceOwnership() {
+        #expect(nucleus_rn_command_handler_ownership_smoke() == 0)
+    }
+
     /// `dirname $(clang++ -print-file-name=libc++.so.1)` — the toolchain libc++.
     static func libcxxDir() throws -> String? {
         let result = try SpawnedCommand.run(

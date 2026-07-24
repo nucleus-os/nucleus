@@ -58,7 +58,7 @@ These were listed below as "to implement" but are now real, registered globals i
 ### Scanned but not implemented
 
 XML is present under `swift-wayland/Protocols` and included by
-`tools/collider generate wayland`, so generated bindings exist, but no
+`collider generate wayland`, so generated bindings exist, but no
 `NucleusCompositorWaylandRuntime/*.swift` router file registers a global.
 Treated as "to implement," not "done." Listed here so an auditor doesn't
 confuse scanner coverage with runtime coverage.

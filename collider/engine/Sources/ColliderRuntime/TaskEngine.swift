@@ -166,7 +166,7 @@ extension ColliderRuntime {
         of task: TaskDeclaration,
         dependencies: [ArtifactDigest]
     ) throws -> ArtifactDigest {
-        var encoder = CanonicalDigestEncoder(schema: task.schemaVersion)
+        var encoder = CanonicalDigestEncoder()
         encoder.append(tag: 1, string: task.id.rawValue)
         encoder.append(tag: 2, string: task.component.rawValue)
         encoder.append(tag: 89, string: task.cachePolicy.rawValue)
@@ -457,9 +457,13 @@ extension ColliderRuntime {
             encoder.append(tag: 182, string: "prepare")
             encoder.append(tag: 185, string: preparation.launcher.string)
             encoder.append(tag: 185, string: preparation.source.string)
-            encoder.append(
-                tag: 186,
-                integer: preparation.minimumFreeBytes)
+            for stack in preparation.patchStacks {
+                encoder.append(tag: 191, string: stack.repositoryPath)
+                for patch in stack.patches {
+                    encoder.append(tag: 192, string: patch.path)
+                    encoder.append(tag: 193, string: patch.file.string)
+                }
+            }
             encoder.append(
                 tag: 186,
                 integer: UInt64(preparation.syncJobs))
@@ -500,6 +504,7 @@ extension ColliderRuntime {
             for path in [
                 build.productSource,
                 build.source,
+                build.repoLauncher,
                 build.sourceProvenance,
                 build.buildRoot,
                 build.signingIdentity,
@@ -517,7 +522,6 @@ extension ColliderRuntime {
             for value in [
                 build.buildTimestamp,
                 UInt64(build.buildJobs),
-                build.minimumFreeBytes,
                 UInt64(build.expectedPlatformSDK),
                 UInt64(build.expectedVendorAPILevel),
             ] {
@@ -1926,7 +1930,7 @@ private func prepareHostToolchainBuild(
         atPath: preparation.stagingRoot.string,
         withIntermediateDirectories: true)
     try DurableFile.write(
-        Data("schema=3\n".utf8),
+        Data("nucleus\n".utf8),
         to: preparation.stagingRoot.appending(".nucleus-owned"))
     guard preparation.platform == .linux else { return }
     let llvmLibrary = preparation.workspace.appending(

@@ -9,7 +9,7 @@ publication across every first-party component.
 
 All first-party workflow policy and orchestration is Swift. Collider launches
 leaf tools as an executable plus an argument vector and never constructs a
-shell command string. `tools/collider` is the only first-party bootstrap shell
+shell command string. `collider` is the only first-party bootstrap shell
 entry point. An upstream shell program remains only when the upstream build
 system itself requires that program; it receives all paths, environment,
 lifecycle, logging, validation, and publication policy from Collider.
@@ -137,7 +137,7 @@ the root executable consumes those recipes.
   a second process, digest, filesystem, lock, log, or artifact implementation.
 - `ColliderCore` owns the pure `Sendable` domain model: task declarations,
   dependency graphs, artifact and run identifiers, events, validation results,
-  stable manifest schemas, typed command specifications, and `DownloadSpec`.
+  current manifest structures, typed command specifications, and `DownloadSpec`.
   It uses `SystemPackage.FilePath` as the path currency but contains no
   subprocess, HTTP transport, descriptor operation, hashing implementation, or
   platform implementation. It lives in the `collider/` package.
@@ -261,13 +261,13 @@ There is no `Foundation.Process` fallback and no second process implementation.
 `Crypto.SHA256`. `ArtifactDigest` stores the algorithm and bytes and serializes
 as `sha256:<lowercase-hex>`. Manifests never contain an unlabelled digest.
 
-Digest input uses one versioned canonical binary framing with explicit field
-tags and lengths. Task identities include the task schema version, ordered
-dependency identities, normalized arguments, the allowlisted artifact
-environment, resolved tool identities, configuration, and declared source
-trees. A tree identity walks sorted relative path bytes and hashes each entry's
-kind, executable permissions, symlink target, and file contents. It does not
-hash timestamps, ownership, credentials, or incidental shell state. Relevant
+Digest input uses one canonical binary framing with explicit field tags and
+lengths. Task identities include the operation encoding, ordered dependency
+identities, normalized arguments, the allowlisted artifact environment,
+resolved tool identities, configuration, and declared source trees. A tree
+identity walks sorted relative path bytes and hashes each entry's kind,
+executable permissions, symlink target, and file contents. It does not hash
+timestamps, ownership, credentials, or incidental shell state. Relevant
 uncommitted contents participate directly rather than being represented only by
 a repository revision.
 
@@ -452,7 +452,7 @@ protocol target, then make both Collider and the session executable consume
 that target. Verify that `collider doctor --help` builds in a checkout with no
 render SDK, React Native SDK, browser source tree, or runtime installation.
 
-Add `tools/collider` as the minimal bootstrap launcher. It resolves the
+Add `collider` as the minimal bootstrap launcher. It resolves the
 workspace, selects the bootstrap or active Nucleus Swift toolchain, incrementally
 builds the Collider binary, and executes it. It contains no workflow policy.
 
@@ -477,7 +477,7 @@ script owns the Collider run registry, its state files, or its locks after this
 phase; component-local state disappears in that component's migration phase.
 
 Add the run registry, structured event stream, atomic `latest` pointer,
-credential scrubbing, file locks, and stable result schema. Move every existing
+credential scrubbing, file locks, and typed result records. Move every existing
 Collider command onto these primitives before adding new workflows.
 
 ## Phase 3: Add the Task Graph and Artifact State Machine
@@ -486,8 +486,8 @@ Introduce typed task declarations, dependency resolution, content identities,
 output validation, dry-run rendering, invalidation explanations, and safe
 resumption.
 
-Introduce the versioned canonical digest encoder and the streaming
-Swift Crypto-backed `ArtifactDigest`. Apply it to task inputs, file and tree
+Introduce the canonical digest encoder and the streaming Swift Crypto-backed
+`ArtifactDigest`. Apply it to task inputs, file and tree
 contents, tools, manifests, downloaded archives, and generation identities.
 Replace command-specific fingerprints and external checksum implementations
 when their owning recipe lands on this engine.
@@ -505,8 +505,8 @@ AsyncHTTPClient, or a `curl` subprocess fallback.
 
 Introduce the shared private-candidate, validated-generation, atomic-activation
 publication primitive with file and directory durability barriers. Delete the
-existing `.nucleus/state` and `.nucleus/artifacts` layouts when the new schema
-lands; the first Collider run creates new state. Do not add a legacy-layout
+existing `.nucleus/state` and `.nucleus/artifacts` layouts when the new state
+model lands; the first Collider run creates new state. Do not add a legacy-layout
 reader or migration path.
 
 ## Phase 4: Migrate Runtime Workflows
@@ -578,10 +578,10 @@ recipe.
 Delete every superseded public script, duplicated log implementation, duplicated
 lock, duplicated active-generation updater, and stale workflow state file.
 
-Update repository instructions and automation to invoke `tools/collider` only.
+Update repository instructions and automation to invoke `collider` only.
 Delete every first-party orchestration shell and Python program. Reject direct
 execution of a remaining upstream leaf script unless Collider provides its
-orchestration environment. `tools/collider` remains the only first-party shell
+orchestration environment. `collider` remains the only first-party shell
 entry point and contains only bootstrap logic. Remove `curl` and host checksum
 executables from Collider's prerequisite contract.
 
