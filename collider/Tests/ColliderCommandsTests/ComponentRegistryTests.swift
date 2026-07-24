@@ -19,11 +19,11 @@ import WaylandColliderRecipe
         "linux.test", "rn.test", "compositor-core.test",
         "compositor.test", "shell.test", "android-runtime.test",
     ])
-    #expect(try registry.selectedTestTasks("compositor").map(\.rawValue) == [
+    #expect(try registry.selectedTestTasks(.compositor).map(\.rawValue) == [
         "compositor-core.test", "compositor.test",
     ])
-    #expect(throws: WorkspaceFailure.self) {
-        try registry.selectedTestTasks("unknown")
+    #expect(throws: (any Error).self) {
+        try ColliderCommand.parseAsRoot(["test", "unknown"])
     }
 }
 

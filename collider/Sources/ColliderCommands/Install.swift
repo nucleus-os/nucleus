@@ -1,22 +1,25 @@
+import ArgumentParser
 import ColliderCore
 import ColliderRuntime
 import FoundationEssentials
 import SystemPackage
 
-enum RuntimeSanitizer: String, CaseIterable, Equatable {
+enum RuntimeSanitizer: String, CaseIterable, Equatable,
+    ExpressibleByArgument
+{
     case address
     case undefined
     case thread
 }
 
 struct RuntimeBuildOptions: Equatable {
-    var configuration = "debug"
+    var optimization: OptimizationMode = .debug
     var tracy = false
     var sanitizer: RuntimeSanitizer?
 
     var identity: String {
         [
-            configuration,
+            optimization.rawValue,
             tracy ? "tracy" : "plain",
             sanitizer?.rawValue ?? "unsanitized",
         ].joined(separator: "-")
@@ -24,7 +27,7 @@ struct RuntimeBuildOptions: Equatable {
 
     var metadata: String {
         """
-        configuration=\(configuration)
+        configuration=\(optimization.rawValue)
         tracy=\(tracy)
         sanitizer=\(sanitizer?.rawValue ?? "none")
         """ + "\n"
@@ -44,7 +47,7 @@ struct RuntimeInstallation {
 }
 
 struct RuntimeInstaller {
-    enum Component: String {
+    enum Component: String, ExpressibleByArgument {
         case compositor
         case shell
         case session
@@ -283,7 +286,7 @@ struct RuntimeInstaller {
         var arguments = [
             "build",
             "--package-path", packagePath,
-            "--configuration", options.configuration,
+            "--configuration", options.optimization.rawValue,
             "--product", product,
         ]
         if options.tracy {
@@ -387,30 +390,30 @@ struct RuntimeInstaller {
 struct InstallCommand {
     let context: WorkspaceContext
 
-    func run(_ arguments: ArraySlice<String>) throws {
-        let arguments = Array(arguments)
-        guard let name = arguments.first,
-              let component = RuntimeInstaller.Component(rawValue: name)
-        else {
-            throw WorkspaceFailure.message(Self.usage)
-        }
-        let explicitPrefix = try parsePrefix(Array(arguments.dropFirst()))
-        let prefix = explicitPrefix ?? defaultPrefix(for: component)
+    func run(
+        _ component: RuntimeInstaller.Component,
+        prefix explicitPrefix: String?
+    ) throws {
+        let prefix = resolvedPrefix(
+            for: component,
+            explicit: explicitPrefix)
         _ = try RuntimeInstaller(context: context).install(
             component,
             prefix: prefix)
         print("installed \(component.rawValue) runtime → \(prefix.path)")
     }
 
-    private func parsePrefix(_ arguments: [String]) throws -> URL? {
-        guard !arguments.isEmpty else { return nil }
-        guard arguments.count == 2, arguments[0] == "--prefix" else {
-            throw WorkspaceFailure.message(Self.usage)
+    func resolvedPrefix(
+        for component: RuntimeInstaller.Component,
+        explicit value: String?
+    ) -> URL {
+        if let value {
+            return URL(
+                fileURLWithPath: value,
+                relativeTo: context.root
+            ).standardizedFileURL
         }
-        return URL(
-            fileURLWithPath: arguments[1],
-            relativeTo: context.root
-        ).standardizedFileURL
+        return defaultPrefix(for: component)
     }
 
     private func defaultPrefix(for component: RuntimeInstaller.Component) -> URL {
@@ -423,11 +426,4 @@ struct InstallCommand {
             context.root.appendingPathComponent(".install")
         }
     }
-
-    private static let usage = """
-    Usage: collider install compositor|shell|session [--prefix DIR]
-
-    `session` installs the compositor, session launchers, native shell, and PAM
-    helper into one prefix (default: <workspace>/.install).
-    """
 }

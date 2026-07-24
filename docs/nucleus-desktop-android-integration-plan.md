@@ -466,7 +466,7 @@ Phase 2 begins with one strict four-step bring-up sequence:
    and 40 APEX payloads directly, normalize the six published images to mountable raw
    files, and emit exact schema-free source and image provenance. Nucleus does not
    rebuild, rename, or weaken validation for the CTS shim. The retained passing run is
-   `.nucleus/runs/2026-07-24T19-50-29Z-2403572`.
+   `.nucleus/runs/2026-07-24T21-24-51Z-2793327`.
 4. [ ] Mount the four immutable images read-only, mount every immutable APEX payload
    on a host-owned `/apex` tmpfs, create a private binderfs instance, enter the
    user/id/mount/PID/network/cgroup namespace contract through LXC, boot

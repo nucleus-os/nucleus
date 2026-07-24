@@ -1,3 +1,26 @@
+diff --git a/apex/UprobeStats-mainline.rc b/apex/UprobeStats-mainline.rc
+index dccfefda..70241208 100644
+--- a/apex/UprobeStats-mainline.rc
++++ b/apex/UprobeStats-mainline.rc
+@@ -3,4 +3,4 @@ service uprobestats /apex/com.android.uprobestats/bin/uprobestats
+     user uprobestats
+     group uprobestats readproc
+     oneshot
+-    capabilities SYS_ADMIN
++    capabilities SYS_ADMIN BPF
+diff --git a/apex/UprobeStats-service-mainline.rc b/apex/UprobeStats-service-mainline.rc
+index f0495c4a..264e92fa 100644
+--- a/apex/UprobeStats-service-mainline.rc
++++ b/apex/UprobeStats-service-mainline.rc
+@@ -2,7 +2,7 @@ service uprobestats /apex/com.android.uprobestats/bin/uprobestats
+     class main
+     user uprobestats
+     group uprobestats readproc
+-    capabilities SYS_ADMIN PERFMON
++    capabilities SYS_ADMIN PERFMON BPF
+     interface aidl uprobestats_service
+     disabled
+     oneshot
 diff --git a/bpfloader/UprobeStatsBpfLoad.cpp b/bpfloader/UprobeStatsBpfLoad.cpp
 index a46d2d6..77ac575 100644
 --- a/bpfloader/UprobeStatsBpfLoad.cpp

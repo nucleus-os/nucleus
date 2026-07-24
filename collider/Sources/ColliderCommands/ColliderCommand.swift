@@ -4,6 +4,25 @@ import ColliderRuntime
 import FoundationEssentials
 import SystemPackage
 
+enum ColliderPrivilegedMode: Equatable {
+    case androidApexMount
+    case androidBPFBroker
+    case androidBPFMount
+}
+
+func colliderPrivilegedMode(for arguments: [String]) -> ColliderPrivilegedMode? {
+    switch arguments.first {
+    case androidApexMountCommandName:
+        .androidApexMount
+    case androidBPFBrokerCommandName:
+        .androidBPFBroker
+    case androidBPFMountCommandName:
+        .androidBPFMount
+    default:
+        nil
+    }
+}
+
 public struct ColliderCommand: ParsableCommand {
     public static let configuration = CommandConfiguration(
         commandName: "collider",
@@ -21,20 +40,21 @@ public struct ColliderCommand: ParsableCommand {
 
     public static func main() {
         let arguments = Array(CommandLine.arguments.dropFirst())
-        if arguments.first == androidApexMountCommandName {
+        switch colliderPrivilegedMode(for: arguments) {
+        case .androidApexMount:
             AndroidApexMountPrivilegedCommand.main(
                 Array(arguments.dropFirst()))
             return
-        }
-        if arguments.first == androidBPFBrokerCommandName {
+        case .androidBPFBroker:
             AndroidBPFBrokerPrivilegedCommand.main(
                 Array(arguments.dropFirst()))
             return
-        }
-        if arguments.first == androidBPFMountCommandName {
+        case .androidBPFMount:
             AndroidBPFMountPrivilegedCommand.main(
                 Array(arguments.dropFirst()))
             return
+        case nil:
+            break
         }
         do {
             var command = try parseAsRoot()
@@ -43,14 +63,10 @@ public struct ColliderCommand: ParsableCommand {
             let registry = RunRegistry(
                 root: FilePath(workspace).appending(".nucleus"))
             let arguments = Array(CommandLine.arguments)
-            let requestedRunID = selectedRunID(in: arguments)
-            if requestedRunID != nil, !isResumableTaskCommand(arguments) {
-                throw WorkspaceFailure.message(
-                    "--run-id is supported only by task-graph build and test commands")
-            }
+            let requestedRunID = requestedRunID(for: command)
             let run = try waitForAsyncResult {
                 if let requestedRunID {
-                    return try await registry.resume(RunID(rawValue: requestedRunID))
+                    return try await registry.resume(requestedRunID)
                 }
                 return try await registry.begin(command: arguments)
             }
@@ -101,7 +117,16 @@ public struct ColliderCommand: ParsableCommand {
     }
 }
 
-struct GlobalOptions: ParsableArguments {
+struct RunIDArgument: ExpressibleByArgument, Equatable, Sendable {
+    let value: RunID
+
+    init?(argument: String) {
+        guard !argument.isEmpty else { return nil }
+        value = RunID(rawValue: argument)
+    }
+}
+
+struct TaskControlOptions: ParsableArguments {
     @Flag(help: "Print the resolved task graph without executing it.")
     var dryRun = false
 
@@ -115,11 +140,32 @@ struct GlobalOptions: ParsableArguments {
     var json = false
 
     @Option(name: .customLong("run-id"), help: "Resume an interrupted run.")
-    var runID: String?
+    var runID: RunIDArgument?
 
     var controls: TaskControls {
         TaskControls(dryRun: dryRun, explain: explain, verbose: verbose, json: json)
     }
+}
+
+protocol ResumableRun {
+    var requestedRunID: RunID? { get }
+}
+
+protocol TaskControlledCommand: ParsableCommand, ResumableRun {
+    var taskOptions: TaskControlOptions { get set }
+}
+
+extension TaskControlledCommand {
+    var requestedRunID: RunID? { taskOptions.runID?.value }
+}
+
+func requestedRunID(for command: any ParsableCommand) -> RunID? {
+    (command as? any ResumableRun)?.requestedRunID
+}
+
+struct ReportOptions: ParsableArguments {
+    @Flag(help: "Emit stable machine-readable records.")
+    var json = false
 }
 
 private func context() throws -> WorkspaceContext { try WorkspaceContext.load() }
@@ -127,117 +173,92 @@ private func context() throws -> WorkspaceContext { try WorkspaceContext.load() 
 struct Doctor: ParsableCommand {
     static let configuration = CommandConfiguration(
         abstract: "Report missing tools and repository prerequisites.")
-    @OptionGroup var global: GlobalOptions
+    @Flag(help: "Print the resolved checks without executing them.")
+    var dryRun = false
+    @Flag(help: "Emit stable machine-readable records.")
+    var json = false
     @Argument(help: "Prerequisite group: all, runtime, toolchain, android, or browser.")
-    var scope = "all"
-
-    mutating func validate() throws {
-        guard ["all", "runtime", "toolchain", "android", "browser"].contains(scope) else {
-            throw ValidationError("unknown doctor scope '\(scope)'")
-        }
-    }
+    var scope: DoctorScope = .all
 
     mutating func run() throws {
         try WorkspaceDoctor(context: context()).run(
             scope: scope,
-            dryRun: global.dryRun,
-            json: global.json)
+            dryRun: dryRun,
+            json: json)
     }
 }
 
-struct Bootstrap: ParsableCommand {
-    @OptionGroup var global: GlobalOptions
-    @Argument(help: "all, runtime, browser, or a component name.") var component: String?
+struct Bootstrap: TaskControlledCommand {
+    @OptionGroup var taskOptions: TaskControlOptions
+    @Argument(help: "all, runtime, browser, or a component name.")
+    var component: ComponentSelection?
 
     mutating func run() throws {
         let workspace = try context()
-        if component == "browser" {
+        if component == .browser {
             try ChromiumCommand(context: workspace).run(
-                ["bootstrap"][...], controls: global.controls)
+                .bootstrap,
+                controls: taskOptions.controls)
         } else {
             try ComponentRegistry(context: workspace).bootstrap(
-                selection: component, controls: global.controls)
+                selection: component, controls: taskOptions.controls)
         }
     }
 }
 
-struct Build: ParsableCommand {
-    @OptionGroup var global: GlobalOptions
+struct Build: TaskControlledCommand {
+    @OptionGroup var taskOptions: TaskControlOptions
     @Argument(help: "all, runtime, toolchain, android, browser, or a component name.")
-    var component: String?
+    var component: ComponentSelection?
 
     mutating func run() throws {
         let workspace = try context()
         switch component {
-        case "toolchain":
-            try ToolchainCommand(context: workspace).run(
-                (["rebuild"] + taskControlArguments(global))[...])
-        case "android":
+        case .toolchain:
+            try ToolchainCommand(context: workspace).rebuild(
+                RebuildOptions(controls: taskOptions.controls))
+        case .android:
             try AndroidCommand(context: workspace).run(
-                ["build"][...], controls: global.controls)
-        case "browser":
+                .build(gradleArguments: []),
+                controls: taskOptions.controls)
+        case .browser:
             try ChromiumCommand(context: workspace).run(
-                ["build"][...], controls: global.controls)
+                .build,
+                controls: taskOptions.controls)
         default:
             try ComponentRegistry(context: workspace).build(
-                selection: component, controls: global.controls)
+                selection: component, controls: taskOptions.controls)
         }
     }
 }
 
-private func selectedRunID(in arguments: [String]) -> String? {
-    for (index, argument) in arguments.enumerated() {
-        if argument == "--run-id", index + 1 < arguments.count {
-            return arguments[index + 1]
-        }
-        if argument.hasPrefix("--run-id=") {
-            return String(argument.dropFirst("--run-id=".count))
-        }
-    }
-    return nil
-}
-
-private func isResumableTaskCommand(_ arguments: [String]) -> Bool {
-    guard let command = arguments.dropFirst().first else { return false }
-    if ["bootstrap", "build", "test", "generate"].contains(command) {
-        return true
-    }
-    let subcommand = arguments.dropFirst(2).first
-    return (command == "toolchain" && subcommand == "rebuild")
-        || (command == "android"
-            && ["build", "native", "verify"].contains(subcommand ?? ""))
-        || (command == "android-runtime"
-            && ["source-lock", "source", "image"].contains(
-                subcommand ?? ""))
-        || (command == "browser"
-            && ["bootstrap", "build", "test"].contains(subcommand ?? ""))
-}
-
-struct Test: ParsableCommand {
-    @OptionGroup var global: GlobalOptions
+struct Test: TaskControlledCommand {
+    @OptionGroup var taskOptions: TaskControlOptions
     @Argument(help: "all, runtime, android, browser, or a component name.")
-    var component: String?
+    var component: ComponentSelection?
 
     mutating func run() throws {
         let workspace = try context()
-        if component == "android" {
+        if component == .android {
             try workspace.withExclusiveVerification {
                 try AndroidCommand(context: workspace).run(
-                    ["build"][...], controls: global.controls)
+                    .build(gradleArguments: []),
+                    controls: taskOptions.controls)
             }
             return
         }
-        if component == "browser" {
+        if component == .browser {
             try workspace.withExclusiveVerification {
                 try ChromiumCommand(context: workspace).run(
-                    ["test"][...], controls: global.controls)
+                    .test,
+                    controls: taskOptions.controls)
             }
             return
         }
         try workspace.withExclusiveVerification {
             try ComponentRegistry(context: workspace).test(
-                selection: component, controls: global.controls)
-            if component == nil || component == "all", !global.dryRun {
+                selection: component, controls: taskOptions.controls)
+            if component == nil || component == .all, !taskOptions.dryRun {
                 try Orchestrator(context: workspace).runRepositoryWideTestGates()
             }
         }
@@ -247,7 +268,6 @@ struct Test: ParsableCommand {
 struct Run: ParsableCommand {
     static let configuration = CommandConfiguration(
         abstract: "Build, install, and launch a compositor session.")
-    @OptionGroup var global: GlobalOptions
     @Flag var tracy = false
     @Option var output: String?
     @Option var name: String?
@@ -255,62 +275,116 @@ struct Run: ParsableCommand {
     @Option var port: Int?
     @Option var seconds: Int?
     @Option var scale: Double?
-    @Option(name: .customLong("present-mode")) var presentMode: String?
+    @Option(name: .customLong("present-mode"))
+    var presentMode: PresentMode?
     @Option(name: .customLong("drm-device")) var drmDevice: String?
     @Option var wallpaper: String?
-    @Option(name: .customLong("optimize")) var optimization: String?
-    @Option var sanitize: String?
+    @Option(name: .customLong("optimize"))
+    var optimization: OptimizationMode?
+    @Option var sanitize: RuntimeSanitizer?
     @Flag(name: .customLong("no-build")) var noBuild = false
     @Flag(name: .customLong("vk-validation")) var validation = false
     @Flag(name: .customLong("trace-diagnostics")) var diagnostics = false
     @Flag var valgrind = false
-    @Argument(parsing: .captureForPassthrough)
+    @Argument(parsing: .postTerminator)
     var compositorArguments: [String] = []
 
-    mutating func run() throws {
-        try rejectUnsupportedControls(global)
-        var arguments: [String] = []
-        if tracy { arguments.append("--tracy") }
-        append("--output", output, to: &arguments)
-        append("--name", name, to: &arguments)
-        append("--host", host, to: &arguments)
-        append("--port", port, to: &arguments)
-        append("--seconds", seconds, to: &arguments)
-        append("--scale", scale, to: &arguments)
-        append("--present-mode", presentMode, to: &arguments)
-        append("--drm-device", drmDevice, to: &arguments)
-        append("--wallpaper", wallpaper, to: &arguments)
-        append("--optimize", optimization, to: &arguments)
-        append("--sanitize", sanitize, to: &arguments)
-        if noBuild { arguments.append("--no-build") }
-        if validation { arguments.append("--vk-validation") }
-        if diagnostics { arguments.append("--trace-diagnostics") }
-        if valgrind { arguments.append("--valgrind") }
-        if !compositorArguments.isEmpty {
-            arguments.append("--")
-            arguments += compositorArguments
+    mutating func validate() throws {
+        do {
+            _ = try resolvedOptions().validated()
+        } catch {
+            throw ValidationError(String(describing: error))
         }
-        try RunCommand(context: context()).run(arguments[...])
+    }
+
+    mutating func run() throws {
+        try RunCommand(context: context()).run(
+            try resolvedOptions().validated())
+    }
+
+    func resolvedOptions() -> RunOptions {
+        var options = RunOptions()
+        options.tracy = tracy
+        if let output {
+            options.output = output
+            options.outputOptionWasSpecified = true
+        }
+        if let name {
+            options.name = name
+            options.outputOptionWasSpecified = true
+        }
+        if let host {
+            options.host = host
+            options.tracyOnlyOptionWasSpecified = true
+        }
+        if let port {
+            options.port = port
+            options.tracyOnlyOptionWasSpecified = true
+        }
+        options.seconds = seconds
+        options.scale = scale
+        options.presentMode = presentMode
+        options.drmDevice = drmDevice
+        options.wallpaper = wallpaper
+        options.optimization = optimization
+        options.sanitizer = sanitize
+        options.build = !noBuild
+        options.validation = validation
+        options.diagnostics = diagnostics
+        options.valgrind = valgrind
+        options.compositorArguments = compositorArguments
+        return options
     }
 }
 
 struct Install: ParsableCommand {
-    @OptionGroup var global: GlobalOptions
-    @Argument(help: "session or browser.") var component: String
-    @Option var prefix: String?
+    static let configuration = CommandConfiguration(
+        abstract: "Install Nucleus runtime and browser products.",
+        subcommands: [
+            Session.self,
+            Compositor.self,
+            Shell.self,
+            Browser.self,
+        ])
 
-    mutating func run() throws {
-        if component == "browser" {
+    struct Session: RuntimeInstallLeaf {
+        static let component = RuntimeInstaller.Component.session
+        @Option var prefix: String?
+    }
+
+    struct Compositor: RuntimeInstallLeaf {
+        static let component = RuntimeInstaller.Component.compositor
+        @Option var prefix: String?
+    }
+
+    struct Shell: RuntimeInstallLeaf {
+        static let component = RuntimeInstaller.Component.shell
+        @Option var prefix: String?
+    }
+
+    struct Browser: TaskControlledCommand {
+        @OptionGroup var taskOptions: TaskControlOptions
+        @Option var prefix: String?
+
+        mutating func run() throws {
             try ChromiumCommand(context: context()).run(
-                ["install"][...],
-                controls: global.controls,
+                .install,
+                controls: taskOptions.controls,
                 installPrefix: prefix)
-            return
         }
-        try rejectUnsupportedControls(global)
-        var arguments = [component]
-        append("--prefix", prefix, to: &arguments)
-        try InstallCommand(context: context()).run(arguments[...])
+    }
+}
+
+protocol RuntimeInstallLeaf: ParsableCommand {
+    static var component: RuntimeInstaller.Component { get }
+    var prefix: String? { get set }
+}
+
+extension RuntimeInstallLeaf {
+    mutating func run() throws {
+        try InstallCommand(context: context()).run(
+            Self.component,
+            prefix: prefix)
     }
 }
 
@@ -318,54 +392,59 @@ struct Toolchain: ParsableCommand {
     static let configuration = CommandConfiguration(
         subcommands: [Rebuild.self, Status.self, Install.self, Uninstall.self])
 
-    struct Rebuild: ParsableCommand {
-        @OptionGroup var global: GlobalOptions
+    struct Rebuild: TaskControlledCommand {
+        @OptionGroup var taskOptions: TaskControlOptions
         @Flag var reconfigure = false
-        @Option var arch: [String] = []
+        @Option var arch: [ToolchainArchitecture] = []
+
+        var rebuildOptions: RebuildOptions {
+            RebuildOptions(
+                controls: taskOptions.controls,
+                reconfigure: reconfigure,
+                architectures: arch)
+        }
 
         mutating func run() throws {
-            var arguments = ["rebuild"] + taskControlArguments(global)
-            if reconfigure { arguments.append("--reconfigure") }
-            for value in arch { arguments += ["--arch", value] }
-            try ToolchainCommand(context: context()).run(arguments[...])
+            try ToolchainCommand(context: context()).rebuild(
+                rebuildOptions)
         }
     }
 
     struct Status: ParsableCommand {
-        @OptionGroup var global: GlobalOptions
+        @OptionGroup var reportOptions: ReportOptions
         mutating func run() throws {
-            try rejectUnsupportedControls(global, allowingJSON: true)
-            try ToolchainStatus(context: context()).run(json: global.json)
+            try ToolchainStatus(context: context()).run(
+                json: reportOptions.json)
         }
     }
     struct Install: ParsableCommand {
-        @OptionGroup var global: GlobalOptions
+        @Flag(help: "Print the installation actions without executing them.")
+        var dryRun = false
         @Option var version: String?
         @Option var prefix: String?
         @Option var tarball: String?
 
         mutating func run() throws {
-            try rejectUnsupportedControls(global, allowingDryRun: true)
             let workspace = try context()
             try ToolchainInstallation(context: workspace).install(
                 version: version,
                 prefix: prefix,
                 tarball: tarball,
-                dryRun: global.dryRun)
+                dryRun: dryRun)
         }
     }
     struct Uninstall: ParsableCommand {
-        @OptionGroup var global: GlobalOptions
+        @Flag(help: "Print the removal actions without executing them.")
+        var dryRun = false
         @Option var version: String?
         @Option var prefix: String?
 
         mutating func run() throws {
-            try rejectUnsupportedControls(global, allowingDryRun: true)
             let workspace = try context()
             try ToolchainInstallation(context: workspace).uninstall(
                 version: version,
                 prefix: prefix,
-                dryRun: global.dryRun)
+                dryRun: dryRun)
         }
     }
 }
@@ -374,28 +453,43 @@ struct Android: ParsableCommand {
     static let configuration = CommandConfiguration(
         subcommands: [Build.self, Native.self, Verify.self])
 
-    struct Build: ParsableCommand {
-        @OptionGroup var global: GlobalOptions
-        @Argument(parsing: .captureForPassthrough) var arguments: [String] = []
+    struct Build: TaskControlledCommand {
+        @OptionGroup var taskOptions: TaskControlOptions
+        @Argument(parsing: .postTerminator) var arguments: [String] = []
+
+        var operation: AndroidOperation {
+            .build(gradleArguments: arguments)
+        }
+
         mutating func run() throws {
             try AndroidCommand(context: context()).run(
-                (["build"] + arguments)[...], controls: global.controls)
+                operation,
+                controls: taskOptions.controls)
         }
     }
-    struct Native: ParsableCommand {
-        @OptionGroup var global: GlobalOptions
+    struct Native: TaskControlledCommand {
+        @OptionGroup var taskOptions: TaskControlOptions
+
+        var operation: AndroidOperation { .native }
+
         mutating func run() throws {
             try AndroidCommand(context: context()).run(
-                ["native"][...], controls: global.controls)
+                operation,
+                controls: taskOptions.controls)
         }
     }
-    struct Verify: ParsableCommand {
-        @OptionGroup var global: GlobalOptions
+    struct Verify: TaskControlledCommand {
+        @OptionGroup var taskOptions: TaskControlOptions
         @Argument var library: String?
+
+        var operation: AndroidOperation {
+            .verify(library: library)
+        }
+
         mutating func run() throws {
             try AndroidCommand(context: context()).run(
-                (["verify"] + [library].compactMap { $0 })[...],
-                controls: global.controls)
+                operation,
+                controls: taskOptions.controls)
         }
     }
 }
@@ -411,37 +505,40 @@ struct AndroidRuntime: ParsableCommand {
             FrameworkBoot.self,
         ])
 
-    struct SourceLock: ParsableCommand {
+    struct SourceLock: TaskControlledCommand {
         static let configuration = CommandConfiguration(
             commandName: "source-lock",
             abstract: "Verify the pinned AOSP and Repo identities.")
-        @OptionGroup var global: GlobalOptions
+        @OptionGroup var taskOptions: TaskControlOptions
 
         mutating func run() throws {
             try ComponentRegistry(context: context())
-                .verifyAndroidRuntimeSourceLock(controls: global.controls)
+                .verifyAndroidRuntimeSourceLock(
+                    controls: taskOptions.controls)
         }
     }
 
-    struct Source: ParsableCommand {
+    struct Source: TaskControlledCommand {
         static let configuration = CommandConfiguration(
             abstract: "Materialize the exact AOSP source checkout.")
-        @OptionGroup var global: GlobalOptions
+        @OptionGroup var taskOptions: TaskControlOptions
 
         mutating func run() throws {
             try ComponentRegistry(context: context())
-                .prepareAndroidRuntimeSource(controls: global.controls)
+                .prepareAndroidRuntimeSource(
+                    controls: taskOptions.controls)
         }
     }
 
-    struct Image: ParsableCommand {
+    struct Image: TaskControlledCommand {
         static let configuration = CommandConfiguration(
             abstract: "Build and release-sign the Nucleus Android images.")
-        @OptionGroup var global: GlobalOptions
+        @OptionGroup var taskOptions: TaskControlOptions
 
         mutating func run() throws {
             try ComponentRegistry(context: context())
-                .buildAndroidRuntimeImage(controls: global.controls)
+                .buildAndroidRuntimeImage(
+                    controls: taskOptions.controls)
         }
     }
 
@@ -474,97 +571,107 @@ struct AndroidRuntime: ParsableCommand {
 
 struct Browser: ParsableCommand {
     static let configuration = CommandConfiguration(
-        subcommands: [Doctor.self, Bootstrap.self, Build.self, Test.self, Install.self])
+        subcommands: [Doctor.self, Bootstrap.self, Build.self, Test.self])
 
-    struct Doctor: BrowserLeaf {
-        static let operation = "doctor"
-        @OptionGroup var global: GlobalOptions
+    struct Doctor: ParsableCommand {
+        @Flag(help: "Print the resolved browser checks without executing them.")
+        var dryRun = false
+        @Flag(help: "Emit stable machine-readable records.")
+        var json = false
+
+        mutating func run() throws {
+            try ChromiumCommand(context: context()).run(
+                .doctor,
+                controls: TaskControls(dryRun: dryRun, json: json))
+        }
     }
-    struct Bootstrap: BrowserLeaf {
-        static let operation = "bootstrap"
-        @OptionGroup var global: GlobalOptions
+    struct Bootstrap: BrowserTaskLeaf {
+        static let operation = ChromiumOperation.bootstrap
+        @OptionGroup var taskOptions: TaskControlOptions
     }
-    struct Build: BrowserLeaf {
-        static let operation = "build"
-        @OptionGroup var global: GlobalOptions
+    struct Build: BrowserTaskLeaf {
+        static let operation = ChromiumOperation.build
+        @OptionGroup var taskOptions: TaskControlOptions
     }
-    struct Test: BrowserLeaf {
-        static let operation = "test"
-        @OptionGroup var global: GlobalOptions
-    }
-    struct Install: BrowserLeaf {
-        static let operation = "install"
-        @OptionGroup var global: GlobalOptions
+    struct Test: BrowserTaskLeaf {
+        static let operation = ChromiumOperation.test
+        @OptionGroup var taskOptions: TaskControlOptions
     }
 }
 
-protocol BrowserLeaf: ParsableCommand {
-    static var operation: String { get }
-    var global: GlobalOptions { get set }
+protocol BrowserTaskLeaf: TaskControlledCommand {
+    static var operation: ChromiumOperation { get }
 }
 
-extension BrowserLeaf {
+extension BrowserTaskLeaf {
     mutating func run() throws {
         try ChromiumCommand(context: context()).run(
-            [Self.operation][...], controls: global.controls)
+            Self.operation,
+            controls: taskOptions.controls)
     }
 }
 
 struct Sanitize: ParsableCommand {
-    @Argument var kind: String?
+    @Argument var selection: SanitizerSelection = .all
     mutating func run() throws {
         let workspace = try context()
         try workspace.withExclusiveVerification {
-            try SanitizerCommand(context: workspace).run([kind].compactMap { $0 }[...])
+            try SanitizerCommand(context: workspace).run(selection)
         }
     }
 }
 
 struct Benchmark: ParsableCommand {
-    @Argument var suite: String?
     mutating func run() throws {
-        guard suite == nil || suite == "all" else { throw unavailable("selected benchmark suites") }
         let workspace = try context()
-        try workspace.withExclusiveVerification { try BenchmarkCommand(context: workspace).run([]) }
+        try workspace.withExclusiveVerification {
+            try BenchmarkCommand(context: workspace).run()
+        }
     }
 }
 
 struct Generate: ParsableCommand {
     static let configuration = CommandConfiguration(subcommands: [RNSpec.self, Vulkan.self, Wayland.self])
-    struct RNSpec: ParsableCommand {
-        @OptionGroup var global: GlobalOptions
+    struct RNSpec: TaskControlledCommand {
+        @OptionGroup var taskOptions: TaskControlOptions
         mutating func run() throws {
-            try runGenerator("rn", global: global)
+            try runGenerator(.reactNative, taskOptions: taskOptions)
         }
     }
-    struct Vulkan: ParsableCommand {
-        @OptionGroup var global: GlobalOptions
+    struct Vulkan: TaskControlledCommand {
+        @OptionGroup var taskOptions: TaskControlOptions
         mutating func run() throws {
-            try runGenerator("vulkan", global: global)
+            try runGenerator(.vulkan, taskOptions: taskOptions)
         }
     }
-    struct Wayland: ParsableCommand {
-        @OptionGroup var global: GlobalOptions
+    struct Wayland: TaskControlledCommand {
+        @OptionGroup var taskOptions: TaskControlOptions
         mutating func run() throws {
-            try runGenerator("wayland", global: global)
+            try runGenerator(.wayland, taskOptions: taskOptions)
         }
     }
 }
 
-private func runGenerator(_ component: String, global: GlobalOptions) throws {
+private func runGenerator(
+    _ component: GeneratorComponent,
+    taskOptions: TaskControlOptions
+) throws {
     try ComponentRegistry(context: context()).generate(
-        component, controls: global.controls)
+        component, controls: taskOptions.controls)
 }
 
 struct Validate: ParsableCommand {
     static let configuration = CommandConfiguration(subcommands: [Vulkan.self])
     struct Vulkan: ParsableCommand {
-        @OptionGroup var global: GlobalOptions
+        @Flag(help: "Print validation actions without executing them.")
+        var dryRun = false
+        @Flag(help: "Emit stable machine-readable records.")
+        var json = false
 
         mutating func run() throws {
             try VulkanValidation(context: context()).run(
-                dryRun: global.dryRun,
-                json: global.json)
+                dryRun: dryRun,
+                json: json)
         }
     }
 }
@@ -597,7 +704,7 @@ struct Qualify: ParsableCommand {
         @Option(
             name: .customLong("present-mode"),
             help: "vsync or mailbox_latest_wins.")
-        var presentMode = "vsync"
+        var presentMode: PresentMode = .vsync
 
         @Flag(name: .customLong("no-build"))
         var noBuild = false
@@ -614,10 +721,6 @@ struct Qualify: ParsableCommand {
             }
             guard scale.isFinite, scale > 0 else {
                 throw ValidationError("--scale must be positive and finite")
-            }
-            guard ["vsync", "mailbox_latest_wins"].contains(presentMode) else {
-                throw ValidationError(
-                    "--present-mode must be vsync or mailbox_latest_wins")
             }
         }
 
@@ -639,14 +742,17 @@ struct Qualify: ParsableCommand {
 struct Cache: ParsableCommand {
     static let configuration = CommandConfiguration(subcommands: [Status.self, Prune.self])
     struct Status: ParsableCommand {
-        @OptionGroup var global: GlobalOptions
+        @OptionGroup var reportOptions: ReportOptions
         mutating func run() throws {
-            try rejectUnsupportedControls(global, allowingJSON: true)
-            try RepositoryCache(context: context()).status(json: global.json)
+            try RepositoryCache(context: context()).status(
+                json: reportOptions.json)
         }
     }
     struct Prune: ParsableCommand {
-        @OptionGroup var global: GlobalOptions
+        @Flag(help: "Print removals without applying them.")
+        var dryRun = false
+        @Flag(help: "Emit stable machine-readable records.")
+        var json = false
         @Option(name: .customLong("keep-runs"), help: "Number of recent completed runs to retain.")
         var keepRuns = 20
 
@@ -655,14 +761,10 @@ struct Cache: ParsableCommand {
         }
 
         mutating func run() throws {
-            try rejectUnsupportedControls(
-                global,
-                allowingDryRun: true,
-                allowingJSON: true)
             try RepositoryCache(context: context()).prune(
                 keepingRuns: keepRuns,
-                dryRun: global.dryRun,
-                json: global.json)
+                dryRun: dryRun,
+                json: json)
         }
     }
 }
@@ -670,30 +772,27 @@ struct Cache: ParsableCommand {
 struct Logs: ParsableCommand {
     static let configuration = CommandConfiguration(subcommands: [List.self, Show.self, Tail.self])
     struct List: ParsableCommand {
-        @OptionGroup var global: GlobalOptions
+        @OptionGroup var reportOptions: ReportOptions
         @Option var kind: String?
         mutating func run() throws {
-            try rejectUnsupportedControls(global, allowingJSON: true)
             let workspace = try context()
-            try RepositoryState(context: workspace).list(kind: kind, json: global.json)
+            try RepositoryState(context: workspace).list(
+                kind: kind,
+                json: reportOptions.json)
         }
     }
     struct Show: ParsableCommand {
-        @OptionGroup var global: GlobalOptions
         @Argument var runID: String?
         @Option var kind: String?
         mutating func run() throws {
-            try rejectUnsupportedControls(global)
             let workspace = try context()
             try RepositoryState(context: workspace).show(runID, kind: kind)
         }
     }
     struct Tail: ParsableCommand {
-        @OptionGroup var global: GlobalOptions
         @Argument var runID: String?
         @Option var kind: String?
         mutating func run() throws {
-            try rejectUnsupportedControls(global)
             let workspace = try context()
             try RepositoryState(context: workspace).tail(runID, kind: kind)
         }
@@ -701,39 +800,10 @@ struct Logs: ParsableCommand {
 }
 
 struct Status: ParsableCommand {
-    @OptionGroup var global: GlobalOptions
+    @OptionGroup var reportOptions: ReportOptions
     mutating func run() throws {
-        try rejectUnsupportedControls(global, allowingJSON: true)
         let workspace = try context()
-        try RepositoryState(context: workspace).printStatus(json: global.json)
+        try RepositoryState(context: workspace).printStatus(
+            json: reportOptions.json)
     }
-}
-
-private func append<T>(_ option: String, _ value: T?, to arguments: inout [String]) {
-    if let value { arguments += [option, String(describing: value)] }
-}
-
-private func taskControlArguments(_ options: GlobalOptions) -> [String] {
-    var arguments: [String] = []
-    if options.dryRun { arguments.append("--dry-run") }
-    if options.explain { arguments.append("--explain") }
-    if options.verbose { arguments.append("--verbose") }
-    if options.json { arguments.append("--json") }
-    return arguments
-}
-
-private func rejectUnsupportedControls(
-    _ options: GlobalOptions,
-    allowingDryRun: Bool = false,
-    allowingJSON: Bool = false
-) throws {
-    if (!allowingDryRun && options.dryRun) || options.explain || options.verbose
-        || (!allowingJSON && options.json) || options.runID != nil
-    {
-        throw unavailable("global task controls for this migrated workflow")
-    }
-}
-
-private func unavailable(_ feature: String) -> ValidationError {
-    ValidationError("\(feature) has not migrated to the Collider task runtime")
 }

@@ -1,5 +1,23 @@
+import ArgumentParser
 import Foundation
 import NucleusSessionProtocol
+
+enum OptimizationMode: String, Equatable, ExpressibleByArgument {
+    case debug
+    case release
+}
+
+enum PresentMode: String, Equatable, ExpressibleByArgument {
+    case vsync
+    case mailboxLatestWins = "mailbox_latest_wins"
+
+    var sessionValue: SessionPresentMode {
+        switch self {
+        case .vsync: .vsync
+        case .mailboxLatestWins: .mailboxLatestWins
+        }
+    }
+}
 
 struct RunOptions: Equatable {
     var output = "profiles"
@@ -8,32 +26,36 @@ struct RunOptions: Equatable {
     var port = 8086
     var seconds: Int?
     var scale: Double?
-    var presentMode: String?
+    var presentMode: PresentMode?
     var drmDevice: String?
     var wallpaper: String?
     var build = true
     var validation = false
     var diagnostics = false
-    var configuration = "debug"
+    var optimization: OptimizationMode?
     var tracy = false
     var valgrind = false
     var sanitizer: RuntimeSanitizer?
     var compositorArguments: [String] = []
+    var outputOptionWasSpecified = false
+    var tracyOnlyOptionWasSpecified = false
 
     var buildOptions: RuntimeBuildOptions {
         RuntimeBuildOptions(
-            configuration: configuration,
+            optimization: effectiveOptimization,
             tracy: tracy,
             sanitizer: sanitizer)
+    }
+
+    var effectiveOptimization: OptimizationMode {
+        optimization ?? (tracy ? .release : .debug)
     }
 
     var sessionConfiguration: SessionConfiguration {
         get throws {
             try SessionConfiguration(
                 outputScale: scale ?? 1,
-                presentMode: presentMode == "mailbox_latest_wins"
-                    ? .mailboxLatestWins
-                    : .vsync,
+                presentMode: (presentMode ?? .vsync).sessionValue,
                 enableVulkanValidation: validation,
                 traceProtocol: diagnostics,
                 traceDrmDemand: diagnostics,
@@ -42,117 +64,22 @@ struct RunOptions: Equatable {
         }
     }
 
-    static func parse(_ input: [String]) throws -> RunOptions? {
-        var value = RunOptions()
-        var outputOption = false
-        var tracyOnlyOption = false
-        var optimizationOption = false
-        var index = 0
-
-        func argument(_ option: String) throws -> String {
-            guard index + 1 < input.count else {
-                throw WorkspaceFailure.message("missing value for \(option)")
-            }
-            index += 1
-            return input[index]
+    func validated() throws -> RunOptions {
+        if !(1...65_535).contains(port) {
+            throw WorkspaceFailure.message("invalid Tracy port")
         }
-
-        while index < input.count {
-            switch input[index] {
-            case "--tracy":
-                value.tracy = true
-            case "--output":
-                value.output = try argument("--output")
-                outputOption = true
-            case "--name":
-                value.name = try argument("--name")
-                outputOption = true
-            case "--host":
-                value.host = try argument("--host")
-                tracyOnlyOption = true
-            case "--port":
-                guard let port = Int(try argument("--port")),
-                      (1...65535).contains(port)
-                else {
-                    throw WorkspaceFailure.message("invalid Tracy port")
-                }
-                value.port = port
-                tracyOnlyOption = true
-            case "--seconds":
-                guard let seconds = Int(try argument("--seconds")), seconds > 0 else {
-                    throw WorkspaceFailure.message("--seconds must be positive")
-                }
-                value.seconds = seconds
-            case "--scale":
-                guard let scale = Double(try argument("--scale")),
-                      scale.isFinite,
-                      scale > 0
-                else {
-                    throw WorkspaceFailure.message("--scale must be a positive finite number")
-                }
-                value.scale = scale
-            case "--present-mode":
-                value.presentMode = try argument("--present-mode")
-            case "--drm-device":
-                value.drmDevice = try argument("--drm-device")
-            case "--wallpaper":
-                value.wallpaper = try argument("--wallpaper")
-            case "--optimize":
-                value.configuration = try argument("--optimize")
-                optimizationOption = true
-            case "--sanitize":
-                let rawValue = try argument("--sanitize")
-                guard let sanitizer = RuntimeSanitizer(rawValue: rawValue) else {
-                    throw WorkspaceFailure.message(
-                        "--sanitize must be address, undefined, or thread")
-                }
-                value.sanitizer = sanitizer
-            case "--no-build":
-                value.build = false
-            case "--vk-validation":
-                value.validation = true
-            case "--trace-diagnostics":
-                value.diagnostics = true
-            case "--valgrind":
-                value.valgrind = true
-            case "--":
-                value.compositorArguments = Array(input.dropFirst(index + 1))
-                return try value.validated(
-                    outputOption: outputOption,
-                    tracyOnlyOption: tracyOnlyOption,
-                    optimizationOption: optimizationOption)
-            case "-h", "--help":
-                return nil
-            default:
-                throw WorkspaceFailure.message(
-                    "unknown run option '\(input[index])'\n\n\(RunCommand.usage)")
-            }
-            index += 1
+        if let seconds, seconds <= 0 {
+            throw WorkspaceFailure.message("--seconds must be positive")
         }
-        return try value.validated(
-            outputOption: outputOption,
-            tracyOnlyOption: tracyOnlyOption,
-            optimizationOption: optimizationOption)
-    }
-
-    private func validated(
-        outputOption: Bool,
-        tracyOnlyOption: Bool,
-        optimizationOption: Bool
-    ) throws -> RunOptions {
-        guard ["debug", "release"].contains(configuration) else {
-            throw WorkspaceFailure.message("--optimize must be debug or release")
-        }
-        if let presentMode,
-           !["vsync", "mailbox_latest_wins"].contains(presentMode) {
+        if let scale, !scale.isFinite || scale <= 0 {
             throw WorkspaceFailure.message(
-                "--present-mode must be vsync or mailbox_latest_wins")
+                "--scale must be a positive finite number")
         }
-        if outputOption && !tracy && !valgrind {
+        if outputOptionWasSpecified && !tracy && !valgrind {
             throw WorkspaceFailure.message(
                 "capture options require --tracy (or --valgrind for --output/--name)")
         }
-        if tracyOnlyOption && !tracy {
+        if tracyOnlyOptionWasSpecified && !tracy {
             throw WorkspaceFailure.message(
                 "Tracy capture options require --tracy")
         }
@@ -162,51 +89,19 @@ struct RunOptions: Equatable {
         if valgrind && sanitizer != nil {
             throw WorkspaceFailure.message("--valgrind and --sanitize cannot be combined")
         }
-        var value = self
-        if tracy && !optimizationOption {
-            value.configuration = "release"
-        }
         do {
-            _ = try value.sessionConfiguration
+            _ = try sessionConfiguration
         } catch {
             throw WorkspaceFailure.message("invalid session configuration: \(error)")
         }
-        return value
+        return self
     }
 }
 
 struct RunCommand {
     let context: WorkspaceContext
 
-    static let usage = """
-    Usage: collider run [options] [-- compositor-arguments]
-
-      --optimize debug|release  (default: debug; Tracy: release)
-      --no-build
-      --seconds N              stop the run after N seconds
-      --scale N                output scale (default: 1)
-      --present-mode vsync|mailbox_latest_wins
-      --drm-device /dev/dri/renderD...
-      --wallpaper PATH
-      --vk-validation
-      --trace-diagnostics
-      --sanitize address|undefined|thread
-      --valgrind
-
-    Tracy capture:
-      --tracy
-      --output DIR --name NAME --host HOST --port PORT
-
-    Logs:
-      logs/nucleus-<UTC timestamp>-<pid>.log
-      logs/latest -> most recent run
-    """
-
-    func run(_ arguments: ArraySlice<String>) throws {
-        guard let options = try RunOptions.parse(Array(arguments)) else {
-            print(Self.usage)
-            return
-        }
+    func run(_ options: RunOptions) throws {
         try requireLaunchableSeatEnvironment()
 
         let prefix = context.root.appendingPathComponent(".install")

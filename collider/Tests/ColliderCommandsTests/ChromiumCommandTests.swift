@@ -7,17 +7,20 @@ import Testing
 
 @Test
 func chromiumCommandHasOneOpinionatedOperationSurface() throws {
-    #expect(try ChromiumCommand.parse(["doctor"]) == .doctor)
-    #expect(try ChromiumCommand.parse(["bootstrap"]) == .bootstrap)
-    #expect(try ChromiumCommand.parse(["build"]) == .build)
-    #expect(try ChromiumCommand.parse(["test"]) == .test)
-    #expect(try ChromiumCommand.parse(["install"]) == .install)
+    #expect(!(try Browser.Bootstrap.parse([])).taskOptions.dryRun)
+    #expect(
+        try Browser.Build.parse(["--dry-run"]).taskOptions.dryRun)
+    #expect(
+        try Browser.Test.parse(["--explain"]).taskOptions.explain)
+    #expect(
+        try Install.Browser.parse(["--prefix", "/browser"]).prefix
+            == "/browser")
 
-    #expect(throws: WorkspaceFailure.self) {
-        try ChromiumCommand.parse(["build", "cef"])
+    #expect(throws: (any Error).self) {
+        try ColliderCommand.parseAsRoot(["browser", "build", "cef"])
     }
-    #expect(throws: WorkspaceFailure.self) {
-        try ChromiumCommand.parse(["package-only"])
+    #expect(throws: (any Error).self) {
+        try ColliderCommand.parseAsRoot(["browser", "package-only"])
     }
 }
 

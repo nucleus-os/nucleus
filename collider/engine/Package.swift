@@ -44,6 +44,9 @@ let package = Package(
                 .product(name: "Subprocess", package: "swift-subprocess"),
                 .product(name: "Crypto", package: "swift-crypto"),
                 .product(name: "SystemPackage", package: "swift-system"),
+            ],
+            resources: [
+                .copy("Resources/ToolchainValidationFixtures"),
             ]),
         .target(name: "NucleusSessionProtocol"),
         .testTarget(

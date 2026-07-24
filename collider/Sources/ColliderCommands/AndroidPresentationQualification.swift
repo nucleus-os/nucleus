@@ -7,7 +7,7 @@ struct AndroidPresentationQualificationOptions: Equatable {
     var frames: Int
     var output: String?
     var scale: Double
-    var presentMode: String
+    var presentMode: PresentMode
     var build: Bool
     var validation: Bool
     var diagnostics: Bool
@@ -95,7 +95,7 @@ struct AndroidPresentationQualificationCommand {
         let installation: RuntimeInstallation
         if options.build {
             try ComponentRegistry(context: context).build(
-                selection: "android-runtime",
+                selection: .androidRuntime,
                 controls: TaskControls())
             installation = try RuntimeInstaller(context: context).install(
                 .session,
@@ -143,8 +143,7 @@ struct AndroidPresentationQualificationCommand {
 
         let configuration = try SessionConfiguration(
             outputScale: options.scale,
-            presentMode: options.presentMode == "mailbox_latest_wins"
-                ? .mailboxLatestWins : .vsync,
+            presentMode: options.presentMode.sessionValue,
             enableVulkanValidation: options.validation,
             traceProtocol: options.diagnostics,
             traceDrmDemand: options.diagnostics,

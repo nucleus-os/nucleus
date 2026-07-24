@@ -1,3 +1,16 @@
+diff --git a/bpf/loader/netbpfload.35rc b/bpf/loader/netbpfload.35rc
+index 366c1f8e27..249ceac85f 100644
+--- a/bpf/loader/netbpfload.35rc
++++ b/bpf/loader/netbpfload.35rc
+@@ -3,7 +3,7 @@
+ service bpfloader /apex/com.android.tethering/bin/netbpfload
+     disabled # started on demand via trigger
+     # netbpfload will do network bpf loading, then execute /system/bin/bpfloader
+-    capabilities CHOWN SYS_ADMIN NET_ADMIN SYSLOG
++    capabilities CHOWN SYS_ADMIN NET_ADMIN SYSLOG BPF
+     # The following group memberships are a workaround for lack of DAC_OVERRIDE
+     # and allow us to open (among other things) files that we created and are
+     # no longer root owned (due to CHOWN) but still have group read access to
 diff --git a/bpf/loader/NetBpfLoad.cpp b/bpf/loader/NetBpfLoad.cpp
 index 7ba3247dcc..8329e9f8bf 100644
 --- a/bpf/loader/NetBpfLoad.cpp

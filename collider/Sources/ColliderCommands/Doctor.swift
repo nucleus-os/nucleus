@@ -1,4 +1,13 @@
+import ArgumentParser
 import FoundationEssentials
+
+enum DoctorScope: String, CaseIterable, ExpressibleByArgument {
+    case all
+    case runtime
+    case toolchain
+    case android
+    case browser
+}
 
 private struct DoctorReport: Codable {
     let scope: String
@@ -32,7 +41,7 @@ struct WorkspaceDoctor {
     let context: WorkspaceContext
 
     func run(
-        scope: String,
+        scope: DoctorScope,
         dryRun: Bool,
         json: Bool,
         quiet: Bool = false
@@ -56,7 +65,7 @@ struct WorkspaceDoctor {
                 detail: detail)
         }
         let report = DoctorReport(
-            scope: scope,
+            scope: scope.rawValue,
             success: checks.allSatisfy { $0.status != .failed },
             checks: checks)
         if quiet {
@@ -88,10 +97,14 @@ struct WorkspaceDoctor {
         }
     }
 
-    private func selectedPrerequisites(scope: String) -> [HostPrerequisite] {
+    private func selectedPrerequisites(
+        scope: DoctorScope
+    ) -> [HostPrerequisite] {
         let all = runtimePrerequisites + toolchainPrerequisites
             + androidPrerequisites + browserPrerequisites
-        let selected = scope == "all" ? all : all.filter { $0.scope == scope }
+        let selected = scope == .all
+            ? all
+            : all.filter { $0.scope == scope.rawValue }
         var seen: Set<String> = []
         return selected.filter { seen.insert($0.id).inserted }
     }

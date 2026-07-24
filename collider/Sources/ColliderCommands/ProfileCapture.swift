@@ -259,10 +259,11 @@ struct ProfileCapture {
         let values = [
             "created_at=\(ISO8601DateFormatter().string(from: Date()))",
             "host=\(options.host)", "port=\(port)", "seconds=\(options.seconds.map(String.init) ?? "until-client-exit")",
-            "optimize=\(options.configuration)", "tracy=true", "launch=true",
+            "optimize=\(options.effectiveOptimization.rawValue)",
+            "tracy=true", "launch=true",
             "session=true", "vk_validation=\(options.validation)",
             "output_scale=\(options.scale ?? 1)",
-            "present_mode=\(options.presentMode ?? "vsync")",
+            "present_mode=\((options.presentMode ?? .vsync).rawValue)",
             "sanitizer=\(options.sanitizer?.rawValue ?? "none")",
             "compositor=\(binary.path)",
         ]

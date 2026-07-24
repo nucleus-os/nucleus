@@ -1,4 +1,25 @@
+import ArgumentParser
 import FoundationEssentials
+
+enum SanitizerSelection: String, CaseIterable, ExpressibleByArgument {
+    case all
+    case address
+    case undefined
+    case thread
+
+    var sanitizers: [RuntimeSanitizer] {
+        switch self {
+        case .all:
+            RuntimeSanitizer.allCases
+        case .address:
+            [.address]
+        case .undefined:
+            [.undefined]
+        case .thread:
+            [.thread]
+        }
+    }
+}
 
 private extension RuntimeSanitizer {
     /// The strict runtime option strings used when `sanitize` drives a suite or
@@ -69,18 +90,9 @@ struct SanitizerCommand {
         }
     }
 
-    func run(_ arguments: ArraySlice<String>) throws {
-        guard arguments.count <= 1 else { throw usageFailure() }
-        let kinds: [RuntimeSanitizer]
-        if let value = arguments.first, value != "all" {
-            guard let kind = RuntimeSanitizer(rawValue: value) else { throw usageFailure() }
-            kinds = [kind]
-        } else {
-            kinds = RuntimeSanitizer.allCases
-        }
-
+    func run(_ selection: SanitizerSelection) throws {
         let seed = "0x4e55434c455553"
-        for kind in kinds {
+        for kind in selection.sanitizers {
             for invocation in invocations(for: kind) {
                 try run(invocation, sanitizer: kind, seed: seed)
             }
@@ -262,9 +274,5 @@ struct SanitizerCommand {
                     + "\(invocation.workload.label) "
                     + "seed=\(seed)]: \(error)")
         }
-    }
-
-    private func usageFailure() -> WorkspaceFailure {
-        .message("usage: collider sanitize [all|address|undefined|thread]")
     }
 }

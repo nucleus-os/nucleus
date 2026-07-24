@@ -1,3 +1,4 @@
+import ArgumentParser
 import AndroidRuntimeColliderRecipe
 import ColliderCore
 import ColliderRuntime
@@ -12,6 +13,29 @@ import SystemPackage
 import TracyColliderRecipe
 import VulkanColliderRecipe
 import WaylandColliderRecipe
+
+enum ComponentSelection: String, CaseIterable, ExpressibleByArgument {
+    case all
+    case runtime
+    case toolchain
+    case android
+    case browser
+    case tracy
+    case vulkan
+    case wayland
+    case core
+    case linux
+    case reactNative = "rn"
+    case compositor
+    case shell
+    case androidRuntime = "android-runtime"
+}
+
+enum GeneratorComponent {
+    case reactNative
+    case vulkan
+    case wayland
+}
 
 struct ComponentRegistry {
     let context: WorkspaceContext
@@ -64,23 +88,26 @@ struct ComponentRegistry {
         ]
     }
 
-    func build(selection: String?, controls: TaskControls) throws {
+    func build(
+        selection: ComponentSelection?,
+        controls: TaskControls
+    ) throws {
         try context.execute(
             tasks: try buildTasks(),
             selected: try selectedBuildTasks(selection),
             controls: controls)
     }
 
-    func bootstrap(selection: String?, controls: TaskControls) throws {
-        let name = selection ?? "all"
-        let supported = Set([
-            "all", "runtime", "tracy", "vulkan", "wayland", "core",
-            "linux", "rn", "compositor", "shell", "android-runtime",
-        ])
-        guard supported.contains(name) else {
+    func bootstrap(
+        selection: ComponentSelection?,
+        controls: TaskControls
+    ) throws {
+        let selection = selection ?? .all
+        guard ![.toolchain, .android, .browser].contains(selection) else {
             throw WorkspaceFailure.message(
-                "unknown runtime component '\(name)'")
+                "\(selection.rawValue) is not a runtime bootstrap component")
         }
+        let name = selection.rawValue
         let root = FilePath(context.root.path)
         let environment = context.taskEnvironment
         let needsCore = [
@@ -159,24 +186,30 @@ struct ComponentRegistry {
         }
 
         let selected = try selectedBuildTasks(
-            name == "runtime" ? nil : name)
+            selection == .runtime ? nil : selection)
         try context.execute(tasks: tasks, selected: selected, controls: controls)
     }
 
-    func test(selection: String?, controls: TaskControls) throws {
+    func test(
+        selection: ComponentSelection?,
+        controls: TaskControls
+    ) throws {
         try context.execute(
             tasks: try testTasks(),
             selected: try selectedTestTasks(selection),
             controls: controls)
     }
 
-    func generate(_ component: String, controls: TaskControls) throws {
+    func generate(
+        _ component: GeneratorComponent,
+        controls: TaskControls
+    ) throws {
         let root = FilePath(context.root.path)
         let environment = context.taskEnvironment
         let task: TaskDeclaration
         var tasks: [TaskDeclaration]
         switch component {
-        case "rn":
+        case .reactNative:
             let source = try reactNativeSourceTask(
                 root: root.appending("react-native"),
                 environment: environment)
@@ -190,16 +223,14 @@ struct ComponentRegistry {
             task = ReactNativeColliderRecipe.generate(
                 root: root.appending("react-native"), environment: environment)
             tasks = [source, dependencies, types, task]
-        case "vulkan":
+        case .vulkan:
             task = VulkanColliderRecipe.generate(
                 root: root.appending("swift-vulkan"), environment: environment)
             tasks = [task]
-        case "wayland":
+        case .wayland:
             task = try WaylandColliderRecipe.generate(
                 root: root.appending("swift-wayland"), environment: environment)
             tasks = [task]
-        default:
-            throw WorkspaceFailure.message("unknown generator '\(component)'")
         }
         try context.execute(tasks: tasks, selected: [task.id], controls: controls)
     }
@@ -303,28 +334,28 @@ struct ComponentRegistry {
             controls: controls)
     }
 
-    private func selectedBuildTasks(_ selection: String?) throws -> [TaskID] {
-        let name = selection ?? "all"
-        if name == "all" || name == "runtime" {
+    private func selectedBuildTasks(
+        _ selection: ComponentSelection?
+    ) throws -> [TaskID] {
+        let selection = selection ?? .all
+        if selection == .all || selection == .runtime {
             return [
                 TaskID(rawValue: "shell.build"),
                 TaskID(rawValue: "android-runtime.build"),
             ]
         }
-        let supported = Set([
-            "tracy", "vulkan", "wayland", "core", "linux", "rn", "compositor", "shell",
-            "android-runtime",
-        ])
-        guard supported.contains(name) else {
+        guard ![.toolchain, .android, .browser].contains(selection) else {
             throw WorkspaceFailure.message(
-                "unknown runtime component '\(name)'; expected all, tracy, vulkan, wayland, core, linux, rn, compositor, shell, or android-runtime")
+                "\(selection.rawValue) is not a runtime build component")
         }
-        return [TaskID(rawValue: name + ".build")]
+        return [TaskID(rawValue: selection.rawValue + ".build")]
     }
 
-    func selectedTestTasks(_ selection: String?) throws -> [TaskID] {
-        let name = selection ?? "all"
-        if name == "all" || name == "runtime" {
+    func selectedTestTasks(
+        _ selection: ComponentSelection?
+    ) throws -> [TaskID] {
+        let selection = selection ?? .all
+        if selection == .all || selection == .runtime {
             return [
                 "tracy.test", "vulkan.test", "wayland.test", "core.test",
                 "linux.test", "rn.test", "compositor-core.test",
@@ -332,20 +363,20 @@ struct ComponentRegistry {
                 "android-runtime.test",
             ].map { TaskID(rawValue: $0) }
         }
-        let taskNames: [String: [String]] = [
-            "tracy": ["tracy.test"],
-            "vulkan": ["vulkan.test"],
-            "wayland": ["wayland.test"],
-            "core": ["core.test"],
-            "linux": ["linux.test"],
-            "rn": ["rn.test"],
-            "compositor": ["compositor-core.test", "compositor.test"],
-            "shell": ["shell.test"],
-            "android-runtime": ["android-runtime.test"],
+        let taskNames: [ComponentSelection: [String]] = [
+            .tracy: ["tracy.test"],
+            .vulkan: ["vulkan.test"],
+            .wayland: ["wayland.test"],
+            .core: ["core.test"],
+            .linux: ["linux.test"],
+            .reactNative: ["rn.test"],
+            .compositor: ["compositor-core.test", "compositor.test"],
+            .shell: ["shell.test"],
+            .androidRuntime: ["android-runtime.test"],
         ]
-        guard let selected = taskNames[name] else {
+        guard let selected = taskNames[selection] else {
             throw WorkspaceFailure.message(
-                "unknown runtime component '\(name)'; expected all, tracy, vulkan, wayland, core, linux, rn, compositor, shell, or android-runtime")
+                "\(selection.rawValue) is not a runtime test component")
         }
         return selected.map { TaskID(rawValue: $0) }
     }

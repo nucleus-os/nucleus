@@ -9,11 +9,7 @@ struct BenchmarkCommand {
 
     let context: WorkspaceContext
 
-    func run(_ arguments: ArraySlice<String>) throws {
-        guard arguments.isEmpty else {
-            throw WorkspaceFailure.message("usage: collider benchmark")
-        }
-
+    func run() throws {
         let toolchain = try context.run(
             "swift", ["--version"], capture: true)
             .split(whereSeparator: \Character.isNewline)

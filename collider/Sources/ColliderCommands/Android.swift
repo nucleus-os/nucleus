@@ -1,43 +1,51 @@
+import ArgumentParser
+
+enum AndroidOperation: Equatable, ExpressibleByArgument {
+    case build(gradleArguments: [String])
+    case native
+    case verify(library: String?)
+
+    init?(argument: String) {
+        switch argument {
+        case "build":
+            self = .build(gradleArguments: [])
+        case "native":
+            self = .native
+        case "verify":
+            self = .verify(library: nil)
+        default:
+            return nil
+        }
+    }
+
+    var defaultValueDescription: String {
+        switch self {
+        case .build: "build"
+        case .native: "native"
+        case .verify: "verify"
+        }
+    }
+}
+
 struct AndroidCommand {
     let context: WorkspaceContext
 
     func run(
-        _ arguments: ArraySlice<String>,
+        _ operation: AndroidOperation,
         controls: TaskControls = TaskControls()
     ) throws {
-        guard let command = arguments.first else { throw WorkspaceFailure.message(usage) }
-        let rest = Array(arguments.dropFirst())
         let registry = ComponentRegistry(context: context)
-        switch command {
-        case "build":
-            try registry.buildAndroidHost(gradleArguments: rest, controls: controls)
-        case "native":
-            guard rest.isEmpty else {
-                throw WorkspaceFailure.message("android native does not accept arguments\n\n\(usage)")
-            }
+        switch operation {
+        case .build(let gradleArguments):
+            try registry.buildAndroidHost(
+                gradleArguments: gradleArguments,
+                controls: controls)
+        case .native:
             try registry.buildAndroidNative(controls: controls)
-        case "verify":
-            guard rest.count <= 1 else {
-                throw WorkspaceFailure.message(
-                    "android verify accepts at most one library path\n\n\(usage)")
-            }
-            try registry.validateAndroidHost(library: rest.first, controls: controls)
-        case "help", "--help", "-h":
-            print(usage)
-        default:
-            throw WorkspaceFailure.message("unknown android command '\(command)'\n\n\(usage)")
+        case .verify(let library):
+            try registry.validateAndroidHost(
+                library: library,
+                controls: controls)
         }
-    }
-
-    private var usage: String {
-        """
-        Usage: collider android <command>
-
-          build [gradle arguments]  Build and verify the Android host (default: verifyDebug)
-          native                    Cross-compile and verify the Swift Android host library
-          verify [library]         Verify the Android host ELF and JNI contract
-          Swift toolchain and Android SDK generations are managed together by:
-            collider toolchain rebuild
-        """
     }
 }

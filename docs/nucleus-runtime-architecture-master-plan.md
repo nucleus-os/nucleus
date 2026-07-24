@@ -555,6 +555,15 @@ snapshot resolution, and callback-free recording.
 
 ## Phase 6: Declare the capability of every public Collider command leaf
 
+**Status: Complete.**
+
+Implemented with distinct task-control and report option groups, leaf-owned
+diagnostic controls, typed run-ID parsing, a real four-leaf installation group,
+one browser installation path, post-terminator-only passthrough arguments, and
+exact hidden privileged-mode selection. The complete command-capability matrix,
+installation and browser help, unsupported-control rejection, and hidden helper
+selection are covered by parser tests. Both Collider package test suites pass.
+
 `GlobalOptions` currently places task controls on commands that do not drive the
 task graph. `rejectUnsupportedControls` reconstructs the actual capability
 boundary at runtime. Installation and browser commands also vary their
@@ -633,6 +642,16 @@ of command-specific preview behavior.
 
 ## Phase 7: Move resumability onto parsed task commands
 
+**Status: Complete.**
+
+Implemented with `ResumableRun`, a single `TaskControlledCommand`
+implementation derived from the typed run-ID option, and executable
+orchestration that reads only the parsed leaf. Raw argument scanning and command
+classification for resumability are deleted. The capability matrix proves that
+every task leaf carries its run ID into orchestration while every non-task leaf
+rejects it during parsing. RunRegistry resumption and completion behavior and
+both Collider package test suites pass.
+
 Phase 6 ensures that only task-controlled leaves parse `--run-id`. This phase
 makes parsed command values own the remaining run decision.
 
@@ -692,6 +711,18 @@ retain their RunRegistry diagnostics and status behavior.
 Risk surface: type-erased parsed-command casting and begin/resume selection.
 
 ## Phase 8: Remove every second Collider parser and string dispatch seam
+
+**Status: Complete.**
+
+Implemented with typed doctor, component, sanitizer, optimization, present-mode,
+Android-operation, browser-operation, runtime-installation, and toolchain-
+architecture values. Parsed leaves now construct `RunOptions`,
+`AndroidOperation`, `RebuildOptions`, and installation inputs directly.
+Command-layer slice parsers, usage blocks, prefix parsing, token reconstruction,
+and benchmark suite input are deleted. Only post-terminator Android Gradle and
+compositor payloads remain opaque arrays. Typed validation, defaulting,
+incompatible-option, invalid-value, and passthrough behavior tests and both
+Collider package suites pass.
 
 ArgumentParser currently produces typed values that several leaves flatten back
 into tokens. Implementations then repeat parsing, validation, and usage text.

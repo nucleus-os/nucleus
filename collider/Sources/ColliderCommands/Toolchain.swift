@@ -1,3 +1,4 @@
+import ArgumentParser
 import ColliderCore
 import ColliderRuntime
 import FoundationEssentials
@@ -8,6 +9,31 @@ import Glibc
 #elseif canImport(Darwin)
 import Darwin
 #endif
+
+enum ToolchainArchitecture: String, CaseIterable, ExpressibleByArgument {
+    case aarch64
+    case x86_64
+}
+
+struct RebuildOptions {
+    var controls: TaskControls
+    var reconfigure: Bool
+    var architectures: [ToolchainArchitecture]
+
+    init(
+        controls: TaskControls = TaskControls(),
+        reconfigure: Bool = false,
+        architectures: [ToolchainArchitecture] = []
+    ) {
+        self.controls = controls
+        self.reconfigure = reconfigure
+        var seen: Set<ToolchainArchitecture> = []
+        let selected = architectures.filter {
+            seen.insert($0).inserted
+        }
+        self.architectures = selected.isEmpty ? [.aarch64] : selected
+    }
+}
 
 private struct ToolchainStatusRecord: Codable {
     let platformID: String
@@ -80,78 +106,7 @@ struct ToolchainStatus {
 struct ToolchainCommand {
     let context: WorkspaceContext
 
-    private static let usage = """
-    Usage: collider toolchain rebuild [options]
-
-      Rebuilds the host Swift toolchain and Android Swift SDK into one inactive
-      user-level generation, wires and verifies that generation, then atomically
-      activates both artifacts together.
-
-      --dry-run          Print the complete workflow without running it
-      --explain          Explain task invalidation
-      --verbose          Stream leaf commands
-      --json             Emit the task report as JSON
-      --reconfigure      Force host-toolchain reconfiguration
-      --arch ARCH        Build and test aarch64 or x86_64; repeat for both
-    """
-
-    func run(_ arguments: ArraySlice<String>) throws {
-        guard let command = arguments.first else {
-            throw WorkspaceFailure.message(Self.usage)
-        }
-        switch command {
-        case "rebuild": try rebuild(Array(arguments.dropFirst()))
-        case "help", "--help", "-h": print(Self.usage)
-        default:
-            throw WorkspaceFailure.message(
-                "unknown toolchain command '\(command)'\n\n\(Self.usage)")
-        }
-    }
-
-    private struct RebuildOptions {
-        var dryRun = false
-        var explain = false
-        var verbose = false
-        var json = false
-        var reconfigure = false
-        var arches: [String] = []
-
-        var controls: TaskControls {
-            TaskControls(dryRun: dryRun, explain: explain, verbose: verbose, json: json)
-        }
-
-        init(_ arguments: [String]) throws {
-            var index = arguments.startIndex
-            while index < arguments.endIndex {
-                switch arguments[index] {
-                case "--dry-run": dryRun = true
-                case "--explain": explain = true
-                case "--verbose": verbose = true
-                case "--json": json = true
-                case "--reconfigure": reconfigure = true
-                case "--arch":
-                    index += 1
-                    guard index < arguments.endIndex else {
-                        throw WorkspaceFailure.message("--arch needs a value")
-                    }
-                    let arch = arguments[index]
-                    guard ["aarch64", "x86_64"].contains(arch) else {
-                        throw WorkspaceFailure.message(
-                            "unsupported Android SDK architecture '\(arch)'")
-                    }
-                    if !arches.contains(arch) { arches.append(arch) }
-                default:
-                    throw WorkspaceFailure.message(
-                        "unknown toolchain rebuild option '\(arguments[index])'\n\n\(ToolchainCommand.usage)")
-                }
-                index += 1
-            }
-            if arches.isEmpty { arches = ["aarch64"] }
-        }
-    }
-
-    private func rebuild(_ arguments: [String]) throws {
-        let options = try RebuildOptions(arguments)
+    func rebuild(_ options: RebuildOptions) throws {
         let sourceID = context.environment["NUCLEUS_SWIFT_SOURCE_ID"] ?? "release-6.4.x"
         let sourceRef: String
         let sourceScheme: String
@@ -237,7 +192,7 @@ struct ToolchainCommand {
                         "nucleus/downloads/swift-android-foundation").path),
             androidInstallRoot: FilePath(androidInstall.path),
             ndkRoot: FilePath(androidNDKHome.path),
-            architectures: options.arches,
+            architectures: options.architectures.map(\.rawValue),
             apiLevel: 36,
             jobs: UInt32(min(
                 ProcessInfo.processInfo.activeProcessorCount, 16)),
@@ -280,7 +235,10 @@ struct ToolchainCommand {
                 .shared(FilePath(
                     platformRoot.appendingPathComponent("rebuild.lock").path)),
             ])
-        if !options.json, !options.dryRun, !options.explain {
+        if !options.controls.json,
+            !options.controls.dryRun,
+            !options.controls.explain
+        {
             print("==> active Swift platform generation: \(generation.path)")
         }
     }
