@@ -378,6 +378,8 @@ transition and a typed IPC failure for output-required requests.
 
 ## Phase 5 — Harden the Xwayland subprocess boundary
 
+Status: complete
+
 ### Outcome
 
 Xwayland starts from a verified absolute executable, receives a minimal production
@@ -433,6 +435,8 @@ flag, or unbounded log sink.
 ---
 
 ## Phase 6 — Enforce Android owner-thread and native-handle lifetimes
+
+Status: complete
 
 ### Outcome
 
@@ -509,6 +513,8 @@ exactly.
 ---
 
 ## Phase 7 — Remove main-actor child-process and filesystem stalls
+
+Status: complete
 
 ### Outcome
 
@@ -600,6 +606,8 @@ file read remains. Child, descriptor, queue, and cache bounds are behaviorally t
 
 ## Phase 8 — Collapse paint storage to one Swift vocabulary
 
+Status: complete
+
 ### Outcome
 
 Paint commands have one stored Swift representation and one validated lowering into
@@ -659,6 +667,8 @@ reach an explicit C++ lowering and invalid cases fail closed.
 ---
 
 ## Phase 9 — Enable strict memory safety throughout first-party Swift
+
+Status: complete
 
 ### Outcome
 
@@ -730,6 +740,8 @@ no blanket suppression or unexplained unchecked conformance.
 ---
 
 ## Phase 10 — Remove residue and close the documentation lifecycle
+
+Status: active
 
 ### Outcome
 

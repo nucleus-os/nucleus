@@ -57,19 +57,23 @@ struct TextRenderingBridgeTests {
             layout?.storage?.handle.rawValue)
 
         let probe =
-            nucleus.text.testing.TextLayoutBorrowProbe(
+            unsafe nucleus.text.testing.TextLayoutBorrowProbe(
                 handle)
-        #expect(probe.waitUntilBodyEntered())
+        let bodyEntered = unsafe probe.waitUntilBodyEntered()
+        #expect(bodyEntered)
 
         layout = nil
         #expect(
             !nucleus.text.testing.borrowInvokesBody(
                 handle))
 
-        probe.allowBodyToReturn()
-        #expect(probe.waitUntilBodyCompleted())
-        #expect(probe.borrowSucceeded())
-        #expect(probe.bodyCompleted())
+        unsafe probe.allowBodyToReturn()
+        let bodyReturned = unsafe probe.waitUntilBodyCompleted()
+        let borrowSucceeded = unsafe probe.borrowSucceeded()
+        let bodyCompleted = unsafe probe.bodyCompleted()
+        #expect(bodyReturned)
+        #expect(borrowSucceeded)
+        #expect(bodyCompleted)
     }
 
     @Test
@@ -111,16 +115,17 @@ struct TextRenderingBridgeTests {
         let handle = try #require(
             layout.storage?.handle.rawValue)
         let surface =
-            nucleus.skia.makeRasterSurface(200, 64)
-        try #require(surface.isValid())
-        let canvas = surface.getCanvas()
+            unsafe nucleus.skia.makeRasterSurface(200, 64)
+        let surfaceIsValid = unsafe surface.isValid()
+        try #require(surfaceIsValid)
+        let canvas = unsafe surface.getCanvas()
         var clear = nucleus.skia.Color()
         clear.a = 1
-        canvas.clear(clear)
+        unsafe canvas.clear(clear)
         var destination = nucleus.skia.RectF()
         destination.width = 180
         destination.height = 64
-        canvas.drawTextLayout(
+        unsafe canvas.drawTextLayout(
             handle,
             destination,
             1)
@@ -129,7 +134,7 @@ struct TextRenderingBridgeTests {
             repeating: 0,
             count: 200 * 64 * 4)
         let read = pixels.withUnsafeMutableBufferPointer {
-            surface.readPixelsRGBA(
+            unsafe surface.readPixelsRGBA(
                 $0.baseAddress,
                 $0.count,
                 200 * 4)

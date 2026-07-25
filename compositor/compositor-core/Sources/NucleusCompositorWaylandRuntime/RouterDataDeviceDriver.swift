@@ -11,13 +11,11 @@
 // client and comparing client keys.
 //
 // Drag sessions stay in WlDataDeviceManager and are advanced by InputDispatch's
-// live hit-testing and button path. Isolation:
-// the manager invokes the focus predicate from nonisolated @convention(c) request
-// handlers on the compositor's main-actor thread, so the method is nonisolated and
-// re-enters the actor with MainActor.assumeIsolated, crossing only the Sendable
-// client key.
+// live hit-testing and button path. Generated dispatch enters the main actor before
+// the manager invokes this typed policy seam.
 
 import WaylandServerC
+import WaylandServer
 internal import NucleusCompositorServer
 
 @MainActor
@@ -34,20 +32,20 @@ final class RouterDataDeviceDriver {
     /// Resolves the focused surface id (NucleusCompositorServer.seatFocus — the single focus
     /// truth the seat driver mirrors into) to its WlSurface and compares the
     /// surface's libwayland client key against `clientKey`.
-    private func clientIsFocused(_ clientKey: UInt) -> Bool {
+    private func clientIsFocused(_ clientKey: WaylandClientID) -> Bool {
         let focused = server.seatFocus.keyboardSurfaceID
         guard focused != 0,
             let surface = compositor.surface(id: UInt32(truncatingIfNeeded: focused)),
-            let sres = surface.resource,
-            let client = wl_resource_get_client(sres)
+            let sres = unsafe surface.resource,
+            let client = unsafe wl_resource_get_client(sres)
         else { return false }
-        return WlSeat.clientKey(client) == clientKey
+        return unsafe WlSeat.clientKey(client) == clientKey
     }
 }
 
 extension RouterDataDeviceDriver: DataDeviceDelegate {
-    nonisolated func dataDeviceClientFocused(_ clientKey: UInt) -> Bool {
-        MainActor.assumeIsolated { self.clientIsFocused(clientKey) }
+    func dataDeviceClientFocused(_ clientKey: WaylandClientID) -> Bool {
+        clientIsFocused(clientKey)
     }
 
 }

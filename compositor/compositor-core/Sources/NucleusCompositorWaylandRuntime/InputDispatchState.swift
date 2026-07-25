@@ -6,7 +6,7 @@ import Glibc
 extension InputDispatch {
     static func monotonicNowNs() -> UInt64 {
         var timestamp = timespec()
-        clock_gettime(CLOCK_MONOTONIC, &timestamp)
+        unsafe clock_gettime(CLOCK_MONOTONIC, &timestamp)
         return UInt64(timestamp.tv_sec) &* 1_000_000_000
             &+ UInt64(timestamp.tv_nsec)
     }

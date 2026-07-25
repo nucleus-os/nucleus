@@ -14,8 +14,8 @@ private enum CommandHandlerActorSmokeState {
 public func nucleus_rn_command_handler_actor_smoke_start(
     _ hbcPath: UnsafePointer<CChar>?
 ) -> Int32 {
-    guard let hbcPath else { return 2 }
-    let hbcPathValue = String(cString: hbcPath)
+    guard let hbcPath = unsafe hbcPath else { return 2 }
+    let hbcPathValue = unsafe String(cString: hbcPath)
 
     return MainActor.assumeIsolated { () -> Int32 in
         guard CommandHandlerActorSmokeState.activeProbe == nil else {
@@ -27,7 +27,7 @@ public func nucleus_rn_command_handler_actor_smoke_start(
             probe.received = (command, argsJson)
         }
         let result = hbcPathValue.withCString { ownedHBCPath in
-            nucleus_rn_invoke_host_command_on_js_worker(
+            unsafe nucleus_rn_invoke_host_command_on_js_worker(
                 CommandHandlerBox.callback,
                 Unmanaged.passRetained(box).toOpaque(),
                 CommandHandlerBox.release,

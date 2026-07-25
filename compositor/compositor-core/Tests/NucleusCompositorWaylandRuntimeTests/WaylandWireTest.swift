@@ -138,21 +138,25 @@ final class WaylandTestClient {
 
     init?(display: WaylandDisplay) {
         var sv: [Int32] = [0, 0]
-        guard socketpair(AF_UNIX, Int32(SOCK_STREAM.rawValue) | nonblock, 0, &sv) == 0 else {
+        guard unsafe socketpair(
+            AF_UNIX, Int32(SOCK_STREAM.rawValue) | nonblock, 0, &sv) == 0
+        else {
             return nil
         }
-        guard let client = display.createClient(fd: sv[0]) else {
+        guard let client = unsafe display.createClient(fd: sv[0]) else {
             close(sv[0]); close(sv[1]); return nil
         }
         self.display = display
-        _ = client // retained by the Wayland display until disconnect
+        _ = unsafe client // retained by the Wayland display until disconnect
         self.testFd = sv[1]
     }
 
     @discardableResult
     func send(_ builder: WireBuilder) -> Bool {
         let bytes = builder.bytes
-        let n = bytes.withUnsafeBytes { write(testFd, $0.baseAddress, $0.count) }
+        let n = bytes.withUnsafeBytes {
+            unsafe write(testFd, $0.baseAddress, $0.count)
+        }
         return n == bytes.count
     }
 
@@ -163,7 +167,8 @@ final class WaylandTestClient {
         let bytes = builder.bytes
         guard !bytes.isEmpty else { throw WaylandWireError.emptyMessage }
         let code = bytes.withUnsafeBytes {
-            swift_wayland_test_send_fd(testFd, $0.baseAddress, $0.count, fd.rawValue)
+            unsafe swift_wayland_test_send_fd(
+                testFd, $0.baseAddress, $0.count, fd.rawValue)
         }
         guard code == 0 else { throw WaylandWireError.systemCall("sendmsg", code) }
     }
@@ -200,7 +205,9 @@ final class WaylandTestClient {
         var all: [UInt8] = []
         var buf = [UInt8](repeating: 0, count: 8192)
         while true {
-            let n = buf.withUnsafeMutableBytes { read(testFd, $0.baseAddress, $0.count) }
+            let n = buf.withUnsafeMutableBytes {
+                unsafe read(testFd, $0.baseAddress, $0.count)
+            }
             if n <= 0 { break }
             all.append(contentsOf: buf[0..<Int(n)])
         }
@@ -223,7 +230,7 @@ enum WaylandWireError: Error, CustomStringConvertible {
         case .emptyMessage: "empty Wayland wire message"
         case .sizeOverflow: "Wayland SHM allocation size overflow"
         case .systemCall(let operation, let code):
-            "\(operation) failed: \(String(cString: strerror(code)))"
+            "\(operation) failed: \(unsafe String(cString: strerror(code)))"
         }
     }
 }

@@ -14,7 +14,7 @@ import Glibc
     /// A pipe pair for exercising the framing without a process.
     private func makePipe() -> (read: Int32, write: Int32) {
         var fds: [Int32] = [-1, -1]
-        _ = pipe(&fds)
+        _ = unsafe pipe(&fds)
         return (fds[0], fds[1])
     }
 
@@ -53,7 +53,9 @@ import Glibc
         defer { close(readFD) }
 
         var buffer: [UInt8] = []
-        withUnsafeBytes(of: UInt32(1_000_000).littleEndian) { buffer.append(contentsOf: $0) }
+        withUnsafeBytes(of: UInt32(1_000_000).littleEndian) {
+            unsafe buffer.append(contentsOf: $0)
+        }
         #expect(PamHelperWire.writeAll(buffer, to: writeFD))
         close(writeFD)
 
@@ -89,6 +91,32 @@ import Glibc
         #expect(PamHelperWire.Outcome(rawValue: 3) == nil)
     }
 
+    @Test func responseParserAcceptsEveryFragmentBoundary() {
+        var frame = [PamHelperWire.Outcome.rejected.rawValue]
+        PamHelperWire.encodeField(Array("no".utf8), into: &frame)
+        for split in 0...frame.count {
+            var parser = PamHelperWire.ResponseParser()
+            #expect(parser.append(Array(frame[..<split])) == .incomplete
+                    || split == frame.count)
+            let state = parser.append(Array(frame[split...]))
+            #expect(state == .complete(.rejected, "no"))
+        }
+    }
+
+    @Test func responseParserFailsClosedOnTruncationAndOverflow() {
+        var parser = PamHelperWire.ResponseParser()
+        #expect(parser.append([
+            PamHelperWire.Outcome.accepted.rawValue, 1, 0, 0, 0,
+        ]) == .incomplete)
+        #expect(parser.state(eof: true) == .malformed)
+
+        var oversized = PamHelperWire.ResponseParser()
+        let bytes = [UInt8](
+            repeating: 0,
+            count: PamHelperWire.maximumResponseBytes + 1)
+        #expect(oversized.append(bytes) == .malformed)
+    }
+
     // MARK: - The helper binary
 
     /// Run the built helper with a deliberately malformed request. It must
@@ -103,28 +131,33 @@ import Glibc
 
         var toHelper: [Int32] = [-1, -1]
         var fromHelper: [Int32] = [-1, -1]
-        #expect(pipe(&toHelper) == 0)
-        #expect(pipe(&fromHelper) == 0)
+        let toHelperResult = unsafe pipe(&toHelper)
+        let fromHelperResult = unsafe pipe(&fromHelper)
+        #expect(toHelperResult == 0)
+        #expect(fromHelperResult == 0)
 
-        var actions = posix_spawn_file_actions_t()
-        posix_spawn_file_actions_init(&actions)
-        posix_spawn_file_actions_adddup2(&actions, toHelper[0], 0)
-        posix_spawn_file_actions_adddup2(&actions, fromHelper[1], 1)
+        var actions = unsafe posix_spawn_file_actions_t()
+        unsafe posix_spawn_file_actions_init(&actions)
+        unsafe posix_spawn_file_actions_adddup2(&actions, toHelper[0], 0)
+        unsafe posix_spawn_file_actions_adddup2(&actions, fromHelper[1], 1)
         // The parent's own ends must not survive into the child. Without this
         // the child inherits the request pipe's *write* end, so closing the
         // parent's copy never produces EOF and the helper blocks on `read`
         // forever. `PamAuthenticator.spawnHelper` closes them for the same
         // reason; leaving them out here deadlocked this test.
-        posix_spawn_file_actions_addclose(&actions, toHelper[1])
-        posix_spawn_file_actions_addclose(&actions, fromHelper[0])
-        defer { posix_spawn_file_actions_destroy(&actions) }
+        unsafe posix_spawn_file_actions_addclose(&actions, toHelper[1])
+        unsafe posix_spawn_file_actions_addclose(&actions, fromHelper[0])
+        defer { unsafe posix_spawn_file_actions_destroy(&actions) }
 
         var pid: pid_t = 0
-        let argv: [UnsafeMutablePointer<CChar>?] = [strdup(helper), nil]
-        defer { argv.forEach { free($0) } }
+        let argv: [UnsafeMutablePointer<CChar>?] =
+            unsafe [strdup(helper), nil]
+        defer {
+            unsafe argv.forEach { pointer in unsafe free(pointer) }
+        }
         let spawned = argv.withUnsafeBufferPointer { buffer -> Int32 in
             guard let base = buffer.baseAddress else { return -1 }
-            return posix_spawn(
+            return unsafe posix_spawn(
                 &pid, helper, &actions, nil, UnsafeMutablePointer(mutating: base), environ)
         }
         #expect(spawned == 0)
@@ -133,7 +166,9 @@ import Glibc
         close(fromHelper[1])
         // Truncated request: a length header promising more than follows.
         var truncated: [UInt8] = []
-        withUnsafeBytes(of: UInt32(64).littleEndian) { truncated.append(contentsOf: $0) }
+        withUnsafeBytes(of: UInt32(64).littleEndian) {
+            unsafe truncated.append(contentsOf: $0)
+        }
         _ = PamHelperWire.writeAll(truncated, to: toHelper[1])
         close(toHelper[1])
 
@@ -141,7 +176,7 @@ import Glibc
         close(fromHelper[0])
 
         var status: Int32 = 0
-        while waitpid(pid, &status, 0) < 0 && errno == EINTR {}
+        while unsafe waitpid(pid, &status, 0) < 0 && errno == EINTR {}
 
         #expect(header?.first == PamHelperWire.Outcome.unavailable.rawValue)
         let exited = status & 0x7f == 0
@@ -155,7 +190,7 @@ import Glibc
         var buffer = [CChar](repeating: 0, count: 4096)
         let count = buffer.withUnsafeMutableBufferPointer { pointer -> Int in
             guard let base = pointer.baseAddress else { return -1 }
-            return readlink("/proc/self/exe", base, pointer.count - 1)
+            return unsafe readlink("/proc/self/exe", base, pointer.count - 1)
         }
         guard count > 0 else { return nil }
         let executable = String(
@@ -163,6 +198,6 @@ import Glibc
             as: UTF8.self)
         guard let slash = executable.lastIndex(of: "/") else { return nil }
         let candidate = String(executable[..<slash]) + "/NucleusShellPamHelper"
-        return access(candidate, X_OK) == 0 ? candidate : nil
+        return unsafe access(candidate, X_OK) == 0 ? candidate : nil
     }
 }

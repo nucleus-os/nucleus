@@ -13,7 +13,10 @@ public enum PamHelperWire {
     public static let maximumMessageBytes = 4096
     /// Bounded for the same reason. Far above any real passphrase.
     public static let maximumPasswordBytes = 1024
-    public static let maximumServiceBytes = 128
+    public static let maximumServiceBytes = 256
+    public static let responseHeaderBytes = 5
+    public static let maximumResponseBytes =
+        responseHeaderBytes + maximumMessageBytes
 
     /// What the helper concluded. The distinction between `rejected` and
     /// `unavailable` is load-bearing: a user must never be told their password
@@ -35,12 +38,14 @@ public enum PamHelperWire {
     /// Append a length-prefixed field.
     public static func encodeField(_ bytes: UnsafeRawBufferPointer, into buffer: inout [UInt8]) {
         let length = UInt32(bytes.count)
-        withUnsafeBytes(of: length.littleEndian) { buffer.append(contentsOf: $0) }
-        buffer.append(contentsOf: bytes)
+        withUnsafeBytes(of: length.littleEndian) {
+            unsafe buffer.append(contentsOf: $0)
+        }
+        unsafe buffer.append(contentsOf: bytes)
     }
 
     public static func encodeField(_ bytes: [UInt8], into buffer: inout [UInt8]) {
-        bytes.withUnsafeBytes { encodeField($0, into: &buffer) }
+        bytes.withUnsafeBytes { unsafe encodeField($0, into: &buffer) }
     }
 
     /// Read exactly `count` bytes, retrying short reads and `EINTR`. Returns nil
@@ -53,7 +58,8 @@ public enum PamHelperWire {
         while filled < count {
             let n = buffer.withUnsafeMutableBytes { raw -> Int in
                 guard let base = raw.baseAddress else { return -1 }
-                return read(fd, base.advanced(by: filled), count - filled)
+                return unsafe read(
+                    fd, base.advanced(by: filled), count - filled)
             }
             if n > 0 {
                 filled += n
@@ -73,7 +79,8 @@ public enum PamHelperWire {
         while written < bytes.count {
             let n = bytes.withUnsafeBytes { raw -> Int in
                 guard let base = raw.baseAddress else { return -1 }
-                return write(fd, base.advanced(by: written), bytes.count - written)
+                return unsafe write(
+                    fd, base.advanced(by: written), bytes.count - written)
             }
             if n > 0 {
                 written += n
@@ -88,9 +95,61 @@ public enum PamHelperWire {
 
     public static func readLength(from fd: Int32, limit: Int) -> Int? {
         guard let raw = readExactly(4, from: fd) else { return nil }
-        let value = raw.withUnsafeBytes { $0.loadUnaligned(as: UInt32.self) }
+        let value = raw.withUnsafeBytes {
+            unsafe $0.loadUnaligned(as: UInt32.self)
+        }
         let length = Int(UInt32(littleEndian: value))
         guard length <= limit else { return nil }
         return length
+    }
+
+    /// Incremental parent-side parser. It accepts arbitrary pipe fragmentation
+    /// without ever reading past the one bounded response frame.
+    public struct ResponseParser: Sendable {
+        public enum State: Sendable, Equatable {
+            case incomplete
+            case complete(Outcome, String)
+            case malformed
+        }
+
+        private var bytes: [UInt8] = []
+
+        public init() {
+            bytes.reserveCapacity(PamHelperWire.maximumResponseBytes)
+        }
+
+        public mutating func append(_ incoming: UnsafeRawBufferPointer) -> State {
+            guard bytes.count <= PamHelperWire.maximumResponseBytes,
+                  incoming.count <= PamHelperWire.maximumResponseBytes - bytes.count
+            else { return .malformed }
+            unsafe bytes.append(contentsOf: incoming)
+            return state(eof: false)
+        }
+
+        public mutating func append(_ incoming: [UInt8]) -> State {
+            incoming.withUnsafeBytes { unsafe append($0) }
+        }
+
+        public func state(eof: Bool) -> State {
+            guard bytes.count >= responseHeaderBytes else {
+                return eof ? .malformed : .incomplete
+            }
+            guard let outcome = Outcome(rawValue: bytes[0]) else {
+                return .malformed
+            }
+            let length = bytes[1..<5].withUnsafeBytes {
+                unsafe Int(UInt32(
+                    littleEndian: $0.loadUnaligned(as: UInt32.self)))
+            }
+            guard length <= maximumMessageBytes else { return .malformed }
+            let expected = responseHeaderBytes + length
+            guard bytes.count <= expected else { return .malformed }
+            guard bytes.count == expected else {
+                return eof ? .malformed : .incomplete
+            }
+            return .complete(
+                outcome,
+                String(decoding: bytes[responseHeaderBytes..<expected], as: UTF8.self))
+        }
     }
 }

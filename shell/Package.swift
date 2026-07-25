@@ -159,12 +159,16 @@ let package = Package(
                 .product(name: "WaylandClientC", package: "swift-wayland"),
                 .product(name: "WaylandClientDispatch", package: "swift-wayland"),
                 .product(name: "WaylandClient", package: "swift-wayland"),
+                .product(name: "WaylandProtocolTypes", package: "swift-wayland"),
                 .product(name: "WaylandProtocolsC", package: "swift-wayland"),
                 .product(name: "NucleusTypes", package: "Nucleus"),
             ],
             path: "Sources/NucleusShellWayland",
             swiftSettings: [
                 .interoperabilityMode(.Cxx),
+                .unsafeFlags([
+                    "-enable-experimental-feature", "Lifetimes",
+                ]),
                 // NucleusShellInputC #includes <xkbcommon/xkbcommon.h>, so its
                 // include dir has to be on the clang importer path here.
                 .unsafeFlags(xkbClientCcFlags),
@@ -180,11 +184,17 @@ let package = Package(
                 "NucleusShellLoop",
                 .product(name: "WaylandClientC", package: "swift-wayland"),
                 .product(name: "WaylandClientDispatch", package: "swift-wayland"),
+                .product(name: "WaylandProtocolTypes", package: "swift-wayland"),
                 .product(name: "WaylandProtocolsC", package: "swift-wayland"),
                 .product(name: "NucleusUI", package: "Nucleus"),
             ],
             path: "Sources/NucleusShellPasteboard",
-            swiftSettings: [.interoperabilityMode(.Cxx)]
+            swiftSettings: [
+                .interoperabilityMode(.Cxx),
+                .unsafeFlags([
+                    "-enable-experimental-feature", "Lifetimes",
+                ]),
+            ]
         ),
         .testTarget(
             name: "NucleusShellPasteboardTests",
@@ -246,6 +256,9 @@ let package = Package(
             swiftSettings: [
                 .interoperabilityMode(.Cxx),
                 .strictMemorySafety(),
+                .unsafeFlags([
+                    "-enable-experimental-feature", "Lifetimes",
+                ]),
             ]
         ),
 
@@ -270,6 +283,9 @@ let package = Package(
             dependencies: [
                 .product(
                     name: "NucleusLinuxDBus",
+                    package: "NucleusLinuxPlatform"),
+                .product(
+                    name: "NucleusThemeAssetIO",
                     package: "NucleusLinuxPlatform"),
                 .product(name: "NucleusUI", package: "Nucleus"),
             ],
@@ -297,12 +313,17 @@ let package = Package(
             name: "NucleusShellAuth",
             dependencies: [
                 "NucleusShellAuthWire",
+                "NucleusShellProcessC",
                 "NucleusShellProduct",
                 .product(name: "NucleusUI", package: "Nucleus"),
             ],
             path: "Sources/NucleusShellAuth",
             swiftSettings: [.interoperabilityMode(.Cxx)]
         ),
+        .target(
+            name: "NucleusShellProcessC",
+            path: "Sources/NucleusShellProcessC",
+            publicHeadersPath: "include"),
         // A separate process so a crashing or exiting PAM module costs a child,
         // not the locker — a dead locker leaves the session blank and locked.
         .executableTarget(
@@ -312,6 +333,19 @@ let package = Package(
             swiftSettings: [.interoperabilityMode(.Cxx)],
             linkerSettings: [.unsafeFlags(["-lpam"])]
         ),
+        .executableTarget(
+            name: "NucleusShellPamAttemptFixture",
+            path: "Tests/Fixtures/NucleusShellPamAttemptFixture"),
+        .testTarget(
+            name: "NucleusShellAuthTests",
+            dependencies: [
+                "NucleusShellAuth",
+                "NucleusShellAuthWire",
+                "NucleusShellPamAttemptFixture",
+                .product(name: "NucleusUI", package: "Nucleus"),
+            ],
+            path: "Tests/NucleusShellAuthTests",
+            swiftSettings: [.interoperabilityMode(.Cxx)]),
 
         .target(
             name: "NucleusShellInput",
@@ -319,6 +353,7 @@ let package = Package(
                 "NucleusShellWayland",
                 .product(name: "WaylandClientC", package: "swift-wayland"),
                 .product(name: "WaylandClientDispatch", package: "swift-wayland"),
+                .product(name: "WaylandProtocolTypes", package: "swift-wayland"),
                 .product(name: "NucleusUI", package: "Nucleus"),
             ],
             path: "Sources/NucleusShellInput",
@@ -464,6 +499,7 @@ for target in package.targets {
         continue
     }
     var swiftSettings = (target.swiftSettings ?? []) + [
+        .strictMemorySafety(),
         .unsafeFlags(["-warnings-as-errors"]),
         .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
     ]

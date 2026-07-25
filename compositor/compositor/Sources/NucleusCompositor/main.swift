@@ -11,7 +11,9 @@ do {
         readinessReporter: readiness)
 } catch {
     let line = "nucleus-compositor: invalid session launch contract: \(error)\n"
-    _ = line.withCString { write(STDERR_FILENO, $0, strlen($0)) }
+    _ = line.withCString {
+        unsafe write(STDERR_FILENO, $0, strlen($0))
+    }
     status = 1
 }
 exit(status)

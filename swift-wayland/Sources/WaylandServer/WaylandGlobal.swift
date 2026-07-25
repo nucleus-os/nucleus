@@ -3,24 +3,30 @@
 // closure is @convention(c) and cannot capture, so per-global context travels
 // through wl_global_create's `data` pointer or process-global state.
 
-public import WaylandServerC
+import WaylandServerC
 
-public final class WaylandGlobal {
-    public let global: OpaquePointer
+/// Owns the native global and keeps its display alive for the global's entire
+/// lifetime. Binding is serialized on that display's event-loop thread.
+@MainActor
+@safe package final class WaylandGlobal {
+    package let global: OpaquePointer
     private let displayOwner: WaylandDisplay
 
-    public init?(
+    package init?(
         display: WaylandDisplay,
         interface: UnsafePointer<wl_interface>?,
         version: Int32,
         data: UnsafeMutableRawPointer? = nil,
         bind: @convention(c) (OpaquePointer?, UnsafeMutableRawPointer?, UInt32, UInt32) -> Void
     ) {
-        guard let global = wl_global_create(display.display, interface, version, data, bind)
+        guard let global = unsafe wl_global_create(
+            display.display, interface, version, data, bind)
         else { return nil }
-        self.global = global
+        unsafe self.global = global
         self.displayOwner = display
     }
 
-    deinit { wl_global_destroy(global) }
+    isolated deinit {
+        unsafe wl_global_destroy(global)
+    }
 }

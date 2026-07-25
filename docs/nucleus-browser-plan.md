@@ -26,6 +26,8 @@ into shareable buffers and submits their metadata and fences through Chromium's
 existing Ozone IPC boundary. A Wayland object is never passed to Dawn or the GPU
 process.
 
+Status: active
+
 ## Goal
 
 Ship a functional `nucleus-browser` executable that:

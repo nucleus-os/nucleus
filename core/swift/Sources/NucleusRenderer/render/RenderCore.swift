@@ -32,7 +32,9 @@ import Android
 /// path runs on the main-loop thread (the layers commit sink and retained store
 /// are already main-actor-isolated).
 @MainActor
-public final class RenderCore {
+/// Main-actor isolation serializes every raw handle and C++ RAII value; teardown
+/// releases child resources before the Graphite context and Vulkan owners.
+@safe public final class RenderCore {
     nonisolated static func shouldRenderOutput(
         hasPendingDamage: Bool, forced: Bool, wantsPresent: Bool, needsInitialFrame: Bool
     ) -> Bool {
@@ -87,18 +89,31 @@ public final class RenderCore {
     // released on content swap / surface destroy / shutdown (before the Graphite
     // context, per the GPU-lifetime invariant).
     var importedSurfaceImages: [UInt64: VkOwnedImageBox] = [:]
-    var retiredSurfaceImages: [(serial: UInt64, image: VkOwnedImageBox, releaseID: UInt64)] = []
+
+    /// One client-surface image whose replacement was recorded but whose GPU work
+    /// may still be in flight. The entry owns the `VkOwned<VkImage>` outright, so
+    /// the image is destroyed exactly once — when the entry is consumed — instead
+    /// of relying on a shared box being released exactly once by convention.
+    @safe struct RetiredSurfaceImage: ~Copyable {
+        var serial: UInt64
+        var image: VkOwned<VkImage>
+        var releaseID: UInt64
+    }
+    var retiredSurfaceImages = UniqueArray<RetiredSurfaceImage>()
     var pendingClientAcquireSemaphores: [UInt64: ClientAcquireSemaphore] = [:]
     var retiredClientAcquireSemaphores: [(serial: UInt64, semaphore: ClientAcquireSemaphore)] = []
     var pendingShmUploads = PendingShmUploadQueue()
-    struct StagedShmUpload {
+    /// Owns upload/image values only until the enclosing frame commits or rolls
+    /// back on the main render actor.
+    @safe struct StagedShmUpload {
         var pending: PendingShmUpload
         var texture: nucleus.skia.UploadTexture
         var image: nucleus.skia.Image
     }
     var stagedShmUploads: [UInt64: StagedShmUpload] = [:]
-    var clientUploadTextures: [UInt64: nucleus.skia.UploadTexture] = [:]
-    var retiredClientUploadTextures: [(serial: UInt64, texture: nucleus.skia.UploadTexture)] = []
+    var clientUploadTextures: [UInt64: nucleus.skia.UploadTexture] = unsafe [:]
+    var retiredClientUploadTextures:
+        [(serial: UInt64, texture: nucleus.skia.UploadTexture)] = unsafe []
     var nextSnapshotContentRevision: UInt64 = 1
     public struct SnapshotTelemetry: Sendable, Equatable {
         public var captureAttempts: UInt64 = 0
@@ -161,7 +176,9 @@ public final class RenderCore {
         var completion: (@MainActor (PixelCapture?) -> Void)?
     }
 
-    final class PendingPixelCaptureJob {
+    /// Keeps readback and optional backing surface alive until completion on the
+    /// main actor; neither value crosses an actor or outlives the context.
+    @safe final class PendingPixelCaptureJob {
         let key: PixelCaptureKey?
         let readback: nucleus.skia.SurfaceReadback
         var retainedSurface: nucleus.skia.Surface?
@@ -186,8 +203,8 @@ public final class RenderCore {
             subscriber: PixelCaptureSubscriber
         ) {
             self.key = key
-            self.readback = readback
-            self.retainedSurface = retainedSurface
+            unsafe self.readback = unsafe readback
+            unsafe self.retainedSurface = unsafe retainedSurface
             self.originX = originX
             self.originY = originY
             self.width = width
@@ -198,7 +215,9 @@ public final class RenderCore {
         }
     }
 
-    final class PendingDmabufCapture {
+    /// Keeps the surface and image owner paired until completion, then releases
+    /// the surface before the Vulkan backing image.
+    @safe final class PendingDmabufCapture {
         let submissionSerial: UInt64
         var surface: nucleus.skia.Surface?
         let image: VkOwnedImageBox
@@ -213,14 +232,14 @@ public final class RenderCore {
             completion: @escaping @MainActor (Bool) -> Void
         ) {
             self.submissionSerial = submissionSerial
-            self.surface = surface
+            unsafe self.surface = unsafe surface
             self.image = image
             self.startedAt = startedAt
             self.completion = completion
         }
 
         func releaseBacking() {
-            surface = nil
+            unsafe surface = nil
             image.release()
         }
 
@@ -293,26 +312,26 @@ public final class RenderCore {
         asyncRenderWakeSink: any AsyncRenderWakeSink
     ) {
         // Copy the Copyable handles/dispatch out (borrow) before boxing the owners.
-        guard let ownedInstanceHandle = instanceLifetime.owner?.handle,
+        guard let ownedInstanceHandle = unsafe instanceLifetime.owner?.handle,
               let ownedInstanceDispatch = instanceLifetime.owner?.dispatch
         else {
             preconditionFailure("finalized Vulkan bootstrap lost its instance")
         }
-        self.instanceHandle = ownedInstanceHandle
-        self.physicalDevice = physicalDevice
+        unsafe self.instanceHandle = unsafe ownedInstanceHandle
+        unsafe self.physicalDevice = unsafe physicalDevice
         self.instanceDispatch = ownedInstanceDispatch
-        self.deviceHandle = device.handle
+        unsafe self.deviceHandle = unsafe device.handle
         self.deviceDispatch = device.dispatch
         self.graphicsFamily = graphicsFamily
-        self.graphicsQueue = queue
+        unsafe self.graphicsQueue = unsafe queue
         self.vulkanContract = vulkanContract
         self.asyncRenderWakeSink = asyncRenderWakeSink
-        self.context = context
+        unsafe self.context = unsafe context
         self.frameDriver = driver
         self.store = store
         self.resourceHost = resourceHost
         self.snapshots = resourceHost.snapshots
-        self.sampleableDmaBufFormats = querySampleableDmaBufFormats(
+        self.sampleableDmaBufFormats = unsafe querySampleableDmaBufFormats(
             physicalDevice: physicalDevice, instanceDispatch: ownedInstanceDispatch)
         self.instanceLifetime = instanceLifetime
         self.deviceBox = consume device

@@ -19,7 +19,8 @@ public enum DisplayHostError: Error, CustomStringConvertible {
         switch self {
         case .invalidArguments(let message): return message
         case .systemCall(let operation, let code):
-            return "\(operation) failed: \(String(cString: strerror(code)))"
+            let reason = unsafe String(cString: strerror(code))
+            return "\(operation) failed: \(reason)"
         case .unauthorizedPeer(let expected, let actual):
             return "unauthorized Composer3 peer uid \(actual), expected \(expected)"
         case .invalidRequest: return "invalid Composer3 display request"
@@ -29,7 +30,7 @@ public enum DisplayHostError: Error, CustomStringConvertible {
 }
 
 @MainActor
-public final class NucleusAndroidDisplayHost {
+@safe public final class NucleusAndroidDisplayHost {
     private let socketPath: String
     private let expectedUserID: UInt32
     private let parentProcessID: Int32
@@ -48,7 +49,7 @@ public final class NucleusAndroidDisplayHost {
             SIGTERM, parentProcessID) == 0
         else { throw systemError("prctl(PR_SET_PDEATHSIG)") }
         let listener = socketPath.withCString {
-            nucleus_android_ipc_listen($0, 0o666)
+            unsafe nucleus_android_ipc_listen($0, 0o666)
         }
         guard listener >= 0 else { throw systemError("bind/listen") }
         self.socketPath = socketPath
@@ -63,7 +64,7 @@ public final class NucleusAndroidDisplayHost {
                 reactor: reactor)
         } catch {
             _ = close(listener)
-            _ = socketPath.withCString { unlink($0) }
+            _ = socketPath.withCString { unsafe unlink($0) }
             throw error
         }
     }
@@ -71,7 +72,7 @@ public final class NucleusAndroidDisplayHost {
     public func run() async throws {
         defer {
             _ = close(listener)
-            _ = socketPath.withCString { unlink($0) }
+            _ = socketPath.withCString { unsafe unlink($0) }
         }
         while true {
             try await waitForReadable(listener)
@@ -93,7 +94,7 @@ public final class NucleusAndroidDisplayHost {
 
     private func requirePeer(_ connection: Int32) throws {
         var credentials = nucleus_android_peer_credentials()
-        guard nucleus_android_ipc_peer_credentials(
+        guard unsafe nucleus_android_ipc_peer_credentials(
             connection, &credentials) == 0
         else { throw systemError("getsockopt(SO_PEERCRED)") }
         guard credentials.uid == expectedUserID else {
@@ -114,7 +115,7 @@ public final class NucleusAndroidDisplayHost {
             let requestSize = MemoryLayout.size(ofValue: request)
             let received = descriptors.withUnsafeMutableBufferPointer { fds in
                 withUnsafeMutablePointer(to: &request) { bytes in
-                    nucleus_android_ipc_receive(
+                    unsafe nucleus_android_ipc_receive(
                         connection,
                         bytes,
                         requestSize,
@@ -145,7 +146,7 @@ public final class NucleusAndroidDisplayHost {
                 let sent = withUnsafePointer(to: &reply) { bytes in
                     var descriptor = releaseFence
                     return withUnsafePointer(to: &descriptor) { fd in
-                        nucleus_android_ipc_send(
+                        unsafe nucleus_android_ipc_send(
                             connection,
                             bytes,
                             replySize,
@@ -208,7 +209,7 @@ public final class NucleusAndroidDisplayHost {
 }
 
 @MainActor
-private final class AndroidDisplayPresenter:
+@safe private final class AndroidDisplayPresenter:
     @MainActor XdgSurfaceEvents,
     @MainActor XdgToplevelEvents,
     @MainActor WlBufferEvents
@@ -244,7 +245,7 @@ private final class AndroidDisplayPresenter:
             var path = [CChar](
                 repeating: 0,
                 count: Int(NUCLEUS_ANDROID_DRM_PATH_MAX))
-            guard nucleus_android_drm_select_display_render_path(
+            guard unsafe nucleus_android_drm_select_display_render_path(
                 &path, path.count) == 0
             else { throw systemError("selecting display GPU") }
             let end = path.firstIndex(of: 0) ?? path.endIndex
@@ -257,7 +258,7 @@ private final class AndroidDisplayPresenter:
             selectedRenderDevice = renderDevice
         }
         guard let connection = WaylandConnection(socket: waylandSocket),
-              let registry = WaylandRegistry(connection, wanting: [
+              let registry = unsafe WaylandRegistry(connection, wanting: [
                 DesiredGlobal(swift_wayland_iface_wl_compositor(), maxVersion: 6),
                 DesiredGlobal(swift_wayland_iface_zwp_linux_dmabuf_v1(), maxVersion: 5),
                 DesiredGlobal(swift_wayland_iface_xdg_wm_base(), maxVersion: 6),
@@ -267,18 +268,18 @@ private final class AndroidDisplayPresenter:
             ])
         else { throw DisplayHostError.wayland("connection failed") }
         guard let bridge = selectedRenderDevice.withCString({
-            nucleus_android_syncobj_bridge_create($0)
+            unsafe nucleus_android_syncobj_bridge_create($0)
         }) else { throw systemError("creating syncobj bridge") }
         self.connection = connection
         self.registry = registry
         self.reactor = reactor
-        self.bridge = bridge
+        unsafe self.bridge = bridge
         registry.onBind = { [weak self] global in self?.bound(global) }
         guard connection.bootstrapRoundtrip() >= 0 else {
             throw DisplayHostError.wayland("registry roundtrip failed")
         }
-        guard compositor != nil, dmabuf != nil, wmBase != nil,
-              syncobjManager != nil
+        guard unsafe compositor != nil, unsafe dmabuf != nil,
+              unsafe wmBase != nil, unsafe syncobjManager != nil
         else { throw DisplayHostError.wayland("required protocol is unavailable") }
     }
 
@@ -286,53 +287,53 @@ private final class AndroidDisplayPresenter:
         _ request: nucleus_composer_present_request,
         descriptors: [Int32]
     ) async throws -> Int32 {
-        if surface == nil {
+        if unsafe surface == nil {
             try await createSurface(width: request.width, height: request.height)
         }
         guard !closed,
-              let surface,
-              let syncSurface,
-              let acquireTimeline,
-              let releaseTimeline
+              let surface = unsafe surface,
+              let syncSurface = unsafe syncSurface,
+              let acquireTimeline = unsafe acquireTimeline,
+              let releaseTimeline = unsafe releaseTimeline
         else { throw DisplayHostError.wayland("surface closed") }
         let buffer = try importBuffer(request, descriptors: descriptors)
         let acquirePoint = nextAcquirePoint
         nextAcquirePoint &+= 1
         if request.has_acquire_fence == 1 {
-            guard nucleus_android_syncobj_bridge_import_acquire_sync_file(
+            guard unsafe nucleus_android_syncobj_bridge_import_acquire_sync_file(
                 bridge, acquirePoint, descriptors[2]) == 0
             else { throw systemError("importing Composer3 acquire fence") }
         } else {
-            guard nucleus_android_syncobj_bridge_signal_acquire(
+            guard unsafe nucleus_android_syncobj_bridge_signal_acquire(
                 bridge, acquirePoint) == 0
             else { throw systemError("signaling empty acquire point") }
         }
         let releasePoint = nextReleasePoint
         nextReleasePoint &+= 1
         let releaseFence =
-            nucleus_android_syncobj_bridge_export_release_sync_file(
+            unsafe nucleus_android_syncobj_bridge_export_release_sync_file(
                 bridge, releasePoint)
         guard releaseFence >= 0 else {
             throw systemError("exporting Composer3 release fence")
         }
-        wp_linux_drm_syncobj_surface_v1_set_acquire_point(
+        unsafe wp_linux_drm_syncobj_surface_v1_set_acquire_point(
             syncSurface,
             acquireTimeline,
             UInt32(acquirePoint >> 32),
             UInt32(truncatingIfNeeded: acquirePoint))
-        wp_linux_drm_syncobj_surface_v1_set_release_point(
+        unsafe wp_linux_drm_syncobj_surface_v1_set_release_point(
             syncSurface,
             releaseTimeline,
             UInt32(releasePoint >> 32),
             UInt32(truncatingIfNeeded: releasePoint))
-        wl_surface_attach(surface, buffer.proxy, 0, 0)
-        wl_surface_damage_buffer(
+        unsafe wl_surface_attach(surface, buffer.proxy, 0, 0)
+        unsafe wl_surface_damage_buffer(
             surface,
             request.damage_left,
             request.damage_top,
             request.damage_right - request.damage_left,
             request.damage_bottom - request.damage_top)
-        wl_surface_commit(surface)
+        unsafe wl_surface_commit(surface)
         guard connection.flush() >= 0 || errno == EAGAIN else {
             _ = Glibc.close(releaseFence)
             throw DisplayHostError.wayland("commit flush failed")
@@ -396,23 +397,25 @@ private final class AndroidDisplayPresenter:
     }
 
     private func createSurface(width: UInt32, height: UInt32) async throws {
-        guard let compositor, let wmBase, let syncobjManager,
-              let surface = wl_compositor_create_surface(compositor),
-              let xdgSurface = xdg_wm_base_get_xdg_surface(wmBase, surface),
-              let toplevel = xdg_surface_get_toplevel(xdgSurface),
-              let syncSurface = wp_linux_drm_syncobj_manager_v1_get_surface(
+        guard let compositor = unsafe compositor,
+              let wmBase = unsafe wmBase,
+              let syncobjManager = unsafe syncobjManager,
+              let surface = unsafe wl_compositor_create_surface(compositor),
+              let xdgSurface = unsafe xdg_wm_base_get_xdg_surface(wmBase, surface),
+              let toplevel = unsafe xdg_surface_get_toplevel(xdgSurface),
+              let syncSurface = unsafe wp_linux_drm_syncobj_manager_v1_get_surface(
                 syncobjManager, surface)
         else { throw DisplayHostError.wayland("surface creation failed") }
         let acquireFD =
-            nucleus_android_syncobj_bridge_export_acquire_timeline(bridge)
+            unsafe nucleus_android_syncobj_bridge_export_acquire_timeline(bridge)
         let releaseFD =
-            nucleus_android_syncobj_bridge_export_release_timeline(bridge)
+            unsafe nucleus_android_syncobj_bridge_export_release_timeline(bridge)
         guard acquireFD >= 0, releaseFD >= 0,
               let acquireTimeline =
-                wp_linux_drm_syncobj_manager_v1_import_timeline(
+                unsafe wp_linux_drm_syncobj_manager_v1_import_timeline(
                     syncobjManager, acquireFD),
               let releaseTimeline =
-                wp_linux_drm_syncobj_manager_v1_import_timeline(
+                unsafe wp_linux_drm_syncobj_manager_v1_import_timeline(
                     syncobjManager, releaseFD)
         else {
             if acquireFD >= 0 { _ = Glibc.close(acquireFD) }
@@ -421,18 +424,25 @@ private final class AndroidDisplayPresenter:
         }
         _ = Glibc.close(acquireFD)
         _ = Glibc.close(releaseFD)
-        self.surface = surface
-        self.xdgSurface = xdgSurface
-        self.toplevel = toplevel
-        self.syncSurface = syncSurface
-        self.acquireTimeline = acquireTimeline
-        self.releaseTimeline = releaseTimeline
-        XdgSurfaceClient.addListener(xdgSurface, owner: self)
-        XdgToplevelClient.addListener(toplevel, owner: self)
-        "android.runtime".withCString { xdg_toplevel_set_app_id(toplevel, $0) }
-        "Android".withCString { xdg_toplevel_set_title(toplevel, $0) }
-        xdg_toplevel_set_min_size(toplevel, Int32(width), Int32(height))
-        wl_surface_commit(surface)
+        unsafe self.surface = surface
+        unsafe self.xdgSurface = xdgSurface
+        unsafe self.toplevel = toplevel
+        unsafe self.syncSurface = syncSurface
+        unsafe self.acquireTimeline = acquireTimeline
+        unsafe self.releaseTimeline = releaseTimeline
+        unsafe XdgSurfaceClient.addListener(xdgSurface, owner: self)
+        unsafe XdgToplevelClient.addListener(toplevel, owner: self)
+        "android.runtime".withCString {
+            unsafe xdg_toplevel_set_app_id(toplevel, $0)
+        }
+        "Android".withCString {
+            unsafe xdg_toplevel_set_title(toplevel, $0)
+        }
+        unsafe xdg_toplevel_set_min_size(
+            toplevel,
+            Int32(width),
+            Int32(height))
+        unsafe wl_surface_commit(surface)
         guard connection.flush() >= 0 else {
             throw DisplayHostError.wayland("initial commit failed")
         }
@@ -455,11 +465,11 @@ private final class AndroidDisplayPresenter:
             else { throw DisplayHostError.invalidRequest }
             return existing
         }
-        guard let dmabuf,
-              let params = zwp_linux_dmabuf_v1_create_params(dmabuf)
+        guard let dmabuf = unsafe dmabuf,
+              let params = unsafe zwp_linux_dmabuf_v1_create_params(dmabuf)
         else { throw DisplayHostError.wayland("dma-buf params creation failed") }
-        defer { zwp_linux_buffer_params_v1_destroy(params) }
-        zwp_linux_buffer_params_v1_add(
+        defer { unsafe zwp_linux_buffer_params_v1_destroy(params) }
+        unsafe zwp_linux_buffer_params_v1_add(
             params,
             descriptors[0],
             0,
@@ -467,7 +477,7 @@ private final class AndroidDisplayPresenter:
             request.plane_stride,
             UInt32(request.drm_modifier >> 32),
             UInt32(truncatingIfNeeded: request.drm_modifier))
-        guard let proxy = zwp_linux_buffer_params_v1_create_immed(
+        guard let proxy = unsafe zwp_linux_buffer_params_v1_create_immed(
             params,
             Int32(request.width),
             Int32(request.height),
@@ -476,10 +486,10 @@ private final class AndroidDisplayPresenter:
         else { throw DisplayHostError.wayland("dma-buf import failed") }
         let lifetime = dup(descriptors[1])
         guard lifetime >= 0 else {
-            wl_buffer_destroy(proxy)
+            unsafe wl_buffer_destroy(proxy)
             throw systemError("duplicating allocation lifetime")
         }
-        let buffer = DisplayBuffer(
+        let buffer = unsafe DisplayBuffer(
             proxy: proxy,
             lifetime: lifetime,
             width: request.width,
@@ -488,7 +498,7 @@ private final class AndroidDisplayPresenter:
             modifier: request.drm_modifier,
             offset: request.plane_offset,
             stride: request.plane_stride)
-        WlBufferClient.addListener(proxy, owner: self)
+        unsafe WlBufferClient.addListener(proxy, owner: self)
         buffers[request.allocation_id] = buffer
         return buffer
     }
@@ -519,66 +529,82 @@ private final class AndroidDisplayPresenter:
     }
 
     private func bound(_ global: BoundGlobal) {
-        switch String(cString: global.interface.pointee.name) {
-        case "wl_compositor": compositor = global.proxy
-        case "zwp_linux_dmabuf_v1": dmabuf = global.proxy
+        switch unsafe String(cString: global.interface.pointee.name) {
+        case "wl_compositor": unsafe compositor = global.proxy
+        case "zwp_linux_dmabuf_v1": unsafe dmabuf = global.proxy
         case "xdg_wm_base":
-            wmBase = global.proxy
-            XdgWmBaseClient.addListener(global.proxy, owner: wmHandler)
-        case "wp_linux_drm_syncobj_manager_v1": syncobjManager = global.proxy
+            unsafe wmBase = global.proxy
+            unsafe XdgWmBaseClient.addListener(
+                global.proxy,
+                owner: wmHandler)
+        case "wp_linux_drm_syncobj_manager_v1":
+            unsafe syncobjManager = global.proxy
         default: break
         }
     }
 
-    func configure(_ proxy: OpaquePointer, serial: UInt32) {
-        xdg_surface_ack_configure(proxy, serial)
+    func configure(
+        _ proxy: WaylandBorrowedProxy<XdgSurfaceClient>, serial: UInt32
+    ) {
+        unsafe xdg_surface_ack_configure(proxy.proxy, serial)
         configured = true
     }
 
     func configure(
-        _ proxy: OpaquePointer,
+        _ proxy: WaylandBorrowedProxy<XdgToplevelClient>,
         width: Int32,
         height: Int32,
-        states: UnsafeMutablePointer<wl_array>?
+        states: WaylandClientArrayView
     ) {}
 
-    func close(_ proxy: OpaquePointer) { closed = true }
-    func release(_ proxy: OpaquePointer) {
+    func close(_ proxy: WaylandBorrowedProxy<XdgToplevelClient>) {
+        closed = true
+    }
+    func release(_ proxy: WaylandBorrowedProxy<WlBufferClient>) {
         guard let allocation = buffers.first(where: {
-            $0.value.proxy == proxy
+            unsafe $0.value.proxy == proxy.proxy
         })?.key else {
             return
         }
         buffers.removeValue(forKey: allocation)
-        wl_buffer_destroy(proxy)
+        unsafe wl_buffer_destroy(proxy.proxy)
     }
-    func configureBounds(_ proxy: OpaquePointer, width: Int32, height: Int32) {}
+    func configureBounds(
+        _ proxy: WaylandBorrowedProxy<XdgToplevelClient>,
+        width: Int32, height: Int32
+    ) {}
     func wmCapabilities(
-        _ proxy: OpaquePointer,
-        capabilities: UnsafeMutablePointer<wl_array>?
+        _ proxy: WaylandBorrowedProxy<XdgToplevelClient>,
+        capabilities: WaylandClientArrayView
     ) {}
 
     isolated deinit {
         for buffer in buffers.values {
-            wl_buffer_destroy(buffer.proxy)
+            unsafe wl_buffer_destroy(buffer.proxy)
         }
-        if let acquireTimeline {
-            wp_linux_drm_syncobj_timeline_v1_destroy(acquireTimeline)
+        if let acquireTimeline = unsafe acquireTimeline {
+            unsafe wp_linux_drm_syncobj_timeline_v1_destroy(acquireTimeline)
         }
-        if let releaseTimeline {
-            wp_linux_drm_syncobj_timeline_v1_destroy(releaseTimeline)
+        if let releaseTimeline = unsafe releaseTimeline {
+            unsafe wp_linux_drm_syncobj_timeline_v1_destroy(releaseTimeline)
         }
-        if let syncSurface {
-            wp_linux_drm_syncobj_surface_v1_destroy(syncSurface)
+        if let syncSurface = unsafe syncSurface {
+            unsafe wp_linux_drm_syncobj_surface_v1_destroy(syncSurface)
         }
-        if let toplevel { xdg_toplevel_destroy(toplevel) }
-        if let xdgSurface { xdg_surface_destroy(xdgSurface) }
-        if let surface { wl_surface_destroy(surface) }
-        nucleus_android_syncobj_bridge_destroy(bridge)
+        if let toplevel = unsafe toplevel {
+            unsafe xdg_toplevel_destroy(toplevel)
+        }
+        if let xdgSurface = unsafe xdgSurface {
+            unsafe xdg_surface_destroy(xdgSurface)
+        }
+        if let surface = unsafe surface {
+            unsafe wl_surface_destroy(surface)
+        }
+        unsafe nucleus_android_syncobj_bridge_destroy(bridge)
     }
 }
 
-private final class DisplayBuffer {
+@safe private final class DisplayBuffer {
     let proxy: OpaquePointer
     let lifetime: Int32
     let width: UInt32
@@ -598,7 +624,7 @@ private final class DisplayBuffer {
         offset: UInt32,
         stride: UInt32
     ) {
-        self.proxy = proxy
+        unsafe self.proxy = proxy
         self.lifetime = lifetime
         self.width = width
         self.height = height
@@ -612,8 +638,10 @@ private final class DisplayBuffer {
 }
 
 private final class DisplayWmBaseHandler: XdgWmBaseEvents {
-    func ping(_ proxy: OpaquePointer, serial: UInt32) {
-        xdg_wm_base_pong(proxy, serial)
+    func ping(
+        _ proxy: WaylandBorrowedProxy<XdgWmBaseClient>, serial: UInt32
+    ) {
+        unsafe xdg_wm_base_pong(proxy.proxy, serial)
     }
 }
 

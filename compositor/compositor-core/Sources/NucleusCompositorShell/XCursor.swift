@@ -1,6 +1,6 @@
 import FoundationEssentials
 
-struct XCursorImage {
+struct XCursorImage: Sendable {
     var width: UInt32
     var height: UInt32
     var hotSpotX: UInt32

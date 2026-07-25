@@ -624,11 +624,10 @@ struct ComponentRegistry {
     }
 
     private func requiredDirectory(_ path: String) throws -> FilePath {
-        var directory: ObjCBool = false
+        let values = try? URL(fileURLWithPath: path).resourceValues(
+            forKeys: [.isDirectoryKey])
         guard !path.isEmpty,
-              FileManager.default.fileExists(
-                atPath: path, isDirectory: &directory),
-              directory.boolValue
+              values?.isDirectory == true
         else {
             throw WorkspaceFailure.message(
                 "required host directory was not resolved: \(path)")
@@ -637,11 +636,10 @@ struct ComponentRegistry {
     }
 
     private func requiredFile(_ path: String) throws -> FilePath {
-        var directory: ObjCBool = false
+        let values = try? URL(fileURLWithPath: path).resourceValues(
+            forKeys: [.isDirectoryKey])
         guard path.hasPrefix("/"),
-              FileManager.default.fileExists(
-                atPath: path, isDirectory: &directory),
-              !directory.boolValue
+              values?.isDirectory == false
         else {
             throw WorkspaceFailure.message(
                 "required host library was not resolved: \(path)")

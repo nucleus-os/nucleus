@@ -47,7 +47,7 @@ import NucleusRenderModel
             src: PlanRect(x: 0, y: 0, w: 1, h: 1),
             alpha: 0.8))
 
-        try withRequiredVulkanGraphite(
+        try unsafe withRequiredVulkanGraphite(
             presentation: .headless,
             applicationName: "NucleusCompositorRendererLinuxTests"
         ) { _, _, context, recorder in
@@ -60,23 +60,28 @@ import NucleusRenderModel
                 pixels[i * 4 + 3] = 255
             }
             let decodedSource = pixels.withUnsafeBufferPointer { buf in
-                nucleus.skia.makeRasterImageRGBA(16, 16, buf.baseAddress, buf.count)
+                unsafe nucleus.skia.makeRasterImageRGBA(
+                    16, 16, buf.baseAddress, buf.count)
             }
-            let sourceImage = recorder.makeTextureImage(decodedSource)
-            try requireTrue(sourceImage.isValid(), "texture upload image is invalid")
+            let sourceImage = unsafe recorder.makeTextureImage(decodedSource)
+            let sourceImageIsValid = unsafe sourceImage.isValid()
             try requireTrue(
-                submitGraphiteAndWait(
-                    context: context,
-                    recording: recorder.snapRecording(),
-                    serial: 1),
+                sourceImageIsValid, "texture upload image is invalid")
+            let uploadRecording = unsafe recorder.snapRecording()
+            let uploadCompleted = unsafe submitGraphiteAndWait(
+                context: context,
+                recording: uploadRecording,
+                serial: 1)
+            try requireTrue(
+                uploadCompleted,
                 "texture upload submission did not complete")
 
             let basic = try requireValue(
-                FramePlanRenderer.renderOffscreen(
+                unsafe FramePlanRenderer.renderOffscreen(
                     context: context, plan: plan, width: 256, height: 128,
                     submissionSerial: 2,
                     resolveTexture: {
-                        $0.handle.raw == 1 ? sourceImage : nil
+                        unsafe $0.handle.raw == 1 ? sourceImage : nil
                     }),
                 "basic offscreen render failed")
             #expect(basic.imageWidth == 256)
@@ -103,17 +108,19 @@ import NucleusRenderModel
                 src: PlanRect(x: 0, y: 0, w: 16, h: 16),
                 alpha: 0.7))
             let result = try requireValue(
-                FramePlanRenderer.renderOffscreen(
+                unsafe FramePlanRenderer.renderOffscreen(
                     context: context, plan: rich, width: 256, height: 128,
                     submissionSerial: 3,
                     resolveTexture: {
-                        $0.handle.raw == 1 ? sourceImage : nil
+                        unsafe $0.handle.raw == 1 ? sourceImage : nil
                     }),
                 "rich offscreen render failed")
             #expect(result.opsDrawn == 3)
             #expect(result.submitOk)
+            let submissionsCompleted = unsafe waitForGraphiteSerial(
+                context: context, serial: 3)
             try requireTrue(
-                waitForGraphiteSerial(context: context, serial: 3),
+                submissionsCompleted,
                 "offscreen submissions did not complete")
         }
     }

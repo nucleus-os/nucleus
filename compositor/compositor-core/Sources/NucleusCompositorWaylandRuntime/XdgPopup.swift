@@ -4,26 +4,33 @@ import WaylandServerC
 import WaylandServer
 import WaylandServerDispatch
 
-final class XdgPopup {
+@MainActor
+@safe final class XdgPopup {
     unowned let shell: XdgShell
     weak var xdgSurface: XdgSurface?
     weak var parent: XdgSurface?
     private weak var layerParent: WlSurface?
-    private(set) var resource: UnsafeMutablePointer<wl_resource>?
+    private let resource: WaylandResourceHandle<XdgPopupServer>
     /// The resolved parent-local placement (the last configure's geometry).
     private(set) var placement = WlRect(x: 0, y: 0, width: 1, height: 1)
     private var positioner: XdgPositionerSnapshot?
     private(set) var popupDoneSent = false
 
-    init(shell: XdgShell, xdgSurface: XdgSurface, parent: XdgSurface?) {
+    init(
+        resource: WaylandResourceHandle<XdgPopupServer>,
+        shell: XdgShell,
+        xdgSurface: XdgSurface,
+        parent: XdgSurface?
+    ) {
+        self.resource = resource
         self.shell = shell
         self.xdgSurface = xdgSurface
         self.parent = parent
     }
 
-    package func bind(_ resource: UnsafeMutablePointer<wl_resource>) {
-        self.resource = resource
-        shell.registerPopup(self, resource: resource)
+    package func installed() {
+        guard let resource = unsafe resource.resource else { return }
+        unsafe shell.registerPopup(self, resource: resource)
     }
 
     var grabOriginSurface: WlSurface? {
@@ -39,7 +46,7 @@ final class XdgPopup {
             validateLayerParent(surface, positioner: positioner)
         else {
             xdgSurface?.postWmError(
-                5 /* invalid_positioner */,
+                .invalidPositioner,
                 "positioner is not valid for the layer-surface parent")
             return
         }
@@ -83,9 +90,9 @@ final class XdgPopup {
         let base = positioner.resolve()
         placement = shell.delegate?.resolvePopup(
             self, positioner: positioner, base: base) ?? base
-        if let resource {
-            xdg_popup_send_configure(resource, placement.x, placement.y, placement.width, placement.height)
-        }
+        resource.sendConfigure(
+            x: placement.x, y: placement.y,
+            width: placement.width, height: placement.height)
         return placement
     }
 
@@ -93,7 +100,7 @@ final class XdgPopup {
     func sendPopupDone() {
         guard !popupDoneSent else { return }
         popupDoneSent = true
-        if let resource { xdg_popup_send_popup_done(resource) }
+        resource.sendPopupDone()
     }
 
     /// Re-resolve the current placement and send it under a fresh xdg_surface
@@ -111,56 +118,55 @@ final class XdgPopup {
         reconfigureUnderNewParent()
     }
 
-    deinit {
-        shell.unregisterPopup(self, resource: resource)
+    isolated deinit {
+        unsafe shell.unregisterPopup(self, resource: resource.resource)
         xdgSurface?.roleObjectDestroyed(self)
     }
 }
 
 extension XdgPopup: XdgPopupRequests {
-    func destroy(_ resource: UnsafeMutablePointer<wl_resource>) {
-        guard shell.canDestroyPopup(self, resource: resource) else {
+    func destroy(_ request: WaylandRequest<XdgPopupServer>) {
+        let resource = unsafe request.resource
+        guard unsafe shell.canDestroyPopup(self, resource: resource) else {
             xdgSurface?.postWmError(
-                2 /* not_the_topmost_popup */,
+                .notTheTopmostPopup,
                 "popup destruction must proceed topmost-first")
             return
         }
-        shell.unregisterPopup(self, resource: resource)
+        unsafe shell.unregisterPopup(self, resource: resource)
         xdgSurface?.roleObjectDestroyed(self)
-        wl_resource_destroy(resource)
+        unsafe wl_resource_destroy(resource)
     }
 
     func grab(
-        _ resource: UnsafeMutablePointer<wl_resource>, seat: UnsafeMutablePointer<wl_resource>?, serial: UInt32
+        _ request: WaylandRequest<XdgPopupServer>, seat: WaylandBorrowedObject<WlSeatServer>, serial: UInt32
     ) {
-        guard shell.delegate?.popupGrabRequested(
-            self, seat: seat, serial: serial) == true
+        guard unsafe shell.delegate?.popupGrabRequested(
+            self, seat: seat.resource, serial: serial) == true
         else {
             xdgSurface?.postWmError(
-                4 /* invalid_surface_state */,
+                .invalidSurfaceState,
                 "popup grab serial or seat is not authorized")
             return
         }
     }
 
     func reposition(
-        _ resource: UnsafeMutablePointer<wl_resource>,
-        positioner positionerRes: UnsafeMutablePointer<wl_resource>?, token: UInt32
+        _ request: WaylandRequest<XdgPopupServer>,
+        positioner positionerRes: WaylandBorrowedObject<XdgPositionerServer>, token: UInt32
     ) {
-        guard let positionerRes,
-            let positioner = WaylandResource.owner(
-                of: positionerRes, as: XdgPositioner.self),
+        guard let positioner = positionerRes.owner(as: XdgPositioner.self),
             let snapshot = positioner.snapshot()
         else { return }
         guard validateCurrentParent(snapshot) else {
             xdgSurface?.postWmError(
-                5 /* invalid_positioner */,
+                .invalidPositioner,
                 "reposition parent configure is invalid")
             return
         }
         // repositioned(token) acks the reposition before the matching configure so
         // the client can correlate the new geometry.
-        if let resource = self.resource { xdg_popup_send_repositioned(resource, token) }
+        resource.sendRepositioned(token: token)
         let placement = configure(positioner: snapshot)
         _ = xdgSurface?.sendConfigureSerial(
             roleState: .popup(placement), initial: false)

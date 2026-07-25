@@ -63,8 +63,10 @@ public final class WaylandRuntime {
         _ logicalWidth: Int32, _ logicalHeight: Int32, _ fractionalScale: Double,
         _ name: UnsafePointer<CChar>?, _ description: UnsafePointer<CChar>?
     ) {
-        let nm = name.map { String(cString: $0) } ?? "Nucleus"
-        let desc = description.map { String(cString: $0) } ?? nm
+        let nm = unsafe name.map { unsafe String(cString: $0) } ?? "Nucleus"
+        let desc = unsafe description.map {
+            unsafe String(cString: $0)
+        } ?? nm
         guard let runtime = host.runtime else { return }
         runtime.applyOutput(OutputInfo(
             outputId: outputId, x: x, y: y,
@@ -104,8 +106,9 @@ public final class WaylandRuntime {
     public func addSocket() -> Bool {
         guard let runtime = host.runtime else { return false }
         let name: String
-        if let configured = getenv("WAYLAND_DISPLAY"), configured.pointee != 0 {
-            name = String(cString: configured)
+        if let configured = unsafe getenv("WAYLAND_DISPLAY"),
+           unsafe configured.pointee != 0 {
+            name = unsafe String(cString: configured)
             guard runtime.router.display.addSocket(named: name) else {
                 return false
             }
@@ -115,8 +118,8 @@ public final class WaylandRuntime {
             }
             name = automatic
         }
-        setenv("WAYLAND_DISPLAY", name, 1)
-        setenv("XDG_SESSION_TYPE", "wayland", 1)
+        unsafe setenv("WAYLAND_DISPLAY", name, 1)
+        unsafe setenv("XDG_SESSION_TYPE", "wayland", 1)
         return true
     }
 
@@ -162,7 +165,7 @@ public final class WaylandRuntime {
 
     private func monotonicNowNs() -> UInt64 {
         var timestamp = timespec()
-        clock_gettime(CLOCK_MONOTONIC, &timestamp)
+        unsafe clock_gettime(CLOCK_MONOTONIC, &timestamp)
         return UInt64(timestamp.tv_sec) &* 1_000_000_000
             &+ UInt64(timestamp.tv_nsec)
     }

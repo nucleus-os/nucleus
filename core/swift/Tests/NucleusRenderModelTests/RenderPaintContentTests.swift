@@ -1,4 +1,5 @@
 @testable import NucleusRenderModel
+import NucleusTypes
 import Testing
 
 @MainActor
@@ -8,10 +9,10 @@ import Testing
         #expect(store.count == 0, "initial-empty")
 
         // --- register a command list: fresh non-zero handle, refcount 1 ---
-        let cmds: [PaintDrawCommand] = [
-            PaintDrawCommand(kind: .rect, x: 0, y: 0, w: 100, h: 100, color: (0, 0, 0, 0.08)),
-            PaintDrawCommand(kind: .roundedRect, x: 8, y: 8, w: 40, h: 16, radius: 4, color: (1, 1, 1, 1)),
-            PaintDrawCommand(kind: .image, x: 0, y: 0, w: 100, h: 100, imageHandle: 7),
+        let cmds: [PaintCommand] = [
+            PaintCommand(kind: .rect, x: 0, y: 0, w: 100, h: 100, color: Color(r: 0, g: 0, b: 0, a: 0.08)),
+            PaintCommand(kind: .roundedRect, x: 8, y: 8, w: 40, h: 16, radius: 4, color: Color(r: 1, g: 1, b: 1, a: 1)),
+            PaintCommand(kind: .image, x: 0, y: 0, w: 100, h: 100, imageHandle: 7),
         ]
         let h = store.register(cmds, width: 120, height: 80)
         #expect(h.raw != 0, "register-nonzero")
@@ -22,7 +23,7 @@ import Testing
 
         // --- a second registration gets a distinct handle ---
         let h2 = store.register(
-            [PaintDrawCommand(kind: .path, x: 0, y: 0, w: 10, h: 0, strokeWidth: 2, stroke: true)],
+            [PaintCommand(kind: .path, x: 0, y: 0, w: 10, h: 0, strokeWidth: 2, stroke: true)],
             width: 10, height: 10)
         #expect(h2.raw != h.raw, "distinct-handle")
         #expect(store.count == 2, "second-count")
@@ -45,11 +46,11 @@ import Testing
     /// skips re-registering when they compare equal. A stored property missing
     /// from the hand-written `==` makes two visually different commands compare
     /// equal, and the repaint is silently dropped. Vary each field in turn.
-    @Test func everyPaintDrawCommandFieldParticipatesInEquality() {
-        let base = PaintDrawCommand(kind: .rect, x: 1, y: 2, w: 3, h: 4)
+    @Test func everyPaintCommandFieldParticipatesInEquality() {
+        let base = PaintCommand(kind: .rect, x: 1, y: 2, w: 3, h: 4)
 
-        var mutations: [(String, PaintDrawCommand)] = []
-        func vary(_ name: String, _ mutate: (inout PaintDrawCommand) -> Void) {
+        var mutations: [(String, PaintCommand)] = []
+        func vary(_ name: String, _ mutate: (inout PaintCommand) -> Void) {
             var copy = base
             mutate(&copy)
             mutations.append((name, copy))
@@ -63,7 +64,7 @@ import Testing
         vary("radius") { $0.radius = 99 }
         vary("strokeWidth") { $0.strokeWidth = 99 }
         vary("fontSize") { $0.fontSize = 99 }
-        vary("color") { $0.color = (0, 0, 0, 1) }
+        vary("color") { $0.color = Color(r: 0, g: 0, b: 0, a: 1) }
         vary("imageHandle") { $0.imageHandle = 99 }
         vary("textLayoutHandle") { $0.textLayoutHandle = 99 }
         vary("effectHandle") { $0.effectHandle = 99 }
@@ -87,9 +88,9 @@ import Testing
     /// reference must not compare equal — the case that would otherwise drop a
     /// repaint when a view redraws a different path at the same size.
     @Test func distinctPayloadSlicesAreNotEqual() {
-        let a = PaintDrawCommand(
+        let a = PaintCommand(
             kind: .rect, x: 0, y: 0, w: 10, h: 10, payloadOffset: 0, payloadLength: 16)
-        let b = PaintDrawCommand(
+        let b = PaintCommand(
             kind: .rect, x: 0, y: 0, w: 10, h: 10, payloadOffset: 16, payloadLength: 16)
         #expect(a != b, "distinct payload slices")
     }

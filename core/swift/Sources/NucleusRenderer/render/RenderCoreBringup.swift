@@ -45,55 +45,57 @@ extension RenderCore {
         }
         guard !bootstrap.finalized else { return nil }
         let contract = bootstrap.contract
-        guard let instanceHandle = bootstrap.instanceLifetime.owner?.handle,
+        guard let instanceHandle = unsafe bootstrap.instanceLifetime.owner?.handle,
               let instanceDispatch = bootstrap.instanceLifetime.owner?.dispatch
         else { return nil }
         let requiredSurface: VkSurfaceKHR?
         let probe: ((VkInstance, VkPhysicalDevice, UInt32) -> Bool)?
         switch qualification {
         case .none:
-            requiredSurface = nil; probe = nil
+            unsafe requiredSurface = nil
+            unsafe probe = nil
         case .platformProbe(let body):
-            requiredSurface = nil
-            probe = { instance, device, family in
-                body(VulkanInstanceHandle(instance), VulkanPhysicalDeviceHandle(device), family)
+            unsafe requiredSurface = nil
+            unsafe probe = { instance, device, family in
+                unsafe body(VulkanInstanceHandle(instance), VulkanPhysicalDeviceHandle(device), family)
             }
         case .surface(let surface):
-            guard surface.instance == instanceHandle else { return nil }
-            requiredSurface = surface.handle; probe = nil
+            guard unsafe surface.instance == instanceHandle else { return nil }
+            unsafe requiredSurface = surface.handle
+            unsafe probe = nil
         }
-        guard let selection = DeviceOwner.selectPhysicalDevice(
+        guard let selection = unsafe DeviceOwner.selectPhysicalDevice(
             instance: instanceHandle, dispatch: instanceDispatch, contract: contract,
             requiredPresentationSurface: requiredSurface,
             queueFamilyPresentationSupport: probe
         ) else { return nil }
-        guard let device = DeviceOwner.create(
+        guard let device = unsafe DeviceOwner.create(
             selection: selection, instanceDispatch: instanceDispatch,
             contract: contract
         ) else { return nil }
-        guard let queue = device.queue(family: selection.graphicsQueueFamily) else {
+        guard let queue = unsafe device.queue(family: selection.graphicsQueueFamily) else {
             return nil
         }
 
         // Build the Graphite context. The device-extension pointer is only needed
         // for the make call, so create the context inside the cstring scope and
         // copy the (value-typed) context out.
-        let context: nucleus.skia.GraphiteContext = withCStringArray(
+        let context: nucleus.skia.GraphiteContext = unsafe withCStringArray(
             contract.deviceExtensions
         ) { extPtr, extCount in
-            var ctxDesc = nucleus.skia.VulkanContextDescriptor()
-            ctxDesc.instance = UnsafeMutableRawPointer(instanceHandle)
-            ctxDesc.physicalDevice = UnsafeMutableRawPointer(selection.physicalDevice)
-            ctxDesc.device = UnsafeMutableRawPointer(device.handle)
-            ctxDesc.queue = UnsafeMutableRawPointer(queue)
-            ctxDesc.graphicsQueueIndex = selection.graphicsQueueFamily
-            ctxDesc.maxApiVersion = contract.minimumApiVersion.raw
-            ctxDesc.deviceExtensions = extPtr
-            ctxDesc.deviceExtensionCount = extCount
-            return nucleus.skia.makeGraphiteVulkanContext(ctxDesc)
+            var ctxDesc = unsafe nucleus.skia.VulkanContextDescriptor()
+            unsafe ctxDesc.instance = UnsafeMutableRawPointer(instanceHandle)
+            unsafe ctxDesc.physicalDevice = UnsafeMutableRawPointer(selection.physicalDevice)
+            unsafe ctxDesc.device = UnsafeMutableRawPointer(device.handle)
+            unsafe ctxDesc.queue = UnsafeMutableRawPointer(queue)
+            unsafe ctxDesc.graphicsQueueIndex = selection.graphicsQueueFamily
+            unsafe ctxDesc.maxApiVersion = contract.minimumApiVersion.raw
+            unsafe ctxDesc.deviceExtensions = extPtr
+            unsafe ctxDesc.deviceExtensionCount = extCount
+            return unsafe nucleus.skia.makeGraphiteVulkanContext(ctxDesc)
         }
-        guard context.isValid() else { return nil }
-        guard let driver = FrameDriver(
+        guard unsafe context.isValid() else { return nil }
+        guard let driver = unsafe FrameDriver(
             context: context,
             resourceHost: resourceHost,
             wakeSink: asyncRenderWakeSink)
@@ -101,9 +103,9 @@ extension RenderCore {
             return nil
         }
         bootstrap.finalized = true
-        _ = queue  // consumed only to build the context above
+        _ = unsafe queue  // consumed only to build the context above
 
-        return RenderCore(
+        return unsafe RenderCore(
             instanceLifetime: bootstrap.instanceLifetime, device: consume device, queue: queue,
             physicalDevice: selection.physicalDevice, graphicsFamily: selection.graphicsQueueFamily,
             context: context, driver: driver, store: store,
@@ -118,7 +120,7 @@ extension RenderCore {
             let line =
                 "render-core: required Graphite text borrow provider is not installed\n"
             line.withCString {
-                _ = write(
+                _ = unsafe write(
                     STDERR_FILENO,
                     $0,
                     strlen($0))
@@ -130,17 +132,17 @@ extension RenderCore {
     }
 
     func makeReplacementGraphiteContext() -> nucleus.skia.GraphiteContext {
-        withCStringArray(vulkanContract.deviceExtensions) { extPtr, extCount in
-            var descriptor = nucleus.skia.VulkanContextDescriptor()
-            descriptor.instance = UnsafeMutableRawPointer(instanceHandle)
-            descriptor.physicalDevice = UnsafeMutableRawPointer(physicalDevice)
-            descriptor.device = UnsafeMutableRawPointer(deviceHandle)
-            descriptor.queue = UnsafeMutableRawPointer(graphicsQueue)
-            descriptor.graphicsQueueIndex = graphicsFamily
-            descriptor.maxApiVersion = vulkanContract.minimumApiVersion.raw
-            descriptor.deviceExtensions = extPtr
-            descriptor.deviceExtensionCount = extCount
-            return nucleus.skia.makeGraphiteVulkanContext(descriptor)
+        unsafe withCStringArray(vulkanContract.deviceExtensions) { extPtr, extCount in
+            var descriptor = unsafe nucleus.skia.VulkanContextDescriptor()
+            unsafe descriptor.instance = UnsafeMutableRawPointer(instanceHandle)
+            unsafe descriptor.physicalDevice = UnsafeMutableRawPointer(physicalDevice)
+            unsafe descriptor.device = UnsafeMutableRawPointer(deviceHandle)
+            unsafe descriptor.queue = UnsafeMutableRawPointer(graphicsQueue)
+            unsafe descriptor.graphicsQueueIndex = graphicsFamily
+            unsafe descriptor.maxApiVersion = vulkanContract.minimumApiVersion.raw
+            unsafe descriptor.deviceExtensions = extPtr
+            unsafe descriptor.deviceExtensionCount = extCount
+            return unsafe nucleus.skia.makeGraphiteVulkanContext(descriptor)
         }
     }
 
@@ -155,32 +157,31 @@ extension RenderCore {
         frameDriver?.shutdown()
         frameDriver = nil
         snapshots.releaseAll { _ in }
-        clientUploadTextures.removeAll()
-        retiredClientUploadTextures.removeAll()
+        unsafe clientUploadTextures.removeAll()
+        unsafe retiredClientUploadTextures.removeAll()
         pendingClientAcquireSemaphores.removeAll()
         retiredClientAcquireSemaphores.removeAll()
         for box in importedSurfaceImages.values {
             box.release()
         }
         importedSurfaceImages.removeAll()
-        for retired in retiredSurfaceImages {
-            retired.image.release()
-            onSurfaceReleaseSync?(retired.releaseID)
+        for index in retiredSurfaceImages.indices {
+            onSurfaceReleaseSync?(retiredSurfaceImages[index].releaseID)
         }
         retiredSurfaceImages.removeAll()
-        context.reset()
+        unsafe context.reset()
 
-        var replacement = makeReplacementGraphiteContext()
-        guard replacement.isValid(),
-              let driver = FrameDriver(
+        var replacement = unsafe makeReplacementGraphiteContext()
+        guard unsafe replacement.isValid(),
+              let driver = unsafe FrameDriver(
                 context: replacement,
                 resourceHost: resourceHost,
                 wakeSink: asyncRenderWakeSink)
         else {
-            replacement.reset()
+            unsafe replacement.reset()
             return false
         }
-        context = replacement
+        unsafe context = replacement
         frameDriver = driver
         outputsNeedingInitialFrame.formUnion(outputTargets.keys)
         return true
@@ -197,7 +198,7 @@ extension RenderCore {
             + "context_usable=\(result.contextUsable) "
             + "diagnostic=\(String(result.diagnostic))\n"
         line.withCString {
-            _ = write(STDERR_FILENO, $0, strlen($0))
+            _ = unsafe write(STDERR_FILENO, $0, strlen($0))
         }
         #endif
         if !result.contextUsable {
@@ -208,9 +209,9 @@ extension RenderCore {
 
     public func createSurface(_ factory: VulkanSurfaceFactory) -> VulkanSurface? {
         guard let instanceLifetime,
-              let token = factory(VulkanInstanceHandle(instanceHandle))
+              let token = unsafe factory(VulkanInstanceHandle(instanceHandle))
         else { return nil }
-        return VulkanSurface(
+        return unsafe VulkanSurface(
             lifetime: instanceLifetime, instance: instanceHandle, dispatch: instanceDispatch,
             handle: token.vkSurface)
     }

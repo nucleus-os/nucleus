@@ -41,6 +41,7 @@ final class CompositorRuntime {
         case xwaylandListen = 14
         case xwaylandReady = 15
         case xwaylandXwm = 16
+        case xwaylandTrace = 17
         case appearancePortal = 18
         case waylandLoop = 21
         case exitSignal = 22
@@ -312,6 +313,13 @@ final class CompositorRuntime {
             .xwaylandXwm,
             fileDescriptor: xwmFD,
             instance: instOf(xwmFD),
+            to: &interests)
+        let xwaylandTraceFD =
+            waylandRuntime.xwaylandTraceFileDescriptor
+        appendInterest(
+            .xwaylandTrace,
+            fileDescriptor: xwaylandTraceFD,
+            instance: instOf(xwaylandTraceFD),
             to: &interests)
         appendInterest(
             .seat,
@@ -676,6 +684,19 @@ final class CompositorRuntime {
             } else if result.isTerminal {
                 logRuntime("Xwayland window-manager descriptor failed")
             }
+        case .xwaylandTrace:
+            if result.isReadable || result.isHungUp {
+                if !waylandRuntime.drainXwaylandTrace() {
+                    let dropped =
+                        waylandRuntime.xwaylandTraceDroppedBytes
+                    if dropped != 0 {
+                        logRuntime(
+                            "Xwayland trace dropped \(dropped) bytes")
+                    }
+                }
+            } else if result.isTerminal {
+                logRuntime("Xwayland trace descriptor failed")
+            }
         case .waylandLoop:
             if result.isReadable {
                 waylandRuntime.dispatch()
@@ -800,14 +821,16 @@ final class CompositorRuntime {
 
     private static func monotonicNowNs() -> UInt64 {
         var ts = timespec()
-        clock_gettime(CLOCK_MONOTONIC, &ts)
+        unsafe clock_gettime(CLOCK_MONOTONIC, &ts)
         return UInt64(ts.tv_sec) &* 1_000_000_000 &+ UInt64(ts.tv_nsec)
     }
 }
 
 func logRuntime(_ message: String) {
     let bytes = Array(("compositor-runtime: " + message + "\n").utf8)
-    _ = bytes.withUnsafeBytes { write(2, $0.baseAddress, $0.count) }
+    _ = bytes.withUnsafeBytes {
+        unsafe write(2, $0.baseAddress, $0.count)
+    }
 }
 
 // The composition root's conformer to the inverted session-control seam. The input

@@ -18,6 +18,8 @@ Physical display, input-device, suspend/resume, VT, and real GPU validation are
 outside this plan. No phase launches the compositor or shell as an automated
 verification step.
 
+Status: complete
+
 ## Objectives
 
 1. Remove residual mutable process globals from UI, render-model, resource, and

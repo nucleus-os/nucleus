@@ -30,8 +30,8 @@ extension RenderCore {
         frameDriver?.shutdown()
         pendingShmUploads.removeAll()
         stagedShmUploads.removeAll()
-        clientUploadTextures.removeAll()
-        retiredClientUploadTextures.removeAll()
+        unsafe clientUploadTextures.removeAll()
+        unsafe retiredClientUploadTextures.removeAll()
         pendingClientAcquireSemaphores.removeAll()
         retiredClientAcquireSemaphores.removeAll()
         clientUploadStats.pendingBytes = 0
@@ -43,9 +43,8 @@ extension RenderCore {
         frameDriver = nil
         for box in importedSurfaceImages.values { box.release() }
         importedSurfaceImages.removeAll()
-        for retired in retiredSurfaceImages {
-            retired.image.release()
-            onSurfaceReleaseSync?(retired.releaseID)
+        for index in retiredSurfaceImages.indices {
+            onSurfaceReleaseSync?(retiredSurfaceImages[index].releaseID)
         }
         retiredSurfaceImages.removeAll()
         outputTargets.removeAll()
@@ -53,25 +52,50 @@ extension RenderCore {
     }
 
     /// Release resources whose last possible queue use is no newer than a completed
-    /// submission. A KMS page flip gated by submission N proves every earlier item
-    /// on the single graphics queue has completed, independent of other outputs'
-    /// flip phase.
+    /// submission. Client mutation, recording, and submission are MainActor
+    /// serialized, so replacement retires against `lastSubmittedSerial`: using a
+    /// future serial would leak when no later frame is submitted. A KMS page flip
+    /// gated by submission N proves every earlier item on the single graphics queue
+    /// has completed, independent of other outputs' flip phase.
     public func releaseRetiredGpuResources(completedSubmissionSerial: UInt64 = .max) {
         let graphiteCompletedSerial = pollCompletedSubmissionSerial()
         let safeSubmissionSerial = min(completedSubmissionSerial, graphiteCompletedSerial)
-        var pendingImages: [(serial: UInt64, image: VkOwnedImageBox, releaseID: UInt64)] = []
-        pendingImages.reserveCapacity(retiredSurfaceImages.count)
-        for retired in retiredSurfaceImages {
-            if retired.serial <= safeSubmissionSerial {
-                retired.image.release()
-                onSurfaceReleaseSync?(retired.releaseID)
+        // A noncopyable element cannot be filtered in place, so drain from the back
+        // — consuming a completed entry runs `VkOwned.deinit` and destroys the image
+        // exactly once — then restore the original ascending-serial order for the
+        // entries that carry forward. Release notifications fire after the drain, in
+        // that same ascending order, so a callback can no longer re-enter this list
+        // while it is being partitioned.
+        var carried = UniqueArray<RetiredSurfaceImage>()
+        carried.reserveCapacity(retiredSurfaceImages.count)
+        var releasedIDs: [UInt64] = []
+        while !retiredSurfaceImages.isEmpty {
+            let retired = retiredSurfaceImages.removeLast()
+            if ClientResourceRetirement(
+                submissionSerial: retired.serial
+            ).isComplete(completedSubmissionSerial: safeSubmissionSerial) {
+                releasedIDs.append(retired.releaseID)
+                _ = consume retired
             } else {
-                pendingImages.append(retired)
+                carried.append(retired)
             }
         }
-        retiredSurfaceImages = pendingImages
-        retiredClientUploadTextures.removeAll { $0.serial <= safeSubmissionSerial }
-        retiredClientAcquireSemaphores.removeAll { $0.serial <= safeSubmissionSerial }
+        while !carried.isEmpty {
+            retiredSurfaceImages.append(carried.removeLast())
+        }
+        for releaseID in releasedIDs.reversed() {
+            onSurfaceReleaseSync?(releaseID)
+        }
+        unsafe retiredClientUploadTextures.removeAll {
+            unsafe ClientResourceRetirement(
+                submissionSerial: $0.serial
+            ).isComplete(completedSubmissionSerial: safeSubmissionSerial)
+        }
+        retiredClientAcquireSemaphores.removeAll {
+            ClientResourceRetirement(
+                submissionSerial: $0.serial
+            ).isComplete(completedSubmissionSerial: safeSubmissionSerial)
+        }
     }
 
     /// Poll Graphite's completion callbacks without blocking. Platform backends
@@ -93,14 +117,14 @@ extension RenderCore {
     /// Drain submitted GPU work before platform-owned synchronization and scanout
     /// objects are destroyed during shutdown or exceptional presentation recovery.
     public func waitForGpuIdle() {
-        _ = deviceDispatch.vkQueueWaitIdle?(graphicsQueue)
+        _ = unsafe deviceDispatch.vkQueueWaitIdle?(graphicsQueue)
     }
 
     /// Drop Graphite first, then the Vulkan device + instance — step two of
     /// teardown, run AFTER the backend tears down its images. Graphite borrows the
     /// Vulkan handles and must never survive `vkDestroyDevice`.
     public func teardownDevice() {
-        context.reset()
+        unsafe context.reset()
         deviceBox = nil
         instanceLifetime = nil
     }

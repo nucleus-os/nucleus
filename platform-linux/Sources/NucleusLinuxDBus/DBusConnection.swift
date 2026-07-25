@@ -38,7 +38,8 @@ public struct DBusError: Error, Equatable, Sendable {
     public init(errno code: Int32, while action: String) {
         let normalizedCode = code < 0 ? code : -EIO
         self.name = "org.nucleus.DBus.Error.System"
-        self.message = "\(action): \(String(cString: strerror(-normalizedCode)))"
+        let detail = unsafe String(cString: strerror(-normalizedCode))
+        self.message = "\(action): \(detail)"
         self.systemCode = normalizedCode
     }
 
@@ -53,7 +54,7 @@ public struct DBusError: Error, Equatable, Sendable {
 
 /// A subscription token. Dropping it removes the match.
 @MainActor
-public final class DBusSubscription {
+@safe public final class DBusSubscription {
     fileprivate var slot: OpaquePointer?
     fileprivate let handler: () -> Void
     fileprivate weak var owner: DBusConnection?
@@ -64,15 +65,15 @@ public final class DBusSubscription {
 
     /// Stop delivery and release the sd-bus match slot. Idempotent.
     public func cancel() {
-        guard let slot else { return }
-        self.slot = nil
-        sd_bus_slot_unref(slot)
+        guard let slot = unsafe slot else { return }
+        unsafe self.slot = nil
+        unsafe sd_bus_slot_unref(slot)
         let owner = owner
         self.owner = nil
         owner?.subscriptionDidCancel(self)
     }
 
-    var isCancelled: Bool { slot == nil }
+    var isCancelled: Bool { unsafe slot == nil }
 
     isolated deinit {
         cancel()
@@ -98,7 +99,7 @@ public final class DBusConnection {
     private var transport: SDBusConnection?
     private var subscriptions: [WeakSubscription] = []
 
-    private var bus: OpaquePointer? { transport?.rawHandle }
+    private var bus: OpaquePointer? { unsafe transport?.rawHandle }
 
     public let kind: DBusBus
 
@@ -209,18 +210,19 @@ public final class DBusConnection {
     public func propertyString(
         service: String, path: String, interface: String, member: String
     ) throws(DBusError) -> String {
-        guard let bus else { throw DBusError.closed }
-        var error = sd_bus_error()
-        nucleus_dbus_error_init(&error)
-        defer { sd_bus_error_free(&error) }
+        guard let bus = unsafe bus else { throw DBusError.closed }
+        var error = unsafe sd_bus_error()
+        unsafe nucleus_dbus_error_init(&error)
+        defer { unsafe sd_bus_error_free(&error) }
 
         var raw: UnsafeMutablePointer<CChar>?
-        let result = sd_bus_get_property_string(
+        let result = unsafe sd_bus_get_property_string(
             bus, service, path, interface, member, &error, &raw)
-        defer { free(raw) }
-        try check(result, error: &error, while: "reading \(interface).\(member)")
-        guard let raw else { return "" }
-        return String(cString: raw)
+        defer { unsafe free(raw) }
+        try unsafe check(
+            result, error: &error, while: "reading \(interface).\(member)")
+        guard let raw = unsafe raw else { return "" }
+        return unsafe String(cString: raw)
     }
 
     public func portalSettingUInt32Async(
@@ -308,16 +310,17 @@ public final class DBusConnection {
         service: String, path: String, interface: String, member: String,
         type: CChar, into value: inout T
     ) throws(DBusError) {
-        guard let bus else { throw DBusError.closed }
-        var error = sd_bus_error()
-        nucleus_dbus_error_init(&error)
-        defer { sd_bus_error_free(&error) }
+        guard let bus = unsafe bus else { throw DBusError.closed }
+        var error = unsafe sd_bus_error()
+        unsafe nucleus_dbus_error_init(&error)
+        defer { unsafe sd_bus_error_free(&error) }
 
         let result = withUnsafeMutablePointer(to: &value) { pointer in
-            sd_bus_get_property_trivial(
+            unsafe sd_bus_get_property_trivial(
                 bus, service, path, interface, member, &error, type, pointer)
         }
-        try check(result, error: &error, while: "reading \(interface).\(member)")
+        try unsafe check(
+            result, error: &error, while: "reading \(interface).\(member)")
     }
 
     // MARK: - Methods
@@ -330,23 +333,25 @@ public final class DBusConnection {
     public func call(
         service: String, path: String, interface: String, member: String
     ) throws(DBusError) {
-        guard let bus else { throw DBusError.closed }
-        var error = sd_bus_error()
-        nucleus_dbus_error_init(&error)
-        defer { sd_bus_error_free(&error) }
+        guard let bus = unsafe bus else { throw DBusError.closed }
+        var error = unsafe sd_bus_error()
+        unsafe nucleus_dbus_error_init(&error)
+        defer { unsafe sd_bus_error_free(&error) }
 
         var message: OpaquePointer?
-        let created = sd_bus_message_new_method_call(
+        let created = unsafe sd_bus_message_new_method_call(
             bus, &message, service, path, interface, member)
-        guard created >= 0, let message else {
+        guard created >= 0, let message = unsafe message else {
             throw DBusError(errno: created, while: "building \(interface).\(member)")
         }
-        defer { sd_bus_message_unref(message) }
+        defer { unsafe sd_bus_message_unref(message) }
 
         var reply: OpaquePointer?
-        let result = sd_bus_call(bus, message, 0, &error, &reply)
-        if let reply { sd_bus_message_unref(reply) }
-        try check(result, error: &error, while: "calling \(interface).\(member)")
+        let result = unsafe sd_bus_call(
+            bus, message, 0, &error, &reply)
+        if let reply = unsafe reply { unsafe sd_bus_message_unref(reply) }
+        try unsafe check(
+            result, error: &error, while: "calling \(interface).\(member)")
     }
 
     // MARK: - Signals
@@ -365,28 +370,28 @@ public final class DBusConnection {
         matching rule: String, handler: @escaping () -> Void
     ) throws(DBusError) -> DBusSubscription {
         compactSubscriptions()
-        guard let bus else { throw DBusError.closed }
+        guard let bus = unsafe bus else { throw DBusError.closed }
         let subscription = DBusSubscription(handler: handler)
         var slot: OpaquePointer?
         // The slot borrows `subscription`. Both are main-actor confined, and
         // DBusSubscription.deinit synchronously unrefs the slot before ARC can
         // release the callback object.
-        let result = sd_bus_add_match(
+        let result = unsafe sd_bus_add_match(
             bus, &slot, rule,
             { _, userData, _ in
-                guard let userData else { return 0 }
-                let subscription = Unmanaged<DBusSubscription>
+                guard let userData = unsafe userData else { return 0 }
+                let subscription = unsafe Unmanaged<DBusSubscription>
                     .fromOpaque(userData).takeUnretainedValue()
                 MainActor.assumeIsolated { subscription.handler() }
                 return 0
             },
             Unmanaged.passUnretained(subscription).toOpaque())
-        subscription.slot = slot
+        unsafe subscription.slot = slot
         guard result >= 0 else {
             subscription.cancel()
             throw DBusError(errno: result, while: "subscribing to \(rule)")
         }
-        guard slot != nil else {
+        guard unsafe slot != nil else {
             throw DBusError(
                 name: "org.nucleus.DBus.Error.System",
                 message: "subscribing to \(rule): sd-bus returned no match slot")
@@ -435,10 +440,12 @@ public final class DBusConnection {
         _ result: Int32, error: inout sd_bus_error, while action: String
     ) throws(DBusError) {
         guard result < 0 else { return }
-        if nucleus_dbus_error_is_set(&error) != 0 {
+        if unsafe nucleus_dbus_error_is_set(&error) != 0 {
             throw DBusError(
-                name: String(cString: nucleus_dbus_error_name(&error)),
-                message: String(cString: nucleus_dbus_error_message(&error)))
+                name: unsafe String(
+                    cString: nucleus_dbus_error_name(&error)),
+                message: unsafe String(
+                    cString: nucleus_dbus_error_message(&error)))
         }
         throw DBusError(errno: result, while: action)
     }

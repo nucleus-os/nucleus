@@ -18,7 +18,7 @@ final class DiagnosticSyncFile {
 
     func signalTimestampNs() -> UInt64? {
         var snapshot = nucleus_drm_sync_file_snapshot()
-        guard nucleus_drm_get_sync_file_snapshot(fd, &snapshot) == 0,
+        guard unsafe nucleus_drm_get_sync_file_snapshot(fd, &snapshot) == 0,
               snapshot.status > 0, snapshot.latest_timestamp_ns > 0
         else { return nil }
         return snapshot.latest_timestamp_ns
@@ -30,13 +30,13 @@ final class DiagnosticSyncFile {
 }
 
 /// One scanout-ring slot and its strict framebuffer/image/BO lifetime owner.
-final class ScanoutSlot {
+@safe final class ScanoutSlot {
     let imageHandle: VkImage
     let fbId: UInt32
     private var owner: OutputBufferOwner?
 
     init(imageHandle: VkImage, fbId: UInt32, owner: consuming OutputBufferOwner) {
-        self.imageHandle = imageHandle
+        unsafe self.imageHandle = imageHandle
         self.fbId = fbId
         self.owner = consume owner
     }
@@ -46,7 +46,7 @@ final class ScanoutSlot {
 }
 
 /// Exportable Vulkan completion semaphore retained through KMS presentation.
-final class DrmRenderSync {
+@safe final class DrmRenderSync {
     let semaphore: VkSemaphore
     private let device: VkDevice
     private let dispatch: VK.DeviceDispatch
@@ -56,34 +56,36 @@ final class DrmRenderSync {
     private var clientAcquireFenceDiagnostics: [DiagnosticSyncFile] = []
 
     init?(device: VkDevice, dispatch: VK.DeviceDispatch) {
-        guard let create = dispatch.vkCreateSemaphore else { return nil }
-        var export = VkExportSemaphoreCreateInfo()
-        export.sType = VK_STRUCTURE_TYPE_EXPORT_SEMAPHORE_CREATE_INFO
-        export.handleTypes = VkExternalSemaphoreHandleTypeFlags(
+        guard let create = unsafe dispatch.vkCreateSemaphore else { return nil }
+        var export = unsafe VkExportSemaphoreCreateInfo()
+        unsafe export.sType = VK_STRUCTURE_TYPE_EXPORT_SEMAPHORE_CREATE_INFO
+        unsafe export.handleTypes = VkExternalSemaphoreHandleTypeFlags(
             VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_SYNC_FD_BIT.rawValue)
-        var info = VkSemaphoreCreateInfo()
-        info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO
+        var info = unsafe VkSemaphoreCreateInfo()
+        unsafe info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO
         var created: VkSemaphore? = nil
         let result = withUnsafePointer(to: &export) { exportPointer in
-            info.pNext = UnsafeRawPointer(exportPointer)
-            return create(device, &info, nil, &created)
+            unsafe info.pNext = UnsafeRawPointer(exportPointer)
+            return unsafe create(device, &info, nil, &created)
         }
-        guard result == VK_SUCCESS, let created else { return nil }
-        self.device = device
+        guard result == VK_SUCCESS, let created = unsafe created else { return nil }
+        unsafe self.device = device
         self.dispatch = dispatch
-        self.semaphore = created
+        unsafe self.semaphore = created
     }
 
     func exportSyncFd() -> Bool {
-        guard syncFd < 0, let getFd = dispatch.vkGetSemaphoreFdKHR else {
+        guard syncFd < 0,
+            let getFd = unsafe dispatch.vkGetSemaphoreFdKHR
+        else {
             return false
         }
-        var info = VkSemaphoreGetFdInfoKHR()
-        info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_GET_FD_INFO_KHR
-        info.semaphore = semaphore
-        info.handleType = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_SYNC_FD_BIT
+        var info = unsafe VkSemaphoreGetFdInfoKHR()
+        unsafe info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_GET_FD_INFO_KHR
+        unsafe info.semaphore = semaphore
+        unsafe info.handleType = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_SYNC_FD_BIT
         var fd: Int32 = -1
-        guard getFd(device, &info, &fd) == VK_SUCCESS, fd >= 0 else {
+        guard unsafe getFd(device, &info, &fd) == VK_SUCCESS, fd >= 0 else {
             return false
         }
         syncFd = fd
@@ -117,12 +119,12 @@ final class DrmRenderSync {
 
     deinit {
         closeSyncFd()
-        dispatch.vkDestroySemaphore?(device, semaphore, nil)
+        unsafe dispatch.vkDestroySemaphore?(device, semaphore, nil)
     }
 }
 
 /// Retained by DrmOutput while its atomic flip is pending.
-final class SubmittedCompositeScanout {
+@safe final class SubmittedCompositeScanout {
     let slot: ScanoutSlot
     let sync: DrmRenderSync
 
@@ -134,7 +136,7 @@ final class SubmittedCompositeScanout {
 
 /// All KMS, scanout-ring, cursor, and in-flight state owned by one output
 /// topology generation.
-final class RenderOutputBinding {
+@safe final class RenderOutputBinding {
     let outputId: UInt64
     let generation: UInt64
     let drm: DrmOutput

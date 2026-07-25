@@ -17,6 +17,7 @@
 import WaylandServerC
 import WaylandServer
 import WaylandServerDispatch
+internal import NucleusCompositorWindowManager
 
 // MARK: - WindowManager / ConfigurePolicy / PopupPolicy seam
 
@@ -58,6 +59,7 @@ enum XdgToplevelRequest {
 
 /// The policy seam for xdg-shell. The router drives the protocol; the delegate
 /// supplies the windowing decisions. All methods run on the compositor turn.
+@MainActor
 protocol XdgShellDelegate: AnyObject {
     /// The configure to send for `toplevel`: `initial` is the first configure,
     /// sent in response to the surface's first (bufferless) commit; otherwise it
@@ -100,63 +102,79 @@ protocol XdgShellDelegate: AnyObject {
 
 /// Owner bound to each xdg_wm_base resource (Rule 9). Routes its requests back to
 /// the shared XdgShell.
-final class XdgShell {
-    private final class WeakPopup {
-        weak var popup: XdgPopup?
-        init(_ popup: XdgPopup) { self.popup = popup }
-    }
-    private final class WeakToplevel {
-        weak var toplevel: XdgToplevel?
-        init(_ toplevel: XdgToplevel) { self.toplevel = toplevel }
-    }
-
+@MainActor
+@safe final class XdgShell {
     weak var delegate: (any XdgShellDelegate)?
     private var display: OpaquePointer?
-    private var popupStacks: [UInt: [WeakPopup]] = [:]
-    private var toplevels: [WeakToplevel] = []
+    private var popupStacks:
+        [WaylandClientID: [WeakReference<XdgPopup>]] = [:]
+    private var toplevels: [WeakReference<XdgToplevel>] = []
+    private var nextToplevelRawID: UInt64 = 1
 
     func register(in router: NucleusWaylandRouter) {
-        display = router.display.display
+        unsafe display = router.display.display
         // Version 3 is implemented through positioner snapshots, parent configure
         // correlation, and reactive popup repositioning.
         router.addGlobal(
-            interface: swift_wayland_iface_xdg_wm_base(), version: 3, impl: self, bind: Self.bind)
+            XdgWmBaseServer.global(
+                implementation: self,
+                advertisedVersion: 3,
+                owner: { shell, resource in
+                    XdgWmBaseBinding(shell, resource: resource)
+                }))
     }
 
     func nextSerial() -> UInt32 {
-        guard let display else { return 0 }
-        return wl_display_next_serial(display)
+        guard let display = unsafe display else { return 0 }
+        return unsafe wl_display_next_serial(display)
     }
 
-    func registerPopup(_ popup: XdgPopup, resource: UnsafeMutablePointer<wl_resource>) {
-        let key = UInt(bitPattern: wl_resource_get_client(resource))
-        popupStacks[key, default: []].removeAll { $0.popup == nil }
-        popupStacks[key, default: []].append(WeakPopup(popup))
+    func mintToplevelID() -> XdgToplevelID {
+        precondition(
+            nextToplevelRawID != UInt64.max,
+            "XDG toplevel identity space exhausted")
+        let id = XdgToplevelID(nextToplevelRawID)
+        nextToplevelRawID += 1
+        return id
     }
 
-    func canDestroyPopup(
+    @unsafe func registerPopup(
+        _ popup: XdgPopup, resource: UnsafeMutablePointer<wl_resource>
+    ) {
+        guard let key = unsafe WaylandClientID(
+            wl_resource_get_client(resource))
+        else { return }
+        popupStacks[key, default: []].removeAll { $0.value == nil }
+        popupStacks[key, default: []].append(WeakReference(popup))
+    }
+
+    @unsafe func canDestroyPopup(
         _ popup: XdgPopup,
         resource: UnsafeMutablePointer<wl_resource>
     ) -> Bool {
-        let key = UInt(bitPattern: wl_resource_get_client(resource))
-        popupStacks[key, default: []].removeAll { $0.popup == nil }
-        return popupStacks[key]?.last?.popup === popup
+        guard let key = unsafe WaylandClientID(
+            wl_resource_get_client(resource))
+        else { return false }
+        popupStacks[key, default: []].removeAll { $0.value == nil }
+        return popupStacks[key]?.last?.value === popup
     }
 
-    func unregisterPopup(
+    @unsafe func unregisterPopup(
         _ popup: XdgPopup,
         resource: UnsafeMutablePointer<wl_resource>?
     ) {
-        guard let resource else { return }
-        let key = UInt(bitPattern: wl_resource_get_client(resource))
+        guard let resource = unsafe resource else { return }
+        guard let key = unsafe WaylandClientID(
+            wl_resource_get_client(resource))
+        else { return }
         popupStacks[key]?.removeAll {
-            $0.popup == nil || $0.popup === popup
+            $0.value == nil || $0.value === popup
         }
         if popupStacks[key]?.isEmpty == true { popupStacks[key] = nil }
     }
 
     func reconfigureReactivePopups(parent: XdgSurface) {
-        let popups = popupStacks.values.flatMap { $0.compactMap(\.popup) }
+        let popups = popupStacks.values.flatMap { $0.compactMap(\.value) }
         for popup in popups where popup.parent === parent {
             popup.reconfigureIfReactive()
         }
@@ -165,14 +183,14 @@ final class XdgShell {
     /// Output geometry, scale, work-area, or membership changed. Re-plan mapped
     /// toplevels and reactive popups from the same new topology snapshot.
     func outputTopologyChanged() {
-        toplevels.removeAll { $0.toplevel == nil }
-        for toplevel in toplevels.compactMap(\.toplevel)
+        toplevels.removeAll { $0.value == nil }
+        for toplevel in toplevels.compactMap(\.value)
         where toplevel.isMapped {
             toplevel.xdgSurface?.configureToplevel(
                 initial: false)
         }
         let popups = popupStacks.values.flatMap {
-            $0.compactMap(\.popup)
+            $0.compactMap(\.value)
         }
         for popup in popups {
             popup.reconfigureIfReactive()
@@ -181,7 +199,7 @@ final class XdgShell {
 
     func dismissPopups(parent: XdgSurface) {
         let descendants = popupStacks.values
-            .flatMap { $0.compactMap(\.popup) }
+            .flatMap { $0.compactMap(\.value) }
             .filter { $0.parent === parent }
         for popup in descendants.reversed() {
             if let childSurface = popup.xdgSurface {
@@ -192,13 +210,13 @@ final class XdgShell {
     }
 
     func registerToplevel(_ toplevel: XdgToplevel) {
-        toplevels.removeAll { $0.toplevel == nil }
-        toplevels.append(WeakToplevel(toplevel))
+        toplevels.removeAll { $0.value == nil }
+        toplevels.append(WeakReference(toplevel))
     }
 
     func unregisterToplevel(_ toplevel: XdgToplevel) {
         toplevels.removeAll {
-            $0.toplevel == nil || $0.toplevel === toplevel
+            $0.value == nil || $0.value === toplevel
         }
     }
 
@@ -206,24 +224,16 @@ final class XdgShell {
     /// direct child is reparented to the disappearing toplevel's own mapped
     /// parent, exactly as xdg-shell specifies.
     func toplevelDidUnmap(_ toplevel: XdgToplevel) {
-        toplevels.removeAll { $0.toplevel == nil }
+        toplevels.removeAll { $0.value == nil }
         let replacement = toplevel.protocolParent?.isMapped == true
             ? toplevel.protocolParent
             : nil
-        for child in toplevels.compactMap(\.toplevel)
+        for child in toplevels.compactMap(\.value)
         where child.protocolParent === toplevel {
             child.applyProtocolParent(replacement)
         }
     }
 
-    private static let bind: @convention(c) (
-        OpaquePointer?, UnsafeMutableRawPointer?, UInt32, UInt32
-    ) -> Void = { client, data, version, id in
-        guard let client, let me = NucleusWaylandRouter.impl(data, as: XdgShell.self) else { return }
-        _ = WaylandResource.create(
-            client: client, interface: swift_wayland_iface_xdg_wm_base(), version: Int32(version),
-            id: id, vtable: XdgWmBaseServer.vtable, owner: XdgWmBaseBinding(me))
-    }
 }
 
 // MARK: - xdg_surface

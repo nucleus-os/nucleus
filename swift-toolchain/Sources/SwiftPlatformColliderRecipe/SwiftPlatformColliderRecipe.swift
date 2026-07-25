@@ -160,7 +160,7 @@ public enum SwiftPlatformColliderRecipe {
                 outputs: [
                     OutputDeclaration(path: object, validation: .regularFile),
                 ],
-                cachePolicy: .always,
+                cachePolicy: .contentAddressed,
                 operation: .sequence([
                     .removePath(directory),
                     .createDirectory(directory),
@@ -202,7 +202,7 @@ public enum SwiftPlatformColliderRecipe {
                 dependencies: [hostID, preflight.id, foundationTask]
                     + androidSupport.map(\.id),
                 inputs: [
-                    .dependencyOutput(toolchain.appending("bin/swift")),
+                    .dependencyOutput(toolchain.appending("bin/swift-driver")),
                     .dependencyOutput(configuration.sourceWorkspace.appending(
                         "swift")),
                     .dependencyOutput(install.appending("usr/lib/libcurl.a")),
@@ -218,7 +218,7 @@ public enum SwiftPlatformColliderRecipe {
                                 + "static-stdlib-args.lnk"),
                         validation: .regularFile),
                 ],
-                cachePolicy: .always,
+                cachePolicy: .contentAddressed,
                 operation: .command(CommandSpec(
                     executable: .named("python3"),
                     arguments: androidBuildArguments(
@@ -241,7 +241,7 @@ public enum SwiftPlatformColliderRecipe {
             ] + androidBuilds.flatMap {
                 $0.outputs.map { ArtifactInput.dependencyOutput($0.path) }
             }),
-            cachePolicy: .always,
+            cachePolicy: .contentAddressed,
             operation: .validateAndroidRuntimeLinkage(
                 AndroidRuntimeLinkageValidation(
                     installRoot: androidBuildRoot,
@@ -262,7 +262,7 @@ public enum SwiftPlatformColliderRecipe {
                     path: bundle,
                     validation: .nonEmptyDirectory),
             ],
-            cachePolicy: .always,
+            cachePolicy: .contentAddressed,
             operation: .assembleAndroidSDK(AndroidSDKAssembly(
                 toolchain: toolchain,
                 installRoot: androidBuildRoot,
@@ -284,7 +284,7 @@ public enum SwiftPlatformColliderRecipe {
                     path: bundle.appending("swift-android/ndk-sysroot"),
                     validation: .nonEmptyDirectory),
             ],
-            cachePolicy: .always,
+            cachePolicy: .contentAddressed,
             operation: .wireAndroidSDK(AndroidSDKWiring(
                 bundle: bundle,
                 ndk: configuration.foundation.ndkRoot)))
@@ -297,9 +297,9 @@ public enum SwiftPlatformColliderRecipe {
                 dependencies: [wire.id],
                 inputs: [
                     .dependencyOutput(bundle),
-                    .dependencyOutput(toolchain.appending("bin/swift")),
+                    .dependencyOutput(toolchain.appending("bin/swift-driver")),
                 ],
-                cachePolicy: .always,
+                cachePolicy: .contentAddressed,
                 operation: .validateAndroidSDK(AndroidSDKValidation(
                     toolchain: toolchain,
                     sdkSearchRoot: android,
@@ -381,6 +381,9 @@ public enum SwiftPlatformColliderRecipe {
                 .value(
                     name: "source-ref",
                     bytes: Array(configuration.sourceRef.utf8)),
+                .value(
+                    name: "generation-candidate",
+                    bytes: Array(configuration.candidate.string.utf8)),
             ],
             outputs: [
                 OutputDeclaration(
@@ -388,7 +391,7 @@ public enum SwiftPlatformColliderRecipe {
                     validation: .nonEmptyDirectory),
             ],
             locks: [.checkout("swift-platform-source")],
-            cachePolicy: .always,
+            cachePolicy: .contentAddressed,
             operation: .syncGitCheckout(GitCheckoutSync(
                 repository: swiftRepository,
                 remote: "https://github.com/swiftlang/swift.git",
@@ -424,7 +427,7 @@ public enum SwiftPlatformColliderRecipe {
                     validation: .exists),
             ],
             locks: [.checkout("swift-platform-source")],
-            cachePolicy: .always,
+            cachePolicy: .contentAddressed,
             operation: .command(CommandSpec(
                 executable: .named("python3"),
                 arguments: updateArguments,
@@ -443,7 +446,7 @@ public enum SwiftPlatformColliderRecipe {
                     configuration.sourceWorkspace.appending($0))
             },
             locks: [.checkout("swift-platform-source")],
-            cachePolicy: .always,
+            cachePolicy: .contentAddressed,
             operation: .sequence(patchedRepositories.map { repository in
                 .command(CommandSpec(
                     executable: .named("git"),
@@ -484,7 +487,7 @@ public enum SwiftPlatformColliderRecipe {
                                 repository)),
                     ],
                     locks: [.checkout("swift-platform-source")],
-                    cachePolicy: .always,
+                    cachePolicy: .contentAddressed,
                     operation: .applyGitPatch(GitPatchApplication(
                         repository: configuration.sourceWorkspace.appending(
                             repository),
@@ -522,7 +525,7 @@ public enum SwiftPlatformColliderRecipe {
                     path: staging.appending(".nucleus-owned"),
                     validation: .regularFile),
             ],
-            cachePolicy: .always,
+            cachePolicy: .contentAddressed,
             operation: .prepareHostToolchainBuild(
                 HostToolchainBuildPreparation(
                     workspace: configuration.sourceWorkspace,
@@ -551,10 +554,10 @@ public enum SwiftPlatformColliderRecipe {
             ] : []),
             outputs: [
                 OutputDeclaration(
-                    path: staging.appending("usr/bin/swift"),
-                    validation: .executableFile),
+                    path: upstreamPackage,
+                    validation: .regularFile),
             ],
-            cachePolicy: .always,
+            cachePolicy: .contentAddressed,
             operation: .command(CommandSpec(
                 executable: .named("python3"),
                 arguments: buildArguments,
@@ -568,27 +571,29 @@ public enum SwiftPlatformColliderRecipe {
             component: component,
             dependencies: [build.id],
             inputs: [
-                .dependencyOutput(staging.appending("usr/bin/swift")),
+                .dependencyOutput(upstreamPackage),
+                .tool(.named("tar")),
             ],
             outputs: [
                 OutputDeclaration(
-                    path: toolchain.appending("bin/swift"),
+                    path: toolchain.appending("bin/swift-driver"),
                     validation: .executableFile),
             ],
-            cachePolicy: .always,
+            cachePolicy: .contentAddressed,
             operation: .assembleHostToolchain(HostToolchainAssembly(
                 workspace: configuration.sourceWorkspace,
-                stagingRoot: staging,
+                archive: upstreamPackage,
                 toolchain: toolchain,
-                platform: platform)))
+                platform: platform,
+                environment: configuration.environment)))
         let validate = TaskDeclaration(
             id: TaskID(rawValue: "toolchain.host-validate"),
             component: component,
             dependencies: [assemble.id],
             inputs: [
-                .dependencyOutput(toolchain.appending("bin/swift")),
+                .dependencyOutput(toolchain.appending("bin/swift-driver")),
             ],
-            cachePolicy: .always,
+            cachePolicy: .contentAddressed,
             operation: .validateHostToolchain(HostToolchainValidation(
                 toolchain: toolchain,
                 platform: platform,
@@ -610,7 +615,7 @@ public enum SwiftPlatformColliderRecipe {
             outputs: [
                 OutputDeclaration(path: archive, validation: .regularFile),
             ],
-            cachePolicy: .always,
+            cachePolicy: .contentAddressed,
             operation: .sequence([
                 .removePath(archive),
                 .command(CommandSpec(
@@ -746,19 +751,30 @@ public enum SwiftPlatformColliderRecipe {
         }
         #if os(macOS)
         let ccache = "/opt/homebrew/opt/ccache/libexec"
+        let ndkHostTag = "darwin-x86_64"
         let runtimeLibraryVariable = "DYLD_LIBRARY_PATH"
         let runtimeLibraryDirectory = "macosx"
         #else
         let ccache = "/usr/lib/ccache"
+        let ndkHostTag = "linux-x86_64"
         let runtimeLibraryVariable = "LD_LIBRARY_PATH"
         let runtimeLibraryDirectory = "linux"
         #endif
+        let ndkBin = configuration.foundation.ndkRoot.appending(
+            "toolchains/llvm/prebuilt/\(ndkHostTag)/bin")
         environment["PATH"] = [
             ccache,
             toolchain.appending("bin").string,
             environment["PATH"] ?? "/usr/bin:/bin",
         ].joined(separator: ":")
-        environment["CCACHE_PATH"] = toolchain.appending("bin").string
+        environment["CC"] = ndkBin.appending("clang").string
+        environment["CXX"] = ndkBin.appending("clang++").string
+        environment["CCACHE_PATH"] = [
+            ndkBin.string,
+            toolchain.appending("bin").string,
+            "/usr/bin",
+            "/bin",
+        ].joined(separator: ":")
         environment[runtimeLibraryVariable] = [
             toolchain.appending("lib").string,
             toolchain.appending("lib/swift/\(runtimeLibraryDirectory)").string,
@@ -819,6 +835,9 @@ public enum SwiftPlatformColliderRecipe {
             "--skip-test-swift",
             "--skip-test-foundation",
             "--skip-test-libdispatch",
+            "--skip-clean-libdispatch",
+            "--skip-clean-foundation",
+            "--skip-clean-xctest",
             "--reconfigure",
         ]
         #if os(macOS)
@@ -905,7 +924,7 @@ public enum SwiftPlatformColliderRecipe {
                 outputs: [
                     OutputDeclaration(path: marker, validation: .regularFile),
                 ],
-                cachePolicy: .always,
+                cachePolicy: .contentAddressed,
                 operation: .sequence(operations)),
         ]
         #else
@@ -1203,7 +1222,41 @@ public enum SwiftPlatformColliderRecipe {
             ],
             operation: .sanitizeLinkMetadata(LinkMetadataSanitization(
                 root: context.staging.appending("usr/lib"),
-                removedLinkerOptions: ["-pthread"])))
+                removedLinkerOptions: ["-pthread"],
+                cmakeDependencyRepairs: [
+                    CMakeDependencyRepair(
+                        configurationFileName: "CURLConfig.cmake",
+                        package: "OpenSSL",
+                        version: "3",
+                        configurationOnly: true),
+                    CMakeDependencyRepair(
+                        configurationFileName: "CURLConfig.cmake",
+                        package: "ZLIB",
+                        version: "1"),
+                ],
+                replacements: [
+                    LinkMetadataReplacement(
+                        fileName: "CURLTargets.cmake",
+                        original: "INTERFACE_LINK_LIBRARIES \"\\;",
+                        replacement: "INTERFACE_LINK_LIBRARIES \""),
+                    LinkMetadataReplacement(
+                        fileName: "CURLTargets.cmake",
+                        original: "OpenSSL::SSL",
+                        replacement: "${_IMPORT_PREFIX}/lib/libssl.a"),
+                    LinkMetadataReplacement(
+                        fileName: "CURLTargets.cmake",
+                        original: "OpenSSL::Crypto",
+                        replacement: "${_IMPORT_PREFIX}/lib/libcrypto.a"),
+                    LinkMetadataReplacement(
+                        fileName: "CURLTargets.cmake",
+                        original: "ZLIB::ZLIB",
+                        replacement: "${_IMPORT_PREFIX}/lib/libz.a"),
+                    LinkMetadataReplacement(
+                        fileName: "CURLTargets.cmake",
+                        original: context.staging.appending(
+                            "usr/lib/libnghttp2.a").string,
+                        replacement: "${_IMPORT_PREFIX}/lib/libnghttp2.a"),
+                ])))
         return [zlib, xz, iconv, openssl, nghttp2, libxml2, libcurl, sanitize]
     }
 

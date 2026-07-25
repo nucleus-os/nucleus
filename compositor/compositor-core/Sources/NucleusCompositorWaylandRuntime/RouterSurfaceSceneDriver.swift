@@ -11,8 +11,9 @@
 // touches the toplevel→WindowID table, resolving windows only through the O(1)
 // surface-object-id index.
 //
-// RouterWindowDriver owns an instance of this and forwards its two SurfaceSceneDelegate
-// thunks here; `WlCompositor.sceneDelegate` stays wired to RouterWindowDriver.
+// RouterWindowDriver owns an instance of this and forwards its two
+// SurfaceSceneDelegate calls here; `WlCompositor.sceneDelegate` stays wired to
+// RouterWindowDriver.
 
 import WaylandServerC
 import NucleusRenderModel
@@ -28,8 +29,7 @@ final class RouterSurfaceSceneDriver {
     private unowned let host: RouterHost
     private var windowManager: WindowManager { host.windowManager }
     private var server: NucleusCompositorServer { host.server }
-    /// Re-resolves surfaces by wire id (the Sendable token crossed from the nonisolated
-    /// commit/destroy thunks) so no non-Sendable WlSurface is stored.
+    /// Re-resolves surfaces by nominal ID at the model/indexing boundary.
     private let compositor: WlCompositor
     /// Scene author sink: per-commit content publish + layer-surface window authoring.
     /// nil in protocol-only fixtures, where scene publication is intentionally inert.
@@ -46,7 +46,9 @@ final class RouterSurfaceSceneDriver {
 
     private func diagnostic(_ message: String) {
         let line = "surface-scene: \(message)\n"
-        line.withCString { _ = write(STDERR_FILENO, $0, strlen($0)) }
+        line.withCString {
+            _ = unsafe write(STDERR_FILENO, $0, strlen($0))
+        }
     }
 
     /// Resolve a surface's model window via the O(1) surface-object-id index (never the
@@ -62,7 +64,8 @@ final class RouterSurfaceSceneDriver {
     /// `DmabufBuffer`. The render service swaps the GPU texture with one-frame deferred
     /// release and returns the (stable) IOSurfaceID the surface holds across commits.
     func importCommit(_ commit: SurfaceCommit) {
-        let surfaceId = commit.surfaceID
+        let surfaceID = commit.surfaceID
+        let surfaceId = surfaceID.rawValue
         guard let surface = compositor.surface(id: surfaceId) else { return }
         // A client cursor surface (wl_pointer.set_cursor): its committed buffer is the
         // cursor image, not window content — route it to the cursor model and stop.
@@ -86,7 +89,8 @@ final class RouterSurfaceSceneDriver {
             return
         }
         defer { requestRedraw(for: surface) }
-        guard let buffer = UnsafeMutablePointer<wl_resource>(bitPattern: commit.bufferResourceBits) else {
+        guard let buffer = unsafe commit.buffer?.resource
+        else {
             // Capture before releasing the renderer texture. The role callback
             // that follows this scene commit flips `mapped` off and clears input;
             // this preserves only immutable visual content for the close fade.
@@ -110,10 +114,10 @@ final class RouterSurfaceSceneDriver {
             return
         }
 
-        if let shm = wl_shm_buffer_get(buffer) {
-            let signedWidth = wl_shm_buffer_get_width(shm)
-            let signedHeight = wl_shm_buffer_get_height(shm)
-            let signedStride = wl_shm_buffer_get_stride(shm)
+        if let shm = unsafe wl_shm_buffer_get(buffer) {
+            let signedWidth = unsafe wl_shm_buffer_get_width(shm)
+            let signedHeight = unsafe wl_shm_buffer_get_height(shm)
+            let signedStride = unsafe wl_shm_buffer_get_stride(shm)
             guard signedWidth > 0, signedHeight > 0, signedStride > 0 else {
                 importFailed(surface)
                 return
@@ -131,10 +135,10 @@ final class RouterSurfaceSceneDriver {
                 return
             }
 
-            wl_shm_buffer_begin_access(shm)
-            defer { wl_shm_buffer_end_access(shm) }
+            unsafe wl_shm_buffer_begin_access(shm)
+            defer { unsafe wl_shm_buffer_end_access(shm) }
             guard
-                let data = wl_shm_buffer_get_data(shm),
+                let data = unsafe wl_shm_buffer_get_data(shm),
                 let renderService = server.renderService
             else {
                 importFailed(surface)
@@ -151,7 +155,7 @@ final class RouterSurfaceSceneDriver {
                 width: width,
                 height: height,
                 drmFormat: Self.drmFormat(
-                    fromShm: wl_shm_buffer_get_format(shm)),
+                    fromShm: unsafe wl_shm_buffer_get_format(shm)),
                 stride: stride,
                 pixels: pixels)
             guard newId != 0 else {
@@ -171,7 +175,8 @@ final class RouterSurfaceSceneDriver {
             return
         }
 
-        if let dmabuf = WaylandResource.owner(of: buffer, as: DmabufBuffer.self) {
+        if let dmabuf = unsafe WaylandResource.owner(
+            of: buffer, as: DmabufBuffer.self) {
             let attrs = dmabuf.attrs
             // The plane fds are borrowed (owned by DmabufBuffer); the renderer
             // duplicates them before this synchronous call returns.

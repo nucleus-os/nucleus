@@ -6,6 +6,7 @@
 #include <array>
 #include <cmath>
 #include <atomic>
+#include <cstdlib>
 #include <cstring>
 #include <limits>
 #include <memory>
@@ -291,7 +292,7 @@ SkBlendMode toSkBlendMode(BlendMode mode) {
         case BlendMode::dstIn: return SkBlendMode::kDstIn;
         case BlendMode::dstOut: return SkBlendMode::kDstOut;
     }
-    return SkBlendMode::kSrcOver;
+    std::abort();
 }
 
 SkRRect toSkRRect(RectF rect, RRectRadii radii) {
@@ -394,6 +395,47 @@ SkGradient makeSkGradient(
 }
 
 }  // namespace
+
+bool setPaintBlend(Paint &paint, int32_t raw) {
+    switch (raw) {
+        case 0: paint.blend = BlendMode::srcOver; return true;
+        case 1: paint.blend = BlendMode::src; return true;
+        case 2: paint.blend = BlendMode::multiply; return true;
+        case 3: paint.blend = BlendMode::screen; return true;
+        case 4: paint.blend = BlendMode::plus; return true;
+        case 5: paint.blend = BlendMode::overlay; return true;
+        case 6: paint.blend = BlendMode::dstIn; return true;
+        case 7: paint.blend = BlendMode::dstOut; return true;
+        default: return false;
+    }
+}
+
+bool setPaintStyle(Paint &paint, int32_t raw) {
+    switch (raw) {
+        case 0: paint.style = PaintStyle::fill; return true;
+        case 1: paint.style = PaintStyle::stroke; return true;
+        case 2: paint.style = PaintStyle::strokeAndFill; return true;
+        default: return false;
+    }
+}
+
+bool setPaintStrokeCap(Paint &paint, int32_t raw) {
+    switch (raw) {
+        case 0: paint.strokeCap = StrokeCap::butt; return true;
+        case 1: paint.strokeCap = StrokeCap::round; return true;
+        case 2: paint.strokeCap = StrokeCap::square; return true;
+        default: return false;
+    }
+}
+
+bool setPaintStrokeJoin(Paint &paint, int32_t raw) {
+    switch (raw) {
+        case 0: paint.strokeJoin = StrokeJoin::miter; return true;
+        case 1: paint.strokeJoin = StrokeJoin::round; return true;
+        case 2: paint.strokeJoin = StrokeJoin::bevel; return true;
+        default: return false;
+    }
+}
 
 // MARK: - Impl definitions
 

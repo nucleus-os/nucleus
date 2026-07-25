@@ -726,8 +726,8 @@ private final class DownloadDelegate: NSObject, URLSessionDataDelegate,
                 return nil
             }
             do {
-                _ = try data.withUnsafeBytes {
-                    try descriptor.writeAll($0)
+                _ = try unsafe data.withUnsafeBytes {
+                    try unsafe descriptor.writeAll($0)
                 }
             } catch {
                 state.policyError = error
@@ -930,7 +930,9 @@ private func copyFile(_ source: FilePath, to destination: FilePath) throws {
 private func copyBytes(from input: FileDescriptor, to output: FileDescriptor) throws {
     var buffer = [UInt8](repeating: 0, count: 256 * 1_024)
     while true {
-        let count = try buffer.withUnsafeMutableBytes { try input.read(into: $0) }
+        let count = try buffer.withUnsafeMutableBytes {
+            try unsafe input.read(into: $0)
+        }
         if count == 0 { return }
         try output.writeAll(buffer[..<count])
     }
@@ -942,7 +944,9 @@ private func digest(file path: FilePath) throws -> ArtifactDigest {
     var hasher = SHA256()
     var buffer = [UInt8](repeating: 0, count: 256 * 1_024)
     while true {
-        let count = try buffer.withUnsafeMutableBytes { try descriptor.read(into: $0) }
+        let count = try buffer.withUnsafeMutableBytes {
+            try unsafe descriptor.read(into: $0)
+        }
         if count == 0 { break }
         hasher.update(data: buffer[..<count])
     }
@@ -966,7 +970,7 @@ private func writeJSON<T: Encodable>(_ value: T, to path: FilePath) throws {
             throw Errno(rawValue: errno)
         }
         try descriptor.close()
-        guard collider_replace(temporary.string, path.string) == 0 else {
+        guard unsafe collider_replace(temporary.string, path.string) == 0 else {
             throw Errno(rawValue: errno)
         }
         let parent = try FileDescriptor.open(path.removingLastComponent(), .readOnly)

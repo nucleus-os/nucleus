@@ -10,8 +10,8 @@ struct DrmPresentationClock: Sendable, Equatable {
         guard !kernelUsesMonotonic else { return kernelTimestampNs }
         var monotonic = timespec()
         var realtime = timespec()
-        guard clock_gettime(CLOCK_MONOTONIC, &monotonic) == 0,
-            clock_gettime(CLOCK_REALTIME, &realtime) == 0
+        guard unsafe clock_gettime(CLOCK_MONOTONIC, &monotonic) == 0,
+            unsafe clock_gettime(CLOCK_REALTIME, &realtime) == 0
         else { return nil }
         return Self.convertRealtimeToMonotonic(
             kernelTimestampNs,

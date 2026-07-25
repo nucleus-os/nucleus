@@ -29,7 +29,7 @@ public enum DirectoryLifecycle {
                 throw RuntimeFailure.invalidOutput(
                     "activation path is not a symbolic link: \(link)")
             }
-            guard collider_replace(candidate.string, link.string) == 0 else {
+            guard unsafe collider_replace(candidate.string, link.string) == 0 else {
                 throw Errno(rawValue: errno)
             }
             try DurableFile.synchronizeDirectory(link.removingLastComponent())
@@ -63,7 +63,7 @@ public enum DirectoryLifecycle {
                     "publication destination is not a real directory: "
                         + destination.string)
             }
-            guard collider_exchange(
+            guard unsafe collider_exchange(
                 prepared.string, destination.string) == 0
             else {
                 throw Errno(rawValue: errno)
@@ -72,7 +72,7 @@ public enum DirectoryLifecycle {
                 destination.removingLastComponent())
             try manager.removeItem(atPath: prepared.string)
         } else {
-            guard collider_replace(
+            guard unsafe collider_replace(
                 prepared.string, destination.string) == 0
             else {
                 throw Errno(rawValue: errno)

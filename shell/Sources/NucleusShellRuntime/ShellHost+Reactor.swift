@@ -40,12 +40,12 @@ extension ShellHost {
                     : 0)
         }
 
-        let authFileDescriptor = authenticator?.pendingFD
+        let authDescriptors = authenticator?.pollDescriptors ?? []
         let pasteboardDescriptors = pasteboardAdapter?.pollDescriptors ?? []
         let dragDescriptors = dragDropAdapter?.pollDescriptors ?? []
         var interests: [LinuxReactorInterest] = []
         interests.reserveCapacity(
-            7 + pasteboardDescriptors.count + dragDescriptors.count)
+            8 + pasteboardDescriptors.count + dragDescriptors.count)
         interests.append(LinuxReactorInterest(
             token: Self.reactorToken(.display),
             fileDescriptor: displayFileDescriptor,
@@ -62,12 +62,18 @@ extension ShellHost {
             fileDescriptor: renderWake.fileDescriptor,
             events: Int16(POLLIN),
             mode: .multishot))
-        if let authFileDescriptor {
+        for descriptor in authDescriptors {
             interests.append(LinuxReactorInterest(
-                token: Self.reactorToken(.authentication),
-                fileDescriptor: authFileDescriptor,
+                token: Self.reactorToken(
+                    descriptor.source == .response
+                        ? .authenticationResponse
+                        : .authenticationProcess),
+                fileDescriptor: descriptor.fileDescriptor,
                 events: Int16(POLLIN)))
         }
+        deadlines.add(relativeNanoseconds:
+            authenticator?.nanosecondsUntilDeadline(
+                nowNanoseconds: nowNanoseconds))
         if let systemBus {
             let fileDescriptor = systemBus.fileDescriptor
             let events = systemBus.pollEvents
@@ -178,14 +184,18 @@ extension ShellHost {
                     outcome.hadHostEvent = true
                     requestRender()
                 }
-            case .authentication:
+            case .authenticationResponse, .authenticationProcess:
                 if result.isInvalid || result.hasError {
                     authenticator?.failPendingAttempt(
                         "Authentication helper descriptor failed")
                     outcome.hadHostEvent = true
                     requestRender(nativeSceneChanged: true)
                 } else if result.isReadable || result.isHungUp {
-                    authenticator?.drainPendingAttempt()
+                    authenticator?.process(
+                        kind == .authenticationResponse
+                            ? .response
+                            : .process,
+                        nowNanoseconds: nowNanoseconds)
                     outcome.hadHostEvent = true
                     requestRender(nativeSceneChanged: true)
                 }
@@ -235,6 +245,7 @@ extension ShellHost {
             }
             if outcome.shouldStop { break }
         }
+        authenticator?.processDeadline(nowNanoseconds: nowNanoseconds)
         return outcome
     }
 

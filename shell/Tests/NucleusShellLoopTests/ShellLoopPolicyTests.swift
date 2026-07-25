@@ -14,7 +14,10 @@ import Testing
 
     @Test func closingASocketPeerProducesTerminalState() {
         var sockets: [Int32] = [-1, -1]
-        #expect(socketpair(AF_UNIX, Int32(SOCK_STREAM.rawValue), 0, &sockets) == 0)
+        let socketPairCreated =
+            unsafe socketpair(
+                AF_UNIX, Int32(SOCK_STREAM.rawValue), 0, &sockets) == 0
+        #expect(socketPairCreated)
         defer { close(sockets[0]) }
         close(sockets[1])
 
@@ -22,7 +25,8 @@ import Testing
             fd: sockets[0],
             events: Int16(POLLIN),
             revents: 0)
-        #expect(poll(&descriptor, 1, 100) == 1)
+        let terminalEventCount = unsafe poll(&descriptor, 1, 100)
+        #expect(terminalEventCount == 1)
         #expect(ShellPollResult(revents: descriptor.revents).isTerminal)
     }
 
@@ -100,9 +104,11 @@ import Testing
 
         var descriptor = pollfd(
             fd: fd, events: Int16(POLLIN), revents: 0)
-        #expect(poll(&descriptor, 1, 0) == 1)
+        let signaledEventCount = unsafe poll(&descriptor, 1, 0)
+        #expect(signaledEventCount == 1)
         #expect(nucleus_shell_consume_render_wake(fd) == 1)
         descriptor.revents = 0
-        #expect(poll(&descriptor, 1, 0) == 0)
+        let drainedEventCount = unsafe poll(&descriptor, 1, 0)
+        #expect(drainedEventCount == 0)
     }
 }

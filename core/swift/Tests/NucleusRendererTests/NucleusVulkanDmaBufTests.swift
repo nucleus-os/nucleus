@@ -20,11 +20,14 @@ private enum FakeDmaBufImporter {
     }
 
     static let state = Mutex(State())
+    /// These sentinel handles and callbacks form a test-only Vulkan driver
+    /// boundary. Callbacks obey Vulkan's output-pointer contracts, and a
+    /// successful memory import consumes the supplied descriptor exactly once.
     static var image: OpaquePointer {
-        OpaquePointer(bitPattern: 0x1111)!
+        unsafe OpaquePointer(bitPattern: 0x1111)!
     }
     static var memory: OpaquePointer {
-        OpaquePointer(bitPattern: 0x2222)!
+        unsafe OpaquePointer(bitPattern: 0x2222)!
     }
 
     static func reset(failure: DmaBufImportFailure) {
@@ -39,7 +42,7 @@ private enum FakeDmaBufImporter {
     }
 
     static var operations: DmaBufImportOperations {
-        DmaBufImportOperations(
+        unsafe DmaBufImportOperations(
             createImage: { _, _, _, output in
                 let failure = FakeDmaBufImporter.state.withLock {
                     $0.events.append("create-image")
@@ -48,7 +51,7 @@ private enum FakeDmaBufImporter {
                 guard failure != .createImage else {
                     return VK_ERROR_OUT_OF_DEVICE_MEMORY
                 }
-                output?.pointee = FakeDmaBufImporter.image
+                unsafe output?.pointee = FakeDmaBufImporter.image
                 return VK_SUCCESS
             },
             destroyImage: { _, _, _ in
@@ -64,12 +67,12 @@ private enum FakeDmaBufImporter {
                 guard failure != .allocateMemory else {
                     return VK_ERROR_OUT_OF_DEVICE_MEMORY
                 }
-                guard let importInfo = info?.pointee.pNext?
+                guard let importInfo = unsafe info?.pointee.pNext?
                     .assumingMemoryBound(to: VkImportMemoryFdInfoKHR.self)
                 else { return VK_ERROR_INVALID_EXTERNAL_HANDLE }
                 // A successful Vulkan fd import consumes ownership.
-                _ = close(importInfo.pointee.fd)
-                output?.pointee = FakeDmaBufImporter.memory
+                _ = close(unsafe importInfo.pointee.fd)
+                unsafe output?.pointee = FakeDmaBufImporter.memory
                 return VK_SUCCESS
             },
             freeMemory: { _, _, _ in
@@ -97,16 +100,16 @@ private enum FakeDmaBufImporter {
                 guard failure != .memoryProperties else {
                     return VK_ERROR_INVALID_EXTERNAL_HANDLE
                 }
-                properties?.pointee.memoryTypeBits = 1
+                unsafe properties?.pointee.memoryTypeBits = 1
                 return VK_SUCCESS
             },
             getImageMemoryRequirements: { _, _, requirements in
                 FakeDmaBufImporter.state.withLock {
                     $0.events.append("memory-requirements")
                 }
-                requirements?.pointee.size = 4_096
-                requirements?.pointee.alignment = 4_096
-                requirements?.pointee.memoryTypeBits = 1
+                unsafe requirements?.pointee.size = 4_096
+                unsafe requirements?.pointee.alignment = 4_096
+                unsafe requirements?.pointee.memoryTypeBits = 1
             },
             getImageMemoryRequirements2: { _, _, _ in })
     }
@@ -234,13 +237,13 @@ private enum FakeDmaBufImporter {
         let descriptor = descriptorWithPipe()
         defer { _ = close(descriptor.writeFD) }
 
-        if let unexpected = importDmaBufImage(
+        if let unexpected = unsafe importDmaBufImage(
             device: fakeDevice,
             operations: nil,
             descriptor: descriptor.value)
         {
             Issue.record("missing Vulkan operations unexpectedly imported an image")
-            _ = consume unexpected
+            _ = unsafe consume unexpected
         }
         #expect(fcntl(descriptor.readFD, F_GETFD) == -1)
         #expect(errno == EBADF)
@@ -268,13 +271,13 @@ private enum FakeDmaBufImporter {
             let descriptor = descriptorWithPipe()
             defer { _ = close(descriptor.writeFD) }
             FakeDmaBufImporter.reset(failure: failure)
-            if let unexpected = importDmaBufImage(
+            if let unexpected = unsafe importDmaBufImage(
                 device: fakeDevice,
                 operations: FakeDmaBufImporter.operations,
                 descriptor: descriptor.value)
             {
                 Issue.record("injected Vulkan failure unexpectedly imported an image")
-                _ = consume unexpected
+                _ = unsafe consume unexpected
             }
             #expect(FakeDmaBufImporter.events == expectedEvents)
             #expect(fcntl(descriptor.readFD, F_GETFD) == -1)
@@ -287,7 +290,7 @@ private enum FakeDmaBufImporter {
         defer { _ = close(descriptor.writeFD) }
         FakeDmaBufImporter.reset(failure: .none)
         do {
-            guard let image = importDmaBufImage(
+            guard let image = unsafe importDmaBufImage(
                 device: fakeDevice,
                 operations: FakeDmaBufImporter.operations,
                 descriptor: descriptor.value)
@@ -295,7 +298,9 @@ private enum FakeDmaBufImporter {
                 Issue.record("valid injected Vulkan import failed")
                 return
             }
-            #expect(image.handle == FakeDmaBufImporter.image)
+            let importedExpectedHandle =
+                unsafe image.handle == FakeDmaBufImporter.image
+            #expect(importedExpectedHandle)
             #expect(fcntl(descriptor.readFD, F_GETFD) == -1)
             #expect(errno == EBADF)
         }
@@ -308,8 +313,10 @@ private enum FakeDmaBufImporter {
     @Test func invalidAndPartiallyAliasedPlaneLayoutsCloseEveryUniqueFd() {
         var pipes = [[Int32](repeating: -1, count: 2),
                      [Int32](repeating: -1, count: 2)]
-        #expect(pipe(&pipes[0]) == 0)
-        #expect(pipe(&pipes[1]) == 0)
+        let firstPipeCreated = unsafe pipe(&pipes[0]) == 0
+        let secondPipeCreated = unsafe pipe(&pipes[1]) == 0
+        #expect(firstPipeCreated)
+        #expect(secondPipeCreated)
         defer {
             _ = close(pipes[0][1])
             _ = close(pipes[1][1])
@@ -327,13 +334,13 @@ private enum FakeDmaBufImporter {
             ])
         FakeDmaBufImporter.reset(failure: .none)
 
-        if let unexpected = importDmaBufImage(
+        if let unexpected = unsafe importDmaBufImage(
             device: fakeDevice,
             operations: FakeDmaBufImporter.operations,
             descriptor: descriptor)
         {
             Issue.record("partially aliased plane layout was accepted")
-            _ = consume unexpected
+            _ = unsafe consume unexpected
         }
         #expect(FakeDmaBufImporter.events.isEmpty)
         #expect(fcntl(pipes[0][0], F_GETFD) == -1)
@@ -341,7 +348,7 @@ private enum FakeDmaBufImporter {
     }
 
     private var fakeDevice: VkDevice {
-        OpaquePointer(bitPattern: 0x3333)!
+        unsafe OpaquePointer(bitPattern: 0x3333)!
     }
 
     private func descriptorWithPipe() -> (
@@ -350,7 +357,7 @@ private enum FakeDmaBufImporter {
         writeFD: Int32
     ) {
         var descriptors = [Int32](repeating: -1, count: 2)
-        precondition(pipe(&descriptors) == 0)
+        precondition(unsafe pipe(&descriptors) == 0)
         return (
             DmaBufImageDescriptor(
                 fd: descriptors[0],

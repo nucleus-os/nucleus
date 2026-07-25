@@ -436,7 +436,7 @@ index 31a95d19a38..e75175f3d1e 100644
 +    defaults: ["vulkan_gfxstream_library_defaults"],
 +    cflags: ["-DGFXSTREAM_NUCLEUS_SOCKET_TRANSPORT"],
 +    whole_static_libs: [
-+        "libnucleus_android_gfxstream_guest_transport",
++        "//device/nucleus/nucleus_x86_64:libnucleus_android_gfxstream_guest_transport",
 +    ],
 +}
 diff --git a/src/gfxstream/guest/vulkan/gfxstream_vk_device.cpp b/src/gfxstream/guest/vulkan/gfxstream_vk_device.cpp
@@ -629,4 +629,3 @@ index c85a22e905a..3abb23c88ce 100644
  		# When static linking LLVM, all its symbols are public API.
 -- 
 2.53.0
-

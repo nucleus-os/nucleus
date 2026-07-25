@@ -26,7 +26,7 @@ public final class PseudoTerminalLog: @unchecked Sendable {
 
     public init(output path: FilePath) throws {
         var slavePathBytes = [CChar](repeating: 0, count: 4_096)
-        let master = collider_open_raw_pseudo_terminal(
+        let master = unsafe collider_open_raw_pseudo_terminal(
             &slavePathBytes,
             slavePathBytes.count)
         guard master >= 0 else {
@@ -102,7 +102,7 @@ public final class PseudoTerminalLog: @unchecked Sendable {
         var buffer = [UInt8](repeating: 0, count: 64 * 1_024)
         while true {
             let count = buffer.withUnsafeMutableBytes {
-                read(master, $0.baseAddress, $0.count)
+                unsafe read(master, $0.baseAddress, $0.count)
             }
             if count > 0 {
                 guard writeAll(buffer[..<count]) else {
@@ -127,7 +127,7 @@ public final class PseudoTerminalLog: @unchecked Sendable {
                 events: Int16(POLLIN),
                 revents: 0)
             let timeout = state.withLock({ $0.stopRequested }) ? 20 : 100
-            let result = poll(&descriptor, 1, Int32(timeout))
+            let result = unsafe poll(&descriptor, 1, Int32(timeout))
             if result < 0 && errno != EINTR {
                 recordFailure(
                     operation: "poll pseudo-terminal master",
@@ -151,7 +151,7 @@ public final class PseudoTerminalLog: @unchecked Sendable {
         CredentialScrubber.bytes(Array(bytes)).withUnsafeBytes { rawBytes in
             var written = 0
             while written < rawBytes.count {
-                let count = write(
+                let count = unsafe write(
                     output,
                     rawBytes.baseAddress!.advanced(by: written),
                     rawBytes.count - written)

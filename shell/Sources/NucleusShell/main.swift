@@ -9,7 +9,12 @@ import Glibc
 
 @MainActor
 func main() async -> Int32 {
-    let socket = getenv("WAYLAND_DISPLAY").map { String(cString: $0) }
+    let socket: String?
+    if let value = unsafe getenv("WAYLAND_DISPLAY") {
+        socket = unsafe String(cString: value)
+    } else {
+        socket = nil
+    }
 
     let configuration: SessionConfiguration
     let readiness: SessionReadinessReporter?
@@ -35,7 +40,7 @@ func main() async -> Int32 {
 }
 
 private func FileHandle_stderr(_ s: String) {
-    _ = s.withCString { write(2, $0, strlen($0)) }
+    _ = s.withCString { unsafe write(2, $0, strlen($0)) }
 }
 
 exit(await main())

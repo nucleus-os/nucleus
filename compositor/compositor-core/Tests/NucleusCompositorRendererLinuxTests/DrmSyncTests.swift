@@ -27,7 +27,7 @@ import NucleusCompositorDrmC
     @Test func fenceOwnership() {
         // FenceFd ownership over a real pipe fd (no DRM needed).
         var fds: [Int32] = [-1, -1]
-        if pipe(&fds) == 0 {
+        if unsafe pipe(&fds) == 0 {
             let readEnd = fds[0]
             let writeEnd = fds[1]
             close(writeEnd)
@@ -62,7 +62,7 @@ import NucleusCompositorDrmC
 
     @Test func syncFileSnapshotRejectsNonSyncFileDescriptors() {
         var fds: [Int32] = [-1, -1]
-        guard pipe(&fds) == 0 else {
+        guard unsafe pipe(&fds) == 0 else {
             Issue.record("pipe")
             return
         }
@@ -71,7 +71,9 @@ import NucleusCompositorDrmC
             close(fds[1])
         }
         var snapshot = nucleus_drm_sync_file_snapshot()
-        #expect(nucleus_drm_get_sync_file_snapshot(fds[0], &snapshot) == -1)
+        let snapshotResult = unsafe nucleus_drm_get_sync_file_snapshot(
+            fds[0], &snapshot)
+        #expect(snapshotResult == -1)
         #expect(snapshot.status == 0)
         #expect(snapshot.fence_count == 0)
         #expect(snapshot.latest_timestamp_ns == 0)

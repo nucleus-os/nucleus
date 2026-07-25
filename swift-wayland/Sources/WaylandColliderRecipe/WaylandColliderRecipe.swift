@@ -15,9 +15,13 @@ public enum WaylandColliderRecipe {
         let client = root.appending("Sources/WaylandClientC")
         let protocols = root.appending("Sources/WaylandProtocolsC")
         let serverDispatch = root.appending("Sources/WaylandServerDispatch")
-        let clientDispatch = root.appending("Sources/WaylandClientDispatch")
+        let clientDispatchRoot = root.appending(
+            "Sources/WaylandClientDispatch")
+        let clientDispatch = clientDispatchRoot.appending("Generated")
+        let protocolTypesRoot = root.appending("Sources/WaylandProtocolTypes")
+        let protocolTypes = protocolTypesRoot.appending("Generated")
         let generatedDirectories = [
-            server, client, protocols, serverDispatch, clientDispatch,
+            server, client, protocols, protocolTypes, serverDispatch, clientDispatch,
         ]
         let waylandXML = protocolsRoot.appending("protocols/wayland.xml")
         let xmlPaths = records.map(\.path.string)
@@ -44,6 +48,7 @@ public enum WaylandColliderRecipe {
                     "--mode", "server",
                     "--module", "WaylandServerC",
                 ] + searchArguments + [
+                    "--types", protocolTypes.string,
                     "--dispatch", serverDispatch.string,
                     server.string,
                     waylandXML.string,
@@ -98,13 +103,15 @@ public enum WaylandColliderRecipe {
             inputs: [
                 .file(root.appending("Package.swift")),
                 .tree(root.appending("Sources/SwiftWaylandGen")),
+                .tree(root.appending("Sources/SwiftWaylandGenerator")),
+                .tree(root.appending("Sources/WaylandProtocolModel")),
                 .tree(root.appending("Protocols")),
                 .tool(.named("swift")),
                 .tool(.named("wayland-scanner")),
             ],
             outputs: [
                 "WaylandServerC", "WaylandClientC", "WaylandProtocolsC",
-                "WaylandServerDispatch", "WaylandClientDispatch",
+                "WaylandProtocolTypes", "WaylandServerDispatch", "WaylandClientDispatch",
             ].map {
                 OutputDeclaration(
                     path: root.appending("Sources").appending($0),

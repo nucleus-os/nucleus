@@ -15,25 +15,24 @@ import WaylandServerDispatch
 
 /// The DRM seam. rampSize is the output's per-channel LUT length (0 = unsupported);
 /// apply installs the R/G/B ramps; clear restores the default on destroy.
+@MainActor
 protocol GammaControlDelegate: AnyObject {
     func gammaRampSize(output: WlOutput?) -> UInt32
     func gammaApply(output: WlOutput?, red: [UInt16], green: [UInt16], blue: [UInt16])
     func gammaClear(output: WlOutput?)
 }
-private final class WeakGammaControl {
-    weak var control: ZwlrGammaControl?
-    init(_ control: ZwlrGammaControl) { self.control = control }
-}
-
-final class ZwlrGammaControlManager {
+@MainActor
+@safe final class ZwlrGammaControlManager {
     weak var delegate: (any GammaControlDelegate)?
     /// The active control per output (output identity → control).
-    private var controls: [ObjectIdentifier: WeakGammaControl] = [:]
+    private var controls:
+        [ObjectIdentifier: WeakReference<ZwlrGammaControl>] = [:]
 
     func register(in router: NucleusWaylandRouter) {
         router.addGlobal(
-            interface: swift_wayland_iface_zwlr_gamma_control_manager_v1(), version: 1,
-            impl: self, bind: Self.bind)
+            ZwlrGammaControlManagerV1Server.global(
+                implementation: self,
+                owner: { manager, _ in manager }))
     }
 
     fileprivate func apply(output: WlOutput?, red: [UInt16], green: [UInt16], blue: [UInt16]) {
@@ -45,7 +44,7 @@ final class ZwlrGammaControlManager {
     fileprivate func controlDestroyed(_ control: ZwlrGammaControl, output: WlOutput?) {
         guard let output else { return }
         let key = ObjectIdentifier(output)
-        if controls[key]?.control === control {
+        if controls[key]?.value === control {
             controls[key] = nil
             delegate?.gammaClear(output: output)
         }
@@ -53,69 +52,74 @@ final class ZwlrGammaControlManager {
 
     func outputRemoved(_ output: WlOutput) {
         let key = ObjectIdentifier(output)
-        let control = controls.removeValue(forKey: key)?.control
+        let control = controls.removeValue(forKey: key)?.value
         control?.preempt()
         delegate?.gammaClear(output: output)
     }
 
     func outputRestored(_ output: WlOutput) {
-        controls[ObjectIdentifier(output)]?.control?.reapply()
+        controls[ObjectIdentifier(output)]?.value?.reapply()
     }
 
-    private static let bind: @convention(c) (
-        OpaquePointer?, UnsafeMutableRawPointer?, UInt32, UInt32
-    ) -> Void = { client, data, version, id in
-        guard let client, let me = NucleusWaylandRouter.impl(data, as: ZwlrGammaControlManager.self)
-        else { return }
-        _ = WaylandResource.create(
-            client: client, interface: swift_wayland_iface_zwlr_gamma_control_manager_v1(),
-            version: Int32(version), id: id, vtable: ZwlrGammaControlManagerV1Server.vtable, owner: me)
-    }
 }
 
 // get_gamma_control(id, output). The manager is its own resource owner (owner: me on bind).
 extension ZwlrGammaControlManager: ZwlrGammaControlManagerV1Requests {
-    func getGammaControl(_ resource: UnsafeMutablePointer<wl_resource>, id: WlNewId,
-                         output outputRes: UnsafeMutablePointer<wl_resource>?) {
-        let output = WlOutput.from(outputRes)
+    func getGammaControl(
+        _ request: WaylandRequest<ZwlrGammaControlManagerV1Server>,
+        id: WlNewId<ZwlrGammaControlV1Server>,
+                         output outputRes: WaylandBorrowedObject<WlOutputServer>) {
+        let output = outputRes.output
         let size = delegate?.gammaRampSize(output: output) ?? 0
-        let control = ZwlrGammaControl(manager: self, output: output, size: size)
-        guard let cres = id.create(vtable: ZwlrGammaControlV1Server.vtable, owner: control) else { return }
-        control.bind(cres)
-        guard size > 0, let output else {
-            zwlr_gamma_control_v1_send_failed(cres)  // unsupported output
-            return
-        }
-        // Preempt any existing control for this output.
-        let key = ObjectIdentifier(output)
-        let previous = controls[key]?.control
-        controls[key] = WeakGammaControl(control)
-        previous?.preempt()
-        zwlr_gamma_control_v1_send_gamma_size(cres, size)
+        _ = unsafe id.create(
+            owner: { handle in
+                ZwlrGammaControl(
+                    resource: handle,
+                    manager: self,
+                    output: output,
+                    size: size)
+            },
+            installed: { control in
+                guard size > 0, let output else {
+                    control.resource.sendFailed()
+                    return
+                }
+                let key = ObjectIdentifier(output)
+                let previous = self.controls[key]?.value
+                self.controls[key] = WeakReference(control)
+                previous?.preempt()
+                control.resource.sendGammaSize(size: size)
+            })
     }
 }
 
 /// zwlr_gamma_control_v1 owner (Rule 9). Reads ramps off the client fd and applies
 /// them; restores default gamma on destroy if still the active control.
-final class ZwlrGammaControl {
+@MainActor
+@safe final class ZwlrGammaControl {
     private weak var manager: ZwlrGammaControlManager?
     private weak var output: WlOutput?
     private let size: UInt32
-    private var resource: UnsafeMutablePointer<wl_resource>?
+    fileprivate let resource:
+        WaylandResourceHandle<ZwlrGammaControlV1Server>
     private var currentRamp: (
         red: [UInt16], green: [UInt16], blue: [UInt16]
     )?
 
-    init(manager: ZwlrGammaControlManager, output: WlOutput?, size: UInt32) {
+    init(
+        resource: WaylandResourceHandle<ZwlrGammaControlV1Server>,
+        manager: ZwlrGammaControlManager,
+        output: WlOutput?,
+        size: UInt32
+    ) {
+        self.resource = resource
         self.manager = manager
         self.output = output
         self.size = size
     }
-    fileprivate func bind(_ resource: UnsafeMutablePointer<wl_resource>) { self.resource = resource }
-
     /// Preempted by a newer control for the same output: tell the client it failed.
     fileprivate func preempt() {
-        if let resource { zwlr_gamma_control_v1_send_failed(resource) }
+        resource.sendFailed()
     }
 
     fileprivate func reapply() {
@@ -127,19 +131,22 @@ final class ZwlrGammaControl {
             blue: currentRamp.blue)
     }
 
-    deinit { manager?.controlDestroyed(self, output: output) }
+    isolated deinit { manager?.controlDestroyed(self, output: output) }
 }
 
 // set_gamma(fd): the fd holds 3 * size host-endian uint16 ramps (R, G, B).
 extension ZwlrGammaControl: ZwlrGammaControlV1Requests {
-    func setGamma(_ resource: UnsafeMutablePointer<wl_resource>, fd: Int32) {
-        defer { if fd >= 0 { close(fd) } }
+    func setGamma(_ request: WaylandRequest<ZwlrGammaControlV1Server>, fd: consuming WaylandOwnedFileDescriptor) {
+        let rawFD = fd.take()
+        defer { if rawFD >= 0 { close(rawFD) } }
         let count = Int(size) * 3
         let byteCount = count * 2
         var buf = [UInt8](repeating: 0, count: byteCount)
-        let n = buf.withUnsafeMutableBytes { pread(fd, $0.baseAddress, byteCount, 0) }
+        let n = buf.withUnsafeMutableBytes {
+            unsafe pread(rawFD, $0.baseAddress, byteCount, 0)
+        }
         guard n == byteCount else {
-            zwlr_gamma_control_v1_send_failed(resource)
+            resource.sendFailed()
             return
         }
         func u16(_ i: Int) -> UInt16 { UInt16(buf[2 * i]) | (UInt16(buf[2 * i + 1]) << 8) }

@@ -27,6 +27,10 @@ int32_t nucleus_android_window_get_width(void *window);
 int32_t nucleus_android_window_get_height(void *window);
 int32_t nucleus_android_window_get_format(void *window);
 
+// Owner-thread identity and directed diagnostics for the Swift host boundary.
+int64_t nucleus_android_current_thread_id(void);
+void nucleus_android_log_thread_violation(const char *operation);
+
 // AAssetManager + AAsset.
 void *nucleus_android_asset_manager_from_java(void *env, void *asset_manager);
 void *nucleus_android_asset_open(void *manager, const char *filename, int32_t mode);

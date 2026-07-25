@@ -1,4 +1,4 @@
-internal import FoundationEssentials
+internal import Foundation
 
 /// One directory a theme keeps icons in, and what size they are.
 struct IconSearchDirectory: Sendable, Equatable {
@@ -130,11 +130,44 @@ public final class IconThemeResolver {
         return nil
     }
 
-    /// The theme, then `hicolor`. Inheritance beyond one level is not followed:
-    /// it needs `index.theme` parsing, and in practice a theme that lacks an
-    /// icon falls through to `hicolor` anyway.
+    /// The declared inheritance graph in breadth-first order, then `hicolor`.
+    /// Cycles and hostile depth are bounded.
     private func themeChain() -> [String] {
-        themeName == "hicolor" ? ["hicolor"] : [themeName, "hicolor"]
+        var result: [String] = []
+        var queued = [themeName]
+        while !queued.isEmpty, result.count < 16 {
+            let theme = queued.removeFirst()
+            guard !theme.isEmpty, !result.contains(theme) else { continue }
+            result.append(theme)
+            queued.append(contentsOf: inheritedThemes(theme))
+        }
+        if !result.contains("hicolor") { result.append("hicolor") }
+        return result
+    }
+
+    private func inheritedThemes(_ theme: String) -> [String] {
+        for root in roots {
+            let path = "\(root)/\(theme)/index.theme"
+            guard let text = try? String(contentsOfFile: path, encoding: .utf8)
+            else { continue }
+            for line in text.split(separator: "\n") {
+                let parts = line.split(
+                    separator: "=", maxSplits: 1,
+                    omittingEmptySubsequences: false)
+                guard parts.count == 2,
+                      String(parts[0]).trimmingCharacters(in: .whitespaces)
+                        == "Inherits"
+                else { continue }
+                return parts[1]
+                    .split { $0 == "," || $0 == ";" }
+                    .map {
+                        String($0).trimmingCharacters(
+                            in: .whitespacesAndNewlines)
+                    }
+                    .filter { !$0.isEmpty }
+            }
+        }
+        return []
     }
 
     /// Directories a theme keeps icons in, discovered by walking rather than by

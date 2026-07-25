@@ -11,8 +11,8 @@ import NucleusReactFabricSmokeC
 // on success.
 @c @implementation
 public func nucleus_rn_fabric_full_smoke(_ hbcPath: UnsafePointer<CChar>?) -> Int32 {
-    guard let hbcPath else { return 1 }
-    let path = String(cString: hbcPath)
+    guard let hbcPath = unsafe hbcPath else { return 1 }
+    let path = unsafe String(cString: hbcPath)
     return MainActor.assumeIsolated {
         do {
             let host = try RuntimeHost()

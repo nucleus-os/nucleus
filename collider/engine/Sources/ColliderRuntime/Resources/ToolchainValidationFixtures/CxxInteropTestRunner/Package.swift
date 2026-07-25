@@ -5,10 +5,15 @@ let package = Package(
     name: "CxxInteropTestRunner",
     products: [.library(name: "Example", targets: ["Example"])],
     targets: [
-        .target(name: "Example"),
+        .target(
+            name: "Example",
+            swiftSettings: [.strictMemorySafety()]),
         .testTarget(
             name: "ExampleTests",
             dependencies: ["Example"],
-            swiftSettings: [.interoperabilityMode(.Cxx)]),
+            swiftSettings: [
+                .interoperabilityMode(.Cxx),
+                .strictMemorySafety(),
+            ]),
     ]
 )

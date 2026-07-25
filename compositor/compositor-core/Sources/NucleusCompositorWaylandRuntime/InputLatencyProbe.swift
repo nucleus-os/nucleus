@@ -70,7 +70,7 @@ enum InputLatencyProbe {
 
     private static func nsNow() -> UInt64 {
         var ts = timespec()
-        clock_gettime(CLOCK_MONOTONIC, &ts)
+        unsafe clock_gettime(CLOCK_MONOTONIC, &ts)
         return UInt64(ts.tv_sec) &* 1_000_000_000 &+ UInt64(ts.tv_nsec)
     }
 
@@ -103,7 +103,7 @@ enum InputLatencyProbe {
                 + " min=\(us(s.minNs))us mean=\(us(s.sumNs / s.count))us"
                 + " p50=\(us(s.quantileNs(0.50)))us p99=\(us(s.quantileNs(0.99)))us"
                 + " max=\(us(s.maxNs))us\n"
-            line.withCString { _ = write(2, $0, strlen($0)) }
+            line.withCString { _ = unsafe write(2, $0, strlen($0)) }
         }
     }
 

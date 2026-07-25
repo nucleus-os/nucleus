@@ -25,29 +25,31 @@ struct ShellTextInputWireTests {
             fd: client.fd,
             events: Int16(POLLIN),
             revents: 0)
-        let pollResult = poll(&descriptor, 1, 0)
+        let pollResult = unsafe poll(&descriptor, 1, 0)
         let readable = pollResult > 0
             && descriptor.revents & Int16(POLLIN) != 0
         return preparation.read.complete(readable: readable)
     }
 
     @MainActor
-    private final class Peer {
+    @safe private final class Peer {
         let client: ShellWaylandClient
         let seat: ShellSeat
         let textInput: ShellTextInput
         let surface: OpaquePointer
+        let surfaceID: UInt
         let serverSurfaceID: UInt32
 
         init(runtime: WaylandRouterRuntime) throws {
             var sockets = [Int32](repeating: -1, count: 2)
-            try #require(socketpair(
+            let socketResult = unsafe socketpair(
                 AF_UNIX,
                 Int32(SOCK_STREAM.rawValue)
                     | O_NONBLOCK
                     | Int32(SOCK_CLOEXEC.rawValue),
                 0,
-                &sockets) == 0)
+                &sockets)
+            try #require(socketResult == 0)
             guard runtime.attachClient(fileDescriptor: sockets[0]) else {
                 close(sockets[0])
                 close(sockets[1])
@@ -57,17 +59,22 @@ struct ShellTextInputWireTests {
                 connectedFileDescriptor: sockets[1]))
             Self.pump(runtime, client: client)
             seat = try #require(ShellSeat(client: client))
-            textInput = try #require(ShellTextInput(
+            guard let createdTextInput = unsafe ShellTextInput(
                 client: client,
-                seat: seat.protocolSeat))
-            surface = try #require(client.createSurface())
-            serverSurfaceID = wl_proxy_get_id(surface)
+                seat: seat.protocolSeat)
+            else { throw TextInputWireFailure.serverAttach }
+            textInput = createdTextInput
+            guard let createdSurface = unsafe client.createSurface()
+            else { throw TextInputWireFailure.serverAttach }
+            unsafe surface = createdSurface
+            surfaceID = UInt(bitPattern: createdSurface)
+            serverSurfaceID = unsafe wl_proxy_get_id(createdSurface)
             Self.pump(runtime, client: client)
         }
 
         func shutdown(runtime: WaylandRouterRuntime) {
             textInput.close()
-            wl_surface_destroy(surface)
+            unsafe wl_surface_destroy(surface)
             Self.pump(runtime, client: client)
         }
 
@@ -115,7 +122,7 @@ struct ShellTextInputWireTests {
         window.setContentView(root)
         window.setSurfaceAssociation(WindowSurfaceAssociation(
             surfaceID: PresentationSurfaceID(
-                rawValue: UInt64(UInt(bitPattern: peer.surface))),
+                rawValue: UInt64(peer.surfaceID)),
             transform: WindowSurfaceTransform(
                 windowOriginInSurface: Point(x: 7.25, y: 3.5),
                 surfaceOriginInOutput: Point(x: 100, y: 80),
@@ -144,7 +151,7 @@ struct ShellTextInputWireTests {
         #expect(initial.contentHint & 0x3 == 0x3)
         #expect(initial.cursorRectangle == nil)
 
-        wl_surface_commit(peer.surface)
+        unsafe wl_surface_commit(peer.surface)
         Peer.pump(runtime, client: peer.client)
         let appliedGeometry = try #require(
             runtime.textInputManager.latestSnapshot?.cursorRectangle)
@@ -162,7 +169,7 @@ struct ShellTextInputWireTests {
         ) throws {
             mutation()
             Peer.pump(runtime, client: peer.client)
-            wl_surface_commit(peer.surface)
+            unsafe wl_surface_commit(peer.surface)
             Peer.pump(runtime, client: peer.client)
             let candidate = try #require(
                 field.textInputCandidateGeometry)
@@ -187,7 +194,7 @@ struct ShellTextInputWireTests {
         try expectUpdatedCandidateGeometry {
             window.setSurfaceAssociation(WindowSurfaceAssociation(
                 surfaceID: PresentationSurfaceID(
-                    rawValue: UInt64(UInt(bitPattern: peer.surface))),
+                    rawValue: UInt64(peer.surfaceID)),
                 transform: WindowSurfaceTransform(
                     windowOriginInSurface: Point(x: 9.75, y: 6.25),
                     surfaceOriginInOutput: Point(x: 140, y: 95),

@@ -8,9 +8,10 @@ import Testing
     @Test func bytesRoundTripFromAString() {
         let secret = SecureBytes(utf8: "hunter2")
         #expect(secret.count == 7)
-        unsafe secret.withUnsafeBytes {
-            #expect(String(decoding: $0, as: UTF8.self) == "hunter2")
+        let decoded = unsafe secret.withUnsafeBytes {
+            unsafe String(decoding: $0, as: UTF8.self)
         }
+        #expect(decoded == "hunter2")
     }
 
     @Test func multibyteTextKeepsItsByteLength() {
@@ -32,16 +33,20 @@ import Testing
     @Test func scrubbingZeroesTheBufferInPlace() {
         let secret = SecureBytes(utf8: "hunter2")
         secret.scrub()
-        unsafe secret.withUnsafeBytes { bytes in
-            #expect(bytes.allSatisfy { $0 == 0 })
+        let isZeroed = unsafe secret.withUnsafeBytes { bytes in
+            unsafe bytes.allSatisfy { $0 == 0 }
         }
+        #expect(isZeroed)
         #expect(secret.count == 7, "the buffer is still there, just empty of secret")
     }
 
     @Test func bytesCanBeMutatedInPlace() {
         var secret = SecureBytes(count: 4)
-        unsafe secret.withUnsafeMutableBytes { $0.copyBytes(from: [1, 2, 3, 4]) }
-        unsafe secret.withUnsafeBytes { #expect(Array($0) == [1, 2, 3, 4]) }
+        unsafe secret.withUnsafeMutableBytes {
+            unsafe $0.copyBytes(from: [1, 2, 3, 4])
+        }
+        let bytes = unsafe secret.withUnsafeBytes { unsafe Array($0) }
+        #expect(bytes == [1, 2, 3, 4])
     }
 
     @Test func requestedCapacityIsAllocatedExactly() {
@@ -78,7 +83,9 @@ import Testing
             didScrub: { scrubbed.append($0) },
             didDeallocate: { deallocations += 1 })
         var original = SecureBytes(count: 4, lifecycleObserver: observer)
-        unsafe original.withUnsafeMutableBytes { $0.copyBytes(from: [9, 8, 7, 6]) }
+        unsafe original.withUnsafeMutableBytes {
+            unsafe $0.copyBytes(from: [9, 8, 7, 6])
+        }
 
         consume(original)
 
@@ -98,9 +105,10 @@ import Testing
         var model = TextEditorModel(text: "hunter2", isSecure: true)
         let secret = model.takeSecureBytes()
 
-        unsafe secret.withUnsafeBytes {
-            #expect(String(decoding: $0, as: UTF8.self) == "hunter2")
+        let decoded = unsafe secret.withUnsafeBytes {
+            unsafe String(decoding: $0, as: UTF8.self)
         }
+        #expect(decoded == "hunter2")
         #expect(model.text.isEmpty)
         #expect(model.selection == TextSelection(caretAt: 0))
     }
@@ -122,9 +130,10 @@ import Testing
         let field = TextField(string: "hunter2", isSecure: true)
         let secret = field.takeSecureCredential()
 
-        unsafe secret.withUnsafeBytes {
-            #expect(String(decoding: $0, as: UTF8.self) == "hunter2")
+        let decoded = unsafe secret.withUnsafeBytes {
+            unsafe String(decoding: $0, as: UTF8.self)
         }
+        #expect(decoded == "hunter2")
         #expect(field.stringValue.isEmpty)
     }
 

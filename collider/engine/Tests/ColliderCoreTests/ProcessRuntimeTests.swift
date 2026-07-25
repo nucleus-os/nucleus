@@ -281,6 +281,16 @@ import Testing
         at: directory, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: directory) }
     let runtime = ColliderRuntime()
+    _ = try await runtime.execute(
+        CommandSpec(
+            executable: .named("true"),
+            arguments: [],
+            workingDirectory: FilePath(directory.path),
+            environment: [
+                "PATH": ProcessInfo.processInfo.environment["PATH"]
+                    ?? "/usr/bin:/bin"
+            ],
+            output: .captured(limit: 1)))
     let baseline = try openDescriptorCount()
     for _ in 0..<40 {
         let result = try await runtime.execute(

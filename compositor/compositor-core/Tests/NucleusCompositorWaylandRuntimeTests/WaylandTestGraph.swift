@@ -28,7 +28,7 @@ final class WaylandTestGraph {
     func surface(
         compositor: WlCompositor,
         version: Int32 = 7,
-        stableObjectId: UInt32 = 0
+        stableObjectId: UInt32 = 1
     ) -> WlSurface {
         WlSurface(
             compositor: compositor,

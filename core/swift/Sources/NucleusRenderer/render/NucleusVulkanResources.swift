@@ -8,93 +8,118 @@ public import Vulkan
 
 // MARK: - Structure chains
 
-/// Fixed structure chain: enable the contract's required modern features on a
-/// `VkPhysicalDeviceFeatures2` head linked to the 1.1/1.2 feature structs, and
-/// invoke `body` with a borrowed pointer to the head. No pNext escapes `body`.
-public func withRequiredFeatureChain<R>(
+/// Build the mutable feature chain shared by query and enable operations.
+/// Every pointer is aligned for its concrete Vulkan structure and remains valid
+/// only for `body`; no `pNext` or head pointer may escape the closure.
+@unsafe private func withRequiredMutableFeatureChain<R>(
     contract: VkRequirements.Contract,
-    enableRequiredFeatures: Bool = true,
-    _ body: (UnsafePointer<VkPhysicalDeviceFeatures2>) -> R
+    enableRequiredFeatures: Bool,
+    _ body: (UnsafeMutablePointer<VkPhysicalDeviceFeatures2>) -> R
 ) -> R {
-    var v12 = VkPhysicalDeviceVulkan12Features()
-    v12.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES
-    v12.timelineSemaphore = enableRequiredFeatures && contract.requiresTimelineSemaphore ? 1 : 0
-    var feats = VkPhysicalDeviceFeatures2()
-    feats.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2
+    var v12 = unsafe VkPhysicalDeviceVulkan12Features()
+    unsafe v12.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES
+    unsafe v12.timelineSemaphore = enableRequiredFeatures && contract.requiresTimelineSemaphore ? 1 : 0
+    var feats = unsafe VkPhysicalDeviceFeatures2()
+    unsafe feats.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2
 
     return withUnsafeMutablePointer(to: &v12) { p12 -> R in
         func withYcbcrChain(_ tail: UnsafeMutableRawPointer?) -> R {
-            p12.pointee.pNext = tail
-            feats.pNext = UnsafeMutableRawPointer(p12)
-            return withUnsafePointer(to: &feats) { body($0) }
+            unsafe p12.pointee.pNext = unsafe tail
+            unsafe feats.pNext = UnsafeMutableRawPointer(p12)
+            return withUnsafeMutablePointer(to: &feats) { unsafe body($0) }
         }
         func withOptionalYcbcr(_ tail: UnsafeMutableRawPointer?) -> R {
-            guard contract.requiresSamplerYcbcrConversion else { return withYcbcrChain(tail) }
-            var v11 = VkPhysicalDeviceVulkan11Features()
-            v11.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES
-            v11.samplerYcbcrConversion = enableRequiredFeatures ? 1 : 0
+            guard contract.requiresSamplerYcbcrConversion else { return unsafe withYcbcrChain(tail) }
+            var v11 = unsafe VkPhysicalDeviceVulkan11Features()
+            unsafe v11.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES
+            unsafe v11.samplerYcbcrConversion = enableRequiredFeatures ? 1 : 0
             return withUnsafeMutablePointer(to: &v11) { p11 -> R in
-                p11.pointee.pNext = tail
-                return withYcbcrChain(UnsafeMutableRawPointer(p11))
+                unsafe p11.pointee.pNext = unsafe tail
+                return unsafe withYcbcrChain(UnsafeMutableRawPointer(p11))
             }
         }
         guard contract.requiresSwapchainMaintenance1 else { return withOptionalYcbcr(nil) }
-        var maintenance = VkPhysicalDeviceSwapchainMaintenance1FeaturesKHR()
-        maintenance.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SWAPCHAIN_MAINTENANCE_1_FEATURES_KHR
-        maintenance.swapchainMaintenance1 = enableRequiredFeatures ? 1 : 0
+        var maintenance = unsafe VkPhysicalDeviceSwapchainMaintenance1FeaturesKHR()
+        unsafe maintenance.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SWAPCHAIN_MAINTENANCE_1_FEATURES_KHR
+        unsafe maintenance.swapchainMaintenance1 = enableRequiredFeatures ? 1 : 0
         return withUnsafeMutablePointer(to: &maintenance) { pointer in
-            withOptionalYcbcr(UnsafeMutableRawPointer(pointer))
+            unsafe withOptionalYcbcr(UnsafeMutableRawPointer(pointer))
         }
     }
 }
 
-private func extensionName(_ property: VkExtensionProperties) -> String {
-    var name = property.extensionName
-    return withUnsafeBytes(of: &name) { bytes in
-        let end = bytes.firstIndex(of: 0) ?? bytes.endIndex
-        return String(decoding: bytes[..<end], as: UTF8.self)
+/// Supply a writable feature chain to `vkGetPhysicalDeviceFeatures2`.
+/// Vulkan may mutate every structure in the chain; no pointer may escape.
+@unsafe public func withRequiredFeatureQueryChain<R>(
+    contract: VkRequirements.Contract,
+    _ body: (UnsafeMutablePointer<VkPhysicalDeviceFeatures2>) -> R
+) -> R {
+    unsafe withRequiredMutableFeatureChain(
+        contract: contract,
+        enableRequiredFeatures: false,
+        body)
+}
+
+/// Supply an immutable, fully enabled feature chain to `vkCreateDevice`.
+/// The borrowed pointer and every `pNext` node remain valid only for `body`.
+@unsafe public func withRequiredFeatureEnableChain<R>(
+    contract: VkRequirements.Contract,
+    _ body: (UnsafePointer<VkPhysicalDeviceFeatures2>) -> R
+) -> R {
+    unsafe withRequiredMutableFeatureChain(
+        contract: contract,
+        enableRequiredFeatures: true
+    ) { mutableHead in
+        unsafe body(UnsafePointer(mutableHead))
     }
 }
 
-private func supportsExtensions(
+@unsafe private func extensionName(_ property: VkExtensionProperties) -> String {
+    var name = property.extensionName
+    return withUnsafeBytes(of: &name) { bytes in
+        let end = unsafe bytes.firstIndex(of: 0) ?? bytes.endIndex
+        return unsafe String(decoding: bytes[..<end], as: UTF8.self)
+    }
+}
+
+@unsafe private func supportsExtensions(
     _ required: [String],
     enumerate: (_ count: UnsafeMutablePointer<UInt32>, _ out: UnsafeMutablePointer<VkExtensionProperties>?) -> VkResult
 ) -> Bool {
-    guard let properties = VkEnumerate.array(enumerate) else { return false }
-    let available = Set(properties.map(extensionName))
+    guard let properties = unsafe VkEnumerate.array(enumerate) else { return false }
+    let available = unsafe Set(properties.map(extensionName))
     return required.allSatisfy(available.contains)
 }
 
-private func supportsFeatures(
+@unsafe private func supportsFeatures(
     physicalDevice: VkPhysicalDevice,
     dispatch: VK.InstanceDispatch,
     contract: VkRequirements.Contract
 ) -> Bool {
-    guard let getFeatures = dispatch.vkGetPhysicalDeviceFeatures2 else { return false }
+    guard let getFeatures = unsafe dispatch.vkGetPhysicalDeviceFeatures2 else { return false }
     var supported = false
-    withRequiredFeatureChain(contract: contract, enableRequiredFeatures: false) { pointer in
-        let mutable = UnsafeMutablePointer(mutating: pointer)
-        getFeatures(physicalDevice, mutable)
-        var feature = mutable.pointee.pNext
+    unsafe withRequiredFeatureQueryChain(contract: contract) { pointer in
+        unsafe getFeatures(physicalDevice, pointer)
+        var feature = unsafe pointer.pointee.pNext
         var timeline = !contract.requiresTimelineSemaphore
         var ycbcr = !contract.requiresSamplerYcbcrConversion
         var maintenance = !contract.requiresSwapchainMaintenance1
-        while let raw = feature {
-            let header = raw.assumingMemoryBound(to: VkBaseOutStructure.self)
-            switch header.pointee.sType {
+        while let raw = unsafe feature {
+            let header = unsafe raw.assumingMemoryBound(to: VkBaseOutStructure.self)
+            switch unsafe header.pointee.sType {
             case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES:
-                timeline = raw.assumingMemoryBound(
+                timeline = unsafe raw.assumingMemoryBound(
                     to: VkPhysicalDeviceVulkan12Features.self).pointee.timelineSemaphore != 0
             case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES:
-                ycbcr = raw.assumingMemoryBound(
+                ycbcr = unsafe raw.assumingMemoryBound(
                     to: VkPhysicalDeviceVulkan11Features.self).pointee.samplerYcbcrConversion != 0
             case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SWAPCHAIN_MAINTENANCE_1_FEATURES_KHR:
-                maintenance = raw.assumingMemoryBound(
+                maintenance = unsafe raw.assumingMemoryBound(
                     to: VkPhysicalDeviceSwapchainMaintenance1FeaturesKHR.self
                 ).pointee.swapchainMaintenance1 != 0
             default: break
             }
-            feature = UnsafeMutableRawPointer(header.pointee.pNext)
+            unsafe feature = unsafe UnsafeMutableRawPointer(header.pointee.pNext)
         }
         supported = timeline && ycbcr && maintenance
     }
@@ -103,34 +128,36 @@ private func supportsFeatures(
 
 // MARK: - Instance owner
 
-public struct InstanceOwner: ~Copyable {
+/// Owns the instance handle and destroys it exactly once after all child
+/// devices and surfaces have been released.
+@safe public struct InstanceOwner: ~Copyable {
     public let handle: VkInstance
     public let dispatch: VK.InstanceDispatch
 
-    public init(adopting handle: VkInstance, dispatch: VK.InstanceDispatch) {
-        self.handle = handle
+    @unsafe public init(adopting handle: VkInstance, dispatch: VK.InstanceDispatch) {
+        unsafe self.handle = unsafe handle
         self.dispatch = dispatch
     }
 
-    deinit { dispatch.vkDestroyInstance?(handle, nil) }
+    @unsafe deinit { unsafe dispatch.vkDestroyInstance?(handle, nil) }
 
     /// Create the Nucleus instance with the given extensions (and optionally the
     /// Khronos validation layer). Returns nil on any failure.
-    public static func create(
+    @unsafe public static func create(
         base: VK.BaseDispatch,
         applicationName: String,
         contract: VkRequirements.Contract,
         enableValidation: Bool
     ) -> InstanceOwner? {
-        guard let createFn = base.vkCreateInstance,
-              let enumerateVersion = base.vkEnumerateInstanceVersion,
-              let enumerateExtensions = base.vkEnumerateInstanceExtensionProperties
+        guard let createFn = unsafe base.vkCreateInstance,
+              let enumerateVersion = unsafe base.vkEnumerateInstanceVersion,
+              let enumerateExtensions = unsafe base.vkEnumerateInstanceExtensionProperties
         else { return nil }
         var loaderVersion: UInt32 = 0
-        guard enumerateVersion(&loaderVersion) == VK_SUCCESS,
+        guard unsafe enumerateVersion(&loaderVersion) == VK_SUCCESS,
               VkVersion(raw: loaderVersion) >= contract.minimumApiVersion,
-              supportsExtensions(contract.instanceExtensions, enumerate: { count, out in
-                  enumerateExtensions(nil, count, out)
+              unsafe supportsExtensions(contract.instanceExtensions, enumerate: { count, out in
+                  unsafe enumerateExtensions(nil, count, out)
               })
         else { return nil }
         let layers = enableValidation ? ["VK_LAYER_KHRONOS_validation"] : []
@@ -140,65 +167,69 @@ public struct InstanceOwner: ~Copyable {
         // the Copyable-constrained `withCString` generics.
         var created: VkInstance? = nil
         applicationName.withCString { appName in
-            var app = VkApplicationInfo()
-            app.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO
-            app.pApplicationName = appName
-            app.apiVersion = contract.minimumApiVersion.raw
+            var app = unsafe VkApplicationInfo()
+            unsafe app.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO
+            unsafe app.pApplicationName = unsafe appName
+            unsafe app.apiVersion = contract.minimumApiVersion.raw
 
-            withCStringArray(contract.instanceExtensions) { extPtr, extCount in
-                withCStringArray(layers) { layerPtr, layerCount in
+            unsafe withCStringArray(contract.instanceExtensions) { extPtr, extCount in
+                unsafe withCStringArray(layers) { layerPtr, layerCount in
                     withUnsafePointer(to: &app) { appPtr in
-                        var ci = VkInstanceCreateInfo()
-                        ci.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO
-                        ci.pApplicationInfo = appPtr
-                        ci.enabledExtensionCount = extCount
-                        ci.ppEnabledExtensionNames = extPtr
-                        ci.enabledLayerCount = layerCount
-                        ci.ppEnabledLayerNames = layerPtr
+                        var ci = unsafe VkInstanceCreateInfo()
+                        unsafe ci.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO
+                        unsafe ci.pApplicationInfo = unsafe appPtr
+                        unsafe ci.enabledExtensionCount = extCount
+                        unsafe ci.ppEnabledExtensionNames = unsafe extPtr
+                        unsafe ci.enabledLayerCount = layerCount
+                        unsafe ci.ppEnabledLayerNames = unsafe layerPtr
 
                         var inst: VkInstance? = nil
-                        if createFn(&ci, nil, &inst) == VK_SUCCESS { created = inst }
+                        if unsafe createFn(&ci, nil, &inst) == VK_SUCCESS { unsafe created = unsafe inst }
                     }
                 }
             }
         }
-        guard let inst = created else { return nil }
+        guard let inst = unsafe created else { return nil }
         let hasEntryPoints = contract.requiredInstanceEntryPoints.allSatisfy { name in
-            name.withCString { base.vkGetInstanceProcAddr(inst, $0) != nil }
+            name.withCString { unsafe base.vkGetInstanceProcAddr(inst, $0) != nil }
         }
         guard hasEntryPoints else {
-            let dispatch = VK.InstanceDispatch(inst, loader: base.vkGetInstanceProcAddr)
-            dispatch.vkDestroyInstance?(inst, nil)
+            let dispatch = unsafe VK.InstanceDispatch(inst, loader: base.vkGetInstanceProcAddr)
+            unsafe dispatch.vkDestroyInstance?(inst, nil)
             return nil
         }
-        let dispatch = VK.InstanceDispatch(inst, loader: base.vkGetInstanceProcAddr)
-        return InstanceOwner(adopting: inst, dispatch: dispatch)
+        let dispatch = unsafe VK.InstanceDispatch(inst, loader: base.vkGetInstanceProcAddr)
+        return unsafe InstanceOwner(adopting: inst, dispatch: dispatch)
     }
 }
 
 // MARK: - Device owner
 
-public struct DeviceOwner: ~Copyable {
+/// Owns the device handle and destroys it exactly once; borrowed queues remain
+/// valid only while this owner is alive.
+@safe public struct DeviceOwner: ~Copyable {
     public let handle: VkDevice
     public let dispatch: VK.DeviceDispatch
 
-    public init(adopting handle: VkDevice, dispatch: VK.DeviceDispatch) {
-        self.handle = handle
+    @unsafe public init(adopting handle: VkDevice, dispatch: VK.DeviceDispatch) {
+        unsafe self.handle = unsafe handle
         self.dispatch = dispatch
     }
 
-    deinit { dispatch.vkDestroyDevice?(handle, nil) }
+    @unsafe deinit { unsafe dispatch.vkDestroyDevice?(handle, nil) }
 
     /// Fetch a queue from a created device (handle is borrowed from the device).
-    public func queue(family: UInt32, index: UInt32 = 0) -> VkQueue? {
-        guard let get = dispatch.vkGetDeviceQueue else { return nil }
+    @unsafe public func queue(family: UInt32, index: UInt32 = 0) -> VkQueue? {
+        guard let get = unsafe dispatch.vkGetDeviceQueue else { return nil }
         var q: VkQueue? = nil
-        get(handle, family, index, &q)
-        return q
+        unsafe get(handle, family, index, &q)
+        return unsafe q
     }
 
     /// A physical device plus the graphics queue family chosen for it.
-    public struct PhysicalSelection {
+    /// Borrows a physical-device handle from the instance supplied to
+    /// `selectPhysicalDevice`; that instance must outlive every use.
+    @safe public struct PhysicalSelection {
         public var physicalDevice: VkPhysicalDevice
         public var graphicsQueueFamily: UInt32
     }
@@ -206,55 +237,56 @@ public struct DeviceOwner: ~Copyable {
     /// Pick the first physical device satisfying the complete Nucleus contract.
     /// Incompatible devices are never returned and are not retried through a
     /// reduced extension/feature set.
-    public static func selectPhysicalDevice(
+    @unsafe public static func selectPhysicalDevice(
         instance: VkInstance,
         dispatch: VK.InstanceDispatch,
         contract: VkRequirements.Contract,
         requiredPresentationSurface: VkSurfaceKHR? = nil,
         queueFamilyPresentationSupport: ((VkInstance, VkPhysicalDevice, UInt32) -> Bool)? = nil
     ) -> PhysicalSelection? {
-        guard let enumerate = dispatch.vkEnumeratePhysicalDevices,
-              let queueProps = dispatch.vkGetPhysicalDeviceQueueFamilyProperties,
-              let getProperties = dispatch.vkGetPhysicalDeviceProperties,
-              let enumerateExtensions = dispatch.vkEnumerateDeviceExtensionProperties
+        guard let enumerate = unsafe dispatch.vkEnumeratePhysicalDevices,
+              let queueProps = unsafe dispatch.vkGetPhysicalDeviceQueueFamilyProperties,
+              let getProperties = unsafe dispatch.vkGetPhysicalDeviceProperties,
+              let enumerateExtensions = unsafe dispatch.vkEnumerateDeviceExtensionProperties
         else { return nil }
 
-        guard let devices = VkEnumerate.array({ count, out in
-            enumerate(instance, count, out)
+        guard let devices = unsafe VkEnumerate.array({ count, out in
+            unsafe enumerate(instance, count, out)
         }) else { return nil }
 
-        for case let device? in devices {
+        for index in unsafe devices.indices {
+            guard let device = unsafe devices[index] else { continue }
             var properties = VkPhysicalDeviceProperties()
-            getProperties(device, &properties)
+            unsafe getProperties(device, &properties)
             guard VkVersion(raw: properties.apiVersion) >= contract.minimumApiVersion,
-                  supportsExtensions(contract.deviceExtensions, enumerate: { count, out in
-                      enumerateExtensions(device, nil, count, out)
+                  unsafe supportsExtensions(contract.deviceExtensions, enumerate: { count, out in
+                      unsafe enumerateExtensions(device, nil, count, out)
                   }),
-                  supportsFeatures(physicalDevice: device, dispatch: dispatch, contract: contract)
+                  unsafe supportsFeatures(physicalDevice: device, dispatch: dispatch, contract: contract)
             else { continue }
             var count: UInt32 = 0
-            queueProps(device, &count, nil)
+            unsafe queueProps(device, &count, nil)
             if count == 0 { continue }
             var families = [VkQueueFamilyProperties](repeating: VkQueueFamilyProperties(), count: Int(count))
-            queueProps(device, &count, &families)
+            unsafe queueProps(device, &count, &families)
             for (index, family) in families.enumerated() {
                 guard family.queueFlags & VK.QueueFlags.graphicsBit.rawValue != 0 else { continue }
                 let familyIndex = UInt32(index)
-                if let requiredPresentationSurface {
-                    guard let getSurfaceSupport = dispatch.vkGetPhysicalDeviceSurfaceSupportKHR else {
+                if let requiredPresentationSurface = unsafe requiredPresentationSurface {
+                    guard let getSurfaceSupport = unsafe dispatch.vkGetPhysicalDeviceSurfaceSupportKHR else {
                         continue
                     }
                     var supported: VkBool32 = 0
-                    guard getSurfaceSupport(
+                    guard unsafe getSurfaceSupport(
                         device, familyIndex, requiredPresentationSurface, &supported) == VK_SUCCESS,
                         supported != 0
                     else { continue }
                 }
-                if let queueFamilyPresentationSupport,
-                   !queueFamilyPresentationSupport(instance, device, familyIndex) {
+                if let queueFamilyPresentationSupport = unsafe queueFamilyPresentationSupport,
+                   unsafe !queueFamilyPresentationSupport(instance, device, familyIndex) {
                     continue
                 }
-                return PhysicalSelection(physicalDevice: device, graphicsQueueFamily: familyIndex)
+                return unsafe PhysicalSelection(physicalDevice: device, graphicsQueueFamily: familyIndex)
             }
         }
         return nil
@@ -263,54 +295,54 @@ public struct DeviceOwner: ~Copyable {
     /// Create a logical device on `selection` with the required extensions and
     /// modern feature chain. Returns nil on failure (e.g. a required extension or
     /// feature is unsupported) — fail-closed, no fallback.
-    public static func create(
+    @unsafe public static func create(
         selection: PhysicalSelection,
         instanceDispatch: VK.InstanceDispatch,
         contract: VkRequirements.Contract
     ) -> DeviceOwner? {
-        guard let createFn = instanceDispatch.vkCreateDevice,
-              let deviceLoader = instanceDispatch.vkGetDeviceProcAddr
+        guard let createFn = unsafe instanceDispatch.vkCreateDevice,
+              let deviceLoader = unsafe instanceDispatch.vkGetDeviceProcAddr
         else { return nil }
 
         var created: VkDevice? = nil
         var priority: Float = 1.0
         withUnsafePointer(to: &priority) { priorityPtr in
-            var queueInfo = VkDeviceQueueCreateInfo()
-            queueInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO
-            queueInfo.queueFamilyIndex = selection.graphicsQueueFamily
-            queueInfo.queueCount = 1
-            queueInfo.pQueuePriorities = priorityPtr
+            var queueInfo = unsafe VkDeviceQueueCreateInfo()
+            unsafe queueInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO
+            unsafe queueInfo.queueFamilyIndex = selection.graphicsQueueFamily
+            unsafe queueInfo.queueCount = 1
+            unsafe queueInfo.pQueuePriorities = unsafe priorityPtr
 
             withUnsafePointer(to: &queueInfo) { queuePtr in
-                withRequiredFeatureChain(
+                unsafe withRequiredFeatureEnableChain(
                     contract: contract
                 ) { featuresPtr in
-                    withCStringArray(contract.deviceExtensions) { extPtr, extCount in
-                        var ci = VkDeviceCreateInfo()
-                        ci.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO
-                        ci.pNext = UnsafeRawPointer(featuresPtr)
-                        ci.queueCreateInfoCount = 1
-                        ci.pQueueCreateInfos = queuePtr
-                        ci.enabledExtensionCount = extCount
-                        ci.ppEnabledExtensionNames = extPtr
+                    unsafe withCStringArray(contract.deviceExtensions) { extPtr, extCount in
+                        var ci = unsafe VkDeviceCreateInfo()
+                        unsafe ci.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO
+                        unsafe ci.pNext = unsafe UnsafeRawPointer(featuresPtr)
+                        unsafe ci.queueCreateInfoCount = 1
+                        unsafe ci.pQueueCreateInfos = unsafe queuePtr
+                        unsafe ci.enabledExtensionCount = extCount
+                        unsafe ci.ppEnabledExtensionNames = unsafe extPtr
 
                         var device: VkDevice? = nil
-                        if createFn(selection.physicalDevice, &ci, nil, &device) == VK_SUCCESS {
-                            created = device
+                        if unsafe createFn(selection.physicalDevice, &ci, nil, &device) == VK_SUCCESS {
+                            unsafe created = unsafe device
                         }
                     }
                 }
             }
         }
-        guard let device = created else { return nil }
-        let dispatch = VK.DeviceDispatch(device, loader: deviceLoader)
+        guard let device = unsafe created else { return nil }
+        let dispatch = unsafe VK.DeviceDispatch(device, loader: deviceLoader)
         let hasEntryPoints = contract.requiredDeviceEntryPoints.allSatisfy { name in
-            name.withCString { deviceLoader(device, $0) != nil }
+            name.withCString { unsafe deviceLoader(device, $0) != nil }
         }
         guard hasEntryPoints else {
-            dispatch.vkDestroyDevice?(device, nil)
+            unsafe dispatch.vkDestroyDevice?(device, nil)
             return nil
         }
-        return DeviceOwner(adopting: device, dispatch: dispatch)
+        return unsafe DeviceOwner(adopting: device, dispatch: dispatch)
     }
 }

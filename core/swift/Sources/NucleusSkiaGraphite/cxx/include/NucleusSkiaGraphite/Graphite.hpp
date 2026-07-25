@@ -173,6 +173,14 @@ struct Paint {
     float miter = 4;
 };
 
+/// Validate stable Nucleus wire values before forming façade enums. These are
+/// the only entry points paint-command rasterization uses for enum lowering;
+/// an unknown value leaves `paint` unchanged and returns false.
+bool setPaintBlend(Paint &paint, int32_t raw);
+bool setPaintStyle(Paint &paint, int32_t raw);
+bool setPaintStrokeCap(Paint &paint, int32_t raw);
+bool setPaintStrokeJoin(Paint &paint, int32_t raw);
+
 class Recorder;
 class Recording;
 class Surface;

@@ -9,7 +9,8 @@ import NucleusRenderer  // DmaBufPlane
 @Suite struct DrmClientScanoutTests {
     @Test func retainDupsWithoutConsumingClientFds() {
         var fds: [Int32] = [0, 0]
-        #expect(pipe(&fds) == 0)
+        let pipeResult = unsafe pipe(&fds)
+        #expect(pipeResult == 0)
         let clientFd = fds[0]
         let otherEnd = fds[1]
         defer { close(clientFd); close(otherEnd) }
@@ -34,7 +35,8 @@ import NucleusRenderer  // DmaBufPlane
 
     @Test func retainSharesOneDupAcrossPlanesWithSameFd() {
         var fds: [Int32] = [0, 0]
-        #expect(pipe(&fds) == 0)
+        let pipeResult = unsafe pipe(&fds)
+        #expect(pipeResult == 0)
         let clientFd = fds[0]
         let otherEnd = fds[1]
         defer { close(clientFd); close(otherEnd) }
@@ -57,7 +59,8 @@ import NucleusRenderer  // DmaBufPlane
 
     @Test func acquireFenceTransfersExactlyOnce() {
         var fds: [Int32] = [0, 0]
-        #expect(pipe(&fds) == 0)
+        let pipeResult = unsafe pipe(&fds)
+        #expect(pipeResult == 0)
         defer { close(fds[0]); close(fds[1]) }
         let ownedFence = dup(fds[0])
         let device = DrmDeviceLifetime(fileDescriptor: -1)

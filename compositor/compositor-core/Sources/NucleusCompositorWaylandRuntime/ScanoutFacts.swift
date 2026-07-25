@@ -151,8 +151,8 @@ public extension WaylandRuntime {
         let hasViewport = surface.aux.viewportSource != nil || surface.aux.viewportDestination != nil
 
         var dmabuf: DmabufFacts?
-        if let buffer = surface.currentBuffer,
-           let owner = WaylandResource.owner(of: buffer, as: DmabufBuffer.self) {
+        if let buffer = unsafe surface.currentBuffer,
+           let owner = unsafe WaylandResource.owner(of: buffer, as: DmabufBuffer.self) {
             let attrs = owner.attrs
             dmabuf = DmabufFacts(
                 format: attrs.format, modifier: attrs.modifier,

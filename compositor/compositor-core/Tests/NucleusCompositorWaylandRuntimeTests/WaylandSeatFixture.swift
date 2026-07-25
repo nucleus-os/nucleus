@@ -13,6 +13,18 @@
 import Glibc
 import WaylandServerC
 
+@MainActor
+private func surfaceForWireID(
+    _ id: UInt32, in compositor: WlCompositor
+) -> WlSurface? {
+    compositor.liveSurfaceIDs.lazy
+        .compactMap { compositor.surface(id: $0) }
+        .first {
+            guard let resource = unsafe $0.resource else { return false }
+            return unsafe wl_resource_get_id(resource) == id
+        }
+}
+
 private func fail(_ msg: String) -> Never {
     print("FAIL: \(msg)")
     exit(1)
@@ -89,7 +101,8 @@ enum WaylandSeatFixture {
 
         // In-process seat sends (the focus/grab mechanism's calls at #12).
         let key = WlSeat.clientKey(client.client)
-        guard let surface = compositor.surface(id: surfId) else { fail("surface model") }
+        guard let surface = surfaceForWireID(surfId, in: compositor)
+        else { fail("surface model") }
 
         let enterSerial = seat.pointerEnter(surface, surfaceX: 12.0, surfaceY: 34.0)
         let buttonSerial = seat.pointerButton(clientKey: key, timeMsec: 100, button: 0x110, state: 1)

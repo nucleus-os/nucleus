@@ -1,42 +1,41 @@
+import Dispatch
 import NucleusShellAuthWire
+import NucleusShellProcessC
 public import NucleusShellProduct
 public import NucleusUI
 #if canImport(Glibc)
 import Glibc
 #endif
 
-/// Authenticates by spawning `nucleus-pam-helper` and reading its verdict.
-///
-/// The shell never loads a PAM module into its own address space. PAM `dlopen`s
-/// whatever the system administrator configured, and those modules can crash or
-/// call `exit()`; in the locker's process that would kill the locker, leaving the
-/// compositor holding a permanently blank fail-closed session. Here the worst
-/// case is a failed attempt.
-///
-/// `posix_spawn` rather than `fork` without `exec`: after a fork in a
-/// multithreaded process the child may only call async-signal-safe functions,
-/// and PAM goes well past that. The shell holds a Vulkan device and several
-/// platform/runtime threads, so spawning a fresh image is the honest way to get a
-/// single-threaded process to run PAM in.
-///
-/// Non-blocking by construction: the spawn returns immediately and the verdict
-/// arrives on a pipe the shell's existing event loop polls. A lock screen that
-/// froze for the duration of a deliberately-slow authentication would stop
-/// blinking its caret and drop keystrokes.
 @MainActor
 public final class PamAuthenticator: LockAuthenticator {
-    /// The PAM service to authenticate against. `login` is the conventional
-    /// choice for a locker and exists on every system PAM is configured on.
-    public var service: String = "login"
+    public enum PollSource: Sendable, Equatable {
+        case response
+        case process
+    }
 
-    /// Path to the helper. Resolved next to the running executable so a
-    /// development build uses its own helper rather than an installed one.
+    public struct PollDescriptor: Sendable {
+        public var source: PollSource
+        public var fileDescriptor: Int32
+    }
+
+    public var service: String = "login"
     private let helperPath: String
     private let pollSetDidChange: @MainActor () -> Void
+    private let attemptTimeoutNanoseconds: UInt64
+    private let exitGraceNanoseconds: UInt64
+    private let openPidFD: @Sendable (pid_t) -> Int32
 
     private struct Attempt {
-        var readFD: Int32
+        var responseFD: Int32
+        var pidFD: Int32
         var pid: pid_t
+        var parser = PamHelperWire.ResponseParser()
+        var response: LockAuthenticationOutcome?
+        var exitCode: Int32?
+        var attemptDeadline: UInt64
+        var exitDeadline: UInt64?
+        var didKill = false
         var completion: (LockAuthenticationOutcome) -> Void
     }
 
@@ -44,25 +43,45 @@ public final class PamAuthenticator: LockAuthenticator {
 
     public init(
         helperPath: String? = nil,
+        attemptTimeoutNanoseconds: UInt64 = 30_000_000_000,
+        exitGraceNanoseconds: UInt64 = 1_000_000_000,
+        pidFDOpen: @escaping @Sendable (pid_t) -> Int32 = {
+            nucleus_shell_pidfd_open($0)
+        },
         pollSetDidChange: @escaping @MainActor () -> Void = {}
     ) {
-        self.helperPath = helperPath ?? PamAuthenticator.defaultHelperPath()
+        self.helperPath = helperPath ?? Self.defaultHelperPath()
+        self.attemptTimeoutNanoseconds = attemptTimeoutNanoseconds
+        self.exitGraceNanoseconds = exitGraceNanoseconds
+        openPidFD = pidFDOpen
         self.pollSetDidChange = pollSetDidChange
     }
 
-    /// The fd carrying a verdict, for the host to poll. `nil` when idle.
-    public var pendingFD: Int32? { attempt?.readFD }
+    public var pollDescriptors: [PollDescriptor] {
+        guard let attempt else { return [] }
+        return [
+            PollDescriptor(source: .response, fileDescriptor: attempt.responseFD),
+            PollDescriptor(source: .process, fileDescriptor: attempt.pidFD),
+        ]
+    }
 
-    // MARK: - LockAuthenticator
+    public func nanosecondsUntilDeadline(nowNanoseconds: UInt64) -> UInt64? {
+        guard let attempt else { return nil }
+        let deadline = min(attempt.attemptDeadline, attempt.exitDeadline ?? .max)
+        return deadline > nowNanoseconds ? deadline - nowNanoseconds : 0
+    }
 
     public func authenticate(
         password: consuming SecureBytes,
         completion: @escaping (LockAuthenticationOutcome) -> Void
     ) {
         guard attempt == nil else {
-            // The caller already serializes attempts; refusing here too means a
-            // second one can never silently displace the first's completion.
             completion(.unavailable("An attempt is already in progress"))
+            return
+        }
+        let serviceBytes = Array(service.utf8)
+        guard serviceBytes.count <= PamHelperWire.maximumServiceBytes else {
+            completion(.unavailable("PAM service name is too long"))
             return
         }
         guard password.count <= PamHelperWire.maximumPasswordBytes else {
@@ -70,178 +89,282 @@ public final class PamAuthenticator: LockAuthenticator {
             return
         }
 
-        var request: [UInt8] = []
-        PamHelperWire.encodeField(Array(service.utf8), into: &request)
-        unsafe password.withUnsafeBytes { PamHelperWire.encodeField($0, into: &request) }
-
-        guard let spawned = spawnHelper() else {
-            scrub(&request)
-            completion(.unavailable("Could not start the authentication helper"))
+        var request: PamCredentialRequest?
+        unsafe password.withUnsafeBytes {
+            request = unsafe PamCredentialRequest(
+                service: serviceBytes,
+                password: $0)
+        }
+        guard var request = consume request else {
+            completion(.unavailable("Authentication request is too large"))
             return
         }
 
-        let wrote = PamHelperWire.writeAll(request, to: spawned.writeFD)
-        // The request held a copy of the credential; it does not outlive the write.
-        scrub(&request)
-        close(spawned.writeFD)
+        guard let spawned = spawnHelper() else {
+            request.scrub()
+            completion(.unavailable("Could not start the authentication helper"))
+            return
+        }
+        let pidFD = openPidFD(spawned.pid)
+        guard pidFD >= 0,
+              nucleus_shell_set_nonblocking(spawned.responseFD) == 0
+        else {
+            if pidFD >= 0 { close(pidFD) }
+            close(spawned.responseFD)
+            close(spawned.requestFD)
+            kill(spawned.pid, SIGKILL)
+            reapOffMain(spawned.pid)
+            request.scrub()
+            completion(.unavailable("pidfd is unavailable"))
+            return
+        }
 
+        let wrote = writeAtomic(request.storage, to: spawned.requestFD)
+        request.scrub()
+        close(spawned.requestFD)
         guard wrote else {
-            close(spawned.readFD)
-            reap(spawned.pid)
+            close(spawned.responseFD)
+            close(pidFD)
+            kill(spawned.pid, SIGKILL)
+            reapOffMain(spawned.pid)
             completion(.unavailable("Could not reach the authentication helper"))
             return
         }
 
-        attempt = Attempt(readFD: spawned.readFD, pid: spawned.pid, completion: completion)
+        attempt = Attempt(
+            responseFD: spawned.responseFD,
+            pidFD: pidFD,
+            pid: spawned.pid,
+            attemptDeadline: clampedAdd(monotonicNow(), attemptTimeoutNanoseconds),
+            completion: completion)
         pollSetDidChange()
     }
 
-    /// Read the verdict and complete the attempt. Called by the host when
-    /// `pendingFD` is readable, or when it decides to give up waiting.
-    ///
-    /// Reading here cannot block for long: the helper writes its whole response
-    /// in one go immediately before exiting.
-    public func drainPendingAttempt() {
-        guard let attempt else { return }
-        self.attempt = nil
-        pollSetDidChange()
-
-        let outcome = readOutcome(from: attempt.readFD)
-        close(attempt.readFD)
-        let status = reap(attempt.pid)
-
-        // The exit status is the backstop: a helper killed by a signal, or one a
-        // PAM module called `exit()` inside, must never read as success however
-        // the pipe happened to end.
-        if case .accepted = outcome, status != PamHelperWire.exitAccepted {
-            attempt.completion(.unavailable("Authentication helper failed"))
-            return
+    public func process(
+        _ source: PollSource,
+        nowNanoseconds: UInt64
+    ) {
+        guard attempt != nil else { return }
+        switch source {
+        case .response:
+            drainResponse(nowNanoseconds: nowNanoseconds)
+        case .process:
+            reapProcess()
         }
-        attempt.completion(outcome)
+        finishIfReady()
     }
 
-    /// Abandon an attempt in flight — the lock was torn down, or the session
-    /// ended. The helper is killed rather than left running with a credential.
+    public func processDeadline(nowNanoseconds: UInt64) {
+        guard var current = attempt else { return }
+        let expired = nowNanoseconds >= current.attemptDeadline
+            || current.exitDeadline.map { nowNanoseconds >= $0 } == true
+        guard expired else { return }
+        if !current.didKill {
+            _ = kill(current.pid, SIGKILL)
+            current.didKill = true
+        }
+        current.response = .unavailable("Authentication helper timed out")
+        attempt = current
+        reapProcess()
+        finishIfReady()
+    }
+
     public func cancelPendingAttempt() {
-        guard let attempt else { return }
-        self.attempt = nil
+        guard let current = attempt else { return }
+        attempt = nil
+        _ = kill(current.pid, SIGKILL)
+        close(current.responseFD)
+        close(current.pidFD)
+        reapOffMain(current.pid)
         pollSetDidChange()
-        kill(attempt.pid, SIGKILL)
-        close(attempt.readFD)
-        _ = reap(attempt.pid)
+        current.completion(.unavailable("Authentication cancelled"))
     }
 
-    /// Fail a poll source that became invalid before producing a verdict.
     public func failPendingAttempt(_ message: String) {
-        guard let attempt else { return }
-        self.attempt = nil
-        pollSetDidChange()
-        kill(attempt.pid, SIGKILL)
-        close(attempt.readFD)
-        _ = reap(attempt.pid)
-        attempt.completion(.unavailable(message))
+        failAndKill(message)
     }
 
-    // MARK: - Helper process
+    private func failAndKill(_ message: String) {
+        guard var current = attempt else { return }
+        current.response = .unavailable(message)
+        if !current.didKill {
+            _ = kill(current.pid, SIGKILL)
+            current.didKill = true
+        }
+        attempt = current
+        reapProcess()
+        finishIfReady()
+        pollSetDidChange()
+    }
 
     private struct Spawned {
         var pid: pid_t
-        var readFD: Int32
-        var writeFD: Int32
+        var responseFD: Int32
+        var requestFD: Int32
     }
 
     private func spawnHelper() -> Spawned? {
         var toHelper: [Int32] = [-1, -1]
         var fromHelper: [Int32] = [-1, -1]
-        guard pipe(&toHelper) == 0 else { return nil }
-        guard pipe(&fromHelper) == 0 else {
+        guard unsafe nucleus_shell_pipe(&toHelper) == 0 else { return nil }
+        guard unsafe nucleus_shell_pipe(&fromHelper) == 0 else {
             close(toHelper[0]); close(toHelper[1])
             return nil
         }
-
-        var actions = posix_spawn_file_actions_t()
-        posix_spawn_file_actions_init(&actions)
-        defer { posix_spawn_file_actions_destroy(&actions) }
-        // The helper reads the request on stdin and writes the verdict on stdout.
-        posix_spawn_file_actions_adddup2(&actions, toHelper[0], 0)
-        posix_spawn_file_actions_adddup2(&actions, fromHelper[1], 1)
-        // The parent's ends must not survive into the child, or the read side
-        // never sees EOF when the helper exits.
-        posix_spawn_file_actions_addclose(&actions, toHelper[1])
-        posix_spawn_file_actions_addclose(&actions, fromHelper[0])
-
+        var actions = unsafe posix_spawn_file_actions_t()
+        unsafe posix_spawn_file_actions_init(&actions)
+        defer { unsafe posix_spawn_file_actions_destroy(&actions) }
+        unsafe posix_spawn_file_actions_adddup2(&actions, toHelper[0], STDIN_FILENO)
+        unsafe posix_spawn_file_actions_adddup2(&actions, fromHelper[1], STDOUT_FILENO)
+        for descriptor in [toHelper[1], fromHelper[0], toHelper[0], fromHelper[1]] {
+            unsafe posix_spawn_file_actions_addclose(&actions, descriptor)
+        }
         var pid: pid_t = 0
-        let argv: [UnsafeMutablePointer<CChar>?] = [strdup(helperPath), nil]
-        defer { argv.forEach { free($0) } }
-
+        let argv: [UnsafeMutablePointer<CChar>?] = unsafe [strdup(helperPath), nil]
+        defer { unsafe argv.forEach { pointer in unsafe free(pointer) } }
         let result = argv.withUnsafeBufferPointer { buffer -> Int32 in
             guard let base = buffer.baseAddress else { return -1 }
-            return posix_spawn(
+            return unsafe posix_spawn(
                 &pid, helperPath, &actions, nil,
                 UnsafeMutablePointer(mutating: base), environ)
         }
-
         close(toHelper[0])
         close(fromHelper[1])
         guard result == 0 else {
             close(toHelper[1]); close(fromHelper[0])
             return nil
         }
-        return Spawned(pid: pid, readFD: fromHelper[0], writeFD: toHelper[1])
+        return Spawned(pid: pid, responseFD: fromHelper[0], requestFD: toHelper[1])
     }
 
-    private func readOutcome(from fd: Int32) -> LockAuthenticationOutcome {
-        guard let header = PamHelperWire.readExactly(1, from: fd),
-              let outcome = PamHelperWire.Outcome(rawValue: header[0]),
-              let length = PamHelperWire.readLength(
-                from: fd, limit: PamHelperWire.maximumMessageBytes),
-              let messageBytes = PamHelperWire.readExactly(length, from: fd)
-        else {
-            // A truncated or unreadable response is the machinery failing, not a
-            // wrong password.
-            return .unavailable("Authentication helper did not respond")
+    private func drainResponse(nowNanoseconds: UInt64) {
+        guard var current = attempt, current.response == nil else { return }
+        var scratch = [UInt8](repeating: 0, count: 1024)
+        drainLoop: while true {
+            let count = scratch.withUnsafeMutableBytes {
+                unsafe read(current.responseFD, $0.baseAddress, $0.count)
+            }
+            if count > 0 {
+                let state = scratch.withUnsafeBytes {
+                    unsafe current.parser.append(
+                        UnsafeRawBufferPointer(rebasing: $0[..<count]))
+                }
+                switch state {
+                case .incomplete:
+                    continue
+                case .complete(let verdict, let message):
+                    current.response = outcome(verdict, message: message)
+                    current.exitDeadline = clampedAdd(
+                        nowNanoseconds, exitGraceNanoseconds)
+                    continue
+                case .malformed:
+                    current.response = .unavailable(
+                        "Authentication helper sent an invalid response")
+                    _ = kill(current.pid, SIGKILL)
+                    current.didKill = true
+                    break drainLoop
+                }
+            }
+            if count == 0 {
+                if current.response == nil {
+                    current.response = .unavailable(
+                        "Authentication helper did not respond")
+                }
+                break
+            }
+            if errno == EINTR { continue }
+            if errno == EAGAIN || errno == EWOULDBLOCK { break }
+            current.response = .unavailable(
+                "Authentication helper response failed")
+            _ = kill(current.pid, SIGKILL)
+            current.didKill = true
+            break
         }
-        let message = String(decoding: messageBytes, as: UTF8.self)
-        switch outcome {
-        case .accepted: return .accepted
-        case .rejected: return .rejected(message.isEmpty ? "Incorrect password" : message)
+        attempt = current
+    }
+
+    private func reapProcess() {
+        guard var current = attempt, current.exitCode == nil else { return }
+        var exitCode: Int32 = -1
+        let result = unsafe nucleus_shell_reap_nohang(current.pid, &exitCode)
+        if result == 1 {
+            current.exitCode = exitCode
+        } else if result < 0 {
+            current.exitCode = -1
+        }
+        attempt = current
+    }
+
+    private func finishIfReady() {
+        guard let current = attempt,
+              let response = current.response,
+              let exitCode = current.exitCode
+        else { return }
+        attempt = nil
+        close(current.responseFD)
+        close(current.pidFD)
+        pollSetDidChange()
+        if case .accepted = response, exitCode != PamHelperWire.exitAccepted {
+            current.completion(.unavailable("Authentication helper failed"))
+        } else {
+            current.completion(response)
+        }
+    }
+
+    private func outcome(
+        _ verdict: PamHelperWire.Outcome,
+        message: String
+    ) -> LockAuthenticationOutcome {
+        switch verdict {
+        case .accepted: .accepted
+        case .rejected: .rejected(message.isEmpty ? "Incorrect password" : message)
         case .unavailable:
-            return .unavailable(message.isEmpty ? "Authentication unavailable" : message)
+            .unavailable(message.isEmpty ? "Authentication unavailable" : message)
         }
     }
 
-    @discardableResult
-    private func reap(_ pid: pid_t) -> Int32 {
-        var status: Int32 = 0
-        while waitpid(pid, &status, 0) < 0 {
-            if errno != EINTR { return -1 }
+    private func writeAtomic(_ bytes: [UInt8], to fd: Int32) -> Bool {
+        func attemptWrite() -> Int {
+            bytes.withUnsafeBytes { unsafe write(fd, $0.baseAddress, $0.count) }
         }
-        // Only a normal exit reports its own code; a signalled helper is a
-        // failure whatever the signal was.
-        guard status & 0x7f == 0 else { return -1 }
-        return (status >> 8) & 0xff
+        var count = attemptWrite()
+        if count < 0 && errno == EINTR { count = attemptWrite() }
+        return count == bytes.count
     }
 
-    private func scrub(_ bytes: inout [UInt8]) {
-        bytes.withUnsafeMutableBytes { raw in
-            guard let base = raw.baseAddress, raw.count > 0 else { return }
-            explicit_bzero(base, raw.count)
+    private func reapOffMain(_ pid: pid_t) {
+        DispatchQueue.global(qos: .utility).async {
+            var exitCode: Int32 = -1
+            while unsafe nucleus_shell_reap_nohang(pid, &exitCode) == 0 {
+                usleep(1_000)
+            }
         }
-        bytes = []
     }
 
-    /// Next to the running executable, so a build tree uses its own helper.
+    private func monotonicNow() -> UInt64 {
+        var time = timespec()
+        unsafe clock_gettime(CLOCK_MONOTONIC, &time)
+        return UInt64(time.tv_sec) &* 1_000_000_000 &+ UInt64(time.tv_nsec)
+    }
+
+    private func clampedAdd(_ lhs: UInt64, _ rhs: UInt64) -> UInt64 {
+        let sum = lhs.addingReportingOverflow(rhs)
+        return sum.overflow ? .max : sum.partialValue
+    }
+
     private static func defaultHelperPath() -> String {
         var buffer = [CChar](repeating: 0, count: 4096)
         let count = buffer.withUnsafeMutableBufferPointer { pointer -> Int in
             guard let base = pointer.baseAddress else { return -1 }
-            return readlink("/proc/self/exe", base, pointer.count - 1)
+            return unsafe readlink("/proc/self/exe", base, pointer.count - 1)
         }
         guard count > 0 else { return "nucleus-pam-helper" }
         let executable = String(
             decoding: buffer[..<count].map { UInt8(bitPattern: $0) },
             as: UTF8.self)
-        guard let slash = executable.lastIndex(of: "/") else { return "nucleus-pam-helper" }
+        guard let slash = executable.lastIndex(of: "/") else {
+            return "nucleus-pam-helper"
+        }
         return String(executable[..<slash]) + "/nucleus-pam-helper"
     }
 }

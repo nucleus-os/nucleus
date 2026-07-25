@@ -7,7 +7,10 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "hello",
-            swiftSettings: [.interoperabilityMode(.Cxx)],
+            swiftSettings: [
+                .interoperabilityMode(.Cxx),
+                .strictMemorySafety(),
+            ],
             plugins: ["FoundationXMLHostPlugin"]),
         .plugin(name: "FoundationXMLHostPlugin", capability: .buildTool()),
     ]

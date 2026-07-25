@@ -3,24 +3,29 @@ import Vulkan
 
 @Test func cStringArrayBorrowsEveryStringForTheBody() {
     unsafe withCStringArray([]) { pointers, count in
-        #expect(pointers == nil)
+        let pointersAreNil = unsafe pointers == nil
+        #expect(pointersAreNil)
         #expect(count == 0)
     }
 
     unsafe withCStringArray(["VK_ONLY"]) { pointers, count in
         #expect(count == 1)
-        #expect(pointers.map { String(cString: $0[0]!) } == "VK_ONLY")
+        let decoded = unsafe pointers.map {
+            unsafe String(cString: $0[0]!)
+        }
+        #expect(decoded == "VK_ONLY")
     }
 
     let strings = ["VK_ONE", "VK_TWO", "Vulkan-λ"]
     unsafe withCStringArray(strings) { pointers, count in
         #expect(count == UInt32(strings.count))
-        guard let pointers else {
+        guard let pointers = unsafe pointers else {
             Issue.record("nonempty input must provide a pointer table")
             return
         }
         for index in strings.indices {
-            #expect(String(cString: pointers[index]!) == strings[index])
+            let decoded = unsafe String(cString: pointers[index]!)
+            #expect(decoded == strings[index])
         }
     }
 }

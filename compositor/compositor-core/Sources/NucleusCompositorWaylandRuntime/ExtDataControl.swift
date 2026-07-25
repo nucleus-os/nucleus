@@ -18,17 +18,14 @@ import Glibc
 import WaylandServerC
 import WaylandServer
 import WaylandServerDispatch
+import WaylandProtocolTypes
 
-private final class WeakExtDataControlDevice {
-    weak var device: ExtDataControlDevice?
-    init(_ device: ExtDataControlDevice) { self.device = device }
-}
-
-final class ExtDataControlManager: SelectionObserver {
+@MainActor
+@safe final class ExtDataControlManager: SelectionObserver {
     /// The shared clipboard owner both protocols project + set.
     private unowned let dataDevice: WlDataDeviceManager
 
-    private var devices: [WeakExtDataControlDevice] = []
+    private var devices: [WeakReference<ExtDataControlDevice>] = []
 
     init(dataDevice: WlDataDeviceManager) {
         self.dataDevice = dataDevice
@@ -36,7 +33,9 @@ final class ExtDataControlManager: SelectionObserver {
 
     func register(in router: NucleusWaylandRouter) {
         router.addGlobal(
-            interface: swift_wayland_iface_ext_data_control_manager_v1(), version: 1, impl: self, bind: Self.bind)
+            ExtDataControlManagerV1Server.global(
+                implementation: self,
+                owner: { manager, _ in manager }))
         // Observe the shared clipboard so every data-control device stays current.
         dataDevice.addSelectionObserver(self)
     }
@@ -48,64 +47,68 @@ final class ExtDataControlManager: SelectionObserver {
     }
 
     fileprivate func addDevice(_ device: ExtDataControlDevice) {
-        devices.append(WeakExtDataControlDevice(device))
+        devices.append(WeakReference(device))
         device.projectSelection(currentClipboard)
     }
 
     // MARK: SelectionObserver
 
     func clipboardSelectionChanged(_ source: (any SelectionSource)?) {
-        devices.removeAll { $0.device == nil }
-        for box in devices { box.device?.projectSelection(source) }
+        devices.removeAll { $0.value == nil }
+        for box in devices { box.value?.projectSelection(source) }
     }
 
-    private static let bind: @convention(c) (
-        OpaquePointer?, UnsafeMutableRawPointer?, UInt32, UInt32
-    ) -> Void = { client, data, version, id in
-        guard let client, let me = NucleusWaylandRouter.impl(data, as: ExtDataControlManager.self)
-        else { return }
-        _ = WaylandResource.create(
-            client: client, interface: swift_wayland_iface_ext_data_control_manager_v1(),
-            version: Int32(version), id: id, vtable: ExtDataControlManagerV1Server.vtable, owner: me)
-    }
 }
 
 extension ExtDataControlManager: ExtDataControlManagerV1Requests {
     // create_data_source(id)
-    func createDataSource(_ resource: UnsafeMutablePointer<wl_resource>, id: WlNewId) {
-        let source = ExtDataControlSource(manager: self)
-        guard let sres = id.create(vtable: ExtDataControlSourceV1Server.vtable, owner: source) else { return }
-        source.bind(sres)
+    func createDataSource(
+        _ request: WaylandRequest<ExtDataControlManagerV1Server>,
+        id: WlNewId<ExtDataControlSourceV1Server>
+    ) {
+        _ = unsafe id.create { handle in
+            ExtDataControlSource(resource: handle, manager: self)
+        }
     }
 
     // get_data_device(id, seat)
-    func getDataDevice(_ resource: UnsafeMutablePointer<wl_resource>, id: WlNewId,
-                       seat: UnsafeMutablePointer<wl_resource>?) {
-        let device = ExtDataControlDevice(manager: self)
-        guard let dres = id.create(vtable: ExtDataControlDeviceV1Server.vtable, owner: device) else { return }
-        device.bind(dres)
-        addDevice(device)
+    func getDataDevice(
+        _ request: WaylandRequest<ExtDataControlManagerV1Server>,
+        id: WlNewId<ExtDataControlDeviceV1Server>,
+                       seat: WaylandBorrowedObject<WlSeatServer>) {
+        _ = unsafe id.create(
+            owner: { handle in
+                ExtDataControlDevice(resource: handle, manager: self)
+            },
+            installed: { device in
+                self.addDevice(device)
+            })
     }
 }
 
 /// ext_data_control_source_v1 owner (Rule 9): a shell-offered clipboard source.
-final class ExtDataControlSource: SelectionSource, ExtDataControlSourceV1Requests {
+@MainActor
+@safe final class ExtDataControlSource: SelectionSource, ExtDataControlSourceV1Requests {
     private weak var manager: ExtDataControlManager?
     private(set) var mimes: [String] = []
-    private var resource: UnsafeMutablePointer<wl_resource>?
+    private let resource:
+        WaylandResourceHandle<ExtDataControlSourceV1Server>
     private var wasUsed = false
 
-    init(manager: ExtDataControlManager) {
+    init(
+        resource: WaylandResourceHandle<ExtDataControlSourceV1Server>,
+        manager: ExtDataControlManager
+    ) {
+        self.resource = resource
         self.manager = manager
     }
-    fileprivate func bind(_ resource: UnsafeMutablePointer<wl_resource>) { self.resource = resource }
     fileprivate func claimForSelection() -> Bool {
         guard !wasUsed else { return false }
         wasUsed = true
         return true
     }
 
-    deinit {
+    isolated deinit {
         manager?.sourceDestroyed(self)
     }
 
@@ -114,50 +117,65 @@ final class ExtDataControlSource: SelectionSource, ExtDataControlSourceV1Request
     var selectionMimeTypes: [String] { mimes }
 
     func sendSelection(mime: String, fd: Int32) {
-        guard let resource else { if fd >= 0 { close(fd) }; return }
-        mime.withCString { ext_data_control_source_v1_send_send(resource, $0, fd) }
+        guard unsafe resource.resource != nil else {
+            if fd >= 0 { close(fd) }
+            return
+        }
+        resource.sendSend(mime_type: mime, fd: fd)
         if fd >= 0 { close(fd) }
     }
 
     func selectionCancelled() {
-        guard let resource else { return }
-        ext_data_control_source_v1_send_cancelled(resource)
+        resource.sendCancelled()
     }
 
     // offer(mime_type)
-    func offer(_ resource: UnsafeMutablePointer<wl_resource>, mime_type: UnsafePointer<CChar>?) {
-        guard let mime_type else { return }
-        mimes.append(String(cString: mime_type))
+    func offer(
+        _ request: WaylandRequest<ExtDataControlSourceV1Server>,
+        mime_type: String
+    ) {
+        mimes.append(mime_type)
     }
 }
 
 /// ext_data_control_device_v1 owner (Rule 9): a client's always-on clipboard view.
-final class ExtDataControlDevice {
+@MainActor
+@safe final class ExtDataControlDevice {
     private weak var manager: ExtDataControlManager?
-    private var resource: UnsafeMutablePointer<wl_resource>?
+    private let resource:
+        WaylandResourceHandle<ExtDataControlDeviceV1Server>
 
-    init(manager: ExtDataControlManager) { self.manager = manager }
-    fileprivate func bind(_ resource: UnsafeMutablePointer<wl_resource>) { self.resource = resource }
+    init(
+        resource: WaylandResourceHandle<ExtDataControlDeviceV1Server>,
+        manager: ExtDataControlManager
+    ) {
+        self.resource = resource
+        self.manager = manager
+    }
 
     /// Emit data_offer + offer(mime)* + selection(offer) for the current selection,
     /// or selection(null) to clear.
     fileprivate func projectSelection(_ source: (any SelectionSource)?) {
-        guard let deviceRes = resource, let client = wl_resource_get_client(deviceRes)
+        guard let deviceRes = unsafe resource.resource,
+              let client = unsafe wl_resource_get_client(deviceRes)
         else { return }
         guard let source else {
-            ext_data_control_device_v1_send_selection(deviceRes, nil)
+            resource.sendSelection(id: nil)
             return
         }
-        guard let offerRes = WaylandResource.create(
-            client: client, interface: swift_wayland_iface_ext_data_control_offer_v1(),
-            version: Int32(wl_resource_get_version(deviceRes)), id: 0,
-            vtable: ExtDataControlOfferV1Server.vtable, owner: ExtDataControlOffer(source: source))
-        else { return }
-        ext_data_control_device_v1_send_data_offer(deviceRes, offerRes)
-        for mime in source.selectionMimeTypes {
-            mime.withCString { ext_data_control_offer_v1_send_offer(offerRes, $0) }
-        }
-        ext_data_control_device_v1_send_selection(deviceRes, offerRes)
+        _ = unsafe ExtDataControlOfferV1Server.createResource(
+            client: client,
+            version: Int32(wl_resource_get_version(deviceRes)),
+            owner: { handle in
+                ExtDataControlOffer(resource: handle, source: source)
+            },
+            installed: { offer in
+                resource.sendDataOffer(id: offer.resource)
+                for mime in source.selectionMimeTypes {
+                    offer.resource.sendOffer(mime_type: mime)
+                }
+                resource.sendSelection(id: offer.resource)
+            })
     }
 
 }
@@ -165,36 +183,42 @@ final class ExtDataControlDevice {
 extension ExtDataControlDevice: ExtDataControlDeviceV1Requests {
     // set_selection(source): the shell sets the clipboard. A data-control source
     // becomes the shared selection; wl_data_device clients then offer it too.
-    func setSelection(_ resource: UnsafeMutablePointer<wl_resource>,
-                      source sourceRes: UnsafeMutablePointer<wl_resource>?) {
-        let source = sourceRes.flatMap { WaylandResource.owner(of: $0, as: ExtDataControlSource.self) }
+    func setSelection(_ request: WaylandRequest<ExtDataControlDeviceV1Server>,
+                      source sourceRes: WaylandBorrowedObject<ExtDataControlSourceV1Server>?) {
+        let source = sourceRes?.owner(as: ExtDataControlSource.self)
         if let source, !source.claimForSelection() {
-            swift_wayland_resource_post_error(
-                resource,
-                UInt32(EXT_DATA_CONTROL_DEVICE_V1_ERROR_USED_SOURCE.rawValue),
-                "data-control source was already used")
+            request.postError(.usedSource, message: "data-control source was already used")
             return
         }
         manager?.setClipboard(source)
     }
 
     // set_primary_selection(source): primary selection unsupported; ignored.
-    func setPrimarySelection(_ resource: UnsafeMutablePointer<wl_resource>,
-                             source: UnsafeMutablePointer<wl_resource>?) {}
+    func setPrimarySelection(_ request: WaylandRequest<ExtDataControlDeviceV1Server>,
+                             source: WaylandBorrowedObject<ExtDataControlSourceV1Server>?) {}
 }
 
 /// ext_data_control_offer_v1 owner (Rule 9): pipes a receive fd to the selection
 /// source (a wl_data_source or another data-control source).
+@MainActor
 final class ExtDataControlOffer {
     private weak var source: (any SelectionSource)?
-    init(source: (any SelectionSource)?) { self.source = source }
+    fileprivate let resource:
+        WaylandResourceHandle<ExtDataControlOfferV1Server>
+
+    init(
+        resource: WaylandResourceHandle<ExtDataControlOfferV1Server>,
+        source: (any SelectionSource)?
+    ) {
+        self.resource = resource
+        self.source = source
+    }
 }
 
 extension ExtDataControlOffer: ExtDataControlOfferV1Requests {
     // receive(mime, fd): relay to the owning source's send event (the data transfer).
-    func receive(_ resource: UnsafeMutablePointer<wl_resource>, mime_type: UnsafePointer<CChar>?, fd: Int32) {
-        guard let mime_type else { if fd >= 0 { close(fd) }; return }
-        guard let source else { if fd >= 0 { close(fd) }; return }
-        source.sendSelection(mime: String(cString: mime_type), fd: fd)
+    func receive(_ request: WaylandRequest<ExtDataControlOfferV1Server>, mime_type: String, fd: consuming WaylandOwnedFileDescriptor) {
+        guard let source else { return }
+        source.sendSelection(mime: mime_type, fd: fd.take())
     }
 }

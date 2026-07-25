@@ -48,12 +48,13 @@ import NucleusSkiaGraphiteBridge
         // TextureRegistry: handles, content-revision, and refcount.
         let registry = TextureRegistry()
         #expect(registry.count == 0, "registry-empty")
-        let surface = nucleus.skia.makeRasterSurface(2, 2)
-        let image = surface.snapshotImage()
-        #expect(image.isValid())
+        let surface = unsafe nucleus.skia.makeRasterSurface(2, 2)
+        let image = unsafe surface.snapshotImage()
+        let imageIsValid = unsafe image.isValid()
+        #expect(imageIsValid)
         let h1 = registry.allocRendererHandle()
         let rendererKey = TextureRegistryKey.renderer(h1)
-        registry.register(
+        unsafe registry.register(
             key: rendererKey, image: image,
             width: 2, height: 2, contentRevision: 1)
         #expect(h1 != 0, "registry-handle-nonzero")
@@ -85,17 +86,17 @@ import NucleusSkiaGraphiteBridge
         // Handles are distinct + non-zero across registrations.
         let h2 = registry.allocRendererHandle()
         let h3 = registry.allocRendererHandle()
-        registry.register(
+        unsafe registry.register(
             key: .renderer(h2), image: image,
             width: 2, height: 2, contentRevision: 1)
-        registry.register(
+        unsafe registry.register(
             key: .renderer(h3), image: image,
             width: 2, height: 2, contentRevision: 1)
         #expect(h2 != 0 && h3 != 0 && h2 != h3, "registry-distinct-handles")
 
         // Client IDs are an independent namespace. A client surface whose ID
         // equals a live renderer handle must coexist without replacing it.
-        registry.register(
+        unsafe registry.register(
             key: .clientSurface(h2), image: image,
             width: 3840, height: 28, contentRevision: 7)
         #expect(registry.count == 3, "registry-namespaces-coexist")
@@ -107,16 +108,17 @@ import NucleusSkiaGraphiteBridge
 
     @Test func gpuHeadless_backendImageWrapFailsClosed() throws {
         let registry = TextureRegistry()
-        try withRequiredVulkanGraphite(
+        try unsafe withRequiredVulkanGraphite(
             presentation: .headless,
             applicationName: "TextureRegistryTests"
         ) { _, _, _, recorder in
             // A descriptor with no image wraps to an invalid image (fail-closed).
-            var nullDesc = nucleus.skia.VulkanImageDescriptor()
-            nullDesc.width = 64
-            nullDesc.height = 64
-            #expect(registry.wrapBackendImage(
-                recorder: recorder, descriptor: nullDesc) == nil)
+            var nullDesc = unsafe nucleus.skia.VulkanImageDescriptor()
+            unsafe nullDesc.width = 64
+            unsafe nullDesc.height = 64
+            let wrapFailed = unsafe registry.wrapBackendImage(
+                recorder: recorder, descriptor: nullDesc) == nil
+            #expect(wrapFailed)
             #expect(registry.count == 0)
         }
     }

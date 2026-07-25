@@ -127,7 +127,9 @@ package protocol FrameResourceResolver: AnyObject {
 
 /// Owns the per-frame GPU state — the Graphite context + recorder, the texture
 /// registry/producer, and per-output accumulators — and renders one frame.
-final class FrameDriver {
+/// Render-thread-confined owner of Graphite context, recorder, surfaces, and
+/// cached C++ RAII values; `shutdown` drains work before context teardown.
+@safe final class FrameDriver {
     let resourceHost: SwiftResourceHost
     let context: nucleus.skia.GraphiteContext
     let recorder: nucleus.skia.Recorder
@@ -142,7 +144,7 @@ final class FrameDriver {
     /// Compiled SkSL programs keyed by runtime-effect handle. Compilation is
     /// the expensive half and is uniform-independent, so it is cached here
     /// while uniforms are re-bound per draw.
-    private var compiledEffects: [UInt64: nucleus.skia.RuntimeEffect] = [:]
+    private var compiledEffects: [UInt64: nucleus.skia.RuntimeEffect] = unsafe [:]
     private var recording = false
     private(set) var sawCallbackWhileRecording = false
     private var presentationPlanDiagnosticsRemaining: [UInt64: Int] = [:]
@@ -152,13 +154,13 @@ final class FrameDriver {
         resourceHost: SwiftResourceHost,
         wakeSink: any AsyncRenderWakeSink
     ) {
-        guard context.isValid() else { return nil }
-        let recorder = context.makeRecorder()
-        guard recorder.isValid() else { return nil }
-        self.context = context
+        guard unsafe context.isValid() else { return nil }
+        let recorder = unsafe context.makeRecorder()
+        guard unsafe recorder.isValid() else { return nil }
+        unsafe self.context = unsafe context
         self.resourceHost = resourceHost
-        self.recorder = recorder
-        self.imageResources = ImageResourceManager(
+        unsafe self.recorder = unsafe recorder
+        self.imageResources = unsafe ImageResourceManager(
             recorder: recorder,
             wakeSink: wakeSink)
         self.producer = TextureProducer(registry: registry)
@@ -171,17 +173,21 @@ final class FrameDriver {
         width: Int32, height: Int32
     ) -> nucleus.skia.UploadTexture? {
         let texture: nucleus.skia.UploadTexture
-        if let existing, existing.isValid(), existing.width() == width, existing.height() == height {
-            texture = existing
+        if let existing = unsafe existing,
+           unsafe existing.isValid(),
+           unsafe existing.width() == width,
+           unsafe existing.height() == height
+        {
+            unsafe texture = unsafe existing
         } else {
-            texture = recorder.makeUploadTextureRGBA(width, height)
+            unsafe texture = unsafe recorder.makeUploadTextureRGBA(width, height)
         }
-        guard texture.isValid() else { return nil }
+        guard unsafe texture.isValid() else { return nil }
         let updated = pixels.withUnsafeBufferPointer {
-            texture.updateRGBA($0.baseAddress, $0.count)
+            unsafe texture.updateRGBA($0.baseAddress, $0.count)
         }
         guard updated else { return nil }
-        return texture
+        return unsafe texture
     }
 
     /// Submit a standalone renderer-owned copy outside the presentation loop.
@@ -192,11 +198,11 @@ final class FrameDriver {
         waitSemaphores: [VkSemaphore],
         submissionSerial: UInt64
     ) -> nucleus.skia.SubmissionResult {
-        let waits: [UnsafeMutableRawPointer?] = waitSemaphores.map {
-            UnsafeMutableRawPointer($0)
+        let waits: [UnsafeMutableRawPointer?] = unsafe waitSemaphores.map {
+            unsafe UnsafeMutableRawPointer($0)
         }
         return waits.withUnsafeBufferPointer { waits in
-            return context.submitWithSemaphores(
+            return unsafe context.submitWithSemaphores(
                 recording,
                 waits.baseAddress,
                 waits.count,
@@ -210,14 +216,14 @@ final class FrameDriver {
     func shutdown() {
         imageResources.shutdown()
         registry.clear()
-        compiledEffects.removeAll()
+        unsafe compiledEffects.removeAll()
         accumulators.removeAll()
     }
 
     /// Discard every unsnapped command in the current scope and force persistent
     /// targets to rebuild from accepted state on the next frame.
     func abandonSubmissionScope() {
-        _ = recorder.snapRecording()
+        _ = unsafe recorder.snapRecording()
         for accumulator in accumulators.values {
             accumulator.invalidate()
         }
@@ -238,7 +244,7 @@ final class FrameDriver {
         source: ImageSource,
         outputID: UInt64
     ) -> nucleus.skia.Image? {
-        imageResources.image(
+        unsafe imageResources.image(
             handle: handle,
             source: source,
             outputID: outputID)
@@ -277,21 +283,21 @@ final class FrameDriver {
     /// and caching on first use. Mirrors `resolvePaintImage`.
     func resolvePaintEffect(_ handle: UInt64) -> nucleus.skia.RuntimeEffect? {
         guard let source = resourceHost.runtimeEffects.source(handle) else { return nil }
-        return compiledEffect(handle: handle, source: source)
+        return unsafe compiledEffect(handle: handle, source: source)
     }
 
     func compiledEffect(handle: UInt64, source: RuntimeEffectSource) -> nucleus.skia.RuntimeEffect? {
-        if let existing = compiledEffects[handle], existing.isValid() { return existing }
-        let effect = nucleus.skia.makeRuntimeEffect(source.sksl)
-        guard effect.isValid() else { return nil }
-        compiledEffects[handle] = effect
-        return effect
+        if let existing = unsafe compiledEffects[handle], unsafe existing.isValid() { return unsafe existing }
+        let effect = unsafe nucleus.skia.makeRuntimeEffect(source.sksl)
+        guard unsafe effect.isValid() else { return nil }
+        unsafe compiledEffects[handle] = unsafe effect
+        return unsafe effect
     }
 
     /// Drop a compiled-program cache entry after the render owner drains its
     /// source store's eviction queue. No-op for an unknown handle.
     func evictCompiledEffect(_ handle: UInt64) {
-        compiledEffects[handle] = nil
+        unsafe compiledEffects[handle] = nil
     }
 
     /// Drop a decoded-image cache entry after the render owner drains its
@@ -313,11 +319,11 @@ final class FrameDriver {
     /// Poll Graphite's internal Vulkan submission fences and return the newest
     /// frame serial whose GPU-finished callback has run. This never waits.
     func pollCompletedSubmissionSerial() -> UInt64 {
-        context.pollCompletedSubmissionSerial()
+        unsafe context.pollCompletedSubmissionSerial()
     }
 
     func takeCompletedSubmissionGpuElapsedNs(_ submissionSerial: UInt64) -> UInt64? {
-        let elapsed = context.takeCompletedSubmissionGpuElapsedNs(submissionSerial)
+        let elapsed = unsafe context.takeCompletedSubmissionGpuElapsedNs(submissionSerial)
         return elapsed == 0 ? nil : elapsed
     }
 
@@ -350,9 +356,9 @@ final class FrameDriver {
 
     private func ensureAccumulator(output: UInt64, width: Int32, height: Int32) -> OutputAccumulator? {
         if let existing = accumulators[output] {
-            return existing.ensure(recorder: recorder, width: width, height: height) ? existing : nil
+            return unsafe existing.ensure(recorder: recorder, width: width, height: height) ? existing : nil
         }
-        guard let created = OutputAccumulator.create(
+        guard let created = unsafe OutputAccumulator.create(
             recorder: recorder, outputId: output, width: width, height: height) else { return nil }
         accumulators[output] = created
         return created
@@ -365,8 +371,8 @@ final class FrameDriver {
         outputID: UInt64,
         resolver: any FrameResourceResolver
     ) -> [PlanTextureReference: nucleus.skia.Image] {
-        var resolved: [PlanTextureReference: nucleus.skia.Image] = [:]
-        var resolvedPaintImages: [UInt64: nucleus.skia.Image] = [:]
+        var resolved: [PlanTextureReference: nucleus.skia.Image] = unsafe [:]
+        var resolvedPaintImages: [UInt64: nucleus.skia.Image] = unsafe [:]
         var attemptedPaintImages: Set<UInt64> = []
         for request in summary.paintRequests {
             let handle = request.reference.handle
@@ -376,14 +382,14 @@ final class FrameDriver {
                 continue
             }
 
-            let paintImages = Self.resolvePaintImages(
+            let paintImages = unsafe Self.resolvePaintImages(
                 content.imageDependencies,
                 outputID: outputID,
                 resolver: resolver,
                 attempted: &attemptedPaintImages,
                 resolved: &resolvedPaintImages)
 
-            let produced = producer.producePaintCommands(
+            let produced = unsafe producer.producePaintCommands(
                 recorder: recorder,
                 layerId: request.layerID,
                 revision: handle.raw,
@@ -396,15 +402,15 @@ final class FrameDriver {
                 contentWidth: pixelExtent(content.width * Float(target.fractionalScale)),
                 contentHeight: pixelExtent(content.height * Float(target.fractionalScale)),
                 localDamage: request.localDamage,
-                resolveImage: { paintImages[$0] },
-                resolveEffect: resolvePaintEffect)
+                resolveImage: { unsafe paintImages[$0] },
+                resolveEffect: unsafe resolvePaintEffect)
             if let produced,
-               let image = registry.resolve(.renderer(produced))
+               let image = unsafe registry.resolve(.renderer(produced))
             {
-                resolved[request.reference] = image
+                unsafe resolved[request.reference] = unsafe image
             }
         }
-        return resolved
+        return unsafe resolved
     }
 
     @MainActor
@@ -415,27 +421,27 @@ final class FrameDriver {
         attempted: inout Set<UInt64>,
         resolved: inout [UInt64: nucleus.skia.Image]
     ) -> [UInt64: nucleus.skia.Image] {
-        var images: [UInt64: nucleus.skia.Image] = [:]
-        images.reserveCapacity(handles.count)
+        var images: [UInt64: nucleus.skia.Image] = unsafe [:]
+        unsafe images.reserveCapacity(handles.count)
         for handle in handles {
             if attempted.insert(handle).inserted,
-               let image = resolver.paintImage(
+               let image = unsafe resolver.paintImage(
                    for: handle,
                    outputID: outputID)
             {
-                resolved[handle] = image
+                unsafe resolved[handle] = unsafe image
             }
-            if let image = resolved[handle] {
-                images[handle] = image
+            if let image = unsafe resolved[handle] {
+                unsafe images[handle] = unsafe image
             }
         }
-        return images
+        return unsafe images
     }
 
     private func produceShadowTextures(
         summary: FrameResourceSummary
     ) -> [UInt64: nucleus.skia.Image] {
-        var resolved: [UInt64: nucleus.skia.Image] = [:]
+        var resolved: [UInt64: nucleus.skia.Image] = unsafe [:]
         for material in summary.shadowMaterials {
             var color = nucleus.skia.Color()
             color.r = material.color.0
@@ -446,14 +452,14 @@ final class FrameDriver {
                 width: material.rasterWidth, height: material.rasterHeight,
                 shapeRect: material.shapeRect, cornerRadii: material.cornerRadii,
                 blurSigma: material.blurSigma, color: color)
-            guard let handle = producer.produceShadow(
+            guard let handle = unsafe producer.produceShadow(
                 recorder: recorder, layerId: material.layerId,
                 revision: material.revision, shadow: decoration),
-                let image = registry.resolve(.renderer(handle))
+                let image = unsafe registry.resolve(.renderer(handle))
             else { continue }
-            resolved[material.layerId] = image
+            unsafe resolved[material.layerId] = unsafe image
         }
-        return resolved
+        return unsafe resolved
     }
 
     @MainActor
@@ -463,10 +469,10 @@ final class FrameDriver {
         into resolved: inout [PlanTextureReference: nucleus.skia.Image]
     ) {
         for reference in summary.textureReferences
-        where resolved[reference] == nil {
+        where unsafe resolved[reference] == nil {
             if reference.role == .paint { continue }
-            if let image = resolver.texture(for: reference) {
-                resolved[reference] = image
+            if let image = unsafe resolver.texture(for: reference) {
+                unsafe resolved[reference] = unsafe image
             }
         }
     }
@@ -481,13 +487,16 @@ final class FrameDriver {
     /// Per-frame WSI present parameters for the Vulkan swapchain path: the submit
     /// waits on `waitSemaphore`, signals `signalSemaphore`, and transitions the
     /// scanout image to `VK_IMAGE_LAYOUT_PRESENT_SRC_KHR` on `queueFamily`.
-    struct PresentSubmit {
+    /// Borrows semaphores for one submission; their Vulkan owners outlive
+    /// `renderFrame` and retain them through GPU completion.
+    @safe struct PresentSubmit {
         var waitSemaphore: VkSemaphore?
         var signalSemaphore: VkSemaphore?
         var queueFamily: UInt32
     }
 
-    struct DrmSubmit {
+    /// Borrows the exportable signal semaphore for one DRM submission.
+    @safe struct DrmSubmit {
         var signalSemaphore: VkSemaphore
     }
 
@@ -500,7 +509,9 @@ final class FrameDriver {
         case offscreen
     }
 
-    struct FrameRenderRequest {
+    /// The scanout surface and submission handles are borrowed only for the
+    /// synchronous recording/submission performed by `renderFrame`.
+    @safe struct FrameRenderRequest {
         var tree: LayerTree
         var target: RenderTarget
         var frame: FrameInfo
@@ -523,7 +534,7 @@ final class FrameDriver {
             self.tree = tree
             self.target = target
             self.frame = frame
-            self.scanout = scanout
+            unsafe self.scanout = unsafe scanout
             self.submissionMode = submissionMode
             self.rootContexts = rootContexts
             self.rootLayerIDs = rootLayerIDs
@@ -562,28 +573,28 @@ final class FrameDriver {
         let summary = plan.resourceSummary
         let referencedSurfaceIDs = summary.clientSurfaceIDs
         var acquiredSurfaceIDs: [UInt64] = []
-        var frameAcquireWaits: [VkSemaphore] = []
+        var frameAcquireWaits: [VkSemaphore] = unsafe []
         acquiredSurfaceIDs.reserveCapacity(referencedSurfaceIDs.count)
-        frameAcquireWaits.reserveCapacity(referencedSurfaceIDs.count)
+        unsafe frameAcquireWaits.reserveCapacity(referencedSurfaceIDs.count)
         for surfaceID in referencedSurfaceIDs {
-            guard let semaphore = resolver.acquireWaitSemaphore(
+            guard let semaphore = unsafe resolver.acquireWaitSemaphore(
                 forClientSurfaceID: surfaceID)
             else {
                 continue
             }
             acquiredSurfaceIDs.append(surfaceID)
-            frameAcquireWaits.append(semaphore)
+            unsafe frameAcquireWaits.append(semaphore)
         }
 
         // Resolve the complete summary before recording. Ordered unique
         // references guarantee that missing resources are attempted only once.
-        var resolved = producePaintTextures(
+        var resolved = unsafe producePaintTextures(
             summary: summary,
             target: request.target,
             outputID: request.target.outputId,
             resolver: resolver)
-        let resolvedShadows = produceShadowTextures(summary: summary)
-        Self.resolveGenericTextures(
+        let resolvedShadows = unsafe produceShadowTextures(summary: summary)
+        unsafe Self.resolveGenericTextures(
             summary: summary,
             resolver: resolver,
             into: &resolved)
@@ -615,18 +626,18 @@ final class FrameDriver {
         defer { recording = false }
 
         phaseStart = clock.now
-        let canvas = accumulator.canvas
+        let canvas = unsafe accumulator.canvas
         let shouldComposite = damage.full || damage.bounds != nil
         if let bounds = damage.bounds, !damage.full {
-            canvas.save()
-            canvas.clipRect(
+            unsafe canvas.save()
+            unsafe canvas.clipRect(
                 FramePlanRenderer.rectF(planRectFromDamageRect(bounds)),
                 false)
         }
         if shouldComposite {
             var bg = nucleus.skia.Color()
             bg.a = 1  // opaque black
-            canvas.clear(bg)
+            unsafe canvas.clear(bg)
         }
 
         // Execute one ordered command stream. A backdrop snapshots exactly the
@@ -635,23 +646,23 @@ final class FrameDriver {
         var backdropDraws = 0
         for op in shouldComposite ? plan.ops : [] {
             if case .backdrop(let spec) = op {
-                let source = accumulator.snapshotImage()
-                backdropDraws += Backdrop.execute(
+                let source = unsafe accumulator.snapshotImage()
+                unsafe backdropDraws += Backdrop.execute(
                     spec, liveSnapshot: source, prefix: source, onto: canvas)
             } else {
-                drawn += FramePlanRenderer.composite(
+                unsafe drawn += FramePlanRenderer.composite(
                     op: op, onto: canvas,
-                    resolveTexture: { resolved[$0] },
-                    resolveShadow: { layerId in resolvedShadows[layerId] })
+                    resolveTexture: { unsafe resolved[$0] },
+                    resolveShadow: { layerId in unsafe resolvedShadows[layerId] })
             }
         }
         if damage.full { accumulator.markRedrawn() }
-        if damage.bounds != nil, !damage.full { canvas.restore() }
+        if damage.bounds != nil, !damage.full { unsafe canvas.restore() }
         timings.compositeNs = elapsedNanoseconds(phaseStart, clock.now)
 
         // Present the composited accumulator into the scanout surface.
         phaseStart = clock.now
-        let presented = accumulator.present(onto: request.scanout)
+        let presented = unsafe accumulator.present(onto: request.scanout)
         timings.blitNs = elapsedNanoseconds(phaseStart, clock.now)
         guard presented else {
             timings.totalNs = elapsedNanoseconds(totalStart, clock.now)
@@ -663,7 +674,7 @@ final class FrameDriver {
                 damagePixelCount: damage.bounds.map {
                     UInt64($0.width) * UInt64($0.height)
                 } ?? 0,
-                acquireWaitCount: frameAcquireWaits.count,
+                acquireWaitCount: unsafe frameAcquireWaits.count,
                 acquiredSurfaceIDs: acquiredSurfaceIDs,
                 referencedSurfaceIDs: referencedSurfaceIDs,
                 uniqueTextureCount: summary.textureReferences.count,
@@ -679,30 +690,30 @@ final class FrameDriver {
         // for presentation (acquire/present semaphores + PRESENT_SRC transition);
         // DRM signals an exportable semaphore that KMS waits on via IN_FENCE_FD.
         phaseStart = clock.now
-        let recordingHandle = recorder.snapRecording()
+        let recordingHandle = unsafe recorder.snapRecording()
         timings.frameSnapNs = elapsedNanoseconds(phaseStart, clock.now)
         let submissionResult: nucleus.skia.SubmissionResult
         phaseStart = clock.now
-        var waits: [UnsafeMutableRawPointer?] = frameAcquireWaits.map { UnsafeMutableRawPointer($0) }
+        var waits: [UnsafeMutableRawPointer?] = unsafe frameAcquireWaits.map { unsafe UnsafeMutableRawPointer($0) }
         switch request.submissionMode {
         case .swapchain(let present):
-            if let wait = present.waitSemaphore { waits.append(UnsafeMutableRawPointer(wait)) }
-            let signal = present.signalSemaphore.map { UnsafeMutableRawPointer($0) }
+            if let wait = unsafe present.waitSemaphore { unsafe waits.append(UnsafeMutableRawPointer(wait)) }
+            let signal = unsafe present.signalSemaphore.map { unsafe UnsafeMutableRawPointer($0) }
             submissionResult = waits.withUnsafeBufferPointer { waits in
-                return context.submitForPresent(
+                return unsafe context.submitForPresent(
                     request.scanout, recordingHandle, waits.baseAddress, waits.count,
                     signal, present.queueFamily, request.frame.frameSerial, true)
             }
         case .drm(let drmSubmit):
-            let signal = UnsafeMutableRawPointer(drmSubmit.signalSemaphore)
+            let signal = unsafe UnsafeMutableRawPointer(drmSubmit.signalSemaphore)
             submissionResult = waits.withUnsafeBufferPointer { waits in
-                return context.submitWithSemaphores(
+                return unsafe context.submitWithSemaphores(
                     recordingHandle, waits.baseAddress, waits.count,
                     signal, request.frame.frameSerial, true)
             }
         case .offscreen:
             submissionResult = waits.withUnsafeBufferPointer { waits in
-                return context.submitWithSemaphores(
+                return unsafe context.submitWithSemaphores(
                     recordingHandle, waits.baseAddress, waits.count,
                     nil, request.frame.frameSerial, false)
             }
@@ -722,7 +733,7 @@ final class FrameDriver {
             damagePixelCount: damage.bounds.map {
                 UInt64($0.width) * UInt64($0.height)
             } ?? 0,
-            acquireWaitCount: frameAcquireWaits.count,
+            acquireWaitCount: unsafe frameAcquireWaits.count,
             acquiredSurfaceIDs: acquiredSurfaceIDs,
             referencedSurfaceIDs: referencedSurfaceIDs,
             uniqueTextureCount: summary.textureReferences.count,
@@ -779,7 +790,7 @@ final class FrameDriver {
             + "shadows=\(plan.resourceSummary.shadowMaterials.count) "
             + "blur=\(plan.resourceSummary.backdropBlurRegions.count) "
             + "ops=[\(operations.joined(separator: ";"))]\n"
-        line.withCString { _ = write(STDERR_FILENO, $0, strlen($0)) }
+        line.withCString { _ = unsafe write(STDERR_FILENO, $0, strlen($0)) }
         #endif
     }
 

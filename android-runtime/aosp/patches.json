@@ -46,7 +46,7 @@
     {
       "path": "packages/modules/Connectivity",
       "patches": [
-        "aosp/patches/platform-packages-modules-connectivity/0001-netbpfload-use-nucleus-bpf-token.patch"
+        "aosp/patches/platform-packages-modules-connectivity/0001-support-nucleus-container.patch"
       ]
     },
     {

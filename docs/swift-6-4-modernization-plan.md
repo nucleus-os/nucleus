@@ -6,6 +6,8 @@ Nucleus uses Swift 6.4 as a single opinionated language baseline. Unsafe operati
 
 This modernization removes replaced spellings and APIs directly. It does not preserve old and new paths, add feature flags, or introduce compatibility wrappers.
 
+Status: complete
+
 ## Outcomes
 
 The completed work delivers these outcomes:

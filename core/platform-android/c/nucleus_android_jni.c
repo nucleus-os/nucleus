@@ -5,6 +5,9 @@
 #include <android/native_window_jni.h>
 #include <android/asset_manager.h>
 #include <android/asset_manager_jni.h>
+#include <android/log.h>
+#include <sys/syscall.h>
+#include <unistd.h>
 
 const char *nucleus_jni_get_string_utf_chars(void *env, void *value) {
     JNIEnv *e = (JNIEnv *)env;
@@ -47,6 +50,17 @@ int32_t nucleus_android_window_get_format(void *window) {
     return ANativeWindow_getFormat((ANativeWindow *)window);
 }
 
+int64_t nucleus_android_current_thread_id(void) {
+    return (int64_t)syscall(__NR_gettid);
+}
+
+void nucleus_android_log_thread_violation(const char *operation) {
+    __android_log_print(
+        ANDROID_LOG_ERROR,
+        "NucleusAndroid",
+        "owner-thread violation in %s",
+        operation ? operation : "<unknown>");
+}
 
 void *nucleus_android_asset_manager_from_java(void *env, void *asset_manager) {
     if (env == 0 || asset_manager == 0) {

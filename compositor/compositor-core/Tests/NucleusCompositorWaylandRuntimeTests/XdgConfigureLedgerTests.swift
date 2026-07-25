@@ -1,6 +1,7 @@
 import Testing
 @testable import NucleusCompositorWaylandRuntime
 
+@MainActor
 @Suite struct XdgConfigureLedgerTests {
     private static func record(_ serial: UInt32) -> XdgConfigureRecord {
         XdgConfigureRecord(

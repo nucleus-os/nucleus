@@ -17,7 +17,7 @@ public protocol TextLayoutManagerHandler: AnyObject, Sendable {
 // Swift hands the C++ factory a retained opaque pointer; the bridge
 // `.cpp` calls `fromUnsafe` (exposed via `NucleusReactRuntimeCxx.h`)
 // to reclaim the typed Swift instance.
-public final class SwiftTextLayoutManager {
+public final class SwiftTextLayoutManager: Sendable {
     private let handler: any TextLayoutManagerHandler
 
     public init(_ handler: any TextLayoutManagerHandler) {
@@ -29,10 +29,12 @@ public final class SwiftTextLayoutManager {
     }
 
     public func toUnsafe() -> UnsafeMutableRawPointer {
-        Unmanaged.passRetained(self).toOpaque()
+        unsafe Unmanaged.passRetained(self).toOpaque()
     }
 
     public static func fromUnsafe(_ pointer: UnsafeMutableRawPointer) -> SwiftTextLayoutManager {
-        Unmanaged<SwiftTextLayoutManager>.fromOpaque(pointer).takeRetainedValue()
+        unsafe Unmanaged<SwiftTextLayoutManager>
+            .fromOpaque(pointer)
+            .takeRetainedValue()
     }
 }

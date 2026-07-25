@@ -108,7 +108,8 @@ struct GammaState {
         destroyBlob(fd: fd)
         var blobId: UInt32 = 0
         let ok = lut.withUnsafeBytes { raw -> Bool in
-            drmModeCreatePropertyBlob(fd, raw.baseAddress, raw.count, &blobId) == 0
+            unsafe drmModeCreatePropertyBlob(
+                fd, raw.baseAddress, raw.count, &blobId) == 0
         }
         guard ok else { return false }  // dirty stays set → retried next ensureBlob
         desiredBlobId = blobId

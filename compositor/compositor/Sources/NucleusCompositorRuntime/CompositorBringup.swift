@@ -31,17 +31,9 @@ extension CompositorRuntime {
     /// tears down + exits non-zero).
     func bringUp() -> Bool {
         // ── DRM device discovery (Swift-owned, over libdrm) ───────────────
-        var primaryPathBuf = [CChar](repeating: 0, count: 256)
-        var renderPathBuf = [CChar](repeating: 0, count: 256)
-        let discovered = primaryPathBuf.withUnsafeMutableBufferPointer { primary in
-            renderPathBuf.withUnsafeMutableBufferPointer { render in
-                nucleus_drm_discover(
-                    primary.baseAddress!, primary.count,
-                    render.baseAddress!, render.count,
-                    preferredRenderPath: configuration.drmDevicePath)
-            }
-        }
-        guard discovered else {
+        guard let drmDevice = discoverDrmDevice(
+            preferredRenderPath: configuration.drmDevicePath)
+        else {
             logRuntime("DRM device discovery failed")
             return false
         }
@@ -55,12 +47,14 @@ extension CompositorRuntime {
         // Install the inverted session seams. The render service installs itself
         // only after successful GPU bring-up below.
         server.sessionControl = self
-        drmSession.installDeviceSeat(
-            open: { [weak waylandRuntime] in waylandRuntime?.openDevice($0) ?? -1 },
+        unsafe drmSession.installDeviceSeat(
+            open: { [weak waylandRuntime] in
+                unsafe waylandRuntime?.openDevice($0) ?? -1
+            },
             close: { [weak waylandRuntime] in waylandRuntime?.closeDevice($0) })
 
-        let primaryFd = primaryPathBuf.withUnsafeBufferPointer {
-            drmSession.open(path: $0.baseAddress!)
+        let primaryFd = drmDevice.primaryPath.withCString {
+            unsafe drmSession.open(path: $0)
         }
         guard primaryFd >= 0 else {
             logRuntime("session: failed to open DRM primary node through the seat")
@@ -98,8 +92,8 @@ extension CompositorRuntime {
 
         // ── Swift render runtime ──────────────────────────────────────────
         var renderNodeStat = stat()
-        let renderMainDevice = renderPathBuf.withUnsafeBufferPointer {
-            stat($0.baseAddress!, &renderNodeStat) == 0
+        let renderMainDevice = drmDevice.renderPath.withCString {
+            unsafe stat($0, &renderNodeStat) == 0
                 ? UInt64(renderNodeStat.st_rdev)
                 : 0
         }
@@ -214,7 +208,8 @@ extension CompositorRuntime {
 
         // XDG_RUNTIME_DIR (set by the isolated session) is required for the router's
         // wl_display_add_socket_auto.
-        guard getenv("XDG_RUNTIME_DIR") != nil else {
+        let hasRuntimeDirectory = unsafe getenv("XDG_RUNTIME_DIR") != nil
+        guard hasRuntimeDirectory else {
             logRuntime("XDG_RUNTIME_DIR is required for the Wayland listen socket")
             return false
         }
@@ -242,7 +237,23 @@ extension CompositorRuntime {
         shellServices.activateEnvironment()
 
         // ── XWayland (lazy spawn) ─────────────────────────────────────────
-        if !waylandRuntime.bringUpXwayland() {
+        if let xwaylandExecutablePath =
+                configuration.xwaylandExecutablePath
+        {
+            let traceEnabled: Bool
+            if let traceValue = unsafe getenv("NUCLEUS_XWAYLAND_TRACE") {
+                traceEnabled = unsafe String(cString: traceValue) == "1"
+            } else {
+                traceEnabled = false
+            }
+            if !waylandRuntime.bringUpXwayland(
+                executablePath: xwaylandExecutablePath,
+                traceEnabled: traceEnabled)
+            {
+                logRuntime(
+                    "[xwayland] init failed — continuing without X11 support")
+            }
+        } else {
             logRuntime("[xwayland] init failed — continuing without X11 support")
         }
 
@@ -291,7 +302,7 @@ extension CompositorRuntime {
         for display in server.layout.displays {
             display.name.withCString { namePtr in
                 display.description.withCString { descPtr in
-                    waylandRuntime.addOutput(
+                    unsafe waylandRuntime.addOutput(
                         display.id,
                         Int32(display.logicalRect.x.rounded()),
                         Int32(display.logicalRect.y.rounded()),

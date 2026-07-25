@@ -20,10 +20,12 @@ public final class ProbeSwiftHandler {
     }
 
     public func toUnsafe() -> UnsafeMutableRawPointer {
-        Unmanaged.passRetained(self).toOpaque()
+        unsafe Unmanaged.passRetained(self).toOpaque()
     }
 
     public static func fromUnsafe(_ pointer: UnsafeMutableRawPointer) -> ProbeSwiftHandler {
-        Unmanaged<ProbeSwiftHandler>.fromOpaque(pointer).takeRetainedValue()
+        unsafe Unmanaged<ProbeSwiftHandler>
+            .fromOpaque(pointer)
+            .takeRetainedValue()
     }
 }

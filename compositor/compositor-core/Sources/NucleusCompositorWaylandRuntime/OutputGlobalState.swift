@@ -1,12 +1,15 @@
 import WaylandServerC
+import WaylandServer
+import WaylandServerDispatch
 
 /// Independently removable output-global registration plus the live resources
 /// that continue to outlive global withdrawal. This keeps hotplug lifetime state
 /// separate from the output's advertised value snapshot.
-final class OutputGlobalState {
+@MainActor
+@safe final class OutputGlobalState {
     private var global: NucleusWaylandRouter.GlobalHandle?
-    private(set) var resources: [UnsafeMutablePointer<wl_resource>] = []
-    private var xdgOutputs: [WeakXdgOutput] = []
+    private(set) var resources: [WaylandResourceHandle<WlOutputServer>] = []
+    private var xdgOutputs: [WeakReference<XdgOutput>] = []
 
     func install(_ global: NucleusWaylandRouter.GlobalHandle?) -> Bool {
         self.global = global
@@ -18,27 +21,29 @@ final class OutputGlobalState {
         global = nil
     }
 
-    func addResource(_ resource: UnsafeMutablePointer<wl_resource>) {
+    func addResource(_ resource: WaylandResourceHandle<WlOutputServer>) {
         resources.append(resource)
     }
 
-    func removeResource(_ resource: UnsafeMutablePointer<wl_resource>) {
-        resources.removeAll { $0 == resource }
+    func removeResource(_ resource: WaylandResourceHandle<WlOutputServer>) {
+        resources.removeAll { $0 === resource }
     }
 
     func resources(
-        forClient client: OpaquePointer?
-    ) -> [UnsafeMutablePointer<wl_resource>] {
-        resources.filter { wl_resource_get_client($0) == client }
+        forClient client: WaylandClientID?
+    ) -> [WaylandResourceHandle<WlOutputServer>] {
+        resources.filter {
+            $0.clientID == client
+        }
     }
 
     func registerXdgOutput(_ output: XdgOutput) {
-        xdgOutputs.removeAll { $0.output == nil }
-        xdgOutputs.append(WeakXdgOutput(output))
+        xdgOutputs.removeAll { $0.value == nil }
+        xdgOutputs.append(WeakReference(output))
     }
 
     func liveXdgOutputs() -> [XdgOutput] {
-        xdgOutputs.removeAll { $0.output == nil }
-        return xdgOutputs.compactMap(\.output)
+        xdgOutputs.removeAll { $0.value == nil }
+        return xdgOutputs.compactMap(\.value)
     }
 }

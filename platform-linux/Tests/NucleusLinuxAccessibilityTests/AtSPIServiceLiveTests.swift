@@ -642,7 +642,9 @@ struct AtSPIServiceLiveTests {
 
         let privateBus = try PrivateAccessibilityBus()
         defer { privateBus.stop() }
-        #expect(setenv("AT_SPI_BUS_ADDRESS", privateBus.address, 1) == 0)
+        let addressInstalled = unsafe setenv(
+            "AT_SPI_BUS_ADDRESS", privateBus.address, 1) == 0
+        #expect(addressInstalled)
         try privateBus.waitUntilReady(service)
 
         #expect(service.isReady)
@@ -718,10 +720,11 @@ struct AtSPIServiceLiveTests {
 
         let replacementBus = try PrivateAccessibilityBus()
         defer { replacementBus.stop() }
-        #expect(setenv(
+        let replacementAddressInstalled = unsafe setenv(
             "AT_SPI_BUS_ADDRESS",
             replacementBus.address,
-            1) == 0)
+            1) == 0
+        #expect(replacementAddressInstalled)
 
         for _ in 0..<1_000 where adapter.connectionGeneration == 1 {
             _ = adapter.process()

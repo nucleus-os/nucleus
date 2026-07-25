@@ -42,14 +42,14 @@ extension RenderCore {
         // Wrap a TRANSIENT surface over the borrowed image, render into it, and let
         // it drop at the end of this scope. No long-lived surface outlives the image.
         var phaseStarted = telemetryClock.now
-        let params = ScanoutImageParams(
+        let params = unsafe ScanoutImageParams(
             image: target.image, memory: nil, allocSize: 0,
             width: target.width, height: target.height, format: target.format,
             tiling: target.tiling, initialLayout: target.initialLayout,
             usageFlags: target.usageFlags, queueFamilyIndex: target.queueFamily,
             hasAlpha: target.hasAlpha)
-        let surface = ScanoutSurface.wrap(recorder: driver.recorder, params: params)
-        guard surface.isValid() else { return false }
+        let surface = unsafe ScanoutSurface.wrap(recorder: driver.recorder, params: params)
+        guard unsafe surface.isValid() else { return false }
         let targetWrapNs = elapsedNanoseconds(phaseStarted, telemetryClock.now)
         // Select the platform completion contract before recording. A DRM target
         // without its required exportable signal semaphore is invalid; it must
@@ -57,13 +57,13 @@ extension RenderCore {
         let submissionMode: FrameDriver.SubmissionMode
         switch target.kind {
         case .swapchainColor:
-            submissionMode = .swapchain(FrameDriver.PresentSubmit(
+            submissionMode = unsafe .swapchain(FrameDriver.PresentSubmit(
                 waitSemaphore: target.waitSemaphore,
                 signalSemaphore: target.signalSemaphore,
                 queueFamily: target.queueFamily))
         case .drmScanout:
-            guard let signalSemaphore = target.signalSemaphore else { return false }
-            submissionMode = .drm(FrameDriver.DrmSubmit(
+            guard let signalSemaphore = unsafe target.signalSemaphore else { return false }
+            submissionMode = unsafe .drm(FrameDriver.DrmSubmit(
                 signalSemaphore: signalSemaphore))
         }
 
@@ -81,7 +81,7 @@ extension RenderCore {
         let lockContexts: Set<ContextID>? = lockComposition.map { $0[outputID] ?? [] }
         let rootContexts = outputRootContexts[outputID] ?? [compositorContextId]
         let rootLayerIDs = outputRootLayerIDs[outputID]
-        let request = FrameDriver.FrameRenderRequest(
+        let request = unsafe FrameDriver.FrameRenderRequest(
             tree: tree,
             target: renderTarget,
             frame: frame,
@@ -169,7 +169,7 @@ extension RenderCore {
         if startupFrameDiagnosticsRemaining > 0 {
             startupFrameDiagnosticsRemaining -= 1
             let line = "render-frame: output=\(outputID) serial=\(frameSerial) layers=\(tree.layers.count) ops=\(result.opsDrawn) backdrops=\(result.backdropDraws) damage=\(result.damageRectCount) full_damage=\(result.fullDamage) acquire_waits=\(result.acquireWaitCount) presented=\(result.presented) submitted=\(result.submitted) uploads=\(clientUploadStats.uploaded) upload_failures=\(clientUploadStats.failed)\n"
-            line.withCString { _ = write(STDERR_FILENO, $0, strlen($0)) }
+            line.withCString { unsafe _ = write(STDERR_FILENO, $0, strlen($0)) }
         }
         if let submission = result.submissionResult,
            !submission.isOk()

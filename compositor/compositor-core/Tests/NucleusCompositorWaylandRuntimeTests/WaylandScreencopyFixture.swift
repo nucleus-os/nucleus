@@ -4,6 +4,7 @@
 // reports failed; a second copy on a used frame raises already_used (sent last).
 
 import Glibc
+import WaylandServer
 import WaylandServerC
 
 private func fail(_ msg: String) -> Never {
@@ -24,7 +25,7 @@ private final class ScreencopyStub: ScreencopyDelegate {
     func screencopyCapture(
         output: WlOutput?, configuration: ScreencopyConfiguration,
         overlayCursor: Bool,
-        buffer: UnsafeMutablePointer<wl_resource>, withDamage: Bool,
+        buffer: WaylandResourceReference, withDamage: Bool,
         preferRegionReadback: Bool,
         completion: @escaping @MainActor (ScreencopyResult) -> Void
     ) -> UInt64? {

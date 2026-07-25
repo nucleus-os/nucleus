@@ -47,17 +47,26 @@ final class AndroidRenderEngine {
         }
         guard let bootstrap = VulkanBootstrap.create(applicationName: "Nucleus Android"),
               let surface = bootstrap.createSurface({ context in
-            let instance = context.vkInstance
-            guard let raw = vkGetInstanceProcAddr(instance, "vkCreateAndroidSurfaceKHR") else {
+            let instance = unsafe context.vkInstance
+            guard let raw = unsafe vkGetInstanceProcAddr(
+                instance,
+                "vkCreateAndroidSurfaceKHR")
+            else {
                 return nil
             }
-            let create = unsafeBitCast(raw, to: PFN_vkCreateAndroidSurfaceKHR.self)
-            var info = VkAndroidSurfaceCreateInfoKHR()
-            info.sType = VK_STRUCTURE_TYPE_ANDROID_SURFACE_CREATE_INFO_KHR
-            info.window = OpaquePointer(window)
+            let create = unsafe unsafeBitCast(
+                raw,
+                to: PFN_vkCreateAndroidSurfaceKHR.self)
+            var info = unsafe VkAndroidSurfaceCreateInfoKHR()
+            unsafe info.sType = VK_STRUCTURE_TYPE_ANDROID_SURFACE_CREATE_INFO_KHR
+            unsafe info.window = OpaquePointer(window)
             var surface: VkSurfaceKHR? = nil
-            guard create(instance, &info, nil, &surface) == VK_SUCCESS, let surface else { return nil }
-            return VulkanSurfaceHandle(surface)
+            guard unsafe create(instance, &info, nil, &surface) == VK_SUCCESS,
+                  let surface = unsafe surface
+            else {
+                return nil
+            }
+            return unsafe VulkanSurfaceHandle(surface)
         }),
               let core = RenderCore.create(
                 bootstrap: bootstrap,

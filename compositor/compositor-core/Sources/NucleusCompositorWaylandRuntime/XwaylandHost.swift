@@ -14,13 +14,24 @@ internal import NucleusCompositorServer
 @MainActor
 final class XwaylandHost {
     private unowned let host: RouterHost
+    private let executablePath: String
+    private let traceEnabled: Bool
+    private let runtimeDirectory: XwaylandRuntimeDirectory
     var display: XwaylandDisplay?
     var process: XwaylandProcess?
     var xwm: XwaylandXWM?
     private var processActive = false
 
-    init(host: RouterHost) {
+    init(
+        host: RouterHost,
+        executablePath: String,
+        traceEnabled: Bool,
+        runtimeDirectory: XwaylandRuntimeDirectory
+    ) {
         self.host = host
+        self.executablePath = executablePath
+        self.traceEnabled = traceEnabled
+        self.runtimeDirectory = runtimeDirectory
     }
 
     /// Claim a display slot, bind sockets, export DISPLAY, and arm first-client
@@ -29,7 +40,7 @@ final class XwaylandHost {
         guard let d = XwaylandDisplay.bind() else { return false }
         display = d
         d.startListening()
-        setenv("DISPLAY", ":\(d.number)", 1)  // export for compositor children
+        unsafe setenv("DISPLAY", ":\(d.number)", 1)  // export for compositor children
         return true
     }
 
@@ -41,7 +52,11 @@ final class XwaylandHost {
     func handleDisplayReadable(_ fd: Int32) -> Bool {
         guard let d = display, d.isFirstClient(fd) else { return false }
         guard !processActive else { return true }
-        let p = XwaylandProcess(host: host)
+        let p = XwaylandProcess(
+            host: host,
+            executablePath: executablePath,
+            runtimeDirectory: runtimeDirectory,
+            traceEnabled: traceEnabled)
         if p.spawn(displayNum: d.number, abstractFd: d.abstractFd, fsFd: d.fsFd) {
             process = p
             processActive = true
@@ -51,6 +66,11 @@ final class XwaylandHost {
 
     /// The readiness pipe fd, polled until Xwayland reports its display number.
     func readyFd() -> Int32? { processActive ? process?.readyFd() : nil }
+    func traceFd() -> Int32? { processActive ? process?.traceFd() : nil }
+    func drainTrace() -> Bool { process?.drainTrace() ?? false }
+    var traceDroppedBytes: UInt64 {
+        process?.traceDroppedBytes ?? 0
+    }
 
     /// Xwayland is ready: take the WM fd and bring the XWM up.
     func handleReadyReadable() {
@@ -85,8 +105,20 @@ final class XwaylandHost {
 // ── composition-root lifecycle ────────────────────────────────────────────────
 
 public extension WaylandRuntime {
-    func bringUpXwayland() -> Bool {
-        let xwaylandHost = XwaylandHost(host: host)
+    func bringUpXwayland(
+        executablePath: String,
+        traceEnabled: Bool
+    ) -> Bool {
+        guard let runtimeDirectory = try? XwaylandRuntimeDirectory
+            .openFromEnvironment()
+        else {
+            return false
+        }
+        let xwaylandHost = XwaylandHost(
+            host: host,
+            executablePath: executablePath,
+            traceEnabled: traceEnabled,
+            runtimeDirectory: runtimeDirectory)
         guard xwaylandHost.bringUp() else { return false }
         host.xwaylandHost = xwaylandHost
         return true
@@ -106,6 +138,18 @@ public extension WaylandRuntime {
 
     var xwaylandReadyFileDescriptor: Int32 {
         host.xwaylandHost?.readyFd() ?? -1
+    }
+
+    var xwaylandTraceFileDescriptor: Int32 {
+        host.xwaylandHost?.traceFd() ?? -1
+    }
+
+    func drainXwaylandTrace() -> Bool {
+        host.xwaylandHost?.drainTrace() ?? false
+    }
+
+    var xwaylandTraceDroppedBytes: UInt64 {
+        host.xwaylandHost?.traceDroppedBytes ?? 0
     }
 
     func xwaylandReadyReadable() {

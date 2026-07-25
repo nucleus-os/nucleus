@@ -5,6 +5,7 @@ public import NucleusShellWayland
 public import NucleusUI
 import WaylandClientC
 public import WaylandClientDispatch
+import WaylandProtocolTypes
 
 /// The `wl_data_device` projection of NucleusUI's retained drag lifecycle.
 ///
@@ -12,7 +13,7 @@ public import WaylandClientDispatch
 /// Sharing this target gives both transports the same descriptor executor
 /// without sharing offers, sources, cancellation, or selection state.
 @MainActor
-public final class ShellWaylandDragDropAdapter {
+@safe public final class ShellWaylandDragDropAdapter {
     public typealias DestinationResolver =
         @MainActor (_ surfaceID: UInt, _ surfaceLocation: Point)
             -> (scene: WindowScene, sceneLocation: Point)?
@@ -20,7 +21,7 @@ public final class ShellWaylandDragDropAdapter {
         @MainActor @Sendable (_ operation: String, _ message: String) -> Void
 
     @MainActor
-    private final class Offer: WlDataOfferEvents {
+    @safe private final class Offer: WlDataOfferEvents {
         let proxy: OpaquePointer
         weak var adapter: ShellWaylandDragDropAdapter?
         var mimeTypes: Set<String> = []
@@ -34,45 +35,45 @@ public final class ShellWaylandDragDropAdapter {
             proxy: OpaquePointer,
             adapter: ShellWaylandDragDropAdapter
         ) {
-            self.proxy = proxy
+            unsafe self.proxy = proxy
             self.adapter = adapter
-            WlDataOfferClient.addListener(proxy, owner: self)
+            unsafe WlDataOfferClient.addListener(proxy, owner: self)
         }
 
         nonisolated func offer(
-            _ proxy: OpaquePointer,
-            mime_type: UnsafePointer<CChar>?
+            _ proxy: WaylandBorrowedProxy<WlDataOfferClient>,
+            mime_type: String
         ) {
-            guard let mime_type else { return }
-            let mime = String(cString: mime_type)
             _ = MainActor.assumeIsolated {
-                mimeTypes.insert(mime)
+                mimeTypes.insert(mime_type)
             }
         }
 
         nonisolated func sourceActions(
-            _ proxy: OpaquePointer,
-            source_actions: UInt32
+            _ proxy: WaylandBorrowedProxy<WlDataOfferClient>,
+            source_actions: WlDataDeviceManagerDndAction
         ) {
             MainActor.assumeIsolated {
                 sourceActions =
-                    ShellWaylandDragDropAdapter.operations(from: source_actions)
+                    ShellWaylandDragDropAdapter.operations(
+                        from: source_actions.rawValue)
             }
         }
 
         nonisolated func action(
-            _ proxy: OpaquePointer,
-            dnd_action: UInt32
+            _ proxy: WaylandBorrowedProxy<WlDataOfferClient>,
+            dnd_action: WlDataDeviceManagerDndAction
         ) {
             MainActor.assumeIsolated {
                 selectedAction =
-                    ShellWaylandDragDropAdapter.operation(from: dnd_action)
+                    ShellWaylandDragDropAdapter.operation(
+                        from: dnd_action.rawValue)
             }
         }
     }
 
     @MainActor
-    private final class Source: WlDataSourceEvents {
+    @safe private final class Source: WlDataSourceEvents {
         let proxy: OpaquePointer
         let sessionID: DragSessionID
         weak var scene: WindowScene?
@@ -93,43 +94,50 @@ public final class ShellWaylandDragDropAdapter {
             configuration: DragSourceConfiguration,
             adapter: ShellWaylandDragDropAdapter
         ) {
-            self.proxy = proxy
+            unsafe self.proxy = proxy
             self.sessionID = sessionID
             self.scene = scene
             self.configuration = configuration
             self.adapter = adapter
-            WlDataSourceClient.addListener(proxy, owner: self)
+            unsafe WlDataSourceClient.addListener(proxy, owner: self)
         }
 
         nonisolated func target(
-            _ proxy: OpaquePointer,
-            mime_type: UnsafePointer<CChar>?
+            _ proxy: WaylandBorrowedProxy<WlDataSourceClient>,
+            mime_type: String?
         ) {}
 
         nonisolated func send(
-            _ proxy: OpaquePointer,
-            mime_type: UnsafePointer<CChar>?,
-            fd: Int32
+            _ proxy: WaylandBorrowedProxy<WlDataSourceClient>,
+            mime_type: String,
+            fd: consuming WaylandClientOwnedFileDescriptor
         ) {
-            let mime = mime_type.map(String.init(cString:))
+            let descriptor = fd.take()
             MainActor.assumeIsolated {
-                adapter?.source(self, send: mime, owning: fd)
+                adapter?.source(
+                    self, send: mime_type, owning: descriptor)
             }
         }
 
-        nonisolated func cancelled(_ proxy: OpaquePointer) {
+        nonisolated func cancelled(
+            _ proxy: WaylandBorrowedProxy<WlDataSourceClient>
+        ) {
             MainActor.assumeIsolated {
                 adapter?.finishSource(self, outcome: .cancelled)
             }
         }
 
-        nonisolated func dndDropPerformed(_ proxy: OpaquePointer) {
+        nonisolated func dndDropPerformed(
+            _ proxy: WaylandBorrowedProxy<WlDataSourceClient>
+        ) {
             MainActor.assumeIsolated {
                 didPerformDrop = true
             }
         }
 
-        nonisolated func dndFinished(_ proxy: OpaquePointer) {
+        nonisolated func dndFinished(
+            _ proxy: WaylandBorrowedProxy<WlDataSourceClient>
+        ) {
             MainActor.assumeIsolated {
                 guard let adapter else { return }
                 let outcome: DragCompletionOutcome
@@ -145,12 +153,13 @@ public final class ShellWaylandDragDropAdapter {
         }
 
         nonisolated func action(
-            _ proxy: OpaquePointer,
-            dnd_action: UInt32
+            _ proxy: WaylandBorrowedProxy<WlDataSourceClient>,
+            dnd_action: WlDataDeviceManagerDndAction
         ) {
             MainActor.assumeIsolated {
                 selectedAction =
-                    ShellWaylandDragDropAdapter.operation(from: dnd_action)
+                    ShellWaylandDragDropAdapter.operation(
+                        from: dnd_action.rawValue)
             }
         }
     }
@@ -205,8 +214,8 @@ public final class ShellWaylandDragDropAdapter {
         pollSetDidChange: @escaping @MainActor () -> Void = {},
         diagnosticHandler: @escaping DiagnosticHandler = { _, _ in }
     ) {
-        guard let manager = client.proxy(.dataDeviceManager),
-              let device = wl_data_device_manager_get_data_device(
+        guard let manager = unsafe client.proxy(.dataDeviceManager),
+              let device = unsafe wl_data_device_manager_get_data_device(
                 manager,
                 seat.protocolSeat)
         else {
@@ -214,13 +223,13 @@ public final class ShellWaylandDragDropAdapter {
         }
         self.client = client
         self.seat = seat
-        self.manager = manager
-        self.device = device
+        unsafe self.manager = manager
+        unsafe self.device = device
         self.limits = limits
         self.destinationResolver = destinationResolver
         self.pollSetDidChange = pollSetDidChange
         self.diagnosticHandler = diagnosticHandler
-        WlDataDeviceClient.addListener(device, owner: self)
+        unsafe WlDataDeviceClient.addListener(device, owner: self)
     }
 
     public var pollDescriptors: [ShellDataTransferPollDescriptor] {
@@ -263,8 +272,8 @@ public final class ShellWaylandDragDropAdapter {
         at sceneLocation: Point
     ) -> DragSessionID? {
         guard !isShutdown,
-              let device,
-              let authorization = seat.takeDragAuthorization(
+              let device = unsafe device,
+              let authorization = unsafe seat.takeDragAuthorization(
                 for: originSurface),
               let scene = sourceView.window?.windowScene,
               let sessionID = scene.beginProjectedDrag(
@@ -274,7 +283,7 @@ public final class ShellWaylandDragDropAdapter {
         else {
             return nil
         }
-        guard let proxy = wl_data_device_manager_create_data_source(manager)
+        guard let proxy = unsafe wl_data_device_manager_create_data_source(manager)
         else {
             scene.completeDrag(
                 sessionID: sessionID,
@@ -282,20 +291,20 @@ public final class ShellWaylandDragDropAdapter {
             return nil
         }
 
-        let projected = Source(
+        let projected = unsafe Source(
             proxy: proxy,
             sessionID: sessionID,
             scene: scene,
             configuration: source,
             adapter: self)
-        sources[key(proxy)] = projected
+        sources[unsafe key(proxy)] = projected
         for mime in source.offer.contentTypes {
-            mime.withCString { wl_data_source_offer(proxy, $0) }
+            mime.withCString { unsafe wl_data_source_offer(proxy, $0) }
         }
-        wl_data_source_set_actions(
+        unsafe wl_data_source_set_actions(
             proxy,
             Self.actionMask(source.offer.allowedOperations))
-        wl_data_device_start_drag(
+        unsafe wl_data_device_start_drag(
             device,
             proxy,
             originSurface,
@@ -334,9 +343,9 @@ public final class ShellWaylandDragDropAdapter {
         }
         readTokens.removeAll()
         transferExecutor.shutdown()
-        if let device {
-            wl_data_device_release(device)
-            self.device = nil
+        if let device = unsafe device {
+            unsafe wl_data_device_release(device)
+            unsafe self.device = nil
         }
     }
 
@@ -424,16 +433,16 @@ public final class ShellWaylandDragDropAdapter {
         let offer = incoming.offer
         let mime = proposal?.contentType
         mime?.withCString {
-            wl_data_offer_accept(offer.proxy, offer.enterSerial, $0)
+            unsafe wl_data_offer_accept(offer.proxy, offer.enterSerial, $0)
         }
         if mime == nil {
-            wl_data_offer_accept(
+            unsafe wl_data_offer_accept(
                 offer.proxy,
                 offer.enterSerial,
                 nil)
         }
         let operation = proposal?.operation
-        wl_data_offer_set_actions(
+        unsafe wl_data_offer_set_actions(
             offer.proxy,
             operation.map(Self.actionMask) ?? 0,
             operation.map(Self.actionMask) ?? 0)
@@ -460,7 +469,7 @@ public final class ShellWaylandDragDropAdapter {
                 return
             }
             if case .performed = outcome {
-                wl_data_offer_finish(current.offer.proxy)
+                unsafe wl_data_offer_finish(current.offer.proxy)
                 _ = self.flush(operation: "finish-drag")
             }
             self.finishIncoming(current)
@@ -510,16 +519,16 @@ public final class ShellWaylandDragDropAdapter {
             return
         }
         var descriptors = [Int32](repeating: -1, count: 2)
-        guard pipe2(&descriptors, O_CLOEXEC | O_NONBLOCK) == 0 else {
+        guard unsafe pipe2(&descriptors, O_CLOEXEC | O_NONBLOCK) == 0 else {
             continuation.resume(returning: .failure(.transport(
                 "failed to create drag pipe: "
-                    + String(cString: strerror(errno)))))
+                    + (unsafe String(cString: strerror(errno))))))
             return
         }
         let readDescriptor = TransferFileDescriptor(owning: descriptors[0])
         let writeDescriptor = TransferFileDescriptor(owning: descriptors[1])
         mime.withCString {
-            wl_data_offer_receive(
+            unsafe wl_data_offer_receive(
                 offer.proxy,
                 $0,
                 writeDescriptor.rawValue)
@@ -534,7 +543,7 @@ public final class ShellWaylandDragDropAdapter {
             self?.readTokens.removeValue(forKey: requestID)
             continuation.resume(returning: result)
         }
-        readTokens[requestID] = (key(offer.proxy), token)
+        readTokens[requestID] = (unsafe key(offer.proxy), token)
         guard flush(operation: "receive-drag") else {
             transferExecutor.failRead(
                 token: token,
@@ -567,7 +576,7 @@ public final class ShellWaylandDragDropAdapter {
         let stored = StoredTransferFileDescriptor(
             owning: TransferFileDescriptor(owning: fileDescriptor))
         guard !isShutdown,
-              sources[key(source.proxy)] === source,
+              sources[unsafe key(source.proxy)] === source,
               let mime,
               let provider = source.configuration.payloadProviders[mime]
         else {
@@ -613,7 +622,7 @@ public final class ShellWaylandDragDropAdapter {
         payload: [UInt8]
     ) {
         source.providerTasks.removeValue(forKey: requestID)
-        guard sources[key(source.proxy)] === source,
+        guard sources[unsafe key(source.proxy)] === source,
               let descriptor = source.pendingDescriptors.removeValue(
                 forKey: requestID)
         else {
@@ -638,7 +647,7 @@ public final class ShellWaylandDragDropAdapter {
     ) {
         guard !source.isDestroyed else { return }
         source.isDestroyed = true
-        sources.removeValue(forKey: key(source.proxy))
+        sources.removeValue(forKey: unsafe key(source.proxy))
         for task in source.providerTasks.values {
             task.cancel()
         }
@@ -655,7 +664,7 @@ public final class ShellWaylandDragDropAdapter {
             sessionID: source.sessionID,
             outcome: outcome)
         source.adapter = nil
-        wl_data_source_destroy(source.proxy)
+        unsafe wl_data_source_destroy(source.proxy)
     }
 
     private func incomingDidComplete(
@@ -684,7 +693,7 @@ public final class ShellWaylandDragDropAdapter {
             return
         }
         incoming = nil
-        let offerKey = key(session.offer.proxy)
+        let offerKey = unsafe key(session.offer.proxy)
         let requests = readTokens.filter {
             $0.value.offerKey == offerKey
         }.map(\.key)
@@ -695,8 +704,8 @@ public final class ShellWaylandDragDropAdapter {
     }
 
     private func reject(_ offer: Offer, serial: UInt32) {
-        wl_data_offer_accept(offer.proxy, serial, nil)
-        wl_data_offer_set_actions(offer.proxy, 0, 0)
+        unsafe wl_data_offer_accept(offer.proxy, serial, nil)
+        unsafe wl_data_offer_set_actions(offer.proxy, 0, 0)
         _ = flush(operation: "reject-drag")
     }
 
@@ -704,8 +713,8 @@ public final class ShellWaylandDragDropAdapter {
         guard !offer.isDestroyed else { return }
         offer.isDestroyed = true
         offer.adapter = nil
-        offers.removeValue(forKey: key(offer.proxy))
-        wl_data_offer_destroy(offer.proxy)
+        offers.removeValue(forKey: unsafe key(offer.proxy))
+        unsafe wl_data_offer_destroy(offer.proxy)
     }
 
     private func configureTransferDescriptor(_ descriptor: Int32) -> Bool {
@@ -725,7 +734,7 @@ public final class ShellWaylandDragDropAdapter {
             diagnosticHandler(
                 "serve-drag",
                 "failed to configure transfer descriptor: "
-                    + String(cString: strerror(errno)))
+                    + (unsafe String(cString: strerror(errno))))
             return false
         }
         return true
@@ -736,7 +745,7 @@ public final class ShellWaylandDragDropAdapter {
         guard result < 0, errno != EAGAIN else { return true }
         diagnosticHandler(
             operation,
-            "Wayland flush failed: " + String(cString: strerror(errno)))
+            "Wayland flush failed: " + (unsafe String(cString: strerror(errno))))
         return false
     }
 
@@ -753,7 +762,7 @@ public final class ShellWaylandDragDropAdapter {
 
     private func monotonicNowNanoseconds() -> UInt64 {
         var time = timespec()
-        _ = clock_gettime(CLOCK_MONOTONIC, &time)
+        _ = unsafe clock_gettime(CLOCK_MONOTONIC, &time)
         return UInt64(max(0, time.tv_sec))
             .saturatingMultiply(1_000_000_000)
             .saturatingAdd(UInt64(max(0, time.tv_nsec)))
@@ -788,31 +797,35 @@ public final class ShellWaylandDragDropAdapter {
 
 extension ShellWaylandDragDropAdapter: WlDataDeviceEvents {
     public nonisolated func dataOffer(
-        _ proxy: OpaquePointer,
-        id: OpaquePointer?
+        _ proxy: WaylandBorrowedProxy<WlDataDeviceClient>,
+        id: WaylandBorrowedProxy<WlDataOfferClient>
     ) {
-        guard let id else { return }
-        let rawID = UInt(bitPattern: id)
+        let rawID = unsafe UInt(bitPattern: id.proxy)
         MainActor.assumeIsolated {
             guard !isShutdown,
-                  let proxy = OpaquePointer(bitPattern: rawID)
+                  let proxy = unsafe OpaquePointer(bitPattern: rawID)
             else {
                 return
             }
-            offers[rawID] = Offer(proxy: proxy, adapter: self)
+            offers[rawID] = unsafe Offer(proxy: proxy, adapter: self)
         }
     }
 
     public nonisolated func enter(
-        _ proxy: OpaquePointer,
+        _ proxy: WaylandBorrowedProxy<WlDataDeviceClient>,
         serial: UInt32,
-        surface: OpaquePointer?,
+        surface: WaylandBorrowedProxy<WlSurfaceClient>,
         x: Double,
         y: Double,
-        id: OpaquePointer?
+        id: WaylandBorrowedProxy<WlDataOfferClient>?
     ) {
-        let offerID = id.map { UInt(bitPattern: $0) }
-        let surfaceID = surface.map { UInt(bitPattern: $0) } ?? 0
+        let offerID: UInt?
+        if let id {
+            offerID = unsafe UInt(bitPattern: id.proxy)
+        } else {
+            offerID = nil
+        }
+        let surfaceID = unsafe UInt(bitPattern: surface.proxy)
         MainActor.assumeIsolated {
             guard let offerID, let offer = offers[offerID] else {
                 return
@@ -825,14 +838,16 @@ extension ShellWaylandDragDropAdapter: WlDataDeviceEvents {
         }
     }
 
-    public nonisolated func leave(_ proxy: OpaquePointer) {
+    public nonisolated func leave(
+        _ proxy: WaylandBorrowedProxy<WlDataDeviceClient>
+    ) {
         MainActor.assumeIsolated {
             cancelIncoming()
         }
     }
 
     public nonisolated func motion(
-        _ proxy: OpaquePointer,
+        _ proxy: WaylandBorrowedProxy<WlDataDeviceClient>,
         time: UInt32,
         x: Double,
         y: Double
@@ -842,17 +857,24 @@ extension ShellWaylandDragDropAdapter: WlDataDeviceEvents {
         }
     }
 
-    public nonisolated func drop(_ proxy: OpaquePointer) {
+    public nonisolated func drop(
+        _ proxy: WaylandBorrowedProxy<WlDataDeviceClient>
+    ) {
         MainActor.assumeIsolated {
             performIncomingDrop()
         }
     }
 
     public nonisolated func selection(
-        _ proxy: OpaquePointer,
-        id: OpaquePointer?
+        _ proxy: WaylandBorrowedProxy<WlDataDeviceClient>,
+        id: WaylandBorrowedProxy<WlDataOfferClient>?
     ) {
-        let offerID = id.map { UInt(bitPattern: $0) }
+        let offerID: UInt?
+        if let id {
+            offerID = unsafe UInt(bitPattern: id.proxy)
+        } else {
+            offerID = nil
+        }
         MainActor.assumeIsolated {
             // Clipboard selection is owned by ext-data-control. Destroy the
             // corresponding core data-device offer without touching drag state.

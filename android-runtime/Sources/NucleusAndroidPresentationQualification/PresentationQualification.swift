@@ -367,7 +367,7 @@ public final class PresentationQualificationRunner {
 
     private static func isSocket(_ path: String) -> Bool {
         var information = stat()
-        guard lstat(path, &information) == 0 else { return false }
+        guard unsafe lstat(path, &information) == 0 else { return false }
         return information.st_mode & mode_t(S_IFMT) == mode_t(S_IFSOCK)
     }
 }

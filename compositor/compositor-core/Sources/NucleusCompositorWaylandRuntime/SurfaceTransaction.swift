@@ -14,7 +14,7 @@ struct SurfaceTransaction {
     let commitID: UInt64
     let bufferAttached: Bool
     let buffer: WaylandResourceReference?
-    let releaseCallback: UnsafeMutablePointer<wl_resource>?
+    let releaseCallback: WaylandResourceReference?
     let offsetX: Int32
     let offsetY: Int32
     let bufferScale: Int32
@@ -23,8 +23,8 @@ struct SurfaceTransaction {
     let input: SurfacePendingField<RegionSnapshot>
     let surfaceDamage: [WlRect]
     let bufferDamage: [WlRect]
-    var frameCallbacks: [UnsafeMutablePointer<wl_resource>]
-    var presentationFeedbacks: [UnsafeMutablePointer<wl_resource>]
+    var frameCallbacks: [WaylandResourceReference]
+    var presentationFeedbacks: [WaylandResourceReference]
     let isInitial: Bool
     let auxViewportSource: WlFRect?
     let auxViewportSourceSet: Bool

@@ -49,7 +49,7 @@ public final class RenderRuntime {
 
     private func monotonicNowNs() -> UInt64 {
         var ts = timespec()
-        clock_gettime(CLOCK_MONOTONIC, &ts)
+        unsafe clock_gettime(CLOCK_MONOTONIC, &ts)
         return UInt64(ts.tv_sec) &* 1_000_000_000 &+ UInt64(ts.tv_nsec)
     }
 

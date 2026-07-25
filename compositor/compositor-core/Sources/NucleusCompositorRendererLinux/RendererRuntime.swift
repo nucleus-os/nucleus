@@ -26,7 +26,7 @@ import Glibc
 /// drives `renderReadyOutputs`. `@MainActor`: the render path runs on the main-loop
 /// executor alongside Wayland and DRM ownership.
 @MainActor
-public final class RendererRuntime: PresentationBackend {
+@safe public final class RendererRuntime: PresentationBackend {
     public var defersGpuResourceRetirement: Bool { true }
     let core: RenderCore
     public var onSurfaceBufferRetired: (@MainActor (UInt64) -> Void)?
@@ -175,7 +175,7 @@ public final class RendererRuntime: PresentationBackend {
         presentPolicy: RendererPresentPolicy
     ) {
         self.core = core
-        self.gbmHandle = gbmHandle
+        unsafe self.gbmHandle = gbmHandle
         self.drmDevice = drmDevice
         self.drmCaps = drmCaps
         self.presentPolicy = presentPolicy
@@ -216,15 +216,17 @@ public final class RendererRuntime: PresentationBackend {
         case .draining:
             return .draining
         case .failed:
-            backendState = .failed(
-                "output topology could not retire before DRM master loss")
+            // A libseat disable notification may arrive after logind has
+            // already revoked device access. Preserve every scanout owner and
+            // acknowledge the seat transition; after libseat restores access,
+            // the enable path force-reattaches the topology transactionally.
+            logRendererDrm(
+                "session pause could not disable outputs; preserving them for resume recovery")
+            pendingTopology = nil
+            backendState = .inactive
             return .failed
         case .complete:
             break
-        }
-        guard DrmSession.dropMaster(fd: drmDeviceFd) else {
-            backendState = .failed("drmDropMaster failed")
-            return .failed
         }
         pendingTopology = nil
         backendState = .inactive
@@ -239,13 +241,11 @@ public final class RendererRuntime: PresentationBackend {
             return backendState.admitsPresentation
         }
         backendState = .resuming
-        guard DrmSession.setMaster(fd: drmDeviceFd) else {
-            backendState = .failed("drmSetMaster failed")
-            return false
-        }
         guard DrmCapabilities.enableAtomicModesetting(fd: drmDeviceFd) else {
-            backendState = .failed("required DRM client capabilities unavailable")
-            _ = DrmSession.dropMaster(fd: drmDeviceFd)
+            logRendererDrm(
+                "session resume could not restore required DRM client capabilities "
+                    + "errno=\(rendererErrno())")
+            backendState = .inactive
             return false
         }
         return true

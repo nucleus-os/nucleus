@@ -14,6 +14,17 @@ import NucleusCompositorInputC
 internal import NucleusCompositorServer
 import NucleusCompositorServerTypes
 
+/// Opaque identity for a live C-owned libinput device. It pairs inventory events
+/// and is never converted back into a pointer.
+private struct LibinputDeviceID: Hashable {
+    private let rawValue: UInt
+
+    @unsafe
+    init(_ device: OpaquePointer) {
+        rawValue = unsafe UInt(bitPattern: UnsafeRawPointer(device))
+    }
+}
+
 // The composition root owns process exit + VT session lifecycle. The area DAG
 // forbids the input host (`.nucleus_compositor_substrate`) from importing the runtime
 // (`.nucleus_compositor_runtime`), so it reaches them through the inverted
@@ -42,7 +53,7 @@ final class InputHost {
     /// DRM connector-hotplug monitor over libinput's udev context. Released before
     /// the backend that owns that context (udev refcounting makes the order safe).
     private var drmHotplug: UdevMonitor?
-    private var devices: [UInt: DeviceCapabilities] = [:]
+    private var devices: [LibinputDeviceID: DeviceCapabilities] = [:]
     private var advertisedCapabilities = DeviceCapabilities()
     private(set) var active = false
 
@@ -112,7 +123,7 @@ final class InputHost {
         // The DRM connector-hotplug monitor shares libinput's udev context (one
         // netlink monitor filtered to the "drm" subsystem). Swift owns it now; the
         // reactor borrows its fd and drives `drainDrmHotplug` on readiness.
-        drmHotplug = UdevMonitor(udev: li.udevContext, subsystem: "drm")
+        drmHotplug = unsafe UdevMonitor(udev: li.udevContext, subsystem: "drm")
         publishKeymap()
         return true
     }
@@ -148,9 +159,9 @@ final class InputHost {
     func drainLibinput() {
         guard let li = libinput else { return }
         li.dispatch()
-        while let event = li.nextEvent() {
-            if consumeDeviceLifecycle(event) {
-                libinput_event_destroy(event)
+        while let event = unsafe li.nextEvent() {
+            if unsafe consumeDeviceLifecycle(event) {
+                unsafe libinput_event_destroy(event)
                 continue
             }
             let snapshot = dispatch.currentSnapshot()
@@ -161,9 +172,9 @@ final class InputHost {
                     width: UInt32(max(1, $0.logicalRect.width.rounded())),
                     height: UInt32(max(1, $0.logicalRect.height.rounded())))
             }
-            let batch = InputEventNormalize.translate(
+            let batch = unsafe InputEventNormalize.translate(
                 event, snapshot: snapshot, scale: scale, touchSpace: touchSpace)
-            libinput_event_destroy(event)
+            unsafe libinput_event_destroy(event)
             for record in batch.records {
                 switch dispatch.dispatch(record, location: .hid) {
                 case .exitRequested:
@@ -182,20 +193,20 @@ final class InputHost {
     /// Consume libinput's device inventory events before normal event
     /// translation. Capabilities are an aggregate of live physical devices, not a
     /// hard-coded promise made by the Wayland seat.
-    private func consumeDeviceLifecycle(_ event: OpaquePointer) -> Bool {
-        let type = libinput_event_get_type(event)
+    @unsafe private func consumeDeviceLifecycle(_ event: OpaquePointer) -> Bool {
+        let type = unsafe libinput_event_get_type(event)
         guard type == LIBINPUT_EVENT_DEVICE_ADDED || type == LIBINPUT_EVENT_DEVICE_REMOVED,
-            let device = libinput_event_get_device(event)
+            let device = unsafe libinput_event_get_device(event)
         else { return false }
 
-        let key = UInt(bitPattern: UnsafeRawPointer(device))
+        let key = unsafe LibinputDeviceID(device)
         if type == LIBINPUT_EVENT_DEVICE_ADDED {
             devices[key] = DeviceCapabilities(
-                pointer: libinput_device_has_capability(
+                pointer: unsafe libinput_device_has_capability(
                     device, LIBINPUT_DEVICE_CAP_POINTER) != 0,
-                keyboard: libinput_device_has_capability(
+                keyboard: unsafe libinput_device_has_capability(
                     device, LIBINPUT_DEVICE_CAP_KEYBOARD) != 0,
-                touch: libinput_device_has_capability(
+                touch: unsafe libinput_device_has_capability(
                     device, LIBINPUT_DEVICE_CAP_TOUCH) != 0)
         } else {
             devices[key] = nil
@@ -218,7 +229,9 @@ final class InputHost {
     }
 
     // Seat-mediated device opens for the DRM backend.
-    func openDevice(path: UnsafePointer<CChar>) -> Int32 { seat.openDevice(path: path) }
+    @unsafe func openDevice(path: UnsafePointer<CChar>) -> Int32 {
+        unsafe seat.openDevice(path: path)
+    }
     func closeDevice(fd: Int32) { seat.closeDevice(fd: fd) }
     func switchSession(to vt: Int32) { seat.switchSession(to: vt) }
 }
@@ -243,8 +256,8 @@ public extension WaylandRuntime {
     func drainLibinput() { host.inputHost?.drainLibinput() }
 
     func openDevice(_ path: UnsafePointer<CChar>?) -> Int32 {
-        guard let path else { return -1 }
-        return host.inputHost?.openDevice(path: path) ?? -1
+        guard let path = unsafe path else { return -1 }
+        return unsafe host.inputHost?.openDevice(path: path) ?? -1
     }
 
     func closeDevice(_ fileDescriptor: Int32) {

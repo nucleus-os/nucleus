@@ -14,11 +14,13 @@ import Glibc
 
 /// The presentation seam. The clock id is the CLOCK_* domain the compositor stamps
 /// presentation times in (CLOCK_MONOTONIC by default).
+@MainActor
 protocol PresentationDelegate: AnyObject {
     var presentationClockId: UInt32 { get }
 }
 
-final class WpPresentation {
+@MainActor
+@safe final class WpPresentation {
     weak var delegate: (any PresentationDelegate)?
     var clockId: UInt32 {
         delegate?.presentationClockId ?? UInt32(CLOCK_MONOTONIC)
@@ -26,32 +28,25 @@ final class WpPresentation {
 
     func register(in router: NucleusWaylandRouter) {
         router.addGlobal(
-            interface: swift_wayland_iface_wp_presentation(), version: 2, impl: self, bind: Self.bind)
-    }
-
-    private static let bind: @convention(c) (
-        OpaquePointer?, UnsafeMutableRawPointer?, UInt32, UInt32
-    ) -> Void = { client, data, version, id in
-        guard let client, let me = NucleusWaylandRouter.impl(data, as: WpPresentation.self) else {
-            return
-        }
-        guard let res = WaylandResource.create(
-            client: client, interface: swift_wayland_iface_wp_presentation(),
-            version: Int32(version), id: id, vtable: WpPresentationServer.vtable, owner: me)
-        else { return }
-        wp_presentation_send_clock_id(res, me.clockId)
+            WpPresentationServer.global(
+                implementation: self,
+                advertisedVersion: 2,
+                owner: { presentation, _ in presentation },
+                installed: { presentation, _, handle in
+                    handle.sendClockId(clk_id: presentation.clockId)
+                }))
     }
 }
 
 extension WpPresentation: WpPresentationRequests {
     // feedback(surface, callback): register a per-commit feedback on the surface.
-    func feedback(_ resource: UnsafeMutablePointer<wl_resource>,
-                  surface surfaceRes: UnsafeMutablePointer<wl_resource>?, callback: WlNewId) {
-        guard let surfaceRes, let surface = WaylandResource.owner(of: surfaceRes, as: WlSurface.self)
-        else { return }
+    func feedback(_ request: WaylandRequest<WpPresentationServer>,
+                  surface surfaceRes: WaylandBorrowedObject<WlSurfaceServer>,
+                  callback: WlNewId<WpPresentationFeedbackServer>) {
+        guard let surface = surfaceRes.owner(as: WlSurface.self) else { return }
         // wp_presentation_feedback has no requests: create it with no implementation,
         // exactly as wl_surface.frame does for wl_callback.
-        guard let feedback = callback.createBare() else { return }
-        surface.addPresentationFeedback(feedback)
+        guard let feedback = unsafe callback.createBare() else { return }
+        unsafe surface.addPresentationFeedback(feedback)
     }
 }

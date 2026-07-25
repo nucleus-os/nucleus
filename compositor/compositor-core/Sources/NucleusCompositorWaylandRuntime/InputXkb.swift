@@ -20,7 +20,7 @@ enum EventFlagBit {
 }
 
 @MainActor
-final class XkbKeyboard {
+@safe final class XkbKeyboard {
     /// XKB keycodes are evdev keycodes plus 8. Named rather than spelled `+ 8`
     /// at each call site, because getting it wrong silently yields the wrong
     /// character rather than an error.
@@ -47,38 +47,42 @@ final class XkbKeyboard {
     private static let modLogo = "Mod4"
 
     init?() {
-        guard let ctx = xkb_context_new(XKB_CONTEXT_NO_FLAGS) else { return nil }
-        guard let km = xkb_keymap_new_from_names(ctx, nil, XKB_KEYMAP_COMPILE_NO_FLAGS) else {
-            xkb_context_unref(ctx)
+        guard let ctx = unsafe xkb_context_new(XKB_CONTEXT_NO_FLAGS) else { return nil }
+        guard let km = unsafe xkb_keymap_new_from_names(
+            ctx, nil, XKB_KEYMAP_COMPILE_NO_FLAGS)
+        else {
+            unsafe xkb_context_unref(ctx)
             return nil
         }
-        guard let st = xkb_state_new(km) else {
-            xkb_keymap_unref(km)
-            xkb_context_unref(ctx)
+        guard let st = unsafe xkb_state_new(km) else {
+            unsafe xkb_keymap_unref(km)
+            unsafe xkb_context_unref(ctx)
             return nil
         }
-        self.context = ctx
-        self.keymap = km
-        self.state = st
+        unsafe self.context = ctx
+        unsafe self.keymap = km
+        unsafe self.state = st
         buildKeymapMemfd()
     }
 
     isolated deinit {
         if keymapFd >= 0 { close(keymapFd) }
-        xkb_state_unref(state)
-        xkb_keymap_unref(keymap)
-        xkb_context_unref(context)
+        unsafe xkb_state_unref(state)
+        unsafe xkb_keymap_unref(keymap)
+        unsafe xkb_context_unref(context)
     }
 
     /// Compile the keymap to its text form and publish it through a sealed memfd
     /// (the wl_keyboard.keymap contract). Best-effort: a missing string leaves the
     /// fd at -1 and clients simply do not receive a keymap.
     private func buildKeymapMemfd() {
-        guard let cstr = xkb_keymap_get_as_string(keymap, XKB_KEYMAP_FORMAT_TEXT_V1) else { return }
-        defer { free(cstr) }
-        let len = strlen(cstr)
+        guard let cstr = unsafe xkb_keymap_get_as_string(
+            keymap, XKB_KEYMAP_FORMAT_TEXT_V1)
+        else { return }
+        defer { unsafe free(cstr) }
+        let len = unsafe strlen(cstr)
         var size: UInt32 = 0
-        let fd = nucleus_input_keymap_memfd(cstr, len, &size)
+        let fd = unsafe nucleus_input_keymap_memfd(cstr, len, &size)
         guard fd >= 0 else { return }
         keymapFd = fd
         keymapSize = size
@@ -99,12 +103,13 @@ final class XkbKeyboard {
             if pressed { pressedKeysLow |= mask } else { pressedKeysLow &= ~mask }
         }
         // xkb keycodes are evdev + 8.
-        _ = xkb_state_update_key(
+        _ = unsafe xkb_state_update_key(
             state, evdevKeycode + Self.evdevKeycodeOffset, pressed ? XKB_KEY_DOWN : XKB_KEY_UP)
     }
 
     func updateMask(depressed: UInt32, latched: UInt32, locked: UInt32, group: UInt32) {
-        _ = xkb_state_update_mask(state, depressed, latched, locked, 0, 0, group)
+        _ = unsafe xkb_state_update_mask(
+            state, depressed, latched, locked, 0, 0, group)
     }
 
     func resetPressedKeys() { pressedKeysLow = 0 }
@@ -155,7 +160,7 @@ final class XkbKeyboard {
     }
 
     func serializedModifiers() -> SerializedModifiers {
-        SerializedModifiers(
+        unsafe SerializedModifiers(
             depressed: xkb_state_serialize_mods(state, XKB_STATE_MODS_DEPRESSED),
             latched: xkb_state_serialize_mods(state, XKB_STATE_MODS_LATCHED),
             locked: xkb_state_serialize_mods(state, XKB_STATE_MODS_LOCKED),
@@ -178,7 +183,7 @@ final class XkbKeyboard {
     }
 
     func keyGetOneSym(xkbKeycode: UInt32) -> UInt32 {
-        xkb_state_key_get_one_sym(state, xkbKeycode)
+        unsafe xkb_state_key_get_one_sym(state, xkbKeycode)
     }
 
     /// The composed UTF-8 text this key produces in the current layout and
@@ -191,11 +196,13 @@ final class XkbKeyboard {
     func keyGetText(xkbKeycode: UInt32) -> String? {
         // Ask for the size first; xkb writes a NUL-terminated string and
         // returns the length excluding it.
-        let needed = xkb_state_key_get_utf8(state, xkbKeycode, nil, 0)
+        let needed = unsafe xkb_state_key_get_utf8(
+            state, xkbKeycode, nil, 0)
         guard needed > 0 else { return nil }
         var buffer = [CChar](repeating: 0, count: Int(needed) + 1)
         _ = buffer.withUnsafeMutableBufferPointer { out in
-            xkb_state_key_get_utf8(state, xkbKeycode, out.baseAddress, out.count)
+            unsafe xkb_state_key_get_utf8(
+                state, xkbKeycode, out.baseAddress, out.count)
         }
         let text = String(decoding: buffer.prefix(Int(needed)).map { UInt8(bitPattern: $0) },
                           as: UTF8.self)
@@ -212,11 +219,11 @@ final class XkbKeyboard {
 
     private func modActive(_ name: String, locked: Bool) -> Bool {
         let component = locked ? XKB_STATE_MODS_LOCKED : XKB_STATE_MODS_DEPRESSED
-        return xkb_state_mod_name_is_active(state, name, component) > 0
+        return unsafe xkb_state_mod_name_is_active(state, name, component) > 0
     }
 
     private func modMask(_ name: String) -> UInt32 {
-        let index = xkb_keymap_mod_get_index(keymap, name)
+        let index = unsafe xkb_keymap_mod_get_index(keymap, name)
         if index == XKB_MOD_INVALID { return 0 }
         return UInt32(1) << index
     }

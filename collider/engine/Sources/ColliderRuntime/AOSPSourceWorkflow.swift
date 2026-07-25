@@ -242,28 +242,36 @@ extension ColliderRuntime {
             stage: stage)
         let patchedResolvedDigest = ArtifactHasher.digest(
             bytes: patchedResolvedData)
-        try DurableFile.write(
-            patchedResolvedData,
-            to: metadata.appending("patched-resolved-manifest.xml"))
-        let replacedManifest = metadata.appending("resolved-manifest.xml")
-        if FileManager.default.fileExists(atPath: replacedManifest.string) {
-            try FileManager.default.removeItem(
-                atPath: replacedManifest.string)
+        // Commit the metadata as one unit. `source-provenance.json` is the marker
+        // `validateExistingAOSPSourceIdentity` requires before it will touch an
+        // existing tree, so a cancellation landing between the manifest writes and
+        // the provenance write strands a fully synced source that the next run
+        // refuses to reuse. These are three local filesystem operations on an
+        // already-populated directory — short enough to finish rather than unwind.
+        try withTaskCancellationShield {
+            try DurableFile.write(
+                patchedResolvedData,
+                to: metadata.appending("patched-resolved-manifest.xml"))
+            let replacedManifest = metadata.appending("resolved-manifest.xml")
+            if FileManager.default.fileExists(atPath: replacedManifest.string) {
+                try FileManager.default.removeItem(
+                    atPath: replacedManifest.string)
+            }
+            try DurableFile.writeJSON(
+                AOSPSourceProvenance(
+                    status: "materialized",
+                    release: platform.release,
+                    revision: platform.revision,
+                    manifestCommit: initialized.manifestCommit,
+                    superprojectCommit: initialized.superprojectCommit,
+                    repoCommit: initialized.repoCommit,
+                    baseResolvedManifestSHA256:
+                        baseResolvedDigest.sha256Hex,
+                    resolvedManifestSHA256:
+                        patchedResolvedDigest.sha256Hex,
+                    forwardPatches: appliedPatches),
+                to: metadata.appending("source-provenance.json"))
         }
-        try DurableFile.writeJSON(
-            AOSPSourceProvenance(
-                status: "materialized",
-                release: platform.release,
-                revision: platform.revision,
-                manifestCommit: initialized.manifestCommit,
-                superprojectCommit: initialized.superprojectCommit,
-                repoCommit: initialized.repoCommit,
-                baseResolvedManifestSHA256:
-                    baseResolvedDigest.sha256Hex,
-                resolvedManifestSHA256:
-                    patchedResolvedDigest.sha256Hex,
-                forwardPatches: appliedPatches),
-            to: metadata.appending("source-provenance.json"))
     }
 
     private func validateExistingAOSPSourceIdentity(
@@ -634,12 +642,10 @@ private func requireEmptyOrRepo(_ source: FilePath) throws {
             withIntermediateDirectories: true)
         return
     }
-    var isDirectory = ObjCBool(false)
-    if manager.fileExists(
-        atPath: source.appending(".repo").string,
-        isDirectory: &isDirectory),
-        isDirectory.boolValue
-    {
+    let repoValues = try? URL(
+        fileURLWithPath: source.appending(".repo").string)
+        .resourceValues(forKeys: [.isDirectoryKey])
+    if repoValues?.isDirectory == true {
         return
     }
     let entries = try manager.contentsOfDirectory(atPath: source.string)

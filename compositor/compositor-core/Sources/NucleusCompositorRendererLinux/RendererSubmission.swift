@@ -231,7 +231,7 @@ extension RendererRuntime {
             let binding = bindings[outputID],
             binding.drm.lifecycleState.admitsScanoutCommit
         else { return nil }
-        guard let renderSync = DrmRenderSync(
+        guard let renderSync = unsafe DrmRenderSync(
                 device: core.deviceHandle,
                 dispatch: core.deviceDispatch)
         else {
@@ -242,7 +242,7 @@ extension RendererRuntime {
         let slot = binding.nextSlot()
         binding.currentSlot = slot
         binding.currentRenderSync = renderSync
-        return AcquiredFrameTarget(
+        return unsafe AcquiredFrameTarget(
             image: slot.imageHandle,
             width: binding.width,
             height: binding.height,

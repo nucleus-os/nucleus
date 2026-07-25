@@ -17,7 +17,7 @@ final class RenderCoreFrameResourceResolver: FrameResourceResolver {
     func acquireWaitSemaphore(
         forClientSurfaceID surfaceID: UInt64
     ) -> VkSemaphore? {
-        owner.pendingClientAcquireSemaphores[surfaceID]?.semaphore
+        unsafe owner.pendingClientAcquireSemaphores[surfaceID]?.semaphore
     }
 
     func paintContent(
@@ -35,7 +35,7 @@ final class RenderCoreFrameResourceResolver: FrameResourceResolver {
         else {
             return nil
         }
-        return driver.decodedImage(
+        return unsafe driver.decodedImage(
             handle: handle,
             source: source,
             outputID: outputID)
@@ -52,15 +52,15 @@ final class RenderCoreFrameResourceResolver: FrameResourceResolver {
             else {
                 return nil
             }
-            return driver.registry.resolve(.renderer(entry.texture.raw))
+            return unsafe driver.registry.resolve(.renderer(entry.texture.raw))
         case .content:
             if let staged = owner.stagedShmUploads[reference.handle.raw] {
-                return staged.image
+                return unsafe staged.image
             }
-            return driver.registry.resolve(
+            return unsafe driver.registry.resolve(
                 .clientSurface(reference.handle.raw))
         case .paint, .remoteHost, .shadow, .fill, .shell, .unknown:
-            return driver.registry.resolve(.renderer(reference.handle.raw))
+            return unsafe driver.registry.resolve(.renderer(reference.handle.raw))
         }
     }
 }

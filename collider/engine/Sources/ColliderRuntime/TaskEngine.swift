@@ -353,9 +353,13 @@ extension ColliderRuntime {
             encoder.append(tag: 128, string: preparation.platform.rawValue)
         case .assembleHostToolchain(let assembly):
             encoder.append(tag: 129, string: assembly.workspace.string)
-            encoder.append(tag: 130, string: assembly.stagingRoot.string)
+            encoder.append(tag: 130, string: assembly.archive.string)
             encoder.append(tag: 131, string: assembly.toolchain.string)
             encoder.append(tag: 132, string: assembly.platform.rawValue)
+            for (name, value) in artifactEnvironment(assembly.environment) {
+                encoder.append(tag: 185, string: name)
+                encoder.append(tag: 186, string: value)
+            }
         case .validateHostToolchain(let validation):
             encoder.append(tag: 133, string: validation.toolchain.string)
             encoder.append(tag: 134, string: validation.platform.rawValue)
@@ -416,6 +420,20 @@ extension ColliderRuntime {
             encoder.append(tag: 102, string: sanitization.root.string)
             for option in sanitization.removedLinkerOptions {
                 encoder.append(tag: 103, string: option)
+            }
+            for repair in sanitization.cmakeDependencyRepairs {
+                encoder.append(
+                    tag: 204, string: repair.configurationFileName)
+                encoder.append(tag: 205, string: repair.package)
+                encoder.append(tag: 206, string: repair.version)
+                encoder.append(
+                    tag: 207,
+                    integer: repair.configurationOnly ? 1 : 0)
+            }
+            for replacement in sanitization.replacements {
+                encoder.append(tag: 208, string: replacement.fileName)
+                encoder.append(tag: 209, string: replacement.original)
+                encoder.append(tag: 210, string: replacement.replacement)
             }
         case .publishSymlink(let publication):
             encoder.append(tag: 104, string: publication.path.string)
@@ -953,7 +971,7 @@ extension ColliderRuntime {
         case .prepareHostToolchainBuild(let preparation):
             try prepareHostToolchainBuild(preparation)
         case .assembleHostToolchain(let assembly):
-            try assembleHostToolchain(assembly)
+            try await assembleHostToolchain(assembly, stage: stage)
         case .validateHostToolchain(let validation):
             try await validateHostToolchain(validation, stage: stage)
         case .assembleAndroidSDK(let assembly):
@@ -1042,10 +1060,11 @@ extension ColliderRuntime {
 
     private func validate(_ outputs: [OutputDeclaration]) throws {
         for output in outputs {
-            let metadata = try output.path.stat(followTargetSymlink: false)
             switch output.validation {
-            case .exists: break
+            case .exists:
+                _ = try output.path.stat(followTargetSymlink: false)
             case .regularFile, .json:
+                let metadata = try output.path.stat()
                 guard metadata.type == .regular else {
                     throw RuntimeFailure.invalidOutput(output.path.string)
                 }
@@ -1054,10 +1073,12 @@ extension ColliderRuntime {
                         with: Data(contentsOf: URL(fileURLWithPath: output.path.string)))
                 }
             case .executableFile:
+                let metadata = try output.path.stat()
                 guard metadata.type == .regular,
                       metadata.permissions.contains(.ownerExecute)
                 else { throw RuntimeFailure.invalidOutput(output.path.string) }
             case .nonEmptyDirectory:
+                let metadata = try output.path.stat()
                 guard metadata.type == .directory,
                       !(try FileManager.default.contentsOfDirectory(
                         atPath: output.path.string)).isEmpty
@@ -1162,8 +1183,10 @@ private func operationEnvironment(_ operation: TaskOperation) -> [String: String
         synchronization.environment
     case .validateGitCheckout(let validation):
         validation.environment
-    case .prepareHostToolchainBuild, .assembleHostToolchain:
+    case .prepareHostToolchainBuild:
         [:]
+    case .assembleHostToolchain(let assembly):
+        assembly.environment
     case .validateHostToolchain(let validation):
         validation.environment
     case .assembleAndroidSDK:

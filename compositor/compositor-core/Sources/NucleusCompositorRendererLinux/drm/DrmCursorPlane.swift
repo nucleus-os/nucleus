@@ -25,7 +25,7 @@ final class DrmCursorPlane {
     let width: UInt32
     let height: UInt32
 
-    private struct Buffer {
+    @safe private struct Buffer {
         let bo: OpaquePointer
         let fbId: UInt32
         let stride: UInt32
@@ -62,23 +62,28 @@ final class DrmCursorPlane {
                 if let fd = device.availableFileDescriptor {
                     _ = drmModeRmFB(fd, b.fbId)
                 }
-                gbm_bo_destroy(b.bo)
+                unsafe gbm_bo_destroy(b.bo)
             }
         }
 
         for _ in 0..<2 {
-            guard let bo = gbm_bo_create(
+            guard let bo = unsafe gbm_bo_create(
                 gbmDevice, width, height, drmFormatARGB8888,
                 GBM_BO_USE_CURSOR.rawValue | GBM_BO_USE_WRITE.rawValue
             ) else { rollback(); return nil }
 
-            let handle = gbm_bo_get_handle_for_plane(bo, 0).u32
-            let stride = gbm_bo_get_stride(bo)
+            let handle = unsafe gbm_bo_get_handle_for_plane(bo, 0).u32
+            let stride = unsafe gbm_bo_get_stride(bo)
             guard let fb = DrmFramebuffer(
                 deviceFd: device.fileDescriptor, width: width, height: height, pixelFormat: drmFormatARGB8888,
                 handles: [handle], pitches: [stride], offsets: [0]
-            ) else { gbm_bo_destroy(bo); rollback(); return nil }
-            buffers.append(Buffer(bo: bo, fbId: fb.release(), stride: stride))
+            ) else {
+                unsafe gbm_bo_destroy(bo)
+                rollback()
+                return nil
+            }
+            buffers.append(unsafe Buffer(
+                bo: bo, fbId: fb.release(), stride: stride))
         }
 
         return DrmCursorPlane(
@@ -103,7 +108,9 @@ final class DrmCursorPlane {
             destinationStride: Int(back.stride),
             destinationWidth: Int(width), destinationHeight: Int(height))
         packed.withUnsafeBytes { raw in
-            if let base = raw.baseAddress { _ = gbm_bo_write(back.bo, base, raw.count) }
+            if let base = raw.baseAddress {
+                _ = unsafe gbm_bo_write(back.bo, base, raw.count)
+            }
         }
         frontIndex = backIndex
         hasImage = true
@@ -131,7 +138,7 @@ final class DrmCursorPlane {
             if let fd = device.availableFileDescriptor {
                 _ = drmModeRmFB(fd, b.fbId)
             }
-            gbm_bo_destroy(b.bo)
+            unsafe gbm_bo_destroy(b.bo)
         }
         buffers = []
         hasImage = false

@@ -15,7 +15,9 @@ import NucleusSkiaGraphiteBridge
 /// A borrowed Vulkan scanout image plus the metadata the façade needs to wrap it
 /// as a Graphite render target. Every handle is borrowed — see the lifetime
 /// contract on `ScanoutSurface`.
-public struct ScanoutImageParams {
+/// Pure borrowed-handle metadata. No operation dereferences the handles until
+/// `wrapBackendSurface`, whose caller owns the stated scanout lifetime.
+@safe public struct ScanoutImageParams {
     /// The borrowed `VkImage`. Must include `VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT`
     /// in `usageFlags` for the wrap to produce a render target.
     public var image: VkImage?
@@ -50,8 +52,8 @@ public struct ScanoutImageParams {
         hasAlpha: Bool,
         sampleCount: UInt32 = 1
     ) {
-        self.image = image
-        self.memory = memory
+        unsafe self.image = image
+        unsafe self.memory = memory
         self.allocSize = allocSize
         self.width = width
         self.height = height
@@ -79,20 +81,24 @@ public enum ScanoutSurface {
     /// handles do (`UnsafeMutableRawPointer(handle)`); the `VkFormat` /
     /// `VkImageTiling` / `VkImageLayout` C enums lower to their `rawValue`.
     public static func descriptor(_ params: ScanoutImageParams) -> nucleus.skia.VulkanImageDescriptor {
-        var desc = nucleus.skia.VulkanImageDescriptor()
-        if let image = params.image { desc.image = UnsafeMutableRawPointer(image) }
-        if let memory = params.memory { desc.memory = UnsafeMutableRawPointer(memory) }
-        desc.allocSize = params.allocSize
-        desc.format = params.format.rawValue
-        desc.width = params.width
-        desc.height = params.height
-        desc.imageTiling = params.tiling.rawValue
-        desc.imageLayout = params.initialLayout.rawValue
-        desc.imageUsageFlags = params.usageFlags.rawValue
-        desc.sampleCount = params.sampleCount
-        desc.queueFamilyIndex = params.queueFamilyIndex
-        desc.hasAlpha = params.hasAlpha
-        return desc
+        var desc = unsafe nucleus.skia.VulkanImageDescriptor()
+        if let image = unsafe params.image {
+            unsafe desc.image = UnsafeMutableRawPointer(image)
+        }
+        if let memory = unsafe params.memory {
+            unsafe desc.memory = UnsafeMutableRawPointer(memory)
+        }
+        unsafe desc.allocSize = params.allocSize
+        unsafe desc.format = params.format.rawValue
+        unsafe desc.width = params.width
+        unsafe desc.height = params.height
+        unsafe desc.imageTiling = params.tiling.rawValue
+        unsafe desc.imageLayout = params.initialLayout.rawValue
+        unsafe desc.imageUsageFlags = params.usageFlags.rawValue
+        unsafe desc.sampleCount = params.sampleCount
+        unsafe desc.queueFamilyIndex = params.queueFamilyIndex
+        unsafe desc.hasAlpha = params.hasAlpha
+        return unsafe desc
     }
 
     /// Wrap the borrowed image as a Graphite render-target `Surface`. The returned
@@ -101,6 +107,6 @@ public enum ScanoutSurface {
     public static func wrap(
         recorder: nucleus.skia.Recorder, params: ScanoutImageParams
     ) -> nucleus.skia.Surface {
-        recorder.wrapBackendSurface(descriptor(params))
+        unsafe recorder.wrapBackendSurface(descriptor(params))
     }
 }

@@ -4,14 +4,22 @@ public protocol WindowRole: AnyObject {
     var windowID: UInt64 { get }
 }
 
+public struct XdgToplevelID: Hashable, Sendable {
+    public let rawValue: UInt64
+
+    public init(_ rawValue: UInt64) {
+        self.rawValue = rawValue
+    }
+}
+
 @MainActor
 public final class XdgRole: WindowRole {
-    public let xdgToplevelID: UInt64
+    public let xdgToplevelID: XdgToplevelID
     public let windowID: UInt64
     public var parentWindowID: UInt64?
     public var requestedFullscreenTarget: UInt64?
 
-    public init(xdgToplevelID: UInt64, windowID: UInt64) {
+    public init(xdgToplevelID: XdgToplevelID, windowID: UInt64) {
         self.xdgToplevelID = xdgToplevelID
         self.windowID = windowID
     }
@@ -54,7 +62,7 @@ public final class XwaylandRole: WindowRole {
 
 extension WindowManager {
     @discardableResult
-    public func xdgCreated(xdgToplevelID: UInt64) -> UInt64 {
+    public func xdgCreated(xdgToplevelID: XdgToplevelID) -> UInt64 {
         if let windowID = xdgWindowByToplevel[xdgToplevelID] {
             return windowID
         }

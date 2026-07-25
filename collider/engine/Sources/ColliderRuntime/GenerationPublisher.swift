@@ -68,7 +68,7 @@ public enum GenerationPublisher {
             ".\(active.lastComponent?.string ?? "active").candidate-\(getpid())")
         try? FileManager.default.removeItem(atPath: linkCandidate.string)
         let target = relativeTarget(for: generation, from: active.removingLastComponent())
-        guard collider_symlink(target, linkCandidate.string) == 0 else {
+        guard unsafe collider_symlink(target, linkCandidate.string) == 0 else {
             throw Errno(rawValue: errno)
         }
         do {
@@ -120,7 +120,7 @@ public enum GenerationPublisher {
     }
 
     private static func rename(_ source: FilePath, _ destination: FilePath) throws {
-        guard collider_replace(source.string, destination.string) == 0 else {
+        guard unsafe collider_replace(source.string, destination.string) == 0 else {
             throw Errno(rawValue: errno)
         }
     }

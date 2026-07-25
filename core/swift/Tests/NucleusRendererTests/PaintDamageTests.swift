@@ -24,16 +24,16 @@ import Testing
     @Test func localizedRepaintPreservesPixelsOutsideTheDamageClip() {
         let width: Int32 = 8
         let height: Int32 = 4
-        let previous = nucleus.skia.makeRasterSurface(width, height)
-        let previousCanvas = previous.getCanvas()
+        let previous = unsafe nucleus.skia.makeRasterSurface(width, height)
+        let previousCanvas = unsafe previous.getCanvas()
         var red = nucleus.skia.Color()
         red.r = 1
         red.a = 1
-        previousCanvas.clear(red)
-        let previousImage = previous.snapshotImage()
+        unsafe previousCanvas.clear(red)
+        let previousImage = unsafe previous.snapshotImage()
 
-        let next = nucleus.skia.makeRasterSurface(width, height)
-        let localized = TextureProducer.repaint(
+        let next = unsafe nucleus.skia.makeRasterSurface(width, height)
+        let localized = unsafe TextureProducer.repaint(
             canvas: next.getCanvas(),
             previousImage: previousImage,
             damage: PlanRect(x: 2, y: 0, w: 2, h: 4),
@@ -46,7 +46,7 @@ import Testing
             var paint = nucleus.skia.Paint()
             paint.color = blue
             paint.blend = .src
-            canvas.drawRect(
+            unsafe canvas.drawRect(
                 nucleus.skia.RectF(
                     x: 0,
                     y: 0,
@@ -59,7 +59,7 @@ import Testing
             repeating: 0,
             count: Int(width * height) * 4)
         let read = pixels.withUnsafeMutableBufferPointer {
-            next.readPixelsRGBA(
+            unsafe next.readPixelsRGBA(
                 $0.baseAddress,
                 $0.count,
                 width * 4)

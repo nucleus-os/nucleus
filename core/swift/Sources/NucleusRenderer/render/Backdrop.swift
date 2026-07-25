@@ -60,8 +60,9 @@ enum Backdrop {
         let uniforms: [Float] = [vibrancyStrength(variant)]
         return uniforms.withUnsafeBufferPointer { up in
             vibrancySksl.withCString { src in
-                let shader = nucleus.skia.makeRuntimeShaderWithImage(src, up.baseAddress, 1, content)
-                return shader.isValid() ? shader : nil
+                let shader = unsafe nucleus.skia.makeRuntimeShaderWithImage(
+                    src, up.baseAddress, 1, content)
+                return unsafe shader.isValid() ? shader : nil
             }
         }
     }
@@ -70,11 +71,11 @@ enum Backdrop {
     static func clip(to shape: EffectShape, on canvas: nucleus.skia.Canvas) {
         switch shape {
         case .rect(let r):
-            canvas.clipRect(rectF(r), true)
+            unsafe canvas.clipRect(rectF(r), true)
         case .rrect(let r, let radii):
             let rr = nucleus.skia.RRectRadii(
                 topLeft: radii.0, topRight: radii.1, bottomRight: radii.2, bottomLeft: radii.3)
-            canvas.clipRRect(rectF(r), rr, true)
+            unsafe canvas.clipRRect(rectF(r), rr, true)
         }
     }
 
@@ -86,27 +87,29 @@ enum Backdrop {
         onto canvas: nucleus.skia.Canvas
     ) -> Int {
         guard spec.enabled else { return 0 }
-        let source = spec.blendingMode == .behindWindow ? (prefix ?? liveSnapshot) : liveSnapshot
-        guard source.isValid() else { return 0 }
+        let source = unsafe spec.blendingMode == .behindWindow
+            ? (prefix ?? liveSnapshot)
+            : liveSnapshot
+        guard unsafe source.isValid() else { return 0 }
         let region = rectF(spec.region)
 
-        canvas.save()
-        clip(to: spec.shape, on: canvas)
+        unsafe canvas.save()
+        unsafe clip(to: spec.shape, on: canvas)
 
         var blurPaint = nucleus.skia.Paint()
         blurPaint.blurSigma = blurSigma(spec)
         blurPaint.saturation = spec.saturation
         blurPaint.alpha = spec.alpha
         // Sample the same region of the source and composite it back blurred.
-        canvas.drawImageRect(source, region, region, blurPaint)
+        unsafe canvas.drawImageRect(source, region, region, blurPaint)
 
         if spec.tintBlend > 0 {
             var tint = nucleus.skia.Paint()
             tint.color = color(spec.tintRgba)
             tint.alpha = spec.tintBlend
-            canvas.drawRect(region, tint)
+            unsafe canvas.drawRect(region, tint)
         }
-        canvas.restore()
+        unsafe canvas.restore()
         return 1
     }
 }

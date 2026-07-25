@@ -362,7 +362,7 @@ extension RendererRuntime {
             return nil
         }
         var handle: UInt32 = 0
-        guard drmSyncobjFDToHandle(
+        guard unsafe drmSyncobjFDToHandle(
             drmDeviceFd, fd, &handle) == 0,
             handle != 0
         else { return nil }
@@ -387,7 +387,7 @@ extension RendererRuntime {
               sync.handle != 0
         else { return nil }
         var temporary: UInt32 = 0
-        guard drmSyncobjCreate(
+        guard unsafe drmSyncobjCreate(
             drmDeviceFd, 0, &temporary) == 0,
             temporary != 0
         else { return nil }
@@ -404,7 +404,7 @@ extension RendererRuntime {
             0) == 0
         else { return nil }
         var fd: Int32 = -1
-        guard drmSyncobjExportSyncFile(
+        guard unsafe drmSyncobjExportSyncFile(
             drmDeviceFd, temporary, &fd) == 0,
             fd >= 0
         else { return nil }
@@ -417,7 +417,7 @@ extension RendererRuntime {
         else { return }
         var handle = sync.handle
         var point = sync.point
-        _ = drmSyncobjTimelineSignal(
+        _ = unsafe drmSyncobjTimelineSignal(
             drmDeviceFd, &handle, &point, 1)
     }
 

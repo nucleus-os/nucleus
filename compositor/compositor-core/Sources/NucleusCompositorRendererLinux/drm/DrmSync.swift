@@ -61,14 +61,19 @@ struct DrmSyncobj: ~Copyable {
     init?(deviceFd: Int32, signaled: Bool = false) {
         var created: UInt32 = 0
         let flags = signaled ? DrmSyncobj.createSignaled : 0
-        guard drmSyncobjCreate(deviceFd, flags, &created) == 0, created != 0 else { return nil }
+        guard unsafe drmSyncobjCreate(deviceFd, flags, &created) == 0,
+            created != 0
+        else { return nil }
         self.deviceFd = deviceFd
         self.handle = created
     }
 
     init?(deviceFd: Int32, importingHandleFd fd: Int32) {
         var imported: UInt32 = 0
-        guard fd >= 0, drmSyncobjFDToHandle(deviceFd, fd, &imported) == 0, imported != 0 else {
+        guard fd >= 0,
+            unsafe drmSyncobjFDToHandle(deviceFd, fd, &imported) == 0,
+            imported != 0
+        else {
             return nil
         }
         self.deviceFd = deviceFd
@@ -81,7 +86,9 @@ struct DrmSyncobj: ~Copyable {
     /// hand-off to clients / the reactor).
     borrowing func exportSyncFile() -> FenceFd? {
         var out: Int32 = -1
-        guard drmSyncobjExportSyncFile(deviceFd, handle, &out) == 0, out >= 0 else { return nil }
+        guard unsafe drmSyncobjExportSyncFile(deviceFd, handle, &out) == 0,
+            out >= 0
+        else { return nil }
         return FenceFd(owning: out)
     }
 
@@ -90,7 +97,9 @@ struct DrmSyncobj: ~Copyable {
     /// contained fence.
     borrowing func exportHandleFd() -> FenceFd? {
         var out: Int32 = -1
-        guard drmSyncobjHandleToFD(deviceFd, handle, &out) == 0, out >= 0 else { return nil }
+        guard unsafe drmSyncobjHandleToFD(deviceFd, handle, &out) == 0,
+            out >= 0
+        else { return nil }
         return FenceFd(owning: out)
     }
 
@@ -114,7 +123,8 @@ struct DrmSyncobj: ~Copyable {
     borrowing func timelineSignal(point: UInt64) -> Bool {
         var handles = handle
         var points = point
-        return drmSyncobjTimelineSignal(deviceFd, &handles, &points, 1) == 0
+        return unsafe drmSyncobjTimelineSignal(
+            deviceFd, &handles, &points, 1) == 0
     }
 
     borrowing func timelineWait(
@@ -123,7 +133,7 @@ struct DrmSyncobj: ~Copyable {
         var handles = handle
         var points = point
         var first: UInt32 = 0
-        return drmSyncobjTimelineWait(
+        return unsafe drmSyncobjTimelineWait(
             deviceFd, &handles, &points, 1, timeoutNs,
             DrmSyncobj.waitAll | DrmSyncobj.waitForSubmit, &first) == 0
     }

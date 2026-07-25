@@ -22,7 +22,7 @@ import NucleusCompositorDrmC
 /// Builds one atomic commit: populates the opaque libdrm `drmModeAtomicReq`
 /// while recording a typed labelled shadow of every property for validation and
 /// the failed-request diagnostic dump. Noncopyable — one owner, freed once.
-struct AtomicRequestBuilder: ~Copyable {
+@safe struct AtomicRequestBuilder: ~Copyable {
     /// One recorded property assignment. The label (e.g. "plane.FB_ID") names
     /// the property in a rejection dump where only opaque IDs are otherwise
     /// visible.
@@ -37,8 +37,8 @@ struct AtomicRequestBuilder: ~Copyable {
     private(set) var entries: [Entry] = []
 
     init?() {
-        guard let r = drmModeAtomicAlloc() else { return nil }
-        self.req = r
+        guard let r = unsafe drmModeAtomicAlloc() else { return nil }
+        unsafe self.req = r
     }
 
     var count: Int { entries.count }
@@ -48,7 +48,8 @@ struct AtomicRequestBuilder: ~Copyable {
     /// regardless so a failed build still dumps what was attempted.
     @discardableResult
     mutating func add(objectId: UInt32, propertyId: UInt32, value: UInt64, label: String) -> Bool {
-        let rc = drmModeAtomicAddProperty(req, objectId, propertyId, value)
+        let rc = unsafe drmModeAtomicAddProperty(
+            req, objectId, propertyId, value)
         entries.append(Entry(objectId: objectId, propertyId: propertyId, value: value, label: label))
         return rc >= 0
     }
@@ -57,13 +58,13 @@ struct AtomicRequestBuilder: ~Copyable {
     /// negative errno otherwise). `flags` carries `DRM_MODE_ATOMIC_*` /
     /// `DRM_MODE_PAGE_FLIP_*`; `userData` is handed back on the page-flip event.
     borrowing func commit(fd: Int32, flags: UInt32, userData: UnsafeMutableRawPointer? = nil) -> Int32 {
-        drmModeAtomicCommit(fd, req, flags, userData)
+        unsafe drmModeAtomicCommit(fd, req, flags, userData)
     }
 
     /// Validate the staged request as a kernel test-only commit (no scanout
     /// change). True when the kernel would accept it.
     borrowing func validates(fd: Int32, flags: UInt32 = 0) -> Bool {
-        drmModeAtomicCommit(
+        unsafe drmModeAtomicCommit(
             fd,
             req,
             flags | UInt32(DRM_MODE_ATOMIC_TEST_ONLY),
@@ -78,7 +79,7 @@ struct AtomicRequestBuilder: ~Copyable {
         }
     }
 
-    deinit { drmModeAtomicFree(req) }
+    deinit { unsafe drmModeAtomicFree(req) }
 }
 
 // MARK: - Atomic property groups

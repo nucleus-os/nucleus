@@ -59,39 +59,44 @@ struct VulkanRequirementsTests {
     @Test("The queried and enabled feature chains have identical structure")
     func featureContractChain() {
         let contract = VkRequirements.contract(for: .waylandClientWSI)
-        withRequiredFeatureChain(contract: contract) { head in
-            guard let v12Raw = head.pointee.pNext else {
-                Issue.record("missing Vulkan 1.2 feature link")
-                return
-            }
-            let v12 = v12Raw.assumingMemoryBound(to: VkPhysicalDeviceVulkan12Features.self)
-            #expect(v12.pointee.timelineSemaphore != 0)
-            guard let v11Raw = v12.pointee.pNext else {
-                Issue.record("missing Vulkan 1.1 feature link")
-                return
-            }
-            let v11 = v11Raw.assumingMemoryBound(to: VkPhysicalDeviceVulkan11Features.self)
-            #expect(v11.pointee.samplerYcbcrConversion != 0)
-            guard let maintenanceRaw = v11.pointee.pNext else {
-                Issue.record("missing swapchain-maintenance feature link")
-                return
-            }
-            let maintenance = maintenanceRaw.assumingMemoryBound(
-                to: VkPhysicalDeviceSwapchainMaintenance1FeaturesKHR.self)
-            #expect(maintenance.pointee.swapchainMaintenance1 != 0)
-        }
-        withRequiredFeatureChain(
-            contract: contract, enableRequiredFeatures: false
-        ) { head in
-            let v12 = head.pointee.pNext!.assumingMemoryBound(
+        let enabled: (Bool, Bool, Bool)? =
+            unsafe withRequiredFeatureEnableChain(contract: contract) { head in
+            guard let v12Raw = unsafe head.pointee.pNext else { return nil }
+            let v12 = unsafe v12Raw.assumingMemoryBound(
                 to: VkPhysicalDeviceVulkan12Features.self)
-            #expect(v12.pointee.timelineSemaphore == 0)
-            let v11 = v12.pointee.pNext!.assumingMemoryBound(
+            guard let v11Raw = unsafe v12.pointee.pNext else { return nil }
+            let v11 = unsafe v11Raw.assumingMemoryBound(
                 to: VkPhysicalDeviceVulkan11Features.self)
-            #expect(v11.pointee.samplerYcbcrConversion == 0)
-            let maintenance = v11.pointee.pNext!.assumingMemoryBound(
+            guard let maintenanceRaw = unsafe v11.pointee.pNext else { return nil }
+            let maintenance = unsafe maintenanceRaw.assumingMemoryBound(
                 to: VkPhysicalDeviceSwapchainMaintenance1FeaturesKHR.self)
-            #expect(maintenance.pointee.swapchainMaintenance1 == 0)
+            return (
+                unsafe v12.pointee.timelineSemaphore != 0,
+                unsafe v11.pointee.samplerYcbcrConversion != 0,
+                unsafe maintenance.pointee.swapchainMaintenance1 != 0)
         }
+        #expect(enabled?.0 == true)
+        #expect(enabled?.1 == true)
+        #expect(enabled?.2 == true)
+
+        let queried: (Bool, Bool, Bool)? =
+            unsafe withRequiredFeatureQueryChain(contract: contract) { head in
+            guard let v12Raw = unsafe head.pointee.pNext else { return nil }
+            let v12 = unsafe v12Raw.assumingMemoryBound(
+                to: VkPhysicalDeviceVulkan12Features.self)
+            guard let v11Raw = unsafe v12.pointee.pNext else { return nil }
+            let v11 = unsafe v11Raw.assumingMemoryBound(
+                to: VkPhysicalDeviceVulkan11Features.self)
+            guard let maintenanceRaw = unsafe v11.pointee.pNext else { return nil }
+            let maintenance = unsafe maintenanceRaw.assumingMemoryBound(
+                to: VkPhysicalDeviceSwapchainMaintenance1FeaturesKHR.self)
+            return (
+                unsafe v12.pointee.timelineSemaphore == 0,
+                unsafe v11.pointee.samplerYcbcrConversion == 0,
+                unsafe maintenance.pointee.swapchainMaintenance1 == 0)
+        }
+        #expect(queried?.0 == true)
+        #expect(queried?.1 == true)
+        #expect(queried?.2 == true)
     }
 }

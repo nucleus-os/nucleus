@@ -7,6 +7,18 @@
 import Glibc
 import WaylandServerC
 
+@MainActor
+private func surfaceForWireID(
+    _ id: UInt32, in compositor: WlCompositor
+) -> WlSurface? {
+    compositor.liveSurfaceIDs.lazy
+        .compactMap { compositor.surface(id: $0) }
+        .first {
+            guard let resource = unsafe $0.resource else { return false }
+            return unsafe wl_resource_get_id(resource) == id
+        }
+}
+
 private func fail(_ msg: String) -> Never {
     print("FAIL: \(msg)")
     exit(1)
@@ -62,7 +74,8 @@ enum WaylandPointerConstraintsFixture {
             fail("locked before focus")
         }
 
-        guard let surface = compositor.surface(id: surfId) else { fail("surface model") }
+        guard let surface = surfaceForWireID(surfId, in: compositor)
+        else { fail("surface model") }
 
         // Focus enters → locked.
         constraints.notifyPointerFocus(old: nil, new: surface)
@@ -84,7 +97,8 @@ enum WaylandPointerConstraintsFixture {
         }
         guard client.send(b) else { fail("send b") }
         client.pump()
-        guard let surface2 = compositor.surface(id: surf2Id) else { fail("surface2 model") }
+        guard let surface2 = surfaceForWireID(surf2Id, in: compositor)
+        else { fail("surface2 model") }
 
         constraints.notifyPointerFocus(old: nil, new: surface2)
         let afterFocus2 = client.drainEvents()

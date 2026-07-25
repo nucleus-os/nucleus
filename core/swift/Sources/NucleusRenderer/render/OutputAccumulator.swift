@@ -56,7 +56,9 @@ struct AccumulatorState: Equatable {
 /// the output's lifetime). The accumulator surface and prefix image are tied to
 /// the recorder passed in; the compositor drives one persistent recorder, so the
 /// surface validly persists across frames and recordings.
-final class OutputAccumulator {
+/// Render-thread-confined owner of the Graphite surface and prefix snapshot;
+/// both values are released before their recorder/context is torn down.
+@safe final class OutputAccumulator {
     let outputId: UInt64
     private(set) var state: AccumulatorState
     private(set) var surface: nucleus.skia.Surface
@@ -68,7 +70,7 @@ final class OutputAccumulator {
     private init(outputId: UInt64, state: AccumulatorState, surface: nucleus.skia.Surface) {
         self.outputId = outputId
         self.state = state
-        self.surface = surface
+        unsafe self.surface = surface
     }
 
     /// Allocate the persistent accumulator surface for `outputId`. Returns nil if
@@ -76,9 +78,9 @@ final class OutputAccumulator {
     static func create(
         recorder: nucleus.skia.Recorder, outputId: UInt64, width: Int32, height: Int32
     ) -> OutputAccumulator? {
-        let surface = recorder.makeOffscreenSurface(width, height)
-        guard surface.isValid() else { return nil }
-        return OutputAccumulator(
+        let surface = unsafe recorder.makeOffscreenSurface(width, height)
+        guard unsafe surface.isValid() else { return nil }
+        return unsafe OutputAccumulator(
             outputId: outputId, state: AccumulatorState(width: width, height: height),
             surface: surface)
     }
@@ -87,48 +89,50 @@ final class OutputAccumulator {
     /// a dimension change. Returns false if a needed reallocation failed.
     func ensure(recorder: nucleus.skia.Recorder, width: Int32, height: Int32) -> Bool {
         guard state.resize(width: width, height: height) else { return true }
-        let resized = recorder.makeOffscreenSurface(width, height)
-        guard resized.isValid() else { return false }
-        surface = resized
-        prefix = nil
+        let resized = unsafe recorder.makeOffscreenSurface(width, height)
+        guard unsafe resized.isValid() else { return false }
+        unsafe surface = resized
+        unsafe prefix = nil
         return true
     }
 
     /// The accumulator's canvas — scene composition draws here.
-    var canvas: nucleus.skia.Canvas { surface.getCanvas() }
+    var canvas: nucleus.skia.Canvas { unsafe surface.getCanvas() }
 
     /// Snapshot the live accumulator into the prefix buffer (taken once per frame
     /// before the first backdrop effect). Mirrors `snapshotPrefix`.
     func snapshotPrefix() {
-        prefix = surface.snapshotImage()
+        unsafe prefix = surface.snapshotImage()
     }
 
     /// The current accumulator content as an image (the present + capture source).
     func snapshotImage() -> nucleus.skia.Image {
-        surface.snapshotImage()
+        unsafe surface.snapshotImage()
     }
 
     /// Present: sample the composited accumulator into `target`, stretching it to
     /// fill. Returns false if either side is unusable.
     func present(onto target: nucleus.skia.Surface, alpha: Float = 1) -> Bool {
-        present(onto: target, source: nil, alpha: alpha)
+        unsafe present(onto: target, source: nil, alpha: alpha)
     }
 
     func present(
         onto target: nucleus.skia.Surface, source: nucleus.skia.RectF?, alpha: Float = 1
     ) -> Bool {
-        guard target.isValid() else { return false }
-        let image = surface.snapshotImage()
-        guard image.isValid() else { return false }
-        let canvas = target.getCanvas()
-        guard canvas.isValid() else { return false }
+        guard unsafe target.isValid() else { return false }
+        let image = unsafe surface.snapshotImage()
+        guard unsafe image.isValid() else { return false }
+        let canvas = unsafe target.getCanvas()
+        guard unsafe canvas.isValid() else { return false }
         var dst = nucleus.skia.RectF()
         dst.x = 0; dst.y = 0
-        dst.width = Float(target.width()); dst.height = Float(target.height())
+        dst.width = Float(unsafe target.width())
+        dst.height = Float(unsafe target.height())
         var paint = nucleus.skia.Paint()
         paint.alpha = alpha
         paint.blend = nucleus.skia.BlendMode.src
-        canvas.drawImageRect(image, source ?? nucleus.skia.RectF(), dst, paint)
+        unsafe canvas.drawImageRect(
+            image, source ?? nucleus.skia.RectF(), dst, paint)
         return true
     }
 
@@ -137,6 +141,6 @@ final class OutputAccumulator {
     func markRedrawn() { state.markRedrawn() }
     func invalidate() {
         state.invalidate()
-        prefix = nil
+        unsafe prefix = nil
     }
 }

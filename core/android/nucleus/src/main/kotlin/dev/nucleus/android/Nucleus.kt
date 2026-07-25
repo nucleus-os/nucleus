@@ -20,6 +20,7 @@ object Nucleus {
     const val ERROR_ASSET_PATH_REJECTED: Int = 12
     const val ERROR_RUNTIME_NOT_ATTACHED: Int = 13
     const val ERROR_RENDER_NOT_STARTED: Int = 14
+    const val ERROR_OWNER_THREAD_VIOLATION: Int = 15
 
     const val RENDER_STATUS_NONE: Int = 0
     const val RENDER_STATUS_POSTED: Int = 1
@@ -132,6 +133,7 @@ object Nucleus {
         ERROR_ASSET_PATH_REJECTED -> "asset path was rejected"
         ERROR_RUNTIME_NOT_ATTACHED -> "runtime is not attached"
         ERROR_RENDER_NOT_STARTED -> "renderer is not started"
+        ERROR_OWNER_THREAD_VIOLATION -> "native host owner-thread violation"
         else -> "unknown native error $code"
     }
 }

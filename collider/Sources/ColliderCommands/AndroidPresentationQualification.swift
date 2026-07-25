@@ -149,7 +149,9 @@ struct AndroidPresentationQualificationCommand {
             enableVulkanValidation: options.validation,
             traceProtocol: options.diagnostics,
             traceDrmDemand: options.diagnostics,
-            drmDevicePath: options.drmDevice)
+            drmDevicePath: options.drmDevice,
+            xwaylandExecutablePath: try resolveXwaylandExecutable(
+                environment: context.environment))
         var workflowFailure: (any Error)?
         var qualificationStatus: Int32?
         do {
@@ -298,12 +300,9 @@ struct AndroidPresentationQualificationCommand {
         let parentPath = context.environment["XDG_RUNTIME_DIR"]
             ?? "/run/user/\(getuid())"
         let parent = URL(fileURLWithPath: parentPath).standardizedFileURL
-        var isDirectory: ObjCBool = false
+        let parentValues = try? parent.resourceValues(forKeys: [.isDirectoryKey])
         guard parent.path != "/",
-              FileManager.default.fileExists(
-                atPath: parent.path,
-                isDirectory: &isDirectory),
-              isDirectory.boolValue
+              parentValues?.isDirectory == true
         else {
             throw WorkspaceFailure.message(
                 "the login runtime directory does not exist: \(parent.path)")

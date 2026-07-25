@@ -318,10 +318,12 @@ final class PrivateAccessibilityBus {
             fd: descriptor,
             events: Int16(POLLIN),
             revents: 0)
-        guard poll(&pollDescriptor, 1, 2_000) > 0 else { return nil }
+        guard unsafe poll(&pollDescriptor, 1, 2_000) > 0 else {
+            return nil
+        }
         var bytes: [UInt8] = []
         var byte: UInt8 = 0
-        while Glibc.read(descriptor, &byte, 1) == 1 {
+        while unsafe Glibc.read(descriptor, &byte, 1) == 1 {
             if byte == UInt8(ascii: "\n") { break }
             bytes.append(byte)
         }
@@ -342,15 +344,19 @@ struct ScopedEnvironmentVariable {
 
     init(name: String, value: String) {
         self.name = name
-        previousValue = getenv(name).map { String(cString: $0) }
-        setenv(name, value, 1)
+        if let existing = unsafe getenv(name) {
+            previousValue = unsafe String(cString: existing)
+        } else {
+            previousValue = nil
+        }
+        unsafe setenv(name, value, 1)
     }
 
     func restore() {
         if let previousValue {
-            setenv(name, previousValue, 1)
+            unsafe setenv(name, previousValue, 1)
         } else {
-            unsetenv(name)
+            unsafe unsetenv(name)
         }
     }
 }

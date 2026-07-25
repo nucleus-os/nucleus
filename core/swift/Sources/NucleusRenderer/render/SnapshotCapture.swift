@@ -7,26 +7,27 @@ import NucleusSkiaGraphiteBridge
 
 /// A render-into-texture target: a fresh surface to draw a capture into, then
 /// `finish` to snapshot + register the result.
-final class CaptureTarget {
+/// Owns the C++ surface value and confines all access to the render actor.
+@safe final class CaptureTarget {
     let surface: nucleus.skia.Surface
     let width: Int32
     let height: Int32
 
     init(surface: nucleus.skia.Surface, width: Int32, height: Int32) {
-        self.surface = surface
+        unsafe self.surface = surface
         self.width = width
         self.height = height
     }
 
-    var canvas: nucleus.skia.Canvas { surface.getCanvas() }
+    var canvas: nucleus.skia.Canvas { unsafe surface.getCanvas() }
 
     /// Snapshot the drawn content, register it under a fresh handle, return it.
     func finish(into registry: TextureRegistry, contentRevision: UInt64) -> UInt64? {
-        let image = surface.snapshotImage()
-        guard image.isValid() else { return nil }
+        let image = unsafe surface.snapshotImage()
+        guard unsafe image.isValid() else { return nil }
         let handle = registry.allocRendererHandle()
-        registry.register(
-            key: .renderer(handle), image: image, width: width, height: height,
+        unsafe registry.register(
+            key: .renderer(handle), image: unsafe image, width: width, height: height,
             contentRevision: contentRevision)
         return handle
     }
@@ -45,9 +46,9 @@ enum SnapshotCapture {
     /// `RenderTextureCapture.begin`. Nil if the surface cannot be allocated.
     static func begin(recorder: nucleus.skia.Recorder, width: Int32, height: Int32) -> CaptureTarget? {
         guard width > 0, height > 0 else { return nil }
-        let surface = recorder.makeOffscreenSurface(width, height)
-        guard surface.isValid() else { return nil }
-        return CaptureTarget(surface: surface, width: width, height: height)
+        let surface = unsafe recorder.makeOffscreenSurface(width, height)
+        guard unsafe surface.isValid() else { return nil }
+        return unsafe CaptureTarget(surface: surface, width: width, height: height)
     }
 
     /// Capture a device-space rect of `source` into a fresh registered texture.
@@ -58,18 +59,24 @@ enum SnapshotCapture {
         srcX: Float, srcY: Float, width: Int32, height: Int32,
         into registry: TextureRegistry, contentRevision: UInt64
     ) -> UInt64? {
-        guard source.isValid(),
-              let target = begin(recorder: recorder, width: width, height: height) else { return nil }
-        let canvas = target.canvas
+        guard unsafe source.isValid(),
+              let target = unsafe begin(recorder: recorder, width: width, height: height) else { return nil }
+        let canvas = unsafe target.canvas
         var clear = nucleus.skia.Color()
         clear.a = 0
-        canvas.clear(clear)
+        unsafe canvas.clear(clear)
 
         var src = nucleus.skia.RectF()
-        src.x = srcX; src.y = srcY; src.width = Float(width); src.height = Float(height)
+        src.x = srcX
+        src.y = srcY
+        src.width = Float(width)
+        src.height = Float(height)
         var dst = nucleus.skia.RectF()
-        dst.x = 0; dst.y = 0; dst.width = Float(width); dst.height = Float(height)
-        canvas.drawImageRect(source, src, dst, nucleus.skia.Paint())
+        dst.x = 0
+        dst.y = 0
+        dst.width = Float(width)
+        dst.height = Float(height)
+        unsafe canvas.drawImageRect(source, src, dst, nucleus.skia.Paint())
 
         return target.finish(into: registry, contentRevision: contentRevision)
     }
@@ -82,7 +89,7 @@ enum SnapshotCapture {
         into registry: TextureRegistry, contentRevision: UInt64
     ) -> UInt64? {
         let size = deviceSize(localWidth: localWidth, localHeight: localHeight, scale: scale)
-        return captureDeviceRect(
+        return unsafe captureDeviceRect(
             recorder: recorder, source: source,
             srcX: originX, srcY: originY, width: size.width, height: size.height,
             into: registry, contentRevision: contentRevision)

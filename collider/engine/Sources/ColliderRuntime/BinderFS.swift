@@ -35,7 +35,7 @@ public enum BinderFS {
         var minor: UInt32 = 0
         let status = control.string.withCString { controlPath in
             name.withCString { deviceName in
-                collider_binderfs_add_device(
+                unsafe collider_binderfs_add_device(
                     controlPath,
                     deviceName,
                     &major,

@@ -1,5 +1,6 @@
 import ColliderCore
 import Foundation
+import Subprocess
 import SystemPackage
 
 extension ColliderRuntime {
@@ -50,28 +51,37 @@ extension ColliderRuntime {
     }
 
     func assembleHostToolchain(
-        _ assembly: HostToolchainAssembly
-    ) throws {
-        let staged = assembly.stagingRoot.appending("usr")
-        guard hostIsDirectory(staged) else {
+        _ assembly: HostToolchainAssembly,
+        stage: TaskID
+    ) async throws {
+        guard assembly.archive.isRegularFile else {
             throw RuntimeFailure.invalidOutput(
-                "upstream Swift build did not produce \(staged)")
+                "upstream Swift build did not produce \(assembly.archive)")
         }
         try hostRemoveExisting(assembly.toolchain)
         try FileManager.default.createDirectory(
             atPath: assembly.toolchain.removingLastComponent().string,
             withIntermediateDirectories: true)
-        try FileManager.default.moveItem(
-            atPath: staged.string,
-            toPath: assembly.toolchain.string)
-        try? FileManager.default.removeItem(
-            atPath: assembly.stagingRoot.appending(".nucleus-owned").string)
+        let extraction = try await execute(
+            CommandSpec(
+                executable: .named("tar"),
+                arguments: [
+                    "-xzf", assembly.archive.string,
+                    "-C", assembly.toolchain.removingLastComponent().string,
+                ],
+                workingDirectory: assembly.workspace,
+                environment: assembly.environment,
+                output: .logged),
+            stage: stage)
+        guard extraction.status == 0, assembly.toolchain.isDirectory else {
+            throw RuntimeFailure.commandFailed(status: extraction.status)
+        }
         guard assembly.platform == .linux else { return }
 
         let library = assembly.toolchain.appending("lib")
         let cfxmlStatic = library.appending(
             "swift_static/linux/lib_CFXMLInterface.a")
-        guard hostIsRegularFile(cfxmlStatic) else {
+        guard cfxmlStatic.isRegularFile else {
             throw RuntimeFailure.invalidOutput(
                 "host FoundationXML support archive is missing: "
                     + "\(cfxmlStatic)")
@@ -81,7 +91,7 @@ extension ColliderRuntime {
             to: library.appending("swift/linux/lib_CFXMLInterface.a"))
         let staticArguments = library.appending(
             "swift_static/linux/static-stdlib-args.lnk")
-        guard hostIsRegularFile(staticArguments) else {
+        guard staticArguments.isRegularFile else {
             throw RuntimeFailure.invalidOutput(
                 "host static Swift link metadata is missing: "
                     + "\(staticArguments)")
@@ -123,7 +133,7 @@ extension ColliderRuntime {
         let testingInterop = assembly.workspace.appending(
             "build/buildbot_linux/swifttesting-linux-x86_64/lib/"
                 + "lib_TestingInterop.so")
-        if hostIsRegularFile(testingInterop) {
+        if testingInterop.isRegularFile {
             try hostCopyReplacing(
                 from: testingInterop,
                 to: library.appending(
@@ -371,8 +381,8 @@ extension ColliderRuntime {
                 "--fallback-bundle-version", "1",
                 "--output-path", archive.string,
             ])
-        guard hostIsRegularFile(archive.appending("index.html")),
-            hostIsDirectory(archive.appending("data"))
+        guard archive.appending("index.html").isRegularFile,
+            archive.appending("data").isDirectory
         else {
             throw RuntimeFailure.invalidOutput(
                 "DocC did not emit a valid documentation archive")
@@ -412,7 +422,7 @@ extension ColliderRuntime {
             fileURLWithPath: lspPackage.string).absoluteString
         let libraryURI = URL(
             fileURLWithPath: library.string).absoluteString
-        let lspInput = try ToolchainValidationFixtures.jsonRPCPayload([
+        let lspInitialize = try ToolchainValidationFixtures.jsonRPCPayload([
             [
                 "jsonrpc": "2.0",
                 "id": 1,
@@ -429,6 +439,8 @@ extension ColliderRuntime {
                     ],
                 ],
             ],
+        ])
+        let lspSymbols = try ToolchainValidationFixtures.jsonRPCPayload([
             [
                 "jsonrpc": "2.0",
                 "method": "initialized",
@@ -454,28 +466,37 @@ extension ColliderRuntime {
                     "textDocument": ["uri": libraryURI],
                 ],
             ],
+        ])
+        let lspShutdown = try ToolchainValidationFixtures.jsonRPCPayload([
             [
                 "jsonrpc": "2.0",
                 "id": 3,
                 "method": "shutdown",
                 "params": [:],
             ],
+        ])
+        let lspExit = try ToolchainValidationFixtures.jsonRPCPayload([
             [
                 "jsonrpc": "2.0",
                 "method": "exit",
                 "params": [:],
             ],
         ])
-        let lsp = try await execute(
+        let lsp = try await executeJSONRPCSession(
             CommandSpec(
                 executable: .path(validation.toolchain.appending(
                     "bin/sourcekit-lsp")),
                 arguments: [],
                 workingDirectory: lspPackage,
                 environment: commandEnvironment,
-                input: .bytes(lspInput),
                 output: .captured(limit: 16 * 1_024 * 1_024),
                 timeoutNanoseconds: 120_000_000_000),
+            exchanges: [
+                (request: lspInitialize, responseID: 1),
+                (request: lspSymbols, responseID: 2),
+                (request: lspShutdown, responseID: 3),
+            ],
+            finalInput: lspExit,
             stage: stage)
         guard lsp.status == 0 else {
             throw RuntimeFailure.commandFailed(status: lsp.status)
@@ -500,19 +521,173 @@ extension ColliderRuntime {
     }
 }
 
-private func hostIsDirectory(_ path: FilePath) -> Bool {
-    var directory: ObjCBool = false
-    return FileManager.default.fileExists(
-        atPath: path.string,
-        isDirectory: &directory) && directory.boolValue
+private struct JSONRPCSessionOutput {
+    let status: Int32
+    let standardOutput: String
 }
 
-private func hostIsRegularFile(_ path: FilePath) -> Bool {
-    var directory: ObjCBool = false
-    return FileManager.default.fileExists(
-        atPath: path.string,
-        isDirectory: &directory) && !directory.boolValue
+extension ColliderRuntime {
+    private func executeJSONRPCSession(
+        _ command: CommandSpec,
+        exchanges: [(request: [UInt8], responseID: Int)],
+        finalInput: [UInt8],
+        stage: TaskID
+    ) async throws -> JSONRPCSessionOutput {
+        let executable: Subprocess.Executable = switch command.executable {
+        case .named(let name): .name(name)
+        case .path(let path), .taskOutput(let path): .path(path)
+        }
+        let environment = Subprocess.Environment.custom(
+            Dictionary(
+                uniqueKeysWithValues: command.environment.map {
+                    (Subprocess.Environment.Key(rawValue: $0.key)!, $0.value)
+                }))
+        var platform = Subprocess.PlatformOptions()
+        #if !os(Windows)
+        platform.processGroupID = 0
+        platform.teardownSequence = [
+            .gracefulShutDown(
+                toProcessGroup: true,
+                allowedDurationToNextStep: .seconds(2))
+        ]
+        #endif
+        let result = try await Subprocess.run(
+            executable,
+            arguments: Arguments(command.arguments),
+            environment: environment,
+            workingDirectory: command.workingDirectory,
+            platformOptions: platform,
+            input: CustomWriteInput.inputWriter,
+            output: SequenceOutput.sequence,
+            error: SequenceOutput.sequence
+        ) { execution in
+            let registration = await cancellation.registerProcessGroup(
+                execution.processIdentifier.value)
+            do {
+                async let errorBytes = collectJSONRPCStream(
+                    execution.standardError,
+                    limit: 4 * 1_024 * 1_024)
+                var outputBytes: [UInt8] = []
+                var iterator = execution.standardOutput.makeAsyncIterator()
+                for exchange in exchanges {
+                    _ = try await execution.standardInputWriter.write(
+                        exchange.request)
+                    while !containsJSONRPCResponse(
+                        outputBytes,
+                        id: exchange.responseID)
+                    {
+                        guard let chunk = try await iterator.next() else {
+                            throw RuntimeFailure.invalidOutput(
+                                "SourceKit-LSP closed stdout before response "
+                                    + "\(exchange.responseID)")
+                        }
+                        outputBytes += unsafe chunk.withUnsafeBytes {
+                            unsafe Array($0)
+                        }
+                        guard outputBytes.count <= 16 * 1_024 * 1_024 else {
+                            throw RuntimeFailure.outputLimitExceeded(
+                                16 * 1_024 * 1_024)
+                        }
+                    }
+                }
+                _ = try await execution.standardInputWriter.write(finalInput)
+                try await execution.standardInputWriter.finish()
+                while let chunk = try await iterator.next() {
+                    outputBytes += unsafe chunk.withUnsafeBytes {
+                        unsafe Array($0)
+                    }
+                    guard outputBytes.count <= 16 * 1_024 * 1_024 else {
+                        throw RuntimeFailure.outputLimitExceeded(
+                            16 * 1_024 * 1_024)
+                    }
+                }
+                let capturedError = try await errorBytes
+                if !capturedError.isEmpty, let logging {
+                    try await logging.registry.appendLog(
+                        capturedError,
+                        stage: stage,
+                        in: logging.run)
+                }
+                await cancellation.unregisterProcessGroup(registration)
+                return outputBytes
+            } catch {
+                await cancellation.unregisterProcessGroup(registration)
+                throw error
+            }
+        }
+        return JSONRPCSessionOutput(
+            status: hostStatusCode(result.terminationStatus),
+            standardOutput: String(
+                decoding: result.closureResult,
+                as: UTF8.self))
+    }
 }
+
+private func containsJSONRPCResponse(
+    _ bytes: [UInt8],
+    id: Int
+) -> Bool {
+    let data = Data(bytes)
+    let separator = Data("\r\n\r\n".utf8)
+    var offset = data.startIndex
+    while offset < data.endIndex {
+        guard let headerRange = data.range(
+            of: separator,
+            in: offset..<data.endIndex),
+            let header = String(
+                data: data[offset..<headerRange.lowerBound],
+                encoding: .utf8),
+            let lengthLine = header.split(separator: "\r\n").first(
+                where: {
+                    $0.lowercased().hasPrefix("content-length:")
+                }),
+            let length = Int(
+                lengthLine.split(separator: ":", maxSplits: 1)[1]
+                    .trimmingCharacters(in: .whitespaces))
+        else {
+            return false
+        }
+        let bodyStart = headerRange.upperBound
+        let bodyEnd = bodyStart + length
+        guard bodyEnd <= data.endIndex else { return false }
+        if let message = try? JSONSerialization.jsonObject(
+            with: data[bodyStart..<bodyEnd]) as? [String: Any],
+            (message["id"] as? Int) == id
+        {
+            return true
+        }
+        offset = bodyEnd
+    }
+    return false
+}
+
+private func collectJSONRPCStream(
+    _ sequence: SubprocessOutputSequence,
+    limit: Int
+) async throws -> [UInt8] {
+    var captured: [UInt8] = []
+    for try await chunk in sequence {
+        let bytes = unsafe chunk.withUnsafeBytes { unsafe Array($0) }
+        guard captured.count <= limit,
+            bytes.count <= limit - captured.count
+        else {
+            throw RuntimeFailure.outputLimitExceeded(limit)
+        }
+        captured += bytes
+    }
+    return captured
+}
+
+private func hostStatusCode(_ status: TerminationStatus) -> Int32 {
+    switch status {
+    case .exited(let code): code
+    #if !os(Windows)
+    case .signaled(let signal): 128 + signal
+    #endif
+    }
+}
+
+
 
 private func hostRemoveExisting(_ path: FilePath) throws {
     if FileManager.default.fileExists(atPath: path.string)

@@ -75,7 +75,8 @@ final class PointerCursorSurface {
     func applyCommittedImage(_ surface: WlSurface) {
         guard surface.objectId == surfaceId, surfaceId != 0 else { return }
         cancelPendingCapture()
-        if let buffer = surface.currentBuffer, let shm = Self.cursorImageFromShm(buffer) {
+        if let buffer = unsafe surface.currentBuffer,
+           let shm = unsafe Self.cursorImageFromShm(buffer) {
             surface.releaseCurrentBufferImmediately()
             server.cursor.setImage(
                 pixels: shm.pixels,
@@ -126,20 +127,20 @@ final class PointerCursorSurface {
     /// ARGB8888 (0) / XRGB8888 (1) wl_shm formats — whose byte order matches the cursor
     /// plane's ARGB8888 — repacking away any stride padding. Returns nil otherwise. The
     /// libwayland access is here; the format gate + repack are the pure, tested units.
-    static func cursorImageFromShm(
+    @unsafe static func cursorImageFromShm(
         _ buffer: UnsafeMutablePointer<wl_resource>
     ) -> (pixels: [UInt8], width: UInt32, height: UInt32)? {
-        guard let shm = wl_shm_buffer_get(buffer) else { return nil }
-        guard isReadableCursorShmFormat(wl_shm_buffer_get_format(shm)) else { return nil }
-        let w = Int(wl_shm_buffer_get_width(shm))
-        let h = Int(wl_shm_buffer_get_height(shm))
-        let stride = Int(wl_shm_buffer_get_stride(shm))
+        guard let shm = unsafe wl_shm_buffer_get(buffer) else { return nil }
+        guard isReadableCursorShmFormat(unsafe wl_shm_buffer_get_format(shm)) else { return nil }
+        let w = Int(unsafe wl_shm_buffer_get_width(shm))
+        let h = Int(unsafe wl_shm_buffer_get_height(shm))
+        let stride = Int(unsafe wl_shm_buffer_get_stride(shm))
         guard w > 0, h > 0, stride >= w * 4 else { return nil }
 
-        wl_shm_buffer_begin_access(shm)
-        defer { wl_shm_buffer_end_access(shm) }
-        guard let data = wl_shm_buffer_get_data(shm) else { return nil }
-        let pixels = repackTightARGB(
+        unsafe wl_shm_buffer_begin_access(shm)
+        defer { unsafe wl_shm_buffer_end_access(shm) }
+        guard let data = unsafe wl_shm_buffer_get_data(shm) else { return nil }
+        let pixels = unsafe repackTightARGB(
             source: UnsafeRawBufferPointer(start: data, count: stride * h),
             width: w, height: h, sourceStride: stride)
         return (pixels, UInt32(w), UInt32(h))
@@ -155,18 +156,19 @@ final class PointerCursorSurface {
     /// tightly-packed `width*height*4` buffer, stripping stride padding. Copies one full
     /// `width*4`-byte row per line, clamped to the source length; short/degenerate inputs
     /// yield a zero-filled buffer of the correct size (never over-reads).
-    nonisolated static func repackTightARGB(
+    @unsafe nonisolated static func repackTightARGB(
         source: UnsafeRawBufferPointer, width: Int, height: Int, sourceStride: Int
     ) -> [UInt8] {
         let rowBytes = width * 4
         var out = [UInt8](repeating: 0, count: max(0, rowBytes * height))
         guard width > 0, height > 0, sourceStride >= rowBytes else { return out }
         out.withUnsafeMutableBytes { dst in
-            guard let dstBase = dst.baseAddress, let srcBase = source.baseAddress else { return }
+            guard let dstBase = dst.baseAddress,
+                  let srcBase = source.baseAddress else { return }
             for row in 0..<height {
                 let srcOff = row * sourceStride
                 guard srcOff + rowBytes <= source.count else { break }
-                dstBase.advanced(by: row * rowBytes).copyMemory(
+                unsafe dstBase.advanced(by: row * rowBytes).copyMemory(
                     from: srcBase.advanced(by: srcOff), byteCount: rowBytes)
             }
         }

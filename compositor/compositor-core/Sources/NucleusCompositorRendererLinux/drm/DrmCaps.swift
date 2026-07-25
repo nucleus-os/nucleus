@@ -3,9 +3,9 @@
 //
 // Init-time capability negotiation an output pipeline needs before scanout:
 // enabling the universal-planes + atomic client caps, and reading the cursor
-// dimensions / ADDFB2-modifiers / syncobj device caps. Plus the
-// outside-the-frame-path session ioctls (`drmSetMaster`/`drmDropMaster`) and the
-// PRIME import / GEM-close helpers framebuffer creation uses.
+// dimensions / ADDFB2-modifiers / syncobj device caps. DRM-master ownership
+// belongs exclusively to libseat; renderer code only uses the descriptor while
+// the seat is active.
 
 import NucleusCompositorDrmC
 
@@ -33,7 +33,7 @@ enum DrmCapabilities {
     /// Read a device capability, or nil if the query failed.
     static func get(fd: Int32, capability: UInt64) -> UInt64? {
         var value: UInt64 = 0
-        return drmGetCap(fd, capability, &value) == 0 ? value : nil
+        return unsafe drmGetCap(fd, capability, &value) == 0 ? value : nil
     }
 
     /// Enable a client capability. Returns true on success.
@@ -58,29 +58,5 @@ enum DrmCapabilities {
             syncobj: (get(fd: fd, capability: capSyncobj) ?? 0) != 0,
             timestampMonotonic:
                 (get(fd: fd, capability: capTimestampMonotonic) ?? 0) != 0)
-    }
-}
-
-/// Session-management ioctls used outside the per-frame path.
-enum DrmSession {
-    /// Acquire DRM master on `fd` (seat resume). Returns true on success.
-    @discardableResult
-    static func setMaster(fd: Int32) -> Bool { drmSetMaster(fd) == 0 }
-
-    /// Drop DRM master on `fd` (seat suspend / VT switch). Returns true on success.
-    @discardableResult
-    static func dropMaster(fd: Int32) -> Bool { drmDropMaster(fd) == 0 }
-
-    /// Import a DMA-BUF fd into a device-local GEM handle (framebuffer creation).
-    /// Returns the handle, or nil on failure.
-    static func primeFDToHandle(fd: Int32, dmabufFd: Int32) -> UInt32? {
-        var handle: UInt32 = 0
-        return drmPrimeFDToHandle(fd, dmabufFd, &handle) == 0 ? handle : nil
-    }
-
-    /// Close a GEM buffer handle.
-    @discardableResult
-    static func closeBufferHandle(fd: Int32, handle: UInt32) -> Bool {
-        drmCloseBufferHandle(fd, handle) == 0
     }
 }

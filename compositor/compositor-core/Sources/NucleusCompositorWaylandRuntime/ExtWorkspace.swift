@@ -19,6 +19,7 @@ import WaylandServerC
 internal import NucleusCompositorServer
 import WaylandServer
 import WaylandServerDispatch
+import WaylandProtocolTypes
 
 @MainActor
 final class ExtWorkspaceManager {
@@ -32,52 +33,34 @@ final class ExtWorkspaceManager {
 
     func register(in router: NucleusWaylandRouter) {
         router.addGlobal(
-            interface: swift_wayland_iface_ext_workspace_manager_v1(), version: 1, impl: self, bind: Self.bind)
+            ExtWorkspaceManagerV1Server.global(
+                implementation: self,
+                owner: { manager, handle in
+                    ExtWorkspaceClient(
+                        resource: handle,
+                        manager: manager)
+                },
+                installed: { _, projection, _ in
+                    projection.start()
+                }))
     }
 
-    fileprivate func outputResource(
+    @unsafe fileprivate func outputResource(
         forClient client: OpaquePointer, displayID: UInt64
-    ) -> UnsafeMutablePointer<wl_resource>? {
-        compositor.output(id: displayID)?.resources(forClient: client).first
+    ) -> WaylandResourceHandle<WlOutputServer>? {
+        unsafe compositor.output(id: displayID)?
+            .resources(forClient: WaylandClientID(client)).first
     }
 
-    private static let bind: @convention(c) (
-        OpaquePointer?, UnsafeMutableRawPointer?, UInt32, UInt32
-    ) -> Void = { client, data, version, id in
-        guard let client else { return }
-        let clientBits = UInt(bitPattern: UnsafeRawPointer(client))
-        let dataBits = UInt(bitPattern: data)
-        MainActor.assumeIsolated {
-            guard let clientRaw = UnsafeRawPointer(bitPattern: clientBits),
-                let dataRaw = UnsafeMutableRawPointer(bitPattern: dataBits),
-                let me = NucleusWaylandRouter.impl(dataRaw, as: ExtWorkspaceManager.self)
-            else { return }
-            let projection = ExtWorkspaceClient(manager: me, version: version)
-            guard let res = WaylandResource.create(
-                client: OpaquePointer(clientRaw), interface: swift_wayland_iface_ext_workspace_manager_v1(),
-                version: Int32(version), id: id, vtable: ExtWorkspaceManagerV1Server.vtable,
-                owner: projection) else { return }
-            projection.bind(res)
-            projection.start()
-        }
-    }
-}
-
-private final class WeakGroup {
-    weak var group: ExtWorkspaceGroup?
-    init(_ group: ExtWorkspaceGroup) { self.group = group }
-}
-private final class WeakWorkspace {
-    weak var workspace: ExtWorkspaceHandle?
-    init(_ workspace: ExtWorkspaceHandle) { self.workspace = workspace }
 }
 
 /// A single client's pager projection (Rule 9: owned by its manager wl_resource).
 @MainActor
-final class ExtWorkspaceClient: DesktopModelObserver {
+@safe final class ExtWorkspaceClient: DesktopModelObserver {
     fileprivate unowned let manager: ExtWorkspaceManager
     fileprivate let version: Int32
-    private var resource: UnsafeMutablePointer<wl_resource>?
+    private let resource:
+        WaylandResourceHandle<ExtWorkspaceManagerV1Server>
 
     /// group_capabilities: create_workspace = 1.
     private static let groupCaps: UInt32 = 1
@@ -86,8 +69,10 @@ final class ExtWorkspaceClient: DesktopModelObserver {
     private static let workspaceCaps: UInt32 = 1 | 4
     private static let stateActive: UInt32 = 1
 
-    private var groups: [DisplayID: WeakGroup] = [:]
-    private var workspaces: [SpaceID: WeakWorkspace] = [:]
+    private var groups:
+        [DisplayID: WeakReference<ExtWorkspaceGroup>] = [:]
+    private var workspaces:
+        [SpaceID: WeakReference<ExtWorkspaceHandle>] = [:]
 
     fileprivate enum PendingRequest {
         case activate(space: SpaceID, output: DisplayID)
@@ -97,30 +82,39 @@ final class ExtWorkspaceClient: DesktopModelObserver {
     private var pending: [PendingRequest] = []
     private var finished = false
 
-    init(manager: ExtWorkspaceManager, version: UInt32) {
+    init(
+        resource: WaylandResourceHandle<ExtWorkspaceManagerV1Server>,
+        manager: ExtWorkspaceManager
+    ) {
+        self.resource = resource
         self.manager = manager
-        self.version = Int32(version)
+        version = resource.version ?? 1
     }
-    fileprivate func bind(_ resource: UnsafeMutablePointer<wl_resource>) { self.resource = resource }
     fileprivate func start() { manager.server.addObserver(self) }
 
     private var spaces: Spaces { manager.server.spaces }
 
     private func group(_ outputID: DisplayID) -> ExtWorkspaceGroup? {
         guard let box = groups[outputID] else { return nil }
-        guard let g = box.group else { groups[outputID] = nil; return nil }
+        guard let g = box.value else {
+            groups[outputID] = nil
+            return nil
+        }
         return g
     }
     private func workspace(_ spaceID: SpaceID) -> ExtWorkspaceHandle? {
         guard let box = workspaces[spaceID] else { return nil }
-        guard let w = box.workspace else { workspaces[spaceID] = nil; return nil }
+        guard let w = box.value else {
+            workspaces[spaceID] = nil
+            return nil
+        }
         return w
     }
 
     // MARK: DesktopModelObserver
 
     func desktopModelDidChange(_ changes: [DesktopChange]) {
-        guard !finished, let resource else { return }
+        guard !finished else { return }
         var touched = false
         for change in changes {
             switch change {
@@ -131,32 +125,48 @@ final class ExtWorkspaceClient: DesktopModelObserver {
             default: break  // window changes belong to foreign-toplevel
             }
         }
-        if touched { ext_workspace_manager_v1_send_done(resource) }
+        if touched { resource.sendDone() }
     }
 
     private func reconcileWorkspace(_ spaceID: SpaceID) -> Bool {
-        guard let resource, let space = spaces.spaces.first(where: { $0.id == spaceID }) else {
+        guard let resource = unsafe resource.resource,
+              let space = spaces.spaces.first(where: { $0.id == spaceID })
+        else {
             return dropWorkspace(spaceID)
         }
         let active = spaces.activeSpace(forDisplay: space.outputID) == spaceID
         let group = ensureGroup(forOutput: space.outputID)
 
         if workspace(spaceID) == nil {
-            guard let client = wl_resource_get_client(resource) else { return false }
-            let handleObj = ExtWorkspaceHandle(
-                client: self, spaceID: spaceID, outputID: space.outputID)
-            guard let wsRes = WaylandResource.create(
-                client: client, interface: swift_wayland_iface_ext_workspace_handle_v1(),
-                version: version, id: 0, vtable: ExtWorkspaceHandleV1Server.vtable,
-                owner: handleObj) else { return false }
-            handleObj.bind(wsRes)
-            handleObj.active = active
-            workspaces[spaceID] = WeakWorkspace(handleObj)
-            ext_workspace_manager_v1_send_workspace(resource, wsRes)
-            if let group { ext_workspace_group_handle_v1_send_workspace_enter(group.resource, wsRes) }
-            space.name.withCString { ext_workspace_handle_v1_send_name(wsRes, $0) }
-            ext_workspace_handle_v1_send_capabilities(wsRes, Self.workspaceCaps)
-            ext_workspace_handle_v1_send_state(wsRes, active ? Self.stateActive : 0)
+            guard let client = unsafe wl_resource_get_client(resource) else { return false }
+            guard unsafe ExtWorkspaceHandleV1Server.createResource(
+                client: client,
+                version: version,
+                owner: { handle in
+                    ExtWorkspaceHandle(
+                        resource: handle,
+                        client: self,
+                        spaceID: spaceID,
+                        outputID: space.outputID)
+                },
+                installed: { handleObj in
+                    handleObj.active = active
+                    self.workspaces[spaceID] = WeakReference(handleObj)
+                    self.resource.sendWorkspace(
+                        workspace: handleObj.resource)
+                    if let group {
+                        group.resource.sendWorkspaceEnter(
+                            workspace: handleObj.resource)
+                    }
+                    handleObj.resource.sendName(name: space.name)
+                    handleObj.resource.sendCapabilities(
+                        capabilities: ExtWorkspaceHandleV1WorkspaceCapabilities(
+                            rawValue: Self.workspaceCaps))
+                    handleObj.resource.sendState(
+                        state: ExtWorkspaceHandleV1State(
+                            rawValue: active ? Self.stateActive : 0))
+                }) != nil
+            else { return false }
             return true
         }
 
@@ -164,12 +174,14 @@ final class ExtWorkspaceClient: DesktopModelObserver {
         var emitted = false
         if handle.name != space.name {
             handle.name = space.name
-            space.name.withCString { ext_workspace_handle_v1_send_name(handle.resource, $0) }
+            handle.resource.sendName(name: space.name)
             emitted = true
         }
         if handle.active != active {
             handle.active = active
-            ext_workspace_handle_v1_send_state(handle.resource, active ? Self.stateActive : 0)
+            handle.resource.sendState(
+                state: ExtWorkspaceHandleV1State(
+                    rawValue: active ? Self.stateActive : 0))
             emitted = true
         }
         return emitted
@@ -178,23 +190,35 @@ final class ExtWorkspaceClient: DesktopModelObserver {
     /// Get-or-create the wire group for an output, retrying the (possibly deferred)
     /// output_enter each call.
     private func ensureGroup(forOutput outputID: DisplayID) -> ExtWorkspaceGroup? {
-        guard let resource, let client = wl_resource_get_client(resource) else { return nil }
+        guard let resource = unsafe resource.resource,
+              let client = unsafe wl_resource_get_client(resource)
+        else { return nil }
         if group(outputID) == nil {
-            let groupObj = ExtWorkspaceGroup(client: self, outputID: outputID)
-            guard let groupRes = WaylandResource.create(
-                client: client, interface: swift_wayland_iface_ext_workspace_group_handle_v1(),
-                version: version, id: 0, vtable: ExtWorkspaceGroupHandleV1Server.vtable,
-                owner: groupObj) else { return nil }
-            groupObj.bind(groupRes)
-            groups[outputID] = WeakGroup(groupObj)
-            ext_workspace_manager_v1_send_workspace_group(resource, groupRes)
-            ext_workspace_group_handle_v1_send_capabilities(groupRes, Self.groupCaps)
+            guard unsafe ExtWorkspaceGroupHandleV1Server.createResource(
+                client: client,
+                version: version,
+                owner: { handle in
+                    ExtWorkspaceGroup(
+                        resource: handle,
+                        client: self,
+                        outputID: outputID)
+                },
+                installed: { groupObj in
+                    self.groups[outputID] = WeakReference(groupObj)
+                    self.resource.sendWorkspaceGroup(
+                        workspace_group: groupObj.resource)
+                    groupObj.resource.sendCapabilities(
+                        capabilities: ExtWorkspaceGroupHandleV1GroupCapabilities(
+                            rawValue: Self.groupCaps))
+                }) != nil
+            else { return nil }
         }
         guard let group = group(outputID) else { return nil }
         if !group.outputAdvertised,
-            let outputRes = manager.outputResource(forClient: client, displayID: outputID)
+            let output = unsafe manager.outputResource(
+                forClient: client, displayID: outputID)
         {
-            ext_workspace_group_handle_v1_send_output_enter(group.resource, outputRes)
+            group.resource.sendOutputEnter(output: output)
             group.outputAdvertised = true
         }
         return group
@@ -203,16 +227,18 @@ final class ExtWorkspaceClient: DesktopModelObserver {
     private func dropWorkspace(_ spaceID: SpaceID) -> Bool {
         guard let handle = workspace(spaceID) else { return false }
         if let group = group(handle.outputID) {
-            ext_workspace_group_handle_v1_send_workspace_leave(group.resource, handle.resource)
+            group.resource.sendWorkspaceLeave(workspace: handle.resource)
         }
-        ext_workspace_handle_v1_send_removed(handle.resource)
+        handle.resource.sendRemoved()
         let outputID = handle.outputID
         workspaces[spaceID] = nil
         // An output keeps ≥1 workspace unless the output itself is gone, so a now-empty
         // group means the output was removed.
-        if !workspaces.values.contains(where: { $0.workspace?.outputID == outputID }) {
+        if !workspaces.values.contains(where: {
+            $0.value?.outputID == outputID
+        }) {
             if let group = group(outputID) {
-                ext_workspace_group_handle_v1_send_removed(group.resource)
+                group.resource.sendRemoved()
                 groups[outputID] = nil
             }
         }
@@ -227,7 +253,9 @@ final class ExtWorkspaceClient: DesktopModelObserver {
             let active = (spaceID == activeID)
             guard handle.active != active else { continue }
             handle.active = active
-            ext_workspace_handle_v1_send_state(handle.resource, active ? Self.stateActive : 0)
+            handle.resource.sendState(
+                state: ExtWorkspaceHandleV1State(
+                    rawValue: active ? Self.stateActive : 0))
             emitted = true
         }
         return emitted
@@ -273,80 +301,86 @@ final class ExtWorkspaceClient: DesktopModelObserver {
         finished = true
         pending.removeAll()
         manager.server.removeObserver(self)
-        if let resource { ext_workspace_manager_v1_send_finished(resource) }
+        resource.sendFinished()
     }
 
 }
 
-// The generated dispatch is nonisolated; the router only drives it on the compositor
-// main actor, so each handler reasserts that with `assumeIsolated`.
 extension ExtWorkspaceClient: ExtWorkspaceManagerV1Requests {
-    nonisolated func commit(_ resource: UnsafeMutablePointer<wl_resource>) {
-        MainActor.assumeIsolated { self.commitRequests() }
+    func commit(_ request: WaylandRequest<ExtWorkspaceManagerV1Server>) {
+        commitRequests()
     }
-    nonisolated func stop(_ resource: UnsafeMutablePointer<wl_resource>) {
-        MainActor.assumeIsolated { self.stopProjection() }
+    func stop(_ request: WaylandRequest<ExtWorkspaceManagerV1Server>) {
+        stopProjection()
     }
 }
 
 /// ext_workspace_group_handle_v1 owner (Rule 9): one output's wire group.
 @MainActor
-final class ExtWorkspaceGroup {
+@safe final class ExtWorkspaceGroup {
     private unowned let client: ExtWorkspaceClient
     let outputID: DisplayID
-    private(set) var resource: UnsafeMutablePointer<wl_resource>! = nil
+    fileprivate let resource:
+        WaylandResourceHandle<ExtWorkspaceGroupHandleV1Server>
     var outputAdvertised = false
 
-    init(client: ExtWorkspaceClient, outputID: DisplayID) {
+    init(
+        resource: WaylandResourceHandle<ExtWorkspaceGroupHandleV1Server>,
+        client: ExtWorkspaceClient,
+        outputID: DisplayID
+    ) {
+        self.resource = resource
         self.client = client
         self.outputID = outputID
     }
-    fileprivate func bind(_ resource: UnsafeMutablePointer<wl_resource>) { self.resource = resource }
 }
 
 extension ExtWorkspaceGroup: ExtWorkspaceGroupHandleV1Requests {
-    nonisolated func createWorkspace(_ resource: UnsafeMutablePointer<wl_resource>,
-                                     workspace: UnsafePointer<CChar>?) {
+    func createWorkspace(_ request: WaylandRequest<ExtWorkspaceGroupHandleV1Server>,
+                         workspace: String) {
         // The requested name is advisory; the model numbers workspaces. Buffered.
-        MainActor.assumeIsolated {
-            self.client.enqueueCreateWorkspace(output: self.outputID)
-        }
+        client.enqueueCreateWorkspace(output: outputID)
     }
 }
 
 /// ext_workspace_handle_v1 owner (Rule 9): one Space's wire workspace.
 @MainActor
-final class ExtWorkspaceHandle {
+@safe final class ExtWorkspaceHandle {
     private unowned let client: ExtWorkspaceClient
     let spaceID: SpaceID
     let outputID: DisplayID
-    private(set) var resource: UnsafeMutablePointer<wl_resource>! = nil
+    fileprivate let resource:
+        WaylandResourceHandle<ExtWorkspaceHandleV1Server>
     var name: String = ""
     var active: Bool = false
 
-    init(client: ExtWorkspaceClient, spaceID: SpaceID, outputID: DisplayID) {
+    init(
+        resource: WaylandResourceHandle<ExtWorkspaceHandleV1Server>,
+        client: ExtWorkspaceClient,
+        spaceID: SpaceID,
+        outputID: DisplayID
+    ) {
+        self.resource = resource
         self.client = client
         self.spaceID = spaceID
         self.outputID = outputID
     }
-    fileprivate func bind(_ resource: UnsafeMutablePointer<wl_resource>) { self.resource = resource }
 
-    fileprivate nonisolated func act(_ body: @escaping @MainActor (ExtWorkspaceClient, ExtWorkspaceHandle) -> Void) {
-        MainActor.assumeIsolated { body(self.client, self) }
+    fileprivate func act(_ body: (ExtWorkspaceClient, ExtWorkspaceHandle) -> Void) {
+        body(client, self)
     }
 }
 
-// The generated dispatch is nonisolated; reassert the compositor main actor.
 extension ExtWorkspaceHandle: ExtWorkspaceHandleV1Requests {
-    nonisolated func activate(_ resource: UnsafeMutablePointer<wl_resource>) {
+    func activate(_ request: WaylandRequest<ExtWorkspaceHandleV1Server>) {
         act { $0.enqueueActivate(space: $1.spaceID, output: $1.outputID) }
     }
     // deactivate: not advertised (the active workspace is implicitly replaced, never
     // cleared); assign: not advertised (workspaces are output-bound). Both no-op.
-    nonisolated func deactivate(_ resource: UnsafeMutablePointer<wl_resource>) {}
-    nonisolated func assign(_ resource: UnsafeMutablePointer<wl_resource>,
-                            workspace_group: UnsafeMutablePointer<wl_resource>?) {}
-    nonisolated func remove(_ resource: UnsafeMutablePointer<wl_resource>) {
+    func deactivate(_ request: WaylandRequest<ExtWorkspaceHandleV1Server>) {}
+    func assign(_ request: WaylandRequest<ExtWorkspaceHandleV1Server>,
+                workspace_group: WaylandBorrowedObject<ExtWorkspaceGroupHandleV1Server>) {}
+    func remove(_ request: WaylandRequest<ExtWorkspaceHandleV1Server>) {
         act { client, me in client.enqueueRemove(space: me.spaceID) }
     }
 }

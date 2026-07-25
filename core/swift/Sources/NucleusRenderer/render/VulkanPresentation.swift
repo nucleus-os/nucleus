@@ -6,22 +6,34 @@ public import VulkanC
 /// construction and dereference remain platform SPI operations, and the
 /// originating `VulkanBootstrap`/`VulkanSurface` lifetime must encompass every
 /// use. No mutable Vulkan state is accessed through these values directly.
-public struct VulkanInstanceHandle: @unchecked Sendable {
+@safe public struct VulkanInstanceHandle: @unchecked Sendable {
     private let raw: UnsafeRawPointer
-    @_spi(NucleusPlatform) public init(_ value: VkInstance) { raw = UnsafeRawPointer(value) }
-    @_spi(NucleusPlatform) public var vkInstance: VkInstance { OpaquePointer(raw) }
+    @_spi(NucleusPlatform) public init(_ value: VkInstance) {
+        unsafe raw = UnsafeRawPointer(value)
+    }
+    @_spi(NucleusPlatform) public var vkInstance: VkInstance {
+        unsafe OpaquePointer(raw)
+    }
 }
 
-public struct VulkanPhysicalDeviceHandle: @unchecked Sendable {
+@safe public struct VulkanPhysicalDeviceHandle: @unchecked Sendable {
     private let raw: UnsafeRawPointer
-    @_spi(NucleusPlatform) public init(_ value: VkPhysicalDevice) { raw = UnsafeRawPointer(value) }
-    @_spi(NucleusPlatform) public var vkPhysicalDevice: VkPhysicalDevice { OpaquePointer(raw) }
+    @_spi(NucleusPlatform) public init(_ value: VkPhysicalDevice) {
+        unsafe raw = UnsafeRawPointer(value)
+    }
+    @_spi(NucleusPlatform) public var vkPhysicalDevice: VkPhysicalDevice {
+        unsafe OpaquePointer(raw)
+    }
 }
 
-public struct VulkanSurfaceHandle: @unchecked Sendable {
+@safe public struct VulkanSurfaceHandle: @unchecked Sendable {
     private let raw: UnsafeRawPointer
-    @_spi(NucleusPlatform) public init(_ value: VkSurfaceKHR) { raw = UnsafeRawPointer(value) }
-    @_spi(NucleusPlatform) public var vkSurface: VkSurfaceKHR { OpaquePointer(raw) }
+    @_spi(NucleusPlatform) public init(_ value: VkSurfaceKHR) {
+        unsafe raw = UnsafeRawPointer(value)
+    }
+    @_spi(NucleusPlatform) public var vkSurface: VkSurfaceKHR {
+        unsafe OpaquePointer(raw)
+    }
 }
 
 public typealias VulkanSurfaceFactory = (VulkanInstanceHandle) -> VulkanSurfaceHandle?
@@ -44,7 +56,8 @@ final class VulkanInstanceLifetime {
 /// Owns one platform VkSurfaceKHR. It is created through the same factory path
 /// on every WSI platform and must be released before its originating instance.
 @MainActor
-public final class VulkanSurface {
+/// Encapsulates a surface handle while retaining its originating instance owner.
+@safe public final class VulkanSurface {
     let instance: VkInstance
     let dispatch: VK.InstanceDispatch
     let handle: VkSurfaceKHR
@@ -55,13 +68,13 @@ public final class VulkanSurface {
         dispatch: VK.InstanceDispatch, handle: VkSurfaceKHR
     ) {
         self.lifetime = lifetime
-        self.instance = instance
+        unsafe self.instance = instance
         self.dispatch = dispatch
-        self.handle = handle
+        unsafe self.handle = handle
     }
 
     isolated deinit {
-        dispatch.vkDestroySurfaceKHR?(instance, handle, nil)
+        unsafe dispatch.vkDestroySurfaceKHR?(instance, handle, nil)
     }
 }
 
@@ -84,7 +97,7 @@ public final class VulkanBootstrap {
         enableValidation: Bool = false
     ) -> VulkanBootstrap? {
         let contract = VkRequirements.contract(for: presentation)
-        guard let instance = InstanceOwner.create(
+        guard let instance = unsafe InstanceOwner.create(
             base: VK.loadBaseDispatch(), applicationName: applicationName,
             contract: contract, enableValidation: enableValidation
         ) else { return nil }
@@ -92,12 +105,14 @@ public final class VulkanBootstrap {
     }
 
     public func createSurface(_ factory: VulkanSurfaceFactory) -> VulkanSurface? {
-        guard !finalized,
-              let instance = instanceLifetime.owner?.handle,
-              let dispatch = instanceLifetime.owner?.dispatch,
-              let token = factory(VulkanInstanceHandle(instance))
+        guard !finalized else { return nil }
+        guard let instance = unsafe instanceLifetime.owner?.handle,
+              let dispatch = instanceLifetime.owner?.dispatch
         else { return nil }
-        return VulkanSurface(
+        guard let token = unsafe factory(VulkanInstanceHandle(instance)) else {
+            return nil
+        }
+        return unsafe VulkanSurface(
             lifetime: instanceLifetime, instance: instance, dispatch: dispatch,
             handle: token.vkSurface)
     }

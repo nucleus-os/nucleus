@@ -286,7 +286,7 @@ final class OutputTopologyReconciler {
         else { return }
         display.name.withCString { name in
             display.description.withCString { description in
-                waylandRuntime.addOutput(
+                unsafe waylandRuntime.addOutput(
                     display.id,
                     Int32(clamping: Int(display.logicalRect.x.rounded())),
                     Int32(clamping: Int(display.logicalRect.y.rounded())),

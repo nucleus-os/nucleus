@@ -80,7 +80,7 @@ import NucleusTypes
         let producer = TextureProducer(registry: registry)
         let pixels: [UInt8] = [255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 255, 255]
 
-        try withRequiredVulkanGraphite(
+        try unsafe withRequiredVulkanGraphite(
             presentation: .headless,
             applicationName: "TextureProducerTests"
         ) { _, _, context, recorder in
@@ -93,22 +93,25 @@ import NucleusTypes
 
             // First produce rasterizes; same revision suppresses; new revision
             // allocates a replacement handle.
+            let firstShadowValue = unsafe producer.produceShadow(
+                recorder: recorder, layerId: 10,
+                revision: 1, shadow: shadow)
             let firstShadow = try requireValue(
-                producer.produceShadow(
-                    recorder: recorder, layerId: 10,
-                    revision: 1, shadow: shadow),
+                firstShadowValue,
                 "initial shadow rasterization failed")
             #expect(producer.drainStats().shadowRepaint == 1)
+            let unchangedShadowValue = unsafe producer.produceShadow(
+                recorder: recorder, layerId: 10,
+                revision: 1, shadow: shadow)
             let unchangedShadow = try requireValue(
-                producer.produceShadow(
-                    recorder: recorder, layerId: 10,
-                    revision: 1, shadow: shadow),
+                unchangedShadowValue,
                 "cached shadow lookup failed")
             #expect(producer.drainStats().shadowRepaint == 0)
+            let updatedShadowValue = unsafe producer.produceShadow(
+                recorder: recorder, layerId: 10,
+                revision: 2, shadow: shadow)
             let updatedShadow = try requireValue(
-                producer.produceShadow(
-                    recorder: recorder, layerId: 10,
-                    revision: 2, shadow: shadow),
+                updatedShadowValue,
                 "updated shadow rasterization failed")
             #expect(producer.drainStats().shadowRepaint == 1)
             #expect(firstShadow == unchangedShadow)
@@ -120,32 +123,37 @@ import NucleusTypes
                 to: &linePayload, verbs: [.move, .line], points: [0, 17, 24, 17])
 
             let paintCommands = [
-                PaintDrawCommand(kind: .rect, x: 0, y: 0, w: 24, h: 18, color: (1, 0, 0, 1)),
-                PaintDrawCommand(kind: .roundedRect, x: 4, y: 4, w: 12, h: 8, radius: 3, color: (0, 1, 0, 0.8)),
-                PaintDrawCommand(
-                    kind: .path, x: 0, y: 17, w: 24, h: 0, strokeWidth: 2, color: (0, 0, 1, 1),
+                PaintCommand(kind: .rect, x: 0, y: 0, w: 24, h: 18, color: Color(r: 1, g: 0, b: 0, a: 1)),
+                PaintCommand(kind: .roundedRect, x: 4, y: 4, w: 12, h: 8, radius: 3, color: Color(r: 0, g: 1, b: 0, a: 0.8)),
+                PaintCommand(
+                    kind: .path, x: 0, y: 17, w: 24, h: 0, strokeWidth: 2, color: Color(r: 0, g: 0, b: 1, a: 1),
                     payloadOffset: 0, payloadLength: UInt32(linePayload.count), stroke: true),
-                PaintDrawCommand(kind: .image, x: 2, y: 2, w: 8, h: 8, imageHandle: 77),
-                PaintDrawCommand(kind: .textLayout, x: 1, y: 1, w: 20, h: 10, color: (1, 1, 1, 1), textLayoutHandle: 123),
+                PaintCommand(kind: .image, x: 2, y: 2, w: 8, h: 8, imageHandle: 77),
+                PaintCommand(kind: .textLayout, x: 1, y: 1, w: 20, h: 10, color: Color(r: 1, g: 1, b: 1, a: 1), textLayoutHandle: 123),
             ]
             let decodedPaintImage = pixels.withUnsafeBufferPointer {
-                nucleus.skia.makeRasterImageRGBA(2, 2, $0.baseAddress, $0.count)
+                unsafe nucleus.skia.makeRasterImageRGBA(
+                    2, 2, $0.baseAddress, $0.count)
             }
-            let paintImage = recorder.makeTextureImage(decodedPaintImage)
-            let paintHandle = producer.producePaintCommands(
+            let paintImage = unsafe recorder.makeTextureImage(decodedPaintImage)
+            let paintHandle = unsafe producer.producePaintCommands(
                 recorder: recorder, layerId: 12, revision: 1,
                 commands: paintCommands, payload: linePayload,
                 authoredWidth: 24, authoredHeight: 18,
                 contentWidth: 48, contentHeight: 36,
-                resolveImage: { handle in handle == 77 ? paintImage : nil },
+                resolveImage: { handle in
+                    unsafe handle == 77 ? paintImage : nil
+                },
                 resolveEffect: { _ in nil })
             #expect(producer.drainStats().paintRepaint == 1)
-            let paintHandle2 = producer.producePaintCommands(
+            let paintHandle2 = unsafe producer.producePaintCommands(
                 recorder: recorder, layerId: 12, revision: 1,
                 commands: paintCommands, payload: linePayload,
                 authoredWidth: 24, authoredHeight: 18,
                 contentWidth: 48, contentHeight: 36,
-                resolveImage: { handle in handle == 77 ? paintImage : nil },
+                resolveImage: { handle in
+                    unsafe handle == 77 ? paintImage : nil
+                },
                 resolveEffect: { _ in nil })
             let firstPaint = try requireValue(
                 paintHandle, "initial paint rasterization failed")
@@ -154,10 +162,11 @@ import NucleusTypes
             #expect(firstPaint == secondPaint)
             #expect(producer.drainStats().paintRepaint == 0)
 
-            let recording = recorder.snapRecording()
+            let recording = unsafe recorder.snapRecording()
+            let submissionCompleted = unsafe submitGraphiteAndWait(
+                context: context, recording: recording, serial: 1)
             try requireTrue(
-                submitGraphiteAndWait(
-                    context: context, recording: recording, serial: 1),
+                submissionCompleted,
                 "texture producer submission did not complete")
 
             // GPU-backed images must not outlive the context: drop them here.

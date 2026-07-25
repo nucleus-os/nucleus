@@ -16,6 +16,9 @@ let package = Package(
         .library(
             name: "NucleusLinuxAccessibility",
             targets: ["NucleusLinuxAccessibility"]),
+        .library(
+            name: "NucleusThemeAssetIO",
+            targets: ["NucleusThemeAssetIO"]),
         .executable(
             name: "NucleusSessionSupervisor",
             targets: ["NucleusSessionSupervisor"]),
@@ -95,6 +98,14 @@ let package = Package(
                 .interoperabilityMode(.Cxx),
                 .strictMemorySafety(),
             ]),
+        .target(
+            name: "NucleusThemeAssetIO",
+            path: "Sources/NucleusThemeAssetIO",
+            swiftSettings: [.strictMemorySafety()]),
+        .testTarget(
+            name: "NucleusThemeAssetIOTests",
+            dependencies: ["NucleusThemeAssetIO"],
+            path: "Tests/NucleusThemeAssetIOTests"),
         .target(
             name: "NucleusLinuxSessionC",
             path: "Sources/NucleusLinuxSessionC",
@@ -179,6 +190,7 @@ for target in package.targets {
         continue
     }
     var swiftSettings = (target.swiftSettings ?? []) + [
+        .strictMemorySafety(),
         .unsafeFlags(["-warnings-as-errors"]),
         .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
     ]

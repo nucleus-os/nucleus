@@ -62,3 +62,6 @@
 	path = third-party/mesa
 	url = git@github.com:maddythewisp/platform_external_mesa3d.git
 	branch = nucleus-android-17
+[submodule "third-party/swift-syntax"]
+	path = third-party/swift-syntax
+	url = https://github.com/swiftlang/swift-syntax.git

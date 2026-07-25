@@ -1,21 +1,13 @@
-/// Weak reference to a surface. Parent/child topology must never become an
-/// ownership path for a resource whose wl_surface is its sole owner.
-final class WeakSurfaceBox {
-    weak var surface: WlSurface?
-
-    init(_ surface: WlSurface) {
-        self.surface = surface
-    }
-}
-
+@MainActor
 private enum SubsurfaceStackEntry {
     case selfContent
-    case child(WeakSurfaceBox)
+    case child(WeakReference<WlSurface>)
 }
 
 /// Pending/current topology and synchronized-commit state for one wl_surface.
 /// The aggregate owns this mechanism; all wire requests mutate it through the
 /// methods on `WlSurface` below.
+@MainActor
 final class SubsurfaceTopology {
     weak var parent: WlSurface?
     private(set) var x: Int32 = 0
@@ -29,7 +21,7 @@ final class SubsurfaceTopology {
     var children: [WlSurface] {
         stack.compactMap {
             if case .child(let child) = $0 {
-                return child.surface
+                return child.value
             }
             return nil
         }
@@ -41,7 +33,7 @@ final class SubsurfaceTopology {
             case .selfContent:
                 return parentID
             case .child(let child):
-                return child.surface?.objectId
+                return child.value?.objectId
             }
         }
     }
@@ -74,22 +66,22 @@ final class SubsurfaceTopology {
         if next.isEmpty {
             next = [.selfContent]
         }
-        next.append(.child(WeakSurfaceBox(child)))
+        next.append(.child(WeakReference(child)))
         pendingStack = next
     }
 
     func removeChild(_ child: WlSurface) {
         stack.removeAll { entry in
             if case .child(let candidate) = entry {
-                return candidate.surface == nil
-                    || candidate.surface === child
+                return candidate.value == nil
+                    || candidate.value === child
             }
             return false
         }
         pendingStack?.removeAll { entry in
             if case .child(let candidate) = entry {
-                return candidate.surface == nil
-                    || candidate.surface === child
+                return candidate.value == nil
+                    || candidate.value === child
             }
             return false
         }
@@ -145,7 +137,7 @@ final class SubsurfaceTopology {
     ) -> Int? {
         stack.firstIndex {
             if case .child(let candidate) = $0 {
-                return candidate.surface === child
+                return candidate.value === child
             }
             return false
         }

@@ -35,7 +35,7 @@ final class GemHandleTable {
     func importHandle(fd: Int32) -> UInt32 {
         var handle: UInt32 = 0
         guard let deviceFd = device.availableFileDescriptor,
-              drmPrimeFDToHandle(deviceFd, fd, &handle) == 0,
+              unsafe drmPrimeFDToHandle(deviceFd, fd, &handle) == 0,
               handle != 0
         else { return 0 }
         refcount[handle, default: 0] += 1

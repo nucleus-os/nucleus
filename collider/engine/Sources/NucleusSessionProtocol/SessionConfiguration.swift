@@ -8,6 +8,7 @@ public enum SessionPresentMode: UInt8, Sendable, Equatable {
 public enum SessionConfigurationFailure: Error, CustomStringConvertible {
     case invalidScale
     case invalidDevicePath
+    case invalidExecutablePath
     case encodingTooLarge
     case invalidEncoding
     case invalidDescriptor(String)
@@ -19,6 +20,8 @@ public enum SessionConfigurationFailure: Error, CustomStringConvertible {
             "output scale must be positive and finite"
         case .invalidDevicePath:
             "DRM device path must be absolute"
+        case .invalidExecutablePath:
+            "Xwayland executable path must be absolute"
         case .encodingTooLarge:
             "session configuration exceeds the wire limit"
         case .invalidEncoding:
@@ -39,8 +42,8 @@ public struct SessionConfiguration: Sendable, Equatable {
     public static let defaults = try! SessionConfiguration()
 
     private static let magic: UInt32 = 0x4E_55_43_46
-    private static let version: UInt16 = 1
-    private static let fixedSize = 28
+    private static let version: UInt16 = 2
+    private static let fixedSize = 32
     private static let maximumEncodedSize = 64 * 1024
 
     public let outputScale: Double
@@ -50,6 +53,7 @@ public struct SessionConfiguration: Sendable, Equatable {
     public let traceDrmDemand: Bool
     public let drmDevicePath: String?
     public let wallpaperPath: String?
+    public let xwaylandExecutablePath: String?
 
     public init(
         outputScale: Double = 1,
@@ -58,7 +62,8 @@ public struct SessionConfiguration: Sendable, Equatable {
         traceProtocol: Bool = false,
         traceDrmDemand: Bool = false,
         drmDevicePath: String? = nil,
-        wallpaperPath: String? = nil
+        wallpaperPath: String? = nil,
+        xwaylandExecutablePath: String? = nil
     ) throws {
         guard outputScale.isFinite, outputScale > 0 else {
             throw SessionConfigurationFailure.invalidScale
@@ -66,8 +71,14 @@ public struct SessionConfiguration: Sendable, Equatable {
         if let drmDevicePath, !drmDevicePath.hasPrefix("/") {
             throw SessionConfigurationFailure.invalidDevicePath
         }
+        if let xwaylandExecutablePath,
+           !xwaylandExecutablePath.hasPrefix("/")
+        {
+            throw SessionConfigurationFailure.invalidExecutablePath
+        }
         let stringBytes = (drmDevicePath?.utf8.count ?? 0)
             + (wallpaperPath?.utf8.count ?? 0)
+            + (xwaylandExecutablePath?.utf8.count ?? 0)
         guard Self.fixedSize + stringBytes <= Self.maximumEncodedSize else {
             throw SessionConfigurationFailure.encodingTooLarge
         }
@@ -78,16 +89,22 @@ public struct SessionConfiguration: Sendable, Equatable {
         self.traceDrmDemand = traceDrmDemand
         self.drmDevicePath = drmDevicePath.flatMap { $0.isEmpty ? nil : $0 }
         self.wallpaperPath = wallpaperPath.flatMap { $0.isEmpty ? nil : $0 }
+        self.xwaylandExecutablePath = xwaylandExecutablePath.flatMap {
+            $0.isEmpty ? nil : $0
+        }
     }
 
     public var encoded: [UInt8] {
         let drm = Array((drmDevicePath ?? "").utf8)
         let wallpaper = Array((wallpaperPath ?? "").utf8)
-        precondition(Self.fixedSize + drm.count + wallpaper.count
-            <= Self.maximumEncodedSize)
+        let xwayland = Array((xwaylandExecutablePath ?? "").utf8)
+        precondition(
+            Self.fixedSize + drm.count + wallpaper.count + xwayland.count
+                <= Self.maximumEncodedSize)
         var bytes = [UInt8](
             repeating: 0,
-            count: Self.fixedSize + drm.count + wallpaper.count)
+            count: Self.fixedSize + drm.count + wallpaper.count
+                + xwayland.count)
         Self.store(Self.magic, in: &bytes, at: 0)
         Self.store(Self.version, in: &bytes, at: 4)
         var flags: UInt16 = 0
@@ -100,8 +117,14 @@ public struct SessionConfiguration: Sendable, Equatable {
         // Byte 17 is reserved and must remain zero.
         Self.store(UInt32(drm.count), in: &bytes, at: 20)
         Self.store(UInt32(wallpaper.count), in: &bytes, at: 24)
-        bytes.replaceSubrange(28..<(28 + drm.count), with: drm)
-        bytes.replaceSubrange((28 + drm.count)..<bytes.count, with: wallpaper)
+        Self.store(UInt32(xwayland.count), in: &bytes, at: 28)
+        bytes.replaceSubrange(32..<(32 + drm.count), with: drm)
+        bytes.replaceSubrange(
+            (32 + drm.count)..<(32 + drm.count + wallpaper.count),
+            with: wallpaper)
+        bytes.replaceSubrange(
+            (32 + drm.count + wallpaper.count)..<bytes.count,
+            with: xwayland)
         return bytes
     }
 
@@ -118,12 +141,19 @@ public struct SessionConfiguration: Sendable, Equatable {
         else { throw SessionConfigurationFailure.invalidEncoding }
         let drmCount = Int(Self.loadUInt32(bytes, at: 20))
         let wallpaperCount = Int(Self.loadUInt32(bytes, at: 24))
-        guard Self.fixedSize + drmCount + wallpaperCount == bytes.count,
+        let xwaylandCount = Int(Self.loadUInt32(bytes, at: 28))
+        guard Self.fixedSize + drmCount + wallpaperCount + xwaylandCount
+                == bytes.count,
               let drm = String(
-                validating: bytes[28..<(28 + drmCount)],
+                validating: bytes[32..<(32 + drmCount)],
                 as: UTF8.self),
               let wallpaper = String(
-                validating: bytes[(28 + drmCount)..<bytes.count],
+                validating: bytes[
+                    (32 + drmCount)..<(32 + drmCount + wallpaperCount)],
+                as: UTF8.self),
+              let xwayland = String(
+                validating: bytes[
+                    (32 + drmCount + wallpaperCount)..<bytes.count],
                 as: UTF8.self)
         else { throw SessionConfigurationFailure.invalidEncoding }
         let flags = Self.loadUInt16(bytes, at: 6)
@@ -134,7 +164,8 @@ public struct SessionConfiguration: Sendable, Equatable {
             traceProtocol: flags & (1 << 1) != 0,
             traceDrmDemand: flags & (1 << 2) != 0,
             drmDevicePath: drm.isEmpty ? nil : drm,
-            wallpaperPath: wallpaper.isEmpty ? nil : wallpaper)
+            wallpaperPath: wallpaper.isEmpty ? nil : wallpaper,
+            xwaylandExecutablePath: xwayland.isEmpty ? nil : xwayland)
     }
 
     public var hexEncoded: String {
@@ -190,7 +221,7 @@ public struct SessionConfiguration: Sendable, Equatable {
         var encoded: [UInt8] = []
         var chunk = [UInt8](repeating: 0, count: 4096)
         while true {
-            let count = read(descriptor, &chunk, chunk.count)
+            let count = unsafe read(descriptor, &chunk, chunk.count)
             if count > 0 {
                 guard encoded.count + count <= maximumEncodedSize else {
                     throw SessionConfigurationFailure.invalidEncoding
@@ -212,7 +243,8 @@ public struct SessionConfiguration: Sendable, Equatable {
     ) {
         let littleEndian = value.littleEndian
         withUnsafeBytes(of: littleEndian) {
-            bytes.replaceSubrange(offset..<(offset + $0.count), with: $0)
+            unsafe bytes.replaceSubrange(
+                offset..<(offset + $0.count), with: $0)
         }
     }
 
@@ -223,7 +255,8 @@ public struct SessionConfiguration: Sendable, Equatable {
     ) {
         let littleEndian = value.littleEndian
         withUnsafeBytes(of: littleEndian) {
-            bytes.replaceSubrange(offset..<(offset + $0.count), with: $0)
+            unsafe bytes.replaceSubrange(
+                offset..<(offset + $0.count), with: $0)
         }
     }
 
@@ -234,7 +267,8 @@ public struct SessionConfiguration: Sendable, Equatable {
     ) {
         let littleEndian = value.littleEndian
         withUnsafeBytes(of: littleEndian) {
-            bytes.replaceSubrange(offset..<(offset + $0.count), with: $0)
+            unsafe bytes.replaceSubrange(
+                offset..<(offset + $0.count), with: $0)
         }
     }
 

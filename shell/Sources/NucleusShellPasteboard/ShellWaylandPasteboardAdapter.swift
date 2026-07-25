@@ -30,7 +30,7 @@ struct ShellPasteboardResourceCounts: Equatable {
 }
 
 @MainActor
-public final class ShellWaylandPasteboardAdapter: PasteboardAdapter {
+@safe public final class ShellWaylandPasteboardAdapter: PasteboardAdapter {
     public typealias DiagnosticHandler =
         @MainActor @Sendable (_ operation: String, _ failure: PasteboardFailure) -> Void
 
@@ -51,13 +51,13 @@ public final class ShellWaylandPasteboardAdapter: PasteboardAdapter {
     }
 
     @MainActor
-    private final class Offer: ExtDataControlOfferV1Events {
+    @safe private final class Offer: ExtDataControlOfferV1Events {
         let proxy: OpaquePointer
         private(set) var mimeTypes: Set<String> = []
 
         init(proxy: OpaquePointer) {
-            self.proxy = proxy
-            ExtDataControlOfferV1Client.addListener(proxy, owner: self)
+            unsafe self.proxy = proxy
+            unsafe ExtDataControlOfferV1Client.addListener(proxy, owner: self)
         }
 
         var preferredMIMEType: String? {
@@ -66,19 +66,17 @@ public final class ShellWaylandPasteboardAdapter: PasteboardAdapter {
         }
 
         nonisolated func offer(
-            _ proxy: OpaquePointer,
-            mime_type: UnsafePointer<CChar>?
+            _ proxy: WaylandBorrowedProxy<ExtDataControlOfferV1Client>,
+            mime_type: String
         ) {
-            guard let mime_type else { return }
-            let value = String(cString: mime_type)
             _ = MainActor.assumeIsolated {
-                mimeTypes.insert(value)
+                mimeTypes.insert(mime_type)
             }
         }
     }
 
     @MainActor
-    private final class Source: ExtDataControlSourceV1Events {
+    @safe private final class Source: ExtDataControlSourceV1Events {
         let proxy: OpaquePointer
         let payload: [UInt8]
         weak var adapter: ShellWaylandPasteboardAdapter?
@@ -88,28 +86,31 @@ public final class ShellWaylandPasteboardAdapter: PasteboardAdapter {
             payload: [UInt8],
             adapter: ShellWaylandPasteboardAdapter
         ) {
-            self.proxy = proxy
+            unsafe self.proxy = proxy
             self.payload = payload
             self.adapter = adapter
-            ExtDataControlSourceV1Client.addListener(proxy, owner: self)
+            unsafe ExtDataControlSourceV1Client.addListener(proxy, owner: self)
         }
 
         nonisolated func send(
-            _ proxy: OpaquePointer,
-            mime_type: UnsafePointer<CChar>?,
-            fd: Int32
+            _ proxy: WaylandBorrowedProxy<ExtDataControlSourceV1Client>,
+            mime_type: String,
+            fd: consuming WaylandClientOwnedFileDescriptor
         ) {
-            let mime = mime_type.map(String.init(cString:))
+            let descriptor = fd.take()
             MainActor.assumeIsolated {
                 guard let adapter else {
-                    if fd >= 0 { _ = Glibc.close(fd) }
+                    if descriptor >= 0 { _ = Glibc.close(descriptor) }
                     return
                 }
-                adapter.source(self, send: mime, owning: fd)
+                adapter.source(
+                    self, send: mime_type, owning: descriptor)
             }
         }
 
-        nonisolated func cancelled(_ proxy: OpaquePointer) {
+        nonisolated func cancelled(
+            _ proxy: WaylandBorrowedProxy<ExtDataControlSourceV1Client>
+        ) {
             MainActor.assumeIsolated {
                 adapter?.sourceWasCancelled(self)
             }
@@ -146,20 +147,20 @@ public final class ShellWaylandPasteboardAdapter: PasteboardAdapter {
         pollSetDidChange: @escaping @MainActor () -> Void = {},
         diagnosticHandler: @escaping DiagnosticHandler = { _, _ in }
     ) {
-        guard let manager = client.proxy(.dataControl),
-              let device = ext_data_control_manager_v1_get_data_device(
+        guard let manager = unsafe client.proxy(.dataControl),
+              let device = unsafe ext_data_control_manager_v1_get_data_device(
                 manager,
                 seat.protocolSeat)
         else {
             return nil
         }
         self.client = client
-        self.manager = manager
-        self.device = device
+        unsafe self.manager = manager
+        unsafe self.device = device
         self.limits = limits
         self.pollSetDidChange = pollSetDidChange
         self.diagnosticHandler = diagnosticHandler
-        ExtDataControlDeviceV1Client.addListener(device, owner: self)
+        unsafe ExtDataControlDeviceV1Client.addListener(device, owner: self)
     }
 
     public var pollDescriptors: [ShellDataTransferPollDescriptor] {
@@ -171,10 +172,16 @@ public final class ShellWaylandPasteboardAdapter: PasteboardAdapter {
     }
 
     var resourceCounts: ShellPasteboardResourceCounts {
-        ShellPasteboardResourceCounts(
+        let deviceCount: Int
+        if let _ = unsafe device {
+            deviceCount = 1
+        } else {
+            deviceCount = 0
+        }
+        return ShellPasteboardResourceCounts(
             offers: offers.count,
             sources: sources.count,
-            devices: device == nil ? 0 : 1,
+            devices: deviceCount,
             transfers: transferExecutor.activeTransferCount)
     }
 
@@ -255,31 +262,31 @@ public final class ShellWaylandPasteboardAdapter: PasteboardAdapter {
     func publish(payload: [UInt8], mimeTypes: [String])
         throws(PasteboardFailure)
     {
-        guard !isShutdown, let device else { throw .unavailable }
-        guard let proxy = ext_data_control_manager_v1_create_data_source(manager)
+        guard !isShutdown, let device = unsafe device else { throw .unavailable }
+        guard let proxy = unsafe ext_data_control_manager_v1_create_data_source(manager)
         else {
             throw .transport("failed to create a Wayland data-control source")
         }
 
-        let source = Source(
+        let source = unsafe Source(
             proxy: proxy,
             payload: payload,
             adapter: self)
-        let sourceKey = key(proxy)
+        let sourceKey = unsafe key(proxy)
         sources[sourceKey] = source
         for mime in mimeTypes {
             mime.withCString {
-                ext_data_control_source_v1_offer(proxy, $0)
+                unsafe ext_data_control_source_v1_offer(proxy, $0)
             }
         }
-        ext_data_control_device_v1_set_selection(device, proxy)
+        unsafe ext_data_control_device_v1_set_selection(device, proxy)
         selectedSourceKey = sourceKey
         try flush(operation: "write-selection")
     }
 
     public func clear() async throws(PasteboardFailure) {
-        guard !isShutdown, let device else { throw .unavailable }
-        ext_data_control_device_v1_set_selection(device, nil)
+        guard !isShutdown, let device = unsafe device else { throw .unavailable }
+        unsafe ext_data_control_device_v1_set_selection(device, nil)
         selectedSourceKey = nil
         try flush(operation: "clear-selection")
     }
@@ -291,18 +298,18 @@ public final class ShellWaylandPasteboardAdapter: PasteboardAdapter {
         readRequestTokens.removeAll()
         activeOffer = nil
         for offer in offers.values {
-            ext_data_control_offer_v1_destroy(offer.proxy)
+            unsafe ext_data_control_offer_v1_destroy(offer.proxy)
         }
         offers.removeAll()
         for source in sources.values {
             source.adapter = nil
-            ext_data_control_source_v1_destroy(source.proxy)
+            unsafe ext_data_control_source_v1_destroy(source.proxy)
         }
         sources.removeAll()
         selectedSourceKey = nil
-        if let device {
-            ext_data_control_device_v1_destroy(device)
-            self.device = nil
+        if let device = unsafe device {
+            unsafe ext_data_control_device_v1_destroy(device)
+            unsafe self.device = nil
         }
     }
 
@@ -323,16 +330,16 @@ public final class ShellWaylandPasteboardAdapter: PasteboardAdapter {
             return
         }
         var descriptors = [Int32](repeating: -1, count: 2)
-        guard pipe2(&descriptors, O_CLOEXEC | O_NONBLOCK) == 0 else {
+        guard unsafe pipe2(&descriptors, O_CLOEXEC | O_NONBLOCK) == 0 else {
             continuation.resume(returning: .failure(.transport(
                 "failed to create selection pipe: "
-                    + String(cString: strerror(errno)))))
+                    + (unsafe String(cString: strerror(errno))))))
             return
         }
         let readDescriptor = TransferFileDescriptor(owning: descriptors[0])
         let writeDescriptor = TransferFileDescriptor(owning: descriptors[1])
         mime.withCString {
-            ext_data_control_offer_v1_receive(
+            unsafe ext_data_control_offer_v1_receive(
                 offer.proxy,
                 $0,
                 writeDescriptor.rawValue)
@@ -391,7 +398,7 @@ public final class ShellWaylandPasteboardAdapter: PasteboardAdapter {
         else {
             let failure = PasteboardFailure.transport(
                 "failed to configure selection descriptor: "
-                    + String(cString: strerror(errno)))
+                    + (unsafe String(cString: strerror(errno))))
             _ = Glibc.close(fileDescriptor)
             diagnosticHandler("serve-selection", failure)
             return
@@ -412,13 +419,13 @@ public final class ShellWaylandPasteboardAdapter: PasteboardAdapter {
     }
 
     private func sourceWasCancelled(_ source: Source) {
-        let sourceKey = key(source.proxy)
+        let sourceKey = unsafe key(source.proxy)
         if selectedSourceKey == sourceKey {
             selectedSourceKey = nil
         }
         guard sources.removeValue(forKey: sourceKey) != nil else { return }
         source.adapter = nil
-        ext_data_control_source_v1_destroy(source.proxy)
+        unsafe ext_data_control_source_v1_destroy(source.proxy)
     }
 
     private func flush(
@@ -427,7 +434,8 @@ public final class ShellWaylandPasteboardAdapter: PasteboardAdapter {
         let result = client.flush()
         guard result < 0, errno != EAGAIN else { return }
         throw .transport(
-            "\(operation) flush failed: " + String(cString: strerror(errno)))
+            "\(operation) flush failed: "
+                + (unsafe String(cString: strerror(errno))))
     }
 
     private func key(_ proxy: OpaquePointer) -> UInt {
@@ -447,7 +455,7 @@ public final class ShellWaylandPasteboardAdapter: PasteboardAdapter {
 
     private func monotonicNowNanoseconds() -> UInt64 {
         var time = timespec()
-        _ = clock_gettime(CLOCK_MONOTONIC, &time)
+        _ = unsafe clock_gettime(CLOCK_MONOTONIC, &time)
         let seconds = UInt64(max(0, time.tv_sec))
         let nanoseconds = UInt64(max(0, time.tv_nsec))
         return seconds.saturatingMultiply(1_000_000_000)
@@ -457,29 +465,33 @@ public final class ShellWaylandPasteboardAdapter: PasteboardAdapter {
 
 extension ShellWaylandPasteboardAdapter: ExtDataControlDeviceV1Events {
     public nonisolated func dataOffer(
-        _ proxy: OpaquePointer,
-        id: OpaquePointer?
+        _ proxy: WaylandBorrowedProxy<ExtDataControlDeviceV1Client>,
+        id: WaylandBorrowedProxy<ExtDataControlOfferV1Client>
     ) {
-        guard let id else { return }
-        let rawID = UInt(bitPattern: id)
+        let rawID = unsafe UInt(bitPattern: id.proxy)
         MainActor.assumeIsolated {
-            guard let id = OpaquePointer(bitPattern: rawID) else { return }
-            offers[rawID] = Offer(proxy: id)
+            guard let id = unsafe OpaquePointer(bitPattern: rawID) else { return }
+            offers[rawID] = unsafe Offer(proxy: id)
         }
     }
 
     public nonisolated func selection(
-        _ proxy: OpaquePointer,
-        id: OpaquePointer?
+        _ proxy: WaylandBorrowedProxy<ExtDataControlDeviceV1Client>,
+        id: WaylandBorrowedProxy<ExtDataControlOfferV1Client>?
     ) {
-        let rawID = id.map { UInt(bitPattern: $0) }
+        let rawID: UInt?
+        if let id {
+            rawID = unsafe UInt(bitPattern: id.proxy)
+        } else {
+            rawID = nil
+        }
         MainActor.assumeIsolated {
             let replacement = rawID.flatMap { offers[$0] }
             let oldOffer = activeOffer
             activeOffer = replacement
             if let oldOffer, oldOffer !== replacement {
-                offers.removeValue(forKey: key(oldOffer.proxy))
-                ext_data_control_offer_v1_destroy(oldOffer.proxy)
+                offers.removeValue(forKey: unsafe key(oldOffer.proxy))
+                unsafe ext_data_control_offer_v1_destroy(oldOffer.proxy)
             }
             if rawID == nil {
                 activeOffer = nil
@@ -487,7 +499,9 @@ extension ShellWaylandPasteboardAdapter: ExtDataControlDeviceV1Events {
         }
     }
 
-    public nonisolated func finished(_ proxy: OpaquePointer) {
+    public nonisolated func finished(
+        _ proxy: WaylandBorrowedProxy<ExtDataControlDeviceV1Client>
+    ) {
         MainActor.assumeIsolated {
             shutdown()
             diagnosticHandler(
@@ -497,15 +511,20 @@ extension ShellWaylandPasteboardAdapter: ExtDataControlDeviceV1Events {
     }
 
     public nonisolated func primarySelection(
-        _ proxy: OpaquePointer,
-        id: OpaquePointer?
+        _ proxy: WaylandBorrowedProxy<ExtDataControlDeviceV1Client>,
+        id: WaylandBorrowedProxy<ExtDataControlOfferV1Client>?
     ) {
-        let rawID = id.map { UInt(bitPattern: $0) }
+        let rawID: UInt?
+        if let id {
+            rawID = unsafe UInt(bitPattern: id.proxy)
+        } else {
+            rawID = nil
+        }
         MainActor.assumeIsolated {
             guard let rawID,
                   let offer = offers.removeValue(forKey: rawID)
             else { return }
-            ext_data_control_offer_v1_destroy(offer.proxy)
+            unsafe ext_data_control_offer_v1_destroy(offer.proxy)
         }
     }
 }

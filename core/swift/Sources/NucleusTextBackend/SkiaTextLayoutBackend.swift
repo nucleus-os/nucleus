@@ -43,8 +43,8 @@ public final class SkiaTextLayoutBackend: TextLayoutBackend {
     public func resolveFont(_ descriptor: FontDescriptor) -> ResolvedFontDescriptor? {
         let service = nucleus.text.TextLayoutService()
         var resolved = nucleus.text.ResolvedFontDescriptor()
-        return withUTF8View(descriptor.familyName) { familyView -> ResolvedFontDescriptor? in
-            let status = service.resolveFont(
+        return unsafe withUTF8View(descriptor.familyName) { familyView -> ResolvedFontDescriptor? in
+            let status = unsafe service.resolveFont(
                 familyView,
                 descriptor.pointSize,
                 descriptor.weight.cValue,
@@ -72,8 +72,8 @@ public final class SkiaTextLayoutBackend: TextLayoutBackend {
     public func fontMetrics(for descriptor: FontDescriptor) -> FontMetrics? {
         let service = nucleus.text.TextLayoutService()
         var metrics = nucleus.text.FontMetrics()
-        return withUTF8View(descriptor.familyName) { familyView -> FontMetrics? in
-            let status = service.queryFontMetrics(
+        return unsafe withUTF8View(descriptor.familyName) { familyView -> FontMetrics? in
+            let status = unsafe service.queryFontMetrics(
                 familyView,
                 descriptor.pointSize,
                 descriptor.weight.cValue,
@@ -153,13 +153,13 @@ public final class SkiaTextLayoutBackend: TextLayoutBackend {
                 containerWidth: containerWidth.map { $0 * Double(scale) }
             )
 
-            return withCTextRuns(
+            return unsafe withCTextRuns(
                 resolvedRuns,
                 localeIdentifier: paragraphStyle.localeIdentifier
             ) { cRuns in
                 var handle: UInt64 = 0
                 var metrics = nucleus.text.ParagraphMetrics()
-                let status = nucleus.text.TextLayoutService().createRuns(
+                let status = unsafe nucleus.text.TextLayoutService().createRuns(
                     cRuns.baseAddress,
                     cRuns.count,
                     &cParagraphStyle,
@@ -178,7 +178,7 @@ public final class SkiaTextLayoutBackend: TextLayoutBackend {
                 if lineCount > 0 {
                     metrics = nucleus.text.ParagraphMetrics()
                     let metricsStatus = lineMetrics.withUnsafeMutableBufferPointer { buffer in
-                        service.metrics(
+                        unsafe service.metrics(
                             handle,
                             buffer.baseAddress,
                             buffer.count,
@@ -235,7 +235,7 @@ public final class SkiaTextLayoutBackend: TextLayoutBackend {
         in handle: TextLayoutHandle
     ) -> TextGlyphPosition? {
         var position = nucleus.text.TextPosition()
-        guard nucleus.text.TextLayoutService().glyphPositionAt(
+        guard unsafe nucleus.text.TextLayoutService().glyphPositionAt(
             handle.rawValue,
             Float(point.x),
             Float(point.y),
@@ -255,7 +255,7 @@ public final class SkiaTextLayoutBackend: TextLayoutBackend {
         in handle: TextLayoutHandle
     ) -> TextCaretGeometry? {
         var caret = nucleus.text.TextCaret()
-        guard nucleus.text.TextLayoutService().caretForOffset(
+        guard unsafe nucleus.text.TextLayoutService().caretForOffset(
             handle.rawValue,
             offset.clampedUInt32,
             affinity.cValue,
@@ -283,7 +283,7 @@ public final class SkiaTextLayoutBackend: TextLayoutBackend {
         let end = max(range.lowerBound, range.upperBound).clampedUInt32
         var rectCount: UInt32 = 0
         let service = nucleus.text.TextLayoutService()
-        guard service.rectsForRange(
+        guard unsafe service.rectsForRange(
             handle.rawValue,
             start,
             end,
@@ -296,7 +296,7 @@ public final class SkiaTextLayoutBackend: TextLayoutBackend {
         guard rectCount > 0 else { return [] }
         var rects = Array(repeating: nucleus.text.TextRect(), count: Int(rectCount))
         let status = rects.withUnsafeMutableBufferPointer { buffer in
-            service.rectsForRange(
+            unsafe service.rectsForRange(
                 handle.rawValue,
                 start,
                 end,
@@ -342,43 +342,44 @@ package func withCTextRuns<T>(
     return textBytes.withUnsafeBufferPointer { textBuffer in
         familyBytes.withUnsafeBufferPointer { familyBuffer in
             localeBytes.withUnsafeBufferPointer { localeBuffer in
-            var cRuns = Array(repeating: nucleus.text.TextRunView(), count: runs.count)
+            var cRuns = unsafe Array(
+                repeating: nucleus.text.TextRunView(), count: runs.count)
             for index in runs.indices {
                 let runColor = runs[index].color ?? Color(1, 1, 1, 1)
 
                 let family = familyOffsets[index]
-                cRuns[index].fontFamily = textStringView(
+                unsafe cRuns[index].fontFamily = textStringView(
                     base: familyBuffer.baseAddress,
                     offset: family.offset,
                     length: family.length
                 )
-                cRuns[index].locale = textStringView(
+                unsafe cRuns[index].locale = textStringView(
                     base: localeBuffer.baseAddress,
                     offset: 0,
                     length: localeBuffer.count
                 )
                 let text = textOffsets[index]
-                cRuns[index].text = textStringView(
+                unsafe cRuns[index].text = textStringView(
                     base: textBuffer.baseAddress,
                     offset: text.offset,
                     length: text.length
                 )
-                cRuns[index].pointSize = runs[index].font.pointSize
-                cRuns[index].lineHeight = Float(
+                unsafe cRuns[index].pointSize = runs[index].font.pointSize
+                unsafe cRuns[index].lineHeight = Float(
                     runs[index].style.lineHeight ?? 0
                 )
-                cRuns[index].baselineShift = Float(
+                unsafe cRuns[index].baselineShift = Float(
                     runs[index].style.baselineOffset
                 )
-                cRuns[index].weight = runs[index].font.weight.cValue
-                cRuns[index].width = runs[index].font.width.cValue
-                cRuns[index].slant = runs[index].font.slant.cValue
-                cRuns[index].underline = runs[index].style.underline
-                cRuns[index].strikeThrough = runs[index].style.strikethrough
-                cRuns[index].red = runColor.r
-                cRuns[index].green = runColor.g
-                cRuns[index].blue = runColor.b
-                cRuns[index].alpha = runColor.a
+                unsafe cRuns[index].weight = runs[index].font.weight.cValue
+                unsafe cRuns[index].width = runs[index].font.width.cValue
+                unsafe cRuns[index].slant = runs[index].font.slant.cValue
+                unsafe cRuns[index].underline = runs[index].style.underline
+                unsafe cRuns[index].strikeThrough = runs[index].style.strikethrough
+                unsafe cRuns[index].red = runColor.r
+                unsafe cRuns[index].green = runColor.g
+                unsafe cRuns[index].blue = runColor.b
+                unsafe cRuns[index].alpha = runColor.a
             }
             return cRuns.withUnsafeBufferPointer(body)
             }
@@ -388,11 +389,12 @@ package func withCTextRuns<T>(
 
 package func withUTF8View<T>(_ text: String?, _ body: (nucleus.text.TextStringView) -> T) -> T {
     guard let text, !text.isEmpty else {
-        return body(nucleus.text.TextStringView())
+        return unsafe body(nucleus.text.TextStringView())
     }
     let bytes = Array(text.utf8)
     return bytes.withUnsafeBufferPointer { buffer in
-        body(textStringView(base: buffer.baseAddress, offset: 0, length: buffer.count))
+        unsafe body(textStringView(
+            base: buffer.baseAddress, offset: 0, length: buffer.count))
     }
 }
 
@@ -401,19 +403,21 @@ private func textStringView(
     offset: Int,
     length: Int
 ) -> nucleus.text.TextStringView {
-    guard let base, length > 0 else {
-        return nucleus.text.TextStringView()
+    guard let base = unsafe base, length > 0 else {
+        return unsafe nucleus.text.TextStringView()
     }
-    var view = nucleus.text.TextStringView()
-    view.data = UnsafeRawPointer(base.advanced(by: offset)).assumingMemoryBound(to: CChar.self)
-    view.size = length
-    return view
+    var view = unsafe nucleus.text.TextStringView()
+    unsafe view.data = UnsafeRawPointer(
+        base.advanced(by: offset)).assumingMemoryBound(to: CChar.self)
+    unsafe view.size = length
+    return unsafe view
 }
 
 private func stringFromFixedBuffer<T>(_ buffer: T, count: UInt32) -> String {
     withUnsafeBytes(of: buffer) { rawBuffer in
         let byteCount = min(Int(count), rawBuffer.count)
-        return String(decoding: rawBuffer.prefix(byteCount), as: UTF8.self)
+        return unsafe String(
+            decoding: rawBuffer.prefix(byteCount), as: UTF8.self)
     }
 }
 

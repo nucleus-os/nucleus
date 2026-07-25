@@ -118,7 +118,8 @@ public struct SessionReadinessMessage: Sendable, Equatable {
     ) {
         let littleEndian = value.littleEndian
         withUnsafeBytes(of: littleEndian) {
-            bytes.replaceSubrange(offset..<(offset + $0.count), with: $0)
+            unsafe bytes.replaceSubrange(
+                offset..<(offset + $0.count), with: $0)
         }
     }
 
@@ -129,7 +130,8 @@ public struct SessionReadinessMessage: Sendable, Equatable {
     ) {
         let littleEndian = value.littleEndian
         withUnsafeBytes(of: littleEndian) {
-            bytes.replaceSubrange(offset..<(offset + $0.count), with: $0)
+            unsafe bytes.replaceSubrange(
+                offset..<(offset + $0.count), with: $0)
         }
     }
 
@@ -217,7 +219,7 @@ public final class SessionReadinessReporter {
         var written = 0
         let result = message.encoded.withUnsafeBytes { bytes -> Int in
             while written < bytes.count {
-                let count = Glibc.write(
+                let count = unsafe Glibc.write(
                     descriptor,
                     bytes.baseAddress!.advanced(by: written),
                     bytes.count - written)

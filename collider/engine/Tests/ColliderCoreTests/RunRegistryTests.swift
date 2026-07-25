@@ -60,7 +60,10 @@ import Testing
     #expect(decoded.resumeCount == manifest.resumeCount)
 }
 
-@Test func interruptedRunResumptionRequiresTheRecordedTaskIdentities() async throws {
+@Test(arguments: [RunStatus.interrupted, .failed])
+func unfinishedRunResumptionReusesOnlyMatchingCleanTaskIdentities(
+    status: RunStatus
+) async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
         "collider-resume-\(UUID().uuidString)")
     defer { try? FileManager.default.removeItem(at: directory) }
@@ -72,7 +75,7 @@ import Testing
         isClean: false,
         explanation: "no prior task state")]
     try await registry.recordPlan(original, in: run)
-    try await registry.finish(run, status: .interrupted)
+    try await registry.finish(run, status: status)
 
     let resumed = try await registry.resume(run.id)
     try await registry.recordPlan(original, in: resumed)
@@ -81,8 +84,14 @@ import Testing
         identity: ArtifactDigest(bytes: [UInt8](repeating: 2, count: 32)),
         isClean: false,
         explanation: "input identity changed")]
+    try await registry.recordPlan(changed, in: resumed)
+    let incorrectlyClean = [TaskPlanEntry(
+        task: TaskID(rawValue: "core.build"),
+        identity: ArtifactDigest(bytes: [UInt8](repeating: 3, count: 32)),
+        isClean: true,
+        explanation: "fixture incorrectly claims reusable state")]
     await #expect(throws: RunRegistryFailure.self) {
-        try await registry.recordPlan(changed, in: resumed)
+        try await registry.recordPlan(incorrectlyClean, in: resumed)
     }
 }
 

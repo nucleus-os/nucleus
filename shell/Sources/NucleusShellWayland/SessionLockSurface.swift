@@ -12,7 +12,7 @@ import WaylandClientC
 public import WaylandClientDispatch
 
 @MainActor
-public final class SessionLockSurface {
+@safe public final class SessionLockSurface {
     public let wlSurface: OpaquePointer
     public let lockSurface: OpaquePointer
     public let output: WaylandOutput
@@ -29,17 +29,18 @@ public final class SessionLockSurface {
     private var isDestroyed = false
 
     public init?(lock: OpaquePointer, client: ShellWaylandClient, output: WaylandOutput) {
-        guard let surface = client.createSurface() else { return nil }
-        guard let lockSurface = ext_session_lock_v1_get_lock_surface(
+        guard let surface = unsafe client.createSurface() else { return nil }
+        guard let lockSurface = unsafe ext_session_lock_v1_get_lock_surface(
             lock, surface, output.proxy)
         else {
-            wl_surface_destroy(surface)
+            unsafe wl_surface_destroy(surface)
             return nil
         }
-        self.wlSurface = surface
-        self.lockSurface = lockSurface
+        unsafe self.wlSurface = surface
+        unsafe self.lockSurface = lockSurface
         self.output = output
-        ExtSessionLockSurfaceV1Client.addListener(lockSurface, owner: self)
+        unsafe ExtSessionLockSurfaceV1Client.addListener(
+            lockSurface, owner: self)
         // No commit here: unlike layer-shell, the compositor sends the first
         // configure unprompted, and committing a bufferless surface first is
         // not part of this protocol's handshake.
@@ -48,8 +49,8 @@ public final class SessionLockSurface {
     public func destroy() {
         guard !isDestroyed else { return }
         isDestroyed = true
-        ext_session_lock_surface_v1_destroy(lockSurface)
-        wl_surface_destroy(wlSurface)
+        unsafe ext_session_lock_surface_v1_destroy(lockSurface)
+        unsafe wl_surface_destroy(wlSurface)
     }
 
     isolated deinit {
@@ -62,11 +63,12 @@ public final class SessionLockSurface {
 // handler reasserts the main actor.
 extension SessionLockSurface: ExtSessionLockSurfaceV1Events {
     public nonisolated func configure(
-        _ proxy: OpaquePointer, serial: UInt32, width: UInt32, height: UInt32
+        _ proxy: WaylandBorrowedProxy<ExtSessionLockSurfaceV1Client>, serial: UInt32, width: UInt32, height: UInt32
     ) {
         // Acked before the actor hop, as layer-shell does: it is a C call on the
         // proxy, and the protocol wants the ack promptly.
-        ext_session_lock_surface_v1_ack_configure(proxy, serial)
+        unsafe ext_session_lock_surface_v1_ack_configure(
+            proxy.proxy, serial)
         MainActor.assumeIsolated {
             hasConfigure = true
             configuredWidth = width

@@ -3,13 +3,15 @@
 import WaylandServerC
 import WaylandServer
 import WaylandServerDispatch
+import WaylandProtocolTypes
 import NucleusRenderModel
 
-final class XdgSurface: WlSurfaceRole {
+@MainActor
+@safe final class XdgSurface: WlSurfaceRole {
     unowned let shell: XdgShell
     weak var surface: WlSurface?
-    private(set) var resource: UnsafeMutablePointer<wl_resource>?
-    private let wmBaseResource: UnsafeMutablePointer<wl_resource>
+    private let resource: WaylandResourceHandle<XdgSurfaceServer>
+    private let wmBaseResource: WaylandResourceHandle<XdgWmBaseServer>
 
     private let configureLedger = XdgConfigureLedger()
     var lastConsumedConfigure: XdgConfigureRecord? {
@@ -29,18 +31,18 @@ final class XdgSurface: WlSurfaceRole {
     }
 
     init(
+        resource: WaylandResourceHandle<XdgSurfaceServer>,
         shell: XdgShell,
         surface: WlSurface,
-        wmBaseResource: UnsafeMutablePointer<wl_resource>
+        wmBaseResource: WaylandResourceHandle<XdgWmBaseServer>
     ) {
+        self.resource = resource
         self.shell = shell
         self.surface = surface
         self.wmBaseResource = wmBaseResource
     }
 
-    package func bind(_ resource: UnsafeMutablePointer<wl_resource>) { self.resource = resource }
-
-    deinit {
+    isolated deinit {
         surface?.releaseXdgConstruction()
     }
 
@@ -51,7 +53,7 @@ final class XdgSurface: WlSurfaceRole {
         initial: Bool
     ) -> UInt32 {
         let serial = shell.nextSerial()
-        if let resource { xdg_surface_send_configure(resource, serial) }
+        resource.sendConfigure(serial: serial)
         configureLedger.append(XdgConfigureRecord(
             serial: serial, roleState: roleState, initial: initial))
         return serial
@@ -97,8 +99,8 @@ final class XdgSurface: WlSurfaceRole {
         if popup === object { popup = nil }
     }
 
-    func postWmError(_ code: UInt32, _ message: String) {
-        swift_wayland_resource_post_error(wmBaseResource, code, message)
+    func postWmError(_ code: XdgWmBaseError, _ message: String) {
+        wmBaseResource.postError(code, message: message)
     }
 
     // MARK: WlSurfaceRole
@@ -108,24 +110,25 @@ final class XdgSurface: WlSurfaceRole {
         context: SurfaceRoleCommitContext
     ) -> Bool {
         guard roleAssigned else {
-            postWmError(
-                1 /* not_constructed */,
-                "xdg_surface must be given a role before wl_surface.commit")
+            resource.postError(
+                .notConstructed,
+                message:
+                    "xdg_surface must be given a role before wl_surface.commit")
             return false
         }
         guard context.willHaveBuffer, !mapped else { return true }
         if let popup, !popup.hasValidParent {
-            postWmError(
-                3 /* invalid_popup_parent */,
-                "popup must be adopted by a valid parent before mapping")
+            wmBaseResource.postError(
+                .invalidPopupParent,
+                message:
+                    "popup must be adopted by a valid parent before mapping")
             return false
         }
         guard configureLedger.acknowledged != nil else {
-            if let resource {
-                swift_wayland_resource_post_error(
-                    resource, 3 /* unconfigured_buffer */,
+            resource.postError(
+                .unconfiguredBuffer,
+                message:
                     "buffer committed before an initial configure was acknowledged")
-            }
             return false
         }
         return true
@@ -194,80 +197,98 @@ final class XdgSurface: WlSurfaceRole {
 // MARK: xdg_surface requests
 
 extension XdgSurface: XdgSurfaceRequests {
-    func destroy(_ resource: UnsafeMutablePointer<wl_resource>) {
+    func destroy(_ request: WaylandRequest<XdgSurfaceServer>) {
+        let resource = unsafe request.resource
         guard toplevel == nil, popup == nil else {
-            swift_wayland_resource_post_error(
-                resource, 6 /* defunct_role_object */,
-                "destroy the XDG role object before xdg_surface")
+            request.postError(
+                .defunctRoleObject,
+                message: "destroy the XDG role object before xdg_surface")
             return
         }
         surface?.releaseXdgConstruction()
-        wl_resource_destroy(resource)
+        unsafe wl_resource_destroy(resource)
     }
 
-    func getToplevel(_ resource: UnsafeMutablePointer<wl_resource>, id: WlNewId) {
+    func getToplevel(
+        _ request: WaylandRequest<XdgSurfaceServer>,
+        id: WlNewId<XdgToplevelServer>
+    ) {
         guard let surface else { return }
-        guard !roleAssigned, surface.assignRole(self) else {
-            swift_wayland_resource_post_error(resource, 2 /* already_constructed */, "xdg_surface already has a role")
-            return
-        }
-        roleAssigned = true
-        let toplevel = XdgToplevel(shell: shell, xdgSurface: self)
-        guard let tres = id.create(vtable: XdgToplevelServer.vtable, owner: toplevel)
-        else { return }
-        toplevel.bind(tres)
-        self.toplevel = toplevel
+        _ = unsafe id.create(
+            owner: { handle -> XdgToplevel? in
+                guard !self.roleAssigned, surface.assignRole(self) else {
+                    self.resource.postError(
+                        .alreadyConstructed,
+                        message: "xdg_surface already has a role")
+                    return nil
+                }
+                self.roleAssigned = true
+                return XdgToplevel(
+                    resource: handle, shell: self.shell, xdgSurface: self)
+            },
+            installed: { toplevel in
+                self.toplevel = toplevel
+                toplevel.installed()
+            })
         // The initial configure is sent at the surface's first commit (xdg-shell
         // requires the configure follow the first commit, not the role request).
     }
 
     func getPopup(
-        _ resource: UnsafeMutablePointer<wl_resource>, id: WlNewId,
-        parent parentRes: UnsafeMutablePointer<wl_resource>?,
-        positioner positionerRes: UnsafeMutablePointer<wl_resource>?
+        _ request: WaylandRequest<XdgSurfaceServer>,
+        id: WlNewId<XdgPopupServer>,
+        parent parentRes: WaylandBorrowedObject<XdgSurfaceServer>?,
+        positioner positionerRes: WaylandBorrowedObject<XdgPositionerServer>
     ) {
-        guard let surface, let positionerRes,
-            let positioner = WaylandResource.owner(
-                of: positionerRes, as: XdgPositioner.self)
+        guard let surface,
+            let positioner = positionerRes.owner(as: XdgPositioner.self)
         else { return }
         guard let snapshot = positioner.snapshot() else {
-            swift_wayland_resource_post_error(
-                wmBaseResource, 5 /* invalid_positioner */,
-                "positioner is incomplete")
+            wmBaseResource.postError(
+                .invalidPositioner,
+                message: "positioner is incomplete")
             return
         }
-        guard !roleAssigned, surface.assignRole(self) else {
-            swift_wayland_resource_post_error(resource, 2 /* already_constructed */, "xdg_surface already has a role")
-            return
-        }
-        roleAssigned = true
-        let parent = parentRes.flatMap { WaylandResource.owner(of: $0, as: XdgSurface.self) }
+        let parent = parentRes?.owner(as: XdgSurface.self)
         guard parent?.validatePositionerParentConfigure(snapshot) ?? true else {
-            swift_wayland_resource_post_error(
-                wmBaseResource, 5 /* invalid_positioner */,
-                "positioner is not valid for the mapped parent geometry")
+            wmBaseResource.postError(
+                .invalidPositioner,
+                message:
+                    "positioner is not valid for the mapped parent geometry")
             return
         }
-        let popup = XdgPopup(shell: shell, xdgSurface: self, parent: parent)
-        guard let pres = id.create(vtable: XdgPopupServer.vtable, owner: popup)
-        else { return }
-        popup.bind(pres)
-        self.popup = popup
-        // A popup is configured immediately (placement is known at creation), then
-        // the xdg_surface serial pairs it. The first commit maps it.
-        let placement = popup.configure(positioner: snapshot)
-        _ = sendConfigureSerial(
-            roleState: .popup(placement), initial: true)
-        needsInitialConfigure = false
+        _ = unsafe id.create(
+            owner: { handle -> XdgPopup? in
+                guard !self.roleAssigned, surface.assignRole(self) else {
+                    self.resource.postError(
+                        .alreadyConstructed,
+                        message: "xdg_surface already has a role")
+                    return nil
+                }
+                self.roleAssigned = true
+                return XdgPopup(
+                    resource: handle,
+                    shell: self.shell,
+                    xdgSurface: self,
+                    parent: parent)
+            },
+            installed: { popup in
+                self.popup = popup
+                popup.installed()
+                let placement = popup.configure(positioner: snapshot)
+                _ = self.sendConfigureSerial(
+                    roleState: .popup(placement), initial: true)
+                self.needsInitialConfigure = false
+            })
     }
 
     func setWindowGeometry(
-        _ resource: UnsafeMutablePointer<wl_resource>, x: Int32, y: Int32, width: Int32, height: Int32
+        _ request: WaylandRequest<XdgSurfaceServer>, x: Int32, y: Int32, width: Int32, height: Int32
     ) {
         guard width > 0, height > 0 else {
-            swift_wayland_resource_post_error(
-                resource, 5 /* invalid_size */,
-                "window geometry must have positive dimensions")
+            request.postError(
+                .invalidSize,
+                message: "window geometry must have positive dimensions")
             return
         }
         pendingWindowGeometry = WlRect(
@@ -275,13 +296,14 @@ extension XdgSurface: XdgSurfaceRequests {
         pendingWindowGeometrySet = true
     }
 
-    func ackConfigure(_ resource: UnsafeMutablePointer<wl_resource>, serial: UInt32) {
+    func ackConfigure(_ request: WaylandRequest<XdgSurfaceServer>, serial: UInt32) {
         do {
             try configureLedger.acknowledge(serial: serial)
         } catch {
-            swift_wayland_resource_post_error(
-                resource, 4 /* invalid_serial */,
-                "configure serial was not outstanding on this xdg_surface")
+            request.postError(
+                .invalidSerial,
+                message:
+                    "configure serial was not outstanding on this xdg_surface")
             return
         }
     }

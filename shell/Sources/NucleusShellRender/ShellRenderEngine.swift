@@ -25,12 +25,12 @@ package enum ShellImageResidency: Sendable, Equatable {
 }
 
 @MainActor
-public final class ShellRenderEngine {
+@safe public final class ShellRenderEngine {
     public let core: RenderCore
     private var presenters: [UInt64: SwapchainPresenter] = [:]
     // Keyed alongside the presenters: the wl_surface each presents onto, so a resize can
     // re-supply the makeSurface closure (a no-op after first create, which caches the surface).
-    private var surfaces: [UInt64: OpaquePointer] = [:]
+    private var surfaces: [UInt64: OpaquePointer] = unsafe [:]
     private var refreshMillihertzByOutput: [UInt64: Int32] = [:]
     private var presentationContextIDByOutput: [UInt64: UInt32] = [:]
     private var presentationRootLayerIDByOutput: [UInt64: UInt64] = [:]
@@ -55,7 +55,7 @@ public final class ShellRenderEngine {
               let core = RenderCore.create(
             bootstrap: bootstrap,
             qualification: .platformProbe({ instance, physicalDevice, queueFamily in
-                WaylandVulkanSurface.supportsPresentation(
+                unsafe WaylandVulkanSurface.supportsPresentation(
                     instance: instance, physicalDevice: physicalDevice,
                     queueFamily: queueFamily, display: display)
             }),
@@ -64,7 +64,7 @@ public final class ShellRenderEngine {
             asyncRenderWakeSink: asyncRenderWakeSink
         ) else { return nil }
         self.core = core
-        self.display = display
+        unsafe self.display = display
     }
 
     /// Register a shell surface as a presentable output and build its swapchain presenter.
@@ -76,11 +76,14 @@ public final class ShellRenderEngine {
                            refreshMillihertz: Int32) -> UInt64? {
         let id = nextOutputID
         nextOutputID &+= 1
-        let display = self.display
+        let display = unsafe self.display
         Self.log(
             "shell-render: add surface output=\(id) extent=\(width)x\(height)")
         guard let surface = core.createSurface({
-            WaylandVulkanSurface.make(instance: $0, display: display, surface: waylandSurface)
+            unsafe WaylandVulkanSurface.make(
+                instance: $0,
+                display: display,
+                surface: waylandSurface)
         }) else {
             Self.log("shell-render: output=\(id) Vulkan surface creation failed")
             return nil
@@ -111,7 +114,7 @@ public final class ShellRenderEngine {
                 + "extent=\(presenter.lastExtentWidth)x"
                 + "\(presenter.lastExtentHeight)")
         presenters[id] = presenter
-        surfaces[id] = waylandSurface
+        unsafe surfaces[id] = waylandSurface
         refreshMillihertzByOutput[id] = refreshMillihertz
         presentationContextIDByOutput[id] = presentationContextID
         core.attachOutputGeometry(
@@ -188,7 +191,7 @@ public final class ShellRenderEngine {
     public func removeSurface(_ id: UInt64) {
         presenters[id]?.teardown()
         presenters[id] = nil
-        surfaces[id] = nil
+        unsafe surfaces[id] = nil
         refreshMillihertzByOutput[id] = nil
         presentationContextIDByOutput[id] = nil
         presentationRootLayerIDByOutput[id] = nil
@@ -254,7 +257,9 @@ public final class ShellRenderEngine {
     private static func log(_ message: String) {
         #if canImport(Glibc)
         let line = message + "\n"
-        line.withCString { _ = write(STDERR_FILENO, $0, strlen($0)) }
+        line.withCString {
+            _ = unsafe write(STDERR_FILENO, $0, strlen($0))
+        }
         #endif
     }
 

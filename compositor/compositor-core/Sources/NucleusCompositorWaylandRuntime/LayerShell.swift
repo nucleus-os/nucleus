@@ -12,10 +12,12 @@
 import WaylandServerC
 import WaylandServer
 import WaylandServerDispatch
+import WaylandProtocolTypes
 import Glibc
 
 // MARK: - Delegate seam
 
+@MainActor
 protocol LayerShellDelegate: AnyObject {
     /// The compositor DisplayID to use when get_layer_surface's output arg was nil.
     func defaultLayerOutputID() -> UInt64
@@ -33,48 +35,45 @@ protocol LayerShellDelegate: AnyObject {
 
 // MARK: - zwlr_layer_shell_v1 global
 
+@MainActor
 final class ZwlrLayerShellBinding {
     unowned let shell: ZwlrLayerShell
     init(_ shell: ZwlrLayerShell) { self.shell = shell }
 }
 
-final class ZwlrLayerShell {
+@MainActor
+@safe final class ZwlrLayerShell {
     weak var delegate: (any LayerShellDelegate)?
     private var display: OpaquePointer?
 
     func register(in router: NucleusWaylandRouter) {
-        display = router.display.display
+        unsafe display = router.display.display
         router.addGlobal(
-            interface: swift_wayland_iface_zwlr_layer_shell_v1(), version: 4, impl: self, bind: Self.bind)
+            ZwlrLayerShellV1Server.global(
+                implementation: self,
+                advertisedVersion: 4,
+                owner: { shell, _ in ZwlrLayerShellBinding(shell) }))
     }
 
     func nextSerial() -> UInt32 {
-        guard let display else { return 0 }
-        return wl_display_next_serial(display)
+        guard let display = unsafe display else { return 0 }
+        return unsafe wl_display_next_serial(display)
     }
 
-    private static let bind: @convention(c) (
-        OpaquePointer?, UnsafeMutableRawPointer?, UInt32, UInt32
-    ) -> Void = { client, data, version, id in
-        guard let client, let me = NucleusWaylandRouter.impl(data, as: ZwlrLayerShell.self) else { return }
-        _ = WaylandResource.create(
-            client: client, interface: swift_wayland_iface_zwlr_layer_shell_v1(), version: Int32(version),
-            id: id, vtable: ZwlrLayerShellV1Server.vtable, owner: ZwlrLayerShellBinding(me))
-    }
 }
 
 extension ZwlrLayerShellBinding: ZwlrLayerShellV1Requests {
     func getLayerSurface(
-        _ resource: UnsafeMutablePointer<wl_resource>, id: WlNewId,
-        surface surfaceRes: UnsafeMutablePointer<wl_resource>?,
-        output outputRes: UnsafeMutablePointer<wl_resource>?, layer: UInt32,
-        namespace namespacePtr: UnsafePointer<CChar>?
+        _ request: WaylandRequest<ZwlrLayerShellV1Server>,
+        id: WlNewId<ZwlrLayerSurfaceV1Server>,
+        surface surfaceRes: WaylandBorrowedObject<WlSurfaceServer>,
+        output outputRes: WaylandBorrowedObject<WlOutputServer>?, layer: ZwlrLayerShellV1Layer,
+        namespace namespacePtr: String
     ) {
         let me = shell
-        guard let surfaceRes, let surface = WaylandResource.owner(of: surfaceRes, as: WlSurface.self)
-        else { return }
-        guard layer <= 3 else {
-            swift_wayland_resource_post_error(resource, 1 /* invalid_layer */, "layer out of range")
+        guard let surface = surfaceRes.owner(as: WlSurface.self) else { return }
+        guard layer.rawValue <= 3 else {
+            request.postError(.invalidLayer, message: "layer out of range")
             return
         }
         // A wl_surface that already has a buffer committed cannot become a layer
@@ -82,26 +81,35 @@ extension ZwlrLayerShellBinding: ZwlrLayerShellV1Requests {
         // bufferless commit (e.g. a frame callback) is permitted, so this gates on
         // buffer content, not on `committed`.
         guard !surface.hasCurrentBuffer else {
-            swift_wayland_resource_post_error(resource, 2 /* already_constructed */, "surface already has buffer content")
+            request.postError(.alreadyConstructed, message: "surface already has buffer content")
             return
         }
-        let output = WlOutput.from(outputRes)
+        let output = outputRes?.output
         let outputID = output?.info.outputId ?? me.delegate?.defaultLayerOutputID() ?? 0
         let rect = output?.logicalRect ?? me.delegate?.defaultLayerOutputRect()
         guard let rect else {
-            swift_wayland_resource_post_error(resource, 1 /* invalid_layer (no output) */, "no output for layer surface")
+            request.postError(.invalidLayer, message: "no output for layer surface")
             return
         }
-        let ns = namespacePtr.map { String(cString: $0) } ?? ""
-        let layerSurface = ZwlrLayerSurface(
-            shell: me, surface: surface, outputID: outputID, outputRect: rect, layer: layer, namespace: ns)
-        guard surface.assignRole(layerSurface),
-            let lres = id.create(vtable: ZwlrLayerSurfaceV1Server.vtable, owner: layerSurface)
-        else {
-            swift_wayland_resource_post_error(resource, 0 /* role */, "surface already has a role")
+        let ns = namespacePtr
+        guard !surface.hasRole else {
+            request.postError(.role, message: "surface already has a role")
             return
         }
-        layerSurface.bind(lres)
+        _ = unsafe id.create(
+            owner: { handle in
+                ZwlrLayerSurface(
+                    resource: handle,
+                    shell: me,
+                    surface: surface,
+                    outputID: outputID,
+                    outputRect: rect,
+                    layer: layer.rawValue,
+                    namespace: ns)
+            },
+            installed: { layerSurface in
+                precondition(surface.assignRole(layerSurface))
+            })
     }
 }
 
@@ -110,12 +118,13 @@ extension ZwlrLayerShellBinding: ZwlrLayerShellV1Requests {
 /// A layer surface role. Accumulates the anchored-geometry request state, applies
 /// it at commit, arranges against the output, and sends configure/closed. Anchor
 /// bits: top=1, bottom=2, left=4, right=8.
-final class ZwlrLayerSurface: WlSurfaceRole {
+@MainActor
+@safe final class ZwlrLayerSurface: WlSurfaceRole {
     unowned let shell: ZwlrLayerShell
     weak var surface: WlSurface?
     let namespace: String
     let outputID: UInt64
-    private(set) var resource: UnsafeMutablePointer<wl_resource>?
+    private let resource: WaylandResourceHandle<ZwlrLayerSurfaceV1Server>
     private var outputRect: WlRect
 
     // Pending (request) state.
@@ -159,9 +168,8 @@ final class ZwlrLayerSurface: WlSurfaceRole {
     /// when the role object is destroyed.
     let surfaceObjectID: UInt32
 
-    /// The exclusive-zone / layout-relevant arranged state, as value types so the
-    /// nonisolated `layerSurfaceMapped` delegate can cross it to the main actor and
-    /// build the layout policy's `LayerSurfaceRecord`.
+    /// The exclusive-zone / layout-relevant arranged state used to build the layout
+    /// policy's `LayerSurfaceRecord`.
     struct LayerArrangement: Sendable {
         let layer: UInt32
         let anchor: UInt32
@@ -184,7 +192,16 @@ final class ZwlrLayerSurface: WlSurfaceRole {
             keyboardInteractivity: keyboardInteractivity)
     }
 
-    init(shell: ZwlrLayerShell, surface: WlSurface, outputID: UInt64, outputRect: WlRect, layer: UInt32, namespace: String) {
+    init(
+        resource: WaylandResourceHandle<ZwlrLayerSurfaceV1Server>,
+        shell: ZwlrLayerShell,
+        surface: WlSurface,
+        outputID: UInt64,
+        outputRect: WlRect,
+        layer: UInt32,
+        namespace: String
+    ) {
+        self.resource = resource
         self.shell = shell
         self.surface = surface
         self.outputID = outputID
@@ -194,8 +211,6 @@ final class ZwlrLayerSurface: WlSurfaceRole {
         self.namespace = namespace
         self.surfaceObjectID = surface.objectId
     }
-
-    fileprivate func bind(_ resource: UnsafeMutablePointer<wl_resource>) { self.resource = resource }
 
     // MARK: WlSurfaceRole
 
@@ -207,7 +222,7 @@ final class ZwlrLayerSurface: WlSurfaceRole {
         if !configured {
             guard !context.willHaveBuffer else {
                 postSurfaceError(
-                    2 /* already_constructed */,
+                    .invalidSurfaceState,
                     "buffer attached before the initial configure")
                 return false
             }
@@ -217,12 +232,12 @@ final class ZwlrLayerSurface: WlSurfaceRole {
             acknowledgedConfigureSerial == nil
         {
             postSurfaceError(
-                0 /* invalid_surface_state */,
+                .invalidSurfaceState,
                 "buffer committed before acknowledging a configure")
             return false
         }
         if let error = sizeAnchorError() {
-            postSurfaceError(1 /* invalid_size */, error)
+            postSurfaceError(.invalidSize, error)
             return false
         }
         return true
@@ -234,11 +249,13 @@ final class ZwlrLayerSurface: WlSurfaceRole {
         if isInitial {
             // A buffer attached before the first configure is a protocol error.
             guard !surface.hasCurrentBuffer else {
-                postSurfaceError(2 /* already_constructed */, "buffer attached before first configure")
+                postSurfaceError(
+                    .invalidSurfaceState,
+                    "buffer attached before first configure")
                 return
             }
             if let err = sizeAnchorError() {
-                postSurfaceError(1 /* invalid_size */, err)
+                postSurfaceError(.invalidSize, err)
                 return
             }
             applyAndArrange()
@@ -253,7 +270,7 @@ final class ZwlrLayerSurface: WlSurfaceRole {
             }
         } else {
             if let err = sizeAnchorError() {
-                postSurfaceError(1 /* invalid_size */, err)
+                postSurfaceError(.invalidSize, err)
                 return
             }
             mapped = true
@@ -272,7 +289,7 @@ final class ZwlrLayerSurface: WlSurfaceRole {
     /// owner is released when libwayland destroys the resource): unmap first —
     /// tearing down the model window + exclusive zone even when the client keeps the
     /// underlying wl_surface. Without the unmap the reserved exclusive band leaks.
-    deinit {
+    isolated deinit {
         if mapped { shell.delegate?.layerSurfaceUnmapped(surfaceID: surfaceObjectID) }
     }
 
@@ -291,13 +308,18 @@ final class ZwlrLayerSurface: WlSurfaceRole {
         return nil
     }
 
-    private func postSurfaceError(_ code: UInt32, _ message: String) {
-        if let resource { swift_wayland_resource_post_error(resource, code, message) }
+    private func postSurfaceError(
+        _ code: ZwlrLayerSurfaceV1Error,
+        _ message: String
+    ) {
+        resource.postError(code, message: message)
     }
 
     private func diagnostic(_ message: String) {
         let line = "layer-shell: \(message)\n"
-        line.withCString { _ = write(STDERR_FILENO, $0, strlen($0)) }
+        line.withCString {
+            _ = unsafe write(STDERR_FILENO, $0, strlen($0))
+        }
     }
 
     /// The pinned output disappeared. Close the role and release its shell-policy
@@ -309,7 +331,7 @@ final class ZwlrLayerSurface: WlSurfaceRole {
             mapped = false
             shell.delegate?.layerSurfaceUnmapped(surfaceID: surfaceObjectID)
         }
-        if let resource { zwlr_layer_surface_v1_send_closed(resource) }
+        resource.sendClosed()
     }
 
     /// Re-arrange a pinned layer surface against an updated logical output rect.
@@ -330,7 +352,7 @@ final class ZwlrLayerSurface: WlSurfaceRole {
     /// surface (its output vanished with no fallback).
     func sendClosed() {
         closed = true
-        if let resource { zwlr_layer_surface_v1_send_closed(resource) }
+        resource.sendClosed()
     }
 
     // MARK: arrange
@@ -386,11 +408,12 @@ final class ZwlrLayerSurface: WlSurfaceRole {
     }
 
     private func sendConfigure() {
-        guard let resource else { return }
         let serial = shell.nextSerial()
         outstandingConfigureSerials.append(serial)
-        zwlr_layer_surface_v1_send_configure(
-            resource, serial, configuredWidth, configuredHeight)
+        resource.sendConfigure(
+            serial: serial,
+            width: configuredWidth,
+            height: configuredHeight)
     }
 
 }
@@ -398,73 +421,70 @@ final class ZwlrLayerSurface: WlSurfaceRole {
 // MARK: requests
 
 extension ZwlrLayerSurface: ZwlrLayerSurfaceV1Requests {
-    func setSize(_ resource: UnsafeMutablePointer<wl_resource>, width w: UInt32, height h: UInt32) {
+    func setSize(_ request: WaylandRequest<ZwlrLayerSurfaceV1Server>, width w: UInt32, height h: UInt32) {
         pendingWidth = Int32(bitPattern: w)
         pendingHeight = Int32(bitPattern: h)
     }
 
-    func setAnchor(_ resource: UnsafeMutablePointer<wl_resource>, anchor a: UInt32) {
+    func setAnchor(_ request: WaylandRequest<ZwlrLayerSurfaceV1Server>, anchor a: ZwlrLayerSurfaceV1Anchor) {
         // anchor is a bitfield of top=1|bottom=2|left=4|right=8; any other bit is
         // invalid_anchor (value 2 on the layer_surface).
-        guard a & ~UInt32(0xF) == 0 else {
-            swift_wayland_resource_post_error(resource, 2 /* invalid_anchor */, "anchor bits out of range")
+        guard a.rawValue & ~UInt32(0xF) == 0 else {
+            request.postError(.invalidAnchor, message: "anchor bits out of range")
             return
         }
-        pendingAnchor = a
+        pendingAnchor = a.rawValue
     }
 
-    func setExclusiveZone(_ resource: UnsafeMutablePointer<wl_resource>, zone z: Int32) {
+    func setExclusiveZone(_ request: WaylandRequest<ZwlrLayerSurfaceV1Server>, zone z: Int32) {
         pendingExclusiveZone = z
     }
 
     func setMargin(
-        _ resource: UnsafeMutablePointer<wl_resource>, top: Int32, right: Int32, bottom: Int32, left: Int32
+        _ request: WaylandRequest<ZwlrLayerSurfaceV1Server>, top: Int32, right: Int32, bottom: Int32, left: Int32
     ) {
         pendingMarginTop = top; pendingMarginRight = right
         pendingMarginBottom = bottom; pendingMarginLeft = left
     }
 
-    func setKeyboardInteractivity(_ resource: UnsafeMutablePointer<wl_resource>, keyboard_interactivity ki: UInt32) {
-        guard ki <= 2 else {
-            swift_wayland_resource_post_error(resource, 3 /* invalid_keyboard_interactivity */, "bad keyboard interactivity")
+    func setKeyboardInteractivity(_ request: WaylandRequest<ZwlrLayerSurfaceV1Server>, keyboard_interactivity ki: ZwlrLayerSurfaceV1KeyboardInteractivity) {
+        guard ki.rawValue <= 2 else {
+            request.postError(.invalidKeyboardInteractivity, message: "bad keyboard interactivity")
             return
         }
-        pendingKeyboard = ki
+        pendingKeyboard = ki.rawValue
     }
 
-    func setLayer(_ resource: UnsafeMutablePointer<wl_resource>, layer: UInt32) {
-        guard layer <= 3 else {
+    func setLayer(_ request: WaylandRequest<ZwlrLayerSurfaceV1Server>, layer: ZwlrLayerShellV1Layer) {
+        guard layer.rawValue <= 3 else {
             // invalid_layer belongs to the zwlr_layer_shell_v1 error enum (value 1);
             // wlroots posts it on the layer_surface resource, matching get_layer_surface.
-            swift_wayland_resource_post_error(resource, 1 /* invalid_layer */, "layer out of range")
+            request.postError(.invalidSize, message: "layer out of range")
             return
         }
-        pendingLayer = layer
+        pendingLayer = layer.rawValue
     }
 
-    func setExclusiveEdge(_ resource: UnsafeMutablePointer<wl_resource>, edge: UInt32) {
+    func setExclusiveEdge(_ request: WaylandRequest<ZwlrLayerSurfaceV1Server>, edge: ZwlrLayerSurfaceV1Anchor) {
         // Unreachable while the global advertises v4. Restore v5 only with
         // validated, double-buffered exclusive-edge layout behavior.
     }
 
     func getPopup(
-        _ resource: UnsafeMutablePointer<wl_resource>, popup popupRes: UnsafeMutablePointer<wl_resource>?
+        _ request: WaylandRequest<ZwlrLayerSurfaceV1Server>, popup popupRes: WaylandBorrowedObject<XdgPopupServer>
     ) {
         // Adopt a same-client xdg popup: re-drive its configure so it maps under the
         // layer surface. libwayland hands the popup as a live resource — the retired
         // cross-client XdgWmBaseTable lookup is gone.
-        guard let popupRes, let popup = WaylandResource.owner(of: popupRes, as: XdgPopup.self)
-        else { return }
+        guard let popup = popupRes.owner(as: XdgPopup.self) else { return }
         popup.adoptLayerParent(surface)
     }
 
-    func ackConfigure(_ resource: UnsafeMutablePointer<wl_resource>, serial: UInt32) {
+    func ackConfigure(_ request: WaylandRequest<ZwlrLayerSurfaceV1Server>, serial: UInt32) {
         guard let index = outstandingConfigureSerials.firstIndex(
             of: serial)
         else {
-            swift_wayland_resource_post_error(
-                resource, 0 /* invalid_surface_state */,
-                "configure serial was not issued by this layer surface")
+            request.postError(.invalidSurfaceState, message: "configure serial was not issued by this layer surface")
             return
         }
         acknowledgedConfigureSerial = serial

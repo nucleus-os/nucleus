@@ -89,7 +89,7 @@ extension ShellHost {
         case .disconnected(let error):
             writeErr(
                 "nucleus-shell: Wayland flush failed: "
-                    + String(cString: strerror(error)))
+                    + (unsafe String(cString: strerror(error))))
             return false
         }
     }
@@ -235,6 +235,6 @@ extension ShellHost {
 
     func writeErr(_ message: String) {
         let message = message + "\n"
-        _ = message.withCString { write(2, $0, strlen($0)) }
+        _ = message.withCString { unsafe write(2, $0, strlen($0)) }
     }
 }

@@ -90,19 +90,19 @@ func logRendererDrm(_ message: String) {
         ("renderer-drm: " + message + "\n").utf8)
     line.withUnsafeBytes { bytes in
         if let base = bytes.baseAddress {
-            _ = Glibc.write(
+            _ = unsafe Glibc.write(
                 STDERR_FILENO, base, bytes.count)
         }
     }
 }
 
 func rendererErrno() -> Int32 {
-    __errno_location().pointee
+    unsafe __errno_location().pointee
 }
 
 func rendererMonotonicNowNs() -> UInt64 {
     var timestamp = timespec()
-    clock_gettime(CLOCK_MONOTONIC, &timestamp)
+    unsafe clock_gettime(CLOCK_MONOTONIC, &timestamp)
     return UInt64(timestamp.tv_sec)
         &* 1_000_000_000
         &+ UInt64(timestamp.tv_nsec)
@@ -111,7 +111,7 @@ func rendererMonotonicNowNs() -> UInt64 {
 func logScanout(_ message: String) {
     let line = "scanout: \(message)\n"
     line.withCString {
-        _ = write(
+        _ = unsafe write(
             STDERR_FILENO, $0, strlen($0))
     }
 }
@@ -127,7 +127,7 @@ extension RendererRuntime {
         asyncRenderWakeSink: any AsyncRenderWakeSink
     ) -> RendererRuntime? {
         var deviceStat = stat()
-        guard fstat(drmDeviceFd, &deviceStat) == 0
+        guard unsafe fstat(drmDeviceFd, &deviceStat) == 0
         else { return nil }
         let deviceID = UInt64(deviceStat.st_rdev)
         let targetMajor = Int64(
@@ -151,37 +151,43 @@ extension RendererRuntime {
             bootstrap: bootstrap,
             qualification: .platformProbe {
                 instance, physicalDevice, _ in
-                guard let raw = vkGetInstanceProcAddr(
+                guard let raw = unsafe vkGetInstanceProcAddr(
                     instance.vkInstance,
                     "vkGetPhysicalDeviceProperties2")
                 else { return false }
-                let getProperties = unsafeBitCast(
+                let getProperties = unsafe unsafeBitCast(
                     raw,
                     to: PFN_vkGetPhysicalDeviceProperties2
                         .self)
                 var drm =
-                    VkPhysicalDeviceDrmPropertiesEXT()
-                drm.sType =
+                    unsafe VkPhysicalDeviceDrmPropertiesEXT()
+                unsafe drm.sType =
                     VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRM_PROPERTIES_EXT
                 var properties =
-                    VkPhysicalDeviceProperties2()
-                properties.sType =
+                    unsafe VkPhysicalDeviceProperties2()
+                unsafe properties.sType =
                     VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2
                 withUnsafeMutablePointer(to: &drm) {
                     drmPointer in
-                    properties.pNext =
+                    unsafe properties.pNext =
                         UnsafeMutableRawPointer(drmPointer)
-                    getProperties(
+                    unsafe getProperties(
                         physicalDevice.vkPhysicalDevice,
                         &properties)
                 }
-                let matches = drm.hasPrimary != 0
-                    && drm.primaryMajor == targetMajor
-                    && drm.primaryMinor == targetMinor
+                let hasPrimary = unsafe drm.hasPrimary != 0
+                let primaryMajor = unsafe drm.primaryMajor
+                let primaryMinor = unsafe drm.primaryMinor
+                let hasRender = unsafe drm.hasRender != 0
+                let renderMajor = unsafe drm.renderMajor
+                let renderMinor = unsafe drm.renderMinor
+                let matches = hasPrimary
+                    && primaryMajor == targetMajor
+                    && primaryMinor == targetMinor
                 logRendererDrm(
                     "Vulkan candidate primary=" +
-                    "\(drm.hasPrimary != 0 ? "\(drm.primaryMajor):\(drm.primaryMinor)" : "none") " +
-                    "render=\(drm.hasRender != 0 ? "\(drm.renderMajor):\(drm.renderMinor)" : "none") " +
+                    "\(hasPrimary ? "\(primaryMajor):\(primaryMinor)" : "none") " +
+                    "render=\(hasRender ? "\(renderMajor):\(renderMinor)" : "none") " +
                     "match=\(matches)")
                 return matches
             },
@@ -195,7 +201,7 @@ extension RendererRuntime {
         }
         guard let gbm = GbmDevice(
             borrowingFd: drmDeviceFd),
-            let gbmHandle = gbm.handle
+            let gbmHandle = unsafe gbm.handle
         else {
             logRendererDrm(
                 "gbm_create_device failed errno=\(rendererErrno())")
@@ -208,7 +214,7 @@ extension RendererRuntime {
             "kernel_timestamp_monotonic=\(caps.timestampMonotonic)")
         let drmDevice = DrmDeviceLifetime(
             fileDescriptor: drmDeviceFd)
-        return RendererRuntime(
+        return unsafe RendererRuntime(
             core: core,
             gbm: consume gbm,
             gbmHandle: gbmHandle,

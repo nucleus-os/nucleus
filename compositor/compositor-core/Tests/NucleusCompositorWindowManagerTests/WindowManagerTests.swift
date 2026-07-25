@@ -97,7 +97,7 @@ private func nucleus_compositor_window_manager_normalize_output_state(
 }
 
 @MainActor
-private func nucleus_compositor_window_manager_migrate_off_output(
+@unsafe private func nucleus_compositor_window_manager_migrate_off_output(
     _ windowID: UInt64,
     _ removedOutputID: UInt64,
     _ hasFallbackOutputID: UInt8,
@@ -128,9 +128,9 @@ private func nucleus_compositor_window_manager_migrate_off_output(
         hasMaximizedRect: hasMaximizedRect != 0,
         maximizedRect: maximizedRect
     ) else { return 0 }
-    outManaged?.pointee = result.managed ? 1 : 0
-    outChanged?.pointee = result.changed ? 1 : 0
-    outSpecialChanged?.pointee = result.specialChanged ? 1 : 0
+    unsafe outManaged?.pointee = result.managed ? 1 : 0
+    unsafe outChanged?.pointee = result.changed ? 1 : 0
+    unsafe outSpecialChanged?.pointee = result.specialChanged ? 1 : 0
     return 1
 }
 
@@ -245,17 +245,17 @@ private func nucleus_compositor_window_manager_migrate_off_output(
     // xdg toplevel with a native-Command app-id resolves to native. This is the
     // case the Zig side could not see — the app-id lives here — so these clients
     // were previously always translated.
-    let kitty = windowManager.xdgCreated(xdgToplevelID: 1)
+    let kitty = windowManager.xdgCreated(xdgToplevelID: XdgToplevelID(1))
     server.window(id: kitty)?.appId = "kitty"
     #expect(windowManager.nativeCommandPolicy(windowID: kitty) == true)
 
     // The match is case-insensitive.
-    let gnome = windowManager.xdgCreated(xdgToplevelID: 2)
+    let gnome = windowManager.xdgCreated(xdgToplevelID: XdgToplevelID(2))
     server.window(id: gnome)?.appId = "org.GNOME.Terminal"
     #expect(windowManager.nativeCommandPolicy(windowID: gnome) == true)
 
     // A non-native xdg app is translated (Command → Control).
-    let editor = windowManager.xdgCreated(xdgToplevelID: 3)
+    let editor = windowManager.xdgCreated(xdgToplevelID: XdgToplevelID(3))
     server.window(id: editor)?.appId = "com.example.editor"
     #expect(windowManager.nativeCommandPolicy(windowID: editor) == false)
 
@@ -282,13 +282,13 @@ final class RecordingDesktopObserver: DesktopModelObserver {
     windowManager.reset()
 
     // A window that exists before registration is replayed as a snapshot add.
-    let pre = windowManager.xdgCreated(xdgToplevelID: 1)
+    let pre = windowManager.xdgCreated(xdgToplevelID: XdgToplevelID(1))
     let observer = RecordingDesktopObserver()
     server.addObserver(observer)
     #expect(observer.flat.contains(.windowAdded(pre)))
 
     // Live changes accumulate and dispatch on drain, not synchronously.
-    let live = windowManager.xdgCreated(xdgToplevelID: 2)
+    let live = windowManager.xdgCreated(xdgToplevelID: XdgToplevelID(2))
     server.window(id: live)?.title = "A"
     server.window(id: live)?.title = "B"
     server.window(id: live)?.appId = "app"
@@ -322,7 +322,7 @@ final class RecordingDesktopObserver: DesktopModelObserver {
     server.serverReset()
     windowManager.reset()
 
-    let id = windowManager.xdgCreated(xdgToplevelID: 1)
+    let id = windowManager.xdgCreated(xdgToplevelID: XdgToplevelID(1))
     let observer = RecordingDesktopObserver()
     server.addObserver(observer)
     guard let window = server.window(id: id) else {
@@ -405,7 +405,7 @@ final class RecordingDesktopObserver: DesktopModelObserver {
     #expect(observer.batches.count == batchesBefore)
 
     // Assigning a window to a workspace streams windowSpaceChanged.
-    let windowID = windowManager.xdgCreated(xdgToplevelID: 1)
+    let windowID = windowManager.xdgCreated(xdgToplevelID: XdgToplevelID(1))
     #expect(server.spacesAssignWindowToSpace(windowID: windowID, spaceID: firstSpace))
     server.drainChanges()
     #expect((observer.batches.last ?? []).contains(.windowSpaceChanged(window: windowID, space: firstSpace)))
@@ -734,7 +734,7 @@ final class RecordingDesktopObserver: DesktopModelObserver {
     var managed: UInt8 = 0
     var changed: UInt8 = 0
     var specialChanged: UInt8 = 0
-    #expect(nucleus_compositor_window_manager_migrate_off_output(
+    let migrationResult = unsafe nucleus_compositor_window_manager_migrate_off_output(
         windowID,
         7,
         1, 9,
@@ -745,7 +745,8 @@ final class RecordingDesktopObserver: DesktopModelObserver {
         &managed,
         &changed,
         &specialChanged
-    ) == 1)
+    )
+    #expect(migrationResult == 1)
     #expect(specialChanged == 1)
 }
 
@@ -859,7 +860,7 @@ final class RecordingDesktopObserver: DesktopModelObserver {
     windowManager.reset()
     try seedConfigurePolicyDisplay()
 
-    let windowID = windowManager.xdgCreated(xdgToplevelID: 0x5501)
+    let windowID = windowManager.xdgCreated(xdgToplevelID: XdgToplevelID(0x5501))
     #expect(windowID != 0)
 
     let plan = try #require(windowManager.planConfigure(
@@ -991,7 +992,7 @@ final class RecordingDesktopObserver: DesktopModelObserver {
     var managed: UInt8 = 0
     var changed: UInt8 = 0
     var specialChanged: UInt8 = 0
-    #expect(nucleus_compositor_window_manager_migrate_off_output(
+    let migrationResult = unsafe nucleus_compositor_window_manager_migrate_off_output(
         windowID,
         7,
         1, 9,
@@ -1002,7 +1003,8 @@ final class RecordingDesktopObserver: DesktopModelObserver {
         &managed,
         &changed,
         &specialChanged
-    ) == 1)
+    )
+    #expect(migrationResult == 1)
     #expect(managed == 1)
     #expect(changed == 1)
     #expect(specialChanged == 1)
@@ -1066,7 +1068,7 @@ final class RecordingDesktopObserver: DesktopModelObserver {
     server.serverReset()
     windowManager.reset()
 
-    let windowID = windowManager.xdgCreated(xdgToplevelID: 0xabc)
+    let windowID = windowManager.xdgCreated(xdgToplevelID: XdgToplevelID(0xabc))
     #expect(windowID != 0)
     #expect(server.window(id: windowID)?.source == .xdg)
 
@@ -1100,19 +1102,19 @@ final class RecordingDesktopObserver: DesktopModelObserver {
     server.serverReset()
     windowManager.reset()
 
-    let first = windowManager.xdgCreated(xdgToplevelID: 0xabc)
-    let duplicate = windowManager.xdgCreated(xdgToplevelID: 0xabc)
+    let first = windowManager.xdgCreated(xdgToplevelID: XdgToplevelID(0xabc))
+    let duplicate = windowManager.xdgCreated(xdgToplevelID: XdgToplevelID(0xabc))
     #expect(duplicate == first)
-    #expect(windowManager.xdgRole(windowID: first)?.xdgToplevelID == 0xabc)
+    #expect(windowManager.xdgRole(windowID: first)?.xdgToplevelID == XdgToplevelID(0xabc))
 
     windowManager.xdgDestroyed(windowID: first)
     #expect(windowManager.xdgRole(windowID: first) == nil)
     try server.windowDestroy(id: first)
 
-    let second = windowManager.xdgCreated(xdgToplevelID: 0xabc)
+    let second = windowManager.xdgCreated(xdgToplevelID: XdgToplevelID(0xabc))
     #expect(second != 0)
     #expect(second != first)
-    #expect(windowManager.xdgRole(windowID: second)?.xdgToplevelID == 0xabc)
+    #expect(windowManager.xdgRole(windowID: second)?.xdgToplevelID == XdgToplevelID(0xabc))
 }
 
 @MainActor

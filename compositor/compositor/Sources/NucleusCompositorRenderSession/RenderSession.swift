@@ -4,7 +4,7 @@ import Glibc
 /// injects its libseat device operations and owns this object until reactor
 /// shutdown has completed.
 @MainActor
-public final class DrmSession {
+@safe public final class DrmSession {
     private var openDevice: ((UnsafePointer<CChar>?) -> Int32)?
     private var closeDevice: ((Int32) -> Void)?
 
@@ -17,13 +17,15 @@ public final class DrmSession {
         open: @escaping (UnsafePointer<CChar>?) -> Int32,
         close: @escaping (Int32) -> Void
     ) {
-        openDevice = open
+        unsafe openDevice = open
         closeDevice = close
     }
 
     public func open(path: UnsafePointer<CChar>?) -> Int32 {
-        guard fd < 0, let path, let openDevice else { return -1 }
-        let opened = openDevice(path)
+        guard fd < 0 else { return -1 }
+        guard let path = unsafe path else { return -1 }
+        guard let openDevice = unsafe openDevice else { return -1 }
+        let opened = unsafe openDevice(path)
         guard opened >= 0 else { return -1 }
         generation &+= 1
         if generation == 0 { generation = 1 }

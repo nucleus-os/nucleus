@@ -327,7 +327,7 @@ final class DataTransferExecutor {
             capacity: 16 * 1024
         ) { scratch in
             while transfers[token] != nil {
-                let count = Glibc.read(
+                let count = unsafe Glibc.read(
                     pending.descriptor.borrowedValue,
                     scratch.baseAddress,
                     scratch.count)
@@ -341,7 +341,7 @@ final class DataTransferExecutor {
                                 "transfer exceeded \(pending.byteLimit) byte limit"))
                         return
                     }
-                    pending.bytes.append(
+                    unsafe pending.bytes.append(
                         contentsOf: UnsafeBufferPointer(
                             start: scratch.baseAddress,
                             count: byteCount))
@@ -358,7 +358,7 @@ final class DataTransferExecutor {
                     operation: pending.operation,
                     failure: .transport(
                         "transfer read failed: "
-                            + String(cString: strerror(errno))))
+                            + (unsafe String(cString: strerror(errno)))))
                 return
             }
         }
@@ -367,7 +367,7 @@ final class DataTransferExecutor {
     private func drainWrite(token: UInt64, pending: PendingWrite) {
         while pending.offset < pending.payload.count {
             let count = pending.payload.withUnsafeBytes { bytes in
-                Glibc.write(
+                unsafe Glibc.write(
                     pending.descriptor.borrowedValue,
                     bytes.baseAddress?.advanced(by: pending.offset),
                     pending.payload.count - pending.offset)
@@ -390,7 +390,7 @@ final class DataTransferExecutor {
                 operation: pending.operation,
                 failure: .transport(
                     "transfer write failed: "
-                        + String(cString: strerror(errno))))
+                        + (unsafe String(cString: strerror(errno)))))
             return
         }
         transfers.removeValue(forKey: token)?.descriptor.close()

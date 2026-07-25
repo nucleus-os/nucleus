@@ -34,6 +34,8 @@ Complete the phases below in strict order. A phase is complete only when its
 behavioral gate passes. Later phases extend the conformance harness established
 earlier; they do not retroactively become prerequisites for an earlier gate.
 
+Status: complete
+
 ## Host taxonomy
 
 Use these names consistently in code, tests, diagnostics, and documentation:

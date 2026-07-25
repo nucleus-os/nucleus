@@ -5,11 +5,23 @@ import NucleusAndroidGraphicsContract
 
 @Test func feedbackTableDecodesNativeFormatModifierRecords() throws {
     var data = Data(count: 32)
-    data.withUnsafeMutableBytes { bytes in
-        bytes.storeBytes(of: UInt32(0x3432_5258), toByteOffset: 0, as: UInt32.self)
-        bytes.storeBytes(of: UInt64(7), toByteOffset: 8, as: UInt64.self)
-        bytes.storeBytes(of: UInt32(0x3432_5241), toByteOffset: 16, as: UInt32.self)
-        bytes.storeBytes(of: UInt64(11), toByteOffset: 24, as: UInt64.self)
+    unsafe data.withUnsafeMutableBytes { bytes in
+        unsafe bytes.storeBytes(
+            of: UInt32(0x3432_5258),
+            toByteOffset: 0,
+            as: UInt32.self)
+        unsafe bytes.storeBytes(
+            of: UInt64(7),
+            toByteOffset: 8,
+            as: UInt64.self)
+        unsafe bytes.storeBytes(
+            of: UInt32(0x3432_5241),
+            toByteOffset: 16,
+            as: UInt32.self)
+        unsafe bytes.storeBytes(
+            of: UInt64(11),
+            toByteOffset: 24,
+            as: UInt64.self)
     }
     #expect(try DmabufFeedbackTable.decode(data) == [
         DrmFormatModifier(format: 0x3432_5258, modifier: 7),
@@ -19,9 +31,15 @@ import NucleusAndroidGraphicsContract
 
 @Test func feedbackAccumulatorPreservesTranchePriorityAndFlags() throws {
     var data = Data(count: 16)
-    data.withUnsafeMutableBytes { bytes in
-        bytes.storeBytes(of: UInt32(0x3432_5258), toByteOffset: 0, as: UInt32.self)
-        bytes.storeBytes(of: UInt64(3), toByteOffset: 8, as: UInt64.self)
+    unsafe data.withUnsafeMutableBytes { bytes in
+        unsafe bytes.storeBytes(
+            of: UInt32(0x3432_5258),
+            toByteOffset: 0,
+            as: UInt32.self)
+        unsafe bytes.storeBytes(
+            of: UInt64(3),
+            toByteOffset: 8,
+            as: UInt64.self)
     }
     let accumulator = DmabufFeedbackAccumulator()
     try accumulator.setFormatTable(data)

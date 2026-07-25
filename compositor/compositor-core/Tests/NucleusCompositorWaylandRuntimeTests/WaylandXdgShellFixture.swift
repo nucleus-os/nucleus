@@ -10,6 +10,18 @@
 import Glibc
 import WaylandServerC
 
+@MainActor
+private func surfaceForWireID(
+    _ id: UInt32, in compositor: WlCompositor
+) -> WlSurface? {
+    compositor.liveSurfaceIDs.lazy
+        .compactMap { compositor.surface(id: $0) }
+        .first {
+            guard let resource = unsafe $0.resource else { return false }
+            return unsafe wl_resource_get_id(resource) == id
+        }
+}
+
 private func fail(_ msg: String) -> Never {
     print("FAIL: \(msg)")
     exit(1)
@@ -146,7 +158,8 @@ enum WaylandXdgShellFixture {
         guard delegate.lastTitle == "hello" else { fail("set_title not recorded") }
 
         // close: the compositor asks the client to close (in-process trigger).
-        compositor.surface(id: surfId)?.role.flatMap { $0 as? XdgSurface }?.toplevel?.sendClose()
+        surfaceForWireID(surfId, in: compositor)?
+            .role.flatMap { $0 as? XdgSurface }?.toplevel?.sendClose()
         let afterClose = client.drainEvents()
         guard WireMessage.first(afterClose, object: topId, opcode: 1) != nil else {
             fail("missing xdg_toplevel.close")

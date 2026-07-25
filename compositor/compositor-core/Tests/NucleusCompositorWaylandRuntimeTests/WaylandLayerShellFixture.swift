@@ -8,6 +8,18 @@
 import Glibc
 import WaylandServerC
 
+@MainActor
+private func surfaceForWireID(
+    _ id: UInt32, in compositor: WlCompositor
+) -> WlSurface? {
+    compositor.liveSurfaceIDs.lazy
+        .compactMap { compositor.surface(id: $0) }
+        .first {
+            guard let resource = unsafe $0.resource else { return false }
+            return unsafe wl_resource_get_id(resource) == id
+        }
+}
+
 private func fail(_ msg: String) -> Never {
     print("FAIL: \(msg)")
     exit(1)
@@ -124,7 +136,8 @@ enum WaylandLayerShellFixture {
         }
 
         // closed asks the client to destroy the surface (compositor-initiated).
-        compositor.surface(id: surfId)?.role.flatMap { $0 as? ZwlrLayerSurface }?.sendClosed()
+        surfaceForWireID(surfId, in: compositor)?
+            .role.flatMap { $0 as? ZwlrLayerSurface }?.sendClosed()
         let afterClosed = client.drainEvents()
         guard WireMessage.first(afterClosed, object: layerId, opcode: 1) != nil else {
             fail("missing layer_surface.closed")

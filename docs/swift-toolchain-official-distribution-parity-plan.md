@@ -17,6 +17,8 @@ targets, post-assembly assertions, and functional smoke tests directly define
 the shipped surface. Do not maintain a second product manifest that can drift
 from the executable build graph.
 
+Status: active
+
 ## Progress and Decisions
 
 - [x] Audited the Linux and macOS builders against the official distribution

@@ -20,7 +20,7 @@ import NucleusUI
             // Recorded as text only so the tests can assert what was submitted;
             // a real authenticator never turns the bytes back into a String.
             attempts.append(unsafe password.withUnsafeBytes {
-                String(decoding: $0, as: UTF8.self)
+                unsafe String(decoding: $0, as: UTF8.self)
             })
             pending = completion
         }

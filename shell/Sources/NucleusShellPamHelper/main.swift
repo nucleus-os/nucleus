@@ -34,7 +34,9 @@ final class ConversationState {
     }
 
     func scrub() {
-        password.withUnsafeMutableBytes { nucleus_pam_scrub($0.baseAddress, $0.count) }
+        password.withUnsafeMutableBytes {
+            unsafe nucleus_pam_scrub($0.baseAddress, $0.count)
+        }
         password = [0]
     }
 }
@@ -52,43 +54,54 @@ let conversation: @convention(c) (
     UnsafeMutablePointer<UnsafeMutablePointer<pam_response>?>?,
     UnsafeMutableRawPointer?
 ) -> Int32 = { count, messages, responses, appdata in
-    guard count > 0, let messages, let responses, let appdata else {
+    guard count > 0 else {
         return Int32(PAM_CONV_ERR)
     }
-    let state = Unmanaged<ConversationState>.fromOpaque(appdata).takeUnretainedValue()
-    guard let replies = nucleus_pam_alloc_responses(count) else {
+    guard let messages = unsafe messages,
+          let responses = unsafe responses,
+          let appdata = unsafe appdata
+    else {
+        return Int32(PAM_CONV_ERR)
+    }
+    let state = unsafe Unmanaged<ConversationState>
+        .fromOpaque(appdata)
+        .takeUnretainedValue()
+    guard let replies = unsafe nucleus_pam_alloc_responses(count) else {
         return Int32(PAM_BUF_ERR)
     }
 
     for index in 0..<Int(count) {
-        guard let message = messages[index] else {
-            nucleus_pam_free_responses(replies, count)
+        guard let message = unsafe messages[index] else {
+            unsafe nucleus_pam_free_responses(replies, count)
             return Int32(PAM_CONV_ERR)
         }
 
-        switch message.pointee.msg_style {
+        switch unsafe message.pointee.msg_style {
         case Int32(PAM_PROMPT_ECHO_OFF):
             let ok = state.password.withUnsafeBufferPointer { buffer in
-                nucleus_pam_set_response(replies, Int32(index), buffer.baseAddress)
+                unsafe nucleus_pam_set_response(
+                    replies, Int32(index), buffer.baseAddress)
             }
             if ok != 0 {
-                nucleus_pam_free_responses(replies, count)
+                unsafe nucleus_pam_free_responses(replies, count)
                 return Int32(PAM_BUF_ERR)
             }
         case Int32(PAM_PROMPT_ECHO_ON):
-            if nucleus_pam_set_response(replies, Int32(index), "") != 0 {
-                nucleus_pam_free_responses(replies, count)
+            if unsafe nucleus_pam_set_response(
+                replies, Int32(index), "") != 0
+            {
+                unsafe nucleus_pam_free_responses(replies, count)
                 return Int32(PAM_BUF_ERR)
             }
         case Int32(PAM_ERROR_MSG), Int32(PAM_TEXT_INFO):
             break
         default:
-            nucleus_pam_free_responses(replies, count)
+            unsafe nucleus_pam_free_responses(replies, count)
             return Int32(PAM_CONV_ERR)
         }
     }
 
-    responses.pointee = replies
+    unsafe responses.pointee = replies
     return Int32(PAM_SUCCESS)
 }
 
@@ -119,21 +132,20 @@ else {
 let service = String(decoding: serviceBytes, as: UTF8.self)
 let state = ConversationState(password: passwordBytes)
 // The intermediate copy goes now; `state` owns the only one left.
-passwordBytes.withUnsafeMutableBytes { nucleus_pam_scrub($0.baseAddress, $0.count) }
+passwordBytes.withUnsafeMutableBytes {
+    unsafe nucleus_pam_scrub($0.baseAddress, $0.count)
+}
 passwordBytes = []
 
 var usernameBuffer = [CChar](repeating: 0, count: 256)
 guard usernameBuffer.withUnsafeMutableBufferPointer({
-    nucleus_pam_current_username($0.baseAddress, $0.count) == 0
+    unsafe nucleus_pam_current_username($0.baseAddress, $0.count) == 0
 }) else {
     state.scrub()
     respond(.unavailable, "Could not determine the current user")
 }
 let username = usernameBuffer.withUnsafeBufferPointer { buffer in
-    String(
-        decodingCString: UnsafeRawPointer(buffer.baseAddress!)
-            .assumingMemoryBound(to: UInt8.self),
-        as: UTF8.self)
+    unsafe String(cString: buffer.baseAddress!)
 }
 
 // MARK: - Conversation
@@ -141,38 +153,41 @@ let username = usernameBuffer.withUnsafeBufferPointer { buffer in
 var handle: OpaquePointer?
 // PAM borrows `state` through appdata only until pam_end below. The local
 // strong reference remains live for that entire synchronous conversation.
-var conv = pam_conv(
+var conv = unsafe pam_conv(
     conv: conversation,
     appdata_ptr: Unmanaged.passUnretained(state).toOpaque())
 
-let startResult = pam_start(
+let startResult = unsafe pam_start(
     service.isEmpty ? "login" : service, username, &conv, &handle)
-guard startResult == PAM_SUCCESS, let handle else {
+guard startResult == PAM_SUCCESS else {
+    state.scrub()
+    respond(.unavailable, "Could not start authentication")
+}
+guard let handle = unsafe handle else {
     state.scrub()
     respond(.unavailable, "Could not start authentication")
 }
 
-var result = pam_authenticate(handle, 0)
+var result = unsafe pam_authenticate(handle, 0)
 
 if result == PAM_SUCCESS {
     // An unprivileged locker cannot read /etc/shadow, so the account stack may
     // legitimately report that it has no information. `pam_authenticate` has
     // already proved identity, so that specific answer is not a failure —
     // treating it as one would reject the correct password on most systems.
-    let accountResult = pam_acct_mgmt(handle, 0)
+    let accountResult = unsafe pam_acct_mgmt(handle, 0)
     if accountResult != PAM_SUCCESS && accountResult != PAM_AUTHINFO_UNAVAIL {
         result = accountResult
     }
 }
 
-let description = pam_strerror(handle, result).map {
-    String(
-        decodingCString: UnsafeRawPointer($0)
-            .assumingMemoryBound(to: UInt8.self),
-        as: UTF8.self)
+let description: String
+if let descriptionPointer = unsafe pam_strerror(handle, result) {
+    description = unsafe String(cString: descriptionPointer)
+} else {
+    description = "Authentication failed"
 }
-    ?? "Authentication failed"
-pam_end(handle, result)
+unsafe pam_end(handle, result)
 state.scrub()
 
 if result == PAM_SUCCESS {

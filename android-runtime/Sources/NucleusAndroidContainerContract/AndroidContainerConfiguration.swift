@@ -137,7 +137,7 @@ public struct AndroidContainerConfiguration: Hashable, Sendable {
             "lxc.mount.entry = \(gfxstreamSocketDirectory) dev/nucleus none bind,ro,create=dir 0 0",
             "lxc.mount.entry = tmpfs data tmpfs rw,nosuid,nodev,mode=0771,create=dir 0 0",
             "lxc.mount.entry = \(tombstones) data/tombstones none bind,create=dir 0 0",
-            "lxc.mount.entry = tmpfs metadata tmpfs rw,nosuid,nodev,noexec,mode=0700,create=dir 0 0",
+            "lxc.mount.entry = tmpfs metadata tmpfs rw,nosuid,nodev,noexec,mode=0755,create=dir 0 0",
             "lxc.mount.entry = tmpfs mnt tmpfs rw,nosuid,nodev,noexec,mode=0755,create=dir 0 0",
             "lxc.mount.entry = tmpfs linkerconfig tmpfs rw,nosuid,nodev,noexec,mode=0755,create=dir 0 0",
             "lxc.mount.entry = tmpfs storage tmpfs rw,nosuid,nodev,noexec,mode=0755,create=dir 0 0",

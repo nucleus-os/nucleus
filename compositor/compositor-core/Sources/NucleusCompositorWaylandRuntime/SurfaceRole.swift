@@ -14,6 +14,7 @@ enum SurfaceRoleIdentity: Equatable {
 
 /// Role-specific validation and applied-transaction hooks. The surface retains
 /// only the typed identity; the wire resource remains the role object's owner.
+@MainActor
 protocol WlSurfaceRole: AnyObject {
     func validateSurfaceCommit(
         _ surface: WlSurface,

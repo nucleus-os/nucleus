@@ -81,12 +81,13 @@ struct NucleusCompositorThreadSanitizerHarness {
                 fatalError("failed to construct Wayland router fixture")
             }
             var sockets: [Int32] = [-1, -1]
-            precondition(
-                socketpair(
+            let socketPairCreated =
+                unsafe socketpair(
                     AF_UNIX,
                     Int32(SOCK_STREAM.rawValue) | nonblockingSocket,
                     0,
-                    &sockets) == 0)
+                    &sockets) == 0
+            precondition(socketPairCreated)
             guard fixture.runtime.attachClient(
                 fileDescriptor: sockets[0])
             else {
@@ -103,14 +104,14 @@ struct NucleusCompositorThreadSanitizerHarness {
             appendWord((12 << 16) | 1, to: &request)
             appendWord(2, to: &request)
             let written = request.withUnsafeBytes {
-                write(sockets[1], $0.baseAddress, $0.count)
+                unsafe write(sockets[1], $0.baseAddress, $0.count)
             }
             precondition(written == request.count)
             fixture.runtime.dispatchClientsNonBlocking()
 
             var events = [UInt8](repeating: 0, count: 32 * 1_024)
             _ = events.withUnsafeMutableBytes {
-                read(sockets[1], $0.baseAddress, $0.count)
+                unsafe read(sockets[1], $0.baseAddress, $0.count)
             }
             close(sockets[1])
             fixture.runtime.dispatchClientsNonBlocking()

@@ -8,8 +8,10 @@ import WaylandClientC
     @Test func extensionInterfaceLinks() {
         // xdg_wm_base_interface is defined by xdg-shell-protocol.c in WaylandProtocolsC; taking its
         // pointer proves the module imports and the marshalling target links.
-        #expect(swift_wayland_iface_xdg_wm_base() != nil)
-        #expect(swift_wayland_iface_wl_surface() != nil)
+        let hasXdgWmBase = unsafe swift_wayland_iface_xdg_wm_base() != nil
+        let hasSurface = unsafe swift_wayland_iface_wl_surface() != nil
+        #expect(hasXdgWmBase)
+        #expect(hasSurface)
     }
 
     @Test func fixedPointHelpers() {

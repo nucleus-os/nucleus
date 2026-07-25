@@ -12,17 +12,20 @@ import NucleusSkiaGraphiteBridge
 internal import NucleusRenderModel
 internal import NucleusTypes
 
-enum PaintRasterizer {
-static func paintColor(_ rgba: Float4) -> nucleus.skia.Color {
+/// Safe facade over the Skia C++ paint bridge. Every pointer is borrowed only
+/// for its enclosing buffer closure and all C++ values remain render-thread
+/// confined.
+@safe enum PaintRasterizer {
+static func paintColor(_ rgba: Color) -> nucleus.skia.Color {
     var color = nucleus.skia.Color()
-    color.r = rgba.0
-    color.g = rgba.1
-    color.b = rgba.2
-    color.a = rgba.3
+    color.r = rgba.r
+    color.g = rgba.g
+    color.b = rgba.b
+    color.a = rgba.a
     return color
 }
 
-static func scaledRect(_ command: PaintDrawCommand, _ sx: Float, _ sy: Float) -> nucleus.skia.RectF {
+static func scaledRect(_ command: PaintCommand, _ sx: Float, _ sy: Float) -> nucleus.skia.RectF {
     var rect = nucleus.skia.RectF()
     rect.x = command.x * sx
     rect.y = command.y * sy
@@ -34,7 +37,7 @@ static func scaledRect(_ command: PaintDrawCommand, _ sx: Float, _ sy: Float) ->
 /// Draw a whole command list. The single entry point; `TextureProducer` calls
 /// this after allocating its cache surface.
 static func draw(
-    commands: [PaintDrawCommand],
+    commands: [PaintCommand],
     payload: [UInt8],
     onto canvas: nucleus.skia.Canvas,
     scaleX sx: Float,
@@ -43,14 +46,14 @@ static func draw(
     resolveEffect: (UInt64) -> nucleus.skia.RuntimeEffect?
 ) {
     for command in commands {
-        drawPaintCommand(
+        unsafe drawPaintCommand(
             command, payload: payload, onto: canvas, scaleX: sx, scaleY: sy,
             resolveImage: resolveImage, resolveEffect: resolveEffect)
     }
 }
 
 static func drawPaintCommand(
-    _ command: PaintDrawCommand,
+    _ command: PaintCommand,
     payload: [UInt8],
     onto canvas: nucleus.skia.Canvas,
     scaleX sx: Float,
@@ -61,11 +64,11 @@ static func drawPaintCommand(
     // Save/restore are recording-state commands, not paint operations with
     // local geometry.
     if command.kind == .save {
-        canvas.save()
+        unsafe canvas.save()
         return
     }
     if command.kind == .restore {
-        canvas.restore()
+        unsafe canvas.restore()
         return
     }
 
@@ -73,7 +76,7 @@ static func drawPaintCommand(
     // matrix inside save/restore would restore the clip too, so map the path
     // through the complete device transform and clip without changing the CTM.
     if command.kind == .clipPath {
-        guard let path = decodePath(
+        guard let path = unsafe decodePath(
             command, payload: payload,
             scaleX: command.transform == nil ? sx : 1,
             scaleY: command.transform == nil ? sy : 1)
@@ -81,10 +84,10 @@ static func drawPaintCommand(
         if let transform = command.transform {
             let matrix = deviceMatrix(transform, scaleX: sx, scaleY: sy)
             matrix.withUnsafeBufferPointer {
-                canvas.clipPathTransformed(path, $0.baseAddress, command.antialias)
+                unsafe canvas.clipPathTransformed(path, $0.baseAddress, command.antialias)
             }
         } else {
-            canvas.clipPath(path, command.antialias)
+            unsafe canvas.clipPath(path, command.antialias)
         }
         return
     }
@@ -94,11 +97,11 @@ static func drawPaintCommand(
     // anisotropic stroke and radial-gradient behavior are not approximated by
     // one scalar.
     if let transform = command.transform {
-        canvas.save()
+        unsafe canvas.save()
         let matrix = deviceMatrix(transform, scaleX: sx, scaleY: sy)
-        matrix.withUnsafeBufferPointer { canvas.concat($0.baseAddress) }
+        matrix.withUnsafeBufferPointer { unsafe canvas.concat($0.baseAddress) }
     }
-    defer { if command.transform != nil { canvas.restore() } }
+    defer { if command.transform != nil { unsafe canvas.restore() } }
 
     // With a carried transform the canvas is already in the command's space, so
     // geometry and radii are used as authored rather than pre-scaled.
@@ -106,38 +109,40 @@ static func drawPaintCommand(
     let deviceScaleY = command.transform == nil ? sy : 1
     // Stroke width and blur follow the same rule as geometry: the carried
     // matrix already scales them, so pre-scaling as well would apply it twice.
-    let paint = skiaPaint(command, scaleX: deviceScaleX, scaleY: deviceScaleY)
+    guard let paint = skiaPaint(
+        command, scaleX: deviceScaleX, scaleY: deviceScaleY
+    ) else { return }
 
     switch command.kind {
     case .rect:
-        canvas.drawRect(scaledRect(command, deviceScaleX, deviceScaleY), paint)
+        unsafe canvas.drawRect(scaledRect(command, deviceScaleX, deviceScaleY), paint)
     case .roundedRect:
         let radius = max(0, command.radius) * min(deviceScaleX, deviceScaleY)
         let radii = nucleus.skia.RRectRadii(
             topLeft: radius, topRight: radius,
             bottomRight: radius, bottomLeft: radius)
-        canvas.drawRRect(scaledRect(command, deviceScaleX, deviceScaleY), radii, paint)
+        unsafe canvas.drawRRect(scaledRect(command, deviceScaleX, deviceScaleY), radii, paint)
     case .path:
-        drawPathCommand(
+        unsafe drawPathCommand(
             command, payload: payload, onto: canvas, paint: paint,
             scaleX: deviceScaleX, scaleY: deviceScaleY,
             resolveEffect: resolveEffect)
     case .image:
-        guard command.imageHandle != 0, let image = resolveImage(command.imageHandle) else { break }
-        canvas.drawImageRect(
+        guard command.imageHandle != 0, let image = unsafe resolveImage(command.imageHandle) else { break }
+        unsafe canvas.drawImageRect(
             image, nucleus.skia.RectF(),
             scaledRect(command, deviceScaleX, deviceScaleY), paint)
     case .textLayout:
-        canvas.drawTextLayout(
+        unsafe canvas.drawTextLayout(
             command.textLayoutHandle,
-            scaledRect(command, deviceScaleX, deviceScaleY), command.color.3)
+            scaledRect(command, deviceScaleX, deviceScaleY), command.color.a)
     case .clipPath, .save, .restore:
         break
     }
 }
 
 private static func deviceMatrix(
-    _ transform: PaintDrawTransform, scaleX sx: Float, scaleY sy: Float
+    _ transform: PaintTransform, scaleX sx: Float, scaleY sy: Float
 ) -> [Float] {
     [
         transform.a * sx, transform.c * sx, transform.tx * sx,
@@ -150,42 +155,25 @@ private static func deviceMatrix(
 /// only `color`, so stroke width, blend, alpha, blur, and saturation were
 /// carried through the pipeline and then dropped at the last step.
 static func skiaPaint(
-    _ command: PaintDrawCommand, scaleX sx: Float, scaleY sy: Float
-) -> nucleus.skia.Paint {
+    _ command: PaintCommand, scaleX sx: Float, scaleY sy: Float
+) -> nucleus.skia.Paint? {
     var paint = nucleus.skia.Paint()
     paint.color = paintColor(command.color)
     paint.alpha = command.alpha
     paint.antialias = command.antialias
-    paint.blend = skiaBlendMode(command.blend)
+    guard nucleus.skia.setPaintBlend(
+        &paint, Int32(command.blend.rawValue)),
+          nucleus.skia.setPaintStyle(&paint, command.stroke ? 1 : 0),
+          nucleus.skia.setPaintStrokeCap(
+            &paint, Int32(command.strokeCap.rawValue)),
+          nucleus.skia.setPaintStrokeJoin(
+            &paint, Int32(command.strokeJoin.rawValue))
+    else { return nil }
     paint.blurSigma = command.blurSigma * min(sx, sy)
     paint.saturation = command.saturation
     paint.tintsImage = command.tintsImage
-    paint.style = command.stroke ? .stroke : .fill
-    paint.strokeCap = switch command.strokeCap {
-    case .butt: .butt
-    case .round: .round
-    case .square: .square
-    }
-    paint.strokeJoin = switch command.strokeJoin {
-    case .miter: .miter
-    case .round: .round
-    case .bevel: .bevel
-    }
     paint.strokeWidth = command.strokeWidth * min(sx, sy)
     return paint
-}
-
-static func skiaBlendMode(_ blend: PaintDrawBlendMode) -> nucleus.skia.BlendMode {
-    switch blend {
-    case .srcOver: .srcOver
-    case .src: .src
-    case .multiply: .multiply
-    case .screen: .screen
-    case .plus: .plus
-    case .overlay: .overlay
-    case .dstIn: .dstIn
-    case .dstOut: .dstOut
-    }
 }
 
 /// Decode a command's payload slice into a Skia path and draw it with the
@@ -193,7 +181,7 @@ static func skiaBlendMode(_ blend: PaintDrawBlendMode) -> nucleus.skia.BlendMode
 /// drawn from misread bytes; the decoder rejects out-of-range slices,
 /// inconsistent region sizes, and verbs that over-consume points.
 static func drawPathCommand(
-    _ command: PaintDrawCommand,
+    _ command: PaintCommand,
     payload: [UInt8],
     onto canvas: nucleus.skia.Canvas,
     paint: nucleus.skia.Paint,
@@ -203,27 +191,29 @@ static func drawPathCommand(
 ) {
     guard let regions = PaintPayload.decode(
         payload, offset: command.payloadOffset, length: command.payloadLength),
-          let path = makeSkiaPath(regions, evenOdd: command.evenOddFill, scaleX: sx, scaleY: sy)
+          let path = unsafe makeSkiaPath(
+            regions, evenOdd: command.evenOddFill, scaleX: sx, scaleY: sy)
     else { return }
 
-    guard let shader = makeShader(
+    guard let shader = unsafe makeShader(
         command, regions: regions, scaleX: sx, scaleY: sy, resolveEffect: resolveEffect)
     else {
-        canvas.drawPath(path, paint)
+        unsafe canvas.drawPath(path, paint)
         return
     }
-    canvas.drawPathWithShader(path, shader, paint)
+    unsafe canvas.drawPathWithShader(path, shader, paint)
 }
 
 /// Decode a command's payload into a Skia path, or nil if it does not
 /// decode. Shared by path draws and clips.
 static func decodePath(
-    _ command: PaintDrawCommand, payload: [UInt8], scaleX sx: Float, scaleY sy: Float
+    _ command: PaintCommand, payload: [UInt8], scaleX sx: Float, scaleY sy: Float
 ) -> nucleus.skia.Path? {
     guard let regions = PaintPayload.decode(
         payload, offset: command.payloadOffset, length: command.payloadLength)
     else { return nil }
-    return makeSkiaPath(regions, evenOdd: command.evenOddFill, scaleX: sx, scaleY: sy)
+    return unsafe makeSkiaPath(
+        regions, evenOdd: command.evenOddFill, scaleX: sx, scaleY: sy)
 }
 
 /// Scale authored points into raster space and build the path. Arc verbs
@@ -258,19 +248,19 @@ static func makeSkiaPath(
 
     let path = verbs.withUnsafeBufferPointer { verbBuffer in
         points.withUnsafeBufferPointer { pointBuffer in
-            nucleus.skia.makePath(
+            unsafe nucleus.skia.makePath(
                 verbBuffer.baseAddress, verbBuffer.count,
                 pointBuffer.baseAddress, pointBuffer.count, evenOdd)
         }
     }
-    return path.isValid() ? path : nil
+    return unsafe path.isValid() ? path : nil
 }
 
 /// Build the shader for a command's shading, or nil for a plain color fill
 /// (and for a shading whose parameters do not decode, which falls back to
 /// the command color rather than dropping the draw entirely).
 static func makeShader(
-    _ command: PaintDrawCommand,
+    _ command: PaintCommand,
     regions: PaintPayload.Regions,
     scaleX sx: Float,
     scaleY sy: Float,
@@ -280,7 +270,7 @@ static func makeShader(
     var colors: [nucleus.skia.Color] = []
     colors.reserveCapacity(regions.colors.count)
     for color in regions.colors {
-        colors.append(paintColor((color.r, color.g, color.b, color.a)))
+        colors.append(paintColor(color))
     }
     // Stops trail the geometry scalars, one per color.
     func stops(after geometry: Int) -> [Float] {
@@ -294,8 +284,8 @@ static func makeShader(
         guard scalars.count >= 4, colors.count >= 2 else { return nil }
         let positions = stops(after: 4)
         return colors.withUnsafeBufferPointer { c in
-            withStops(positions, count: colors.count) { p in
-                nucleus.skia.makeLinearGradient(
+            unsafe withStops(positions, count: colors.count) { p in
+                unsafe nucleus.skia.makeLinearGradient(
                     scalars[0] * sx, scalars[1] * sy, scalars[2] * sx, scalars[3] * sy,
                     c.baseAddress, p, c.count, .clamp)
             }
@@ -304,8 +294,8 @@ static func makeShader(
         guard scalars.count >= 3, colors.count >= 2 else { return nil }
         let positions = stops(after: 3)
         return colors.withUnsafeBufferPointer { c in
-            withStops(positions, count: colors.count) { p in
-                nucleus.skia.makeRadialGradient(
+            unsafe withStops(positions, count: colors.count) { p in
+                unsafe nucleus.skia.makeRadialGradient(
                     scalars[0] * sx, scalars[1] * sy, scalars[2] * min(sx, sy),
                     c.baseAddress, p, c.count, .clamp)
             }
@@ -314,17 +304,17 @@ static func makeShader(
         guard scalars.count >= 4, colors.count >= 2 else { return nil }
         let positions = stops(after: 4)
         return colors.withUnsafeBufferPointer { c in
-            withStops(positions, count: colors.count) { p in
-                nucleus.skia.makeSweepGradient(
+            unsafe withStops(positions, count: colors.count) { p in
+                unsafe nucleus.skia.makeSweepGradient(
                     scalars[0] * sx, scalars[1] * sy, scalars[2], scalars[3],
                     c.baseAddress, p, c.count, .clamp)
             }
         }
     case .effect:
         guard command.effectHandle != 0,
-              let effect = resolveEffect(command.effectHandle) else { return nil }
+              let effect = unsafe resolveEffect(command.effectHandle) else { return nil }
         return scalars.withUnsafeBufferPointer { u in
-            effect.makeShader(u.baseAddress, u.count)
+            unsafe effect.makeShader(u.baseAddress, u.count)
         }
     }
 }
@@ -335,6 +325,6 @@ static func withStops<T>(
     _ positions: [Float], count: Int, _ body: (UnsafePointer<Float>?) -> T
 ) -> T {
     guard positions.count == count else { return body(nil) }
-    return positions.withUnsafeBufferPointer { body($0.baseAddress) }
+    return positions.withUnsafeBufferPointer { unsafe body($0.baseAddress) }
 }
 }

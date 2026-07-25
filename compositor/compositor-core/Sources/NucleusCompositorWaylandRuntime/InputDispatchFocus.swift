@@ -36,7 +36,7 @@ extension InputDispatch {
             inputRouteDiagnosticsRemaining -= 1
             let source = windowDriver?.windowSource(forSurfaceId: UInt32(truncatingIfNeeded: surfaceID)) ?? 0
             let line = "input-route: focus old=\(old) new=\(surfaceID) source=\(source) local=\(sx),\(sy)\n"
-            line.withCString { _ = write(STDERR_FILENO, $0, strlen($0)) }
+            line.withCString { _ = unsafe write(STDERR_FILENO, $0, strlen($0)) }
         }
         if old != 0 { seatDelivery.pointerLeave(surfaceID: old) }
         if surfaceID != 0 { seatDelivery.pointerEnter(surfaceID: surfaceID, x: sx, y: sy) }

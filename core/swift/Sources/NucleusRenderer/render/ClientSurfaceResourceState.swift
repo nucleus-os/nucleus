@@ -9,7 +9,9 @@ import Android
 
 /// Owns one imported client acquire semaphore. The sync fd is consumed on
 /// every initializer path and the Vulkan semaphore is destroyed exactly once.
-final class ClientAcquireSemaphore {
+/// The render actor serializes use; this owner consumes the sync fd and keeps
+/// the device alive until the imported semaphore is destroyed.
+@safe final class ClientAcquireSemaphore {
     let semaphore: VkSemaphore
     private let device: VkDevice
     private let dispatch: VK.DeviceDispatch
@@ -19,39 +21,39 @@ final class ClientAcquireSemaphore {
         dispatch: VK.DeviceDispatch,
         consumingSyncFd fd: Int32
     ) {
-        guard fd >= 0, let create = dispatch.vkCreateSemaphore,
-              let importFd = dispatch.vkImportSemaphoreFdKHR
+        guard fd >= 0, let create = unsafe dispatch.vkCreateSemaphore,
+              let importFd = unsafe dispatch.vkImportSemaphoreFdKHR
         else {
             if fd >= 0 { close(fd) }
             return nil
         }
-        var info = VkSemaphoreCreateInfo()
-        info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO
+        var info = unsafe VkSemaphoreCreateInfo()
+        unsafe info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO
         var created: VkSemaphore?
-        guard create(device, &info, nil, &created) == VK_SUCCESS,
-              let created
+        guard unsafe create(device, &info, nil, &created) == VK_SUCCESS,
+              let created = unsafe created
         else {
             close(fd)
             return nil
         }
-        var importInfo = VkImportSemaphoreFdInfoKHR()
-        importInfo.sType = VK_STRUCTURE_TYPE_IMPORT_SEMAPHORE_FD_INFO_KHR
-        importInfo.semaphore = created
-        importInfo.flags = VK_SEMAPHORE_IMPORT_TEMPORARY_BIT.rawValue
-        importInfo.handleType = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_SYNC_FD_BIT
-        importInfo.fd = fd
-        guard importFd(device, &importInfo) == VK_SUCCESS else {
-            dispatch.vkDestroySemaphore?(device, created, nil)
+        var importInfo = unsafe VkImportSemaphoreFdInfoKHR()
+        unsafe importInfo.sType = VK_STRUCTURE_TYPE_IMPORT_SEMAPHORE_FD_INFO_KHR
+        unsafe importInfo.semaphore = created
+        unsafe importInfo.flags = VK_SEMAPHORE_IMPORT_TEMPORARY_BIT.rawValue
+        unsafe importInfo.handleType = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_SYNC_FD_BIT
+        unsafe importInfo.fd = fd
+        guard unsafe importFd(device, &importInfo) == VK_SUCCESS else {
+            unsafe dispatch.vkDestroySemaphore?(device, created, nil)
             close(fd)
             return nil
         }
-        self.device = device
+        unsafe self.device = device
         self.dispatch = dispatch
-        semaphore = created
+        unsafe semaphore = created
     }
 
     deinit {
-        dispatch.vkDestroySemaphore?(device, semaphore, nil)
+        unsafe dispatch.vkDestroySemaphore?(device, semaphore, nil)
     }
 }
 

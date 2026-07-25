@@ -155,23 +155,23 @@ struct AtomTable {
 
 /// Batch-intern every `AtomId` on `conn`: send all InternAtom requests (single
 /// flush) then collect replies. A failed reply leaves that atom at 0.
-func internAllAtoms(_ conn: OpaquePointer) -> AtomTable {
+@unsafe func internAllAtoms(_ conn: OpaquePointer) -> AtomTable {
     var cookies: [(AtomId, xcb_intern_atom_cookie_t)] = []
     cookies.reserveCapacity(AtomId.allCases.count)
     for id in AtomId.allCases {
         let name = id.wireName
         let cookie = name.withCString { ptr in
-            xcb_intern_atom(conn, 0 /* only_if_exists=0: create if absent */, UInt16(name.utf8.count), ptr)
+            unsafe xcb_intern_atom(conn, 0 /* only_if_exists=0: create if absent */, UInt16(name.utf8.count), ptr)
         }
         cookies.append((id, cookie))
     }
-    _ = xcb_flush(conn)
+    _ = unsafe xcb_flush(conn)
 
     var table = AtomTable()
     for (id, cookie) in cookies {
-        if let reply = xcb_intern_atom_reply(conn, cookie, nil) {
-            table[id] = reply.pointee.atom
-            free(reply)
+        if let reply = unsafe xcb_intern_atom_reply(conn, cookie, nil) {
+            table[id] = unsafe reply.pointee.atom
+            unsafe free(reply)
         } else {
             table[id] = 0
         }

@@ -191,8 +191,12 @@ func parseInFormatsBlob(_ bytes: [UInt8]) -> [FormatModifierPair] {
     //         count_modifiers(u32) modifiers_offset(u32) = 24 bytes.
     guard bytes.count >= 24 else { return [] }
     return bytes.withUnsafeBytes { raw -> [FormatModifierPair] in
-        func u32(_ off: Int) -> UInt32 { raw.loadUnaligned(fromByteOffset: off, as: UInt32.self) }
-        func u64(_ off: Int) -> UInt64 { raw.loadUnaligned(fromByteOffset: off, as: UInt64.self) }
+        func u32(_ off: Int) -> UInt32 {
+            unsafe raw.loadUnaligned(fromByteOffset: off, as: UInt32.self)
+        }
+        func u64(_ off: Int) -> UInt64 {
+            unsafe raw.loadUnaligned(fromByteOffset: off, as: UInt64.self)
+        }
 
         let countFormats = Int(u32(8))
         let formatsOffset = Int(u32(12))

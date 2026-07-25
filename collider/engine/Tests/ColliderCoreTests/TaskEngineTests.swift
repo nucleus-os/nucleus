@@ -61,6 +61,47 @@ import Testing
     #expect(second.plan[0].isClean)
 }
 
+@Test func executableOutputValidationFollowsTheDeclaredSymlink() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-engine-executable-symlink-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(
+        at: directory,
+        withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let executable = directory.appendingPathComponent("swift-driver")
+    let link = directory.appendingPathComponent("swift")
+    let task = TaskDeclaration(
+        id: TaskID(rawValue: "fixture.executable-symlink"),
+        component: ComponentID(rawValue: "fixture"),
+        outputs: [
+            OutputDeclaration(
+                path: FilePath(link.path),
+                validation: .executableFile),
+        ],
+        operation: .command(CommandSpec(
+            executable: .named("sh"),
+            arguments: [
+                "-c",
+                "printf '#!/bin/sh\\n' > \"$1\" && chmod 755 \"$1\" && "
+                    + "ln -s swift-driver \"$2\"",
+                "sh",
+                executable.path,
+                link.path,
+            ],
+            workingDirectory: FilePath(directory.path),
+            environment: [
+                "PATH": ProcessInfo.processInfo.environment["PATH"]
+                    ?? "/usr/bin:/bin",
+            ])))
+    _ = try await ColliderRuntime().execute(
+        graph: TaskGraph([task]),
+        selected: [task.id],
+        stateRoot: FilePath(directory.appendingPathComponent("state").path))
+
+    #expect(try FileManager.default.destinationOfSymbolicLink(
+        atPath: link.path) == "swift-driver")
+}
+
 @Test func taskIdentityIgnoresPerRunLoggingDestinations() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
         "collider-engine-run-environment-\(UUID().uuidString)")
@@ -502,6 +543,17 @@ import Testing
         "-lswiftCore",
         staging.appendingPathComponent(
             "usr/lib/swift_static/linux/static-stdlib-args.lnk"))
+    let archive = workspace.appendingPathComponent("toolchain.tar.gz")
+    let tar = Process()
+    tar.executableURL = URL(fileURLWithPath: "/usr/bin/tar")
+    tar.arguments = [
+        "-C", staging.path,
+        "-czf", archive.path,
+        "usr",
+    ]
+    try tar.run()
+    tar.waitUntilExit()
+    #expect(tar.terminationStatus == 0)
     let assembly = TaskDeclaration(
         id: TaskID(rawValue: "fixture.assemble-host-toolchain"),
         component: ComponentID(rawValue: "fixture"),
@@ -514,9 +566,10 @@ import Testing
         cachePolicy: .always,
         operation: .assembleHostToolchain(HostToolchainAssembly(
             workspace: FilePath(workspace.path),
-            stagingRoot: FilePath(staging.path),
+            archive: FilePath(archive.path),
             toolchain: FilePath(toolchain.path),
-            platform: .linux)))
+            platform: .linux,
+            environment: ProcessInfo.processInfo.environment)))
     _ = try await ColliderRuntime().execute(
         graph: TaskGraph([assembly]),
         selected: [assembly.id],
@@ -740,6 +793,130 @@ import Testing
     #expect(contents.contains("-lfixture"))
     #expect(!contents.contains("-pthread"))
     #expect(!contents.contains("LINK_ONLY"))
+}
+
+@Test func linkMetadataSanitizationRepairsCachedCMakeDependencyLookups() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-cmake-dependency-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let metadata = directory.appendingPathComponent(
+        "usr/lib/cmake/CURL/CURLConfig.cmake")
+    let targets = directory.appendingPathComponent(
+        "usr/lib/cmake/CURL/CURLTargets.cmake")
+    try FileManager.default.createDirectory(
+        at: metadata.deletingLastPathComponent(),
+        withIntermediateDirectories: true)
+    try Data(
+        """
+        include(CMakeFindDependencyMacro)
+        find_dependency(OpenSSL "3")
+        include(CURLTargets.cmake)
+        """.utf8
+    ).write(to: metadata)
+    try Data(
+        "INTERFACE_LINK_LIBRARIES \"\\;OpenSSL::SSL\"\n".utf8
+    ).write(to: targets)
+    let task = TaskDeclaration(
+        id: TaskID(rawValue: "fixture.repair-cmake-dependency"),
+        component: ComponentID(rawValue: "fixture"),
+        outputs: [
+            OutputDeclaration(
+                path: FilePath(metadata.path),
+                validation: .regularFile),
+        ],
+        operation: .sanitizeLinkMetadata(LinkMetadataSanitization(
+            root: FilePath(directory.path),
+            removedLinkerOptions: [],
+            cmakeDependencyRepairs: [
+                    CMakeDependencyRepair(
+                        configurationFileName: "CURLConfig.cmake",
+                        package: "OpenSSL",
+                        version: "3",
+                        configurationOnly: true),
+            ],
+            replacements: [
+                LinkMetadataReplacement(
+                    fileName: "CURLTargets.cmake",
+                    original: "OpenSSL::SSL",
+                    replacement: "${_IMPORT_PREFIX}/lib/libssl.a"),
+                LinkMetadataReplacement(
+                    fileName: "CURLTargets.cmake",
+                    original: "INTERFACE_LINK_LIBRARIES \"\\;",
+                    replacement: "INTERFACE_LINK_LIBRARIES \""),
+            ])))
+    _ = try await ColliderRuntime().execute(
+        graph: TaskGraph([task]),
+        selected: [task.id],
+        stateRoot: FilePath(directory.appendingPathComponent("state").path))
+    let contents = try String(contentsOf: metadata, encoding: .utf8)
+    #expect(contents.contains("find_package(OpenSSL 3 REQUIRED CONFIG)"))
+    #expect(!contents.contains("find_dependency(OpenSSL"))
+    #expect(try String(contentsOf: targets, encoding: .utf8)
+        .contains("${_IMPORT_PREFIX}/lib/libssl.a"))
+    #expect(try String(contentsOf: targets, encoding: .utf8)
+        .contains("INTERFACE_LINK_LIBRARIES \"${_IMPORT_PREFIX}"))
+    _ = try await ColliderRuntime().execute(
+        graph: TaskGraph([task]),
+        selected: [task.id],
+        stateRoot: FilePath(
+            directory.appendingPathComponent("retry-state").path))
+    try Data(
+        "find_package(OpenSSL 3 REQUIRED)\n".utf8
+    ).write(to: metadata)
+    _ = try await ColliderRuntime().execute(
+        graph: TaskGraph([task]),
+        selected: [task.id],
+        stateRoot: FilePath(
+            directory.appendingPathComponent("migration-state").path))
+    #expect(try String(contentsOf: metadata, encoding: .utf8)
+        .contains("find_package(OpenSSL 3 REQUIRED CONFIG)"))
+}
+
+@Test func changedCMakeDependencyRepairInvalidatesPriorTaskState() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-cmake-repair-identity-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let metadata = directory.appendingPathComponent(
+        "usr/lib/cmake/CURL/CURLConfig.cmake")
+    try FileManager.default.createDirectory(
+        at: metadata.deletingLastPathComponent(),
+        withIntermediateDirectories: true)
+    let state = FilePath(directory.appendingPathComponent("state").path)
+
+    func task(version: String) -> TaskDeclaration {
+        TaskDeclaration(
+            id: TaskID(rawValue: "fixture.cmake-repair-identity"),
+            component: ComponentID(rawValue: "fixture"),
+            outputs: [
+                OutputDeclaration(
+                    path: FilePath(metadata.path),
+                    validation: .regularFile),
+            ],
+            operation: .sanitizeLinkMetadata(LinkMetadataSanitization(
+                root: FilePath(directory.path),
+                removedLinkerOptions: [],
+                cmakeDependencyRepairs: [
+                    CMakeDependencyRepair(
+                        configurationFileName: "CURLConfig.cmake",
+                        package: "OpenSSL",
+                        version: version),
+                ])))
+    }
+
+    try Data("find_dependency(OpenSSL \"3\")\n".utf8).write(to: metadata)
+    let runtime = ColliderRuntime()
+    _ = try await runtime.execute(
+        graph: TaskGraph([task(version: "3")]),
+        selected: [task(version: "3").id],
+        stateRoot: state)
+    try Data("find_dependency(OpenSSL \"4\")\n".utf8).write(to: metadata)
+    let changed = task(version: "4")
+    let report = try await runtime.execute(
+        graph: TaskGraph([changed]),
+        selected: [changed.id],
+        stateRoot: state)
+    #expect(report.executed == [changed.id])
+    #expect(report.plan[0].explanation == "input identity changed")
 }
 
 @Test func symlinkPublicationPreservesADisplacedMutableInstallation() async throws {

@@ -11,11 +11,38 @@ import NucleusSkiaGraphiteBridge
         0, 0, 255, 255,   255, 255, 0, 255,
     ]
     let img = px.withUnsafeBufferPointer { buf in
-        nucleus.skia.makeRasterImageRGBA(2, 2, buf.baseAddress, buf.count)
+        unsafe RasterFixtureImage(nucleus.skia.makeRasterImageRGBA(
+            2, 2, buf.baseAddress, buf.count))
     }
-    #expect(img.isValid())
-    #expect(img.width() == 2)
-    #expect(img.height() == 2)
+    #expect(img.isValid)
+    #expect(img.width == 2)
+    #expect(img.height == 2)
+}
+
+@Test func paintWireEnumsAcceptEveryDeclaredValueAndRejectUnknownValues() {
+    var paint = nucleus.skia.Paint()
+
+    for raw in Int32(0)...7 {
+        #expect(nucleus.skia.setPaintBlend(&paint, raw))
+        #expect(Int32(paint.blend.rawValue) == raw)
+    }
+    #expect(!nucleus.skia.setPaintBlend(&paint, 8))
+    #expect(Int32(paint.blend.rawValue) == 7, "rejection leaves the paint unchanged")
+
+    for raw in Int32(0)...2 {
+        #expect(nucleus.skia.setPaintStyle(&paint, raw))
+        #expect(Int32(paint.style.rawValue) == raw)
+        #expect(nucleus.skia.setPaintStrokeCap(&paint, raw))
+        #expect(Int32(paint.strokeCap.rawValue) == raw)
+        #expect(nucleus.skia.setPaintStrokeJoin(&paint, raw))
+        #expect(Int32(paint.strokeJoin.rawValue) == raw)
+    }
+    #expect(!nucleus.skia.setPaintStyle(&paint, -1))
+    #expect(!nucleus.skia.setPaintStrokeCap(&paint, 3))
+    #expect(!nucleus.skia.setPaintStrokeJoin(&paint, 3))
+    #expect(Int32(paint.style.rawValue) == 2)
+    #expect(Int32(paint.strokeCap.rawValue) == 2)
+    #expect(Int32(paint.strokeJoin.rawValue) == 2)
 }
 
 // MARK: - Raster harness
@@ -23,21 +50,9 @@ import NucleusSkiaGraphiteBridge
 /// Draw into a CPU raster surface and read the pixels back. Needs no Graphite
 /// context, so the drawing façade is verifiable headless.
 private func render(
-    width: Int32, height: Int32, _ body: (nucleus.skia.Canvas) -> Void
+    width: Int32, height: Int32, _ body: (RasterFixtureCanvas) -> Void
 ) -> [UInt8] {
-    let surface = nucleus.skia.makeRasterSurface(width, height)
-    guard surface.isValid() else { return [] }
-    let canvas = surface.getCanvas()
-    var clear = nucleus.skia.Color()
-    clear.r = 0; clear.g = 0; clear.b = 0; clear.a = 1
-    canvas.clear(clear)
-    body(canvas)
-
-    var pixels = [UInt8](repeating: 0, count: Int(width * height) * 4)
-    let ok = pixels.withUnsafeMutableBufferPointer { buf in
-        surface.readPixelsRGBA(buf.baseAddress, buf.count, Int32(width * 4))
-    }
-    return ok ? pixels : []
+    renderRasterFixture(width: width, height: height, body)
 }
 
 private func pixel(_ pixels: [UInt8], _ x: Int, _ y: Int, width: Int) -> (UInt8, UInt8, UInt8, UInt8) {
@@ -51,12 +66,10 @@ private func opaqueWhite() -> nucleus.skia.Color {
     return c
 }
 
-private func makePath(_ verbs: [UInt8], _ points: [Float], evenOdd: Bool = false) -> nucleus.skia.Path {
-    verbs.withUnsafeBufferPointer { v in
-        points.withUnsafeBufferPointer { p in
-            nucleus.skia.makePath(v.baseAddress, v.count, p.baseAddress, p.count, evenOdd)
-        }
-    }
+private func makePath(
+    _ verbs: [UInt8], _ points: [Float], evenOdd: Bool = false
+) -> RasterFixturePath {
+    makeRasterFixturePath(verbs, points, evenOdd: evenOdd)
 }
 
 private let move = UInt8(nucleus.skia.PathVerb.move.rawValue)
@@ -157,9 +170,9 @@ private let closeVerb = UInt8(nucleus.skia.PathVerb.close.rawValue)
     var black = nucleus.skia.Color(); black.a = 1
     let colors = [black, opaqueWhite()]
 
-    let pixels = colors.withUnsafeBufferPointer { c -> [UInt8] in
-        let shader = nucleus.skia.makeLinearGradient(
-            0, 0, 40, 0, c.baseAddress, nil, c.count, .clamp)
+    let pixels: [UInt8] = {
+        let shader = makeLinearGradientFixture(
+            colors: colors, x0: 0, y0: 0, x1: 40, y1: 0)
         guard shader.isValid() else { return [] }
         let path = makePath(
             [move, line, line, line, closeVerb],
@@ -169,7 +182,7 @@ private let closeVerb = UInt8(nucleus.skia.PathVerb.close.rawValue)
             paint.color = opaqueWhite()
             canvas.drawPathWithShader(path, shader, paint)
         }
-    }
+    }()
     #expect(!pixels.isEmpty, "gradient shader built and drew")
 
     let left = pixel(pixels, 1, 20, width: 40).0
@@ -179,9 +192,8 @@ private let closeVerb = UInt8(nucleus.skia.PathVerb.close.rawValue)
 
 @Test func gradientRequiresAtLeastTwoColors() {
     let one = [opaqueWhite()]
-    let shader = one.withUnsafeBufferPointer { c in
-        nucleus.skia.makeLinearGradient(0, 0, 10, 0, c.baseAddress, nil, c.count, .clamp)
-    }
+    let shader = makeLinearGradientFixture(
+        colors: one, x0: 0, y0: 0, x1: 10, y1: 0)
     #expect(!shader.isValid(), "a one-color gradient is rejected")
 }
 
@@ -191,9 +203,8 @@ private let closeVerb = UInt8(nucleus.skia.PathVerb.close.rawValue)
 @Test func sweepGradientRejectsInvertedAngleRange() {
     var black = nucleus.skia.Color(); black.a = 1
     let colors = [black, opaqueWhite()]
-    let shader = colors.withUnsafeBufferPointer { c in
-        nucleus.skia.makeSweepGradient(20, 20, 270, 90, c.baseAddress, nil, c.count, .clamp)
-    }
+    let shader = makeSweepGradientFixture(
+        colors: colors, centerX: 20, centerY: 20, start: 270, end: 90)
     #expect(!shader.isValid())
 }
 
@@ -210,7 +221,7 @@ private let closeVerb = UInt8(nucleus.skia.PathVerb.close.rawValue)
         paint.antialias = false
         // Row-major translate by (20, 20).
         let m: [Float] = [1, 0, 20, 0, 1, 20, 0, 0, 1]
-        m.withUnsafeBufferPointer { canvas.concat($0.baseAddress) }
+        canvas.concat(m)
         canvas.drawPath(path, paint)
     }
     #expect(!pixels.isEmpty)
@@ -255,36 +266,36 @@ half4 main(float2 p) { return half4(tint); }
 /// uniform sets. This split is what lets the effect store cache compilation
 /// behind a handle while uniforms ride the per-frame payload blob.
 @Test func aCompiledEffectVendsShadersForDifferentUniformSets() {
-    let effect = nucleus.skia.makeRuntimeEffect(uniformColor)
+    let effect = RasterFixtureEffect(uniformColor)
     #expect(effect.isValid(), "program compiles")
 
     let red: [Float] = [1, 0, 0, 1]
     let blue: [Float] = [0, 0, 1, 1]
-    let redShader = red.withUnsafeBufferPointer { effect.makeShader($0.baseAddress, $0.count) }
-    let blueShader = blue.withUnsafeBufferPointer { effect.makeShader($0.baseAddress, $0.count) }
+    let redShader = effect.makeShader(red)
+    let blueShader = effect.makeShader(blue)
     #expect(redShader.isValid(), "first uniform set binds")
     #expect(blueShader.isValid(), "second uniform set binds against the same program")
 }
 
 @Test func compilingInvalidSkslFails() {
-    let effect = nucleus.skia.makeRuntimeEffect("this is not sksl")
+    let effect = RasterFixtureEffect("this is not sksl")
     #expect(!effect.isValid())
 }
 
 /// A uniform buffer whose size does not match the program's declared uniforms
 /// must fail rather than bind garbage.
 @Test func mismatchedUniformSizeIsRejected() {
-    let effect = nucleus.skia.makeRuntimeEffect(uniformColor)
+    let effect = RasterFixtureEffect(uniformColor)
     #expect(effect.isValid())
     let tooFew: [Float] = [1, 0]
-    let shader = tooFew.withUnsafeBufferPointer { effect.makeShader($0.baseAddress, $0.count) }
+    let shader = effect.makeShader(tooFew)
     #expect(!shader.isValid(), "short uniform buffer is rejected")
 }
 
 @Test func aRuntimeEffectShaderPaintsThroughDrawPathWithShader() {
-    let effect = nucleus.skia.makeRuntimeEffect(solidRed)
+    let effect = RasterFixtureEffect(solidRed)
     #expect(effect.isValid())
-    let shader = effect.makeShader(nil, 0)
+    let shader = effect.makeShader([])
     #expect(shader.isValid(), "a program with no uniforms binds an empty set")
 
     let path = makePath(

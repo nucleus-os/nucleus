@@ -355,7 +355,7 @@ extension ColliderRuntime {
         var images: [AOSPImageProvenance.Image] = []
         for name in requiredImages {
             let image = imageCandidate.appending(name)
-            guard aospProductIsRegularFile(image) else {
+            guard image.isRegularFile else {
                 throw RuntimeFailure.invalidOutput(
                     "signed Android image is missing: \(name)")
             }
@@ -527,7 +527,7 @@ extension ColliderRuntime {
             let certificate = FilePath(base.string + ".x509.pem")
             let pkcs8 = FilePath(base.string + ".pk8")
             for path in [privateKey, certificate, pkcs8] where
-                !aospProductIsRegularFile(path)
+                !path.isRegularFile
             {
                 throw RuntimeFailure.invalidOutput(
                     "AOSP signing key material is missing: \(path)")
@@ -1030,12 +1030,6 @@ private func aospProductRelativePath(
     return components.isEmpty ? "." : components.joined(separator: "/")
 }
 
-private func aospProductIsRegularFile(_ path: FilePath) -> Bool {
-    var isDirectory = ObjCBool(false)
-    return FileManager.default.fileExists(
-        atPath: path.string,
-        isDirectory: &isDirectory) && !isDirectory.boolValue
-}
 
 private func aospImageIsSparse(_ path: FilePath) throws -> Bool {
     let handle = try FileHandle(forReadingFrom: URL(
@@ -1087,7 +1081,7 @@ private func replaceAOSPProductFile(
     _ candidate: FilePath,
     with destination: FilePath
 ) throws {
-    guard aospProductIsRegularFile(candidate) else {
+    guard candidate.isRegularFile else {
         throw RuntimeFailure.invalidOutput(
             "AOSP build did not produce \(candidate)")
     }

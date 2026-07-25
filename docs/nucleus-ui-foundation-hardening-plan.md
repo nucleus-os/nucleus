@@ -29,6 +29,8 @@ The completed foundation has these additional invariants:
 
 Each phase below starts only after the preceding phase's exit criteria pass.
 
+Status: complete
+
 ## Scope
 
 This plan hardens the reusable Nucleus application and UI foundation:

@@ -23,6 +23,9 @@ PRODUCT_SOONG_NAMESPACES += \
 PRODUCT_PACKAGES += \
     android.hardware.graphics.composer3-service.nucleus \
     android.hardware.graphics.allocator-service.nucleus \
+    android.hardware.health-service.example \
+    android.hardware.power-service.example \
+    audio_policy_configuration.xml \
     com.android.hardware.audio \
     android.hardware.security.keymint-service.nonsecure \
     ip \
@@ -37,3 +40,6 @@ PRODUCT_COPY_FILES += \
 PRODUCT_VENDOR_PROPERTIES += \
     ro.control_privapp_permissions=enforce \
     ro.sf.lcd_density=160
+
+PRODUCT_PRODUCT_PROPERTIES += \
+    sys.use_memfd=true

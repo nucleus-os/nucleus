@@ -592,7 +592,7 @@ private func collect(
 ) async throws -> [UInt8] {
     var captured: [UInt8] = []
     for try await chunk in sequence {
-        let bytes = chunk.withUnsafeBytes { Array($0) }
+        let bytes = unsafe chunk.withUnsafeBytes { unsafe Array($0) }
         if let limit {
             guard captured.count <= limit,
                 bytes.count <= limit - captured.count

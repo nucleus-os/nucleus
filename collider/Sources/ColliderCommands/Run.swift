@@ -37,6 +37,7 @@ struct RunOptions: Equatable {
     var valgrind = false
     var sanitizer: RuntimeSanitizer?
     var compositorArguments: [String] = []
+    var xwaylandExecutablePath: String?
     var outputOptionWasSpecified = false
     var tracyOnlyOptionWasSpecified = false
 
@@ -60,7 +61,8 @@ struct RunOptions: Equatable {
                 traceProtocol: diagnostics,
                 traceDrmDemand: diagnostics,
                 drmDevicePath: drmDevice,
-                wallpaperPath: wallpaper)
+                wallpaperPath: wallpaper,
+                xwaylandExecutablePath: xwaylandExecutablePath)
         }
     }
 
@@ -102,6 +104,9 @@ struct RunCommand {
     let context: WorkspaceContext
 
     func run(_ options: RunOptions) async throws {
+        var options = options
+        options.xwaylandExecutablePath = try resolveXwaylandExecutable(
+            environment: context.environment)
         try requireLaunchableSeatEnvironment()
 
         let prefix = context.root.appendingPathComponent(".install")

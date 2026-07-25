@@ -50,12 +50,12 @@ public final class ShellLockController {
             lockOutputs[index].logicalOrigin = Point(
                 x: Double(output.logicalX),
                 y: Double(output.logicalY))
-            surfaceRegistry.updateRefreshRate(
+            unsafe surfaceRegistry.updateRefreshRate(
                 output.refreshMillihertz,
                 surfaceID: UInt(bitPattern:
                     lockOutputs[index].surface.wlSurface))
             if lockOutputs[index].surface.hasConfigure {
-                configureLockSurface(
+                unsafe configureLockSurface(
                     surfaceID: UInt(bitPattern:
                         lockOutputs[index].surface.wlSurface),
                     width: lockOutputs[index].surface.configuredWidth,
@@ -148,11 +148,11 @@ public final class ShellLockController {
                 logicalOrigin: origin)
 
             surface.onConfigure = { [weak self] width, height in
-                self?.configureLockSurface(
+                unsafe self?.configureLockSurface(
                     surfaceID: UInt(bitPattern: surface.wlSurface),
                     width: width, height: height)
             }
-            surfaceRegistry.register(
+            unsafe surfaceRegistry.register(
                 window: window,
                 waylandSurface: surface.wlSurface,
                 refreshMillihertz: output.refreshMillihertz)
@@ -170,7 +170,7 @@ public final class ShellLockController {
         focusPasswordField: Bool = true
     ) {
         guard let index = lockOutputs.firstIndex(where: {
-            UInt(bitPattern: $0.surface.wlSurface) == surfaceID
+            unsafe UInt(bitPattern: $0.surface.wlSurface) == surfaceID
         }) else { return }
 
         let scale = Double(max(1, lockOutputs[index].surface.output.scale))
@@ -224,7 +224,7 @@ public final class ShellLockController {
         // The password field may still hold text if the lock is being torn
         // down mid-attempt.
         record.view.clearPassword()
-        surfaceRegistry.unregister(
+        unsafe surfaceRegistry.unregister(
             surfaceID: UInt(bitPattern: record.surface.wlSurface))
         record.surface.destroy()
     }

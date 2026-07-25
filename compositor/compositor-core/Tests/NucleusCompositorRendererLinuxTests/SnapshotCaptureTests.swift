@@ -17,7 +17,7 @@ import NucleusSkiaGraphiteBridge
     }
 
     @Test func gpuHeadless_captureLifecycle() throws {
-        try withRequiredVulkanGraphite(
+        try unsafe withRequiredVulkanGraphite(
             presentation: .headless,
             applicationName: "SnapshotCaptureTests"
         ) { _, _, context, recorder in
@@ -30,13 +30,13 @@ import NucleusSkiaGraphiteBridge
                 pixels[i * 4 + 3] = 255
             }
             let decodedSource = pixels.withUnsafeBufferPointer {
-                nucleus.skia.makeRasterImageRGBA(32, 32, $0.baseAddress, $0.count)
+                unsafe nucleus.skia.makeRasterImageRGBA(32, 32, $0.baseAddress, $0.count)
             }
-            let source = recorder.makeTextureImage(decodedSource)
+            let source = unsafe recorder.makeTextureImage(decodedSource)
 
             // begin() allocates a render texture of the requested size.
             let target = try requireValue(
-                SnapshotCapture.begin(
+                unsafe SnapshotCapture.begin(
                     recorder: recorder, width: 16, height: 16),
                 "could not allocate the snapshot target")
             #expect(target.width == 16)
@@ -44,21 +44,22 @@ import NucleusSkiaGraphiteBridge
 
             // captureDeviceRect captures + registers the sub-rect.
             let handle = try requireValue(
-                SnapshotCapture.captureDeviceRect(
+                unsafe SnapshotCapture.captureDeviceRect(
                     recorder: recorder, source: source,
                     srcX: 8, srcY: 8, width: 16, height: 16,
                     into: registry, contentRevision: 1),
                 "device-rect snapshot capture failed")
-            let capturedImage = try requireValue(
-                registry.resolve(.renderer(handle)),
+            let capturedImage = try unsafe requireValue(
+                unsafe registry.resolve(.renderer(handle)),
                 "captured snapshot was not registered")
-            #expect(capturedImage.isValid())
+            let capturedImageIsValid = unsafe capturedImage.isValid()
+            #expect(capturedImageIsValid)
             #expect(registry.size(.renderer(handle))?.width == 16)
             #expect(registry.size(.renderer(handle))?.height == 16)
 
             // captureWorldRect maps through scale then captures.
             let worldHandle = try requireValue(
-                SnapshotCapture.captureWorldRect(
+                unsafe SnapshotCapture.captureWorldRect(
                     recorder: recorder, source: source,
                     originX: 0, originY: 0, scale: 0.5,
                     localWidth: 32, localHeight: 32,
@@ -67,12 +68,15 @@ import NucleusSkiaGraphiteBridge
             #expect(registry.size(.renderer(worldHandle))?.width == 16)
             #expect(registry.size(.renderer(worldHandle))?.height == 16)
 
-            let recording = recorder.snapRecording()
+            let recording = unsafe recorder.snapRecording()
+            let submissionCompleted = unsafe submitGraphiteAndWait(
+                context: context, recording: recording, serial: 1)
             try requireTrue(
-                submitGraphiteAndWait(
-                    context: context, recording: recording, serial: 1),
+                submissionCompleted,
                 "snapshot submission did not complete")
-            #expect(context.completedSubmissionTimingCount() == 0)
+            let completedSubmissionTimingCount =
+                unsafe context.completedSubmissionTimingCount()
+            #expect(completedSubmissionTimingCount == 0)
             registry.clear()
         }
     }

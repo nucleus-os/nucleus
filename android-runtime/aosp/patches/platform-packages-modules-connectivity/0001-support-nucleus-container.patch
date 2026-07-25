@@ -1,0 +1,275 @@
+diff --git a/bpf/loader/netbpfload.35rc b/bpf/loader/netbpfload.35rc
+index 366c1f8e27..249ceac85f 100644
+--- a/bpf/loader/netbpfload.35rc
++++ b/bpf/loader/netbpfload.35rc
+@@ -3,7 +3,7 @@
+ service bpfloader /apex/com.android.tethering/bin/netbpfload
+     disabled # started on demand via trigger
+     # netbpfload will do network bpf loading, then execute /system/bin/bpfloader
+-    capabilities CHOWN SYS_ADMIN NET_ADMIN SYSLOG
++    capabilities CHOWN SYS_ADMIN NET_ADMIN SYSLOG BPF
+     # The following group memberships are a workaround for lack of DAC_OVERRIDE
+     # and allow us to open (among other things) files that we created and are
+     # no longer root owned (due to CHOWN) but still have group read access to
+diff --git a/bpf/netd/BpfHandler.cpp b/bpf/netd/BpfHandler.cpp
+index 9b57548b54..6adcc42a34 100644
+--- a/bpf/netd/BpfHandler.cpp
++++ b/bpf/netd/BpfHandler.cpp
+@@ -51,6 +51,11 @@ using bpf::isUserspace64bit;
+ using bpf::queryProgram;
+ using bpf::retrieveProgram;
+ 
++static bool isNucleusContainer() {
++    static const bool value = getenv("NUCLEUS_ANDROID_CONTAINER") != nullptr;
++    return value;
++}
++
+ constexpr int PER_UID_STATS_ENTRIES_LIMIT = 500;
+ // At most 90% of the stats map may be used by tagged traffic entries. This ensures
+ // that 10% of the map is always available to count untagged traffic, one entry per UID.
+@@ -203,7 +208,16 @@ static Result<void> initPrograms(const char* cg2_path) {
+                 cg_fd, BPF_CGROUP_INET4_BIND));
+         RETURN_IF_NOT_OK(attachProgramToCgroup(CGROUP_BIND6_PROG_PATH,
+                 cg_fd, BPF_CGROUP_INET6_BIND));
++    }
+ 
++    if (isNucleusContainer()) {
++        // BPF_PROG_QUERY requires CAP_NET_ADMIN or CAP_SYS_ADMIN in the
++        // initial user namespace and cannot consume a BPF token. Every
++        // attachment above remains checked at the operation boundary.
++        return {};
++    }
++
++    if (isAtLeastKernelVersion(4, 19)) {
+         // This should trivially pass, since we just attached up above,
+         // but BPF_PROG_QUERY is only implemented on 4.19+ kernels.
+         if (queryProgram(cg_fd, BPF_CGROUP_INET_EGRESS) <= 0) abort();
+@@ -320,7 +334,7 @@ Result<void> BpfHandler::init(const char* cg2_path) {
+     RETURN_IF_NOT_OK(initPrograms(cg2_path));
+     RETURN_IF_NOT_OK(initMaps());
+ 
+-    if (isAtLeast25Q2) {
++    if (isAtLeast25Q2 && !isNucleusContainer()) {
+         struct rlimit limit = {
+             .rlim_cur = 1u << 30,  // 1 GiB
+             .rlim_max = 1u << 30,  // 1 GiB
+diff --git a/bpf/loader/NetBpfLoad.cpp b/bpf/loader/NetBpfLoad.cpp
+index 7ba3247dcc..8329e9f8bf 100644
+--- a/bpf/loader/NetBpfLoad.cpp
++++ b/bpf/loader/NetBpfLoad.cpp
+@@ -18,6 +18,7 @@
+ 
+ #include <algorithm>
+ #include <arpa/inet.h>
++#include <bpf/bpf.h>
+ #include <bpf/btf.h>
+ #include <bpf/libbpf.h>
+ #include <dirent.h>
+@@ -117,6 +118,29 @@ static_assert(!minSupportedKernelVer, "NetBpfLoad must not assume min kver");
+ 
+ static unsigned int page_size = static_cast<unsigned int>(getpagesize());
+ 
++static bool isNucleusContainer() {
++    static const bool value = getenv("NUCLEUS_ANDROID_CONTAINER") != nullptr;
++    return value;
++}
++
++static unique_fd nucleusBpfToken;
++
++static bool initializeNucleusBpfToken() {
++    if (!isNucleusContainer()) return true;
++    unique_fd bpffs(open("/sys/fs/bpf", O_DIRECTORY | O_RDONLY | O_CLOEXEC));
++    if (!bpffs.ok()) {
++        ALOGE("Failed to open delegated Nucleus bpffs: %s", strerror(errno));
++        return false;
++    }
++    nucleusBpfToken.reset(bpf_token_create(bpffs, nullptr));
++    if (!nucleusBpfToken.ok()) {
++        ALOGE("Failed to create Nucleus BPF token: %s", strerror(errno));
++        return false;
++    }
++    ALOGI("Using the instance-private Nucleus BPF delegation");
++    return true;
++}
++
+ typedef struct {
+     const char* program_name;
+     vector<char> data;
+@@ -561,6 +585,24 @@ static int sanitizeBtf(struct btf *btf) {
+     return 0;
+ }
+ 
++static int loadBtfIntoKernel(struct btf *btf) {
++    if (!isNucleusContainer()) return btf__load_into_kernel(btf);
++
++    __u32 size = 0;
++    const void* raw = btf__raw_data(btf, &size);
++    if (!raw) return -ENOMEM;
++
++    LIBBPF_OPTS(bpf_btf_load_opts, options,
++        .btf_flags = BPF_F_TOKEN_FD,
++        .token_fd = static_cast<__u32>(nucleusBpfToken.get()),
++    );
++    int fd = bpf_btf_load(raw, size, &options);
++    if (fd < 0) return -errno;
++
++    btf__set_fd(btf, fd);
++    return 0;
++}
++
+ static int loadBtf(const ElfObject &elfObj, struct btf *btf) {
+     int ret;
+     for (unsigned int i = 1; i < btf__type_cnt(btf); ++i) {
+@@ -577,7 +619,7 @@ static int loadBtf(const ElfObject &elfObj, struct btf *btf) {
+         sanitizeBtf(btf);
+     }
+ 
+-    ret = btf__load_into_kernel(btf);
++    ret = loadBtfIntoKernel(btf);
+     if (ret) {
+         if (errno != EINVAL) {
+             ALOGE("btf__load_into_kernel failed, errno: %d", errno);
+@@ -594,7 +636,7 @@ static int loadBtf(const ElfObject &elfObj, struct btf *btf) {
+                 bt->info = (BTF_INFO_KIND(bt->info)) << 24;
+             }
+         }
+-        ret = btf__load_into_kernel(btf);
++        ret = loadBtfIntoKernel(btf);
+         if (ret) {
+             ALOGE("btf__load_into_kernel retry failed, errno: %d", errno);
+             return ret;
+@@ -852,6 +894,10 @@ static int createMaps(const ElfObject& elfObj, const span<const struct bpf_map_d
+             };
+             if (isAtLeastKernelVersion(4, 15))
+                 strlcpy(req.map_name, md[i].name(), sizeof(req.map_name));
++            if (isNucleusContainer()) {
++                req.map_flags |= BPF_F_TOKEN_FD;
++                req.map_token_fd = nucleusBpfToken.get();
++            }
+ 
+             bool haveBtf = btf && isBtfSupported(type);
+             if (haveBtf) {
+@@ -981,6 +1027,14 @@ static int validateProg(const borrowed_fd& fd, const char* const progPinLoc) {
+         return 0;
+     }
+     int progId = bpfGetFdProgId(fd);
++    if (isNucleusContainer() && progId != -1) {
++        // BPF tokens authorize loads in the bpffs owner's user namespace, but
++        // BPF_OBJ_GET_INFO_BY_FD masks instruction lengths unless the caller
++        // has CAP_BPF in the initial user namespace. The successful load and
++        // program ID query are the validation available at this boundary.
++        if (!isUser) ALOGD("prog %s id %d loaded with delegated BPF token", progPinLoc, progId);
++        return 0;
++    }
+     if (progId == -1) {
+         const int err = errno;
+         ALOGE("bpfGetFdProgId failed, errno: %d", err);
+@@ -1057,6 +1111,10 @@ static int loadCodeSections(const ElfObject& elfObj, vector<codeSection>& cs,
+             };
+             if (isAtLeastKernelVersion(4, 15))
+                 strlcpy(req.prog_name, cs[i].prog_def->name(), sizeof(req.prog_name));
++            if (isNucleusContainer()) {
++                req.prog_flags |= BPF_F_TOKEN_FD;
++                req.prog_token_fd = nucleusBpfToken.get();
++            }
+ 
+             // use a copy, so that bpf() system call cannot scribble over our req,
+             // which we want to mutate (to enable logging) and reuse on failure
+@@ -1254,7 +1312,7 @@ static int loadProgByLibbpf(const char* const elfPath) {
+     int ret;
+ 
+     LIBBPF_OPTS(bpf_object_open_opts, opts,
+-        .bpf_token_path = "",
++        .bpf_token_path = isNucleusContainer() ? "/sys/fs/bpf" : "",
+     );
+     struct bpf_object* obj = bpf_object__open_file(elfPath, &opts);
+     if (!obj) return -1;
+@@ -1527,6 +1585,8 @@ static int doLoad(char** argv, char * const envp[]) {
+           libbpf_major_version(), libbpf_minor_version(), getuid(), has_platform_bpfloader_rc,
+           has_platform_netbpfload_rc, isUser, isUserdebug, isEng);
+ 
++    if (!initializeNucleusBpfToken()) return 126;
++
+     if (!has_platform_bpfloader_rc && !has_platform_netbpfload_rc) {
+         ALOGE("Unable to find platform's bpfloader & netbpfload init scripts.");
+         return 1;
+@@ -1731,7 +1791,7 @@ static int doLoad(char** argv, char * const envp[]) {
+         return 22;
+     }
+ 
+-    if (runningAsRoot) {
++    if (runningAsRoot && !isNucleusContainer()) {
+         // Note: writing this proc file requires being root (always the case on V+)
+ 
+         // Linux 5.16-rc1 changed the default to 2 (disabled but changeable),
+@@ -1742,7 +1802,7 @@ static int doLoad(char** argv, char * const envp[]) {
+             isAtLeastKernelVersion(5, 13)) return 23;
+     }
+ 
+-    if (isAtLeastU) {
++    if (isAtLeastU && !isNucleusContainer()) {
+         // Note: writing these proc files requires CAP_NET_ADMIN
+         // and sepolicy which is only present on U+,
+         // on Android T and earlier versions they're written from the 'load_bpf_programs'
+@@ -1779,7 +1839,7 @@ static int doLoad(char** argv, char * const envp[]) {
+         if (!createDir("/sys/fs/bpf/loader")) return 31;
+     }
+ 
+-    if (runningAsRoot) {  // implies U QPR3+ and kernel 4.14+
++    if (runningAsRoot && !isNucleusContainer()) {  // implies U QPR3+ and kernel 4.14+
+         // There should not be any programs or maps yet
+         errno = 0;
+         uint32_t progId = bpfGetNextProgId(0);  // expect 0 with errno == ENOENT
+@@ -1793,7 +1853,8 @@ static int doLoad(char** argv, char * const envp[]) {
+             ALOGE("bpfGetNextMapId(zero) returned %u (errno %d)", mapId, errno);
+             return 33;
+         }
+-    } else if (isAtLeastKernelVersion(4, 14)) {  // implies S through U QPR2
++    } else if (!runningAsRoot &&
++               isAtLeastKernelVersion(4, 14)) {  // implies S through U QPR2
+         // bpfGetNext{Prog,Map}Id require 4.14+
+         // furthermore since we're not running as root, we're not the initial
+         // platform bpfloader, so there may already be some maps & programs.
+diff --git a/service/jni/com_android_server_connectivity_ClatCoordinator.cpp b/service/jni/com_android_server_connectivity_ClatCoordinator.cpp
+index 70991ebad3..7aa9501e78 100644
+--- a/service/jni/com_android_server_connectivity_ClatCoordinator.cpp
++++ b/service/jni/com_android_server_connectivity_ClatCoordinator.cpp
+@@ -26,6 +26,7 @@
+ #include <nativehelper/JNIHelp.h>
+ #include <net/if.h>
+ #include <spawn.h>
++#include <stdlib.h>
+ #include <sys/stat.h>
+ #include <sys/types.h>
+ #include <sys/wait.h>
+@@ -57,6 +58,11 @@ static bool fatal = false;
+ 
+ enum verify { VERIFY_DIR, VERIFY_BIN, VERIFY_PROG, VERIFY_MAP_RO, VERIFY_MAP_RW };
+ 
++static bool isNucleusContainer() {
++    static const bool value = getenv("NUCLEUS_ANDROID_CONTAINER") != nullptr;
++    return value;
++}
++
+ static void verifyPerms(const char * const path,
+                         const mode_t mode, const uid_t uid, const gid_t gid,
+                         const char * const ctxt,
+@@ -68,10 +74,14 @@ static void verifyPerms(const char * const path,
+     if (s.st_uid != uid) ALOGF("'%s' uid is %d != %d", path, s.st_uid, uid);
+     if (s.st_gid != gid) ALOGF("'%s' gid is %d != %d", path, s.st_gid, gid);
+ 
+-    char b[255] = {};
+-    int v = lgetxattr(path, "security.selinux", &b, sizeof(b));
+-    if (v < 0) ALOGF("lgetxattr '%s' errno=%d", path, errno);
+-    if (strncmp(ctxt, b, sizeof(b))) ALOGF("context of '%s' is '%s' != '%s'", path, b, ctxt);
++    if (!isNucleusContainer()) {
++        char b[255] = {};
++        int v = lgetxattr(path, "security.selinux", &b, sizeof(b));
++        if (v < 0) ALOGF("lgetxattr '%s' errno=%d", path, errno);
++        if (strncmp(ctxt, b, sizeof(b))) {
++            ALOGF("context of '%s' is '%s' != '%s'", path, b, ctxt);
++        }
++    }
+ 
+     int fd = -1;
+ 

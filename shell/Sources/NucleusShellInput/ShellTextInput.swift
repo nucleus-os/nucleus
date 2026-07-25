@@ -1,5 +1,6 @@
 import WaylandClientC
 import WaylandClientDispatch
+import WaylandProtocolTypes
 public import NucleusShellWayland
 public import NucleusUI
 
@@ -529,59 +530,71 @@ final class ShellTextInputListener: ZwpTextInputV3Events {
         self.owner = owner
     }
 
-    nonisolated func enter(_ proxy: OpaquePointer, surface: OpaquePointer?) {
-        // Wayland guarantees event arguments remain valid for the callback.
-        // Convert the borrowed proxy identity to a scalar before actor handoff.
-        let surfaceID = unsafe surface.map { UInt(bitPattern: $0) } ?? 0
+    nonisolated func enter(
+        _ proxy: WaylandBorrowedProxy<ZwpTextInputV3Client>,
+        surface: WaylandBorrowedProxy<WlSurfaceClient>
+    ) {
+        let surfaceID = unsafe UInt(bitPattern: surface.proxy)
         MainActor.assumeIsolated { owner.handleEnter(surfaceID: surfaceID) }
     }
 
-    nonisolated func leave(_ proxy: OpaquePointer, surface: OpaquePointer?) {
-        let surfaceID = unsafe surface.map { UInt(bitPattern: $0) } ?? 0
+    nonisolated func leave(
+        _ proxy: WaylandBorrowedProxy<ZwpTextInputV3Client>,
+        surface: WaylandBorrowedProxy<WlSurfaceClient>
+    ) {
+        let surfaceID = unsafe UInt(bitPattern: surface.proxy)
         MainActor.assumeIsolated { owner.handleLeave(surfaceID: surfaceID) }
     }
 
     nonisolated func preeditString(
-        _ proxy: OpaquePointer, text: UnsafePointer<CChar>?,
+        _ proxy: WaylandBorrowedProxy<ZwpTextInputV3Client>, text: String?,
         cursor_begin: Int32, cursor_end: Int32
     ) {
-        // Protocol strings are nullable, NUL-terminated UTF-8 C strings borrowed for
-        // this callback. Copy into Swift ownership before crossing actors.
-        let value = unsafe text.map { unsafe String(cString: $0) }
         MainActor.assumeIsolated {
-            owner.handlePreedit(text: value, cursorBegin: cursor_begin, cursorEnd: cursor_end)
+            owner.handlePreedit(
+                text: text, cursorBegin: cursor_begin, cursorEnd: cursor_end)
         }
     }
 
-    nonisolated func commitString(_ proxy: OpaquePointer, text: UnsafePointer<CChar>?) {
-        let value = unsafe text.map { unsafe String(cString: $0) }
-        MainActor.assumeIsolated { owner.handleCommitString(value) }
+    nonisolated func commitString(
+        _ proxy: WaylandBorrowedProxy<ZwpTextInputV3Client>, text: String?
+    ) {
+        MainActor.assumeIsolated { owner.handleCommitString(text) }
     }
 
     nonisolated func deleteSurroundingText(
-        _ proxy: OpaquePointer, before_length: UInt32, after_length: UInt32
+        _ proxy: WaylandBorrowedProxy<ZwpTextInputV3Client>, before_length: UInt32, after_length: UInt32
     ) {
         MainActor.assumeIsolated {
             owner.handleDeleteSurrounding(before: before_length, after: after_length)
         }
     }
 
-    nonisolated func done(_ proxy: OpaquePointer, serial: UInt32) {
+    nonisolated func done(_ proxy: WaylandBorrowedProxy<ZwpTextInputV3Client>, serial: UInt32) {
         MainActor.assumeIsolated { owner.handleDone(serial: serial) }
     }
 
-    nonisolated func action(_ proxy: OpaquePointer, action: UInt32, serial: UInt32) {
-        MainActor.assumeIsolated { owner.handleAction(action) }
+    nonisolated func action(
+        _ proxy: WaylandBorrowedProxy<ZwpTextInputV3Client>,
+        action: ZwpTextInputV3Action,
+        serial: UInt32
+    ) {
+        MainActor.assumeIsolated { owner.handleAction(action.rawValue) }
     }
-    nonisolated func language(_ proxy: OpaquePointer, language: UnsafePointer<CChar>?) {
-        let value = unsafe language.map { unsafe String(cString: $0) }
-        MainActor.assumeIsolated { owner.handleLanguage(value) }
+    nonisolated func language(
+        _ proxy: WaylandBorrowedProxy<ZwpTextInputV3Client>,
+        language: String
+    ) {
+        MainActor.assumeIsolated { owner.handleLanguage(language) }
     }
     nonisolated func preeditHint(
-        _ proxy: OpaquePointer, start: UInt32, end: UInt32, hint: UInt32
+        _ proxy: WaylandBorrowedProxy<ZwpTextInputV3Client>,
+        start: UInt32, end: UInt32,
+        hint: ZwpTextInputV3PreeditHint
     ) {
         MainActor.assumeIsolated {
-            owner.handlePreeditHint(start: start, end: end, hint: hint)
+            owner.handlePreeditHint(
+                start: start, end: end, hint: hint.rawValue)
         }
     }
 }

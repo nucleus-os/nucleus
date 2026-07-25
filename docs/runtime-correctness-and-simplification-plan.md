@@ -13,6 +13,8 @@ Nucleus has one explicit ownership path, one frame-demand path, and one authorit
 - Cross-module inversion uses typed Swift values and one justified protocol seam, not manually assembled callback tables.
 - Generated and vendored code remains untouched. First-party callers are updated directly when an API is replaced.
 
+Status: complete
+
 ## Scope
 
 This plan changes first-party code in:

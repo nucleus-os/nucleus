@@ -1,3 +1,5 @@
+import WaylandServer
+
 /// Provenance for serials minted by one `wl_seat`.
 ///
 /// A serial is useful only inside the session generation and focus lifetime in
@@ -14,7 +16,7 @@ enum SeatSerialKind: Hashable, Sendable {
 struct SeatSerialRecord: Equatable, Sendable {
     let serial: UInt32
     let kind: SeatSerialKind
-    let clientKey: UInt
+    let clientKey: WaylandClientID
     let surfaceID: UInt32?
     let sessionGeneration: UInt64
 }
@@ -33,7 +35,7 @@ final class SeatSerialLedger {
     func record(
         serial: UInt32,
         kind: SeatSerialKind,
-        clientKey: UInt,
+        clientKey: WaylandClientID,
         surfaceID: UInt32?
     ) -> SeatSerialRecord {
         let record = SeatSerialRecord(
@@ -53,7 +55,7 @@ final class SeatSerialLedger {
     func authorizes(
         serial: UInt32,
         kinds: Set<SeatSerialKind>,
-        clientKey: UInt,
+        clientKey: WaylandClientID,
         surfaceID: UInt32?,
         consume: Bool
     ) -> Bool {
@@ -70,7 +72,7 @@ final class SeatSerialLedger {
         return true
     }
 
-    func invalidate(kind: SeatSerialKind, clientKey: UInt? = nil) {
+    func invalidate(kind: SeatSerialKind, clientKey: WaylandClientID? = nil) {
         let rejected = Set<UInt32>(records.values.compactMap { record -> UInt32? in
             guard record.kind == kind,
                 clientKey == nil || record.clientKey == clientKey
@@ -82,7 +84,7 @@ final class SeatSerialLedger {
         order.removeAll { rejected.contains($0) }
     }
 
-    func invalidate(clientKey: UInt) {
+    func invalidate(clientKey: WaylandClientID) {
         let rejected = Set<UInt32>(records.values.compactMap {
             $0.clientKey == clientKey ? $0.serial : nil
         })

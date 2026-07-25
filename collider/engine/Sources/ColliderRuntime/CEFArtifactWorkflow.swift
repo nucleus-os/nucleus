@@ -276,7 +276,7 @@ private func cefExists(_ path: FilePath) -> Bool {
 }
 
 private func cefDirectory(_ path: FilePath) -> Bool {
-    var directory = ObjCBool(false)
-    return FileManager.default.fileExists(
-        atPath: path.string, isDirectory: &directory) && directory.boolValue
+    let values = try? URL(fileURLWithPath: path.string)
+        .resourceValues(forKeys: [.isDirectoryKey])
+    return values?.isDirectory == true
 }

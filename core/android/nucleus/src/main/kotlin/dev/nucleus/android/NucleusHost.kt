@@ -2,6 +2,7 @@ package dev.nucleus.android
 
 import android.content.Context
 import android.os.Build
+import android.os.Looper
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.Surface
@@ -14,30 +15,30 @@ import org.swift.swiftkit.core.SwiftArena
  *
  * The host itself is the swift-java-generated [AndroidHost]; its native memory is
  * owned by a confined [SwiftArena] tied to this object and freed in [close] (which
- * runs the Swift `deinit`, releasing any retained ANativeWindow). The NDK-handle
- * entry points (Surface / AssetManager) go through [NucleusNative], which takes the
- * host's swift-java self-pointer. There is no longer a native handle registry.
+ * runs the Swift `deinit`). The NDK-handle entry points (Surface / AssetManager)
+ * go through [NucleusNative] using a monotonic opaque host ID. All native calls are
+ * confined to the Android main/Choreographer thread.
  */
 class NucleusHost() : AutoCloseable {
     private val arena: ClosableSwiftArena
     private val host: AndroidHost
+    private val hostId: Long
     private var closed = false
 
     init {
+        checkOwnerThread()
         // Load libc++_shared / libnucleus-android (and, transitively, libSwiftJava)
         // before the first native call. The Swift runtime is embedded in the host.
         Nucleus.ensureLoaded()
         arena = SwiftArena.ofConfined()
         host = AndroidHost.init(arena)
+        hostId = host.hostID()
+        check(hostId != 0L) { "native host registration failed" }
     }
 
     constructor(context: Context) : this() {
         configure(context)
     }
-
-    /** The swift-java self-pointer the hand-written NDK-handle thunks reconstruct from. */
-    private val selfPointer: Long
-        get() = host.`$memoryAddress`()
 
     fun isClosed(): Boolean = closed
 
@@ -72,7 +73,7 @@ class NucleusHost() : AutoCloseable {
         val density = context.resources.displayMetrics.density
         requireNative(
             NucleusNative.configureHost(
-                selfPointer,
+                hostId,
                 appContext.assets,
                 pathOrEmpty(appContext.filesDir),
                 pathOrEmpty(appContext.cacheDir),
@@ -91,17 +92,17 @@ class NucleusHost() : AutoCloseable {
 
     fun surfaceCreated(surface: Surface) {
         checkOpen()
-        requireNative(NucleusNative.surfaceCreated(selfPointer, surface), "native surface attach")
+        requireNative(NucleusNative.surfaceCreated(hostId, surface), "native surface attach")
     }
 
     fun surfaceChanged(format: Int, width: Int, height: Int) {
         checkOpen()
-        requireNative(NucleusNative.surfaceChanged(selfPointer, format, width, height), "native surface change")
+        requireNative(NucleusNative.surfaceChanged(hostId, format, width, height), "native surface change")
     }
 
     fun surfaceDestroyed() {
         checkOpen()
-        requireNative(NucleusNative.surfaceDestroyed(selfPointer), "native surface detach")
+        requireNative(NucleusNative.surfaceDestroyed(hostId), "native surface detach")
     }
 
     fun frame(frameTimeNanos: Long) {
@@ -234,15 +235,24 @@ class NucleusHost() : AutoCloseable {
     }
 
     override fun close() {
+        checkOwnerThread()
         if (closed) return
+        requireNative(host.close(), "native host close")
         closed = true
-        // Closing the arena runs the Swift deinit, which releases any retained
-        // ANativeWindow and frees the host core.
+        // Native close detaches renderer/surface state and unregisters the opaque
+        // ID before arena finalization releases the Swift object.
         arena.close()
     }
 
     private fun checkOpen() {
+        checkOwnerThread()
         check(!closed) { "NucleusHost is closed" }
+    }
+
+    private fun checkOwnerThread() {
+        check(Looper.myLooper() === Looper.getMainLooper()) {
+            "NucleusHost native calls require the Android main looper"
+        }
     }
 
     private fun requireNative(ok: Boolean, operation: String) {

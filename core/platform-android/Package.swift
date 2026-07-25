@@ -95,6 +95,9 @@ let package = Package(
         .target(
             name: "NucleusAndroidCore",
             dependencies: [
+                .product(
+                    name: "NucleusAndroidHostLifecycle",
+                    package: "Nucleus"),
                 "NucleusAndroidC",
                 .product(name: "Vulkan", package: "swift-vulkan"),
                 .product(name: "VulkanC", package: "swift-vulkan"),
@@ -110,6 +113,7 @@ let package = Package(
             ],
             path: "swift-core",
             swiftSettings: [
+                .strictMemorySafety(),
                 .swiftLanguageMode(.v6),
                 .interoperabilityMode(.Cxx),
                 .unsafeFlags(["-warnings-as-errors", "-Werror", "StrictLanguageFeatures"]),
@@ -141,6 +145,9 @@ let package = Package(
         .target(
             name: "NucleusAndroidJNI",
             dependencies: [
+                .product(
+                    name: "NucleusAndroidHostLifecycle",
+                    package: "Nucleus"),
                 "NucleusAndroidCore",
                 "NucleusAndroidC",
                 .product(name: "SwiftJava", package: "swift-java"),
@@ -148,6 +155,7 @@ let package = Package(
             path: "swift-jni",
             exclude: ["swift-java.config"],
             swiftSettings: [
+                .strictMemorySafety(),
                 // Unified on v6 + cxx-interop after the C-ABI collapse: the facade
                 // imports NucleusAndroidCore (v6) directly, and the forked swift-java's
                 // generated JNI thunks + the hand-written NDK thunks all compile clean

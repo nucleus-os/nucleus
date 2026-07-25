@@ -3,6 +3,7 @@ import VulkanC
 import Vulkan
 import NucleusSkiaGraphiteBridge
 import NucleusRenderModel
+import NucleusTypes
 @testable import NucleusRenderer
 
 struct RendererTestWakeSink: AsyncRenderWakeSink {
@@ -10,10 +11,10 @@ struct RendererTestWakeSink: AsyncRenderWakeSink {
 }
 
 @MainActor
-final class TestFrameResourceResolver: FrameResourceResolver {
+@safe final class TestFrameResourceResolver: FrameResourceResolver {
     var paintContents: [PaintContentHandle: PaintContentStore.Content] = [:]
-    var paintImages: [UInt64: nucleus.skia.Image] = [:]
-    var textures: [PlanTextureReference: nucleus.skia.Image] = [:]
+    var paintImages: [UInt64: nucleus.skia.Image] = unsafe [:]
+    var textures: [PlanTextureReference: nucleus.skia.Image] = unsafe [:]
     var paintImageCalls: [UInt64] = []
     var textureCalls: [PlanTextureReference] = []
 
@@ -34,14 +35,14 @@ final class TestFrameResourceResolver: FrameResourceResolver {
         outputID: UInt64
     ) -> nucleus.skia.Image? {
         paintImageCalls.append(handle)
-        return paintImages[handle]
+        return unsafe paintImages[handle]
     }
 
     func texture(
         for reference: PlanTextureReference
     ) -> nucleus.skia.Image? {
         textureCalls.append(reference)
-        return textures[reference]
+        return unsafe textures[reference]
     }
 }
 
@@ -179,30 +180,31 @@ final class TestFrameResourceResolver: FrameResourceResolver {
                 alpha: 1))
         }
         let resolver = TestFrameResourceResolver()
-        var resolved: [PlanTextureReference: nucleus.skia.Image] = [:]
+        var resolved: [PlanTextureReference: nucleus.skia.Image] = unsafe [:]
 
-        FrameDriver.resolveGenericTextures(
+        unsafe FrameDriver.resolveGenericTextures(
             summary: plan.resourceSummary,
             resolver: resolver,
             into: &resolved)
 
         #expect(resolver.textureCalls == [reference])
-        #expect(resolved.isEmpty)
+        let resolvedIsEmpty = unsafe resolved.isEmpty
+        #expect(resolvedIsEmpty)
     }
 
     @Test @MainActor
     func missingPaintImageIsResolvedOnceAcrossPaintRequests() {
         let resolver = TestFrameResourceResolver()
         var attempted: Set<UInt64> = []
-        var resolved: [UInt64: nucleus.skia.Image] = [:]
+        var resolved: [UInt64: nucleus.skia.Image] = unsafe [:]
 
-        _ = FrameDriver.resolvePaintImages(
+        _ = unsafe FrameDriver.resolvePaintImages(
             [88, 99],
             outputID: 1,
             resolver: resolver,
             attempted: &attempted,
             resolved: &resolved)
-        _ = FrameDriver.resolvePaintImages(
+        _ = unsafe FrameDriver.resolvePaintImages(
             [88],
             outputID: 1,
             resolver: resolver,
@@ -210,7 +212,8 @@ final class TestFrameResourceResolver: FrameResourceResolver {
             resolved: &resolved)
 
         #expect(resolver.paintImageCalls == [88, 99])
-        #expect(resolved.isEmpty)
+        let resolvedIsEmpty = unsafe resolved.isEmpty
+        #expect(resolvedIsEmpty)
     }
 
     @Test
@@ -246,7 +249,9 @@ final class TestFrameResourceResolver: FrameResourceResolver {
             height: 20))
     }
 
-    static func layer(_ id: UInt64, kind: LayerKind = .container,
+    static func layer(
+        _ id: UInt64,
+        kind: NucleusRenderModel.LayerKind = .container,
                       x: Float, y: Float, w: Float, h: Float) -> LayerCreated {
         LayerCreated(
             nodeId: id,
@@ -290,12 +295,12 @@ final class TestFrameResourceResolver: FrameResourceResolver {
             pixelSize: PixelSize(width: 400, height: 400),
             scale: 1, fractionalScale: 2, overlayUsableArea: UsableArea())
 
-        try withRequiredVulkanGraphite(
+        try unsafe withRequiredVulkanGraphite(
             presentation: .headless,
             applicationName: "FrameDriverTests"
         ) { _, _, context, _ in
             let driver = try requireValue(
-                FrameDriver(
+                unsafe FrameDriver(
                     context: context,
                     resourceHost: SwiftResourceHost(),
                     wakeSink: RendererTestWakeSink()),
@@ -306,29 +311,30 @@ final class TestFrameResourceResolver: FrameResourceResolver {
             var pixels = [UInt8](repeating: 0, count: 16 * 16 * 4)
             for i in 0..<(16 * 16) { pixels[i * 4 + 1] = 255; pixels[i * 4 + 3] = 255 }
             let decodedSource = pixels.withUnsafeBufferPointer {
-                nucleus.skia.makeRasterImageRGBA(16, 16, $0.baseAddress, $0.count)
+                unsafe nucleus.skia.makeRasterImageRGBA(
+                    16, 16, $0.baseAddress, $0.count)
             }
-            let source = driver.recorder.makeTextureImage(decodedSource)
+            let source = unsafe driver.recorder.makeTextureImage(decodedSource)
 
-            let scanout = driver.recorder.makeOffscreenSurface(400, 400)
+            let scanout = unsafe driver.recorder.makeOffscreenSurface(400, 400)
 
             let resolver = TestFrameResourceResolver()
             resolver.paintContents[PaintContentHandle(raw: 9)] =
                 PaintContentStore.Content(commands: [
-                    PaintDrawCommand(
+                    PaintCommand(
                         kind: .rect, x: 0, y: 0, w: 80, h: 80,
-                        color: (0.8, 0.1, 0.1, 1)),
-                    PaintDrawCommand(
+                        color: Color(r: 0.8, g: 0.1, b: 0.1, a: 1)),
+                    PaintCommand(
                         kind: .image, x: 8, y: 8, w: 16, h: 16,
                         imageHandle: 88),
                 ], width: 80, height: 80)
-            resolver.paintImages[88] = source
-            resolver.textures[PlanTextureReference(
+            unsafe resolver.paintImages[88] = source
+            unsafe resolver.textures[PlanTextureReference(
                 role: .content,
                 handle: TextureHandle(raw: 5))] = source
 
             var resolveCalls = 0
-            let firstRequest = FrameDriver.FrameRenderRequest(
+            let firstRequest = unsafe FrameDriver.FrameRenderRequest(
                 tree: tree,
                 target: target,
                 frame: FrameInfo(outputId: 1, frameSerial: 1),
@@ -346,7 +352,7 @@ final class TestFrameResourceResolver: FrameResourceResolver {
 
             // A second frame reuses the persistent accumulator (no re-create).
             resolver.textureCalls.removeAll()
-            let secondRequest = FrameDriver.FrameRenderRequest(
+            let secondRequest = unsafe FrameDriver.FrameRenderRequest(
                 tree: tree,
                 target: target,
                 frame: FrameInfo(outputId: 1, frameSerial: 2),
@@ -363,22 +369,23 @@ final class TestFrameResourceResolver: FrameResourceResolver {
             #expect(resolveCalls == 2)
             #expect(second.presented)
             #expect(second.submitted)
+            let submissionsCompleted = unsafe waitForGraphiteSerial(
+                context: context,
+                serial: secondRequest.frame.frameSerial)
             try requireTrue(
-                waitForGraphiteSerial(
-                    context: context,
-                    serial: secondRequest.frame.frameSerial),
+                submissionsCompleted,
                 "frame driver submissions did not complete")
         }
     }
 
     @Test @MainActor
     func gpuHeadless_abandonedUploadPreservesResidentPixels() throws {
-        try withRequiredVulkanGraphite(
+        try unsafe withRequiredVulkanGraphite(
             presentation: .headless,
             applicationName: "FrameDriver upload rollback"
         ) { _, _, context, _ in
             let driver = try requireValue(
-                FrameDriver(
+                unsafe FrameDriver(
                     context: context,
                     resourceHost: SwiftResourceHost(),
                     wakeSink: RendererTestWakeSink()),
@@ -391,26 +398,28 @@ final class TestFrameResourceResolver: FrameResourceResolver {
                 default: 0
                 }
             }
-            let texture = try requireValue(
-                driver.stageClientUpload(
+            let texture = try unsafe requireValue(
+                unsafe driver.stageClientUpload(
                     replacing: nil,
                     pixels: green,
                     width: 2,
                     height: 2),
                 "initial upload failed")
-            let image = texture.image()
-            let initialTarget = driver.recorder.makeOffscreenSurface(2, 2)
+            let image = unsafe texture.image()
+            let initialTarget = unsafe driver.recorder.makeOffscreenSurface(2, 2)
             var rect = nucleus.skia.RectF()
             rect.width = 2
             rect.height = 2
-            initialTarget.getCanvas().drawImage(image, rect, 1)
-            let initialResult = driver.submitImmediate(
+            unsafe initialTarget.getCanvas().drawImage(image, rect, 1)
+            let initialResult = unsafe driver.submitImmediate(
                 driver.recorder.snapRecording(),
                 waitSemaphores: [],
                 submissionSerial: 1)
             try requireTrue(initialResult.isOk(), "initial upload submission failed")
+            let initialUploadCompleted =
+                unsafe waitForGraphiteSerial(context: context, serial: 1)
             try requireTrue(
-                waitForGraphiteSerial(context: context, serial: 1),
+                initialUploadCompleted,
                 "initial upload did not complete")
 
             var red = [UInt8](repeating: 0, count: 16)
@@ -418,8 +427,8 @@ final class TestFrameResourceResolver: FrameResourceResolver {
                 red[index] = 255
                 red[index + 3] = 255
             }
-            _ = try requireValue(
-                driver.stageClientUpload(
+            _ = try unsafe requireValue(
+                unsafe driver.stageClientUpload(
                     replacing: texture,
                     pixels: red,
                     width: 2,
@@ -428,25 +437,29 @@ final class TestFrameResourceResolver: FrameResourceResolver {
             driver.abandonSubmissionScope()
 
             let verificationTarget =
-                driver.recorder.makeOffscreenSurface(2, 2)
-            verificationTarget.getCanvas().drawImage(image, rect, 1)
-            let verificationResult = driver.submitImmediate(
+                unsafe driver.recorder.makeOffscreenSurface(2, 2)
+            unsafe verificationTarget.getCanvas().drawImage(image, rect, 1)
+            let verificationResult = unsafe driver.submitImmediate(
                 driver.recorder.snapRecording(),
                 waitSemaphores: [],
                 submissionSerial: 2)
             try requireTrue(
                 verificationResult.isOk(),
                 "verification submission failed")
+            let verificationCompleted =
+                unsafe waitForGraphiteSerial(context: context, serial: 2)
             try requireTrue(
-                waitForGraphiteSerial(context: context, serial: 2),
+                verificationCompleted,
                 "verification submission did not complete")
             let pixels = try requireValue(
-                readGraphiteSurfaceRGBA(
+                unsafe readGraphiteSurfaceRGBA(
                     context: context,
                     surface: verificationTarget),
                 "verification readback failed")
             #expect(Array(pixels.prefix(4)) == [0, 255, 0, 255])
-            #expect(context.completedSubmissionTimingCount() == 0)
+            let completedSubmissionTimingCount =
+                unsafe context.completedSubmissionTimingCount()
+            #expect(completedSubmissionTimingCount == 0)
         }
     }
 }

@@ -3,6 +3,7 @@ enum XdgConfigureLedgerError: Error, Equatable {
 }
 
 /// Ordered configure/ack/commit state for one xdg_surface.
+@MainActor
 final class XdgConfigureLedger {
     private(set) var outstanding: [XdgConfigureRecord] = []
     private(set) var acknowledged: XdgConfigureRecord?

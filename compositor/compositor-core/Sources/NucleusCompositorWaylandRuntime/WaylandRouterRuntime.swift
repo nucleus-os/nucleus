@@ -207,7 +207,7 @@ public final class WaylandRouterRuntime {
     /// The runtime owns the descriptor after this succeeds. This is also the
     /// deterministic connection seam used by in-process protocol fixtures.
     public func attachClient(fileDescriptor: Int32) -> Bool {
-        router.display.createClient(fd: fileDescriptor) != nil
+        unsafe router.display.createClient(fd: fileDescriptor) != nil
     }
 
     /// Process all currently-ready client requests and flush queued events

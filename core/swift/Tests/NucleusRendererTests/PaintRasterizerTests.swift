@@ -4,6 +4,69 @@ import NucleusSkiaGraphiteBridge
 import NucleusRenderModel
 import NucleusTypes
 
+private enum PaintFixtureResources {
+    case none
+    case redImage(handle: UInt64)
+    case runtimeEffect(handle: UInt64, source: String)
+}
+
+/// Owns every Skia value for the duration of the synchronous draw and copies
+/// readback bytes into Swift-owned storage before the surface is destroyed.
+@safe private func renderPaintFixture(
+    width: Int32,
+    height: Int32,
+    commands: [PaintCommand],
+    payload: [UInt8],
+    scaleX: Float = 1,
+    scaleY: Float = 1,
+    resources: PaintFixtureResources = .none
+) -> [UInt8] {
+    let surface = unsafe nucleus.skia.makeRasterSurface(width, height)
+    guard unsafe surface.isValid() else { return [] }
+    let canvas = unsafe surface.getCanvas()
+    var clear = nucleus.skia.Color()
+    clear.r = 0; clear.g = 0; clear.b = 0; clear.a = 1
+    unsafe canvas.clear(clear)
+
+    switch resources {
+    case .none:
+        unsafe PaintRasterizer.draw(
+            commands: commands, payload: payload, onto: canvas,
+            scaleX: scaleX, scaleY: scaleY,
+            resolveImage: { _ in nil }, resolveEffect: { _ in nil })
+    case .redImage(let handle):
+        let imageSurface = unsafe nucleus.skia.makeRasterSurface(2, 2)
+        var red = nucleus.skia.Color()
+        red.r = 1
+        red.a = 1
+        unsafe imageSurface.getCanvas().clear(red)
+        let image = unsafe imageSurface.snapshotImage()
+        unsafe PaintRasterizer.draw(
+            commands: commands, payload: payload, onto: canvas,
+            scaleX: scaleX, scaleY: scaleY,
+            resolveImage: { candidate in
+                candidate == handle ? unsafe image : nil
+            },
+            resolveEffect: { _ in nil })
+    case .runtimeEffect(let handle, let source):
+        let effect = unsafe nucleus.skia.makeRuntimeEffect(source)
+        unsafe PaintRasterizer.draw(
+            commands: commands, payload: payload, onto: canvas,
+            scaleX: scaleX, scaleY: scaleY,
+            resolveImage: { _ in nil },
+            resolveEffect: { candidate in
+                candidate == handle ? unsafe effect : nil
+            })
+    }
+
+    var pixels = [UInt8](repeating: 0, count: Int(width * height) * 4)
+    let copied = pixels.withUnsafeMutableBufferPointer {
+        unsafe surface.readPixelsRGBA(
+            $0.baseAddress, $0.count, Int32(width * 4))
+    }
+    return copied ? pixels : []
+}
+
 /// Pixel coverage for the decode half of the paint pipeline.
 ///
 /// The encoder (`PaintPayload.append`, driven by `GraphicsContext`) and the
@@ -19,29 +82,15 @@ import NucleusTypes
 
     private func render(
         width: Int32, height: Int32,
-        commands: [PaintDrawCommand],
+        commands: [PaintCommand],
         payload: [UInt8],
         scaleX: Float = 1, scaleY: Float = 1,
-        resolveImage: @escaping (UInt64) -> nucleus.skia.Image? = { _ in nil },
-        resolveEffect: @escaping (UInt64) -> nucleus.skia.RuntimeEffect? = { _ in nil }
+        resources: PaintFixtureResources = .none
     ) -> [UInt8] {
-        let surface = nucleus.skia.makeRasterSurface(width, height)
-        guard surface.isValid() else { return [] }
-        let canvas = surface.getCanvas()
-        var clear = nucleus.skia.Color()
-        clear.r = 0; clear.g = 0; clear.b = 0; clear.a = 1
-        canvas.clear(clear)
-
-        PaintRasterizer.draw(
-            commands: commands, payload: payload, onto: canvas,
-            scaleX: scaleX, scaleY: scaleY,
-            resolveImage: resolveImage, resolveEffect: resolveEffect)
-
-        var pixels = [UInt8](repeating: 0, count: Int(width * height) * 4)
-        let ok = pixels.withUnsafeMutableBufferPointer { buf in
-            surface.readPixelsRGBA(buf.baseAddress, buf.count, Int32(width * 4))
-        }
-        return ok ? pixels : []
+        renderPaintFixture(
+            width: width, height: height,
+            commands: commands, payload: payload,
+            scaleX: scaleX, scaleY: scaleY, resources: resources)
     }
 
     private func pixel(
@@ -58,22 +107,23 @@ import NucleusTypes
         into payload: inout [UInt8],
         stroke: Bool = false,
         strokeWidth: Float = 0,
-        shading: PaintDrawShading = .color,
+        shading: PaintShading = .color,
         scalars: [Float] = [],
         colors: [Color] = [],
         effectHandle: UInt64 = 0,
-        color: Float4 = (1, 1, 1, 1),
-        transform: PaintDrawTransform? = nil
-    ) -> PaintDrawCommand {
+        color: Color = Color(r: 1, g: 1, b: 1, a: 1),
+        transform: PaintTransform? = nil
+    ) -> PaintCommand {
         let slice = PaintPayload.append(
             to: &payload, verbs: verbs, points: points, scalars: scalars, colors: colors)
-        return PaintDrawCommand(
-            kind: .path, x: 0, y: 0, w: 0, h: 0,
+        return PaintCommand(
+            kind: .path, shading: shading,
+            x: 0, y: 0, w: 0, h: 0,
             strokeWidth: strokeWidth, color: color,
             effectHandle: effectHandle,
             payloadOffset: slice.offset, payloadLength: slice.length,
             stroke: stroke, antialias: false,
-            transform: transform, shading: shading)
+            transform: transform)
     }
 
     private func rectPath(_ x: Float, _ y: Float, _ w: Float, _ h: Float)
@@ -85,19 +135,13 @@ import NucleusTypes
     // MARK: - Geometry
 
     @Test func imageCommandDrawsResolvedPixels() {
-        let imageSurface = nucleus.skia.makeRasterSurface(2, 2)
-        var red = nucleus.skia.Color()
-        red.r = 1
-        red.a = 1
-        imageSurface.getCanvas().clear(red)
-        let image = imageSurface.snapshotImage()
-        let command = PaintDrawCommand(
+        let command = PaintCommand(
             kind: .image, x: 0, y: 0, w: 20, h: 20,
             imageHandle: 7, antialias: false)
 
         let pixels = render(
             width: 20, height: 20, commands: [command], payload: [],
-            resolveImage: { $0 == 7 ? image : nil })
+            resources: .redImage(handle: 7))
 
         #expect(!pixels.isEmpty)
         let center = pixel(pixels, 10, 10, width: 20)
@@ -204,7 +248,7 @@ import NucleusTypes
         let (verbs, points) = rectPath(0, 0, 10, 10)
         let command = pathCommand(
             verbs: verbs, points: points, into: &payload,
-            transform: PaintDrawTransform(
+            transform: PaintTransform(
                 a: 2, b: 0, c: 0, d: 1, tx: 5, ty: 3))
 
         let pixels = render(
@@ -224,7 +268,7 @@ import NucleusTypes
             points: [10, 5, 10, 25],
             into: &payload,
             stroke: true, strokeWidth: 4,
-            transform: PaintDrawTransform(
+            transform: PaintTransform(
                 a: 3, b: 0, c: 0, d: 1, tx: 0, ty: 0))
 
         let pixels = render(width: 64, height: 32, commands: [command], payload: payload)
@@ -238,7 +282,7 @@ import NucleusTypes
         let (verbs, points) = rectPath(5, 5, 10, 10)
         let command = pathCommand(
             verbs: verbs, points: points, into: &payload,
-            transform: PaintDrawTransform(
+            transform: PaintTransform(
                 a: -1, b: 0, c: 0, d: 1, tx: 30, ty: 0))
 
         let pixels = render(width: 40, height: 24, commands: [command], payload: payload)
@@ -254,7 +298,7 @@ import NucleusTypes
             points: [5, 5, 25, 25],
             into: &payload,
             stroke: true, strokeWidth: 10,
-            transform: PaintDrawTransform(
+            transform: PaintTransform(
                 a: 0, b: 0, c: 0, d: 0, tx: 20, ty: 20))
 
         let pixels = render(width: 40, height: 40, commands: [command], payload: payload)
@@ -320,7 +364,7 @@ import NucleusTypes
                 Color(r: 1, g: 1, b: 1, a: 1),
                 Color(r: 0, g: 0, b: 0, a: 1),
             ],
-            transform: PaintDrawTransform(
+            transform: PaintTransform(
                 a: 2, b: 0, c: 0, d: 1, tx: 0, ty: 0))
 
         let pixels = render(width: 40, height: 20, commands: [command], payload: payload)
@@ -330,9 +374,7 @@ import NucleusTypes
     }
 
     @Test func aRuntimeEffectShadesThePath() {
-        let effect = nucleus.skia.makeRuntimeEffect(
-            "half4 main(float2 p) { return half4(1, 0, 0, 1); }")
-        #expect(effect.isValid())
+        let source = "half4 main(float2 p) { return half4(1, 0, 0, 1); }"
 
         var payload: [UInt8] = []
         let (verbs, points) = rectPath(0, 0, 20, 20)
@@ -342,7 +384,7 @@ import NucleusTypes
 
         let pixels = render(
             width: 20, height: 20, commands: [command], payload: payload,
-            resolveEffect: { $0 == 7 ? effect : nil })
+            resources: .runtimeEffect(handle: 7, source: source))
         #expect(!pixels.isEmpty)
         let p = pixel(pixels, 10, 10, width: 20)
         #expect(p.0 > 200 && p.1 < 50, "the effect painted red")
@@ -355,7 +397,7 @@ import NucleusTypes
         let (clipVerbs, clipPoints) = rectPath(0, 0, 20, 40)
         let clipSlice = PaintPayload.append(
             to: &payload, verbs: clipVerbs, points: clipPoints)
-        let clip = PaintDrawCommand(
+        let clip = PaintCommand(
             kind: .clipPath, x: 0, y: 0, w: 0, h: 0,
             payloadOffset: clipSlice.offset, payloadLength: clipSlice.length,
             antialias: false)
@@ -375,11 +417,11 @@ import NucleusTypes
         let (clipVerbs, clipPoints) = rectPath(0, 0, 10, 40)
         let clipSlice = PaintPayload.append(
             to: &payload, verbs: clipVerbs, points: clipPoints)
-        let clip = PaintDrawCommand(
+        let clip = PaintCommand(
             kind: .clipPath, x: 0, y: 0, w: 0, h: 0,
             payloadOffset: clipSlice.offset, payloadLength: clipSlice.length,
             antialias: false,
-            transform: PaintDrawTransform(
+            transform: PaintTransform(
                 a: 1, b: 0, c: 0, d: 1, tx: 10, ty: 0))
 
         let (fillVerbs, fillPoints) = rectPath(0, 0, 40, 40)
@@ -394,11 +436,11 @@ import NucleusTypes
     @Test func anEmptyPathProducesAnEmptyClip() {
         var payload: [UInt8] = []
         let clipSlice = PaintPayload.append(to: &payload)
-        let clip = PaintDrawCommand(
+        let clip = PaintCommand(
             kind: .clipPath, x: 0, y: 0, w: 0, h: 0,
             payloadOffset: clipSlice.offset, payloadLength: clipSlice.length,
             antialias: false,
-            transform: PaintDrawTransform(
+            transform: PaintTransform(
                 a: 1, b: 0, c: 0, d: 1, tx: 0, ty: 0))
         let (fillVerbs, fillPoints) = rectPath(0, 0, 40, 40)
         let fill = pathCommand(verbs: fillVerbs, points: fillPoints, into: &payload)
@@ -412,17 +454,17 @@ import NucleusTypes
     /// still be clipped — which is what an unbalanced stack looks like.
     @Test func restoreUndoesAClip() {
         var payload: [UInt8] = []
-        let save = PaintDrawCommand(kind: .save, x: 0, y: 0, w: 0, h: 0)
+        let save = PaintCommand(kind: .save, x: 0, y: 0, w: 0, h: 0)
 
         let (clipVerbs, clipPoints) = rectPath(0, 0, 20, 40)
         let clipSlice = PaintPayload.append(
             to: &payload, verbs: clipVerbs, points: clipPoints)
-        let clip = PaintDrawCommand(
+        let clip = PaintCommand(
             kind: .clipPath, x: 0, y: 0, w: 0, h: 0,
             payloadOffset: clipSlice.offset, payloadLength: clipSlice.length,
             antialias: false)
 
-        let restore = PaintDrawCommand(kind: .restore, x: 0, y: 0, w: 0, h: 0)
+        let restore = PaintCommand(kind: .restore, x: 0, y: 0, w: 0, h: 0)
         let (fillVerbs, fillPoints) = rectPath(0, 0, 40, 40)
         let fill = pathCommand(verbs: fillVerbs, points: fillPoints, into: &payload)
 
@@ -446,7 +488,7 @@ import NucleusTypes
         let good = pathCommand(verbs: verbs, points: points, into: &payload)
 
         // Length past the end of the blob.
-        let bad = PaintDrawCommand(
+        let bad = PaintCommand(
             kind: .path, x: 0, y: 0, w: 0, h: 0,
             payloadOffset: 0, payloadLength: UInt32(payload.count + 64))
 
@@ -475,23 +517,10 @@ import NucleusTypes
 /// line, and nothing short of drawing shows whether they are there.
 @Suite struct StrokeCapJoinTests {
     private func render(
-        _ commands: [PaintDrawCommand], payload: [UInt8], size: Int32 = 40
+        _ commands: [PaintCommand], payload: [UInt8], size: Int32 = 40
     ) -> [UInt8] {
-        let surface = nucleus.skia.makeRasterSurface(size, size)
-        guard surface.isValid() else { return [] }
-        let canvas = surface.getCanvas()
-        var clear = nucleus.skia.Color()
-        clear.r = 0; clear.g = 0; clear.b = 0; clear.a = 1
-        canvas.clear(clear)
-        PaintRasterizer.draw(
-            commands: commands, payload: payload, onto: canvas, scaleX: 1, scaleY: 1,
-            resolveImage: { _ in nil }, resolveEffect: { _ in nil })
-
-        var pixels = [UInt8](repeating: 0, count: Int(size * size) * 4)
-        let ok = pixels.withUnsafeMutableBufferPointer {
-            surface.readPixelsRGBA($0.baseAddress, $0.count, size * 4)
-        }
-        return ok ? pixels : []
+        renderPaintFixture(
+            width: size, height: size, commands: commands, payload: payload)
     }
 
     private func red(_ pixels: [UInt8], _ x: Int, _ y: Int, size: Int = 40) -> UInt8 {
@@ -501,15 +530,15 @@ import NucleusTypes
     /// A horizontal line from x=10 to x=30 at y=20, stroked 8 wide.
     private func line(
         into payload: inout [UInt8],
-        cap: PaintDrawStrokeCap = .butt,
-        join: PaintDrawStrokeJoin = .miter
-    ) -> PaintDrawCommand {
+        cap: PaintStrokeCap = .butt,
+        join: PaintStrokeJoin = .miter
+    ) -> PaintCommand {
         let slice = PaintPayload.append(
             to: &payload, verbs: [.move, .line], points: [10, 20, 30, 20],
             scalars: [], colors: [])
-        return PaintDrawCommand(
+        return PaintCommand(
             kind: .path, x: 0, y: 0, w: 0, h: 0,
-            strokeWidth: 8, color: (1, 1, 1, 1),
+            strokeWidth: 8, color: Color(r: 1, g: 1, b: 1, a: 1),
             payloadOffset: slice.offset, payloadLength: slice.length,
             stroke: true, antialias: false,
             strokeCap: cap, strokeJoin: join)
@@ -546,14 +575,14 @@ import NucleusTypes
     /// past the join; a bevelled one is cut off, so the outermost corner pixel
     /// distinguishes them.
     @Test func joinsDifferAtACorner() {
-        func corner(_ join: PaintDrawStrokeJoin) -> [UInt8] {
+        func corner(_ join: PaintStrokeJoin) -> [UInt8] {
             var payload: [UInt8] = []
             let slice = PaintPayload.append(
                 to: &payload, verbs: [.move, .line, .line],
                 points: [10, 30, 20, 10, 30, 30], scalars: [], colors: [])
-            let command = PaintDrawCommand(
+            let command = PaintCommand(
                 kind: .path, x: 0, y: 0, w: 0, h: 0,
-                strokeWidth: 8, color: (1, 1, 1, 1),
+                strokeWidth: 8, color: Color(r: 1, g: 1, b: 1, a: 1),
                 payloadOffset: slice.offset, payloadLength: slice.length,
                 stroke: true, antialias: false,
                 strokeCap: .butt, strokeJoin: join)
@@ -577,22 +606,9 @@ import NucleusTypes
 /// glyph run, or background box drew upright at the wrong size, and nothing
 /// indicated the rotation had been dropped.
 @Suite struct RotatedDrawTests {
-    private func render(_ commands: [PaintDrawCommand], size: Int32 = 40) -> [UInt8] {
-        let surface = nucleus.skia.makeRasterSurface(size, size)
-        guard surface.isValid() else { return [] }
-        let canvas = surface.getCanvas()
-        var clear = nucleus.skia.Color()
-        clear.r = 0; clear.g = 0; clear.b = 0; clear.a = 1
-        canvas.clear(clear)
-        PaintRasterizer.draw(
-            commands: commands, payload: [], onto: canvas, scaleX: 1, scaleY: 1,
-            resolveImage: { _ in nil }, resolveEffect: { _ in nil })
-
-        var pixels = [UInt8](repeating: 0, count: Int(size * size) * 4)
-        let ok = pixels.withUnsafeMutableBufferPointer {
-            surface.readPixelsRGBA($0.baseAddress, $0.count, size * 4)
-        }
-        return ok ? pixels : []
+    private func render(_ commands: [PaintCommand], size: Int32 = 40) -> [UInt8] {
+        renderPaintFixture(
+            width: size, height: size, commands: commands, payload: [])
     }
 
     private func red(_ pixels: [UInt8], _ x: Int, _ y: Int, size: Int = 40) -> UInt8 {
@@ -602,14 +618,14 @@ import NucleusTypes
     /// A 45°-rotated square about the canvas centre. Its corners land on the
     /// axes and its edges pull away from the diagonals — a diamond. An
     /// axis-aligned box cannot produce that, which is what makes this decisive.
-    private func rotatedSquare() -> PaintDrawCommand {
+    private func rotatedSquare() -> PaintCommand {
         let angle = Double.pi / 4
         let (c, s) = (Float(cos(angle)), Float(sin(angle)))
         // Rotate about (20, 20): translate out, rotate, translate back.
-        return PaintDrawCommand(
+        return PaintCommand(
             kind: .rect, x: -10, y: -10, w: 20, h: 20,
-            color: (1, 1, 1, 1), antialias: false,
-            transform: PaintDrawTransform(
+            color: Color(r: 1, g: 1, b: 1, a: 1), antialias: false,
+            transform: PaintTransform(
                 a: c, b: s, c: -s, d: c, tx: 20, ty: 20))
     }
 
@@ -629,9 +645,9 @@ import NucleusTypes
     /// exactly the two probe points above. This is the picture the old encoder
     /// produced for a rotated draw.
     @Test func anUnrotatedRectIsTheOppositePicture() {
-        let command = PaintDrawCommand(
+        let command = PaintCommand(
             kind: .rect, x: 10, y: 10, w: 20, h: 20,
-            color: (1, 1, 1, 1), antialias: false)
+            color: Color(r: 1, g: 1, b: 1, a: 1), antialias: false)
         let pixels = render([command])
         #expect(red(pixels, 20, 8) == 0, "an upright square does not reach here")
         #expect(red(pixels, 12, 12) > 200, "and is solid on the diagonal")
@@ -640,34 +656,24 @@ import NucleusTypes
     /// The transform must not leak into whatever is drawn next — it is scoped to
     /// its own command.
     @Test func aCarriedTransformDoesNotLeak() {
-        let after = PaintDrawCommand(
+        let after = PaintCommand(
             kind: .rect, x: 0, y: 0, w: 6, h: 6,
-            color: (1, 1, 1, 1), antialias: false)
+            color: Color(r: 1, g: 1, b: 1, a: 1), antialias: false)
         let pixels = render([rotatedSquare(), after])
         #expect(red(pixels, 2, 2) > 200, "the second command drew at the origin")
     }
 
     /// Device scale composes with the carried matrix rather than replacing it.
     @Test func deviceScaleStillApplies() {
-        let surface = nucleus.skia.makeRasterSurface(40, 40)
-        let canvas = surface.getCanvas()
-        var clear = nucleus.skia.Color()
-        clear.r = 0; clear.g = 0; clear.b = 0; clear.a = 1
-        canvas.clear(clear)
         // An unrotated-but-carried transform: identity linear part, translation
         // only, so the effect of the device scale is readable on its own.
-        let command = PaintDrawCommand(
+        let command = PaintCommand(
             kind: .rect, x: 0, y: 0, w: 5, h: 5,
-            color: (1, 1, 1, 1), antialias: false,
-            transform: PaintDrawTransform(a: 1, b: 0.0001, c: 0, d: 1, tx: 0, ty: 0))
-        PaintRasterizer.draw(
-            commands: [command], payload: [], onto: canvas, scaleX: 2, scaleY: 2,
-            resolveImage: { _ in nil }, resolveEffect: { _ in nil })
-
-        var pixels = [UInt8](repeating: 0, count: 40 * 40 * 4)
-        _ = pixels.withUnsafeMutableBufferPointer {
-            surface.readPixelsRGBA($0.baseAddress, $0.count, 40 * 4)
-        }
+            color: Color(r: 1, g: 1, b: 1, a: 1), antialias: false,
+            transform: PaintTransform(a: 1, b: 0.0001, c: 0, d: 1, tx: 0, ty: 0))
+        let pixels = renderPaintFixture(
+            width: 40, height: 40, commands: [command], payload: [],
+            scaleX: 2, scaleY: 2)
         #expect(red(pixels, 8, 8) > 200, "a 5px square at 2x covers 10px")
         #expect(red(pixels, 12, 12) == 0, "and no further")
     }

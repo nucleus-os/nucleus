@@ -12,7 +12,7 @@ extension VK {
     /// scope (not BaseDispatch) so the loader symbol is not shadowed by the
     /// stored property of the same name.
     public static func loadBaseDispatch() -> BaseDispatch {
-        BaseDispatch(loader: vkGetInstanceProcAddr)
+        unsafe BaseDispatch(loader: vkGetInstanceProcAddr)
     }
 }
 
@@ -27,13 +27,14 @@ public enum VkEnumerate {
     ) -> [T]? {
         while true {
             var count: UInt32 = 0
-            guard body(&count, nil) == VK_SUCCESS else { return nil }
+            guard unsafe body(&count, nil) == VK_SUCCESS else { return nil }
             if count == 0 { return [] }
 
             var lastResult = VK_SUCCESS
-            let items = [T](unsafeUninitializedCapacity: Int(count)) { buffer, initialized in
+            let items = unsafe [T](unsafeUninitializedCapacity: Int(count)) {
+                buffer, initialized in
                 var n = count
-                lastResult = body(&n, buffer.baseAddress)
+                lastResult = unsafe body(&n, buffer.baseAddress)
                 initialized = (lastResult == VK_SUCCESS) ? Int(n) : 0
             }
             switch lastResult {
@@ -63,21 +64,21 @@ public enum VkEnumerate {
         _ pointers: inout OutputSpan<UnsafePointer<CChar>?>
     ) -> R {
         if index == strings.count {
-            return pointers.span.withUnsafeBufferPointer { buffer in
-                body(buffer.baseAddress, UInt32(buffer.count))
+            return unsafe pointers.span.withUnsafeBufferPointer { buffer in
+                unsafe body(buffer.baseAddress, UInt32(buffer.count))
             }
         }
         return strings[index].withCString { pointer in
-            pointers.append(pointer)
-            return recurse(index + 1, &pointers)
+            unsafe pointers.append(pointer)
+            return unsafe recurse(index + 1, &pointers)
         }
     }
 
-    return withTemporaryAllocation(
+    return unsafe withTemporaryAllocation(
         of: UnsafePointer<CChar>?.self,
         capacity: strings.count
     ) { pointers in
-        recurse(0, &pointers)
+        unsafe recurse(0, &pointers)
     }
 }
 
@@ -85,18 +86,20 @@ public enum VkEnumerate {
 
 /// A noncopyable owner for a device-child handle. The destroy closure wraps the
 /// typed `PFN_vkDestroy*`; `deinit` runs it once, `take()` suppresses it.
-public struct VkOwned<Handle>: ~Copyable {
+/// The owner never dereferences either opaque handle. Its caller must arrange
+/// Vulkan-required external synchronization while constructing or destroying it.
+@safe public struct VkOwned<Handle>: ~Copyable {
     public let handle: Handle
     private let device: VkDevice
     private let destroyer: (VkDevice, Handle) -> Void
 
     public init(adopting handle: Handle, device: VkDevice, destroy: @escaping (VkDevice, Handle) -> Void) {
         self.handle = handle
-        self.device = device
-        self.destroyer = destroy
+        unsafe self.device = device
+        unsafe self.destroyer = destroy
     }
 
-    deinit { destroyer(device, handle) }
+    deinit { unsafe destroyer(device, handle) }
 }
 
 // MARK: - Owned-image box
@@ -105,98 +108,164 @@ public struct VkOwned<Handle>: ~Copyable {
 /// captured by an `@escaping` destroy closure (and live in maps keyed by id).
 /// `release()` drops the held image exactly once (idempotent);
 /// `deinit` drops it if `release()` was never called.
-public final class VkOwnedImageBox {
+/// Encapsulates the unsafe image handle inside `VkOwned`; no raw handle escapes.
+///
+/// Prefer `take()` over `release()` wherever the image outlives the box: moving
+/// the owner out restores static single-ownership, whereas a shared box only
+/// promises single destruction by convention.
+@safe public final class VkOwnedImageBox {
     private var image: VkOwned<VkImage>?
-    public init(consuming image: consuming VkOwned<VkImage>) { self.image = consume image }
+    public init(consuming image: consuming VkOwned<VkImage>) {
+        unsafe self.image = consume image
+    }
+    /// Move the held image owner out of the box, transferring destruction duty to
+    /// the caller. The box is empty afterward, so any later `release()`/`deinit`
+    /// — including one reached through another reference to this same box — is a
+    /// no-op rather than a second destroy.
+    public func take() -> VkOwned<VkImage>? { unsafe image.take() }
     /// Drop the held image now (runs its `deinit`). Safe to call once.
-    public func release() { image = nil }
-    deinit { image = nil }
+    public func release() { unsafe image = nil }
+    deinit { unsafe image = nil }
 }
 
 // MARK: - Device-child resource constructors
 
 extension VK.DeviceDispatch {
     public func createFence(_ device: VkDevice, signaled: Bool = false) -> VkOwned<VkFence>? {
-        guard let create = vkCreateFence, let destroy = vkDestroyFence else { return nil }
-        var ci = VkFenceCreateInfo()
-        ci.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO
-        ci.flags = signaled ? VK.FenceCreateFlags.signaledBit.rawValue : 0
+        guard let create = unsafe vkCreateFence,
+              let destroy = unsafe vkDestroyFence
+        else { return nil }
+        var ci = unsafe VkFenceCreateInfo()
+        unsafe ci.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO
+        unsafe ci.flags = signaled ? VK.FenceCreateFlags.signaledBit.rawValue : 0
         var h: VkFence? = nil
-        guard create(device, &ci, nil, &h) == VK_SUCCESS, let h else { return nil }
-        return VkOwned(adopting: h, device: device, destroy: { d, x in destroy(d, x, nil) })
+        guard unsafe create(device, &ci, nil, &h) == VK_SUCCESS else { return nil }
+        guard let h = unsafe h else { return nil }
+        return unsafe VkOwned(
+            adopting: h,
+            device: device,
+            destroy: { d, x in unsafe destroy(d, x, nil) })
     }
 
     public func createSemaphore(_ device: VkDevice) -> VkOwned<VkSemaphore>? {
-        guard let create = vkCreateSemaphore, let destroy = vkDestroySemaphore else { return nil }
-        var ci = VkSemaphoreCreateInfo()
-        ci.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO
+        guard let create = unsafe vkCreateSemaphore,
+              let destroy = unsafe vkDestroySemaphore
+        else { return nil }
+        var ci = unsafe VkSemaphoreCreateInfo()
+        unsafe ci.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO
         var h: VkSemaphore? = nil
-        guard create(device, &ci, nil, &h) == VK_SUCCESS, let h else { return nil }
-        return VkOwned(adopting: h, device: device, destroy: { d, x in destroy(d, x, nil) })
+        guard unsafe create(device, &ci, nil, &h) == VK_SUCCESS else { return nil }
+        guard let h = unsafe h else { return nil }
+        return unsafe VkOwned(
+            adopting: h,
+            device: device,
+            destroy: { d, x in unsafe destroy(d, x, nil) })
     }
 
     public func createCommandPool(_ device: VkDevice, queueFamily: UInt32) -> VkOwned<VkCommandPool>? {
-        guard let create = vkCreateCommandPool, let destroy = vkDestroyCommandPool else { return nil }
-        var ci = VkCommandPoolCreateInfo()
-        ci.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO
-        ci.queueFamilyIndex = queueFamily
-        ci.flags = VK.CommandPoolCreateFlags.resetCommandBufferBit.rawValue
+        guard let create = unsafe vkCreateCommandPool,
+              let destroy = unsafe vkDestroyCommandPool
+        else { return nil }
+        var ci = unsafe VkCommandPoolCreateInfo()
+        unsafe ci.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO
+        unsafe ci.queueFamilyIndex = queueFamily
+        unsafe ci.flags = VK.CommandPoolCreateFlags.resetCommandBufferBit.rawValue
         var h: VkCommandPool? = nil
-        guard create(device, &ci, nil, &h) == VK_SUCCESS, let h else { return nil }
-        return VkOwned(adopting: h, device: device, destroy: { d, x in destroy(d, x, nil) })
+        guard unsafe create(device, &ci, nil, &h) == VK_SUCCESS else { return nil }
+        guard let h = unsafe h else { return nil }
+        return unsafe VkOwned(
+            adopting: h,
+            device: device,
+            destroy: { d, x in unsafe destroy(d, x, nil) })
     }
 
     public func allocateMemory(_ device: VkDevice, info: VkMemoryAllocateInfo) -> VkOwned<VkDeviceMemory>? {
-        guard let allocate = vkAllocateMemory, let free = vkFreeMemory else { return nil }
-        var ci = info
-        ci.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO
+        guard let allocate = unsafe vkAllocateMemory,
+              let free = unsafe vkFreeMemory
+        else { return nil }
+        var ci = unsafe info
+        unsafe ci.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO
         var h: VkDeviceMemory? = nil
-        guard allocate(device, &ci, nil, &h) == VK_SUCCESS, let h else { return nil }
-        return VkOwned(adopting: h, device: device, destroy: { d, x in free(d, x, nil) })
+        guard unsafe allocate(device, &ci, nil, &h) == VK_SUCCESS else { return nil }
+        guard let h = unsafe h else { return nil }
+        return unsafe VkOwned(
+            adopting: h,
+            device: device,
+            destroy: { d, x in unsafe free(d, x, nil) })
     }
 
     public func createBuffer(_ device: VkDevice, info: VkBufferCreateInfo) -> VkOwned<VkBuffer>? {
-        guard let create = vkCreateBuffer, let destroy = vkDestroyBuffer else { return nil }
-        var ci = info
-        ci.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO
+        guard let create = unsafe vkCreateBuffer,
+              let destroy = unsafe vkDestroyBuffer
+        else { return nil }
+        var ci = unsafe info
+        unsafe ci.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO
         var h: VkBuffer? = nil
-        guard create(device, &ci, nil, &h) == VK_SUCCESS, let h else { return nil }
-        return VkOwned(adopting: h, device: device, destroy: { d, x in destroy(d, x, nil) })
+        guard unsafe create(device, &ci, nil, &h) == VK_SUCCESS else { return nil }
+        guard let h = unsafe h else { return nil }
+        return unsafe VkOwned(
+            adopting: h,
+            device: device,
+            destroy: { d, x in unsafe destroy(d, x, nil) })
     }
 
     public func createImage(_ device: VkDevice, info: VkImageCreateInfo) -> VkOwned<VkImage>? {
-        guard let create = vkCreateImage, let destroy = vkDestroyImage else { return nil }
-        var ci = info
-        ci.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO
+        guard let create = unsafe vkCreateImage,
+              let destroy = unsafe vkDestroyImage
+        else { return nil }
+        var ci = unsafe info
+        unsafe ci.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO
         var h: VkImage? = nil
-        guard create(device, &ci, nil, &h) == VK_SUCCESS, let h else { return nil }
-        return VkOwned(adopting: h, device: device, destroy: { d, x in destroy(d, x, nil) })
+        guard unsafe create(device, &ci, nil, &h) == VK_SUCCESS else { return nil }
+        guard let h = unsafe h else { return nil }
+        return unsafe VkOwned(
+            adopting: h,
+            device: device,
+            destroy: { d, x in unsafe destroy(d, x, nil) })
     }
 
     public func createImageView(_ device: VkDevice, info: VkImageViewCreateInfo) -> VkOwned<VkImageView>? {
-        guard let create = vkCreateImageView, let destroy = vkDestroyImageView else { return nil }
-        var ci = info
-        ci.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO
+        guard let create = unsafe vkCreateImageView,
+              let destroy = unsafe vkDestroyImageView
+        else { return nil }
+        var ci = unsafe info
+        unsafe ci.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO
         var h: VkImageView? = nil
-        guard create(device, &ci, nil, &h) == VK_SUCCESS, let h else { return nil }
-        return VkOwned(adopting: h, device: device, destroy: { d, x in destroy(d, x, nil) })
+        guard unsafe create(device, &ci, nil, &h) == VK_SUCCESS else { return nil }
+        guard let h = unsafe h else { return nil }
+        return unsafe VkOwned(
+            adopting: h,
+            device: device,
+            destroy: { d, x in unsafe destroy(d, x, nil) })
     }
 
     public func createDescriptorPool(_ device: VkDevice, info: VkDescriptorPoolCreateInfo) -> VkOwned<VkDescriptorPool>? {
-        guard let create = vkCreateDescriptorPool, let destroy = vkDestroyDescriptorPool else { return nil }
-        var ci = info
-        ci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO
+        guard let create = unsafe vkCreateDescriptorPool,
+              let destroy = unsafe vkDestroyDescriptorPool
+        else { return nil }
+        var ci = unsafe info
+        unsafe ci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO
         var h: VkDescriptorPool? = nil
-        guard create(device, &ci, nil, &h) == VK_SUCCESS, let h else { return nil }
-        return VkOwned(adopting: h, device: device, destroy: { d, x in destroy(d, x, nil) })
+        guard unsafe create(device, &ci, nil, &h) == VK_SUCCESS else { return nil }
+        guard let h = unsafe h else { return nil }
+        return unsafe VkOwned(
+            adopting: h,
+            device: device,
+            destroy: { d, x in unsafe destroy(d, x, nil) })
     }
 
     public func createPipelineLayout(_ device: VkDevice, info: VkPipelineLayoutCreateInfo) -> VkOwned<VkPipelineLayout>? {
-        guard let create = vkCreatePipelineLayout, let destroy = vkDestroyPipelineLayout else { return nil }
-        var ci = info
-        ci.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO
+        guard let create = unsafe vkCreatePipelineLayout,
+              let destroy = unsafe vkDestroyPipelineLayout
+        else { return nil }
+        var ci = unsafe info
+        unsafe ci.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO
         var h: VkPipelineLayout? = nil
-        guard create(device, &ci, nil, &h) == VK_SUCCESS, let h else { return nil }
-        return VkOwned(adopting: h, device: device, destroy: { d, x in destroy(d, x, nil) })
+        guard unsafe create(device, &ci, nil, &h) == VK_SUCCESS else { return nil }
+        guard let h = unsafe h else { return nil }
+        return unsafe VkOwned(
+            adopting: h,
+            device: device,
+            destroy: { d, x in unsafe destroy(d, x, nil) })
     }
 }

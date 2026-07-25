@@ -121,7 +121,7 @@ public struct AndroidApexMountRequest: Equatable, Sendable {
         let status = rootFileSystem.withCString { rootPath in
             source.withCString { sourcePath in
                 target.withCString { targetPath in
-                    collider_mount_apex_in_chroot(
+                    unsafe collider_mount_apex_in_chroot(
                         rootPath,
                         sourcePath,
                         targetPath,

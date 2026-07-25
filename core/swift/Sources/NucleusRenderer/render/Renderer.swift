@@ -15,7 +15,8 @@ struct RenderResult {
     var submitOk: Bool
 }
 
-enum FramePlanRenderer {
+/// Render-thread-confined safe facade over the Graphite C++ bridge.
+@safe enum FramePlanRenderer {
     static func rectF(_ r: PlanRect) -> nucleus.skia.RectF {
         var out = nucleus.skia.RectF()
         out.x = r.x; out.y = r.y; out.width = r.w; out.height = r.h
@@ -51,7 +52,8 @@ enum FramePlanRenderer {
     ) -> Int {
         var drawn = 0
         for op in plan.ops {
-            drawn += composite(op: op, onto: canvas, resolveTexture: resolveTexture)
+            drawn += unsafe composite(
+                op: op, onto: canvas, resolveTexture: resolveTexture)
         }
         return drawn
     }
@@ -69,12 +71,12 @@ enum FramePlanRenderer {
                 paint.color = color(quad.color)
                 paint.blend = blend(quad.blendMode)
                 if let mask = quad.maskRRect {
-                    canvas.save()
-                    canvas.clipRRect(rectF(mask.rect), radii(mask), true)
-                    canvas.drawRect(rectF(quad.dst), paint)
-                    canvas.restore()
+                    unsafe canvas.save()
+                    unsafe canvas.clipRRect(rectF(mask.rect), radii(mask), true)
+                    unsafe canvas.drawRect(rectF(quad.dst), paint)
+                    unsafe canvas.restore()
                 } else {
-                    canvas.drawRect(rectF(quad.dst), paint)
+                    unsafe canvas.drawRect(rectF(quad.dst), paint)
                 }
                 return 1
 
@@ -93,37 +95,44 @@ enum FramePlanRenderer {
                 style.borderRightColor = color(quad.borderRightColor)
                 style.borderBottomColor = color(quad.borderBottomColor)
                 style.borderLeftColor = color(quad.borderLeftColor)
-                canvas.drawStyledRRect(style, quad.alpha)
+                unsafe canvas.drawStyledRRect(style, quad.alpha)
                 return 1
 
             case .textureQuad(let quad):
                 guard let handle = quad.texture,
-                      let image = resolveTexture(PlanTextureReference(
+                      let image = unsafe resolveTexture(PlanTextureReference(
                         role: quad.role, handle: handle))
                 else { return 0 }
                 var paint = nucleus.skia.Paint()
                 paint.alpha = quad.alpha
                 paint.blend = blend(quad.blendMode)
                 if let mask = quad.maskRRect {
-                    canvas.save()
-                    canvas.clipRRect(rectF(mask.rect), radii(mask), true)
-                    canvas.drawImageRect(image, rectF(quad.src), rectF(quad.dst), paint)
-                    canvas.restore()
+                    unsafe canvas.save()
+                    unsafe canvas.clipRRect(rectF(mask.rect), radii(mask), true)
+                    unsafe canvas.drawImageRect(
+                        image, rectF(quad.src), rectF(quad.dst), paint)
+                    unsafe canvas.restore()
                 } else {
-                    canvas.drawImageRect(image, rectF(quad.src), rectF(quad.dst), paint)
+                    unsafe canvas.drawImageRect(
+                        image, rectF(quad.src), rectF(quad.dst), paint)
                 }
                 return 1
 
             case .shadowQuad(let quad):
-                let image = quad.texture.flatMap {
-                    resolveTexture(PlanTextureReference(
-                        role: .shadow, handle: $0))
+                let image: nucleus.skia.Image?
+                if let texture = quad.texture {
+                    unsafe image = resolveTexture(PlanTextureReference(
+                        role: .shadow, handle: texture))
+                } else if let material = quad.material {
+                    unsafe image = resolveShadow(material.layerId)
+                } else {
+                    unsafe image = nil
                 }
-                    ?? quad.material.flatMap { resolveShadow($0.layerId) }
-                guard let image else { return 0 }
+                guard let image = unsafe image else { return 0 }
                 var paint = nucleus.skia.Paint()
                 paint.alpha = quad.alpha
-                canvas.drawImageRect(image, rectF(quad.src), rectF(quad.dst), paint)
+                unsafe canvas.drawImageRect(
+                    image, rectF(quad.src), rectF(quad.dst), paint)
                 return 1
 
             case .backdrop:
@@ -143,34 +152,35 @@ enum FramePlanRenderer {
         submissionSerial: UInt64,
         resolveTexture: (PlanTextureReference) -> nucleus.skia.Image?
     ) -> RenderResult? {
-        let recorder = context.makeRecorder()
-        guard recorder.isValid() else { return nil }
-        let surface = recorder.makeOffscreenSurface(width, height)
-        guard surface.isValid() else { return nil }
+        let recorder = unsafe context.makeRecorder()
+        guard unsafe recorder.isValid() else { return nil }
+        let surface = unsafe recorder.makeOffscreenSurface(width, height)
+        guard unsafe surface.isValid() else { return nil }
 
-        let canvas = surface.getCanvas()
+        let canvas = unsafe surface.getCanvas()
         var background = nucleus.skia.Color()
         background.a = 1  // opaque black
-        canvas.clear(background)
+        unsafe canvas.clear(background)
 
         var drawn = 0
         for op in plan.ops {
             if case .backdrop(let spec) = op {
-                let source = surface.snapshotImage()
-                drawn += Backdrop.execute(
+                let source = unsafe surface.snapshotImage()
+                drawn += unsafe Backdrop.execute(
                     spec, liveSnapshot: source, prefix: source, onto: canvas)
             } else {
-                drawn += composite(op: op, onto: canvas, resolveTexture: resolveTexture)
+                drawn += unsafe composite(
+                    op: op, onto: canvas, resolveTexture: resolveTexture)
             }
         }
 
-        let image = surface.snapshotImage()
-        let recording = recorder.snapRecording()
-        let result = context.submitAsync(recording, submissionSerial)
+        let image = unsafe surface.snapshotImage()
+        let recording = unsafe recorder.snapRecording()
+        let result = unsafe context.submitAsync(recording, submissionSerial)
 
         return RenderResult(
-            imageWidth: image.width(),
-            imageHeight: image.height(),
+            imageWidth: unsafe image.width(),
+            imageHeight: unsafe image.height(),
             opsDrawn: drawn,
             submitOk: result.isOk())
     }

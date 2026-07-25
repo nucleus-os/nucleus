@@ -51,7 +51,9 @@ public enum DrmDeviceDiscovery {
             repeating: nucleus_android_drm_candidate(),
             count: Int(count))
         let filled = raw.withUnsafeMutableBufferPointer { buffer in
-            nucleus_android_drm_enumerate(buffer.baseAddress, buffer.count)
+            unsafe nucleus_android_drm_enumerate(
+                buffer.baseAddress,
+                buffer.count)
         }
         guard filled >= 0 else {
             throw GraphicsPlatformError.drmEnumerationFailed(errno: errno)
@@ -96,14 +98,14 @@ public enum DrmDeviceDiscovery {
     }
 }
 
-private final class GraphicsDeviceResource {
+@safe private final class GraphicsDeviceResource {
     let handle: OpaquePointer
 
     init(handle: OpaquePointer) {
-        self.handle = handle
+        unsafe self.handle = handle
     }
 
-    deinit { nucleus_android_gpu_destroy(handle) }
+    deinit { unsafe nucleus_android_gpu_destroy(handle) }
 }
 
 public final class AndroidGraphicsDevice: @unchecked Sendable {
@@ -122,17 +124,17 @@ public final class AndroidGraphicsDevice: @unchecked Sendable {
     public init(candidate: DrmDeviceCandidate) throws {
         var error = [CChar](repeating: 0, count: 1024)
         let handle = candidate.renderNode.withCString { path in
-            nucleus_android_gpu_create(path, &error, error.count)
+            unsafe nucleus_android_gpu_create(path, &error, error.count)
         }
-        guard let handle else {
+        guard let handle = unsafe handle else {
             throw GraphicsPlatformError.gpuInitializationFailed(string(from: error))
         }
         var raw = nucleus_android_gpu_diagnostic()
-        guard nucleus_android_gpu_get_diagnostic(handle, &raw) == 0 else {
-            nucleus_android_gpu_destroy(handle)
+        guard unsafe nucleus_android_gpu_get_diagnostic(handle, &raw) == 0 else {
+            unsafe nucleus_android_gpu_destroy(handle)
             throw GraphicsPlatformError.gpuInitializationFailed("GPU diagnostic unavailable")
         }
-        let resource = GraphicsDeviceResource(handle: handle)
+        let resource = unsafe GraphicsDeviceResource(handle: handle)
         self.candidate = candidate
         self.resource = resource
         diagnostic = BrokerDeviceDiagnostic(
@@ -151,7 +153,7 @@ public final class AndroidGraphicsDevice: @unchecked Sendable {
     }
 
     public func supports(_ pair: DrmFormatModifier) -> Bool {
-        nucleus_android_gpu_supports_format_modifier(
+        unsafe nucleus_android_gpu_supports_format_modifier(
             resource.handle,
             pair.format,
             pair.modifier) == 1
@@ -162,7 +164,7 @@ public final class AndroidGraphicsDevice: @unchecked Sendable {
     ) -> (planeCount: UInt32, features: UInt64)? {
         var planeCount: UInt32 = 0
         var features: UInt64 = 0
-        guard nucleus_android_gpu_format_modifier_properties(
+        guard unsafe nucleus_android_gpu_format_modifier_properties(
             resource.handle,
             pair.format,
             pair.modifier,
@@ -175,7 +177,7 @@ public final class AndroidGraphicsDevice: @unchecked Sendable {
     public func formatModifiers(
         format: UInt32
     ) -> [(pair: DrmFormatModifier, planeCount: UInt32, features: UInt64)] {
-        let count = nucleus_android_gpu_list_format_modifiers(
+        let count = unsafe nucleus_android_gpu_list_format_modifiers(
             resource.handle,
             format,
             nil,
@@ -185,7 +187,7 @@ public final class AndroidGraphicsDevice: @unchecked Sendable {
             repeating: nucleus_android_format_modifier_properties(),
             count: Int(count))
         let filled = raw.withUnsafeMutableBufferPointer { buffer in
-            nucleus_android_gpu_list_format_modifiers(
+            unsafe nucleus_android_gpu_list_format_modifiers(
                 resource.handle,
                 format,
                 buffer.baseAddress,
@@ -202,7 +204,7 @@ public final class AndroidGraphicsDevice: @unchecked Sendable {
 
     public func gbmPreferredFormatModifier(format: UInt32) -> DrmFormatModifier? {
         var modifier: UInt64 = 0
-        guard nucleus_android_gpu_preferred_modifier(
+        guard unsafe nucleus_android_gpu_preferred_modifier(
             resource.handle,
             format,
             &modifier) == 0
@@ -234,7 +236,7 @@ public final class AndroidGraphicsDevice: @unchecked Sendable {
             var buffers: [AndroidGraphicsBuffer] = []
             for index in 0..<Int(request.bufferCount) {
                 var error = [CChar](repeating: 0, count: 1024)
-                let handle = nucleus_android_gpu_buffer_create(
+                let handle = unsafe nucleus_android_gpu_buffer_create(
                     resource.handle,
                     request.width,
                     request.height,
@@ -243,12 +245,12 @@ public final class AndroidGraphicsDevice: @unchecked Sendable {
                     scanout ? 1 : 0,
                     &error,
                     error.count)
-                guard let handle else {
+                guard let handle = unsafe handle else {
                     lastAllocationFailure = string(from: error)
                     buffers.removeAll()
                     break
                 }
-                buffers.append(AndroidGraphicsBuffer(
+                unsafe buffers.append(AndroidGraphicsBuffer(
                     id: UInt64(index + 1),
                     width: request.width,
                     height: request.height,
@@ -305,7 +307,7 @@ public struct ExportedDmabufPlane: ~Copyable {
     }
 }
 
-public final class AndroidGraphicsBuffer: @unchecked Sendable {
+@safe public final class AndroidGraphicsBuffer: @unchecked Sendable {
     public let id: UInt64
     public let width: UInt32
     public let height: UInt32
@@ -325,17 +327,20 @@ public final class AndroidGraphicsBuffer: @unchecked Sendable {
         self.width = width
         self.height = height
         self.formatModifier = formatModifier
-        self.handle = handle
+        unsafe self.handle = handle
         self.resource = resource
     }
 
     public var planeCount: UInt32 {
-        nucleus_android_gpu_buffer_plane_count(handle)
+        unsafe nucleus_android_gpu_buffer_plane_count(handle)
     }
 
     public func exportPlane(at index: UInt32) throws -> ExportedDmabufPlane {
         var layout = nucleus_android_dmabuf_plane()
-        let descriptor = nucleus_android_gpu_buffer_export_plane(handle, index, &layout)
+        let descriptor = unsafe nucleus_android_gpu_buffer_export_plane(
+            handle,
+            index,
+            &layout)
         guard descriptor >= 0 else {
             throw GraphicsPlatformError.allocationFailed("dma-buf plane export failed: errno \(errno)")
         }
@@ -353,7 +358,7 @@ public final class AndroidGraphicsBuffer: @unchecked Sendable {
         releasePoint: UInt64 = 0
     ) throws {
         var error = [CChar](repeating: 0, count: 1024)
-        guard nucleus_android_gpu_buffer_render(
+        guard unsafe nucleus_android_gpu_buffer_render(
             handle,
             frameNumber,
             acquireTimeline.handle,
@@ -365,23 +370,26 @@ public final class AndroidGraphicsBuffer: @unchecked Sendable {
         else { throw GraphicsPlatformError.renderFailed(string(from: error)) }
     }
 
-    deinit { nucleus_android_gpu_buffer_destroy(handle) }
+    deinit { unsafe nucleus_android_gpu_buffer_destroy(handle) }
 }
 
-public final class AndroidSyncobjTimeline: @unchecked Sendable {
+@safe public final class AndroidSyncobjTimeline: @unchecked Sendable {
     fileprivate let handle: OpaquePointer
     private let resource: GraphicsDeviceResource
 
     fileprivate init?(resource: GraphicsDeviceResource) {
-        guard let handle = nucleus_android_syncobj_timeline_create(resource.handle) else {
+        guard let handle = unsafe nucleus_android_syncobj_timeline_create(
+            resource.handle)
+        else {
             return nil
         }
-        self.handle = handle
+        unsafe self.handle = handle
         self.resource = resource
     }
 
     public func exportFileDescriptor() throws -> Int32 {
-        let descriptor = nucleus_android_syncobj_timeline_export_fd(handle)
+        let descriptor = unsafe nucleus_android_syncobj_timeline_export_fd(
+            handle)
         guard descriptor >= 0 else {
             throw GraphicsPlatformError.timelineExportFailed(errno: errno)
         }
@@ -389,18 +397,18 @@ public final class AndroidSyncobjTimeline: @unchecked Sendable {
     }
 
     public func signal(point: UInt64) -> Bool {
-        nucleus_android_syncobj_timeline_signal(handle, point) == 0
+        unsafe nucleus_android_syncobj_timeline_signal(handle, point) == 0
     }
 
     public func isSignaled(point: UInt64) -> Bool? {
-        switch nucleus_android_syncobj_timeline_is_signaled(handle, point) {
+        switch unsafe nucleus_android_syncobj_timeline_is_signaled(handle, point) {
         case 0: return false
         case 1: return true
         default: return nil
         }
     }
 
-    deinit { nucleus_android_syncobj_timeline_destroy(handle) }
+    deinit { unsafe nucleus_android_syncobj_timeline_destroy(handle) }
 }
 
 public final class AndroidBufferRing: @unchecked Sendable {
@@ -437,7 +445,8 @@ public enum DrmFormats {
 private func string<T>(from tuple: T) -> String {
     withUnsafeBytes(of: tuple) { bytes in
         guard let base = bytes.baseAddress else { return "" }
-        return String(cString: base.assumingMemoryBound(to: CChar.self))
+        return unsafe String(
+            cString: base.assumingMemoryBound(to: CChar.self))
     }
 }
 

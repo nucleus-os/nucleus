@@ -290,6 +290,9 @@ let package = Package(
                 .product(
                     name: "NucleusLinuxEnvironment",
                     package: "NucleusLinuxPlatform"),
+                .product(
+                    name: "NucleusThemeAssetIO",
+                    package: "NucleusLinuxPlatform"),
             ],
             path: "Sources/NucleusCompositorShell",
             exclude: ["DesktopApplicationIndex.swift"],
@@ -303,6 +306,7 @@ let package = Package(
                 .product(name: "WaylandServerC", package: "swift-wayland"),
                 .product(name: "WaylandProtocolsC", package: "swift-wayland"),
                 .product(name: "WaylandServer", package: "swift-wayland"),
+                .product(name: "WaylandProtocolTypes", package: "swift-wayland"),
                 .product(name: "WaylandServerDispatch", package: "swift-wayland"),
                 "NucleusCompositorXcbC", "NucleusCompositorInputC",
                 "NucleusCompositorServer", "NucleusCompositorWindowManager", "NucleusCompositorServerTypes", "NucleusCompositorWindowScene",
@@ -315,6 +319,7 @@ let package = Package(
             exclude: ["README.md"],
             swiftSettings: [
                 .interoperabilityMode(.Cxx),
+                .unsafeFlags(["-enable-experimental-feature", "Lifetimes"]),
                 .unsafeFlags(waylandRuntimeCcFlags),
             ]
         ),
@@ -328,7 +333,10 @@ let package = Package(
                 .product(name: "NucleusLayers", package: "Nucleus"),
             ],
             path: "Sources/NucleusCompositorWaylandTestSupport",
-            swiftSettings: [.interoperabilityMode(.Cxx)]
+            swiftSettings: [
+                .interoperabilityMode(.Cxx),
+                .unsafeFlags(["-enable-experimental-feature", "Lifetimes"]),
+            ]
         ),
 
         // ── The DRM/KMS renderer backend + the render-runtime facade ─────────────
@@ -494,9 +502,11 @@ let package = Package(
                 "CompositorRenderServiceTests.swift",
                 "SceneTransitionTests.swift",
                 "DndActionNegotiationTests.swift",
+                "XwaylandProcessSecurityTests.swift",
             ],
             swiftSettings: [
                 .interoperabilityMode(.Cxx),
+                .unsafeFlags(["-enable-experimental-feature", "Lifetimes"]),
                 .unsafeFlags(waylandRuntimeCcFlags),
             ],
             linkerSettings: [.unsafeFlags(skiaLinkFlags + waylandRuntimeLinkFlags)]
@@ -567,6 +577,7 @@ for target in package.targets {
         continue
     }
     var swiftSettings = (target.swiftSettings ?? []) + [
+        .strictMemorySafety(),
         .unsafeFlags(["-warnings-as-errors"]),
         .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
     ]

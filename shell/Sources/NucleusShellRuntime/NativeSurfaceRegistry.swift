@@ -8,8 +8,8 @@ import NucleusUIEmbedder
 /// Role objects own protocol handshakes; this registry owns the shared
 /// NucleusUI/window/input/render lifecycle behind those roles.
 @MainActor
-final class NativeSurfaceRegistry {
-    struct Record {
+@safe final class NativeSurfaceRegistry {
+    @safe struct Record {
         let surfaceID: UInt
         let waylandSurface: OpaquePointer
         let window: Window
@@ -51,7 +51,7 @@ final class NativeSurfaceRegistry {
         scene.addWindow(window)
         window.orderFront()
         inputRouter?.register(window: window, forSurface: surfaceID)
-        records[surfaceID] = Record(
+        records[surfaceID] = unsafe Record(
             surfaceID: surfaceID,
             waylandSurface: waylandSurface,
             window: window,
@@ -98,7 +98,7 @@ final class NativeSurfaceRegistry {
                 scale: scale)
             engine.setRefreshMillihertz(refresh, forSurface: renderOutputID)
         } else {
-            guard let renderOutputID = engine.addSurface(
+            guard let renderOutputID = unsafe engine.addSurface(
                 waylandSurface: record.waylandSurface,
                 width: pixelWidth,
                 height: pixelHeight,

@@ -284,7 +284,12 @@ let package = Package(
                 .product(name: "WaylandClientDispatch", package: "swift-wayland"),
                 .product(name: "WaylandProtocolsC", package: "swift-wayland"),
             ],
-            swiftSettings: [.interoperabilityMode(.Cxx)]),
+            swiftSettings: [
+                .interoperabilityMode(.Cxx),
+                .unsafeFlags([
+                    "-enable-experimental-feature", "Lifetimes",
+                ]),
+            ]),
         .executableTarget(
             name: "NucleusAndroidSharedRingStress",
             dependencies: ["NucleusAndroidSharedRingC"],
@@ -313,9 +318,15 @@ let package = Package(
                 .product(name: "WaylandClient", package: "swift-wayland"),
                 .product(name: "WaylandClientC", package: "swift-wayland"),
                 .product(name: "WaylandClientDispatch", package: "swift-wayland"),
+                .product(name: "WaylandProtocolTypes", package: "swift-wayland"),
                 .product(name: "WaylandProtocolsC", package: "swift-wayland"),
             ],
-            swiftSettings: [.interoperabilityMode(.Cxx)]),
+            swiftSettings: [
+                .interoperabilityMode(.Cxx),
+                .unsafeFlags([
+                    "-enable-experimental-feature", "Lifetimes",
+                ]),
+            ]),
         .testTarget(
             name: "NucleusAndroidGraphicsContractTests",
             dependencies: ["NucleusAndroidGraphicsContract"]),
@@ -375,6 +386,7 @@ for target in package.targets {
         continue
     }
     target.swiftSettings = (target.swiftSettings ?? []) + [
+        .strictMemorySafety(),
         .unsafeFlags(["-warnings-as-errors"]),
         .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
     ]

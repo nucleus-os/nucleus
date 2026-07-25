@@ -8,13 +8,28 @@
 
 import Testing
 import Glibc
+import WaylandServer
 import WaylandServerC
 import NucleusCompositorServer
+import NucleusCompositorServerTypes
 import NucleusCompositorWindowScene
 import NucleusLayers
 @testable import NucleusCompositorWaylandRuntime
 
 private let testDrmFormatXrgb8888: UInt32 = 0x3432_5258
+
+@MainActor
+private func surface(
+    in compositor: WlCompositor,
+    withWireObjectID wireObjectID: UInt32
+) -> WlSurface? {
+    compositor.liveSurfaceIDs.lazy
+        .compactMap { compositor.surface(id: $0) }
+        .first {
+            guard let resource = unsafe $0.resource else { return false }
+            return unsafe wl_resource_get_id(resource) == wireObjectID
+        }
+}
 
 private final class AcceptingDmabufDelegate: DmabufDelegate {
     func dmabufSupportedFormats() -> [DmabufFormat] {
@@ -321,7 +336,7 @@ private func bind(
         let error = try #require(
             WireError.first(context.client.drainEvents()))
         #expect(error.objectID == context.managerID)
-        #expect(error.code == 0)
+        #expect(error.code == 1)
     }
 
     do {
@@ -395,10 +410,11 @@ private func bind(
     client.pump()
     _ = client.drainEvents()
 
-    let surface = try #require(compositor.surface(id: surfaceID))
-    let clientKey = try #require(
-        surface.resource.flatMap(wl_resource_get_client)
-            .map(WlSeat.clientKey))
+    let surface = try #require(surface(
+        in: compositor, withWireObjectID: surfaceID))
+    let wlClient = unsafe surface.resource.flatMap(wl_resource_get_client)
+    let clientKeyValue = unsafe wlClient.map(WlSeat.clientKey)
+    let clientKey = try #require(clientKeyValue)
     _ = seat.pointerEnter(
         surface, surfaceX: 4, surfaceY: 5)
     let serial = seat.pointerButton(
@@ -423,7 +439,7 @@ private func bind(
     #expect(dataDevice.dragActive)
 
     #expect(dataDevice.dragMotion(
-        surfaceID: UInt64(surfaceID),
+        surfaceID: UInt64(surface.objectId),
         x: 12,
         y: 14,
         timeMsec: 11))
@@ -695,7 +711,7 @@ private final class ScreencopyStub: ScreencopyDelegate {
         output: WlOutput?,
         configuration: ScreencopyConfiguration,
         overlayCursor: Bool,
-        buffer: UnsafeMutablePointer<wl_resource>,
+        buffer: WaylandResourceReference,
         withDamage: Bool,
         preferRegionReadback: Bool,
         completion: @escaping @MainActor (ScreencopyResult) -> Void
@@ -733,7 +749,7 @@ private final class SuccessfulScreencopyStub: ScreencopyDelegate {
         output: WlOutput?,
         configuration: ScreencopyConfiguration,
         overlayCursor: Bool,
-        buffer: UnsafeMutablePointer<wl_resource>,
+        buffer: WaylandResourceReference,
         withDamage: Bool,
         preferRegionReadback: Bool,
         completion: @escaping @MainActor (ScreencopyResult) -> Void
@@ -965,7 +981,7 @@ private func appendShmBuffer(
 ) throws -> OwnedTestFD {
     let (size, overflow) = stride.multipliedReportingOverflow(by: height)
     guard !overflow, size > 0 else { throw WaylandWireError.sizeOverflow }
-    let fd = memfd_create("nucleus-wayland-conformance", 0)
+    let fd = unsafe memfd_create("nucleus-wayland-conformance", 0)
     guard fd >= 0 else { throw WaylandWireError.systemCall("memfd_create", errno) }
     let owned = OwnedTestFD(fd)
     guard ftruncate(fd, off_t(size)) == 0 else {
@@ -1016,7 +1032,7 @@ private func appendShmBuffer(
     client.pump()
     _ = client.drainEvents()
 
-    let dmabufFDValue = memfd_create("nucleus-syncobj-dmabuf", 0)
+    let dmabufFDValue = unsafe memfd_create("nucleus-syncobj-dmabuf", 0)
     try #require(dmabufFDValue >= 0)
     let dmabufFD = OwnedTestFD(dmabufFDValue)
     var createBuffer = WireBuilder()
@@ -1033,7 +1049,7 @@ private func appendShmBuffer(
     _ = client.drainEvents()
 
     func importTimeline(_ id: UInt32) throws {
-        let value = memfd_create("nucleus-syncobj-timeline", 0)
+        let value = unsafe memfd_create("nucleus-syncobj-timeline", 0)
         try #require(value >= 0)
         let fd = OwnedTestFD(value)
         var request = WireBuilder()
@@ -1067,7 +1083,8 @@ private func appendShmBuffer(
     client.pump()
     #expect(WireError.first(client.drainEvents()) == nil)
 
-    let surface = try #require(compositor.surface(id: surfaceID))
+    let surface = try #require(surface(
+        in: compositor, withWireObjectID: surfaceID))
     #expect(surface.aux.syncAcquire == SyncPoint(
         handle: syncobjDelegate.importedHandle, point: 5))
     #expect(surface.aux.syncRelease == SyncPoint(
@@ -1106,8 +1123,8 @@ private final class RecordingSurfaceScene: SurfaceSceneDelegate {
         commits.append(commit)
     }
 
-    func surfaceDestroyed(surfaceID: UInt32, iosurfaceID: UInt32) {
-        destroyedSurfaceIDs.append(surfaceID)
+    func surfaceDestroyed(surfaceID: WlSurfaceID, iosurfaceID: UInt32) {
+        destroyedSurfaceIDs.append(surfaceID.rawValue)
     }
 }
 
@@ -1172,7 +1189,7 @@ private final class RecordingSurfaceScene: SurfaceSceneDelegate {
     #expect(!second.bufferAttached)
     #expect(second.bufferPixelSize == first.bufferPixelSize)
     #expect(second.bufferGeneration == first.bufferGeneration)
-    #expect(second.bufferResourceBits == first.bufferResourceBits)
+    #expect(second.buffer === first.buffer)
     #expect(second.surfaceDamage == [
         WlRect(x: 0, y: 0, width: 1, height: 1)
     ])
@@ -1211,7 +1228,8 @@ private final class PreferredScaleProbe: PreferredScaleSink {
     #expect(client.send(requests))
     client.pump()
 
-    let surface = try #require(compositor.surface(id: surfaceId))
+    let surface = try #require(surface(
+        in: compositor, withWireObjectID: surfaceId))
     let probe = PreferredScaleProbe()
     surface.fractionalScaleSink = probe
     surface.updateEnteredOutputs([822])
@@ -1382,9 +1400,13 @@ private final class PreferredScaleProbe: PreferredScaleSink {
     #expect(client.send(replace))
     client.pump()
 
-    let surface = try #require(compositor.surface(id: surfId))
+    let surface = try #require(surface(
+        in: compositor, withWireObjectID: surfId))
     #expect(surface.hasCurrentBuffer)
-    #expect(surface.currentBuffer.map { wl_resource_get_id($0) } == bufB)
+    let currentBufferID = unsafe surface.currentBuffer.map {
+        unsafe wl_resource_get_id($0)
+    }
+    #expect(currentBufferID == bufB)
 }
 
 /// A buffer rejected before renderer ownership is immediately reusable, but its
@@ -1431,7 +1453,8 @@ private final class PreferredScaleProbe: PreferredScaleSink {
     client.pump()
     _ = client.drainEvents()
 
-    let surface = try #require(compositor.surface(id: surfaceID))
+    let surface = try #require(surface(
+        in: compositor, withWireObjectID: surfaceID))
     surface.releaseCurrentBufferImmediately()
     surface.releaseCurrentBufferImmediately()
     router.flushClients()
@@ -1471,7 +1494,7 @@ private final class PreferredScaleProbe: PreferredScaleSink {
     _ = client.drainEvents()
 
     func createBuffer(paramsID: UInt32, bufferID: UInt32) throws {
-        let fd = memfd_create("nucleus-retirement-test", 0)
+        let fd = unsafe memfd_create("nucleus-retirement-test", 0)
         try #require(fd >= 0)
         let ownedFD = OwnedTestFD(fd)
         var request = WireBuilder()
@@ -1497,7 +1520,8 @@ private final class PreferredScaleProbe: PreferredScaleSink {
     first.message(object: surfaceID, opcode: 6) { _ in }
     #expect(client.send(first))
     client.pump()
-    let surface = try #require(compositor.surface(id: surfaceID))
+    let surface = try #require(surface(
+        in: compositor, withWireObjectID: surfaceID))
     surface.renderIosurfaceId = 77
     _ = client.drainEvents()
 
@@ -1705,7 +1729,8 @@ private final class LockGateStub: SessionLockDelegate {
     client.pump()
     _ = client.drainEvents()  // discard bind/create acks
 
-    let surface = try #require(compositor.surface(id: surfId))
+    let surface = try #require(surface(
+        in: compositor, withWireObjectID: surfId))
     surface.renderIosurfaceId = 99
     surface.renderIosurfaceId = 100
     compositor.submitFrame(
@@ -1814,7 +1839,8 @@ private final class LockGateStub: SessionLockDelegate {
     client.pump()
     _ = client.drainEvents()
 
-    let surface = try #require(compositor.surface(id: surfaceID))
+    let surface = try #require(surface(
+        in: compositor, withWireObjectID: surfaceID))
     surface.renderIosurfaceId = 101
     compositor.submitFrame(
         outputID: 11,

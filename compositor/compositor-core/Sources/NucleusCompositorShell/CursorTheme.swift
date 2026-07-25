@@ -1,11 +1,18 @@
 import FoundationEssentials
 
-@MainActor
-public final class CursorTheme {
-    public init() {}
+public final class CursorTheme: Sendable {
+    private let theme: String
+    private let paths: [URL]
+
+    public init(
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) {
+        theme = environment["XCURSOR_THEME"].flatMap { $0.isEmpty ? nil : $0 }
+            ?? "default"
+        paths = Self.libraryPath(environment: environment)
+    }
 
     func load(name: String, size: UInt32) -> XCursorImage {
-        let theme = ProcessInfo.processInfo.environment["XCURSOR_THEME"].flatMap { $0.isEmpty ? nil : $0 } ?? "default"
         let names = ([name] + ["left_ptr", "arrow", "top_left_arrow"]).reduce(into: [String]()) { result, candidate in
             if !result.contains(candidate) { result.append(candidate) }
         }
@@ -20,7 +27,7 @@ public final class CursorTheme {
     private func load(theme: String, name: String, size: UInt32, depth: UInt32) -> XCursorImage? {
         guard depth <= 16 else { return nil }
         var inherits: [String] = []
-        for directory in libraryPath() {
+        for directory in paths {
             let themeURL = directory.appendingPathComponent(theme, isDirectory: true)
             let cursorURL = themeURL.appendingPathComponent("cursors").appendingPathComponent(name)
             if let data = try? Data(contentsOf: cursorURL),
@@ -39,8 +46,7 @@ public final class CursorTheme {
         return nil
     }
 
-    private func libraryPath() -> [URL] {
-        let env = ProcessInfo.processInfo.environment
+    private static func libraryPath(environment env: [String: String]) -> [URL] {
         let raw: String
         if let path = env["XCURSOR_PATH"], !path.isEmpty {
             raw = path
@@ -52,14 +58,19 @@ public final class CursorTheme {
             raw = defaultPaths
         }
         return raw.split(separator: ":").compactMap { component in
-            let expanded = expandTilde(String(component))
+            let expanded = expandTilde(
+                String(component),
+                environment: env)
             return expanded.isEmpty ? nil : URL(fileURLWithPath: expanded, isDirectory: true)
         }
     }
 
-    private func expandTilde(_ path: String) -> String {
+    private static func expandTilde(
+        _ path: String,
+        environment: [String: String]
+    ) -> String {
         guard path.first == "~" else { return path }
-        guard let home = ProcessInfo.processInfo.environment["HOME"] else { return "" }
+        guard let home = environment["HOME"] else { return "" }
         return home + path.dropFirst()
     }
 
@@ -78,7 +89,7 @@ public final class CursorTheme {
         return []
     }
 
-    private func defaultCursor() -> XCursorImage {
+    func defaultCursor() -> XCursorImage {
         let width = 24
         let height = 24
         var bytes = [UInt8](repeating: 0, count: width * height * 4)

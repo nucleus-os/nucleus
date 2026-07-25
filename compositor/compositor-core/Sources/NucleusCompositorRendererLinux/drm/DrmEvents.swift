@@ -34,7 +34,7 @@ final class DrmPageFlipToken: Sendable {
     }
 
     func commitUserData() -> UnsafeMutableRawPointer {
-        Unmanaged.passUnretained(self).toOpaque()
+        unsafe Unmanaged.passUnretained(self).toOpaque()
     }
 }
 
@@ -49,8 +49,9 @@ func drmPageFlipTrampoline(
     _ sequence: UInt32,
     _ crtcId: UInt32
 ) {
-    guard let userData else { return }
-    let token = Unmanaged<DrmPageFlipToken>.fromOpaque(userData).takeUnretainedValue()
+    guard let userData = unsafe userData else { return }
+    let token = unsafe Unmanaged<DrmPageFlipToken>
+        .fromOpaque(userData).takeUnretainedValue()
     let event = DrmPageFlipEvent(timestampNs: timestampNs, sequence: sequence, crtcId: crtcId)
     MainActor.assumeIsolated { token.onFlip(event) }
 }
@@ -70,7 +71,7 @@ func drmPageFlipTrampoline(
     /// `DrmPageFlipToken`.
     @discardableResult
     static func dispatch(fd: Int32) -> Bool {
-        nucleus_drm_handle_event(fd, drmPageFlipTrampoline) == 0
+        unsafe nucleus_drm_handle_event(fd, drmPageFlipTrampoline) == 0
     }
 
     /// Drain only when the fd is readable (the reactor-readiness path); a no-op

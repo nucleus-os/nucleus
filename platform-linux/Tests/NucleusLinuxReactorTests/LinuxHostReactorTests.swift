@@ -60,7 +60,9 @@ struct LinuxHostReactorTests {
     func readinessCarriesThePollMaskAndRearms() async throws {
         let reactor = try LinuxHostReactor(queueDepth: 16)
         var descriptors = [Int32](repeating: -1, count: 2)
-        #expect(nucleus_linux_reactor_create_pipe(&descriptors) == 0)
+        let pipeCreated =
+            unsafe nucleus_linux_reactor_create_pipe(&descriptors) == 0
+        #expect(pipeCreated)
         let descriptor = descriptors[0]
         defer {
             _ = Glibc.close(descriptors[0])
@@ -106,7 +108,9 @@ struct LinuxHostReactorTests {
     func invalidRequestedPollBitsAreRejected() async throws {
         let reactor = try LinuxHostReactor(queueDepth: 16)
         var descriptors = [Int32](repeating: -1, count: 2)
-        #expect(nucleus_linux_reactor_create_pipe(&descriptors) == 0)
+        let pipeCreated =
+            unsafe nucleus_linux_reactor_create_pipe(&descriptors) == 0
+        #expect(pipeCreated)
         defer {
             for descriptor in descriptors { _ = Glibc.close(descriptor) }
         }
@@ -132,7 +136,9 @@ struct LinuxHostReactorTests {
     func multishotPollSurvivesSeparateReadinessTransitions() async throws {
         let reactor = try LinuxHostReactor(queueDepth: 16)
         var descriptors = [Int32](repeating: -1, count: 2)
-        #expect(nucleus_linux_reactor_create_pipe(&descriptors) == 0)
+        let pipeCreated =
+            unsafe nucleus_linux_reactor_create_pipe(&descriptors) == 0
+        #expect(pipeCreated)
         defer {
             for descriptor in descriptors { _ = Glibc.close(descriptor) }
         }
@@ -164,7 +170,9 @@ struct LinuxHostReactorTests {
         var pipes = [[Int32]]()
         for _ in 0..<3 {
             var descriptors = [Int32](repeating: -1, count: 2)
-            #expect(nucleus_linux_reactor_create_pipe(&descriptors) == 0)
+            let pipeCreated =
+                unsafe nucleus_linux_reactor_create_pipe(&descriptors) == 0
+            #expect(pipeCreated)
             pipes.append(descriptors)
         }
         defer {
@@ -211,8 +219,12 @@ struct LinuxHostReactorTests {
         let reactor = try LinuxHostReactor(queueDepth: 16)
         var firstPipe = [Int32](repeating: -1, count: 2)
         var secondPipe = [Int32](repeating: -1, count: 2)
-        #expect(nucleus_linux_reactor_create_pipe(&firstPipe) == 0)
-        #expect(nucleus_linux_reactor_create_pipe(&secondPipe) == 0)
+        let firstPipeCreated =
+            unsafe nucleus_linux_reactor_create_pipe(&firstPipe) == 0
+        let secondPipeCreated =
+            unsafe nucleus_linux_reactor_create_pipe(&secondPipe) == 0
+        #expect(firstPipeCreated)
+        #expect(secondPipeCreated)
         let first = firstPipe[0]
         let second = secondPipe[0]
         defer {
@@ -246,7 +258,9 @@ struct LinuxHostReactorTests {
     func removingAnInterestCancelsItsOutstandingPoll() async throws {
         let reactor = try LinuxHostReactor(queueDepth: 16)
         var descriptors = [Int32](repeating: -1, count: 2)
-        #expect(nucleus_linux_reactor_create_pipe(&descriptors) == 0)
+        let pipeCreated =
+            unsafe nucleus_linux_reactor_create_pipe(&descriptors) == 0
+        #expect(pipeCreated)
         defer {
             for descriptor in descriptors { _ = Glibc.close(descriptor) }
         }
@@ -364,7 +378,8 @@ struct LinuxHostReactorTests {
     private func signal(_ descriptor: Int32) {
         var value: UInt8 = 1
         let count = withUnsafeBytes(of: &value) {
-            Glibc.write(descriptor, $0.baseAddress, $0.count)
+            unsafe Glibc.write(
+                descriptor, $0.baseAddress, $0.count)
         }
         #expect(count == MemoryLayout<UInt8>.size)
     }
@@ -372,7 +387,8 @@ struct LinuxHostReactorTests {
     private func drain(_ descriptor: Int32) {
         var value: UInt8 = 0
         let count = withUnsafeMutableBytes(of: &value) {
-            Glibc.read(descriptor, $0.baseAddress, $0.count)
+            unsafe Glibc.read(
+                descriptor, $0.baseAddress, $0.count)
         }
         #expect(count == MemoryLayout<UInt8>.size)
     }

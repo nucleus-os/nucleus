@@ -31,7 +31,7 @@ private func pumpDragFixtureSetup(
 @Suite(.serialized, .uiContext)
 struct DragDropClientServerTests {
     @MainActor
-    private final class Peer {
+    @safe private final class Peer {
         let client: ShellWaylandClient
         let seat: ShellSeat
         let surface: OpaquePointer
@@ -48,13 +48,14 @@ struct DragDropClientServerTests {
             configure: (View) -> Void
         ) throws {
             var sockets = [Int32](repeating: -1, count: 2)
-            try #require(socketpair(
+            let socketResult = unsafe socketpair(
                 AF_UNIX,
                 Int32(SOCK_STREAM.rawValue)
                     | O_NONBLOCK
                     | Int32(SOCK_CLOEXEC.rawValue),
                 0,
-                &sockets) == 0)
+                &sockets)
+            try #require(socketResult == 0)
             guard runtime.attachClient(fileDescriptor: sockets[0]) else {
                 close(sockets[0])
                 close(sockets[1])
@@ -66,13 +67,17 @@ struct DragDropClientServerTests {
             pumpDragFixtureSetup(runtime, clients: [client])
             seat = try #require(ShellSeat(client: client))
             let priorSurfaceIDs = runtime.compositor.liveSurfaceIDs
-            surface = try #require(client.createSurface())
+            guard let createdSurface = unsafe client.createSurface() else {
+                throw DataTransferFailure.transport(
+                    "fixture client could not create a surface")
+            }
+            unsafe surface = createdSurface
             pumpDragFixtureSetup(runtime, clients: [client])
             serverSurfaceID = try #require(
                 runtime.compositor.liveSurfaceIDs
                     .subtracting(priorSurfaceIDs)
                     .first)
-            let fixtureSurfaceID = UInt(bitPattern: surface)
+            let fixtureSurfaceID = unsafe UInt(bitPattern: surface)
             surfaceID = fixtureSurfaceID
 
             root = View()
@@ -114,7 +119,7 @@ struct DragDropClientServerTests {
         }
 
         isolated deinit {
-            wl_surface_destroy(surface)
+            unsafe wl_surface_destroy(surface)
         }
     }
 
@@ -182,7 +187,7 @@ struct DragDropClientServerTests {
             maximumPayloadBytes: 128,
             preview: preview,
             completion: { sourceOutcomes.append($0) })
-        let sessionID = source.drag.startDrag(
+        let sessionID = unsafe source.drag.startDrag(
             from: sourceView,
             source: configuration,
             originSurface: source.surface,
@@ -256,24 +261,26 @@ struct DragDropClientServerTests {
         }
         pump(runtime, peers: [source, destination])
 
-        #expect(source.drag.startDrag(
+        let unauthorizedSession = unsafe source.drag.startDrag(
             from: sourceView,
             source: DragSourceConfiguration(payloadProviders: [
                 "text/plain": { Data() }
             ]),
             originSurface: source.surface,
-            at: .zero) == nil)
+            at: .zero)
+        #expect(unauthorizedSession == nil)
 
         authorizeDrag(from: source, runtime: runtime)
         pump(runtime, peers: [source, destination])
         var outcomes: [DragCompletionOutcome] = []
-        #expect(source.drag.startDrag(
+        let authorizedSession = unsafe source.drag.startDrag(
             from: sourceView,
             source: DragSourceConfiguration(
                 payloadProviders: ["text/plain": { Data("x".utf8) }],
                 completion: { outcomes.append($0) }),
             originSurface: source.surface,
-            at: .zero) != nil)
+            at: .zero)
+        #expect(authorizedSession != nil)
         pump(runtime, peers: [source, destination])
         _ = runtime.dataDevice.dragMotion(
             surfaceID: UInt64(destination.serverSurfaceID),
@@ -307,8 +314,8 @@ struct DragDropClientServerTests {
     ) {
         guard let surface = runtime.compositor.surface(
                 id: peer.serverSurfaceID),
-              let resource = surface.resource,
-              let client = wl_resource_get_client(resource)
+              let resource = unsafe surface.resource,
+              let client = unsafe wl_resource_get_client(resource)
         else {
             Issue.record("fixture surface did not reach compositor")
             return
@@ -317,7 +324,7 @@ struct DragDropClientServerTests {
             surface,
             surfaceX: 20,
             surfaceY: 20)
-        _ = runtime.seat.pointerButton(
+        _ = unsafe runtime.seat.pointerButton(
             clientKey: WlSeat.clientKey(client),
             surface: surface,
             timeMsec: 1,
@@ -395,7 +402,7 @@ struct DragDropClientServerTests {
             fd: descriptor.fileDescriptor,
             events: descriptor.events,
             revents: 0)
-        guard poll(&polled, 1, 0) > 0 else { return }
+        guard unsafe poll(&polled, 1, 0) > 0 else { return }
         apply(
             descriptor.token,
             ShellPollResult(revents: polled.revents),

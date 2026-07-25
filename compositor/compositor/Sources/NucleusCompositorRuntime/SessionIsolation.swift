@@ -61,7 +61,9 @@ final class SessionIsolation {
 
         let parent = resolveParentRuntimeDir(config.xdgRuntimeDir)
         let runtimeDir = try makeRuntimeDir(parent)
-        guard runtimeDir.withCString({ setenv("XDG_RUNTIME_DIR", $0, 1) }) == 0 else {
+        guard runtimeDir.withCString({
+            unsafe setenv("XDG_RUNTIME_DIR", $0, 1)
+        }) == 0 else {
             deleteTreeBestEffort(runtimeDir)
             throw SessionIsolationError.setenvFailed
         }
@@ -121,14 +123,16 @@ final class SessionIsolation {
     }
 
     private static func ensureExistingDir(_ path: String) throws {
-        let fd = path.withCString { open($0, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC) }
+        let fd = path.withCString {
+            unsafe open($0, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+        }
         guard fd >= 0 else { throw SessionIsolationError.notDirectory }
         defer { close(fd) }
         if fchmod(fd, 0o700) != 0 { throw SessionIsolationError.chmodFailed }
     }
 
     private static func mkdirMode700(_ path: String) -> Int32 {
-        path.withCString { mkdir($0, 0o700) }
+        path.withCString { unsafe mkdir($0, 0o700) }
     }
 
     private static func deleteTreeBestEffort(_ path: String) {
@@ -137,11 +141,13 @@ final class SessionIsolation {
 }
 
 private func envString(_ name: String) -> String? {
-    guard let raw = getenv(name) else { return nil }
-    return String(cString: raw)
+    guard let raw = unsafe getenv(name) else { return nil }
+    return unsafe String(cString: raw)
 }
 
 private func logSession(_ message: String) {
     let line = "session runtime: \(message)\n"
-    line.withCString { _ = write(STDERR_FILENO, $0, strlen($0)) }
+    line.withCString {
+        _ = unsafe write(STDERR_FILENO, $0, strlen($0))
+    }
 }

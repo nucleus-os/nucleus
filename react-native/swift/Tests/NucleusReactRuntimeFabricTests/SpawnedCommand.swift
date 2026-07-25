@@ -13,25 +13,25 @@ enum SpawnedCommand {
         environment: [String: String],
         captureOutput: Bool = false
     ) throws -> SpawnedCommandResult {
-        var actions = posix_spawn_file_actions_t()
-        guard posix_spawn_file_actions_init(&actions) == 0 else {
+        var actions = unsafe posix_spawn_file_actions_t()
+        guard unsafe posix_spawn_file_actions_init(&actions) == 0 else {
             throw commandError("could not initialize process file actions")
         }
-        defer { posix_spawn_file_actions_destroy(&actions) }
+        defer { unsafe posix_spawn_file_actions_destroy(&actions) }
 
         var descriptors = [Int32](repeating: -1, count: 2)
         if captureOutput {
             guard descriptors.withUnsafeMutableBufferPointer({
-                pipe($0.baseAddress!)
+                unsafe pipe($0.baseAddress!)
             }) == 0 else {
                 throw commandError("could not create process output pipe")
             }
             guard
-                posix_spawn_file_actions_adddup2(
+                unsafe posix_spawn_file_actions_adddup2(
                     &actions, descriptors[1], STDOUT_FILENO) == 0,
-                posix_spawn_file_actions_addclose(
+                unsafe posix_spawn_file_actions_addclose(
                     &actions, descriptors[0]) == 0,
-                posix_spawn_file_actions_addclose(
+                unsafe posix_spawn_file_actions_addclose(
                     &actions, descriptors[1]) == 0
             else {
                 close(descriptors[0])
@@ -40,26 +40,32 @@ enum SpawnedCommand {
             }
         }
 
-        let argv = ([executable] + arguments).map {
-            $0.withCString(strdup)
+        let argv = unsafe ([executable] + arguments).map {
+            $0.withCString { unsafe strdup($0) }
         } + [nil]
-        let environmentPointers = environment
+        let environmentPointers = unsafe environment
             .map { "\($0.key)=\($0.value)" }
             .sorted()
-            .map { $0.withCString(strdup) } + [nil]
+            .map { value in
+                value.withCString { unsafe strdup($0) }
+            } + [nil]
         defer {
-            for pointer in argv {
-                if let pointer { free(UnsafeMutableRawPointer(pointer)) }
+            for unsafe pointer in unsafe argv {
+                if let pointer = unsafe pointer {
+                    unsafe free(UnsafeMutableRawPointer(pointer))
+                }
             }
-            for pointer in environmentPointers {
-                if let pointer { free(UnsafeMutableRawPointer(pointer)) }
+            for unsafe pointer in unsafe environmentPointers {
+                if let pointer = unsafe pointer {
+                    unsafe free(UnsafeMutableRawPointer(pointer))
+                }
             }
         }
 
         var processID = pid_t()
         let launchStatus = argv.withUnsafeBufferPointer { argvBuffer in
             environmentPointers.withUnsafeBufferPointer { environmentBuffer in
-                posix_spawn(
+                unsafe posix_spawn(
                     &processID,
                     executable,
                     &actions,
@@ -94,7 +100,7 @@ enum SpawnedCommand {
         }
 
         var waitStatus: Int32 = 0
-        while waitpid(processID, &waitStatus, 0) == -1 {
+        while unsafe waitpid(processID, &waitStatus, 0) == -1 {
             guard errno == EINTR else {
                 throw commandError(
                     "waitpid failed for \(executable): errno \(errno)")

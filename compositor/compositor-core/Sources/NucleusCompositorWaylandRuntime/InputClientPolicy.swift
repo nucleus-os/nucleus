@@ -115,6 +115,6 @@ final class InputClientPolicy {
         guard logCount < 64 else { return }
         logCount += 1
         let line = "input policy: keycode=\(keycode) pressed=\(pressed) \(reason)\n"
-        line.withCString { _ = write(2, $0, strlen($0)) }
+        line.withCString { _ = unsafe write(2, $0, strlen($0)) }
     }
 }

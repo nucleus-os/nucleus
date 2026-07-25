@@ -112,11 +112,12 @@ struct WorkspaceDoctor {
     }
 
     private var runtimePrerequisites: [HostPrerequisite] {
-        [swiftVersion(scope: "runtime"), lavapipe(scope: "runtime")]
+        [swiftVersion(scope: "runtime"), lavapipe(scope: "runtime"),
+         xwayland(scope: "runtime"), pidfd(scope: "runtime")]
             + executables(
                 [
                     "swift", "swiftc", "git", "cmake", "ninja", "pkg-config",
-                    "corepack", "bun", "tar",
+                    "corepack", "bun", "tar", "python3",
                 ],
                 scope: "runtime")
             + paths(
@@ -212,6 +213,38 @@ struct WorkspaceDoctor {
                     atPath: artifact.library.string)
             else { return nil }
             return "\(artifact.stagedManifest) -> \(artifact.library)"
+        }
+    }
+
+    private func xwayland(scope: String) -> HostPrerequisite {
+        HostPrerequisite(
+            id: "executable:Xwayland",
+            scope: scope,
+            description: "verified Xwayland executable"
+        ) {
+            try? resolveXwaylandExecutable(
+                environment: context.environment)
+        }
+    }
+
+    private func pidfd(scope: String) -> HostPrerequisite {
+        HostPrerequisite(
+            id: "kernel:pidfd-open",
+            scope: scope,
+            description: "Linux pidfd_open support"
+        ) {
+            let path = "/proc/self/fd"
+            guard FileManager.default.fileExists(atPath: path) else {
+                return nil
+            }
+            let result = try? await self.context.run(
+                "python3",
+                [
+                    "-c",
+                    "import os; fd=os.pidfd_open(os.getpid()); os.close(fd); print('pidfd_open')",
+                ],
+                capture: true)
+            return result?.trimmingCharacters(in: .whitespacesAndNewlines)
         }
     }
 

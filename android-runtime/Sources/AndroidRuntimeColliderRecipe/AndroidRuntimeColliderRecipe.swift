@@ -345,7 +345,7 @@ public enum AndroidRuntimeColliderRecipe {
                 }
                 let file = root.appending(path)
                 var isDirectory = ObjCBool(false)
-                guard FileManager.default.fileExists(
+                guard unsafe FileManager.default.fileExists(
                     atPath: file.string,
                     isDirectory: &isDirectory),
                       !isDirectory.boolValue

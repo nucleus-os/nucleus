@@ -51,20 +51,52 @@ index bb3477bca56..b08c113db30 100644
 +}
 +
 diff --git a/stdlib/public/Synchronization/Mutex/LinuxImpl.swift b/stdlib/public/Synchronization/Mutex/LinuxImpl.swift
-index 3f89b119923..a4a246f2f11 100644
+index 87005957358..965e77399ad 100644
 --- a/stdlib/public/Synchronization/Mutex/LinuxImpl.swift
 +++ b/stdlib/public/Synchronization/Mutex/LinuxImpl.swift
-@@ -107,0 +108 @@ extension _MutexHandle {
+@@ -106,4 +106,5 @@ extension _MutexHandle {
+     if _fastPath(exchanged) {
+       // Locked!
 +      unsafe _swift_stdlib_tsan_acquire(.init(storage._rawAddress))
-@@ -111,0 +113 @@ extension _MutexHandle {
-+    unsafe _swift_stdlib_tsan_acquire(.init(storage._rawAddress))
-@@ -236 +238 @@ extension _MutexHandle {
+       return
+     }
+@@ -162,6 +163,7 @@ extension _MutexHandle {
+           )
+           if exchanged {
+             // Locked!
++            unsafe _swift_stdlib_tsan_acquire(.init(storage._rawAddress))
+             return
+           }
+           // CAS failed: another thread beat us to `locked`, or a thread in the kernel phase wrote `contended`.
+@@ -198,5 +200,6 @@ extension _MutexHandle {
+           _ = slowPathDepth.wrappingSubtract(1, ordering: .relaxed)
+         }
+         // Locked!
++        unsafe _swift_stdlib_tsan_acquire(.init(storage._rawAddress))
+         return
+       }
+@@ -233,10 +236,14 @@ extension _MutexHandle {
+   @_transparent
+   internal borrowing func _tryLock() -> Bool {
+     // Do a user space cmpxchg to see if we can easily acquire the lock.
 -    return storage.compareExchange(
 +    let acquired = storage.compareExchange(
-@@ -241,0 +244,4 @@ extension _MutexHandle {
+       expected: Self.unlocked,
+       desired: Self.locked,
+       successOrdering: .acquiring,
+       failureOrdering: .relaxed
+     ).exchanged
 +    if acquired {
 +      unsafe _swift_stdlib_tsan_acquire(.init(storage._rawAddress))
 +    }
 +    return acquired
-@@ -247,0 +254 @@ extension _MutexHandle {
+   }
+@@ -244,6 +251,7 @@ extension _MutexHandle {
+   @available(SwiftStdlib 6.0, *)
+   @_alwaysEmitIntoClient
+   @_transparent
+   internal borrowing func _unlock() {
 +    unsafe _swift_stdlib_tsan_release(.init(storage._rawAddress))
+     // Release the lock atomically in userspace. Previous value tells us whether anyone is parked.
+     if storage.exchange(Self.unlocked, ordering: .releasing) == Self.locked {
+       // No waiters, unlocked!

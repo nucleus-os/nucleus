@@ -171,8 +171,10 @@ enum TextureRegistryKey: Equatable, Hashable {
 
 /// Maps namespaced texture handles to sampleable Skia images with
 /// content-revision reuse + refcounting. Reference type; one per renderer.
-final class TextureRegistry {
-    struct Entry {
+/// The render actor owns all entries and clears them before Graphite teardown.
+@safe final class TextureRegistry {
+    /// Owns its C++ RAII image value for the entry's registry lifetime.
+    @safe struct Entry {
         var image: nucleus.skia.Image
         var width: Int32
         var height: Int32
@@ -207,13 +209,13 @@ final class TextureRegistry {
         height: Int32,
         contentRevision: UInt64
     ) {
-        entries[key] = Entry(
+        unsafe entries[key] = Entry(
             image: image, width: width, height: height,
             contentRevision: contentRevision, refcount: 1)
     }
 
     /// The image to sample for `key`, or nil if not registered.
-    func resolve(_ key: TextureRegistryKey) -> nucleus.skia.Image? { entries[key]?.image }
+    func resolve(_ key: TextureRegistryKey) -> nucleus.skia.Image? { unsafe entries[key]?.image }
 
     /// The pixel size registered for `key`.
     func size(_ key: TextureRegistryKey) -> (width: Int32, height: Int32)? {
@@ -249,7 +251,7 @@ final class TextureRegistry {
     func wrapBackendImage(
         recorder: nucleus.skia.Recorder, descriptor: nucleus.skia.VulkanImageDescriptor
     ) -> nucleus.skia.Image? {
-        let image = recorder.wrapBackendImage(descriptor)
-        return image.isValid() ? image : nil
+        let image = unsafe recorder.wrapBackendImage(descriptor)
+        return unsafe image.isValid() ? image : nil
     }
 }

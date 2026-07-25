@@ -6,41 +6,41 @@ import NucleusAndroidDrmCTestSupport
 import NucleusAndroidGfxstreamTransport
 import Synchronization
 
-private final class SendableLifetimeDomain: @unchecked Sendable {
+@safe private final class SendableLifetimeDomain: @unchecked Sendable {
     let handle: OpaquePointer
 
     init?() {
-        guard let handle = nucleus_android_test_gpu_lifetime_domain_create() else {
+        guard let handle = unsafe nucleus_android_test_gpu_lifetime_domain_create() else {
             return nil
         }
-        self.handle = handle
+        unsafe self.handle = handle
     }
 
     deinit {
-        nucleus_android_test_gpu_lifetime_domain_destroy(handle)
+        unsafe nucleus_android_test_gpu_lifetime_domain_destroy(handle)
     }
 
     var diagnostic: nucleus_android_gpu_diagnostic? {
         var diagnostic = nucleus_android_gpu_diagnostic()
-        guard nucleus_android_gpu_get_diagnostic(handle, &diagnostic) == 0 else {
+        guard unsafe nucleus_android_gpu_get_diagnostic(handle, &diagnostic) == 0 else {
             return nil
         }
         return diagnostic
     }
 }
 
-private final class SendableLifetimeBuffer: @unchecked Sendable {
+@safe private final class SendableLifetimeBuffer: @unchecked Sendable {
     let domain: SendableLifetimeDomain
     private var handle: OpaquePointer?
 
     init?(domain: SendableLifetimeDomain) {
         guard let handle =
-            nucleus_android_test_gpu_buffer_lifetime_domain_create(domain.handle)
+            unsafe nucleus_android_test_gpu_buffer_lifetime_domain_create(domain.handle)
         else {
             return nil
         }
         self.domain = domain
-        self.handle = handle
+        unsafe self.handle = handle
     }
 
     deinit {
@@ -48,14 +48,14 @@ private final class SendableLifetimeBuffer: @unchecked Sendable {
     }
 
     func recordSubmission() -> UInt64 {
-        guard let handle else { return 0 }
-        return nucleus_android_test_gpu_buffer_record_submission(handle)
+        guard let handle = unsafe handle else { return 0 }
+        return unsafe nucleus_android_test_gpu_buffer_record_submission(handle)
     }
 
     func release() {
-        guard let handle else { return }
-        self.handle = nil
-        nucleus_android_gpu_buffer_destroy(handle)
+        guard let handle = unsafe handle else { return }
+        unsafe self.handle = nil
+        unsafe nucleus_android_gpu_buffer_destroy(handle)
     }
 }
 
@@ -94,8 +94,8 @@ enum NucleusAndroidThreadSanitizerHarness {
                         failures.withLock { $0 += 1 }
                         return
                     }
-                    let value = packet.withUnsafeBytes {
-                        $0.loadUnaligned(as: UInt64.self)
+                    let value = unsafe packet.withUnsafeBytes {
+                        unsafe $0.loadUnaligned(as: UInt64.self)
                     }
                     _ = seen.withLock { $0.insert(value) }
                 } catch GfxstreamTransportError.empty {
@@ -114,7 +114,7 @@ enum NucleusAndroidThreadSanitizerHarness {
                     var value =
                         UInt64(producerID * packetsPerProducer + sequence)
                     let packet = withUnsafeBytes(of: &value) {
-                        Data($0)
+                        unsafe Data($0)
                     }
                     while failures.withLock({ $0 }) == 0 {
                         do {
@@ -170,7 +170,7 @@ enum NucleusAndroidThreadSanitizerHarness {
             exit(3)
         }
 
-        nucleus_android_test_gpu_complete_through(
+        unsafe nucleus_android_test_gpu_complete_through(
             domain.handle,
             retired.submitted_serial)
         guard let reclaimed = domain.diagnostic,

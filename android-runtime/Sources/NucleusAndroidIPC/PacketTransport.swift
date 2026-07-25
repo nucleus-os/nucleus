@@ -59,14 +59,18 @@ public final class BrokerPacketConnection: @unchecked Sendable {
     }
 
     public static func connect(path: String) throws -> BrokerPacketConnection {
-        let descriptor = path.withCString { nucleus_android_ipc_connect($0) }
+        let descriptor = path.withCString {
+            unsafe nucleus_android_ipc_connect($0)
+        }
         guard descriptor >= 0 else { throw systemError("connect") }
         return BrokerPacketConnection(owning: descriptor)
     }
 
     public static func socketPair() throws -> (BrokerPacketConnection, BrokerPacketConnection) {
         var pair = [Int32](repeating: -1, count: 2)
-        guard nucleus_android_ipc_socket_pair(&pair) == 0 else { throw systemError("socketpair") }
+        guard unsafe nucleus_android_ipc_socket_pair(&pair) == 0 else {
+            throw systemError("socketpair")
+        }
         return (
             BrokerPacketConnection(owning: pair[0]),
             BrokerPacketConnection(owning: pair[1]))
@@ -74,7 +78,10 @@ public final class BrokerPacketConnection: @unchecked Sendable {
 
     public var peerCredentials: PeerCredentials? {
         var credentials = nucleus_android_peer_credentials()
-        guard nucleus_android_ipc_peer_credentials(fileDescriptor, &credentials) == 0 else {
+        guard unsafe nucleus_android_ipc_peer_credentials(
+            fileDescriptor,
+            &credentials) == 0
+        else {
             return nil
         }
         return PeerCredentials(
@@ -100,9 +107,9 @@ public final class BrokerPacketConnection: @unchecked Sendable {
         guard bytes.count <= AndroidGraphicsProtocol.maximumPacketBytes else {
             throw PacketTransportError.packetTooLarge(bytes.count)
         }
-        let result = bytes.withUnsafeBytes { rawBytes in
+        let result = unsafe bytes.withUnsafeBytes { rawBytes in
             descriptors.withUnsafeBufferPointer { rawDescriptors in
-                nucleus_android_ipc_send(
+                unsafe nucleus_android_ipc_send(
                     fileDescriptor,
                     rawBytes.baseAddress,
                     rawBytes.count,
@@ -121,7 +128,7 @@ public final class BrokerPacketConnection: @unchecked Sendable {
         var descriptorCount = 0
         let byteCount = bytes.withUnsafeMutableBytes { rawBytes in
             descriptors.withUnsafeMutableBufferPointer { rawDescriptors in
-                nucleus_android_ipc_receive(
+                unsafe nucleus_android_ipc_receive(
                     fileDescriptor,
                     rawBytes.baseAddress,
                     rawBytes.count,
@@ -158,7 +165,9 @@ public final class BrokerPacketListener: @unchecked Sendable {
     public let path: String
 
     public init(path: String, mode: UInt32 = 0o600) throws {
-        let descriptor = path.withCString { nucleus_android_ipc_listen($0, mode) }
+        let descriptor = path.withCString {
+            unsafe nucleus_android_ipc_listen($0, mode)
+        }
         guard descriptor >= 0 else { throw BrokerPacketConnection.systemError("bind/listen") }
         self.fileDescriptor = descriptor
         self.path = path
@@ -178,6 +187,6 @@ public final class BrokerPacketListener: @unchecked Sendable {
 
     deinit {
         if fileDescriptor >= 0 { _ = Glibc.close(fileDescriptor) }
-        _ = path.withCString { Glibc.unlink($0) }
+        _ = path.withCString { unsafe Glibc.unlink($0) }
     }
 }

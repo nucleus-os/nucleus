@@ -20,14 +20,19 @@ public enum ImageDecodeFailure: Error, Sendable, Equatable, Hashable {
     case uploadFailure
 }
 
-package struct DecodedImage: @unchecked Sendable {
+/// Owns an immutable, CPU-backed raster value. The decoder finishes all writes
+/// before publishing it, and consumers only query dimensions or move it into a
+/// render-thread upload, so concurrent mutation is impossible.
+@safe package struct DecodedImage: @unchecked Sendable {
     package var image: nucleus.skia.RasterImage
 
-    package var isValid: Bool { image.isValid() }
-    package var width: Int32 { image.width() }
-    package var height: Int32 { image.height() }
+    package var isValid: Bool { unsafe image.isValid() }
+    package var width: Int32 { unsafe image.width() }
+    package var height: Int32 { unsafe image.height() }
 }
 
+/// Sendability derives from `DecodedImage`'s immutable-pixel contract; failure
+/// values and generation metadata are ordinary value types.
 package struct ImageDecodeCompletion: @unchecked Sendable {
     package var handle: UInt64
     package var generation: UInt64
@@ -267,19 +272,19 @@ package final class ImageDecodeQueue {
         self.state = state
         for _ in 0..<max(0, workerCount) {
             let retainedState =
-                Unmanaged.passRetained(state).toOpaque()
+                unsafe Unmanaged.passRetained(state).toOpaque()
             var thread = pthread_t()
-            let created = pthread_create(&thread, nil, { pointer in
-                let state = Unmanaged<WorkerState>
+            let created = unsafe pthread_create(&thread, nil, { pointer in
+                let state = unsafe Unmanaged<WorkerState>
                     .fromOpaque(pointer!)
                     .takeRetainedValue()
                 state.workerLoop()
                 return nil
-            }, retainedState)
+            }, unsafe retainedState)
             if created == 0 {
                 workers.append(thread)
             } else {
-                Unmanaged<WorkerState>
+                unsafe Unmanaged<WorkerState>
                     .fromOpaque(retainedState)
                     .release()
             }
@@ -349,7 +354,7 @@ package final class ImageDecodeQueue {
             guard encodedFileSize(path) != nil else {
                 return .failure(.unreadableInput)
             }
-            return mapMetadata(
+            return unsafe mapMetadata(
                 nucleus.skia.probeEncodedImageFile(path))
         case .encoded(let bytes):
             guard !bytes.isEmpty else {
@@ -359,7 +364,7 @@ package final class ImageDecodeQueue {
                 return .failure(.limitExceeded)
             }
             return bytes.withUnsafeBufferPointer {
-                mapMetadata(nucleus.skia.probeEncodedImageMemory(
+                unsafe mapMetadata(nucleus.skia.probeEncodedImageMemory(
                     $0.baseAddress,
                     $0.count))
             }
@@ -380,7 +385,7 @@ package final class ImageDecodeQueue {
             guard let bounds = validatedTargetBounds(source) else {
                 return .failure(targetFailure(source))
             }
-            return mapDecode(nucleus.skia.decodeEncodedImageFile(
+            return unsafe mapDecode(nucleus.skia.decodeEncodedImageFile(
                 path,
                 bounds.width,
                 bounds.height))
@@ -395,7 +400,7 @@ package final class ImageDecodeQueue {
                 return .failure(targetFailure(source))
             }
             return bytes.withUnsafeBufferPointer {
-                mapDecode(nucleus.skia.decodeEncodedImageMemory(
+                unsafe mapDecode(nucleus.skia.decodeEncodedImageMemory(
                     $0.baseAddress,
                     $0.count,
                     bounds.width,
@@ -414,13 +419,13 @@ package final class ImageDecodeQueue {
                 return .failure(.decodeFailure)
             }
             let image = rgba.withUnsafeBufferPointer {
-                nucleus.skia.makeRasterImageRGBA(
+                unsafe nucleus.skia.makeRasterImageRGBA(
                     Int32(buffer.width),
                     Int32(buffer.height),
                     $0.baseAddress,
                     $0.count)
             }
-            return image.isValid()
+            return unsafe image.isValid()
                 ? .success(DecodedImage(image: image))
                 : .failure(.decodeFailure)
         }
@@ -473,11 +478,11 @@ package final class ImageDecodeQueue {
 
     private static func encodedFileSize(_ path: String) -> Int? {
         guard !path.isEmpty,
-              let file = fopen(path, "rb")
+              let file = unsafe fopen(path, "rb")
         else { return nil }
-        defer { fclose(file) }
-        guard fseek(file, 0, SEEK_END) == 0 else { return nil }
-        let length = ftell(file)
+        defer { unsafe fclose(file) }
+        guard unsafe fseek(file, 0, SEEK_END) == 0 else { return nil }
+        let length = unsafe ftell(file)
         guard length > 0 else { return nil }
         return Int(exactly: length)
     }
@@ -497,10 +502,10 @@ package final class ImageDecodeQueue {
     private static func mapDecode(
         _ decoded: nucleus.skia.RasterDecodeResult
     ) -> Result<DecodedImage, ImageDecodeFailure> {
-        guard decoded.isSuccess() else {
-            return .failure(mapFailure(decoded.status))
+        guard unsafe decoded.isSuccess() else {
+            return unsafe .failure(mapFailure(decoded.status))
         }
-        return .success(DecodedImage(image: decoded.image))
+        return unsafe .success(DecodedImage(image: decoded.image))
     }
 
     private static func mapFailure(

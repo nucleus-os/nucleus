@@ -49,7 +49,9 @@ func runProducesOneTypedConfigurationForBothSessionChildren() throws {
         "--drm-device", "/dev/dri/renderD129",
         "--wallpaper", "~/Pictures/typed.jpeg",
     ])
-    let configuration = try options.sessionConfiguration
+    var configuredOptions = options
+    configuredOptions.xwaylandExecutablePath = "/usr/bin/Xwayland"
+    let configuration = try configuredOptions.sessionConfiguration
 
     #expect(configuration.outputScale == 1.5)
     #expect(configuration.presentMode == .mailboxLatestWins)
@@ -58,6 +60,9 @@ func runProducesOneTypedConfigurationForBothSessionChildren() throws {
     #expect(configuration.traceDrmDemand)
     #expect(configuration.drmDevicePath == "/dev/dri/renderD129")
     #expect(configuration.wallpaperPath == "~/Pictures/typed.jpeg")
+    #expect(configuration.xwaylandExecutablePath == "/usr/bin/Xwayland")
+    #expect(try SessionConfiguration(encoded: configuration.encoded)
+        == configuration)
 }
 
 @Test

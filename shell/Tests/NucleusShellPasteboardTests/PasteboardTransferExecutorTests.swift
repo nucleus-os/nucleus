@@ -29,7 +29,8 @@ import Testing
             result = $0
         }
 
-        #expect(write(writeFD, "hel", 3) == 3)
+        let firstWrite = unsafe write(writeFD, "hel", 3)
+        #expect(firstWrite == 3)
         #expect(result == nil)
         executor.processPollResult(
             token: token,
@@ -37,7 +38,8 @@ import Testing
             nowNanoseconds: 1)
         #expect(result == nil)
 
-        #expect(write(writeFD, "lo", 2) == 2)
+        let secondWrite = unsafe write(writeFD, "lo", 2)
+        #expect(secondWrite == 2)
         close(writeFD)
         executor.processPollResult(
             token: token,
@@ -63,7 +65,8 @@ import Testing
         ) {
             result = $0
         }
-        #expect(write(writeFD, "12345", 5) == 5)
+        let oversizedWrite = unsafe write(writeFD, "12345", 5)
+        #expect(oversizedWrite == 5)
         close(writeFD)
 
         executor.processPollResult(
@@ -165,7 +168,7 @@ import Testing
         var received = [UInt8]()
         var scratch = [UInt8](repeating: 0, count: 8 * 1024)
         while executor.activeTransferCount > 0 {
-            let count = read(readFD, &scratch, scratch.count)
+            let count = unsafe read(readFD, &scratch, scratch.count)
             if count > 0 {
                 received.append(contentsOf: scratch.prefix(Int(count)))
             }
@@ -175,7 +178,7 @@ import Testing
                 nowNanoseconds: 2)
         }
         while true {
-            let count = read(readFD, &scratch, scratch.count)
+            let count = unsafe read(readFD, &scratch, scratch.count)
             guard count > 0 else { break }
             received.append(contentsOf: scratch.prefix(Int(count)))
         }
@@ -186,9 +189,9 @@ import Testing
 
     private func makePipe() throws -> [Int32] {
         var descriptors = [Int32](repeating: -1, count: 2)
-        guard pipe2(&descriptors, O_CLOEXEC | O_NONBLOCK) == 0 else {
+        guard unsafe pipe2(&descriptors, O_CLOEXEC | O_NONBLOCK) == 0 else {
             throw PasteboardFailure.transport(
-                "pipe2 failed: \(String(cString: strerror(errno)))")
+                "pipe2 failed: \(unsafe String(cString: strerror(errno)))")
         }
         return descriptors
     }

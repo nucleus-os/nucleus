@@ -805,19 +805,82 @@ int nucleus_android_gpu_preferred_modifier(
         return -1;
     }
     nucleus_android_gpu_lock(gpu);
-    struct gbm_bo *bo = gbm_bo_create(
+    struct gbm_bo *preferred_bo = gbm_bo_create(
         gpu->gbm,
         64,
         64,
         drm_format,
         GBM_BO_USE_RENDERING);
-    if (!bo) {
+    if (preferred_bo) {
+        uint64_t preferred = gbm_bo_get_modifier(preferred_bo);
+        uint32_t gbm_plane_count =
+            gbm_bo_get_plane_count(preferred_bo);
+        gbm_bo_destroy(preferred_bo);
+        if (gbm_plane_count == 1 &&
+            nucleus_android_gpu_supports_format_modifier(
+                gpu, drm_format, preferred)) {
+            *output_modifier = preferred;
+            nucleus_android_gpu_unlock(gpu);
+            return 0;
+        }
+    }
+
+    int modifier_count = nucleus_android_gpu_list_format_modifiers(
+        gpu, drm_format, NULL, 0);
+    if (modifier_count <= 0) {
         nucleus_android_gpu_unlock(gpu);
+        errno = ENOTSUP;
         return -1;
     }
-    *output_modifier = gbm_bo_get_modifier(bo);
-    gbm_bo_destroy(bo);
+    struct nucleus_android_format_modifier_properties *modifiers =
+        calloc((size_t)modifier_count, sizeof(*modifiers));
+    if (!modifiers) {
+        nucleus_android_gpu_unlock(gpu);
+        errno = ENOMEM;
+        return -1;
+    }
+    int returned_count = nucleus_android_gpu_list_format_modifiers(
+        gpu,
+        drm_format,
+        modifiers,
+        (size_t)modifier_count);
+    int available_count = returned_count < modifier_count
+        ? returned_count
+        : modifier_count;
+    bool found = false;
+    for (int index = 0; index < available_count; ++index) {
+        uint64_t candidate = modifiers[index].modifier;
+        if (!nucleus_android_gpu_supports_format_modifier(
+                gpu, drm_format, candidate)) {
+            continue;
+        }
+        struct gbm_bo *bo = gbm_bo_create_with_modifiers2(
+            gpu->gbm,
+            64,
+            64,
+            drm_format,
+            &candidate,
+            1,
+            GBM_BO_USE_RENDERING);
+        if (!bo) {
+            continue;
+        }
+        bool usable =
+            gbm_bo_get_plane_count(bo) == 1 &&
+            gbm_bo_get_modifier(bo) == candidate;
+        gbm_bo_destroy(bo);
+        if (usable) {
+            *output_modifier = candidate;
+            found = true;
+            break;
+        }
+    }
+    free(modifiers);
     nucleus_android_gpu_unlock(gpu);
+    if (!found) {
+        errno = ENOTSUP;
+        return -1;
+    }
     return 0;
 }
 

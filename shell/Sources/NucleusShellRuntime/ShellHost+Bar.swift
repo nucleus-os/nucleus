@@ -101,7 +101,7 @@ extension ShellHost {
                 writeErr("shell: failed to create bar for output \(outputID)")
                 continue
             }
-            let surfaceID = surfaceRegistry.register(
+            let surfaceID = unsafe surfaceRegistry.register(
                 window: window,
                 waylandSurface: layerSurface.wlSurface,
                 refreshMillihertz: output.refreshMillihertz)

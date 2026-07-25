@@ -17,26 +17,28 @@ import NucleusSkiaGraphiteBridge
     }
 
     @Test func gpuHeadless_readbackRoundTrip() throws {
-        try withRequiredVulkanGraphite(
+        try unsafe withRequiredVulkanGraphite(
             presentation: .headless,
             applicationName: "ScreenshotTests"
         ) { _, _, context, recorder in
-            let surface = recorder.makeOffscreenSurface(8, 8)
-            try requireTrue(surface.isValid(), "could not create the screenshot surface")
+            let surface = unsafe recorder.makeOffscreenSurface(8, 8)
+            let surfaceIsValid = unsafe surface.isValid()
+            try requireTrue(surfaceIsValid, "could not create the screenshot surface")
 
             // Clear to opaque red, submit, then read back.
-            let canvas = surface.getCanvas()
+            let canvas = unsafe surface.getCanvas()
             var red = nucleus.skia.Color()
             red.r = 1; red.g = 0; red.b = 0; red.a = 1
-            canvas.clear(red)
-            let recording = recorder.snapRecording()
+            unsafe canvas.clear(red)
+            let recording = unsafe recorder.snapRecording()
+            let submissionCompleted = unsafe submitGraphiteAndWait(
+                context: context, recording: recording, serial: 1)
             try requireTrue(
-                submitGraphiteAndWait(
-                    context: context, recording: recording, serial: 1),
+                submissionCompleted,
                 "screenshot submission did not complete")
 
             let pixels = try requireValue(
-                readGraphiteSurfaceRGBA(context: context, surface: surface),
+                unsafe readGraphiteSurfaceRGBA(context: context, surface: surface),
                 "screenshot readback failed")
             #expect(pixels.count == 8 * 8 * 4)
             #expect(pixels[0] >= 250)

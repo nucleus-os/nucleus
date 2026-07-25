@@ -307,6 +307,13 @@ let package = Package(
                 .product(name: "NucleusSkiaGraphiteBridge", package: "Nucleus"),
             ],
             path: "swift/Tests/NucleusReactRuntimeFabricTests",
+            swiftSettings: [
+                .interoperabilityMode(.Cxx),
+                .unsafeFlags([
+                    "-Xcc", "-fmodule-map-file=" + repoRoot
+                        + "/swiftpm/cmodules/NucleusReactRuntimeCxxBridge/module.modulemap",
+                ] + rnRuntimeXccFlags),
+            ],
             linkerSettings: [.unsafeFlags(rnFabricLinkFlags + skiaLinkFlags)]
         ),
         .executableTarget(
@@ -445,6 +452,7 @@ for target in package.targets {
         continue
     }
     var swiftSettings = (target.swiftSettings ?? []) + [
+        .strictMemorySafety(),
         .unsafeFlags(["-warnings-as-errors"]),
         .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
     ]

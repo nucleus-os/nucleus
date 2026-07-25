@@ -239,7 +239,7 @@ private final class SessionSupervisor {
         command: [String]
     ) throws -> SupervisedChild {
         var pipeDescriptors = [Int32](repeating: -1, count: 2)
-        guard pipe(&pipeDescriptors) == 0 else {
+        guard unsafe pipe(&pipeDescriptors) == 0 else {
             throw SupervisorFailure.system("pipe", errno)
         }
         guard fcntl(pipeDescriptors[0], F_SETFD, FD_CLOEXEC) == 0,
@@ -255,7 +255,7 @@ private final class SessionSupervisor {
         let readDescriptor = pipeDescriptors[0]
         let writeDescriptor = pipeDescriptors[1]
         var configurationDescriptors = [Int32](repeating: -1, count: 2)
-        guard pipe(&configurationDescriptors) == 0 else {
+        guard unsafe pipe(&configurationDescriptors) == 0 else {
             let error = errno
             _ = close(readDescriptor)
             _ = close(writeDescriptor)
@@ -272,10 +272,10 @@ private final class SessionSupervisor {
             throw SupervisorFailure.system("configuration pipe flags", error)
         }
 
-        var actions = posix_spawn_file_actions_t()
+        var actions = unsafe posix_spawn_file_actions_t()
         var attributes = posix_spawnattr_t()
-        guard posix_spawn_file_actions_init(&actions) == 0,
-              posix_spawnattr_init(&attributes) == 0
+        guard unsafe posix_spawn_file_actions_init(&actions) == 0,
+              unsafe posix_spawnattr_init(&attributes) == 0
         else {
             _ = close(readDescriptor)
             _ = close(writeDescriptor)
@@ -284,27 +284,27 @@ private final class SessionSupervisor {
             throw SupervisorFailure.system("posix_spawn initialization", errno)
         }
         defer {
-            posix_spawn_file_actions_destroy(&actions)
-            posix_spawnattr_destroy(&attributes)
+            unsafe posix_spawn_file_actions_destroy(&actions)
+            unsafe posix_spawnattr_destroy(&attributes)
         }
-        guard posix_spawn_file_actions_adddup2(
+        guard unsafe posix_spawn_file_actions_adddup2(
             &actions,
             writeDescriptor,
             Self.childReadinessDescriptor) == 0,
-              posix_spawn_file_actions_addclose(
+              unsafe posix_spawn_file_actions_addclose(
                 &actions,
                 readDescriptor) == 0,
-              posix_spawn_file_actions_addclose(
+              unsafe posix_spawn_file_actions_addclose(
                 &actions,
                 writeDescriptor) == 0,
-              posix_spawn_file_actions_adddup2(
+              unsafe posix_spawn_file_actions_adddup2(
                 &actions,
                 configurationDescriptors[0],
                 Self.childConfigurationDescriptor) == 0,
-              posix_spawn_file_actions_addclose(
+              unsafe posix_spawn_file_actions_addclose(
                 &actions,
                 configurationDescriptors[0]) == 0,
-              posix_spawn_file_actions_addclose(
+              unsafe posix_spawn_file_actions_addclose(
                 &actions,
                 configurationDescriptors[1]) == 0
         else {
@@ -317,22 +317,22 @@ private final class SessionSupervisor {
 
         var defaultSignals = sigset_t()
         var emptyMask = sigset_t()
-        sigemptyset(&defaultSignals)
-        sigemptyset(&emptyMask)
+        unsafe sigemptyset(&defaultSignals)
+        unsafe sigemptyset(&emptyMask)
         for signal in [SIGCHLD, SIGINT, SIGQUIT, SIGTERM, SIGHUP, SIGPIPE] {
-            sigaddset(&defaultSignals, signal)
+            unsafe sigaddset(&defaultSignals, signal)
         }
-        guard posix_spawnattr_setsigdefault(
+        guard unsafe posix_spawnattr_setsigdefault(
             &attributes,
             &defaultSignals) == 0,
-              posix_spawnattr_setsigmask(&attributes, &emptyMask) == 0,
-              posix_spawnattr_setflags(
+              unsafe posix_spawnattr_setsigmask(&attributes, &emptyMask) == 0,
+              unsafe posix_spawnattr_setflags(
                 &attributes,
                 Int16(
                     POSIX_SPAWN_SETSIGDEF
                         | POSIX_SPAWN_SETSIGMASK
                         | POSIX_SPAWN_SETPGROUP)) == 0,
-              posix_spawnattr_setpgroup(&attributes, 0) == 0
+              unsafe posix_spawnattr_setpgroup(&attributes, 0) == 0
         else {
             _ = close(readDescriptor)
             _ = close(writeDescriptor)
@@ -350,11 +350,11 @@ private final class SessionSupervisor {
             String(Self.childConfigurationDescriptor),
         ] + command.dropFirst()
         let storage: [UnsafeMutablePointer<CChar>?] =
-            childArguments.map { strdup($0) } + [nil]
-        defer { storage.forEach { free($0) } }
+            unsafe childArguments.map { unsafe strdup($0) } + [nil]
+        defer { unsafe storage.forEach { unsafe free($0) } }
         var processID = pid_t()
         let result = storage.withUnsafeBufferPointer { buffer in
-            posix_spawnp(
+            unsafe posix_spawnp(
                 &processID,
                 buffer[0]!,
                 &actions,
@@ -418,7 +418,7 @@ private final class SessionSupervisor {
                 Int32(min(
                     UInt64(Int32.max),
                     (deadline - now + 999_999) / 1_000_000)))
-            let pollResult = poll(
+            let pollResult = unsafe poll(
                 &descriptors,
                 nfds_t(descriptors.count),
                 remainingMilliseconds)
@@ -436,7 +436,7 @@ private final class SessionSupervisor {
                 var bytes = [UInt8](
                     repeating: 0,
                     count: SessionReadinessMessage.encodedSize)
-                let count = read(
+                let count = unsafe read(
                     child.readinessDescriptor,
                     &bytes,
                     bytes.count)
@@ -465,7 +465,7 @@ private final class SessionSupervisor {
                 fd: signalDescriptor,
                 events: Int16(POLLIN),
                 revents: 0)
-            let result = poll(&descriptor, 1, -1)
+            let result = unsafe poll(&descriptor, 1, -1)
             if result < 0 {
                 if errno == EINTR { continue }
                 throw SupervisorFailure.system("session wait", errno)
@@ -479,7 +479,8 @@ private final class SessionSupervisor {
             }
             for child in children {
                 var waitStatus: Int32 = 0
-                let waited = waitpid(child.processID, &waitStatus, WNOHANG)
+                let waited = unsafe waitpid(
+                    child.processID, &waitStatus, WNOHANG)
                 guard waited == child.processID else { continue }
                 let status = Self.exitStatus(waitStatus)
                 // Include the exited root so any descendants that remained in
@@ -502,7 +503,8 @@ private final class SessionSupervisor {
         guard signals.contains(SIGCHLD) else { return }
         for child in children {
             var waitStatus: Int32 = 0
-            let waited = waitpid(child.processID, &waitStatus, WNOHANG)
+            let waited = unsafe waitpid(
+                child.processID, &waitStatus, WNOHANG)
             if waited == child.processID {
                 throw SupervisorFailure.childExited(
                     child.role,
@@ -532,7 +534,8 @@ private final class SessionSupervisor {
         {
             for processID in Array(remaining) {
                 var waitStatus: Int32 = 0
-                let waited = waitpid(processID, &waitStatus, WNOHANG)
+                let waited = unsafe waitpid(
+                    processID, &waitStatus, WNOHANG)
                 if waited == processID || (waited < 0 && errno == ECHILD) {
                     remaining.remove(processID)
                 }
@@ -542,7 +545,7 @@ private final class SessionSupervisor {
                 fd: signalDescriptor,
                 events: Int16(POLLIN),
                 revents: 0)
-            _ = poll(&descriptor, 1, 20)
+            _ = unsafe poll(&descriptor, 1, 20)
             _ = drainSignals()
         }
         // A root may have exited during the grace period while a descendant
@@ -567,7 +570,7 @@ private final class SessionSupervisor {
         var written = 0
         while written < bytes.count {
             let count = bytes.withUnsafeBytes {
-                write(
+                unsafe write(
                     descriptor,
                     $0.baseAddress!.advanced(by: written),
                     bytes.count - written)
@@ -583,14 +586,16 @@ private final class SessionSupervisor {
 
     private static func monotonicNanoseconds() -> UInt64 {
         var time = timespec()
-        clock_gettime(CLOCK_MONOTONIC, &time)
+        unsafe clock_gettime(CLOCK_MONOTONIC, &time)
         return UInt64(time.tv_sec) * 1_000_000_000
             + UInt64(time.tv_nsec)
     }
 
     private func log(_ message: String) {
         let line = "nucleus-session-supervisor: \(message)\n"
-        _ = line.withCString { write(STDERR_FILENO, $0, strlen($0)) }
+        _ = line.withCString {
+            unsafe write(STDERR_FILENO, $0, strlen($0))
+        }
     }
 }
 
@@ -603,7 +608,9 @@ do {
     status = CommandLine.arguments.contains("--help") ? 0 : 64
 } catch {
     let line = "nucleus-session-supervisor: \(error)\n"
-    _ = line.withCString { write(STDERR_FILENO, $0, strlen($0)) }
+    _ = line.withCString {
+        unsafe write(STDERR_FILENO, $0, strlen($0))
+    }
     status = 1
 }
 exit(status)

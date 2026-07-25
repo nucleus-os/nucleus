@@ -1,7 +1,7 @@
 // wl_compositor on the router. Mints wl_surface and wl_region objects and owns
 // the three shared request vtables (compositor/surface/region) plus the scene
 // delegate every surface reports commits to. Each bound compositor resource
-// carries a CompositorBinding that points back here so the @convention(c) request
+// carries a CompositorBinding that points back here so generated request
 // handlers — which cannot capture — can reach the shared state.
 //
 // The compositor holds weak references to live surfaces only (Rule 9: each
@@ -10,12 +10,13 @@
 
 import WaylandServerC
 internal import NucleusCompositorServer
+import NucleusCompositorServerTypes
 internal import NucleusCompositorWindowManager
 import WaylandServer
 import WaylandServerDispatch
 
 struct PresentedSurfaceCommit: Sendable, Equatable {
-    let surfaceID: UInt32
+    let surfaceID: WlSurfaceID
     let commitID: UInt64
 }
 
@@ -29,6 +30,7 @@ struct SubmittedOutputFrame: Sendable, Equatable {
 
 /// Owner bound to each wl_compositor resource (Rule 9). Routes create_surface /
 /// create_region back to the shared WlCompositor.
+@MainActor
 final class CompositorBinding {
     unowned let compositor: WlCompositor
     init(_ compositor: WlCompositor) { self.compositor = compositor }
@@ -37,30 +39,21 @@ final class CompositorBinding {
 // The wl_compositor request handlers, recovered by WlCompositorServer.vtable from the
 // per-resource CompositorBinding owner and forwarded to the shared WlCompositor factory verbs.
 extension CompositorBinding: WlCompositorRequests {
-    func createSurface(_ resource: UnsafeMutablePointer<wl_resource>, id: WlNewId) {
-        let compositorBits = UInt(
-            bitPattern: Unmanaged.passUnretained(compositor).toOpaque())
-        let clientBits = UInt(bitPattern: UnsafeRawPointer(id.client))
-        let objectID = id.id
-        let version = id.version
-        MainActor.assumeIsolated {
-            guard let compositorPointer = UnsafeRawPointer(
-                bitPattern: compositorBits),
-                let clientPointer = UnsafeRawPointer(bitPattern: clientBits)
-            else { return }
-            let compositor = Unmanaged<WlCompositor>
-                .fromOpaque(compositorPointer).takeUnretainedValue()
-            _ = compositor.makeSurface(
-                client: OpaquePointer(clientPointer),
-                id: objectID,
-                version: version)
-        }
+    func createSurface(
+        _ request: WaylandRequest<WlCompositorServer>,
+        id: WlNewId<WlSurfaceServer>
+    ) {
+        _ = unsafe compositor.makeSurface(id: id)
     }
-    func createRegion(_ resource: UnsafeMutablePointer<wl_resource>, id: WlNewId) {
-        _ = compositor.makeRegion(client: id.client, id: id.id, version: id.version)
+    func createRegion(
+        _ request: WaylandRequest<WlCompositorServer>,
+        id: WlNewId<WlRegionServer>
+    ) {
+        _ = unsafe compositor.makeRegion(id: id)
     }
 }
 
+@MainActor
 private final class WeakSurface {
     weak var surface: WlSurface?
     /// The surface's wire object id captured at registration, so the id→surface
@@ -77,6 +70,7 @@ private final class WeakSurface {
     }
 }
 
+@MainActor
 final class WlCompositor {
     unowned let host: RouterHost
     private struct SubmittedFrameKey: Hashable {
@@ -115,16 +109,20 @@ final class WlCompositor {
 
     func deferBufferRelease(
         iosurfaceID: UInt32, buffer: WaylandResourceReference,
-        callback: UnsafeMutablePointer<wl_resource>?
+        callback: WaylandResourceReference?
     ) {
         guard iosurfaceID != 0 else {
-            if let resource = buffer.resource { wl_buffer_send_release(resource) }
-            if let callback { wl_callback_send_done(callback, 0); wl_resource_destroy(callback) }
+            buffer.typedHandle(as: WlBufferServer.self)?.sendRelease()
+            if let callback, let resource = unsafe callback.resource {
+                callback.typedHandle(as: WlCallbackServer.self)?
+                    .sendDone(callback_data: 0)
+                unsafe wl_resource_destroy(resource)
+            }
             return
         }
         deferredBufferReleases[iosurfaceID, default: []].append(DeferredBufferRelease(
             buffer: buffer,
-            callback: callback.flatMap { WaylandResourceReference($0) }))
+            callback: callback))
     }
 
     /// The renderer retired one imported generation under this stable IOSurface id.
@@ -134,10 +132,13 @@ final class WlCompositor {
         let release = releases.removeFirst()
         if releases.isEmpty { deferredBufferReleases[iosurfaceID] = nil }
         else { deferredBufferReleases[iosurfaceID] = releases }
-        if let resource = release.buffer.resource { wl_buffer_send_release(resource) }
-        if let callback = release.callback?.resource {
-            wl_callback_send_done(callback, 0)
-            wl_resource_destroy(callback)
+        release.buffer.typedHandle(as: WlBufferServer.self)?.sendRelease()
+        if let callback = release.callback,
+            let resource = unsafe callback.resource
+        {
+            callback.typedHandle(as: WlCallbackServer.self)?
+                .sendDone(callback_data: 0)
+            unsafe wl_resource_destroy(resource)
         }
     }
 
@@ -241,7 +242,7 @@ final class WlCompositor {
                 let commitID = surface.noteSampled(submissionID: submissionID)
             else { continue }
             sampled.append(PresentedSurfaceCommit(
-                surfaceID: surface.objectId, commitID: commitID))
+                surfaceID: surface.id, commitID: commitID))
         }
         sampled.sort {
             if $0.surfaceID != $1.surfaceID {
@@ -280,7 +281,7 @@ final class WlCompositor {
         let tvSec = timestampNs / 1_000_000_000
         let output = output(id: outputID)
         for sampled in frame.sampledCommits {
-            surface(id: sampled.surfaceID)?.completePresentation(
+            surface(id: sampled.surfaceID.rawValue)?.completePresentation(
                 commitID: sampled.commitID,
                 submissionID: submissionID,
                 output: output,
@@ -311,7 +312,7 @@ final class WlCompositor {
                 continue
             }
             for sampled in frame.sampledCommits {
-                surface(id: sampled.surfaceID)?.discardPresentation(
+                surface(id: sampled.surfaceID.rawValue)?.discardPresentation(
                     commitID: sampled.commitID,
                     submissionID: frame.submissionID)
             }
@@ -326,8 +327,12 @@ final class WlCompositor {
 
     func register(in router: NucleusWaylandRouter) {
         router.addGlobal(
-            interface: swift_wayland_iface_wl_compositor(), version: 6, impl: self, bind: Self.bind
-        )
+            WlCompositorServer.global(
+                implementation: self,
+                advertisedVersion: 6,
+                owner: { compositor, _ in
+                    CompositorBinding(compositor)
+                }))
     }
 
     // MARK: surface registry (weak; for the presentation tick)
@@ -499,27 +504,10 @@ final class WlCompositor {
     }
 
     /// Complete frame callbacks on every live surface (presentation tick).
-    func makeRegion(
-        client: OpaquePointer, id: UInt32, version: Int32
-    ) -> UnsafeMutablePointer<wl_resource>? {
-        WaylandResource.create(
-            client: client, interface: swift_wayland_iface_wl_region(),
-            version: version, id: id, vtable: WlRegionServer.vtable, owner: WlRegion()
-        )
-    }
-
-    // MARK: bind
-
-    private static let bind: @convention(c) (
-        OpaquePointer?, UnsafeMutableRawPointer?, UInt32, UInt32
-    ) -> Void = { client, data, version, id in
-        guard let client, let me = NucleusWaylandRouter.impl(data, as: WlCompositor.self) else {
-            return
+    func makeRegion(id: WlNewId<WlRegionServer>) -> WlRegion? {
+        unsafe id.create { handle in
+            WlRegion(resource: handle)
         }
-        _ = WaylandResource.create(
-            client: client, interface: swift_wayland_iface_wl_compositor(),
-            version: Int32(version), id: id, vtable: WlCompositorServer.vtable,
-            owner: CompositorBinding(me)
-        )
     }
+
 }

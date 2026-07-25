@@ -1,6 +1,7 @@
 import Testing
 @testable import NucleusCompositorWaylandRuntime
 
+@MainActor
 private final class RecordingActivationDelegate: XdgActivationDelegate {
     var activations: [(surfaceID: UInt32?, token: String)] = []
 
@@ -9,7 +10,7 @@ private final class RecordingActivationDelegate: XdgActivationDelegate {
     }
 }
 
-@Test
+@MainActor @Test
 func activationTokensHaveUniqueOpaqueRandomPayloads() {
     let manager = XdgActivationManager()
     var tokens: Set<String> = []
@@ -27,7 +28,7 @@ func activationTokensHaveUniqueOpaqueRandomPayloads() {
     #expect(tokens.count == 1_024)
 }
 
-@Test
+@MainActor @Test
 func activationTokenGrantsAreOneShot() {
     let manager = XdgActivationManager()
     let authorized = manager.mintToken(authorized: true)
@@ -38,7 +39,7 @@ func activationTokenGrantsAreOneShot() {
     #expect(!manager.consumeToken(unauthorized))
 }
 
-@Test
+@MainActor @Test
 func activationTokenGenerationRetriesAnActiveCollision() {
     var candidates = ["collision", "collision", "replacement"]
     let manager = XdgActivationManager(tokenGenerator: {
@@ -125,6 +126,7 @@ func activationTokensRemainOpaqueAndOneShotAcrossTheWaylandWire() throws {
     #expect(client.send(activation))
     client.pump()
     #expect(delegate.activations.count == 1)
-    #expect(delegate.activations.first?.surfaceID == surfaceID)
+    #expect(delegate.activations.first?.surfaceID
+        == compositor.liveSurfaceIDs.first)
     #expect(delegate.activations.first?.token == authorizedToken)
 }

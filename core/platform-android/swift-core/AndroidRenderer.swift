@@ -42,7 +42,7 @@ enum RenderStatus: Int32 {
     case present_failed = 7
 }
 
-struct SurfaceBinding {
+@safe struct SurfaceBinding {
     var window: UnsafeMutableRawPointer? = nil
     var width: Int32 = 0
     var height: Int32 = 0
@@ -90,7 +90,7 @@ struct AndroidRenderer {
     @discardableResult
     mutating func attach(_ surface: SurfaceBinding, _ assetProviderAvailable: Bool) -> Bool {
         self.surface = surface
-        self.surface_available_at_attach = surface.window != nil
+        self.surface_available_at_attach = unsafe surface.window != nil
         self.asset_provider_available_at_attach = assetProviderAvailable
         self.attached = true
         self.started = false
@@ -176,7 +176,7 @@ struct AndroidRenderer {
     }
 
     private mutating func renderVulkanFrame() -> RenderStatus {
-        guard let window = surface.window else { return .no_surface }
+        guard let window = unsafe surface.window else { return .no_surface }
         if surface.width <= 0 || surface.height <= 0 { return .invalid_surface }
         let width = surface.width, height = surface.height
         let generation = surface.generation, frameTime = last_frame_time_nanos
@@ -195,7 +195,9 @@ struct AndroidRenderer {
         let previousGeneration = engineSurfaceGeneration
         let result: (status: RenderStatus, width: Int32, height: Int32) =
             MainActor.assumeIsolated {
-                guard let window = UnsafeMutableRawPointer(bitPattern: windowBits) else {
+                guard let window = unsafe UnsafeMutableRawPointer(
+                    bitPattern: windowBits)
+                else {
                     return (.no_surface, 0, 0)
                 }
                 if previousGeneration != generation, let oldEngine = localEngine {
@@ -208,7 +210,7 @@ struct AndroidRenderer {
                         ?? RetainedTreeStore(resourceHost: host)
                     localResourceHost = host
                     localRetainedStore = store
-                    localEngine = AndroidRenderEngine(
+                    localEngine = unsafe AndroidRenderEngine(
                         window: window,
                         store: store,
                         resourceHost: host,

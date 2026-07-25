@@ -14,8 +14,8 @@ public final class WindowManager {
     public let backdropResolver = BackdropResolver()
     private var pendingInteractionStarts: [UInt64: InteractiveStartContext] = [:]
     var xdgRolesByWindow: [UInt64: XdgRole] = [:]
-    var xdgWindowByToplevel: [UInt64: UInt64] = [:]
-    var xdgToplevelByWindow: [UInt64: UInt64] = [:]
+    var xdgWindowByToplevel: [XdgToplevelID: UInt64] = [:]
+    var xdgToplevelByWindow: [UInt64: XdgToplevelID] = [:]
     var xwaylandRolesByWindow: [UInt64: XwaylandRole] = [:]
     var xwaylandWindowByXID: [UInt64: UInt64] = [:]
     var xwaylandXIDByWindow: [UInt64: UInt64] = [:]

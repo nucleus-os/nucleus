@@ -52,7 +52,7 @@ public actor RunRegistry {
         var manifest = try JSONDecoder().decode(
             RunManifest.self,
             from: Data(contentsOf: URL(fileURLWithPath: manifestPath.string)))
-        guard manifest.status == .interrupted else {
+        guard manifest.status == .interrupted || manifest.status == .failed else {
             throw RunRegistryFailure.notResumable(id, manifest.status)
         }
         manifest.status = .running
@@ -87,10 +87,13 @@ public actor RunRegistry {
             ($0.task.rawValue, $0.identity)
         })
         if (manifest.resumeCount ?? 0) > 0,
-           let recorded = manifest.plannedTasks,
-           recorded != identities
+           let recorded = manifest.plannedTasks
         {
-            throw RunRegistryFailure.resumptionIdentityChanged(run.id)
+            for entry in plan where entry.isClean {
+                guard recorded[entry.task.rawValue] == entry.identity else {
+                    throw RunRegistryFailure.resumptionIdentityChanged(run.id)
+                }
+            }
         }
         manifest.plannedTasks = identities
         try writeJSON(manifest, to: path)
@@ -195,7 +198,10 @@ public actor RunRegistry {
     private func replaceLatest(runID: RunID, runs: FilePath) throws {
         let candidate = root.appending(".latest-\(getpid())")
         try? FileManager.default.removeItem(atPath: candidate.string)
-        guard collider_symlink("runs/\(runID.rawValue)", candidate.string) == 0 else {
+        guard unsafe collider_symlink(
+            "runs/\(runID.rawValue)",
+            candidate.string) == 0
+        else {
             throw Errno(rawValue: errno)
         }
         do {
@@ -261,7 +267,7 @@ private func appendBytes(_ bytes: [UInt8], to path: FilePath) throws {
 }
 
 private func replace(_ source: FilePath, with destination: FilePath) throws {
-    guard collider_replace(source.string, destination.string) == 0 else {
+    guard unsafe collider_replace(source.string, destination.string) == 0 else {
         throw Errno(rawValue: errno)
     }
 }

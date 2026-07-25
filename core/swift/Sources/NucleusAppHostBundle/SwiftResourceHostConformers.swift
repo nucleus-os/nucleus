@@ -119,49 +119,33 @@ final class SwiftRuntimeEffectLifecycle: RuntimeEffectLifecycle {
 
 // MARK: - Paint content
 
-/// Translate the command vocabulary into the render model's. Exhaustive by
-/// construction: `NucleusRenderModel` resolves no dependencies, so it cannot
-/// share `NucleusTypes`' enums, and these switches carry no `default` — adding
-/// a kind or blend mode is a compile error at every site that must learn it.
-private func paintDrawCommandKind(_ kind: NucleusTypes.PaintCommandKind) -> PaintDrawCommandKind {
-    switch kind {
-    case .rect: .rect
-    case .roundedRect: .roundedRect
-    case .image: .image
-    case .path: .path
-    case .clipPath: .clipPath
-    case .save: .save
-    case .restore: .restore
-    case .textLayout: .textLayout
+/// Copy one borrowed contiguous span into owned storage. The callback exists so
+/// behavioral tests can count the single bulk initialization operation without
+/// inspecting implementation shape.
+func copyContiguousSpan<Element>(
+    _ source: Span<Element>,
+    didInitialize: (Int) -> Void = { _ in }
+) -> [Element] {
+    source.withUnsafeBufferPointer { source in
+        unsafe Array<Element>(
+            unsafeUninitializedCapacity: source.count
+        ) { destination, initializedCount in
+            guard source.count > 0 else {
+                initializedCount = 0
+                return
+            }
+            unsafe destination.baseAddress!.initialize(
+                from: source.baseAddress!,
+                count: source.count)
+            initializedCount = source.count
+            didInitialize(source.count)
+        }
     }
 }
 
-private func paintDrawShading(_ shading: NucleusTypes.PaintShading) -> PaintDrawShading {
-    switch shading {
-    case .color: .color
-    case .linearGradient: .linearGradient
-    case .radialGradient: .radialGradient
-    case .sweepGradient: .sweepGradient
-    case .effect: .effect
-    }
-}
-
-private func paintDrawBlendMode(_ blend: NucleusTypes.PaintBlendMode) -> PaintDrawBlendMode {
-    switch blend {
-    case .srcOver: .srcOver
-    case .src: .src
-    case .multiply: .multiply
-    case .screen: .screen
-    case .plus: .plus
-    case .overlay: .overlay
-    case .dstIn: .dstIn
-    case .dstOut: .dstOut
-    }
-}
-
-/// `PaintContentRegistrar` over `SwiftResourceHost.paintContents`. Decodes the
-/// command span into the Swift `PaintDrawCommand` vocabulary. An unknown
-/// discriminant is no longer representable, so no draw can be silently dropped.
+/// `PaintContentRegistrar` over `SwiftResourceHost.paintContents`. Validation
+/// happens before either contiguous copy, so rejected input cannot become
+/// partially registered content.
 final class SwiftPaintContentRegistrar: PaintContentRegistrar {
     private let resourceHost: SwiftResourceHost
 
@@ -179,40 +163,20 @@ final class SwiftPaintContentRegistrar: PaintContentRegistrar {
         guard resourceHost.accepts(rawIdentity: resourceHostHandle) else {
             throw PaintContentRegistrationError.invalidHandle
         }
-        var decoded: [PaintDrawCommand] = []
-        decoded.reserveCapacity(commands.count)
         for i in 0..<commands.count {
-            let c = commands[i]
-            decoded.append(PaintDrawCommand(
-                kind: paintDrawCommandKind(c.kind),
-                x: c.x, y: c.y, w: c.w, h: c.h,
-                radius: c.radius, strokeWidth: c.strokeWidth, fontSize: c.fontSize,
-                color: (c.color.r, c.color.g, c.color.b, c.color.a),
-                imageHandle: c.imageHandle, textLayoutHandle: c.textLayoutHandle,
-                effectHandle: c.effectHandle,
-                payloadOffset: c.payloadOffset, payloadLength: c.payloadLength,
-                stroke: c.flags.contains(.stroke),
-                antialias: c.flags.contains(.antialias),
-                evenOddFill: c.flags.contains(.evenOddFill),
-                tintsImage: c.flags.contains(.tintImage),
-                strokeCap: c.flags.contains(.capRound) ? .round
-                    : (c.flags.contains(.capSquare) ? .square : .butt),
-                strokeJoin: c.flags.contains(.joinRound) ? .round
-                    : (c.flags.contains(.joinBevel) ? .bevel : .miter),
-                transform: c.flags.contains(.hasTransform)
-                    ? PaintDrawTransform(
-                        a: c.transformA, b: c.transformB, c: c.transformC,
-                        d: c.transformD, tx: c.transformTX, ty: c.transformTY)
-                    : nil,
-                shading: paintDrawShading(c.shading),
-                blend: paintDrawBlendMode(c.blend),
-                alpha: c.alpha, blurSigma: c.blurSigma, saturation: c.saturation))
+            let command = commands[i]
+            guard command.hasValidFlags,
+                  command.hasValidPayloadRange(count: payload.count)
+            else {
+                throw PaintContentRegistrationError.invalidArgument
+            }
         }
-        var payloadBytes = [UInt8]()
-        payloadBytes.reserveCapacity(payload.count)
-        for i in 0..<payload.count { payloadBytes.append(payload[i]) }
+
+        let storedCommands = copyContiguousSpan(commands)
+        let payloadBytes = copyContiguousSpan(payload)
         return resourceHost.paintContents.register(
-            decoded, payload: payloadBytes, width: width, height: height).raw
+            storedCommands, payload: payloadBytes,
+            width: width, height: height).raw
     }
 }
 

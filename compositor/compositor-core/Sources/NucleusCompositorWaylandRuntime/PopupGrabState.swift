@@ -1,28 +1,21 @@
 /// Seat-owned XDG popup grab stack. Weak entries preserve Wayland resource
 /// ownership while keeping dismissal, delivery redirection, and compaction in
 /// one state machine.
+@MainActor
 final class PopupGrabState {
-    private final class WeakPopup {
-        weak var popup: XdgPopup?
-
-        init(_ popup: XdgPopup) {
-            self.popup = popup
-        }
-    }
-
-    private var stack: [WeakPopup] = []
+    private var stack: [WeakReference<XdgPopup>] = []
 
     func begin(_ popup: XdgPopup) {
         compact()
         guard !popup.popupDoneSent else { return }
-        if stack.last?.popup !== popup {
-            stack.append(WeakPopup(popup))
+        if stack.last?.value !== popup {
+            stack.append(WeakReference(popup))
         }
     }
 
     func deliverySurface(fallback: WlSurface) -> WlSurface {
         compact()
-        return stack.last?.popup?.xdgSurface?.surface ?? fallback
+        return stack.last?.value?.xdgSurface?.surface ?? fallback
     }
 
     /// Dismiss the complete grab stack only when the interaction lands outside
@@ -31,7 +24,7 @@ final class PopupGrabState {
         compact()
         guard !stack.isEmpty else { return false }
         let grabbedSurfaceIDs = Set(stack.compactMap {
-            $0.popup?.xdgSurface?.surface?.objectId
+            $0.value?.xdgSurface?.surface?.objectId
         })
         guard !grabbedSurfaceIDs.contains(target.objectId) else {
             return false
@@ -42,7 +35,7 @@ final class PopupGrabState {
 
     func cancel() {
         compact()
-        for popup in stack.reversed().compactMap(\.popup) {
+        for popup in stack.reversed().compactMap(\.value) {
             popup.sendPopupDone()
         }
         stack.removeAll(keepingCapacity: true)
@@ -50,7 +43,7 @@ final class PopupGrabState {
 
     private func compact() {
         stack.removeAll {
-            $0.popup == nil || $0.popup?.popupDoneSent == true
+            $0.value == nil || $0.value?.popupDoneSent == true
         }
     }
 }

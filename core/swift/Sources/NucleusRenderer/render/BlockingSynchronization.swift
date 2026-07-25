@@ -3,20 +3,21 @@ import NucleusBlockingSynchronizationC
 /// Heap-stable pthread mutex/condition ownership for blocking worker loops.
 ///
 /// Swift stores only this reference and an opaque pointer. The pthread objects
-/// themselves never live in movable Swift storage.
-final class BlockingSynchronization: @unchecked Sendable {
+/// themselves never live in movable Swift storage. The C shim owns the pointer
+/// until `deinit`; its mutex serializes all cross-thread access.
+@safe final class BlockingSynchronization: @unchecked Sendable {
     private let handle: OpaquePointer
 
     init() {
-        guard let handle = nucleus_blocking_synchronization_create() else {
+        guard let handle = unsafe nucleus_blocking_synchronization_create() else {
             preconditionFailure(
                 "failed to create blocking synchronization state")
         }
-        self.handle = handle
+        unsafe self.handle = handle
     }
 
     deinit {
-        nucleus_blocking_synchronization_destroy(handle)
+        unsafe nucleus_blocking_synchronization_destroy(handle)
     }
 
     @inline(__always)
@@ -28,36 +29,41 @@ final class BlockingSynchronization: @unchecked Sendable {
 
     @inline(__always)
     func lock() {
+        let result = unsafe nucleus_blocking_synchronization_lock(handle)
         precondition(
-            nucleus_blocking_synchronization_lock(handle) == 0,
+            result == 0,
             "failed to lock blocking synchronization state")
     }
 
     @inline(__always)
     func wait() {
+        let result = unsafe nucleus_blocking_synchronization_wait(handle)
         precondition(
-            nucleus_blocking_synchronization_wait(handle) == 0,
+            result == 0,
             "failed to wait on blocking synchronization state")
     }
 
     @inline(__always)
     func signal() {
+        let result = unsafe nucleus_blocking_synchronization_signal(handle)
         precondition(
-            nucleus_blocking_synchronization_signal(handle) == 0,
+            result == 0,
             "failed to signal blocking synchronization state")
     }
 
     @inline(__always)
     func broadcast() {
+        let result = unsafe nucleus_blocking_synchronization_broadcast(handle)
         precondition(
-            nucleus_blocking_synchronization_broadcast(handle) == 0,
+            result == 0,
             "failed to broadcast blocking synchronization state")
     }
 
     @inline(__always)
     func unlock() {
+        let result = unsafe nucleus_blocking_synchronization_unlock(handle)
         precondition(
-            nucleus_blocking_synchronization_unlock(handle) == 0,
+            result == 0,
             "failed to unlock blocking synchronization state")
     }
 }

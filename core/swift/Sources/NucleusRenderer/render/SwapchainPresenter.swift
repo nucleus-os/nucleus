@@ -15,7 +15,9 @@ public enum SwapchainStatus: Sendable {
 /// - retired swapchain generations stay alive until every armed presentation
 ///   fence signals. No steady-state queue/device idle operation is used.
 @MainActor
-public final class SwapchainPresenter: PresentationBackend {
+/// Main-actor isolation serializes every handle access. The presenter owns all
+/// synchronization objects and generations until their completion fences signal.
+@safe public final class SwapchainPresenter: PresentationBackend {
     public let outputID: UInt64
 
     /// Graphite requires input-attachment usage on every Vulkan color render
@@ -26,18 +28,20 @@ public final class SwapchainPresenter: PresentationBackend {
         .transferDstBit,
     ]
 
-    private final class FrameSlot {
+    /// Owns one semaphore/fence pair until presenter teardown.
+    @safe private final class FrameSlot {
         let acquireSemaphore: VkSemaphore
         let completionFence: VkFence
         var inFlight = false
 
         init(acquireSemaphore: VkSemaphore, completionFence: VkFence) {
-            self.acquireSemaphore = acquireSemaphore
-            self.completionFence = completionFence
+            unsafe self.acquireSemaphore = acquireSemaphore
+            unsafe self.completionFence = completionFence
         }
     }
 
-    private final class Generation {
+    /// Owns one swapchain generation and its per-image synchronization handles.
+    @safe private final class Generation {
         let swapchain: VkSwapchainKHR
         let images: [VkImage?]
         let presentSemaphores: [VkSemaphore]
@@ -48,11 +52,11 @@ public final class SwapchainPresenter: PresentationBackend {
             swapchain: VkSwapchainKHR, images: [VkImage?],
             presentSemaphores: [VkSemaphore], presentFences: [VkFence]
         ) {
-            self.swapchain = swapchain
-            self.images = images
-            self.presentSemaphores = presentSemaphores
-            self.presentFences = presentFences
-            self.presentFenceArmed = [Bool](repeating: false, count: images.count)
+            unsafe self.swapchain = swapchain
+            unsafe self.images = images
+            unsafe self.presentSemaphores = presentSemaphores
+            unsafe self.presentFences = presentFences
+            self.presentFenceArmed = unsafe [Bool](repeating: false, count: images.count)
         }
     }
 
@@ -94,15 +98,15 @@ public final class SwapchainPresenter: PresentationBackend {
         surface: VulkanSurface
     ) {
         self.outputID = outputID
-        self.instance = core.instanceHandle
+        unsafe self.instance = core.instanceHandle
         self.instanceDispatch = core.instanceDispatch
-        self.physicalDevice = core.physicalDevice
+        unsafe self.physicalDevice = core.physicalDevice
         self.queueFamily = core.graphicsFamily
-        self.device = core.deviceHandle
+        unsafe self.device = core.deviceHandle
         self.deviceDispatch = core.deviceDispatch
-        self.queue = core.graphicsQueue
-        guard surface.instance == core.instanceHandle else { return nil }
-        self.surface = surface.handle
+        unsafe self.queue = core.graphicsQueue
+        guard unsafe surface.instance == core.instanceHandle else { return nil }
+        unsafe self.surface = surface.handle
         self.surfaceOwner = surface
         guard createFrameSlots(count: 2) else {
             destroyFrameSlots()
@@ -129,41 +133,45 @@ public final class SwapchainPresenter: PresentationBackend {
         }
         retiredGenerations.removeAll()
         destroyFrameSlots()
-        surface = nil
+        unsafe surface = nil
         surfaceOwner = nil
     }
 
     private func createFrameSlots(count: Int) -> Bool {
-        guard let createSemaphore = deviceDispatch.vkCreateSemaphore,
-              let createFence = deviceDispatch.vkCreateFence
+        guard let createSemaphore = unsafe deviceDispatch.vkCreateSemaphore,
+              let createFence = unsafe deviceDispatch.vkCreateFence
         else { return false }
-        var semaphoreInfo = VkSemaphoreCreateInfo()
-        semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO
-        var fenceInfo = VkFenceCreateInfo()
-        fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO
-        fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT.rawValue
+        var semaphoreInfo = unsafe VkSemaphoreCreateInfo()
+        unsafe semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO
+        var fenceInfo = unsafe VkFenceCreateInfo()
+        unsafe fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO
+        unsafe fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT.rawValue
 
         for _ in 0..<count {
             var semaphore: VkSemaphore? = nil
             var fence: VkFence? = nil
-            guard createSemaphore(device, &semaphoreInfo, nil, &semaphore) == VK_SUCCESS,
-                  let semaphore,
-                  createFence(device, &fenceInfo, nil, &fence) == VK_SUCCESS,
-                  let fence
+            guard unsafe createSemaphore(device, &semaphoreInfo, nil, &semaphore) == VK_SUCCESS,
+                  let semaphore = unsafe semaphore,
+                  unsafe createFence(device, &fenceInfo, nil, &fence) == VK_SUCCESS,
+                  let fence = unsafe fence
             else {
-                if let semaphore { deviceDispatch.vkDestroySemaphore?(device, semaphore, nil) }
-                if let fence { deviceDispatch.vkDestroyFence?(device, fence, nil) }
+                if let semaphore = unsafe semaphore {
+                    unsafe deviceDispatch.vkDestroySemaphore?(device, semaphore, nil)
+                }
+                if let fence = unsafe fence {
+                    unsafe deviceDispatch.vkDestroyFence?(device, fence, nil)
+                }
                 return false
             }
-            frameSlots.append(FrameSlot(acquireSemaphore: semaphore, completionFence: fence))
+            unsafe frameSlots.append(FrameSlot(acquireSemaphore: semaphore, completionFence: fence))
         }
         return true
     }
 
     private func destroyFrameSlots() {
         for slot in frameSlots {
-            deviceDispatch.vkDestroySemaphore?(device, slot.acquireSemaphore, nil)
-            deviceDispatch.vkDestroyFence?(device, slot.completionFence, nil)
+            unsafe deviceDispatch.vkDestroySemaphore?(device, slot.acquireSemaphore, nil)
+            unsafe deviceDispatch.vkDestroyFence?(device, slot.completionFence, nil)
         }
         frameSlots.removeAll()
     }
@@ -173,35 +181,35 @@ public final class SwapchainPresenter: PresentationBackend {
         width: Int32, height: Int32, hasAlpha: Bool
     ) -> Bool {
         self.hasAlpha = hasAlpha
-        guard surface != nil else { lastStatus = .noSurface; return false }
+        guard unsafe surface != nil else { lastStatus = .noSurface; return false }
         return createSwapchain(width: width, height: height)
     }
 
     private func createSwapchain(width: Int32, height: Int32) -> Bool {
-        guard acquired == nil, let surface,
-              let getCaps = instanceDispatch.vkGetPhysicalDeviceSurfaceCapabilitiesKHR,
-              let getFormats = instanceDispatch.vkGetPhysicalDeviceSurfaceFormatsKHR,
-              let getSupport = instanceDispatch.vkGetPhysicalDeviceSurfaceSupportKHR,
-              let createSwapchain = deviceDispatch.vkCreateSwapchainKHR,
-              let getImages = deviceDispatch.vkGetSwapchainImagesKHR
+        guard acquired == nil, let surface = unsafe surface,
+              let getCaps = unsafe instanceDispatch.vkGetPhysicalDeviceSurfaceCapabilitiesKHR,
+              let getFormats = unsafe instanceDispatch.vkGetPhysicalDeviceSurfaceFormatsKHR,
+              let getSupport = unsafe instanceDispatch.vkGetPhysicalDeviceSurfaceSupportKHR,
+              let createSwapchain = unsafe deviceDispatch.vkCreateSwapchainKHR,
+              let getImages = unsafe deviceDispatch.vkGetSwapchainImagesKHR
         else { lastStatus = .invalidSurface; return false }
 
         var supported: VkBool32 = 0
-        guard getSupport(physicalDevice, queueFamily, surface, &supported) == VK_SUCCESS,
+        guard unsafe getSupport(physicalDevice, queueFamily, surface, &supported) == VK_SUCCESS,
               supported != 0
         else { lastStatus = .invalidSurface; return false }
 
         var caps = VkSurfaceCapabilitiesKHR()
-        guard getCaps(physicalDevice, surface, &caps) == VK_SUCCESS else {
+        guard unsafe getCaps(physicalDevice, surface, &caps) == VK_SUCCESS else {
             lastStatus = .invalidSurface
             return false
         }
         var formatCount: UInt32 = 0
-        guard getFormats(physicalDevice, surface, &formatCount, nil) == VK_SUCCESS,
+        guard unsafe getFormats(physicalDevice, surface, &formatCount, nil) == VK_SUCCESS,
               formatCount > 0
         else { lastStatus = .invalidSurface; return false }
         var formats = [VkSurfaceFormatKHR](repeating: VkSurfaceFormatKHR(), count: Int(formatCount))
-        guard getFormats(physicalDevice, surface, &formatCount, &formats) == VK_SUCCESS else {
+        guard unsafe getFormats(physicalDevice, surface, &formatCount, &formats) == VK_SUCCESS else {
             lastStatus = .invalidSurface
             return false
         }
@@ -227,30 +235,32 @@ public final class SwapchainPresenter: PresentationBackend {
 
         let wantPremultiplied = hasAlpha
             && (caps.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR.rawValue) != 0
-        var info = VkSwapchainCreateInfoKHR()
-        info.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR
-        info.surface = surface
-        info.minImageCount = imageCount
-        info.imageFormat = newFormat.format
-        info.imageColorSpace = newFormat.colorSpace
-        info.imageExtent = newExtent
-        info.imageArrayLayers = 1
-        info.imageUsage = requiredUsage
-        info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE
-        info.preTransform = caps.currentTransform
-        info.compositeAlpha = wantPremultiplied
+        var info = unsafe VkSwapchainCreateInfoKHR()
+        unsafe info.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR
+        unsafe info.surface = surface
+        unsafe info.minImageCount = imageCount
+        unsafe info.imageFormat = newFormat.format
+        unsafe info.imageColorSpace = newFormat.colorSpace
+        unsafe info.imageExtent = newExtent
+        unsafe info.imageArrayLayers = 1
+        unsafe info.imageUsage = requiredUsage
+        unsafe info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE
+        unsafe info.preTransform = caps.currentTransform
+        unsafe info.compositeAlpha = wantPremultiplied
             ? VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR : VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR
-        info.presentMode = VK_PRESENT_MODE_FIFO_KHR
-        info.clipped = 1
-        info.oldSwapchain = activeGeneration?.swapchain
+        unsafe info.presentMode = VK_PRESENT_MODE_FIFO_KHR
+        unsafe info.clipped = 1
+        unsafe info.oldSwapchain = activeGeneration?.swapchain
 
         var handle: VkSwapchainKHR? = nil
-        guard createSwapchain(device, &info, nil, &handle) == VK_SUCCESS, let handle else {
+        guard unsafe createSwapchain(device, &info, nil, &handle) == VK_SUCCESS,
+              let handle = unsafe handle
+        else {
             lastStatus = .invalidSurface
             return false
         }
-        guard let generation = makeGeneration(swapchain: handle, getImages: getImages) else {
-            deviceDispatch.vkDestroySwapchainKHR?(device, handle, nil)
+        guard let generation = unsafe makeGeneration(swapchain: handle, getImages: getImages) else {
+            unsafe deviceDispatch.vkDestroySwapchainKHR?(device, handle, nil)
             lastStatus = .invalidSurface
             return false
         }
@@ -268,59 +278,67 @@ public final class SwapchainPresenter: PresentationBackend {
     private func makeGeneration(
         swapchain: VkSwapchainKHR, getImages: PFN_vkGetSwapchainImagesKHR
     ) -> Generation? {
-        guard let createSemaphore = deviceDispatch.vkCreateSemaphore,
-              let createFence = deviceDispatch.vkCreateFence
+        guard let createSemaphore = unsafe deviceDispatch.vkCreateSemaphore,
+              let createFence = unsafe deviceDispatch.vkCreateFence
         else { return nil }
         var count: UInt32 = 0
-        guard getImages(device, swapchain, &count, nil) == VK_SUCCESS, count > 0 else { return nil }
-        var images = [VkImage?](repeating: nil, count: Int(count))
-        guard getImages(device, swapchain, &count, &images) == VK_SUCCESS else { return nil }
+        guard unsafe getImages(device, swapchain, &count, nil) == VK_SUCCESS, count > 0 else { return nil }
+        var images = unsafe [VkImage?](repeating: nil, count: Int(count))
+        guard unsafe getImages(device, swapchain, &count, &images) == VK_SUCCESS else { return nil }
 
-        var semaphoreInfo = VkSemaphoreCreateInfo()
-        semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO
-        var fenceInfo = VkFenceCreateInfo()
-        fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO
-        fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT.rawValue
-        var semaphores: [VkSemaphore] = []
-        var fences: [VkFence] = []
-        for _ in images {
+        var semaphoreInfo = unsafe VkSemaphoreCreateInfo()
+        unsafe semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO
+        var fenceInfo = unsafe VkFenceCreateInfo()
+        unsafe fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO
+        unsafe fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT.rawValue
+        var semaphores: [VkSemaphore] = unsafe []
+        var fences: [VkFence] = unsafe []
+        for unsafe _ in unsafe images {
             var semaphore: VkSemaphore? = nil
             var fence: VkFence? = nil
-            guard createSemaphore(device, &semaphoreInfo, nil, &semaphore) == VK_SUCCESS,
-                  let semaphore,
-                  createFence(device, &fenceInfo, nil, &fence) == VK_SUCCESS,
-                  let fence
+            guard unsafe createSemaphore(device, &semaphoreInfo, nil, &semaphore) == VK_SUCCESS,
+                  let semaphore = unsafe semaphore,
+                  unsafe createFence(device, &fenceInfo, nil, &fence) == VK_SUCCESS,
+                  let fence = unsafe fence
             else {
-                if let semaphore { deviceDispatch.vkDestroySemaphore?(device, semaphore, nil) }
-                if let fence { deviceDispatch.vkDestroyFence?(device, fence, nil) }
-                for value in semaphores { deviceDispatch.vkDestroySemaphore?(device, value, nil) }
-                for value in fences { deviceDispatch.vkDestroyFence?(device, value, nil) }
+                if let semaphore = unsafe semaphore {
+                    unsafe deviceDispatch.vkDestroySemaphore?(device, semaphore, nil)
+                }
+                if let fence = unsafe fence {
+                    unsafe deviceDispatch.vkDestroyFence?(device, fence, nil)
+                }
+                for unsafe value in unsafe semaphores {
+                    unsafe deviceDispatch.vkDestroySemaphore?(device, value, nil)
+                }
+                for unsafe value in unsafe fences {
+                    unsafe deviceDispatch.vkDestroyFence?(device, value, nil)
+                }
                 return nil
             }
-            semaphores.append(semaphore)
-            fences.append(fence)
+            unsafe semaphores.append(semaphore)
+            unsafe fences.append(fence)
         }
-        return Generation(
+        return unsafe Generation(
             swapchain: swapchain, images: images,
             presentSemaphores: semaphores, presentFences: fences)
     }
 
     public func presentableOutputIDs() -> [UInt64] {
-        surface != nil && activeGeneration != nil ? [outputID] : []
+        unsafe surface != nil && activeGeneration != nil ? [outputID] : []
     }
 
     public func isReadyToPresent(_ outputID: UInt64) -> Bool {
         guard outputID == self.outputID, acquired == nil, activeGeneration != nil,
-              !frameSlots.isEmpty, let getFenceStatus = deviceDispatch.vkGetFenceStatus
+              !frameSlots.isEmpty, let getFenceStatus = unsafe deviceDispatch.vkGetFenceStatus
         else { return false }
         let slot = frameSlots[nextFrameSlot]
-        return !slot.inFlight || getFenceStatus(device, slot.completionFence) == VK_SUCCESS
+        return unsafe !slot.inFlight || getFenceStatus(device, slot.completionFence) == VK_SUCCESS
     }
 
     public func acquireTarget(_ outputID: UInt64) -> AcquiredFrameTarget? {
         guard outputID == self.outputID, acquired == nil,
               let generation = activeGeneration,
-              let acquireNextImage = deviceDispatch.vkAcquireNextImageKHR,
+              let acquireNextImage = unsafe deviceDispatch.vkAcquireNextImageKHR,
               isReadyToPresent(outputID)
         else { return nil }
         collectRetiredGenerations()
@@ -328,7 +346,7 @@ public final class SwapchainPresenter: PresentationBackend {
         let slotIndex = nextFrameSlot
         let slot = frameSlots[slotIndex]
         var imageIndex: UInt32 = 0
-        let result = acquireNextImage(
+        let result = unsafe acquireNextImage(
             device, generation.swapchain, 0, slot.acquireSemaphore, nil, &imageIndex)
         if result == VK_NOT_READY || result == VK_TIMEOUT {
             lastStatus = .none
@@ -340,14 +358,14 @@ public final class SwapchainPresenter: PresentationBackend {
             return nil
         }
         guard result == VK_SUCCESS || result == VK_SUBOPTIMAL_KHR,
-              Int(imageIndex) < generation.images.count,
-              let image = generation.images[Int(imageIndex)],
-              let resetFences = deviceDispatch.vkResetFences
+              unsafe Int(imageIndex) < generation.images.count,
+              let image = unsafe generation.images[Int(imageIndex)],
+              let resetFences = unsafe deviceDispatch.vkResetFences
         else { lastStatus = .acquireFailed; return nil }
 
-        var completionFence: VkFence? = slot.completionFence
+        var completionFence: VkFence? = unsafe slot.completionFence
         guard withUnsafePointer(to: &completionFence, {
-            resetFences(device, 1, $0) == VK_SUCCESS
+            unsafe resetFences(device, 1, $0) == VK_SUCCESS
         }) else {
             releaseImage(generation: generation, imageIndex: imageIndex)
             lastStatus = .acquireFailed
@@ -359,7 +377,7 @@ public final class SwapchainPresenter: PresentationBackend {
             slotIndex: slotIndex, rendererSubmitted: false, completionEnqueued: false)
         nextFrameSlot = (slotIndex + 1) % frameSlots.count
 
-        return AcquiredFrameTarget(
+        return unsafe AcquiredFrameTarget(
             image: image, width: lastExtentWidth, height: lastExtentHeight,
             format: surfaceFormat.format, tiling: VK_IMAGE_TILING_OPTIMAL,
             initialLayout: VK_IMAGE_LAYOUT_UNDEFINED,
@@ -372,12 +390,12 @@ public final class SwapchainPresenter: PresentationBackend {
 
     public func didSubmitTarget(_ outputID: UInt64) -> Bool {
         guard outputID == self.outputID, var acquired,
-              let submit = deviceDispatch.vkQueueSubmit
+              let submit = unsafe deviceDispatch.vkQueueSubmit
         else { return false }
         let slot = frameSlots[acquired.slotIndex]
         acquired.rendererSubmitted = true
         self.acquired = acquired
-        guard submit(queue, 0, nil, slot.completionFence) == VK_SUCCESS else {
+        guard unsafe submit(queue, 0, nil, slot.completionFence) == VK_SUCCESS else {
             lastStatus = .renderFailed
             return false
         }
@@ -388,54 +406,54 @@ public final class SwapchainPresenter: PresentationBackend {
 
     public func present(_ outputID: UInt64) -> Bool {
         guard outputID == self.outputID, let acquired, acquired.completionEnqueued,
-              let present = deviceDispatch.vkQueuePresentKHR
+              let present = unsafe deviceDispatch.vkQueuePresentKHR
         else { lastStatus = .presentFailed; return false }
         self.acquired = nil
 
         let generation = acquired.generation
         let index = Int(acquired.imageIndex)
-        let presentFence = generation.presentFences[index]
+        let presentFence = unsafe generation.presentFences[index]
         if generation.presentFenceArmed[index] {
             // Reacquiring this image guarantees its preceding presentation will
             // complete, but the acquire semaphore may be signaled after the host
             // acquire call returns. Wait here, after CPU recording overlapped that
             // completion, before resetting the presentation-owned fence.
-            waitForFence(presentFence)
+            unsafe waitForFence(presentFence)
             generation.presentFenceArmed[index] = false
         }
-        var presentFenceOptional: VkFence? = presentFence
-        guard let resetFences = deviceDispatch.vkResetFences,
+        var presentFenceOptional: VkFence? = unsafe presentFence
+        guard let resetFences = unsafe deviceDispatch.vkResetFences,
               withUnsafePointer(to: &presentFenceOptional, {
-            resetFences(device, 1, $0) == VK_SUCCESS
+            unsafe resetFences(device, 1, $0) == VK_SUCCESS
         }) else {
-            waitForFence(frameSlots[acquired.slotIndex].completionFence)
+            unsafe waitForFence(frameSlots[acquired.slotIndex].completionFence)
             releaseImage(generation: generation, imageIndex: acquired.imageIndex)
             lastStatus = .presentFailed
             return false
         }
 
-        var fenceInfo = VkSwapchainPresentFenceInfoKHR()
-        fenceInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_PRESENT_FENCE_INFO_KHR
-        fenceInfo.swapchainCount = 1
-        var waitSemaphore: VkSemaphore? = generation.presentSemaphores[index]
-        var swapchain: VkSwapchainKHR? = generation.swapchain
+        var fenceInfo = unsafe VkSwapchainPresentFenceInfoKHR()
+        unsafe fenceInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_PRESENT_FENCE_INFO_KHR
+        unsafe fenceInfo.swapchainCount = 1
+        var waitSemaphore: VkSemaphore? = unsafe generation.presentSemaphores[index]
+        var swapchain: VkSwapchainKHR? = unsafe generation.swapchain
         var imageIndex = acquired.imageIndex
         var result = VK_SUCCESS
         withUnsafePointer(to: &presentFenceOptional) { fencePointer in
-            fenceInfo.pFences = fencePointer
+            unsafe fenceInfo.pFences = fencePointer
             withUnsafePointer(to: &fenceInfo) { fenceInfoPointer in
                 withUnsafePointer(to: &waitSemaphore) { waitPointer in
                     withUnsafePointer(to: &swapchain) { swapchainPointer in
                         withUnsafePointer(to: &imageIndex) { indexPointer in
-                            var info = VkPresentInfoKHR()
-                            info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR
-                            info.pNext = UnsafeRawPointer(fenceInfoPointer)
-                            info.waitSemaphoreCount = 1
-                            info.pWaitSemaphores = waitPointer
-                            info.swapchainCount = 1
-                            info.pSwapchains = swapchainPointer
-                            info.pImageIndices = indexPointer
-                            result = present(queue, &info)
+                            var info = unsafe VkPresentInfoKHR()
+                            unsafe info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR
+                            unsafe info.pNext = UnsafeRawPointer(fenceInfoPointer)
+                            unsafe info.waitSemaphoreCount = 1
+                            unsafe info.pWaitSemaphores = waitPointer
+                            unsafe info.swapchainCount = 1
+                            unsafe info.pSwapchains = swapchainPointer
+                            unsafe info.pImageIndices = indexPointer
+                            result = unsafe present(queue, &info)
                         }
                     }
                 }
@@ -447,7 +465,7 @@ public final class SwapchainPresenter: PresentationBackend {
         }
         if result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR {
             if result == VK_ERROR_OUT_OF_DATE_KHR {
-                waitForFence(frameSlots[acquired.slotIndex].completionFence)
+                unsafe waitForFence(frameSlots[acquired.slotIndex].completionFence)
                 releaseImage(generation: generation, imageIndex: acquired.imageIndex)
             }
             _ = createSwapchain(width: lastExtentWidth, height: lastExtentHeight)
@@ -455,7 +473,7 @@ public final class SwapchainPresenter: PresentationBackend {
             return result == VK_SUBOPTIMAL_KHR
         }
         guard result == VK_SUCCESS else {
-            waitForFence(frameSlots[acquired.slotIndex].completionFence)
+            unsafe waitForFence(frameSlots[acquired.slotIndex].completionFence)
             releaseImage(generation: generation, imageIndex: acquired.imageIndex)
             lastStatus = .presentFailed
             return false
@@ -473,28 +491,28 @@ public final class SwapchainPresenter: PresentationBackend {
             // The renderer already queued a wait on the acquire semaphore, so it
             // must not be waited a second time. This is an exceptional recovery
             // path for failure to enqueue the fence-only completion marker.
-            _ = deviceDispatch.vkQueueWaitIdle?(queue)
+            _ = unsafe deviceDispatch.vkQueueWaitIdle?(queue)
             slot.inFlight = false
         } else if !acquired.completionEnqueued {
-            guard let submit = deviceDispatch.vkQueueSubmit else {
+            guard let submit = unsafe deviceDispatch.vkQueueSubmit else {
                 lastStatus = .renderFailed
                 return
             }
-            var waitSemaphore: VkSemaphore? = slot.acquireSemaphore
+            var waitSemaphore: VkSemaphore? = unsafe slot.acquireSemaphore
             var waitStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT.rawValue
             let submitted = withUnsafePointer(to: &waitSemaphore) { waitPointer in
                 withUnsafePointer(to: &waitStage) { stagePointer in
-                    var info = VkSubmitInfo()
-                    info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO
-                    info.waitSemaphoreCount = 1
-                    info.pWaitSemaphores = waitPointer
-                    info.pWaitDstStageMask = stagePointer
-                    return submit(queue, 1, &info, slot.completionFence) == VK_SUCCESS
+                    var info = unsafe VkSubmitInfo()
+                    unsafe info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO
+                    unsafe info.waitSemaphoreCount = 1
+                    unsafe info.pWaitSemaphores = waitPointer
+                    unsafe info.pWaitDstStageMask = stagePointer
+                    return unsafe submit(queue, 1, &info, slot.completionFence) == VK_SUCCESS
                 }
             }
             guard submitted else { lastStatus = .renderFailed; return }
         }
-        if slot.inFlight { waitForFence(slot.completionFence) }
+        if slot.inFlight { unsafe waitForFence(slot.completionFence) }
         releaseImage(generation: acquired.generation, imageIndex: acquired.imageIndex)
     }
 
@@ -503,27 +521,27 @@ public final class SwapchainPresenter: PresentationBackend {
     public func resumeSession() {}
 
     private func releaseImage(generation: Generation, imageIndex: UInt32) {
-        guard let release = deviceDispatch.vkReleaseSwapchainImagesKHR else {
+        guard let release = unsafe deviceDispatch.vkReleaseSwapchainImagesKHR else {
             lastStatus = .renderFailed
             return
         }
         var index = imageIndex
         withUnsafePointer(to: &index) { pointer in
-            var info = VkReleaseSwapchainImagesInfoKHR()
-            info.sType = VK_STRUCTURE_TYPE_RELEASE_SWAPCHAIN_IMAGES_INFO_KHR
-            info.swapchain = generation.swapchain
-            info.imageIndexCount = 1
-            info.pImageIndices = pointer
-            if release(device, &info) != VK_SUCCESS { lastStatus = .renderFailed }
+            var info = unsafe VkReleaseSwapchainImagesInfoKHR()
+            unsafe info.sType = VK_STRUCTURE_TYPE_RELEASE_SWAPCHAIN_IMAGES_INFO_KHR
+            unsafe info.swapchain = generation.swapchain
+            unsafe info.imageIndexCount = 1
+            unsafe info.pImageIndices = pointer
+            if unsafe release(device, &info) != VK_SUCCESS { lastStatus = .renderFailed }
         }
     }
 
     private func collectRetiredGenerations() {
-        guard let getFenceStatus = deviceDispatch.vkGetFenceStatus else { return }
+        guard let getFenceStatus = unsafe deviceDispatch.vkGetFenceStatus else { return }
         var survivors: [Generation] = []
         for generation in retiredGenerations {
-            let complete = generation.presentFences.indices.allSatisfy {
-                !generation.presentFenceArmed[$0]
+            let complete = unsafe generation.presentFences.indices.allSatisfy {
+                unsafe !generation.presentFenceArmed[$0]
                     || getFenceStatus(device, generation.presentFences[$0]) == VK_SUCCESS
             }
             if complete { destroyGeneration(generation) } else { survivors.append(generation) }
@@ -532,29 +550,31 @@ public final class SwapchainPresenter: PresentationBackend {
     }
 
     private func destroyGeneration(_ generation: Generation) {
-        for semaphore in generation.presentSemaphores {
-            deviceDispatch.vkDestroySemaphore?(device, semaphore, nil)
+        for unsafe semaphore in unsafe generation.presentSemaphores {
+            unsafe deviceDispatch.vkDestroySemaphore?(device, semaphore, nil)
         }
-        for fence in generation.presentFences {
-            deviceDispatch.vkDestroyFence?(device, fence, nil)
+        for unsafe fence in unsafe generation.presentFences {
+            unsafe deviceDispatch.vkDestroyFence?(device, fence, nil)
         }
-        deviceDispatch.vkDestroySwapchainKHR?(device, generation.swapchain, nil)
+        unsafe deviceDispatch.vkDestroySwapchainKHR?(device, generation.swapchain, nil)
     }
 
     private func waitForFrameSlots() {
-        for slot in frameSlots where slot.inFlight { waitForFence(slot.completionFence) }
+        for slot in frameSlots where slot.inFlight { unsafe waitForFence(slot.completionFence) }
     }
 
     private func waitForPresentations(_ generation: Generation) {
-        for index in generation.presentFences.indices where generation.presentFenceArmed[index] {
-            waitForFence(generation.presentFences[index])
+        for index in unsafe generation.presentFences.indices
+        where generation.presentFenceArmed[index]
+        {
+            unsafe waitForFence(generation.presentFences[index])
         }
     }
 
     private func waitForFence(_ fence: VkFence) {
-        guard let wait = deviceDispatch.vkWaitForFences else { return }
-        var optional: VkFence? = fence
-        withUnsafePointer(to: &optional) { _ = wait(device, 1, $0, 1, UInt64.max) }
+        guard let wait = unsafe deviceDispatch.vkWaitForFences else { return }
+        var optional: VkFence? = unsafe fence
+        withUnsafePointer(to: &optional) { _ = unsafe wait(device, 1, $0, 1, UInt64.max) }
     }
 }
 

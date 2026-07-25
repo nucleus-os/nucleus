@@ -9,8 +9,7 @@ import NucleusTypes
 struct SurfaceCurrentState {
     var buffer: WaylandResourceReference?
     var bufferPixelSize = BufferPixelSize()
-    var releaseCallback:
-        UnsafeMutablePointer<wl_resource>?
+    var releaseCallback: WaylandResourceReference?
     var bufferReleased = false
 
     var bufferScale: Int32 = 1

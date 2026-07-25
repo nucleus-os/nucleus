@@ -53,9 +53,12 @@ import Testing
             presentMode: .mailboxLatestWins,
             wallpaperPath: "/tmp/wallpaper.jpeg")
         var descriptors = [Int32](repeating: -1, count: 2)
-        try #require(pipe(&descriptors) == 0)
+        let pipeCreated = unsafe pipe(&descriptors) == 0
+        try #require(pipeCreated)
         let bytes = expected.encoded
-        try #require(write(descriptors[1], bytes, bytes.count) == bytes.count)
+        let written = unsafe write(
+            descriptors[1], bytes, bytes.count)
+        try #require(written == bytes.count)
         close(descriptors[1])
 
         let decoded = try SessionConfiguration.inherited(arguments: [
@@ -85,7 +88,8 @@ import Testing
 
     @Test func reporterWritesOneTypedRecordAndClosesItsPipe() throws {
         var descriptors = [Int32](repeating: -1, count: 2)
-        try #require(pipe(&descriptors) == 0)
+        let pipeCreated = unsafe pipe(&descriptors) == 0
+        try #require(pipeCreated)
         defer { _ = close(descriptors[0]) }
         let reporter = SessionReadinessReporter(
             role: .compositor,
@@ -95,12 +99,15 @@ import Testing
         var bytes = [UInt8](
             repeating: 0,
             count: SessionReadinessMessage.encodedSize)
-        let count = read(descriptors[0], &bytes, bytes.count)
+        let count = unsafe read(
+            descriptors[0], &bytes, bytes.count)
         #expect(count == bytes.count)
         #expect(SessionReadinessMessage(encoded: bytes) ==
             SessionReadinessMessage(
                 role: .compositor,
                 milestone: .compositorReady))
-        #expect(read(descriptors[0], &bytes, bytes.count) == 0)
+        let endOfFile = unsafe read(
+            descriptors[0], &bytes, bytes.count) == 0
+        #expect(endOfFile)
     }
 }

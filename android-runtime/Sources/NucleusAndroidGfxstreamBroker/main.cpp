@@ -323,15 +323,20 @@ int sendControlResponse(
 int main(int argc, char **argv) {
     const char *socketPath = nullptr;
     const char *renderNode = nullptr;
-    uint32_t expectedUID = 0;
+    uint32_t uidRangeStart = 0;
+    uint32_t uidRangeCount = 0;
     uint32_t parentPID = 0;
     for (int index = 1; index < argc; ++index) {
         const std::string_view argument(argv[index]);
         if (argument == "--socket" && ++index < argc) {
             socketPath = argv[index];
-        } else if (argument == "--expected-uid" && ++index < argc) {
-            if (!parseUInt32(argv[index], &expectedUID)) {
-                expectedUID = 0;
+        } else if (argument == "--uid-range-start" && ++index < argc) {
+            if (!parseUInt32(argv[index], &uidRangeStart)) {
+                uidRangeStart = 0;
+            }
+        } else if (argument == "--uid-range-count" && ++index < argc) {
+            if (!parseUInt32(argv[index], &uidRangeCount)) {
+                uidRangeCount = 0;
             }
         } else if (argument == "--parent-pid" && ++index < argc) {
             if (!parseUInt32(argv[index], &parentPID)) {
@@ -344,7 +349,11 @@ int main(int argc, char **argv) {
             return 2;
         }
     }
-    if (socketPath == nullptr || expectedUID == 0 || parentPID == 0 ||
+    const uint64_t uidRangeEnd =
+        static_cast<uint64_t>(uidRangeStart) + uidRangeCount;
+    if (socketPath == nullptr || uidRangeStart == 0 || uidRangeCount == 0 ||
+        uidRangeEnd > static_cast<uint64_t>(UINT32_MAX) + 1 ||
+        parentPID == 0 ||
         nucleus_android_ipc_require_parent_lifetime(SIGTERM, parentPID) < 0) {
         std::fprintf(stderr, "invalid or incomplete broker invocation\n");
         return 2;
@@ -452,8 +461,13 @@ int main(int argc, char **argv) {
             nullptr,
             0,
             &receivedDescriptors);
-        if (nucleus_android_ipc_peer_credentials(peer, &credentials) < 0 ||
-            credentials.uid != expectedUID ||
+        const int credentialsResult =
+            nucleus_android_ipc_peer_credentials(peer, &credentials);
+        const bool peerUIDAuthorized =
+            credentialsResult == 0 &&
+            static_cast<uint64_t>(credentials.uid) >= uidRangeStart &&
+            static_cast<uint64_t>(credentials.uid) < uidRangeEnd;
+        if (!peerUIDAuthorized ||
             received != static_cast<int>(sizeof(request)) ||
             receivedDescriptors != 0 ||
             request.magic != NUCLEUS_ANDROID_GFXSTREAM_SOCKET_MAGIC ||
@@ -462,7 +476,7 @@ int main(int argc, char **argv) {
             request.operation > NUCLEUS_ANDROID_GFXSTREAM_ALLOCATE_BUFFER) {
             (void)sendResponse(peer, -EPERM, emptyDescriptors());
             close(peer);
-            trace("peer.rejected");
+            trace("peer.rejected", std::to_string(credentials.uid));
             continue;
         }
         if (request.operation == NUCLEUS_ANDROID_GFXSTREAM_ALLOCATE_BUFFER) {

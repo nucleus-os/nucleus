@@ -52,7 +52,7 @@ package final class RouterHost {
         guard diagnostics.traceProtocolEffects else { return }
         let line = "wayland-protocol: \(message)\n"
         _ = line.withCString {
-            write(STDERR_FILENO, $0, strlen($0))
+            unsafe write(STDERR_FILENO, $0, strlen($0))
         }
     }
 

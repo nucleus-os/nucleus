@@ -140,12 +140,12 @@ final class TextureProducer {
         }
         guard !failedKeys.contains(key) else { return nil }
 
-        let surface = recorder.makeOffscreenSurface(width, height)
-        guard surface.isValid() else {
+        let surface = unsafe recorder.makeOffscreenSurface(width, height)
+        guard unsafe surface.isValid() else {
             failedKeys.insert(key)
             return nil
         }
-        let canvas = surface.getCanvas()
+        let canvas = unsafe surface.getCanvas()
         let previousImage: nucleus.skia.Image? = {
             guard damage != nil else { return nil }
             let oldKey = keysByLayer[layerId]?.first {
@@ -160,9 +160,9 @@ final class TextureProducer {
             else {
                 return nil
             }
-            return registry.resolve(.renderer(oldHandle))
+            return unsafe registry.resolve(.renderer(oldHandle))
         }()
-        let localized = Self.repaint(
+        let localized = unsafe Self.repaint(
             canvas: canvas,
             previousImage: previousImage,
             damage: damage,
@@ -177,8 +177,8 @@ final class TextureProducer {
             }
         }
 
-        let image = surface.snapshotImage()
-        guard image.isValid() else {
+        let image = unsafe surface.snapshotImage()
+        guard unsafe image.isValid() else {
             failedKeys.insert(key)
             return nil
         }
@@ -205,7 +205,7 @@ final class TextureProducer {
         })
 
         let handle = registry.allocRendererHandle()
-        registry.register(
+        unsafe registry.register(
             key: .renderer(handle), image: image,
             width: width, height: height, contentRevision: revision)
         handlesByKey[key] = handle
@@ -236,9 +236,9 @@ final class TextureProducer {
     ) -> Bool {
         var clear = nucleus.skia.Color()
         clear.a = 0
-        guard let damage, let previousImage else {
-            canvas.clear(clear)
-            draw(canvas)
+        guard let damage, let previousImage = unsafe previousImage else {
+            unsafe canvas.clear(clear)
+            unsafe draw(canvas)
             return false
         }
 
@@ -247,21 +247,21 @@ final class TextureProducer {
             y: 0,
             width: Float(width),
             height: Float(height))
-        canvas.drawImage(previousImage, full, 1)
-        canvas.save()
+        unsafe canvas.drawImage(previousImage, full, 1)
+        unsafe canvas.save()
         let damageRect = nucleus.skia.RectF(
             x: damage.x,
             y: damage.y,
             width: damage.w,
             height: damage.h)
-        canvas.clipRect(damageRect, false)
+        unsafe canvas.clipRect(damageRect, false)
         var clearPaint = nucleus.skia.Paint()
         clearPaint.color = clear
         clearPaint.alpha = 1
         clearPaint.blend = .src
-        canvas.drawRect(damageRect, clearPaint)
-        draw(canvas)
-        canvas.restore()
+        unsafe canvas.drawRect(damageRect, clearPaint)
+        unsafe draw(canvas)
+        unsafe canvas.restore()
         return true
     }
 
@@ -274,7 +274,7 @@ final class TextureProducer {
         layerId: UInt64,
         revision: UInt64,
         imageDependencies: PaintImageDependencies = PaintImageDependencies(),
-        commands: [PaintDrawCommand],
+        commands: [PaintCommand],
         payload: [UInt8],
         authoredWidth: Float,
         authoredHeight: Float,
@@ -297,13 +297,13 @@ final class TextureProducer {
                 height: height)
         }
 
-        return produce(
+        return unsafe produce(
             recorder: recorder, layerId: layerId, revision: revision,
             imageDependencies: imageDependencies,
             width: width, height: height, kind: .paint,
             damage: rasterDamage
         ) { canvas in
-            PaintRasterizer.draw(
+            unsafe PaintRasterizer.draw(
                 commands: commands, payload: payload, onto: canvas,
                 scaleX: sx, scaleY: sy,
                 resolveImage: resolveImage, resolveEffect: resolveEffect)
@@ -357,20 +357,22 @@ final class TextureProducer {
     func produceShadow(
         recorder: nucleus.skia.Recorder, layerId: UInt64, revision: UInt64, shadow: ShadowDecoration
     ) -> UInt64? {
-        produce(
+        unsafe produce(
             recorder: recorder, layerId: layerId, revision: revision,
             width: shadow.width, height: shadow.height, kind: .shadow
         ) { canvas in
             var rect = nucleus.skia.RectF()
-            rect.x = shadow.shapeRect.x; rect.y = shadow.shapeRect.y
-            rect.width = shadow.shapeRect.w; rect.height = shadow.shapeRect.h
+            rect.x = shadow.shapeRect.x
+            rect.y = shadow.shapeRect.y
+            rect.width = shadow.shapeRect.w
+            rect.height = shadow.shapeRect.h
             var paint = nucleus.skia.Paint()
             paint.color = shadow.color
             paint.blurSigma = shadow.blurSigma
             let radii = nucleus.skia.RRectRadii(
                 topLeft: shadow.cornerRadii.0, topRight: shadow.cornerRadii.1,
                 bottomRight: shadow.cornerRadii.2, bottomLeft: shadow.cornerRadii.3)
-            canvas.drawRRect(rect, radii, paint)
+            unsafe canvas.drawRRect(rect, radii, paint)
         }
     }
 

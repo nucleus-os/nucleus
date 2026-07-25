@@ -1,7 +1,11 @@
 import WaylandServerC
+import WaylandServer
+import WaylandServerDispatch
+import WaylandProtocolTypes
 
 /// Exact commit-owned frame callback and presentation-feedback state.
-final class SurfacePresentationState {
+@MainActor
+@safe final class SurfacePresentationState {
     private struct PresentedSample {
         var outputs: [WlOutput]
         var timestampNs: UInt64
@@ -16,8 +20,8 @@ final class SurfacePresentationState {
     }
 
     private struct CommitResources {
-        var frameCallbacks: [UnsafeMutablePointer<wl_resource>]
-        var feedbacks: [UnsafeMutablePointer<wl_resource>]
+        var frameCallbacks: [WaylandResourceReference]
+        var feedbacks: [WaylandResourceReference]
         var sampledSubmissionIDs: Set<UInt64> = []
         var presented: PresentedSample?
     }
@@ -28,8 +32,8 @@ final class SurfacePresentationState {
 
     func install(
         commitID: UInt64,
-        frameCallbacks: [UnsafeMutablePointer<wl_resource>],
-        feedbacks: [UnsafeMutablePointer<wl_resource>]
+        frameCallbacks: [WaylandResourceReference],
+        feedbacks: [WaylandResourceReference]
     ) {
         var callbacks = frameCallbacks
         if currentCommitID != 0,
@@ -38,8 +42,10 @@ final class SurfacePresentationState {
         {
             callbacks = superseded.frameCallbacks + callbacks
             for feedback in superseded.feedbacks {
-                wp_presentation_feedback_send_discarded(feedback)
-                wl_resource_destroy(feedback)
+                guard let resource = unsafe feedback.resource else { continue }
+                unsafe WaylandResourceHandle<WpPresentationFeedbackServer>(resource)?
+                    .sendDiscarded()
+                unsafe wl_resource_destroy(resource)
             }
             superseded.frameCallbacks.removeAll()
             superseded.feedbacks.removeAll()
@@ -80,8 +86,10 @@ final class SurfacePresentationState {
                 &* 1_000_000_000
                 &+ UInt64(tvNsec)
         for callback in resources.frameCallbacks {
-            wl_callback_send_done(callback, timeMs)
-            wl_resource_destroy(callback)
+            guard let resource = unsafe callback.resource else { continue }
+            unsafe WaylandResourceHandle<WlCallbackServer>(resource)?
+                .sendDone(callback_data: timeMs)
+            unsafe wl_resource_destroy(resource)
             completedFrameCallbacks += 1
         }
         resources.frameCallbacks.removeAll()
@@ -142,11 +150,15 @@ final class SurfacePresentationState {
     func destroyAll() {
         for resources in commits.values {
             for callback in resources.frameCallbacks {
-                wl_resource_destroy(callback)
+                if let resource = unsafe callback.resource {
+                    unsafe wl_resource_destroy(resource)
+                }
             }
             for feedback in resources.feedbacks {
-                wp_presentation_feedback_send_discarded(feedback)
-                wl_resource_destroy(feedback)
+                guard let resource = unsafe feedback.resource else { continue }
+                unsafe WaylandResourceHandle<WpPresentationFeedbackServer>(resource)?
+                    .sendDiscarded()
+                unsafe wl_resource_destroy(resource)
             }
         }
         commits.removeAll()
@@ -173,30 +185,36 @@ final class SurfacePresentationState {
         guard resources.sampledSubmissionIDs.isEmpty else { return }
         if let presented = resources.presented {
             for feedback in resources.feedbacks {
-                let client = wl_resource_get_client(feedback)
+                guard let feedbackResource = unsafe feedback.resource else { continue }
+                guard let feedbackHandle =
+                    unsafe WaylandResourceHandle<WpPresentationFeedbackServer>(
+                        feedbackResource)
+                else { continue }
+                let client = feedbackHandle.clientID
                 for output in presented.outputs {
                     for outputResource in output.resources(
                         forClient: client)
                     {
-                        wp_presentation_feedback_send_sync_output(
-                            feedback, outputResource)
+                        feedbackHandle.sendSyncOutput(output: outputResource)
                     }
                 }
-                wp_presentation_feedback_send_presented(
-                    feedback,
-                    presented.tvSecHi,
-                    presented.tvSecLo,
-                    presented.tvNsec,
-                    presented.refreshNs,
-                    presented.seqHi,
-                    presented.seqLo,
-                    presented.flags)
-                wl_resource_destroy(feedback)
+                feedbackHandle.sendPresented(
+                    tv_sec_hi: presented.tvSecHi,
+                    tv_sec_lo: presented.tvSecLo,
+                    tv_nsec: presented.tvNsec,
+                    refresh: presented.refreshNs,
+                    seq_hi: presented.seqHi,
+                    seq_lo: presented.seqLo,
+                    flags: WpPresentationFeedbackKind(
+                        rawValue: presented.flags))
+                unsafe wl_resource_destroy(feedbackResource)
             }
         } else {
             for feedback in resources.feedbacks {
-                wp_presentation_feedback_send_discarded(feedback)
-                wl_resource_destroy(feedback)
+                guard let resource = unsafe feedback.resource else { continue }
+                unsafe WaylandResourceHandle<WpPresentationFeedbackServer>(resource)?
+                    .sendDiscarded()
+                unsafe wl_resource_destroy(resource)
             }
         }
         resources.feedbacks.removeAll()

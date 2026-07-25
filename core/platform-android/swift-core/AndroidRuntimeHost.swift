@@ -2,7 +2,7 @@
 //
 // The renderer is owned by value, embedded as a struct field.
 
-struct AttachSnapshot {
+@safe struct AttachSnapshot {
     var platform_configured: Bool = false
     var asset_provider_available: Bool = false
     var surface_window: UnsafeMutableRawPointer? = nil
@@ -32,7 +32,7 @@ struct AndroidRuntimeHost {
     mutating func attach(_ snapshot: AttachSnapshot) -> Bool {
         if !snapshot.platform_configured { return false }
         self.snapshot = snapshot
-        _ = renderer.attach(
+        _ = unsafe renderer.attach(
             SurfaceBinding(
                 window: snapshot.surface_window,
                 width: snapshot.surface_width,
@@ -56,12 +56,12 @@ struct AndroidRuntimeHost {
         _ generation: UInt64
     ) {
         if !attached { return }
-        snapshot.surface_window = window
+        unsafe snapshot.surface_window = window
         snapshot.surface_width = width
         snapshot.surface_height = height
         snapshot.surface_format = format
         snapshot.surface_generation = generation
-        renderer.updateSurface(
+        unsafe renderer.updateSurface(
             SurfaceBinding(
                 window: window,
                 width: width,

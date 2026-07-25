@@ -15,7 +15,8 @@ private enum GfxstreamWorkerBackendError: Error, CustomStringConvertible {
         case .invalidRing(let message):
             return message
         case .systemCall(let operation, let code):
-            return "\(operation) failed: \(String(cString: strerror(code)))"
+            let reason = unsafe String(cString: strerror(code))
+            return "\(operation) failed: \(reason)"
         case .worker(let message):
             return "gfxstream worker failed: \(message)"
         }
@@ -54,7 +55,7 @@ final class GfxstreamWorkerBrokerRenderBackend: BrokerRenderBackend {
         }
 
         var socketPair = [Int32](repeating: -1, count: 2)
-        guard nucleus_android_ipc_socket_pair(&socketPair) == 0 else {
+        guard unsafe nucleus_android_ipc_socket_pair(&socketPair) == 0 else {
             throw systemError("socketpair")
         }
         let parentDescriptor = socketPair[0]
@@ -126,15 +127,16 @@ final class GfxstreamWorkerBrokerRenderBackend: BrokerRenderBackend {
                 ring.diagnostic.vulkanDeviceUUID,
                 into: &message.device_uuid)
             withUnsafeMutablePointer(to: &message.buffers) { tuple in
-                tuple.withMemoryRebound(
+                unsafe tuple.withMemoryRebound(
                     to: nucleus_android_gfxstream_worker_buffer.self,
                     capacity: buffers.count
                 ) { output in
                     for (index, buffer) in buffers.enumerated() {
-                        output[index].color_buffer_handle = UInt32(buffer.id)
-                        output[index].plane_offset =
+                        unsafe output[index].color_buffer_handle =
+                            UInt32(buffer.id)
+                        unsafe output[index].plane_offset =
                             planeLayouts[index].offset
-                        output[index].plane_stride =
+                        unsafe output[index].plane_stride =
                             planeLayouts[index].stride
                     }
                 }
@@ -203,7 +205,7 @@ final class GfxstreamWorkerBrokerRenderBackend: BrokerRenderBackend {
         }
         let result = withUnsafeBytes(of: message) { bytes in
             descriptors.withUnsafeBufferPointer { descriptorBuffer in
-                nucleus_android_ipc_send(
+                unsafe nucleus_android_ipc_send(
                     controlDescriptor,
                     bytes.baseAddress,
                     bytes.count,
@@ -220,7 +222,7 @@ final class GfxstreamWorkerBrokerRenderBackend: BrokerRenderBackend {
         var response = nucleus_android_gfxstream_worker_response()
         var descriptorCount = 0
         let result = withUnsafeMutableBytes(of: &response) { bytes in
-            nucleus_android_ipc_receive(
+            unsafe nucleus_android_ipc_receive(
                 controlDescriptor,
                 bytes.baseAddress,
                 bytes.count,
@@ -300,14 +302,15 @@ private func copyCString<T>(
             "gfxstream worker metadata string is too long")
     }
     withUnsafeMutableBytes(of: &storage) { output in
-        output.initializeMemory(as: UInt8.self, repeating: 0)
-        output.copyBytes(from: bytes)
+        unsafe output.initializeMemory(as: UInt8.self, repeating: 0)
+        unsafe output.copyBytes(from: bytes)
     }
 }
 
 private func string<T>(from tuple: T) -> String {
     withUnsafeBytes(of: tuple) { bytes in
         guard let base = bytes.baseAddress else { return "" }
-        return String(cString: base.assumingMemoryBound(to: CChar.self))
+        return unsafe String(
+            cString: base.assumingMemoryBound(to: CChar.self))
     }
 }

@@ -43,31 +43,70 @@ import Vulkan
                 DmaBufPlane(offset: 131_072, rowPitch: 512),
             ])
 
-        withDmaBufImportImageInfo(descriptor) { head in
-            #expect(head.pointee.sType == VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO, "chain-head-stype")
-            #expect(head.pointee.flags == 0, "chain-same-fd-not-disjoint")
-            #expect(head.pointee.tiling == VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT, "chain-tiling")
-            #expect(head.pointee.format == VK_FORMAT_B8G8R8A8_UNORM, "chain-format")
-            #expect(head.pointee.extent.width == 256 && head.pointee.extent.height == 128, "chain-extent")
-            #expect(head.pointee.usage == (VK.ImageUsageFlags.sampledBit.rawValue | VK.ImageUsageFlags.colorAttachmentBit.rawValue), "chain-usage")
+        unsafe withDmaBufImportImageInfo(descriptor) { head in
+            let headSType = unsafe head.pointee.sType
+            let headFlags = unsafe head.pointee.flags
+            let headTiling = unsafe head.pointee.tiling
+            let headFormat = unsafe head.pointee.format
+            let headWidth = unsafe head.pointee.extent.width
+            let headHeight = unsafe head.pointee.extent.height
+            let headUsage = unsafe head.pointee.usage
+            #expect(headSType == VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO, "chain-head-stype")
+            #expect(headFlags == 0, "chain-same-fd-not-disjoint")
+            #expect(headTiling == VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT, "chain-tiling")
+            #expect(headFormat == VK_FORMAT_B8G8R8A8_UNORM, "chain-format")
+            #expect(headWidth == 256 && headHeight == 128, "chain-extent")
+            #expect(
+                headUsage == (VK.ImageUsageFlags.sampledBit.rawValue
+                    | VK.ImageUsageFlags.colorAttachmentBit.rawValue),
+                "chain-usage")
 
-            guard let raw1 = head.pointee.pNext else { #expect(Bool(false), "chain-link1"); return }
-            let external = raw1.assumingMemoryBound(to: VkExternalMemoryImageCreateInfo.self)
-            #expect(external.pointee.sType == VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO, "chain-ext-stype")
-            #expect(external.pointee.handleTypes == VK.ExternalMemoryHandleTypeFlags.dmaBufBitEXT.rawValue, "chain-ext-handletype")
+            guard let raw1 = unsafe head.pointee.pNext else {
+                #expect(Bool(false), "chain-link1")
+                return
+            }
+            let external = unsafe raw1.assumingMemoryBound(
+                to: VkExternalMemoryImageCreateInfo.self)
+            let externalSType = unsafe external.pointee.sType
+            let externalHandleTypes = unsafe external.pointee.handleTypes
+            #expect(
+                externalSType == VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO,
+                "chain-ext-stype")
+            #expect(
+                externalHandleTypes == VK.ExternalMemoryHandleTypeFlags.dmaBufBitEXT.rawValue,
+                "chain-ext-handletype")
 
-            guard let raw2 = external.pointee.pNext else { #expect(Bool(false), "chain-link2"); return }
-            let modifier = raw2.assumingMemoryBound(to: VkImageDrmFormatModifierExplicitCreateInfoEXT.self)
-            #expect(modifier.pointee.sType == VK_STRUCTURE_TYPE_IMAGE_DRM_FORMAT_MODIFIER_EXPLICIT_CREATE_INFO_EXT, "chain-mod-stype")
-            #expect(modifier.pointee.drmFormatModifier == 0x0100_0000_0000_0001, "chain-mod-value")
-            #expect(modifier.pointee.drmFormatModifierPlaneCount == 2, "chain-mod-plane-count")
-            if let layouts = modifier.pointee.pPlaneLayouts {
-                #expect(layouts[0].rowPitch == 1024 && layouts[0].offset == 0, "chain-plane0-layout")
-                #expect(layouts[1].rowPitch == 512 && layouts[1].offset == 131_072, "chain-plane1-layout")
+            guard let raw2 = unsafe external.pointee.pNext else {
+                #expect(Bool(false), "chain-link2")
+                return
+            }
+            let modifier = unsafe raw2.assumingMemoryBound(
+                to: VkImageDrmFormatModifierExplicitCreateInfoEXT.self)
+            let modifierSType = unsafe modifier.pointee.sType
+            let modifierValue = unsafe modifier.pointee.drmFormatModifier
+            let planeCount = unsafe modifier.pointee.drmFormatModifierPlaneCount
+            #expect(
+                modifierSType
+                    == VK_STRUCTURE_TYPE_IMAGE_DRM_FORMAT_MODIFIER_EXPLICIT_CREATE_INFO_EXT,
+                "chain-mod-stype")
+            #expect(modifierValue == 0x0100_0000_0000_0001, "chain-mod-value")
+            #expect(planeCount == 2, "chain-mod-plane-count")
+            if let layouts = unsafe modifier.pointee.pPlaneLayouts {
+                let plane0RowPitch = unsafe layouts[0].rowPitch
+                let plane0Offset = unsafe layouts[0].offset
+                let plane1RowPitch = unsafe layouts[1].rowPitch
+                let plane1Offset = unsafe layouts[1].offset
+                #expect(
+                    plane0RowPitch == 1024 && plane0Offset == 0,
+                    "chain-plane0-layout")
+                #expect(
+                    plane1RowPitch == 512 && plane1Offset == 131_072,
+                    "chain-plane1-layout")
             } else {
                 #expect(Bool(false), "chain-plane-layouts")
             }
-            #expect(modifier.pointee.pNext == nil, "chain-tail-nil")
+            let tailIsNil = unsafe modifier.pointee.pNext == nil
+            #expect(tailIsNil, "chain-tail-nil")
         }
 
         let separateFdDescriptor = DmaBufImageDescriptor(
@@ -77,10 +116,10 @@ import Vulkan
                 DmaBufPlane(fd: 10, offset: 0, rowPitch: 1024),
                 DmaBufPlane(fd: 11, offset: 131_072, rowPitch: 512),
             ])
-        withDmaBufImportImageInfo(separateFdDescriptor) { head in
-            #expect(
-                head.pointee.flags == VK.ImageCreateFlags.disjointBit.rawValue,
-                "chain-separate-fd-disjoint")
+        unsafe withDmaBufImportImageInfo(separateFdDescriptor) { head in
+            let flags = unsafe head.pointee.flags
+            #expect(flags == VK.ImageCreateFlags.disjointBit.rawValue,
+                    "chain-separate-fd-disjoint")
         }
     }
 }

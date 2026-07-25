@@ -406,8 +406,9 @@ final class DrmOutput {
         let flags = commitFlags(requestedVrr: requestedVrr, pageFlipEvent: true, modeset: modeset)
         // The output owns the callback token; the runtime preserves tokens from
         // replaced bindings until the DRM device itself is torn down.
-        let userData = flipToken.commitUserData()
-        let rc = builder.commit(fd: deviceFd, flags: flags, userData: userData)
+        let userData = unsafe flipToken.commitUserData()
+        let rc = unsafe builder.commit(
+            fd: deviceFd, flags: flags, userData: userData)
         if rc == 0 {
             noteScanoutCommitAccepted(
                 retaining: buffer,

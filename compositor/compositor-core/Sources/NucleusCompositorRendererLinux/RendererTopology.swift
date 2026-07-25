@@ -78,7 +78,7 @@ extension RendererRuntime {
             }
         }
         scanoutSurfaces.removeOutput(outputId)
-        let cursorPlane = DrmCursorPlane.create(
+        let cursorPlane = unsafe DrmCursorPlane.create(
             gbmDevice: gbmHandle,
             device: drmDevice,
             planeId: cursorPlaneId,
@@ -128,7 +128,7 @@ extension RendererRuntime {
         height: UInt32,
         drmFormat: UInt32
     ) -> ScanoutSlot? {
-        guard let buffer = GbmScanoutBuffer.allocate(
+        guard let buffer = unsafe GbmScanoutBuffer.allocate(
             gbmDevice: gbmHandle,
             drmFormat: drmFormat,
             width: width,
@@ -143,11 +143,13 @@ extension RendererRuntime {
             return nil
         }
 
-        let imageHandle = buffer.image.handle
-        let handles = buffer.planes.map(\.handle)
-        let pitches = buffer.planes.map(\.stride)
-        let offsets = buffer.planes.map(\.offset)
-        let modifiers = buffer.planes.map { _ in buffer.modifier }
+        let imageHandle = unsafe buffer.image.handle
+        let planes = unsafe buffer.planes
+        let modifier = unsafe buffer.modifier
+        let handles = planes.map(\.handle)
+        let pitches = planes.map(\.stride)
+        let offsets = planes.map(\.offset)
+        let modifiers = planes.map { _ in modifier }
         guard let framebuffer = DrmFramebuffer(
             deviceFd: drmDeviceFd,
             width: width,
@@ -159,15 +161,15 @@ extension RendererRuntime {
             modifiers: modifiers
         ) else {
             logRendererDrm(
-                "drmModeAddFB2WithModifiers failed errno=\(rendererErrno()) modifier=\(buffer.modifier)")
-            _ = buffer.makeOwner()
+                "drmModeAddFB2WithModifiers failed errno=\(rendererErrno()) modifier=\(modifier)")
+            _ = unsafe buffer.makeOwner()
             return nil
         }
         let framebufferID = framebuffer.fbId
-        let owner = buffer.makeOwner(
+        let owner = unsafe buffer.makeOwner(
             framebufferDevice: drmDevice,
             framebufferId: framebuffer.release())
-        return ScanoutSlot(
+        return unsafe ScanoutSlot(
             imageHandle: imageHandle,
             fbId: framebufferID,
             owner: consume owner)
@@ -343,7 +345,7 @@ extension RendererRuntime {
                 diagnosticLines = builder.diagnosticLines()
                 return .rejected(errno: commitErrno)
             }
-            let rc = builder.commit(
+            let rc = unsafe builder.commit(
                 fd: drmDeviceFd,
                 flags: drmModeAtomicAllowModeset)
             diagnosticLines = builder.diagnosticLines()

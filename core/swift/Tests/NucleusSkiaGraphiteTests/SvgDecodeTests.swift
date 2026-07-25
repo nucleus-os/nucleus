@@ -34,28 +34,21 @@ import NucleusSkiaGraphiteBridge
         """
 
     private func decode(_ fixture: Fixture, _ maxWidth: Int32, _ maxHeight: Int32)
-        -> nucleus.skia.RasterImage
+        -> RasterFixtureImage
     {
-        nucleus.skia.decodeEncodedImageFile(
+        unsafe RasterFixtureImage(nucleus.skia.decodeEncodedImageFile(
             fixture.path,
             maxWidth,
-            maxHeight).image
+            maxHeight).image)
     }
 
     /// Read the whole image and return one pixel. Reading must be whole-image —
     /// `readPixelsRGBA` rejects a buffer too small for the full surface, and a
     /// rejected read leaves zeroes that look exactly like a transparent pixel.
-    private func pixel(_ image: nucleus.skia.RasterImage, x: Int, y: Int)
+    private func pixel(_ image: RasterFixtureImage, x: Int, y: Int)
         -> (UInt8, UInt8, UInt8, UInt8)
     {
-        let width = Int(image.width())
-        var px = [UInt8](repeating: 0, count: width * Int(image.height()) * 4)
-        let ok = px.withUnsafeMutableBufferPointer {
-            image.readPixelsRGBA($0.baseAddress, $0.count, Int32(width * 4))
-        }
-        #expect(ok, "readback failed")
-        let i = (y * width + x) * 4
-        return (px[i], px[i + 1], px[i + 2], px[i + 3])
+        image.pixel(x: x, y: y)
     }
 
     // MARK: - Rasterization
@@ -65,9 +58,9 @@ import NucleusSkiaGraphiteBridge
     @Test func anSvgRasterizesAtTheRequestedSize() {
         let fixture = Fixture(Self.redSquare)
         let image = decode(fixture, 32, 32)
-        #expect(image.isValid())
-        #expect(image.width() == 32)
-        #expect(image.height() == 32)
+        #expect(image.isValid)
+        #expect(image.width == 32)
+        #expect(image.height == 32)
     }
 
     /// The same document at a different size is a genuinely different raster, not
@@ -76,8 +69,8 @@ import NucleusSkiaGraphiteBridge
         let fixture = Fixture(Self.redSquare)
         for size in [Int32(16), 64, 256] {
             let image = decode(fixture, size, size)
-            #expect(image.width() == size)
-            #expect(image.height() == size)
+            #expect(image.width == size)
+            #expect(image.height == size)
         }
     }
 
@@ -110,19 +103,19 @@ import NucleusSkiaGraphiteBridge
     @Test func aspectRatioIsPreservedInsideTheBounds() {
         let fixture = Fixture(Self.wideRectangle)
         let image = decode(fixture, 100, 100)
-        #expect(image.width() == 100)
-        #expect(image.height() == 50)
+        #expect(image.width == 100)
+        #expect(image.height == 50)
     }
 
     /// Intrinsic dimensions are metadata, not permission to defer rasterization
     /// until a draw. Every SVG decode still requires positive target bounds.
     @Test func anSvgWithIntrinsicSizeStillRequiresTargetBounds() {
         let fixture = Fixture(Self.wideRectangle)
-        let result = nucleus.skia.decodeEncodedImageFile(
+        let status = unsafe nucleus.skia.decodeEncodedImageFile(
             fixture.path,
             0,
-            0)
-        #expect(result.status == .invalidDimensions)
+            0).status
+        #expect(status == .invalidDimensions)
     }
 
     /// A document sized in relative units has no intrinsic size, so bounds are
@@ -134,8 +127,8 @@ import NucleusSkiaGraphiteBridge
             </svg>
             """)
         let image = decode(fixture, 40, 24)
-        #expect(image.width() == 40)
-        #expect(image.height() == 24)
+        #expect(image.width == 40)
+        #expect(image.height == 24)
     }
 
     /// A sizeless document rasterizes into its explicit target viewport.
@@ -146,8 +139,8 @@ import NucleusSkiaGraphiteBridge
             </svg>
             """)
         let image = decode(fixture, 512, 512)
-        #expect(image.isValid())
-        #expect(image.width() == 512)
+        #expect(image.isValid)
+        #expect(image.width == 512)
     }
 
     // MARK: - Detection
@@ -157,8 +150,8 @@ import NucleusSkiaGraphiteBridge
     @Test func svgIsDetectedByContentNotExtension() {
         let fixture = Fixture(Self.redSquare, extension: "png")
         let image = decode(fixture, 20, 20)
-        #expect(image.isValid())
-        #expect(image.width() == 20, "rasterized as SVG despite the .png name")
+        #expect(image.isValid)
+        #expect(image.width == 20, "rasterized as SVG despite the .png name")
     }
 
     /// An XML declaration, doctype, or comment before the root element is
@@ -172,21 +165,21 @@ import NucleusSkiaGraphiteBridge
             </svg>
             """)
         let image = decode(fixture, 25, 25)
-        #expect(image.isValid())
-        #expect(image.width() == 25)
+        #expect(image.isValid)
+        #expect(image.width == 25)
     }
 
     // MARK: - Failure
 
     @Test func amalformedDocumentRastersNothing() {
         let fixture = Fixture("<svg is not really xml at all")
-        #expect(!decode(fixture, 16, 16).isValid())
+        #expect(!decode(fixture, 16, 16).isValid)
     }
 
     /// A file that merely mentions svg in its text is not an SVG, and must not
     /// be diverted away from the codec path.
     @Test func aPlainTextFileIsNotAnSvg() {
         let fixture = Fixture("this file talks about <svgx> but is not one", extension: "txt")
-        #expect(!decode(fixture, 16, 16).isValid())
+        #expect(!decode(fixture, 16, 16).isValid)
     }
 }

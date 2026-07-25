@@ -126,6 +126,9 @@ let package = Package(
     products: [
         .library(name: "CoreColliderRecipe", targets: ["CoreColliderRecipe"]),
         .library(name: "NucleusAppHostBundle", targets: ["NucleusAppHostBundle"]),
+        .library(
+            name: "NucleusAndroidHostLifecycle",
+            targets: ["NucleusAndroidHostLifecycle"]),
         .library(name: "NucleusRenderModel", targets: ["NucleusRenderModel"]),
         .library(name: "NucleusRenderer", targets: ["NucleusRenderer"]),
         .library(name: "NucleusTextCxxBridge", targets: ["NucleusTextCxxBridge"]),
@@ -171,6 +174,11 @@ let package = Package(
         .target(
             name: "CoreColliderRecipe",
             dependencies: [.product(name: "ColliderCore", package: "engine")]),
+        .target(
+            name: "NucleusAndroidHostLifecycle",
+            path: "swift/Sources/NucleusAndroidHostLifecycle",
+            swiftSettings: [.strictMemorySafety()]
+        ),
         // ── Shared-type leaves: public value structs + enums + constants, no deps. ─
         .target(
             name: "NucleusTypes",
@@ -277,7 +285,7 @@ let package = Package(
         // only module sources and globs cleanly (no explicit source list).
         .target(
             name: "NucleusRenderModel",
-            dependencies: ["NucleusAppHostProtocols"],
+            dependencies: ["NucleusTypes", "NucleusAppHostProtocols"],
             path: "swift/Sources/NucleusRenderModel",
             swiftSettings: [.strictMemorySafety()]
         ),
@@ -362,9 +370,14 @@ let package = Package(
             dependencies: [
                 "NucleusAppHostBundle", "NucleusRenderHost",
                 "NucleusRenderModel", "NucleusLayers", "NucleusUI",
-                "NucleusAppHostProtocols",
+                "NucleusAppHostProtocols", "NucleusTypes",
             ],
             path: "swift/Tests/NucleusRuntimeGraphTests"
+        ),
+        .testTarget(
+            name: "NucleusAndroidHostLifecycleTests",
+            dependencies: ["NucleusAndroidHostLifecycle"],
+            path: "swift/Tests/NucleusAndroidHostLifecycleTests"
         ),
         // The compositor render runtime and its libdrm/gbm, xcb, and libinput/seat
         // C façades live in compositor-core with the DRM/KMS renderer backend.
@@ -414,7 +427,7 @@ let package = Package(
         // compile fixtures did). `swift test` runs them.
         .testTarget(
             name: "NucleusRenderModelTests",
-            dependencies: ["NucleusRenderModel"],
+            dependencies: ["NucleusRenderModel", "NucleusTypes"],
             path: "swift/Tests/NucleusRenderModelTests"
         ),
         .target(
@@ -535,6 +548,7 @@ for target in package.targets {
         continue
     }
     var swiftSettings = (target.swiftSettings ?? []) + [
+        .strictMemorySafety(),
         .unsafeFlags(["-warnings-as-errors"]),
         .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
     ]

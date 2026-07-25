@@ -7,6 +7,7 @@ import NucleusLinuxReactor
 import WaylandClient
 import WaylandClientC
 import WaylandClientDispatch
+import WaylandProtocolTypes
 
 public struct SurfaceProbeConfiguration: Sendable {
     public var waylandSocket: String?
@@ -84,7 +85,7 @@ public struct SurfaceProbeLifecycleEvent: Codable, Equatable, Sendable {
 }
 
 @MainActor
-public final class AndroidSurfaceProbe {
+@safe public final class AndroidSurfaceProbe {
     private let configuration: SurfaceProbeConfiguration
     private let connection: WaylandConnection
     private let registry: WaylandRegistry
@@ -100,7 +101,7 @@ public final class AndroidSurfaceProbe {
         guard let connection = WaylandConnection(socket: configuration.waylandSocket) else {
             throw SurfaceProbeError.waylandConnectionFailed
         }
-        guard let registry = WaylandRegistry(connection, wanting: [
+        guard let registry = unsafe WaylandRegistry(connection, wanting: [
             DesiredGlobal(swift_wayland_iface_wl_compositor(), maxVersion: 6),
             DesiredGlobal(swift_wayland_iface_zwp_linux_dmabuf_v1(), maxVersion: 5),
             DesiredGlobal(swift_wayland_iface_xdg_wm_base(), maxVersion: 6),
@@ -156,16 +157,23 @@ public final class AndroidSurfaceProbe {
         else { throw brokerError(allocationPacket.envelope) }
         let descriptors = allocationPacket.takeDescriptors()
         defer { for descriptor in descriptors { _ = close(descriptor) } }
-        let presenter = try await SurfacePresenter(
+        let compositor = try unsafe require(compositor, "wl_compositor")
+        let dmabuf = try unsafe require(dmabuf, "zwp_linux_dmabuf_v1")
+        let wmBase = try unsafe require(wmBase, "xdg_wm_base")
+        let syncobjManager = try unsafe require(
+            syncobjManager,
+            "wp_linux_drm_syncobj_manager_v1")
+        let presentation = try unsafe require(
+            presentation,
+            "wp_presentation")
+        let presenter = try await unsafe SurfacePresenter(
             connection: connection,
             reactor: reactor,
-            compositor: require(compositor, "wl_compositor"),
-            dmabuf: require(dmabuf, "zwp_linux_dmabuf_v1"),
-            wmBase: require(wmBase, "xdg_wm_base"),
-            syncobjManager: require(
-                syncobjManager,
-                "wp_linux_drm_syncobj_manager_v1"),
-            presentation: require(presentation, "wp_presentation"),
+            compositor: compositor,
+            dmabuf: dmabuf,
+            wmBase: wmBase,
+            syncobjManager: syncobjManager,
+            presentation: presentation,
             allocation: allocation,
             descriptors: descriptors,
             timeoutMilliseconds: configuration.eventTimeoutMilliseconds)
@@ -184,33 +192,41 @@ public final class AndroidSurfaceProbe {
     }
 
     private func bound(_ global: BoundGlobal) {
-        switch String(cString: global.interface.pointee.name) {
-        case "wl_compositor": compositor = global.proxy
-        case "zwp_linux_dmabuf_v1": dmabuf = global.proxy
+        switch unsafe String(cString: global.interface.pointee.name) {
+        case "wl_compositor": unsafe compositor = global.proxy
+        case "zwp_linux_dmabuf_v1": unsafe dmabuf = global.proxy
         case "xdg_wm_base":
-            wmBase = global.proxy
-            XdgWmBaseClient.addListener(global.proxy, owner: wmHandler)
-        case "wp_linux_drm_syncobj_manager_v1": syncobjManager = global.proxy
-        case "wp_presentation": presentation = global.proxy
+            unsafe wmBase = global.proxy
+            unsafe XdgWmBaseClient.addListener(
+                global.proxy,
+                owner: wmHandler)
+        case "wp_linux_drm_syncobj_manager_v1":
+            unsafe syncobjManager = global.proxy
+        case "wp_presentation": unsafe presentation = global.proxy
         default: break
         }
     }
 
     private func requireGlobals() throws {
-        _ = try require(compositor, "wl_compositor")
-        _ = try require(dmabuf, "zwp_linux_dmabuf_v1")
-        _ = try require(wmBase, "xdg_wm_base")
-        _ = try require(syncobjManager, "wp_linux_drm_syncobj_manager_v1")
-        _ = try require(presentation, "wp_presentation")
+        _ = try unsafe require(compositor, "wl_compositor")
+        _ = try unsafe require(dmabuf, "zwp_linux_dmabuf_v1")
+        _ = try unsafe require(wmBase, "xdg_wm_base")
+        _ = try unsafe require(
+            syncobjManager,
+            "wp_linux_drm_syncobj_manager_v1")
+        _ = try unsafe require(presentation, "wp_presentation")
     }
 
     private func collectFeedback() async throws -> WaylandDmabufFeedback {
-        guard let proxy = zwp_linux_dmabuf_v1_get_default_feedback(
-            try require(dmabuf, "zwp_linux_dmabuf_v1"))
+        let dmabuf = try unsafe require(dmabuf, "zwp_linux_dmabuf_v1")
+        guard let proxy = unsafe zwp_linux_dmabuf_v1_get_default_feedback(
+            dmabuf)
         else { throw SurfaceProbeError.waylandObjectCreationFailed("dma-buf feedback") }
-        defer { zwp_linux_dmabuf_feedback_v1_destroy(proxy) }
+        defer { unsafe zwp_linux_dmabuf_feedback_v1_destroy(proxy) }
         let collector = WaylandDmabufFeedbackCollector()
-        ZwpLinuxDmabufFeedbackV1Client.addListener(proxy, owner: collector)
+        unsafe ZwpLinuxDmabufFeedbackV1Client.addListener(
+            proxy,
+            owner: collector)
         try await dispatchWaylandUntil(
             connection: connection,
             reactor: reactor,
@@ -235,19 +251,23 @@ public final class AndroidSurfaceProbe {
     }
 
     private func require(_ proxy: OpaquePointer?, _ name: String) throws -> OpaquePointer {
-        guard let proxy else { throw SurfaceProbeError.missingGlobal(name) }
-        return proxy
+        guard let proxy = unsafe proxy else {
+            throw SurfaceProbeError.missingGlobal(name)
+        }
+        return unsafe proxy
     }
 }
 
 private final class WmBaseHandler: XdgWmBaseEvents {
-    func ping(_ proxy: OpaquePointer, serial: UInt32) {
-        xdg_wm_base_pong(proxy, serial)
+    func ping(
+        _ proxy: WaylandBorrowedProxy<XdgWmBaseClient>, serial: UInt32
+    ) {
+        unsafe xdg_wm_base_pong(proxy.proxy, serial)
     }
 }
 
 @MainActor
-private final class SurfacePresenter:
+@safe private final class SurfacePresenter:
     @MainActor XdgSurfaceEvents,
     @MainActor XdgToplevelEvents,
     @MainActor WpPresentationFeedbackEvents
@@ -261,9 +281,9 @@ private final class SurfacePresenter:
     private let acquireTimeline: OpaquePointer
     private let presentation: OpaquePointer
     private let timeoutMilliseconds: Int32
-    private var buffers: [UInt64: OpaquePointer] = [:]
-    private var releaseTimelines: [UInt64: OpaquePointer] = [:]
-    private var releaseWaiters: [UInt64: OpaquePointer] = [:]
+    private var buffers: [UInt64: OpaquePointer] = unsafe [:]
+    private var releaseTimelines: [UInt64: OpaquePointer] = unsafe [:]
+    private var releaseWaiters: [UInt64: OpaquePointer] = unsafe [:]
     private var previousReleasePoint: [UInt64: UInt64] = [:]
     private var presentationFrames: [UInt: SurfaceProbeLifecycleEvent] = [:]
     private var lifecycleEvents: [SurfaceProbeLifecycleEvent] = []
@@ -286,40 +306,40 @@ private final class SurfacePresenter:
         descriptors: [Int32],
         timeoutMilliseconds: Int32
     ) async throws {
-        guard let surface = wl_compositor_create_surface(compositor),
-              let xdgSurface = xdg_wm_base_get_xdg_surface(wmBase, surface),
-              let toplevel = xdg_surface_get_toplevel(xdgSurface),
-              let syncSurface = wp_linux_drm_syncobj_manager_v1_get_surface(
+        guard let surface = unsafe wl_compositor_create_surface(compositor),
+              let xdgSurface = unsafe xdg_wm_base_get_xdg_surface(wmBase, surface),
+              let toplevel = unsafe xdg_surface_get_toplevel(xdgSurface),
+              let syncSurface = unsafe wp_linux_drm_syncobj_manager_v1_get_surface(
                 syncobjManager, surface),
               descriptors.indices.contains(Int(allocation.acquireTimelineFDIndex)),
-              let acquireTimeline = wp_linux_drm_syncobj_manager_v1_import_timeline(
+              let acquireTimeline = unsafe wp_linux_drm_syncobj_manager_v1_import_timeline(
                 syncobjManager,
                 descriptors[Int(allocation.acquireTimelineFDIndex)])
         else { throw SurfaceProbeError.waylandObjectCreationFailed("surface tree") }
         self.connection = connection
         self.reactor = reactor
-        self.surface = surface
-        self.xdgSurface = xdgSurface
-        self.toplevel = toplevel
-        self.syncSurface = syncSurface
-        self.acquireTimeline = acquireTimeline
-        self.presentation = presentation
+        unsafe self.surface = surface
+        unsafe self.xdgSurface = xdgSurface
+        unsafe self.toplevel = toplevel
+        unsafe self.syncSurface = syncSurface
+        unsafe self.acquireTimeline = acquireTimeline
+        unsafe self.presentation = presentation
         self.timeoutMilliseconds = timeoutMilliseconds
-        XdgSurfaceClient.addListener(xdgSurface, owner: self)
-        XdgToplevelClient.addListener(toplevel, owner: self)
+        unsafe XdgSurfaceClient.addListener(xdgSurface, owner: self)
+        unsafe XdgToplevelClient.addListener(toplevel, owner: self)
         "android.dev.nucleus.graphics-probe".withCString {
-            xdg_toplevel_set_app_id(toplevel, $0)
+            unsafe xdg_toplevel_set_app_id(toplevel, $0)
         }
         "Nucleus Android Graphics Probe".withCString {
-            xdg_toplevel_set_title(toplevel, $0)
+            unsafe xdg_toplevel_set_title(toplevel, $0)
         }
         for description in allocation.buffers {
             guard descriptors.indices.contains(Int(description.releaseTimelineFDIndex)),
-                  let releaseTimeline = wp_linux_drm_syncobj_manager_v1_import_timeline(
+                  let releaseTimeline = unsafe wp_linux_drm_syncobj_manager_v1_import_timeline(
                     syncobjManager,
                     descriptors[Int(description.releaseTimelineFDIndex)]),
                   let releaseWaiter = allocation.device.renderNode.withCString({ path in
-                    nucleus_android_syncobj_waiter_create(
+                    unsafe nucleus_android_syncobj_waiter_create(
                         path,
                         descriptors[Int(description.releaseTimelineFDIndex)])
                   })
@@ -327,17 +347,17 @@ private final class SurfacePresenter:
                 throw SurfaceProbeError.waylandObjectCreationFailed(
                     "per-buffer release timeline")
             }
-            releaseTimelines[description.id] = releaseTimeline
-            releaseWaiters[description.id] = releaseWaiter
-            guard let params = zwp_linux_dmabuf_v1_create_params(dmabuf) else {
+            unsafe releaseTimelines[description.id] = releaseTimeline
+            unsafe releaseWaiters[description.id] = releaseWaiter
+            guard let params = unsafe zwp_linux_dmabuf_v1_create_params(dmabuf) else {
                 throw SurfaceProbeError.waylandObjectCreationFailed("dma-buf params")
             }
-            defer { zwp_linux_buffer_params_v1_destroy(params) }
+            defer { unsafe zwp_linux_buffer_params_v1_destroy(params) }
             for (planeIndex, plane) in description.planes.enumerated() {
                 guard descriptors.indices.contains(Int(plane.fdIndex)) else {
                     throw SurfaceProbeError.invalidBrokerReply
                 }
-                zwp_linux_buffer_params_v1_add(
+                unsafe zwp_linux_buffer_params_v1_add(
                     params,
                     descriptors[Int(plane.fdIndex)],
                     UInt32(planeIndex),
@@ -346,21 +366,21 @@ private final class SurfacePresenter:
                     UInt32(description.modifier >> 32),
                     UInt32(truncatingIfNeeded: description.modifier))
             }
-            guard let buffer = zwp_linux_buffer_params_v1_create_immed(
+            guard let buffer = unsafe zwp_linux_buffer_params_v1_create_immed(
                 params,
                 Int32(description.width),
                 Int32(description.height),
                 description.format,
                 0)
             else { throw SurfaceProbeError.waylandObjectCreationFailed("wl_buffer") }
-            buffers[description.id] = buffer
+            unsafe buffers[description.id] = buffer
             lifecycleEvents.append(SurfaceProbeLifecycleEvent(
                 stage: "wayland.buffer-import",
                 bufferID: description.id))
         }
         lifecycleEvents.append(SurfaceProbeLifecycleEvent(
             stage: "wayland.configure-commit"))
-        wl_surface_commit(surface)
+        unsafe wl_surface_commit(surface)
         guard connection.flush() >= 0 else { throw SurfaceProbeError.compositorClosed }
         try await dispatchUntil { configured || closed }
         if closed { throw SurfaceProbeError.compositorClosed }
@@ -372,9 +392,11 @@ private final class SurfacePresenter:
         frames: UInt64,
         through broker: BrokerPacketConnection
     ) async throws {
-        guard !buffers.isEmpty else { throw SurfaceProbeError.invalidBrokerReply }
+        guard unsafe !buffers.isEmpty else {
+            throw SurfaceProbeError.invalidBrokerReply
+        }
         guard frames > 0 else { return }
-        let ordered = buffers.keys.sorted()
+        let ordered = unsafe buffers.keys.sorted()
         for frame in 1...frames {
             let bufferID = ordered[Int((frame - 1) % UInt64(ordered.count))]
             if let priorRelease = previousReleasePoint[bufferID] {
@@ -408,8 +430,8 @@ private final class SurfacePresenter:
                   let render = packet.envelope.renderReply,
                   render.bufferID == bufferID,
                   render.frameNumber == frame,
-                  let buffer = buffers[bufferID],
-                  let releaseTimeline = releaseTimelines[bufferID]
+                  let buffer = unsafe buffers[bufferID],
+                  let releaseTimeline = unsafe releaseTimelines[bufferID]
             else { throw brokerError(packet.envelope) }
             lifecycleEvents.append(SurfaceProbeLifecycleEvent(
                 stage: "broker.guest-submission-accepted",
@@ -417,20 +439,30 @@ private final class SurfacePresenter:
                 frameNumber: frame,
                 acquirePoint: render.acquirePoint,
                 releasePoint: render.releasePoint))
-            wp_linux_drm_syncobj_surface_v1_set_acquire_point(
+            unsafe wp_linux_drm_syncobj_surface_v1_set_acquire_point(
                 syncSurface,
                 acquireTimeline,
                 UInt32(render.acquirePoint >> 32),
                 UInt32(truncatingIfNeeded: render.acquirePoint))
-            wp_linux_drm_syncobj_surface_v1_set_release_point(
+            unsafe wp_linux_drm_syncobj_surface_v1_set_release_point(
                 syncSurface,
                 releaseTimeline,
                 UInt32(render.releasePoint >> 32),
                 UInt32(truncatingIfNeeded: render.releasePoint))
-            wl_surface_attach(surface, buffer, 0, 0)
-            wl_surface_damage_buffer(surface, 0, 0, Int32.max, Int32.max)
-            if let feedback = wp_presentation_feedback(presentation, surface) {
-                WpPresentationFeedbackClient.addListener(feedback, owner: self)
+            unsafe wl_surface_attach(surface, buffer, 0, 0)
+            unsafe wl_surface_damage_buffer(
+                surface,
+                0,
+                0,
+                Int32.max,
+                Int32.max)
+            if let feedback = unsafe wp_presentation_feedback(
+                presentation,
+                surface)
+            {
+                unsafe WpPresentationFeedbackClient.addListener(
+                    feedback,
+                    owner: self)
                 presentationFrames[UInt(bitPattern: feedback)] =
                     SurfaceProbeLifecycleEvent(
                         stage: "wayland.presentation-pending",
@@ -445,7 +477,7 @@ private final class SurfacePresenter:
                 frameNumber: frame,
                 acquirePoint: render.acquirePoint,
                 releasePoint: render.releasePoint))
-            wl_surface_commit(surface)
+            unsafe wl_surface_commit(surface)
             guard connection.flush() >= 0 else { throw SurfaceProbeError.compositorClosed }
             previousReleasePoint[bufferID] = render.releasePoint
             submitted &+= 1
@@ -456,56 +488,68 @@ private final class SurfacePresenter:
         if closed { throw SurfaceProbeError.compositorClosed }
     }
 
-    func configure(_ proxy: OpaquePointer, serial: UInt32) {
-        xdg_surface_ack_configure(proxy, serial)
+    func configure(
+        _ proxy: WaylandBorrowedProxy<XdgSurfaceClient>, serial: UInt32
+    ) {
+        unsafe xdg_surface_ack_configure(proxy.proxy, serial)
         configured = true
     }
 
     func configure(
-        _ proxy: OpaquePointer,
+        _ proxy: WaylandBorrowedProxy<XdgToplevelClient>,
         width: Int32,
         height: Int32,
-        states: UnsafeMutablePointer<wl_array>?
+        states: WaylandClientArrayView
     ) {}
 
-    func close(_ proxy: OpaquePointer) { closed = true }
-    func configureBounds(_ proxy: OpaquePointer, width: Int32, height: Int32) {}
+    func close(_ proxy: WaylandBorrowedProxy<XdgToplevelClient>) {
+        closed = true
+    }
+    func configureBounds(
+        _ proxy: WaylandBorrowedProxy<XdgToplevelClient>,
+        width: Int32, height: Int32
+    ) {}
     func wmCapabilities(
-        _ proxy: OpaquePointer,
-        capabilities: UnsafeMutablePointer<wl_array>?
+        _ proxy: WaylandBorrowedProxy<XdgToplevelClient>,
+        capabilities: WaylandClientArrayView
     ) {}
 
-    func syncOutput(_ proxy: OpaquePointer, output: OpaquePointer?) {}
+    func syncOutput(
+        _ proxy: WaylandBorrowedProxy<WpPresentationFeedbackClient>,
+        output: WaylandBorrowedProxy<WlOutputClient>
+    ) {}
 
     func presented(
-        _ proxy: OpaquePointer,
+        _ proxy: WaylandBorrowedProxy<WpPresentationFeedbackClient>,
         tv_sec_hi: UInt32,
         tv_sec_lo: UInt32,
         tv_nsec: UInt32,
         refresh: UInt32,
         seq_hi: UInt32,
         seq_lo: UInt32,
-        flags: UInt32
+        flags: WpPresentationFeedbackKind
     ) {
         presented &+= 1
         if var event = presentationFrames.removeValue(
-            forKey: UInt(bitPattern: proxy)
+            forKey: unsafe UInt(bitPattern: proxy.proxy)
         ) {
             event.stage = "wayland.presented"
             lifecycleEvents.append(event)
         }
-        wp_presentation_feedback_destroy(proxy)
+        unsafe wp_presentation_feedback_destroy(proxy.proxy)
     }
 
-    func discarded(_ proxy: OpaquePointer) {
+    func discarded(
+        _ proxy: WaylandBorrowedProxy<WpPresentationFeedbackClient>
+    ) {
         discarded &+= 1
         if var event = presentationFrames.removeValue(
-            forKey: UInt(bitPattern: proxy)
+            forKey: unsafe UInt(bitPattern: proxy.proxy)
         ) {
             event.stage = "wayland.discarded"
             lifecycleEvents.append(event)
         }
-        wp_presentation_feedback_destroy(proxy)
+        unsafe wp_presentation_feedback_destroy(proxy.proxy)
     }
 
     func finish() -> [SurfaceProbeLifecycleEvent] {
@@ -521,19 +565,24 @@ private final class SurfacePresenter:
         bufferID: UInt64,
         point: UInt64
     ) async throws {
-        guard let waiter = releaseWaiters[bufferID] else {
+        guard let waiter = unsafe releaseWaiters[bufferID] else {
             throw SurfaceProbeError.invalidBrokerReply
         }
-        let initial = nucleus_android_syncobj_waiter_is_signaled(waiter, point)
+        let initial = unsafe nucleus_android_syncobj_waiter_is_signaled(
+            waiter,
+            point)
         if initial == 1 { return }
         guard initial == 0,
-              nucleus_android_syncobj_waiter_arm(waiter, point) == 0
+              unsafe nucleus_android_syncobj_waiter_arm(waiter, point) == 0
         else { throw SurfaceProbeError.compositorClosed }
-        let notification = nucleus_android_syncobj_waiter_notification_fd(waiter)
+        let notification = unsafe nucleus_android_syncobj_waiter_notification_fd(
+            waiter)
         try await dispatchUntil(extraFileDescriptor: notification) {
-            nucleus_android_syncobj_waiter_is_signaled(waiter, point) == 1 || closed
+            unsafe nucleus_android_syncobj_waiter_is_signaled(
+                waiter,
+                point) == 1 || closed
         }
-        guard nucleus_android_syncobj_waiter_drain(waiter) == 0 else {
+        guard unsafe nucleus_android_syncobj_waiter_drain(waiter) == 0 else {
             throw SurfaceProbeError.compositorClosed
         }
     }
@@ -558,23 +607,25 @@ private final class SurfacePresenter:
         guard !didTearDown else { return }
         didTearDown = true
         for feedback in presentationFrames.keys {
-            if let proxy = OpaquePointer(bitPattern: feedback) {
-                wp_presentation_feedback_destroy(proxy)
+            if let proxy = unsafe OpaquePointer(bitPattern: feedback) {
+                unsafe wp_presentation_feedback_destroy(proxy)
             }
         }
         presentationFrames.removeAll()
-        for buffer in buffers.values { wl_buffer_destroy(buffer) }
-        for timeline in releaseTimelines.values {
-            wp_linux_drm_syncobj_timeline_v1_destroy(timeline)
+        for unsafe buffer in unsafe buffers.values {
+            unsafe wl_buffer_destroy(buffer)
         }
-        for waiter in releaseWaiters.values {
-            nucleus_android_syncobj_waiter_destroy(waiter)
+        for unsafe timeline in unsafe releaseTimelines.values {
+            unsafe wp_linux_drm_syncobj_timeline_v1_destroy(timeline)
         }
-        wp_linux_drm_syncobj_timeline_v1_destroy(acquireTimeline)
-        wp_linux_drm_syncobj_surface_v1_destroy(syncSurface)
-        xdg_toplevel_destroy(toplevel)
-        xdg_surface_destroy(xdgSurface)
-        wl_surface_destroy(surface)
+        for unsafe waiter in unsafe releaseWaiters.values {
+            unsafe nucleus_android_syncobj_waiter_destroy(waiter)
+        }
+        unsafe wp_linux_drm_syncobj_timeline_v1_destroy(acquireTimeline)
+        unsafe wp_linux_drm_syncobj_surface_v1_destroy(syncSurface)
+        unsafe xdg_toplevel_destroy(toplevel)
+        unsafe xdg_surface_destroy(xdgSurface)
+        unsafe wl_surface_destroy(surface)
     }
 }
 
@@ -689,7 +740,7 @@ private func dispatchWaylandUntil(
 
 private func monotonicMilliseconds() -> Int64 {
     var time = timespec()
-    _ = clock_gettime(CLOCK_MONOTONIC, &time)
+    _ = unsafe clock_gettime(CLOCK_MONOTONIC, &time)
     return Int64(time.tv_sec) * 1_000 + Int64(time.tv_nsec) / 1_000_000
 }
 

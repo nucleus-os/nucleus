@@ -48,9 +48,7 @@ import NucleusSkiaGraphiteBridge
     /// context, allocate a renderable BO, import it, wrap it as a surface, draw +
     /// read back, then assemble + deinit the `OutputBufferOwner`.
     static func runRoundTrip() throws {
-        let renderPath = try requireValue(
-            ProcessInfo.processInfo.environment["NUCLEUS_TEST_DRM_RENDER_NODE"],
-            "Collider did not provide NUCLEUS_TEST_DRM_RENDER_NODE")
+        let renderPath = try requireProvisionedDrmRenderNode()
         guard let drmFd = DrmDeviceFd(openingNode: renderPath) else {
             throw VulkanLaneTestFailure.requirement(
                 "could not open required DRM render node \(renderPath)")
@@ -60,23 +58,23 @@ import NucleusSkiaGraphiteBridge
             throw VulkanLaneTestFailure.requirement(
                 "GBM rejected required render node \(renderPath)")
         }
-        let gbmHandle = try requireValue(
+        let gbmHandle = try unsafe requireValue(
             gbm.handle, "GBM returned a null device")
         let renderIdentity = try Self.renderNodeIdentity(drmFd.fd)
 
         // Bring up the Vulkan device the Graphite context will use. The GBM
         // allocation and this device are required to be the same physical GPU.
-        try withRequiredVulkanGraphite(
+        try unsafe withRequiredVulkanGraphite(
             presentation: .platformDefault,
             applicationName: "GbmScanoutBufferTests",
             queueFamilyQualification: { instance, physicalDevice, _ in
-                Self.physicalDevice(
+                unsafe Self.physicalDevice(
                     physicalDevice,
                     belongsToRenderNode: renderIdentity,
                     instance: instance)
             }
         ) { device, selection, context, recorder in
-            try runGbmImport(
+            try unsafe runGbmImport(
                 gbmHandle: gbmHandle, device: device, graphicsFamily: selection.graphicsQueueFamily,
                 context: context, recorder: recorder)
         }
@@ -96,7 +94,7 @@ import NucleusSkiaGraphiteBridge
         // Allocate the scanout buffer. A render node has no DRM master, so use the
         // renderable-only fallback (no GBM_BO_USE_SCANOUT) and no negotiated
         // modifier (LINEAR). The GPU half is fully exercised without KMS master.
-        guard let buffer = GbmScanoutBuffer.allocate(
+        guard let buffer = unsafe GbmScanoutBuffer.allocate(
             gbmDevice: gbmHandle,
             drmFormat: DrmFourcc.xrgb8888,
             width: width, height: height,
@@ -112,7 +110,7 @@ import NucleusSkiaGraphiteBridge
         // color, submit, and read it back. The surface lives in this `do` so it is
         // destroyed strictly before the OutputBufferOwner is assembled below.
         do {
-            let params = ScanoutImageParams(
+            let params = unsafe ScanoutImageParams(
                 image: buffer.image.handle,
                 memory: nil,
                 allocSize: 0,
@@ -125,27 +123,30 @@ import NucleusSkiaGraphiteBridge
                 queueFamilyIndex: graphicsFamily,
                 hasAlpha: false)
 
-            let surface = ScanoutSurface.wrap(recorder: recorder, params: params)
+            let surface = unsafe ScanoutSurface.wrap(recorder: recorder, params: params)
+            let surfaceIsValid = unsafe surface.isValid()
             try requireTrue(
-                surface.isValid(),
+                surfaceIsValid,
                 "Graphite rejected the imported GBM image")
 
-            let canvas = surface.getCanvas()
+            let canvas = unsafe surface.getCanvas()
             var color = nucleus.skia.Color()
             color.r = 0.25; color.g = 0.5; color.b = 0.75; color.a = 1
-            canvas.clear(color)
+            unsafe canvas.clear(color)
             var paint = nucleus.skia.Paint()
             paint.color = color
             paint.alpha = 1
-            canvas.drawRect(nucleus.skia.RectF(x: 8, y: 8, width: 16, height: 16), paint)
+            unsafe canvas.drawRect(
+                nucleus.skia.RectF(x: 8, y: 8, width: 16, height: 16), paint)
 
-            let recording = recorder.snapRecording()
+            let recording = unsafe recorder.snapRecording()
+            let submissionCompleted = unsafe submitGraphiteAndWait(
+                context: context, recording: recording, serial: 1)
             try requireTrue(
-                submitGraphiteAndWait(
-                    context: context, recording: recording, serial: 1),
+                submissionCompleted,
                 "GBM image submission did not complete")
             let pixels = try requireValue(
-                readGraphiteSurfaceRGBA(
+                unsafe readGraphiteSurfaceRGBA(
                     context: context, surface: surface),
                 "GBM image readback failed")
             #expect(pixels.count == Int(width * height * 4))
@@ -160,14 +161,15 @@ import NucleusSkiaGraphiteBridge
         // and let it deinit at the end of this scope: destroyImage (drops the
         // imported VkImage + memory) then destroyBuffer (gbm_bo_destroy). This runs
         // before the Graphite context is torn down (the caller's closure).
-        let owner = buffer.makeOwner()
+        let owner = unsafe buffer.makeOwner()
         _ = owner
         // `owner` deinits here.
     }
 
     static func renderNodeIdentity(_ fd: Int32) throws -> (major: Int64, minor: Int64) {
         var deviceStat = stat()
-        try requireTrue(fstat(fd, &deviceStat) == 0, "fstat failed for DRM render node")
+        let statSucceeded = unsafe fstat(fd, &deviceStat) == 0
+        try requireTrue(statSucceeded, "fstat failed for DRM render node")
         let deviceID = UInt64(deviceStat.st_rdev)
         return (
             Int64(((deviceID >> 8) & 0xfff) | ((deviceID >> 32) & ~0xfff)),
@@ -179,20 +181,20 @@ import NucleusSkiaGraphiteBridge
         belongsToRenderNode identity: (major: Int64, minor: Int64),
         instance: VkInstance
     ) -> Bool {
-        guard let raw = vkGetInstanceProcAddr(
+        guard let raw = unsafe vkGetInstanceProcAddr(
             instance, "vkGetPhysicalDeviceProperties2")
         else { return false }
-        let getProperties = unsafeBitCast(
+        let getProperties = unsafe unsafeBitCast(
             raw, to: PFN_vkGetPhysicalDeviceProperties2.self)
-        var drm = VkPhysicalDeviceDrmPropertiesEXT()
-        drm.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRM_PROPERTIES_EXT
-        var properties = VkPhysicalDeviceProperties2()
-        properties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2
+        var drm = unsafe VkPhysicalDeviceDrmPropertiesEXT()
+        unsafe drm.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRM_PROPERTIES_EXT
+        var properties = unsafe VkPhysicalDeviceProperties2()
+        unsafe properties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2
         withUnsafeMutablePointer(to: &drm) { pointer in
-            properties.pNext = UnsafeMutableRawPointer(pointer)
-            getProperties(physicalDevice, &properties)
+            unsafe properties.pNext = UnsafeMutableRawPointer(pointer)
+            unsafe getProperties(physicalDevice, &properties)
         }
-        return drm.hasRender != 0
+        return unsafe drm.hasRender != 0
             && drm.renderMajor == identity.major
             && drm.renderMinor == identity.minor
     }

@@ -105,6 +105,6 @@ func writeNetWmStateMask(
     var states: [xcb_atom_t] = []
     for (bit, id) in netStateEmitOrder where mask.contains(bit) { states.append(atoms[id]) }
     surface.states = states
-    writeAtomListProperty(conn, atoms, surface.windowID, atoms[._NET_WM_STATE], states)
-    _ = xcb_flush(conn)
+    unsafe writeAtomListProperty(conn, atoms, surface.windowID, atoms[._NET_WM_STATE], states)
+    _ = unsafe xcb_flush(conn)
 }

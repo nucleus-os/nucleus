@@ -13,16 +13,31 @@ import WaylandServer
 @MainActor
 final class XwaylandProcess {
     private unowned let host: RouterHost
+    private let launchConfiguration: XwaylandLaunchConfiguration
+    private let runtimeDirectory: XwaylandRuntimeDirectory
+    private let traceEnabled: Bool
     private(set) var pid: pid_t = 0
     private(set) var wmFd: Int32 = -1
     private(set) var displayPipeRd: Int32 = -1
+    private(set) var tracePipeRd: Int32 = -1
+    private var traceSink: XwaylandTraceSink?
 
     private var sockType: Int32 { Int32(SOCK_STREAM.rawValue) }
     private var cloexec: Int32 { Int32(SOCK_CLOEXEC.rawValue) }
     private var nonblock: Int32 { Int32(SOCK_NONBLOCK.rawValue) }
 
-    init(host: RouterHost) {
+    init(
+        host: RouterHost,
+        executablePath: String,
+        runtimeDirectory: XwaylandRuntimeDirectory,
+        traceEnabled: Bool
+    ) {
         self.host = host
+        self.launchConfiguration = XwaylandLaunchConfiguration(
+            executablePath: executablePath,
+            displayNumber: 0)
+        self.runtimeDirectory = runtimeDirectory
+        self.traceEnabled = traceEnabled
     }
 
     /// Spawn Xwayland on `displayNum` using the pre-bound listen fds. Returns false on
@@ -30,31 +45,37 @@ final class XwaylandProcess {
     /// readiness pipe are owned here until readiness / teardown.
     func spawn(displayNum: UInt8, abstractFd: Int32, fsFd: Int32) -> Bool {
         guard pid == 0 else { return false }
+        let ownedDescriptors = XwaylandOwnedFileDescriptors()
+        let launch = XwaylandLaunchConfiguration(
+            executablePath: launchConfiguration.executablePath,
+            displayNumber: displayNum)
+        guard launch.executableIsValid else { return false }
+
+        var tracePair: [Int32] = [-1, -1]
+        var useTrace = false
+        if traceEnabled,
+           unsafe pipe2(&tracePair, O_CLOEXEC | O_NONBLOCK) == 0
+        {
+            useTrace = true
+            ownedDescriptors.insert(contentsOf: tracePair)
+        }
 
         var wlPair: [Int32] = [-1, -1]
-        if socketpair(AF_UNIX, sockType | cloexec | nonblock, 0, &wlPair) != 0 {
+        if unsafe socketpair(AF_UNIX, sockType | cloexec | nonblock, 0, &wlPair) != 0 {
             return false
         }
+        ownedDescriptors.insert(contentsOf: wlPair)
         var wmPair: [Int32] = [-1, -1]
-        if socketpair(AF_UNIX, sockType | cloexec, 0, &wmPair) != 0 {
-            close(wlPair[0]); close(wlPair[1])
+        if unsafe socketpair(AF_UNIX, sockType | cloexec, 0, &wmPair) != 0 {
             return false
         }
+        ownedDescriptors.insert(contentsOf: wmPair)
         var pipeFds: [Int32] = [-1, -1]
-        if pipe2(&pipeFds, O_CLOEXEC) != 0 {
-            close(wlPair[0]); close(wlPair[1])
-            close(wmPair[0]); close(wmPair[1])
+        if unsafe pipe2(&pipeFds, O_CLOEXEC) != 0 {
             return false
         }
+        ownedDescriptors.insert(contentsOf: pipeFds)
 
-        // Adopt the wl parent end as a router client (the router owns it on success;
-        // libwayland destroys the client when Xwayland disconnects).
-        guard host.runtime?.router.display.createClient(fd: wlPair[0]) != nil else {
-            close(wlPair[0]); close(wlPair[1])
-            close(wmPair[0]); close(wmPair[1])
-            close(pipeFds[0]); close(pipeFds[1])
-            return false
-        }
         let wlChild = wlPair[1]
         let wmChild = wmPair[1]
         let dfChild = pipeFds[1]
@@ -64,124 +85,165 @@ final class XwaylandProcess {
         // cross the process boundary; a Swift fork child can deadlock before
         // exec on a runtime or allocator lock inherited from another thread.
         let sources = [wlChild, wmChild, dfChild, abstractFd, fsFd]
+            + (useTrace ? [tracePair[1]] : [])
         var spawnSources: [Int32] = []
         for source in sources {
             let duplicate = fcntl(source, F_DUPFD_CLOEXEC, 64)
             guard duplicate >= 0 else {
-                spawnSources.forEach { _ = close($0) }
-                closeLaunchFailure(
-                    wlChild: wlChild,
-                    wmPair: wmPair,
-                    pipeFds: pipeFds)
                 return false
             }
             spawnSources.append(duplicate)
+            ownedDescriptors.insert(duplicate)
         }
-        defer { spawnSources.forEach { _ = close($0) } }
 
         // Work from high-numbered duplicates so file actions cannot overwrite
         // another source while assigning the stable child descriptor contract.
         let childFDs: [Int32] = [3, 4, 5, 6, 7]
-        var actions = posix_spawn_file_actions_t()
-        guard posix_spawn_file_actions_init(&actions) == 0 else {
-            closeLaunchFailure(
-                wlChild: wlChild,
-                wmPair: wmPair,
-                pipeFds: pipeFds)
+            + (useTrace ? [Int32(STDOUT_FILENO)] : [])
+        var actions = unsafe posix_spawn_file_actions_t()
+        guard unsafe posix_spawn_file_actions_init(&actions) == 0 else {
             return false
         }
-        defer { posix_spawn_file_actions_destroy(&actions) }
+        defer { unsafe posix_spawn_file_actions_destroy(&actions) }
         for (source, target) in zip(spawnSources, childFDs) {
-            guard posix_spawn_file_actions_adddup2(
+            guard unsafe posix_spawn_file_actions_adddup2(
                 &actions, source, target) == 0
             else {
-                closeLaunchFailure(
-                    wlChild: wlChild,
-                    wmPair: wmPair,
-                    pipeFds: pipeFds)
                 return false
             }
         }
-        let logAction = "/tmp/nucleus-xwayland.log".withCString {
-            posix_spawn_file_actions_addopen(
-                &actions,
-                STDOUT_FILENO,
-                $0,
-                O_WRONLY | O_CREAT | O_TRUNC,
-                0o644)
+        let outputAction: Int32
+        if useTrace {
+            outputAction = 0
+        } else {
+            outputAction = "/dev/null".withCString {
+                unsafe posix_spawn_file_actions_addopen(
+                    &actions,
+                    STDOUT_FILENO,
+                    $0,
+                    O_WRONLY,
+                    0)
+            }
         }
-        guard logAction == 0,
-              posix_spawn_file_actions_adddup2(
+        guard outputAction == 0,
+              unsafe posix_spawn_file_actions_adddup2(
                 &actions, STDOUT_FILENO, STDERR_FILENO) == 0
         else {
-            closeLaunchFailure(
-                wlChild: wlChild,
-                wmPair: wmPair,
-                pipeFds: pipeFds)
             return false
+        }
+        for source in spawnSources {
+            guard unsafe posix_spawn_file_actions_addclose(
+                &actions, source) == 0
+            else {
+                return false
+            }
+        }
+        let stableChildDescriptors = Set(
+            childFDs + [Int32(STDERR_FILENO)])
+        let inheritedDescriptors = [
+            wlPair[0], wlPair[1],
+            wmPair[0], wmPair[1],
+            pipeFds[0], pipeFds[1],
+            abstractFd, fsFd,
+            tracePair[0], tracePair[1],
+        ]
+        for descriptor in Set(inheritedDescriptors)
+        where descriptor >= 0
+            && !stableChildDescriptors.contains(descriptor)
+        {
+            guard unsafe posix_spawn_file_actions_addclose(
+                &actions, descriptor) == 0
+            else {
+                return false
+            }
         }
 
         var attributes = posix_spawnattr_t()
-        guard posix_spawnattr_init(&attributes) == 0 else {
-            closeLaunchFailure(
-                wlChild: wlChild,
-                wmPair: wmPair,
-                pipeFds: pipeFds)
+        guard unsafe posix_spawnattr_init(&attributes) == 0 else {
             return false
         }
-        defer { posix_spawnattr_destroy(&attributes) }
+        defer { unsafe posix_spawnattr_destroy(&attributes) }
         var defaultSignals = sigset_t()
         var emptyMask = sigset_t()
-        sigemptyset(&defaultSignals)
-        sigemptyset(&emptyMask)
+        unsafe sigemptyset(&defaultSignals)
+        unsafe sigemptyset(&emptyMask)
         for signal in [SIGINT, SIGQUIT, SIGTERM, SIGHUP, SIGPIPE] {
-            sigaddset(&defaultSignals, signal)
+            unsafe sigaddset(&defaultSignals, signal)
         }
-        guard posix_spawnattr_setsigdefault(
+        guard unsafe posix_spawnattr_setsigdefault(
             &attributes, &defaultSignals) == 0,
-              posix_spawnattr_setsigmask(&attributes, &emptyMask) == 0,
-              posix_spawnattr_setflags(
+              unsafe posix_spawnattr_setsigmask(&attributes, &emptyMask) == 0,
+              unsafe posix_spawnattr_setflags(
                 &attributes,
                 Int16(POSIX_SPAWN_SETSIGDEF | POSIX_SPAWN_SETSIGMASK)) == 0
         else {
-            closeLaunchFailure(
-                wlChild: wlChild,
-                wmPair: wmPair,
-                pipeFds: pipeFds)
             return false
         }
 
-        let argv = buildArgv(displayNum: displayNum)
-        defer { freeArgv(argv) }
+        let argv = unsafe makeCStringVector(launch.arguments)
+        defer { unsafe freeArgv(argv) }
+        let environment = unsafe makeCStringVector(launch.environment)
+        defer { unsafe freeArgv(environment) }
         var child = pid_t()
         let spawnResult = argv.withUnsafeBufferPointer { buffer in
-            posix_spawn(
-                &child,
-                "/usr/bin/env",
-                &actions,
-                &attributes,
-                UnsafeMutablePointer(mutating: buffer.baseAddress!),
-                Glibc.environ)
+            environment.withUnsafeBufferPointer { environmentBuffer in
+                unsafe posix_spawn(
+                    &child,
+                    launch.executablePath,
+                    &actions,
+                    &attributes,
+                    unsafe UnsafeMutablePointer(mutating: buffer.baseAddress!),
+                    unsafe UnsafeMutablePointer(
+                        mutating: environmentBuffer.baseAddress!))
+            }
         }
         guard spawnResult == 0 else {
-            closeLaunchFailure(
-                wlChild: wlChild,
-                wmPair: wmPair,
-                pipeFds: pipeFds)
             return false
         }
 
+        // Adopt only after spawn succeeds. This keeps every file-action failure
+        // descriptor-only and prevents a failed launch from leaving a live
+        // server-side Wayland client behind.
+        guard unsafe host.runtime?.router.display.createClient(fd: wlPair[0]) != nil else {
+            terminateFailedSpawn(child)
+            return false
+        }
+        ownedDescriptors.relinquish(wlPair[0])
+
         // Parent: close child-only ends, keep the WM parent + readiness read.
-        close(wlChild)
-        close(wmPair[1])
-        close(pipeFds[1])
+        ownedDescriptors.close(wlChild)
+        ownedDescriptors.close(wmPair[1])
+        ownedDescriptors.close(pipeFds[1])
         pid = child
         wmFd = wmPair[0]
+        ownedDescriptors.relinquish(wmFd)
         displayPipeRd = pipeFds[0]
+        ownedDescriptors.relinquish(displayPipeRd)
+        if useTrace {
+            ownedDescriptors.close(tracePair[1])
+            tracePipeRd = tracePair[0]
+            ownedDescriptors.relinquish(tracePipeRd)
+            traceSink = XwaylandTraceSink(
+                directoryFD: runtimeDirectory.fileDescriptor)
+        }
         return true
     }
 
     func readyFd() -> Int32? { displayPipeRd >= 0 ? displayPipeRd : nil }
+    func traceFd() -> Int32? { tracePipeRd >= 0 ? tracePipeRd : nil }
+    var traceDroppedBytes: UInt64 {
+        traceSink?.droppedBytes ?? 0
+    }
+
+    func drainTrace() -> Bool {
+        guard tracePipeRd >= 0, let traceSink else { return false }
+        let remainsOpen = traceSink.drain(tracePipeRd)
+        if !remainsOpen {
+            _ = close(tracePipeRd)
+            tracePipeRd = -1
+        }
+        return remainsOpen
+    }
 
     /// Drain the readiness pipe and surrender the WM fd to the XWM (ownership
     /// transferred). Returns -1 if not ready.
@@ -189,7 +251,7 @@ final class XwaylandProcess {
         guard displayPipeRd >= 0 else { return -1 }
         var buf = [UInt8](repeating: 0, count: 16)
         _ = buf.withUnsafeMutableBytes {
-            read(displayPipeRd, $0.baseAddress, $0.count)
+            unsafe read(displayPipeRd, $0.baseAddress, $0.count)
         }
         close(displayPipeRd)
         displayPipeRd = -1
@@ -201,52 +263,115 @@ final class XwaylandProcess {
     func shutdown() {
         if displayPipeRd >= 0 { close(displayPipeRd); displayPipeRd = -1 }
         if wmFd >= 0 { close(wmFd); wmFd = -1 }
+        if tracePipeRd >= 0 { close(tracePipeRd); tracePipeRd = -1 }
+        traceSink = nil
         guard pid > 0 else { return }
 
         let child = pid
         pid = 0
-        _ = kill(child, SIGTERM)
-        for _ in 0..<50 {
+        XwaylandChildReaper.terminate(child, gracefully: true)
+    }
+
+    private func terminateFailedSpawn(_ child: pid_t) {
+        XwaylandChildReaper.terminate(child, gracefully: false)
+    }
+
+    @unsafe private func makeCStringVector(
+        _ parts: [String]
+    ) -> [UnsafeMutablePointer<CChar>?] {
+        var argv: [UnsafeMutablePointer<CChar>?] = unsafe parts.map { unsafe strdup($0) }
+        unsafe argv.append(nil)
+        return unsafe argv
+    }
+
+    @unsafe private func freeArgv(_ argv: [UnsafeMutablePointer<CChar>?]) {
+        var index = 0
+        while unsafe index < argv.count {
+            if let pointer = unsafe argv[index] {
+                unsafe Glibc.free(pointer)
+            }
+            index += 1
+        }
+    }
+}
+
+enum XwaylandChildReaper {
+    private enum PollResult {
+        case pending
+        case finished
+    }
+
+    /// Reaping is deliberately detached from the compositor main actor. Every
+    /// wait is nonblocking, so an unresponsive child cannot stall protocol,
+    /// input, rendering, or teardown ownership.
+    @discardableResult
+    nonisolated static func terminate(
+        _ child: pid_t,
+        gracefully: Bool
+    ) -> Task<Void, Never> {
+        Task.detached {
+            if gracefully {
+                _ = kill(child, SIGTERM)
+                for _ in 0..<50 {
+                    if unsafe poll(child) == .finished { return }
+                    try? await ContinuousClock().sleep(
+                        for: .milliseconds(10))
+                }
+            }
+
+            _ = kill(child, SIGKILL)
+            while unsafe poll(child) == .pending {
+                try? await ContinuousClock().sleep(for: .milliseconds(10))
+            }
+        }
+    }
+
+    @unsafe private nonisolated static func poll(
+        _ child: pid_t
+    ) -> PollResult {
+        while true {
             let result = waitpid(child, nil, WNOHANG)
             if result == child || (result == -1 && errno == ECHILD) {
-                return
+                return .finished
             }
-            usleep(10_000)
+            if result == 0 {
+                return .pending
+            }
+            if result == -1 && errno == EINTR {
+                continue
+            }
+            return .finished
         }
-        _ = kill(child, SIGKILL)
-        while waitpid(child, nil, 0) == -1, errno == EINTR {}
+    }
+}
+
+final class XwaylandOwnedFileDescriptors {
+    private var descriptors: Set<Int32> = []
+
+    func insert(_ descriptor: Int32) {
+        if descriptor >= 0 {
+            descriptors.insert(descriptor)
+        }
     }
 
-    private func closeLaunchFailure(
-        wlChild: Int32,
-        wmPair: [Int32],
-        pipeFds: [Int32]
-    ) {
-        close(wlChild)
-        close(wmPair[0]); close(wmPair[1])
-        close(pipeFds[0]); close(pipeFds[1])
+    func insert(contentsOf newDescriptors: [Int32]) {
+        for descriptor in newDescriptors {
+            insert(descriptor)
+        }
     }
 
-    private func buildArgv(
-        displayNum: UInt8
-    ) -> [UnsafeMutablePointer<CChar>?] {
-        let parts = [
-            "/usr/bin/env", "-u", "DISPLAY",
-            "WAYLAND_SOCKET=3", "WAYLAND_DEBUG=client",
-            "Xwayland", "-rootless", "-terminate", "-core", "-verbose", "10",
-            "-force-xrandr-emulation",
-            "-listenfd", "6", "-listenfd", "7",
-            "-wm", "4", "-displayfd", "5",
-            ":\(displayNum)",
-        ]
-        var argv: [UnsafeMutablePointer<CChar>?] = parts.map { strdup($0) }
-        argv.append(nil)
-        return argv
+    func close(_ descriptor: Int32) {
+        guard descriptors.remove(descriptor) != nil else { return }
+        _ = Glibc.close(descriptor)
     }
 
-    private func freeArgv(_ argv: [UnsafeMutablePointer<CChar>?]) {
-        for pointer in argv {
-            if let pointer { Glibc.free(pointer) }
+    func relinquish(_ descriptor: Int32) {
+        descriptors.remove(descriptor)
+    }
+
+    deinit {
+        for descriptor in descriptors {
+            _ = Glibc.close(descriptor)
         }
     }
 }

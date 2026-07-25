@@ -141,6 +141,39 @@ public enum PaintBlendMode: Swift.UInt32, Swift.Sendable {
   case dstOut = 7
 }
 
+public enum PaintStrokeCap: Swift.UInt8, Swift.Sendable, Swift.Equatable {
+  case butt = 0
+  case round = 1
+  case square = 2
+}
+
+public enum PaintStrokeJoin: Swift.UInt8, Swift.Sendable, Swift.Equatable {
+  case miter = 0
+  case round = 1
+  case bevel = 2
+}
+
+public struct PaintTransform: Swift.Sendable, Swift.Equatable {
+  public var a: Swift.Float
+  public var b: Swift.Float
+  public var c: Swift.Float
+  public var d: Swift.Float
+  public var tx: Swift.Float
+  public var ty: Swift.Float
+
+  public init(
+    a: Swift.Float, b: Swift.Float, c: Swift.Float,
+    d: Swift.Float, tx: Swift.Float, ty: Swift.Float
+  ) {
+    self.a = a
+    self.b = b
+    self.c = c
+    self.d = d
+    self.tx = tx
+    self.ty = ty
+  }
+}
+
 /// Style/behavior bits on a paint command. `stroke` selects
 /// `SkPaint::kStroke_Style` — without it a `strokeWidth` renders as a fill,
 /// which is why borders paint solid today.
@@ -168,6 +201,11 @@ public struct PaintCommandFlags: Swift.OptionSet, Swift.Sendable {
   public static let hasTransform = PaintCommandFlags(rawValue: 1 << 8)
 
   public static let `default`: PaintCommandFlags = [.antialias]
+
+  public static let known: PaintCommandFlags = [
+    .stroke, .antialias, .evenOddFill, .tintImage,
+    .capRound, .capSquare, .joinRound, .joinBevel, .hasTransform,
+  ]
 }
 
 public enum ImplicitActionKeyPath: Swift.UInt8, Swift.Sendable {
@@ -970,7 +1008,12 @@ public struct PaintCommand: Swift.Equatable, Swift.Sendable {
     payloadOffset: Swift.UInt32 = 0, payloadLength: Swift.UInt32 = 0,
     transformA: Swift.Float = 1, transformB: Swift.Float = 0,
     transformC: Swift.Float = 0, transformD: Swift.Float = 1,
-    transformTX: Swift.Float = 0, transformTY: Swift.Float = 0
+    transformTX: Swift.Float = 0, transformTY: Swift.Float = 0,
+    stroke: Swift.Bool? = nil, antialias: Swift.Bool? = nil,
+    evenOddFill: Swift.Bool? = nil, tintsImage: Swift.Bool? = nil,
+    strokeCap: PaintStrokeCap? = nil,
+    strokeJoin: PaintStrokeJoin? = nil,
+    transform: PaintTransform? = nil
   ) {
     self.kind = kind
     self.flags = flags
@@ -998,7 +1041,108 @@ public struct PaintCommand: Swift.Equatable, Swift.Sendable {
     self.transformD = transformD
     self.transformTX = transformTX
     self.transformTY = transformTY
+    if let stroke { self.stroke = stroke }
+    if let antialias { self.antialias = antialias }
+    if let evenOddFill { self.evenOddFill = evenOddFill }
+    if let tintsImage { self.tintsImage = tintsImage }
+    if let strokeCap { self.strokeCap = strokeCap }
+    if let strokeJoin { self.strokeJoin = strokeJoin }
+    if let transform { self.transform = transform }
+  }
+
+  public var stroke: Swift.Bool {
+    get { flags.contains(.stroke) }
+    set { flags.set(.stroke, to: newValue) }
+  }
+
+  public var antialias: Swift.Bool {
+    get { flags.contains(.antialias) }
+    set { flags.set(.antialias, to: newValue) }
+  }
+
+  public var evenOddFill: Swift.Bool {
+    get { flags.contains(.evenOddFill) }
+    set { flags.set(.evenOddFill, to: newValue) }
+  }
+
+  public var tintsImage: Swift.Bool {
+    get { flags.contains(.tintImage) }
+    set { flags.set(.tintImage, to: newValue) }
+  }
+
+  public var strokeCap: PaintStrokeCap {
+    get {
+      if flags.contains(.capRound) { return .round }
+      if flags.contains(.capSquare) { return .square }
+      return .butt
+    }
+    set {
+      flags.subtract([.capRound, .capSquare])
+      switch newValue {
+      case .butt: break
+      case .round: flags.insert(.capRound)
+      case .square: flags.insert(.capSquare)
+      }
+    }
+  }
+
+  public var strokeJoin: PaintStrokeJoin {
+    get {
+      if flags.contains(.joinRound) { return .round }
+      if flags.contains(.joinBevel) { return .bevel }
+      return .miter
+    }
+    set {
+      flags.subtract([.joinRound, .joinBevel])
+      switch newValue {
+      case .miter: break
+      case .round: flags.insert(.joinRound)
+      case .bevel: flags.insert(.joinBevel)
+      }
+    }
+  }
+
+  public var transform: PaintTransform? {
+    get {
+      guard flags.contains(.hasTransform) else { return nil }
+      return PaintTransform(
+        a: transformA, b: transformB, c: transformC,
+        d: transformD, tx: transformTX, ty: transformTY)
+    }
+    set {
+      guard let newValue else {
+        flags.remove(.hasTransform)
+        return
+      }
+      flags.insert(.hasTransform)
+      transformA = newValue.a
+      transformB = newValue.b
+      transformC = newValue.c
+      transformD = newValue.d
+      transformTX = newValue.tx
+      transformTY = newValue.ty
+    }
+  }
+
+  public var hasValidFlags: Swift.Bool {
+    flags.subtracting(.known).isEmpty
+      && !flags.isSuperset(of: [.capRound, .capSquare])
+      && !flags.isSuperset(of: [.joinRound, .joinBevel])
+  }
+
+  public func hasValidPayloadRange(count: Swift.Int) -> Swift.Bool {
+    guard let offset = Swift.Int(exactly: payloadOffset),
+          let length = Swift.Int(exactly: payloadLength)
+    else { return false }
+    let end = offset.addingReportingOverflow(length)
+    return !end.overflow && offset <= count && end.partialValue <= count
   }
 }
 
 extension PaintCommandFlags: Swift.Equatable {}
+
+private extension PaintCommandFlags {
+  mutating func set(_ member: PaintCommandFlags, to enabled: Swift.Bool) {
+    if enabled { insert(member) } else { remove(member) }
+  }
+}

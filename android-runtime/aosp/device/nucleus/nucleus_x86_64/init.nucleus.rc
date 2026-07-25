@@ -30,3 +30,10 @@ on early-init
     mkdir /data/dalvik-cache 0771 root root
 
     mkdir /data/nucleus 0700 system system
+
+# Nucleus supplies /data as a host-mounted container filesystem, so there is no
+# device fstab mount_all command to publish Android's data-ready lifecycle event.
+# The platform post-fs-data action initializes user 0 before this action runs;
+# a failure there reboots instead of reaching this trigger.
+on post-fs-data
+    trigger nonencrypted

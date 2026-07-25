@@ -8,6 +8,7 @@
 
 import WaylandClientC
 public import WaylandClientDispatch
+import WaylandProtocolTypes
 public import WaylandClient
 import WaylandProtocolsC  // links the shared marshalling tables
 #if canImport(Glibc)
@@ -35,22 +36,22 @@ public enum WaylandGlobalKind: String, CaseIterable {
     /// The interface descriptor pointer the client binds against (from the generated accessors).
     var interface: UnsafePointer<wl_interface>? {
         switch self {
-        case .compositor: return swift_wayland_iface_wl_compositor()
-        case .shm: return swift_wayland_iface_wl_shm()
-        case .output: return swift_wayland_iface_wl_output()
-        case .seat: return swift_wayland_iface_wl_seat()
-        case .layerShell: return swift_wayland_iface_zwlr_layer_shell_v1()
-        case .foreignToplevel: return swift_wayland_iface_zwlr_foreign_toplevel_manager_v1()
-        case .sessionLock: return swift_wayland_iface_ext_session_lock_manager_v1()
-        case .screencopy: return swift_wayland_iface_zwlr_screencopy_manager_v1()
-        case .viewporter: return swift_wayland_iface_wp_viewporter()
-        case .fractionalScale: return swift_wayland_iface_wp_fractional_scale_manager_v1()
-        case .xdgOutput: return swift_wayland_iface_zxdg_output_manager_v1()
-        case .textInputManager: return swift_wayland_iface_zwp_text_input_manager_v3()
-        case .cursorShape: return swift_wayland_iface_wp_cursor_shape_manager_v1()
-        case .dataControl: return swift_wayland_iface_ext_data_control_manager_v1()
+        case .compositor: return unsafe swift_wayland_iface_wl_compositor()
+        case .shm: return unsafe swift_wayland_iface_wl_shm()
+        case .output: return unsafe swift_wayland_iface_wl_output()
+        case .seat: return unsafe swift_wayland_iface_wl_seat()
+        case .layerShell: return unsafe swift_wayland_iface_zwlr_layer_shell_v1()
+        case .foreignToplevel: return unsafe swift_wayland_iface_zwlr_foreign_toplevel_manager_v1()
+        case .sessionLock: return unsafe swift_wayland_iface_ext_session_lock_manager_v1()
+        case .screencopy: return unsafe swift_wayland_iface_zwlr_screencopy_manager_v1()
+        case .viewporter: return unsafe swift_wayland_iface_wp_viewporter()
+        case .fractionalScale: return unsafe swift_wayland_iface_wp_fractional_scale_manager_v1()
+        case .xdgOutput: return unsafe swift_wayland_iface_zxdg_output_manager_v1()
+        case .textInputManager: return unsafe swift_wayland_iface_zwp_text_input_manager_v3()
+        case .cursorShape: return unsafe swift_wayland_iface_wp_cursor_shape_manager_v1()
+        case .dataControl: return unsafe swift_wayland_iface_ext_data_control_manager_v1()
         case .dataDeviceManager:
-            return swift_wayland_iface_wl_data_device_manager()
+            return unsafe swift_wayland_iface_wl_data_device_manager()
         }
     }
 
@@ -77,13 +78,13 @@ public enum WaylandGlobalKind: String, CaseIterable {
 
     /// Reverse lookup from the interface descriptor a WaylandRegistry bound (pointer-identical).
     static func from(interface: UnsafePointer<wl_interface>) -> WaylandGlobalKind? {
-        allCases.first { $0.interface == interface }
+        allCases.first { kind in unsafe kind.interface == interface }
     }
 }
 
 /// A live wl_output the shell can anchor surfaces to.
 @MainActor
-public final class WaylandOutput {
+@safe public final class WaylandOutput {
     public let proxy: OpaquePointer
     public let registryName: UInt32
     public var logicalWidth: Int32 = 0
@@ -97,7 +98,7 @@ public final class WaylandOutput {
     var onChanged: (() -> Void)?
 
     init(proxy: OpaquePointer, registryName: UInt32) {
-        self.proxy = proxy
+        unsafe self.proxy = proxy
         self.registryName = registryName
     }
 }
@@ -145,8 +146,11 @@ public final class ShellWaylandClient {
         self.connection = connection
 
         let wanted: [DesiredGlobal] = WaylandGlobalKind.allCases.compactMap { kind in
-            kind.interface.map { DesiredGlobal($0, maxVersion: kind.bindVersion,
-                                               allowsMultiple: kind == .output) }
+            guard let interface = unsafe kind.interface else { return nil }
+            return unsafe DesiredGlobal(
+                interface,
+                maxVersion: kind.bindVersion,
+                allowsMultiple: kind == .output)
         }
         guard let reg = WaylandRegistry(connection, wanting: wanted) else {
             return nil
@@ -168,7 +172,7 @@ public final class ShellWaylandClient {
     isolated deinit {}
 
     /// The raw wl_display, for the render backend's VK_KHR_wayland_surface swapchain.
-    public var display: OpaquePointer { connection.display }
+    public var display: OpaquePointer { unsafe connection.display }
 
     /// The display fd registered with the Linux host reactor.
     public var fd: Int32 { connection.fd }
@@ -182,32 +186,34 @@ public final class ShellWaylandClient {
         connection.prepareRead()
     }
 
-    public func proxy(_ kind: WaylandGlobalKind) -> OpaquePointer? { globals[kind]?.proxy }
+    public func proxy(_ kind: WaylandGlobalKind) -> OpaquePointer? {
+        unsafe globals[kind]?.proxy
+    }
 
     /// Create a bare wl_surface from the bound compositor (the drawing surface a role —
     /// layer-shell, session-lock — is then assigned to).
     public func createSurface() -> OpaquePointer? {
-        guard let compositor = proxy(.compositor) else { return nil }
-        return wl_compositor_create_surface(compositor)
+        guard let compositor = unsafe proxy(.compositor) else { return nil }
+        return unsafe wl_compositor_create_surface(compositor)
     }
 
     // MARK: - Registry callbacks (main-actor, from WaylandRegistry)
 
     private func bound(_ global: BoundGlobal) {
-        guard let kind = WaylandGlobalKind.from(interface: global.interface) else { return }
+        guard let kind = unsafe WaylandGlobalKind.from(interface: global.interface) else { return }
         if kind == .output {
-            let output = WaylandOutput(proxy: global.proxy, registryName: global.name)
+            let output = unsafe WaylandOutput(proxy: global.proxy, registryName: global.name)
             output.onChanged = { [weak self] in
                 self?.onOutputsChanged?()
             }
             outputs[global.name] = output
             // The per-output object is the owner; `outputs` keeps it alive for the proxy's lifetime.
-            WlOutputClient.addListener(output.proxy, owner: output)
+            unsafe WlOutputClient.addListener(output.proxy, owner: output)
             onOutputsChanged?()
         } else if globals[kind] == nil {
             globals[kind] = global
             if kind == .seat {
-                seatEventBroker = ShellSeatEventBroker(proxy: global.proxy)
+                seatEventBroker = unsafe ShellSeatEventBroker(proxy: global.proxy)
             }
             onGlobalChanged?(kind)
         }
@@ -219,7 +225,7 @@ public final class ShellWaylandClient {
             onOutputsChanged?()
             return
         }
-        guard let kind = WaylandGlobalKind.from(interface: global.interface),
+        guard let kind = unsafe WaylandGlobalKind.from(interface: global.interface),
               globals[kind]?.name == global.name
         else {
             return
@@ -250,17 +256,17 @@ public final class ShellWaylandClient {
 @MainActor
 private final class ShellSeatEventBroker: WlSeatEvents {
     private weak var consumer: ShellSeat?
-    private var capabilities: UInt32?
+    private var capabilities: WlSeatCapability?
 
     init(proxy: OpaquePointer) {
-        WlSeatClient.addListener(proxy, owner: self)
+        unsafe WlSeatClient.addListener(proxy, owner: self)
     }
 
     func attach(_ consumer: ShellSeat) {
         self.consumer = consumer
         if let capabilities {
-            consumer.bindPointerIfNeeded(capabilities)
-            consumer.bindKeyboardIfNeeded(capabilities)
+            consumer.bindPointerIfNeeded(capabilities.rawValue)
+            consumer.bindKeyboardIfNeeded(capabilities.rawValue)
         }
     }
 
@@ -270,50 +276,48 @@ private final class ShellSeatEventBroker: WlSeatEvents {
     }
 
     nonisolated func capabilities(
-        _ proxy: OpaquePointer,
-        capabilities: UInt32
+        _ proxy: WaylandBorrowedProxy<WlSeatClient>,
+        capabilities: WlSeatCapability
     ) {
         MainActor.assumeIsolated {
             self.capabilities = capabilities
-            consumer?.bindPointerIfNeeded(capabilities)
-            consumer?.bindKeyboardIfNeeded(capabilities)
+            consumer?.bindPointerIfNeeded(capabilities.rawValue)
+            consumer?.bindKeyboardIfNeeded(capabilities.rawValue)
         }
     }
 
     nonisolated func name(
-        _ proxy: OpaquePointer,
-        name: UnsafePointer<CChar>?
+        _ proxy: WaylandBorrowedProxy<WlSeatClient>,
+        name: String
     ) {}
 }
 
 // A wl_output's events land on its own per-output owner object (not @MainActor), so its geometry
 // fields are updated directly; the name string is decoded in-place.
 extension WaylandOutput: WlOutputEvents {
-    public nonisolated func geometry(_ proxy: OpaquePointer, x: Int32, y: Int32, physical_width: Int32, physical_height: Int32, subpixel: Int32, make: UnsafePointer<CChar>?, model: UnsafePointer<CChar>?, transform: Int32) {
+    public nonisolated func geometry(_ proxy: WaylandBorrowedProxy<WlOutputClient>, x: Int32, y: Int32, physical_width: Int32, physical_height: Int32, subpixel: WlOutputSubpixel, make: String, model: String, transform: WlOutputTransform) {
         MainActor.assumeIsolated {
             logicalX = x
             logicalY = y
         }
     }
-    public nonisolated func mode(_ proxy: OpaquePointer, flags: UInt32, width: Int32, height: Int32, refresh: Int32) {
+    public nonisolated func mode(_ proxy: WaylandBorrowedProxy<WlOutputClient>, flags: WlOutputMode, width: Int32, height: Int32, refresh: Int32) {
         MainActor.assumeIsolated {
             // Other advertised modes are alternatives, not current geometry.
-            guard flags & 0x1 != 0 else { return }
+            guard flags.contains(.current) else { return }
             logicalWidth = width
             logicalHeight = height
             refreshMillihertz = max(0, refresh)
         }
     }
-    public nonisolated func done(_ proxy: OpaquePointer) {
+    public nonisolated func done(_ proxy: WaylandBorrowedProxy<WlOutputClient>) {
         MainActor.assumeIsolated { onChanged?() }
     }
-    public nonisolated func scale(_ proxy: OpaquePointer, factor: Int32) {
+    public nonisolated func scale(_ proxy: WaylandBorrowedProxy<WlOutputClient>, factor: Int32) {
         MainActor.assumeIsolated { self.scale = factor }
     }
-    public nonisolated func name(_ proxy: OpaquePointer, name: UnsafePointer<CChar>?) {
-        guard let name else { return }
-        let value = String(cString: name)
-        MainActor.assumeIsolated { self.name = value }
+    public nonisolated func name(_ proxy: WaylandBorrowedProxy<WlOutputClient>, name: String) {
+        MainActor.assumeIsolated { self.name = name }
     }
-    public nonisolated func description(_ proxy: OpaquePointer, description: UnsafePointer<CChar>?) {}
+    public nonisolated func description(_ proxy: WaylandBorrowedProxy<WlOutputClient>, description: String) {}
 }

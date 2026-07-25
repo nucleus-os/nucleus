@@ -9,7 +9,7 @@ private struct RawGraphicsTestError: Error, CustomStringConvertible {
     let description: String
 }
 
-private final class RawGraphicsTestGPU: @unchecked Sendable {
+@safe private final class RawGraphicsTestGPU: @unchecked Sendable {
     let handle: OpaquePointer
     let format = nucleus_android_drm_format_xrgb8888()
     let modifier: UInt64
@@ -18,25 +18,25 @@ private final class RawGraphicsTestGPU: @unchecked Sendable {
         let rawFormat = nucleus_android_drm_format_xrgb8888()
         var error = [CChar](repeating: 0, count: 1_024)
         guard let handle = candidate.renderNode.withCString({ path in
-            nucleus_android_gpu_create(path, &error, error.count)
+            unsafe nucleus_android_gpu_create(path, &error, error.count)
         }) else {
             throw RawGraphicsTestError(description: Self.errorString(error))
         }
 
-        let modifierCount = nucleus_android_gpu_list_format_modifiers(
+        let modifierCount = unsafe nucleus_android_gpu_list_format_modifiers(
             handle,
             rawFormat,
             nil,
             0)
         guard modifierCount > 0 else {
-            nucleus_android_gpu_destroy(handle)
+            unsafe nucleus_android_gpu_destroy(handle)
             throw RawGraphicsTestError(description: "GPU exposes no XRGB8888 modifiers")
         }
         var modifiers = [nucleus_android_format_modifier_properties](
             repeating: .init(),
             count: Int(modifierCount))
         let returnedCount = modifiers.withUnsafeMutableBufferPointer { storage in
-            nucleus_android_gpu_list_format_modifiers(
+            unsafe nucleus_android_gpu_list_format_modifiers(
                 handle,
                 rawFormat,
                 storage.baseAddress,
@@ -44,86 +44,93 @@ private final class RawGraphicsTestGPU: @unchecked Sendable {
         }
         let selected = modifiers.prefix(max(0, min(Int(returnedCount), modifiers.count)))
             .first {
-                nucleus_android_gpu_supports_format_modifier(
+                unsafe nucleus_android_gpu_supports_format_modifier(
                     handle,
                     rawFormat,
                     $0.modifier) == 1
             }
         guard let selected else {
-            nucleus_android_gpu_destroy(handle)
+            unsafe nucleus_android_gpu_destroy(handle)
             throw RawGraphicsTestError(
                 description: "GPU exposes no renderable XRGB8888 modifier")
         }
 
-        self.handle = handle
+        unsafe self.handle = handle
         modifier = selected.modifier
     }
 
     deinit {
-        nucleus_android_gpu_destroy(handle)
+        unsafe nucleus_android_gpu_destroy(handle)
     }
 
     func diagnostic() throws -> nucleus_android_gpu_diagnostic {
         var diagnostic = nucleus_android_gpu_diagnostic()
-        guard nucleus_android_gpu_get_diagnostic(handle, &diagnostic) == 0 else {
+        guard unsafe nucleus_android_gpu_get_diagnostic(
+            handle,
+            &diagnostic) == 0
+        else {
             throw RawGraphicsTestError(description: "GPU diagnostic unavailable")
         }
         return diagnostic
     }
 
     func collect() throws {
-        guard nucleus_android_gpu_collect(handle) == 0 else {
+        guard unsafe nucleus_android_gpu_collect(handle) == 0 else {
             throw RawGraphicsTestError(description: "GPU collection failed")
         }
     }
 
     func forceFencesPending(_ enabled: Bool) {
-        nucleus_android_test_gpu_force_fences_pending(handle, enabled ? 1 : 0)
+        unsafe nucleus_android_test_gpu_force_fences_pending(
+            handle,
+            enabled ? 1 : 0)
     }
 
     func failNextPostSubmitStep() {
-        nucleus_android_test_gpu_fail_next_post_submit(handle)
+        unsafe nucleus_android_test_gpu_fail_next_post_submit(handle)
     }
 
     private static func errorString(_ error: [CChar]) -> String {
         error.withUnsafeBufferPointer { storage in
-            String(cString: storage.baseAddress!)
+            unsafe String(cString: storage.baseAddress!)
         }
     }
 }
 
-private final class RawGraphicsTestTimeline: @unchecked Sendable {
+@safe private final class RawGraphicsTestTimeline: @unchecked Sendable {
     let gpu: RawGraphicsTestGPU
     let handle: OpaquePointer
 
     init(gpu: RawGraphicsTestGPU) throws {
-        guard let handle = nucleus_android_syncobj_timeline_create(gpu.handle) else {
+        guard let handle = unsafe nucleus_android_syncobj_timeline_create(
+            gpu.handle)
+        else {
             throw RawGraphicsTestError(description: "syncobj timeline creation failed")
         }
         self.gpu = gpu
-        self.handle = handle
+        unsafe self.handle = handle
     }
 
     deinit {
-        nucleus_android_syncobj_timeline_destroy(handle)
+        unsafe nucleus_android_syncobj_timeline_destroy(handle)
     }
 
     func signal(_ point: UInt64) -> Bool {
-        nucleus_android_syncobj_timeline_signal(handle, point) == 0
+        unsafe nucleus_android_syncobj_timeline_signal(handle, point) == 0
     }
 
     func isSignaled(_ point: UInt64) -> Bool {
-        nucleus_android_syncobj_timeline_is_signaled(handle, point) == 1
+        unsafe nucleus_android_syncobj_timeline_is_signaled(handle, point) == 1
     }
 }
 
-private final class RawGraphicsTestBuffer: @unchecked Sendable {
+@safe private final class RawGraphicsTestBuffer: @unchecked Sendable {
     let gpu: RawGraphicsTestGPU
     private var handle: OpaquePointer?
 
     init(gpu: RawGraphicsTestGPU) throws {
         var error = [CChar](repeating: 0, count: 1_024)
-        guard let handle = nucleus_android_gpu_buffer_create(
+        guard let handle = unsafe nucleus_android_gpu_buffer_create(
             gpu.handle,
             64,
             64,
@@ -135,11 +142,11 @@ private final class RawGraphicsTestBuffer: @unchecked Sendable {
         else {
             throw RawGraphicsTestError(
                 description: error.withUnsafeBufferPointer {
-                    String(cString: $0.baseAddress!)
+                    unsafe String(cString: $0.baseAddress!)
                 })
         }
         self.gpu = gpu
-        self.handle = handle
+        unsafe self.handle = handle
     }
 
     deinit {
@@ -153,11 +160,11 @@ private final class RawGraphicsTestBuffer: @unchecked Sendable {
         release: RawGraphicsTestTimeline? = nil,
         releasePoint: UInt64 = 0
     ) throws {
-        guard let handle else {
+        guard let handle = unsafe handle else {
             throw RawGraphicsTestError(description: "buffer was already released")
         }
         var error = [CChar](repeating: 0, count: 1_024)
-        guard nucleus_android_gpu_buffer_render(
+        guard unsafe nucleus_android_gpu_buffer_render(
             handle,
             frame,
             acquire.handle,
@@ -169,25 +176,25 @@ private final class RawGraphicsTestBuffer: @unchecked Sendable {
         else {
             throw RawGraphicsTestError(
                 description: error.withUnsafeBufferPointer {
-                    String(cString: $0.baseAddress!)
+                    unsafe String(cString: $0.baseAddress!)
                 })
         }
     }
 
     func release() {
-        guard let handle else { return }
-        self.handle = nil
-        nucleus_android_gpu_buffer_destroy(handle)
+        guard let handle = unsafe handle else { return }
+        unsafe self.handle = nil
+        unsafe nucleus_android_gpu_buffer_destroy(handle)
     }
 
     func lastUseSerial() -> UInt64 {
-        guard let handle else { return 0 }
-        return nucleus_android_test_gpu_buffer_last_use_serial(handle)
+        guard let handle = unsafe handle else { return 0 }
+        return unsafe nucleus_android_test_gpu_buffer_last_use_serial(handle)
     }
 
     func hasGeneralLayout() -> Bool {
-        guard let handle else { return false }
-        return nucleus_android_test_gpu_buffer_has_general_layout(handle) == 1
+        guard let handle = unsafe handle else { return false }
+        return unsafe nucleus_android_test_gpu_buffer_has_general_layout(handle) == 1
     }
 }
 
@@ -317,20 +324,29 @@ private final class RawGraphicsTestBuffer: @unchecked Sendable {
     let timelineFD = try timeline.exportFileDescriptor()
     defer { _ = close(timelineFD) }
     let rawWaiter = candidate.renderNode.withCString { path in
-        nucleus_android_syncobj_waiter_create(path, timelineFD)
+        unsafe nucleus_android_syncobj_waiter_create(path, timelineFD)
     }
-    let waiter = try #require(rawWaiter)
-    defer { nucleus_android_syncobj_waiter_destroy(waiter) }
-    #expect(nucleus_android_syncobj_waiter_arm(waiter, 9) == 0)
+    guard let waiter = unsafe rawWaiter else {
+        throw RawGraphicsTestError(description: "syncobj waiter creation failed")
+    }
+    defer { unsafe nucleus_android_syncobj_waiter_destroy(waiter) }
+    let armResult = unsafe nucleus_android_syncobj_waiter_arm(waiter, 9)
+    #expect(armResult == 0)
     var descriptor = pollfd(
-        fd: nucleus_android_syncobj_waiter_notification_fd(waiter),
+        fd: unsafe nucleus_android_syncobj_waiter_notification_fd(waiter),
         events: Int16(POLLIN),
         revents: 0)
-    #expect(poll(&descriptor, 1, 0) == 0)
+    let beforeSignalPoll = unsafe poll(&descriptor, 1, 0)
+    #expect(beforeSignalPoll == 0)
     #expect(timeline.signal(point: 9))
-    #expect(poll(&descriptor, 1, 1_000) == 1)
-    #expect(nucleus_android_syncobj_waiter_drain(waiter) == 0)
-    #expect(nucleus_android_syncobj_waiter_is_signaled(waiter, 9) == 1)
+    let afterSignalPoll = unsafe poll(&descriptor, 1, 1_000)
+    #expect(afterSignalPoll == 1)
+    let drainResult = unsafe nucleus_android_syncobj_waiter_drain(waiter)
+    #expect(drainResult == 0)
+    let isSignaled = unsafe nucleus_android_syncobj_waiter_is_signaled(
+        waiter,
+        9)
+    #expect(isSignaled == 1)
 }
 
 @Test func neverSubmittedBufferIsReclaimedWhileGPUStaysAlive() throws {

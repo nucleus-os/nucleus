@@ -82,7 +82,7 @@ public struct LayerSurfaceConfig {
 }
 
 @MainActor
-public final class LayerSurface {
+@safe public final class LayerSurface {
     public let wlSurface: OpaquePointer
     public let layerSurface: OpaquePointer
     public let config: LayerSurfaceConfig
@@ -103,46 +103,48 @@ public final class LayerSurface {
     private var isDestroyed = false
 
     public init?(client: ShellWaylandClient, config: LayerSurfaceConfig, output: WaylandOutput?) {
-        guard let layerShell = client.proxy(.layerShell),
-              let surface = client.createSurface() else { return nil }
-        self.wlSurface = surface
+        guard let layerShell = unsafe client.proxy(.layerShell),
+              let surface = unsafe client.createSurface() else { return nil }
+        unsafe self.wlSurface = surface
         self.config = config
         self.output = output
 
         guard let ls = config.namespace.withCString({ nsPtr -> OpaquePointer? in
-            zwlr_layer_shell_v1_get_layer_surface(
+            unsafe zwlr_layer_shell_v1_get_layer_surface(
                 layerShell, surface, output?.proxy, config.layer.rawValue, nsPtr)
         }) else {
-            wl_surface_destroy(surface)
+            unsafe wl_surface_destroy(surface)
             return nil
         }
-        self.layerSurface = ls
+        unsafe self.layerSurface = ls
 
-        zwlr_layer_surface_v1_set_anchor(ls, config.anchor.rawValue)
-        zwlr_layer_surface_v1_set_size(ls, config.width, config.height)
-        zwlr_layer_surface_v1_set_exclusive_zone(ls, config.exclusiveZone)
-        zwlr_layer_surface_v1_set_keyboard_interactivity(ls, config.keyboard.rawValue)
+        unsafe zwlr_layer_surface_v1_set_anchor(ls, config.anchor.rawValue)
+        unsafe zwlr_layer_surface_v1_set_size(ls, config.width, config.height)
+        unsafe zwlr_layer_surface_v1_set_exclusive_zone(
+            ls, config.exclusiveZone)
+        unsafe zwlr_layer_surface_v1_set_keyboard_interactivity(
+            ls, config.keyboard.rawValue)
 
         installListener()
         // Commit with no buffer to elicit the initial configure.
-        wl_surface_commit(surface)
+        unsafe wl_surface_commit(surface)
     }
 
     private func installListener() {
-        ZwlrLayerSurfaceV1Client.addListener(layerSurface, owner: self)
+        unsafe ZwlrLayerSurfaceV1Client.addListener(layerSurface, owner: self)
     }
 
     /// Update the reserved work area (e.g. when the bar height changes).
     public func setExclusiveZone(_ zone: Int32) {
-        zwlr_layer_surface_v1_set_exclusive_zone(layerSurface, zone)
-        wl_surface_commit(wlSurface)
+        unsafe zwlr_layer_surface_v1_set_exclusive_zone(layerSurface, zone)
+        unsafe wl_surface_commit(wlSurface)
     }
 
     public func destroy() {
         guard !isDestroyed else { return }
         isDestroyed = true
-        zwlr_layer_surface_v1_destroy(layerSurface)
-        wl_surface_destroy(wlSurface)
+        unsafe zwlr_layer_surface_v1_destroy(layerSurface)
+        unsafe wl_surface_destroy(wlSurface)
     }
 
     isolated deinit {
@@ -153,8 +155,9 @@ public final class LayerSurface {
 // The generated event dispatch is nonisolated (a @convention(c) libwayland callback); the shell
 // pumps wl_display on its main-thread event loop, so each handler reasserts the main actor.
 extension LayerSurface: ZwlrLayerSurfaceV1Events {
-    public nonisolated func configure(_ proxy: OpaquePointer, serial: UInt32, width: UInt32, height: UInt32) {
-        zwlr_layer_surface_v1_ack_configure(proxy, serial)  // C call; the proxy stays out of the actor hop
+    public nonisolated func configure(_ proxy: WaylandBorrowedProxy<ZwlrLayerSurfaceV1Client>, serial: UInt32, width: UInt32, height: UInt32) {
+        unsafe zwlr_layer_surface_v1_ack_configure(
+            proxy.proxy, serial)
         MainActor.assumeIsolated {
             acked = true
             configuredWidth = width
@@ -162,7 +165,7 @@ extension LayerSurface: ZwlrLayerSurfaceV1Events {
             onConfigure?(width, height)
         }
     }
-    public nonisolated func closed(_ proxy: OpaquePointer) {
+    public nonisolated func closed(_ proxy: WaylandBorrowedProxy<ZwlrLayerSurfaceV1Client>) {
         MainActor.assumeIsolated { onClosed?() }
     }
 }

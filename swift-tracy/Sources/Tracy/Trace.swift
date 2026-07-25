@@ -23,10 +23,10 @@ public enum Trace {
         file: String = #fileID,
         line: UInt = #line
     ) -> TraceZone {
-        withStaticStringBytes(name) { namePointer, nameLength in
+        unsafe withStaticStringBytes(name) { namePointer, nameLength in
             function.withCString { functionPointer in
                 file.withCString { filePointer in
-                    TraceZone(context: swift_tracy_begin_zone(
+                    unsafe TraceZone(context: swift_tracy_begin_zone(
                         namePointer,
                         nameLength,
                         functionPointer,
@@ -58,31 +58,31 @@ public enum Trace {
 
     public static func setThreadName(_ name: String) {
         name.withCString { pointer in
-            swift_tracy_set_thread_name(pointer, name.utf8.count)
+            unsafe swift_tracy_set_thread_name(pointer, name.utf8.count)
         }
     }
 
     public static func message(_ text: String) {
         text.withCString { pointer in
-            swift_tracy_message(pointer, text.utf8.count)
+            unsafe swift_tracy_message(pointer, text.utf8.count)
         }
     }
 
     public static func message(_ text: String, color: UInt32) {
         text.withCString { pointer in
-            swift_tracy_message_color(pointer, text.utf8.count, color)
+            unsafe swift_tracy_message_color(pointer, text.utf8.count, color)
         }
     }
 
     public static func plot(_ name: String, _ value: Double) {
         name.withCString { pointer in
-            swift_tracy_plot(pointer, value)
+            unsafe swift_tracy_plot(pointer, value)
         }
     }
 
     public static func plot(_ name: String, _ value: Int64) {
         name.withCString { pointer in
-            swift_tracy_plot_int(pointer, value)
+            unsafe swift_tracy_plot_int(pointer, value)
         }
     }
 
@@ -93,11 +93,11 @@ public enum Trace {
     /// Open/close a named discontinuous frame range. Tracy requires the name's
     /// storage to outlive the capture; the C++ bridge interns dynamic names.
     public static func frameMarkStart(_ name: String) {
-        name.withCString { swift_tracy_frame_mark_start($0) }
+        name.withCString { unsafe swift_tracy_frame_mark_start($0) }
     }
 
     public static func frameMarkEnd(_ name: String) {
-        name.withCString { swift_tracy_frame_mark_end($0) }
+        name.withCString { unsafe swift_tracy_frame_mark_end($0) }
     }
 }
 
@@ -118,15 +118,18 @@ public struct TraceZone {
 
     public func text(_ text: String) {
         text.withCString { pointer in
-            swift_tracy_zone_text(context, pointer, text.utf8.count)
+            unsafe swift_tracy_zone_text(context, pointer, text.utf8.count)
         }
     }
 }
 
-private func withStaticStringBytes<Result>(
+/// Borrows the immutable, process-lifetime UTF-8 storage of `StaticString`.
+/// The pointer is aligned for bytes and must not escape `body`.
+@unsafe private func withStaticStringBytes<Result>(
     _ string: StaticString,
     _ body: (UnsafePointer<CChar>, Int) -> Result
 ) -> Result {
-    let pointer = UnsafeRawPointer(string.utf8Start).assumingMemoryBound(to: CChar.self)
-    return body(pointer, string.utf8CodeUnitCount)
+    let pointer = unsafe UnsafeRawPointer(string.utf8Start)
+        .assumingMemoryBound(to: CChar.self)
+    return unsafe body(pointer, string.utf8CodeUnitCount)
 }

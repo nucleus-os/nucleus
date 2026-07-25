@@ -41,7 +41,7 @@ public struct GbmPlaneLayout: Equatable, Sendable {
 /// chosen format/modifier, and the per-plane layout. The BO is owned here until
 /// `makeOwner` packages it; on the failure paths inside `allocate` the BO is
 /// destroyed before returning nil.
-public struct GbmScanoutBuffer: ~Copyable {
+@unsafe public struct GbmScanoutBuffer: ~Copyable {
     /// The imported scanout image. `consuming`-moved into the `OutputBufferOwner`.
     public var image: VkOwned<VkImage>
     /// The raw `gbm_bo*`. Owned here; destroyed by the owner's `destroyBuffer`.
@@ -65,14 +65,14 @@ public struct GbmScanoutBuffer: ~Copyable {
         planes: [GbmPlaneLayout],
         keptDmaBufFd: Int32
     ) {
-        self.image = image
-        self.bo = bo
-        self.width = width
-        self.height = height
-        self.drmFormat = drmFormat
-        self.modifier = modifier
-        self.planes = planes
-        self.keptDmaBufFd = keptDmaBufFd
+        unsafe self.image = image
+        unsafe self.bo = bo
+        unsafe self.width = width
+        unsafe self.height = height
+        unsafe self.drmFormat = drmFormat
+        unsafe self.modifier = modifier
+        unsafe self.planes = planes
+        unsafe self.keptDmaBufFd = keptDmaBufFd
     }
 
     /// Which GBM allocation path to take. Scanout-capable buffers need
@@ -117,8 +117,8 @@ public struct GbmScanoutBuffer: ~Copyable {
         // supplied; else the usage-flag path.
         let bo: OpaquePointer?
         if !modifiers.isEmpty {
-            bo = modifiers.withUnsafeBufferPointer { mods in
-                gbm_bo_create_with_modifiers(
+            unsafe bo = modifiers.withUnsafeBufferPointer { mods in
+                unsafe gbm_bo_create_with_modifiers(
                     gbmDevice, width, height, drmFormat,
                     mods.baseAddress, modifierCount)
             }
@@ -130,22 +130,26 @@ public struct GbmScanoutBuffer: ~Copyable {
             case .renderableOnly:
                 flags = GBM_BO_USE_RENDERING.rawValue
             }
-            bo = gbm_bo_create(gbmDevice, width, height, drmFormat, flags)
+            unsafe bo = gbm_bo_create(
+                gbmDevice, width, height, drmFormat, flags)
         }
-        guard let bo else { logRendererDrm("gbm_bo_create failed errno=\(rendererErrno())"); return nil }
+        guard let bo = unsafe bo else {
+            logRendererDrm("gbm_bo_create failed errno=\(rendererErrno())")
+            return nil
+        }
 
         // b. Read the plane layout + modifier, then export the dmabuf fd.
-        let planeCount = Int(gbm_bo_get_plane_count(bo))
+        let planeCount = unsafe Int(gbm_bo_get_plane_count(bo))
         guard (1...3).contains(planeCount) else {
             logRendererDrm("GBM BO reported unsupported plane count=\(planeCount)")
-            gbm_bo_destroy(bo)
+            unsafe gbm_bo_destroy(bo)
             return nil
         }
         var planes: [GbmPlaneLayout] = []
         planes.reserveCapacity(planeCount)
         for plane in 0..<planeCount {
             let p = Int32(plane)
-            planes.append(GbmPlaneLayout(
+            planes.append(unsafe GbmPlaneLayout(
                 offset: gbm_bo_get_offset(bo, p),
                 stride: gbm_bo_get_stride_for_plane(bo, p),
                 handle: gbm_bo_get_handle_for_plane(bo, p).u32))
@@ -155,12 +159,16 @@ public struct GbmScanoutBuffer: ~Copyable {
         // Import the exact modifier GBM chose. Forcing LINEAR in the
         // renderable-only path is invalid on drivers that expose only tiled
         // render targets.
-        let reportedModifier = gbm_bo_get_modifier(bo)
+        let reportedModifier = unsafe gbm_bo_get_modifier(bo)
         let importModifier = reportedModifier
 
         // Single-fd export covering the whole BO (single-plane XRGB assumption).
-        let exportedFd = gbm_bo_get_fd(bo)
-        guard exportedFd >= 0 else { logRendererDrm("gbm_bo_get_fd failed errno=\(rendererErrno())"); gbm_bo_destroy(bo); return nil }
+        let exportedFd = unsafe gbm_bo_get_fd(bo)
+        guard exportedFd >= 0 else {
+            logRendererDrm("gbm_bo_get_fd failed errno=\(rendererErrno())")
+            unsafe gbm_bo_destroy(bo)
+            return nil
+        }
 
         // Optionally retain a dup for KMS before the import consumes the original.
         let keptFd: Int32
@@ -169,7 +177,7 @@ public struct GbmScanoutBuffer: ~Copyable {
             guard keptFd >= 0 else {
                 logRendererDrm("dup of GBM DMA-BUF failed errno=\(rendererErrno())")
                 close(exportedFd)
-                gbm_bo_destroy(bo)
+                unsafe gbm_bo_destroy(bo)
                 return nil
             }
         } else {
@@ -189,16 +197,18 @@ public struct GbmScanoutBuffer: ~Copyable {
             planes: planes.map { DmaBufPlane(offset: UInt64($0.offset), rowPitch: UInt64($0.stride)) },
             usage: DmaBufImageDescriptor.scanoutUsage)
 
-        guard let image = importDmaBufImage(device: device, dispatch: dispatch, descriptor: descriptor) else {
+        guard let image = unsafe importDmaBufImage(
+            device: device, dispatch: dispatch, descriptor: descriptor)
+        else {
             logRendererDrm("Vulkan DMA-BUF import failed modifier=\(importModifier) planes=\(planeCount)")
             // `exportedFd` is already closed by the importer's cleanup; only the KMS dup is ours.
             if keptFd >= 0 { close(keptFd) }
-            gbm_bo_destroy(bo)
+            unsafe gbm_bo_destroy(bo)
             return nil
         }
 
         // d. Hand back the result; the BO is owned by the caller until packaged.
-        return GbmScanoutBuffer(
+        return unsafe GbmScanoutBuffer(
             image: image,
             bo: bo,
             width: width,
@@ -222,13 +232,13 @@ public struct GbmScanoutBuffer: ~Copyable {
         framebufferDevice: DrmDeviceLifetime? = nil,
         framebufferId: UInt32 = 0
     ) -> OutputBufferOwner {
-        let bo = self.bo
-        let keptFd = self.keptDmaBufFd
-        let w = self.width
-        let h = self.height
+        let bo = unsafe self.bo
+        let keptFd = unsafe self.keptDmaBufFd
+        let w = unsafe self.width
+        let h = unsafe self.height
         // Move the noncopyable image into a class box the closure can capture and
         // release. `VkOwned.deinit` frees the image + its imported memory.
-        let imageBox = VkOwnedImageBox(consuming: self.image)
+        let imageBox = unsafe VkOwnedImageBox(consuming: self.image)
 
         let fbId = framebufferId
 
@@ -249,7 +259,7 @@ public struct GbmScanoutBuffer: ~Copyable {
             },
             destroyBuffer: {
                 if keptFd >= 0 { close(keptFd) }
-                gbm_bo_destroy(bo)
+                unsafe gbm_bo_destroy(bo)
             })
     }
 }

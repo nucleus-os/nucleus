@@ -12,8 +12,8 @@
 import NucleusCompositorInputC
 
 @MainActor
-final class SeatSession {
-    struct NativeOperations {
+@safe final class SeatSession {
+    @safe struct NativeOperations {
         let open: (
             UnsafePointer<libseat_seat_listener>?,
             UnsafeMutableRawPointer?
@@ -21,7 +21,7 @@ final class SeatSession {
         let close: (OpaquePointer?) -> Int32
         let disable: (OpaquePointer?) -> Int32
 
-        @MainActor static let live = NativeOperations(
+        @MainActor static let live = unsafe NativeOperations(
             open: libseat_open_seat,
             close: libseat_close_seat,
             disable: libseat_disable_seat)
@@ -49,10 +49,10 @@ final class SeatSession {
 
     private init(native: NativeOperations) {
         self.native = native
-        listener = .allocate(capacity: 1)
-        listener.initialize(to: libseat_seat_listener(
-            enable_seat: { _, data in SeatSession.from(data)?.handleEnable() },
-            disable_seat: { seat, data in SeatSession.from(data)?.handleDisable(seat) }))
+        unsafe listener = .allocate(capacity: 1)
+        unsafe listener.initialize(to: libseat_seat_listener(
+            enable_seat: { _, data in unsafe SeatSession.from(data)?.handleEnable() },
+            disable_seat: { seat, data in unsafe SeatSession.from(data)?.handleDisable(seat) }))
     }
 
     /// Open the seat. Returns nil if seatd/logind is unavailable. The session is not
@@ -64,28 +64,28 @@ final class SeatSession {
     /// Internal injection point for deterministic native lifetime coverage.
     static func open(using native: NativeOperations) -> SeatSession? {
         let session = SeatSession(native: native)
-        let userdata = Unmanaged.passUnretained(session).toOpaque()
-        guard let handle = native.open(session.listener, userdata) else {
+        let userdata = unsafe Unmanaged.passUnretained(session).toOpaque()
+        guard let handle = unsafe native.open(session.listener, userdata) else {
             return nil
         }
-        session.handle = handle
+        unsafe session.handle = handle
         return session
     }
 
     isolated deinit {
-        if let handle { _ = native.close(handle) }
-        listener.deinitialize(count: 1)
-        listener.deallocate()
+        if let handle = unsafe handle { _ = unsafe native.close(handle) }
+        unsafe listener.deinitialize(count: 1)
+        unsafe listener.deallocate()
     }
 
     private static func from(_ data: UnsafeMutableRawPointer?) -> SeatSession? {
-        guard let data else { return nil }
-        return Unmanaged<SeatSession>.fromOpaque(data).takeUnretainedValue()
+        guard let data = unsafe data else { return nil }
+        return unsafe Unmanaged<SeatSession>.fromOpaque(data).takeUnretainedValue()
     }
 
     private func handleEnable() { onEnable?() }
 
-    private func handleDisable(_ seat: OpaquePointer?) {
+    @unsafe private func handleDisable(_ seat: OpaquePointer?) {
         disableAcknowledgementPending = true
         if onDisable?() ?? true {
             completeDisableAcknowledgement()
@@ -96,41 +96,44 @@ final class SeatSession {
         guard disableAcknowledgementPending else { return }
         disableAcknowledgementPending = false
         // Acknowledge deactivation only after all KMS kernel borrows retired.
-        if let handle { _ = native.disable(handle) }
+        if let handle = unsafe handle { _ = unsafe native.disable(handle) }
     }
 
     // MARK: - FD + dispatch
 
-    var fd: Int32 { handle.map { libseat_get_fd($0) } ?? -1 }
+    var fd: Int32 {
+        guard let handle = unsafe handle else { return -1 }
+        return unsafe libseat_get_fd(handle)
+    }
 
     @discardableResult
     func dispatch(timeoutMs: Int32 = 0) -> Int32 {
-        guard let handle else { return -1 }
-        return libseat_dispatch(handle, timeoutMs)
+        guard let handle = unsafe handle else { return -1 }
+        return unsafe libseat_dispatch(handle, timeoutMs)
     }
 
     func switchSession(to vt: Int32) {
-        guard let handle else { return }
-        _ = libseat_switch_session(handle, vt)
+        guard let handle = unsafe handle else { return }
+        _ = unsafe libseat_switch_session(handle, vt)
     }
 
     // MARK: - restricted device opens (mediated for libinput + DRM)
 
     /// Open a device node through the seat, returning its fd (or -1). Tracks the
     /// fd→id pairing so `closeDevice(fd:)` can release it.
-    func openDevice(path: UnsafePointer<CChar>) -> Int32 {
-        guard let handle else { return -1 }
+    @unsafe func openDevice(path: UnsafePointer<CChar>) -> Int32 {
+        guard let handle = unsafe handle else { return -1 }
         var fd: Int32 = -1
-        let id = libseat_open_device(handle, path, &fd)
+        let id = unsafe libseat_open_device(handle, path, &fd)
         guard id >= 0 else { return -1 }
         deviceIds[fd] = id
         return fd
     }
 
     func closeDevice(fd: Int32) {
-        guard let handle else { return }
+        guard let handle = unsafe handle else { return }
         if let id = deviceIds.removeValue(forKey: fd) {
-            _ = libseat_close_device(handle, id)
+            _ = unsafe libseat_close_device(handle, id)
         } else {
             close(fd)
         }

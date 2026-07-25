@@ -5,11 +5,9 @@
 // so policy, the foreign-toplevel projection, and the keyboard-shortcuts-inhibit gate
 // all read one focus truth.
 //
-// Focus is tracked by surface wire id (a Sendable token), not by holding the
-// WlSurface: the surfaces are re-resolved by id through the compositor at the moment
-// the wire event is sent, so no non-Sendable router object is ever stored across an
-// isolation boundary. Pointer focus is driven separately by the input feed; this
-// driver owns only keyboard focus, which follows window activation.
+// Focus is tracked by surface wire id because the authoritative model and input wire
+// use that ID. Pointer focus is driven separately by the input feed; this driver owns
+// only keyboard focus, which follows window activation.
 
 internal import NucleusCompositorServer
 import WaylandServerC
@@ -34,13 +32,12 @@ final class RouterSeatDriver {
 
     func authorizeUserIntent(
         serial: UInt32,
-        seatResourceBits: UInt,
+        seatResource: UnsafeMutablePointer<wl_resource>?,
         surfaceID: UInt32
     ) -> Bool {
-        seat.authorize(
+        unsafe seat.authorize(
             serial: serial,
-            seatResource: UnsafeMutablePointer<wl_resource>(
-                bitPattern: seatResourceBits),
+            seatResource: seatResource,
             surface: compositor.surface(id: surfaceID),
             kinds: [.pointerButton, .touchDown])
     }

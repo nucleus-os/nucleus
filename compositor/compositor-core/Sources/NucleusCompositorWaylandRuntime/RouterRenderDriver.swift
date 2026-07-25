@@ -2,11 +2,8 @@
 // server's typed render service. `RenderBridge` retains only compositor-owned
 // redraw and output-intersection policy.
 //
-// Isolation: libwayland invokes request handlers on the compositor's single
-// main-actor thread, so each
-// conformance method is `nonisolated` and re-enters the actor with
-// `MainActor.assumeIsolated`, crossing only Sendable tokens (the output's u64
-// DisplayID, plain value arrays).
+// Libwayland request entry is isolated by the generated dispatch boundary; these
+// delegate conformances therefore remain typed and main-actor-isolated throughout.
 
 import WaylandServerC
 import WaylandServer
@@ -26,58 +23,48 @@ final class RouterRenderDriver {
 
 // wp_presentation: advertise the renderer-selected normalized clock domain.
 extension RouterRenderDriver: PresentationDelegate {
-    nonisolated var presentationClockId: UInt32 {
-        MainActor.assumeIsolated {
-            self.server.renderService?
-                .presentationClockID ?? UInt32(CLOCK_MONOTONIC)
-        }
+    var presentationClockId: UInt32 {
+        server.renderService?
+            .presentationClockID ?? UInt32(CLOCK_MONOTONIC)
     }
 }
 
 extension RouterRenderDriver: GammaControlDelegate {
-    nonisolated func gammaRampSize(output: WlOutput?) -> UInt32 {
+    func gammaRampSize(output: WlOutput?) -> UInt32 {
         let outputID = output?.outputId ?? 0
-        return MainActor.assumeIsolated {
-            self.server.renderService?
-                .gammaRampSize(outputID: outputID) ?? 0
-        }
+        return server.renderService?
+            .gammaRampSize(outputID: outputID) ?? 0
     }
 
-    nonisolated func gammaApply(
+    func gammaApply(
         output: WlOutput?,
         red: [UInt16],
         green: [UInt16],
         blue: [UInt16]
     ) {
         let outputID = output?.outputId ?? 0
-        MainActor.assumeIsolated {
-            if self.server.renderService?.applyGamma(
-                RenderGammaRamp(
-                    outputID: outputID,
-                    red: red,
-                    green: green,
-                    blue: blue)) == true
-            {
-                RenderBridge.requestFrame(
-                    server: self.server,
-                    outputId: outputID,
-                    reason: .outputChange)
-            }
-        }
-    }
-
-    nonisolated func gammaClear(output: WlOutput?) {
-        let outputID = output?.outputId ?? 0
-        MainActor.assumeIsolated {
-            guard let renderService =
-                self.server.renderService
-            else { return }
-            renderService.clearGamma(outputID: outputID)
+        if server.renderService?.applyGamma(
+            RenderGammaRamp(
+                outputID: outputID,
+                red: red,
+                green: green,
+                blue: blue)) == true
+        {
             RenderBridge.requestFrame(
-                server: self.server,
+                server: server,
                 outputId: outputID,
                 reason: .outputChange)
         }
+    }
+
+    func gammaClear(output: WlOutput?) {
+        let outputID = output?.outputId ?? 0
+        guard let renderService = server.renderService else { return }
+        renderService.clearGamma(outputID: outputID)
+        RenderBridge.requestFrame(
+            server: server,
+            outputId: outputID,
+            reason: .outputChange)
     }
 }
 
@@ -85,41 +72,35 @@ extension RouterRenderDriver: GammaControlDelegate {
 // render-node device. Creation probes the real Vulkan import path synchronously;
 // commit-time import still handles device loss and allocation failure.
 extension RouterRenderDriver: DmabufDelegate {
-    nonisolated func dmabufSupportedFormats() -> [DmabufFormat] {
-        MainActor.assumeIsolated {
-            self.server.renderService?
-                .dmabufFormats()
-                .map {
-                    DmabufFormat(
-                        format: $0.format,
-                        modifier: $0.modifier)
-                } ?? []
-        }
+    func dmabufSupportedFormats() -> [DmabufFormat] {
+        server.renderService?
+            .dmabufFormats()
+            .map {
+                DmabufFormat(
+                    format: $0.format,
+                    modifier: $0.modifier)
+            } ?? []
     }
 
-    nonisolated func dmabufMainDevice() -> UInt64 {
-        MainActor.assumeIsolated {
-            self.server.renderService?
-                .dmabufMainDevice ?? 0
-        }
+    func dmabufMainDevice() -> UInt64 {
+        server.renderService?
+            .dmabufMainDevice ?? 0
     }
 
-    nonisolated func dmabufImport(_ attrs: DmabufAttrs) -> Bool {
+    func dmabufImport(_ attrs: DmabufAttrs) -> Bool {
         guard let snapshot = DmabufProbeSnapshot(attrs) else { return false }
-        return MainActor.assumeIsolated {
-            self.server.renderService?.probeDmabuf(
-                RenderDmabufProbe(
-                    width: snapshot.width,
-                    height: snapshot.height,
-                    drmFormat: snapshot.format,
-                    modifier: snapshot.modifier,
-                    planes: snapshot.planes.map {
-                        RenderDmabufPlane(
-                            fd: $0.fd,
-                            offset: $0.offset,
-                            stride: $0.stride)
-                    })) ?? false
-        }
+        return server.renderService?.probeDmabuf(
+            RenderDmabufProbe(
+                width: snapshot.width,
+                height: snapshot.height,
+                drmFormat: snapshot.format,
+                modifier: snapshot.modifier,
+                planes: snapshot.planes.map {
+                    RenderDmabufPlane(
+                        fd: $0.fd,
+                        offset: $0.offset,
+                        stride: $0.stride)
+                })) ?? false
     }
 }
 
@@ -127,18 +108,14 @@ extension RouterRenderDriver: DmabufDelegate {
 // handle. Per-commit acquire/release points latch onto the surface aux state in
 // Syncobj.swift, then travel with the committed DMABUF upload to the renderer.
 extension RouterRenderDriver: DrmSyncobjDelegate {
-    nonisolated func importSyncobjTimeline(fd: Int32) -> UInt32? {
-        MainActor.assumeIsolated {
-            self.server.renderService?
-                .importSyncobjTimeline(fd: fd)
-        }
+    func importSyncobjTimeline(fd: Int32) -> UInt32? {
+        server.renderService?
+            .importSyncobjTimeline(fd: fd)
     }
 
-    nonisolated func destroySyncobjTimeline(handle: UInt32) {
-        MainActor.assumeIsolated {
-            self.server.renderService?
-                .destroySyncobjTimeline(handle: handle)
-        }
+    func destroySyncobjTimeline(handle: UInt32) {
+        server.renderService?
+            .destroySyncobjTimeline(handle: handle)
     }
 
 }
@@ -239,17 +216,16 @@ extension RouterRenderDriver: ScreencopyDelegate {
     func screencopyCapture(
         output: WlOutput?, configuration: ScreencopyConfiguration,
         overlayCursor: Bool,
-        buffer: UnsafeMutablePointer<wl_resource>, withDamage _: Bool,
+        buffer: WaylandResourceReference, withDamage _: Bool,
         preferRegionReadback: Bool,
         completion: @escaping @MainActor (ScreencopyResult) -> Void
     ) -> UInt64? {
         guard let id = output?.info.outputId, id != 0 else { return nil }
-        let bufferBits = UInt(bitPattern: buffer)
         return captureImpl(
             outputId: id, configuration: configuration,
             overlayCursor: overlayCursor,
             preferRegionReadback: preferRegionReadback,
-            bufferBits: bufferBits,
+            buffer: buffer,
             completion: completion)
     }
 
@@ -266,12 +242,10 @@ extension RouterRenderDriver: ScreencopyDelegate {
         configuration: ScreencopyConfiguration,
         overlayCursor: Bool,
         preferRegionReadback: Bool,
-        bufferBits: UInt,
+        buffer: WaylandResourceReference,
         completion: @escaping @MainActor (ScreencopyResult) -> Void
     ) -> UInt64? {
-        guard let buffer = UnsafeMutablePointer<wl_resource>(
-            bitPattern: bufferBits)
-        else { return nil }
+        guard let bufferResource = unsafe buffer.resource else { return nil }
         guard let currentParams = RenderBridge.screencopyParams(
             server: server,
             outputId: outputId)
@@ -297,7 +271,9 @@ extension RouterRenderDriver: ScreencopyDelegate {
         // dmabuf target: blit the composited frame straight into the client buffer on the
         // GPU (no CPU round-trip), sampling either the whole accumulator or the
         // requested clipped source region into the client-sized target.
-        if let dmabuf = WaylandResource.owner(of: buffer, as: DmabufBuffer.self) {
+        if let dmabuf = unsafe WaylandResource.owner(
+            of: bufferResource, as: DmabufBuffer.self)
+        {
             let attrs = dmabuf.attrs
             let sourceRegion = configuration.sourceRegion.map {
                 RenderCaptureRegion(
@@ -319,7 +295,7 @@ extension RouterRenderDriver: ScreencopyDelegate {
         // SHM target: read the composited frame back (whole output, BGRA8888 = the wl_shm
         // XRGB8888 byte order — the block forces composition so this is current content),
         // then copy the requested region into the client buffer.
-        guard wl_shm_buffer_get(buffer) != nil else { return nil }
+        guard unsafe wl_shm_buffer_get(bufferResource) != nil else { return nil }
         let sourceRegion = preferRegionReadback
             ? configuration.sourceRegion.map {
                 RenderCaptureRegion(
@@ -346,22 +322,21 @@ extension RouterRenderDriver: ScreencopyDelegate {
                     captureOriginX: capture.originX,
                     captureOriginY: capture.originY)
             }
-            let copied = Self.copyCapture(
+            let copied = unsafe Self.copyCapture(
                 capture,
                 configuration: configuration,
-                toShmResourceBits: bufferBits)
+                toShmResource: buffer)
             completion(copied ? Self.captureResult() : .failed)
         }
     }
 
-    private static func copyCapture(
+    @unsafe private static func copyCapture(
         _ capture: RenderPixelCapture,
         configuration: ScreencopyConfiguration,
-        toShmResourceBits bufferBits: UInt
+        toShmResource buffer: WaylandResourceReference
     ) -> Bool {
-        guard let buffer = UnsafeMutablePointer<wl_resource>(
-                bitPattern: bufferBits),
-              let shm = wl_shm_buffer_get(buffer)
+        guard let resource = unsafe buffer.resource,
+              let shm = unsafe wl_shm_buffer_get(resource)
         else { return false }
         let outW = capture.width
         let outH = capture.height
@@ -391,14 +366,14 @@ extension RouterRenderDriver: ScreencopyDelegate {
               ry <= outH - copyHeight
         else { return false }
 
-        wl_shm_buffer_begin_access(shm)
-        defer { wl_shm_buffer_end_access(shm) }
-        guard let destination = wl_shm_buffer_get_data(shm) else {
+        unsafe wl_shm_buffer_begin_access(shm)
+        defer { unsafe wl_shm_buffer_end_access(shm) }
+        guard let destination = unsafe wl_shm_buffer_get_data(shm) else {
             return false
         }
-        let destinationStride = Int(wl_shm_buffer_get_stride(shm))
-        let destinationHeight = Int(wl_shm_buffer_get_height(shm))
-        guard copyWidth == Int(wl_shm_buffer_get_width(shm)),
+        let destinationStride = Int(unsafe wl_shm_buffer_get_stride(shm))
+        let destinationHeight = Int(unsafe wl_shm_buffer_get_height(shm))
+        guard copyWidth == Int(unsafe wl_shm_buffer_get_width(shm)),
               copyHeight == destinationHeight,
               copyWidth > 0,
               copyHeight > 0,
@@ -417,7 +392,7 @@ extension RouterRenderDriver: ScreencopyDelegate {
                       destinationOffset + rowBytes
                         <= destinationCount.partialValue
                 else { return false }
-                destination.advanced(by: destinationOffset).copyMemory(
+                unsafe destination.advanced(by: destinationOffset).copyMemory(
                     from: sourceBase.advanced(by: sourceOffset),
                     byteCount: rowBytes)
             }
@@ -489,7 +464,7 @@ extension RouterRenderDriver: ScreencopyDelegate {
     /// no y_invert flag.
     private static func captureResult() -> ScreencopyResult {
         var ts = timespec()
-        clock_gettime(CLOCK_MONOTONIC, &ts)
+        unsafe clock_gettime(CLOCK_MONOTONIC, &ts)
         let sec = UInt64(ts.tv_sec)
         return ScreencopyResult(
             ok: true,

@@ -41,7 +41,7 @@ struct DrmFramebuffer: ~Copyable {
         var id: UInt32 = 0
         // libdrm takes `const uint32_t[4]` / `const uint64_t[4]`; a Swift array
         // converts to the element pointer for the call.
-        let rc = drmModeAddFB2WithModifiers(
+        let rc = unsafe drmModeAddFB2WithModifiers(
             deviceFd, width, height, pixelFormat, h, p, o, m, &id, flags)
         guard rc == 0, id != 0 else { return nil }
         self.deviceFd = deviceFd
@@ -67,7 +67,8 @@ struct DrmFramebuffer: ~Copyable {
         let p = DrmFramebuffer.fourPlane(pitches)
         let o = DrmFramebuffer.fourPlane(offsets)
         var id: UInt32 = 0
-        let rc = drmModeAddFB2(deviceFd, width, height, pixelFormat, h, p, o, &id, flags)
+        let rc = unsafe drmModeAddFB2(
+            deviceFd, width, height, pixelFormat, h, p, o, &id, flags)
         guard rc == 0, id != 0 else { return nil }
         self.deviceFd = deviceFd
         self.fbId = id

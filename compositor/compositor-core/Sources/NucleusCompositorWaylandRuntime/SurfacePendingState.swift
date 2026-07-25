@@ -1,5 +1,6 @@
 import WaylandServerC
 import WaylandServer
+import NucleusCompositorServerTypes
 import NucleusTypes
 
 /// A rectangle in fractional buffer coordinates (wp_viewport source is fixed-point).
@@ -52,6 +53,7 @@ enum SurfaceAuxKind: Hashable {
     case syncobj
 }
 
+@MainActor
 protocol WlSurfaceCommitObserver: AnyObject {
     func captureSurfaceCommit(
         _ surface: WlSurface,
@@ -63,16 +65,18 @@ protocol WlSurfaceCommitObserver: AnyObject {
     ) -> Bool
 }
 
+@MainActor
 protocol PreferredScaleSink: AnyObject {
     func sendPreferredScale(_ scale120: UInt32)
 }
 
-struct SurfaceCommit: Sendable {
-    let surfaceID: UInt32
+@MainActor
+struct SurfaceCommit {
+    let surfaceID: WlSurfaceID
     let commitID: UInt64
     let bufferAttached: Bool
     let bufferGeneration: UInt64
-    let bufferResourceBits: UInt
+    let buffer: WaylandResourceReference?
     let bufferPixelSize: BufferPixelSize
     let logicalContentSize: SurfaceLogicalSize
     let bufferScale: Int32
@@ -85,9 +89,10 @@ struct SurfaceCommit: Sendable {
     let aux: SurfaceAuxState
 }
 
+@MainActor
 protocol SurfaceSceneDelegate: AnyObject {
     func surfaceCommitted(_ commit: SurfaceCommit)
-    func surfaceDestroyed(surfaceID: UInt32, iosurfaceID: UInt32)
+    func surfaceDestroyed(surfaceID: WlSurfaceID, iosurfaceID: UInt32)
 }
 
 /// The sole accumulator for double-buffered core-surface state. Sticky values
@@ -96,13 +101,13 @@ protocol SurfaceSceneDelegate: AnyObject {
 struct SurfacePendingState {
     var bufferAttached = false
     var buffer: WaylandResourceReference?
-    var releaseCallback: UnsafeMutablePointer<wl_resource>?
+    var releaseCallback: WaylandResourceReference?
     var offsetX: Int32 = 0
     var offsetY: Int32 = 0
     var surfaceDamage: [WlRect] = []
     var bufferDamage: [WlRect] = []
-    var frameCallbacks: [UnsafeMutablePointer<wl_resource>] = []
-    var presentationFeedbacks: [UnsafeMutablePointer<wl_resource>] = []
+    var frameCallbacks: [WaylandResourceReference] = []
+    var presentationFeedbacks: [WaylandResourceReference] = []
     var bufferScale: Int32 = 1
     var bufferTransform: Int32 = 0
     var opaque: SurfacePendingField<RegionSnapshot> = .unchanged

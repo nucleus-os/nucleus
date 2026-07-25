@@ -1,6 +1,7 @@
 import WaylandServerC
 import WaylandServer
 import WaylandServerDispatch
+import WaylandProtocolTypes
 
 struct TextInputServerRectangle: Sendable, Equatable {
     var x: Int32
@@ -70,19 +71,15 @@ struct TextInputServerEventBatch: Sendable {
     }
 }
 
-private final class WeakTextInputV3 {
-    weak var value: TextInputV3?
-    init(_ value: TextInputV3) { self.value = value }
-}
-
 /// The compositor-side owner for one seat's text-input-v3 objects.
 ///
 /// Focus follows `WlSeat` keyboard focus. Each resource owns its own commit
 /// counter and double-buffered client state; the manager arbitrates the single
 /// enabled object and provides the input-method event projection.
-final class TextInputManagerV3 {
+@MainActor
+@safe final class TextInputManagerV3 {
     private unowned let seat: WlSeat
-    private var inputs: [WeakTextInputV3] = []
+    private var inputs: [WeakReference<TextInputV3>] = []
     private weak var enabledInput: TextInputV3?
     private weak var focusedSurface: WlSurface?
     private(set) var snapshots: [TextInputServerSnapshot] = []
@@ -93,10 +90,10 @@ final class TextInputManagerV3 {
 
     func register(in router: NucleusWaylandRouter) {
         router.addGlobal(
-            interface: swift_wayland_iface_zwp_text_input_manager_v3(),
-            version: 2,
-            impl: self,
-            bind: Self.bind)
+            ZwpTextInputManagerV3Server.global(
+                implementation: self,
+                advertisedVersion: 2,
+                owner: { manager, _ in manager }))
     }
 
     var liveResourceCount: Int {
@@ -115,9 +112,9 @@ final class TextInputManagerV3 {
         }
         focusedSurface = surface
         compactInputs()
-        guard let client = surface.resource.flatMap(wl_resource_get_client)
+        guard let client = unsafe surface.resource.flatMap(wl_resource_get_client)
         else { return }
-        let key = WlSeat.clientKey(client)
+        let key = unsafe WlSeat.clientKey(client)
         for input in inputs.compactMap(\.value)
         where input.clientKey == key {
             input.focusEntered(surface)
@@ -156,9 +153,9 @@ final class TextInputManagerV3 {
 
     fileprivate func register(_ input: TextInputV3) {
         compactInputs()
-        inputs.append(WeakTextInputV3(input))
+        inputs.append(WeakReference(input))
         guard let focusedSurface,
-              focusedSurface.resource
+              unsafe focusedSurface.resource
                 .flatMap(wl_resource_get_client)
                 .map(WlSeat.clientKey) == input.clientKey
         else { return }
@@ -196,56 +193,29 @@ final class TextInputManagerV3 {
         inputs.removeAll { $0.value == nil }
     }
 
-    private static let bind: @convention(c) (
-        OpaquePointer?,
-        UnsafeMutableRawPointer?,
-        UInt32,
-        UInt32
-    ) -> Void = { client, data, version, id in
-        guard let client,
-              let manager = NucleusWaylandRouter.impl(
-                data,
-                as: TextInputManagerV3.self)
-        else { return }
-        _ = WaylandResource.create(
-            client: client,
-            interface: swift_wayland_iface_zwp_text_input_manager_v3(),
-            version: Int32(version),
-            id: id,
-            vtable: ZwpTextInputManagerV3Server.vtable,
-            owner: manager)
-    }
 }
 
 extension TextInputManagerV3: ZwpTextInputManagerV3Requests {
     func getTextInput(
-        _ resource: UnsafeMutablePointer<wl_resource>,
-        id: WlNewId,
-        seat seatResource: UnsafeMutablePointer<wl_resource>?
+        _ request: WaylandRequest<ZwpTextInputManagerV3Server>,
+        id: WlNewId<ZwpTextInputV3Server>,
+        seat seatResource: WaylandBorrowedObject<WlSeatServer>
     ) {
-        guard let seatResource,
-              let binding = WaylandResource.owner(
-                of: seatResource,
-                as: SeatBinding.self),
+        guard let binding = seatResource.owner(as: SeatBinding.self),
               binding.seat === seat,
-              wl_resource_get_client(seatResource) == id.client
-        else {
-            swift_wayland_resource_post_error(
-                resource,
-                0,
-                "text-input seat must belong to the requesting client")
-            return
-        }
-        let input = TextInputV3(
-            manager: self,
-            clientKey: WlSeat.clientKey(id.client),
-            version: id.version)
-        guard let inputResource = id.create(
-            vtable: ZwpTextInputV3Server.vtable,
-            owner: input)
+              unsafe wl_resource_get_client(seatResource.resource) == id.client
         else { return }
-        input.bind(inputResource)
-        register(input)
+        _ = unsafe id.create(
+            owner: { handle in
+                TextInputV3(
+                    resource: handle,
+                    manager: self,
+                    clientKey: unsafe WlSeat.clientKey(id.client),
+                    version: unsafe id.version)
+            },
+            installed: { input in
+                self.register(input)
+            })
     }
 }
 
@@ -271,13 +241,14 @@ private struct PendingTextInputState {
 }
 
 /// One resource-owned text input. No platform editor or surface retains it.
-private final class TextInputV3: ZwpTextInputV3Requests,
+@MainActor
+@safe private final class TextInputV3: ZwpTextInputV3Requests,
     WlSurfaceCommitObserver
 {
     private weak var manager: TextInputManagerV3?
-    fileprivate let clientKey: UInt
+    fileprivate let clientKey: WaylandClientID
     private let version: Int32
-    private var resource: UnsafeMutablePointer<wl_resource>?
+    private let resource: WaylandResourceHandle<ZwpTextInputV3Server>
     fileprivate weak var focusedSurface: WlSurface?
     fileprivate private(set) var enabled = false
     private var pending = PendingTextInputState()
@@ -291,26 +262,22 @@ private final class TextInputV3: ZwpTextInputV3Requests,
     private var commitCount: UInt32 = 0
 
     init(
+        resource: WaylandResourceHandle<ZwpTextInputV3Server>,
         manager: TextInputManagerV3,
-        clientKey: UInt,
+        clientKey: WaylandClientID,
         version: Int32
     ) {
+        self.resource = resource
         self.manager = manager
         self.clientKey = clientKey
         self.version = version
     }
 
-    deinit {
+    isolated deinit {
         if let focusedSurface {
             focusedSurface.removeCommitObserver(self)
         }
         manager?.unregister(self)
-    }
-
-    fileprivate func bind(
-        _ resource: UnsafeMutablePointer<wl_resource>
-    ) {
-        self.resource = resource
     }
 
     fileprivate func focusEntered(_ surface: WlSurface) {
@@ -324,21 +291,15 @@ private final class TextInputV3: ZwpTextInputV3Requests,
         pending = PendingTextInputState()
         focusedSurface = surface
         surface.addCommitObserver(self)
-        guard let resource, let surfaceResource = surface.resource else {
-            return
-        }
-        ZwpTextInputV3Server.sendEnter(
-            resource,
-            surface: surfaceResource)
+        guard let surfaceResource = surface.protocolResource else { return }
+        resource.sendEnter(surface: surfaceResource)
         recordSnapshot()
     }
 
     fileprivate func focusLeft(_ surface: WlSurface) {
         guard focusedSurface === surface else { return }
-        if let resource, let surfaceResource = surface.resource {
-            ZwpTextInputV3Server.sendLeave(
-                resource,
-                surface: surfaceResource)
+        if let surfaceResource = surface.protocolResource {
+            resource.sendLeave(surface: surfaceResource)
         }
         detachFromFocusedSurface()
     }
@@ -366,52 +327,51 @@ private final class TextInputV3: ZwpTextInputV3Requests,
         appliedCursorRectangle = nil
     }
 
-    func enable(_ resource: UnsafeMutablePointer<wl_resource>) {
+    func enable(_ request: WaylandRequest<ZwpTextInputV3Server>) {
         guard focusedSurface != nil else { return }
         pending.reset(forEnableCommand: true)
     }
 
-    func disable(_ resource: UnsafeMutablePointer<wl_resource>) {
+    func disable(_ request: WaylandRequest<ZwpTextInputV3Server>) {
         guard focusedSurface != nil else { return }
         pending.reset(forEnableCommand: false)
     }
 
     func setSurroundingText(
-        _ resource: UnsafeMutablePointer<wl_resource>,
-        text: UnsafePointer<CChar>?,
+        _ request: WaylandRequest<ZwpTextInputV3Server>,
+        text: String,
         cursor: Int32,
         anchor: Int32
     ) {
-        guard focusedSurface != nil, let text else { return }
-        let value = String(cString: text)
-        guard value.utf8.count <= 4_000,
-              Self.isValidUTF8Boundary(cursor, in: value),
-              Self.isValidUTF8Boundary(anchor, in: value)
+        guard focusedSurface != nil else { return }
+        guard text.utf8.count <= 4_000,
+              Self.isValidUTF8Boundary(cursor, in: text),
+              Self.isValidUTF8Boundary(anchor, in: text)
         else { return }
-        pending.surrounding = (value, cursor, anchor)
+        pending.surrounding = (text, cursor, anchor)
     }
 
     func setTextChangeCause(
-        _ resource: UnsafeMutablePointer<wl_resource>,
-        cause: UInt32
+        _ request: WaylandRequest<ZwpTextInputV3Server>,
+        cause: ZwpTextInputV3ChangeCause
     ) {
-        guard focusedSurface != nil, cause <= 1 else { return }
-        pending.changeCause = cause
+        guard focusedSurface != nil, cause.rawValue <= 1 else { return }
+        pending.changeCause = cause.rawValue
     }
 
     func setContentType(
-        _ resource: UnsafeMutablePointer<wl_resource>,
-        hint: UInt32,
-        purpose: UInt32
+        _ request: WaylandRequest<ZwpTextInputV3Server>,
+        hint: ZwpTextInputV3ContentHint,
+        purpose: ZwpTextInputV3ContentPurpose
     ) {
-        guard focusedSurface != nil, purpose <= 13 else { return }
+        guard focusedSurface != nil, purpose.rawValue <= 13 else { return }
         let allowedHints: UInt32 = version >= 2 ? 0x1fff : 0x03ff
-        guard hint & ~allowedHints == 0 else { return }
-        pending.contentType = (hint, purpose)
+        guard hint.rawValue & ~allowedHints == 0 else { return }
+        pending.contentType = (hint.rawValue, purpose.rawValue)
     }
 
     func setCursorRectangle(
-        _ resource: UnsafeMutablePointer<wl_resource>,
+        _ request: WaylandRequest<ZwpTextInputV3Server>,
         x: Int32,
         y: Int32,
         width: Int32,
@@ -427,7 +387,7 @@ private final class TextInputV3: ZwpTextInputV3Requests,
             height: height)
     }
 
-    func commit(_ resource: UnsafeMutablePointer<wl_resource>) {
+    func commit(_ request: WaylandRequest<ZwpTextInputV3Server>) {
         commitCount &+= 1
         guard focusedSurface != nil else {
             pending = PendingTextInputState()
@@ -468,38 +428,30 @@ private final class TextInputV3: ZwpTextInputV3Requests,
     }
 
     func setAvailableActions(
-        _ resource: UnsafeMutablePointer<wl_resource>,
-        available_actions: UnsafeMutablePointer<wl_array>?
+        _ request: WaylandRequest<ZwpTextInputV3Server>,
+        available_actions: WaylandArrayView
     ) {
-        guard version >= 2, let available_actions else { return }
-        let count = Int(available_actions.pointee.size)
-            / MemoryLayout<UInt32>.stride
-        guard count > 0, let data = available_actions.pointee.data else {
-            return
-        }
-        let actions = data.bindMemory(
-            to: UInt32.self,
-            capacity: count)
+        guard version >= 2,
+              let actions = available_actions.copiedElements(of: UInt32.self),
+              !actions.isEmpty
+        else { return }
         var seen: Set<UInt32> = []
-        for index in 0..<count {
-            let action = actions[index]
+        for action in actions {
             guard action <= 1, seen.insert(action).inserted else {
-                swift_wayland_resource_post_error(
-                    resource,
-                    UInt32(
-                        ZWP_TEXT_INPUT_V3_ERROR_INVALID_ACTION.rawValue),
-                    "text-input action is invalid or duplicated")
+                request.postError(
+                    .invalidAction,
+                    message: "text-input action is invalid or duplicated")
                 return
             }
         }
     }
 
     func showInputPanel(
-        _ resource: UnsafeMutablePointer<wl_resource>
+        _ request: WaylandRequest<ZwpTextInputV3Server>
     ) {}
 
     func hideInputPanel(
-        _ resource: UnsafeMutablePointer<wl_resource>
+        _ request: WaylandRequest<ZwpTextInputV3Server>
     ) {}
 
     func captureSurfaceCommit(
@@ -522,69 +474,49 @@ private final class TextInputV3: ZwpTextInputV3Requests,
     }
 
     fileprivate func send(_ batch: TextInputServerEventBatch) {
-        guard let resource, enabled, focusedSurface != nil else {
+        guard enabled,
+              focusedSurface != nil else {
             return
         }
-        if version >= 2 {
+        if resource.supportsPreeditHint {
             for hint in batch.preeditHints {
-                ZwpTextInputV3Server.sendPreeditHint(
-                    resource,
+                resource.sendPreeditHint(
                     start: hint.start,
                     end: hint.end,
-                    hint: hint.hint)
-            }
-            if let language = batch.language {
-                language.withCString {
-                    ZwpTextInputV3Server.sendLanguage(
-                        resource,
-                        language: $0)
-                }
+                    hint: ZwpTextInputV3PreeditHint(rawValue: hint.hint))
             }
         }
+        if resource.supportsLanguage, let language = batch.language {
+            resource.sendLanguage(language: language)
+        }
         if batch.deleteBefore > 0 || batch.deleteAfter > 0 {
-            ZwpTextInputV3Server.sendDeleteSurroundingText(
-                resource,
+            resource.sendDeleteSurroundingText(
                 before_length: batch.deleteBefore,
                 after_length: batch.deleteAfter)
         }
         if let commit = batch.commit {
-            commit.withCString {
-                ZwpTextInputV3Server.sendCommitString(
-                    resource,
-                    text: $0)
-            }
+            resource.sendCommitString(text: commit)
         }
         if let preedit = batch.preedit {
-            if let text = preedit.text {
-                text.withCString {
-                    ZwpTextInputV3Server.sendPreeditString(
-                        resource,
-                        text: $0,
-                        cursor_begin: preedit.cursorBegin,
-                        cursor_end: preedit.cursorEnd)
-                }
-            } else {
-                ZwpTextInputV3Server.sendPreeditString(
-                    resource,
-                    text: nil,
-                    cursor_begin: preedit.cursorBegin,
-                    cursor_end: preedit.cursorEnd)
-            }
+            resource.sendPreeditString(
+                text: preedit.text,
+                cursor_begin: preedit.cursorBegin,
+                cursor_end: preedit.cursorEnd)
         }
-        if version >= 2, let action = batch.action {
-            ZwpTextInputV3Server.sendAction(
-                resource,
-                action: action,
+        if resource.supportsAction, let action = batch.action {
+            resource.sendAction(
+                action: ZwpTextInputV3Action(rawValue: action),
                 serial: commitCount)
         }
-        ZwpTextInputV3Server.sendDone(
-            resource,
+        resource.sendDone(
             serial: batch.doneSerial ?? commitCount)
     }
 
     private func recordSnapshot() {
         manager?.record(TextInputServerSnapshot(
-            resourceID: resource.map { wl_resource_get_id($0) } ?? 0,
+            resourceID: unsafe resource.resource.map {
+                unsafe wl_resource_get_id($0)
+            } ?? 0,
             focusedSurfaceID: focusedSurface?.objectId,
             enabled: enabled,
             surroundingText: surrounding?.text,

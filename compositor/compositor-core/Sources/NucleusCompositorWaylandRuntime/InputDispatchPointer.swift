@@ -181,7 +181,9 @@ extension InputDispatch {
             let source = target == 0 ? 0 : (windowDriver?.windowSource(
                 forSurfaceId: UInt32(truncatingIfNeeded: target)) ?? 0)
             let line = "input-route: button=\(button) down=\(down) target=\(target) source=\(source) cursor=\(cursorX),\(cursorY)\n"
-            line.withCString { _ = write(STDERR_FILENO, $0, strlen($0)) }
+            line.withCString {
+                _ = unsafe write(STDERR_FILENO, $0, strlen($0))
+            }
         }
         if target != 0 && !lockBlocks(target) {
             serial = seatDelivery.pointerButton(

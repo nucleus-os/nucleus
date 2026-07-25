@@ -16,25 +16,35 @@ enum WaylandVulkanSurface {
         instance: VulkanInstanceHandle, physicalDevice: VulkanPhysicalDeviceHandle,
         queueFamily: UInt32, display: OpaquePointer
     ) -> Bool {
-        guard let raw = vkGetInstanceProcAddr(
+        guard let raw = unsafe vkGetInstanceProcAddr(
             instance.vkInstance, "vkGetPhysicalDeviceWaylandPresentationSupportKHR")
         else { return false }
-        let query = unsafeBitCast(
+        let query = unsafe unsafeBitCast(
             raw, to: PFN_vkGetPhysicalDeviceWaylandPresentationSupportKHR.self)
-        return query(physicalDevice.vkPhysicalDevice, queueFamily, display) != 0
+        return unsafe query(
+            physicalDevice.vkPhysicalDevice,
+            queueFamily,
+            display) != 0
     }
 
     /// Create a Wayland WSI surface. `display` is the client's wl_display, `surface` the client
     /// wl_surface the panel presents onto. Returns nil if the WSI entry point or create fails.
     static func make(instance: VulkanInstanceHandle, display: OpaquePointer, surface: OpaquePointer) -> VulkanSurfaceHandle? {
-        guard let raw = vkGetInstanceProcAddr(instance.vkInstance, "vkCreateWaylandSurfaceKHR") else { return nil }
-        let createFn = unsafeBitCast(raw, to: PFN_vkCreateWaylandSurfaceKHR.self)
-        var sci = VkWaylandSurfaceCreateInfoKHR()
-        sci.sType = VK_STRUCTURE_TYPE_WAYLAND_SURFACE_CREATE_INFO_KHR
-        sci.display = display
-        sci.surface = surface
+        guard let raw = unsafe vkGetInstanceProcAddr(
+            instance.vkInstance,
+            "vkCreateWaylandSurfaceKHR")
+        else { return nil }
+        let createFn = unsafe unsafeBitCast(
+            raw,
+            to: PFN_vkCreateWaylandSurfaceKHR.self)
+        var sci = unsafe VkWaylandSurfaceCreateInfoKHR()
+        unsafe sci.sType = VK_STRUCTURE_TYPE_WAYLAND_SURFACE_CREATE_INFO_KHR
+        unsafe sci.display = display
+        unsafe sci.surface = surface
         var surf: VkSurfaceKHR? = nil
-        guard createFn(instance.vkInstance, &sci, nil, &surf) == VK_SUCCESS, let surf else { return nil }
-        return VulkanSurfaceHandle(surf)
+        guard unsafe createFn(instance.vkInstance, &sci, nil, &surf) == VK_SUCCESS,
+              let surf = unsafe surf
+        else { return nil }
+        return unsafe VulkanSurfaceHandle(surf)
     }
 }

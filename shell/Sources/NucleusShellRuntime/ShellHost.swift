@@ -16,6 +16,7 @@ import NucleusShellProduct
 import NucleusShellRender
 import NucleusShellLoop
 import NucleusRenderer
+import NucleusTextBackend
 import NucleusShellSignalC
 import FoundationEssentials
 import FoundationInternationalization
@@ -42,7 +43,8 @@ public final class ShellHost {
         case display = 1
         case exitSignal
         case renderWake
-        case authentication
+        case authenticationResponse
+        case authenticationProcess
         case systemBus
         case accessibility
         case environment
@@ -71,6 +73,7 @@ public final class ShellHost {
     let resourceHost: SwiftResourceHost
     let retainedStore: RetainedTreeStore
     let hostBundle: NucleusAppHostBundle
+    let textSystem: TextSystem
     let iconSourceResolver = ShellIconSourceResolver()
 
     var nativePublicationContext: WindowScenePublicationContext?
@@ -138,9 +141,20 @@ public final class ShellHost {
         let resourceHost = SwiftResourceHost()
         let retainedStore = RetainedTreeStore(resourceHost: resourceHost)
         let hostBundle = NucleusAppHostBundle(resourceHost: resourceHost)
+        let textSystem = TextSystem()
+        guard SkiaTextLayoutBackend.install(in: textSystem) else {
+            #if canImport(Glibc)
+            let message =
+                "shell: conflicting Graphite text borrow provider\n"
+            _ = message.withCString {
+                unsafe write(STDERR_FILENO, $0, strlen($0))
+            }
+            #endif
+            return nil
+        }
         let clockFormatStyle = ShellFormatting.clockStyle()
         guard let renderWake = ShellRenderWakeSink(),
-              let engine = ShellRenderEngine(
+              let engine = unsafe ShellRenderEngine(
                 display: client.display,
                 enableValidation: configuration.enableVulkanValidation,
                 store: retainedStore,
@@ -156,6 +170,7 @@ public final class ShellHost {
         self.resourceHost = resourceHost
         self.retainedStore = retainedStore
         self.hostBundle = hostBundle
+        self.textSystem = textSystem
         self.wallpaperPath = ShellFormatting.wallpaperPath(
             configuredPath: configuration.wallpaperPath,
             homeDirectory: FileManager.default.homeDirectoryForCurrentUser)

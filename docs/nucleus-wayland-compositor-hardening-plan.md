@@ -15,6 +15,8 @@ Nucleus exposes one coherent compositor state at every observable boundary.
 
 This plan replaces incomplete behavior directly. It does not preserve partially implemented protocol paths, add compatibility modes, or keep parallel scheduling and topology pipelines.
 
+Status: active
+
 ## Audit basis
 
 The findings came from comparing the Nucleus compositor at `4b4fe13f1aeeb081a012d2dbdc6ec29df2fdaa91` with the local niri and Smithay checkouts, then tracing the relevant Nucleus paths from Wayland request dispatch through scene authoring, renderer submission, DRM completion, and session lifecycle.

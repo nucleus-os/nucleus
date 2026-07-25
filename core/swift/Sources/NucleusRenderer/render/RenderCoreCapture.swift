@@ -28,9 +28,9 @@ extension RenderCore {
         guard let driver = frameDriver,
               let accumulator = driver.accumulator(for: outputID)
         else { return nil }
-        let surface = accumulator.surface
-        let surfaceWidth = surface.width()
-        let surfaceHeight = surface.height()
+        let surface = unsafe accumulator.surface
+        let surfaceWidth = unsafe surface.width()
+        let surfaceHeight = unsafe surface.height()
         let usesRegion = sourceWidth > 0 || sourceHeight > 0
         let x = usesRegion ? sourceX : 0
         let y = usesRegion ? sourceY : 0
@@ -72,12 +72,12 @@ extension RenderCore {
             return nil
         }
         let startedAt = telemetryClock.now
-        let readback = usesRegion
+        let readback = unsafe usesRegion
             ? context.beginSurfaceReadbackBGRARegion(
                 surface, x, y, width, height)
             : context.beginSurfaceReadbackBGRA(surface)
-        guard readback.isValid() else { return nil }
-        pendingPixelCaptureJobs[requestID] = PendingPixelCaptureJob(
+        guard unsafe readback.isValid() else { return nil }
+        pendingPixelCaptureJobs[requestID] = unsafe PendingPixelCaptureJob(
             key: key,
             readback: readback,
             retainedSurface: surface,
@@ -114,11 +114,11 @@ extension RenderCore {
             return nil
         }
         guard let driver = frameDriver,
-              let image = driver.registry.resolve(.clientSurface(iosurfaceID)),
-              image.isValid()
+              let image = unsafe driver.registry.resolve(.clientSurface(iosurfaceID)),
+              unsafe image.isValid()
         else { return nil }
-        let width = image.width()
-        let height = image.height()
+        let width = unsafe image.width()
+        let height = unsafe image.height()
         guard width > 0, height > 0,
               let byteCount = Self.captureByteCount(
                 width: Int(width), height: Int(height)),
@@ -129,24 +129,24 @@ extension RenderCore {
             return nil
         }
         let startedAt = telemetryClock.now
-        let surface = driver.recorder.makeOffscreenSurface(width, height)
-        guard surface.isValid() else { return nil }
+        let surface = unsafe driver.recorder.makeOffscreenSurface(width, height)
+        guard unsafe surface.isValid() else { return nil }
         var source = nucleus.skia.RectF()
         source.width = Float(width); source.height = Float(height)
         var paint = nucleus.skia.Paint()
         paint.blend = nucleus.skia.BlendMode.src
-        surface.getCanvas().drawImageRect(image, source, source, paint)
-        let recording = driver.recorder.snapRecording()
-        guard recording.isValid() else { return nil }
+        unsafe surface.getCanvas().drawImageRect(image, source, source, paint)
+        let recording = unsafe driver.recorder.snapRecording()
+        guard unsafe recording.isValid() else { return nil }
         let serial = allocateSubmissionSerial()
-        guard acceptGraphiteSubmission(
+        guard unsafe acceptGraphiteSubmission(
             context.submitAsync(recording, serial))
         else { return nil }
         lastSubmittedSerial = serial
-        let readback = context.beginSurfaceReadbackBGRA(surface)
-        guard readback.isValid() else { return nil }
+        let readback = unsafe context.beginSurfaceReadbackBGRA(surface)
+        guard unsafe readback.isValid() else { return nil }
         let requestID = allocateCaptureRequestID()
-        pendingPixelCaptureJobs[requestID] = PendingPixelCaptureJob(
+        pendingPixelCaptureJobs[requestID] = unsafe PendingPixelCaptureJob(
             key: nil,
             readback: readback,
             retainedSurface: surface,
@@ -196,21 +196,21 @@ extension RenderCore {
         let descriptor = DmaBufImageDescriptor(
             fd: fd, width: width, height: height, drmFormat: drmFormat, modifier: modifier,
             planes: planes, usage: DmaBufImageDescriptor.scanoutUsage)
-        guard let imported = importDmaBufImage(
+        guard let imported = unsafe importDmaBufImage(
             device: deviceHandle, dispatch: deviceDispatch, descriptor: descriptor
         ) else { return nil }
-        guard let submitted = submitAccumulatorBlit(
+        guard let submitted = unsafe submitAccumulatorBlit(
             accumulator, image: imported.handle, recorder: driver.recorder,
             width: checkedWidth, height: checkedHeight,
             format: vulkanFormatForDrm(drmFormat),
             sourceX: sourceX, sourceY: sourceY,
             sourceWidth: sourceWidth, sourceHeight: sourceHeight, overlay: overlay)
         else {
-            _ = consume imported
+            _ = unsafe consume imported
             return nil
         }
         let requestID = allocateCaptureRequestID()
-        pendingDmabufCaptures[requestID] = PendingDmabufCapture(
+        pendingDmabufCaptures[requestID] = unsafe PendingDmabufCapture(
             submissionSerial: submitted.serial,
             surface: submitted.surface,
             image: VkOwnedImageBox(consuming: imported),
@@ -227,13 +227,13 @@ extension RenderCore {
         sourceX: Int32, sourceY: Int32, sourceWidth: Int32, sourceHeight: Int32,
         overlay: CaptureOverlay?
     ) -> (surface: nucleus.skia.Surface, serial: UInt64)? {
-        let params = ScanoutImageParams(
+        let params = unsafe ScanoutImageParams(
             image: image, memory: nil, allocSize: 0,
             width: width, height: height, format: format,
             tiling: VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT, initialLayout: VK_IMAGE_LAYOUT_UNDEFINED,
             usageFlags: DmaBufImageDescriptor.scanoutUsage, queueFamilyIndex: graphicsFamily,
             hasAlpha: false)
-        let surface = ScanoutSurface.wrap(recorder: recorder, params: params)
+        let surface = unsafe ScanoutSurface.wrap(recorder: recorder, params: params)
         var source: nucleus.skia.RectF?
         if sourceWidth > 0, sourceHeight > 0 {
             var rect = nucleus.skia.RectF()
@@ -241,17 +241,17 @@ extension RenderCore {
             rect.width = Float(sourceWidth); rect.height = Float(sourceHeight)
             source = rect
         }
-        guard surface.isValid(), accumulator.present(onto: surface, source: source)
+        guard unsafe surface.isValid(), unsafe accumulator.present(onto: surface, source: source)
         else { return nil }
         if let overlay,
            overlay.width > 0, overlay.height > 0,
            overlay.rgbaPixels.count >= Int(overlay.width) * Int(overlay.height) * 4 {
             let decoded = overlay.rgbaPixels.withUnsafeBufferPointer {
-                nucleus.skia.makeRasterImageRGBA(
+                unsafe nucleus.skia.makeRasterImageRGBA(
                     overlay.width, overlay.height, $0.baseAddress, $0.count)
             }
-            let image = recorder.makeTextureImage(decoded)
-            if image.isValid() {
+            let image = unsafe recorder.makeTextureImage(decoded)
+            if unsafe image.isValid() {
                 var src = nucleus.skia.RectF()
                 src.width = Float(overlay.width); src.height = Float(overlay.height)
                 var dst = src
@@ -259,17 +259,17 @@ extension RenderCore {
                 dst.y = Float(overlay.y - sourceY)
                 var paint = nucleus.skia.Paint()
                 paint.blend = nucleus.skia.BlendMode.srcOver
-                surface.getCanvas().drawImageRect(image, src, dst, paint)
+                unsafe surface.getCanvas().drawImageRect(image, src, dst, paint)
             }
         }
-        let recording = recorder.snapRecording()
-        guard recording.isValid() else { return nil }
+        let recording = unsafe recorder.snapRecording()
+        guard unsafe recording.isValid() else { return nil }
         let serial = allocateSubmissionSerial()
-        guard acceptGraphiteSubmission(
+        guard unsafe acceptGraphiteSubmission(
             context.submitAsync(recording, serial))
         else { return nil }
         lastSubmittedSerial = serial
-        return (surface, serial)
+        return unsafe (surface, serial)
     }
 
     @_spi(NucleusPlatform)
@@ -289,11 +289,11 @@ extension RenderCore {
     @_spi(NucleusPlatform)
     public func pollCaptureWork() {
         guard hasPendingCaptureWork else { return }
-        let completedSerial = context.pollCompletedSubmissionSerial()
+        let completedSerial = unsafe context.pollCompletedSubmissionSerial()
         var madeProgress = false
 
         let completedPixelIDs = pendingPixelCaptureJobs.compactMap {
-            $0.value.readback.isComplete() ? $0.key : nil
+            unsafe $0.value.readback.isComplete() ? $0.key : nil
         }
         for jobID in completedPixelIDs {
             guard let pending = pendingPixelCaptureJobs.removeValue(
@@ -319,7 +319,7 @@ extension RenderCore {
                 count: pending.byteCount)
             let copyStartedAt = telemetryClock.now
             let status = pixels.withUnsafeMutableBufferPointer {
-                pending.readback.copyPixels(
+                unsafe pending.readback.copyPixels(
                     $0.baseAddress,
                     $0.count,
                     Int32(pending.width * 4))
@@ -328,7 +328,7 @@ extension RenderCore {
                 "swift.nucleus.renderer.capture.pixel_copy_ms",
                 Double(elapsedNanoseconds(
                     copyStartedAt, telemetryClock.now)) / 1_000_000.0)
-            pending.retainedSurface = nil
+            unsafe pending.retainedSurface = nil
             let capture: PixelCapture? = status == nucleus.skia.Status.ok
                 ? PixelCapture(
                     pixels: pixels,

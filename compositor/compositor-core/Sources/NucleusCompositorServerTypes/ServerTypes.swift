@@ -1,5 +1,18 @@
 import Swift
 
+public struct WlSurfaceID: Hashable, Comparable, Sendable {
+  public let rawValue: Swift.UInt32
+
+  public init(_ rawValue: Swift.UInt32) {
+    precondition(rawValue != 0, "zero is not a valid compositor surface identity")
+    self.rawValue = rawValue
+  }
+
+  public static func < (lhs: Self, rhs: Self) -> Swift.Bool {
+    lhs.rawValue < rhs.rawValue
+  }
+}
+
 public enum WireInteractionMode: Swift.UInt32, Swift.Sendable {
   case move = 1
   case resize = 2

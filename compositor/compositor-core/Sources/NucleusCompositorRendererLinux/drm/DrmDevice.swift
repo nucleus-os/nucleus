@@ -48,7 +48,7 @@ struct DrmDeviceFd: ~Copyable {
     /// can't be opened. Used for the render node; the primary node is opened
     /// through libseat for DRM-master negotiation and handed to `init(owning:)`.
     init?(openingNode path: String) {
-        let opened = path.withCString { nucleus_drm_open_device($0) }
+        let opened = path.withCString { unsafe nucleus_drm_open_device($0) }
         guard opened >= 0 else { return nil }
         self.fd = opened
     }
@@ -71,25 +71,26 @@ struct DrmDeviceFd: ~Copyable {
 /// Owns a `gbm_device*` created over a borrowed DRM fd and destroys it on
 /// teardown. GBM does not take ownership of the fd — the `DrmDeviceFd` outlives
 /// this and remains responsible for closing it.
-struct GbmDevice: ~Copyable {
+@safe struct GbmDevice: ~Copyable {
     private(set) var handle: OpaquePointer?
 
     /// Create a GBM device over a borrowed DRM fd. Returns nil on failure.
     init?(borrowingFd fd: Int32) {
-        guard fd >= 0, let device = gbm_create_device(fd) else { return nil }
-        self.handle = device
+        guard fd >= 0, let device = unsafe gbm_create_device(fd) else { return nil }
+        unsafe self.handle = device
     }
 
-    var isValid: Bool { handle != nil }
+    var isValid: Bool { unsafe handle != nil }
 
     /// Backend name (e.g. "drm") for diagnostics, or nil if unavailable.
     var backendName: String? {
-        guard let handle, let name = gbm_device_get_backend_name(handle) else { return nil }
-        return String(cString: name)
+        guard let handle = unsafe handle,
+              let name = unsafe gbm_device_get_backend_name(handle) else { return nil }
+        return unsafe String(cString: name)
     }
 
     deinit {
-        if let handle { gbm_device_destroy(handle) }
+        if let handle = unsafe handle { unsafe gbm_device_destroy(handle) }
     }
 }
 
@@ -171,42 +172,42 @@ enum DrmDeviceEnumerator {
     /// required). Returns the enumeration
     /// errno path as `.failure(.enumerationFailed)`.
     static func enumerate() -> Result<[DrmDeviceCandidate], DrmSelectionError> {
-        var devices = [drmDevicePtr?](repeating: nil, count: 32)
+        var devices = unsafe [drmDevicePtr?](repeating: nil, count: 32)
         let count = devices.withUnsafeMutableBufferPointer { buf in
-            drmGetDevices2(0, buf.baseAddress, Int32(buf.count))
+            unsafe drmGetDevices2(0, buf.baseAddress, Int32(buf.count))
         }
         guard count >= 0 else { return .failure(.enumerationFailed) }
         // `drmGetDevices2` fills at most `buf.count` entries but returns the total
         // device count, which can exceed the buffer on a host with >32 DRM devices.
         // Clamp to the buffer capacity so neither the loop nor `drmFreeDevices`
         // reads past the 32-element array.
-        let filled = min(Int(count), devices.count)
+        let filled = unsafe min(Int(count), devices.count)
 
         defer {
             devices.withUnsafeMutableBufferPointer { buf in
-                drmFreeDevices(buf.baseAddress, Int32(filled))
+                unsafe drmFreeDevices(buf.baseAddress, Int32(filled))
             }
         }
 
         var candidates: [DrmDeviceCandidate] = []
         for index in 0..<filled {
-            guard let device = devices[index] else { continue }
-            let d = device.pointee
-            guard d.bustype == DRM_BUS_PCI else { continue }
-            guard let pciDevice = d.deviceinfo.pci else { continue }
-            guard let pciBus = d.businfo.pci else { continue }
-            guard (d.available_nodes & (1 << DRM_NODE_RENDER)) != 0 else { continue }
-            guard let renderC = d.nodes[Int(DRM_NODE_RENDER)] else { continue }
+            guard let device = unsafe devices[index] else { continue }
+            let d = unsafe device.pointee
+            guard unsafe d.bustype == DRM_BUS_PCI else { continue }
+            guard let pciDevice = unsafe d.deviceinfo.pci else { continue }
+            guard let pciBus = unsafe d.businfo.pci else { continue }
+            guard unsafe (d.available_nodes & (1 << DRM_NODE_RENDER)) != 0 else { continue }
+            guard let renderC = unsafe d.nodes[Int(DRM_NODE_RENDER)] else { continue }
 
             let primary: String?
-            if (d.available_nodes & (1 << DRM_NODE_PRIMARY)) != 0,
-               let primaryC = d.nodes[Int(DRM_NODE_PRIMARY)] {
-                primary = String(cString: primaryC)
+            if unsafe (d.available_nodes & (1 << DRM_NODE_PRIMARY)) != 0,
+               let primaryC = unsafe d.nodes[Int(DRM_NODE_PRIMARY)] {
+                primary = unsafe String(cString: primaryC)
             } else {
                 primary = nil
             }
 
-            candidates.append(DrmDeviceCandidate(
+            let candidate = unsafe DrmDeviceCandidate(
                 renderPath: String(cString: renderC),
                 primaryPath: primary,
                 vendorId: pciDevice.pointee.vendor_id,
@@ -218,21 +219,26 @@ enum DrmDeviceEnumerator {
                 connectedDisplayCount: primary.flatMap(Self.connectedDisplayCount),
                 isBootVGA: Self.isBootVGA(
                     domain: pciBus.pointee.domain, bus: pciBus.pointee.bus,
-                    device: pciBus.pointee.dev, function: pciBus.pointee.func)))
+                    device: pciBus.pointee.dev, function: pciBus.pointee.func))
+            candidates.append(candidate)
         }
         return .success(candidates)
     }
 
     private static func connectedDisplayCount(primaryPath: String) -> Int? {
         guard let fd = DrmDeviceFd(openingNode: primaryPath) else { return nil }
-        guard let resources = drmModeGetResources(fd.fd) else { return nil }
-        defer { drmModeFreeResources(resources) }
+        guard let resources = unsafe drmModeGetResources(fd.fd) else { return nil }
+        defer { unsafe drmModeFreeResources(resources) }
         var count = 0
-        for index in 0..<Int(resources.pointee.count_connectors) {
-            guard let connector = drmModeGetConnector(fd.fd, resources.pointee.connectors[index]) else { continue }
-            defer { drmModeFreeConnector(connector) }
-            if connector.pointee.connection == DRM_MODE_CONNECTED,
-               connector.pointee.count_modes > 0 { count += 1 }
+        let connectorCount = unsafe Int(resources.pointee.count_connectors)
+        for index in 0..<connectorCount {
+            let connectorID = unsafe resources.pointee.connectors[index]
+            guard let connector = unsafe drmModeGetConnector(fd.fd, connectorID) else {
+                continue
+            }
+            defer { unsafe drmModeFreeConnector(connector) }
+            if unsafe connector.pointee.connection == DRM_MODE_CONNECTED,
+               unsafe connector.pointee.count_modes > 0 { count += 1 }
         }
         return count
     }
@@ -244,11 +250,11 @@ enum DrmDeviceEnumerator {
         }
         let address = "\(hex(UInt64(domain), width: 4)):\(hex(UInt64(bus), width: 2)):\(hex(UInt64(device), width: 2)).\(hex(UInt64(function), width: 1))"
         let path = "/sys/bus/pci/devices/\(address)/boot_vga"
-        let descriptor = path.withCString { open($0, O_RDONLY | O_CLOEXEC) }
+        let descriptor = path.withCString { unsafe open($0, O_RDONLY | O_CLOEXEC) }
         guard descriptor >= 0 else { return false }
         defer { close(descriptor) }
         var value: UInt8 = 0
-        return read(descriptor, &value, 1) == 1 && value == 0x31
+        return unsafe read(descriptor, &value, 1) == 1 && value == 0x31
     }
 }
 
@@ -256,7 +262,15 @@ enum DrmDeviceEnumerator {
 
 private func logDrmDiscover(_ message: String) {
     let line = "drm-discover: \(message)\n"
-    line.withCString { _ = write(STDERR_FILENO, $0, strlen($0)) }
+    line.withCString { _ = unsafe write(STDERR_FILENO, $0, strlen($0)) }
+}
+
+/// The DRM device nodes selected for compositor bring-up.
+public struct DrmDiscovery: Sendable, Equatable {
+    /// Primary (card) node the seat opens for KMS.
+    public let primaryPath: String
+    /// Render node whose `dev_t` seeds DMA-BUF feedback.
+    public let renderPath: String
 }
 
 /// Discover the DRM device for compositor bring-up: enumerate PCI GPUs via libdrm
@@ -265,19 +279,10 @@ private func logDrmDiscover(_ message: String) {
 /// primary node, and return both device-node paths. Discovery does not open the
 /// render node: DMA-BUF feedback needs only its `dev_t`, which the composition
 /// root obtains with `stat(2)`.
-public func nucleus_drm_discover(
-    _ primaryPathOut: UnsafeMutablePointer<CChar>,
-    _ primaryPathCap: Int,
-    _ renderPathOut: UnsafeMutablePointer<CChar>,
-    _ renderPathCap: Int,
-    preferredRenderPath: String? = nil
-) -> Bool {
-    if primaryPathCap > 0 { primaryPathOut.pointee = 0 }
-    if renderPathCap > 0 { renderPathOut.pointee = 0 }
-
+public func discoverDrmDevice(preferredRenderPath: String? = nil) -> DrmDiscovery? {
     guard case .success(let candidates) = DrmDeviceEnumerator.enumerate() else {
         logDrmDiscover("DRM enumeration failed")
-        return false
+        return nil
     }
     let selected: DrmDeviceCandidate
     switch selectDrmDevice(
@@ -292,23 +297,13 @@ public func nucleus_drm_discover(
             let displays = candidate.connectedDisplayCount.map(String.init) ?? "unknown"
             logDrmDiscover("candidate pci=\(candidate.pciAddress) render=\(candidate.renderPath) primary=\(candidate.primaryPath ?? "none") connected_displays=\(displays) boot_vga=\(candidate.isBootVGA)")
         }
-        return false
+        return nil
     }
     guard let primary = selected.primaryPath else {
         logDrmDiscover("matched DRM device \(selected.pciAddress) has no primary node")
-        return false
-    }
-    if primaryPathCap > 0 {
-        _ = primary.withCString { strncpy(primaryPathOut, $0, primaryPathCap - 1) }
-        primaryPathOut[primaryPathCap - 1] = 0
-    }
-    if renderPathCap > 0 {
-        _ = selected.renderPath.withCString {
-            strncpy(renderPathOut, $0, renderPathCap - 1)
-        }
-        renderPathOut[renderPathCap - 1] = 0
+        return nil
     }
     let displays = selected.connectedDisplayCount.map(String.init) ?? "unknown"
     logDrmDiscover("matched DRM device \(selected.pciAddress) render=\(selected.renderPath) primary=\(primary) connected_displays=\(displays) boot_vga=\(selected.isBootVGA)")
-    return true
+    return DrmDiscovery(primaryPath: primary, renderPath: selected.renderPath)
 }

@@ -8,7 +8,7 @@ import WaylandClientC
 public import WaylandClientDispatch
 
 @MainActor
-public final class SessionLockClient {
+@safe public final class SessionLockClient {
     private let manager: OpaquePointer
     private weak var client: ShellWaylandClient?
     private var lock: OpaquePointer?
@@ -21,28 +21,31 @@ public final class SessionLockClient {
     public var onFinished: (() -> Void)?
 
     public init?(client: ShellWaylandClient) {
-        guard let manager = client.proxy(.sessionLock) else { return nil }
-        self.manager = manager
+        guard let manager = unsafe client.proxy(.sessionLock) else { return nil }
+        unsafe self.manager = manager
         self.client = client
     }
 
     /// Request the session lock. On `onLocked`, present per-output lock surfaces.
     public func lockSession() {
-        guard let lock = ext_session_lock_manager_v1_lock(manager) else { return }
-        self.lock = lock
-        ExtSessionLockV1Client.addListener(lock, owner: self)
+        guard let lock = unsafe ext_session_lock_manager_v1_lock(manager) else {
+            return
+        }
+        unsafe self.lock = lock
+        unsafe ExtSessionLockV1Client.addListener(lock, owner: self)
     }
 
     /// Create the lock surface for one output. Returns nil before the lock is
     /// confirmed — the protocol only permits lock surfaces on a held lock.
     public func lockSurface(for output: WaylandOutput) -> SessionLockSurface? {
-        guard let lock, let client else { return nil }
-        return SessionLockSurface(lock: lock, client: client, output: output)
+        guard let lock = unsafe lock, let client else { return nil }
+        return unsafe SessionLockSurface(
+            lock: lock, client: client, output: output)
     }
 
     /// Whether the compositor has confirmed the lock. Until it does, the session
     /// is not yet secure and no lock surface may be created.
-    public var isLocked: Bool { lock != nil && lockConfirmed }
+    public var isLocked: Bool { unsafe lock != nil && lockConfirmed }
 
     /// Release the lock (after successful authentication).
     /// Release the lock after successful authentication. Refuses unless the
@@ -50,9 +53,9 @@ public final class SessionLockClient {
     /// protocol error, and silently doing nothing is safer than a crash that
     /// would strand the session.
     public func unlockAndDestroy() {
-        guard let lock, lockConfirmed else { return }
-        ext_session_lock_v1_unlock_and_destroy(lock)
-        self.lock = nil
+        guard let lock = unsafe lock, lockConfirmed else { return }
+        unsafe ext_session_lock_v1_unlock_and_destroy(lock)
+        unsafe self.lock = nil
         lockConfirmed = false
     }
 }
@@ -60,7 +63,7 @@ public final class SessionLockClient {
 // The generated event dispatch is nonisolated (a @convention(c) libwayland callback); the shell
 // pumps wl_display on its main-thread event loop, so each handler reasserts the main actor.
 extension SessionLockClient: ExtSessionLockV1Events {
-    public nonisolated func locked(_ proxy: OpaquePointer) {
+    public nonisolated func locked(_ proxy: WaylandBorrowedProxy<ExtSessionLockV1Client>) {
         MainActor.assumeIsolated {
             lockConfirmed = true
             onLocked?()
@@ -70,10 +73,10 @@ extension SessionLockClient: ExtSessionLockV1Events {
     /// The compositor refused or revoked the lock. The protocol forbids touching
     /// the lock object further, so it is dropped without `unlock_and_destroy` —
     /// calling that on a finished lock is a protocol error.
-    public nonisolated func finished(_ proxy: OpaquePointer) {
+    public nonisolated func finished(_ proxy: WaylandBorrowedProxy<ExtSessionLockV1Client>) {
         MainActor.assumeIsolated {
             lockConfirmed = false
-            lock = nil
+            unsafe lock = nil
             onFinished?()
         }
     }

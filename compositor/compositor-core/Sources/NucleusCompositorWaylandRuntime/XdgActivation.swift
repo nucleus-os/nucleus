@@ -8,18 +8,22 @@
 import WaylandServerC
 import WaylandServer
 import WaylandServerDispatch
+import WaylandProtocolTypes
 
+@MainActor
 protocol XdgActivationDelegate: AnyObject {
     /// Request focus after the manager has consumed a valid one-shot grant.
     func activateSurface(_ surface: WlSurface?, token: String)
 }
 
-final class XdgActivationBinding {
+@MainActor
+@safe final class XdgActivationBinding {
     unowned let manager: XdgActivationManager
     init(_ manager: XdgActivationManager) { self.manager = manager }
 }
 
-final class XdgActivationManager {
+@MainActor
+@safe final class XdgActivationManager {
     weak var delegate: (any XdgActivationDelegate)?
     weak var seat: WlSeat?
     private let tokenGenerator: () -> String
@@ -32,7 +36,11 @@ final class XdgActivationManager {
 
     func register(in router: NucleusWaylandRouter) {
         router.addGlobal(
-            interface: swift_wayland_iface_xdg_activation_v1(), version: 1, impl: self, bind: Self.bind)
+            XdgActivationV1Server.global(
+                implementation: self,
+                owner: { manager, _ in
+                    XdgActivationBinding(manager)
+                }))
     }
 
     func mintToken(authorized: Bool) -> String {
@@ -68,32 +76,31 @@ final class XdgActivationManager {
         return String(repeating: "0", count: 16 - digits.count) + digits
     }
 
-    private static let bind: @convention(c) (
-        OpaquePointer?, UnsafeMutableRawPointer?, UInt32, UInt32
-    ) -> Void = { client, data, version, id in
-        guard let client, let me = NucleusWaylandRouter.impl(data, as: XdgActivationManager.self) else { return }
-        _ = WaylandResource.create(
-            client: client, interface: swift_wayland_iface_xdg_activation_v1(), version: Int32(version),
-            id: id, vtable: XdgActivationV1Server.vtable, owner: XdgActivationBinding(me))
-    }
 }
 
 extension XdgActivationBinding: XdgActivationV1Requests {
-    func getActivationToken(_ resource: UnsafeMutablePointer<wl_resource>, id: WlNewId) {
-        _ = id.create(vtable: XdgActivationTokenV1Server.vtable, owner: XdgActivationToken(manager: manager))
+    func getActivationToken(
+        _ request: WaylandRequest<XdgActivationV1Server>,
+        id: WlNewId<XdgActivationTokenV1Server>
+    ) {
+        _ = unsafe id.create { handle in
+            XdgActivationToken(resource: handle, manager: manager)
+        }
     }
 
-    func activate(_ resource: UnsafeMutablePointer<wl_resource>, token: UnsafePointer<CChar>?,
-                  surface surfaceRes: UnsafeMutablePointer<wl_resource>?) {
-        let surface = surfaceRes.flatMap { WaylandResource.owner(of: $0, as: WlSurface.self) }
-        let token = token.map { String(cString: $0) } ?? ""
+    func activate(_ request: WaylandRequest<XdgActivationV1Server>, token: String,
+                  surface surfaceRes: WaylandBorrowedObject<WlSurfaceServer>) {
+        let surface = surfaceRes.owner(as: WlSurface.self)
         guard surface != nil, manager.consumeToken(token) else { return }
         manager.delegate?.activateSurface(surface, token: token)
     }
 }
 
 /// An activation token accumulates provenance until its one commit.
-final class XdgActivationToken {
+@MainActor
+@safe final class XdgActivationToken {
+    private let resource:
+        WaylandResourceHandle<XdgActivationTokenV1Server>
     private unowned let manager: XdgActivationManager
     private var used = false
     private var serial: UInt32?
@@ -101,55 +108,57 @@ final class XdgActivationToken {
     private weak var surface: WlSurface?
     private var appID: String?
 
-    init(manager: XdgActivationManager) { self.manager = manager }
+    init(
+        resource: WaylandResourceHandle<XdgActivationTokenV1Server>,
+        manager: XdgActivationManager
+    ) {
+        self.resource = resource
+        self.manager = manager
+    }
 }
 
 extension XdgActivationToken: XdgActivationTokenV1Requests {
-    func setSerial(_ resource: UnsafeMutablePointer<wl_resource>, serial: UInt32,
-                   seat: UnsafeMutablePointer<wl_resource>?) {
+    func setSerial(_ request: WaylandRequest<XdgActivationTokenV1Server>, serial: UInt32,
+                   seat: WaylandBorrowedObject<WlSeatServer>) {
         guard !used else {
-            postAlreadyUsed(resource)
+            postAlreadyUsed(request)
             return
         }
         self.serial = serial
-        self.seat = seat.flatMap {
-            WaylandResource.owner(of: $0, as: SeatBinding.self)?.seat
-        }
+        self.seat = seat.owner(as: SeatBinding.self)?.seat
     }
 
-    func setAppId(_ resource: UnsafeMutablePointer<wl_resource>, app_id: UnsafePointer<CChar>?) {
+    func setAppId(_ request: WaylandRequest<XdgActivationTokenV1Server>, app_id: String) {
         guard !used else {
-            postAlreadyUsed(resource)
+            postAlreadyUsed(request)
             return
         }
-        appID = app_id.map(String.init(cString:))
+        appID = app_id
     }
 
-    func setSurface(_ resource: UnsafeMutablePointer<wl_resource>,
-                    surface: UnsafeMutablePointer<wl_resource>?) {
+    func setSurface(_ request: WaylandRequest<XdgActivationTokenV1Server>,
+                    surface: WaylandBorrowedObject<WlSurfaceServer>) {
         guard !used else {
-            postAlreadyUsed(resource)
+            postAlreadyUsed(request)
             return
         }
-        self.surface = surface.flatMap {
-            WaylandResource.owner(of: $0, as: WlSurface.self)
-        }
+        self.surface = surface.owner(as: WlSurface.self)
     }
 
-    func commit(_ resource: UnsafeMutablePointer<wl_resource>) {
+    func commit(_ request: WaylandRequest<XdgActivationTokenV1Server>) {
         // The token resource carries the done event; the manager mints the string.
         guard !used else {
-            postAlreadyUsed(resource)
+            postAlreadyUsed(request)
             return
         }
         used = true
         let authorized: Bool
         if let serial, let seat, let managerSeat = manager.seat,
             seat === managerSeat, let surface,
-            let surfaceResource = surface.resource,
-            let client = wl_resource_get_client(surfaceResource)
+            let surfaceResource = unsafe surface.resource,
+            let client = unsafe wl_resource_get_client(surfaceResource)
         {
-            authorized = seat.authorize(
+            authorized = unsafe seat.authorize(
                 serial: serial,
                 clientKey: WlSeat.clientKey(client),
                 surfaceID: surface.objectId,
@@ -159,14 +168,12 @@ extension XdgActivationToken: XdgActivationTokenV1Requests {
         }
         _ = appID
         let tok = manager.mintToken(authorized: authorized)
-        tok.withCString { xdg_activation_token_v1_send_done(resource, $0) }
+        resource.sendDone(token: tok)
     }
 
     private func postAlreadyUsed(
-        _ resource: UnsafeMutablePointer<wl_resource>
+        _ request: WaylandRequest<XdgActivationTokenV1Server>
     ) {
-        swift_wayland_resource_post_error(
-            resource, 0 /* already_used */,
-            "activation token already committed")
+        request.postError(.alreadyUsed, message: "activation token already committed")
     }
 }

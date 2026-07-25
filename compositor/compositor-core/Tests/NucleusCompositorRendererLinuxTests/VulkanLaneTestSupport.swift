@@ -1,6 +1,8 @@
+import FoundationEssentials
 import Glibc
 import NucleusSkiaGraphiteBridge
 @testable import NucleusRenderer
+import Testing
 import Vulkan
 import VulkanC
 
@@ -11,20 +13,20 @@ import VulkanC
 /// exclusive so teardown finishes before another suite initializes the loader.
 private let requiredVulkanGraphiteGate = VulkanGraphiteTestGate()
 
-private final class VulkanGraphiteTestGate: @unchecked Sendable {
-    private var mutex = pthread_mutex_t()
+@safe private final class VulkanGraphiteTestGate: @unchecked Sendable {
+    private var mutex = unsafe pthread_mutex_t()
 
     init() {
-        precondition(pthread_mutex_init(&mutex, nil) == 0)
+        precondition(unsafe pthread_mutex_init(&mutex, nil) == 0)
     }
 
     deinit {
-        precondition(pthread_mutex_destroy(&mutex) == 0)
+        precondition(unsafe pthread_mutex_destroy(&mutex) == 0)
     }
 
     func withLock<Result>(_ body: () throws -> Result) rethrows -> Result {
-        precondition(pthread_mutex_lock(&mutex) == 0)
-        defer { precondition(pthread_mutex_unlock(&mutex) == 0) }
+        precondition(unsafe pthread_mutex_lock(&mutex) == 0)
+        defer { precondition(unsafe pthread_mutex_unlock(&mutex) == 0) }
         return try body()
     }
 }
@@ -56,6 +58,23 @@ enum VulkanLaneTestFailure: Error, CustomStringConvertible {
             message
         }
     }
+}
+
+/// The DRM render node Collider provisions for the mandatory GPU+GBM lane.
+///
+/// An absent variable means this run is not the provisioned lane — the case is
+/// cancelled rather than recorded as a failure. Everything downstream of this gate
+/// stays a hard requirement: once Collider names a node, the lane must work.
+func requireProvisionedDrmRenderNode() throws -> String {
+    guard
+        let path = ProcessInfo.processInfo.environment[
+            "NUCLEUS_TEST_DRM_RENDER_NODE"],
+        !path.isEmpty
+    else {
+        try Test.cancel(
+            "NUCLEUS_TEST_DRM_RENDER_NODE is not provisioned; the DRM lane runs only under Collider on a machine with a render node")
+    }
+    return path
 }
 
 func requireValue<T>(
@@ -93,7 +112,7 @@ func withRequiredVulkanGraphite<Result>(
     ) throws -> Result
 ) throws -> Result {
     try requiredVulkanGraphiteGate.withLock {
-        try withExclusiveRequiredVulkanGraphite(
+        try unsafe withExclusiveRequiredVulkanGraphite(
             presentation: presentation,
             applicationName: applicationName,
             queueFamilyQualification: queueFamilyQualification,
@@ -115,7 +134,7 @@ private func withExclusiveRequiredVulkanGraphite<Result>(
     ) throws -> Result
 ) throws -> Result {
     let contract = VkRequirements.contract(for: presentation)
-    guard let instance = InstanceOwner.create(
+    guard let instance = unsafe InstanceOwner.create(
         base: VK.loadBaseDispatch(),
         applicationName: applicationName,
         contract: contract,
@@ -123,7 +142,7 @@ private func withExclusiveRequiredVulkanGraphite<Result>(
     ) else {
         throw VulkanLaneTestFailure.instance(presentation)
     }
-    guard let selection = DeviceOwner.selectPhysicalDevice(
+    guard let selection = unsafe DeviceOwner.selectPhysicalDevice(
         instance: instance.handle,
         dispatch: instance.dispatch,
         contract: contract,
@@ -131,30 +150,31 @@ private func withExclusiveRequiredVulkanGraphite<Result>(
     ) else {
         throw VulkanLaneTestFailure.physicalDevice(presentation)
     }
-    guard let device = DeviceOwner.create(
+    guard let device = unsafe DeviceOwner.create(
         selection: selection,
         instanceDispatch: instance.dispatch,
         contract: contract
     ) else {
         throw VulkanLaneTestFailure.logicalDevice(presentation)
     }
-    guard let queue = device.queue(family: selection.graphicsQueueFamily) else {
+    guard let queue = unsafe device.queue(family: selection.graphicsQueueFamily) else {
         throw VulkanLaneTestFailure.graphicsQueue
     }
 
-    var context = withCStringArray(contract.deviceExtensions) { extensions, count in
-        var descriptor = nucleus.skia.VulkanContextDescriptor()
-        descriptor.instance = UnsafeMutableRawPointer(instance.handle)
-        descriptor.physicalDevice = UnsafeMutableRawPointer(selection.physicalDevice)
-        descriptor.device = UnsafeMutableRawPointer(device.handle)
-        descriptor.queue = UnsafeMutableRawPointer(queue)
-        descriptor.graphicsQueueIndex = selection.graphicsQueueFamily
-        descriptor.maxApiVersion = contract.minimumApiVersion.raw
-        descriptor.deviceExtensions = extensions
-        descriptor.deviceExtensionCount = count
-        return nucleus.skia.makeGraphiteVulkanContext(descriptor)
+    var context = unsafe withCStringArray(contract.deviceExtensions) { extensions, count in
+        var descriptor = unsafe nucleus.skia.VulkanContextDescriptor()
+        unsafe descriptor.instance = UnsafeMutableRawPointer(instance.handle)
+        unsafe descriptor.physicalDevice =
+            UnsafeMutableRawPointer(selection.physicalDevice)
+        unsafe descriptor.device = UnsafeMutableRawPointer(device.handle)
+        unsafe descriptor.queue = UnsafeMutableRawPointer(queue)
+        unsafe descriptor.graphicsQueueIndex = selection.graphicsQueueFamily
+        unsafe descriptor.maxApiVersion = contract.minimumApiVersion.raw
+        unsafe descriptor.deviceExtensions = extensions
+        unsafe descriptor.deviceExtensionCount = count
+        return unsafe nucleus.skia.makeGraphiteVulkanContext(descriptor)
     }
-    guard context.isValid() else {
+    guard unsafe context.isValid() else {
         throw VulkanLaneTestFailure.graphiteContext
     }
 
@@ -166,19 +186,19 @@ private func withExclusiveRequiredVulkanGraphite<Result>(
             nucleus.skia.Recorder
         ) throws -> Result
     ) throws -> Result {
-        let recorder = context.makeRecorder()
-        guard recorder.isValid() else {
+        let recorder = unsafe context.makeRecorder()
+        guard unsafe recorder.isValid() else {
             throw VulkanLaneTestFailure.graphiteRecorder
         }
-        return try body(device, selection, context, recorder)
+        return try unsafe body(device, selection, context, recorder)
     }
 
     do {
-        let result = try useRecorder(body)
-        context.reset()
+        let result = try unsafe useRecorder(body)
+        unsafe context.reset()
         return result
     } catch {
-        context.reset()
+        unsafe context.reset()
         throw error
     }
 }

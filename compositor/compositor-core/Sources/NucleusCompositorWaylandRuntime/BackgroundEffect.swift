@@ -9,12 +9,15 @@
 import WaylandServerC
 import WaylandServer
 import WaylandServerDispatch
+import WaylandProtocolTypes
 
 /// The render seam for ext-background-effect. `region` nil = no blur.
+@MainActor
 protocol BackgroundEffectDelegate: AnyObject {
     func backgroundBlurRegionUpdated(surfaceID: UInt32, region: RegionSnapshot?)
 }
 
+@MainActor
 final class ExtBackgroundEffectManager {
     weak var delegate: (any BackgroundEffectDelegate)?
     /// Advertised capability bitfield (capability.blur = 1).
@@ -22,21 +25,19 @@ final class ExtBackgroundEffectManager {
 
     func register(in router: NucleusWaylandRouter) {
         router.addGlobal(
-            interface: swift_wayland_iface_ext_background_effect_manager_v1(), version: 1,
-            impl: self, bind: Self.bind)
-    }
-
-    private static let bind: @convention(c) (
-        OpaquePointer?, UnsafeMutableRawPointer?, UInt32, UInt32
-    ) -> Void = { client, data, version, id in
-        guard let client, let me = NucleusWaylandRouter.impl(data, as: ExtBackgroundEffectManager.self)
-        else { return }
-        guard let res = WaylandResource.create(
-            client: client, interface: swift_wayland_iface_ext_background_effect_manager_v1(),
-            version: Int32(version), id: id, vtable: ExtBackgroundEffectManagerV1Server.vtable, owner: me)
-        else { return }
-        // Advertise supported effects immediately on bind.
-        ext_background_effect_manager_v1_send_capabilities(res, me.capabilities)
+            ExtBackgroundEffectManagerV1Server.global(
+                implementation: self,
+                owner: { manager, _ in manager },
+                installed: { manager, _, handle in
+                    guard let resource = unsafe handle.resource else {
+                        return
+                    }
+                    unsafe ExtBackgroundEffectManagerV1Server
+                        .sendCapabilities(
+                            resource,
+                            flags: ExtBackgroundEffectManagerV1Capability(
+                                rawValue: manager.capabilities))
+                }))
     }
 
     fileprivate func publish(surfaceID: UInt32, region: RegionSnapshot?) {
@@ -46,33 +47,49 @@ final class ExtBackgroundEffectManager {
 
 extension ExtBackgroundEffectManager: ExtBackgroundEffectManagerV1Requests {
     // get_background_effect(id, surface): one per surface (background_effect_exists = 0).
-    func getBackgroundEffect(_ resource: UnsafeMutablePointer<wl_resource>, id: WlNewId,
-                             surface surfaceRes: UnsafeMutablePointer<wl_resource>?) {
-        guard let surfaceRes, let surface = WaylandResource.owner(of: surfaceRes, as: WlSurface.self)
-        else { return }
+    func getBackgroundEffect(
+        _ request: WaylandRequest<ExtBackgroundEffectManagerV1Server>,
+        id: WlNewId<ExtBackgroundEffectSurfaceV1Server>,
+                             surface surfaceRes: WaylandBorrowedObject<WlSurfaceServer>) {
+        guard let surface = surfaceRes.owner(as: WlSurface.self) else { return }
         guard surface.claimAux(.backgroundEffect) else {
-            swift_wayland_resource_post_error(resource, 0, "surface already has a background effect")
+            request.postError(.backgroundEffectExists, message: "surface already has a background effect")
             return
         }
-        let object = ExtBackgroundEffectSurface(manager: self, surface: surface)
-        guard id.create(vtable: ExtBackgroundEffectSurfaceV1Server.vtable, owner: object) != nil
+        guard unsafe id.create(
+            owner: { handle in
+                ExtBackgroundEffectSurface(
+                    resource: handle,
+                    manager: self,
+                    surface: surface)
+            },
+            installed: { object in
+                surface.addCommitObserver(object)
+            }) != nil
         else {
             surface.releaseAux(.backgroundEffect)
             return
         }
-        surface.addCommitObserver(object)
     }
 }
 
 /// ext_background_effect_surface_v1 owner (Rule 9). Double-buffered blur region:
 /// set_blur_region writes pending, latched and published on the surface's commit.
+@MainActor
 final class ExtBackgroundEffectSurface: WlSurfaceCommitObserver {
+    private let resource:
+        WaylandResourceHandle<ExtBackgroundEffectSurfaceV1Server>
     private weak var manager: ExtBackgroundEffectManager?
     private weak var surface: WlSurface?
     private var pendingRegion: RegionSnapshot?
     private var pendingSet = false
 
-    init(manager: ExtBackgroundEffectManager, surface: WlSurface) {
+    init(
+        resource: WaylandResourceHandle<ExtBackgroundEffectSurfaceV1Server>,
+        manager: ExtBackgroundEffectManager,
+        surface: WlSurface
+    ) {
+        self.resource = resource
         self.manager = manager
         self.surface = surface
     }
@@ -95,18 +112,18 @@ final class ExtBackgroundEffectSurface: WlSurfaceCommitObserver {
         return true
     }
 
-    deinit { surface?.releaseAux(.backgroundEffect) }
+    isolated deinit { surface?.releaseAux(.backgroundEffect) }
 }
 
 extension ExtBackgroundEffectSurface: ExtBackgroundEffectSurfaceV1Requests {
     // set_blur_region(region): null region = no blur.
-    func setBlurRegion(_ resource: UnsafeMutablePointer<wl_resource>,
-                       region regionRes: UnsafeMutablePointer<wl_resource>?) {
+    func setBlurRegion(_ request: WaylandRequest<ExtBackgroundEffectSurfaceV1Server>,
+                       region regionRes: WaylandBorrowedObject<WlRegionServer>?) {
         guard surface != nil else {
-            swift_wayland_resource_post_error(resource, 0, "wl_surface was destroyed")  // surface_destroyed
+            request.postError(.surfaceDestroyed, message: "wl_surface was destroyed")  // surface_destroyed
             return
         }
-        if let regionRes, let region = WaylandResource.owner(of: regionRes, as: WlRegion.self) {
+        if let region = regionRes?.owner(as: WlRegion.self) {
             pendingRegion = region.snapshot()
         } else {
             pendingRegion = nil

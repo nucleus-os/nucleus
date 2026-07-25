@@ -8,7 +8,10 @@ public enum CompositorColliderRecipe {
     ) -> TaskDeclaration {
         packageTask(
             "compositor-core.build", root, environment, ["build"],
-            [TaskID(rawValue: "rn.build")], isTest: false)
+            [
+                TaskID(rawValue: "rn.build"),
+            ],
+            isTest: false)
     }
 
     public static func test(

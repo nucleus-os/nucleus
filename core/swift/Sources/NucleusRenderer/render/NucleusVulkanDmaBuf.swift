@@ -13,7 +13,7 @@ public import Vulkan
 private func logDmaBufImportFailure(_ descriptor: DmaBufImageDescriptor, _ stage: String) {
     #if canImport(Glibc)
     let line = "dmabuf-import: failed stage=\(stage) size=\(descriptor.width)x\(descriptor.height) format=\(descriptor.drmFormat) modifier=\(descriptor.modifier) planes=\(descriptor.planes.count)\n"
-    line.withCString { _ = write(STDERR_FILENO, $0, strlen($0)) }
+    line.withCString { _ = unsafe write(STDERR_FILENO, $0, strlen($0)) }
     #endif
 }
 
@@ -136,7 +136,7 @@ func convertClientShmToRGBAWithMetrics(
         return nil
     }
 
-    let converted = [UInt8](unsafeUninitializedCapacity: destinationCount) {
+    let converted = unsafe [UInt8](unsafeUninitializedCapacity: destinationCount) {
         destination, initializedCount in
         guard let destinationBase = destination.baseAddress else {
             initializedCount = 0
@@ -144,14 +144,14 @@ func convertClientShmToRGBAWithMetrics(
         }
         for y in 0..<Int(height) {
             let sourceRow = y * rowStride
-            let destinationRow = destinationBase.advanced(by: y * destinationRowBytes)
+            let destinationRow = unsafe destinationBase.advanced(by: y * destinationRowBytes)
             for x in 0..<Int(width) {
                 let sourcePixel = sourceRow + x * 4
-                let destinationPixel = destinationRow.advanced(by: x * 4)
-                destinationPixel[0] = pixels[sourcePixel + 2]
-                destinationPixel[1] = pixels[sourcePixel + 1]
-                destinationPixel[2] = pixels[sourcePixel]
-                destinationPixel[3] = opaque ? 255 : pixels[sourcePixel + 3]
+                let destinationPixel = unsafe destinationRow.advanced(by: x * 4)
+                unsafe destinationPixel[0] = pixels[sourcePixel + 2]
+                unsafe destinationPixel[1] = pixels[sourcePixel + 1]
+                unsafe destinationPixel[2] = pixels[sourcePixel]
+                unsafe destinationPixel[3] = opaque ? 255 : pixels[sourcePixel + 3]
             }
         }
         initializedCount = destinationCount
@@ -203,33 +203,33 @@ public func querySampleableDmaBufFormats(
     instanceDispatch: VK.InstanceDispatch,
     drmFormats: [UInt32] = [DrmFourcc.xrgb8888, DrmFourcc.argb8888]
 ) -> [DmaBufFormatModifier] {
-    guard let getFormatProperties = instanceDispatch.vkGetPhysicalDeviceFormatProperties2,
-          let getImageFormatProperties = instanceDispatch.vkGetPhysicalDeviceImageFormatProperties2
+    guard let getFormatProperties = unsafe instanceDispatch.vkGetPhysicalDeviceFormatProperties2,
+          let getImageFormatProperties = unsafe instanceDispatch.vkGetPhysicalDeviceImageFormatProperties2
     else {
         return []
     }
 
     var out: [DmaBufFormatModifier] = []
     for drmFormat in drmFormats {
-        var list = VkDrmFormatModifierPropertiesList2EXT()
-        list.sType = VK_STRUCTURE_TYPE_DRM_FORMAT_MODIFIER_PROPERTIES_LIST_2_EXT
+        var list = unsafe VkDrmFormatModifierPropertiesList2EXT()
+        unsafe list.sType = VK_STRUCTURE_TYPE_DRM_FORMAT_MODIFIER_PROPERTIES_LIST_2_EXT
 
-        var props = VkFormatProperties2()
-        props.sType = VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_2
+        var props = unsafe VkFormatProperties2()
+        unsafe props.sType = VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_2
         withUnsafeMutablePointer(to: &list) { listPtr in
-            props.pNext = UnsafeMutableRawPointer(listPtr)
-            getFormatProperties(physicalDevice, vulkanFormatForDrm(drmFormat), &props)
+            unsafe props.pNext = UnsafeMutableRawPointer(listPtr)
+            unsafe getFormatProperties(physicalDevice, vulkanFormatForDrm(drmFormat), &props)
         }
-        guard list.drmFormatModifierCount > 0 else { continue }
+        guard unsafe list.drmFormatModifierCount > 0 else { continue }
 
-        var modifiers = [VkDrmFormatModifierProperties2EXT](
+        var modifiers = unsafe [VkDrmFormatModifierProperties2EXT](
             repeating: VkDrmFormatModifierProperties2EXT(),
             count: Int(list.drmFormatModifierCount))
         modifiers.withUnsafeMutableBufferPointer { buffer in
-            list.pDrmFormatModifierProperties = buffer.baseAddress
+            unsafe list.pDrmFormatModifierProperties = buffer.baseAddress
             withUnsafeMutablePointer(to: &list) { listPtr in
-                props.pNext = UnsafeMutableRawPointer(listPtr)
-                getFormatProperties(physicalDevice, vulkanFormatForDrm(drmFormat), &props)
+                unsafe props.pNext = UnsafeMutableRawPointer(listPtr)
+                unsafe getFormatProperties(physicalDevice, vulkanFormatForDrm(drmFormat), &props)
             }
         }
 
@@ -242,38 +242,38 @@ public func querySampleableDmaBufFormats(
             // modifiers which fail the external-memory import path. Advertising one
             // lets the client create a perfectly valid buffer that this compositor
             // can never turn into a texture, producing an invisible surface.
-            var externalInfo = VkPhysicalDeviceExternalImageFormatInfo()
-            externalInfo.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_IMAGE_FORMAT_INFO
-            externalInfo.handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT
+            var externalInfo = unsafe VkPhysicalDeviceExternalImageFormatInfo()
+            unsafe externalInfo.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_IMAGE_FORMAT_INFO
+            unsafe externalInfo.handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT
 
-            var modifierInfo = VkPhysicalDeviceImageDrmFormatModifierInfoEXT()
-            modifierInfo.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_DRM_FORMAT_MODIFIER_INFO_EXT
-            modifierInfo.drmFormatModifier = modifier.drmFormatModifier
-            modifierInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE
+            var modifierInfo = unsafe VkPhysicalDeviceImageDrmFormatModifierInfoEXT()
+            unsafe modifierInfo.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_DRM_FORMAT_MODIFIER_INFO_EXT
+            unsafe modifierInfo.drmFormatModifier = modifier.drmFormatModifier
+            unsafe modifierInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE
 
-            var imageInfo = VkPhysicalDeviceImageFormatInfo2()
-            imageInfo.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_FORMAT_INFO_2
-            imageInfo.format = vulkanFormatForDrm(drmFormat)
-            imageInfo.type = VK_IMAGE_TYPE_2D
-            imageInfo.tiling = VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT
-            imageInfo.usage = DmaBufImageDescriptor.sampledUsage.rawValue
+            var imageInfo = unsafe VkPhysicalDeviceImageFormatInfo2()
+            unsafe imageInfo.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_FORMAT_INFO_2
+            unsafe imageInfo.format = vulkanFormatForDrm(drmFormat)
+            unsafe imageInfo.type = VK_IMAGE_TYPE_2D
+            unsafe imageInfo.tiling = VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT
+            unsafe imageInfo.usage = DmaBufImageDescriptor.sampledUsage.rawValue
 
-            var externalProperties = VkExternalImageFormatProperties()
-            externalProperties.sType = VK_STRUCTURE_TYPE_EXTERNAL_IMAGE_FORMAT_PROPERTIES
-            var imageProperties = VkImageFormatProperties2()
-            imageProperties.sType = VK_STRUCTURE_TYPE_IMAGE_FORMAT_PROPERTIES_2
+            var externalProperties = unsafe VkExternalImageFormatProperties()
+            unsafe externalProperties.sType = VK_STRUCTURE_TYPE_EXTERNAL_IMAGE_FORMAT_PROPERTIES
+            var imageProperties = unsafe VkImageFormatProperties2()
+            unsafe imageProperties.sType = VK_STRUCTURE_TYPE_IMAGE_FORMAT_PROPERTIES_2
             let supported = withUnsafePointer(to: &externalInfo) { externalPtr in
-                modifierInfo.pNext = UnsafeRawPointer(externalPtr)
+                unsafe modifierInfo.pNext = unsafe UnsafeRawPointer(externalPtr)
                 return withUnsafePointer(to: &modifierInfo) { modifierPtr in
-                    imageInfo.pNext = UnsafeRawPointer(modifierPtr)
+                    unsafe imageInfo.pNext = unsafe UnsafeRawPointer(modifierPtr)
                     return withUnsafeMutablePointer(to: &externalProperties) { externalPropertiesPtr in
-                        imageProperties.pNext = UnsafeMutableRawPointer(externalPropertiesPtr)
-                        return getImageFormatProperties(physicalDevice, &imageInfo, &imageProperties)
+                        unsafe imageProperties.pNext = UnsafeMutableRawPointer(externalPropertiesPtr)
+                        return unsafe getImageFormatProperties(physicalDevice, &imageInfo, &imageProperties)
                     }
                 }
             }
             guard supported == VK_SUCCESS else { continue }
-            let externalFeatures = externalProperties.externalMemoryProperties.externalMemoryFeatures
+            let externalFeatures = unsafe externalProperties.externalMemoryProperties.externalMemoryFeatures
             guard externalFeatures & VK_EXTERNAL_MEMORY_FEATURE_IMPORTABLE_BIT.rawValue != 0 else { continue }
             out.append(DmaBufFormatModifier(format: drmFormat, modifier: modifier.drmFormatModifier))
         }
@@ -295,37 +295,37 @@ public func withDmaBufImportImageInfo<R>(
         return layout
     }
     return layouts.withUnsafeBufferPointer { layoutBuffer -> R in
-        var modifierInfo = VkImageDrmFormatModifierExplicitCreateInfoEXT()
-        modifierInfo.sType = VK_STRUCTURE_TYPE_IMAGE_DRM_FORMAT_MODIFIER_EXPLICIT_CREATE_INFO_EXT
-        modifierInfo.drmFormatModifier = descriptor.modifier
-        modifierInfo.drmFormatModifierPlaneCount = UInt32(descriptor.planes.count)
-        modifierInfo.pPlaneLayouts = layoutBuffer.baseAddress
+        var modifierInfo = unsafe VkImageDrmFormatModifierExplicitCreateInfoEXT()
+        unsafe modifierInfo.sType = VK_STRUCTURE_TYPE_IMAGE_DRM_FORMAT_MODIFIER_EXPLICIT_CREATE_INFO_EXT
+        unsafe modifierInfo.drmFormatModifier = descriptor.modifier
+        unsafe modifierInfo.drmFormatModifierPlaneCount = UInt32(descriptor.planes.count)
+        unsafe modifierInfo.pPlaneLayouts = layoutBuffer.baseAddress
 
         return withUnsafePointer(to: &modifierInfo) { modifierPtr -> R in
-            var externalInfo = VkExternalMemoryImageCreateInfo()
-            externalInfo.sType = VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO
-            externalInfo.pNext = UnsafeRawPointer(modifierPtr)
-            externalInfo.handleTypes = VK.ExternalMemoryHandleTypeFlags.dmaBufBitEXT.rawValue
+            var externalInfo = unsafe VkExternalMemoryImageCreateInfo()
+            unsafe externalInfo.sType = VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO
+            unsafe externalInfo.pNext = unsafe UnsafeRawPointer(modifierPtr)
+            unsafe externalInfo.handleTypes = VK.ExternalMemoryHandleTypeFlags.dmaBufBitEXT.rawValue
 
             return withUnsafePointer(to: &externalInfo) { externalPtr -> R in
-                var info = VkImageCreateInfo()
-                info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO
-                info.pNext = UnsafeRawPointer(externalPtr)
+                var info = unsafe VkImageCreateInfo()
+                unsafe info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO
+                unsafe info.pNext = unsafe UnsafeRawPointer(externalPtr)
                 let planeFds = descriptor.planes.map { $0.fd >= 0 ? $0.fd : descriptor.fd }
                 if Set(planeFds).count > 1 {
-                    info.flags = VK.ImageCreateFlags.disjointBit.rawValue
+                    unsafe info.flags = VK.ImageCreateFlags.disjointBit.rawValue
                 }
-                info.imageType = VK_IMAGE_TYPE_2D
-                info.format = vulkanFormatForDrm(descriptor.drmFormat)
-                info.extent = VkExtent3D(width: descriptor.width, height: descriptor.height, depth: 1)
-                info.mipLevels = 1
-                info.arrayLayers = 1
-                info.samples = VK_SAMPLE_COUNT_1_BIT
-                info.tiling = VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT
-                info.usage = descriptor.usage.rawValue
-                info.sharingMode = VK_SHARING_MODE_EXCLUSIVE
-                info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED
-                return withUnsafePointer(to: &info) { body($0) }
+                unsafe info.imageType = VK_IMAGE_TYPE_2D
+                unsafe info.format = vulkanFormatForDrm(descriptor.drmFormat)
+                unsafe info.extent = VkExtent3D(width: descriptor.width, height: descriptor.height, depth: 1)
+                unsafe info.mipLevels = 1
+                unsafe info.arrayLayers = 1
+                unsafe info.samples = VK_SAMPLE_COUNT_1_BIT
+                unsafe info.tiling = VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT
+                unsafe info.usage = descriptor.usage.rawValue
+                unsafe info.sharingMode = VK_SHARING_MODE_EXCLUSIVE
+                unsafe info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED
+                return withUnsafePointer(to: &info) { unsafe body($0) }
             }
         }
     }
@@ -336,7 +336,9 @@ public func withDmaBufImportImageInfo<R>(
 /// VkOwned image (which frees the bound memory on destruction via the closure)
 /// or nil on any failure. Consumes ownership of every fd in `descriptor` on
 /// success or failure.
-struct DmaBufImportOperations {
+/// The device owner outlives this table and import is render-thread confined;
+/// every stored entry point is validated non-null before construction.
+@safe struct DmaBufImportOperations {
     let createImage: PFN_vkCreateImage
     let destroyImage: PFN_vkDestroyImage
     let allocateMemory: PFN_vkAllocateMemory
@@ -348,19 +350,19 @@ struct DmaBufImportOperations {
     let getImageMemoryRequirements2: PFN_vkGetImageMemoryRequirements2
 
     init?(_ dispatch: VK.DeviceDispatch) {
-        guard let createImage = dispatch.vkCreateImage,
-              let destroyImage = dispatch.vkDestroyImage,
-              let allocateMemory = dispatch.vkAllocateMemory,
-              let freeMemory = dispatch.vkFreeMemory,
-              let bindImageMemory = dispatch.vkBindImageMemory,
-              let bindImageMemory2 = dispatch.vkBindImageMemory2,
-              let getMemoryFdProperties = dispatch.vkGetMemoryFdPropertiesKHR,
+        guard let createImage = unsafe dispatch.vkCreateImage,
+              let destroyImage = unsafe dispatch.vkDestroyImage,
+              let allocateMemory = unsafe dispatch.vkAllocateMemory,
+              let freeMemory = unsafe dispatch.vkFreeMemory,
+              let bindImageMemory = unsafe dispatch.vkBindImageMemory,
+              let bindImageMemory2 = unsafe dispatch.vkBindImageMemory2,
+              let getMemoryFdProperties = unsafe dispatch.vkGetMemoryFdPropertiesKHR,
               let getImageMemoryRequirements =
-                dispatch.vkGetImageMemoryRequirements,
+                unsafe dispatch.vkGetImageMemoryRequirements,
               let getImageMemoryRequirements2 =
-                dispatch.vkGetImageMemoryRequirements2
+                unsafe dispatch.vkGetImageMemoryRequirements2
         else { return nil }
-        self.init(
+        unsafe self.init(
             createImage: createImage,
             destroyImage: destroyImage,
             allocateMemory: allocateMemory,
@@ -385,15 +387,15 @@ struct DmaBufImportOperations {
         getImageMemoryRequirements2:
             @escaping PFN_vkGetImageMemoryRequirements2
     ) {
-        self.createImage = createImage
-        self.destroyImage = destroyImage
-        self.allocateMemory = allocateMemory
-        self.freeMemory = freeMemory
-        self.bindImageMemory = bindImageMemory
-        self.bindImageMemory2 = bindImageMemory2
-        self.getMemoryFdProperties = getMemoryFdProperties
-        self.getImageMemoryRequirements = getImageMemoryRequirements
-        self.getImageMemoryRequirements2 = getImageMemoryRequirements2
+        unsafe self.createImage = unsafe createImage
+        unsafe self.destroyImage = unsafe destroyImage
+        unsafe self.allocateMemory = unsafe allocateMemory
+        unsafe self.freeMemory = unsafe freeMemory
+        unsafe self.bindImageMemory = unsafe bindImageMemory
+        unsafe self.bindImageMemory2 = unsafe bindImageMemory2
+        unsafe self.getMemoryFdProperties = unsafe getMemoryFdProperties
+        unsafe self.getImageMemoryRequirements = unsafe getImageMemoryRequirements
+        unsafe self.getImageMemoryRequirements2 = unsafe getImageMemoryRequirements2
     }
 }
 
@@ -402,7 +404,7 @@ public func importDmaBufImage(
     dispatch: VK.DeviceDispatch,
     descriptor: DmaBufImageDescriptor
 ) -> VkOwned<VkImage>? {
-    importDmaBufImage(
+    unsafe importDmaBufImage(
         device: device,
         operations: DmaBufImportOperations(dispatch),
         descriptor: descriptor)
@@ -455,151 +457,151 @@ func importDmaBufImage(
         return nil
     }
 
-    let createImage = operations.createImage
-    let destroyImage = operations.destroyImage
-    let allocateMemory = operations.allocateMemory
-    let freeMemory = operations.freeMemory
-    let bindImageMemory = operations.bindImageMemory
-    let bindImageMemory2 = operations.bindImageMemory2
-    let getMemoryFdProperties = operations.getMemoryFdProperties
-    let getImageMemoryRequirements = operations.getImageMemoryRequirements
-    let getImageMemoryRequirements2 = operations.getImageMemoryRequirements2
+    let createImage = unsafe operations.createImage
+    let destroyImage = unsafe operations.destroyImage
+    let allocateMemory = unsafe operations.allocateMemory
+    let freeMemory = unsafe operations.freeMemory
+    let bindImageMemory = unsafe operations.bindImageMemory
+    let bindImageMemory2 = unsafe operations.bindImageMemory2
+    let getMemoryFdProperties = unsafe operations.getMemoryFdProperties
+    let getImageMemoryRequirements = unsafe operations.getImageMemoryRequirements
+    let getImageMemoryRequirements2 = unsafe operations.getImageMemoryRequirements2
 
     var image: VkImage? = nil
-    let createResult = withDmaBufImportImageInfo(descriptor) { infoPtr in
-        createImage(device, infoPtr, nil, &image)
+    let createResult = unsafe withDmaBufImportImageInfo(descriptor) { infoPtr in
+        unsafe createImage(device, infoPtr, nil, &image)
     }
-    guard createResult == VK_SUCCESS, let image else {
+    guard createResult == VK_SUCCESS, let image = unsafe image else {
         logDmaBufImportFailure(descriptor, "vkCreateImage-result-\(createResult.rawValue)")
         return nil
     }
 
     var ok = false
-    defer { if !ok { destroyImage(device, image, nil) } }
+    defer { if !ok { unsafe destroyImage(device, image, nil) } }
 
-    var memories: [VkDeviceMemory] = []
+    var memories: [VkDeviceMemory] = unsafe []
     // Distinct fds ⇒ each plane imports its own dedicated memory; a shared fd ⇒ one
     // memory covers every plane (imported once, below).
     let separatePlaneMemory = distinctPlaneFds.count > 1
 
     func allocateImportedMemory(fdIndex: Int, requirements: VkMemoryRequirements) -> VkDeviceMemory? {
-        var fdProps = VkMemoryFdPropertiesKHR()
-        fdProps.sType = VK_STRUCTURE_TYPE_MEMORY_FD_PROPERTIES_KHR
+        var fdProps = unsafe VkMemoryFdPropertiesKHR()
+        unsafe fdProps.sType = VK_STRUCTURE_TYPE_MEMORY_FD_PROPERTIES_KHR
         let fd = ownedPlaneFds[fdIndex]
-        let fdPropertiesResult = getMemoryFdProperties(
+        let fdPropertiesResult = unsafe getMemoryFdProperties(
             device, VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT, fd, &fdProps)
         guard fdPropertiesResult == VK_SUCCESS else {
             logDmaBufImportFailure(descriptor, "vkGetMemoryFdProperties-result-\(fdPropertiesResult.rawValue)")
             return nil
         }
-        let typeBits = requirements.memoryTypeBits & fdProps.memoryTypeBits
+        let typeBits = unsafe requirements.memoryTypeBits & fdProps.memoryTypeBits
         guard typeBits != 0 else {
             logDmaBufImportFailure(descriptor, "no-compatible-memory-type")
             return nil
         }
         let memoryTypeIndex = UInt32(typeBits.trailingZeroBitCount)
 
-        var dedicated = VkMemoryDedicatedAllocateInfo()
-        dedicated.sType = VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO
-        dedicated.image = image
+        var dedicated = unsafe VkMemoryDedicatedAllocateInfo()
+        unsafe dedicated.sType = VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO
+        unsafe dedicated.image = unsafe image
 
         var memory: VkDeviceMemory? = nil
         let allocated = withUnsafeMutablePointer(to: &dedicated) { dedicatedPtr -> Bool in
-            var importInfo = VkImportMemoryFdInfoKHR()
-            importInfo.sType = VK_STRUCTURE_TYPE_IMPORT_MEMORY_FD_INFO_KHR
-            importInfo.pNext = UnsafeRawPointer(dedicatedPtr)
-            importInfo.handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT
-            importInfo.fd = fd
+            var importInfo = unsafe VkImportMemoryFdInfoKHR()
+            unsafe importInfo.sType = VK_STRUCTURE_TYPE_IMPORT_MEMORY_FD_INFO_KHR
+            unsafe importInfo.pNext = UnsafeRawPointer(dedicatedPtr)
+            unsafe importInfo.handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT
+            unsafe importInfo.fd = fd
             return withUnsafePointer(to: &importInfo) { importPtr -> Bool in
-                var allocInfo = VkMemoryAllocateInfo()
-                allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO
-                allocInfo.pNext = UnsafeRawPointer(importPtr)
-                allocInfo.allocationSize = requirements.size
-                allocInfo.memoryTypeIndex = memoryTypeIndex
-                return allocateMemory(device, &allocInfo, nil, &memory) == VK_SUCCESS
+                var allocInfo = unsafe VkMemoryAllocateInfo()
+                unsafe allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO
+                unsafe allocInfo.pNext = unsafe UnsafeRawPointer(importPtr)
+                unsafe allocInfo.allocationSize = requirements.size
+                unsafe allocInfo.memoryTypeIndex = memoryTypeIndex
+                return unsafe allocateMemory(device, &allocInfo, nil, &memory) == VK_SUCCESS
             }
         }
-        guard allocated, let memory else {
+        guard allocated, let memory = unsafe memory else {
             logDmaBufImportFailure(descriptor, "vkAllocateMemory")
             return nil
         }
         consumedFds.insert(fd)
-        return memory
+        return unsafe memory
     }
 
     if separatePlaneMemory {
-        var binds: [VkBindImageMemoryInfo] = []
-        var planeInfos: [VkBindImagePlaneMemoryInfo] = []
+        var binds: [VkBindImageMemoryInfo] = unsafe []
+        var planeInfos: [VkBindImagePlaneMemoryInfo] = unsafe []
         for i in descriptor.planes.indices {
-            var planeReq = VkImagePlaneMemoryRequirementsInfo()
-            planeReq.sType = VK_STRUCTURE_TYPE_IMAGE_PLANE_MEMORY_REQUIREMENTS_INFO
-            planeReq.planeAspect = dmaBufPlaneAspect(i)
+            var planeReq = unsafe VkImagePlaneMemoryRequirementsInfo()
+            unsafe planeReq.sType = VK_STRUCTURE_TYPE_IMAGE_PLANE_MEMORY_REQUIREMENTS_INFO
+            unsafe planeReq.planeAspect = dmaBufPlaneAspect(i)
 
-            var reqInfo = VkImageMemoryRequirementsInfo2()
-            reqInfo.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_REQUIREMENTS_INFO_2
-            reqInfo.image = image
+            var reqInfo = unsafe VkImageMemoryRequirementsInfo2()
+            unsafe reqInfo.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_REQUIREMENTS_INFO_2
+            unsafe reqInfo.image = unsafe image
 
-            var req2 = VkMemoryRequirements2()
-            req2.sType = VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2
+            var req2 = unsafe VkMemoryRequirements2()
+            unsafe req2.sType = VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2
             withUnsafeMutablePointer(to: &planeReq) { planeReqPtr in
-                reqInfo.pNext = UnsafeRawPointer(planeReqPtr)
-                getImageMemoryRequirements2(device, &reqInfo, &req2)
+                unsafe reqInfo.pNext = UnsafeRawPointer(planeReqPtr)
+                unsafe getImageMemoryRequirements2(device, &reqInfo, &req2)
             }
 
-            guard let memory = allocateImportedMemory(fdIndex: i, requirements: req2.memoryRequirements) else {
-                for m in memories { freeMemory(device, m, nil) }
+            guard let memory = unsafe allocateImportedMemory(fdIndex: i, requirements: req2.memoryRequirements) else {
+                for unsafe m in unsafe memories { unsafe freeMemory(device, m, nil) }
                 return nil
             }
-            memories.append(memory)
+            unsafe memories.append(memory)
 
-            var planeInfo = VkBindImagePlaneMemoryInfo()
-            planeInfo.sType = VK_STRUCTURE_TYPE_BIND_IMAGE_PLANE_MEMORY_INFO
-            planeInfo.planeAspect = dmaBufPlaneAspect(i)
-            planeInfos.append(planeInfo)
+            var planeInfo = unsafe VkBindImagePlaneMemoryInfo()
+            unsafe planeInfo.sType = VK_STRUCTURE_TYPE_BIND_IMAGE_PLANE_MEMORY_INFO
+            unsafe planeInfo.planeAspect = dmaBufPlaneAspect(i)
+            unsafe planeInfos.append(planeInfo)
 
-            var bind = VkBindImageMemoryInfo()
-            bind.sType = VK_STRUCTURE_TYPE_BIND_IMAGE_MEMORY_INFO
-            bind.image = image
-            bind.memory = memory
-            bind.memoryOffset = 0
-            binds.append(bind)
+            var bind = unsafe VkBindImageMemoryInfo()
+            unsafe bind.sType = VK_STRUCTURE_TYPE_BIND_IMAGE_MEMORY_INFO
+            unsafe bind.image = unsafe image
+            unsafe bind.memory = unsafe memory
+            unsafe bind.memoryOffset = 0
+            unsafe binds.append(bind)
         }
         let bindResult = planeInfos.withUnsafeMutableBufferPointer { planeBuffer in
-            for i in binds.indices {
-                binds[i].pNext = UnsafeRawPointer(planeBuffer.baseAddress!.advanced(by: i))
+            for i in unsafe binds.indices {
+                unsafe binds[i].pNext = unsafe UnsafeRawPointer(planeBuffer.baseAddress!.advanced(by: i))
             }
             return binds.withUnsafeMutableBufferPointer { bindBuffer in
-                bindImageMemory2(device, UInt32(bindBuffer.count), bindBuffer.baseAddress)
+                unsafe bindImageMemory2(device, UInt32(bindBuffer.count), bindBuffer.baseAddress)
             }
         }
         guard bindResult == VK_SUCCESS else {
             logDmaBufImportFailure(descriptor, "vkBindImageMemory2-result-\(bindResult.rawValue)")
-            for m in memories { freeMemory(device, m, nil) }
+            for unsafe m in unsafe memories { unsafe freeMemory(device, m, nil) }
             return nil
         }
     } else {
         var requirements = VkMemoryRequirements()
-        getImageMemoryRequirements(device, image, &requirements)
-        guard let memory = allocateImportedMemory(fdIndex: 0, requirements: requirements) else {
+        unsafe getImageMemoryRequirements(device, image, &requirements)
+        guard let memory = unsafe allocateImportedMemory(fdIndex: 0, requirements: requirements) else {
             return nil
         }
-        memories.append(memory)
-        let bindResult = bindImageMemory(device, image, memory, 0)
+        unsafe memories.append(memory)
+        let bindResult = unsafe bindImageMemory(device, image, memory, 0)
         guard bindResult == VK_SUCCESS else {
             logDmaBufImportFailure(descriptor, "vkBindImageMemory-result-\(bindResult.rawValue)")
-            for m in memories { freeMemory(device, m, nil) }
+            for unsafe m in unsafe memories { unsafe freeMemory(device, m, nil) }
             return nil
         }
     }
 
-    guard !memories.isEmpty else {
+    guard unsafe !memories.isEmpty else {
         return nil
     }
 
     ok = true
-    return VkOwned(adopting: image, device: device, destroy: { d, img in
-        destroyImage(d, img, nil)
-        for memory in memories { freeMemory(d, memory, nil) }
+    return unsafe VkOwned(adopting: image, device: device, destroy: { d, img in
+        unsafe destroyImage(d, img, nil)
+        for unsafe memory in unsafe memories { unsafe freeMemory(d, memory, nil) }
     })
 }
 

@@ -28,6 +28,8 @@ recipe targets whose dependency graphs contain no product implementation.
 Replaced entry points are deleted when their behavior lands in Collider. There
 is no `tools/nucleus` compatibility wrapper and no second orchestration path.
 
+Status: complete
+
 ## Current Assessment
 
 The root Swift workspace executable is the correct starting point for Collider.

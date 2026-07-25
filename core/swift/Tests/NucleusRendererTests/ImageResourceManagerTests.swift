@@ -33,8 +33,10 @@ import NucleusSkiaGraphiteBridge
                 count: width * height * 4))))
     }
 
+    /// The returned C++ value owns its raster surface snapshot. The bridge
+    /// retains no pointer into Swift storage.
     private func residentImage() -> nucleus.skia.Image {
-        nucleus.skia.makeRasterSurface(1, 1).snapshotImage()
+        unsafe nucleus.skia.makeRasterSurface(1, 1).snapshotImage()
     }
 
     private func wait(
@@ -155,7 +157,7 @@ import NucleusSkiaGraphiteBridge
                 decodeCount.withLock { $0 += 1 }
                 return .failure(.unsupportedFormat)
             })
-        let manager = ImageResourceManager(
+        let manager = unsafe ImageResourceManager(
             decodeQueue: queue,
             uploadOperation: { _ in nil })
         defer { manager.shutdown() }
@@ -164,10 +166,11 @@ import NucleusSkiaGraphiteBridge
             maxWidth: 16,
             maxHeight: 16)
 
-        #expect(manager.image(
+        let firstRequestIsPending = unsafe manager.image(
             handle: 11,
             source: corrupt,
-            outputID: 1) == nil)
+            outputID: 1) == nil
+        #expect(firstRequestIsPending)
         #expect(wait(
             for: .failed(
                 generation: 1,
@@ -176,10 +179,11 @@ import NucleusSkiaGraphiteBridge
             manager: manager))
 
         for _ in 0..<100 {
-            #expect(manager.image(
+            let repeatedRequestIsPending = unsafe manager.image(
                 handle: 11,
                 source: corrupt,
-                outputID: 1) == nil)
+                outputID: 1) == nil
+            #expect(repeatedRequestIsPending)
         }
         #expect(decodeCount.withLock { $0 } == 1)
         #expect(
@@ -201,13 +205,13 @@ import NucleusSkiaGraphiteBridge
                     ? .failure(.decodeFailure)
                     : ImageDecodeQueue.decode(source)
             })
-        let image = residentImage()
-        let manager = ImageResourceManager(
+        let image = unsafe residentImage()
+        let manager = unsafe ImageResourceManager(
             decodeQueue: queue,
-            uploadOperation: { _ in image })
+            uploadOperation: { _ in unsafe image })
         defer { manager.shutdown() }
 
-        _ = manager.image(handle: 12, source: valid, outputID: 1)
+        _ = unsafe manager.image(handle: 12, source: valid, outputID: 1)
         #expect(wait(
             for: .failed(
                 generation: 1,
@@ -215,15 +219,16 @@ import NucleusSkiaGraphiteBridge
             handle: 12,
             manager: manager))
         #expect(manager.retry(handle: 12))
-        _ = manager.image(handle: 12, source: valid, outputID: 1)
+        _ = unsafe manager.image(handle: 12, source: valid, outputID: 1)
         #expect(wait(
             for: .ready(generation: 2),
             handle: 12,
             manager: manager))
-        #expect(manager.image(
+        let retryImageIsValid = unsafe manager.image(
             handle: 12,
             source: valid,
-            outputID: 1)?.isValid() == true)
+            outputID: 1)?.isValid() == true
+        #expect(retryImageIsValid)
         #expect(decodeCount.withLock { $0 } == 2)
     }
 
@@ -241,19 +246,19 @@ import NucleusSkiaGraphiteBridge
                 }
                 return ImageDecodeQueue.decode(source)
             })
-        let image = residentImage()
-        let manager = ImageResourceManager(
+        let image = unsafe residentImage()
+        let manager = unsafe ImageResourceManager(
             decodeQueue: queue,
-            uploadOperation: { _ in image })
+            uploadOperation: { _ in unsafe image })
         defer {
             gate.release.signal()
             manager.shutdown()
         }
 
-        _ = manager.image(handle: 13, source: old, outputID: 1)
+        _ = unsafe manager.image(handle: 13, source: old, outputID: 1)
         #expect(gate.entered.wait(timeout: .now() + 2) == .success)
         #expect(manager.replace(handle: 13, with: new))
-        _ = manager.image(handle: 13, source: new, outputID: 1)
+        _ = unsafe manager.image(handle: 13, source: new, outputID: 1)
         #expect(wait(
             for: .ready(generation: 2),
             handle: 13,
@@ -278,16 +283,16 @@ import NucleusSkiaGraphiteBridge
                 gate.release.wait()
                 return ImageDecodeQueue.decode(source)
             })
-        let image = residentImage()
-        let manager = ImageResourceManager(
+        let image = unsafe residentImage()
+        let manager = unsafe ImageResourceManager(
             decodeQueue: queue,
-            uploadOperation: { _ in image })
+            uploadOperation: { _ in unsafe image })
         defer {
             gate.release.signal()
             manager.shutdown()
         }
 
-        _ = manager.image(handle: 14, source: source, outputID: 1)
+        _ = unsafe manager.image(handle: 14, source: source, outputID: 1)
         #expect(gate.entered.wait(timeout: .now() + 2) == .success)
         manager.evict(14)
         gate.release.signal()
@@ -309,12 +314,12 @@ import NucleusSkiaGraphiteBridge
                 decodeCount.withLock { $0 += 1 }
                 return ImageDecodeQueue.decode(source)
             })
-        let image = residentImage()
-        let manager = ImageResourceManager(
+        let image = unsafe residentImage()
+        let manager = unsafe ImageResourceManager(
             decodeQueue: queue,
             uploadOperation: { _ in
                 uploadCount.withLock { $0 += 1 }
-                return image
+                return unsafe image
             })
         defer { manager.shutdown() }
 
@@ -322,7 +327,7 @@ import NucleusSkiaGraphiteBridge
             rawSource(byte: UInt8($0))
         }
         for (index, source) in sources.enumerated() {
-            _ = manager.image(
+            _ = unsafe manager.image(
                 handle: UInt64(index + 1),
                 source: source,
                 outputID: 1)
@@ -339,10 +344,11 @@ import NucleusSkiaGraphiteBridge
             manager.drainCompletions()
         }
         let beforeDraw = decodeCount.withLock { $0 }
-        #expect(manager.image(
+        let readyImageIsValid = unsafe manager.image(
             handle: 1,
             source: sources[0],
-            outputID: 1)?.isValid() == true)
+            outputID: 1)?.isValid() == true
+        #expect(readyImageIsValid)
         #expect(decodeCount.withLock { $0 } == beforeDraw)
     }
 

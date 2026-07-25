@@ -16,48 +16,24 @@ import WaylandServerC
 import WaylandServer
 import WaylandServerDispatch
 
-private final class WeakNotification {
-    weak var notification: ExtIdleNotification?
-    init(_ notification: ExtIdleNotification) { self.notification = notification }
-}
-
-final class IdleManager {
-    /// Destroy-only child vtable kept hand-wired: zwp_idle_inhibitor_v1 has no
-    /// non-destructor request, so it has no generated dispatch.
-    private let inhibitorVtable: UnsafeMutableRawPointer
-    /// Destroy-only child vtable kept hand-wired: ext_idle_notification_v1 has no
-    /// non-destructor request, so it has no generated dispatch.
-    private let notificationVtable: UnsafeMutableRawPointer
-
+@MainActor
+@safe final class IdleManager {
     /// Number of live idle inhibitors. The compositor pauses idle while > 0.
     private(set) var inhibitorCount = 0
     /// Last user-input time (ms, monotonic). Notification deadlines are relative.
     private var lastInputMs: UInt64 = 0
-    private var notifications: [WeakNotification] = []
-
-    init() {
-        inhibitorVtable = allocVtable(
-            MemoryLayout<swift_wayland_zwp_idle_inhibitor_v1_requests>.stride,
-            MemoryLayout<swift_wayland_zwp_idle_inhibitor_v1_requests>.alignment)
-        let iv = inhibitorVtable.bindMemory(
-            to: swift_wayland_zwp_idle_inhibitor_v1_requests.self, capacity: 1)
-        iv.pointee.destroy = IdleInhibitor.objectDestroy
-
-        notificationVtable = allocVtable(
-            MemoryLayout<swift_wayland_ext_idle_notification_v1_requests>.stride,
-            MemoryLayout<swift_wayland_ext_idle_notification_v1_requests>.alignment)
-        let nnv = notificationVtable.bindMemory(
-            to: swift_wayland_ext_idle_notification_v1_requests.self, capacity: 1)
-        nnv.pointee.destroy = ExtIdleNotification.objectDestroy
-    }
+    private var notifications: [WeakReference<ExtIdleNotification>] = []
 
     func register(in router: NucleusWaylandRouter) {
         router.addGlobal(
-            interface: swift_wayland_iface_zwp_idle_inhibit_manager_v1(), version: 1,
-            impl: self, bind: Self.bindInhibit)
+            ZwpIdleInhibitManagerV1Server.global(
+                implementation: self,
+                owner: { manager, _ in manager }))
         router.addGlobal(
-            interface: swift_wayland_iface_ext_idle_notifier_v1(), version: 2,
-            impl: self, bind: Self.bindNotifier)
+            ExtIdleNotifierV1Server.global(
+                implementation: self,
+                advertisedVersion: 2,
+                owner: { manager, _ in manager }))
     }
 
     // MARK: compositor / reactor seam
@@ -67,7 +43,7 @@ final class IdleManager {
     var nextDeadlineMs: UInt64? {
         var best: UInt64?
         for box in notifications {
-            guard let n = box.notification, !n.idled else { continue }
+            guard let n = box.value, !n.idled else { continue }
             if !n.inputOnly, inhibitorCount > 0 { continue }
             let deadline = lastInputMs + UInt64(n.timeoutMs)
             if best == nil || deadline < best! { best = deadline }
@@ -79,8 +55,8 @@ final class IdleManager {
     /// idle clock.
     func noteUserInput(atMs: UInt64) {
         lastInputMs = atMs
-        for box in notifications where box.notification?.idled == true {
-            box.notification?.sendResumed()
+        for box in notifications where box.value?.idled == true {
+            box.value?.sendResumed()
         }
     }
 
@@ -88,7 +64,7 @@ final class IdleManager {
     /// deadline has elapsed and that are not suppressed by an inhibitor.
     func idleTick(nowMs: UInt64) {
         for box in notifications {
-            guard let n = box.notification, !n.idled else { continue }
+            guard let n = box.value, !n.idled else { continue }
             if !n.inputOnly, inhibitorCount > 0 { continue }
             if nowMs >= lastInputMs + UInt64(n.timeoutMs) { n.sendIdled() }
         }
@@ -103,123 +79,126 @@ final class IdleManager {
         if inhibitorCount > 0 { inhibitorCount -= 1 }
     }
     fileprivate func addNotification(_ n: ExtIdleNotification) {
-        notifications.append(WeakNotification(n))
+        notifications.append(WeakReference(n))
     }
     fileprivate func removeNotification(_ n: ExtIdleNotification) {
-        notifications.removeAll { $0.notification == nil || $0.notification === n }
+        notifications.removeAll { $0.value == nil || $0.value === n }
     }
 
-    // MARK: binds
-
-    private static let bindInhibit: @convention(c) (
-        OpaquePointer?, UnsafeMutableRawPointer?, UInt32, UInt32
-    ) -> Void = { client, data, version, id in
-        guard let client, let me = NucleusWaylandRouter.impl(data, as: IdleManager.self) else { return }
-        _ = WaylandResource.create(
-            client: client, interface: swift_wayland_iface_zwp_idle_inhibit_manager_v1(),
-            version: Int32(version), id: id, vtable: ZwpIdleInhibitManagerV1Server.vtable, owner: me)
-    }
-
-    private static let bindNotifier: @convention(c) (
-        OpaquePointer?, UnsafeMutableRawPointer?, UInt32, UInt32
-    ) -> Void = { client, data, version, id in
-        guard let client, let me = NucleusWaylandRouter.impl(data, as: IdleManager.self) else { return }
-        _ = WaylandResource.create(
-            client: client, interface: swift_wayland_iface_ext_idle_notifier_v1(),
-            version: Int32(version), id: id, vtable: ExtIdleNotifierV1Server.vtable, owner: me)
-    }
-
-    // The inhibitor / notification children are destroy-only (no non-destructor
-    // request), so they keep their hand-wired vtables; `id.create` materializes them
-    // against `inhibitorVtable` / `notificationVtable`.
-    fileprivate func makeNotification(id: WlNewId, timeout: UInt32, inputOnly: Bool) {
-        let n = ExtIdleNotification(manager: self, timeoutMs: timeout, inputOnly: inputOnly)
-        guard let nres = id.create(vtable: UnsafeRawPointer(notificationVtable), owner: n) else { return }
-        n.bind(nres)
-        addNotification(n)
-    }
-
-    deinit {
-        inhibitorVtable.deallocate()
-        notificationVtable.deallocate()
+    // The inhibitor and notification children use generated destroy-only dispatch.
+    fileprivate func makeNotification(
+        id: WlNewId<ExtIdleNotificationV1Server>,
+        timeout: UInt32,
+        inputOnly: Bool
+    ) {
+        _ = unsafe id.create(
+            owner: { handle in
+                ExtIdleNotification(
+                    resource: handle,
+                    manager: self,
+                    timeoutMs: timeout,
+                    inputOnly: inputOnly)
+            },
+            installed: { notification in
+                self.addNotification(notification)
+            })
     }
 }
 
 extension IdleManager: ZwpIdleInhibitManagerV1Requests {
     // Both the inhibit-manager and notifier protocols default `destroy`; conforming to both makes the
     // default ambiguous, so pin it explicitly (plain teardown — the manager outlives its resources).
-    func destroy(_ resource: UnsafeMutablePointer<wl_resource>) { wl_resource_destroy(resource) }
+    func destroy(_ request: WaylandRequest<ZwpIdleInhibitManagerV1Server>) {
+        let resource = unsafe request.resource
+        unsafe wl_resource_destroy(resource)
+    }
 
     // create_inhibitor(id, surface)
-    func createInhibitor(_ resource: UnsafeMutablePointer<wl_resource>, id: WlNewId,
-                         surface surfaceRes: UnsafeMutablePointer<wl_resource>?) {
-        let surface = surfaceRes.flatMap { WaylandResource.owner(of: $0, as: WlSurface.self) }
-        let inhibitor = IdleInhibitor(manager: self, surface: surface)
-        guard id.create(vtable: UnsafeRawPointer(inhibitorVtable), owner: inhibitor) != nil
-        else { return }
-        addInhibitor()
+    func createInhibitor(
+        _ request: WaylandRequest<ZwpIdleInhibitManagerV1Server>,
+        id: WlNewId<ZwpIdleInhibitorV1Server>,
+                         surface surfaceRes: WaylandBorrowedObject<WlSurfaceServer>) {
+        let surface = surfaceRes.owner(as: WlSurface.self)
+        _ = unsafe id.create(
+            owner: { handle in
+                IdleInhibitor(
+                    resource: handle, manager: self, surface: surface)
+            },
+            installed: { _ in
+                self.addInhibitor()
+            })
     }
 }
 
 extension IdleManager: ExtIdleNotifierV1Requests {
-    func getIdleNotification(_ resource: UnsafeMutablePointer<wl_resource>, id: WlNewId,
-                             timeout: UInt32, seat: UnsafeMutablePointer<wl_resource>?) {
-        makeNotification(id: id, timeout: timeout, inputOnly: false)
+    func getIdleNotification(
+        _ request: WaylandRequest<ExtIdleNotifierV1Server>,
+        id: WlNewId<ExtIdleNotificationV1Server>,
+                             timeout: UInt32, seat: WaylandBorrowedObject<WlSeatServer>) {
+        unsafe makeNotification(id: id, timeout: timeout, inputOnly: false)
     }
-    func getInputIdleNotification(_ resource: UnsafeMutablePointer<wl_resource>, id: WlNewId,
-                                  timeout: UInt32, seat: UnsafeMutablePointer<wl_resource>?) {
-        makeNotification(id: id, timeout: timeout, inputOnly: true)
+    func getInputIdleNotification(
+        _ request: WaylandRequest<ExtIdleNotifierV1Server>,
+        id: WlNewId<ExtIdleNotificationV1Server>,
+                                  timeout: UInt32, seat: WaylandBorrowedObject<WlSeatServer>) {
+        unsafe makeNotification(id: id, timeout: timeout, inputOnly: true)
     }
 }
 
 /// zwp_idle_inhibitor_v1 owner (Rule 9). Contributes to the inhibitor count while
 /// alive; the surface association keeps the inhibition scoped to its owner.
+@MainActor
 final class IdleInhibitor {
+    private let resource:
+        WaylandResourceHandle<ZwpIdleInhibitorV1Server>
     private weak var manager: IdleManager?
     private weak var surface: WlSurface?
 
-    init(manager: IdleManager, surface: WlSurface?) {
+    init(
+        resource: WaylandResourceHandle<ZwpIdleInhibitorV1Server>,
+        manager: IdleManager,
+        surface: WlSurface?
+    ) {
+        self.resource = resource
         self.manager = manager
         self.surface = surface
     }
 
-    fileprivate static let objectDestroy: @convention(c) (
-        OpaquePointer?, UnsafeMutablePointer<wl_resource>?
-    ) -> Void = { _, resource in if let resource { wl_resource_destroy(resource) } }
-
-    deinit { manager?.removeInhibitor() }
+    isolated deinit { manager?.removeInhibitor() }
 }
 
 /// ext_idle_notification_v1 owner (Rule 9). Sends idled/resumed (each guarded so
 /// the protocol's "no two idled without a resumed" invariant holds).
-final class ExtIdleNotification {
+@MainActor
+@safe final class ExtIdleNotification {
     private weak var manager: IdleManager?
     let timeoutMs: UInt32
     let inputOnly: Bool
     private(set) var idled = false
-    private var resource: UnsafeMutablePointer<wl_resource>?
+    private let resource:
+        WaylandResourceHandle<ExtIdleNotificationV1Server>
 
-    init(manager: IdleManager, timeoutMs: UInt32, inputOnly: Bool) {
+    init(
+        resource: WaylandResourceHandle<ExtIdleNotificationV1Server>,
+        manager: IdleManager,
+        timeoutMs: UInt32,
+        inputOnly: Bool
+    ) {
+        self.resource = resource
         self.manager = manager
         self.timeoutMs = timeoutMs
         self.inputOnly = inputOnly
     }
-    fileprivate func bind(_ resource: UnsafeMutablePointer<wl_resource>) { self.resource = resource }
-
     func sendIdled() {
-        guard let resource, !idled else { return }
+        guard !idled else { return }
         idled = true
-        ext_idle_notification_v1_send_idled(resource)
+        resource.sendIdled()
     }
     func sendResumed() {
-        guard let resource, idled else { return }
+        guard idled else { return }
         idled = false
-        ext_idle_notification_v1_send_resumed(resource)
+        resource.sendResumed()
     }
 
-    fileprivate static let objectDestroy: @convention(c) (
-        OpaquePointer?, UnsafeMutablePointer<wl_resource>?
-    ) -> Void = { _, resource in if let resource { wl_resource_destroy(resource) } }
-
-    deinit { manager?.removeNotification(self) }
+    isolated deinit { manager?.removeNotification(self) }
 }

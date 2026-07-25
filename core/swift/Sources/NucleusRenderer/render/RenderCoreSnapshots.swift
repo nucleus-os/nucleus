@@ -54,12 +54,12 @@ extension RenderCore {
             drainPendingShmUpload(iosurfaceID: iosurfaceID)
             guard iosurfaceID != 0,
                   let driver = frameDriver,
-                  let source = stagedShmUploads[iosurfaceID]?.image
+                  let source = unsafe stagedShmUploads[iosurfaceID]?.image
                     ?? driver.registry.resolve(.clientSurface(iosurfaceID)),
-                  source.isValid()
+                  unsafe source.isValid()
             else { return nil }
-            let width = source.width()
-            let height = source.height()
+            let width = unsafe source.width()
+            let height = unsafe source.height()
             guard width > 0, height > 0,
                   let registeredWidth = UInt32(exactly: width),
                   let registeredHeight = UInt32(exactly: height)
@@ -70,7 +70,7 @@ extension RenderCore {
             if nextSnapshotContentRevision == 0 {
                 nextSnapshotContentRevision = 1
             }
-            guard let textureHandle = SnapshotCapture.captureDeviceRect(
+            guard let textureHandle = unsafe SnapshotCapture.captureDeviceRect(
                 recorder: driver.recorder,
                 source: source,
                 srcX: 0,
@@ -84,18 +84,18 @@ extension RenderCore {
             // Submit as standalone ordered GPU work. A closing client can destroy
             // its surface immediately after capture while serial retirement keeps
             // the source backing alive until this copy finishes.
-            let recording = driver.recorder.snapRecording()
+            let recording = unsafe driver.recorder.snapRecording()
             let acquire = pendingClientAcquireSemaphores[iosurfaceID]
             frameSerial &+= 1
             let captureSerial = frameSerial
-            guard recording.isValid()
+            guard unsafe recording.isValid()
             else {
                 _ = driver.registry.release(.renderer(textureHandle))
                 return nil
             }
-            let submission = driver.submitImmediate(
+            let submission = unsafe driver.submitImmediate(
                     recording,
-                    waitSemaphores: acquire.map { [$0.semaphore] } ?? [],
+                    waitSemaphores: acquire.map { unsafe [$0.semaphore] } ?? [],
                     submissionSerial: captureSerial)
             guard acceptGraphiteSubmission(submission) else {
                 _ = driver.registry.release(.renderer(textureHandle))

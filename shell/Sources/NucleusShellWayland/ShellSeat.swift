@@ -13,6 +13,7 @@
 
 import WaylandClientC
 public import WaylandClientDispatch
+import WaylandProtocolTypes
 import WaylandClient
 import WaylandProtocolsC
 import NucleusShellInputC
@@ -95,7 +96,7 @@ public protocol ShellSeatDelegate: AnyObject {
 /// Binds the seat and its pointer/keyboard, compiles the keymap the compositor
 /// sends, and reports events to a delegate.
 @MainActor
-public final class ShellSeat {
+@safe public final class ShellSeat {
     public weak var delegate: (any ShellSeatDelegate)?
 
     /// Key repeat as the compositor advertises it over `wl_keyboard.repeat_info`.
@@ -107,7 +108,7 @@ public final class ShellSeat {
     private let client: ShellWaylandClient
 
     /// Borrowed seat proxy used to create seat-scoped protocol extensions.
-    public var protocolSeat: OpaquePointer { seat }
+    public var protocolSeat: OpaquePointer { unsafe seat }
     private var pointer: OpaquePointer?
     private var keyboard: OpaquePointer?
     // Retained for the proxies' lifetime: `addListener` borrows its owner.
@@ -148,20 +149,21 @@ public final class ShellSeat {
     private let cursorShapeManager: OpaquePointer?
 
     public init?(client: ShellWaylandClient) {
-        guard let seat = client.proxy(.seat) else { return nil }
-        self.seat = seat
+        guard let seat = unsafe client.proxy(.seat) else { return nil }
+        unsafe self.seat = seat
         self.client = client
-        cursorShapeManager = client.proxy(.cursorShape)
+        unsafe cursorShapeManager = client.proxy(.cursorShape)
         guard client.attachSeatConsumer(self) else { return nil }
         // Do not allocate native state until the unretained Wayland listener
         // owner has been accepted. A failed class initializer does not run this
         // type's deinit, so allocating first would leak the xkb context.
-        xkbContext = xkb_context_new(XKB_CONTEXT_NO_FLAGS)
+        unsafe xkbContext = xkb_context_new(XKB_CONTEXT_NO_FLAGS)
     }
 
     private func bindCursorShapeDevice(for pointer: OpaquePointer) {
-        guard let manager = cursorShapeManager else { return }
-        cursorShapeDevice = wp_cursor_shape_manager_v1_get_pointer(manager, pointer)
+        guard let manager = unsafe cursorShapeManager else { return }
+        unsafe cursorShapeDevice =
+            wp_cursor_shape_manager_v1_get_pointer(manager, pointer)
     }
 
     // `isolated deinit`: the xkb handles are @MainActor-confined state, so the
@@ -169,18 +171,24 @@ public final class ShellSeat {
     // boundary with non-Sendable pointers.
     isolated deinit {
         client.detachSeatConsumer(self)
-        if let cursorShapeDevice {
-            wp_cursor_shape_device_v1_destroy(cursorShapeDevice)
+        if let cursorShapeDevice = unsafe cursorShapeDevice {
+            unsafe wp_cursor_shape_device_v1_destroy(cursorShapeDevice)
         }
-        if let pointer {
-            wl_pointer_release(pointer)
+        if let pointer = unsafe pointer {
+            unsafe wl_pointer_release(pointer)
         }
-        if let keyboard {
-            wl_keyboard_release(keyboard)
+        if let keyboard = unsafe keyboard {
+            unsafe wl_keyboard_release(keyboard)
         }
-        if let xkbState { xkb_state_unref(xkbState) }
-        if let xkbKeymap { xkb_keymap_unref(xkbKeymap) }
-        if let xkbContext { xkb_context_unref(xkbContext) }
+        if let xkbState = unsafe xkbState {
+            unsafe xkb_state_unref(xkbState)
+        }
+        if let xkbKeymap = unsafe xkbKeymap {
+            unsafe xkb_keymap_unref(xkbKeymap)
+        }
+        if let xkbContext = unsafe xkbContext {
+            unsafe xkb_context_unref(xkbContext)
+        }
     }
 
     // MARK: - Key repeat
@@ -238,7 +246,7 @@ public final class ShellSeat {
 
     private func nowNanoseconds() -> UInt64 {
         var time = timespec()
-        clock_gettime(CLOCK_MONOTONIC, &time)
+        unsafe clock_gettime(CLOCK_MONOTONIC, &time)
         return UInt64(time.tv_sec) &* 1_000_000_000 &+ UInt64(time.tv_nsec)
     }
 
@@ -247,21 +255,27 @@ public final class ShellSeat {
     func applyKeymap(format: UInt32, fd: Int32, size: UInt32) {
         defer { close(fd) }
         guard format == UInt32(WL_KEYBOARD_KEYMAP_FORMAT_XKB_V1.rawValue) else { return }
-        guard let mapped = nucleus_shell_map_keymap_fd(fd, size) else { return }
-        defer { nucleus_shell_unmap_keymap(mapped, size) }
-        guard let xkbContext else { return }
-
-        guard let keymap = xkb_keymap_new_from_string(
-            xkbContext, mapped, XKB_KEYMAP_FORMAT_TEXT_V1, XKB_KEYMAP_COMPILE_NO_FLAGS)
-        else { return }
-        guard let state = xkb_state_new(keymap) else {
-            xkb_keymap_unref(keymap)
+        guard let mapped = unsafe nucleus_shell_map_keymap_fd(fd, size) else {
             return
         }
-        if let xkbState { xkb_state_unref(xkbState) }
-        if let xkbKeymap { xkb_keymap_unref(xkbKeymap) }
-        xkbKeymap = keymap
-        xkbState = state
+        defer { unsafe nucleus_shell_unmap_keymap(mapped, size) }
+        guard let xkbContext = unsafe xkbContext else { return }
+
+        guard let keymap = unsafe xkb_keymap_new_from_string(
+            xkbContext, mapped, XKB_KEYMAP_FORMAT_TEXT_V1, XKB_KEYMAP_COMPILE_NO_FLAGS)
+        else { return }
+        guard let state = unsafe xkb_state_new(keymap) else {
+            unsafe xkb_keymap_unref(keymap)
+            return
+        }
+        if let xkbState = unsafe xkbState {
+            unsafe xkb_state_unref(xkbState)
+        }
+        if let xkbKeymap = unsafe xkbKeymap {
+            unsafe xkb_keymap_unref(xkbKeymap)
+        }
+        unsafe xkbKeymap = keymap
+        unsafe xkbState = state
     }
 
     /// Composed text for a keycode, or nil when the key produces none.
@@ -269,13 +283,15 @@ public final class ShellSeat {
     /// Control characters are rejected: Return must not insert U+000D into a
     /// text field, and Escape must not insert U+001B.
     func composedText(evdevKeycode: UInt32) -> String? {
-        guard let xkbState else { return nil }
+        guard let xkbState = unsafe xkbState else { return nil }
         let xkbKeycode = evdevKeycode + ShellSeat.evdevKeycodeOffset
-        let size = xkb_state_key_get_utf8(xkbState, xkbKeycode, nil, 0)
+        let size = unsafe xkb_state_key_get_utf8(
+            xkbState, xkbKeycode, nil, 0)
         guard size > 0 else { return nil }
         var buffer = [CChar](repeating: 0, count: Int(size) + 1)
         let written = buffer.withUnsafeMutableBufferPointer { pointer in
-            xkb_state_key_get_utf8(xkbState, xkbKeycode, pointer.baseAddress, pointer.count)
+            unsafe xkb_state_key_get_utf8(
+                xkbState, xkbKeycode, pointer.baseAddress, pointer.count)
         }
         guard written == size else { return nil }
         let bytes = buffer.prefix(Int(written)).map {
@@ -296,18 +312,20 @@ public final class ShellSeat {
     func updateModifiers(
         depressed: UInt32, latched: UInt32, locked: UInt32, group: UInt32
     ) {
-        guard let xkbState else { return }
-        _ = xkb_state_update_mask(xkbState, depressed, latched, locked, 0, 0, group)
-        modifiers.shift = isModifierActive(XKB_MOD_NAME_SHIFT)
-        modifiers.control = isModifierActive(XKB_MOD_NAME_CTRL)
-        modifiers.alt = isModifierActive(XKB_MOD_NAME_ALT)
-        modifiers.logo = isModifierActive(XKB_MOD_NAME_LOGO)
-        modifiers.capsLock = isModifierActive(XKB_MOD_NAME_CAPS)
+        guard let xkbState = unsafe xkbState else { return }
+        _ = unsafe xkb_state_update_mask(
+            xkbState, depressed, latched, locked, 0, 0, group)
+        modifiers.shift = unsafe isModifierActive(XKB_MOD_NAME_SHIFT)
+        modifiers.control = unsafe isModifierActive(XKB_MOD_NAME_CTRL)
+        modifiers.alt = unsafe isModifierActive(XKB_MOD_NAME_ALT)
+        modifiers.logo = unsafe isModifierActive(XKB_MOD_NAME_LOGO)
+        modifiers.capsLock = unsafe isModifierActive(XKB_MOD_NAME_CAPS)
     }
 
     private func isModifierActive(_ name: UnsafePointer<CChar>) -> Bool {
-        guard let xkbState else { return false }
-        return xkb_state_mod_name_is_active(xkbState, name, XKB_STATE_MODS_EFFECTIVE) > 0
+        guard let xkbState = unsafe xkbState else { return false }
+        return unsafe xkb_state_mod_name_is_active(
+            xkbState, name, XKB_STATE_MODS_EFFECTIVE) > 0
     }
 
     func emit(_ event: ShellInputEvent) {
@@ -323,21 +341,23 @@ public final class ShellSeat {
 
     func bindPointerIfNeeded(_ capabilities: UInt32) {
         let hasPointer = capabilities & UInt32(WL_SEAT_CAPABILITY_POINTER.rawValue) != 0
-        if hasPointer, pointer == nil {
-            pointer = wl_seat_get_pointer(seat)
+        let pointerIsNil = unsafe pointer == nil
+        if hasPointer, pointerIsNil {
+            unsafe pointer = wl_seat_get_pointer(seat)
             let listener = ShellPointerListener(seat: self)
             pointerListener = listener
-            if let pointer {
-                _ = WlPointerClient.addListener(pointer, owner: listener)
-                bindCursorShapeDevice(for: pointer)
+            if let pointer = unsafe pointer {
+                _ = unsafe WlPointerClient.addListener(
+                    pointer, owner: listener)
+                unsafe bindCursorShapeDevice(for: pointer)
             }
-        } else if !hasPointer, let existing = pointer {
-            if let device = cursorShapeDevice {
-                wp_cursor_shape_device_v1_destroy(device)
-                cursorShapeDevice = nil
+        } else if !hasPointer, let existing = unsafe pointer {
+            if let device = unsafe cursorShapeDevice {
+                unsafe wp_cursor_shape_device_v1_destroy(device)
+                unsafe cursorShapeDevice = nil
             }
-            wl_pointer_release(existing)
-            pointer = nil
+            unsafe wl_pointer_release(existing)
+            unsafe pointer = nil
             pointerListener = nil
             pointerEnterSerial = 0
         }
@@ -345,14 +365,18 @@ public final class ShellSeat {
 
     func bindKeyboardIfNeeded(_ capabilities: UInt32) {
         let hasKeyboard = capabilities & UInt32(WL_SEAT_CAPABILITY_KEYBOARD.rawValue) != 0
-        if hasKeyboard, keyboard == nil {
-            keyboard = wl_seat_get_keyboard(seat)
+        let keyboardIsNil = unsafe keyboard == nil
+        if hasKeyboard, keyboardIsNil {
+            unsafe keyboard = wl_seat_get_keyboard(seat)
             let listener = ShellKeyboardListener(seat: self)
             keyboardListener = listener
-            if let keyboard { _ = WlKeyboardClient.addListener(keyboard, owner: listener) }
-        } else if !hasKeyboard, let existing = keyboard {
-            wl_keyboard_release(existing)
-            keyboard = nil
+            if let keyboard = unsafe keyboard {
+                _ = unsafe WlKeyboardClient.addListener(
+                    keyboard, owner: listener)
+            }
+        } else if !hasKeyboard, let existing = unsafe keyboard {
+            unsafe wl_keyboard_release(existing)
+            unsafe keyboard = nil
             keyboardListener = nil
             cancelKeyRepeat()
         }
@@ -383,8 +407,10 @@ public final class ShellSeat {
     public func setCursor(_ shape: ShellCursorShape) {
         guard shape != currentCursor else { return }
         currentCursor = shape
-        guard let device = cursorShapeDevice, pointerEnterSerial != 0 else { return }
-        wp_cursor_shape_device_v1_set_shape(device, pointerEnterSerial, shape.rawValue)
+        guard let device = unsafe cursorShapeDevice,
+              pointerEnterSerial != 0 else { return }
+        unsafe wp_cursor_shape_device_v1_set_shape(
+            device, pointerEnterSerial, shape.rawValue)
     }
 
     func noteKeyboardSurface(_ surfaceID: UInt) {
@@ -514,10 +540,11 @@ final class ShellPointerListener: WlPointerEvents {
     }
 
     nonisolated func enter(
-        _ proxy: OpaquePointer, serial: UInt32, surface: OpaquePointer?,
+        _ proxy: WaylandBorrowedProxy<WlPointerClient>, serial: UInt32,
+        surface: WaylandBorrowedProxy<WlSurfaceClient>,
         surface_x: Double, surface_y: Double
     ) {
-        let surfaceID = surface.map { UInt(bitPattern: $0) } ?? 0
+        let surfaceID = unsafe UInt(bitPattern: surface.proxy)
         MainActor.assumeIsolated {
             seat.notePointerSurface(surfaceID)
             seat.notePointerEnterSerial(serial)
@@ -531,10 +558,11 @@ final class ShellPointerListener: WlPointerEvents {
         }
     }
 
-    nonisolated func leave(_ proxy: OpaquePointer, serial: UInt32, surface: OpaquePointer?) {
-        // Reduced to a scalar identity before the actor hop: an OpaquePointer is
-        // non-Sendable, and only its identity is wanted here.
-        let surfaceID = surface.map { UInt(bitPattern: $0) } ?? 0
+    nonisolated func leave(
+        _ proxy: WaylandBorrowedProxy<WlPointerClient>, serial: UInt32,
+        surface: WaylandBorrowedProxy<WlSurfaceClient>
+    ) {
+        let surfaceID = unsafe UInt(bitPattern: surface.proxy)
         MainActor.assumeIsolated {
             var event = seat.makeEvent(.pointerLeave)
             event.surface = surfaceID
@@ -545,7 +573,7 @@ final class ShellPointerListener: WlPointerEvents {
     }
 
     nonisolated func motion(
-        _ proxy: OpaquePointer, time: UInt32, surface_x: Double, surface_y: Double
+        _ proxy: WaylandBorrowedProxy<WlPointerClient>, time: UInt32, surface_x: Double, surface_y: Double
     ) {
         MainActor.assumeIsolated {
             seat.notePointerPosition(x: surface_x, y: surface_y)
@@ -559,10 +587,11 @@ final class ShellPointerListener: WlPointerEvents {
     }
 
     nonisolated func button(
-        _ proxy: OpaquePointer, serial: UInt32, time: UInt32, button: UInt32, state: UInt32
+        _ proxy: WaylandBorrowedProxy<WlPointerClient>, serial: UInt32,
+        time: UInt32, button: UInt32, state: WlPointerButtonState
     ) {
         MainActor.assumeIsolated {
-            let pressed = state == UInt32(WL_POINTER_BUTTON_STATE_PRESSED.rawValue)
+            let pressed = state == .pressed
             seat.notePointerButton(button, pressed: pressed)
             if pressed {
                 seat.noteDragAuthorization(serial: serial)
@@ -577,13 +606,16 @@ final class ShellPointerListener: WlPointerEvents {
         }
     }
 
-    nonisolated func axis(_ proxy: OpaquePointer, time: UInt32, axis: UInt32, value: Double) {
+    nonisolated func axis(
+        _ proxy: WaylandBorrowedProxy<WlPointerClient>, time: UInt32,
+        axis: WlPointerAxis, value: Double
+    ) {
         MainActor.assumeIsolated {
             var event = seat.makeEvent(.pointerAxis)
             event.surface = seat.currentPointerSurface
             event.x = seat.pointerPosition.x
             event.y = seat.pointerPosition.y
-            if axis == UInt32(WL_POINTER_AXIS_VERTICAL_SCROLL.rawValue) {
+            if axis == .verticalScroll {
                 event.scrollY = value
             } else {
                 event.scrollX = value
@@ -596,19 +628,25 @@ final class ShellPointerListener: WlPointerEvents {
         }
     }
 
-    nonisolated func frame(_ proxy: OpaquePointer) {}
+    nonisolated func frame(_ proxy: WaylandBorrowedProxy<WlPointerClient>) {}
 
-    nonisolated func axisSource(_ proxy: OpaquePointer, axis_source: UInt32) {
+    nonisolated func axisSource(
+        _ proxy: WaylandBorrowedProxy<WlPointerClient>,
+        axis_source: WlPointerAxisSource
+    ) {
         MainActor.assumeIsolated {
             // A finger or continuous source scrolls smoothly; a wheel is detented.
-            seat.noteAxisSource(axis_source)
+            seat.noteAxisSource(axis_source.rawValue)
         }
     }
 
     /// The finger lifted. There is no momentum phase to follow — the compositor
     /// does not synthesize inertia, so a view wanting kinetic scrolling starts
     /// it from here.
-    nonisolated func axisStop(_ proxy: OpaquePointer, time: UInt32, axis: UInt32) {
+    nonisolated func axisStop(
+        _ proxy: WaylandBorrowedProxy<WlPointerClient>, time: UInt32,
+        axis: WlPointerAxis
+    ) {
         MainActor.assumeIsolated {
             var event = seat.makeEvent(.pointerAxis)
             event.surface = seat.currentPointerSurface
@@ -622,14 +660,20 @@ final class ShellPointerListener: WlPointerEvents {
 
     /// Superseded by `axis_value120` since `wl_pointer` v8, and ignored here:
     /// a compositor sending both would otherwise have the notch counted twice.
-    nonisolated func axisDiscrete(_ proxy: OpaquePointer, axis: UInt32, discrete: Int32) {}
+    nonisolated func axisDiscrete(
+        _ proxy: WaylandBorrowedProxy<WlPointerClient>,
+        axis: WlPointerAxis, discrete: Int32
+    ) {}
 
     /// High-resolution wheel travel: 120 units to a detent. This is the only
     /// place a free-spinning wheel's sub-notch movement is reported.
-    nonisolated func axisValue120(_ proxy: OpaquePointer, axis: UInt32, value120: Int32) {
+    nonisolated func axisValue120(
+        _ proxy: WaylandBorrowedProxy<WlPointerClient>,
+        axis: WlPointerAxis, value120: Int32
+    ) {
         MainActor.assumeIsolated {
             let detents = Double(value120) / 120
-            if axis == UInt32(WL_POINTER_AXIS_VERTICAL_SCROLL.rawValue) {
+            if axis == .verticalScroll {
                 seat.pendingAxisDetents.y = detents
             } else {
                 seat.pendingAxisDetents.x = detents
@@ -637,7 +681,9 @@ final class ShellPointerListener: WlPointerEvents {
         }
     }
     nonisolated func axisRelativeDirection(
-        _ proxy: OpaquePointer, axis: UInt32, direction: UInt32
+        _ proxy: WaylandBorrowedProxy<WlPointerClient>,
+        axis: WlPointerAxis,
+        direction: WlPointerAxisRelativeDirection
     ) {}
 }
 
@@ -649,17 +695,25 @@ final class ShellKeyboardListener: WlKeyboardEvents {
         self.seat = seat
     }
 
-    nonisolated func keymap(_ proxy: OpaquePointer, format: UInt32, fd: Int32, size: UInt32) {
+    nonisolated func keymap(
+        _ proxy: WaylandBorrowedProxy<WlKeyboardClient>,
+        format: WlKeyboardKeymapFormat,
+        fd: consuming WaylandClientOwnedFileDescriptor,
+        size: UInt32
+    ) {
+        let descriptor = fd.take()
         MainActor.assumeIsolated {
-            seat.applyKeymap(format: format, fd: fd, size: size)
+            seat.applyKeymap(
+                format: format.rawValue, fd: descriptor, size: size)
         }
     }
 
     nonisolated func enter(
-        _ proxy: OpaquePointer, serial: UInt32, surface: OpaquePointer?,
-        keys: UnsafeMutablePointer<wl_array>?
+        _ proxy: WaylandBorrowedProxy<WlKeyboardClient>, serial: UInt32,
+        surface: WaylandBorrowedProxy<WlSurfaceClient>,
+        keys: WaylandClientArrayView
     ) {
-        let surfaceID = surface.map { UInt(bitPattern: $0) } ?? 0
+        let surfaceID = unsafe UInt(bitPattern: surface.proxy)
         MainActor.assumeIsolated {
             seat.noteKeyboardSurface(surfaceID)
             var event = seat.makeEvent(.keyboardEnter)
@@ -668,8 +722,11 @@ final class ShellKeyboardListener: WlKeyboardEvents {
         }
     }
 
-    nonisolated func leave(_ proxy: OpaquePointer, serial: UInt32, surface: OpaquePointer?) {
-        let surfaceID = surface.map { UInt(bitPattern: $0) } ?? 0
+    nonisolated func leave(
+        _ proxy: WaylandBorrowedProxy<WlKeyboardClient>, serial: UInt32,
+        surface: WaylandBorrowedProxy<WlSurfaceClient>
+    ) {
+        let surfaceID = unsafe UInt(bitPattern: surface.proxy)
         MainActor.assumeIsolated {
             var event = seat.makeEvent(.keyboardLeave)
             event.surface = surfaceID
@@ -681,17 +738,18 @@ final class ShellKeyboardListener: WlKeyboardEvents {
     }
 
     nonisolated func key(
-        _ proxy: OpaquePointer, serial: UInt32, time: UInt32, key: UInt32, state: UInt32
+        _ proxy: WaylandBorrowedProxy<WlKeyboardClient>, serial: UInt32,
+        time: UInt32, key: UInt32, state: WlKeyboardKeyState
     ) {
         MainActor.assumeIsolated {
             seat.handleKey(
                 keycode: key,
-                pressed: state == UInt32(WL_KEYBOARD_KEY_STATE_PRESSED.rawValue))
+                pressed: state == .pressed)
         }
     }
 
     nonisolated func modifiers(
-        _ proxy: OpaquePointer, serial: UInt32, mods_depressed: UInt32,
+        _ proxy: WaylandBorrowedProxy<WlKeyboardClient>, serial: UInt32, mods_depressed: UInt32,
         mods_latched: UInt32, mods_locked: UInt32, group: UInt32
     ) {
         MainActor.assumeIsolated {
@@ -701,7 +759,7 @@ final class ShellKeyboardListener: WlKeyboardEvents {
         }
     }
 
-    nonisolated func repeatInfo(_ proxy: OpaquePointer, rate: Int32, delay: Int32) {
+    nonisolated func repeatInfo(_ proxy: WaylandBorrowedProxy<WlKeyboardClient>, rate: Int32, delay: Int32) {
         MainActor.assumeIsolated {
             seat.noteRepeatInfo(rate: rate, delay: delay)
         }

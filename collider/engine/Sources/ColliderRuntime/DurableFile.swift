@@ -28,7 +28,7 @@ enum DurableFile {
                 try? descriptor.close()
                 throw error
             }
-            guard collider_replace(candidate.string, path.string) == 0 else {
+            guard unsafe collider_replace(candidate.string, path.string) == 0 else {
                 throw Errno(rawValue: errno)
             }
             try synchronizeDirectory(path.removingLastComponent())
@@ -62,7 +62,7 @@ enum DurableFile {
                 throw Errno(rawValue: errno)
             }
             try descriptor.close()
-            guard collider_replace(candidate.string, path.string) == 0 else {
+            guard unsafe collider_replace(candidate.string, path.string) == 0 else {
                 throw Errno(rawValue: errno)
             }
             try synchronizeDirectory(path.removingLastComponent())

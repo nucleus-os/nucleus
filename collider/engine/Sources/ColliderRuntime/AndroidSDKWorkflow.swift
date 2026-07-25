@@ -19,7 +19,7 @@ extension ColliderRuntime {
                     + validation.architecture)
         }
         let bundle = validation.sdkSearchRoot.appending(validation.bundleName)
-        guard isDirectory(bundle) else {
+        guard bundle.isDirectory else {
             throw RuntimeFailure.invalidOutput(
                 "Android Swift SDK bundle is missing: \(bundle)")
         }
@@ -107,7 +107,7 @@ extension ColliderRuntime {
         for architecture in validation.architectures {
             let library = validation.installRoot.appending(
                 "install-\(architecture)/usr/lib/swift/android/libswiftCore.so")
-            guard isRegularFile(library) else {
+            guard library.isRegularFile else {
                 throw RuntimeFailure.invalidOutput(
                     "Android libswiftCore is missing: \(library)")
             }
@@ -151,11 +151,11 @@ extension ColliderRuntime {
         _ validation: AndroidHostValidation,
         stage: TaskID
     ) async throws {
-        guard isRegularFile(validation.library) else {
+        guard validation.library.isRegularFile else {
             throw RuntimeFailure.invalidOutput(
                 "Android host library is missing: \(validation.library)")
         }
-        guard isRegularFile(validation.kotlinContract) else {
+        guard validation.kotlinContract.isRegularFile else {
             throw RuntimeFailure.invalidOutput(
                 "Android Kotlin JNI contract is missing: "
                     + validation.kotlinContract.string)
@@ -311,7 +311,7 @@ func assembleAndroidSDK(_ assembly: AndroidSDKAssembly) throws {
     let firstArchitecture = assembly.architectures[0]
     let firstUSR = assembly.installRoot.appending(
         "install-\(firstArchitecture)/usr")
-    guard isDirectory(firstUSR) else {
+    guard firstUSR.isDirectory else {
         throw RuntimeFailure.invalidOutput(
             "Android SDK install tree is missing: \(firstUSR)")
     }
@@ -329,8 +329,8 @@ func assembleAndroidSDK(_ assembly: AndroidSDKAssembly) throws {
     let toolchainSwiftHeaders = assembly.toolchain.appending("include/swift")
     let toolchainModuleMap = assembly.toolchain.appending(
         "include/module.modulemap")
-    guard isDirectory(toolchainSwiftHeaders),
-          isRegularFile(toolchainModuleMap)
+    guard toolchainSwiftHeaders.isDirectory,
+          toolchainModuleMap.isRegularFile
     else {
         throw RuntimeFailure.invalidOutput(
             "host Swift bridging headers are missing under \(assembly.toolchain)")
@@ -351,8 +351,8 @@ func assembleAndroidSDK(_ assembly: AndroidSDKAssembly) throws {
             "swift_static-\(architecture)")
         let swiftSource = installUSR.appending("lib/swift")
         let staticSource = installUSR.appending("lib/swift_static")
-        guard isDirectory(swiftSource.appending("android")),
-              isDirectory(staticSource.appending("android"))
+        guard swiftSource.appending("android").isDirectory,
+              staticSource.appending("android").isDirectory
         else {
             throw RuntimeFailure.invalidOutput(
                 "Swift Android resources are missing for \(architecture)")
@@ -368,7 +368,7 @@ func assembleAndroidSDK(_ assembly: AndroidSDKAssembly) throws {
 
         for archive in ["libswiftCxx.a", "libswiftCxxStdlib.a"] {
             let source = swiftDestination.appending("android/\(archive)")
-            guard isRegularFile(source) else {
+            guard source.isRegularFile else {
                 throw RuntimeFailure.invalidOutput(
                     "Swift C++ interoperability archive is missing: \(source)")
             }
@@ -378,7 +378,7 @@ func assembleAndroidSDK(_ assembly: AndroidSDKAssembly) throws {
         }
         let cfxml = staticDestination.appending(
             "android/lib_CFXMLInterface.a")
-        guard isRegularFile(cfxml) else {
+        guard cfxml.isRegularFile else {
             throw RuntimeFailure.invalidOutput(
                 "FoundationXML support archive is missing: \(cfxml)")
         }
@@ -387,7 +387,7 @@ func assembleAndroidSDK(_ assembly: AndroidSDKAssembly) throws {
             to: swiftDestination.appending("android/lib_CFXMLInterface.a"))
         let staticArguments = staticDestination.appending(
             "android/static-stdlib-args.lnk")
-        guard isRegularFile(staticArguments) else {
+        guard staticArguments.isRegularFile else {
             throw RuntimeFailure.invalidOutput(
                 "static Swift link arguments are missing: \(staticArguments)")
         }
@@ -417,7 +417,7 @@ func assembleAndroidSDK(_ assembly: AndroidSDKAssembly) throws {
         where name.hasSuffix(".a")
         {
             let source = libraryRoot.appending(name)
-            guard isRegularFile(source) else { continue }
+            guard source.isRegularFile else { continue }
             try copyReplacing(
                 from: source,
                 to: resourcesLibrary.appending(name))
@@ -443,7 +443,7 @@ private func copyDirectoryContents(
     from source: FilePath,
     to destination: FilePath
 ) throws {
-    guard isDirectory(source) else {
+    guard source.isDirectory else {
         throw RuntimeFailure.invalidOutput(
             "copy source directory is missing: \(source)")
     }
@@ -604,6 +604,43 @@ func sanitizeLinkMetadata(
             }
             contents = contents.replacingOccurrences(of: option, with: "")
         }
+        for repair in sanitization.cmakeDependencyRepairs
+        where url.lastPathComponent == repair.configurationFileName {
+            let generatedLookup =
+                "find_dependency(\(repair.package) \"\(repair.version)\")"
+            let repairedLookup =
+                "find_package(\(repair.package) \(repair.version) REQUIRED"
+                + (repair.configurationOnly ? " CONFIG)" : ")")
+            let nonConfigurationLookup =
+                "find_package(\(repair.package) \(repair.version) REQUIRED)"
+            if contents.contains(generatedLookup) {
+                contents = contents.replacingOccurrences(
+                    of: generatedLookup,
+                    with: repairedLookup)
+            } else if repair.configurationOnly
+                        && contents.contains(nonConfigurationLookup)
+            {
+                contents = contents.replacingOccurrences(
+                    of: nonConfigurationLookup,
+                    with: repairedLookup)
+            } else if !contents.contains(repairedLookup) {
+                throw RuntimeFailure.invalidOutput(
+                    "\(repair.configurationFileName) does not contain expected "
+                        + "CMake dependency lookup: \(generatedLookup)")
+            }
+        }
+        for replacement in sanitization.replacements
+        where url.lastPathComponent == replacement.fileName {
+            if contents.contains(replacement.original) {
+                contents = contents.replacingOccurrences(
+                    of: replacement.original,
+                    with: replacement.replacement)
+            } else if !contents.contains(replacement.replacement) {
+                throw RuntimeFailure.invalidOutput(
+                    "\(replacement.fileName) does not contain expected link "
+                        + "metadata: \(replacement.original)")
+            }
+        }
         if contents != original {
             try DurableFile.write(Data(contents.utf8), to: FilePath(path))
         }
@@ -637,9 +674,9 @@ func wireAndroidSDK(_ wiring: AndroidSDKWiring) throws {
 
     let prebuiltRoot = wiring.ndk.appending("toolchains/llvm/prebuilt")
     let hostDirectories = try directoryChildren(prebuiltRoot).filter {
-        isDirectory($0.appending("sysroot/usr/include"))
-            && isDirectory($0.appending("sysroot/usr/lib"))
-            && isDirectory($0.appending("lib/clang"))
+        $0.appending("sysroot/usr/include").isDirectory
+            && $0.appending("sysroot/usr/lib").isDirectory
+            && $0.appending("lib/clang").isDirectory
     }
     guard hostDirectories.count == 1, let prebuilt = hostDirectories.first else {
         throw RuntimeFailure.invalidOutput(
@@ -650,7 +687,7 @@ func wireAndroidSDK(_ wiring: AndroidSDKWiring) throws {
     let variant = wiring.bundle.appending("swift-android")
     let resources = variant.appending("swift-resources")
     let resourcesLibrary = resources.appending("usr/lib")
-    guard isDirectory(resourcesLibrary) else {
+    guard resourcesLibrary.isDirectory else {
         throw RuntimeFailure.invalidOutput(
             "Swift Android resources are missing: \(resourcesLibrary)")
     }
@@ -675,7 +712,7 @@ func wireAndroidSDK(_ wiring: AndroidSDKWiring) throws {
     }
 
     let clangVersions = try directoryChildren(prebuilt.appending("lib/clang"))
-        .filter(isDirectory)
+        .filter(\.isDirectory)
         .sorted(by: versionPathOrdering)
     guard let clangResources = clangVersions.last else {
         throw RuntimeFailure.invalidOutput(
@@ -696,10 +733,10 @@ func wireAndroidSDK(_ wiring: AndroidSDKWiring) throws {
             continue
         }
         let android = resourceDirectory.appending("android")
-        guard isDirectory(android) else { continue }
+        guard android.isDirectory else { continue }
         for architectureDirectory in try directoryChildren(android) {
             let source = architectureDirectory.appending("swiftrt.o")
-            guard isRegularFile(source) else { continue }
+            guard source.isRegularFile else { continue }
             let destinationDirectory = sysrootLibraries
                 .appending(family)
                 .appending("android")
@@ -721,19 +758,7 @@ private func directoryChildren(_ directory: FilePath) throws -> [FilePath] {
         .map(directory.appending)
 }
 
-private func isDirectory(_ path: FilePath) -> Bool {
-    var directory: ObjCBool = false
-    return FileManager.default.fileExists(
-        atPath: path.string,
-        isDirectory: &directory) && directory.boolValue
-}
 
-private func isRegularFile(_ path: FilePath) -> Bool {
-    var directory: ObjCBool = false
-    return FileManager.default.fileExists(
-        atPath: path.string,
-        isDirectory: &directory) && !directory.boolValue
-}
 
 private func removeExisting(_ path: FilePath) throws {
     if FileManager.default.fileExists(atPath: path.string)

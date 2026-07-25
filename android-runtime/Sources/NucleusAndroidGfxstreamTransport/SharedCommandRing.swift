@@ -36,7 +36,7 @@ public struct SharedCommandRingDiagnostic: Sendable, Equatable {
 /// Owns shared-memory and notification descriptors without producer or
 /// consumer authority. A mapping only wires directional endpoints and exposes
 /// ring-wide diagnostics.
-public final class SharedCommandRingMapping {
+@safe public final class SharedCommandRingMapping {
     private let handle: OpaquePointer
     public let slotCount: UInt32
     public let slotSize: UInt32
@@ -45,7 +45,7 @@ public final class SharedCommandRingMapping {
         slotCount: UInt32 = 256,
         slotSize: UInt32 = 64 * 1024
     ) throws {
-        guard let handle = nucleus_android_shared_ring_mapping_create(
+        guard let handle = unsafe nucleus_android_shared_ring_mapping_create(
             slotCount,
             slotSize)
         else {
@@ -53,7 +53,7 @@ public final class SharedCommandRingMapping {
             throw GfxstreamTransportError.createFailed(
                 errno: capturedErrno)
         }
-        self.handle = handle
+        unsafe self.handle = handle
         self.slotCount = slotCount
         self.slotSize = slotSize
     }
@@ -67,7 +67,7 @@ public final class SharedCommandRingMapping {
             memory_fd: -1,
             data_notification_fd: -1,
             space_notification_fd: -1)
-        let result = nucleus_android_shared_ring_mapping_export_descriptors(
+        let result = unsafe nucleus_android_shared_ring_mapping_export_descriptors(
             handle,
             &descriptors)
         let capturedErrno = errno
@@ -98,7 +98,7 @@ public final class SharedCommandRingMapping {
     }
 
     public func close() throws {
-        let result = nucleus_android_shared_ring_mapping_close(handle)
+        let result = unsafe nucleus_android_shared_ring_mapping_close(handle)
         let capturedErrno = errno
         guard result == 0 else {
             throw GfxstreamTransportError.systemCall(
@@ -110,7 +110,7 @@ public final class SharedCommandRingMapping {
         get throws {
             var value = nucleus_android_shared_ring_diagnostic()
             let result =
-                nucleus_android_shared_ring_mapping_get_diagnostic(
+                unsafe nucleus_android_shared_ring_mapping_get_diagnostic(
                     handle,
                     &value)
             let capturedErrno = errno
@@ -123,11 +123,11 @@ public final class SharedCommandRingMapping {
     }
 
     deinit {
-        nucleus_android_shared_ring_mapping_destroy(handle)
+        unsafe nucleus_android_shared_ring_mapping_destroy(handle)
     }
 }
 
-public final class SharedCommandProducer: Sendable {
+@safe public final class SharedCommandProducer: Sendable {
     private let handle: Mutex<OpaquePointer>
     public let slotCount: UInt32
     public let slotSize: UInt32
@@ -141,7 +141,7 @@ public final class SharedCommandProducer: Sendable {
             memory_fd: memoryFD,
             data_notification_fd: dataNotificationFD,
             space_notification_fd: spaceNotificationFD)
-        guard let handle = nucleus_android_shared_ring_producer_attach(
+        guard let handle = unsafe nucleus_android_shared_ring_producer_attach(
             descriptors)
         else {
             let capturedErrno = errno
@@ -152,15 +152,15 @@ public final class SharedCommandProducer: Sendable {
                 errno: capturedErrno)
         }
         slotCount =
-            nucleus_android_shared_ring_producer_slot_count(handle)
+            unsafe nucleus_android_shared_ring_producer_slot_count(handle)
         slotSize =
-            nucleus_android_shared_ring_producer_slot_size(handle)
-        self.handle = Mutex(handle)
+            unsafe nucleus_android_shared_ring_producer_slot_size(handle)
+        unsafe self.handle = Mutex(handle)
     }
 
     public var spaceNotificationFileDescriptor: Int32 {
-        handle.withLock {
-            nucleus_android_shared_ring_producer_space_notification_fd($0)
+        unsafe handle.withLock {
+            unsafe nucleus_android_shared_ring_producer_space_notification_fd($0)
         }
     }
 
@@ -170,9 +170,9 @@ public final class SharedCommandProducer: Sendable {
         guard packet.count <= payloadCapacity else {
             throw GfxstreamTransportError.packetTooLarge
         }
-        try handle.withLock { handle in
-            let (result, capturedErrno) = packet.withUnsafeBytes { bytes in
-                let result = nucleus_android_shared_ring_producer_write(
+        try unsafe handle.withLock { handle in
+            let (result, capturedErrno) = unsafe packet.withUnsafeBytes { bytes in
+                let result = unsafe nucleus_android_shared_ring_producer_write(
                     handle,
                     bytes.baseAddress,
                     UInt32(bytes.count))
@@ -197,9 +197,9 @@ public final class SharedCommandProducer: Sendable {
     public func prepareSpaceWait()
         throws -> SharedCommandRingWaitPreparation
     {
-        try handle.withLock { handle in
+        try unsafe handle.withLock { handle in
             let result =
-                nucleus_android_shared_ring_producer_prepare_space_wait(
+                unsafe nucleus_android_shared_ring_producer_prepare_space_wait(
                     handle)
             let capturedErrno = errno
             return try decodeWaitPreparation(
@@ -209,9 +209,9 @@ public final class SharedCommandProducer: Sendable {
     }
 
     public func drainSpaceNotification() throws {
-        try handle.withLock { handle in
+        try unsafe handle.withLock { handle in
             let result =
-                nucleus_android_shared_ring_producer_drain_space_notification(
+                unsafe nucleus_android_shared_ring_producer_drain_space_notification(
                     handle)
             let capturedErrno = errno
             guard result == 0 else {
@@ -222,9 +222,9 @@ public final class SharedCommandProducer: Sendable {
     }
 
     public func close() throws {
-        try handle.withLock { handle in
+        try unsafe handle.withLock { handle in
             let result =
-                nucleus_android_shared_ring_producer_close(handle)
+                unsafe nucleus_android_shared_ring_producer_close(handle)
             let capturedErrno = errno
             guard result == 0 else {
                 throw GfxstreamTransportError.systemCall(
@@ -235,10 +235,10 @@ public final class SharedCommandProducer: Sendable {
 
     public var diagnostic: SharedCommandRingDiagnostic {
         get throws {
-            try handle.withLock { handle in
+            try unsafe handle.withLock { handle in
                 var value = nucleus_android_shared_ring_diagnostic()
                 let result =
-                    nucleus_android_shared_ring_producer_get_diagnostic(
+                    unsafe nucleus_android_shared_ring_producer_get_diagnostic(
                         handle,
                         &value)
                 let capturedErrno = errno
@@ -252,13 +252,13 @@ public final class SharedCommandProducer: Sendable {
     }
 
     deinit {
-        handle.withLock {
-            nucleus_android_shared_ring_producer_destroy($0)
+        unsafe handle.withLock {
+            unsafe nucleus_android_shared_ring_producer_destroy($0)
         }
     }
 }
 
-public final class SharedCommandConsumer: Sendable {
+@safe public final class SharedCommandConsumer: Sendable {
     private let handle: Mutex<OpaquePointer>
     public let slotCount: UInt32
     public let slotSize: UInt32
@@ -272,7 +272,7 @@ public final class SharedCommandConsumer: Sendable {
             memory_fd: memoryFD,
             data_notification_fd: dataNotificationFD,
             space_notification_fd: spaceNotificationFD)
-        guard let handle = nucleus_android_shared_ring_consumer_attach(
+        guard let handle = unsafe nucleus_android_shared_ring_consumer_attach(
             descriptors)
         else {
             let capturedErrno = errno
@@ -283,32 +283,32 @@ public final class SharedCommandConsumer: Sendable {
                 errno: capturedErrno)
         }
         slotCount =
-            nucleus_android_shared_ring_consumer_slot_count(handle)
+            unsafe nucleus_android_shared_ring_consumer_slot_count(handle)
         slotSize =
-            nucleus_android_shared_ring_consumer_slot_size(handle)
-        self.handle = Mutex(handle)
+            unsafe nucleus_android_shared_ring_consumer_slot_size(handle)
+        unsafe self.handle = Mutex(handle)
     }
 
     public var dataNotificationFileDescriptor: Int32 {
-        handle.withLock {
-            nucleus_android_shared_ring_consumer_data_notification_fd($0)
+        unsafe handle.withLock {
+            unsafe nucleus_android_shared_ring_consumer_data_notification_fd($0)
         }
     }
 
     public func read() throws -> Data {
         let payloadCapacity =
             Int(slotSize) - MemoryLayout<UInt32>.size
-        return try handle.withLock { handle in
-            guard let storage = malloc(payloadCapacity) else {
+        return try unsafe handle.withLock { handle in
+            guard let storage = unsafe malloc(payloadCapacity) else {
                 throw GfxstreamTransportError.systemCall(errno: ENOMEM)
             }
-            let result = nucleus_android_shared_ring_consumer_read(
+            let result = unsafe nucleus_android_shared_ring_consumer_read(
                 handle,
                 storage,
                 UInt32(payloadCapacity))
             let capturedErrno = errno
             guard result >= 0 else {
-                free(storage)
+                unsafe free(storage)
                 switch capturedErrno {
                 case EAGAIN:
                     throw GfxstreamTransportError.empty
@@ -321,7 +321,7 @@ public final class SharedCommandConsumer: Sendable {
                         errno: capturedErrno)
                 }
             }
-            return Data(
+            return unsafe Data(
                 bytesNoCopy: storage,
                 count: Int(result),
                 deallocator: .free)
@@ -331,9 +331,9 @@ public final class SharedCommandConsumer: Sendable {
     public func prepareDataWait()
         throws -> SharedCommandRingWaitPreparation
     {
-        try handle.withLock { handle in
+        try unsafe handle.withLock { handle in
             let result =
-                nucleus_android_shared_ring_consumer_prepare_data_wait(
+                unsafe nucleus_android_shared_ring_consumer_prepare_data_wait(
                     handle)
             let capturedErrno = errno
             return try decodeWaitPreparation(
@@ -343,9 +343,9 @@ public final class SharedCommandConsumer: Sendable {
     }
 
     public func drainDataNotification() throws {
-        try handle.withLock { handle in
+        try unsafe handle.withLock { handle in
             let result =
-                nucleus_android_shared_ring_consumer_drain_data_notification(
+                unsafe nucleus_android_shared_ring_consumer_drain_data_notification(
                     handle)
             let capturedErrno = errno
             guard result == 0 else {
@@ -356,9 +356,9 @@ public final class SharedCommandConsumer: Sendable {
     }
 
     public func close() throws {
-        try handle.withLock { handle in
+        try unsafe handle.withLock { handle in
             let result =
-                nucleus_android_shared_ring_consumer_close(handle)
+                unsafe nucleus_android_shared_ring_consumer_close(handle)
             let capturedErrno = errno
             guard result == 0 else {
                 throw GfxstreamTransportError.systemCall(
@@ -369,10 +369,10 @@ public final class SharedCommandConsumer: Sendable {
 
     public var diagnostic: SharedCommandRingDiagnostic {
         get throws {
-            try handle.withLock { handle in
+            try unsafe handle.withLock { handle in
                 var value = nucleus_android_shared_ring_diagnostic()
                 let result =
-                    nucleus_android_shared_ring_consumer_get_diagnostic(
+                    unsafe nucleus_android_shared_ring_consumer_get_diagnostic(
                         handle,
                         &value)
                 let capturedErrno = errno
@@ -386,8 +386,8 @@ public final class SharedCommandConsumer: Sendable {
     }
 
     deinit {
-        handle.withLock {
-            nucleus_android_shared_ring_consumer_destroy($0)
+        unsafe handle.withLock {
+            unsafe nucleus_android_shared_ring_consumer_destroy($0)
         }
     }
 }

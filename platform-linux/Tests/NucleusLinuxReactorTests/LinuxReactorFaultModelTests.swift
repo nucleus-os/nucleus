@@ -90,7 +90,8 @@ struct LinuxReactorFaultModelTests {
     @Test
     func repeatedCancellationPreparationExhaustionIsTerminal() async throws {
         var descriptors = [Int32](repeating: -1, count: 2)
-        #expect(pipe(&descriptors) == 0)
+        let pipeCreated = unsafe pipe(&descriptors) == 0
+        #expect(pipeCreated)
         defer {
             for descriptor in descriptors { _ = Glibc.close(descriptor) }
         }

@@ -6,7 +6,7 @@ import SystemPackage
 
 private func reactorMonotonicNowNanoseconds() -> UInt64 {
     var value = timespec()
-    guard clock_gettime(CLOCK_MONOTONIC, &value) == 0,
+    guard unsafe clock_gettime(CLOCK_MONOTONIC, &value) == 0,
           value.tv_sec >= 0,
           value.tv_nsec >= 0
     else { return 0 }

@@ -45,7 +45,7 @@ import NucleusReactFabricSmokeC
 
     @Test func staticReactNativeFabricRuns() throws {
         let hbc = try Self.makeTinyBytecode()
-        let rc = hbc.withCString { nucleus_rn_fabric_smoke($0) }
+        let rc = hbc.withCString { unsafe nucleus_rn_fabric_smoke($0) }
         #expect(rc == 0, "static RN fabric smoke failed at step \(rc)")
     }
 
@@ -55,13 +55,15 @@ import NucleusReactFabricSmokeC
         // real bytecode bundle. Proves the static fabric's surface layer wires up
         // headless, not just the runtime core.
         let hbc = try Self.makeTinyBytecode()
-        let rc = hbc.withCString { nucleus_rn_fabric_full_smoke($0) }
+        let rc = hbc.withCString {
+            unsafe nucleus_rn_fabric_full_smoke($0)
+        }
         #expect(rc == 0, "full RN fabric smoke failed (rc \(rc))")
     }
 
     @Test func runtimeFailureCrossesTheCxxBoundary() {
         let rc = "/definitely-not-a-nucleus-bundle.hbc".withCString {
-            nucleus_rn_fabric_full_smoke($0)
+            unsafe nucleus_rn_fabric_full_smoke($0)
         }
         #expect(rc == 2, "runtime failure should return through Swift instead of aborting")
     }
@@ -73,7 +75,7 @@ import NucleusReactFabricSmokeC
             setTimeout(function () {}, 1);
             """)
         let result = hbc.withCString {
-            nucleus_rn_js_work_wake_smoke($0)
+            unsafe nucleus_rn_js_work_wake_smoke($0)
         }
         #expect(result == 0)
     }
@@ -97,7 +99,7 @@ import NucleusReactFabricSmokeC
               .invoke('activate', '{"window":7}');
             """)
         let start = hbc.withCString {
-            nucleus_rn_command_handler_actor_smoke_start($0)
+            unsafe nucleus_rn_command_handler_actor_smoke_start($0)
         }
         #expect(start == 0)
         defer {

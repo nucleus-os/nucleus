@@ -11,6 +11,7 @@
 import WaylandServerC
 import WaylandServer
 import WaylandServerDispatch
+import WaylandProtocolTypes
 import NucleusRenderModel
 
 /// Buffer the client must allocate to receive a capture.
@@ -49,7 +50,7 @@ protocol ScreencopyDelegate: AnyObject {
     func screencopyCapture(
         output: WlOutput?, configuration: ScreencopyConfiguration,
         overlayCursor: Bool,
-        buffer: UnsafeMutablePointer<wl_resource>, withDamage: Bool,
+        buffer: WaylandResourceReference, withDamage: Bool,
         preferRegionReadback: Bool,
         completion: @escaping @MainActor (ScreencopyResult) -> Void
     ) -> UInt64?
@@ -74,19 +75,11 @@ enum ScreencopyActivity {
 }
 
 @MainActor
-private final class WeakScreencopyFrame {
-    weak var frame: ScreencopyFrame?
-
-    init(_ frame: ScreencopyFrame) {
-        self.frame = frame
-    }
-}
-
-@MainActor
 final class ScreencopyManager {
     weak var delegate: (any ScreencopyDelegate)?
-    private var pendingFrames: [UInt64: [WeakScreencopyFrame]] = [:]
-    private var admittedByClient: [UInt: Int] = [:]
+    private var pendingFrames:
+        [UInt64: [WeakReference<ScreencopyFrame>]] = [:]
+    private var admittedByClient: [WaylandClientID: Int] = [:]
     private var admittedByOutput: [UInt64: Int] = [:]
     private var admittedTotal = 0
     private static let maximumCapturesPerClient = 8
@@ -95,8 +88,10 @@ final class ScreencopyManager {
 
     func register(in router: NucleusWaylandRouter) {
         router.addGlobal(
-            interface: swift_wayland_iface_zwlr_screencopy_manager_v1(), version: 3,
-            impl: self, bind: Self.bind)
+            ZwlrScreencopyManagerV1Server.global(
+                implementation: self,
+                advertisedVersion: 3,
+                owner: { manager, _ in manager }))
     }
 
     fileprivate func configuration(
@@ -108,7 +103,7 @@ final class ScreencopyManager {
     fileprivate func capture(
         output: WlOutput?, configuration: ScreencopyConfiguration,
         overlayCursor: Bool,
-        buffer: UnsafeMutablePointer<wl_resource>, withDamage: Bool,
+        buffer: WaylandResourceReference, withDamage: Bool,
         preferRegionReadback: Bool,
         completion: @escaping @MainActor (ScreencopyResult) -> Void
     ) -> UInt64? {
@@ -132,8 +127,8 @@ final class ScreencopyManager {
         }
         frame.holdAdmission(outputID: outputID)
         var frames = pendingFrames[outputID, default: []]
-        frames.removeAll { $0.frame == nil }
-        frames.append(WeakScreencopyFrame(frame))
+        frames.removeAll { $0.value == nil }
+        frames.append(WeakReference(frame))
         pendingFrames[outputID] = frames
         delegate?.screencopyRequestFrame(output: output)
     }
@@ -144,7 +139,7 @@ final class ScreencopyManager {
     /// resident while the Wayland request was dispatched.
     func outputSubmitted(_ outputID: UInt64) {
         let frames = pendingFrames.removeValue(forKey: outputID) ?? []
-        let liveFrames = frames.compactMap(\.frame)
+        let liveFrames = frames.compactMap(\.value)
         let preferRegionReadback = liveFrames.count == 1
         for frame in liveFrames {
             frame.completeQueuedCopy(
@@ -157,12 +152,12 @@ final class ScreencopyManager {
     /// `failed` event.
     func outputRemoved(_ outputID: UInt64) {
         let frames = pendingFrames.removeValue(forKey: outputID) ?? []
-        for frame in frames.compactMap(\.frame) {
+        for frame in frames.compactMap(\.value) {
             frame.failQueuedCopy()
         }
     }
 
-    private func admit(clientKey: UInt, outputID: UInt64) -> Bool {
+    private func admit(clientKey: WaylandClientID, outputID: UInt64) -> Bool {
         guard admittedTotal < Self.maximumCapturesGlobal,
               admittedByClient[clientKey, default: 0]
                 < Self.maximumCapturesPerClient,
@@ -176,7 +171,7 @@ final class ScreencopyManager {
     }
 
     fileprivate func releaseAdmission(
-        clientKey: UInt, outputID: UInt64
+        clientKey: WaylandClientID, outputID: UInt64
     ) {
         guard admittedTotal > 0 else { return }
         admittedTotal -= 1
@@ -188,133 +183,84 @@ final class ScreencopyManager {
         }
     }
 
-    private static let bind: @convention(c) (
-        OpaquePointer?, UnsafeMutableRawPointer?, UInt32, UInt32
-    ) -> Void = { client, data, version, id in
-        guard let client, let data else { return }
-        let clientBits = UInt(bitPattern: client)
-        let dataBits = UInt(bitPattern: data)
-        MainActor.assumeIsolated {
-            guard let client = OpaquePointer(bitPattern: clientBits),
-                  let data = UnsafeMutableRawPointer(bitPattern: dataBits),
-                  let me = NucleusWaylandRouter.impl(
-                    data, as: ScreencopyManager.self)
-            else { return }
-            _ = WaylandResource.create(
-                client: client,
-                interface: swift_wayland_iface_zwlr_screencopy_manager_v1(),
-                version: Int32(version),
-                id: id,
-                vtable: ZwlrScreencopyManagerV1Server.vtable,
-                owner: me)
-        }
-    }
-
     private func makeFrame(
-        frame frameId: WlNewId, output: UnsafeMutablePointer<wl_resource>?,
+        frame frameId: WlNewId<ZwlrScreencopyFrameV1Server>,
+        output outputObj: WlOutput?,
         region: WlRect?, overlayCursor: Bool
     ) {
-        let version = frameId.version
-        let outputObj = WlOutput.from(output)
-        let frame = ScreencopyFrame(
-            manager: self, output: outputObj,
-            clientKey: UInt(bitPattern: frameId.client),
-            overlayCursor: overlayCursor, version: version)
-        guard let fres = frameId.create(vtable: ZwlrScreencopyFrameV1Server.vtable, owner: frame)
-        else { return }
-        frame.bind(fres)
-        guard let configuration = configuration(
-            output: outputObj, region: region)
-        else {
-            zwlr_screencopy_frame_v1_send_failed(fres)
-            return
-        }
-        frame.configuration = configuration
-        let p = configuration.params
-        zwlr_screencopy_frame_v1_send_buffer(fres, p.shmFormat, p.width, p.height, p.stride)
-        if version >= 3 {
-            zwlr_screencopy_frame_v1_send_linux_dmabuf(fres, p.drmFourcc, p.width, p.height)
-            zwlr_screencopy_frame_v1_send_buffer_done(fres)
-        }
+        let version = unsafe frameId.version
+        guard let clientID = unsafe WaylandClientID(frameId.client) else { return }
+        _ = unsafe frameId.create(
+            owner: { handle in
+                ScreencopyFrame(
+                    resource: handle,
+                    manager: self,
+                    output: outputObj,
+                    clientKey: clientID,
+                    overlayCursor: overlayCursor,
+                    version: version)
+            },
+            installed: { frame in
+                frame.installed()
+                guard let configuration = self.configuration(
+                    output: outputObj, region: region)
+                else {
+                    frame.resource.sendFailed()
+                    return
+                }
+                frame.configuration = configuration
+                let p = configuration.params
+                frame.resource.sendBuffer(
+                    format: WlShmFormat(rawValue: p.shmFormat),
+                    width: p.width, height: p.height, stride: p.stride)
+                if frame.resource.supportsLinuxDmabuf {
+                    frame.resource.sendLinuxDmabuf(
+                        format: p.drmFourcc,
+                        width: p.width, height: p.height)
+                    frame.resource.sendBufferDone()
+                }
+            })
     }
 }
 
 extension ScreencopyManager: ZwlrScreencopyManagerV1Requests {
     // capture_output(frame, overlay_cursor, output)
-    nonisolated func captureOutput(
-        _ resource: UnsafeMutablePointer<wl_resource>,
-        frame: WlNewId,
+    func captureOutput(
+        _ request: WaylandRequest<ZwlrScreencopyManagerV1Server>,
+        frame: WlNewId<ZwlrScreencopyFrameV1Server>,
         overlay_cursor: Int32,
-        output: UnsafeMutablePointer<wl_resource>?
+        output: WaylandBorrowedObject<WlOutputServer>
     ) {
-        let clientBits = UInt(bitPattern: frame.client)
-        let frameID = frame.id
-        let frameVersion = frame.version
-        let interfaceBits = frame.interface.map { UInt(bitPattern: $0) }
-        let outputBits = output.map { UInt(bitPattern: $0) }
-        MainActor.assumeIsolated {
-            guard let client = OpaquePointer(bitPattern: clientBits) else {
-                return
-            }
-            let frame = WlNewId(
-                client: client,
-                id: frameID,
-                version: frameVersion,
-                interface: interfaceBits.flatMap {
-                    UnsafePointer<wl_interface>(bitPattern: $0)
-                })
-            makeFrame(
-                frame: frame,
-                output: outputBits.flatMap {
-                    UnsafeMutablePointer<wl_resource>(bitPattern: $0)
-                },
-                region: nil,
-                overlayCursor: overlay_cursor != 0)
-        }
+        unsafe makeFrame(
+            frame: frame,
+            output: output.output,
+            region: nil,
+            overlayCursor: overlay_cursor != 0)
     }
 
     // capture_output_region(frame, overlay_cursor, output, x, y, width, height)
-    nonisolated func captureOutputRegion(
-        _ resource: UnsafeMutablePointer<wl_resource>,
-        frame: WlNewId,
+    func captureOutputRegion(
+        _ request: WaylandRequest<ZwlrScreencopyManagerV1Server>,
+        frame: WlNewId<ZwlrScreencopyFrameV1Server>,
         overlay_cursor: Int32,
-        output: UnsafeMutablePointer<wl_resource>?,
+        output: WaylandBorrowedObject<WlOutputServer>,
         x: Int32,
         y: Int32,
         width: Int32,
         height: Int32
     ) {
-        let clientBits = UInt(bitPattern: frame.client)
-        let frameID = frame.id
-        let frameVersion = frame.version
-        let interfaceBits = frame.interface.map { UInt(bitPattern: $0) }
-        let outputBits = output.map { UInt(bitPattern: $0) }
-        MainActor.assumeIsolated {
-            guard let client = OpaquePointer(bitPattern: clientBits) else {
-                return
-            }
-            let frame = WlNewId(
-                client: client,
-                id: frameID,
-                version: frameVersion,
-                interface: interfaceBits.flatMap {
-                    UnsafePointer<wl_interface>(bitPattern: $0)
-                })
-            makeFrame(
-                frame: frame,
-                output: outputBits.flatMap {
-                    UnsafeMutablePointer<wl_resource>(bitPattern: $0)
-                },
-                region: WlRect(
-                    x: x, y: y, width: width, height: height),
-                overlayCursor: overlay_cursor != 0)
-        }
+        unsafe makeFrame(
+            frame: frame,
+            output: output.output,
+            region: WlRect(
+                x: x, y: y, width: width, height: height),
+            overlayCursor: overlay_cursor != 0)
     }
 }
 
 /// zwlr_screencopy_frame_v1 owner (Rule 9). One copy per frame.
 @MainActor
-final class ScreencopyFrame {
+@safe final class ScreencopyFrame {
     private final class CaptureCallState {
         var hasReturned = false
         var inlineResult: ScreencopyResult?
@@ -322,10 +268,11 @@ final class ScreencopyFrame {
 
     private weak var manager: ScreencopyManager?
     private weak var output: WlOutput?
-    fileprivate let clientKey: UInt
+    fileprivate let clientKey: WaylandClientID
     private let overlayCursor: Bool
     private let version: Int32
-    private var resource: UnsafeMutablePointer<wl_resource>?
+    fileprivate let resource:
+        WaylandResourceHandle<ZwlrScreencopyFrameV1Server>
     fileprivate var configuration: ScreencopyConfiguration?
     private var used = false
     private var pendingBuffer: WaylandResourceReference?
@@ -336,16 +283,19 @@ final class ScreencopyFrame {
     private var admittedOutputID: UInt64?
 
     init(
-        manager: ScreencopyManager, output: WlOutput?, clientKey: UInt,
+        resource: WaylandResourceHandle<ZwlrScreencopyFrameV1Server>,
+        manager: ScreencopyManager, output: WlOutput?, clientKey: WaylandClientID,
         overlayCursor: Bool, version: Int32
     ) {
+        self.resource = resource
         self.manager = manager
         self.output = output
         self.clientKey = clientKey
         self.overlayCursor = overlayCursor
         self.version = version
-        // A live frame means a client is mid-capture: force composition (block direct
-        // scanout) until it is done and the frame is destroyed.
+    }
+
+    fileprivate func installed() {
         ScreencopyActivity.retainFrame()
     }
     isolated deinit {
@@ -355,19 +305,19 @@ final class ScreencopyFrame {
         releaseAdmission()
         ScreencopyActivity.releaseFrame()
     }
-    fileprivate func bind(_ resource: UnsafeMutablePointer<wl_resource>) { self.resource = resource }
-
     /// Whether the client's attached wl_buffer matches the advertised capture params.
     /// shm buffers are validated by format/width/height/stride; dmabuf buffers by
     /// fourcc/width/height. An unrecognized buffer type fails validation (→ invalid_buffer).
     private func bufferMatchesParams(_ buffer: UnsafeMutablePointer<wl_resource>, _ p: ScreencopyParams) -> Bool {
-        if let shm = wl_shm_buffer_get(buffer) {
-            return wl_shm_buffer_get_format(shm) == p.shmFormat
+        if let shm = unsafe wl_shm_buffer_get(buffer) {
+            return unsafe wl_shm_buffer_get_format(shm) == p.shmFormat
                 && UInt32(bitPattern: wl_shm_buffer_get_width(shm)) == p.width
                 && UInt32(bitPattern: wl_shm_buffer_get_height(shm)) == p.height
                 && UInt32(bitPattern: wl_shm_buffer_get_stride(shm)) == p.stride
         }
-        if let dmabuf = WaylandResource.owner(of: buffer, as: DmabufBuffer.self) {
+        if let dmabuf = unsafe WaylandResource.owner(
+            of: buffer, as: DmabufBuffer.self)
+        {
             return dmabuf.attrs.format == p.drmFourcc
                 && UInt32(bitPattern: dmabuf.attrs.width) == p.width
                 && UInt32(bitPattern: dmabuf.attrs.height) == p.height
@@ -376,40 +326,42 @@ final class ScreencopyFrame {
     }
 
     private func performCopy(
-        res: UnsafeMutablePointer<wl_resource>, buffer: UnsafeMutablePointer<wl_resource>?,
+        buffer: UnsafeMutablePointer<wl_resource>?,
         withDamage: Bool
     ) {
         guard !used else {
-            swift_wayland_resource_post_error(res, 0, "frame already used")  // already_used
+            resource.postError(.alreadyUsed, message: "frame already used")
             return
         }
-        guard let buffer else {
-            swift_wayland_resource_post_error(res, 1, "invalid buffer")  // invalid_buffer
+        guard let buffer = unsafe buffer else {
+            resource.postError(.invalidBuffer, message: "invalid buffer")
             return
         }
         // Validate the attached buffer against the advertised params before capture:
         // a format/size/stride mismatch is invalid_buffer (value 1), and rejecting it
         // here prevents an out-of-bounds readback into an undersized client buffer.
         guard let configuration else {
-            zwlr_screencopy_frame_v1_send_failed(res)
+            resource.sendFailed()
             return
         }
-        if !bufferMatchesParams(buffer, configuration.params) {
-            swift_wayland_resource_post_error(res, 1, "buffer does not match advertised format/size")
+        if unsafe !bufferMatchesParams(buffer, configuration.params) {
+            resource.postError(
+                .invalidBuffer,
+                message: "buffer does not match advertised format/size")
             return
         }
         used = true
         // libwayland owns wl_shm buffer user_data; only router-created DMA-BUF
         // resources carry a Swift WaylandResource owner.
         let semanticOwner: DmabufBuffer? =
-            wl_shm_buffer_get(buffer) == nil
-                ? WaylandResource.owner(
+            unsafe wl_shm_buffer_get(buffer) == nil
+                ? unsafe WaylandResource.owner(
                     of: buffer, as: DmabufBuffer.self)
                 : nil
-        guard let bufferReference = WaylandResourceReference(
+        guard let bufferReference = unsafe WaylandResourceReference(
             buffer, retaining: semanticOwner)
         else {
-            zwlr_screencopy_frame_v1_send_failed(res)
+            resource.sendFailed()
             return
         }
         pendingBuffer = bufferReference
@@ -436,8 +388,8 @@ final class ScreencopyFrame {
     fileprivate func completeQueuedCopy(
         preferRegionReadback: Bool
     ) {
-        guard resource != nil,
-            let buffer = pendingBuffer?.resource,
+        guard unsafe resource.resource != nil,
+            let buffer = pendingBuffer,
             let configuration
         else {
             releaseAdmission()
@@ -493,23 +445,29 @@ final class ScreencopyFrame {
         activeCaptureGeneration = nil
         pendingCaptureID = nil
         releaseAdmission()
-        guard let res = resource, pendingBuffer?.resource != nil else {
+        guard unsafe resource.resource != nil,
+            unsafe pendingBuffer?.resource != nil
+        else {
             pendingBuffer = nil
             return
         }
         pendingBuffer = nil
         guard result.ok else {
-            zwlr_screencopy_frame_v1_send_failed(res)
+            resource.sendFailed()
             return
         }
-        zwlr_screencopy_frame_v1_send_flags(res, result.flags)
+        resource.sendFlags(
+            flags: ZwlrScreencopyFrameV1Flags(rawValue: result.flags))
         if withDamage, let p = configuration?.params {
             // We do not retain cross-frame damage history, so report the whole
             // destination buffer in buffer-local coordinates.
-            zwlr_screencopy_frame_v1_send_damage(
-                res, 0, 0, p.width, p.height)
+            resource.sendDamage(
+                x: 0, y: 0, width: p.width, height: p.height)
         }
-        zwlr_screencopy_frame_v1_send_ready(res, result.tvSecHi, result.tvSecLo, result.tvNsec)
+        resource.sendReady(
+            tv_sec_hi: result.tvSecHi,
+            tv_sec_lo: result.tvSecLo,
+            tv_nsec: result.tvNsec)
     }
 
     fileprivate func failQueuedCopy() {
@@ -520,46 +478,23 @@ final class ScreencopyFrame {
         }
         releaseAdmission()
         pendingBuffer = nil
-        guard let resource else { return }
-        zwlr_screencopy_frame_v1_send_failed(resource)
+        resource.sendFailed()
     }
 }
 
 extension ScreencopyFrame: ZwlrScreencopyFrameV1Requests {
-    nonisolated func copy(
-        _ resource: UnsafeMutablePointer<wl_resource>,
-        buffer: UnsafeMutablePointer<wl_resource>?
+    func copy(
+        _ request: WaylandRequest<ZwlrScreencopyFrameV1Server>,
+        buffer: WaylandBorrowedObject<WlBufferServer>
     ) {
-        performCopyFromProtocol(
-            resourceBits: UInt(bitPattern: resource),
-            bufferBits: buffer.map { UInt(bitPattern: $0) },
-            withDamage: false)
+        unsafe performCopy(
+            buffer: buffer.resource, withDamage: false)
     }
-    nonisolated func copyWithDamage(
-        _ resource: UnsafeMutablePointer<wl_resource>,
-        buffer: UnsafeMutablePointer<wl_resource>?
+    func copyWithDamage(
+        _ request: WaylandRequest<ZwlrScreencopyFrameV1Server>,
+        buffer: WaylandBorrowedObject<WlBufferServer>
     ) {
-        performCopyFromProtocol(
-            resourceBits: UInt(bitPattern: resource),
-            bufferBits: buffer.map { UInt(bitPattern: $0) },
-            withDamage: true)
-    }
-
-    nonisolated private func performCopyFromProtocol(
-        resourceBits: UInt,
-        bufferBits: UInt?,
-        withDamage: Bool
-    ) {
-        MainActor.assumeIsolated {
-            guard let resource = UnsafeMutablePointer<wl_resource>(
-                bitPattern: resourceBits)
-            else { return }
-            performCopy(
-                res: resource,
-                buffer: bufferBits.flatMap {
-                    UnsafeMutablePointer<wl_resource>(bitPattern: $0)
-                },
-                withDamage: withDamage)
-        }
+        unsafe performCopy(
+            buffer: buffer.resource, withDamage: true)
     }
 }

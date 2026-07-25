@@ -14,9 +14,9 @@ import NucleusSkiaGraphiteBridge
     @Test func descriptorMarshaling() {
         // A dummy non-null borrowed image handle: the descriptor never derefs it,
         // it only marshals the address into the façade's void* field.
-        let dummyImage = VkImage(bitPattern: 0xDEAD_BEEF)
+        let dummyImage = unsafe VkImage(bitPattern: 0xDEAD_BEEF)
         let usage: VK.ImageUsageFlags = [.colorAttachmentBit, .transferSrcBit]
-        let params = ScanoutImageParams(
+        let params = unsafe ScanoutImageParams(
             image: dummyImage,
             memory: nil,
             allocSize: 64 * 64 * 4,
@@ -28,44 +28,61 @@ import NucleusSkiaGraphiteBridge
             usageFlags: usage,
             queueFamilyIndex: 3,
             hasAlpha: false)
-        let desc = ScanoutSurface.descriptor(params)
-        #expect(desc.image != nil, "desc-image-nonnull")
-        #expect(desc.memory == nil, "desc-memory-null")
-        #expect(desc.allocSize == 64 * 64 * 4, "desc-allocsize")
-        #expect(desc.width == 64 && desc.height == 64, "desc-extent")
-        #expect(desc.format == VK_FORMAT_B8G8R8A8_UNORM.rawValue, "desc-format")
-        #expect(desc.imageTiling == VK_IMAGE_TILING_OPTIMAL.rawValue, "desc-tiling")
-        #expect(desc.imageLayout == VK_IMAGE_LAYOUT_UNDEFINED.rawValue, "desc-layout")
-        #expect(desc.imageUsageFlags == usage.rawValue, "desc-usage")
-        #expect(desc.imageUsageFlags & VK.ImageUsageFlags.colorAttachmentBit.rawValue != 0, "desc-usage-color-attachment")
-        #expect(desc.sampleCount == 1, "desc-samplecount")
-        #expect(desc.queueFamilyIndex == 3, "desc-queuefamily")
-        #expect(desc.hasAlpha == false, "desc-hasalpha")
+        let desc = unsafe ScanoutSurface.descriptor(params)
+        let imageIsNonNull = unsafe desc.image != nil
+        let memoryIsNull = unsafe desc.memory == nil
+        let allocSize = unsafe desc.allocSize
+        let width = unsafe desc.width
+        let height = unsafe desc.height
+        let format = unsafe desc.format
+        let imageTiling = unsafe desc.imageTiling
+        let imageLayout = unsafe desc.imageLayout
+        let imageUsageFlags = unsafe desc.imageUsageFlags
+        let sampleCount = unsafe desc.sampleCount
+        let queueFamilyIndex = unsafe desc.queueFamilyIndex
+        let hasAlpha = unsafe desc.hasAlpha
+        #expect(imageIsNonNull, "desc-image-nonnull")
+        #expect(memoryIsNull, "desc-memory-null")
+        #expect(allocSize == 64 * 64 * 4, "desc-allocsize")
+        #expect(width == 64 && height == 64, "desc-extent")
+        #expect(format == VK_FORMAT_B8G8R8A8_UNORM.rawValue, "desc-format")
+        #expect(imageTiling == VK_IMAGE_TILING_OPTIMAL.rawValue, "desc-tiling")
+        #expect(imageLayout == VK_IMAGE_LAYOUT_UNDEFINED.rawValue, "desc-layout")
+        #expect(imageUsageFlags == usage.rawValue, "desc-usage")
+        #expect(imageUsageFlags & VK.ImageUsageFlags.colorAttachmentBit.rawValue != 0, "desc-usage-color-attachment")
+        #expect(sampleCount == 1, "desc-samplecount")
+        #expect(queueFamilyIndex == 3, "desc-queuefamily")
+        #expect(hasAlpha == false, "desc-hasalpha")
 
         // A descriptor built from a nil image marshals a null void* (fail-closed
         // input).
-        let nullParams = ScanoutImageParams(
+        let nullParams = unsafe ScanoutImageParams(
             image: nil, memory: nil, allocSize: 0, width: 64, height: 64,
             format: VK_FORMAT_B8G8R8A8_UNORM, tiling: VK_IMAGE_TILING_OPTIMAL,
             initialLayout: VK_IMAGE_LAYOUT_UNDEFINED,
             usageFlags: [.colorAttachmentBit], queueFamilyIndex: 0, hasAlpha: false)
-        #expect(ScanoutSurface.descriptor(nullParams).image == nil, "desc-null-image")
+        let nullImageIsNull =
+            unsafe ScanoutSurface.descriptor(nullParams).image == nil
+        #expect(nullImageIsNull, "desc-null-image")
     }
 
     @Test func gpuHeadless_scanoutWrap() throws {
-        try withRequiredVulkanGraphite(
+        try unsafe withRequiredVulkanGraphite(
             presentation: .headless,
             applicationName: "ScanoutSurfaceTests"
         ) { device, selection, context, recorder in
             // A descriptor with a null image wraps to an invalid Surface
             // (fail-closed) — mirrors the registry's wrap-null check.
-            var nullDesc = nucleus.skia.VulkanImageDescriptor()
-            nullDesc.width = 64
-            nullDesc.height = 64
-            nullDesc.imageUsageFlags = VK.ImageUsageFlags.colorAttachmentBit.rawValue
-            #expect(!recorder.wrapBackendSurface(nullDesc).isValid())
+            var nullDesc = unsafe nucleus.skia.VulkanImageDescriptor()
+            unsafe nullDesc.width = 64
+            unsafe nullDesc.height = 64
+            unsafe nullDesc.imageUsageFlags =
+                VK.ImageUsageFlags.colorAttachmentBit.rawValue
+            let nullSurface = unsafe recorder.wrapBackendSurface(nullDesc)
+            let nullSurfaceIsValid = unsafe nullSurface.isValid()
+            #expect(!nullSurfaceIsValid)
 
-            try Self.runScanoutGPU(
+            try unsafe Self.runScanoutGPU(
                 device: device, dispatch: device.dispatch,
                 graphicsFamily: selection.graphicsQueueFamily,
                 context: context, recorder: recorder)
@@ -85,60 +102,63 @@ import NucleusSkiaGraphiteBridge
 
         // Create the borrowed scanout-style image: a color attachment we can also
         // copy out of (TRANSFER_SRC) so the readback path is valid.
-        var imageInfo = VkImageCreateInfo()
-        imageInfo.imageType = VK_IMAGE_TYPE_2D
-        imageInfo.format = VK_FORMAT_B8G8R8A8_UNORM
-        imageInfo.extent = VkExtent3D(width: UInt32(width), height: UInt32(height), depth: 1)
-        imageInfo.mipLevels = 1
-        imageInfo.arrayLayers = 1
-        imageInfo.samples = VK_SAMPLE_COUNT_1_BIT
-        imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL
+        var imageInfo = unsafe VkImageCreateInfo()
+        unsafe imageInfo.imageType = VK_IMAGE_TYPE_2D
+        unsafe imageInfo.format = VK_FORMAT_B8G8R8A8_UNORM
+        unsafe imageInfo.extent =
+            VkExtent3D(width: UInt32(width), height: UInt32(height), depth: 1)
+        unsafe imageInfo.mipLevels = 1
+        unsafe imageInfo.arrayLayers = 1
+        unsafe imageInfo.samples = VK_SAMPLE_COUNT_1_BIT
+        unsafe imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL
         // A color-renderable Graphite Vulkan texture must carry both
         // COLOR_ATTACHMENT and INPUT_ATTACHMENT (Skia binds the dst as an input
         // attachment for blending); TRANSFER_SRC makes the readback path valid.
         let renderUsage: VK.ImageUsageFlags = [.colorAttachmentBit, .inputAttachmentBit, .transferSrcBit]
-        imageInfo.usage = renderUsage.rawValue
-        imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE
-        imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED
+        unsafe imageInfo.usage = renderUsage.rawValue
+        unsafe imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE
+        unsafe imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED
 
-        guard let imageOwned = dispatch.createImage(
+        guard let imageOwned = unsafe dispatch.createImage(
             device.handle, info: imageInfo)
         else {
             throw VulkanLaneTestFailure.requirement(
                 "could not create the borrowed scanout test image")
         }
 
-        let getReqs = try requireValue(
+        let getReqs = try unsafe requireValue(
             dispatch.vkGetImageMemoryRequirements,
             "vkGetImageMemoryRequirements is unavailable")
-        let bindImage = try requireValue(
+        let bindImage = try unsafe requireValue(
             dispatch.vkBindImageMemory,
             "vkBindImageMemory is unavailable")
 
         var requirements = VkMemoryRequirements()
-        getReqs(device.handle, imageOwned.handle, &requirements)
+        unsafe getReqs(device.handle, imageOwned.handle, &requirements)
+        let memoryTypeBits = requirements.memoryTypeBits
         try requireTrue(
-            requirements.memoryTypeBits != 0,
+            memoryTypeBits != 0,
             "scanout test image has no compatible memory type")
         // Lowest set bit, mirroring the DmaBuf import's selection.
-        let memoryTypeIndex = UInt32(requirements.memoryTypeBits.trailingZeroBitCount)
+        let memoryTypeIndex = UInt32(memoryTypeBits.trailingZeroBitCount)
 
-        var allocInfo = VkMemoryAllocateInfo()
-        allocInfo.allocationSize = requirements.size
-        allocInfo.memoryTypeIndex = memoryTypeIndex
-        guard let memoryOwned = dispatch.allocateMemory(
+        var allocInfo = unsafe VkMemoryAllocateInfo()
+        unsafe allocInfo.allocationSize = requirements.size
+        unsafe allocInfo.memoryTypeIndex = memoryTypeIndex
+        guard let memoryOwned = unsafe dispatch.allocateMemory(
             device.handle, info: allocInfo)
         else {
             throw VulkanLaneTestFailure.requirement(
                 "could not allocate scanout test image memory")
         }
-        try requireTrue(
-            bindImage(
+        let bindSucceeded = unsafe bindImage(
                 device.handle, imageOwned.handle,
-                memoryOwned.handle, 0) == VK_SUCCESS,
+                memoryOwned.handle, 0) == VK_SUCCESS
+        try requireTrue(
+            bindSucceeded,
             "could not bind scanout test image memory")
 
-        let params = ScanoutImageParams(
+        let params = unsafe ScanoutImageParams(
             image: imageOwned.handle,
             memory: memoryOwned.handle,
             allocSize: requirements.size,
@@ -157,28 +177,31 @@ import NucleusSkiaGraphiteBridge
         // is itself before the Graphite context (the caller's closure). Skia
         // surfaces backed by a backend texture must not outlive their backing.
         do {
-            let surface = ScanoutSurface.wrap(recorder: recorder, params: params)
-            try requireTrue(surface.isValid(), "Graphite rejected the borrowed image")
+            let surface = unsafe ScanoutSurface.wrap(recorder: recorder, params: params)
+            let surfaceIsValid = unsafe surface.isValid()
+            try requireTrue(surfaceIsValid, "Graphite rejected the borrowed image")
 
             // Clear to an opaque known color, then draw a rect in the same color
             // over a sub-region (exercises the Paint/drawRect path on a wrapped RT).
-            let canvas = surface.getCanvas()
+            let canvas = unsafe surface.getCanvas()
             var color = nucleus.skia.Color()
             color.r = 0.25; color.g = 0.5; color.b = 0.75; color.a = 1
-            canvas.clear(color)
+            unsafe canvas.clear(color)
             var paint = nucleus.skia.Paint()
             paint.color = color
             paint.alpha = 1
-            canvas.drawRect(nucleus.skia.RectF(x: 8, y: 8, width: 16, height: 16), paint)
+            unsafe canvas.drawRect(
+                nucleus.skia.RectF(x: 8, y: 8, width: 16, height: 16), paint)
 
-            let recording = recorder.snapRecording()
+            let recording = unsafe recorder.snapRecording()
+            let submissionCompleted = unsafe submitGraphiteAndWait(
+                context: context, recording: recording, serial: 1)
             try requireTrue(
-                submitGraphiteAndWait(
-                    context: context, recording: recording, serial: 1),
+                submissionCompleted,
                 "borrowed-image submission did not complete")
 
             let pixels = try requireValue(
-                readGraphiteSurfaceRGBA(
+                unsafe readGraphiteSurfaceRGBA(
                     context: context, surface: surface),
                 "borrowed-image readback failed")
             #expect(pixels.count == Int(width * height * 4))

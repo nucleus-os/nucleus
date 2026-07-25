@@ -15,7 +15,7 @@ public enum ArtifactHasher {
         var storage = [UInt8](repeating: 0, count: 256 * 1_024)
         while true {
             let count = try storage.withUnsafeMutableBytes {
-                try descriptor.read(into: $0)
+                try unsafe descriptor.read(into: $0)
             }
             if count == 0 { break }
             hasher.update(data: storage[..<count])

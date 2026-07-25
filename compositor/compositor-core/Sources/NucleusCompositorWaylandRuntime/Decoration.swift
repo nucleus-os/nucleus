@@ -8,14 +8,17 @@
 import WaylandServerC
 import WaylandServer
 import WaylandServerDispatch
+import WaylandProtocolTypes
 
 /// mode enum: client_side=1, server_side=2.
+@MainActor
 protocol DecorationDelegate: AnyObject {
     /// The effective mode for a toplevel, given the client's explicit request (nil =
     /// none). Default is server-side.
     func resolveDecorationMode(for toplevel: XdgToplevel?, clientRequested: UInt32?) -> UInt32
 }
 
+@MainActor
 final class XdgDecorationManagerBinding {
     unowned let manager: XdgDecorationManager
     init(_ manager: XdgDecorationManager) { self.manager = manager }
@@ -25,60 +28,66 @@ final class XdgDecorationManagerBinding {
 // ZxdgDecorationManagerV1Server.vtable from the per-resource binding owner.
 extension XdgDecorationManagerBinding: ZxdgDecorationManagerV1Requests {
     func getToplevelDecoration(
-        _ resource: UnsafeMutablePointer<wl_resource>, id: WlNewId,
-        toplevel toplevelRes: UnsafeMutablePointer<wl_resource>?
+        _ request: WaylandRequest<ZxdgDecorationManagerV1Server>,
+        id: WlNewId<ZxdgToplevelDecorationV1Server>,
+        toplevel toplevelRes: WaylandBorrowedObject<XdgToplevelServer>
     ) {
-        guard let toplevelRes,
-            let toplevel = WaylandResource.owner(of: toplevelRes, as: XdgToplevel.self)
-        else { return }
+        guard let toplevel = toplevelRes.owner(as: XdgToplevel.self) else { return }
         guard toplevel.decoration == nil else {
-            swift_wayland_resource_post_error(
-                resource, 0,
-                "xdg_toplevel already has a decoration object")
+            request.postError(
+                ZxdgToplevelDecorationV1Error.alreadyConstructed,
+                message: "xdg_toplevel already has a decoration object")
             return
         }
-        let decoration = XdgToplevelDecoration(manager: manager, toplevel: toplevel)
-        guard let dres = id.create(vtable: ZxdgToplevelDecorationV1Server.vtable, owner: decoration)
-        else { return }
-        decoration.bind(dres)
-        toplevel.decoration = decoration
-        if toplevel.xdgSurface?.hasSentInitialConfigure == true {
-            toplevel.xdgSurface?.configureToplevel(initial: false)
-        }
+        _ = unsafe id.create(
+            owner: { handle in
+                XdgToplevelDecoration(
+                    resource: handle,
+                    manager: manager,
+                    toplevel: toplevel)
+            },
+            installed: { decoration in
+                toplevel.decoration = decoration
+                if toplevel.xdgSurface?.hasSentInitialConfigure == true {
+                    toplevel.xdgSurface?.configureToplevel(initial: false)
+                }
+            })
     }
 }
 
-final class XdgDecorationManager {
+@MainActor
+@safe final class XdgDecorationManager {
     weak var delegate: (any DecorationDelegate)?
 
     func register(in router: NucleusWaylandRouter) {
         router.addGlobal(
-            interface: swift_wayland_iface_zxdg_decoration_manager_v1(), version: 2, impl: self, bind: Self.bind)
-    }
-
-    private static let bind: @convention(c) (
-        OpaquePointer?, UnsafeMutableRawPointer?, UInt32, UInt32
-    ) -> Void = { client, data, version, id in
-        guard let client, let me = NucleusWaylandRouter.impl(data, as: XdgDecorationManager.self) else { return }
-        _ = WaylandResource.create(
-            client: client, interface: swift_wayland_iface_zxdg_decoration_manager_v1(), version: Int32(version),
-            id: id, vtable: ZxdgDecorationManagerV1Server.vtable, owner: XdgDecorationManagerBinding(me))
+            ZxdgDecorationManagerV1Server.global(
+                implementation: self,
+                advertisedVersion: 2,
+                owner: { manager, _ in
+                    XdgDecorationManagerBinding(manager)
+                }))
     }
 }
 
-final class XdgToplevelDecoration {
+@MainActor
+@safe final class XdgToplevelDecoration {
     private unowned let manager: XdgDecorationManager
     private weak var toplevel: XdgToplevel?
-    private var resource: UnsafeMutablePointer<wl_resource>?
+    private let resource:
+        WaylandResourceHandle<ZxdgToplevelDecorationV1Server>
     private var clientRequested: UInt32?
     private var lastSent: UInt32?
 
-    init(manager: XdgDecorationManager, toplevel: XdgToplevel?) {
+    init(
+        resource: WaylandResourceHandle<ZxdgToplevelDecorationV1Server>,
+        manager: XdgDecorationManager,
+        toplevel: XdgToplevel?
+    ) {
+        self.resource = resource
         self.manager = manager
         self.toplevel = toplevel
     }
-
-    fileprivate func bind(_ resource: UnsafeMutablePointer<wl_resource>) { self.resource = resource }
 
     /// Resolve the effective mode and emit configure(mode) if it changed. Called
     /// from XdgSurface immediately before the rest of the configure cycle.
@@ -87,7 +96,8 @@ final class XdgToplevelDecoration {
             ?? (clientRequested ?? 2)
         guard mode != lastSent else { return }
         lastSent = mode
-        if let resource { zxdg_toplevel_decoration_v1_send_configure(resource, mode) }
+        resource.sendConfigure(
+            mode: ZxdgToplevelDecorationV1Mode(rawValue: mode))
     }
 
     private func requestConfigureCycleIfReady() {
@@ -100,17 +110,16 @@ final class XdgToplevelDecoration {
 }
 
 extension XdgToplevelDecoration: ZxdgToplevelDecorationV1Requests {
-    func setMode(_ resource: UnsafeMutablePointer<wl_resource>, mode: UInt32) {
-        guard mode == 1 || mode == 2 else {
-            swift_wayland_resource_post_error(
-                resource, 0, "invalid decoration mode")
+    func setMode(_ request: WaylandRequest<ZxdgToplevelDecorationV1Server>, mode: ZxdgToplevelDecorationV1Mode) {
+        guard mode == .clientSide || mode == .serverSide else {
+            request.postError(.unconfiguredBuffer, message: "invalid decoration mode")
             return
         }
-        clientRequested = mode
+        clientRequested = mode.rawValue
         requestConfigureCycleIfReady()
     }
 
-    func unsetMode(_ resource: UnsafeMutablePointer<wl_resource>) {
+    func unsetMode(_ request: WaylandRequest<ZxdgToplevelDecorationV1Server>) {
         clientRequested = nil
         requestConfigureCycleIfReady()
     }

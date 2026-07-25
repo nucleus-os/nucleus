@@ -10,34 +10,34 @@ func submitGraphiteAndWait(
     recording: nucleus.skia.Recording,
     serial: UInt64
 ) -> Bool {
-    guard recording.isValid(),
-          context.submitAsync(recording, serial).isOk()
+    guard unsafe recording.isValid(),
+          unsafe context.submitAsync(recording, serial).isOk()
     else { return false }
-    return waitForGraphiteSerial(context: context, serial: serial)
+    return unsafe waitForGraphiteSerial(context: context, serial: serial)
 }
 
 func readGraphiteSurfaceRGBA(
     context: nucleus.skia.GraphiteContext,
     surface: nucleus.skia.Surface
 ) -> [UInt8]? {
-    let width = Int(surface.width())
-    let height = Int(surface.height())
+    let width = unsafe Int(surface.width())
+    let height = unsafe Int(surface.height())
     guard width > 0, height > 0,
           width <= Int.max / 4,
           height <= Int.max / (width * 4)
     else { return nil }
     let rowBytes = width * 4
-    let readback = context.beginSurfaceReadbackRGBA(surface)
-    guard readback.isValid() else { return nil }
+    let readback = unsafe context.beginSurfaceReadbackRGBA(surface)
+    guard unsafe readback.isValid() else { return nil }
     let deadline = ContinuousClock.now.advanced(by: .seconds(10))
-    while !readback.isComplete() {
-        _ = context.pollCompletedSubmissionSerial()
+    while unsafe !readback.isComplete() {
+        _ = unsafe context.pollCompletedSubmissionSerial()
         guard ContinuousClock.now < deadline else { return nil }
         sched_yield()
     }
     var pixels = [UInt8](repeating: 0, count: rowBytes * height)
     let status = pixels.withUnsafeMutableBufferPointer {
-        readback.copyPixels($0.baseAddress, $0.count, Int32(rowBytes))
+        unsafe readback.copyPixels($0.baseAddress, $0.count, Int32(rowBytes))
     }
     return status == nucleus.skia.Status.ok ? pixels : nil
 }
@@ -47,7 +47,7 @@ func waitForGraphiteSerial(
     serial: UInt64
 ) -> Bool {
     let deadline = ContinuousClock.now.advanced(by: .seconds(10))
-    while context.pollCompletedSubmissionSerial() < serial {
+    while unsafe context.pollCompletedSubmissionSerial() < serial {
         guard ContinuousClock.now < deadline else { return false }
         sched_yield()
     }

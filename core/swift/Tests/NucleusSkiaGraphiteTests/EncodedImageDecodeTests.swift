@@ -96,12 +96,12 @@ import NucleusSkiaGraphiteBridge
     }
 
     private func decode(_ fixture: Fixture, maxWidth: Int32, maxHeight: Int32)
-        -> nucleus.skia.RasterImage
+        -> RasterFixtureImage
     {
-        nucleus.skia.decodeEncodedImageFile(
+        unsafe RasterFixtureImage(nucleus.skia.decodeEncodedImageFile(
             fixture.path,
             maxWidth,
-            maxHeight).image
+            maxHeight).image)
     }
 
     // MARK: - The encoder is trustworthy
@@ -111,9 +111,9 @@ import NucleusSkiaGraphiteBridge
         let fixture = Fixture(width: 4, height: 3,
                               rgba: Self.solid(width: 4, height: 3, 10, 200, 30))
         let image = decode(fixture, maxWidth: 4, maxHeight: 3)
-        #expect(image.isValid())
-        #expect(image.width() == 4)
-        #expect(image.height() == 3)
+        #expect(image.isValid)
+        #expect(image.width == 4)
+        #expect(image.height == 3)
     }
 
     // MARK: - Bounds
@@ -124,9 +124,9 @@ import NucleusSkiaGraphiteBridge
         let fixture = Fixture(width: 256, height: 256,
                               rgba: Self.solid(width: 256, height: 256, 128, 128, 128))
         let image = decode(fixture, maxWidth: 32, maxHeight: 32)
-        #expect(image.isValid())
-        #expect(image.width() == 32)
-        #expect(image.height() == 32)
+        #expect(image.isValid)
+        #expect(image.width == 32)
+        #expect(image.height == 32)
     }
 
     /// The bound is a box the result fits inside, not the result's size.
@@ -134,8 +134,8 @@ import NucleusSkiaGraphiteBridge
         let fixture = Fixture(width: 400, height: 100,
                               rgba: Self.solid(width: 400, height: 100, 200, 50, 50))
         let image = decode(fixture, maxWidth: 100, maxHeight: 100)
-        #expect(image.width() == 100)
-        #expect(image.height() == 25, "the wide axis binds; the short axis follows it")
+        #expect(image.width == 100)
+        #expect(image.height == 25, "the wide axis binds; the short axis follows it")
     }
 
     /// Upscaling to fill the box would burn memory to blur.
@@ -143,8 +143,8 @@ import NucleusSkiaGraphiteBridge
         let fixture = Fixture(width: 16, height: 16,
                               rgba: Self.solid(width: 16, height: 16, 0, 0, 255))
         let image = decode(fixture, maxWidth: 512, maxHeight: 512)
-        #expect(image.width() == 16)
-        #expect(image.height() == 16)
+        #expect(image.width == 16)
+        #expect(image.height == 16)
     }
 
     /// A full-size target preserves the source dimensions without deferring.
@@ -152,8 +152,8 @@ import NucleusSkiaGraphiteBridge
         let fixture = Fixture(width: 64, height: 48,
                               rgba: Self.solid(width: 64, height: 48, 1, 2, 3))
         let image = decode(fixture, maxWidth: 64, maxHeight: 48)
-        #expect(image.width() == 64)
-        #expect(image.height() == 48)
+        #expect(image.width == 64)
+        #expect(image.height == 48)
     }
 
     // MARK: - Colour
@@ -174,13 +174,11 @@ import NucleusSkiaGraphiteBridge
         }
         let fixture = Fixture(width: side, height: side, rgba: checkerboard)
         let image = decode(fixture, maxWidth: 1, maxHeight: 1)
-        #expect(image.isValid())
-        #expect(image.width() == 1)
+        #expect(image.isValid)
+        #expect(image.width == 1)
 
         var pixel = [UInt8](repeating: 0, count: 4)
-        let read = pixel.withUnsafeMutableBufferPointer {
-            image.readPixelsRGBA($0.baseAddress, $0.count, 4)
-        }
+        let read = image.readPixelsRGBA(into: &pixel, rowBytes: 4)
         #expect(read)
         // Linear-correct: ~188. Naive sRGB averaging: ~128. The gap is wide
         // enough that filter choice cannot account for it.
@@ -192,9 +190,7 @@ import NucleusSkiaGraphiteBridge
                               rgba: Self.solid(width: 64, height: 64, 220, 40, 90))
         let image = decode(fixture, maxWidth: 8, maxHeight: 8)
         var pixels = [UInt8](repeating: 0, count: 8 * 8 * 4)
-        let read = pixels.withUnsafeMutableBufferPointer {
-            image.readPixelsRGBA($0.baseAddress, $0.count, 8 * 4)
-        }
+        let read = image.readPixelsRGBA(into: &pixels, rowBytes: 8 * 4)
         #expect(read)
         // A solid colour survives any correct resample exactly.
         #expect(abs(Int(pixels[0]) - 220) <= 1)
@@ -212,9 +208,7 @@ import NucleusSkiaGraphiteBridge
         let image = decode(fixture, maxWidth: 4, maxHeight: 4)
 
         var out = [UInt8](repeating: 255, count: 4 * 4 * 4)
-        let read = out.withUnsafeMutableBufferPointer {
-            image.readPixelsRGBA($0.baseAddress, $0.count, 4 * 4)
-        }
+        let read = image.readPixelsRGBA(into: &out, rowBytes: 4 * 4)
         #expect(read)
         #expect(out[3] == 0, "fully transparent in must stay fully transparent out")
     }
@@ -228,12 +222,12 @@ import NucleusSkiaGraphiteBridge
             width: 8, height: 8, rgba: Self.solid(width: 8, height: 8, 30, 60, 90))
         let bytes = [UInt8](png)
         let image = bytes.withUnsafeBufferPointer {
-            nucleus.skia.decodeEncodedImageMemory(
-                $0.baseAddress, $0.count, 8, 8).image
+            unsafe RasterFixtureImage(nucleus.skia.decodeEncodedImageMemory(
+                $0.baseAddress, $0.count, 8, 8).image)
         }
-        #expect(image.isValid())
-        #expect(image.width() == 8)
-        #expect(image.height() == 8)
+        #expect(image.isValid)
+        #expect(image.width == 8)
+        #expect(image.height == 8)
     }
 
     @Test func encodedBytesHonourBounds() {
@@ -241,20 +235,22 @@ import NucleusSkiaGraphiteBridge
             width: 64, height: 64, rgba: Self.solid(width: 64, height: 64, 1, 2, 3))
         let bytes = [UInt8](png)
         let image = bytes.withUnsafeBufferPointer {
-            nucleus.skia.decodeEncodedImageMemory(
-                $0.baseAddress, $0.count, 16, 16).image
+            unsafe RasterFixtureImage(nucleus.skia.decodeEncodedImageMemory(
+                $0.baseAddress, $0.count, 16, 16).image)
         }
-        #expect(image.width() == 16)
+        #expect(image.width == 16)
     }
 
     @Test func emptyBytesDecodeToNothing() {
         let empty: [UInt8] = []
         let result = empty.withUnsafeBufferPointer {
-            nucleus.skia.decodeEncodedImageMemory(
+            unsafe nucleus.skia.decodeEncodedImageMemory(
                 $0.baseAddress, $0.count, 16, 16)
         }
-        #expect(!result.isSuccess())
-        #expect(result.status == .unreadableInput)
+        let succeeded = unsafe result.isSuccess()
+        let status = unsafe result.status
+        #expect(!succeeded)
+        #expect(status == .unreadableInput)
     }
 
     // MARK: - ICO
@@ -267,15 +263,13 @@ import NucleusSkiaGraphiteBridge
     /// exists to notice if that ever stops being true.
     @Test func icoPreservesPerPixelAlpha() {
         let fixture = IcoFixture(alphas: [0, 64, 255, 128])
-        let image = nucleus.skia.decodeEncodedImageFile(
-            fixture.path, 2, 2).image
-        #expect(image.isValid())
-        #expect(image.width() == 2)
+        let image = unsafe RasterFixtureImage(
+            nucleus.skia.decodeEncodedImageFile(fixture.path, 2, 2).image)
+        #expect(image.isValid)
+        #expect(image.width == 2)
 
         var px = [UInt8](repeating: 0, count: 2 * 2 * 4)
-        let read = px.withUnsafeMutableBufferPointer {
-            image.readPixelsRGBA($0.baseAddress, $0.count, 2 * 4)
-        }
+        let read = image.readPixelsRGBA(into: &px, rowBytes: 2 * 4)
         #expect(read)
         #expect([px[3], px[7], px[11], px[15]] == [0, 64, 255, 128],
                 "every alpha survives; all-255 would mean the BMP path flattened them")
@@ -293,9 +287,21 @@ import NucleusSkiaGraphiteBridge
                 + "\(UInt32.random(in: 0...UInt32.max)).ico"
 
             var dib = Data()
-            func u32(_ v: UInt32) { withUnsafeBytes(of: v.littleEndian) { dib.append(contentsOf: $0) } }
-            func u16(_ v: UInt16) { withUnsafeBytes(of: v.littleEndian) { dib.append(contentsOf: $0) } }
-            func i32(_ v: Int32) { withUnsafeBytes(of: v.littleEndian) { dib.append(contentsOf: $0) } }
+            func u32(_ v: UInt32) {
+                withUnsafeBytes(of: v.littleEndian) {
+                    unsafe dib.append(contentsOf: $0)
+                }
+            }
+            func u16(_ v: UInt16) {
+                withUnsafeBytes(of: v.littleEndian) {
+                    unsafe dib.append(contentsOf: $0)
+                }
+            }
+            func i32(_ v: Int32) {
+                withUnsafeBytes(of: v.littleEndian) {
+                    unsafe dib.append(contentsOf: $0)
+                }
+            }
 
             // BITMAPINFOHEADER: height is doubled to cover the (unused) AND mask.
             u32(40); i32(2); i32(4); u16(1); u16(32)
@@ -311,8 +317,16 @@ import NucleusSkiaGraphiteBridge
             dib.append(contentsOf: [0, 0, 0, 0])  // AND mask
 
             var ico = Data()
-            func h16(_ v: UInt16) { withUnsafeBytes(of: v.littleEndian) { ico.append(contentsOf: $0) } }
-            func h32(_ v: UInt32) { withUnsafeBytes(of: v.littleEndian) { ico.append(contentsOf: $0) } }
+            func h16(_ v: UInt16) {
+                withUnsafeBytes(of: v.littleEndian) {
+                    unsafe ico.append(contentsOf: $0)
+                }
+            }
+            func h32(_ v: UInt32) {
+                withUnsafeBytes(of: v.littleEndian) {
+                    unsafe ico.append(contentsOf: $0)
+                }
+            }
             h16(0); h16(1); h16(1)                      // reserved, type=icon, count
             ico.append(contentsOf: [2, 2, 0, 0])        // width, height, palette, reserved
             h16(1); h16(32)                             // planes, bit depth
@@ -328,16 +342,17 @@ import NucleusSkiaGraphiteBridge
     // MARK: - Failure
 
     @Test func aMissingFileDecodesToNothing() {
-        let result = nucleus.skia.decodeEncodedImageFile(
+        let result = unsafe nucleus.skia.decodeEncodedImageFile(
             "\(NSTemporaryDirectory())nucleus-absent-\(UInt32.random(in: 0...UInt32.max)).png",
             32, 32)
-        #expect(result.status == .unreadableInput)
+        let status = unsafe result.status
+        #expect(status == .unreadableInput)
     }
 
     @Test func anEmptyPathDecodesToNothing() {
-        #expect(
-            nucleus.skia.decodeEncodedImageFile("", 32, 32).status
-                == .unreadableInput)
+        let status = unsafe nucleus.skia.decodeEncodedImageFile(
+            "", 32, 32).status
+        #expect(status == .unreadableInput)
     }
 
     @Test func anUndecodableFileDecodesToNothing() {
@@ -346,11 +361,11 @@ import NucleusSkiaGraphiteBridge
         try? Data([0xDE, 0xAD, 0xBE, 0xEF]).write(to: URL(fileURLWithPath: path))
         defer { try? FileManager.default.removeItem(atPath: path) }
 
-        #expect(
-            nucleus.skia.decodeEncodedImageFile(path, 16, 16).status
-                == .unsupportedFormat)
-        #expect(
-            nucleus.skia.decodeEncodedImageFile(path, 0, 0).status
-                == .invalidDimensions)
+        let unsupported = unsafe nucleus.skia.decodeEncodedImageFile(
+            path, 16, 16).status
+        let invalidDimensions = unsafe nucleus.skia.decodeEncodedImageFile(
+            path, 0, 0).status
+        #expect(unsupported == .unsupportedFormat)
+        #expect(invalidDimensions == .invalidDimensions)
     }
 }

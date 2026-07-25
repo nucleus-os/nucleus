@@ -29,7 +29,9 @@ public enum FrameTargetKind {
 /// modules) or a primitive, so any backend — in any module — can construct it
 /// without depending on the core's generated `VK.*` wrapper types. The backend
 /// keeps ownership of the underlying image; this is a borrow for one frame.
-public struct AcquiredFrameTarget {
+/// The value only transports opaque identities; it never dereferences them.
+/// The backend keeps each handle alive through the matching frame completion.
+@safe public struct AcquiredFrameTarget {
     /// The borrowed color-attachment `VkImage` the frame is composited into.
     public var image: VkImage?
     public var width: Int32
@@ -69,7 +71,7 @@ public struct AcquiredFrameTarget {
         waitSemaphore: VkSemaphore? = nil,
         signalSemaphore: VkSemaphore? = nil
     ) {
-        self.image = image
+        unsafe self.image = image
         self.width = width
         self.height = height
         self.format = format
@@ -79,8 +81,8 @@ public struct AcquiredFrameTarget {
         self.queueFamily = queueFamily
         self.hasAlpha = hasAlpha
         self.kind = kind
-        self.waitSemaphore = waitSemaphore
-        self.signalSemaphore = signalSemaphore
+        unsafe self.waitSemaphore = waitSemaphore
+        unsafe self.signalSemaphore = signalSemaphore
     }
 }
 

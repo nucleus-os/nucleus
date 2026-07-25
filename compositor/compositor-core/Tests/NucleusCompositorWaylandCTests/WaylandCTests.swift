@@ -6,15 +6,25 @@ import WaylandServerC
 // extension symbols compiled from wayland-scanner private-code (xdg_wm_base,
 // zwlr_layer_shell_v1) link and resolve through the accessor façades.
 @Test func coreInterfaceDescriptorResolves() {
-    let iface = swift_wayland_iface_wl_compositor()
-    #expect(iface != nil)
-    #expect(String(cString: iface!.pointee.name) == "wl_compositor")
+    #expect(coreInterfaceName() == "wl_compositor")
 }
 
 @Test func extensionInterfaceDescriptorsLink() {
-    let xdg = swift_wayland_iface_xdg_wm_base()
-    #expect(String(cString: xdg!.pointee.name) == "xdg_wm_base")
+    #expect(xdgInterfaceName() == "xdg_wm_base")
+    #expect(layerShellInterfaceName() == "zwlr_layer_shell_v1")
+}
 
-    let layer = swift_wayland_iface_zwlr_layer_shell_v1()
-    #expect(String(cString: layer!.pointee.name) == "zwlr_layer_shell_v1")
+@safe private func coreInterfaceName() -> String? {
+    guard let interface = unsafe swift_wayland_iface_wl_compositor() else { return nil }
+    return unsafe String(cString: interface.pointee.name)
+}
+
+@safe private func xdgInterfaceName() -> String? {
+    guard let interface = unsafe swift_wayland_iface_xdg_wm_base() else { return nil }
+    return unsafe String(cString: interface.pointee.name)
+}
+
+@safe private func layerShellInterfaceName() -> String? {
+    guard let interface = unsafe swift_wayland_iface_zwlr_layer_shell_v1() else { return nil }
+    return unsafe String(cString: interface.pointee.name)
 }

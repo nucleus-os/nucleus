@@ -136,6 +136,21 @@ import Testing
         #expect(resolved?.contains("hicolor") == true)
     }
 
+    @Test func itFollowsDeclaredThemeInheritance() {
+        let fixture = Fixture()
+        fixture.add(theme: "Parent", directory: "48x48", name: "inherited")
+        let child = "\(fixture.root)/Child"
+        try? FileManager.default.createDirectory(
+            atPath: child, withIntermediateDirectories: true)
+        #expect(FileManager.default.createFile(
+            atPath: "\(child)/index.theme",
+            contents: Data("[Icon Theme]\nInherits=Parent\n".utf8)))
+
+        let resolved = fixture.makeResolver(theme: "Child")
+            .resolve("inherited", size: 48)
+        #expect(resolved?.contains("/Parent/") == true)
+    }
+
     @Test func anUnknownIconResolvesToNothing() {
         let fixture = Fixture()
         fixture.add(theme: "Adwaita", directory: "48x48", name: "firefox")

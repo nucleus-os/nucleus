@@ -93,11 +93,15 @@ host-owned APEX mounting, instance-private delegated bpffs creation, token-aware
 Android BPF loading, the SELinux-bypassed vold preparation path, the production
 host-owned gfxstream socket/ring broker, and the Android 17 AIDL audio HAL are
 implemented. Android receives the broker socket but no DRM node; the broker validates
-the mapped Android system UID and `vulkan.nucleus` fails closed rather than entering
-the ranchu render-node path. The Nucleus Composer3 HAL and production Swift display
-host now replace the synthetic presentation workload during framework boot. The
-remaining Phase 2 gate is a signed image build followed by the user-run framework
-boot:
+that every graphics client belongs to the instance's subordinate UID range, while the
+Composer3 display socket remains restricted to the mapped Android system UID.
+Collider loads Android netd's required host xtables modules before creating the
+unprivileged network namespace. `vulkan.nucleus` fails closed rather than entering the
+ranchu render-node path. The Nucleus Composer3 HAL and production Swift display host
+now replace the synthetic presentation workload during framework boot. The
+complete signed image, package/APEX signature, APEX-payload, and AVB verification
+pipeline passed in `.nucleus/runs/2026-07-25T05-33-29Z-655228`. The remaining
+Phase 2 gate is the user-run framework boot:
 
 ```sh
 collider android-runtime framework-boot

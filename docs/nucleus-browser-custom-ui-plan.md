@@ -37,6 +37,8 @@ Across every phase boundary:
     the same pinned Chromium checkout and common patch foundation. Product UI work does not create a
     second Chromium build system or source fork.
 
+Status: active
+
 ## Context
 
 The existing Nucleus Browser work establishes the engine and presentation foundation:

@@ -87,6 +87,8 @@ The installable OS is a signed `bootc` image based on Fedora, with transactional
 and rollback. The supported hardware matrix is qualified explicitly; Linux having a
 driver is not itself a product-support claim.
 
+Status: active
+
 ## Positioning
 
 Nucleus must be a compelling desktop without Android. Its compositor, shell, UI
@@ -525,7 +527,10 @@ Phase 2 begins with one strict four-step bring-up sequence:
    transient scope so LXC owns its cgroup subtree and installs the exact cgroup-v2
    device BPF allowlist. Collider consumes each complete configured range without
    imposing a project-authored minimum. The host's AppArmor LSM is enabled, and its
-   kernel provides binderfs and file-backed EROFS.
+   kernel provides binderfs and file-backed EROFS. Before creating the unprivileged
+   network namespace, Collider loads the host legacy xtables table and rule modules
+   required by Android netd; Android does not depend on module autoload from inside
+   its user namespace.
 
    Collider creates one raw pseudo-terminal for each runtime instance, mounts only its
    slave endpoint as Android's `/dev/kmsg` and `/dev/kmsg_debug`, and continuously
@@ -543,12 +548,14 @@ Phase 2 begins with one strict four-step bring-up sequence:
    renderer against that device UUID, and creates one sealed duplex-ring endpoint for
    each guest connection. Collider bind-mounts only the broker's instance-private
    socket directory at `/dev/nucleus`; Android receives no DRM node. The broker accepts
-   only the subordinate-ID mapping of Android's system UID and exits nonzero if a
-   render-channel pump fails. `vulkan.nucleus` installs this socket transport before
-   choosing a gfxstream connection, fails closed if the broker is unavailable, and
-   never enters the ranchu render-node path. Collider retains the broker stream as
-   `android-gfxstream-broker.log` and supervises it for the complete container
-   lifetime.
+   only peers inside that instance's complete subordinate UID range, allowing isolated
+   Android application UIDs without admitting the host user or another container. The
+   separate Composer3 display socket accepts only the mapped Android system UID. The
+   broker exits nonzero if a render-channel pump fails. `vulkan.nucleus` installs this
+   socket transport before choosing a gfxstream connection, fails closed if the broker
+   is unavailable, and never enters the ranchu render-node path. Collider retains the
+   broker stream as `android-gfxstream-broker.log` and supervises it for the complete
+   container lifetime.
 
    The same authenticated broker owns Android graphic-buffer allocation. The Nucleus
    AIDL allocator requests a host allocation, receives one dma-buf plus immutable
@@ -586,9 +593,10 @@ Phase 2 begins with one strict four-step bring-up sequence:
    connections. SurfaceFlinger then stopped at the missing hardware-composer service.
    The Nucleus Composer3 AIDL HAL, authenticated presentation protocol, persistent
    Swift display host, compositor-session supervision, and exact LXC `RLIMIT_NICE`
-   contract are implemented. The current signed-image rebuild installs that complete
-   service boundary. The next retained user run validates framework boot and real
-   Composer3 presentation through the former demo surface.
+   contract are implemented. The complete signed image containing that service
+   boundary passed build, signing, package/APEX verification, and AVB verification in
+   `.nucleus/runs/2026-07-25T05-33-29Z-655228`. The next retained user run validates
+   framework boot and real Composer3 presentation through the former demo surface.
 
    Step 4 completes when the newly signed image reaches
    `sys.boot_completed=1` in one retained user-run framework-boot session:

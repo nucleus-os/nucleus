@@ -56,6 +56,8 @@ The complete system preserves these concrete invariants:
   parser, duplicate workflow, deprecated wrapper, feature-flagged old path,
   semaphore bridge into async code, or unstructured process-lifetime task.
 
+Status: complete
+
 ## Target architecture
 
 The end state has eight major seams:

@@ -36,7 +36,7 @@ public struct AndroidBPFDelegationBroker: Equatable, Sendable {
             throw AndroidBPFDelegationFailure.brokerRequiresRoot
         }
         let status = socketPath.withCString {
-            collider_android_bpf_delegation_broker(
+            unsafe collider_android_bpf_delegation_broker(
                 $0,
                 containerRootUID,
                 containerRootGID)
@@ -94,7 +94,7 @@ public struct AndroidBPFDelegationMount: Equatable, Sendable {
         let targetPath = try bpfMountTarget(mountedRoot: mountedRoot)
         let status = socketPath.withCString { socket in
             targetPath.withCString { target in
-                collider_android_bpf_delegation_mount(socket, target)
+                unsafe collider_android_bpf_delegation_mount(socket, target)
             }
         }
         guard status == 0 else {

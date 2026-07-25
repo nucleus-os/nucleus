@@ -11,6 +11,48 @@ import Glibc
 import Darwin
 #endif
 
+private let androidFrameworkKernelModules = [
+    "binder_linux",
+    "erofs",
+    // Android netd uses the legacy xtables ABI inside the container network
+    // namespace. Load its table and rule modules from the initial namespace:
+    // an unprivileged user namespace cannot trigger host module autoloading.
+    "ip_tables",
+    "ip6_tables",
+    "iptable_filter",
+    "ip6table_filter",
+    "iptable_mangle",
+    "ip6table_mangle",
+    "iptable_raw",
+    "ip6table_raw",
+    "iptable_nat",
+    "ip6table_nat",
+    "xt_connmark",
+    "xt_conntrack",
+    "xt_CT",
+    "xt_state",
+    "xt_mark",
+    "xt_NFLOG",
+    "nfnetlink_log",
+    "ipt_REJECT",
+    "ip6t_REJECT",
+    "xt_TCPMSS",
+    "xt_u32",
+    "xt_tcpudp",
+    "xt_multiport",
+    "xt_owner",
+    "xt_policy",
+    "xt_quota",
+    "ipt_rpfilter",
+    "ip6t_rpfilter",
+    "xt_bpf",
+    "xt_IDLETIMER",
+    "xt_MASQUERADE",
+    "xt_socket",
+    "xt_comment",
+    "xt_limit",
+]
+
 struct AndroidFrameworkBootCommand {
     let context: WorkspaceContext
     let timeoutSeconds: UInt32
@@ -57,7 +99,9 @@ struct AndroidFrameworkBootCommand {
                 installation.session.path,
                 [
                     "--status-file", statusFile.path,
-                    "--configuration", try SessionConfiguration().hexEncoded,
+                    "--configuration", try SessionConfiguration(
+                        xwaylandExecutablePath: resolveXwaylandExecutable(
+                            environment: context.environment)).hexEncoded,
                     "--", installation.compositor.path,
                 ],
                 environmentOverrides: environment
@@ -111,12 +155,9 @@ struct AndroidFrameworkBootCommand {
                 context.environment["XDG_RUNTIME_DIR"]
                 ?? "/run/user/\(getuid())",
             isDirectory: true)
-        var isDirectory = ObjCBool(false)
+        let parentValues = try? parent.resourceValues(forKeys: [.isDirectoryKey])
         guard parent.path != "/",
-              FileManager.default.fileExists(
-                atPath: parent.path,
-                isDirectory: &isDirectory),
-              isDirectory.boolValue
+              parentValues?.isDirectory == true
         else {
             throw WorkspaceFailure.message(
                 "the login runtime directory does not exist: \(parent.path)")
@@ -323,6 +364,17 @@ struct AndroidFrameworkBootCommand {
                 }
             }
         }
+        for module in androidFrameworkKernelModules {
+            do {
+                _ = try await context.run(
+                    "modinfo",
+                    [module],
+                    capture: true)
+            } catch {
+                failures.append(
+                    "kernel does not provide required Android module: \(module)")
+            }
+        }
         let controllers =
             (try? String(
                 contentsOfFile: "/sys/fs/cgroup/cgroup.controllers",
@@ -411,7 +463,7 @@ private actor AndroidFrameworkBootSession {
     }
 
     func prepare() async throws {
-        for module in ["binder_linux", "erofs"] {
+        for module in androidFrameworkKernelModules {
             try await context.run(
                 "sudo",
                 [
@@ -970,8 +1022,10 @@ private actor AndroidFrameworkBootSession {
                 [
                     "--socket",
                     self.layout.gfxstreamBrokerSocket.path,
-                    "--expected-uid",
-                    "\(UInt64(self.host.subordinateUID) + 1_000)",
+                    "--uid-range-start",
+                    "\(self.host.subordinateUID)",
+                    "--uid-range-count",
+                    "\(self.host.subordinateUIDCount)",
                     "--parent-pid",
                     "\(getpid())",
                 ],
@@ -1144,7 +1198,8 @@ private actor AndroidFrameworkBootSession {
         while ContinuousClock.now < deadline {
             try kernelLog?.checkHealth()
             try frameworkHealth.check(
-                log: layout.androidKernelLog,
+                kernelLog: layout.androidKernelLog,
+                frameworkLog: layout.androidLog,
                 diagnostics: layout.diagnostics)
             if !(await container.isRunning) {
                 let status = try await container.wait().status
@@ -1187,9 +1242,6 @@ private actor AndroidFrameworkBootSession {
     ) async throws {
         while ContinuousClock.now < deadline {
             try kernelLog?.checkHealth()
-            try frameworkHealth.check(
-                log: layout.androidKernelLog,
-                diagnostics: layout.diagnostics)
             if !(await container.isRunning) {
                 let status = try await container.wait().status
                 throw WorkspaceFailure.message(
@@ -1210,6 +1262,10 @@ private actor AndroidFrameworkBootSession {
             {
                 return
             }
+            try frameworkHealth.check(
+                kernelLog: layout.androidKernelLog,
+                frameworkLog: layout.androidLog,
+                diagnostics: layout.diagnostics)
             try await ContinuousClock().sleep(for: .seconds(1))
         }
         throw WorkspaceFailure.message(
@@ -1381,47 +1437,107 @@ struct AndroidFrameworkMountLedger {
 }
 
 struct AndroidFrameworkHealthMonitor {
-    private var offset: UInt64 = 0
-    private var pending = Data()
-    private var surfaceFlingerCrashCount = 0
+    private struct LogCursor {
+        var offset: UInt64 = 0
+        var pending = Data()
+    }
 
-    mutating func check(log: URL, diagnostics: URL) throws {
+    private var cursors: [String: LogCursor] = [:]
+    private var surfaceFlingerCrashCount = 0
+    private var zygoteCrashCount = 0
+    private var zygoteCrashProcessIDs: Set<Int32> = []
+    private var systemServerCrashCount = 0
+    private var systemServerCrashProcessIDs: Set<Int32> = []
+
+    mutating func check(
+        kernelLog: URL,
+        frameworkLog: URL,
+        diagnostics: URL
+    ) throws {
+        let kernel = try readNewLines(from: kernelLog)
+        if kernel.wasTruncated {
+            surfaceFlingerCrashCount = 0
+            zygoteCrashCount = 0
+            zygoteCrashProcessIDs.removeAll(keepingCapacity: true)
+        }
+        for line in kernel.lines {
+            try inspectKernelLine(line, diagnostics: diagnostics)
+        }
+
+        let framework = try readNewLines(from: frameworkLog)
+        if framework.wasTruncated {
+            systemServerCrashCount = 0
+            systemServerCrashProcessIDs.removeAll(keepingCapacity: true)
+        }
+        for line in framework.lines {
+            try inspectFrameworkLine(line, diagnostics: diagnostics)
+        }
+    }
+
+    private mutating func readNewLines(
+        from log: URL
+    ) throws -> (lines: [String], wasTruncated: Bool) {
         guard
             let attributes = try? FileManager.default.attributesOfItem(
                 atPath: log.path),
             let size = (attributes[.size] as? NSNumber)?.uint64Value
         else {
-            return
+            return ([], false)
         }
-        if size < offset {
-            offset = 0
-            pending.removeAll(keepingCapacity: true)
-            surfaceFlingerCrashCount = 0
+        var cursor = cursors[log.path] ?? LogCursor()
+        let wasTruncated = size < cursor.offset
+        if wasTruncated {
+            cursor.offset = 0
+            cursor.pending.removeAll(keepingCapacity: true)
         }
-        guard size > offset else { return }
+        guard size > cursor.offset else {
+            cursors[log.path] = cursor
+            return ([], wasTruncated)
+        }
 
         let handle = try FileHandle(forReadingFrom: log)
         defer { try? handle.close() }
-        try handle.seek(toOffset: offset)
+        try handle.seek(toOffset: cursor.offset)
         guard let data = try handle.readToEnd(), !data.isEmpty else {
-            return
+            cursors[log.path] = cursor
+            return ([], wasTruncated)
         }
-        offset += UInt64(data.count)
-        pending.append(data)
+        cursor.offset += UInt64(data.count)
+        cursor.pending.append(data)
 
-        while let newline = pending.firstIndex(of: 0x0A) {
+        var lines: [String] = []
+        while let newline = cursor.pending.firstIndex(of: 0x0A) {
             let line = String(
-                decoding: pending[..<newline],
+                decoding: cursor.pending[..<newline],
                 as: UTF8.self)
-            pending.removeSubrange(...newline)
-            try inspect(line: line, diagnostics: diagnostics)
+            cursor.pending.removeSubrange(...newline)
+            lines.append(line)
         }
+        cursors[log.path] = cursor
+        return (lines, wasTruncated)
     }
 
-    private mutating func inspect(
-        line: String,
+    private mutating func inspectKernelLine(
+        _ line: String,
         diagnostics: URL
     ) throws {
+        if line.contains("init: Service 'zygote'"),
+            line.contains("received SIGKILL")
+        {
+            if let processID = initServiceProcessID(line),
+                !zygoteCrashProcessIDs.insert(processID).inserted
+            {
+                return
+            }
+            zygoteCrashCount += 1
+            if zygoteCrashCount >= 2 {
+                throw failure(
+                    "Android zygote was killed \(zygoteCrashCount) times "
+                        + "before framework boot",
+                    diagnostics: diagnostics)
+            }
+            return
+        }
         if line.contains(
             "process with updatable components 'surfaceflinger' exited "
                 + "4 times before boot completed")
@@ -1443,6 +1559,69 @@ struct AndroidFrameworkHealthMonitor {
                     + "before framework boot",
                 diagnostics: diagnostics)
         }
+    }
+
+    private func initServiceProcessID(_ line: String) -> Int32? {
+        guard
+            let marker = line.range(of: "(pid "),
+            let end = line[marker.upperBound...].firstIndex(of: ")")
+        else {
+            return nil
+        }
+        return Int32(line[marker.upperBound..<end])
+    }
+
+    private mutating func inspectFrameworkLine(
+        _ line: String,
+        diagnostics: URL
+    ) throws {
+        let processID: Int32?
+        if line.contains(
+            "AndroidRuntime: *** FATAL EXCEPTION IN SYSTEM PROCESS:")
+        {
+            processID = logcatProcessID(line)
+        } else if line.contains("Fatal signal"),
+            line.contains("(system_server)")
+        {
+            processID = nativeCrashProcessID(line)
+        } else {
+            return
+        }
+        if let processID,
+            !systemServerCrashProcessIDs.insert(processID).inserted
+        {
+            return
+        }
+        systemServerCrashCount += 1
+        if systemServerCrashCount >= 2 {
+            throw failure(
+                "system_server crashed \(systemServerCrashCount) times "
+                    + "before framework boot",
+                diagnostics: diagnostics)
+        }
+    }
+
+    private func logcatProcessID(_ line: String) -> Int32? {
+        let fields = line.split(whereSeparator: \.isWhitespace)
+        guard
+            let tag = fields.firstIndex(of: "AndroidRuntime:"),
+            tag >= 3
+        else {
+            return nil
+        }
+        return Int32(fields[tag - 3])
+    }
+
+    private func nativeCrashProcessID(_ line: String) -> Int32? {
+        let fields = line.split(whereSeparator: \.isWhitespace)
+        guard
+            let pid = fields.lastIndex(of: "pid"),
+            fields.indices.contains(pid + 2),
+            fields[pid + 2] == "(system_server)"
+        else {
+            return nil
+        }
+        return Int32(fields[pid + 1])
     }
 
     private func failure(
@@ -1584,16 +1763,14 @@ func currentSwiftRuntime() throws -> SwiftRuntime {
     let loaderSearchDirectory = library.deletingLastPathComponent()
     let swiftDirectory = loaderSearchDirectory.deletingLastPathComponent()
     let libraryRoot = swiftDirectory.deletingLastPathComponent()
-    var isDirectory: ObjCBool = false
+    let libraryRootValues = try? libraryRoot.resourceValues(
+        forKeys: [.isDirectoryKey])
     guard library.lastPathComponent == "libswiftCore.so",
         loaderSearchDirectory.lastPathComponent == "linux",
         swiftDirectory.lastPathComponent == "swift",
         FileManager.default.fileExists(
             atPath: library.path),
-        FileManager.default.fileExists(
-            atPath: libraryRoot.path,
-            isDirectory: &isDirectory),
-        isDirectory.boolValue
+        libraryRootValues?.isDirectory == true
     else {
         throw WorkspaceFailure.message(
             "the dynamic loader returned an invalid Swift runtime path: "

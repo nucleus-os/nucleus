@@ -14,19 +14,19 @@
 // since the compositor's own DRM layer owns real output topology — so it is
 // intentionally dropped.
 
-import Glibc
-import NucleusCompositorXcbC
+@unsafe import Glibc
+@unsafe import NucleusCompositorXcbC
 internal import NucleusCompositorServer
 import NucleusCompositorServerTypes
 internal import NucleusCompositorWindowManager
 
 private func xwmLog(_ s: String) {
     let line = "[xwm] \(s)\n"
-    _ = line.withCString { ptr in write(2, ptr, strlen(ptr)) }
+    _ = line.withCString { ptr in unsafe write(2, ptr, strlen(ptr)) }
 }
 
 @MainActor
-final class XwaylandXWM {
+@safe final class XwaylandXWM {
     private unowned let host: RouterHost
     let conn: OpaquePointer
     /// XCB connection fd, polled by the compositor loop (xwayland_xwm token).
@@ -54,21 +54,32 @@ final class XwaylandXWM {
     /// Take ownership of `wmFd`, connect via XCB, claim the WM role + EWMH, enable
     /// Composite redirect, and expose the XCB fd. Returns nil on any bring-up failure.
     init?(wmFd: Int32, host: RouterHost) {
-        guard let c = xcb_connect_to_fd(wmFd, nil) else { close(wmFd); return nil }
-        if xcb_connection_has_error(c) != 0 { xcb_disconnect(c); return nil }
-        guard let setup = xcb_get_setup(c) else { xcb_disconnect(c); return nil }
-        let iter = xcb_setup_roots_iterator(setup)
-        guard iter.rem != 0, let screenPtr = iter.data else { xcb_disconnect(c); return nil }
-        let screen = screenPtr.pointee
-        let interned = internAllAtoms(c)
+        guard let c = unsafe xcb_connect_to_fd(wmFd, nil) else { close(wmFd); return nil }
+        if unsafe xcb_connection_has_error(c) != 0 {
+            unsafe xcb_disconnect(c)
+            return nil
+        }
+        guard let setup = unsafe xcb_get_setup(c) else {
+            unsafe xcb_disconnect(c)
+            return nil
+        }
+        let iter = unsafe xcb_setup_roots_iterator(setup)
+        guard unsafe iter.rem != 0,
+            let screenPtr = unsafe iter.data
+        else {
+            unsafe xcb_disconnect(c)
+            return nil
+        }
+        let screen = unsafe screenPtr.pointee
+        let interned = unsafe internAllAtoms(c)
 
         self.host = host
-        self.conn = c
-        self.pollFd = xcb_get_file_descriptor(c)
+        unsafe self.conn = c
+        self.pollFd = unsafe xcb_get_file_descriptor(c)
         self.rootWindow = screen.root
         self.rootVisual = screen.root_visual
         self.atoms = interned
-        self.xsettings = XSettingsManager(
+        self.xsettings = unsafe XSettingsManager(
             conn: c, root: screen.root, rootVisual: screen.root_visual, atoms: interned)
 
         selectRootEvents()
@@ -78,7 +89,7 @@ final class XwaylandXWM {
         enableCompositeRedirect()
         refreshDesktopState()
         initXfixes()
-        _ = xcb_flush(c)
+        _ = unsafe xcb_flush(c)
         xwmLog("ready on root 0x\(String(rootWindow, radix: 16)), wm_window 0x\(String(wmWindow, radix: 16))")
     }
 
@@ -94,11 +105,11 @@ final class XwaylandXWM {
         unpairedRouterSurfaceBySerial.removeAll()
         xsettings.destroyWindow()
         if wmWindow != 0 {
-            _ = xcb_destroy_window(conn, wmWindow)
-            _ = xcb_flush(conn)
+            _ = unsafe xcb_destroy_window(conn, wmWindow)
+            _ = unsafe xcb_flush(conn)
             wmWindow = 0
         }
-        xcb_disconnect(conn)
+        unsafe xcb_disconnect(conn)
     }
 
     // ── router driver / window model access ──────────────────────────────────
@@ -112,12 +123,13 @@ final class XwaylandXWM {
                 | XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT.rawValue
                 | XCB_EVENT_MASK_PROPERTY_CHANGE.rawValue
         ]
-        _ = xcb_change_window_attributes(conn, rootWindow, XCB_CW_EVENT_MASK.rawValue, &mask)
+        _ = unsafe xcb_change_window_attributes(
+            conn, rootWindow, XCB_CW_EVENT_MASK.rawValue, &mask)
     }
 
     private func createWmWindow() {
-        let wid = xcb_generate_id(conn)
-        _ = xcb_create_window(
+        let wid = unsafe xcb_generate_id(conn)
+        _ = unsafe xcb_create_window(
             conn, 0 /* XCB_COPY_FROM_PARENT */, wid, rootWindow,
             0, 0, 10, 10, 0,
             UInt16(XCB_WINDOW_CLASS_INPUT_OUTPUT.rawValue), rootVisual, 0, nil)
@@ -126,22 +138,24 @@ final class XwaylandXWM {
     }
 
     private func claimWmSelection() {
-        _ = xcb_set_selection_owner(conn, wmWindow, atoms[.WM_S0], 0 /* XCB_CURRENT_TIME */)
-        _ = xcb_set_selection_owner(conn, wmWindow, atoms[._NET_WM_CM_S0], 0)
+        _ = unsafe xcb_set_selection_owner(
+            conn, wmWindow, atoms[.WM_S0], 0 /* XCB_CURRENT_TIME */)
+        _ = unsafe xcb_set_selection_owner(
+            conn, wmWindow, atoms[._NET_WM_CM_S0], 0)
     }
 
     private func enableCompositeRedirect() {
-        _ = xcb_composite_redirect_subwindows(
+        _ = unsafe xcb_composite_redirect_subwindows(
             conn, rootWindow, UInt8(XCB_COMPOSITE_REDIRECT_MANUAL.rawValue))
     }
 
     private func advertiseEwmh() {
         let check: [UInt32] = [wmWindow]
         check.withUnsafeBytes { raw in
-            _ = xcb_change_property(
+            _ = unsafe xcb_change_property(
                 conn, UInt8(XCB_PROP_MODE_REPLACE.rawValue), rootWindow,
                 atoms[._NET_SUPPORTING_WM_CHECK], xcb_atom_t(XCB_ATOM_WINDOW.rawValue), 32, 1, raw.baseAddress)
-            _ = xcb_change_property(
+            _ = unsafe xcb_change_property(
                 conn, UInt8(XCB_PROP_MODE_REPLACE.rawValue), wmWindow,
                 atoms[._NET_SUPPORTING_WM_CHECK], atoms[.ATOM], 32, 1, raw.baseAddress)
         }
@@ -159,7 +173,7 @@ final class XwaylandXWM {
             atoms[._NET_WM_MOVERESIZE], atoms[._NET_WM_SYNC_REQUEST],
         ]
         supported.withUnsafeBytes { raw in
-            _ = xcb_change_property(
+            _ = unsafe xcb_change_property(
                 conn, UInt8(XCB_PROP_MODE_REPLACE.rawValue), rootWindow,
                 atoms[._NET_SUPPORTED], atoms[.ATOM], 32, UInt32(supported.count), raw.baseAddress)
         }
@@ -170,7 +184,7 @@ final class XwaylandXWM {
     func refreshDesktopState() {
         publishRootDesktopState()
         publishDpiSettings()
-        _ = xcb_flush(conn)
+        _ = unsafe xcb_flush(conn)
     }
 
     func updateScale() { refreshDesktopState() }
@@ -242,7 +256,7 @@ final class XwaylandXWM {
 
     private func publishDpiSettings() {
         let scale = shellFractionalScale()
-        setResourceManager(conn, rootWindow, atoms, scale: scale)
+        unsafe setResourceManager(conn, rootWindow, atoms, scale: scale)
         xsettings.publishScale(scale)
     }
 
@@ -252,13 +266,13 @@ final class XwaylandXWM {
         let clients = host.windowManager
             .xwaylandClientXIDs()
         clients.withUnsafeBytes { raw in
-            _ = xcb_change_property(
+            _ = unsafe xcb_change_property(
                 conn, UInt8(XCB_PROP_MODE_REPLACE.rawValue), rootWindow,
                 atoms[._NET_CLIENT_LIST],
                 xcb_atom_t(XCB_ATOM_WINDOW.rawValue), 32,
                 UInt32(clamping: clients.count),
                 raw.baseAddress)
-            _ = xcb_change_property(
+            _ = unsafe xcb_change_property(
                 conn, UInt8(XCB_PROP_MODE_REPLACE.rawValue), rootWindow,
                 atoms[._NET_CLIENT_LIST_STACKING],
                 xcb_atom_t(XCB_ATOM_WINDOW.rawValue), 32,
@@ -267,40 +281,44 @@ final class XwaylandXWM {
         }
         let active: [UInt32] = [UInt32(truncatingIfNeeded: host.windowManager.activeXwaylandXID())]
         active.withUnsafeBytes { raw in
-            _ = xcb_change_property(
+            _ = unsafe xcb_change_property(
                 conn, UInt8(XCB_PROP_MODE_REPLACE.rawValue), rootWindow,
                 atoms[._NET_ACTIVE_WINDOW],
                 xcb_atom_t(XCB_ATOM_WINDOW.rawValue), 32, 1,
                 raw.baseAddress)
         }
-        _ = xcb_flush(conn)
+        _ = unsafe xcb_flush(conn)
     }
 
     // ── XFixes cursor bridge ────────────────────────────────────────────────────
 
     private func initXfixes() {
-        let verCookie = xcb_xfixes_query_version(conn, 4, 0)
-        guard let verReply = xcb_xfixes_query_version_reply(conn, verCookie, nil) else {
+        let verCookie = unsafe xcb_xfixes_query_version(conn, 4, 0)
+        guard let verReply = unsafe xcb_xfixes_query_version_reply(
+            conn, verCookie, nil)
+        else {
             xwmLog("XFixes query_version failed — cursor bridge disabled"); return
         }
-        free(verReply)
+        unsafe free(verReply)
         var present: UInt8 = 0
-        let base = nucleus_xcb_xfixes_event_base(conn, &present)
+        let base = unsafe nucleus_xcb_xfixes_event_base(conn, &present)
         guard present != 0 else {
             xwmLog("XFixes not present — cursor bridge disabled"); return
         }
         xfixesEventBase = base
         xfixesOK = true
-        _ = xcb_xfixes_select_cursor_input(
+        _ = unsafe xcb_xfixes_select_cursor_input(
             conn, rootWindow, UInt32(XCB_XFIXES_CURSOR_NOTIFY_MASK_DISPLAY_CURSOR.rawValue))
         fetchCursorOnly()
     }
 
     private func fetchCursorOnly() {
-        let cookie = xcb_xfixes_get_cursor_image_and_name(conn)
-        guard let reply = xcb_xfixes_get_cursor_image_and_name_reply(conn, cookie, nil) else { return }
-        defer { free(reply) }
-        storeCursor(reply)
+        let cookie = unsafe xcb_xfixes_get_cursor_image_and_name(conn)
+        guard let reply = unsafe xcb_xfixes_get_cursor_image_and_name_reply(
+            conn, cookie, nil)
+        else { return }
+        defer { unsafe free(reply) }
+        unsafe storeCursor(reply)
     }
 
     private func fetchAndApplyCursor() {
@@ -309,13 +327,13 @@ final class XwaylandXWM {
     }
 
     private func storeCursor(_ reply: UnsafeMutablePointer<xcb_xfixes_get_cursor_image_and_name_reply_t>) {
-        let w = UInt32(reply.pointee.width)
-        let h = UInt32(reply.pointee.height)
+        let w = unsafe UInt32(reply.pointee.width)
+        let h = unsafe UInt32(reply.pointee.height)
         guard w != 0, h != 0 else { return }
         cursorW = w
         cursorH = h
-        cursorHX = reply.pointee.xhot
-        cursorHY = reply.pointee.yhot
+        cursorHX = unsafe reply.pointee.xhot
+        cursorHY = unsafe reply.pointee.yhot
         cursorHas = true
     }
 
@@ -338,38 +356,38 @@ final class XwaylandXWM {
     /// Drain all pending XCB events. Returns false on a fatal connection error
     /// (the loop drops the xwayland_xwm token).
     func dispatchReadable() -> Bool {
-        while let raw = xcb_poll_for_event(conn) {
-            dispatch(raw)
-            free(raw)
+        while let raw = unsafe xcb_poll_for_event(conn) {
+            unsafe dispatch(raw)
+            unsafe free(raw)
         }
-        if xcb_connection_has_error(conn) != 0 {
+        if unsafe xcb_connection_has_error(conn) != 0 {
             xwmLog("XCB connection error — detaching")
             return false
         }
-        _ = xcb_flush(conn)
+        _ = unsafe xcb_flush(conn)
         return true
     }
 
     private func bind<T>(_ raw: UnsafeMutablePointer<xcb_generic_event_t>, _ t: T.Type) -> UnsafeMutablePointer<T> {
-        UnsafeMutableRawPointer(raw).assumingMemoryBound(to: T.self)
+        unsafe UnsafeMutableRawPointer(raw).assumingMemoryBound(to: T.self)
     }
 
     private func dispatch(_ raw: UnsafeMutablePointer<xcb_generic_event_t>) {
-        let kind = Int32(raw.pointee.response_type & 0x7f)
+        let kind = unsafe Int32(raw.pointee.response_type & 0x7f)
         if xfixesOK && kind == Int32(xfixesEventBase) + XCB_XFIXES_CURSOR_NOTIFY {
             fetchAndApplyCursor()
             return
         }
         switch kind {
-        case XCB_CREATE_NOTIFY: onCreateNotify(bind(raw, xcb_create_notify_event_t.self))
-        case XCB_DESTROY_NOTIFY: onDestroyNotify(bind(raw, xcb_destroy_notify_event_t.self))
-        case XCB_UNMAP_NOTIFY: onUnmapNotify(bind(raw, xcb_unmap_notify_event_t.self))
-        case XCB_MAP_NOTIFY: onMapNotify(bind(raw, xcb_map_notify_event_t.self))
-        case XCB_MAP_REQUEST: onMapRequest(bind(raw, xcb_map_request_event_t.self))
-        case XCB_CONFIGURE_NOTIFY: onConfigureNotify(bind(raw, xcb_configure_notify_event_t.self))
-        case XCB_CONFIGURE_REQUEST: onConfigureRequest(bind(raw, xcb_configure_request_event_t.self))
-        case XCB_PROPERTY_NOTIFY: onPropertyNotify(bind(raw, xcb_property_notify_event_t.self))
-        case XCB_CLIENT_MESSAGE: onClientMessage(bind(raw, xcb_client_message_event_t.self))
+        case XCB_CREATE_NOTIFY: unsafe onCreateNotify(bind(raw, xcb_create_notify_event_t.self))
+        case XCB_DESTROY_NOTIFY: unsafe onDestroyNotify(bind(raw, xcb_destroy_notify_event_t.self))
+        case XCB_UNMAP_NOTIFY: unsafe onUnmapNotify(bind(raw, xcb_unmap_notify_event_t.self))
+        case XCB_MAP_NOTIFY: unsafe onMapNotify(bind(raw, xcb_map_notify_event_t.self))
+        case XCB_MAP_REQUEST: unsafe onMapRequest(bind(raw, xcb_map_request_event_t.self))
+        case XCB_CONFIGURE_NOTIFY: unsafe onConfigureNotify(bind(raw, xcb_configure_notify_event_t.self))
+        case XCB_CONFIGURE_REQUEST: unsafe onConfigureRequest(bind(raw, xcb_configure_request_event_t.self))
+        case XCB_PROPERTY_NOTIFY: unsafe onPropertyNotify(bind(raw, xcb_property_notify_event_t.self))
+        case XCB_CLIENT_MESSAGE: unsafe onClientMessage(bind(raw, xcb_client_message_event_t.self))
         default: break
         }
     }
@@ -377,7 +395,7 @@ final class XwaylandXWM {
     // ── event handlers ──────────────────────────────────────────────────────────
 
     private func onCreateNotify(_ ev: UnsafeMutablePointer<xcb_create_notify_event_t>) {
-        let e = ev.pointee
+        let e = unsafe ev.pointee
         if e.window == wmWindow { return }
         let surface = XwaylandSurface(windowID: e.window, overrideRedirect: e.override_redirect != 0)
         surface.x = e.x
@@ -385,12 +403,12 @@ final class XwaylandXWM {
         surface.width = e.width
         surface.height = e.height
         windowMap[e.window] = surface
-        subscribeWindow(conn, e.window)
-        refreshTracked(conn, atoms, surface)
+        unsafe subscribeWindow(conn, e.window)
+        unsafe refreshTracked(conn, atoms, surface)
     }
 
     private func onDestroyNotify(_ ev: UnsafeMutablePointer<xcb_destroy_notify_event_t>) {
-        let window = ev.pointee.window
+        let window = unsafe ev.pointee.window
         guard let surface = windowMap.removeValue(forKey: window) else { return }
         if host.windowManager.activeXwaylandXID() == UInt64(window) { clearFocus() }
         destroyPairedWindow(surface)
@@ -399,39 +417,45 @@ final class XwaylandXWM {
     }
 
     private func onMapRequest(_ ev: UnsafeMutablePointer<xcb_map_request_event_t>) {
-        _ = xcb_map_window(conn, ev.pointee.window)
+        _ = unsafe xcb_map_window(conn, ev.pointee.window)
     }
 
     private func onMapNotify(_ ev: UnsafeMutablePointer<xcb_map_notify_event_t>) {
-        guard let surface = windowMap[ev.pointee.window] else { return }
+        guard let surface = unsafe windowMap[ev.pointee.window] else { return }
         surface.x11Mapped = true
-        if !surface.overrideRedirect { setWmState(conn, atoms, surface, .normal) }
+        if !surface.overrideRedirect {
+            unsafe setWmState(conn, atoms, surface, .normal)
+        }
         if surface.routerWindowID != 0 { driver?.setMapped(windowID: surface.routerWindowID, mapped: true) }
         syncWindowNetState(surface)
     }
 
     private func onUnmapNotify(_ ev: UnsafeMutablePointer<xcb_unmap_notify_event_t>) {
-        guard let surface = windowMap[ev.pointee.window] else { return }
+        guard let surface = unsafe windowMap[ev.pointee.window] else { return }
         surface.x11Mapped = false
-        if !surface.overrideRedirect { setWmState(conn, atoms, surface, .withdrawn) }
+        if !surface.overrideRedirect {
+            unsafe setWmState(conn, atoms, surface, .withdrawn)
+        }
         if surface.routerWindowID != 0 { driver?.setMapped(windowID: surface.routerWindowID, mapped: false) }
-        if host.windowManager.activeXwaylandXID() == UInt64(ev.pointee.window) { clearFocus() }
+        if unsafe host.windowManager.activeXwaylandXID() == UInt64(ev.pointee.window) {
+            clearFocus()
+        }
         syncWindowNetState(surface)
     }
 
     private func onConfigureNotify(_ ev: UnsafeMutablePointer<xcb_configure_notify_event_t>) {
-        guard let surface = windowMap[ev.pointee.window] else { return }
-        surface.x = ev.pointee.x
-        surface.y = ev.pointee.y
-        surface.width = ev.pointee.width
-        surface.height = ev.pointee.height
+        guard let surface = unsafe windowMap[ev.pointee.window] else { return }
+        surface.x = unsafe ev.pointee.x
+        surface.y = unsafe ev.pointee.y
+        surface.width = unsafe ev.pointee.width
+        surface.height = unsafe ev.pointee.height
         // The compositor owns the paired window's geometry (the router driver's
         // reverse configure path drives moves/resizes); X-side ConfigureNotify only
         // updates the cached rect.
     }
 
     private func onConfigureRequest(_ ev: UnsafeMutablePointer<xcb_configure_request_event_t>) {
-        let e = ev.pointee
+        let e = unsafe ev.pointee
         let surfaceOpt = windowMap[e.window]
         let isPaired = (surfaceOpt?.routerWindowID ?? 0) != 0 && !(surfaceOpt?.overrideRedirect ?? true)
 
@@ -456,15 +480,15 @@ final class XwaylandXWM {
     }
 
     private func onPropertyNotify(_ ev: UnsafeMutablePointer<xcb_property_notify_event_t>) {
-        guard let surface = windowMap[ev.pointee.window] else { return }
-        refreshOne(conn, atoms, surface, ev.pointee.atom)
+        guard let surface = unsafe windowMap[ev.pointee.window] else { return }
+        unsafe refreshOne(conn, atoms, surface, ev.pointee.atom)
         if surface.routerWindowID != 0 { syncMetadata(surface.routerWindowID, surface) }
     }
 
     private func onClientMessage(_ ev: UnsafeMutablePointer<xcb_client_message_event_t>) {
-        let e = ev.pointee
+        let e = unsafe ev.pointee
         if e.type == atoms[.WL_SURFACE_SERIAL], e.format == 32 {
-            let d = e.data.data32
+            let d = unsafe e.data.data32
             let serial = (UInt64(d.1) << 32) | UInt64(d.0)
             onSurfaceSerial(e.window, serial)
             return
@@ -482,7 +506,7 @@ final class XwaylandXWM {
             return
         }
         if e.type == atoms[._NET_WM_STATE] {
-            handleNetWmState(ev)
+            unsafe handleNetWmState(ev)
             return
         }
     }
@@ -509,9 +533,11 @@ final class XwaylandXWM {
     }
 
     private func handleNetWmState(_ ev: UnsafeMutablePointer<xcb_client_message_event_t>) {
-        guard ev.pointee.format == 32 else { return }
-        guard let surface = windowMap[ev.pointee.window], surface.routerWindowID != 0 else { return }
-        let d = ev.pointee.data.data32
+        guard unsafe ev.pointee.format == 32 else { return }
+        guard let surface = unsafe windowMap[ev.pointee.window],
+            surface.routerWindowID != 0
+        else { return }
+        let d = unsafe ev.pointee.data.data32
         let stateMask = netStateMask(for: [d.1, d.2], atoms)
         let plan = host.windowManager.xwaylandHandleStateRequest(
             XwaylandStateRequest(
@@ -529,8 +555,8 @@ final class XwaylandXWM {
             driver?.activateWindow(windowID: surface.routerWindowID)
             setFocus(surface)
         }
-        writeNetWmStateMask(conn, atoms, surface, plan.netState)
-        _ = xcb_flush(conn)
+        unsafe writeNetWmStateMask(conn, atoms, surface, plan.netState)
+        _ = unsafe xcb_flush(conn)
     }
 
     // ── focus / close / state writeback ──────────────────────────────────────────
@@ -548,17 +574,20 @@ final class XwaylandXWM {
         if plan.actions & UInt32(xwaylandFocusDenied) != 0 {
             if plan.focusedX11Window != 0, plan.deniedSyncState != 0,
                 let focused = windowMap[xcb_window_t(truncatingIfNeeded: plan.focusedX11Window)] {
-                writeNetWmStateMask(conn, atoms, focused, XwaylandNetState(rawValue: plan.deniedSyncState))
-                _ = xcb_flush(conn)
+                unsafe writeNetWmStateMask(
+                    conn, atoms, focused,
+                    XwaylandNetState(rawValue: plan.deniedSyncState))
+                _ = unsafe xcb_flush(conn)
             }
             return
         }
         let inputFocusParent: UInt8 = 2
         if plan.actions & UInt32(xwaylandFocusClear) != 0 {
-            _ = xcb_set_input_focus(conn, 0, 0 /* XCB_NONE */, 0 /* XCB_CURRENT_TIME */)
+            _ = unsafe xcb_set_input_focus(
+                conn, 0, 0 /* XCB_NONE */, 0 /* XCB_CURRENT_TIME */)
         }
         if plan.actions & UInt32(xwaylandFocusSetInput) != 0, plan.focusedX11Window != 0 {
-            _ = xcb_set_input_focus(
+            _ = unsafe xcb_set_input_focus(
                 conn, inputFocusParent, xcb_window_t(truncatingIfNeeded: plan.focusedX11Window), 0)
         }
         if plan.actions & UInt32(xwaylandFocusTakeFocus) != 0, plan.focusedX11Window != 0 {
@@ -566,7 +595,7 @@ final class XwaylandXWM {
         }
         let active: [UInt32] = [UInt32(truncatingIfNeeded: plan.activeX11Window)]
         active.withUnsafeBytes { raw in
-            _ = xcb_change_property(
+            _ = unsafe xcb_change_property(
                 conn, UInt8(XCB_PROP_MODE_REPLACE.rawValue), rootWindow,
                 atoms[._NET_ACTIVE_WINDOW],
                 xcb_atom_t(XCB_ATOM_WINDOW.rawValue), 32, 1,
@@ -581,23 +610,24 @@ final class XwaylandXWM {
             syncWindowNetState(new)
         }
         refreshClientLists()
-        _ = xcb_flush(conn)
+        _ = unsafe xcb_flush(conn)
     }
 
     func closeWindow(_ surface: XwaylandSurface) {
         guard surface.routerWindowID != 0 else { return }
         switch host.windowManager.xwaylandClosePlan(windowID: surface.routerWindowID).action {
         case UInt32(xwaylandCloseDeleteWindow): sendDeleteWindow(surface.windowID)
-        case UInt32(xwaylandCloseDestroy): _ = xcb_kill_client(conn, surface.windowID)
+        case UInt32(xwaylandCloseDestroy):
+            _ = unsafe xcb_kill_client(conn, surface.windowID)
         default: break
         }
-        _ = xcb_flush(conn)
+        _ = unsafe xcb_flush(conn)
     }
 
     func syncWindowNetState(_ surface: XwaylandSurface) {
         guard surface.routerWindowID != 0 else { return }
         let mask = host.windowManager.xwaylandNetStateSnapshot(windowID: surface.routerWindowID)
-        writeNetWmStateMask(conn, atoms, surface, mask)
+        unsafe writeNetWmStateMask(conn, atoms, surface, mask)
     }
 
     // ── outbound configure (reverse crossing target) ─────────────────────────────
@@ -608,7 +638,8 @@ final class XwaylandXWM {
         ]
         let mask: UInt16 = 1 | 2 | 4 | 8  // X | Y | WIDTH | HEIGHT
         values.withUnsafeBytes { raw in
-            _ = xcb_configure_window(conn, window, mask, raw.baseAddress)
+            _ = unsafe xcb_configure_window(
+                conn, window, mask, raw.baseAddress)
         }
     }
 
@@ -624,7 +655,7 @@ final class XwaylandXWM {
             sendSyncRequest(surface.windowID, surface.pendingSyncValue)
         }
         configureWindowRaw(surface.windowID, x, y, w, h)
-        _ = xcb_flush(conn)
+        _ = unsafe xcb_flush(conn)
     }
 
     func configureWindowById(_ windowID: xcb_window_t, _ x: Int16, _ y: Int16, _ w: UInt16, _ h: UInt16) {
@@ -642,9 +673,11 @@ final class XwaylandXWM {
         ev.format = 32
         ev.window = window
         ev.type = type
-        ev.data.data32 = (d0, d1, d2, d3, 0)
+        unsafe ev.data.data32 = (d0, d1, d2, d3, 0)
         withUnsafeBytes(of: &ev) { raw in
-            _ = xcb_send_event(conn, 0, window, 0, raw.baseAddress!.assumingMemoryBound(to: CChar.self))
+            _ = unsafe xcb_send_event(
+                conn, 0, window, 0,
+                raw.baseAddress!.assumingMemoryBound(to: CChar.self))
         }
     }
 
@@ -735,7 +768,7 @@ final class XwaylandXWM {
 
     private func changeProperty8(window: xcb_window_t, property: xcb_atom_t, type: xcb_atom_t, bytes: [UInt8]) {
         bytes.withUnsafeBytes { raw in
-            _ = xcb_change_property(
+            _ = unsafe xcb_change_property(
                 conn, UInt8(XCB_PROP_MODE_REPLACE.rawValue), window, property, type, 8,
                 UInt32(bytes.count), raw.baseAddress)
         }
@@ -743,7 +776,7 @@ final class XwaylandXWM {
 
     private func writeCardinals(_ window: xcb_window_t, _ property: xcb_atom_t, _ type: xcb_atom_t, _ values: [UInt32]) {
         values.withUnsafeBytes { raw in
-            _ = xcb_change_property(
+            _ = unsafe xcb_change_property(
                 conn, UInt8(XCB_PROP_MODE_REPLACE.rawValue), window, property, type, 32,
                 UInt32(values.count), raw.baseAddress)
         }

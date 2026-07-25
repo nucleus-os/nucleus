@@ -12,7 +12,7 @@ import NucleusCompositorXcbC
 private let maxDisplay: UInt8 = 32
 
 @MainActor
-final class XwaylandDisplay {
+@safe final class XwaylandDisplay {
     let number: UInt8
     let lockPath: String
     let fsPath: String
@@ -34,18 +34,18 @@ final class XwaylandDisplay {
         while n < maxDisplay {
             defer { n += 1 }
             let lockPath = "/tmp/.X\(n)-lock"
-            let lockFd = tryCreateLock(lockPath)
+            let lockFd = unsafe tryCreateLock(lockPath)
             if lockFd < 0 { continue }
 
             let fsPath = "/tmp/.X11-unix/X\(n)"
-            _ = mkdir("/tmp/.X11-unix", 0o1777)
-            _ = unlink(fsPath)  // remove stale fs socket (lock held ⇒ safe)
+            _ = unsafe mkdir("/tmp/.X11-unix", 0o1777)
+            _ = unsafe unlink(fsPath)  // remove stale fs socket (lock held ⇒ safe)
 
-            guard let absFd = bindAbstract(fsPath) else {
-                close(lockFd); _ = unlink(lockPath); continue
+            guard let absFd = unsafe bindAbstract(fsPath) else {
+                close(lockFd); _ = unsafe unlink(lockPath); continue
             }
-            guard let fsFd = bindFilesystem(fsPath) else {
-                close(absFd); close(lockFd); _ = unlink(lockPath); continue
+            guard let fsFd = unsafe bindFilesystem(fsPath) else {
+                close(absFd); close(lockFd); _ = unsafe unlink(lockPath); continue
             }
             close(lockFd)  // lock file remains; fd not needed
             return XwaylandDisplay(number: n, lockPath: lockPath, fsPath: fsPath, abstractFd: absFd, fsFd: fsFd)
@@ -68,43 +68,43 @@ final class XwaylandDisplay {
         stopListening()
         if abstractFd >= 0 { close(abstractFd) }
         if fsFd >= 0 { close(fsFd) }
-        _ = unlink(fsPath)
-        _ = unlink(lockPath)
+        _ = unsafe unlink(fsPath)
+        _ = unsafe unlink(lockPath)
     }
 }
 
 /// Atomically claim /tmp/.X{n}-lock. Returns the fd on success, -1 if held by a live
 /// process, recovering from stale locks (ICCCM "%10d\n" PID format).
-private func tryCreateLock(_ path: String) -> Int32 {
+@unsafe private func tryCreateLock(_ path: String) -> Int32 {
     while true {
-        let fd = nucleus_open3(path, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0o444)
+        let fd = unsafe nucleus_open3(path, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0o444)
         if fd >= 0 {
             // ICCCM lock format: 10-byte right-justified decimal PID + '\n'.
             let pidStr = String(getpid())
             let pad = pidStr.count < 10 ? String(repeating: " ", count: 10 - pidStr.count) : ""
             let bytes = Array((pad + pidStr + "\n").utf8)
-            let written = bytes.withUnsafeBytes { write(fd, $0.baseAddress, $0.count) }
+            let written = bytes.withUnsafeBytes { unsafe write(fd, $0.baseAddress, $0.count) }
             if written != bytes.count {
-                close(fd); _ = unlink(path); return -1
+                close(fd); _ = unsafe unlink(path); return -1
             }
             return fd
         }
         // EEXIST: probe the holder.
-        let existing = nucleus_open2(path, O_RDONLY | O_CLOEXEC)
+        let existing = unsafe nucleus_open2(path, O_RDONLY | O_CLOEXEC)
         if existing < 0 { return -1 }
         var buf = [UInt8](repeating: 0, count: 16)
-        let n = buf.withUnsafeMutableBytes { read(existing, $0.baseAddress, $0.count) }
+        let n = buf.withUnsafeMutableBytes { unsafe read(existing, $0.baseAddress, $0.count) }
         close(existing)
         if n <= 0 { return -1 }
         let text = String(decoding: buf[0..<Int(n)], as: UTF8.self)
         let digits = String(text.filter { $0.isNumber })
         guard let pid = Int32(digits) else { return -1 }
         if kill(pid, 0) == 0 { return -1 }  // alive ⇒ held
-        if unlink(path) != 0 { return -1 }  // stale ⇒ retry
+        if unsafe unlink(path) != 0 { return -1 }  // stale ⇒ retry
     }
 }
 
-private func bindAbstract(_ fsPath: String) -> Int32? {
+@unsafe private func bindAbstract(_ fsPath: String) -> Int32? {
     let fd = socket(AF_UNIX, Int32(SOCK_STREAM.rawValue) | Int32(SOCK_CLOEXEC.rawValue), 0)
     if fd < 0 { return nil }
     let pathBytes = Array(fsPath.utf8)
@@ -113,17 +113,19 @@ private func bindAbstract(_ fsPath: String) -> Int32? {
     // Abstract namespace: leading NUL then the path verbatim (offset 1 into sun_path).
     let pathOffset = MemoryLayout<sockaddr_un>.offset(of: \.sun_path)!
     withUnsafeMutableBytes(of: &addr) { raw in
-        for (i, b) in pathBytes.enumerated() { raw[pathOffset + 1 + i] = b }
+        for (i, b) in pathBytes.enumerated() { unsafe raw[pathOffset + 1 + i] = b }
     }
     let addrLen = socklen_t(pathOffset + 1 + pathBytes.count)
     let ok = withUnsafePointer(to: &addr) { p in
-        p.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, addrLen) == 0 }
+        unsafe p.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+            unsafe bind(fd, $0, addrLen) == 0
+        }
     }
     if !ok || listen(fd, 1) != 0 { close(fd); return nil }
     return fd
 }
 
-private func bindFilesystem(_ fsPath: String) -> Int32? {
+@unsafe private func bindFilesystem(_ fsPath: String) -> Int32? {
     let fd = socket(AF_UNIX, Int32(SOCK_STREAM.rawValue) | Int32(SOCK_CLOEXEC.rawValue), 0)
     if fd < 0 { return nil }
     let pathBytes = Array(fsPath.utf8)
@@ -131,11 +133,11 @@ private func bindFilesystem(_ fsPath: String) -> Int32? {
     addr.sun_family = sa_family_t(AF_UNIX)
     let pathOffset = MemoryLayout<sockaddr_un>.offset(of: \.sun_path)!
     withUnsafeMutableBytes(of: &addr) { raw in
-        for (i, b) in pathBytes.enumerated() { raw[pathOffset + i] = b }
+        for (i, b) in pathBytes.enumerated() { unsafe raw[pathOffset + i] = b }
     }
     let ok = withUnsafePointer(to: &addr) { p in
-        p.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-            bind(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) == 0
+        unsafe p.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+            unsafe bind(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) == 0
         }
     }
     if !ok || listen(fd, 1) != 0 { close(fd); return nil }

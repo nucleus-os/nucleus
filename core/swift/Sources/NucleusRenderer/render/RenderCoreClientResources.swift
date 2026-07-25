@@ -32,7 +32,7 @@ extension RenderCore {
         func fail(_ stage: String) -> Bool {
             #if canImport(Glibc)
             let line = "surface-texture: failed stage=\(stage) id=\(iosurfaceID) size=\(width)x\(height) format=\(drmFormat) modifier=\(modifier) planes=\(planes.count)\n"
-            line.withCString { _ = write(STDERR_FILENO, $0, strlen($0)) }
+            line.withCString { _ = unsafe write(STDERR_FILENO, $0, strlen($0)) }
             #endif
             return false
         }
@@ -42,7 +42,7 @@ extension RenderCore {
         }
         let acquireSemaphore: ClientAcquireSemaphore?
         if acquireFenceFd >= 0 {
-            guard let importedSemaphore = ClientAcquireSemaphore(
+            guard let importedSemaphore = unsafe ClientAcquireSemaphore(
                 device: deviceHandle, dispatch: deviceDispatch,
                 consumingSyncFd: acquireFenceFd)
             else { return fail("acquire-semaphore-import") }
@@ -77,40 +77,52 @@ extension RenderCore {
         let descriptor = DmaBufImageDescriptor(
             fd: importFd, width: width, height: height, drmFormat: drmFormat, modifier: modifier,
             planes: importPlanes, usage: DmaBufImageDescriptor.sampledUsage)
-        guard let imported = importDmaBufImage(
+        guard let imported = unsafe importDmaBufImage(
             device: deviceHandle, dispatch: deviceDispatch, descriptor: descriptor
         ) else {
             return fail("vulkan-import")
         }
 
-        let params = ScanoutImageParams(
+        let params = unsafe ScanoutImageParams(
             image: imported.handle, memory: nil, allocSize: 0,
             width: Int32(width), height: Int32(height), format: vulkanFormatForDrm(drmFormat),
             tiling: VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT, initialLayout: VK_IMAGE_LAYOUT_UNDEFINED,
             usageFlags: DmaBufImageDescriptor.sampledUsage, queueFamilyIndex: graphicsFamily,
             hasAlpha: true)
-        guard let image = driver.registry.wrapBackendImage(
+        guard let image = unsafe driver.registry.wrapBackendImage(
             recorder: driver.recorder, descriptor: ScanoutSurface.descriptor(params)
         ) else {
             // The imported VkImage drops here (VkOwned deinit) — wrap failed.
             return fail("graphite-wrap")
         }
 
-        // Hold the backing alive for the registry entry. A replaced backing stays
-        // retired until the asynchronous presentation backend reports completion.
-        if let old = importedSurfaceImages[iosurfaceID] {
-            retiredSurfaceImages.append((lastSubmittedSerial, old, iosurfaceID))
+        // Client commits, frame recording, and submission are all MainActor
+        // serialized. The old backing's last possible use is therefore the most
+        // recent submission, not a hypothetical future frame. Retiring at
+        // lastSubmittedSerial also guarantees release when replacement is the last
+        // commit and no later frame is submitted.
+        if let old = importedSurfaceImages[iosurfaceID], let image = unsafe old.take() {
+            let retirement = ClientResourceRetirement.atMutation(
+                lastSubmittedSerial: lastSubmittedSerial)
+            unsafe retiredSurfaceImages.append(RetiredSurfaceImage(
+                serial: retirement.submissionSerial,
+                image: image,
+                releaseID: iosurfaceID))
         }
-        importedSurfaceImages[iosurfaceID] = VkOwnedImageBox(consuming: imported)
-        driver.registry.register(
+        importedSurfaceImages[iosurfaceID] = unsafe VkOwnedImageBox(consuming: imported)
+        unsafe driver.registry.register(
             key: .clientSurface(iosurfaceID), image: image,
             width: Int32(width), height: Int32(height), contentRevision: contentGeneration)
         pendingClientAcquireSemaphores[iosurfaceID] = acquireSemaphore
         _ = pendingShmUploads.remove(iosurfaceID)
         stagedShmUploads[iosurfaceID] = nil
         clientUploadStats.pendingBytes = pendingShmUploads.byteCount
-        if let old = clientUploadTextures.removeValue(forKey: iosurfaceID) {
-            retiredClientUploadTextures.append((lastSubmittedSerial, old))
+        if let old = unsafe clientUploadTextures.removeValue(forKey: iosurfaceID) {
+            let retirement = ClientResourceRetirement.atMutation(
+                lastSubmittedSerial: lastSubmittedSerial)
+            unsafe retiredClientUploadTextures.append((
+                retirement.submissionSerial,
+                old))
         }
         clientCommitInstants[iosurfaceID] = commitInstant
         return true
@@ -169,7 +181,7 @@ extension RenderCore {
             modifier: modifier,
             planes: importPlanes,
             usage: DmaBufImageDescriptor.sampledUsage)
-        return importDmaBufImage(
+        return unsafe importDmaBufImage(
             device: deviceHandle,
             dispatch: deviceDispatch,
             descriptor: descriptor) != nil
@@ -238,7 +250,7 @@ extension RenderCore {
         iosurfaceID: UInt64,
         driver: FrameDriver
     ) {
-        guard let texture = driver.stageClientUpload(
+        guard let texture = unsafe driver.stageClientUpload(
             replacing: clientUploadTextures[iosurfaceID],
             pixels: pending.pixels,
             width: pending.width,
@@ -247,12 +259,12 @@ extension RenderCore {
             clientUploadStats.failed &+= 1
             return
         }
-        let image = texture.image()
-        guard image.isValid() else {
+        let image = unsafe texture.image()
+        guard unsafe image.isValid() else {
             clientUploadStats.failed &+= 1
             return
         }
-        stagedShmUploads[iosurfaceID] = StagedShmUpload(
+        stagedShmUploads[iosurfaceID] = unsafe StagedShmUpload(
             pending: pending,
             texture: texture,
             image: image)
@@ -262,22 +274,22 @@ extension RenderCore {
         for (iosurfaceID, staged) in stagedShmUploads {
             // Switching from DMA-BUF to SHM retires the borrowed image only
             // after the recording containing the upload was accepted.
-            if let old = importedSurfaceImages[iosurfaceID] {
-                retiredSurfaceImages.append((
-                    submissionSerial,
-                    old,
-                    iosurfaceID))
+            if let old = importedSurfaceImages[iosurfaceID], let image = unsafe old.take() {
+                unsafe retiredSurfaceImages.append(RetiredSurfaceImage(
+                    serial: submissionSerial,
+                    image: image,
+                    releaseID: iosurfaceID))
             }
             importedSurfaceImages[iosurfaceID] = nil
-            if let old = clientUploadTextures.updateValue(
+            if let old = unsafe clientUploadTextures.updateValue(
                 staged.texture,
                 forKey: iosurfaceID)
             {
-                retiredClientUploadTextures.append((
+                unsafe retiredClientUploadTextures.append((
                     submissionSerial,
                     old))
             }
-            frameDriver?.registry.register(
+            unsafe frameDriver?.registry.register(
                 key: .clientSurface(iosurfaceID),
                 image: staged.image,
                 width: staged.pending.width,
@@ -309,11 +321,20 @@ extension RenderCore {
         _ = pendingShmUploads.remove(iosurfaceID)
         stagedShmUploads[iosurfaceID] = nil
         clientUploadStats.pendingBytes = pendingShmUploads.byteCount
-        if let old = clientUploadTextures.removeValue(forKey: iosurfaceID) {
-            retiredClientUploadTextures.append((lastSubmittedSerial, old))
+        if let old = unsafe clientUploadTextures.removeValue(forKey: iosurfaceID) {
+            let retirement = ClientResourceRetirement.atMutation(
+                lastSubmittedSerial: lastSubmittedSerial)
+            unsafe retiredClientUploadTextures.append((
+                retirement.submissionSerial,
+                old))
         }
-        if let old = importedSurfaceImages[iosurfaceID] {
-            retiredSurfaceImages.append((lastSubmittedSerial, old, iosurfaceID))
+        if let old = importedSurfaceImages[iosurfaceID], let image = unsafe old.take() {
+            let retirement = ClientResourceRetirement.atMutation(
+                lastSubmittedSerial: lastSubmittedSerial)
+            unsafe retiredSurfaceImages.append(RetiredSurfaceImage(
+                serial: retirement.submissionSerial,
+                image: image,
+                releaseID: iosurfaceID))
         }
         importedSurfaceImages[iosurfaceID] = nil
     }

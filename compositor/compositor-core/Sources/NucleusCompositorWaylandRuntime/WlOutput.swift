@@ -9,6 +9,7 @@
 
 import WaylandServerC
 import WaylandServer
+import WaylandServerDispatch
 import NucleusRenderModel
 
 /// A snapshot of one output's advertised state. Fields match wl_output's events.
@@ -45,18 +46,31 @@ struct OutputInfo {
 /// so a resource already handed to a client stays safe while the global is being
 /// withdrawn. On destruction it drops the resource from the output's bound-resource
 /// list so `wl_surface.enter`/`leave` never references a freed resource.
-final class WlOutputBinding {
+@MainActor
+@safe final class WlOutputBinding {
     let output: WlOutput
-    var resource: UnsafeMutablePointer<wl_resource>?
-    init(_ output: WlOutput) { self.output = output }
-    deinit {
-        if let resource { output.removeResource(resource) }
+    let resource: WaylandResourceHandle<WlOutputServer>
+    init(
+        resource: WaylandResourceHandle<WlOutputServer>,
+        output: WlOutput
+    ) {
+        self.resource = resource
+        self.output = output
+    }
+    isolated deinit {
+        output.removeResource(resource)
     }
 }
 
-final class WlOutput {
+extension WaylandBorrowedObject where Interface == WlOutputServer {
+    var output: WlOutput? {
+        owner(as: WlOutputBinding.self)?.output
+    }
+}
+
+@MainActor
+@safe final class WlOutput {
     private(set) var info: OutputInfo
-    private let vtable: UnsafeMutableRawPointer
     private let globalState = OutputGlobalState()
 
     /// The DisplayID this output advertises. Surfaces report their overlapping
@@ -67,17 +81,19 @@ final class WlOutput {
     /// reference one of these for the surface's own client, so the list is kept in
     /// sync as clients bind (append in `bind`) and disconnect (removed by the
     /// binding's deinit).
-    var resources: [UnsafeMutablePointer<wl_resource>] {
+    var resources: [WaylandResourceHandle<WlOutputServer>] {
         globalState.resources
     }
 
-    func removeResource(_ resource: UnsafeMutablePointer<wl_resource>) {
+    func removeResource(_ resource: WaylandResourceHandle<WlOutputServer>) {
         globalState.removeResource(resource)
     }
 
     /// The bound wl_output resources belonging to one client (a client may bind the
     /// output more than once; `wl_surface.enter` is sent to each, as wlroots does).
-    func resources(forClient client: OpaquePointer?) -> [UnsafeMutablePointer<wl_resource>] {
+    func resources(
+        forClient client: WaylandClientID?
+    ) -> [WaylandResourceHandle<WlOutputServer>] {
         globalState.resources(forClient: client)
     }
 
@@ -94,33 +110,36 @@ final class WlOutput {
     }
 
     /// Resolve the WlOutput backing a wl_output resource, or nil.
-    static func from(_ resource: UnsafeMutablePointer<wl_resource>?) -> WlOutput? {
-        guard let resource, let b = WaylandResource.owner(of: resource, as: WlOutputBinding.self)
+    @unsafe static func from(
+        _ resource: UnsafeMutablePointer<wl_resource>?
+    ) -> WlOutput? {
+        guard let resource = unsafe resource,
+              let b = unsafe WaylandResource.owner(
+                of: resource, as: WlOutputBinding.self)
         else { return nil }
         return b.output
     }
 
     init(info: OutputInfo) {
         self.info = info
-        let size = MemoryLayout<swift_wayland_wl_output_requests>.stride
-        let raw = UnsafeMutableRawPointer.allocate(
-            byteCount: size, alignment: MemoryLayout<swift_wayland_wl_output_requests>.alignment
-        )
-        raw.initializeMemory(as: UInt8.self, repeating: 0, count: size)
-        let vt = raw.bindMemory(to: swift_wayland_wl_output_requests.self, capacity: 1)
-        // release (v3+) is a destructor request: libwayland will not free the
-        // resource on its own, so the handler must.
-        vt.pointee.release = Self.release
-        self.vtable = raw
     }
 
     @discardableResult
     func register(in router: NucleusWaylandRouter) -> Bool {
-        globalState.install(router.addGlobal(
-            interface: swift_wayland_iface_wl_output(),
-            version: 4,
-            impl: self,
-            bind: Self.bind))
+        globalState.install(
+            router.addGlobal(
+                WlOutputServer.global(
+                    implementation: self,
+                    advertisedVersion: 4,
+                    owner: { output, handle in
+                        WlOutputBinding(
+                            resource: handle,
+                            output: output)
+                    },
+                    installed: { output, _, handle in
+                        output.globalState.addResource(handle)
+                        output.sendState(to: handle)
+                    })))
     }
 
     /// Stop advertising this output. Existing wl_output resources remain valid
@@ -138,10 +157,9 @@ final class WlOutput {
         for xdg in globalState.liveXdgOutputs() {
             xdg.sendDescription()
         }
+        let resources = resources
         for resource in resources {
-            sendState(
-                to: resource,
-                version: UInt32(wl_resource_get_version(resource)))
+            sendState(to: resource)
         }
     }
 
@@ -149,51 +167,33 @@ final class WlOutput {
         globalState.registerXdgOutput(output)
     }
 
-    private static let bind: @convention(c) (
-        OpaquePointer?, UnsafeMutableRawPointer?, UInt32, UInt32
-    ) -> Void = { client, data, version, id in
-        guard let client, let me = NucleusWaylandRouter.impl(data, as: WlOutput.self) else {
-            return
-        }
-        let binding = WlOutputBinding(me)
-        guard let resource = WaylandResource.create(
-            client: client, interface: swift_wayland_iface_wl_output(),
-            version: Int32(version), id: id, vtable: UnsafeRawPointer(me.vtable),
-            owner: binding
-        ) else { return }
-        binding.resource = resource
-        me.globalState.addResource(resource)
-        me.sendState(to: resource, version: version)
-    }
-
-    private static let release: @convention(c) (
-        OpaquePointer?, UnsafeMutablePointer<wl_resource>?
-    ) -> Void = { _, resource in
-        if let resource { wl_resource_destroy(resource) }
-    }
-
     /// Emit the full advertisement to one freshly bound resource. Event set is
     /// version-gated exactly as wl_output specifies.
-    private func sendState(to resource: UnsafeMutablePointer<wl_resource>, version: UInt32) {
-        wl_output_send_geometry(
-            resource, info.x, info.y, info.physicalWidthMm, info.physicalHeightMm,
-            1 /* WL_OUTPUT_SUBPIXEL_NONE */, info.make, info.model,
-            0 /* WL_OUTPUT_TRANSFORM_NORMAL */
-        )
-        wl_output_send_mode(
-            resource,
-            UInt32(0x1 | 0x2) /* WL_OUTPUT_MODE_CURRENT | WL_OUTPUT_MODE_PREFERRED */,
-            info.pixelWidth, info.pixelHeight, info.refreshMhz
-        )
-        if version >= 2 { wl_output_send_scale(resource, info.scale) }
-        if version >= 4 {
-            wl_output_send_name(resource, info.name)
-            wl_output_send_description(resource, info.description)
+    private func sendState(
+        to resource: WaylandResourceHandle<WlOutputServer>
+    ) {
+        resource.sendGeometry(
+            x: info.x, y: info.y,
+            physical_width: info.physicalWidthMm,
+            physical_height: info.physicalHeightMm,
+            subpixel: .none,
+            make: info.make,
+            model: info.model,
+            transform: .normal)
+        resource.sendMode(
+            flags: [.current, .preferred],
+            width: info.pixelWidth,
+            height: info.pixelHeight,
+            refresh: info.refreshMhz)
+        if resource.supportsScale {
+            resource.sendScale(factor: info.scale)
         }
-        if version >= 2 {
-            wl_output_send_done(resource)
+        if resource.supportsName {
+            resource.sendName(name: info.name)
+            resource.sendDescription(description: info.description)
+        }
+        if resource.supportsDone {
+            resource.sendDone()
         }
     }
-
-    deinit { vtable.deallocate() }
 }

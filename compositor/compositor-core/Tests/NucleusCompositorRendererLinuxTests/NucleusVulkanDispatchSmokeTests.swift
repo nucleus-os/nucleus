@@ -12,50 +12,50 @@ import Vulkan
     @Test func gpuLoader_baseDispatchAndGlobals() throws {
         // Base dispatch table loads from the linked loader; core globals resolve.
         let base = VK.loadBaseDispatch()
-        let enumerateVersion = try requireValue(
+        let enumerateVersion = try unsafe requireValue(
             base.vkEnumerateInstanceVersion,
             "Vulkan loader is missing vkEnumerateInstanceVersion")
-        _ = try requireValue(
+        _ = try unsafe requireValue(
             base.vkCreateInstance,
             "Vulkan loader is missing vkCreateInstance")
-        let enumerateExtensions = try requireValue(
+        let enumerateExtensions = try unsafe requireValue(
             base.vkEnumerateInstanceExtensionProperties,
             "Vulkan loader is missing vkEnumerateInstanceExtensionProperties")
-        let enumerateLayers = try requireValue(
+        let enumerateLayers = try unsafe requireValue(
             base.vkEnumerateInstanceLayerProperties,
             "Vulkan loader is missing vkEnumerateInstanceLayerProperties")
 
         // Typed call through the dispatch table.
         var version: UInt32 = 0
-        let vr = enumerateVersion(&version)
+        let vr = unsafe enumerateVersion(&version)
         #expect(vr == VK_SUCCESS, "enumerate-version-result")
         #expect(version != 0, "enumerate-version-nonzero")
         let major = (version >> 22) & 0x7F
         #expect(major >= 1, "version-major-ge-1")
 
         // Checked enumeration helper over the two-call protocol.
-        let exts = VkEnumerate.array { count, out in
-            enumerateExtensions(nil, count, out)
+        let exts = unsafe VkEnumerate.array { count, out in
+            unsafe enumerateExtensions(nil, count, out)
         }
         let extensions = try requireValue(
             exts, "Vulkan instance-extension enumeration failed")
         // Each VkExtensionProperties carries a NUL-terminated C name array.
         for ext in extensions.prefix(1) {
             let name = withUnsafeBytes(of: ext.extensionName) { raw -> String in
-                String(cString: raw.bindMemory(to: CChar.self).baseAddress!)
+                unsafe String(cString: raw.bindMemory(to: CChar.self).baseAddress!)
             }
             #expect(!name.isEmpty && name.hasPrefix("VK_"), "ext-name-shape")
         }
 
         // Layer enumeration via the same helper (commonly empty).
-        let layers = VkEnumerate.array { count, out in
-            enumerateLayers(count, out)
+        let layers = unsafe VkEnumerate.array { count, out in
+            unsafe enumerateLayers(count, out)
         }
         _ = try requireValue(layers, "Vulkan layer enumeration failed")
 
         #expect(throws: VulkanLaneTestFailure.self) {
             _ = try requireValue(
-                vkGetInstanceProcAddr(
+                unsafe vkGetInstanceProcAddr(
                     nil, "vkNucleusDeliberatelyMissingLoaderSymbol"),
                 "Vulkan loader did not resolve the deliberately missing symbol")
         }

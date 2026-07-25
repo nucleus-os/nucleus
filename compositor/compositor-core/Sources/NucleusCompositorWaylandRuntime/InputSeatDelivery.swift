@@ -9,6 +9,7 @@
 // constructed. Single-threaded on the compositor main actor.
 
 import WaylandServerC
+import WaylandServer
 
 @MainActor
 final class SeatDelivery {
@@ -23,9 +24,11 @@ final class SeatDelivery {
         host.runtime?.compositor.surface(id: UInt32(truncatingIfNeeded: id))
     }
 
-    private func clientKey(_ surface: WlSurface) -> UInt? {
-        guard let sres = surface.resource, let c = wl_resource_get_client(sres) else { return nil }
-        return WlSeat.clientKey(c)
+    private func clientKey(_ surface: WlSurface) -> WaylandClientID? {
+        guard let sres = unsafe surface.resource,
+              let c = unsafe wl_resource_get_client(sres)
+        else { return nil }
+        return unsafe WlSeat.clientKey(c)
     }
 
     private func pointerDeliverySurface(_ id: UInt64) -> WlSurface? {

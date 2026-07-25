@@ -100,7 +100,9 @@ func reactorReadinessBacklogWorkload(
             pipes.reserveCapacity(descriptorCount)
             for _ in 0..<descriptorCount {
                 var descriptors = [Int32](repeating: -1, count: 2)
-                guard nucleus_linux_reactor_create_pipe(&descriptors) == 0 else {
+                guard unsafe nucleus_linux_reactor_create_pipe(
+                    &descriptors) == 0
+                else {
                     closePipes(pipes)
                     throw BenchmarkFailure.semantic(
                         "failed to create reactor benchmark pipe")
@@ -223,11 +225,15 @@ func reactorCancellationChurnWorkload(
             precondition(replacementCount > 1)
             var firstPipe = [Int32](repeating: -1, count: 2)
             var secondPipe = [Int32](repeating: -1, count: 2)
-            guard nucleus_linux_reactor_create_pipe(&firstPipe) == 0 else {
+            guard unsafe nucleus_linux_reactor_create_pipe(
+                &firstPipe) == 0
+            else {
                 throw BenchmarkFailure.semantic(
                     "failed to create first cancellation benchmark pipe")
             }
-            guard nucleus_linux_reactor_create_pipe(&secondPipe) == 0 else {
+            guard unsafe nucleus_linux_reactor_create_pipe(
+                &secondPipe) == 0
+            else {
                 closePipes([firstPipe])
                 throw BenchmarkFailure.semantic(
                     "failed to create second cancellation benchmark pipe")
@@ -303,7 +309,8 @@ private func observedResourceMeasurements(
 private func signalPipe(_ descriptor: Int32) throws {
     var value: UInt8 = 1
     let written = withUnsafeBytes(of: &value) { bytes in
-        Glibc.write(descriptor, bytes.baseAddress, bytes.count)
+        unsafe Glibc.write(
+            descriptor, bytes.baseAddress, bytes.count)
     }
     guard written == MemoryLayout<UInt8>.size else {
         throw BenchmarkFailure.semantic(
@@ -314,7 +321,8 @@ private func signalPipe(_ descriptor: Int32) throws {
 private func drainPipe(_ descriptor: Int32) throws {
     var value: UInt8 = 0
     let readCount = withUnsafeMutableBytes(of: &value) { bytes in
-        Glibc.read(descriptor, bytes.baseAddress, bytes.count)
+        unsafe Glibc.read(
+            descriptor, bytes.baseAddress, bytes.count)
     }
     guard readCount == MemoryLayout<UInt8>.size else {
         throw BenchmarkFailure.semantic(

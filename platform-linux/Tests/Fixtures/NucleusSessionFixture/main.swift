@@ -14,7 +14,7 @@ private func writeText(_ value: String, to path: String) throws {
 }
 
 private func waitForFile(_ path: String) {
-    while access(path, F_OK) != 0 { usleep(10_000) }
+    while unsafe access(path, F_OK) != 0 { usleep(10_000) }
 }
 
 private func descriptor(
@@ -31,9 +31,10 @@ private func descriptor(
 private func run() throws -> Int32 {
     let role = try SessionProcessRole.inherited()
     let configuration = try SessionConfiguration.inherited()
-    guard let directoryValue = getenv("NUCLEUS_SESSION_FIXTURE_DIRECTORY")
+    guard let directoryValue = unsafe getenv(
+        "NUCLEUS_SESSION_FIXTURE_DIRECTORY")
     else { throw FixtureFailure.missingDirectory }
-    let directory = String(cString: directoryValue)
+    let directory = unsafe String(cString: directoryValue)
     let roleName = role == .compositor ? "compositor" : "shell"
     try writeText(
         configuration.hexEncoded,
@@ -44,8 +45,12 @@ private func run() throws -> Int32 {
 
     let modeName = "NUCLEUS_SESSION_FIXTURE_"
         + roleName.uppercased() + "_MODE"
-    let mode = getenv(modeName).map { String(cString: $0) }
-        ?? "ready-wait"
+    let mode: String
+    if let modeValue = unsafe getenv(modeName) {
+        mode = unsafe String(cString: modeValue)
+    } else {
+        mode = "ready-wait"
+    }
     if mode == "wait-before-ready" {
         waitForFile(directory + "/release-\(roleName)")
     }
@@ -56,7 +61,7 @@ private func run() throws -> Int32 {
             following: SessionReadinessReporter.descriptorArgument,
             in: CommandLine.arguments)
         var bytes = [UInt8](repeating: 0xa5, count: 12)
-        _ = write(readinessDescriptor, &bytes, bytes.count)
+        _ = unsafe write(readinessDescriptor, &bytes, bytes.count)
         _ = close(readinessDescriptor)
         return 0
     }
@@ -81,6 +86,8 @@ do {
     exit(try run())
 } catch {
     let line = "nucleus-session-fixture: \(error)\n"
-    _ = line.withCString { write(STDERR_FILENO, $0, strlen($0)) }
+    _ = line.withCString {
+        unsafe write(STDERR_FILENO, $0, strlen($0))
+    }
     exit(70)
 }

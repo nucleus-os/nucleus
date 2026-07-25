@@ -13,9 +13,9 @@ public import VulkanC
 /// Cast a loader-returned void function pointer to a typed PFN. Returns nil
 /// when the command is unavailable (extension not enabled / not present).
 @inline(always)
-func vkLoad<T>(_ p: PFN_vkVoidFunction?, as type: T.Type) -> T? {
+@unsafe func vkLoad<T>(_ p: PFN_vkVoidFunction?, as type: T.Type) -> T? {
     guard let p else { return nil }
-    return unsafeBitCast(p, to: T.self)
+    return unsafe unsafeBitCast(p, to: T.self)
 }
 
 
@@ -139,11 +139,19 @@ final class Emitter {
     private func renderHandle(_ vkName: String, isDispatchable: Bool) {
         let typeName = self.typeName(vkName)
         if isDispatchable {
-            out += "    public struct \(typeName): Equatable, Hashable, @unchecked Sendable {\n"
-            out += "        public var raw: OpaquePointer?\n"
-            out += "        public init(_ raw: OpaquePointer? = nil) { self.raw = raw }\n"
-            out += "        public static let null = \(typeName)(nil)\n"
-            out += "        public var isNull: Bool { raw == nil }\n"
+            out += "    /// An immutable opaque identity. The wrapper never dereferences the handle;\n"
+            out += "    /// Vulkan operations remain unsafe and require the caller to uphold handle lifetime.\n"
+            out += "    @safe public struct \(typeName): Equatable, Hashable, @unchecked Sendable {\n"
+            out += "        public let raw: OpaquePointer?\n"
+            out += "        public init(_ raw: OpaquePointer? = nil) { unsafe self.raw = raw }\n"
+            out += "        public static let null = unsafe \(typeName)(nil)\n"
+            out += "        public var isNull: Bool { unsafe raw == nil }\n"
+            out += "        public static func == (lhs: Self, rhs: Self) -> Bool {\n"
+            out += "            unsafe lhs.raw == rhs.raw\n"
+            out += "        }\n"
+            out += "        public func hash(into hasher: inout Hasher) {\n"
+            out += "            unsafe hasher.combine(raw)\n"
+            out += "        }\n"
             out += "    }\n"
         } else {
             out += "    public struct \(typeName): Equatable, Hashable, Sendable {\n"
@@ -220,7 +228,9 @@ final class Emitter {
         ]
 
         for (lvl, typeName) in levels {
-            out += "    public struct \(typeName): @unchecked Sendable {\n"
+            out += "    /// Immutable process-loader function pointers. Sharing the table does not invoke\n"
+            out += "    /// Vulkan; each invocation remains unsafe and enforces Vulkan's synchronization rules.\n"
+            out += "    @safe public struct \(typeName): @unchecked Sendable {\n"
 
             var seen = Set<String>()
             if lvl == .base {
@@ -237,7 +247,7 @@ final class Emitter {
 
             switch lvl {
             case .base:
-                out += "        public init(loader: PFN_vkGetInstanceProcAddr) {\n            self.vkGetInstanceProcAddr = loader\n"
+                out += "        public init(loader: PFN_vkGetInstanceProcAddr) {\n            unsafe self.vkGetInstanceProcAddr = loader\n"
             case .instance:
                 out += "        public init(_ handle: VkInstance?, loader: PFN_vkGetInstanceProcAddr) {\n"
             case .device:
@@ -251,7 +261,7 @@ final class Emitter {
                 if !available.contains(decl.name) { continue }
                 if classify(decl.name, firstParamTypeName: firstParam) != lvl { continue }
                 if !seen.insert(decl.name).inserted { continue }
-                out += "            self.\(decl.name) = vkLoad(loader(\(loaderArg), \"\(decl.name)\"), as: PFN_\(decl.name).self)\n"
+                out += "            unsafe self.\(decl.name) = vkLoad(loader(\(loaderArg), \"\(decl.name)\"), as: PFN_\(decl.name).self)\n"
             }
             out += "        }\n    }\n"
         }

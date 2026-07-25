@@ -21,13 +21,14 @@ struct DataControlClientServerTests {
             limits: ShellDataTransferLimits = ShellDataTransferLimits()
         ) throws {
             var sockets = [Int32](repeating: -1, count: 2)
-            try #require(socketpair(
+            let socketResult = unsafe socketpair(
                 AF_UNIX,
                 Int32(SOCK_STREAM.rawValue)
                     | O_NONBLOCK
                     | Int32(SOCK_CLOEXEC.rawValue),
                 0,
-                &sockets) == 0)
+                &sockets)
+            try #require(socketResult == 0)
             guard runtime.attachClient(fileDescriptor: sockets[0]) else {
                 close(sockets[0])
                 close(sockets[1])
@@ -242,7 +243,7 @@ struct DataControlClientServerTests {
                 fd: descriptor.fileDescriptor,
                 events: descriptor.events,
                 revents: 0)
-            let ready = poll(&pollDescriptor, 1, 0)
+            let ready = unsafe poll(&pollDescriptor, 1, 0)
             guard ready > 0 else { continue }
             pasteboard.processPollResult(
                 token: descriptor.token,

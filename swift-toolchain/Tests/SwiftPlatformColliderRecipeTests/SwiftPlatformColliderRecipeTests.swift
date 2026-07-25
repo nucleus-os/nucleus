@@ -72,6 +72,8 @@ import Testing
             environment: ["PATH": "/usr/bin:/bin"]))
     let ordered = try TaskGraph(taskSet.tasks).orderedTasks(
         selecting: taskSet.selected).map(\.id.rawValue)
+    let tasks = Dictionary(
+        uniqueKeysWithValues: taskSet.tasks.map { ($0.id.rawValue, $0) })
     func index(_ id: String) -> Int {
         ordered.firstIndex(of: id)!
     }
@@ -101,4 +103,55 @@ import Testing
         < index("toolchain.activate-generation"))
     #expect(index("toolchain.activate-generation")
         < index("toolchain.publish-sdk-discovery"))
+
+    let upstreamArchive = FilePath(
+        "/source/.nucleus-upstream-toolchain.tar.gz")
+    let installedDriver = FilePath(
+        "/platform/candidate/toolchain/usr/bin/swift-driver")
+    #expect(tasks["toolchain.host-build"]?.outputs == [
+        OutputDeclaration(
+            path: upstreamArchive,
+            validation: .regularFile),
+    ])
+    #expect(tasks["toolchain.host-assemble"]?.inputs.contains(
+        .dependencyOutput(upstreamArchive)) == true)
+    #expect(tasks["toolchain.host-assemble"]?.outputs == [
+        OutputDeclaration(
+            path: installedDriver,
+            validation: .executableFile),
+    ])
+    #expect(tasks["toolchain.host-validate"]?.inputs.contains(
+        .dependencyOutput(installedDriver)) == true)
+    #expect(tasks["toolchain.android-sdk-build-aarch64"]?.inputs.contains(
+        .dependencyOutput(installedDriver)) == true)
+    #expect(tasks["toolchain.android-sdk-test-aarch64"]?.inputs.contains(
+        .dependencyOutput(installedDriver)) == true)
+    if case .command(let androidBuild) =
+        tasks["toolchain.android-sdk-build-aarch64"]?.operation
+    {
+        #if os(macOS)
+        let ndkBin = "/ndk/toolchains/llvm/prebuilt/darwin-x86_64/bin"
+        #else
+        let ndkBin = "/ndk/toolchains/llvm/prebuilt/linux-x86_64/bin"
+        #endif
+        #expect(androidBuild.environment["CC"]
+            == "\(ndkBin)/clang")
+        #expect(androidBuild.environment["CXX"]
+            == "\(ndkBin)/clang++")
+        #expect(androidBuild.environment["CCACHE_PATH"]?
+            .hasPrefix("\(ndkBin):") == true)
+        #expect(androidBuild.arguments.contains("--skip-clean-libdispatch"))
+        #expect(androidBuild.arguments.contains("--skip-clean-foundation"))
+        #expect(androidBuild.arguments.contains("--skip-clean-xctest"))
+    } else {
+        Issue.record("Android SDK build is not a command task")
+    }
+    for (id, task) in tasks
+    where id != "toolchain.activate-generation"
+        && id != "toolchain.publish-sdk-discovery"
+    {
+        #expect(
+            task.cachePolicy == .contentAddressed,
+            "toolchain work must be resumable: \(id)")
+    }
 }

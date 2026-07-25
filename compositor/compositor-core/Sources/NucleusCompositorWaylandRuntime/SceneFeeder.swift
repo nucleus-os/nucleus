@@ -125,7 +125,9 @@ final class SceneFeeder: BackgroundEffectDelegate, KdeBlurDelegate {
             let key = "\(operation):\(surfaceID.map(String.init) ?? "global"): \(error)"
             if reportedAuthorFailures.insert(key).inserted {
                 let line = "scene feeder: \(key)\n"
-                line.withCString { _ = write(STDERR_FILENO, $0, strlen($0)) }
+                line.withCString {
+                    _ = unsafe write(STDERR_FILENO, $0, strlen($0))
+                }
             }
             return false
         }
@@ -524,52 +526,46 @@ final class SceneFeeder: BackgroundEffectDelegate, KdeBlurDelegate {
         return ix * iy
     }
 
-    nonisolated func backgroundBlurRegionUpdated(surfaceID: UInt32, region: RegionSnapshot?) {
-        MainActor.assumeIsolated {
-            host.traceProtocol(
-                "ext-background-effect surface=\(surfaceID) "
-                    + "rectangles=\(region?.rectangleCount ?? 0)")
-            authoring("update background effect", surfaceID: UInt64(surfaceID)) {
-                try author.setBackgroundEffect(
-                    surfaceID: UInt64(surfaceID),
-                    enabled: region != nil,
-                    regions: Self.backgroundEffectRegions(from: region))
-            }
+    func backgroundBlurRegionUpdated(surfaceID: UInt32, region: RegionSnapshot?) {
+        host.traceProtocol(
+            "ext-background-effect surface=\(surfaceID) "
+                + "rectangles=\(region?.rectangleCount ?? 0)")
+        authoring("update background effect", surfaceID: UInt64(surfaceID)) {
+            try author.setBackgroundEffect(
+                surfaceID: UInt64(surfaceID),
+                enabled: region != nil,
+                regions: Self.backgroundEffectRegions(from: region))
         }
     }
 
-    nonisolated func kdeBlurUpdated(
+    func kdeBlurUpdated(
         _ surface: WlSurface,
         region: RegionSnapshot?,
         wholeSurface: Bool
     ) {
         let surfaceID = surface.objectId
-        MainActor.assumeIsolated {
-            host.traceProtocol(
-                "kde-blur surface=\(surfaceID) whole=\(wholeSurface) "
-                    + "rectangles=\(region?.rectangleCount ?? 0)")
-            authoring("update KDE blur", surfaceID: UInt64(surfaceID)) {
-                try author.setBackgroundEffect(
-                    surfaceID: UInt64(surfaceID),
-                    enabled: true,
-                    regions: wholeSurface
-                        ? BackgroundEffectRegions(
-                            rects: [], wholeSurface: true)
-                        : Self.backgroundEffectRegions(from: region))
-            }
+        host.traceProtocol(
+            "kde-blur surface=\(surfaceID) whole=\(wholeSurface) "
+                + "rectangles=\(region?.rectangleCount ?? 0)")
+        authoring("update KDE blur", surfaceID: UInt64(surfaceID)) {
+            try author.setBackgroundEffect(
+                surfaceID: UInt64(surfaceID),
+                enabled: true,
+                regions: wholeSurface
+                    ? BackgroundEffectRegions(
+                        rects: [], wholeSurface: true)
+                    : Self.backgroundEffectRegions(from: region))
         }
     }
 
-    nonisolated func kdeBlurCleared(_ surface: WlSurface) {
+    func kdeBlurCleared(_ surface: WlSurface) {
         let surfaceID = surface.objectId
-        MainActor.assumeIsolated {
-            host.traceProtocol("kde-blur-clear surface=\(surfaceID)")
-            authoring("clear KDE blur", surfaceID: UInt64(surfaceID)) {
-                try author.setBackgroundEffect(
-                    surfaceID: UInt64(surfaceID),
-                    enabled: false,
-                    regions: BackgroundEffectRegions())
-            }
+        host.traceProtocol("kde-blur-clear surface=\(surfaceID)")
+        authoring("clear KDE blur", surfaceID: UInt64(surfaceID)) {
+            try author.setBackgroundEffect(
+                surfaceID: UInt64(surfaceID),
+                enabled: false,
+                regions: BackgroundEffectRegions())
         }
     }
 

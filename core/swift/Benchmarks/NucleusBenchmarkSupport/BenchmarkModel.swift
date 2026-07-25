@@ -10,7 +10,7 @@ public struct BenchmarkResourceSnapshot: Sendable, Equatable {
 
     public static func capture() throws -> Self {
         var raw = nucleus_benchmark_resource_snapshot()
-        guard nucleus_benchmark_capture_resources(&raw) == 0 else {
+        guard unsafe nucleus_benchmark_capture_resources(&raw) == 0 else {
             throw BenchmarkFailure.semantic(
                 "could not capture Linux process resource counters")
         }

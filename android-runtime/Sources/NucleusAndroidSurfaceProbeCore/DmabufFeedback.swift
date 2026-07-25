@@ -4,6 +4,7 @@ import NucleusAndroidDrmC
 import NucleusAndroidGraphicsContract
 import WaylandClientC
 import WaylandClientDispatch
+import WaylandProtocolTypes
 
 public enum SurfaceProbeError: Error, Equatable, Sendable {
     case waylandConnectionFailed
@@ -26,18 +27,17 @@ public enum DmabufFeedbackTable {
         guard !data.isEmpty, data.count % 16 == 0 else {
             throw SurfaceProbeError.invalidFormatTable
         }
-        return try data.withUnsafeBytes { bytes in
-            guard bytes.baseAddress != nil else {
-                throw SurfaceProbeError.invalidFormatTable
-            }
+        return unsafe data.withUnsafeBytes { bytes in
             return stride(from: 0, to: bytes.count, by: 16).map { offset in
-                DrmFormatModifier(
-                    format: bytes.loadUnaligned(
-                        fromByteOffset: offset,
-                        as: UInt32.self),
-                    modifier: bytes.loadUnaligned(
-                        fromByteOffset: offset + 8,
-                        as: UInt64.self))
+                let format = unsafe bytes.loadUnaligned(
+                    fromByteOffset: offset,
+                    as: UInt32.self)
+                let modifier = unsafe bytes.loadUnaligned(
+                    fromByteOffset: offset + 8,
+                    as: UInt64.self)
+                return DrmFormatModifier(
+                    format: format,
+                    modifier: modifier)
             }
         }
     }
@@ -97,78 +97,93 @@ final class WaylandDmabufFeedbackCollector: ZwpLinuxDmabufFeedbackV1Events {
     private(set) var feedback: WaylandDmabufFeedback?
     private(set) var failure: Error?
 
-    func done(_ proxy: OpaquePointer) {
+    func done(
+        _ proxy: WaylandBorrowedProxy<ZwpLinuxDmabufFeedbackV1Client>
+    ) {
         do { feedback = try accumulator.finish() } catch { failure = error }
     }
 
-    func formatTable(_ proxy: OpaquePointer, fd: Int32, size: UInt32) {
-        defer { _ = close(fd) }
+    func formatTable(
+        _ proxy: WaylandBorrowedProxy<ZwpLinuxDmabufFeedbackV1Client>,
+        fd: consuming WaylandClientOwnedFileDescriptor,
+        size: UInt32
+    ) {
+        let descriptor = fd.take()
+        defer { _ = close(descriptor) }
         guard size > 0 else {
             failure = SurfaceProbeError.invalidFormatTable
             return
         }
-        let mapping = mmap(nil, Int(size), PROT_READ, MAP_PRIVATE, fd, 0)
-        guard mapping != MAP_FAILED, let mapping else {
+        let rawMapping = unsafe mmap(
+            nil,
+            Int(size),
+            PROT_READ,
+            MAP_PRIVATE,
+            descriptor,
+            0)
+        guard let mapping = unsafe rawMapping,
+              unsafe mapping != MAP_FAILED
+        else {
             failure = SurfaceProbeError.invalidFormatTable
             return
         }
-        defer { _ = munmap(mapping, Int(size)) }
+        defer { _ = unsafe munmap(mapping, Int(size)) }
         do {
-            try accumulator.setFormatTable(Data(bytes: mapping, count: Int(size)))
+            let data = unsafe Data(bytes: mapping, count: Int(size))
+            try accumulator.setFormatTable(data)
         } catch { failure = error }
     }
 
-    func mainDevice(_ proxy: OpaquePointer, device: UnsafeMutablePointer<wl_array>?) {
+    func mainDevice(
+        _ proxy: WaylandBorrowedProxy<ZwpLinuxDmabufFeedbackV1Client>,
+        device: WaylandClientArrayView
+    ) {
         consumeDevice(device, accumulator.setMainDevice)
     }
 
-    func trancheDone(_ proxy: OpaquePointer) {
+    func trancheDone(
+        _ proxy: WaylandBorrowedProxy<ZwpLinuxDmabufFeedbackV1Client>
+    ) {
         do { try accumulator.finishTranche() } catch { failure = error }
     }
 
     func trancheTargetDevice(
-        _ proxy: OpaquePointer,
-        device: UnsafeMutablePointer<wl_array>?
+        _ proxy: WaylandBorrowedProxy<ZwpLinuxDmabufFeedbackV1Client>,
+        device: WaylandClientArrayView
     ) {
         consumeDevice(device, accumulator.setTargetDevice)
     }
 
     func trancheFormats(
-        _ proxy: OpaquePointer,
-        indices: UnsafeMutablePointer<wl_array>?
+        _ proxy: WaylandBorrowedProxy<ZwpLinuxDmabufFeedbackV1Client>,
+        indices: WaylandClientArrayView
     ) {
-        guard let indices, indices.pointee.size % MemoryLayout<UInt16>.size == 0,
-              let data = indices.pointee.data
-        else {
+        guard let values = indices.copiedElements(of: UInt16.self) else {
             failure = SurfaceProbeError.invalidTranche
             return
         }
-        let count = indices.pointee.size / MemoryLayout<UInt16>.size
-        accumulator.setIndices((0..<count).map { index in
-            UnsafeRawPointer(data).loadUnaligned(
-                fromByteOffset: index * MemoryLayout<UInt16>.size,
-                as: UInt16.self)
-        })
+        accumulator.setIndices(values)
     }
 
-    func trancheFlags(_ proxy: OpaquePointer, flags: UInt32) {
-        accumulator.setFlags(flags)
+    func trancheFlags(
+        _ proxy: WaylandBorrowedProxy<ZwpLinuxDmabufFeedbackV1Client>,
+        flags: ZwpLinuxDmabufFeedbackV1TrancheFlags
+    ) {
+        accumulator.setFlags(flags.rawValue)
     }
 
     private func consumeDevice(
-        _ array: UnsafeMutablePointer<wl_array>?,
+        _ array: WaylandClientArrayView,
         _ consume: (GraphicsDeviceID) -> Void
     ) {
-        guard let array, let bytes = array.pointee.data else {
-            failure = SurfaceProbeError.invalidDeviceIdentity
-            return
-        }
         var raw = nucleus_android_device_id()
-        guard nucleus_android_drm_device_id_from_native(
-            bytes,
-            array.pointee.size,
-            &raw) == 0
-        else {
+        let result = unsafe array.withUnsafeBytes { bytes in
+            unsafe nucleus_android_drm_device_id_from_native(
+                bytes.baseAddress,
+                bytes.count,
+                &raw)
+        }
+        guard result == 0 else {
             failure = SurfaceProbeError.invalidDeviceIdentity
             return
         }

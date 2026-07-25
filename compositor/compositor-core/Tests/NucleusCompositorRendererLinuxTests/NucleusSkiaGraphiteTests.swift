@@ -31,21 +31,26 @@ import NucleusSkiaGraphiteBridge
     @Test func runtimeEffectCompilation() {
         // Runtime-effect compilation is GPU-independent (SkSL → shader).
         "half4 main(float2 c) { return half4(1.0, 0.0, 0.0, 1.0); }".withCString { src in
-            let shader = nucleus.skia.makeRuntimeShader(src, nil, 0)
-            #expect(shader.isValid(), "runtime-shader-no-uniform")
+            let shader = unsafe nucleus.skia.makeRuntimeShader(src, nil, 0)
+            let shaderIsValid = unsafe shader.isValid()
+            #expect(shaderIsValid, "runtime-shader-no-uniform")
         }
         "uniform half intensity; half4 main(float2 c) { return half4(intensity, 0, 0, 1); }".withCString { src in
             let uniforms: [Float] = [0.5]
             let shader = uniforms.withUnsafeBufferPointer {
-                nucleus.skia.makeRuntimeShader(src, $0.baseAddress, 1)
+                unsafe nucleus.skia.makeRuntimeShader(src, $0.baseAddress, 1)
             }
-            #expect(shader.isValid(), "runtime-shader-with-uniform")
+            let shaderIsValid = unsafe shader.isValid()
+            #expect(shaderIsValid, "runtime-shader-with-uniform")
             // Wrong uniform count fails closed (byte-size mismatch).
-            let bad = nucleus.skia.makeRuntimeShader(src, nil, 0)
-            #expect(!bad.isValid(), "runtime-shader-uniform-mismatch")
+            let bad = unsafe nucleus.skia.makeRuntimeShader(src, nil, 0)
+            let badIsValid = unsafe bad.isValid()
+            #expect(!badIsValid, "runtime-shader-uniform-mismatch")
         }
         "this is not valid sksl {{{".withCString { src in
-            #expect(!nucleus.skia.makeRuntimeShader(src, nil, 0).isValid(), "runtime-shader-compile-fail")
+            let shader = unsafe nucleus.skia.makeRuntimeShader(src, nil, 0)
+            let shaderIsValid = unsafe shader.isValid()
+            #expect(!shaderIsValid, "runtime-shader-compile-fail")
         }
     }
 
@@ -55,12 +60,14 @@ import NucleusSkiaGraphiteBridge
             0, 0, 255, 255, 255, 255, 255, 255,
         ]
         let rasterImage = srcPixels.withUnsafeBufferPointer {
-            nucleus.skia.makeRasterImageRGBA(2, 2, $0.baseAddress, $0.count)
+            unsafe nucleus.skia.makeRasterImageRGBA(
+                2, 2, $0.baseAddress, $0.count)
         }
-        #expect(rasterImage.isValid(), "raster-image")
+        let rasterImageIsValid = unsafe rasterImage.isValid()
+        #expect(rasterImageIsValid, "raster-image")
         var readback = [UInt8](repeating: 0, count: 16)
         let readOk = readback.withUnsafeMutableBufferPointer {
-            rasterImage.readPixelsRGBA($0.baseAddress, $0.count, 8)
+            unsafe rasterImage.readPixelsRGBA($0.baseAddress, $0.count, 8)
         }
         #expect(readOk && readback == srcPixels, "raster-readback-roundtrip")
     }
@@ -71,33 +78,40 @@ import NucleusSkiaGraphiteBridge
             0, 0, 255, 255, 255, 255, 255, 255,
         ]
         let rasterImage = srcPixels.withUnsafeBufferPointer {
-            nucleus.skia.makeRasterImageRGBA(2, 2, $0.baseAddress, $0.count)
+            unsafe nucleus.skia.makeRasterImageRGBA(
+                2, 2, $0.baseAddress, $0.count)
         }
         var radii = nucleus.skia.RRectRadii()
         radii.topLeft = 4; radii.bottomRight = 8
 
-        try withRequiredVulkanGraphite(
+        try unsafe withRequiredVulkanGraphite(
             presentation: .headless,
             applicationName: "NucleusSkiaGraphiteTests"
         ) { _, _, context, recorder in
             // CPU decode results cross onto the Graphite recorder before draw;
             // Graphite's default image provider deliberately drops raster images.
-            let textureImage = recorder.makeTextureImage(rasterImage)
-            #expect(textureImage.isValid(), "raster-image-promoted-to-graphite")
+            let textureImage = unsafe recorder.makeTextureImage(rasterImage)
+            let textureImageIsValid = unsafe textureImage.isValid()
+            #expect(textureImageIsValid, "raster-image-promoted-to-graphite")
 
-            let imageProbe = recorder.makeOffscreenSurface(2, 2)
-            #expect(imageProbe.isValid(), "texture-image-probe-surface")
+            let imageProbe = unsafe recorder.makeOffscreenSurface(2, 2)
+            let imageProbeIsValid = unsafe imageProbe.isValid()
+            #expect(imageProbeIsValid, "texture-image-probe-surface")
             var imageProbeRect = nucleus.skia.RectF()
             imageProbeRect.width = 2
             imageProbeRect.height = 2
-            imageProbe.getCanvas().drawImage(textureImage, imageProbeRect, 1)
-            #expect(submitGraphiteAndWait(
+            unsafe imageProbe.getCanvas().drawImage(
+                textureImage, imageProbeRect, 1)
+            let imageProbeSubmitted = unsafe submitGraphiteAndWait(
                 context: context,
                 recording: recorder.snapRecording(),
-                serial: 1), "texture-image-upload-and-draw-submit")
-            #expect(context.completedSubmissionTimingCount() == 0)
+                serial: 1)
+            #expect(imageProbeSubmitted, "texture-image-upload-and-draw-submit")
+            let initialTimingCount =
+                unsafe context.completedSubmissionTimingCount()
+            #expect(initialTimingCount == 0)
             let pixels = try requireValue(
-                readGraphiteSurfaceRGBA(
+                unsafe readGraphiteSurfaceRGBA(
                     context: context,
                     surface: imageProbe),
                 "promoted image readback failed")
@@ -105,31 +119,32 @@ import NucleusSkiaGraphiteBridge
                 Array(pixels.prefix(4)) == Array(srcPixels.prefix(4)),
                 "promoted-image-draws-decoded-pixels")
 
-            let surface = recorder.makeOffscreenSurface(256, 128)
-            try requireTrue(surface.isValid(), "could not create Graphite draw surface")
+            let surface = unsafe recorder.makeOffscreenSurface(256, 128)
+            let surfaceIsValid = unsafe surface.isValid()
+            try requireTrue(surfaceIsValid, "could not create Graphite draw surface")
 
-            let canvas = surface.getCanvas()
+            let canvas = unsafe surface.getCanvas()
             var clearColor = nucleus.skia.Color()
             clearColor.r = 0.1; clearColor.g = 0.2; clearColor.b = 0.3; clearColor.a = 1
-            canvas.clear(clearColor)
+            unsafe canvas.clear(clearColor)
             var rect = nucleus.skia.RectF()
             rect.x = 10; rect.y = 10; rect.width = 100; rect.height = 50
             var rectColor = nucleus.skia.Color()
             rectColor.r = 1; rectColor.a = 1
-            canvas.drawRect(rect, rectColor)
+            unsafe canvas.drawRect(rect, rectColor)
 
             // Draw vocabulary: save/clip stack + Paint-carrying draws + shader fill.
-            canvas.save()
-            canvas.clipRRect(rect, radii, true)
+            unsafe canvas.save()
+            unsafe canvas.clipRRect(rect, radii, true)
             var paint = nucleus.skia.Paint()
             paint.color = rectColor
             paint.alpha = 0.8
             paint.blend = nucleus.skia.BlendMode.srcOver
             paint.saturation = 1.4
-            canvas.drawRRect(rect, radii, paint)
-            canvas.restore()
+            unsafe canvas.drawRRect(rect, radii, paint)
+            unsafe canvas.restore()
 
-            canvas.saveLayerAlpha(rect, 0.5)
+            unsafe canvas.saveLayerAlpha(rect, 0.5)
             var blurred = nucleus.skia.Paint()
             blurred.alpha = 1
             blurred.blurSigma = 3
@@ -137,51 +152,59 @@ import NucleusSkiaGraphiteBridge
             srcRect.x = 0; srcRect.y = 0; srcRect.width = 2; srcRect.height = 2
             var dstRect = nucleus.skia.RectF()
             dstRect.x = 20; dstRect.y = 20; dstRect.width = 64; dstRect.height = 64
-            canvas.drawImageRect(textureImage, srcRect, dstRect, blurred)
-            canvas.restore()
+            unsafe canvas.drawImageRect(textureImage, srcRect, dstRect, blurred)
+            unsafe canvas.restore()
 
             "half4 main(float2 c) { return half4(0.2, 0.4, 0.6, 1.0); }".withCString { src in
-                let shader = nucleus.skia.makeRuntimeShader(src, nil, 0)
-                #expect(shader.isValid())
-                if shader.isValid() {
+                let shader = unsafe nucleus.skia.makeRuntimeShader(src, nil, 0)
+                let shaderIsValid = unsafe shader.isValid()
+                #expect(shaderIsValid)
+                if shaderIsValid {
                     var shaderPaint = nucleus.skia.Paint()
                     shaderPaint.alpha = 0.9
-                    canvas.drawShaderRect(rect, shader, shaderPaint)
+                    unsafe canvas.drawShaderRect(rect, shader, shaderPaint)
                 }
             }
 
-            let image = surface.snapshotImage()
-            #expect(image.isValid())
+            let image = unsafe surface.snapshotImage()
+            let imageIsValid = unsafe image.isValid()
+            #expect(imageIsValid)
 
-            let recording = recorder.snapRecording()
+            let recording = unsafe recorder.snapRecording()
+            let vocabularySubmitted = unsafe submitGraphiteAndWait(
+                context: context, recording: recording, serial: 2)
             try requireTrue(
-                submitGraphiteAndWait(
-                    context: context, recording: recording, serial: 2),
+                vocabularySubmitted,
                 "Graphite draw-vocabulary submission did not complete")
 
             // Upload and draw share one recorder and become one insertion for
             // each generation.
-            let texture = recorder.makeUploadTextureRGBA(2, 2)
-            #expect(texture.isValid(), "upload-texture-created")
+            let texture = unsafe recorder.makeUploadTextureRGBA(2, 2)
+            let textureIsValid = unsafe texture.isValid()
+            #expect(textureIsValid, "upload-texture-created")
             var uploadPixels = srcPixels
             for generation in 1...2 {
                 if generation == 2 { uploadPixels[0] = 32 }
                 let updated = uploadPixels.withUnsafeBufferPointer {
-                    texture.updateRGBA($0.baseAddress, $0.count)
+                    unsafe texture.updateRGBA($0.baseAddress, $0.count)
                 }
                 #expect(updated, "upload-texture-updated-\(generation)")
-                let target = recorder.makeOffscreenSurface(8, 8)
-                let image = texture.image()
-                #expect(target.isValid() && image.isValid(),
+                let target = unsafe recorder.makeOffscreenSurface(8, 8)
+                let image = unsafe texture.image()
+                let targetIsValid = unsafe target.isValid()
+                let imageIsValid = unsafe image.isValid()
+                #expect(targetIsValid && imageIsValid,
                         "upload-generation-valid-\(generation)")
                 var uploadDst = nucleus.skia.RectF()
                 uploadDst.width = 8; uploadDst.height = 8
-                target.getCanvas().drawImage(image, uploadDst, 1)
-                let submission = recorder.snapRecording()
-                #expect(submitGraphiteAndWait(
+                unsafe target.getCanvas().drawImage(image, uploadDst, 1)
+                let submission = unsafe recorder.snapRecording()
+                let generationSubmitted = unsafe submitGraphiteAndWait(
                     context: context, recording: submission,
-                    serial: UInt64(generation + 2)),
-                        "upload-generation-submit-\(generation)")
+                    serial: UInt64(generation + 2))
+                #expect(
+                    generationSubmitted,
+                    "upload-generation-submit-\(generation)")
             }
         }
     }
@@ -200,80 +223,105 @@ import NucleusSkiaGraphiteBridge
         ]
 
         for (simulated, expectedUsable) in cases {
-            try withRequiredVulkanGraphite(
+            try unsafe withRequiredVulkanGraphite(
                 presentation: .headless,
                 applicationName: "Nucleus insert-status \(simulated.rawValue)"
             ) { _, _, context, recorder in
-                let surface = recorder.makeOffscreenSurface(2, 2)
+                let surface = unsafe recorder.makeOffscreenSurface(2, 2)
+                let surfaceIsValid = unsafe surface.isValid()
                 try requireTrue(
-                    surface.isValid(),
+                    surfaceIsValid,
                     "could not create insert-status surface")
                 var color = nucleus.skia.Color()
                 color.a = 1
-                surface.getCanvas().clear(color)
-                let recording = recorder.snapRecording()
-                let result = context.submitAsyncSimulatingInsertStatus(
+                unsafe surface.getCanvas().clear(color)
+                let recording = unsafe recorder.snapRecording()
+                let result = unsafe context.submitAsyncSimulatingInsertStatus(
                     recording, 1, simulated)
                 if simulated == .success {
+                    let submissionCompleted = unsafe waitForGraphiteSerial(
+                        context: context,
+                        serial: 1)
                     try requireTrue(
-                        waitForGraphiteSerial(
-                            context: context,
-                            serial: 1),
+                        submissionCompleted,
                         "successful simulated insertion did not complete")
                 } else {
-                    _ = context.pollCompletedSubmissionSerial()
+                    _ = unsafe context.pollCompletedSubmissionSerial()
                 }
 
-                #expect(result.insertStatus == simulated)
-                #expect(result.contextUsable == expectedUsable)
-                #expect(result.isOk() == (simulated == .success))
-                #expect(context.submissionCallbackCount() == 1)
+                let insertStatus = result.insertStatus
+                let contextUsable = result.contextUsable
+                let resultIsOk = result.isOk()
+                let callbackCount = unsafe context.submissionCallbackCount()
+                #expect(insertStatus == simulated)
+                #expect(contextUsable == expectedUsable)
+                #expect(resultIsOk == (simulated == .success))
+                #expect(callbackCount == 1)
                 if simulated == .success {
-                    #expect(
-                        context.successfulSubmissionCallbackCount() == 1)
-                    #expect(context.failedSubmissionCallbackCount() == 0)
-                    #expect(String(result.diagnostic).isEmpty)
+                    let successfulCallbackCount =
+                        unsafe context.successfulSubmissionCallbackCount()
+                    let failedCallbackCount =
+                        unsafe context.failedSubmissionCallbackCount()
+                    let diagnosticIsEmpty = String(result.diagnostic).isEmpty
+                    #expect(successfulCallbackCount == 1)
+                    #expect(failedCallbackCount == 0)
+                    #expect(diagnosticIsEmpty)
                 } else {
-                    #expect(
-                        context.successfulSubmissionCallbackCount() == 0)
-                    #expect(context.failedSubmissionCallbackCount() == 1)
-                    #expect(!String(result.diagnostic).isEmpty)
+                    let successfulCallbackCount =
+                        unsafe context.successfulSubmissionCallbackCount()
+                    let failedCallbackCount =
+                        unsafe context.failedSubmissionCallbackCount()
+                    let diagnosticIsEmpty = String(result.diagnostic).isEmpty
+                    #expect(successfulCallbackCount == 0)
+                    #expect(failedCallbackCount == 1)
+                    #expect(!diagnosticIsEmpty)
                 }
             }
         }
     }
 
     @Test func gpuHeadless_presentationTimingRingIsBounded() throws {
-        try withRequiredVulkanGraphite(
+        try unsafe withRequiredVulkanGraphite(
             presentation: .headless,
             applicationName: "Nucleus timing-ring"
         ) { _, _, context, recorder in
             for serial in 1...257 {
-                let surface = recorder.makeOffscreenSurface(1, 1)
+                let surface = unsafe recorder.makeOffscreenSurface(1, 1)
+                let surfaceIsValid = unsafe surface.isValid()
                 try requireTrue(
-                    surface.isValid(),
+                    surfaceIsValid,
                     "could not create timing sample surface")
                 var color = nucleus.skia.Color()
                 color.r = Float(serial % 2)
                 color.a = 1
-                surface.getCanvas().clear(color)
-                let result = context.submitWithSemaphores(
+                unsafe surface.getCanvas().clear(color)
+                let result = unsafe context.submitWithSemaphores(
                     recorder.snapRecording(),
                     nil, 0, nil,
                     UInt64(serial),
                     true)
+                let resultIsOk = result.isOk()
                 try requireTrue(
-                    result.isOk(),
+                    resultIsOk,
                     "timed submission \(serial) failed")
             }
+            let submissionsCompleted =
+                unsafe waitForGraphiteSerial(context: context, serial: 257)
             try requireTrue(
-                waitForGraphiteSerial(context: context, serial: 257),
+                submissionsCompleted,
                 "timed submissions did not complete")
-            #expect(context.completedSubmissionTimingCount() == 256)
-            #expect(context.droppedSubmissionTimingCount() == 1)
-            #expect(context.submissionCallbackCount() == 257)
+            let completedTimingCount =
+                unsafe context.completedSubmissionTimingCount()
+            let droppedTimingCount =
+                unsafe context.droppedSubmissionTimingCount()
+            let callbackCount = unsafe context.submissionCallbackCount()
+            let oldestElapsed =
+                unsafe context.takeCompletedSubmissionGpuElapsedNs(1)
+            #expect(completedTimingCount == 256)
+            #expect(droppedTimingCount == 1)
+            #expect(callbackCount == 257)
             #expect(
-                context.takeCompletedSubmissionGpuElapsedNs(1) == 0,
+                oldestElapsed == 0,
                 "the oldest unconsumed timing was overwritten")
         }
     }

@@ -293,20 +293,23 @@ public struct HostToolchainBuildPreparation: Hashable, Sendable {
 
 public struct HostToolchainAssembly: Hashable, Sendable {
     public let workspace: FilePath
-    public let stagingRoot: FilePath
+    public let archive: FilePath
     public let toolchain: FilePath
     public let platform: HostToolchainPlatform
+    public let environment: [String: String]
 
     public init(
         workspace: FilePath,
-        stagingRoot: FilePath,
+        archive: FilePath,
         toolchain: FilePath,
-        platform: HostToolchainPlatform
+        platform: HostToolchainPlatform,
+        environment: [String: String]
     ) {
         self.workspace = workspace
-        self.stagingRoot = stagingRoot
+        self.archive = archive
         self.toolchain = toolchain
         self.platform = platform
+        self.environment = environment
     }
 }
 
@@ -329,16 +332,57 @@ public struct HostToolchainValidation: Hashable, Sendable {
     }
 }
 
+public struct CMakeDependencyRepair: Hashable, Sendable {
+    public let configurationFileName: String
+    public let package: String
+    public let version: String
+    public let configurationOnly: Bool
+
+    public init(
+        configurationFileName: String,
+        package: String,
+        version: String,
+        configurationOnly: Bool = false
+    ) {
+        self.configurationFileName = configurationFileName
+        self.package = package
+        self.version = version
+        self.configurationOnly = configurationOnly
+    }
+}
+
+public struct LinkMetadataReplacement: Hashable, Sendable {
+    public let fileName: String
+    public let original: String
+    public let replacement: String
+
+    public init(
+        fileName: String,
+        original: String,
+        replacement: String
+    ) {
+        self.fileName = fileName
+        self.original = original
+        self.replacement = replacement
+    }
+}
+
 public struct LinkMetadataSanitization: Hashable, Sendable {
     public let root: FilePath
     public let removedLinkerOptions: [String]
+    public let cmakeDependencyRepairs: [CMakeDependencyRepair]
+    public let replacements: [LinkMetadataReplacement]
 
     public init(
         root: FilePath,
-        removedLinkerOptions: [String]
+        removedLinkerOptions: [String],
+        cmakeDependencyRepairs: [CMakeDependencyRepair] = [],
+        replacements: [LinkMetadataReplacement] = []
     ) {
         self.root = root
         self.removedLinkerOptions = removedLinkerOptions
+        self.cmakeDependencyRepairs = cmakeDependencyRepairs
+        self.replacements = replacements
     }
 }
 
@@ -983,5 +1027,5 @@ public struct CanonicalDigestEncoder: Sendable {
 
 private func withBigEndianBytes<T: FixedWidthInteger>(_ value: T) -> [UInt8] {
     var bigEndian = value.bigEndian
-    return withUnsafeBytes(of: &bigEndian) { Array($0) }
+    return withUnsafeBytes(of: &bigEndian) { unsafe Array($0) }
 }

@@ -31,7 +31,8 @@ import Vulkan
 
         // Typed handles: dispatchable wrap a pointer, non-dispatchable a u64;
         // both default null.
-        #expect(VK.Device.null.isNull && VK.Device.null.raw == nil, "handle-dispatch-null")
+        let nullDeviceRawIsNil = unsafe VK.Device.null.raw == nil
+        #expect(VK.Device.null.isNull && nullDeviceRawIsNil, "handle-dispatch-null")
         #expect(VK.Buffer.null.isNull && VK.Buffer.null.raw == 0, "handle-nondispatch-null")
         #expect(VK.Buffer(7) == VK.Buffer(7) && VK.Buffer(7) != VK.Buffer.null, "handle-equatable")
     }
@@ -39,7 +40,7 @@ import Vulkan
     @Test func gpuLoader_loaderLinks() {
         // The Vulkan loader links: a global command runs with no instance.
         var apiVersion: UInt32 = 0
-        let r = vkEnumerateInstanceVersion(&apiVersion)
+        let r = unsafe vkEnumerateInstanceVersion(&apiVersion)
         #expect(r == VK_SUCCESS, "loader-enumerate-version")
         #expect(apiVersion != 0, "loader-version-nonzero")
     }

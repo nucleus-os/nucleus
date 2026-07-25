@@ -13,6 +13,7 @@ import Glibc
 import WaylandServerC
 import WaylandServer
 import WaylandServerDispatch
+import WaylandProtocolTypes
 
 /// One advertised format + DRM modifier the compositor can import.
 struct DmabufFormat: Equatable {
@@ -87,40 +88,41 @@ struct DmabufProbeSnapshot: Sendable {
 
 /// The render seam. The router asks the delegate which formats/modifiers it can
 /// import, the GPU main device, and to import a fully-specified dmabuf.
+@MainActor
 protocol DmabufDelegate: AnyObject {
     func dmabufSupportedFormats() -> [DmabufFormat]
     func dmabufMainDevice() -> UInt64
     func dmabufImport(_ attrs: DmabufAttrs) -> Bool
 }
 
-final class ZwpLinuxDmabuf {
+@MainActor
+@safe final class ZwpLinuxDmabuf {
     weak var delegate: (any DmabufDelegate)?
-
-    // wl_buffer and zwp_linux_dmabuf_feedback_v1 are destroy-only (no generated
-    // dispatch): their request vtables stay hand-wired. wl_buffer's is passed to
-    // id.create when create_immed materializes a buffer; the feedback's is used in
-    // makeFeedback.
-    private let feedbackVtable: UnsafeMutableRawPointer
-    let bufferVtable: UnsafeMutableRawPointer
-
-    init() {
-        feedbackVtable = allocVtable(
-            MemoryLayout<swift_wayland_zwp_linux_dmabuf_feedback_v1_requests>.stride,
-            MemoryLayout<swift_wayland_zwp_linux_dmabuf_feedback_v1_requests>.alignment)
-        let fvt = feedbackVtable.bindMemory(
-            to: swift_wayland_zwp_linux_dmabuf_feedback_v1_requests.self, capacity: 1)
-        fvt.pointee.destroy = Self.feedbackDestroy
-
-        bufferVtable = allocVtable(
-            MemoryLayout<swift_wayland_wl_buffer_requests>.stride,
-            MemoryLayout<swift_wayland_wl_buffer_requests>.alignment)
-        let bvt = bufferVtable.bindMemory(to: swift_wayland_wl_buffer_requests.self, capacity: 1)
-        bvt.pointee.destroy = DmabufBuffer.objectDestroy
-    }
 
     func register(in router: NucleusWaylandRouter) {
         router.addGlobal(
-            interface: swift_wayland_iface_zwp_linux_dmabuf_v1(), version: 5, impl: self, bind: Self.bind)
+            ZwpLinuxDmabufV1Server.global(
+                implementation: self,
+                advertisedVersion: 5,
+                owner: { manager, _ in manager },
+                installed: { manager, _, handle in
+                    if handle.version ?? 1 < 4 {
+                        for format in manager.supportedFormats() {
+                            if handle.supportsModifier {
+                                handle.sendModifier(
+                                    format: format.format,
+                                    modifier_hi:
+                                        UInt32(format.modifier >> 32),
+                                    modifier_lo:
+                                        UInt32(
+                                            format.modifier
+                                                & 0xffff_ffff))
+                            } else {
+                                handle.sendFormat(format: format.format)
+                            }
+                        }
+                    }
+                }))
     }
 
     fileprivate func supportedFormats() -> [DmabufFormat] { delegate?.dmabufSupportedFormats() ?? [] }
@@ -129,43 +131,31 @@ final class ZwpLinuxDmabuf {
         delegate?.dmabufImport(attrs) ?? false
     }
 
-    private static let bind: @convention(c) (
-        OpaquePointer?, UnsafeMutableRawPointer?, UInt32, UInt32
-    ) -> Void = { client, data, version, id in
-        guard let client, let me = NucleusWaylandRouter.impl(data, as: ZwpLinuxDmabuf.self) else {
-            return
-        }
-        guard let res = WaylandResource.create(
-            client: client, interface: swift_wayland_iface_zwp_linux_dmabuf_v1(),
-            version: Int32(version), id: id, vtable: ZwpLinuxDmabufV1Server.vtable, owner: me)
-        else { return }
-        // v<4 advertises formats/modifiers on bind; v>=4 uses feedback objects.
-        if version < 4 {
-            for f in me.supportedFormats() {
-                if version >= 3 {
-                    zwp_linux_dmabuf_v1_send_modifier(
-                        res, f.format, UInt32(f.modifier >> 32), UInt32(f.modifier & 0xffff_ffff))
-                } else {
-                    zwp_linux_dmabuf_v1_send_format(res, f.format)
-                }
-            }
-        }
-    }
-
-    private static let feedbackDestroy: @convention(c) (
-        OpaquePointer?, UnsafeMutablePointer<wl_resource>?
-    ) -> Void = { _, resource in if let resource { wl_resource_destroy(resource) } }
-
     /// Create a feedback object and emit one atomic update: a format table memfd, a
     /// main device, and one tranche covering all formats. The feedback resource has
     /// no per-object state, so it owns the manager (`self`) like other resources.
-    /// Feedback is destroy-only: materialize with its hand-wired request vtable.
-    fileprivate func makeFeedback(_ id: WlNewId) {
-        guard let res = id.create(vtable: UnsafeRawPointer(feedbackVtable), owner: self)
-        else { return }
+    /// Feedback is destroy-only and uses generated dispatch.
+    fileprivate func makeFeedback(
+        _ id: WlNewId<ZwpLinuxDmabufFeedbackV1Server>
+    ) {
+        _ = unsafe id.create(
+            owner: { handle in
+                DmabufFeedback(resource: handle)
+            },
+            installed: { feedback in
+                self.sendFeedback(feedback.resource)
+            })
+    }
+
+    private func sendFeedback(
+        _ resource:
+            WaylandResourceHandle<ZwpLinuxDmabufFeedbackV1Server>
+    ) {
         let formats = supportedFormats()
         guard formats.count <= Int(UInt16.max) else {
-            wl_resource_post_no_memory(res)
+            if let raw = unsafe resource.resource {
+                unsafe wl_resource_post_no_memory(raw)
+            }
             return
         }
 
@@ -176,14 +166,14 @@ final class ZwpLinuxDmabuf {
             appendLE32(&table, 0)
             appendLE64(&table, f.modifier)
         }
-        let fd = memfd_create(
+        let fd = unsafe memfd_create(
             "nucleus-dmabuf-table",
             UInt32(0x0001 /* MFD_CLOEXEC */ | 0x0002 /* MFD_ALLOW_SEALING */))
         if fd >= 0 {
             var tableReady = ftruncate(fd, off_t(table.count)) == 0
             if tableReady, !table.isEmpty {
                 tableReady = table.withUnsafeBytes {
-                    writeAll(fd: fd, bytes: $0)
+                    unsafe writeAll(fd: fd, bytes: $0)
                 }
             }
             if tableReady {
@@ -192,63 +182,78 @@ final class ZwpLinuxDmabuf {
                     F_SEAL_SHRINK | F_SEAL_GROW | F_SEAL_WRITE | F_SEAL_SEAL) == 0
             }
             if tableReady {
-                zwp_linux_dmabuf_feedback_v1_send_format_table(
-                    res, fd, UInt32(table.count))
+                resource.sendFormatTable(fd: fd, size: UInt32(table.count))
             } else {
-                wl_resource_post_no_memory(res)
+                if let raw = unsafe resource.resource {
+                    unsafe wl_resource_post_no_memory(raw)
+                }
             }
             close(fd)
         } else {
-            wl_resource_post_no_memory(res)
+            if let raw = unsafe resource.resource {
+                unsafe wl_resource_post_no_memory(raw)
+            }
             return
         }
 
         var device = dev_t(mainDevice())
-        let deviceBytes = withUnsafeBytes(of: &device) { Array($0) }
-        withWlArray(deviceBytes) { zwp_linux_dmabuf_feedback_v1_send_main_device(res, $0) }
-        withWlArray(deviceBytes) { zwp_linux_dmabuf_feedback_v1_send_tranche_target_device(res, $0) }
+        let deviceBytes = withUnsafeBytes(of: &device) { unsafe Array($0) }
+        resource.sendMainDevice(device: deviceBytes)
+        resource.sendTrancheTargetDevice(device: deviceBytes)
 
         var indices: [UInt8] = []
         for i in 0..<formats.count { appendLE16(&indices, UInt16(i)) }
-        withWlArray(indices) { zwp_linux_dmabuf_feedback_v1_send_tranche_formats(res, $0) }
-        zwp_linux_dmabuf_feedback_v1_send_tranche_flags(res, 0)
-        zwp_linux_dmabuf_feedback_v1_send_tranche_done(res)
-        zwp_linux_dmabuf_feedback_v1_send_done(res)
-    }
-
-    deinit {
-        feedbackVtable.deallocate()
-        bufferVtable.deallocate()
+        resource.sendTrancheFormats(indices: indices)
+        resource.sendTrancheFlags(flags: [])
+        resource.sendTrancheDone()
+        resource.sendDone()
     }
 }
 
 extension ZwpLinuxDmabuf: ZwpLinuxDmabufV1Requests {
-    func createParams(_ resource: UnsafeMutablePointer<wl_resource>, params_id: WlNewId) {
-        let params = ZwpLinuxBufferParams(manager: self)
-        _ = params_id.create(vtable: ZwpLinuxBufferParamsV1Server.vtable, owner: params)
+    func createParams(
+        _ request: WaylandRequest<ZwpLinuxDmabufV1Server>,
+        params_id: WlNewId<ZwpLinuxBufferParamsV1Server>
+    ) {
+        _ = unsafe params_id.create { handle in
+            ZwpLinuxBufferParams(resource: handle, manager: self)
+        }
     }
 
-    func getDefaultFeedback(_ resource: UnsafeMutablePointer<wl_resource>, id: WlNewId) {
-        makeFeedback(id)
+    func getDefaultFeedback(
+        _ request: WaylandRequest<ZwpLinuxDmabufV1Server>,
+        id: WlNewId<ZwpLinuxDmabufFeedbackV1Server>
+    ) {
+        unsafe makeFeedback(id)
     }
 
     func getSurfaceFeedback(
-        _ resource: UnsafeMutablePointer<wl_resource>, id: WlNewId,
-        surface: UnsafeMutablePointer<wl_resource>?
+        _ request: WaylandRequest<ZwpLinuxDmabufV1Server>,
+        id: WlNewId<ZwpLinuxDmabufFeedbackV1Server>,
+        surface: WaylandBorrowedObject<WlSurfaceServer>
     ) {
-        makeFeedback(id)
+        unsafe makeFeedback(id)
     }
 }
 
 /// zwp_linux_buffer_params_v1 owner (Rule 9): accumulates planes, validates, and
 /// produces a wl_buffer or a failure.
-final class ZwpLinuxBufferParams {
+@MainActor
+@safe final class ZwpLinuxBufferParams {
+    private let resource:
+        WaylandResourceHandle<ZwpLinuxBufferParamsV1Server>
     private weak var manager: ZwpLinuxDmabuf?
     private var planes: [Int: DmabufPlane] = [:]
     private var modifier: UInt64?
     private var used = false
 
-    init(manager: ZwpLinuxDmabuf) { self.manager = manager }
+    init(
+        resource: WaylandResourceHandle<ZwpLinuxBufferParamsV1Server>,
+        manager: ZwpLinuxDmabuf
+    ) {
+        self.resource = resource
+        self.manager = manager
+    }
 
     /// Validate the accumulated planes and assemble the attrs, or post the protocol
     /// error. Returns nil on error (the params is left used).
@@ -256,11 +261,10 @@ final class ZwpLinuxBufferParams {
         width: Int32,
         height: Int32,
         format: UInt32,
-        flags: UInt32,
-        res: UnsafeMutablePointer<wl_resource>
+        flags: UInt32
     ) -> DmabufAttrs? {
         guard !used else {
-            swift_wayland_resource_post_error(res, 0, "params already used")  // already_used
+            resource.postError(.alreadyUsed, message: "params already used")
             return nil
         }
         used = true
@@ -272,27 +276,35 @@ final class ZwpLinuxBufferParams {
                     DmabufPlaneLayout(offset: $0.offset, stride: $0.stride)
                 })
         } catch {
-            let protocolError: UInt32
+            let protocolError: ZwpLinuxBufferParamsV1Error
             let message: String
             switch error {
             case .incompletePlanes:
-                protocolError = 3; message = "incomplete or gapped planes"
+                protocolError = .incomplete
+                message = "incomplete or gapped planes"
             case .invalidDimensions:
-                protocolError = 5; message = "non-positive dimensions"
+                protocolError = .invalidDimensions
+                message = "non-positive dimensions"
             case .unsupportedFlags:
-                protocolError = 4; message = "unsupported linux-dmabuf flags"
+                protocolError = .invalidFormat
+                message = "unsupported linux-dmabuf flags"
             case .invalidPlaneCount:
-                protocolError = 4; message = "format requires exactly one plane"
+                protocolError = .invalidFormat
+                message = "format requires exactly one plane"
             case .zeroStride:
-                protocolError = 6; message = "zero plane stride"
+                protocolError = .outOfBounds
+                message = "zero plane stride"
             case .undersizedStride:
-                protocolError = 6; message = "plane stride is undersized"
+                protocolError = .outOfBounds
+                message = "plane stride is undersized"
             case .layoutOverflow:
-                protocolError = 6; message = "plane layout overflows"
+                protocolError = .outOfBounds
+                message = "plane layout overflows"
             case .mixedModifiers:
-                protocolError = 4; message = "all planes must use the same modifier"
+                protocolError = .invalidFormat
+                message = "all planes must use the same modifier"
             }
-            swift_wayland_resource_post_error(res, protocolError, message)
+            resource.postError(protocolError, message: message)
             return nil
         }
         let ordered = layouts.indices.map { planes[$0]! }
@@ -300,7 +312,9 @@ final class ZwpLinuxBufferParams {
         let supported = manager?.supportedFormats().contains(
             DmabufFormat(format: format, modifier: modifier)) ?? false
         guard supported else {
-            swift_wayland_resource_post_error(res, 4, "format/modifier not supported")  // invalid_format
+            resource.postError(
+                .invalidFormat,
+                message: "format/modifier not supported")
             return nil
         }
         return DmabufAttrs(
@@ -311,17 +325,15 @@ final class ZwpLinuxBufferParams {
 extension ZwpLinuxBufferParams: ZwpLinuxBufferParamsV1Requests {
     // add(fd, plane_idx, offset, stride, modifier_hi, modifier_lo)
     func add(
-        _ resource: UnsafeMutablePointer<wl_resource>, fd: Int32, plane_idx planeIdx: UInt32,
+        _ request: WaylandRequest<ZwpLinuxBufferParamsV1Server>, fd: consuming WaylandOwnedFileDescriptor, plane_idx planeIdx: UInt32,
         offset: UInt32, stride: UInt32, modifier_hi modHi: UInt32, modifier_lo modLo: UInt32
     ) {
         guard planeIdx < 4 else {
-            swift_wayland_resource_post_error(resource, 1, "plane index out of range")  // plane_idx
-            if fd >= 0 { close(fd) }
+            request.postError(.planeIdx, message: "plane index out of range")
             return
         }
         guard planes[Int(planeIdx)] == nil else {
-            swift_wayland_resource_post_error(resource, 2, "plane already set")  // plane_set
-            if fd >= 0 { close(fd) }
+            request.postError(.planeSet, message: "plane already set")
             return
         }
         let incomingModifier = (UInt64(modHi) << 32) | UInt64(modLo)
@@ -329,79 +341,92 @@ extension ZwpLinuxBufferParams: ZwpLinuxBufferParamsV1Requests {
             try DmabufLayoutValidator.validateModifier(
                 current: modifier, incoming: incomingModifier)
         } catch {
-            swift_wayland_resource_post_error(
-                resource, 4, "all planes must use the same modifier")
-            if fd >= 0 { close(fd) }
+            request.postError(
+                .invalidFormat,
+                message: "all planes must use the same modifier")
             return
         }
         modifier = incomingModifier
         planes[Int(planeIdx)] = DmabufPlane(
-            consumingFd: fd, offset: offset, stride: stride)
+            consumingFd: fd.take(), offset: offset, stride: stride)
     }
 
     // create(width, height, format, flags): async — created or failed.
     func create(
-        _ resource: UnsafeMutablePointer<wl_resource>, width: Int32, height: Int32,
-        format: UInt32, flags: UInt32
+        _ request: WaylandRequest<ZwpLinuxBufferParamsV1Server>, width: Int32, height: Int32,
+        format: UInt32, flags: ZwpLinuxBufferParamsV1Flags
     ) {
-        guard let client = wl_resource_get_client(resource), let manager = manager else { return }
+        let resource = unsafe request.resource
+        guard let client = unsafe wl_resource_get_client(resource), let manager = manager else { return }
         guard let attrs = assemble(
             width: width, height: height, format: format,
-            flags: flags, res: resource)
+            flags: flags.rawValue)
         else {
             return  // protocol error already posted
         }
         planes = [:]  // fds transferred into the buffer
         guard manager.importDmabuf(attrs) else {
-            zwp_linux_buffer_params_v1_send_failed(resource)
+            self.resource.sendFailed()
             return
         }
-        let buffer = DmabufBuffer(attrs: attrs)
-        // The wl_buffer here is a `created` event argument (server-allocated id 0),
-        // not a request new_id, so it is created directly with its hand-wired vtable.
-        guard let bufRes = WaylandResource.create(
-            client: client, interface: swift_wayland_iface_wl_buffer(), version: 1, id: 0,
-            vtable: UnsafeRawPointer(manager.bufferVtable), owner: buffer) else {
-            return
-        }
-        zwp_linux_buffer_params_v1_send_created(resource, bufRes)
+        _ = unsafe WlBufferServer.createResource(
+            client: client,
+            version: 1,
+            owner: { handle in
+                DmabufBuffer(resource: handle, attrs: attrs)
+            },
+            installed: { buffer in
+                self.resource.sendCreated(buffer: buffer.resource)
+            })
     }
 
     // create_immed(buffer_id, width, height, format, flags): synchronous.
     func createImmed(
-        _ resource: UnsafeMutablePointer<wl_resource>, buffer_id bufferId: WlNewId,
-        width: Int32, height: Int32, format: UInt32, flags: UInt32
+        _ request: WaylandRequest<ZwpLinuxBufferParamsV1Server>,
+        buffer_id bufferId: WlNewId<WlBufferServer>,
+        width: Int32, height: Int32, format: UInt32, flags: ZwpLinuxBufferParamsV1Flags
     ) {
         guard let manager = manager else { return }
         guard let attrs = assemble(
             width: width, height: height, format: format,
-            flags: flags, res: resource)
+            flags: flags.rawValue)
         else {
             return
         }
         planes = [:]
         guard manager.importDmabuf(attrs) else {
-            swift_wayland_resource_post_error(
-                resource, 7, "dmabuf import failed")
+            request.postError(
+                .invalidWlBuffer,
+                message: "dmabuf import failed")
             return
         }
-        let buffer = DmabufBuffer(attrs: attrs)
-        // wl_buffer is destroy-only: materialize with its hand-wired request vtable.
-        _ = bufferId.create(
-            vtable: UnsafeRawPointer(manager.bufferVtable), owner: buffer)
+        _ = unsafe bufferId.create { handle in
+            DmabufBuffer(resource: handle, attrs: attrs)
+        }
     }
 }
 
 /// A dmabuf-backed wl_buffer (Rule 9). Owns its plane fds; closes them when the
 /// client destroys the buffer. The live surface importer reads its validated attrs.
 final class DmabufBuffer {
+    let resource: WaylandResourceHandle<WlBufferServer>
     let attrs: DmabufAttrs
-    init(attrs: DmabufAttrs) { self.attrs = attrs }
+    init(resource: WaylandResourceHandle<WlBufferServer>, attrs: DmabufAttrs) {
+        self.resource = resource
+        self.attrs = attrs
+    }
 
-    fileprivate static let objectDestroy: @convention(c) (
-        OpaquePointer?, UnsafeMutablePointer<wl_resource>?
-    ) -> Void = { _, resource in if let resource { wl_resource_destroy(resource) } }
+}
 
+@MainActor
+private final class DmabufFeedback {
+    let resource: WaylandResourceHandle<ZwpLinuxDmabufFeedbackV1Server>
+
+    init(
+        resource: WaylandResourceHandle<ZwpLinuxDmabufFeedbackV1Server>
+    ) {
+        self.resource = resource
+    }
 }
 
 // MARK: - little-endian + wl_array helpers
@@ -416,11 +441,12 @@ private func appendLE64(_ out: inout [UInt8], _ v: UInt64) {
     for i in 0..<8 { out.append(UInt8((v >> (8 * UInt64(i))) & 0xff)) }
 }
 
-private func writeAll(fd: Int32, bytes: UnsafeRawBufferPointer) -> Bool {
+@unsafe private func writeAll(fd: Int32, bytes: UnsafeRawBufferPointer) -> Bool {
     var written = 0
     while written < bytes.count {
-        guard let base = bytes.baseAddress else { return bytes.isEmpty }
-        let result = write(fd, base.advanced(by: written), bytes.count - written)
+        guard let base = bytes.baseAddress else { return unsafe bytes.isEmpty }
+        let result = unsafe write(
+            fd, base.advanced(by: written), bytes.count - written)
         if result > 0 {
             written += result
         } else if result < 0, errno == EINTR {
@@ -430,17 +456,4 @@ private func writeAll(fd: Int32, bytes: UnsafeRawBufferPointer) -> Bool {
         }
     }
     return true
-}
-
-/// Build a transient wl_array over `bytes` for an array-typed event send. The send
-/// copies the bytes into the wire, so the array need only live across the call.
-private func withWlArray(_ bytes: [UInt8], _ body: (UnsafeMutablePointer<wl_array>) -> Void) {
-    var bytes = bytes
-    bytes.withUnsafeMutableBytes { raw in
-        var arr = wl_array()
-        arr.size = raw.count
-        arr.alloc = raw.count
-        arr.data = raw.baseAddress
-        withUnsafeMutablePointer(to: &arr) { body($0) }
-    }
 }

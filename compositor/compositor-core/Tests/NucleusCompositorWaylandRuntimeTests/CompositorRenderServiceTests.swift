@@ -157,8 +157,8 @@ final class RenderServiceSpy: CompositorRenderService {
 
     var firstPipe = [Int32](repeating: -1, count: 2)
     var secondPipe = [Int32](repeating: -1, count: 2)
-    #expect(pipe(&firstPipe) == 0)
-    #expect(pipe(&secondPipe) == 0)
+    #expect(unsafe pipe(&firstPipe) == 0)
+    #expect(unsafe pipe(&secondPipe) == 0)
     defer {
         close(firstPipe[1])
         close(secondPipe[1])

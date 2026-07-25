@@ -4,6 +4,8 @@
 // wraps an instance of this and is what swift-java extracts; this type carries
 // the whole state machine.
 
+import NucleusAndroidHostLifecycle
+
 public enum AndroidErrorCode: Int32 {
     case none = 0
     case invalid_handle = 1
@@ -20,6 +22,7 @@ public enum AndroidErrorCode: Int32 {
     case asset_path_rejected = 12
     case runtime_not_attached = 13
     case render_not_started = 14
+    case owner_thread_violation = 15
 }
 
 // Diagnostic code constants (1..65), matching Host.Diagnostic.
@@ -91,7 +94,7 @@ enum Diagnostic {
     static let render_last_post_result: Int32 = 65
 }
 
-struct PlatformContext {
+@safe struct PlatformContext {
     var configured: Bool = false
     var asset_manager: UnsafeMutableRawPointer? = nil
     var density: Float = 1.0
@@ -110,7 +113,7 @@ struct PlatformContext {
         _ packageName: String
     ) -> Bool {
         clear()
-        self.asset_manager = assetManager
+        unsafe self.asset_manager = assetManager
         self.density = density
         self.sdk_int = sdkInt
         self.files_dir = filesDir
@@ -124,15 +127,19 @@ struct PlatformContext {
         files_dir = nil
         cache_dir = nil
         package_name = nil
-        asset_manager = nil
+        unsafe asset_manager = nil
         configured = false
         density = 1.0
         sdk_int = 0
     }
 }
 
-struct SurfaceState {
-    var native_window: UnsafeMutableRawPointer? = nil
+@safe struct SurfaceState {
+    private var ownership =
+        unsafe NativeSurfaceSlot<UnsafeMutableRawPointer>()
+    var native_window: UnsafeMutableRawPointer? {
+        unsafe ownership.handle
+    }
     var width: Int32 = 0
     var height: Int32 = 0
     var format: Int32 = 0
@@ -144,17 +151,16 @@ struct SurfaceState {
         _ height: Int32,
         _ format: Int32
     ) -> UnsafeMutableRawPointer? {
-        let previous = native_window
-        native_window = window
+        let previous = unsafe ownership.adopt(window)
         self.width = width
         self.height = height
         self.format = format
         generation &+= 1
-        return previous
+        return unsafe previous
     }
 
     mutating func update(_ width: Int32, _ height: Int32, _ format: Int32) -> Bool {
-        if native_window == nil { return false }
+        if unsafe native_window == nil { return false }
         self.width = width
         self.height = height
         self.format = format
@@ -162,24 +168,16 @@ struct SurfaceState {
     }
 
     mutating func detach() -> UnsafeMutableRawPointer? {
-        guard let previous = native_window else { return nil }
-        native_window = nil
+        guard unsafe native_window != nil,
+              let previous = unsafe ownership.detach()
+        else { return nil }
         width = 0
         height = 0
         format = 0
         generation &+= 1
-        return previous
+        return unsafe previous
     }
 
-    mutating func take() -> UnsafeMutableRawPointer? {
-        let previous = native_window
-        native_window = nil
-        width = 0
-        height = 0
-        format = 0
-        generation &+= 1
-        return previous
-    }
 }
 
 struct FrameClock {
@@ -273,8 +271,16 @@ public final class AndroidHostCore {
     public init() {}
 
     public func teardown() -> UnsafeMutableRawPointer? {
+        let window = unsafe surface.detach()
+        unsafe runtime.host.updateSurface(nil, 0, 0, 0, surface.generation)
+        if runtime.host.started {
+            _ = runtime.host.stop()
+        }
+        if runtime.host.attached {
+            _ = runtime.host.detach()
+        }
         platform.clear()
-        return takeSurface()
+        return unsafe window
     }
 
     public func start() -> Bool {
@@ -301,7 +307,14 @@ public final class AndroidHostCore {
         _ cacheDir: String,
         _ packageName: String
     ) -> Bool {
-        if !platform.configure(assetManager, density, sdkInt, filesDir, cacheDir, packageName) {
+        if unsafe !platform.configure(
+            assetManager,
+            density,
+            sdkInt,
+            filesDir,
+            cacheDir,
+            packageName)
+        {
             last_error = .allocation_failed
             return false
         }
@@ -316,8 +329,8 @@ public final class AndroidHostCore {
         _ height: Int32,
         _ format: Int32
     ) -> UnsafeMutableRawPointer? {
-        let previous = surface.attach(window, width, height, format)
-        runtime.host.updateSurface(
+        let previous = unsafe surface.attach(window, width, height, format)
+        unsafe runtime.host.updateSurface(
             surface.native_window,
             surface.width,
             surface.height,
@@ -327,7 +340,7 @@ public final class AndroidHostCore {
         events.push(AndroidEvent(kind: .surface_attached, i0: width, i1: height, i2: format))
         lifecycle.surface_attach_count &+= 1
         last_error = .none
-        return previous
+        return unsafe previous
     }
 
     public func updateSurface(_ width: Int32, _ height: Int32, _ format: Int32) -> Bool {
@@ -335,7 +348,7 @@ public final class AndroidHostCore {
             last_error = .no_surface
             return false
         }
-        runtime.host.updateSurface(
+        unsafe runtime.host.updateSurface(
             surface.native_window,
             surface.width,
             surface.height,
@@ -349,19 +362,20 @@ public final class AndroidHostCore {
     }
 
     public func detachSurface() -> UnsafeMutableRawPointer? {
-        guard let previous = surface.detach() else {
+        guard let previous = unsafe surface.detach() else {
             last_error = .no_surface
             return nil
         }
-        runtime.host.updateSurface(nil, 0, 0, 0, surface.generation)
+        unsafe runtime.host.updateSurface(
+            nil,
+            0,
+            0,
+            0,
+            surface.generation)
         events.push(AndroidEvent(kind: .surface_detached))
         lifecycle.surface_detach_count &+= 1
         last_error = .none
-        return previous
-    }
-
-    public func takeSurface() -> UnsafeMutableRawPointer? {
-        return surface.take()
+        return unsafe previous
     }
 
     public func frame(_ frameTimeNanos: Int64) -> Bool {
@@ -369,7 +383,7 @@ public final class AndroidHostCore {
             last_error = .not_started
             return false
         }
-        if surface.native_window == nil {
+        if unsafe surface.native_window == nil {
             last_error = .no_surface
             return false
         }
@@ -484,12 +498,12 @@ public final class AndroidHostCore {
             last_error = .context_null
             return nil
         }
-        guard let manager = platform.asset_manager else {
+        guard let manager = unsafe platform.asset_manager else {
             last_error = .asset_manager_failed
             return nil
         }
         last_error = .none
-        return manager
+        return unsafe manager
     }
 
     @discardableResult
@@ -507,7 +521,7 @@ public final class AndroidHostCore {
     }
 
     public func runtimeAttach() -> Bool {
-        let attached = runtime.host.attach(AttachSnapshot(
+        let attached = unsafe runtime.host.attach(AttachSnapshot(
             platform_configured: platform.configured,
             asset_provider_available: platform.asset_manager != nil,
             surface_window: surface.native_window,
@@ -597,7 +611,8 @@ public final class AndroidHostCore {
         case Diagnostic.host_started: return boolValue(frame_clock.started)
         case Diagnostic.window_attached: return boolValue(input.attached_to_window)
         case Diagnostic.window_focused: return boolValue(input.has_window_focus)
-        case Diagnostic.surface_attached: return boolValue(surface.native_window != nil)
+        case Diagnostic.surface_attached:
+            return boolValue(unsafe surface.native_window != nil)
         case Diagnostic.surface_width: return intValue(surface.width)
         case Diagnostic.surface_height: return intValue(surface.height)
         case Diagnostic.surface_format: return intValue(surface.format)

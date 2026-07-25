@@ -7,7 +7,7 @@ func resourceSnapshotCountsLiveFileDescriptors() throws {
     let before = try BenchmarkResourceSnapshot.capture()
     var descriptors = [Int32](repeating: -1, count: 2)
     let result = descriptors.withUnsafeMutableBufferPointer { buffer in
-        pipe(buffer.baseAddress!)
+        unsafe pipe(buffer.baseAddress!)
     }
     #expect(result == 0)
     guard result == 0 else { return }

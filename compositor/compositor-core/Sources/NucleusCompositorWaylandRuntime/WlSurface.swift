@@ -14,22 +14,31 @@
 import WaylandServerC
 import WaylandServer
 import WaylandServerDispatch
+import WaylandProtocolTypes
+import NucleusCompositorServerTypes
 import NucleusRenderModel
 import NucleusTypes
 
-final class WlSurface {
+@MainActor
+@safe final class WlSurface {
     // Weak: a surface must not keep its compositor alive (Rule 9 — a surface is
     // owned only by its resource). This is also nil-safe at teardown, where the
     // display (and thus surface-resource destruction) outlives the compositor.
     weak let compositor: WlCompositor?
-    private let pointerCursorSurfaceBits: UInt
+    private weak var pointerCursorSurface: PointerCursorSurface?
     let version: Int32
     /// Process-unique compositor identity. Wayland object ids are scoped to one
     /// client and routinely collide across clients, so they cannot key focus,
     /// scene, input, or drag state.
-    private let stableObjectId: UInt32
+    let id: WlSurfaceID
     /// The wl_surface resource. Set right after creation; nil after destruction.
-    fileprivate(set) var resource: UnsafeMutablePointer<wl_resource>?
+    private let resourceHandle: WaylandResourceHandle<WlSurfaceServer>?
+    var protocolResource: WaylandResourceHandle<WlSurfaceServer>? {
+        resourceHandle
+    }
+    @unsafe var resource: UnsafeMutablePointer<wl_resource>? {
+        unsafe resourceHandle?.resource
+    }
 
     private var pending = SurfacePendingState()
     private var current = SurfaceCurrentState()
@@ -38,7 +47,7 @@ final class WlSurface {
     /// wl_buffer while its pixels remain current, so this is nil once the wire
     /// object is gone even though `hasCurrentBuffer` remains true.
     var currentBuffer: UnsafeMutablePointer<wl_resource>? {
-        current.buffer?.resource
+        unsafe current.buffer?.resource
     }
     /// Whether the surface logically has attached content, independent of the
     /// lifetime of the client-side wl_buffer object used to supply those pixels.
@@ -50,7 +59,7 @@ final class WlSurface {
         set { current.buffer = newValue }
     }
     private var currentReleaseCallback:
-        UnsafeMutablePointer<wl_resource>?
+        WaylandResourceReference?
     {
         get { current.releaseCallback }
         set { current.releaseCallback = newValue }
@@ -143,10 +152,15 @@ final class WlSurface {
     /// recording that its release transition has already occurred.
     func releaseCurrentBufferImmediately() {
         guard hasCurrentBuffer, !currentBufferReleased else { return }
-        if let buffer = currentBuffer { wl_buffer_send_release(buffer) }
+        currentBufferReference?
+            .typedHandle(as: WlBufferServer.self)?
+            .sendRelease()
         if let callback = currentReleaseCallback {
-            wl_callback_send_done(callback, 0)
-            wl_resource_destroy(callback)
+            callback.typedHandle(as: WlCallbackServer.self)?
+                .sendDone(callback_data: 0)
+            if let resource = unsafe callback.resource {
+                unsafe wl_resource_destroy(resource)
+            }
             currentReleaseCallback = nil
         }
         currentBufferReleased = true
@@ -205,16 +219,12 @@ final class WlSurface {
 
     let subsurfaceTopology = SubsurfaceTopology()
 
-    var objectId: UInt32 {
-        stableObjectId != 0
-            ? stableObjectId
-            : resource.map { wl_resource_get_id($0) } ?? 0
-    }
+    var objectId: UInt32 { id.rawValue }
 
     /// The client-scoped protocol object id. Use only for wire diagnostics;
     /// compositor state must use `objectId`.
     var wireObjectId: UInt32 {
-        resource.map { wl_resource_get_id($0) } ?? 0
+        unsafe resource.map { unsafe wl_resource_get_id($0) } ?? 0
     }
 
     // MARK: role (xdg_surface / layer surface)
@@ -291,37 +301,53 @@ final class WlSurface {
     }
 
     init(
+        resource: WaylandResourceHandle<WlSurfaceServer>,
         compositor: WlCompositor,
         pointerCursorSurface: PointerCursorSurface,
         version: Int32,
-        stableObjectId: UInt32 = 0
+        stableObjectId: UInt32
     ) {
+        self.resourceHandle = resource
         self.compositor = compositor
-        self.pointerCursorSurfaceBits = UInt(
-            bitPattern: Unmanaged.passUnretained(pointerCursorSurface).toOpaque())
+        self.pointerCursorSurface = pointerCursorSurface
         self.version = version
-        self.stableObjectId = stableObjectId
+        self.id = WlSurfaceID(stableObjectId)
     }
 
-    func bind(resource: UnsafeMutablePointer<wl_resource>) {
-        self.resource = resource
+    /// State-machine fixture initializer. Wire-created surfaces always use the
+    /// typed-handle initializer above.
+    init(
+        compositor: WlCompositor,
+        pointerCursorSurface: PointerCursorSurface,
+        version: Int32,
+        stableObjectId: UInt32
+    ) {
+        resourceHandle = nil
+        self.compositor = compositor
+        self.pointerCursorSurface = pointerCursorSurface
+        self.version = version
+        self.id = WlSurfaceID(stableObjectId)
+    }
+
+    func sendInitialPreferredScale() {
         // Seed the v6 preferred scale before the surface enters an output. The
         // entered-output set recomputes and republishes the live per-output value.
-        if version >= 6 {
-            WlSurfaceServer.sendPreferredBufferScale(resource, factor: compositor?.preferredBufferScale ?? 1)
+        if let resourceHandle, resourceHandle.supportsPreferredBufferScale {
+            resourceHandle.sendPreferredBufferScale(
+                factor: compositor?.preferredBufferScale ?? 1)
         }
     }
 
     // MARK: request application (called from the shared surface vtable)
 
-    func attach(buffer: UnsafeMutablePointer<wl_resource>?, x: Int32, y: Int32) {
+    @unsafe func attach(buffer: UnsafeMutablePointer<wl_resource>?, x: Int32, y: Int32) {
         pending.bufferAttached = true
-        let dmabufOwner: DmabufBuffer? = buffer.flatMap {
-            wl_shm_buffer_get($0) == nil
-                ? WaylandResource.owner(of: $0, as: DmabufBuffer.self)
+        let dmabufOwner: DmabufBuffer? = unsafe buffer.flatMap {
+            unsafe wl_shm_buffer_get($0) == nil
+                ? unsafe WaylandResource.owner(of: $0, as: DmabufBuffer.self)
                 : nil
         }
-        pending.buffer = WaylandResourceReference(buffer, retaining: dmabufOwner)
+        pending.buffer = unsafe WaylandResourceReference(buffer, retaining: dmabufOwner)
         // attach x/y is superseded by the offset request in v5+; record either way.
         pending.offsetX = x
         pending.offsetY = y
@@ -343,12 +369,16 @@ final class WlSurface {
             && !rect.y.addingReportingOverflow(rect.height).overflow
     }
 
-    func addFrameCallback(_ callback: UnsafeMutablePointer<wl_resource>) {
-        pending.frameCallbacks.append(callback)
+    @unsafe func addFrameCallback(_ callback: UnsafeMutablePointer<wl_resource>) {
+        if let reference = unsafe WaylandResourceReference(callback) {
+            pending.frameCallbacks.append(reference)
+        }
     }
 
-    func addPresentationFeedback(_ feedback: UnsafeMutablePointer<wl_resource>) {
-        pending.presentationFeedbacks.append(feedback)
+    @unsafe func addPresentationFeedback(_ feedback: UnsafeMutablePointer<wl_resource>) {
+        if let reference = unsafe WaylandResourceReference(feedback) {
+            pending.presentationFeedbacks.append(reference)
+        }
     }
 
     func setOpaqueRegion(_ snapshot: RegionSnapshot?) { pending.opaque = .set(snapshot) }
@@ -360,19 +390,19 @@ final class WlSurface {
         pending.offsetY = y
     }
 
-    func installPendingReleaseCallback(
-        _ callback: WlNewId,
-        postingErrorsTo resource: UnsafeMutablePointer<wl_resource>
-    ) {
+    @unsafe func installPendingReleaseCallback(
+        _ callback: WlNewId<WlCallbackServer>
+    ) -> Bool {
         guard pending.bufferAttached, pending.buffer != nil else {
-            swift_wayland_resource_post_error(
-                resource, 5, "get_release without an attached buffer")
-            return
+            return false
         }
         if let stale = pending.releaseCallback {
-            wl_resource_destroy(stale)
+            if let resource = unsafe stale.resource {
+                unsafe wl_resource_destroy(resource)
+            }
         }
-        pending.releaseCallback = callback.createBare()
+        pending.releaseCallback = unsafe WaylandResourceReference(callback.createBare())
+        return true
     }
 
     // MARK: surface-adjacent protocol setters (write pending; latched on commit)
@@ -420,18 +450,20 @@ final class WlSurface {
     /// resources), then recomputes preferred scale from the new membership. A no-op
     /// when the set is unchanged, so the presentation walk can call it every frame.
     func updateEnteredOutputs(_ ids: Set<UInt64>) {
-        guard let resource, let compositor, ids != enteredOutputs else { return }
-        let client = wl_resource_get_client(resource)
+        guard let resourceHandle, let compositor, ids != enteredOutputs else {
+            return
+        }
+        let client = resourceHandle.clientID
         for id in ids where !enteredOutputs.contains(id) {
             guard let output = compositor.output(id: id) else { continue }
-            for outputRes in output.resources(forClient: client) {
-                WlSurfaceServer.sendEnter(resource, output: outputRes)
+            for outputResource in output.resources(forClient: client) {
+                resourceHandle.sendEnter(output: outputResource)
             }
         }
         for id in enteredOutputs where !ids.contains(id) {
             guard let output = compositor.output(id: id) else { continue }
-            for outputRes in output.resources(forClient: client) {
-                WlSurfaceServer.sendLeave(resource, output: outputRes)
+            for outputResource in output.resources(forClient: client) {
+                resourceHandle.sendLeave(output: outputResource)
             }
         }
         enteredOutputs = ids
@@ -449,7 +481,7 @@ final class WlSurface {
     /// outputs the surface overlaps, and advertise it if it changed. With no live
     /// outputs the last advertised scale is kept (sending scale 0 is invalid).
     private func refreshPreferredScale() {
-        guard let resource, let compositor else { return }
+        guard let resourceHandle, let compositor else { return }
         var maxScale: Int32 = 0
         var maxFractionalScale = 0.0
         for id in enteredOutputs {
@@ -459,8 +491,10 @@ final class WlSurface {
             }
         }
         guard maxScale > 0 else { return }
-        if version >= 6, maxScale != sentPreferredBufferScale {
-            WlSurfaceServer.sendPreferredBufferScale(resource, factor: maxScale)
+        if resourceHandle.supportsPreferredBufferScale,
+            maxScale != sentPreferredBufferScale
+        {
+            resourceHandle.sendPreferredBufferScale(factor: maxScale)
             sentPreferredBufferScale = maxScale
         }
         let resolvedFractionalScale = maxFractionalScale > 0 ? maxFractionalScale : Double(maxScale)
@@ -477,8 +511,9 @@ final class WlSurface {
         let commitID = nextCommitID
         nextCommitID &+= 1
         if nextCommitID == 0 { nextCommitID = 1 }
-        let attachedBufferIsNonNull = pending.bufferAttached
-            && pending.buffer?.resource != nil
+        let pendingBufferResource = unsafe pending.buffer?.resource
+        let attachedBufferIsNonNull = unsafe pending.bufferAttached
+            && pendingBufferResource != nil
         let attachedBufferSupportsExplicitSync =
             attachedBufferIsNonNull
             && pending.buffer?.semanticOwner is DmabufBuffer
@@ -520,15 +555,23 @@ final class WlSurface {
             // A superseded cached commit is dropped: release its never-applied new
             // buffer, and roll its frame callbacks into the new latch so none leak.
             if let prev = subsurfaceTopology.cachedCommit {
-                if prev.bufferAttached, let b = prev.buffer?.resource {
-                    wl_buffer_send_release(b)
-                    if let cb = prev.releaseCallback { wl_callback_send_done(cb, 0); wl_resource_destroy(cb) }
+                if prev.bufferAttached, let buffer = prev.buffer {
+                    buffer.typedHandle(as: WlBufferServer.self)?.sendRelease()
+                    if let callback = prev.releaseCallback {
+                        callback.typedHandle(as: WlCallbackServer.self)?
+                            .sendDone(callback_data: 0)
+                        if let cb = unsafe callback.resource {
+                            unsafe wl_resource_destroy(cb)
+                        }
+                    }
                 }
                 next.frameCallbacks = prev.frameCallbacks + next.frameCallbacks
                 // A superseded content update is never presented: discard its feedbacks.
                 for fb in prev.presentationFeedbacks {
-                    wp_presentation_feedback_send_discarded(fb)
-                    wl_resource_destroy(fb)
+                    guard let resource = unsafe fb.resource else { continue }
+                    fb.typedHandle(as: WpPresentationFeedbackServer.self)?
+                        .sendDiscarded()
+                    unsafe wl_resource_destroy(resource)
                 }
             }
             subsurfaceTopology.cachedCommit = next
@@ -546,10 +589,10 @@ final class WlSurface {
             return
         }
         let willHaveBuffer = latch.bufferAttached
-            ? latch.buffer?.resource != nil
+            ? unsafe latch.buffer?.resource != nil
             : hasCurrentBuffer
         let roleBufferPixelSize = latch.bufferAttached
-            ? bufferPixelSize(latch.buffer?.resource)
+            ? unsafe bufferPixelSize(latch.buffer?.resource)
             : committedBufferPixelSize()
         guard role?.validateSurfaceCommit(
             self,
@@ -566,15 +609,16 @@ final class WlSurface {
             committedBufferGeneration &+= 1
             if committedBufferGeneration == 0 { committedBufferGeneration = 1 }
             let oldReference = currentBufferReference
-            let old = oldReference?.resource
-            let new = latch.buffer?.resource
+            let old = unsafe oldReference?.resource
+            let new = unsafe latch.buffer?.resource
             let oldWasReleased = currentBufferReleased
             currentBufferReference = latch.buffer
             current.bufferPixelSize = latch.buffer == nil
                 ? BufferPixelSize()
                 : roleBufferPixelSize
             // A replaced buffer is no longer referenced; release it for client reuse.
-            let replaced = oldReference != nil && (latch.buffer == nil || old == nil || old != new)
+            let replaced = unsafe oldReference != nil
+                && (latch.buffer == nil || old == nil || old != new)
             if replaced && !oldWasReleased {
                 if let oldReference,
                    oldReference.semanticOwner is DmabufBuffer,
@@ -586,10 +630,15 @@ final class WlSurface {
                         callback: currentReleaseCallback)
                 } else {
                     // SHM pixels were copied during commit and can be released now.
-                    if let old { wl_buffer_send_release(old) }
-                    if let cb = currentReleaseCallback {
-                        wl_callback_send_done(cb, 0)
-                        wl_resource_destroy(cb)
+                    if let old = currentBufferReference {
+                        old.typedHandle(as: WlBufferServer.self)?.sendRelease()
+                    }
+                    if let callback = currentReleaseCallback,
+                        let cb = unsafe callback.resource
+                    {
+                        callback.typedHandle(as: WlCallbackServer.self)?
+                            .sendDone(callback_data: 0)
+                        unsafe wl_resource_destroy(cb)
                     }
                 }
             }
@@ -598,21 +647,10 @@ final class WlSurface {
             offsetX = latch.offsetX
             offsetY = latch.offsetY
             if roleIdentity == .cursor {
-                let surfaceID = objectId
-                let offsetX = latch.offsetX
-                let offsetY = latch.offsetY
-                let pointerCursorSurfaceBits = pointerCursorSurfaceBits
-                MainActor.assumeIsolated {
-                    guard let pointer = UnsafeRawPointer(
-                        bitPattern: pointerCursorSurfaceBits)
-                    else { return }
-                    let pointerCursorSurface = Unmanaged<PointerCursorSurface>
-                        .fromOpaque(pointer).takeUnretainedValue()
-                    pointerCursorSurface.applyCommittedOffset(
-                        surfaceID: surfaceID,
-                        x: offsetX,
-                        y: offsetY)
-                }
+                pointerCursorSurface?.applyCommittedOffset(
+                    surfaceID: objectId,
+                    x: latch.offsetX,
+                    y: latch.offsetY)
             }
         }
         bufferScale = latch.bufferScale
@@ -641,11 +679,11 @@ final class WlSurface {
             bufferTransform: bufferTransform,
             viewportDestination: aux.viewportDestination)
         let info = SurfaceCommit(
-            surfaceID: objectId,
+            surfaceID: id,
             commitID: latch.commitID,
             bufferAttached: latch.bufferAttached,
             bufferGeneration: committedBufferGeneration,
-            bufferResourceBits: UInt(bitPattern: currentBuffer),
+            buffer: currentBufferReference,
             bufferPixelSize: pixels,
             logicalContentSize: logical,
             bufferScale: bufferScale, bufferTransform: bufferTransform,
@@ -670,18 +708,22 @@ final class WlSurface {
     }
 
     private func discardUnapplied(_ latch: SurfaceTransaction) {
-        if latch.bufferAttached, let buffer = latch.buffer?.resource {
-            wl_buffer_send_release(buffer)
+        if latch.bufferAttached {
+            latch.buffer?.typedHandle(as: WlBufferServer.self)?.sendRelease()
         }
-        if let callback = latch.releaseCallback {
-            wl_resource_destroy(callback)
+        if let callback = unsafe latch.releaseCallback?.resource {
+            unsafe wl_resource_destroy(callback)
         }
         for callback in latch.frameCallbacks {
-            wl_resource_destroy(callback)
+            if let resource = unsafe callback.resource {
+                unsafe wl_resource_destroy(resource)
+            }
         }
         for feedback in latch.presentationFeedbacks {
-            wp_presentation_feedback_send_discarded(feedback)
-            wl_resource_destroy(feedback)
+            guard let resource = unsafe feedback.resource else { continue }
+            feedback.typedHandle(as: WpPresentationFeedbackServer.self)?
+                .sendDiscarded()
+            unsafe wl_resource_destroy(resource)
         }
     }
 
@@ -698,12 +740,12 @@ final class WlSurface {
                 || source.height.rounded(.towardZero) != source.height
         {
             viewport?.postError(
-                1 /* bad_size */,
+                .badSize,
                 "fractional viewport source requires a destination size")
             return false
         }
         let pixels = latch.bufferAttached
-            ? bufferPixelSize(latch.buffer?.resource)
+            ? unsafe bufferPixelSize(latch.buffer?.resource)
             : committedBufferPixelSize()
         guard pixels.width != 0, pixels.height != 0 else { return true }
         let unviewported = resolveSurfaceLogicalSize(
@@ -719,7 +761,7 @@ final class WlSurface {
             maxY <= unviewported.height
         else {
             viewport?.postError(
-                2 /* out_of_buffer */,
+                .outOfBuffer,
                 "viewport source lies outside the transformed, scaled buffer")
             return false
         }
@@ -730,16 +772,16 @@ final class WlSurface {
         current.bufferPixelSize
     }
 
-    private func bufferPixelSize(
+    @unsafe private func bufferPixelSize(
         _ buffer: UnsafeMutablePointer<wl_resource>?
     ) -> BufferPixelSize {
-        guard let buffer else { return BufferPixelSize() }
-        if let shm = wl_shm_buffer_get(buffer) {
+        guard let buffer = unsafe buffer else { return BufferPixelSize() }
+        if let shm = unsafe wl_shm_buffer_get(buffer) {
             return BufferPixelSize(
-                width: UInt32(max(0, wl_shm_buffer_get_width(shm))),
-                height: UInt32(max(0, wl_shm_buffer_get_height(shm))))
+                width: UInt32(max(0, unsafe wl_shm_buffer_get_width(shm))),
+                height: UInt32(max(0, unsafe wl_shm_buffer_get_height(shm))))
         }
-        if let dmabuf = WaylandResource.owner(of: buffer, as: DmabufBuffer.self) {
+        if let dmabuf = unsafe WaylandResource.owner(of: buffer, as: DmabufBuffer.self) {
             return BufferPixelSize(
                 width: UInt32(max(0, dmabuf.attrs.width)),
                 height: UInt32(max(0, dmabuf.attrs.height)))
@@ -784,24 +826,36 @@ final class WlSurface {
             commitID: commitID, submissionID: submissionID)
     }
 
-    deinit {
+    isolated deinit {
         // Outstanding frame callbacks never presented: destroy their resources so
         // they don't dangle. (Their wl_resources belong to the client and would
         // otherwise be cleaned up only at client teardown.)
         presentation.destroyAll()
-        for cb in pending.frameCallbacks { wl_resource_destroy(cb) }
+        for cb in pending.frameCallbacks {
+            if let resource = unsafe cb.resource {
+                unsafe wl_resource_destroy(resource)
+            }
+        }
         if let latch = subsurfaceTopology.cachedCommit {
-            for cb in latch.frameCallbacks { wl_resource_destroy(cb) }
+            for cb in latch.frameCallbacks {
+                if let resource = unsafe cb.resource {
+                    unsafe wl_resource_destroy(resource)
+                }
+            }
         }
         // Presentation feedbacks for never-presented content are discarded.
         for fb in pending.presentationFeedbacks {
-            wp_presentation_feedback_send_discarded(fb)
-            wl_resource_destroy(fb)
+            guard let resource = unsafe fb.resource else { continue }
+            fb.typedHandle(as: WpPresentationFeedbackServer.self)?
+                .sendDiscarded()
+            unsafe wl_resource_destroy(resource)
         }
         if let latch = subsurfaceTopology.cachedCommit {
             for fb in latch.presentationFeedbacks {
-                wp_presentation_feedback_send_discarded(fb)
-                wl_resource_destroy(fb)
+                guard let resource = unsafe fb.resource else { continue }
+                fb.typedHandle(as: WpPresentationFeedbackServer.self)?
+                    .sendDiscarded()
+                unsafe wl_resource_destroy(resource)
             }
         }
         // Retire the current buffer under the same GPU-lifetime contract as a
@@ -815,37 +869,35 @@ final class WlSurface {
                 iosurfaceID: renderIosurfaceId, buffer: currentBufferReference,
                 callback: currentReleaseCallback)
         } else {
-            if let cb = currentReleaseCallback {
-                wl_callback_send_done(cb, 0)
-                wl_resource_destroy(cb)
+            if let callback = currentReleaseCallback,
+                let cb = unsafe callback.resource
+            {
+                callback.typedHandle(as: WlCallbackServer.self)?
+                    .sendDone(callback_data: 0)
+                unsafe wl_resource_destroy(cb)
             }
         }
-        if let cb = pending.releaseCallback { wl_resource_destroy(cb) }
+        if let cb = unsafe pending.releaseCallback?.resource {
+            unsafe wl_resource_destroy(cb)
+        }
         if let latch = subsurfaceTopology.cachedCommit,
-            let cb = latch.releaseCallback
+            let cb = unsafe latch.releaseCallback?.resource
         {
-            wl_resource_destroy(cb)
+            unsafe wl_resource_destroy(cb)
         }
         role?.roleSurfaceDestroyed(self)
         detachFromParent()
         detachSubsurfaceChildren()
         let destroyedSurfaceID = objectId
-        let pointerCursorSurfaceBits = pointerCursorSurfaceBits
-        MainActor.assumeIsolated {
-            guard let pointer = UnsafeRawPointer(
-                bitPattern: pointerCursorSurfaceBits)
-            else { return }
-            let pointerCursorSurface = Unmanaged<PointerCursorSurface>
-                .fromOpaque(pointer).takeUnretainedValue()
-            pointerCursorSurface.unbind(surfaceID: destroyedSurfaceID)
-        }
+        pointerCursorSurface?.unbind(surfaceID: destroyedSurfaceID)
         compositor?.removeSurface(self)
         compositor?.sceneDelegate?.surfaceDestroyed(
-            surfaceID: objectId, iosurfaceID: renderIosurfaceId)
+            surfaceID: id, iosurfaceID: renderIosurfaceId)
     }
 }
 
 /// Weak box for the surface's commit-observer list (Rule 9).
+@MainActor
 private final class WeakCommitObserver {
     weak var observer: (any WlSurfaceCommitObserver)?
     init(_ observer: any WlSurfaceCommitObserver) { self.observer = observer }

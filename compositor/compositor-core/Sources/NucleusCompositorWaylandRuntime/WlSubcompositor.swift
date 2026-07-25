@@ -9,54 +9,69 @@
 import WaylandServerC
 import WaylandServer
 import WaylandServerDispatch
+import WaylandProtocolTypes
 
 /// Owner bound to each wl_subcompositor resource (Rule 9). Routes get_subsurface
 /// back to the shared WlSubcompositor.
-final class SubcompositorBinding {
+@MainActor
+@safe final class SubcompositorBinding {
     unowned let subcompositor: WlSubcompositor
     init(_ subcompositor: WlSubcompositor) { self.subcompositor = subcompositor }
 }
 
 extension SubcompositorBinding: WlSubcompositorRequests {
     func getSubsurface(
-        _ resource: UnsafeMutablePointer<wl_resource>, id: WlNewId,
-        surface surfaceRes: UnsafeMutablePointer<wl_resource>?,
-        parent parentRes: UnsafeMutablePointer<wl_resource>?
+        _ request: WaylandRequest<WlSubcompositorServer>,
+        id: WlNewId<WlSubsurfaceServer>,
+        surface surfaceRes: WaylandBorrowedObject<WlSurfaceServer>,
+        parent parentRes: WaylandBorrowedObject<WlSurfaceServer>
     ) {
-        guard let surfaceRes, let surface = WaylandResource.owner(of: surfaceRes, as: WlSurface.self),
-            let parentRes, let parent = WaylandResource.owner(of: parentRes, as: WlSurface.self)
+        guard let surface = surfaceRes.owner(as: WlSurface.self),
+            let parent = parentRes.owner(as: WlSurface.self)
         else { return }
 
         guard !surface.wouldCreateSubsurfaceCycle(parent: parent),
             surface.claimSubsurfaceRole()
         else {
-            swift_wayland_resource_post_error(resource, 0 /* WL_SUBCOMPOSITOR_ERROR_BAD_SURFACE */,
-                "surface already has a role or is its own parent")
+            request.postError(.badSurface, message: "surface already has a role or is its own parent")
             return
         }
 
-        let sub = WlSubsurface(surface: surface, parent: parent)
-        guard id.create(vtable: WlSubsurfaceServer.vtable, owner: sub) != nil else {
+        guard unsafe id.create(
+            owner: { handle in
+                WlSubsurface(
+                    resource: handle, surface: surface, parent: parent)
+            },
+            installed: { _ in
+                surface.attachAsSubsurface(to: parent)
+            }
+        ) != nil else {
             surface.releaseSubsurfaceRole()
             return
         }
-        surface.attachAsSubsurface(to: parent)
     }
 }
 
 /// The wl_subsurface role object (Rule 9 owner of the wl_subsurface resource).
 /// Holds weak links: a subsurface is owned by its own resource, and its surface
 /// and parent are owned by theirs.
-final class WlSubsurface {
+@MainActor
+@safe final class WlSubsurface {
+    private let resource: WaylandResourceHandle<WlSubsurfaceServer>
     weak var surface: WlSurface?
     weak var parent: WlSurface?
 
-    init(surface: WlSurface, parent: WlSurface) {
+    init(
+        resource: WaylandResourceHandle<WlSubsurfaceServer>,
+        surface: WlSurface,
+        parent: WlSurface
+    ) {
+        self.resource = resource
         self.surface = surface
         self.parent = parent
     }
 
-    deinit {
+    isolated deinit {
         // wl_subsurface destroyed: the surface loses its subsurface role.
         surface?.detachFromParent()
         surface?.releaseSubsurfaceRole()
@@ -64,66 +79,55 @@ final class WlSubsurface {
 }
 
 extension WlSubsurface: WlSubsurfaceRequests {
-    func setPosition(_ resource: UnsafeMutablePointer<wl_resource>, x: Int32, y: Int32) {
+    func setPosition(_ request: WaylandRequest<WlSubsurfaceServer>, x: Int32, y: Int32) {
         surface?.setSubsurfacePosition(x: x, y: y)
     }
 
     func placeAbove(
-        _ resource: UnsafeMutablePointer<wl_resource>, sibling siblingRes: UnsafeMutablePointer<wl_resource>?
+        _ request: WaylandRequest<WlSubsurfaceServer>, sibling siblingRes: WaylandBorrowedObject<WlSurfaceServer>
     ) {
-        place(resource, siblingRes, .above)
+        place(request, siblingRes, .above)
     }
 
     func placeBelow(
-        _ resource: UnsafeMutablePointer<wl_resource>, sibling siblingRes: UnsafeMutablePointer<wl_resource>?
+        _ request: WaylandRequest<WlSubsurfaceServer>, sibling siblingRes: WaylandBorrowedObject<WlSurfaceServer>
     ) {
-        place(resource, siblingRes, .below)
+        place(request, siblingRes, .below)
     }
 
-    func setSync(_ resource: UnsafeMutablePointer<wl_resource>) {
+    func setSync(_ request: WaylandRequest<WlSubsurfaceServer>) {
         surface?.setSubsurfaceSync(true)
     }
 
-    func setDesync(_ resource: UnsafeMutablePointer<wl_resource>) {
+    func setDesync(_ request: WaylandRequest<WlSubsurfaceServer>) {
         surface?.setSubsurfaceSync(false)
     }
 
     private func place(
-        _ resource: UnsafeMutablePointer<wl_resource>,
-        _ siblingRes: UnsafeMutablePointer<wl_resource>?,
+        _ request: WaylandRequest<WlSubsurfaceServer>,
+        _ siblingRes: WaylandBorrowedObject<WlSurfaceServer>,
         _ dir: WlSurface.PlaceDir
     ) {
         guard let surface = self.surface, let parent = self.parent,
-            let siblingRes, let sibling = WaylandResource.owner(of: siblingRes, as: WlSurface.self)
+            let sibling = siblingRes.owner(as: WlSurface.self)
         else { return }
         guard sibling === parent || sibling.subsurfaceParent === parent,
             parent.placeChild(surface, relativeTo: sibling, dir)
         else {
-            swift_wayland_resource_post_error(
-                resource, 0 /* WL_SUBSURFACE_ERROR_BAD_SURFACE */,
-                "stacking reference is not the parent or a sibling")
+            request.postError(.badSurface, message: "stacking reference is not the parent or a sibling")
             return
         }
     }
 }
 
-final class WlSubcompositor {
+@MainActor
+@safe final class WlSubcompositor {
     func register(in router: NucleusWaylandRouter) {
         router.addGlobal(
-            interface: swift_wayland_iface_wl_subcompositor(), version: 1, impl: self, bind: Self.bind
-        )
-    }
-
-    private static let bind: @convention(c) (
-        OpaquePointer?, UnsafeMutableRawPointer?, UInt32, UInt32
-    ) -> Void = { client, data, version, id in
-        guard let client, let me = NucleusWaylandRouter.impl(data, as: WlSubcompositor.self) else {
-            return
-        }
-        _ = WaylandResource.create(
-            client: client, interface: swift_wayland_iface_wl_subcompositor(),
-            version: Int32(version), id: id, vtable: WlSubcompositorServer.vtable,
-            owner: SubcompositorBinding(me)
-        )
+            WlSubcompositorServer.global(
+                implementation: self,
+                owner: { subcompositor, _ in
+                    SubcompositorBinding(subcompositor)
+                }))
     }
 }

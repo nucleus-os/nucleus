@@ -11,7 +11,7 @@ private func pollReadable(
         fd: descriptor,
         events: Int16(POLLIN),
         revents: 0)
-    return poll(&event, 1, timeout) == 1
+    return unsafe poll(&event, 1, timeout) == 1
         && (event.revents & Int16(POLLIN)) != 0
 }
 
@@ -193,8 +193,8 @@ private func pollReadable(
                     throw GfxstreamTransportError.systemCall(
                         errno: EPROTO)
                 }
-                let value = packet.withUnsafeBytes {
-                    $0.loadUnaligned(as: UInt64.self)
+                let value = unsafe packet.withUnsafeBytes {
+                    unsafe $0.loadUnaligned(as: UInt64.self)
                 }
                 values.insert(value)
             } catch GfxstreamTransportError.empty {
@@ -211,7 +211,7 @@ private func pollReadable(
                     var value =
                         UInt64(producerID * packetsPerProducer + sequence)
                     let packet = withUnsafeBytes(of: &value) {
-                        Data($0)
+                        unsafe Data($0)
                     }
                     while true {
                         do {

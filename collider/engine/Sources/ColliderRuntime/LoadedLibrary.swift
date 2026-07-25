@@ -20,14 +20,14 @@ public enum LoadedLibrary {
             throw LoadedLibraryFailure.invalidSymbol(symbol)
         }
         guard let loadedPath = symbol.withCString({
-            collider_copy_loaded_library_path($0)
+            unsafe collider_copy_loaded_library_path($0)
         }) else {
             throw LoadedLibraryFailure.notFound(
                 symbol: symbol,
                 code: errno)
         }
-        defer { free(loadedPath) }
-        return String(cString: loadedPath)
+        defer { unsafe free(loadedPath) }
+        return unsafe String(cString: loadedPath)
     }
 }
 

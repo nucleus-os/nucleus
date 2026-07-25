@@ -66,10 +66,10 @@ struct DrmModeInfo: Sendable, Equatable {
         self.type = mode.type
         var raw = mode.name
         self.name = withUnsafeBytes(of: &raw) { bytes in
-            String(cString: bytes.bindMemory(to: CChar.self).baseAddress!)
+            unsafe String(cString: bytes.bindMemory(to: CChar.self).baseAddress!)
         }
         var rawMode = mode
-        self.kernelBytes = withUnsafeBytes(of: &rawMode) { Array($0) }
+        self.kernelBytes = withUnsafeBytes(of: &rawMode) { unsafe Array($0) }
     }
 
     init(
@@ -109,7 +109,7 @@ struct DrmModeInfo: Sendable, Equatable {
         guard kernelBytes.count == MemoryLayout<drmModeModeInfo>.size else { return nil }
         var blobID: UInt32 = 0
         let result = kernelBytes.withUnsafeBytes {
-            drmModeCreatePropertyBlob(fd, $0.baseAddress, $0.count, &blobID)
+            unsafe drmModeCreatePropertyBlob(fd, $0.baseAddress, $0.count, &blobID)
         }
         return result == 0 && blobID != 0 ? blobID : nil
     }
@@ -118,140 +118,154 @@ struct DrmModeInfo: Sendable, Equatable {
 // MARK: - Resource owners
 
 /// Owns a `drmModeRes` (card resource inventory) and frees it on teardown.
-struct DrmResources: ~Copyable {
+@safe struct DrmResources: ~Copyable {
     private let ptr: drmModeResPtr
 
     init?(fd: Int32) {
-        guard let p = drmModeGetResources(fd) else { return nil }
-        self.ptr = p
+        guard let p = unsafe drmModeGetResources(fd) else { return nil }
+        unsafe self.ptr = p
     }
 
-    var connectorIds: [UInt32] { idArray(ptr.pointee.connectors, ptr.pointee.count_connectors) }
-    var crtcIds: [UInt32] { idArray(ptr.pointee.crtcs, ptr.pointee.count_crtcs) }
-    var encoderIds: [UInt32] { idArray(ptr.pointee.encoders, ptr.pointee.count_encoders) }
-    var fbIds: [UInt32] { idArray(ptr.pointee.fbs, ptr.pointee.count_fbs) }
-    var minWidth: UInt32 { ptr.pointee.min_width }
-    var maxWidth: UInt32 { ptr.pointee.max_width }
-    var minHeight: UInt32 { ptr.pointee.min_height }
-    var maxHeight: UInt32 { ptr.pointee.max_height }
+    var connectorIds: [UInt32] {
+        unsafe idArray(ptr.pointee.connectors, ptr.pointee.count_connectors)
+    }
+    var crtcIds: [UInt32] {
+        unsafe idArray(ptr.pointee.crtcs, ptr.pointee.count_crtcs)
+    }
+    var encoderIds: [UInt32] {
+        unsafe idArray(ptr.pointee.encoders, ptr.pointee.count_encoders)
+    }
+    var fbIds: [UInt32] {
+        unsafe idArray(ptr.pointee.fbs, ptr.pointee.count_fbs)
+    }
+    var minWidth: UInt32 { unsafe ptr.pointee.min_width }
+    var maxWidth: UInt32 { unsafe ptr.pointee.max_width }
+    var minHeight: UInt32 { unsafe ptr.pointee.min_height }
+    var maxHeight: UInt32 { unsafe ptr.pointee.max_height }
 
-    deinit { drmModeFreeResources(ptr) }
+    deinit { unsafe drmModeFreeResources(ptr) }
 }
 
 /// Owns a `drmModeConnector` and frees it on teardown.
-struct DrmConnector: ~Copyable {
+@safe struct DrmConnector: ~Copyable {
     private let ptr: drmModeConnectorPtr
 
     init?(fd: Int32, connectorId: UInt32) {
-        guard let p = drmModeGetConnector(fd, connectorId) else { return nil }
-        self.ptr = p
+        guard let p = unsafe drmModeGetConnector(fd, connectorId) else { return nil }
+        unsafe self.ptr = p
     }
 
-    var connectorId: UInt32 { ptr.pointee.connector_id }
-    var encoderId: UInt32 { ptr.pointee.encoder_id }
-    var connectorType: UInt32 { ptr.pointee.connector_type }
-    var connectorTypeId: UInt32 { ptr.pointee.connector_type_id }
-    var isConnected: Bool { ptr.pointee.connection == DRM_MODE_CONNECTED }
-    var mmWidth: UInt32 { ptr.pointee.mmWidth }
-    var mmHeight: UInt32 { ptr.pointee.mmHeight }
-    var encoderIds: [UInt32] { idArray(ptr.pointee.encoders, ptr.pointee.count_encoders) }
+    var connectorId: UInt32 { unsafe ptr.pointee.connector_id }
+    var encoderId: UInt32 { unsafe ptr.pointee.encoder_id }
+    var connectorType: UInt32 { unsafe ptr.pointee.connector_type }
+    var connectorTypeId: UInt32 { unsafe ptr.pointee.connector_type_id }
+    var isConnected: Bool { unsafe ptr.pointee.connection == DRM_MODE_CONNECTED }
+    var mmWidth: UInt32 { unsafe ptr.pointee.mmWidth }
+    var mmHeight: UInt32 { unsafe ptr.pointee.mmHeight }
+    var encoderIds: [UInt32] {
+        unsafe idArray(ptr.pointee.encoders, ptr.pointee.count_encoders)
+    }
 
     var modes: [DrmModeInfo] {
-        let count = Int(ptr.pointee.count_modes)
-        guard count > 0, let base = ptr.pointee.modes else { return [] }
-        return (0..<count).map { DrmModeInfo(base[$0]) }
+        let count = unsafe Int(ptr.pointee.count_modes)
+        guard count > 0, let base = unsafe ptr.pointee.modes else { return [] }
+        return (0..<count).map { unsafe DrmModeInfo(base[$0]) }
     }
 
-    deinit { drmModeFreeConnector(ptr) }
+    deinit { unsafe drmModeFreeConnector(ptr) }
 }
 
 /// Owns a `drmModeEncoder` and frees it on teardown.
-struct DrmEncoder: ~Copyable {
+@safe struct DrmEncoder: ~Copyable {
     private let ptr: drmModeEncoderPtr
 
     init?(fd: Int32, encoderId: UInt32) {
-        guard let p = drmModeGetEncoder(fd, encoderId) else { return nil }
-        self.ptr = p
+        guard let p = unsafe drmModeGetEncoder(fd, encoderId) else { return nil }
+        unsafe self.ptr = p
     }
 
-    var encoderId: UInt32 { ptr.pointee.encoder_id }
-    var crtcId: UInt32 { ptr.pointee.crtc_id }
-    var possibleCrtcs: UInt32 { ptr.pointee.possible_crtcs }
-    var possibleClones: UInt32 { ptr.pointee.possible_clones }
+    var encoderId: UInt32 { unsafe ptr.pointee.encoder_id }
+    var crtcId: UInt32 { unsafe ptr.pointee.crtc_id }
+    var possibleCrtcs: UInt32 { unsafe ptr.pointee.possible_crtcs }
+    var possibleClones: UInt32 { unsafe ptr.pointee.possible_clones }
 
-    deinit { drmModeFreeEncoder(ptr) }
+    deinit { unsafe drmModeFreeEncoder(ptr) }
 }
 
 /// Owns a `drmModeCrtc` and frees it on teardown.
-struct DrmCrtc: ~Copyable {
+@safe struct DrmCrtc: ~Copyable {
     private let ptr: drmModeCrtcPtr
 
     init?(fd: Int32, crtcId: UInt32) {
-        guard let p = drmModeGetCrtc(fd, crtcId) else { return nil }
-        self.ptr = p
+        guard let p = unsafe drmModeGetCrtc(fd, crtcId) else { return nil }
+        unsafe self.ptr = p
     }
 
-    var crtcId: UInt32 { ptr.pointee.crtc_id }
-    var bufferId: UInt32 { ptr.pointee.buffer_id }
-    var modeValid: Bool { ptr.pointee.mode_valid != 0 }
-    var gammaSize: Int32 { ptr.pointee.gamma_size }
-    var mode: DrmModeInfo { DrmModeInfo(ptr.pointee.mode) }
+    var crtcId: UInt32 { unsafe ptr.pointee.crtc_id }
+    var bufferId: UInt32 { unsafe ptr.pointee.buffer_id }
+    var modeValid: Bool { unsafe ptr.pointee.mode_valid != 0 }
+    var gammaSize: Int32 { unsafe ptr.pointee.gamma_size }
+    var mode: DrmModeInfo { unsafe DrmModeInfo(ptr.pointee.mode) }
 
-    deinit { drmModeFreeCrtc(ptr) }
+    deinit { unsafe drmModeFreeCrtc(ptr) }
 }
 
 /// Owns a `drmModePlane` and frees it on teardown.
-struct DrmPlane: ~Copyable {
+@safe struct DrmPlane: ~Copyable {
     private let ptr: drmModePlanePtr
 
     init?(fd: Int32, planeId: UInt32) {
-        guard let p = drmModeGetPlane(fd, planeId) else { return nil }
-        self.ptr = p
+        guard let p = unsafe drmModeGetPlane(fd, planeId) else { return nil }
+        unsafe self.ptr = p
     }
 
-    var planeId: UInt32 { ptr.pointee.plane_id }
-    var crtcId: UInt32 { ptr.pointee.crtc_id }
-    var fbId: UInt32 { ptr.pointee.fb_id }
-    var possibleCrtcs: UInt32 { ptr.pointee.possible_crtcs }
-    var formats: [UInt32] { idArray(ptr.pointee.formats, ptr.pointee.count_formats) }
+    var planeId: UInt32 { unsafe ptr.pointee.plane_id }
+    var crtcId: UInt32 { unsafe ptr.pointee.crtc_id }
+    var fbId: UInt32 { unsafe ptr.pointee.fb_id }
+    var possibleCrtcs: UInt32 { unsafe ptr.pointee.possible_crtcs }
+    var formats: [UInt32] {
+        unsafe idArray(ptr.pointee.formats, ptr.pointee.count_formats)
+    }
 
-    deinit { drmModeFreePlane(ptr) }
+    deinit { unsafe drmModeFreePlane(ptr) }
 }
 
 /// Owns a `drmModePlaneRes` (plane inventory) and frees it on teardown.
-struct DrmPlaneResources: ~Copyable {
+@safe struct DrmPlaneResources: ~Copyable {
     private let ptr: drmModePlaneResPtr
 
     init?(fd: Int32) {
-        guard let p = drmModeGetPlaneResources(fd) else { return nil }
-        self.ptr = p
+        guard let p = unsafe drmModeGetPlaneResources(fd) else { return nil }
+        unsafe self.ptr = p
     }
 
-    var planeIds: [UInt32] { idArray(ptr.pointee.planes, ptr.pointee.count_planes) }
+    var planeIds: [UInt32] {
+        unsafe idArray(ptr.pointee.planes, ptr.pointee.count_planes)
+    }
 
-    deinit { drmModeFreePlaneResources(ptr) }
+    deinit { unsafe drmModeFreePlaneResources(ptr) }
 }
 
 /// Owns a `drmModePropertyBlob` (e.g. a MODE_ID or GAMMA_LUT blob) and frees it
 /// on teardown. Copies the blob bytes out on demand.
-struct DrmPropertyBlob: ~Copyable {
+@safe struct DrmPropertyBlob: ~Copyable {
     private let ptr: drmModePropertyBlobPtr
 
     init?(fd: Int32, blobId: UInt32) {
-        guard let p = drmModeGetPropertyBlob(fd, blobId) else { return nil }
-        self.ptr = p
+        guard let p = unsafe drmModeGetPropertyBlob(fd, blobId) else { return nil }
+        unsafe self.ptr = p
     }
 
-    var id: UInt32 { ptr.pointee.id }
-    var length: UInt32 { ptr.pointee.length }
+    var id: UInt32 { unsafe ptr.pointee.id }
+    var length: UInt32 { unsafe ptr.pointee.length }
 
     var bytes: [UInt8] {
-        let len = Int(ptr.pointee.length)
-        guard len > 0, let data = ptr.pointee.data else { return [] }
-        return Array(UnsafeRawBufferPointer(start: data, count: len))
+        let len = unsafe Int(ptr.pointee.length)
+        guard len > 0, let data = unsafe ptr.pointee.data else { return [] }
+        return unsafe Array(UnsafeRawBufferPointer(start: data, count: len))
     }
 
-    deinit { drmModeFreePropertyBlob(ptr) }
+    deinit { unsafe drmModeFreePropertyBlob(ptr) }
 }
 
 // MARK: - Property enumeration
@@ -278,25 +292,28 @@ enum DrmProperties {
     /// Returns an empty array when the object has no properties or the query
     /// fails (a fail-soft convention).
     static func enumerate(fd: Int32, objectId: UInt32, kind: DrmObjectKind) -> [DrmPropertyEntry] {
-        guard let props = drmModeObjectGetProperties(fd, objectId, kind.rawValue) else { return [] }
-        defer { drmModeFreeObjectProperties(props) }
+        guard let props = unsafe drmModeObjectGetProperties(fd, objectId, kind.rawValue) else {
+            return []
+        }
+        defer { unsafe drmModeFreeObjectProperties(props) }
 
-        let count = Int(props.pointee.count_props)
+        let count = unsafe Int(props.pointee.count_props)
         guard count > 0,
-              let ids = props.pointee.props,
-              let values = props.pointee.prop_values else { return [] }
+              let ids = unsafe props.pointee.props,
+              let values = unsafe props.pointee.prop_values else { return [] }
 
         var entries: [DrmPropertyEntry] = []
         entries.reserveCapacity(count)
         for i in 0..<count {
-            let propId = ids[i]
-            guard let prop = drmModeGetProperty(fd, propId) else { continue }
-            defer { drmModeFreeProperty(prop) }
-            var rawName = prop.pointee.name
+            let propId = unsafe ids[i]
+            guard let prop = unsafe drmModeGetProperty(fd, propId) else { continue }
+            defer { unsafe drmModeFreeProperty(prop) }
+            var rawName = unsafe prop.pointee.name
             let name = withUnsafeBytes(of: &rawName) { bytes in
-                String(cString: bytes.bindMemory(to: CChar.self).baseAddress!)
+                unsafe String(cString: bytes.bindMemory(to: CChar.self).baseAddress!)
             }
-            entries.append(DrmPropertyEntry(id: propId, value: values[i], name: name))
+            entries.append(
+                DrmPropertyEntry(id: propId, value: unsafe values[i], name: name))
         }
         return entries
     }
@@ -332,11 +349,11 @@ enum DrmProperties {
 /// Copy a libdrm `uint32_t *` + count into a Swift array. The `count` arrives as
 /// libdrm's `int`; a negative/zero count yields an empty array.
 private func idArray(_ base: UnsafeMutablePointer<UInt32>?, _ count: Int32) -> [UInt32] {
-    guard count > 0, let base else { return [] }
-    return Array(UnsafeBufferPointer(start: base, count: Int(count)))
+    guard count > 0, let base = unsafe base else { return [] }
+    return unsafe Array(UnsafeBufferPointer(start: base, count: Int(count)))
 }
 
 private func idArray(_ base: UnsafeMutablePointer<UInt32>?, _ count: UInt32) -> [UInt32] {
-    guard count > 0, let base else { return [] }
-    return Array(UnsafeBufferPointer(start: base, count: Int(count)))
+    guard count > 0, let base = unsafe base else { return [] }
+    return unsafe Array(UnsafeBufferPointer(start: base, count: Int(count)))
 }

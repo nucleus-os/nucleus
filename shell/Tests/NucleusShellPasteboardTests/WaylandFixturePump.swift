@@ -15,7 +15,7 @@ func pumpWaylandFixtureClient(_ client: ShellWaylandClient) -> Int32 {
         fd: client.fd,
         events: Int16(POLLIN),
         revents: 0)
-    let pollResult = poll(&descriptor, 1, 0)
+    let pollResult = unsafe poll(&descriptor, 1, 0)
     let readable = pollResult > 0
         && descriptor.revents & Int16(POLLIN) != 0
     return preparation.read.complete(readable: readable)

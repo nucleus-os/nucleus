@@ -221,11 +221,14 @@ struct ImageResidencyLedger {
 
 /// Render-thread owner for decode, bounded upload, residency, failure
 /// diagnostics, dependency versions, and targeted output invalidation.
-final class ImageResourceManager {
+/// Completion draining and every Graphite value access occur on the owning
+/// renderer thread; decoded RAII values cross only through the decode queue.
+@safe final class ImageResourceManager {
     typealias UploadOperation =
         (nucleus.skia.RasterImage) -> nucleus.skia.Image?
 
-    private struct Record {
+    /// Owns a resident Graphite image until replacement or renderer teardown.
+    @safe private struct Record {
         var resident: nucleus.skia.Image?
     }
 
@@ -246,9 +249,9 @@ final class ImageResourceManager {
         wakeSink: any AsyncRenderWakeSink
     ) {
         self.decodeQueue = ImageDecodeQueue(wakeSink: wakeSink)
-        self.uploadOperation = { decoded in
-            let resident = recorder.makeTextureImage(decoded)
-            return resident.isValid() ? resident : nil
+        unsafe self.uploadOperation = { decoded in
+            let resident = unsafe recorder.makeTextureImage(decoded)
+            return unsafe resident.isValid() ? resident : nil
         }
     }
 
@@ -257,7 +260,7 @@ final class ImageResourceManager {
         uploadOperation: @escaping UploadOperation
     ) {
         self.decodeQueue = decodeQueue
-        self.uploadOperation = uploadOperation
+        unsafe self.uploadOperation = uploadOperation
     }
 
     var completionToFrameDemandNanoseconds: UInt64? {
@@ -296,7 +299,7 @@ final class ImageResourceManager {
     ) -> Bool {
         guard ledger.registerNew(handle: handle, source: source)
         else { return false }
-        records[handle] = Record(resident: nil)
+        unsafe records[handle] = Record(resident: nil)
         return true
     }
 
@@ -304,7 +307,7 @@ final class ImageResourceManager {
     func retry(handle: UInt64) -> Bool {
         guard ledger.phase(for: handle) != nil else { return false }
         cancelOutstanding(handle)
-        records[handle]?.resident = nil
+        unsafe records[handle]?.resident = nil
         return ledger.retry(handle) != nil
     }
 
@@ -315,7 +318,7 @@ final class ImageResourceManager {
     ) -> Bool {
         guard ledger.phase(for: handle) != nil else { return false }
         cancelOutstanding(handle)
-        records[handle]?.resident = nil
+        unsafe records[handle]?.resident = nil
         return ledger.replace(handle, with: source) != nil
     }
 
@@ -332,7 +335,7 @@ final class ImageResourceManager {
             // Preserving a handle across source identity changes is an explicit
             // mutation. Never draw the prior resident image for mismatched data.
             cancelOutstanding(handle)
-            records[handle]?.resident = nil
+            unsafe records[handle]?.resident = nil
             _ = ledger.failCurrent(
                 handle: handle,
                 reason: .decodeFailure)
@@ -362,10 +365,10 @@ final class ImageResourceManager {
         case .decoding, .failed:
             return nil
         case .ready:
-            guard let resident = records[handle]?.resident,
-                  resident.isValid()
+            guard let resident = unsafe records[handle]?.resident,
+                  unsafe resident.isValid()
             else { return nil }
-            return resident
+            return unsafe resident
         }
     }
 
@@ -408,10 +411,10 @@ final class ImageResourceManager {
                 if exceedsBudget {
                     break
                 }
-                if let resident = uploadOperation(decoded.image),
-                   resident.isValid()
+                if let resident = unsafe uploadOperation(decoded.image),
+                   unsafe resident.isValid()
                 {
-                    records[completion.handle]?.resident = resident
+                    unsafe records[completion.handle]?.resident = resident
                     changed.formUnion(ledger.finishReady(
                         handle: completion.handle,
                         generation: completion.generation))

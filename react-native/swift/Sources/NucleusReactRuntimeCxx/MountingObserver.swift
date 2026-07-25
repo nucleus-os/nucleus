@@ -37,10 +37,12 @@ public final class SwiftMountingObserver {
     }
 
     public func toUnsafe() -> UnsafeMutableRawPointer {
-        Unmanaged.passRetained(self).toOpaque()
+        unsafe Unmanaged.passRetained(self).toOpaque()
     }
 
     public static func fromUnsafe(_ pointer: UnsafeMutableRawPointer) -> SwiftMountingObserver {
-        Unmanaged<SwiftMountingObserver>.fromOpaque(pointer).takeRetainedValue()
+        unsafe Unmanaged<SwiftMountingObserver>
+            .fromOpaque(pointer)
+            .takeRetainedValue()
     }
 }

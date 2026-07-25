@@ -11,59 +11,59 @@
 import WaylandServerC
 import WaylandServer
 import WaylandServerDispatch
+import WaylandProtocolTypes
 import NucleusTypes
 
-final class WpViewporter {
+@MainActor
+@safe final class WpViewporter {
     func register(in router: NucleusWaylandRouter) {
         router.addGlobal(
-            interface: swift_wayland_iface_wp_viewporter(), version: 1, impl: self, bind: Self.bind
-        )
-    }
-
-    private static let bind: @convention(c) (
-        OpaquePointer?, UnsafeMutableRawPointer?, UInt32, UInt32
-    ) -> Void = { client, data, version, id in
-        guard let client, let me = NucleusWaylandRouter.impl(data, as: WpViewporter.self) else {
-            return
-        }
-        _ = WaylandResource.create(
-            client: client, interface: swift_wayland_iface_wp_viewporter(),
-            version: Int32(version), id: id, vtable: WpViewporterServer.vtable,
-            owner: me  // the manager is its own resource owner (router retains it)
-        )
+            WpViewporterServer.global(
+                implementation: self,
+                owner: { viewporter, _ in viewporter }))
     }
 }
 
 // get_viewport(id, surface): one viewport per surface (viewport_exists = 0). The manager owner is
 // shared across every bound resource, so the error is posted on the specific request `resource`.
 extension WpViewporter: WpViewporterRequests {
-    func getViewport(_ resource: UnsafeMutablePointer<wl_resource>, id: WlNewId,
-                     surface surfaceRes: UnsafeMutablePointer<wl_resource>?) {
-        guard let surfaceRes, let surface = WaylandResource.owner(of: surfaceRes, as: WlSurface.self)
-        else { return }
+    func getViewport(
+        _ request: WaylandRequest<WpViewporterServer>,
+        id: WlNewId<WpViewportServer>,
+                     surface surfaceRes: WaylandBorrowedObject<WlSurfaceServer>) {
+        guard let surface = surfaceRes.owner(as: WlSurface.self) else { return }
         guard surface.claimAux(.viewport) else {
-            swift_wayland_resource_post_error(resource, 0, "wl_surface already has a viewport")
+            request.postError(
+                .viewportExists,
+                message: "wl_surface already has a viewport")
             return
         }
-        let viewport = WpViewport(surface: surface)
-        guard let vres = id.create(vtable: WpViewportServer.vtable, owner: viewport) else {
+        guard unsafe id.create(
+            owner: { handle in
+                WpViewport(resource: handle, surface: surface)
+            },
+            installed: { viewport in
+                surface.viewport = viewport
+            }
+        ) != nil else {
             surface.releaseAux(.viewport)
             return
         }
-        viewport.bind(vres)
-        surface.viewport = viewport
     }
 }
 
 /// wp_viewport resource owner (Rule 9). Writes the surface's pending crop/scale.
-final class WpViewport {
+@MainActor
+@safe final class WpViewport {
     private weak var surface: WlSurface?
-    fileprivate(set) var resource: UnsafeMutablePointer<wl_resource>?
+    private let resource: WaylandResourceHandle<WpViewportServer>
 
-    init(surface: WlSurface) { self.surface = surface }
-    fileprivate func bind(_ resource: UnsafeMutablePointer<wl_resource>) { self.resource = resource }
+    init(resource: WaylandResourceHandle<WpViewportServer>, surface: WlSurface) {
+        self.resource = resource
+        self.surface = surface
+    }
 
-    deinit {
+    isolated deinit {
         // Removing the viewport clears the surface's crop/scale on the next commit.
         if let surface {
             surface.setPendingViewportSource(nil)
@@ -73,18 +73,16 @@ final class WpViewport {
         }
     }
 
-    func postError(_ code: UInt32, _ message: String) {
-        if let resource {
-            swift_wayland_resource_post_error(resource, code, message)
-        }
+    func postError(_ code: WpViewportError, _ message: String) {
+        resource.postError(code, message: message)
     }
 }
 
 extension WpViewport: WpViewportRequests {
-    func setSource(_ resource: UnsafeMutablePointer<wl_resource>,
+    func setSource(_ request: WaylandRequest<WpViewportServer>,
                    x dx: Double, y dy: Double, width dw: Double, height dh: Double) {
         guard let surface else {
-            swift_wayland_resource_post_error(resource, 3, "wl_surface was destroyed")  // no_surface
+            request.postError(.noSurface, message: "wl_surface was destroyed")
             return
         }
         if dx == -1.0, dy == -1.0, dw == -1.0, dh == -1.0 {
@@ -92,15 +90,17 @@ extension WpViewport: WpViewportRequests {
             return
         }
         guard dx >= 0, dy >= 0, dw > 0, dh > 0 else {
-            swift_wayland_resource_post_error(resource, 0, "invalid viewport source rectangle")  // bad_value
+            request.postError(
+                .badValue,
+                message: "invalid viewport source rectangle")
             return
         }
         surface.setPendingViewportSource(WlFRect(x: dx, y: dy, width: dw, height: dh))
     }
 
-    func setDestination(_ resource: UnsafeMutablePointer<wl_resource>, width: Int32, height: Int32) {
+    func setDestination(_ request: WaylandRequest<WpViewportServer>, width: Int32, height: Int32) {
         guard let surface else {
-            swift_wayland_resource_post_error(resource, 3, "wl_surface was destroyed")  // no_surface
+            request.postError(.noSurface, message: "wl_surface was destroyed")
             return
         }
         if width == -1, height == -1 {
@@ -108,7 +108,9 @@ extension WpViewport: WpViewportRequests {
             return
         }
         guard width > 0, height > 0 else {
-            swift_wayland_resource_post_error(resource, 0, "invalid viewport destination size")  // bad_value
+            request.postError(
+                .badValue,
+                message: "invalid viewport destination size")
             return
         }
         surface.setPendingViewportDestination(WlSize(width: width, height: height))

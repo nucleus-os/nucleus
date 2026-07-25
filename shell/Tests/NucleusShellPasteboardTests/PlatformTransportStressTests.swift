@@ -51,7 +51,7 @@ import Testing
 
         for descriptor in writeDescriptors {
             let count = payload.withUnsafeBytes {
-                write(descriptor, $0.baseAddress, $0.count)
+                unsafe write(descriptor, $0.baseAddress, $0.count)
             }
             #expect(count == payload.count)
             #expect(close(descriptor) == 0)
@@ -79,13 +79,10 @@ import Testing
 
     private func makePipe() throws -> [Int32] {
         var descriptors = [Int32](repeating: -1, count: 2)
-        guard pipe2(&descriptors, O_CLOEXEC | O_NONBLOCK) == 0 else {
+        guard unsafe pipe2(&descriptors, O_CLOEXEC | O_NONBLOCK) == 0 else {
             throw DataTransferFailure.transport(
                 "pipe2 failed: "
-                    + String(
-                        decodingCString: UnsafeRawPointer(strerror(errno))
-                            .assumingMemoryBound(to: UInt8.self),
-                        as: UTF8.self))
+                    + (unsafe String(cString: strerror(errno))))
         }
         return descriptors
     }
