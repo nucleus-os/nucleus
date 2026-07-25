@@ -75,6 +75,8 @@ public final class OverlaySceneRuntime: OverlaySceneHost {
                             UInt64(publication.scene.visualContent.count))
                     }
                 })
+            controller?.setPublicationSuspended(
+                server.outputAvailability == .suspendedNoOutputs)
             return true
         } catch {
             logShellOverlayRuntime("scene init failed: \(error)")
@@ -108,6 +110,16 @@ public final class OverlaySceneRuntime: OverlaySceneHost {
 
     public func frameUpdated(_ frame: FrameInfo) {
         submit(.frame(ShellOverlayFrameInfo(frame)))
+    }
+
+    public func suspendForNoOutputs() {
+        controller?.setPublicationSuspended(true)
+    }
+
+    public func resumeForOutput(_ frame: FrameInfo) {
+        controller?.setPublicationSuspended(true)
+        submit(.frame(ShellOverlayFrameInfo(frame)))
+        controller?.setPublicationSuspended(false)
     }
 
     public func notificationAdded(_ notification: ShellOverlayNotificationInfo) {
@@ -167,8 +179,9 @@ public final class OverlaySceneRuntime: OverlaySceneHost {
     }
 
     public func primaryOutputSize() -> OutputSize {
-        let outputID = server.spaces.overlayDisplayID(layout: server.layout)
-        guard let display = server.layout.display(id: outputID) else {
+        guard let outputID = server.spaces.overlayDisplayID(
+            layout: server.layout
+        ), let display = server.layout.display(id: outputID) else {
             return .init(width: 0, height: 0, scale: 1)
         }
         return .init(

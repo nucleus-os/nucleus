@@ -112,7 +112,7 @@ struct WorkspaceDoctor {
     }
 
     private var runtimePrerequisites: [HostPrerequisite] {
-        [swiftVersion(scope: "runtime")]
+        [swiftVersion(scope: "runtime"), lavapipe(scope: "runtime")]
             + executables(
                 [
                     "swift", "swiftc", "git", "cmake", "ninja", "pkg-config",
@@ -121,7 +121,7 @@ struct WorkspaceDoctor {
                 scope: "runtime")
             + paths(
                 [
-                    "Package.swift", "swift-tracy/Package.swift",
+                    "swift-tracy/Package.swift",
                     "swift-vulkan/Package.swift", "swift-wayland/Package.swift",
                     "core/Package.swift", "platform-linux/Package.swift",
                     "react-native/Package.swift",
@@ -195,6 +195,23 @@ struct WorkspaceDoctor {
                 firstLine.hasPrefix("Swift version 6.4")
             else { return nil }
             return String(firstLine)
+        }
+    }
+
+    private func lavapipe(scope: String) -> HostPrerequisite {
+        HostPrerequisite(
+            id: "vulkan:lavapipe",
+            scope: scope,
+            description: "staged Mesa lavapipe Vulkan ICD"
+        ) {
+            guard let artifact = try? LavapipeTestArtifact.resolve(
+                context: context),
+                FileManager.default.isReadableFile(
+                    atPath: artifact.stagedManifest.string),
+                FileManager.default.isReadableFile(
+                    atPath: artifact.library.string)
+            else { return nil }
+            return "\(artifact.stagedManifest) -> \(artifact.library)"
         }
     }
 

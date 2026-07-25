@@ -1,7 +1,7 @@
 import Dispatch
 import Glibc
 import NucleusRenderModel
-import NucleusRenderer
+@_spi(NucleusPlatform) import NucleusRenderer
 internal import enum NucleusAppHostProtocols.PixelChannelOrder
 import Synchronization
 
@@ -53,6 +53,7 @@ enum NucleusCoreThreadSanitizerHarness {
                 pixels: pixels)))
             guard sendableQueue.value.submit(
                 handle: handle,
+                generation: 1,
                 source: source)
             else {
                 return
@@ -67,14 +68,22 @@ enum NucleusCoreThreadSanitizerHarness {
         let deadline = ContinuousClock.now.advanced(by: .seconds(10))
         while completed.count < expected, ContinuousClock.now < deadline {
             for result in queue.drain() {
-                guard result.isValid,
-                      result.width == 32,
-                      result.height == 32
-                else {
+                switch result.result {
+                case .success(let image):
+                    guard image.isValid,
+                          image.width == 32,
+                          image.height == 32
+                    else {
+                        queue.shutdown()
+                        exit(2)
+                    }
+                    completed.insert(result.handle)
+                case .failure(.cancellation):
+                    break
+                case .failure:
                     queue.shutdown()
                     exit(2)
                 }
-                completed.insert(result.handle)
             }
             usleep(1_000)
         }
@@ -115,6 +124,7 @@ enum NucleusCoreThreadSanitizerHarness {
                 guard !queue.hasWorkers,
                       !queue.submit(
                           handle: UInt64(iteration + 1),
+                          generation: 1,
                           source: source)
                 else {
                     return false
@@ -123,6 +133,7 @@ enum NucleusCoreThreadSanitizerHarness {
                 guard queue.hasWorkers,
                       queue.submit(
                           handle: UInt64(iteration + 1),
+                          generation: 1,
                           source: source)
                 else {
                     return false
@@ -156,7 +167,7 @@ enum NucleusCoreThreadSanitizerHarness {
             images.release(imageHandle)
         }
         guard images.count == 0,
-              images.takeEvictedHandles() == [imageHandle]
+              images.takeMutations() == [.evict(handle: imageHandle)]
         else { return false }
 
         let effects = RuntimeEffectStore()

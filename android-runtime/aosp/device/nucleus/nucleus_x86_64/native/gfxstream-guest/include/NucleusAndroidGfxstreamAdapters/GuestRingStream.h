@@ -3,7 +3,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
-#include <vector>
 
 #include "NucleusAndroidSharedRingC.h"
 #include "gfxstream/guest/IOStream.h"
@@ -46,8 +45,11 @@ private:
     nucleus_android_shared_ring_producer *mCommandProducer;
     nucleus_android_shared_ring_consumer *mResponseConsumer;
     bool mOwnsRings;
-    std::vector<unsigned char> mCommitBuffer;
-    std::vector<unsigned char> mResponseBuffer;
+    std::unique_ptr<unsigned char[]> mCommitBuffer;
+    std::size_t mCommitCapacity = 0;
+    std::unique_ptr<unsigned char[]> mResponseBuffer;
+    std::size_t mResponseCapacity = 0;
+    std::size_t mResponseSize = 0;
     std::size_t mResponseOffset = 0;
 };
 

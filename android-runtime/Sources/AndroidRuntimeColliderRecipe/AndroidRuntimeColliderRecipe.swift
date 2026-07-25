@@ -511,6 +511,8 @@ public enum AndroidRuntimeColliderRecipe {
                 .file(root.appending("Package.swift")),
                 .tree(root.appending("Sources")),
                 .tree(root.appending("Tests")),
+                .tree(root.appending(
+                    "aosp/device/nucleus/nucleus_x86_64/native")),
                 .tool(.named("swift")),
             ],
             outputs: [

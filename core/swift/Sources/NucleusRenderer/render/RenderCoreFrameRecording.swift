@@ -19,8 +19,15 @@ extension RenderCore {
         lastFrameRenderStarted = renderStarted
         lastFrameAcquiredSurfaceIDs.removeAll(keepingCapacity: true)
         guard let driver = frameDriver, let renderTarget = outputTargets[outputID] else { return false }
-        for handle in resourceHost.images.takeEvictedHandles() {
-            driver.evictDecodedImage(handle)
+        for mutation in resourceHost.images.takeMutations() {
+            switch mutation {
+            case .retry(let handle):
+                driver.retryDecodedImage(handle)
+            case .replace(let handle, let source):
+                driver.replaceDecodedImage(handle, with: source)
+            case .evict(let handle):
+                driver.evictDecodedImage(handle)
+            }
         }
         for handle in resourceHost.runtimeEffects.takeEvictedHandles() {
             driver.evictCompiledEffect(handle)
@@ -44,7 +51,6 @@ extension RenderCore {
         let surface = ScanoutSurface.wrap(recorder: driver.recorder, params: params)
         guard surface.isValid() else { return false }
         let targetWrapNs = elapsedNanoseconds(phaseStarted, telemetryClock.now)
-
         // Select the platform completion contract before recording. A DRM target
         // without its required exportable signal semaphore is invalid; it must
         // never degrade into an ordinary or CPU-synchronous submit.
@@ -60,6 +66,11 @@ extension RenderCore {
             submissionMode = .drm(FrameDriver.DrmSubmit(
                 signalSemaphore: signalSemaphore))
         }
+
+        // Materialize the latest coalesced SHM generations only after the target
+        // and its submission contract are both valid. Uploads and frame work share
+        // this recorder and the one recording snapped below.
+        drainPendingShmUploads()
 
         phaseStarted = telemetryClock.now
         let tree = store.snapshot()
@@ -82,7 +93,17 @@ extension RenderCore {
         let result = driver.renderFrame(
             request,
             resolver: frameResourceResolver)
-        guard let result else { return false }
+        guard let result else {
+            rollbackStagedShmUploads()
+            driver.abandonSubmissionScope()
+            return false
+        }
+        if result.submitted {
+            commitStagedShmUploads(submissionSerial: frameSerial)
+        } else {
+            rollbackStagedShmUploads()
+            driver.abandonSubmissionScope()
+        }
         lastFrameAcquiredSurfaceIDs = result.acquiredSurfaceIDs
         var telemetry = RenderFrameTelemetry()
         telemetry.generation = lastFrameTelemetry.generation &+ 1
@@ -150,6 +171,11 @@ extension RenderCore {
             let line = "render-frame: output=\(outputID) serial=\(frameSerial) layers=\(tree.layers.count) ops=\(result.opsDrawn) backdrops=\(result.backdropDraws) damage=\(result.damageRectCount) full_damage=\(result.fullDamage) acquire_waits=\(result.acquireWaitCount) presented=\(result.presented) submitted=\(result.submitted) uploads=\(clientUploadStats.uploaded) upload_failures=\(clientUploadStats.failed)\n"
             line.withCString { _ = write(STDERR_FILENO, $0, strlen($0)) }
         }
+        if let submission = result.submissionResult,
+           !submission.isOk()
+        {
+            _ = acceptGraphiteSubmission(submission)
+        }
         guard result.presented, result.submitted else { return false }
         lastSubmittedSerial = frameSerial
         for id in result.acquiredSurfaceIDs {
@@ -177,17 +203,13 @@ extension RenderCore {
     @discardableResult
     public func renderReady(backend: any PresentationBackend) -> Bool {
         guard frameDriver != nil else { return false }
-        // Client request dispatch only copies/converts SHM. Materialize the latest
-        // generation per surface only when some output can consume a frame; while a
-        // page flip is pending the queue continues coalescing instead of growing
-        // unsnapped transfer work on the upload recorder.
+        // Client request dispatch only copies/converts SHM. `recordFrame`
+        // materializes the latest generation after a composited target exists;
+        // direct-scanout-only passes leave the CPU queue coalescing.
         let outputIDs = backend.presentableOutputIDs()
         frameDriver?.drainDecodedImages()
         let targetRevision = store.revision
         let targetLockGeneration = lockCompositionGeneration
-        if outputIDs.contains(where: { backend.isReadyToPresent($0) }) {
-            drainPendingShmUploads()
-        }
         // Force a redraw across outputs while locked (keep the blank present) and on
         // the frame a lock begins/ends (the composition-time filter is not tree
         // damage). Otherwise the damage gate decides per output as normal.

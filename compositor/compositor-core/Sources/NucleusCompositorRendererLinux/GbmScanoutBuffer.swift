@@ -128,9 +128,7 @@ public struct GbmScanoutBuffer: ~Copyable {
             case .scanout:
                 flags = GBM_BO_USE_SCANOUT.rawValue | GBM_BO_USE_RENDERING.rawValue
             case .renderableOnly:
-                // Linear keeps the renderable-only fallback importable without a
-                // negotiated modifier (the import below uses LINEAR for these).
-                flags = GBM_BO_USE_RENDERING.rawValue | GBM_BO_USE_LINEAR.rawValue
+                flags = GBM_BO_USE_RENDERING.rawValue
             }
             bo = gbm_bo_create(gbmDevice, width, height, drmFormat, flags)
         }
@@ -154,20 +152,11 @@ public struct GbmScanoutBuffer: ~Copyable {
             // (the GEM handle is the union's 32-bit field)
         }
 
-        // The modifier GBM chose. For the renderable-only/no-modifier path the
-        // descriptor pins LINEAR so the modifier-explicit Vulkan import is valid.
+        // Import the exact modifier GBM chose. Forcing LINEAR in the
+        // renderable-only path is invalid on drivers that expose only tiled
+        // render targets.
         let reportedModifier = gbm_bo_get_modifier(bo)
-        let importModifier: UInt64
-        if !modifiers.isEmpty {
-            importModifier = reportedModifier
-        } else {
-            switch usage {
-            case .scanout: importModifier = reportedModifier
-            // DRM_FORMAT_MOD_LINEAR is `fourcc_mod_code(NONE, 0)` == 0; the Swift
-            // importer can't fold the macro, so the literal stands in for it.
-            case .renderableOnly: importModifier = 0
-            }
-        }
+        let importModifier = reportedModifier
 
         // Single-fd export covering the whole BO (single-plane XRGB assumption).
         let exportedFd = gbm_bo_get_fd(bo)

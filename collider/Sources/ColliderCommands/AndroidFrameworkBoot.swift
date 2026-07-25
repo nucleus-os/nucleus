@@ -2,6 +2,7 @@ import ColliderCore
 import ColliderRuntime
 import Foundation
 import NucleusAndroidContainerContract
+import NucleusSessionProtocol
 import SystemPackage
 
 #if canImport(Glibc)
@@ -19,35 +20,149 @@ struct AndroidFrameworkBootCommand {
             throw WorkspaceFailure.message(
                 "run Collider as the workspace user, not as root")
         }
+        try await ComponentRegistry(context: context).buildAndroidRuntimeHost()
+        let installation = try await RuntimeInstaller(context: context).install(
+            .session,
+            prefix: context.root.appendingPathComponent(".install"))
         let layout = AndroidFrameworkBootLayout(context: context)
         let provenance = try await loadAndValidateImages(layout: layout)
         let host = try await validateHost(layout: layout)
+        try requireFreeSeat()
+        let compositorRuntime = try createCompositorRuntime()
+        defer {
+            try? FileManager.default.removeItem(
+                at: compositorRuntime.directory)
+        }
+        try FileManager.default.createDirectory(
+            at: layout.diagnostics,
+            withIntermediateDirectories: true)
 
         try await context.run("sudo", ["--validate"], terminal: true)
-        let session = AndroidFrameworkBootSession(
+        let frameworkSession = AndroidFrameworkBootSession(
             context: context,
             layout: layout,
             host: host)
+        let statusFile = layout.diagnostics.appendingPathComponent(
+            "session-status.bin")
+        var environment = context.environment
+        environment["XDG_RUNTIME_DIR"] = compositorRuntime.parent.path
+        environment["NUCLEUS_SESSION_ID"] = compositorRuntime.identifier
+        environment["NUCLEUS_SESSION_RUNTIME_DIR"] =
+            compositorRuntime.directory.path
+        environment["NUCLEUS_EPHEMERAL_CONFIG"] = "1"
+        environment["NUCLEUS_RUN_LOG"] =
+            layout.diagnostics.appendingPathComponent("session.log").path
         do {
-            try await session.prepare()
-            try await session.mountImages(provenance.images)
-            try await session.mountApexes()
-            try await session.createBinderDevices()
-            try await session.writeConfiguration()
-            try await session.runProcesses(timeoutSeconds: timeoutSeconds)
+            try await context.withRunningCommand(
+                installation.session.path,
+                [
+                    "--status-file", statusFile.path,
+                    "--configuration", try SessionConfiguration().hexEncoded,
+                    "--", installation.compositor.path,
+                ],
+                environmentOverrides: environment
+            ) { compositorSession in
+                try await compositorSession.waitUntilReady()
+                try await waitForSessionReadiness(
+                    compositorSession,
+                    statusFile: statusFile)
+                try await frameworkSession.prepare()
+                try await frameworkSession.mountImages(provenance.images)
+                try await frameworkSession.mountApexes()
+                try await frameworkSession.createBinderDevices()
+                try await frameworkSession.writeConfiguration()
+                try await frameworkSession.runProcesses(
+                    timeoutSeconds: timeoutSeconds,
+                    waylandRuntimeDirectory: compositorRuntime.directory,
+                    waylandSocket: "wayland-0")
+            }
         } catch {
             await Task {
-                await session.cleanup()
-                await session.printFailureDiagnostics()
+                await frameworkSession.cleanup()
+                await frameworkSession.printFailureDiagnostics()
             }.value
             throw error
         }
         await Task {
-            await session.cleanup()
+            await frameworkSession.cleanup()
         }.value
         print(
             "Contained Android framework boot completed; diagnostics: "
                 + layout.diagnostics.path)
+    }
+
+    private func requireFreeSeat() throws {
+        guard context.environment["WAYLAND_DISPLAY"] == nil,
+              context.environment["DISPLAY"] == nil
+        else {
+            throw WorkspaceFailure.message(
+                "cannot launch Android framework presentation inside an "
+                    + "existing Wayland/X11 session; switch to a free virtual terminal")
+        }
+    }
+
+    private func createCompositorRuntime() throws -> (
+        identifier: String,
+        parent: URL,
+        directory: URL
+    ) {
+        let parent = URL(
+            fileURLWithPath:
+                context.environment["XDG_RUNTIME_DIR"]
+                ?? "/run/user/\(getuid())",
+            isDirectory: true)
+        var isDirectory = ObjCBool(false)
+        guard parent.path != "/",
+              FileManager.default.fileExists(
+                atPath: parent.path,
+                isDirectory: &isDirectory),
+              isDirectory.boolValue
+        else {
+            throw WorkspaceFailure.message(
+                "the login runtime directory does not exist: \(parent.path)")
+        }
+        let identifier =
+            "android-framework-\(UUID().uuidString.lowercased())"
+        let directory = parent.appendingPathComponent(
+            "nucleus-\(identifier)",
+            isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: false,
+            attributes: [.posixPermissions: 0o700])
+        return (identifier, parent, directory)
+    }
+
+    private func waitForSessionReadiness(
+        _ session: RunningCommand,
+        statusFile: URL
+    ) async throws {
+        let deadline = ContinuousClock.now.advanced(by: .seconds(45))
+        while ContinuousClock.now < deadline {
+            if let data = try? Data(contentsOf: statusFile),
+               let message = SessionReadinessMessage(encoded: Array(data))
+            {
+                if message.role == .shell,
+                   message.milestone == .shellReady {
+                    return
+                }
+                if message.milestone == .failed {
+                    let reason = SessionFailureReason(rawValue: message.detail)
+                    throw WorkspaceFailure.message(
+                        "Nucleus session startup failed: "
+                            + (reason.map(String.init(describing:))
+                                ?? "reason \(message.detail)"))
+                }
+            }
+            guard await session.isRunning else {
+                throw WorkspaceFailure.message(
+                    "Nucleus session exited before Android startup "
+                        + "(status \(await session.terminationStatus ?? -1))")
+            }
+            try await ContinuousClock().sleep(for: .milliseconds(20))
+        }
+        throw WorkspaceFailure.message(
+            "Nucleus session did not become ready before the startup deadline")
     }
 
     private func loadAndValidateImages(
@@ -70,7 +185,11 @@ struct AndroidFrameworkBootCommand {
             provenance.product == "nucleus_x86_64",
             patchedRepositories.isSuperset(
                 of: [
+                    "device/generic/goldfish",
+                    "external/mesa3d",
+                    "frameworks/base",
                     "frameworks/native",
+                    "hardware/interfaces",
                     "packages/modules/Connectivity",
                     "packages/modules/UprobeStats",
                     "system/apex",
@@ -125,6 +244,20 @@ struct AndroidFrameworkBootCommand {
         layout: AndroidFrameworkBootLayout
     ) async throws -> AndroidFrameworkBootHost {
         var failures: [String] = []
+        if !FileManager.default.isExecutableFile(
+            atPath: layout.gfxstreamBrokerExecutable.path)
+        {
+            failures.append(
+                "missing Android gfxstream broker: "
+                    + layout.gfxstreamBrokerExecutable.path)
+        }
+        if !FileManager.default.isExecutableFile(
+            atPath: layout.displayHostExecutable.path)
+        {
+            failures.append(
+                "missing Android display host: "
+                    + layout.displayHostExecutable.path)
+        }
         for tool in [
             "sudo",
             "mount",
@@ -136,6 +269,7 @@ struct AndroidFrameworkBootCommand {
             "newgidmap",
             "systemd-run",
             "aa-enabled",
+            "apparmor_parser",
             "modprobe",
             "modinfo",
             "journalctl",
@@ -227,6 +361,7 @@ struct AndroidFrameworkBootCommand {
         }
         for path in [
             URL(fileURLWithPath: "/usr/bin/env"),
+            layout.appArmorProfile,
             layout.seccompProfile,
             layout.provenance,
             layout.hostTools.appendingPathComponent("avbtool"),
@@ -261,6 +396,7 @@ private actor AndroidFrameworkBootSession {
     var binderMounted = false
     var containerStarted = false
     var kernelLog: PseudoTerminalLog?
+    var frameworkHealth = AndroidFrameworkHealthMonitor()
     var binderDevices: [AndroidContainerDevice] = []
     let startedAt = Date()
 
@@ -284,6 +420,16 @@ private actor AndroidFrameworkBootSession {
                     module,
                 ])
         }
+        try await context.run(
+            "sudo",
+            [
+                "--non-interactive",
+                "apparmor_parser",
+                "--replace",
+                "--skip-cache",
+                "--Werror",
+                layout.appArmorProfile.path,
+            ])
         try FileManager.default.createDirectory(
             at: layout.diagnostics,
             withIntermediateDirectories: true)
@@ -293,6 +439,8 @@ private actor AndroidFrameworkBootSession {
         for log in [
             layout.lxcLog,
             layout.androidLog,
+            layout.gfxstreamBrokerLog,
+            layout.displayHostLog,
             layout.hostAuditLog,
         ] {
             try Data().write(to: log, options: .atomic)
@@ -341,6 +489,17 @@ private actor AndroidFrameworkBootSession {
                 "--group=root",
                 "--mode=0711",
                 layout.bpfBrokerDirectory.path,
+            ])
+        try await context.run(
+            "sudo",
+            [
+                "--non-interactive",
+                "install",
+                "--directory",
+                "--owner=\(host.userID)",
+                "--group=\(host.groupID)",
+                "--mode=0711",
+                layout.gfxstreamBrokerDirectory.path,
             ])
         try await context.run(
             "sudo",
@@ -759,6 +918,8 @@ private actor AndroidFrameworkBootSession {
             seccompProfile: layout.seccompProfile.path,
             kernelLogDevice: kernelLog.slavePath,
             tombstones: layout.containerTombstones.path,
+            gfxstreamSocketDirectory:
+                layout.gfxstreamBrokerDirectory.path,
             hostUIDStart: host.subordinateUID,
             hostGIDStart: host.subordinateGID,
             hostUIDCount: host.subordinateUIDCount,
@@ -788,7 +949,11 @@ private actor AndroidFrameworkBootSession {
         ).write(to: layout.configuration, options: .atomic)
     }
 
-    func runProcesses(timeoutSeconds: UInt32) async throws {
+    func runProcesses(
+        timeoutSeconds: UInt32,
+        waylandRuntimeDirectory: URL,
+        waylandSocket: String
+    ) async throws {
         let invocation = AndroidBPFBrokerInvocation(
             colliderExecutable: try currentColliderExecutable(),
             socket: layout.bpfBrokerSocket.path,
@@ -800,30 +965,117 @@ private actor AndroidFrameworkBootSession {
         ) { broker in
             try await broker.waitUntilReady()
             try await self.waitForBPFDelegationBrokerReady(broker)
-            let containerInvocation = AndroidLXCStartInvocation(
-                name: self.layout.name,
-                configuration: self.layout.configuration.path,
-                logFile: self.layout.lxcLog.path)
-            await self.markContainerStarted()
             try await self.context.withRunningCommand(
-                containerInvocation.executable,
-                containerInvocation.arguments
-            ) { container in
-                try await container.waitUntilReady()
-                do {
-                    try await self.waitForBPFDelegation(
-                        broker: broker,
-                        container: container)
-                    try await self.waitForFramework(
-                        container: container,
-                        timeoutSeconds: timeoutSeconds)
-                } catch {
-                    await self.stopContainer()
-                    throw error
+                self.layout.gfxstreamBrokerExecutable.path,
+                [
+                    "--socket",
+                    self.layout.gfxstreamBrokerSocket.path,
+                    "--expected-uid",
+                    "\(UInt64(self.host.subordinateUID) + 1_000)",
+                    "--parent-pid",
+                    "\(getpid())",
+                ],
+                output: .file(FilePath(
+                    self.layout.gfxstreamBrokerLog.path))
+            ) { gfxstreamBroker in
+                try await gfxstreamBroker.waitUntilReady()
+                try await self.waitForGfxstreamBrokerReady(gfxstreamBroker)
+                try await self.context.withRunningCommand(
+                    self.layout.displayHostExecutable.path,
+                    [
+                        "--socket",
+                        self.layout.displayHostSocket.path,
+                        "--expected-uid",
+                        "\(UInt64(self.host.subordinateUID) + 1_000)",
+                        "--render-device",
+                        "auto",
+                        "--parent-pid",
+                        "\(getpid())",
+                        "--wayland",
+                        waylandSocket,
+                    ],
+                    environmentOverrides: [
+                        "XDG_RUNTIME_DIR": waylandRuntimeDirectory.path,
+                    ],
+                    output: .file(FilePath(
+                        self.layout.displayHostLog.path))
+                ) { displayHost in
+                    try await displayHost.waitUntilReady()
+                    try await self.waitForDisplayHostReady(displayHost)
+                    let containerInvocation = AndroidLXCStartInvocation(
+                        name: self.layout.name,
+                        configuration: self.layout.configuration.path,
+                        logFile: self.layout.lxcLog.path)
+                    await self.markContainerStarted()
+                    try await self.context.withRunningCommand(
+                        containerInvocation.executable,
+                        containerInvocation.arguments
+                    ) { container in
+                        try await container.waitUntilReady()
+                        do {
+                            try await self.waitForBPFDelegation(
+                                broker: broker,
+                                container: container)
+                            try await self.waitForFramework(
+                                container: container,
+                                timeoutSeconds: timeoutSeconds)
+                        } catch {
+                            await self.stopContainer()
+                            throw error
+                        }
+                        await self.stopContainer()
+                    }
                 }
-                await self.stopContainer()
             }
         }
+    }
+
+    private func waitForDisplayHostReady(
+        _ displayHost: RunningCommand
+    ) async throws {
+        let deadline = ContinuousClock.now.advanced(by: .seconds(30))
+        while ContinuousClock.now < deadline {
+            if FileManager.default.fileExists(
+                atPath: layout.displayHostSocket.path)
+            {
+                return
+            }
+            if !(await displayHost.isRunning) {
+                let status = try await displayHost.wait().status
+                throw WorkspaceFailure.message(
+                    "Android display host exited before becoming ready "
+                        + "(status \(status)); diagnostics: "
+                        + layout.diagnostics.path)
+            }
+            try await ContinuousClock().sleep(for: .milliseconds(25))
+        }
+        throw WorkspaceFailure.message(
+            "Android display host did not become ready; diagnostics: "
+                + layout.diagnostics.path)
+    }
+
+    private func waitForGfxstreamBrokerReady(
+        _ broker: RunningCommand
+    ) async throws {
+        let deadline = ContinuousClock.now.advanced(by: .seconds(30))
+        while ContinuousClock.now < deadline {
+            if FileManager.default.fileExists(
+                atPath: layout.gfxstreamBrokerSocket.path)
+            {
+                return
+            }
+            if !(await broker.isRunning) {
+                let status = try await broker.wait().status
+                throw WorkspaceFailure.message(
+                    "Android gfxstream broker exited before becoming ready "
+                        + "(status \(status)); diagnostics: "
+                        + layout.diagnostics.path)
+            }
+            try await ContinuousClock().sleep(for: .milliseconds(25))
+        }
+        throw WorkspaceFailure.message(
+            "Android gfxstream broker did not become ready; diagnostics: "
+                + layout.diagnostics.path)
     }
 
     private func markContainerStarted() {
@@ -891,6 +1143,9 @@ private actor AndroidFrameworkBootSession {
             by: .seconds(Int64(timeoutSeconds)))
         while ContinuousClock.now < deadline {
             try kernelLog?.checkHealth()
+            try frameworkHealth.check(
+                log: layout.androidKernelLog,
+                diagnostics: layout.diagnostics)
             if !(await container.isRunning) {
                 let status = try await container.wait().status
                 throw WorkspaceFailure.message(
@@ -932,6 +1187,9 @@ private actor AndroidFrameworkBootSession {
     ) async throws {
         while ContinuousClock.now < deadline {
             try kernelLog?.checkHealth()
+            try frameworkHealth.check(
+                log: layout.androidKernelLog,
+                diagnostics: layout.diagnostics)
             if !(await container.isRunning) {
                 let status = try await container.wait().status
                 throw WorkspaceFailure.message(
@@ -1042,6 +1300,8 @@ private actor AndroidFrameworkBootSession {
         for log in [
             layout.androidKernelLog,
             layout.androidLog,
+            layout.gfxstreamBrokerLog,
+            layout.displayHostLog,
             layout.lxcLog,
             layout.hostAuditLog,
             layout.collectorErrors,
@@ -1120,6 +1380,79 @@ struct AndroidFrameworkMountLedger {
     }
 }
 
+struct AndroidFrameworkHealthMonitor {
+    private var offset: UInt64 = 0
+    private var pending = Data()
+    private var surfaceFlingerCrashCount = 0
+
+    mutating func check(log: URL, diagnostics: URL) throws {
+        guard
+            let attributes = try? FileManager.default.attributesOfItem(
+                atPath: log.path),
+            let size = (attributes[.size] as? NSNumber)?.uint64Value
+        else {
+            return
+        }
+        if size < offset {
+            offset = 0
+            pending.removeAll(keepingCapacity: true)
+            surfaceFlingerCrashCount = 0
+        }
+        guard size > offset else { return }
+
+        let handle = try FileHandle(forReadingFrom: log)
+        defer { try? handle.close() }
+        try handle.seek(toOffset: offset)
+        guard let data = try handle.readToEnd(), !data.isEmpty else {
+            return
+        }
+        offset += UInt64(data.count)
+        pending.append(data)
+
+        while let newline = pending.firstIndex(of: 0x0A) {
+            let line = String(
+                decoding: pending[..<newline],
+                as: UTF8.self)
+            pending.removeSubrange(...newline)
+            try inspect(line: line, diagnostics: diagnostics)
+        }
+    }
+
+    private mutating func inspect(
+        line: String,
+        diagnostics: URL
+    ) throws {
+        if line.contains(
+            "process with updatable components 'surfaceflinger' exited "
+                + "4 times before boot completed")
+        {
+            throw failure(
+                "Android init declared SurfaceFlinger critically crashing",
+                diagnostics: diagnostics)
+        }
+        guard line.contains("init: Service 'surfaceflinger'"),
+            line.contains("received SIGABRT")
+                || line.contains("received SIGSEGV")
+        else {
+            return
+        }
+        surfaceFlingerCrashCount += 1
+        if surfaceFlingerCrashCount >= 2 {
+            throw failure(
+                "SurfaceFlinger crashed \(surfaceFlingerCrashCount) times "
+                    + "before framework boot",
+                diagnostics: diagnostics)
+        }
+    }
+
+    private func failure(
+        _ reason: String,
+        diagnostics: URL
+    ) -> WorkspaceFailure {
+        .message("\(reason); diagnostics: \(diagnostics.path)")
+    }
+}
+
 private struct AndroidFrameworkBootLayout {
     let name: String
     let runtime: URL
@@ -1129,12 +1462,19 @@ private struct AndroidFrameworkBootLayout {
     let bpfBrokerDirectory: URL
     let bpfBrokerSocket: URL
     let bpfHookExecutable: URL
+    let gfxstreamBrokerDirectory: URL
+    let gfxstreamBrokerSocket: URL
+    let gfxstreamBrokerExecutable: URL
+    let displayHostSocket: URL
+    let displayHostExecutable: URL
     let swiftRuntime: URL
     let diagnostics: URL
     let configuration: URL
     let lxcLog: URL
     let androidKernelLog: URL
     let androidLog: URL
+    let gfxstreamBrokerLog: URL
+    let displayHostLog: URL
     let hostAuditLog: URL
     let collectorErrors: URL
     let containerTombstones: URL
@@ -1143,6 +1483,7 @@ private struct AndroidFrameworkBootLayout {
     let provenance: URL
     let signingIdentity: URL
     let hostTools: URL
+    let appArmorProfile: URL
     let seccompProfile: URL
 
     init(context: WorkspaceContext) {
@@ -1164,6 +1505,13 @@ private struct AndroidFrameworkBootLayout {
             "broker.sock")
         bpfHookExecutable = bpfBrokerDirectory.appendingPathComponent(
             "collider")
+        gfxstreamBrokerDirectory = instance.appendingPathComponent(
+            "gfxstream-broker",
+            isDirectory: true)
+        gfxstreamBrokerSocket = gfxstreamBrokerDirectory
+            .appendingPathComponent("gfxstream.sock")
+        displayHostSocket = gfxstreamBrokerDirectory
+            .appendingPathComponent("composer.sock")
         swiftRuntime = instance.appendingPathComponent(
             "swift-runtime",
             isDirectory: true)
@@ -1185,6 +1533,10 @@ private struct AndroidFrameworkBootLayout {
             "android-kmsg.log")
         androidLog = diagnostics.appendingPathComponent(
             "android-logcat.log")
+        gfxstreamBrokerLog = diagnostics.appendingPathComponent(
+            "android-gfxstream-broker.log")
+        displayHostLog = diagnostics.appendingPathComponent(
+            "android-display-host.log")
         hostAuditLog = diagnostics.appendingPathComponent(
             "host-audit.log")
         collectorErrors = diagnostics.appendingPathComponent(
@@ -1195,6 +1547,10 @@ private struct AndroidFrameworkBootLayout {
         let android = context.root.appendingPathComponent(
             "android-runtime",
             isDirectory: true)
+        gfxstreamBrokerExecutable = android.appendingPathComponent(
+            ".build/debug/nucleus-android-gfxstream-broker")
+        displayHostExecutable = android.appendingPathComponent(
+            ".build/debug/nucleus-android-display-host")
         images = android.appendingPathComponent(
             ".aosp-build/images",
             isDirectory: true)
@@ -1206,6 +1562,8 @@ private struct AndroidFrameworkBootLayout {
         hostTools = android.appendingPathComponent(
             ".aosp-build/out/host/linux-x86/bin",
             isDirectory: true)
+        appArmorProfile = android.appendingPathComponent(
+            "container/lxc-nucleus-android.apparmor")
         seccompProfile = android.appendingPathComponent(
             "container/nucleus-android.seccomp")
     }

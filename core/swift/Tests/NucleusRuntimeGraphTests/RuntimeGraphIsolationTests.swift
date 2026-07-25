@@ -115,14 +115,17 @@ struct RuntimeGraphIsolationTests {
 
         var firstImage: ImageResource? = ImageResource(
             path: "/same.png",
+            decodeSize: Size(width: 1, height: 1),
             resourceHostHandle: first!.resourceHost.identity.rawValue,
             runtimeHost: first!.bundle.layersHost)
         var duplicateFirstImage: ImageResource? = ImageResource(
             path: "/same.png",
+            decodeSize: Size(width: 1, height: 1),
             resourceHostHandle: first!.resourceHost.identity.rawValue,
             runtimeHost: first!.bundle.layersHost)
         var secondImage: ImageResource? = ImageResource(
             path: "/same.png",
+            decodeSize: Size(width: 1, height: 1),
             resourceHostHandle: second.resourceHost.identity.rawValue,
             runtimeHost: second.bundle.layersHost)
         let firstHandle = try #require(firstImage?.handle.id)
@@ -151,8 +154,8 @@ struct RuntimeGraphIsolationTests {
 
         let lateHandle = try first!.bundle.imageRegistrar.register(
             path: "/late.png",
-            maxWidth: 0,
-            maxHeight: 0)
+            maxWidth: 1,
+            maxHeight: 1)
         var lateLifecycle: (any ImageLifecycle)? =
             first!.bundle.imageLifecycle
         let firstIdentity = first!.resourceHost.identity.rawValue

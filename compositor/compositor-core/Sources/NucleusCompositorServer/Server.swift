@@ -18,6 +18,11 @@ public enum DesktopChange: Sendable, Equatable {
     case windowSpaceChanged(window: WindowID, space: SpaceID?)
 }
 
+public enum OutputAvailability: Sendable, Equatable {
+    case available
+    case suspendedNoOutputs
+}
+
 @MainActor
 public protocol DesktopModelObserver: AnyObject {
     /// One coalesced batch per per-iteration drain. On registration the observer
@@ -437,6 +442,8 @@ public final class NucleusCompositorServer {
     /// The render service installed after successful GPU bring-up and cleared
     /// before teardown. The weak reference does not extend renderer lifetime.
     public weak var renderService: (any CompositorRenderService)?
+    public private(set) var outputAvailability: OutputAvailability =
+        .suspendedNoOutputs
 
     public let layout = DesktopLayout()
     public let windows = WindowList()
@@ -465,6 +472,15 @@ public final class NucleusCompositorServer {
             self?.refreshSpaceHiddenMirror()
             self?.recordChange(change)
         }
+    }
+
+    @discardableResult
+    public func transitionOutputAvailability(
+        to availability: OutputAvailability
+    ) -> Bool {
+        guard outputAvailability != availability else { return false }
+        outputAvailability = availability
+        return true
     }
 
     /// Pin a mapped managed app window to its output's active workspace once both its
@@ -583,6 +599,7 @@ public final class NucleusCompositorServer {
         cursor.reset()
         seatFocus.reset()
         composition.reset()
+        outputAvailability = .suspendedNoOutputs
         pendingChanges.removeAll(keepingCapacity: true)
         observers.removeAll()
     }
@@ -609,7 +626,10 @@ extension NucleusCompositorServer {
     /// cross-level rule decides, with same-level cases tie-broken by back-to-front
     /// z-order (a window behind the owner is occluded).
     public func isOccludedByFullscreen(_ window: Window) -> Bool {
-        let output = spaces.policyOutputID(for: window, layout: layout)
+        guard let output = spaces.policyOutputID(
+            for: window,
+            layout: layout)
+        else { return false }
         return isOccludedByFullscreen(window, owner: fullscreenOwner(onOutput: output))
     }
 
@@ -637,13 +657,19 @@ extension NucleusCompositorServer {
             guard window.isManagedAppWindow(), window.activeFullscreen,
                   window.mapped, !window.minimized
             else { continue }
-            let output = spaces.policyOutputID(for: window, layout: layout)
+            guard let output = spaces.policyOutputID(
+                for: window,
+                layout: layout)
+            else { continue }
             if owners[output] == nil { owners[output] = window }
         }
         guard !owners.isEmpty else { return [] }
         var occluded: Set<WindowID> = []
         for window in windows.windows {
-            let output = spaces.policyOutputID(for: window, layout: layout)
+            guard let output = spaces.policyOutputID(
+                for: window,
+                layout: layout)
+            else { continue }
             if isOccludedByFullscreen(window, owner: owners[output]) { occluded.insert(window.id) }
         }
         return occluded

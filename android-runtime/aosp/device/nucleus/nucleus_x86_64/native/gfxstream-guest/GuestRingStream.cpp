@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cerrno>
 #include <cstring>
+#include <new>
 #include <poll.h>
 #include <unistd.h>
 #include <utility>
@@ -66,21 +67,25 @@ GuestRingStream::~GuestRingStream() {
 }
 
 void *GuestRingStream::allocBuffer(std::size_t minimumSize) {
-    try {
-        mCommitBuffer.resize(minimumSize);
-    } catch (...) {
-        errno = ENOMEM;
-        return nullptr;
+    if (minimumSize > mCommitCapacity) {
+        auto replacement = std::unique_ptr<unsigned char[]>(
+            new (std::nothrow) unsigned char[minimumSize]);
+        if (!replacement) {
+            errno = ENOMEM;
+            return nullptr;
+        }
+        mCommitBuffer = std::move(replacement);
+        mCommitCapacity = minimumSize;
     }
-    return mCommitBuffer.data();
+    return mCommitBuffer.get();
 }
 
 int GuestRingStream::commitBuffer(std::size_t size) {
-    if (size > mCommitBuffer.size()) {
+    if (size > mCommitCapacity) {
         errno = EMSGSIZE;
         return -EMSGSIZE;
     }
-    return writeFully(mCommitBuffer.data(), size);
+    return writeFully(mCommitBuffer.get(), size);
 }
 
 const unsigned char *GuestRingStream::readFully(
@@ -89,12 +94,12 @@ const unsigned char *GuestRingStream::readFully(
     auto *output = static_cast<unsigned char *>(buffer);
     std::size_t copied = 0;
     while (copied < length) {
-        if (mResponseOffset == mResponseBuffer.size() && !loadResponseChunk()) {
+        if (mResponseOffset == mResponseSize && !loadResponseChunk()) {
             return nullptr;
         }
-        const std::size_t available = mResponseBuffer.size() - mResponseOffset;
+        const std::size_t available = mResponseSize - mResponseOffset;
         const std::size_t count = std::min(length - copied, available);
-        std::memcpy(output + copied, mResponseBuffer.data() + mResponseOffset, count);
+        std::memcpy(output + copied, mResponseBuffer.get() + mResponseOffset, count);
         copied += count;
         mResponseOffset += count;
     }
@@ -121,12 +126,12 @@ const unsigned char *GuestRingStream::read(
     if (*inoutLength == 0) {
         return static_cast<unsigned char *>(buffer);
     }
-    if (mResponseOffset == mResponseBuffer.size() && !loadResponseChunk()) {
+    if (mResponseOffset == mResponseSize && !loadResponseChunk()) {
         return nullptr;
     }
-    const std::size_t available = mResponseBuffer.size() - mResponseOffset;
+    const std::size_t available = mResponseSize - mResponseOffset;
     const std::size_t count = std::min(*inoutLength, available);
-    std::memcpy(buffer, mResponseBuffer.data() + mResponseOffset, count);
+    std::memcpy(buffer, mResponseBuffer.get() + mResponseOffset, count);
     mResponseOffset += count;
     *inoutLength = count;
     return static_cast<unsigned char *>(buffer);
@@ -219,19 +224,23 @@ bool GuestRingStream::loadResponseChunk() {
     const std::size_t capacity =
         nucleus_android_shared_ring_consumer_slot_size(mResponseConsumer) -
         sizeof(std::uint32_t);
-    try {
-        mResponseBuffer.resize(capacity);
-    } catch (...) {
-        errno = ENOMEM;
-        return false;
+    if (capacity > mResponseCapacity) {
+        auto replacement = std::unique_ptr<unsigned char[]>(
+            new (std::nothrow) unsigned char[capacity]);
+        if (!replacement) {
+            errno = ENOMEM;
+            return false;
+        }
+        mResponseBuffer = std::move(replacement);
+        mResponseCapacity = capacity;
     }
     while (true) {
         const int result = nucleus_android_shared_ring_consumer_read(
             mResponseConsumer,
-            mResponseBuffer.data(),
-            static_cast<std::uint32_t>(mResponseBuffer.size()));
+            mResponseBuffer.get(),
+            static_cast<std::uint32_t>(mResponseCapacity));
         if (result >= 0) {
-            mResponseBuffer.resize(static_cast<std::size_t>(result));
+            mResponseSize = static_cast<std::size_t>(result);
             mResponseOffset = 0;
             return true;
         }

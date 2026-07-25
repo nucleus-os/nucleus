@@ -3,13 +3,13 @@
 #include "NucleusSkiaGraphite/Graphite.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <atomic>
 #include <cstring>
 #include <limits>
 #include <memory>
 #include <mutex>
-#include <unordered_map>
 #include <vector>
 
 #include <vulkan/vulkan_core.h>
@@ -82,48 +82,194 @@ namespace nucleus::skia {
 namespace {
 
 struct SubmissionCompletionState {
+    struct TimingSample {
+        uint64_t serial = 0;
+        uint64_t elapsedNs = 0;
+        SubmissionCallbackResult result = SubmissionCallbackResult::failed;
+        bool valid = false;
+    };
+
+    static constexpr size_t kTimingCapacity = 256;
     std::atomic<uint64_t> completedSerial{0};
+    std::atomic<uint64_t> callbackCount{0};
+    std::atomic<uint64_t> successfulCallbackCount{0};
+    std::atomic<uint64_t> failedCallbackCount{0};
     std::mutex mutex;
-    std::unordered_map<uint64_t, uint64_t> gpuElapsedNs;
+    std::array<TimingSample, kTimingCapacity> timings{};
+    size_t nextTimingIndex = 0;
+    size_t timingCount = 0;
+    uint64_t droppedTimingCount = 0;
 };
 
 struct SubmissionCompletionToken {
     std::shared_ptr<SubmissionCompletionState> state;
     uint64_t serial;
+    bool requestGpuTiming;
 };
+
+void finishSubmission(
+    std::unique_ptr<SubmissionCompletionToken> token,
+    skgpu::CallbackResult result,
+    uint64_t elapsedNs) {
+    token->state->callbackCount.fetch_add(1, std::memory_order_relaxed);
+    if (result == skgpu::CallbackResult::kSuccess) {
+        token->state->successfulCallbackCount.fetch_add(
+            1, std::memory_order_relaxed);
+    } else {
+        token->state->failedCallbackCount.fetch_add(
+            1, std::memory_order_relaxed);
+    }
+    if (token->requestGpuTiming) {
+        std::lock_guard<std::mutex> lock(token->state->mutex);
+        auto &slot = token->state->timings[token->state->nextTimingIndex];
+        if (slot.valid) {
+            ++token->state->droppedTimingCount;
+        } else {
+            ++token->state->timingCount;
+        }
+        slot = {
+            token->serial,
+            elapsedNs,
+            result == skgpu::CallbackResult::kSuccess
+                ? SubmissionCallbackResult::success
+                : SubmissionCallbackResult::failed,
+            true,
+        };
+        token->state->nextTimingIndex =
+            (token->state->nextTimingIndex + 1)
+            % SubmissionCompletionState::kTimingCapacity;
+    }
+    if (result != skgpu::CallbackResult::kSuccess) return;
+    uint64_t completed =
+        token->state->completedSerial.load(std::memory_order_relaxed);
+    while (completed < token->serial &&
+           !token->state->completedSerial.compare_exchange_weak(
+               completed, token->serial,
+               std::memory_order_release, std::memory_order_relaxed)) {}
+}
 
 void attachSubmissionCompletion(
     skgpu::graphite::InsertRecordingInfo &info,
     const std::shared_ptr<SubmissionCompletionState> &state,
-    uint64_t serial) {
+    uint64_t serial,
+    bool requestGpuTiming) {
     if (serial == 0) return;
-    info.fFinishedContext = new SubmissionCompletionToken{state, serial};
-    info.fGpuStatsFlags = skgpu::GpuStatsFlags::kElapsedTime;
-    info.fFinishedWithStatsProc = [](
-        skgpu::graphite::GpuFinishedContext context,
-        skgpu::CallbackResult result, const skgpu::GpuStats &stats) {
-        std::unique_ptr<SubmissionCompletionToken> token(
-            static_cast<SubmissionCompletionToken *>(context));
-        if (result != skgpu::CallbackResult::kSuccess) return;
-        if (stats.elapsedTime != 0) {
-            std::lock_guard<std::mutex> lock(token->state->mutex);
-            token->state->gpuElapsedNs[token->serial] = stats.elapsedTime;
+    info.fFinishedContext =
+        new SubmissionCompletionToken{state, serial, requestGpuTiming};
+    if (requestGpuTiming) {
+        info.fGpuStatsFlags = skgpu::GpuStatsFlags::kElapsedTime;
+        info.fFinishedWithStatsProc = [](
+            skgpu::graphite::GpuFinishedContext context,
+            skgpu::CallbackResult result, const skgpu::GpuStats &stats) {
+            finishSubmission(
+                std::unique_ptr<SubmissionCompletionToken>(
+                    static_cast<SubmissionCompletionToken *>(context)),
+                result,
+                stats.elapsedTime);
+        };
+    } else {
+        info.fFinishedProc = [](
+            skgpu::graphite::GpuFinishedContext context,
+            skgpu::CallbackResult result) {
+            finishSubmission(
+                std::unique_ptr<SubmissionCompletionToken>(
+                    static_cast<SubmissionCompletionToken *>(context)),
+                result,
+                0);
+        };
+    }
+}
+
+RecordingInsertStatus recordingInsertStatus(
+    skgpu::graphite::InsertStatus status) {
+    switch (static_cast<skgpu::graphite::InsertStatus::V>(status)) {
+        case skgpu::graphite::InsertStatus::kSuccess:
+            return RecordingInsertStatus::success;
+        case skgpu::graphite::InsertStatus::kInvalidRecording:
+            return RecordingInsertStatus::invalidRecording;
+        case skgpu::graphite::InsertStatus::kPromiseImageInstantiationFailed:
+            return RecordingInsertStatus::promiseImageInstantiationFailed;
+        case skgpu::graphite::InsertStatus::kAddCommandsFailed:
+            return RecordingInsertStatus::addCommandsFailed;
+        case skgpu::graphite::InsertStatus::kAsyncShaderCompilesFailed:
+            return RecordingInsertStatus::asyncShaderCompilesFailed;
+        case skgpu::graphite::InsertStatus::kOutOfOrderRecording:
+            return RecordingInsertStatus::outOfOrderRecording;
+    }
+    return RecordingInsertStatus::notAttempted;
+}
+
+skgpu::graphite::InsertStatus::V graphiteInsertStatus(
+    RecordingInsertStatus status) {
+    switch (status) {
+        case RecordingInsertStatus::success:
+            return skgpu::graphite::InsertStatus::kSuccess;
+        case RecordingInsertStatus::invalidRecording:
+            return skgpu::graphite::InsertStatus::kInvalidRecording;
+        case RecordingInsertStatus::promiseImageInstantiationFailed:
+            return skgpu::graphite::InsertStatus::kPromiseImageInstantiationFailed;
+        case RecordingInsertStatus::addCommandsFailed:
+            return skgpu::graphite::InsertStatus::kAddCommandsFailed;
+        case RecordingInsertStatus::asyncShaderCompilesFailed:
+            return skgpu::graphite::InsertStatus::kAsyncShaderCompilesFailed;
+        case RecordingInsertStatus::outOfOrderRecording:
+            return skgpu::graphite::InsertStatus::kOutOfOrderRecording;
+        case RecordingInsertStatus::notAttempted:
+            return skgpu::graphite::InsertStatus::kSuccess;
+    }
+    return skgpu::graphite::InsertStatus::kSuccess;
+}
+
+SubmissionResult insertionResult(
+    const skgpu::graphite::InsertStatus &status) {
+    const auto mapped = recordingInsertStatus(status);
+    const bool contextUsable =
+        mapped == RecordingInsertStatus::success
+        || mapped == RecordingInsertStatus::invalidRecording
+        || mapped == RecordingInsertStatus::promiseImageInstantiationFailed;
+    std::string diagnostic = status.message();
+    if (diagnostic.empty() && mapped != RecordingInsertStatus::success) {
+        switch (mapped) {
+            case RecordingInsertStatus::invalidRecording:
+                diagnostic = "Graphite rejected an invalid recording";
+                break;
+            case RecordingInsertStatus::promiseImageInstantiationFailed:
+                diagnostic = "Graphite promise-image instantiation failed";
+                break;
+            case RecordingInsertStatus::addCommandsFailed:
+                diagnostic = "Graphite command-buffer insertion failed";
+                break;
+            case RecordingInsertStatus::asyncShaderCompilesFailed:
+                diagnostic = "Graphite asynchronous shader compilation failed";
+                break;
+            case RecordingInsertStatus::outOfOrderRecording:
+                diagnostic = "Graphite rejected an out-of-order recording";
+                break;
+            case RecordingInsertStatus::notAttempted:
+            case RecordingInsertStatus::success:
+                break;
         }
-        uint64_t completed = token->state->completedSerial.load(std::memory_order_relaxed);
-        while (completed < token->serial &&
-               !token->state->completedSerial.compare_exchange_weak(
-                   completed, token->serial,
-                   std::memory_order_release, std::memory_order_relaxed)) {}
+    }
+    return {
+        mapped == RecordingInsertStatus::success
+            ? Status::ok
+            : Status::recordingFailed,
+        mapped,
+        contextUsable,
+        std::move(diagnostic),
     };
 }
 
-// Text-layout resolver: installed by the text backend at startup via
-// nucleus_skia_set_text_layout_resolver (see skia_text_backend.cpp). Given a
-// handle it returns the borrowed skia::textlayout::Paragraph* (as uintptr_t, 0
-// if unknown). The render core owns this seam and paints the paragraph itself;
-// it has no compile-time dependency on the text backend.
-using TextLayoutResolver = uintptr_t (*)(uint64_t);
-TextLayoutResolver g_textLayoutResolver = nullptr;
+SubmissionResult invalidSubmission(Status status, const char *diagnostic) {
+    return {
+        status,
+        RecordingInsertStatus::notAttempted,
+        true,
+        diagnostic,
+    };
+}
+
+std::atomic<TextLayoutBorrow> g_textLayoutBorrow{nullptr};
 
 skgpu::VulkanGetProc makeVulkanGetProc() {
     return [](const char *name, VkInstance instance, VkDevice device) -> PFN_vkVoidFunction {
@@ -319,6 +465,7 @@ struct Recording::Impl {
 
 // MARK: - Image
 
+RasterImage::RasterImage() = default;
 RasterImage::RasterImage(std::shared_ptr<Impl> impl) : impl_(std::move(impl)) {}
 bool RasterImage::isValid() const { return impl_ && impl_->image != nullptr; }
 int32_t RasterImage::width() const { return isValid() ? impl_->image->width() : 0; }
@@ -575,9 +722,51 @@ Shader makeRuntimeShaderWithImage(
     return makeRuntimeEffect(sksl).makeShaderWithImage(uniforms, uniformFloatCount, child);
 }
 
+namespace {
+
+constexpr uint64_t kMaximumEncodedBytes = 64ull * 1024ull * 1024ull;
+constexpr int32_t kMaximumRasterDimension = 32768;
+constexpr uint64_t kMaximumDecodedPixels = 64ull * 1000ull * 1000ull;
+constexpr uint64_t kMaximumDecodedBytes = 256ull * 1024ull * 1024ull;
+
+RasterDecodeStatus validateRasterDimensions(
+    int32_t width,
+    int32_t height,
+    uint64_t bytesPerPixel = 4) {
+    if (width <= 0 || height <= 0) {
+        return RasterDecodeStatus::invalidDimensions;
+    }
+    if (width > kMaximumRasterDimension
+        || height > kMaximumRasterDimension) {
+        return RasterDecodeStatus::limitExceeded;
+    }
+    const uint64_t pixelCount =
+        static_cast<uint64_t>(width) * static_cast<uint64_t>(height);
+    if (pixelCount > kMaximumDecodedPixels
+        || pixelCount > kMaximumDecodedBytes / bytesPerPixel) {
+        return RasterDecodeStatus::limitExceeded;
+    }
+    return RasterDecodeStatus::success;
+}
+
+RasterDecodeResult decodeResult(
+    RasterDecodeStatus status,
+    RasterImage image = RasterImage()) {
+    return RasterDecodeResult{
+        .image = std::move(image),
+        .status = status,
+    };
+}
+
+} // namespace
+
 RasterImage makeRasterImageRGBA(
     int32_t width, int32_t height, const uint8_t *pixels, size_t byteLength) {
-    if (width <= 0 || height <= 0 || pixels == nullptr) return RasterImage(nullptr);
+    if (validateRasterDimensions(width, height)
+            != RasterDecodeStatus::success
+        || pixels == nullptr) {
+        return RasterImage(nullptr);
+    }
     SkImageInfo info = SkImageInfo::Make(width, height, kRGBA_8888_SkColorType, kPremul_SkAlphaType);
     if (byteLength < info.computeMinByteSize()) return RasterImage(nullptr);
     SkPixmap pixmap(info, pixels, info.minRowBytes());
@@ -707,11 +896,6 @@ sk_sp<SkFontMgr> svgFontManager() {
     return manager;
 }
 
-// A vector has no natural size, so an unbounded SVG needs *a* raster size and
-// there is no correct one to pick. This is the size used when the document
-// declares no absolute dimensions and the caller asked for no bounds.
-constexpr int32_t kDefaultSvgRasterSize = 512;
-
 // Rasterize an SVG at the size it will be drawn.
 //
 // This is where decode bounds stop being an optimization and become
@@ -732,24 +916,16 @@ RasterImage rasterizeSvg(
 
     float width = 0;
     float height = 0;
-    if (maxWidth > 0 && maxHeight > 0) {
-        if (intrinsic.width() > 0 && intrinsic.height() > 0) {
-            // Fit the document's aspect ratio inside the box, matching how a
-            // bitmap of the same shape would be bounded.
-            float scale = std::min(static_cast<float>(maxWidth) / intrinsic.width(),
-                                   static_cast<float>(maxHeight) / intrinsic.height());
-            width = intrinsic.width() * scale;
-            height = intrinsic.height() * scale;
-        } else {
-            width = static_cast<float>(maxWidth);
-            height = static_cast<float>(maxHeight);
-        }
-    } else if (intrinsic.width() > 0 && intrinsic.height() > 0) {
-        width = intrinsic.width();
-        height = intrinsic.height();
+    if (intrinsic.width() > 0 && intrinsic.height() > 0) {
+        // Fit the document's aspect ratio inside the required target box,
+        // matching how a bitmap of the same shape is bounded.
+        float scale = std::min(static_cast<float>(maxWidth) / intrinsic.width(),
+                               static_cast<float>(maxHeight) / intrinsic.height());
+        width = intrinsic.width() * scale;
+        height = intrinsic.height() * scale;
     } else {
-        width = kDefaultSvgRasterSize;
-        height = kDefaultSvgRasterSize;
+        width = static_cast<float>(maxWidth);
+        height = static_cast<float>(maxHeight);
     }
 
     int32_t pixelWidth = std::max(1, static_cast<int32_t>(std::lround(width)));
@@ -784,83 +960,200 @@ RasterImage rasterizeSvg(
 
 namespace {
 
+EncodedImageMetadata probeEncodedData(const sk_sp<SkData> &data) {
+    if (!data || data->isEmpty()) {
+        return EncodedImageMetadata{
+            .status = RasterDecodeStatus::unreadableInput,
+        };
+    }
+    if (data->size() > kMaximumEncodedBytes) {
+        return EncodedImageMetadata{
+            .status = RasterDecodeStatus::limitExceeded,
+        };
+    }
+    if (looksLikeSvg(data)) {
+        return EncodedImageMetadata{
+            .isVector = true,
+            .status = RasterDecodeStatus::success,
+        };
+    }
+    std::unique_ptr<SkCodec> codec = SkCodec::MakeFromData(data);
+    if (!codec) {
+        return EncodedImageMetadata{
+            .status = RasterDecodeStatus::unsupportedFormat,
+        };
+    }
+    const SkISize size = codec->dimensions();
+    const RasterDecodeStatus dimensions =
+        validateRasterDimensions(size.width(), size.height());
+    if (dimensions != RasterDecodeStatus::success) {
+        return EncodedImageMetadata{
+            .status = dimensions,
+        };
+    }
+    return EncodedImageMetadata{
+        .width = size.width(),
+        .height = size.height(),
+        .isVector = false,
+        .status = RasterDecodeStatus::success,
+    };
+}
+
 // The shared body of every encoded decode, whether the bytes came from a file or
-// from memory. A `data:` URI holds exactly what a file holds, so it must decode
-// exactly the same way.
-RasterImage decodeEncodedData(
+// from memory. Success always owns actual CPU pixels; no deferred encoded image
+// can cross this boundary and move decode work onto a later render call.
+RasterDecodeResult decodeEncodedData(
     sk_sp<SkData> data, int32_t maxWidth, int32_t maxHeight) {
-    if (!data) return RasterImage(nullptr);
+    if (!data || data->isEmpty()) {
+        return decodeResult(RasterDecodeStatus::unreadableInput);
+    }
+    if (data->size() > kMaximumEncodedBytes) {
+        return decodeResult(RasterDecodeStatus::limitExceeded);
+    }
+    const RasterDecodeStatus targetStatus =
+        validateRasterDimensions(maxWidth, maxHeight);
+    if (targetStatus != RasterDecodeStatus::success) {
+        return decodeResult(targetStatus);
+    }
 
     // SVG has its own path: there is nothing to decode, only something to draw,
     // and it must be drawn at the size it will be shown.
-    if (looksLikeSvg(data)) return rasterizeSvg(data, maxWidth, maxHeight);
-
-    // Unbounded stays deferred: nothing is known about the draw size, so there
-    // is nothing to decide and no reason to decode before the first draw.
-    if (maxWidth <= 0 || maxHeight <= 0) {
-        return wrapRasterImage(SkImages::DeferredFromEncodedData(std::move(data)));
+    if (looksLikeSvg(data)) {
+        RasterImage image = rasterizeSvg(data, maxWidth, maxHeight);
+        return image.isValid()
+            ? decodeResult(RasterDecodeStatus::success, std::move(image))
+            : decodeResult(RasterDecodeStatus::decodeFailure);
     }
 
     std::unique_ptr<SkCodec> codec = SkCodec::MakeFromData(std::move(data));
-    if (!codec) return RasterImage(nullptr);
+    if (!codec) {
+        return decodeResult(RasterDecodeStatus::unsupportedFormat);
+    }
 
     SkISize full = codec->dimensions();
-    if (full.isEmpty()) return RasterImage(nullptr);
+    if (full.isEmpty()) {
+        return decodeResult(RasterDecodeStatus::invalidDimensions);
+    }
     float scale = std::min(static_cast<float>(maxWidth) / static_cast<float>(full.width()),
                            static_cast<float>(maxHeight) / static_cast<float>(full.height()));
 
     // Already inside the box. Enlarging to fill it would burn memory to blur.
     if (scale >= 1.0f) {
+        const RasterDecodeStatus dimensions =
+            validateRasterDimensions(full.width(), full.height());
+        if (dimensions != RasterDecodeStatus::success) {
+            return decodeResult(dimensions);
+        }
         SkBitmap bitmap;
         if (!bitmap.tryAllocPixels(decodeInfo(*codec, full.width(), full.height()))) {
-            return RasterImage(nullptr);
+            return decodeResult(RasterDecodeStatus::decodeFailure);
         }
         if (codec->getPixels(bitmap.pixmap()) != SkCodec::kSuccess) {
-            return RasterImage(nullptr);
+            return decodeResult(RasterDecodeStatus::decodeFailure);
         }
         bitmap.setImmutable();
-        return wrapRasterImage(SkImages::RasterFromBitmap(bitmap));
+        RasterImage image =
+            wrapRasterImage(SkImages::RasterFromBitmap(bitmap));
+        return image.isValid()
+            ? decodeResult(RasterDecodeStatus::success, std::move(image))
+            : decodeResult(RasterDecodeStatus::decodeFailure);
     }
 
     // Ask the codec what it can decode natively — JPEG scales during the DCT,
     // which is both faster and better than decoding full and resampling. The
     // answer is never smaller than asked for, so a resample may still follow.
     SkISize decoded = codec->getScaledDimensions(scale);
+    const bool needsLinearResample =
+        decoded.width() > std::max(
+            1,
+            static_cast<int32_t>(std::lround(full.width() * scale)))
+        || decoded.height() > std::max(
+            1,
+            static_cast<int32_t>(std::lround(full.height() * scale)));
+    const RasterDecodeStatus dimensions =
+        validateRasterDimensions(
+            decoded.width(),
+            decoded.height(),
+            needsLinearResample ? 8 : 4);
+    if (dimensions != RasterDecodeStatus::success) {
+        return decodeResult(dimensions);
+    }
     SkBitmap bitmap;
     if (!bitmap.tryAllocPixels(decodeInfo(*codec, decoded.width(), decoded.height()))) {
-        return RasterImage(nullptr);
+        return decodeResult(RasterDecodeStatus::decodeFailure);
     }
     if (codec->getPixels(bitmap.pixmap()) != SkCodec::kSuccess) {
-        return RasterImage(nullptr);
+        return decodeResult(RasterDecodeStatus::decodeFailure);
     }
     bitmap.setImmutable();
 
     sk_sp<SkImage> image = SkImages::RasterFromBitmap(bitmap);
-    if (!image) return RasterImage(nullptr);
+    if (!image) {
+        return decodeResult(RasterDecodeStatus::decodeFailure);
+    }
 
     int32_t targetWidth = std::max(1, static_cast<int32_t>(std::lround(full.width() * scale)));
     int32_t targetHeight = std::max(1, static_cast<int32_t>(std::lround(full.height() * scale)));
     if (decoded.width() <= targetWidth && decoded.height() <= targetHeight) {
-        return wrapRasterImage(std::move(image));
+        RasterImage raster = wrapRasterImage(std::move(image));
+        return raster.isValid()
+            ? decodeResult(RasterDecodeStatus::success, std::move(raster))
+            : decodeResult(RasterDecodeStatus::decodeFailure);
     }
 
     sk_sp<SkImage> resized = linearDownscale(image, targetWidth, targetHeight);
-    // A failed resample is a memory failure, not a decode failure — the
-    // correctly-decoded oversized image beats showing nothing.
-    return wrapRasterImage(resized ? std::move(resized) : std::move(image));
+    if (!resized) {
+        return decodeResult(RasterDecodeStatus::decodeFailure);
+    }
+    RasterImage raster = wrapRasterImage(std::move(resized));
+    return raster.isValid()
+        ? decodeResult(RasterDecodeStatus::success, std::move(raster))
+        : decodeResult(RasterDecodeStatus::decodeFailure);
 }
 
 }  // namespace
 
-RasterImage makeEncodedImageFromFile(
+EncodedImageMetadata probeEncodedImageFile(const char *path) {
+    if (path == nullptr || path[0] == '\0') {
+        return EncodedImageMetadata{
+            .status = RasterDecodeStatus::unreadableInput,
+        };
+    }
+    return probeEncodedData(SkData::MakeFromFileName(path));
+}
+
+EncodedImageMetadata probeEncodedImageMemory(
+    const uint8_t *bytes,
+    size_t byteLength) {
+    if (bytes == nullptr || byteLength == 0) {
+        return EncodedImageMetadata{
+            .status = RasterDecodeStatus::unreadableInput,
+        };
+    }
+    if (byteLength > kMaximumEncodedBytes) {
+        return EncodedImageMetadata{
+            .status = RasterDecodeStatus::limitExceeded,
+        };
+    }
+    return probeEncodedData(SkData::MakeWithCopy(bytes, byteLength));
+}
+
+RasterDecodeResult decodeEncodedImageFile(
     const char *path, int32_t maxWidth, int32_t maxHeight) {
-    if (path == nullptr || path[0] == '\0') return RasterImage(nullptr);
+    if (path == nullptr || path[0] == '\0') {
+        return decodeResult(RasterDecodeStatus::unreadableInput);
+    }
     return decodeEncodedData(SkData::MakeFromFileName(path), maxWidth, maxHeight);
 }
 
-RasterImage makeEncodedImageFromMemory(
+RasterDecodeResult decodeEncodedImageMemory(
     const uint8_t *bytes, size_t byteLength, int32_t maxWidth, int32_t maxHeight) {
-    if (bytes == nullptr || byteLength == 0) return RasterImage(nullptr);
+    if (bytes == nullptr || byteLength == 0) {
+        return decodeResult(RasterDecodeStatus::unreadableInput);
+    }
+    if (byteLength > kMaximumEncodedBytes) {
+        return decodeResult(RasterDecodeStatus::limitExceeded);
+    }
     return decodeEncodedData(
         SkData::MakeWithCopy(bytes, byteLength), maxWidth, maxHeight);
 }
@@ -1066,37 +1359,110 @@ void Canvas::concat(const float m[9]) const {
         SkMatrix::MakeAll(m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7], m[8]));
 }
 
-extern "C" void nucleus_skia_set_text_layout_resolver(uintptr_t (*resolve)(uint64_t)) {
-    g_textLayoutResolver = resolve;
+TextLayoutBorrowInstallStatus installTextLayoutBorrow(
+    TextLayoutBorrow borrow) {
+    if (borrow == nullptr) {
+        return TextLayoutBorrowInstallStatus::missingProvider;
+    }
+    TextLayoutBorrow expected = nullptr;
+    if (g_textLayoutBorrow.compare_exchange_strong(
+            expected,
+            borrow,
+            std::memory_order_release,
+            std::memory_order_acquire)) {
+        return TextLayoutBorrowInstallStatus::installed;
+    }
+    return expected == borrow
+        ? TextLayoutBorrowInstallStatus::alreadyInstalled
+        : TextLayoutBorrowInstallStatus::conflictingProvider;
 }
 
-void Canvas::drawTextLayout(uint64_t handle, RectF dst, float alpha) const {
-    if (!isValid() || handle == 0 || g_textLayoutResolver == nullptr) return;
-    auto *paragraph =
-        reinterpret_cast<::skia::textlayout::Paragraph *>(g_textLayoutResolver(handle));
-    if (paragraph == nullptr) return;
-    SkCanvas *canvas = impl_->canvas;
+bool hasTextLayoutBorrow() {
+    return g_textLayoutBorrow.load(std::memory_order_acquire) != nullptr;
+}
 
-    // The paragraph was laid out to its own width; scale it to fill dst's width
-    // (identical to the former by-handle draw, now painted directly here).
-    const float layout_width = paragraph->getMaxWidth();
+extern "C" bool nucleus_skia_install_text_layout_borrow(
+    TextLayoutBorrow borrow) {
+    const TextLayoutBorrowInstallStatus status =
+        installTextLayoutBorrow(borrow);
+    return status == TextLayoutBorrowInstallStatus::installed
+        || status
+            == TextLayoutBorrowInstallStatus::alreadyInstalled;
+}
+
+extern "C" uint8_t
+nucleus_skia_install_text_layout_borrow_status(
+    TextLayoutBorrow borrow) {
+    return static_cast<uint8_t>(
+        installTextLayoutBorrow(borrow));
+}
+
+extern "C" bool nucleus_skia_borrow_text_layout(
+    uint64_t handle,
+    void *bodyContext,
+    TextLayoutBorrowBody body) {
+    TextLayoutBorrow borrow =
+        g_textLayoutBorrow.load(std::memory_order_acquire);
+    return borrow != nullptr
+        && body != nullptr
+        && borrow(handle, bodyContext, body);
+}
+
+namespace {
+struct TextLayoutPaintContext final {
+    SkCanvas *canvas;
+    RectF dst;
+    float alpha;
+};
+
+void paintBorrowedTextLayout(
+    uintptr_t borrowedParagraph,
+    void *rawContext) {
+    auto *paragraph =
+        reinterpret_cast<::skia::textlayout::Paragraph *>(
+            borrowedParagraph);
+    auto *context =
+        static_cast<TextLayoutPaintContext *>(rawContext);
+    if (paragraph == nullptr || context == nullptr) {
+        return;
+    }
+
+    const float layoutWidth = paragraph->getMaxWidth();
     const float scale =
-        (layout_width > 0.0f && dst.width > 0.0f) ? dst.width / layout_width : 1.0f;
-    canvas->save();
-    canvas->translate(dst.x, dst.y);
-    if (alpha < 1.0f) {
-        SkPaint layer_paint;
-        layer_paint.setAlphaf(std::clamp(alpha, 0.0f, 1.0f));
-        canvas->saveLayer(nullptr, &layer_paint);
+        (layoutWidth > 0.0f && context->dst.width > 0.0f)
+        ? context->dst.width / layoutWidth
+        : 1.0f;
+    context->canvas->save();
+    context->canvas->translate(context->dst.x, context->dst.y);
+    if (context->alpha < 1.0f) {
+        SkPaint layerPaint;
+        layerPaint.setAlphaf(
+            std::clamp(context->alpha, 0.0f, 1.0f));
+        context->canvas->saveLayer(nullptr, &layerPaint);
     }
     if (scale > 0.0f && scale != 1.0f) {
-        canvas->scale(scale, scale);
+        context->canvas->scale(scale, scale);
     }
-    paragraph->paint(canvas, 0.0f, 0.0f);
-    if (alpha < 1.0f) {
-        canvas->restore();
+    paragraph->paint(context->canvas, 0.0f, 0.0f);
+    if (context->alpha < 1.0f) {
+        context->canvas->restore();
     }
-    canvas->restore();
+    context->canvas->restore();
+}
+} // namespace
+
+void Canvas::drawTextLayout(
+    uint64_t handle,
+    RectF dst,
+    float alpha) const {
+    if (!isValid() || handle == 0) {
+        return;
+    }
+    TextLayoutPaintContext context{impl_->canvas, dst, alpha};
+    (void)nucleus_skia_borrow_text_layout(
+        handle,
+        &context,
+        &paintBorrowedTextLayout);
 }
 
 
@@ -1341,30 +1707,93 @@ Recorder GraphiteContext::makeRecorder() const {
     return Recorder(std::move(impl));
 }
 
-Status GraphiteContext::submitAsync(
+SubmissionResult GraphiteContext::submitAsync(
     const Recording &recording, uint64_t submissionSerial) const {
-    if (!isValid() || submissionSerial == 0) return Status::invalidArgument;
+    if (!isValid() || submissionSerial == 0) {
+        return invalidSubmission(
+            Status::invalidArgument,
+            "submitAsync requires a valid context and nonzero serial");
+    }
     Recording::Impl *rec = recording.raw();
-    if (!rec || !rec->recording) return Status::invalidArgument;
+    if (!rec || !rec->recording) {
+        return invalidSubmission(
+            Status::invalidArgument,
+            "submitAsync requires one valid recording");
+    }
 
     skgpu::graphite::InsertRecordingInfo info;
     info.fRecording = rec->recording.get();
     attachSubmissionCompletion(
-        info, impl_->submissionCompletion, submissionSerial);
-    if (!impl_->context->insertRecording(info)) return Status::recordingFailed;
+        info, impl_->submissionCompletion, submissionSerial, false);
+    auto result = insertionResult(impl_->context->insertRecording(info));
+    if (!result.isOk()) return result;
     if (!impl_->context->submit(skgpu::graphite::SyncToCpu::kNo)) {
-        return Status::submitFailed;
+        return invalidSubmission(
+            Status::submitFailed,
+            "Graphite rejected the queued asynchronous submission");
     }
-    return Status::ok;
+    return result;
 }
 
-Status GraphiteContext::submitWithSemaphores(
+SubmissionResult GraphiteContext::submitAsyncSimulatingInsertStatus(
+    const Recording &recording, uint64_t submissionSerial,
+    RecordingInsertStatus simulatedStatus) const {
+    if (!isValid() || submissionSerial == 0
+        || simulatedStatus == RecordingInsertStatus::notAttempted) {
+        return invalidSubmission(
+            Status::invalidArgument,
+            "simulated submission requires a valid context, serial, and insert status");
+    }
+    Recording::Impl *rec = recording.raw();
+    if (!rec || !rec->recording) {
+        return invalidSubmission(
+            Status::invalidArgument,
+            "simulated submission requires one valid recording");
+    }
+    if (simulatedStatus == RecordingInsertStatus::outOfOrderRecording) {
+        finishSubmission(
+            std::make_unique<SubmissionCompletionToken>(
+                SubmissionCompletionToken{
+                    impl_->submissionCompletion,
+                    submissionSerial,
+                    false,
+                }),
+            skgpu::CallbackResult::kFailed,
+            0);
+        return insertionResult(skgpu::graphite::InsertStatus(
+            skgpu::graphite::InsertStatus::kOutOfOrderRecording,
+            "Simulating out-of-order recording failure"));
+    }
+    skgpu::graphite::InsertRecordingInfo info;
+    info.fRecording = rec->recording.get();
+    info.fSimulatedStatus = graphiteInsertStatus(simulatedStatus);
+    attachSubmissionCompletion(
+        info, impl_->submissionCompletion, submissionSerial, false);
+    auto result = insertionResult(impl_->context->insertRecording(info));
+    if (!result.isOk()) return result;
+    if (!impl_->context->submit(skgpu::graphite::SyncToCpu::kNo)) {
+        return invalidSubmission(
+            Status::submitFailed,
+            "Graphite rejected the simulated asynchronous submission");
+    }
+    return result;
+}
+
+SubmissionResult GraphiteContext::submitWithSemaphores(
     const Recording &recording, void *const *waitSemaphores,
     size_t waitSemaphoreCount, void *signalSemaphore,
-    uint64_t submissionSerial) const {
-    if (!isValid()) return Status::invalidArgument;
+    uint64_t submissionSerial, bool requestGpuTiming) const {
+    if (!isValid()) {
+        return invalidSubmission(
+            Status::invalidArgument,
+            "semaphore submission requires a valid context");
+    }
     Recording::Impl *rec = recording.raw();
-    if (!rec || !rec->recording) return Status::invalidArgument;
+    if (!rec || !rec->recording) {
+        return invalidSubmission(
+            Status::invalidArgument,
+            "semaphore submission requires one valid recording");
+    }
 
     std::vector<skgpu::graphite::BackendSemaphore> waits;
     waits.reserve(waitSemaphoreCount);
@@ -1384,60 +1813,40 @@ Status GraphiteContext::submitWithSemaphores(
         info.fNumSignalSemaphores = 1;
         info.fSignalSemaphores = &signal;
     }
-    attachSubmissionCompletion(info, impl_->submissionCompletion, submissionSerial);
-    if (!impl_->context->insertRecording(info)) return Status::recordingFailed;
-    if (!impl_->context->submit(skgpu::graphite::SyncToCpu::kNo)) return Status::submitFailed;
-    return Status::ok;
-}
-
-Status GraphiteContext::submitWithUploadAndSemaphores(
-    const Recording &upload, const Recording &frame, void *const *waitSemaphores,
-    size_t waitSemaphoreCount, void *signalSemaphore,
-    uint64_t submissionSerial) const {
-    if (!isValid()) return Status::invalidArgument;
-    Recording::Impl *up = upload.raw();
-    Recording::Impl *fr = frame.raw();
-    if (!up || !up->recording || !fr || !fr->recording) return Status::invalidArgument;
-
-    skgpu::graphite::InsertRecordingInfo uploadInfo;
-    uploadInfo.fRecording = up->recording.get();
-    if (!impl_->context->insertRecording(uploadInfo)) return Status::recordingFailed;
-
-    std::vector<skgpu::graphite::BackendSemaphore> waits;
-    waits.reserve(waitSemaphoreCount);
-    for (size_t i = 0; i < waitSemaphoreCount; ++i) {
-        if (waitSemaphores[i] != nullptr) waits.push_back(
-            skgpu::graphite::BackendSemaphores::MakeVulkan(
-                static_cast<VkSemaphore>(waitSemaphores[i])));
-    }
-    skgpu::graphite::InsertRecordingInfo frameInfo;
-    frameInfo.fRecording = fr->recording.get();
-    frameInfo.fNumWaitSemaphores = waits.size();
-    frameInfo.fWaitSemaphores = waits.data();
-    skgpu::graphite::BackendSemaphore signal;
-    if (signalSemaphore != nullptr) {
-        signal = skgpu::graphite::BackendSemaphores::MakeVulkan(
-            static_cast<VkSemaphore>(signalSemaphore));
-        frameInfo.fNumSignalSemaphores = 1;
-        frameInfo.fSignalSemaphores = &signal;
-    }
     attachSubmissionCompletion(
-        frameInfo, impl_->submissionCompletion, submissionSerial);
-    if (!impl_->context->insertRecording(frameInfo)) return Status::recordingFailed;
-    if (!impl_->context->submit(skgpu::graphite::SyncToCpu::kNo)) return Status::submitFailed;
-    return Status::ok;
+        info, impl_->submissionCompletion, submissionSerial, requestGpuTiming);
+    auto result = insertionResult(impl_->context->insertRecording(info));
+    if (!result.isOk()) return result;
+    if (!impl_->context->submit(skgpu::graphite::SyncToCpu::kNo)) {
+        return invalidSubmission(
+            Status::submitFailed,
+            "Graphite rejected the queued semaphore submission");
+    }
+    return result;
 }
 
-Status GraphiteContext::submitForPresent(
+SubmissionResult GraphiteContext::submitForPresent(
     const Surface &targetSurface, const Recording &recording,
     void *const *waitSemaphores, size_t waitSemaphoreCount,
     void *signalSemaphore, uint32_t presentQueueFamily,
-    uint64_t submissionSerial) const {
-    if (!isValid()) return Status::submitFailed;
+    uint64_t submissionSerial, bool requestGpuTiming) const {
+    if (!isValid()) {
+        return invalidSubmission(
+            Status::submitFailed,
+            "present submission requires a valid context");
+    }
     Recording::Impl *rec = recording.raw();
-    if (!rec || !rec->recording) return Status::invalidArgument;
+    if (!rec || !rec->recording) {
+        return invalidSubmission(
+            Status::invalidArgument,
+            "present submission requires one valid recording");
+    }
     Surface::Impl *surf = targetSurface.raw();
-    if (!surf || !surf->surface) return Status::invalidArgument;
+    if (!surf || !surf->surface) {
+        return invalidSubmission(
+            Status::invalidArgument,
+            "present submission requires a valid target surface");
+    }
 
     skgpu::graphite::InsertRecordingInfo info;
     info.fRecording = rec->recording.get();
@@ -1468,58 +1877,19 @@ Status GraphiteContext::submitForPresent(
         VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, presentQueueFamily);
     info.fTargetSurface = surf->surface.get();
     info.fTargetTextureState = &presentState;
-    attachSubmissionCompletion(info, impl_->submissionCompletion, submissionSerial);
+    attachSubmissionCompletion(
+        info, impl_->submissionCompletion, submissionSerial, requestGpuTiming);
 
-    if (!impl_->context->insertRecording(info)) return Status::recordingFailed;
+    auto result = insertionResult(impl_->context->insertRecording(info));
+    if (!result.isOk()) return result;
     // Async: do NOT sync to CPU — vkQueuePresentKHR orders against the signal
     // semaphore, so a CPU stall here would only hurt frame pacing.
-    if (!impl_->context->submit(skgpu::graphite::SyncToCpu::kNo)) return Status::submitFailed;
-    return Status::ok;
-}
-
-Status GraphiteContext::submitForPresentWithUpload(
-    const Surface &targetSurface, const Recording &upload, const Recording &frame,
-    void *const *waitSemaphores, size_t waitSemaphoreCount,
-    void *signalSemaphore, uint32_t presentQueueFamily,
-    uint64_t submissionSerial) const {
-    if (!isValid()) return Status::submitFailed;
-    Recording::Impl *up = upload.raw();
-    Recording::Impl *fr = frame.raw();
-    if (!up || !up->recording || !fr || !fr->recording) return Status::invalidArgument;
-    Surface::Impl *surf = targetSurface.raw();
-    if (!surf || !surf->surface) return Status::invalidArgument;
-
-    skgpu::graphite::InsertRecordingInfo uploadInfo;
-    uploadInfo.fRecording = up->recording.get();
-    if (!impl_->context->insertRecording(uploadInfo)) return Status::recordingFailed;
-
-    skgpu::graphite::InsertRecordingInfo frameInfo;
-    frameInfo.fRecording = fr->recording.get();
-    std::vector<skgpu::graphite::BackendSemaphore> waits;
-    skgpu::graphite::BackendSemaphore signalSem;
-    waits.reserve(waitSemaphoreCount);
-    for (size_t i = 0; i < waitSemaphoreCount; ++i) {
-        if (waitSemaphores[i] != nullptr) waits.push_back(
-            skgpu::graphite::BackendSemaphores::MakeVulkan(
-                static_cast<VkSemaphore>(waitSemaphores[i])));
+    if (!impl_->context->submit(skgpu::graphite::SyncToCpu::kNo)) {
+        return invalidSubmission(
+            Status::submitFailed,
+            "Graphite rejected the queued present submission");
     }
-    frameInfo.fNumWaitSemaphores = waits.size();
-    frameInfo.fWaitSemaphores = waits.data();
-    if (signalSemaphore != nullptr) {
-        signalSem = skgpu::graphite::BackendSemaphores::MakeVulkan(
-            static_cast<VkSemaphore>(signalSemaphore));
-        frameInfo.fNumSignalSemaphores = 1;
-        frameInfo.fSignalSemaphores = &signalSem;
-    }
-    skgpu::MutableTextureState presentState = skgpu::MutableTextureStates::MakeVulkan(
-        VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, presentQueueFamily);
-    frameInfo.fTargetSurface = surf->surface.get();
-    frameInfo.fTargetTextureState = &presentState;
-    attachSubmissionCompletion(
-        frameInfo, impl_->submissionCompletion, submissionSerial);
-    if (!impl_->context->insertRecording(frameInfo)) return Status::recordingFailed;
-    if (!impl_->context->submit(skgpu::graphite::SyncToCpu::kNo)) return Status::submitFailed;
-    return Status::ok;
+    return result;
 }
 
 uint64_t GraphiteContext::pollCompletedSubmissionSerial() const {
@@ -1534,11 +1904,51 @@ uint64_t GraphiteContext::takeCompletedSubmissionGpuElapsedNs(
     impl_->context->checkAsyncWorkCompletion();
     auto &state = *impl_->submissionCompletion;
     std::lock_guard<std::mutex> lock(state.mutex);
-    auto it = state.gpuElapsedNs.find(submissionSerial);
-    if (it == state.gpuElapsedNs.end()) return 0;
-    const uint64_t elapsed = it->second;
-    state.gpuElapsedNs.erase(it);
-    return elapsed;
+    for (auto &sample : state.timings) {
+        if (!sample.valid || sample.serial != submissionSerial) continue;
+        const uint64_t elapsed = sample.elapsedNs;
+        sample.valid = false;
+        --state.timingCount;
+        return elapsed;
+    }
+    return 0;
+}
+
+size_t GraphiteContext::completedSubmissionTimingCount() const {
+    if (!isValid()) return 0;
+    impl_->context->checkAsyncWorkCompletion();
+    auto &state = *impl_->submissionCompletion;
+    std::lock_guard<std::mutex> lock(state.mutex);
+    return state.timingCount;
+}
+
+uint64_t GraphiteContext::droppedSubmissionTimingCount() const {
+    if (!isValid()) return 0;
+    impl_->context->checkAsyncWorkCompletion();
+    auto &state = *impl_->submissionCompletion;
+    std::lock_guard<std::mutex> lock(state.mutex);
+    return state.droppedTimingCount;
+}
+
+uint64_t GraphiteContext::submissionCallbackCount() const {
+    if (!isValid()) return 0;
+    impl_->context->checkAsyncWorkCompletion();
+    return impl_->submissionCompletion->callbackCount.load(
+        std::memory_order_relaxed);
+}
+
+uint64_t GraphiteContext::successfulSubmissionCallbackCount() const {
+    if (!isValid()) return 0;
+    impl_->context->checkAsyncWorkCompletion();
+    return impl_->submissionCompletion->successfulCallbackCount.load(
+        std::memory_order_relaxed);
+}
+
+uint64_t GraphiteContext::failedSubmissionCallbackCount() const {
+    if (!isValid()) return 0;
+    impl_->context->checkAsyncWorkCompletion();
+    return impl_->submissionCompletion->failedCallbackCount.load(
+        std::memory_order_relaxed);
 }
 
 struct SurfaceReadback::Impl {

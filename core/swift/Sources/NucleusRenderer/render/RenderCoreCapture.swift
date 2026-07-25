@@ -139,8 +139,8 @@ extension RenderCore {
         let recording = driver.recorder.snapRecording()
         guard recording.isValid() else { return nil }
         let serial = allocateSubmissionSerial()
-        guard context.submitAsync(recording, serial)
-                == nucleus.skia.Status.ok
+        guard acceptGraphiteSubmission(
+            context.submitAsync(recording, serial))
         else { return nil }
         lastSubmittedSerial = serial
         let readback = context.beginSurfaceReadbackBGRA(surface)
@@ -265,8 +265,8 @@ extension RenderCore {
         let recording = recorder.snapRecording()
         guard recording.isValid() else { return nil }
         let serial = allocateSubmissionSerial()
-        guard context.submitAsync(recording, serial)
-                == nucleus.skia.Status.ok
+        guard acceptGraphiteSubmission(
+            context.submitAsync(recording, serial))
         else { return nil }
         lastSubmittedSerial = serial
         return (surface, serial)

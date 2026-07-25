@@ -11,20 +11,7 @@ func submitGraphiteAndWait(
     serial: UInt64
 ) -> Bool {
     guard recording.isValid(),
-          context.submitAsync(recording, serial) == nucleus.skia.Status.ok
-    else { return false }
-    return waitForGraphiteSerial(context: context, serial: serial)
-}
-
-func submitGraphiteWithUploadAndWait(
-    context: nucleus.skia.GraphiteContext,
-    upload: nucleus.skia.Recording,
-    frame: nucleus.skia.Recording,
-    serial: UInt64
-) -> Bool {
-    guard upload.isValid(), frame.isValid(),
-          context.submitWithUploadAndSemaphores(
-              upload, frame, nil, 0, nil, serial) == nucleus.skia.Status.ok
+          context.submitAsync(recording, serial).isOk()
     else { return false }
     return waitForGraphiteSerial(context: context, serial: serial)
 }
@@ -55,7 +42,7 @@ func readGraphiteSurfaceRGBA(
     return status == nucleus.skia.Status.ok ? pixels : nil
 }
 
-private func waitForGraphiteSerial(
+func waitForGraphiteSerial(
     context: nucleus.skia.GraphiteContext,
     serial: UInt64
 ) -> Bool {

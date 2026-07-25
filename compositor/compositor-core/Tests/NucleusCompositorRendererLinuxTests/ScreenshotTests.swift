@@ -6,8 +6,7 @@ import NucleusSkiaGraphiteBridge
 
 // pixel-format conversion (hardware-independent), plus the GPU surface readback
 // round-trip — clear a surface to a known color, submit, read it back, and verify
-// the pixel — over a real Graphite context (best-effort, asserts nothing
-// hardware-conditional).
+// the pixel — over the mandatory headless Graphite lane.
 @Suite struct ScreenshotTests {
     @Test func pixelFormatConversion() {
         let rgba: [UInt8] = [255, 0, 0, 255, 0, 255, 0, 255]
@@ -17,41 +16,13 @@ import NucleusSkiaGraphiteBridge
         #expect(bgra == [0, 0, 255, 255, 0, 255, 0, 255], "convert-bgra-swaps-rb")
     }
 
-    // Best-effort GPU readback round-trip. Hardware-gated, so it asserts nothing.
-    @Test(.disabled("requires a live GPU/Vulkan device")) func readbackRoundTripBestEffort() {
-        let base = VK.loadBaseDispatch()
-        let contract = VkRequirements.contract()
-        guard let instance = InstanceOwner.create(
-            base: base, applicationName: "ScreenshotTests",
-            contract: contract, enableValidation: false
-        ) else { return }
-        guard let selection = DeviceOwner.selectPhysicalDevice(
-            instance: instance.handle, dispatch: instance.dispatch, contract: contract
-        ) else { return }
-        guard let device = DeviceOwner.create(
-            selection: selection, instanceDispatch: instance.dispatch,
-            contract: contract
-        ) else { return }
-        guard let queue = device.queue(family: selection.graphicsQueueFamily) else { return }
-
-        withCStringArray(contract.deviceExtensions) { extPtr, extCount in
-            var desc = nucleus.skia.VulkanContextDescriptor()
-            desc.instance = UnsafeMutableRawPointer(instance.handle)
-            desc.physicalDevice = UnsafeMutableRawPointer(selection.physicalDevice)
-            desc.device = UnsafeMutableRawPointer(device.handle)
-            desc.queue = UnsafeMutableRawPointer(queue)
-            desc.graphicsQueueIndex = selection.graphicsQueueFamily
-            desc.maxApiVersion = VkRequirements.minimumApiVersion.raw
-            desc.deviceExtensions = extPtr
-            desc.deviceExtensionCount = extCount
-
-            let context = nucleus.skia.makeGraphiteVulkanContext(desc)
-            guard context.isValid() else { return }
-            let recorder = context.makeRecorder()
-            guard recorder.isValid() else { return }
-
+    @Test func gpuHeadless_readbackRoundTrip() throws {
+        try withRequiredVulkanGraphite(
+            presentation: .headless,
+            applicationName: "ScreenshotTests"
+        ) { _, _, context, recorder in
             let surface = recorder.makeOffscreenSurface(8, 8)
-            guard surface.isValid() else { return }
+            try requireTrue(surface.isValid(), "could not create the screenshot surface")
 
             // Clear to opaque red, submit, then read back.
             let canvas = surface.getCanvas()
@@ -59,17 +30,23 @@ import NucleusSkiaGraphiteBridge
             red.r = 1; red.g = 0; red.b = 0; red.a = 1
             canvas.clear(red)
             let recording = recorder.snapRecording()
-            guard submitGraphiteAndWait(
-                context: context, recording: recording, serial: 1)
-            else { return }
+            try requireTrue(
+                submitGraphiteAndWait(
+                    context: context, recording: recording, serial: 1),
+                "screenshot submission did not complete")
 
-            guard let pixels = readGraphiteSurfaceRGBA(
-                context: context, surface: surface)
-            else {
-                return
-            }
+            let pixels = try requireValue(
+                readGraphiteSurfaceRGBA(context: context, surface: surface),
+                "screenshot readback failed")
+            #expect(pixels.count == 8 * 8 * 4)
+            #expect(pixels[0] >= 250)
+            #expect(pixels[1] <= 5)
+            #expect(pixels[2] <= 5)
+            #expect(pixels[3] >= 250)
             // Exercise the BGRA conversion of the read frame.
-            _ = Screenshot.convert(rgba: pixels, to: .bgra8888)
+            let bgra = Screenshot.convert(rgba: pixels, to: .bgra8888)
+            #expect(bgra[0] <= 5)
+            #expect(bgra[2] >= 250)
         }
     }
 }

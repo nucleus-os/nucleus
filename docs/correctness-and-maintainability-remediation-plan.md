@@ -2,503 +2,828 @@
 
 ## Invariant
 
-Every defect below is either a lifetime/ownership hazard at a Swift/C/C++ seam, an
-unbounded resource, an abort path reachable from ordinary operation, or a duplicated
-source of truth that drifts silently. When this plan completes: no raw pointer crosses
-a language boundary without an owning reference held for the duration of its use; no
-per-frame bookkeeping structure grows without bound; no runtime state reachable by
-hotplug, client request, or IPC aborts the compositor; the paint vocabulary has exactly
-one definition; and the build configuration has one resolution path that SwiftPM's
-manifest cache correctly invalidates.
+Nucleus has one enforceable owner for every cross-language lifetime, bounded
+bookkeeping on every persistent path, and an explicit recoverable state for ordinary
+hardware and resource loss. Production work does not block the main actor on
+child-process or filesystem IO. Every mandatory
+Vulkan, Graphite, DRM, JNI, image, and IPC contract has a behavioral test that runs on
+a lane capable of exercising it; a missing promised capability fails that lane instead
+of silently returning from the test. The renderer stores one Swift paint vocabulary
+and lowers it once at the C++ facade. Every first-party Swift target compiles with
+strict memory safety.
 
-## Findings index
+Status: active
 
-| # | Finding | Phase |
+## Execution rules
+
+The phases land strictly in the order below. A phase is complete only after its listed
+behavioral verification passes. Later phases may rely on the contracts established by
+earlier phases and must not carry temporary compatibility paths forward.
+
+All host verification runs after:
+
+```sh
+source tools/host-env.sh
+```
+
+The compositor and applications are not launched as part of this plan. Tests exercise
+the runtime contracts through fixtures, headless rendering, and dedicated hardware
+lanes.
+
+## Audited findings
+
+| Finding | Disposition | Phase |
 |---|---|---|
-| 1 | Verification gate invokes a deleted binary; GPU tests all disabled | 1 |
-| 2 | Manifest env reads bypass SwiftPM cache invalidation | 2 |
-| 3 | Three divergent native-SDK root resolutions across five manifests | 2 |
-| 4 | `provisionSDK` mutates the filesystem during manifest evaluation | 2 |
-| 5 | Five hand-maintained copies of the Skia archive link list | 2 |
-| 6 | Text-layout resolver returns a raw pointer with no owning reference | 3 |
-| 7 | `g_textLayoutResolver` is a non-atomic global behind a weak symbol | 3 |
-| 8 | `gpuElapsedNs` grows without bound | 3 |
-| 9 | `SubmissionCompletionToken` leaks when `insertRecording` fails | 3 |
-| 10 | `submitWithUploadAndSemaphores` reports failure after partial application | 3 |
-| 11 | Zero-display state aborts the compositor from three call sites | 4 |
-| 12 | `ImageResidencyLedger.failed` is terminal; `register` traps on source change | 4 |
-| 13 | Unbounded image decode is deferred onto the render thread | 4 |
-| 14 | Xwayland spawned with protocol tracing, core dumps, and a fixed `/tmp` log | 5 |
-| 15 | `AndroidHostCore` has unsynchronized mutable state and no thread contract | 6 |
-| 16 | `hostFromSelfPointer` dereferences an unvalidated `jlong` | 6 |
-| 17 | GPU-resource retirement keyed on `lastSubmittedSerial` | 6 |
-| 18 | `SwiftTextLayoutManager` is not `Sendable` but is called cross-thread | 6 |
-| 19 | Blocking `waitpid` and synchronous file IO on the main actor | 6 |
-| 20 | Four parallel vocabularies for the same paint concepts | 7 |
-| 21 | Per-byte payload copy on the paint-registration path | 7 |
-| 22 | `set_buffer_scale` / `set_buffer_transform` accept out-of-range values | 8 |
-| 23 | Dead code, stray tracked file, unmarked completed plans | 9 |
-| 24 | `strictMemorySafety()` applied to leaves, absent from pointer-handling modules | 9 |
+| `gpuElapsedNs` retains unconsumed timing samples indefinitely | replace with a bounded presentation-timing ring | 1 |
+| Upload-plus-frame submission can insert one recording and reject the next | eliminate paired recording insertion | 1 |
+| Skia `InsertStatus` detail is collapsed into a boolean | preserve and act on the exact status | 1 |
+| Text rendering crosses the facade as a raw paragraph pointer | replace with a scoped borrow | 2 |
+| Text-renderer installation depends on a weak symbol and static initialization | replace with explicit composition-root installation | 2 |
+| Failed image decodes are discarded before the render owner sees them | deliver typed success and failure completions | 3 |
+| Image retry, replacement, and stale-completion behavior are implicit or trapping | replace with a generation-based state machine | 3 |
+| An unbounded encoded image can defer actual decoding to the render thread | require bounded eager worker decode | 3 |
+| Removing the last output reaches three `preconditionFailure` paths | add an explicit no-output runtime state | 4 |
+| Xwayland enables verbose tracing, core dumps, and a predictable `/tmp` log | harden executable, environment, and log handling | 5 |
+| Hand-written Android JNI calls dereference an unvalidated `jlong` | replace with a weak opaque-handle registry | 6 |
+| Android renderer correctness depends on an unenforced owner-thread contract | enforce the UI/Choreographer owner thread | 6 |
+| PAM response parsing and child reaping can block the main actor | use nonblocking pipes and integrate `pidfd` completion into the reactor | 7 |
+| Cursor and icon theme lookup performs synchronous filesystem IO on the main actor | move lookup to bounded filesystem workers | 7 |
+| Paint concepts are duplicated across two Swift models and a facade mapping | collapse to one Swift model and one C++ lowering | 8 |
+| Paint payload registration copies bytes one at a time | use one checked contiguous copy | 8 |
+| Pointer-heavy first-party targets do not consistently enable strict memory safety | migrate every first-party target | 9 |
+| The root `--help` file, dead manifest code, and undocumented plan status remain | remove and index them | 10 |
+
+The audit also ruled out several proposed defects. They are recorded under
+“Deliberately preserved contracts” so implementation does not introduce a regression
+while trying to repair behavior that is already correct.
 
 ---
 
-## Phase 1 — Restore the verification gate
-
-Nothing else in this plan is verifiable until the workspace has a working automated
-gate. `.github/workflows/ci.yml` invokes `tools/nucleus doctor`, `tools/nucleus
-bootstrap`, and `tools/nucleus test all`. `tools/nucleus` was removed when repository
-workflows moved under Collider; `tools/` now holds only `host-env.sh` and
-`lsan-suppressions.txt`. Every step fails at exec.
-
-Repoint the three steps at the installed `collider` command (`collider doctor`,
-`collider bootstrap`, `collider test all`), preceded by `./collider-setup.sh` so a
-fresh runner provisions the toolchain and installs the command on PATH.
-
-The second half of this phase is the disabled GPU suites. Every test that touches
-Vulkan, Graphite, or DRM carries `@Test(.disabled("requires a live GPU/Vulkan
-device"))` or `.disabled("invokes the real Vulkan loader")` —
-`NucleusVulkanResourcesTests`, `ScreenshotTests`, `TextureProducerTests`,
-`BackdropTests`, `RendererModuleTests`, `SnapshotCaptureTests`,
-`NucleusVulkanDispatchSmokeTests`, `NucleusVulkanCoreSmokeTests`. The Swift/Skia/Vulkan
-boundary carries the highest defect density in the repository and has no automated
-signal at all.
-
-Add a software-rasterizer lane: provision a Mesa `lavapipe` ICD as a Collider
-bootstrap artifact, add `collider test gpu` that sets `VK_ICD_FILENAMES` to it, and
-convert the `.disabled` traits to a custom `.requiresVulkanDevice` trait that runs when
-a device is present and skips with a distinct message when it is not. The lane runs as
-part of `collider test all`.
-
-Scope: `.github/workflows/ci.yml`, a new Collider bootstrap recipe for the ICD, one new
-test trait in a shared test-support target, and the trait swap across the eight suites
-above. Risk surface: none in product code.
-
-## Phase 2 — Single-source the build configuration
-
-Three independent problems in the ten `Package.swift` manifests, fixed together because
-they touch the same declarations.
-
-**Manifest cache invalidation.** Every manifest correctly reads
-`NUCLEUS_SWIFT_DIAGNOSTIC_FEATURE` through `Context.environment`, which SwiftPM tracks
-and which invalidates the cached manifest when it changes. The same files read `HOME`,
-`XDG_CACHE_HOME`, `NUCLEUS_NATIVE_SDK_ROOT`, and `SWIFT_TOOLCHAIN` through
-`ProcessInfo.processInfo.environment`, which SwiftPM does not track. Changing any of
-those leaves a stale cached manifest holding the previous absolute paths, and the build
-fails inside clang with an unrelated missing-header error. Convert every manifest env
-read to `Context.environment`:
-`core/Package.swift:38`, `react-native/Package.swift:22`,
-`compositor/compositor-core/Package.swift:30`, `compositor/compositor/Package.swift:31`,
-`shell/Package.swift:25`, `core/platform-android/Package.swift:40`,
-`android-runtime/Package.swift:38`.
-
-**Divergent SDK roots.** `core/` and `react-native/` resolve
-`NUCLEUS_NATIVE_SDK_ROOT` → `XDG_CACHE_HOME` → `$HOME/.cache` → `/tmp`.
-`compositor/compositor-core`, `compositor/compositor`, and `shell/` each carry a local
-`provisionSDK` copy that hardcodes `$HOME/.cache` and honours neither override. Setting
-`NUCLEUS_NATIVE_SDK_ROOT` therefore moves the core's SDK and not the compositor's,
-producing a build where two packages compile against different Skia trees. With `HOME`
-unset — container, systemd unit, some CI images — `home` is `""` and the manifests
-resolve to `/.cache/...`.
-
-**Manifest side effects.** `provisionSDK` creates directories and symlinks in
-`~/.cache` during manifest evaluation, which SwiftPM treats as a pure, cached
-description step. Every failure is swallowed by `try?`. Its
-`else if fm.fileExists(atPath: path) { continue }` branch means a stale *real*
-directory permanently shadows the current clone with no diagnostic, and two clones on
-one machine contend for the same global path.
-
-The fix for both is one shared resolution with no side effects. Add a single
-`NativeSDK.swift` file next to the manifests, included in each by
-`// swift-tools-version` manifest-adjacent source inclusion, exposing one
-`nativeSDKRoot` computed from `Context.environment` with the same precedence
-everywhere. Symlink provisioning moves out of manifest evaluation entirely and into the
-Collider `bootstrap` recipe that already owns the render SDK's artifact fingerprints;
-manifests only read the resolved path. A missing SDK becomes a `collider doctor`
-failure with a directed message instead of a clang error.
-
-**Skia link list.** `skiaLinkFlags` is duplicated verbatim across
-`core/Package.swift`, `react-native/Package.swift`,
-`compositor/compositor-core/Package.swift`, `compositor/compositor/Package.swift`, and
-`shell/Package.swift` — 25 archives inside one `--start-group`, plus the parallel
-`skiaAndroidLinkFlags` and the include-path lists. They are identical today. Move them
-into the same shared manifest-adjacent file introduced above so an archive added to or
-dropped from the Skia build config is a one-line change.
-
-Dead code removed as part of this phase: `pkgConfig` in `core/Package.swift:102` is
-defined and never called, and the comment above it says so.
-
-Scope: ten manifests, one new shared manifest source, one Collider bootstrap recipe.
-Risk surface: build-only; a mistake fails the link loudly rather than changing runtime
-behaviour.
-
-## Phase 3 — Close the render-facade lifetime and bookkeeping defects
-
-Three defects inside `core/swift/Sources/NucleusSkiaGraphite/cxx/Graphite.cpp` and
-`core/render-cxx/skia/skia_text_backend.cpp`, all at the Swift/C++ seam.
-
-**The text-layout resolver discards its owning reference.**
-`skia_text_backend.cpp:851-854`:
-
-```cpp
-extern "C" uintptr_t nucleus_text_layout_paragraph(uint64_t handle)
-{
-    return reinterpret_cast<uintptr_t>(nucleus::text::lookupParagraph(handle).get());
-}
-```
-
-`lookupParagraph` returns `std::shared_ptr<Paragraph>` by value. The temporary is
-destroyed at the end of the return statement, so the raw pointer escapes with no strong
-reference. `Canvas::drawTextLayout` (`Graphite.cpp:1073-1099`) then calls
-`paragraph->paint(canvas, 0, 0)` on it. Every other `lookupParagraph` caller in
-`skia_text_backend.cpp` — lines 663, 677, 695, 723, 749, 799 — holds the `shared_ptr`
-across the use. Only the cross-boundary resolver drops it.
-
-This is currently latent: registration and release are `@MainActor` (`TextSystem.swift:272`
-and `:316`), and painting runs on the same actor. It stops being latent the moment
-paragraph creation or release moves off-main, which the React Native direction already
-implies — `SwiftTextLayoutManagerBridge::measure` runs on Fabric's shadow thread and
-already reaches `nucleus::text` from a second thread.
-
-Replace the pointer-returning resolver with a scoped borrow, so the side holding the
-refcount keeps it alive for exactly the duration of the use:
-
-```cpp
-using TextLayoutBorrow = void (*)(uint64_t handle, void *ctx,
-                                  void (*body)(uintptr_t paragraph, void *ctx));
-extern "C" void nucleus_skia_set_text_layout_borrow(TextLayoutBorrow borrow);
-```
-
-The text backend's implementation holds the `ParagraphPtr` in a local across the
-`body` call. `drawTextLayout` passes its paint work as `body`. No handle can be freed
-mid-paint, and there is no release call for a caller to forget.
-
-**The resolver slot is a non-atomic global behind a weak symbol.**
-`g_textLayoutResolver` (`Graphite.cpp:126`) is a plain pointer written from a static
-initializer and read from the render path.
-`skia_text_backend.cpp:849` declares the setter `__attribute__((weak))` and registers
-only `if (nucleus_skia_set_text_layout_resolver)`. That weak declaration exists because
-`NucleusTextBackendNative` does not declare a dependency on `NucleusSkiaGraphiteBridge`
-— so if the target set or link order ever changes, text rendering silently stops with
-no diagnostic. Make the slot `std::atomic<TextLayoutBorrow>` with release/acquire
-ordering, declare the real dependency in `core/Package.swift`
-(`NucleusTextBackendNative` gains `NucleusSkiaGraphiteBridge`; the edge is acyclic), and
-drop the weak attribute so a missing symbol is a link error.
-
-**Unbounded submission bookkeeping and a leaked token.**
-`attachSubmissionCompletion` (`Graphite.cpp:95-118`) allocates
-`new SubmissionCompletionToken` per submission and inserts
-`gpuElapsedNs[serial]` on completion. The only consumer is
-`takeCompletedSubmissionGpuElapsedNs` (`Graphite.cpp:1531`), reached solely from the
-DRM page-flip handler (`RendererPresentation.swift:44`) for that output's scanout
-serial. Every `submitAsync` from the pixel-capture and snapshot paths
-(`RenderCoreCapture.swift:142` and `:268`) inserts an entry nobody removes, as does
-every frame whose flip is dropped by the `notePageFlipComplete()` or
-`binding.generation == generation` guards. The `new` also leaks whenever
-`insertRecording` returns false before invoking the finish proc.
-
-Replace both mechanisms with one fixed-capacity slot ring owned by
-`SubmissionCompletionState`, sized to the maximum in-flight submission count. A
-submission claims a slot; the completion callback writes into it and marks it free;
-`fFinishedContext` points at the pooled slot instead of a fresh allocation. A slot whose
-callback never fires is reclaimed when the ring wraps. Bounded by construction, and no
-per-submission allocation exists to leak. Alongside this, `submitAsync` stops setting
-`fGpuStatsFlags = kElapsedTime` — the capture path has no consumer for the timing and
-should not request the query.
-
-**Partial application reported as failure.** `submitWithUploadAndSemaphores`
-(`Graphite.cpp:1393-1429`) inserts the upload recording, then returns
-`Status::recordingFailed` if the frame insert fails — leaving the upload inserted in the
-context's pending queue with no way for the caller to know. Insert both recordings only
-after both are validated, and add a `Status::partiallyApplied` case for the residual
-window so the caller can force a full redraw rather than assume nothing happened.
-
-Scope: `Graphite.cpp`, `Graphite.hpp`, `skia_text_backend.cpp`,
-`TextRegistry.{hpp,cpp}`, `core/Package.swift`, `PaintRasterizer.swift`,
-`FrameDriver.swift`, `RenderCoreCapture.swift`. Risk surface: the entire render path.
-Verified by the phase 1 GPU lane plus a new headless facade test that submits an invalid
-recording under LSan and asserts no growth in the completion ring.
-
-## Phase 4 — Remove abort-on-state paths from the compositor
-
-**Zero displays.** `Spaces.overlayDisplayID` (`Spaces.swift:151`),
-`Spaces.fallbackOutput` (`:222`), and `Spaces.placementOutput` (`:301`) each
-`preconditionFailure` when `layout.displays` is empty. That state is reachable:
-`OutputTopologyReconciler.withdraw()` removes outputs with no floor, so unplugging the
-last monitor — dock, DP-MST hub, link loss, lid close — empties the layout while the
-compositor is running. Bring-up guards against it (`CompositorBringup.swift:127`) and two
-call sites guard against it (`ScanoutFacts.swift:98`, `DisplayFrameDemand.swift:58`), so
-the hazard was already noticed, but `DisplayFrameDemand.overlayOutputID()`
-(`DisplayFrameDemand.swift:181`) and `ServerHost.spacesOverlayDisplayID()`
-(`ServerHost.swift:338`) do not. The second is an IPC host call, so the out-of-process
-shell can abort the compositor and every client's session.
-
-Make the state explicit rather than asserting it away. The three APIs return optionals
-(`DisplayID?`, `Display?`). `CompositorRuntime` gains an explicit `outputsAvailable`
-gate that suspends scene authoring, frame demand, and shell-overlay publication while
-the applied set is empty and resumes on the next reconcile that attaches an output.
-`spacesOverlayDisplayID` throws `HostCallError` instead of aborting. The
-`preconditionFailure` calls are deleted, not softened.
-
-**Terminal image failure and a trapping re-registration.**
-`ImageResidencyLedger.allowsTransition` (`ImageResourceManager.swift:132-147`) has no
-edge out of `.failed`, so one decode failure pins a handle permanently — a wallpaper
-written a moment later, a transient read error, an icon theme still being installed.
-Only `evict` clears it, and nothing calls `evict` on failure. Add a
-`.failed → .registered` edge taken when a new registration arrives for the handle, so
-the next frame retries.
-
-`ImageResidencyLedger.register` (`:54-66`) uses
-`precondition(entry.source == source, "an image handle cannot change source before
-eviction")`, aborting the compositor when a handle is reused with a different source.
-Evict and re-register instead. `consume` (`:68-71`) uses a bare
-`precondition(entries[handle] != nil)` with no message; make it a no-op for an unknown
-handle, matching how the rest of the registry treats unknown handles.
-
-**Deferred decode on the render thread.** `ImageDecodeQueue`'s documented contract is
-that decode happens on the worker and the render thread receives an immutable image.
-`decodeEncodedData` (`Graphite.cpp:790-801`) breaks that for the unbounded case:
-`maxWidth <= 0 || maxHeight <= 0` returns `SkImages::DeferredFromEncodedData`, so the
-decode actually runs on the render thread at first draw — precisely the large-image case
-the queue exists to move off it. `isValid()` is also `true` for a deferred image whose
-bytes are undecodable, so a corrupt file reports success and fails silently at draw
-time.
-
-Remove the deferred path. `decodeEncodedData` always decodes eagerly; an unbounded
-request decodes at full size. `isValid()` then means the pixels exist. Callers that know
-a draw size already pass bounds; those that do not now pay the decode on the worker
-where it belongs.
-
-Scope: `Spaces.swift`, `ServerHost.swift`, `DisplayFrameDemand.swift`,
-`CompositorRuntime.swift`, `OutputTopologyReconciler.swift`,
-`ImageResourceManager.swift`, `Graphite.cpp`. Risk surface: compositor availability and
-image residency. Verified by new hotplug-to-zero and image-retry suites in
-`compositor/compositor-core/Tests` and `core/swift/Tests/NucleusRendererTests`.
-
-## Phase 5 — Harden the Xwayland process boundary
-
-`XwaylandProcess.buildArgv` (`XwaylandProcess.swift:230-244`) spawns Xwayland with
-`WAYLAND_DEBUG=client`, `-verbose 10`, and `-core`. `WAYLAND_DEBUG=client` makes
-Xwayland format and write every Wayland protocol message it sends or receives; combined
-with `-verbose 10` that is continuous CPU cost proportional to X11 traffic and unbounded
-log growth over a session. `-core` enables core dumps. All three are debugging
-instrumentation on the production path.
-
-The destination is `/tmp/nucleus-xwayland.log` (`:105`), opened
-`O_WRONLY | O_CREAT | O_TRUNC` with no `O_EXCL` and no `O_NOFOLLOW` on a fixed,
-predictable path in a world-writable directory. Another local user can pre-create it as
-a symlink and have the compositor truncate an arbitrary file the compositor's user can
-write, and two users on one machine collide.
-
-Remove `WAYLAND_DEBUG=client`, `-core`, and drop `-verbose 10` to the default. Route
-stdout and stderr to `$XDG_RUNTIME_DIR/nucleus/xwayland.log`, opened with
-`O_CREAT | O_EXCL | O_NOFOLLOW` against a fresh per-session name, falling back to
-`/dev/null` when the runtime directory is unavailable. Protocol tracing becomes opt-in
-through a `NUCLEUS_XWAYLAND_TRACE` environment variable that `collider doctor` reports
-when set.
-
-Alongside this, resolve the Xwayland binary by absolute path rather than
-`posix_spawn(..., "/usr/bin/env", ...)` with `Xwayland` looked up on `PATH`, and add the
-path to the `collider doctor` host contract so a missing Xwayland is a directed
-diagnostic instead of a spawn that succeeds and then exits.
-
-Scope: `XwaylandProcess.swift`, one `collider doctor` check. Risk surface: X11 client
-support only.
-
-## Phase 6 — Make thread contracts explicit and enforced
-
-Four places where correctness depends on an invariant that is neither documented nor
-checked.
-
-**`AndroidHostCore` has no synchronization.** `AndroidHostCore`
-(`AndroidHostCore.swift:263`) is a plain `final class` with mutable `var` state —
-`platform`, `surface`, `frame_clock`, `input`, `events`, `runtime`, `lifecycle`,
-`last_error` — mutated from JNI thunks that Android drives from the UI thread,
-`SurfaceHolder.Callback`, and the Choreographer callback. There is no actor, no
-`Sendable` conformance, no lock, and no comment stating a thread contract. It is
-probably serialized today because every caller happens to be on the UI thread; nothing
-states or enforces that, and `detachSurface` returning a window the JNI thunk then
-releases (`AndroidJNI.swift:183-185`) is a use-after-free the moment a render thread
-holds it.
-
-Move the whole of `AndroidHostCore`'s state behind a `Synchronization.Mutex` and
-conform `AndroidHostCore` and `AndroidHost` to `Sendable`. The JNI thunks then become
-correct from any thread and the undocumented invariant disappears rather than being
-written down.
-
-**`hostFromSelfPointer` dereferences an unvalidated pointer.**
-`AndroidJNI.swift:47-52` reconstructs the host with
-`UnsafeMutablePointer<AndroidHost>(bitPattern: Int(selfPointer))!.pointee` on a `jlong`
-supplied by Java. A stale or wrong value is an immediate wild dereference. The Android
-Activity and SurfaceView lifecycle — `surfaceDestroyed` arriving after the arena has
-finalized the host — is exactly where native peers are used after free, and there is no
-guard.
-
-Replace the self-pointer convention in the hand-written thunks with a handle registry:
-a `Mutex<[UInt64: AndroidHost]>` populated at construction and cleared at arena
-finalization, with JNI passing the opaque id. A stale handle resolves to `nil` and the
-thunk returns `JNI_FALSE`. One dictionary lookup per JNI call is immaterial next to a
-frame. The generated swift-java thunks keep their own convention; only the six
-hand-written NDK-handle entry points change.
-
-**Retirement keyed on the wrong serial.** `registerSurfaceTexture`,
-`materializeShmUpload`, and `releaseSurfaceTexture`
-(`RenderCoreClientResources.swift:102, 112, 258, 269, 288, 291`) retire replaced GPU
-resources at `lastSubmittedSerial` — the serial of the frame already submitted. That is
-correct only because client commits and frame recording never interleave on the main
-actor; a recording in progress that still references the old image would have it
-released as soon as the previous frame completes. Retire at the serial the *next*
-submission will use instead, which is conservative under any interleaving, and state the
-invariant in `RenderCoreTeardown.releaseRetiredGpuResources`.
-
-**`SwiftTextLayoutManager` is not `Sendable`.**
-`react-native/swift/Sources/NucleusReactRuntimeCxx/TextLayoutManager.swift:20` is a
-`public final class` held as a `mutable` member of `SwiftTextLayoutManagerBridge` and
-called from Fabric's shadow thread. It stores only a `let` of a `Sendable` existential,
-so the conformance is sound; declare it, so the C++ side's cross-thread use is honest
-rather than unchecked.
-
-**Blocking work on the main actor.** `PamAuthenticator.reap`
-(`PamAuthenticator.swift:216`) is a blocking `waitpid(pid, &status, 0)` on the main
-actor. The helper normally writes its verdict and exits immediately, but a PAM module
-that lingers past the write hangs the lock screen with no deadline. Switch to `WNOHANG`
-with a bounded retry driven by the existing poll set, treating expiry as
-`.unavailable`. `CursorTheme.swift:26` and `:67` and
-`IconThemeResolver.swift:216` perform synchronous file and directory reads on the main
-actor during theme resolution; move them to the image-decode worker's queue, which
-already exists for exactly this shape of work.
-
-Also as part of this phase: `PamAuthenticator` scrubs its request buffer
-(`PamAuthenticator.swift:85`), but the buffer is grown with `append`, so a reallocation
-would leave an unscrubbed copy of the password in freed heap. It is safe today only
-because the password is the last field appended. Reserve the full capacity before the
-first `encodeField` so the guarantee does not depend on field order.
-
-Scope: `AndroidHostCore.swift`, `AndroidJNI.swift`, `AndroidHost.swift`,
-`RenderCoreClientResources.swift`, `RenderCoreTeardown.swift`, `TextLayoutManager.swift`,
-`PamAuthenticator.swift`, `CursorTheme.swift`, `IconThemeResolver.swift`. Risk surface:
-Android host lifecycle and lock-screen authentication.
-
-## Phase 7 — Collapse the paint vocabularies to one
-
-Four parallel definitions describe the same concepts:
-
-- `NucleusTypes.PaintCommand`, `PaintCommandKind`, `PaintCommandFlags`,
-  `PaintShading`, `PaintBlendMode`, `PaintPathVerb`
-- `NucleusRenderModel.PaintDrawCommand`, `PaintDrawCommandKind`, `PaintDrawShading`,
-  `PaintDrawBlendMode`, `PaintDrawStrokeCap`, `PaintDrawStrokeJoin`, `PaintDrawTransform`
-- `nucleus::skia::Paint`, `BlendMode`, `PathVerb`, `PaintStyle`, `StrokeCap`, `StrokeJoin`
-- Skia's own `SkBlendMode`, `SkPathVerb`
-
-Adding one blend mode touches six declarations plus three hand-written switches
-(`SwiftResourceHostConformers.swift:124`, `:137`, `:147`) and
-`PaintRasterizer.skiaBlendMode` (`PaintRasterizer.swift:178`). The Swift switches are
-exhaustive with no `default`, so a missed case breaks the build — that part is right.
-The C++ side falls back (`Graphite.cpp:148`, `return SkBlendMode::kSrcOver;`), so a
-value that drifts out of sync renders silently wrong.
-
-`NucleusRenderModel` already reaches `NucleusTypes` transitively through
-`NucleusAppHostProtocols`. Make `NucleusTypes.PaintCommand` the single stored type:
-keep its packed representation (flags option set, flat transform fields) and add
-computed accessors — `stroke`, `antialias`, `evenOddFill`, `tintsImage`, `strokeCap`,
-`strokeJoin`, `transform` — so the renderer's ergonomics survive the collapse. Delete
-`PaintDrawCommand` and its six companion types from `RenderPaintContent.swift`, delete
-the three mapping functions from `SwiftResourceHostConformers.swift`, and leave
-`PaintRasterizer` as the one place a Nucleus enum maps to a Skia façade enum.
-
-Make that remaining boundary drift-proof: give `nucleus::skia::BlendMode`,
-`PathVerb`, `PaintStyle`, `StrokeCap`, and `StrokeJoin` raw values identical to their
-Swift counterparts, and add a headless test that iterates every Swift case and asserts
-the mapped raw value matches. The C++ fallback then becomes unreachable rather than
-load-bearing.
-
-Alongside this, `SwiftResourceHostConformers.swift:209-211` copies the payload blob one
-byte at a time:
-
-```swift
-var payloadBytes = [UInt8]()
-payloadBytes.reserveCapacity(payload.count)
-for i in 0..<payload.count { payloadBytes.append(payload[i]) }
-```
-
-This runs on the paint-registration path — every repaint of any view carrying a path,
-gradient, or runtime effect. Replace it with a bulk copy through
-`Array(unsafeUninitializedCapacity:)` and the span's contiguous storage.
-
-Scope: `NucleusTypes/Types.swift`, `NucleusTypes/PaintPayload.swift`,
-`NucleusRenderModel/RenderPaintContent.swift`,
-`NucleusAppHostBundle/SwiftResourceHostConformers.swift`,
-`NucleusRenderer/render/PaintRasterizer.swift`, `Graphite.hpp`, and every call site that
-constructs or matches a `PaintDrawCommand`. Risk surface: the widest in this plan — it
-touches the paint path end to end. It lands after phase 3 so the façade is already
-stable, and after phase 1 so the GPU lane can catch rendering regressions.
-
-## Phase 8 — Bring Wayland surface-state validation to spec
-
-`WlSurface.setBufferScale` (`WlSurface.swift:356`) and `setBufferTransform` (`:357`)
-store whatever `Int32` the client sent. The spec requires `wl_surface.error.invalid_scale`
-for a scale of zero or less and `invalid_transform` for a transform outside `0...7`.
-Downstream code clamps defensively — `Double(max(1, bufferScale))` in
-`resolveSurfaceLogicalSize` (`SurfacePendingState.swift:33`), `UInt32(max(1, ...))` in
-`SessionLock.swift:231` — so there is no divide-by-zero, but a client bug renders at the
-wrong size instead of failing loudly, and the compositor has no signal that the client
-is wrong.
-
-Post the protocol errors from the request handlers and drop the downstream `max(1, ...)`
-clamps, since an invalid value can no longer reach them. The clamps currently hide the
-bug; removing them alongside the validation keeps exactly one place responsible for the
-invariant.
-
-Scope: `WlSurface.swift`, `SurfacePendingState.swift`, `SessionLock.swift`, and the
-`NucleusCompositorWaylandRuntimeTests` protocol-conformance suite. Risk surface:
-clients that currently send invalid values and are silently tolerated.
-
-## Phase 9 — Repository hygiene and documentation lifecycle
-
-**Stray tracked file.** A file literally named `--help`, containing a CEF license
-header, is tracked at the repository root. Delete it.
-
-**Inconsistent memory-safety opt-in.** `strictMemorySafety()` is applied to nine targets
-in `core/Package.swift` and eight in `compositor/compositor-core/Package.swift`, three in
-`shell/Package.swift`, two in `platform-linux/Package.swift`, and zero in
-`compositor/compositor/Package.swift`, `react-native/Package.swift`,
-`swift-wayland/Package.swift`, `swift-vulkan/Package.swift`, `collider/Package.swift`,
-`collider/engine/Package.swift`, and `android-runtime/Package.swift`. It therefore covers
-the pure-Swift leaves and is absent from every module that actually handles pointers.
-A reader cannot tell from the flag which guarantee holds where.
-
-Enable it on all first-party targets and annotate the genuinely unsafe operations. One
-such operation is already a latent problem: `supportsFeatures`
-(`NucleusVulkanResources.swift:76`) writes through
-`UnsafeMutablePointer(mutating: pointer)` on a pointer obtained from `withUnsafePointer`,
-which is formally undefined and currently sits in a module with no opt-in. Restructure
-it to use `withUnsafeMutablePointer` on the feature chain head so the write is
-well-defined.
-
-**Plan lifecycle.** `docs/` holds roughly 9,200 lines across fourteen plan documents with
-no completion markers and no index. `collider-cli-plan.md` still describes deleting
-`tools/nucleus`, which happened several changes ago. With zero `TODO`, `FIXME`, or
-`HACK` markers anywhere in the code, these documents are the only record of incomplete
-work, and nothing distinguishes a live plan from archaeology. Add a `Status:` line to
-each document's header — `active`, `complete`, or `superseded by <file>` — and a
-`docs/README.md` index that lists them in that order. This document is `active` until
-phase 9 closes.
-
-Scope: repository root, ten manifests, `NucleusVulkanResources.swift`, `docs/`. Risk
-surface: build-only, plus whatever `strictMemorySafety()` surfaces target by target.
+## Separated Collider work
+
+Collider verification lanes, native-SDK ownership, provisioning, artifact storage,
+retention, pruning, and cleaning are owned by
+[`collider-storage-lifecycle-plan.md`](collider-storage-lifecycle-plan.md). Its
+completed Phase 1 is the verification foundation for this plan. Its storage ownership
+phase lands before native-SDK migration begins.
 
 ---
 
-## Deliberately unchanged
+## Phase 1 — Make one recording the unit of submission
 
-The single-actor design is deliberate and stays. Wayland dispatch, input, window
-management, scene authoring, layout, painting, and GPU submission all run on
-`@MainActor`, with the image-decode queue as the only worker. Phase 6 removes the
-concrete stalls on that actor — the blocking `waitpid`, the synchronous theme file
-reads — rather than fragmenting the ownership model that makes the renderer's lifetime
-invariants tractable in the first place.
+Status: complete
 
-The `WaylandResourceReference` unretained-self listener
-(`swift-wayland/Sources/WaylandServer/WaylandResource.swift:86`) is correct in both
-destruction orders and depends only on libwayland's event loop being single-threaded,
-which it is. It gains a comment stating that dependency as part of phase 6 and no code
-change.
+### Outcome
+
+One logical renderer submission inserts exactly one Graphite recording. Failure status
+preserves Skia's recoverability information, completion telemetry is bounded, and no
+caller can observe an upload as “not applied” after it was already inserted.
+
+### Changes
+
+1. Stop recording client uploads on a second long-lived recorder. A client commit
+   stores the latest validated CPU upload payload for that surface and generation.
+   Coalesce superseded payloads before they reach Graphite.
+
+2. Introduce a submission scope owned by `FrameDriver`. The scope:
+
+   - creates the recorder for one frame, capture, or immediate renderer operation,
+   - materializes all required pending uploads on that recorder,
+   - records the draw/copy work,
+   - snaps exactly one recording,
+   - inserts and submits it with the submission's waits, signals, target surface,
+     target texture state, completion serial, and optional timing request.
+
+   A scope is consumed by submit and cannot be reused.
+
+3. Delete `uploadRecorder`, `uploadsStaged`,
+   `submitWithUploadAndSemaphores`, and `submitForPresentWithUpload`. Update frame,
+   capture, snapshot, and immediate-copy paths to use the single-recording API. If
+   materializing an upload fails, abandon the unsnapped scope and preserve the last
+   resident texture; do not insert a partial submission.
+
+4. Replace boolean handling of `Context::insertRecording` with an explicit facade
+   result:
+
+   - `kSuccess` proceeds to `Context::submit`.
+   - `kInvalidRecording` and `kPromiseImageInstantiationFailed` reject that
+     submission without claiming it was queued.
+   - `kAddCommandsFailed`, `kAsyncShaderCompilesFailed`, and
+     `kOutOfOrderRecording` mark the Graphite context unrecoverable. The render owner
+     stops accepting work, tears down the failed renderer, and recreates it from the
+     current output topology. If recreation fails, it remains explicitly renderer
+     unavailable and retries only on the next topology or device-recovery event.
+
+   Preserve the Skia diagnostic message in the facade result and runtime log. Do not
+   add a generic “partially applied” status that leaves the caller guessing whether
+   the context is usable.
+
+5. Keep a completion context alive until Skia invokes its finish callback. Skia
+   guarantees that the callback runs for successful submission and for failures that
+   prevent submission, so callback storage must never be reclaimed merely because a
+   ring wrapped. Keep the current per-in-flight token allocation unless profiling
+   justifies a different stable-address allocator.
+
+6. Replace the unbounded `gpuElapsedNs` dictionary with a fixed-capacity ring of 256
+   completed presentation samples. Each slot contains the submission serial, elapsed
+   time, and callback result. New completed samples overwrite the oldest unconsumed
+   sample and increment a dropped-sample counter. Resource-retirement progress remains
+   a separate monotonic completed serial and is never dropped.
+
+7. Request `kElapsedTime` only for DRM or swapchain presentation submissions that have
+   a timing consumer. Offscreen capture, snapshot, and other asynchronous submissions
+   use the finish callback without GPU statistics.
+
+### Behavioral verification
+
+- Use Skia's simulated `InsertStatus` support to exercise every status and assert the
+  facade result, context-usability decision, callback delivery, and diagnostic.
+- Stage an upload and force frame recording to fail before snap; assert no recording
+  is inserted and the prior resident texture remains visible.
+- Submit more than 256 presentation completions without consuming timings; assert
+  bounded storage, monotonic retirement progress, and the exact dropped-sample count.
+- Submit capture and snapshot work; assert they create no timing sample.
+- Exercise frame, swapchain-present, DRM, offscreen, capture, and immediate-copy paths
+  through the phase 1 headless or DRM lane as appropriate.
+
+### Exit gate
+
+Every facade submission inserts one recording, no paired-submit API remains, exact
+`InsertStatus` values reach the render owner, and completed telemetry has a tested
+fixed bound.
+
+---
+
+## Phase 2 — Replace the text raw pointer with an explicit scoped borrow
+
+Status: complete
+
+### Outcome
+
+Text painting cannot outlive the `Paragraph` ownership acquired for it, and text
+renderer availability is established explicitly during composition rather than by
+weak linking and static initialization.
+
+### Changes
+
+1. Add an internal C++ composition target, `NucleusTextRenderingBridge`, that depends
+   on both `NucleusTextBackendNative` and `NucleusSkiaGraphiteBridge`. This target is
+   the only place that connects the text registry to the Graphite facade. Keep the
+   lower-level targets independent.
+
+2. Replace `nucleus_text_layout_paragraph(handle) -> uintptr_t` with a synchronous
+   borrow function:
+
+   ```cpp
+   using TextLayoutBorrowBody =
+       void (*)(uintptr_t paragraph, void *bodyContext);
+   using TextLayoutBorrow =
+       bool (*)(uint64_t handle, void *bodyContext, TextLayoutBorrowBody body);
+   ```
+
+   The registry looks up a `shared_ptr<Paragraph>`, retains it in a local, invokes the
+   body synchronously, and releases it only after the body returns. The body must not
+   store the pointer.
+
+3. Give the Graphite facade a required one-time installation API for the borrow
+   function. Store the installed pointer atomically with release/acquire ordering
+   because layout creation and drawing can occur on different threads. Reject a
+   second different installation and fail renderer bring-up when no provider is
+   installed.
+
+4. Call installation from `SkiaTextLayoutBackend.install(in:)` through the new
+   composition target before any text handle can be registered or painted. Delete the
+   weak setter declaration, static registration object, raw-pointer resolver, and
+   silent “resolver absent” rendering path.
+
+5. Keep `TextLayoutLease` ownership in registered paint content. The scoped borrow is
+   a boundary guarantee in addition to that higher-level lease, not a replacement for
+   it.
+
+### Behavioral verification
+
+- Borrow a registered paragraph, release its registry handle concurrently while the
+  body is blocked, then prove painting completes before destruction.
+- Verify an unknown or already-released handle returns `false` without invoking the
+  body.
+- Verify bring-up fails with a directed error when installation is omitted and rejects
+  conflicting double installation.
+- Run text measurement and headless text painting from their real Swift and Fabric
+  call paths.
+
+### Exit gate
+
+No paragraph pointer-returning C ABI, weak text-renderer symbol, or static installer
+remains. Every paragraph paint occurs inside a synchronous owning borrow.
+
+---
+
+## Phase 3 — Make image residency failure-aware, replaceable, and bounded
+
+Status: complete
+
+### Outcome
+
+Every decode request reaches one terminal result for its generation. Failure is visible
+to the render owner, retry and source replacement are explicit, stale completions
+cannot overwrite new state, and decoding never moves unbounded work onto the render
+thread.
+
+### Changes
+
+1. Make `ImageDecodeQueue` return a completion for every worker result:
+
+   ```swift
+   struct ImageDecodeCompletion: Sendable {
+       let handle: UInt64
+       let generation: UInt64
+       let result: Result<DecodedImage, ImageDecodeFailure>
+   }
+   ```
+
+   Define stable failure reasons for unreadable input, unsupported format, invalid
+   dimensions, limit exceeded, decode failure, cancellation, and upload failure. Do
+   not discard invalid images before enqueueing the completion.
+
+2. Replace implicit ledger transitions with this generation state machine:
+
+   ```text
+   registered(generation)
+       -> decoding(generation)
+       -> ready(generation) | failed(generation, reason)
+   ```
+
+   `failed` is terminal for the same source generation. A draw lookup reads state and
+   never converts failure back to `registered`.
+
+3. Add explicit mutation operations:
+
+   - `registerNew(handle:source:)` accepts only a new handle.
+   - `retry(handle:)` increments the generation for the same source.
+   - `replace(handle:with:)` cancels the old generation, releases its resident image,
+     increments the generation, and registers the new source.
+   - `evict(handle:)` cancels work and removes all state.
+
+   An ordinary `RenderImageStore` source replacement allocates a new source-bound
+   handle. Callers that intentionally preserve a handle must call `replace`; no
+   source mismatch traps or silently no-ops.
+
+4. Include the generation in jobs and completions. Draining accepts a completion only
+   when both handle and generation match current state. A stale success releases its
+   decoded resource without installing it; a stale failure has no effect.
+
+5. Separate registration from per-frame lookup. `image(...)` may schedule the first
+   decode for a registered generation, but repeated draws of `.decoding` or `.failed`
+   do not enqueue more work. Coalesce queued jobs by `(handle, generation)` and keep
+   only the latest non-started generation per handle.
+
+6. Delete the deferred encoded-image path from `Graphite.cpp`. Worker decode produces
+   actual pixels or an explicit failure before reporting success.
+
+7. Require every rasterization request to carry positive target pixel bounds. Add a
+   metadata-probe operation for callers that need intrinsic dimensions before choosing
+   bounds. Apply non-negotiable limits before allocation:
+
+   - encoded input: 64 MiB,
+   - either target dimension: 32,768 pixels,
+   - decoded pixels: 64 million,
+   - decoded RGBA storage: 256 MiB.
+
+   Use checked multiplication for row bytes and total bytes. SVG and other
+   vector/decompression paths obey the same target and decoded-storage limits. A
+   limit violation is a normal `ImageDecodeFailure.limitExceeded`.
+
+8. Surface failure to the owning resource store and diagnostic counters. File-backed
+   resources retry only on explicit invalidation, a changed source identity, or an
+   observed file-version change; they do not retry once per frame.
+
+### Behavioral verification
+
+- Corrupt bytes produce one `.failed` completion and no repeated job under repeated
+  draws.
+- Explicit retry advances generation and can transition to `.ready`.
+- Source replacement while an old decode is blocked installs only the new result.
+- Eviction during decode leaves no resident image when the completion arrives.
+- Oversized encoded input, dimensions, pixel counts, SVG targets, and checked-byte
+  overflow all fail before allocation.
+- A valid large image decodes on the worker, reaches `.ready`, and incurs no decode
+  work during the subsequent render call.
+
+### Exit gate
+
+Every queued decode resolves to a typed result, all mutation paths are generation-safe,
+and no API represents “unbounded deferred decode.”
+
+---
+
+## Phase 4 — Treat zero outputs as a suspended runtime state
+
+Status: complete
+
+### Outcome
+
+Disconnecting the last output keeps the compositor and clients alive. Output-dependent
+work suspends until an output returns, and IPC reports absence as a typed error.
+
+### Changes
+
+1. Make `Spaces.overlayDisplayID`, `fallbackOutput`, and `placementOutput` return
+   optionals. Propagate the optional through placement, overlay, frame-demand, input,
+   and shell-host callers. Delete the zero-display `preconditionFailure` paths.
+
+2. Add an explicit runtime availability state:
+
+   ```swift
+   enum OutputAvailability {
+       case available
+       case suspendedNoOutputs
+   }
+   ```
+
+   `OutputTopologyReconciler` transitions to suspension after withdrawing the last
+   applied output and back to available after attaching the first output.
+
+3. On entry to `suspendedNoOutputs`:
+
+   - cancel output frame demand and pending presentation,
+   - stop scene authoring and overlay publication,
+   - clear output-bound pointer placement and focus state where required,
+   - release withdrawn output resources through normal retirement,
+   - retain client surfaces, spaces, application state, and non-output protocol
+     objects.
+
+4. On return to `available`, select placement from the newly applied topology,
+   republish shell overlay facts, mark retained content damaged, and request a fresh
+   frame. Do not reuse withdrawn output IDs or stale generations.
+
+5. Change `ServerHost.spacesOverlayDisplayID()` and every other output-required IPC
+   operation to throw a specific `HostCallError.noOutputs`. The shell treats it as a
+   transient state and waits for the topology notification.
+
+### Behavioral verification
+
+- Start with one modeled output, withdraw it, and assert no frame, overlay, placement,
+  or IPC path aborts.
+- Assert output-required IPC returns `noOutputs` and non-output IPC remains usable.
+- Attach a new output with a different ID and assert retained content is placed,
+  damaged, and rendered against only the new generation.
+- Exercise repeated zero/one/many-output transitions and stale page-flip events.
+
+### Exit gate
+
+No ordinary empty-topology path traps. The runtime has one tested suspension/resume
+transition and a typed IPC failure for output-required requests.
+
+---
+
+## Phase 5 — Harden the Xwayland subprocess boundary
+
+### Outcome
+
+Xwayland starts from a verified absolute executable, receives a minimal production
+environment, cannot follow or truncate an attacker-controlled path, and cannot grow an
+unbounded production log.
+
+### Changes
+
+1. Extend Collider host discovery to resolve Xwayland once, validate that it is an
+   executable regular file, and place its absolute path in the compositor host
+   configuration. `collider doctor` reports the resolved path or a directed missing
+   dependency. `XwaylandProcess` receives that path through runtime configuration and
+   never invokes `/usr/bin/env` or searches `PATH`.
+
+2. Remove `WAYLAND_DEBUG=client`, `-core`, and `-verbose 10` from the production
+   argument and environment construction. Start with `DISPLAY` removed and only the
+   explicit environment required by Xwayland.
+
+3. Validate `$XDG_RUNTIME_DIR` as an absolute directory owned by the current UID with
+   no group/world access. Create or open a `nucleus` child directory with mode `0700`
+   using directory-relative, no-follow operations and validate the opened inode with
+   `fstat`.
+
+4. In normal mode, send Xwayland stdout and stderr to `/dev/null`. In explicit
+   diagnostic mode (`NUCLEUS_XWAYLAND_TRACE=1`), connect them to a nonblocking pipe
+   drained by the existing compositor reactor. The drain writes private
+   `xwayland-<random>.log` files created relative to the validated runtime directory
+   with `O_CREAT | O_EXCL | O_NOFOLLOW` and mode `0600`.
+
+5. Bound diagnostic logs to three 8 MiB files. Rotate before accepting more bytes and
+   account for dropped bytes if the sink cannot keep up. A trace sink failure degrades
+   to `/dev/null`; it does not stop the compositor or block Xwayland.
+
+6. Keep inherited file descriptors explicit in the spawn file actions. Close the log
+   pipe, readiness pipe, WM socket, listen sockets, and Wayland socket in the correct
+   parent/child sides on every spawn failure.
+
+### Behavioral verification
+
+- Argument/environment tests prove production mode contains none of the removed debug
+  settings and uses the configured absolute executable.
+- Filesystem tests reject a symlinked runtime directory, wrong owner/mode, and
+  pre-created log name without modifying the target.
+- Concurrent process fixtures receive distinct log files.
+- A trace flood rotates at the exact bound while the pipe continues draining.
+- Forced failures at each spawn-action step leave no descriptor or child-process leak.
+
+### Exit gate
+
+Xwayland has no fixed `/tmp` path, PATH lookup, production protocol trace, core-dump
+flag, or unbounded log sink.
+
+---
+
+## Phase 6 — Enforce Android owner-thread and native-handle lifetimes
+
+### Outcome
+
+Hand-written Android JNI entry points cannot dereference stale memory, and every host,
+surface, Choreographer, and renderer mutation occurs on one checked owner thread.
+
+### Changes
+
+1. Keep `AndroidHostCore` and `AndroidRenderer` owner-thread confined. Do not claim
+   arbitrary-thread safety by wrapping the state in a mutex: renderer methods currently
+   enter `@MainActor` through `MainActor.assumeIsolated`, so mutex protection alone
+   would preserve a false contract.
+
+2. Establish the Android UI/Choreographer thread as the owner:
+
+   - Kotlin calls every hand-written NDK entry point from the main looper.
+   - Construction captures an owner-thread token.
+   - Every JNI thunk validates the current thread before entering the actor-isolated
+     implementation.
+   - A violation records a directed native diagnostic and returns `JNI_FALSE` or the
+     entry point's neutral value without touching host state.
+
+   Surface attach/detach, frame callbacks, input, lifecycle, runtime, and error state
+   all obey this check.
+
+3. Replace `hostFromSelfPointer` with a process-wide
+   `Mutex<[UInt64: WeakAndroidHost]>`. Allocate monotonic nonzero IDs that are never
+   reused during the process. `AndroidHost` exposes its ID through the generated
+   Swift-Java surface; the six hand-written JNI calls accept that opaque ID.
+
+4. Register after host construction is complete. Add an idempotent `close()` called by
+   the Kotlin lifecycle before its Swift arena is released, and unregister again in
+   `deinit` as a safety net. Registry values are weak so registration cannot keep an
+   abandoned host alive. Lookup retains a strong local host for the duration of the JNI
+   call.
+
+5. Make `ANativeWindow` transfer explicit. Attach adopts one acquired reference on the
+   owner thread. Detach removes it from renderer state before returning it for release
+   on that same thread. Shutdown detaches before unregistering the host.
+
+6. Declare `SwiftTextLayoutManager: Sendable`. Its stored handler remains immutable
+   and `Sendable`; do not add mutable cross-thread state to this class.
+
+7. Document and test the existing GPU-retirement invariant in
+   `RenderCoreClientResources` and `RenderCoreTeardown`: client commits, recording, and
+   submission are serialized on the main actor, so a replaced resource retires at
+   `lastSubmittedSerial`. Do not move retirement to a future serial; that can retain a
+   resource forever when no subsequent frame is submitted.
+
+8. Add the missing ownership comment to `WaylandResourceReference`: its
+   unretained-self destroy listener is valid because registration, explicit release,
+   and libwayland destruction are serialized on the Wayland event-loop owner.
+
+### Behavioral verification
+
+- A stale, zero, random, and already-closed Android handle returns failure without
+  dereference.
+- Host close racing a registry lookup either lets the retained in-progress call finish
+  or rejects the lookup; it never accesses a deinitialized host.
+- Invoke each JNI entry point from a non-owner test thread and assert it rejects the
+  call without mutating state.
+- Exercise attach, replace, detach, and shutdown while counting exact
+  `ANativeWindow_acquire`/`release` balance.
+- Replace and release a GPU resource with and without a later frame; assert retirement
+  occurs at completion of the last submission that could reference it.
+- Run Fabric measurement concurrently through the declared `Sendable` manager.
+
+### Exit gate
+
+No hand-written JNI path reconstructs a Swift pointer from Java. Android renderer
+state has one enforced owner thread, and native window/resource lifetime tests balance
+exactly.
+
+---
+
+## Phase 7 — Remove main-actor child-process and filesystem stalls
+
+### Outcome
+
+PAM authentication and theme discovery progress through reactor/worker completions.
+The main actor never performs a blocking child wait or theme filesystem traversal.
+
+### Changes
+
+1. Hard-require Linux `pidfd_open` for the shell host and add it to Collider doctor.
+   Create the helper pipes with close-on-exec and nonblocking parent ends. After
+   spawning the PAM helper, open a pidfd and register both the response pipe and pidfd
+   with `ShellHost+Reactor`.
+
+2. Replace `PamAuthenticator.reap` with a nonblocking state machine:
+
+   ```text
+   awaitingResponse(attemptDeadline)
+       -> responseReceived(result, exitDeadline)
+       -> exited(status)
+       -> complete(result)
+   ```
+
+   Use a 30-second monotonic deadline for the whole attempt and a one-second exit grace
+   after a complete response. Process exit may arrive before or after the response. A
+   readable pidfd permits one `waitpid(..., WNOHANG)` reap. At either deadline, send
+   `SIGKILL`, continue polling the pidfd, reap, and complete as unavailable. No
+   main-actor path calls `waitpid(..., 0)`.
+
+3. Replace `readExactly` on the parent response path with an incremental bounded
+   parser. Each readable event drains until `EAGAIN`, accumulates no more than the
+   fixed header plus `maximumMessageBytes`, and produces a result only when the entire
+   frame is present. EOF with an incomplete frame is unavailable. A partial or
+   malicious helper response can never block the reactor.
+
+4. Bound the request before spawn. Limit the UTF-8 service name to 256 bytes, keep the
+   existing password limit, calculate the framed request size with checked arithmetic,
+   and require it to fit in one Linux `PIPE_BUF` write. Reserve the exact capacity
+   before the first append, perform the one retry-on-`EINTR` write to the initially
+   empty pipe, and zero the entire initialized byte range on every success, error,
+   cancellation, and timeout path.
+
+5. Handle every setup failure fail-closed. If pidfd creation or reactor registration
+   fails after spawn, terminate the helper, arrange nonblocking reap through the
+   reactor's child cleanup path, scrub request storage, and return unavailable.
+
+6. Add one bounded `ThemeAssetIO` worker service per process. The worker owns filesystem
+   traversal and file reads; callers send immutable, `Sendable` request values and
+   receive immutable results on the main actor. Do not reuse the renderer-private image
+   decode queue.
+
+7. Convert cursor resolution to cache-first asynchronous behavior. A miss returns the
+   built-in cursor immediately, coalesces one worker request for the theme/name/size
+   key, and wakes cursor state when the result arrives. Capture XDG and cursor search
+   roots once at service construction.
+
+8. Convert icon-theme indexing and resolution to the same request/completion model.
+   Build immutable per-theme indexes off-main, preserve inheritance and fallback
+   ordering, and atomically replace the main-actor snapshot on completion.
+
+9. Bound each service:
+
+   - at most 256 queued, non-started keys,
+   - coalesce duplicate keys,
+   - a 16 MiB decoded cursor-image LRU,
+   - a 4,096-entry icon-resolution LRU.
+
+   Evict least-recently-used completed entries. When the pending-key bound is reached,
+   drop the oldest non-started request and retain the built-in/fallback result.
+
+### Behavioral verification
+
+- A helper that writes a verdict and lingers cannot block a main-actor sentinel; it is
+  killed and reaped at the deadline.
+- Exit-before-response, response-before-exit, partial response, oversized response,
+  malformed response, cancellation, both deadlines, pidfd-setup failure, and helper
+  crash each complete exactly once and leak no child or descriptor.
+- Request-buffer tests force maximum field sizes and every error path, then verify the
+  initialized buffer is zeroed without reallocation.
+- Block a fake theme filesystem worker and assert input/main-actor work continues.
+- Cursor and icon tests cover inheritance, fallback, coalescing, stale completion,
+  LRU eviction, queue overflow, and worker failure.
+
+### Exit gate
+
+No main-actor `waitpid(..., 0)`, cursor file read, icon directory traversal, or icon
+file read remains. Child, descriptor, queue, and cache bounds are behaviorally tested.
+
+---
+
+## Phase 8 — Collapse paint storage to one Swift vocabulary
+
+### Outcome
+
+Paint commands have one stored Swift representation and one validated lowering into
+the C++ facade. Adding a paint case cannot silently render as a fallback, and payload
+registration uses one contiguous copy.
+
+### Changes
+
+1. Make `NucleusTypes.PaintCommand` the stored command throughout resource
+   registration, render modeling, paint content, and rasterization. Preserve its
+   packed wire representation.
+
+2. Move ergonomic concepts needed by the renderer into `NucleusTypes`: stroke cap,
+   stroke join, transform, flag accessors, and typed shading/blend/path accessors. Add
+   computed properties rather than a second stored command model.
+
+3. Delete `PaintDrawCommand` and its companion kind, shading, blend, stroke, join, and
+   transform definitions from `NucleusRenderModel`. Update every constructor, matcher,
+   content store, dependency scan, and rasterizer call site to consume
+   `PaintCommand` directly.
+
+4. Delete the Swift command/kind/shading/blend translation functions from
+   `SwiftResourceHostConformers`. Registration validates payload ranges once and
+   stores the command array without element-wise remapping.
+
+5. Keep the C++ Skia facade as a language boundary, not a second Swift domain model.
+   Validate incoming raw values before forming C++ enums. Lower each valid Nucleus enum
+   through an exhaustive switch with no rendering fallback. An invalid raw value
+   rejects registration or drawing with a typed diagnostic; it never becomes
+   `SrcOver`, `Fill`, or another plausible-looking default.
+
+6. Give intentional Swift/C++ wire values explicit constants and test them through
+   the public registration/rasterization behavior. Do not depend on Skia's enum raw
+   values; the final facade-to-Skia switch remains explicit.
+
+7. Replace the payload byte loop with one checked
+   `Array(unsafeUninitializedCapacity:)` copy from the contiguous span. Handle an empty
+   span without manufacturing a non-null base address, and validate count conversion
+   before allocation.
+
+### Behavioral verification
+
+- Construct and rasterize every blend mode, path verb, paint style, cap, join, shading
+  form, flag combination, and transform through the real registration boundary.
+- Feed invalid raw values and malformed payload ranges; assert a typed rejection and
+  no draw.
+- Compare headless pixel results for representative fill, stroke, gradient, image,
+  path, blend, and runtime-effect commands before and after the model collapse.
+- Register empty, small, and maximum accepted payloads and verify exact bytes and one
+  allocation/copy operation through an instrumented buffer fixture.
+
+### Exit gate
+
+No `PaintDraw*` stored model or Swift mapping layer remains. All valid paint cases
+reach an explicit C++ lowering and invalid cases fail closed.
+
+---
+
+## Phase 9 — Enable strict memory safety throughout first-party Swift
+
+### Outcome
+
+Every first-party Swift target opts into Swift 6.4 strict memory safety. Unsafe
+operations are narrow, reviewed, and locally annotated; no package receives a blanket
+escape hatch.
+
+### Changes
+
+Migrate packages in dependency order, completing each package's build and tests before
+editing the next group:
+
+1. `swift-wayland`, `swift-vulkan`, and `swift-tracy`.
+2. `core/` Swift targets, including the Swift targets that import C++ facades.
+3. `platform-linux/`.
+4. `compositor/compositor-core`.
+5. `compositor/compositor`.
+6. `shell/`.
+7. `android-runtime/` and `core/platform-android/`.
+8. `react-native/`.
+9. `collider/engine`, its checked-in SwiftPM fixture packages, and `collider`.
+10. Remaining first-party SwiftPM targets under `chromium/` and
+    `swift-toolchain/`.
+
+For each group:
+
+1. Add `.strictMemorySafety()` to every first-party Swift target, including tests and
+   executable targets.
+
+2. Classify each diagnostic:
+
+   - replace avoidable pointer use with typed or scoped APIs,
+   - put pointer formation and lifetime assumptions in the owning C/C++ shim when that
+     is the correct boundary,
+   - annotate an irreducibly unsafe declaration or operation locally with its
+     lifetime, alignment, mutability, and thread preconditions,
+   - reject APIs whose safety cannot be stated and enforced.
+
+3. Do not use module-wide warning suppression, blanket `@preconcurrency`, or unchecked
+   `Sendable` merely to make the build pass.
+
+4. Split Vulkan feature-chain APIs by mutability. A query chain supplies a mutable
+   pointer to `vkGetPhysicalDeviceFeatures2`; a device-enable chain supplies a const
+   view after construction. Remove `UnsafeMutablePointer(mutating:)` from
+   `supportsFeatures` rather than casting away the API mismatch.
+
+5. Run the package's Collider-owned build/test tasks after each group. Build Collider
+   itself with:
+
+   ```sh
+   swift build --package-path collider
+   ```
+
+   Do not defer diagnostics to a final all-workspace pass.
+
+### Behavioral verification
+
+- Existing behavior and phase-specific tests pass after every package group.
+- JNI, Wayland listener, Vulkan chain, Graphite callback, text borrow, image worker,
+  and PAM buffer tests run with the strict annotations in place.
+- The final workspace build emits no strict-memory-safety diagnostic from a
+  first-party target.
+
+### Exit gate
+
+Every first-party Swift target and test target has strict memory safety enabled, with
+no blanket suppression or unexplained unchecked conformance.
+
+---
+
+## Phase 10 — Remove residue and close the documentation lifecycle
+
+### Outcome
+
+The workspace contains no artifact left by the replaced designs, and documentation
+clearly distinguishes active work from completed or superseded plans.
+
+### Changes
+
+1. Delete the tracked root file `--help`.
+
+2. Delete dead declarations, tests, comments, flags, and helper types made obsolete by
+   phases 1–9. Remove replaced APIs and fix every caller in the same phase; do not
+   leave deprecated wrappers.
+
+3. Add a `Status:` line to every plan under `docs/`, using exactly `active`,
+   `complete`, or `superseded by <kebab-case.md>`. Determine status from the current
+   implementation rather than the document's age.
+
+4. Add `docs/README.md` with separate active, complete, and superseded sections. Each
+   entry links to the plan and states its invariant in one sentence. This plan remains
+   active until the final exit gate passes, then changes to complete.
+
+5. Run final repository audits for:
+
+   - disabled first-party GPU tests,
+   - paired Graphite submission APIs,
+   - raw text paragraph pointer APIs and weak resolver symbols,
+   - unbounded image decode requests,
+   - zero-output traps,
+   - fixed Xwayland log paths and production trace flags,
+   - Android self-pointer reconstruction,
+   - blocking main-actor child/filesystem work,
+   - `PaintDraw*` declarations,
+   - first-party targets missing strict memory safety.
+
+   These searches are review aids, not tests that assert source-code shape. Runtime
+   contracts remain covered by the behavioral suites introduced in prior phases.
+
+### Behavioral verification
+
+Run the complete host gate:
+
+```sh
+source tools/host-env.sh
+collider doctor
+collider test all
+```
+
+Run `collider test gpu-drm` on the render-node lane. Build the Collider package with
+`swift build --package-path collider`. Review every prior phase's exit gate and the
+documentation index.
+
+### Exit gate
+
+All agent-runnable verification passes, the hardware lane is green, the audits find no
+replaced path, and this document is indexed as complete. Manual compositor/application
+validation remains a user-owned handoff and does not keep the plan active.
+
+---
+
+## Deliberately preserved contracts
+
+These points were verified during the audit and must not be “fixed” as defects:
+
+- **Graphite finish callbacks:** Skia guarantees that the configured finish callback
+  runs even when insertion or submission fails. The per-submission completion token
+  is therefore not leaked by a failed `insertRecording`. Tokens must remain alive
+  until that callback and must never be reclaimed by wrapping an in-flight pool.
+
+- **Paragraph registry ownership:** The text registry's map currently retains the
+  paragraph after a temporary `shared_ptr` lookup is destroyed, and registered paint
+  content retains `TextLayoutLease`s. Phase 2 replaces the raw-pointer seam because
+  scoped ownership is the correct enforceable boundary, not because the current call
+  immediately dereferences freed storage.
+
+- **GPU retirement serial:** Under the single-main-actor renderer, a replaced resource
+  retires at `lastSubmittedSerial`, the last submission that could reference it.
+  Retiring at an unsubmitted future serial can leak indefinitely.
+
+- **Wayland surface validation:** `WlSurfaceResource` already rejects
+  `set_buffer_scale <= 0` and transforms outside `0...7` with the required protocol
+  errors before calling the accepted-state setters. Keep the defensive downstream
+  clamps unless every internal construction path is also represented by a validated
+  type.
+
+- **Single-owner architecture:** Wayland dispatch, input, window management, scene
+  authoring, rendering, and GPU submission remain owner-serialized. Worker services
+  return immutable completions; they do not fragment mutable compositor ownership
+  across actors.
+
+- **`WaylandResourceReference` destruction listener:** The unretained listener is
+  correct in both destruction orders under the single Wayland event-loop owner. Phase
+  8 documents and tests that assumption without changing the mechanism.
+
+- **`SwiftTextLayoutManager` sendability:** Its immutable stored handler is already
+  `Sendable`, so declaring the conformance is sound. The phase does not add locking or
+  mutable cross-thread state.

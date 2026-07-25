@@ -141,14 +141,11 @@ public final class Spaces {
         return true
     }
 
-    public func overlayDisplayID(layout: DesktopLayout) -> DisplayID {
+    public func overlayDisplayID(layout: DesktopLayout) -> DisplayID? {
         if let id = overlayDisplayID, layout.display(id: id) != nil {
             return id
         }
-        if let id = layout.primaryOutputID ?? layout.displays.first?.id {
-            return id
-        }
-        preconditionFailure("overlay display requested with no displays")
+        return layout.primaryOutputID ?? layout.displays.first?.id
     }
 
     public func activeSpace(forDisplay displayID: DisplayID) -> SpaceID? {
@@ -210,7 +207,10 @@ public final class Spaces {
         return outputID
     }
 
-    public func fallbackOutput(for window: Window?, layout: DesktopLayout) -> Display {
+    public func fallbackOutput(
+        for window: Window?,
+        layout: DesktopLayout
+    ) -> Display? {
         if let window {
             for candidate in [window.currentOutputID, window.preferredOutputID, window.restoreOutputID, window.specialOutputID] {
                 if let id = validOutputID(candidate, layout: layout), let display = layout.display(id: id) {
@@ -218,15 +218,16 @@ public final class Spaces {
                 }
             }
         }
-        guard let primary = (layout.primaryOutputID.flatMap { layout.display(id: $0) } ?? layout.displays.first) else {
-            preconditionFailure("fallback output requested with no displays")
-        }
-        return primary
+        return layout.primaryOutputID.flatMap { layout.display(id: $0) }
+            ?? layout.displays.first
     }
 
-    public func policyOutputID(for window: Window, layout: DesktopLayout) -> DisplayID {
+    public func policyOutputID(
+        for window: Window,
+        layout: DesktopLayout
+    ) -> DisplayID? {
         if !window.isManagedAppWindow() {
-            return fallbackOutput(for: window, layout: layout).id
+            return fallbackOutput(for: window, layout: layout)?.id
         }
         if let pending = window.protocolState.latest,
            pending.activeFullscreen || pending.activeMaximized,
@@ -239,12 +240,15 @@ public final class Spaces {
         {
             return outputID
         }
-        return fallbackOutput(for: window, layout: layout).id
+        return fallbackOutput(for: window, layout: layout)?.id
     }
 
-    public func resolveRequestedFullscreenOutputID(for window: Window, layout: DesktopLayout) -> DisplayID {
+    public func resolveRequestedFullscreenOutputID(
+        for window: Window,
+        layout: DesktopLayout
+    ) -> DisplayID? {
         if !window.isManagedAppWindow() {
-            return fallbackOutput(for: window, layout: layout).id
+            return fallbackOutput(for: window, layout: layout)?.id
         }
         switch window.fullscreenTarget {
         case .automatic:
@@ -261,7 +265,7 @@ public final class Spaces {
         {
             return outputID
         }
-        return fallbackOutput(for: window, layout: layout).id
+        return fallbackOutput(for: window, layout: layout)?.id
     }
 
     public func resolveSpecialOutputID(for window: Window, layout: DesktopLayout, nextActiveFullscreen: Bool, nextActiveMaximized: Bool) -> DisplayID? {
@@ -278,16 +282,23 @@ public final class Spaces {
             if let outputID = validOutputID(window.specialOutputID, layout: layout) {
                 return outputID
             }
-            return fallbackOutput(for: window, layout: layout).id
+            return fallbackOutput(for: window, layout: layout)?.id
         }
         return nil
     }
 
-    public func placementOutput(for window: Window?, layout: DesktopLayout, fullscreen: Bool) -> Display {
+    public func placementOutput(
+        for window: Window?,
+        layout: DesktopLayout,
+        fullscreen: Bool
+    ) -> Display? {
         if let window {
             if fullscreen {
-                return layout.display(id: resolveRequestedFullscreenOutputID(for: window, layout: layout)) ??
-                    fallbackOutput(for: window, layout: layout)
+                return resolveRequestedFullscreenOutputID(
+                    for: window,
+                    layout: layout
+                ).flatMap { layout.display(id: $0) }
+                    ?? fallbackOutput(for: window, layout: layout)
             }
             if window.activeMaximized || window.requestedMaximized,
                let outputID = validOutputID(window.specialOutputID, layout: layout),
@@ -297,14 +308,19 @@ public final class Spaces {
             }
             return fallbackOutput(for: window, layout: layout)
         }
-        guard let primary = (layout.primaryOutputID.flatMap { layout.display(id: $0) } ?? layout.displays.first) else {
-            preconditionFailure("placement output requested with no displays")
-        }
-        return primary
+        return layout.primaryOutputID.flatMap { layout.display(id: $0) }
+            ?? layout.displays.first
     }
 
-    public func placementOutputID(for window: Window?, layout: DesktopLayout, fullscreen: Bool) -> DisplayID {
-        placementOutput(for: window, layout: layout, fullscreen: fullscreen).id
+    public func placementOutputID(
+        for window: Window?,
+        layout: DesktopLayout,
+        fullscreen: Bool
+    ) -> DisplayID? {
+        placementOutput(
+            for: window,
+            layout: layout,
+            fullscreen: fullscreen)?.id
     }
 
     public func fullscreenLayoutRect(for output: Display) -> WindowRect {

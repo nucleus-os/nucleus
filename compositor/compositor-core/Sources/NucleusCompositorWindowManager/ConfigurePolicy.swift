@@ -95,9 +95,14 @@ extension WindowManager {
 
             if requested.willSpecial && !wasSpecial {
                 window.restoreRect = window.currentRect()
-                window.restoreOutputID = server.spaces.fallbackOutput(for: window, layout: server.layout).id
+                window.restoreOutputID = server.spaces.fallbackOutput(
+                    for: window, layout: server.layout)?.id
             } else if !requested.willSpecial, let restore = window.restoreRect {
-                let fallback = server.spaces.fallbackOutput(for: window, layout: server.layout)
+                guard let fallback = server.spaces.fallbackOutput(
+                    for: window, layout: server.layout
+                ) else {
+                    return nil
+                }
                 let restoreOutput = server.spaces.validOutputID(window.restoreOutputID, layout: server.layout)
                 if restoreOutput == nil {
                     window.restoreRect = server.spaces.translateRectToOutput(
@@ -112,7 +117,11 @@ extension WindowManager {
                 }
             }
 
-            let targetRect = request.targetRect ?? desiredConfigureRect(for: window)
+            guard let targetRect = request.targetRect ?? desiredConfigureRect(
+                for: window
+            ) else {
+                return nil
+            }
             let layoutOutputID = specialOutputID ?? window.currentOutputID ?? window.preferredOutputID
             let stateMask = xdgStateMask(
                 requestedMaximized: requested.activeMaximized,
@@ -266,7 +275,17 @@ extension WindowManager {
     }
 
     private func normalizeOutputState(window: Window) {
-        let fallback = server.spaces.fallbackOutput(for: window, layout: server.layout)
+        guard let fallback = server.spaces.fallbackOutput(
+            for: window, layout: server.layout
+        ) else {
+            window.currentOutputID = nil
+            window.preferredOutputID = nil
+            window.specialOutputID = nil
+            if case .output = window.fullscreenTarget {
+                window.fullscreenTarget = .automatic
+            }
+            return
+        }
         if server.spaces.validOutputID(window.currentOutputID, layout: server.layout) == nil {
             window.currentOutputID = fallback.id
         }
@@ -300,9 +319,14 @@ extension WindowManager {
         }
     }
 
-    private func desiredConfigureRect(for window: Window) -> WindowRect {
-        let placement = server.spaces.placementOutput(for: window, layout: server.layout, fullscreen: false)
-        let fullscreenOutput = server.spaces.placementOutput(for: window, layout: server.layout, fullscreen: true)
+    private func desiredConfigureRect(for window: Window) -> WindowRect? {
+        guard let placement = server.spaces.placementOutput(
+            for: window, layout: server.layout, fullscreen: false
+        ), let fullscreenOutput = server.spaces.placementOutput(
+            for: window, layout: server.layout, fullscreen: true
+        ) else {
+            return nil
+        }
         return server.spaces.desiredLayoutRect(
             for: window,
             rects: LayoutRects(
@@ -384,7 +408,11 @@ extension WindowManager {
                 height: h
             )
         }
-        let output = server.spaces.placementOutput(for: window, layout: server.layout, fullscreen: false)
+        guard let output = server.spaces.placementOutput(
+            for: window, layout: server.layout, fullscreen: false
+        ) else {
+            return WindowRect(x: 0, y: 0, width: w, height: h)
+        }
         let usable = usableArea(for: output)
         let maxX = max(0, usable.w - Int32(frameW))
         let maxY = max(0, usable.h - Int32(frameH))

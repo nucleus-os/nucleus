@@ -365,6 +365,9 @@ let package = Package(
                 .product(name: "NucleusLayers", package: "Nucleus"),
                 .product(name: "Tracy", package: "swift-tracy"),
                 .product(name: "NucleusTextCxxBridge", package: "Nucleus"),
+                .product(
+                    name: "NucleusTextRenderingBridge",
+                    package: "Nucleus"),
                 .product(name: "NucleusAppHostProtocols", package: "Nucleus"),
                 // The C header declaring the test-only smoke entries — imported so
                 // `nucleus_rn_fabric_full_smoke` is implemented via `@c @implementation`

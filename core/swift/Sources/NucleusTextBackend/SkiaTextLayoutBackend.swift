@@ -1,4 +1,5 @@
 internal import NucleusTextCxxBridge
+internal import NucleusTextRenderingBridge
 public import NucleusUI
 import Tracy
 
@@ -12,13 +13,26 @@ public final class SkiaTextLayoutBackend: TextLayoutBackend {
 
     public init() {}
 
-    public static func install(in system: TextSystem) {
+    @discardableResult
+    public static func install(in system: TextSystem) -> Bool {
+        let bridgeStatus =
+            nucleus.text.installTextRenderingBridge()
+        guard bridgeStatus
+            != nucleus.text.TextRenderingBridgeInstallStatus
+                .conflictingProvider
+        else {
+            return false
+        }
         system.installBackend(SkiaTextLayoutBackend())
+        return true
     }
 
-    public static func installIfNeeded(in system: TextSystem) {
-        guard !system.hasInstalledBackend else { return }
-        install(in: system)
+    @discardableResult
+    public static func installIfNeeded(
+        in system: TextSystem
+    ) -> Bool {
+        guard !system.hasInstalledBackend else { return true }
+        return install(in: system)
     }
 
     public func invalidateFontCollection() {

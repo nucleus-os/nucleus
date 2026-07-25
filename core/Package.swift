@@ -130,6 +130,9 @@ let package = Package(
         .library(name: "NucleusRenderer", targets: ["NucleusRenderer"]),
         .library(name: "NucleusTextCxxBridge", targets: ["NucleusTextCxxBridge"]),
         .library(name: "NucleusTextBackend", targets: ["NucleusTextBackend"]),
+        .library(
+            name: "NucleusTextRenderingBridge",
+            targets: ["NucleusTextRenderingBridge"]),
         // Core + app-framework products the compositor-core library package consumes.
         // The compositor's shell is itself a Nucleus app, so it consumes the
         // NucleusUI design system — that dependency direction (compositor → app
@@ -216,7 +219,14 @@ let package = Package(
             path: "render-cxx/skia",
             sources: ["skia_text_backend.cpp", "TextRegistry.cpp"],
             publicHeadersPath: "include",
-            cxxSettings: [.unsafeFlags(skiaBridgeLinuxCxxFlags)]
+            cxxSettings: [
+                .unsafeFlags(
+                    skiaBridgeLinuxCxxFlags,
+                    .when(platforms: [.linux])),
+                .unsafeFlags(
+                    skiaBridgeAndroidCxxFlags,
+                    .when(platforms: [.android])),
+            ]
         ),
         // C++-interop adapter for NucleusUI's pure Swift TextLayoutBackend seam.
         // Composition roots install it during bring-up; NucleusUI never imports
@@ -227,6 +237,7 @@ let package = Package(
                 "NucleusUI",
                 "NucleusTextCxxBridge",
                 "NucleusTextBackendNative",
+                "NucleusTextRenderingBridge",
                 .product(name: "Tracy", package: "swift-tracy"),
             ],
             path: "swift/Sources/NucleusTextBackend",
@@ -293,6 +304,26 @@ let package = Package(
             ],
             linkerSettings: [
                 .unsafeFlags(skiaAndroidLinkFlags, .when(platforms: [.android])),
+            ]
+        ),
+        // The sole composition edge between the paragraph registry and Graphite.
+        // Neither lower-level C++ target links upward to the other or installs
+        // process-global state during static initialization.
+        .target(
+            name: "NucleusTextRenderingBridge",
+            dependencies: [
+                "NucleusTextBackendNative",
+                "NucleusSkiaGraphiteBridge",
+            ],
+            path: "swift/Sources/NucleusTextRenderingBridge",
+            publicHeadersPath: "include",
+            cxxSettings: [
+                .unsafeFlags(
+                    skiaBridgeLinuxCxxFlags,
+                    .when(platforms: [.linux])),
+                .unsafeFlags(
+                    skiaBridgeAndroidCxxFlags,
+                    .when(platforms: [.android])),
             ]
         ),
         // Collider also provisions the Android Vulkan Graphite archive set.
@@ -403,6 +434,15 @@ let package = Package(
             name: "NucleusResourceTestSupport",
             path: "swift/Tests/Support/Resources"
         ),
+        .target(
+            name: "NucleusTextRenderingTestSupport",
+            dependencies: [
+                "NucleusSkiaGraphiteBridge",
+                "NucleusTextRenderingBridge",
+            ],
+            path: "swift/Tests/Support/TextRendering",
+            publicHeadersPath: "include"
+        ),
         // (VulkanTests moved to the extracted swift-vulkan package.)
         // The Wayland C, compositor server, and window-manager test targets live in
         // compositor-core.
@@ -437,6 +477,7 @@ let package = Package(
                 "NucleusHostProjectionTestSupport",
                 "NucleusRendererTestSupport",
                 "NucleusResourceTestSupport",
+                "NucleusTextRenderingTestSupport",
             ],
             path: "swift/Tests/NucleusUITests",
             swiftSettings: [.interoperabilityMode(.Cxx)],

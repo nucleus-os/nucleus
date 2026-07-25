@@ -47,7 +47,7 @@ final class TestFrameResourceResolver: FrameResourceResolver {
 
 // predicate (hardware-independent) + the end-to-end top-level frame — walk →
 // pre-resolve → composite → backdrop → present → submit — over a real Graphite
-// context (best-effort GPU, asserts nothing hardware-conditional).
+// context in the mandatory headless Graphite lane.
 @Suite struct FrameDriverTests {
     @Test func frameDemandPredicate() {
         #expect(!FrameDemand().shouldRenderThisVblank, "demand-idle-false")
@@ -256,10 +256,8 @@ final class TestFrameResourceResolver: FrameResourceResolver {
             bounds: Bounds(w: w, h: h))
     }
 
-    // Best-effort GPU: end-to-end frame. Hardware-gated, so it asserts nothing
-    // hardware-conditional.
-    @Test(.disabled("requires a live GPU/Vulkan device")) @MainActor
-    func endToEndFrameBestEffort() {
+    @Test @MainActor
+    func gpuHeadless_endToEndFrame() throws {
         // Build a tree: a backdrop root with an external-content child + a paint
         // content layer.
         var tree = LayerTree()
@@ -292,39 +290,17 @@ final class TestFrameResourceResolver: FrameResourceResolver {
             pixelSize: PixelSize(width: 400, height: 400),
             scale: 1, fractionalScale: 2, overlayUsableArea: UsableArea())
 
-        let base = VK.loadBaseDispatch()
-        let contract = VkRequirements.contract()
-        guard let instance = InstanceOwner.create(
-            base: base, applicationName: "FrameDriverTests",
-            contract: contract, enableValidation: false
-        ) else { return }
-        guard let selection = DeviceOwner.selectPhysicalDevice(
-            instance: instance.handle, dispatch: instance.dispatch, contract: contract
-        ) else { return }
-        guard let device = DeviceOwner.create(
-            selection: selection, instanceDispatch: instance.dispatch,
-            contract: contract
-        ) else { return }
-        guard let queue = device.queue(family: selection.graphicsQueueFamily) else { return }
-
-        withCStringArray(contract.deviceExtensions) { extPtr, extCount in
-            var desc = nucleus.skia.VulkanContextDescriptor()
-            desc.instance = UnsafeMutableRawPointer(instance.handle)
-            desc.physicalDevice = UnsafeMutableRawPointer(selection.physicalDevice)
-            desc.device = UnsafeMutableRawPointer(device.handle)
-            desc.queue = UnsafeMutableRawPointer(queue)
-            desc.graphicsQueueIndex = selection.graphicsQueueFamily
-            desc.maxApiVersion = VkRequirements.minimumApiVersion.raw
-            desc.deviceExtensions = extPtr
-            desc.deviceExtensionCount = extCount
-
-            let context = nucleus.skia.makeGraphiteVulkanContext(desc)
-            guard context.isValid() else { return }
-            guard let driver = FrameDriver(
-                context: context,
-                resourceHost: SwiftResourceHost(),
-                wakeSink: RendererTestWakeSink())
-            else { return }
+        try withRequiredVulkanGraphite(
+            presentation: .headless,
+            applicationName: "FrameDriverTests"
+        ) { _, _, context, _ in
+            let driver = try requireValue(
+                FrameDriver(
+                    context: context,
+                    resourceHost: SwiftResourceHost(),
+                    wakeSink: RendererTestWakeSink()),
+                "could not create the frame driver")
+            defer { driver.shutdown() }
 
             // A small green source image stands in for resolved content.
             var pixels = [UInt8](repeating: 0, count: 16 * 16 * 4)
@@ -355,14 +331,17 @@ final class TestFrameResourceResolver: FrameResourceResolver {
             let firstRequest = FrameDriver.FrameRenderRequest(
                 tree: tree,
                 target: target,
-                frame: FrameInfo(outputId: 1),
+                frame: FrameInfo(outputId: 1, frameSerial: 1),
                 scanout: scanout,
                 submissionMode: .offscreen)
-            let result = driver.renderFrame(
-                firstRequest,
-                resolver: resolver)
+            let result = try requireValue(
+                driver.renderFrame(
+                    firstRequest,
+                    resolver: resolver),
+                "first end-to-end frame failed")
             resolveCalls += resolver.textureCalls.count
-            guard result != nil else { driver.shutdown(); return }
+            #expect(result.presented)
+            #expect(result.submitted)
             _ = driver.producer.drainStats()
 
             // A second frame reuses the persistent accumulator (no re-create).
@@ -370,17 +349,104 @@ final class TestFrameResourceResolver: FrameResourceResolver {
             let secondRequest = FrameDriver.FrameRenderRequest(
                 tree: tree,
                 target: target,
-                frame: FrameInfo(outputId: 1),
+                frame: FrameInfo(outputId: 1, frameSerial: 2),
                 scanout: scanout,
                 submissionMode: .offscreen)
-            _ = driver.renderFrame(
-                secondRequest,
-                resolver: resolver)
+            let second = try requireValue(
+                driver.renderFrame(
+                    secondRequest,
+                    resolver: resolver),
+                "second end-to-end frame failed")
             resolveCalls += resolver.textureCalls.count
             _ = driver.producer.drainStats()
 
             #expect(resolveCalls == 2)
-            driver.shutdown()
+            #expect(second.presented)
+            #expect(second.submitted)
+            try requireTrue(
+                waitForGraphiteSerial(
+                    context: context,
+                    serial: secondRequest.frame.frameSerial),
+                "frame driver submissions did not complete")
+        }
+    }
+
+    @Test @MainActor
+    func gpuHeadless_abandonedUploadPreservesResidentPixels() throws {
+        try withRequiredVulkanGraphite(
+            presentation: .headless,
+            applicationName: "FrameDriver upload rollback"
+        ) { _, _, context, _ in
+            let driver = try requireValue(
+                FrameDriver(
+                    context: context,
+                    resourceHost: SwiftResourceHost(),
+                    wakeSink: RendererTestWakeSink()),
+                "could not create the frame driver")
+            defer { driver.shutdown() }
+
+            let green: [UInt8] = [UInt8](repeating: 0, count: 16).enumerated().map {
+                switch $0.offset % 4 {
+                case 1, 3: 255
+                default: 0
+                }
+            }
+            let texture = try requireValue(
+                driver.stageClientUpload(
+                    replacing: nil,
+                    pixels: green,
+                    width: 2,
+                    height: 2),
+                "initial upload failed")
+            let image = texture.image()
+            let initialTarget = driver.recorder.makeOffscreenSurface(2, 2)
+            var rect = nucleus.skia.RectF()
+            rect.width = 2
+            rect.height = 2
+            initialTarget.getCanvas().drawImage(image, rect, 1)
+            let initialResult = driver.submitImmediate(
+                driver.recorder.snapRecording(),
+                waitSemaphores: [],
+                submissionSerial: 1)
+            try requireTrue(initialResult.isOk(), "initial upload submission failed")
+            try requireTrue(
+                waitForGraphiteSerial(context: context, serial: 1),
+                "initial upload did not complete")
+
+            var red = [UInt8](repeating: 0, count: 16)
+            for index in stride(from: 0, to: red.count, by: 4) {
+                red[index] = 255
+                red[index + 3] = 255
+            }
+            _ = try requireValue(
+                driver.stageClientUpload(
+                    replacing: texture,
+                    pixels: red,
+                    width: 2,
+                    height: 2),
+                "replacement upload failed")
+            driver.abandonSubmissionScope()
+
+            let verificationTarget =
+                driver.recorder.makeOffscreenSurface(2, 2)
+            verificationTarget.getCanvas().drawImage(image, rect, 1)
+            let verificationResult = driver.submitImmediate(
+                driver.recorder.snapRecording(),
+                waitSemaphores: [],
+                submissionSerial: 2)
+            try requireTrue(
+                verificationResult.isOk(),
+                "verification submission failed")
+            try requireTrue(
+                waitForGraphiteSerial(context: context, serial: 2),
+                "verification submission did not complete")
+            let pixels = try requireValue(
+                readGraphiteSurfaceRGBA(
+                    context: context,
+                    surface: verificationTarget),
+                "verification readback failed")
+            #expect(Array(pixels.prefix(4)) == [0, 255, 0, 255])
+            #expect(context.completedSubmissionTimingCount() == 0)
         }
     }
 }

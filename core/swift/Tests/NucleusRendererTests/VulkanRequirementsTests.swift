@@ -33,6 +33,29 @@ struct VulkanRequirementsTests {
         #expect(contract.requiredDeviceEntryPoints.contains("vkReleaseSwapchainImagesKHR"))
     }
 
+    @Test("Headless Graphite excludes every presentation and external-memory requirement")
+    func headlessRequirements() {
+        let contract = VkRequirements.contract(for: .headless)
+
+        #expect(contract.presentation == .headless)
+        #expect(contract.minimumApiVersion == VkVersion(major: 1, minor: 4))
+        #expect(contract.requiresTimelineSemaphore)
+        #expect(contract.requiresSamplerYcbcrConversion)
+        #expect(!contract.requiresSwapchainMaintenance1)
+        #expect(contract.instanceExtensions == ["VK_KHR_get_physical_device_properties2"])
+        #expect(!contract.deviceExtensions.contains("VK_KHR_swapchain"))
+        #expect(!contract.deviceExtensions.contains("VK_KHR_external_memory_fd"))
+        #expect(!contract.deviceExtensions.contains("VK_EXT_external_memory_dma_buf"))
+        #expect(!contract.deviceExtensions.contains("VK_EXT_image_drm_format_modifier"))
+        #expect(!contract.requiredInstanceEntryPoints.contains {
+            $0.contains("Surface")
+        })
+        #expect(!contract.requiredDeviceEntryPoints.contains {
+            $0.contains("Swapchain") || $0.contains("MemoryFd")
+                || $0.contains("SemaphoreFd")
+        })
+    }
+
     @Test("The queried and enabled feature chains have identical structure")
     func featureContractChain() {
         let contract = VkRequirements.contract(for: .waylandClientWSI)

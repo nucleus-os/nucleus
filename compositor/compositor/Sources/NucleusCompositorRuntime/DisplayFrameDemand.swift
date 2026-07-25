@@ -29,6 +29,7 @@ final class DisplayFrameDemand {
 
     /// Mark a one-shot frame need on every output.
     func requestFrame(reason: RedrawReasons = .surfaceDamage) {
+        guard server.outputAvailability == .available else { return }
         for display in server.layout.displays {
             display.requestRedraw(reason)
         }
@@ -40,6 +41,7 @@ final class DisplayFrameDemand {
         outputID: UInt64,
         reason: RedrawReasons = .surfaceDamage
     ) {
+        guard server.outputAvailability == .available else { return }
         if let display = server.layout.display(id: outputID) {
             display.requestRedraw(reason)
         } else {
@@ -48,15 +50,32 @@ final class DisplayFrameDemand {
     }
 
     func requestFrameForOverlay() {
-        requestFrame(outputID: overlayOutputID(), reason: .shellOverlay)
+        guard let outputID = overlayOutputID() else { return }
+        requestFrame(outputID: outputID, reason: .shellOverlay)
+    }
+
+    func suspendForNoOutputs() {
+        for display in server.layout.displays {
+            display.suspendRedraws()
+        }
+    }
+
+    func resumeForOutputs() {
+        for display in server.layout.displays {
+            display.resumeRedraws()
+        }
     }
 
     /// Collect the current frame-demand policy from the shell/overlay/render
     /// owners and apply it across the outputs' `DisplayLink`s.
     func sync() {
         let layout = server.layout
-        guard !layout.displays.isEmpty else { return }
-        let overlayID = overlayOutputID()
+        guard server.outputAvailability == .available,
+              !layout.displays.isEmpty,
+              let overlayID = overlayOutputID()
+        else {
+            return
+        }
 
         // Collect. The `||` short-circuits, so a satisfied
         // bezel latch leaves the notification latch unconsumed (and vice-versa).
@@ -178,7 +197,7 @@ final class DisplayFrameDemand {
         return UInt64(ts.tv_sec) &* 1_000_000_000 &+ UInt64(ts.tv_nsec)
     }
 
-    private func overlayOutputID() -> UInt64 {
+    private func overlayOutputID() -> UInt64? {
         server.spaces.overlayDisplayID(layout: server.layout)
     }
 }

@@ -135,5 +135,8 @@ final class OutputAccumulator {
     /// Convenience pass-throughs to the resize/invalidation state.
     var needsFullRedraw: Bool { state.needsFullRedraw }
     func markRedrawn() { state.markRedrawn() }
-    func invalidate() { state.invalidate() }
+    func invalidate() {
+        state.invalidate()
+        prefix = nil
+    }
 }

@@ -16,6 +16,7 @@ class sk_sp;
 namespace nucleus::text {
 
 using ParagraphPtr = std::shared_ptr<::skia::textlayout::Paragraph>;
+using ParagraphBorrowBody = void (*)(uintptr_t paragraph, void *bodyContext);
 
 uint64_t registerParagraph(ParagraphPtr paragraph, float layoutWidth);
 uint64_t registerParagraph(
@@ -24,6 +25,10 @@ uint64_t registerParagraph(
 void retainParagraph(uint64_t handle);
 void releaseParagraph(uint64_t handle);
 ParagraphPtr lookupParagraph(uint64_t handle);
+bool borrowParagraph(
+    uint64_t handle,
+    void *bodyContext,
+    ParagraphBorrowBody body);
 float paragraphLayoutWidth(uint64_t handle);
 sk_sp<SkFontMgr> sharedFontMgr();
 sk_sp<::skia::textlayout::FontCollection> sharedFontCollection();

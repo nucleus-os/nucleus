@@ -28,8 +28,17 @@ public struct ImageSource: Equatable, Sendable {
 
     public init(content: ImageContent, maxWidth: UInt32 = 0, maxHeight: UInt32 = 0) {
         self.content = content
-        self.maxWidth = maxWidth
-        self.maxHeight = maxHeight
+        if case .raw(let buffer) = content {
+            self.maxWidth = maxWidth > 0
+                ? maxWidth
+                : UInt32(clamping: buffer.width)
+            self.maxHeight = maxHeight > 0
+                ? maxHeight
+                : UInt32(clamping: buffer.height)
+        } else {
+            self.maxWidth = maxWidth
+            self.maxHeight = maxHeight
+        }
     }
 
     public init(path: String, maxWidth: UInt32, maxHeight: UInt32) {
@@ -72,6 +81,12 @@ public struct ImageSource: Equatable, Sendable {
     }
 }
 
+public enum ImageStoreMutation: Equatable, Sendable {
+    case retry(handle: UInt64)
+    case replace(handle: UInt64, source: ImageSource)
+    case evict(handle: UInt64)
+}
+
 /// Refcounted registry of image sources keyed by an opaque handle. The renderer
 /// reads `source(_:)` to decode/upload at frame time; decode/cache is the
 /// renderer's job.
@@ -85,7 +100,7 @@ public final class ImageStore: Sendable {
         var entries: [UInt64: Entry] = [:]
         var byKey: [String: UInt64] = [:]
         var nextHandle: UInt64 = 1
-        var evictedHandles: [UInt64] = []
+        var mutations: [ImageStoreMutation] = []
     }
 
     private let state = Mutex(State())
@@ -134,8 +149,47 @@ public final class ImageStore: Sendable {
             } else {
                 state.byKey[entry.source.dedupeKey] = nil
                 state.entries[handle] = nil
-                state.evictedHandles.append(handle)
+                state.mutations.append(.evict(handle: handle))
             }
+        }
+    }
+
+    /// Start a new generation for the same source-bound handle.
+    ///
+    /// Failure is terminal until this operation is requested explicitly.
+    @discardableResult
+    public func retry(_ handle: UInt64) -> Bool {
+        state.withLock { state in
+            guard state.entries[handle] != nil else { return false }
+            state.mutations.append(.retry(handle: handle))
+            return true
+        }
+    }
+
+    /// Preserve a handle while replacing its source intentionally.
+    ///
+    /// Ordinary registration of a different source allocates a different
+    /// handle. Replacement refuses to steal a source identity already owned by
+    /// another live handle.
+    @discardableResult
+    public func replace(
+        _ handle: UInt64,
+        with source: ImageSource
+    ) -> Bool {
+        state.withLock { state in
+            guard var entry = state.entries[handle] else { return false }
+            let newKey = source.dedupeKey
+            if let owner = state.byKey[newKey], owner != handle {
+                return false
+            }
+            state.byKey[entry.source.dedupeKey] = nil
+            entry.source = source
+            state.entries[handle] = entry
+            state.byKey[newKey] = handle
+            state.mutations.append(.replace(
+                handle: handle,
+                source: source))
+            return true
         }
     }
 
@@ -145,12 +199,12 @@ public final class ImageStore: Sendable {
         state.withLock { $0.entries[handle]?.source }
     }
 
-    /// Take cache handles evicted since the previous render-owner drain.
-    public func takeEvictedHandles() -> [UInt64] {
+    /// Take explicit lifecycle mutations since the prior render-owner drain.
+    public func takeMutations() -> [ImageStoreMutation] {
         state.withLock {
-            let handles = $0.evictedHandles
-            $0.evictedHandles.removeAll(keepingCapacity: true)
-            return handles
+            let mutations = $0.mutations
+            $0.mutations.removeAll(keepingCapacity: true)
+            return mutations
         }
     }
 }

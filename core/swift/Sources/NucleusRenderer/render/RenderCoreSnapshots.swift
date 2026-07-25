@@ -38,6 +38,10 @@ extension RenderCore {
             var succeeded = false
             defer {
                 if !succeeded {
+                    if !stagedShmUploads.isEmpty {
+                        rollbackStagedShmUploads()
+                        frameDriver?.abandonSubmissionScope()
+                    }
                     snapshotTelemetry.capturesFailed &+= 1
                     Trace.plot(
                         "swift.nucleus.renderer.snapshot_capture_failures",
@@ -50,7 +54,8 @@ extension RenderCore {
             drainPendingShmUpload(iosurfaceID: iosurfaceID)
             guard iosurfaceID != 0,
                   let driver = frameDriver,
-                  let source = driver.registry.resolve(.clientSurface(iosurfaceID)),
+                  let source = stagedShmUploads[iosurfaceID]?.image
+                    ?? driver.registry.resolve(.clientSurface(iosurfaceID)),
                   source.isValid()
             else { return nil }
             let width = source.width()
@@ -83,16 +88,20 @@ extension RenderCore {
             let acquire = pendingClientAcquireSemaphores[iosurfaceID]
             frameSerial &+= 1
             let captureSerial = frameSerial
-            guard recording.isValid(),
-                  driver.submitImmediate(
-                    recording,
-                    waitSemaphores: acquire.map { [$0.semaphore] } ?? [],
-                    submissionSerial: captureSerial)
-                    == nucleus.skia.Status.ok
+            guard recording.isValid()
             else {
                 _ = driver.registry.release(.renderer(textureHandle))
                 return nil
             }
+            let submission = driver.submitImmediate(
+                    recording,
+                    waitSemaphores: acquire.map { [$0.semaphore] } ?? [],
+                    submissionSerial: captureSerial)
+            guard acceptGraphiteSubmission(submission) else {
+                _ = driver.registry.release(.renderer(textureHandle))
+                return nil
+            }
+            commitStagedShmUploads(submissionSerial: captureSerial)
             lastSubmittedSerial = captureSerial
             if let acquire = pendingClientAcquireSemaphores.removeValue(
                 forKey: iosurfaceID)

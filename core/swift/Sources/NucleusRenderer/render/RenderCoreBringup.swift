@@ -21,6 +21,9 @@ extension RenderCore {
         resourceHost: SwiftResourceHost,
         asyncRenderWakeSink: any AsyncRenderWakeSink
     ) -> RenderCore? {
+        guard requireTextRenderingBridge() else {
+            return nil
+        }
         guard let bootstrap = VulkanBootstrap.create(
             applicationName: applicationName, presentation: presentation)
         else { return nil }
@@ -37,6 +40,9 @@ extension RenderCore {
         resourceHost: SwiftResourceHost,
         asyncRenderWakeSink: any AsyncRenderWakeSink
     ) -> RenderCore? {
+        guard requireTextRenderingBridge() else {
+            return nil
+        }
         guard !bootstrap.finalized else { return nil }
         let contract = bootstrap.contract
         guard let instanceHandle = bootstrap.instanceLifetime.owner?.handle,
@@ -101,7 +107,103 @@ extension RenderCore {
             instanceLifetime: bootstrap.instanceLifetime, device: consume device, queue: queue,
             physicalDevice: selection.physicalDevice, graphicsFamily: selection.graphicsQueueFamily,
             context: context, driver: driver, store: store,
-            resourceHost: resourceHost)
+            resourceHost: resourceHost,
+            vulkanContract: contract,
+            asyncRenderWakeSink: asyncRenderWakeSink)
+    }
+
+    private static func requireTextRenderingBridge() -> Bool {
+        guard nucleus.skia.hasTextLayoutBorrow() else {
+            #if canImport(Glibc)
+            let line =
+                "render-core: required Graphite text borrow provider is not installed\n"
+            line.withCString {
+                _ = write(
+                    STDERR_FILENO,
+                    $0,
+                    strlen($0))
+            }
+            #endif
+            return false
+        }
+        return true
+    }
+
+    func makeReplacementGraphiteContext() -> nucleus.skia.GraphiteContext {
+        withCStringArray(vulkanContract.deviceExtensions) { extPtr, extCount in
+            var descriptor = nucleus.skia.VulkanContextDescriptor()
+            descriptor.instance = UnsafeMutableRawPointer(instanceHandle)
+            descriptor.physicalDevice = UnsafeMutableRawPointer(physicalDevice)
+            descriptor.device = UnsafeMutableRawPointer(deviceHandle)
+            descriptor.queue = UnsafeMutableRawPointer(graphicsQueue)
+            descriptor.graphicsQueueIndex = graphicsFamily
+            descriptor.maxApiVersion = vulkanContract.minimumApiVersion.raw
+            descriptor.deviceExtensions = extPtr
+            descriptor.deviceExtensionCount = extCount
+            return nucleus.skia.makeGraphiteVulkanContext(descriptor)
+        }
+    }
+
+    @discardableResult
+    func recreateGraphiteRenderer() -> Bool {
+        // A failed insertion never makes staged uploads resident. Return their
+        // owned CPU payloads to the coalescing queue before destroying the failed
+        // recorder so the replacement renderer can retry them.
+        rollbackStagedShmUploads()
+        frameDriver?.abandonSubmissionScope()
+        waitForGpuIdle()
+        frameDriver?.shutdown()
+        frameDriver = nil
+        snapshots.releaseAll { _ in }
+        clientUploadTextures.removeAll()
+        retiredClientUploadTextures.removeAll()
+        pendingClientAcquireSemaphores.removeAll()
+        retiredClientAcquireSemaphores.removeAll()
+        for box in importedSurfaceImages.values {
+            box.release()
+        }
+        importedSurfaceImages.removeAll()
+        for retired in retiredSurfaceImages {
+            retired.image.release()
+            onSurfaceReleaseSync?(retired.releaseID)
+        }
+        retiredSurfaceImages.removeAll()
+        context.reset()
+
+        var replacement = makeReplacementGraphiteContext()
+        guard replacement.isValid(),
+              let driver = FrameDriver(
+                context: replacement,
+                resourceHost: resourceHost,
+                wakeSink: asyncRenderWakeSink)
+        else {
+            replacement.reset()
+            return false
+        }
+        context = replacement
+        frameDriver = driver
+        outputsNeedingInitialFrame.formUnion(outputTargets.keys)
+        return true
+    }
+
+    func acceptGraphiteSubmission(
+        _ result: nucleus.skia.SubmissionResult
+    ) -> Bool {
+        guard !result.isOk() else { return true }
+        #if canImport(Glibc)
+        let line =
+            "graphite-submit: status=\(result.status.rawValue) "
+            + "insert=\(result.insertStatus.rawValue) "
+            + "context_usable=\(result.contextUsable) "
+            + "diagnostic=\(String(result.diagnostic))\n"
+        line.withCString {
+            _ = write(STDERR_FILENO, $0, strlen($0))
+        }
+        #endif
+        if !result.contextUsable {
+            _ = recreateGraphiteRenderer()
+        }
+        return false
     }
 
     public func createSurface(_ factory: VulkanSurfaceFactory) -> VulkanSurface? {

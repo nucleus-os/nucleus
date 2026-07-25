@@ -1,13 +1,19 @@
 #include <nucleus/text/TextRegistry.hpp>
 
 #include <include/core/SkFontMgr.h>
+#if defined(__ANDROID__)
+#include <include/ports/SkFontMgr_android.h>
+#else
 #include <include/ports/SkFontMgr_fontconfig.h>
+#endif
 #include <include/ports/SkFontScanner_FreeType.h>
 #include <modules/skparagraph/include/FontCollection.h>
 #include <modules/skparagraph/include/Paragraph.h>
 #include <modules/skunicode/include/SkUnicode_icu.h>
 
+#if !defined(__ANDROID__)
 #include <fontconfig/fontconfig.h>
+#endif
 
 #include <atomic>
 #include <mutex>
@@ -30,6 +36,18 @@ std::mutex g_font_mutex;
 sk_sp<SkFontMgr> g_font_mgr;
 sk_sp<skia::textlayout::FontCollection> g_font_collection;
 sk_sp<SkUnicode> g_unicode;
+
+sk_sp<SkFontMgr> makePlatformFontManager() {
+#if defined(__ANDROID__)
+  return SkFontMgr_New_Android(
+      nullptr,
+      SkFontScanner_Make_FreeType());
+#else
+  return SkFontMgr_New_FontConfig(
+      FcConfigReference(FcConfigGetCurrent()),
+      SkFontScanner_Make_FreeType());
+#endif
+}
 
 } // namespace
 
@@ -94,6 +112,21 @@ ParagraphPtr lookupParagraph(uint64_t handle) {
   return it == g_paragraphs.end() ? nullptr : it->second.paragraph;
 }
 
+bool borrowParagraph(
+    uint64_t handle,
+    void *bodyContext,
+    ParagraphBorrowBody body) {
+  if (handle == 0 || body == nullptr) {
+    return false;
+  }
+  ParagraphPtr paragraph = lookupParagraph(handle);
+  if (!paragraph) {
+    return false;
+  }
+  body(reinterpret_cast<uintptr_t>(paragraph.get()), bodyContext);
+  return true;
+}
+
 float paragraphLayoutWidth(uint64_t handle) {
   if (handle == 0) {
     return 0.0f;
@@ -106,7 +139,7 @@ float paragraphLayoutWidth(uint64_t handle) {
 sk_sp<SkFontMgr> sharedFontMgr() {
   std::lock_guard<std::mutex> lock(g_font_mutex);
   if (!g_font_mgr) {
-    g_font_mgr = SkFontMgr_New_FontConfig(FcConfigReference(FcConfigGetCurrent()), SkFontScanner_Make_FreeType());
+    g_font_mgr = makePlatformFontManager();
   }
   return g_font_mgr;
 }
@@ -116,7 +149,7 @@ sk_sp<skia::textlayout::FontCollection> sharedFontCollection() {
   if (!g_font_collection) {
     auto collection = sk_make_sp<skia::textlayout::FontCollection>();
     if (!g_font_mgr) {
-      g_font_mgr = SkFontMgr_New_FontConfig(FcConfigReference(FcConfigGetCurrent()), SkFontScanner_Make_FreeType());
+      g_font_mgr = makePlatformFontManager();
     }
     collection->setDefaultFontManager(g_font_mgr);
     collection->enableFontFallback();

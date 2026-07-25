@@ -37,7 +37,6 @@ public struct RenderFrameTimings: Sendable, Equatable {
     public var compositeNs: UInt64 = 0
     public var blitNs: UInt64 = 0
     public var frameSnapNs: UInt64 = 0
-    public var uploadSnapNs: UInt64 = 0
     public var submitNs: UInt64 = 0
     public var totalNs: UInt64 = 0
 
@@ -107,6 +106,7 @@ struct FrameRenderResult {
     var backdropBlurRegionCount: Int
     /// Must remain false: no Swift callback fires during recording or submission.
     var callbackDuringRecord: Bool
+    var submissionResult: nucleus.skia.SubmissionResult?
     var timings: RenderFrameTimings
 }
 
@@ -131,10 +131,6 @@ final class FrameDriver {
     let resourceHost: SwiftResourceHost
     let context: nucleus.skia.GraphiteContext
     let recorder: nucleus.skia.Recorder
-    /// Client uploads are recorded independently from frame drawing. They are
-    /// snapped only when a frame is ready and inserted before that frame in one
-    /// context submission.
-    let uploadRecorder: nucleus.skia.Recorder
     let registry = TextureRegistry()
     let producer: TextureProducer
     private var accumulators: [UInt64: OutputAccumulator] = [:]
@@ -148,7 +144,6 @@ final class FrameDriver {
     /// while uniforms are re-bound per draw.
     private var compiledEffects: [UInt64: nucleus.skia.RuntimeEffect] = [:]
     private var recording = false
-    private var uploadsStaged = false
     private(set) var sawCallbackWhileRecording = false
     private var presentationPlanDiagnosticsRemaining: [UInt64: Int] = [:]
 
@@ -159,21 +154,18 @@ final class FrameDriver {
     ) {
         guard context.isValid() else { return nil }
         let recorder = context.makeRecorder()
-        let uploadRecorder = context.makeRecorder()
-        guard recorder.isValid(), uploadRecorder.isValid() else { return nil }
+        guard recorder.isValid() else { return nil }
         self.context = context
         self.resourceHost = resourceHost
         self.recorder = recorder
-        self.uploadRecorder = uploadRecorder
         self.imageResources = ImageResourceManager(
             recorder: recorder,
             wakeSink: wakeSink)
         self.producer = TextureProducer(registry: registry)
     }
 
-    /// Allocate or update a sampled client texture on the upload recorder. Pixel
-    /// bytes are consumed by Graphite during this call; GPU work remains staged
-    /// until the next successful frame submission.
+    /// Allocate or update a sampled client texture on the active frame recorder.
+    /// Upload transfer and drawing become one recording at the next snap.
     func stageClientUpload(
         replacing existing: nucleus.skia.UploadTexture?, pixels: [UInt8],
         width: Int32, height: Int32
@@ -182,14 +174,13 @@ final class FrameDriver {
         if let existing, existing.isValid(), existing.width() == width, existing.height() == height {
             texture = existing
         } else {
-            texture = uploadRecorder.makeUploadTextureRGBA(width, height)
+            texture = recorder.makeUploadTextureRGBA(width, height)
         }
         guard texture.isValid() else { return nil }
         let updated = pixels.withUnsafeBufferPointer {
             texture.updateRGBA($0.baseAddress, $0.count)
         }
         guard updated else { return nil }
-        uploadsStaged = true
         return texture
     }
 
@@ -200,45 +191,36 @@ final class FrameDriver {
         _ recording: nucleus.skia.Recording,
         waitSemaphores: [VkSemaphore],
         submissionSerial: UInt64
-    ) -> nucleus.skia.Status {
-        let uploadRecording = uploadsStaged
-            ? uploadRecorder.snapRecording()
-            : nil
-        uploadsStaged = false
+    ) -> nucleus.skia.SubmissionResult {
         let waits: [UnsafeMutableRawPointer?] = waitSemaphores.map {
             UnsafeMutableRawPointer($0)
         }
         return waits.withUnsafeBufferPointer { waits in
-            if let uploadRecording, uploadRecording.isValid() {
-                return context.submitWithUploadAndSemaphores(
-                    uploadRecording,
-                    recording,
-                    waits.baseAddress,
-                    waits.count,
-                    nil,
-                    submissionSerial)
-            }
             return context.submitWithSemaphores(
                 recording,
                 waits.baseAddress,
                 waits.count,
                 nil,
-                submissionSerial)
+                submissionSerial,
+                false)
         }
     }
 
     /// Drop GPU-backed images before the context tears down (lifetime invariant).
     func shutdown() {
-        if uploadsStaged {
-            // Cancel unsent transfer tasks before their backend textures are
-            // released by RenderCore's client texture table.
-            _ = uploadRecorder.snapRecording()
-            uploadsStaged = false
-        }
         imageResources.shutdown()
         registry.clear()
         compiledEffects.removeAll()
         accumulators.removeAll()
+    }
+
+    /// Discard every unsnapped command in the current scope and force persistent
+    /// targets to rebuild from accepted state on the next frame.
+    func abandonSubmissionScope() {
+        _ = recorder.snapRecording()
+        for accumulator in accumulators.values {
+            accumulator.invalidate()
+        }
     }
 
     /// The image behind a handle, if it has been decoded.
@@ -274,6 +256,21 @@ final class FrameDriver {
 
     func imageResidency(handle: UInt64) -> RenderImageResidency {
         imageResources.residency(for: handle)
+    }
+
+    func imageFailure(handle: UInt64) -> ImageDecodeFailure? {
+        imageResources.failure(for: handle)
+    }
+
+    func retryDecodedImage(_ handle: UInt64) {
+        imageResources.retry(handle: handle)
+    }
+
+    func replaceDecodedImage(
+        _ handle: UInt64,
+        with source: ImageSource
+    ) {
+        imageResources.replace(handle: handle, with: source)
     }
 
     /// Resolve a paint command's effect handle to a compiled program, compiling
@@ -622,7 +619,9 @@ final class FrameDriver {
         let shouldComposite = damage.full || damage.bounds != nil
         if let bounds = damage.bounds, !damage.full {
             canvas.save()
-            canvas.clipRect(NucleusRenderer.rectF(planRectFromDamageRect(bounds)), false)
+            canvas.clipRect(
+                FramePlanRenderer.rectF(planRectFromDamageRect(bounds)),
+                false)
         }
         if shouldComposite {
             var bg = nucleus.skia.Color()
@@ -640,7 +639,7 @@ final class FrameDriver {
                 backdropDraws += Backdrop.execute(
                     spec, liveSnapshot: source, prefix: source, onto: canvas)
             } else {
-                drawn += NucleusRenderer.composite(
+                drawn += FramePlanRenderer.composite(
                     op: op, onto: canvas,
                     resolveTexture: { resolved[$0] },
                     resolveShadow: { layerId in resolvedShadows[layerId] })
@@ -672,6 +671,7 @@ final class FrameDriver {
                 shadowMaterialCount: summary.shadowMaterials.count,
                 backdropBlurRegionCount: summary.backdropBlurRegions.count,
                 callbackDuringRecord: sawCallbackWhileRecording,
+                submissionResult: nil,
                 timings: timings)
         }
 
@@ -681,58 +681,35 @@ final class FrameDriver {
         phaseStart = clock.now
         let recordingHandle = recorder.snapRecording()
         timings.frameSnapNs = elapsedNanoseconds(phaseStart, clock.now)
-        phaseStart = clock.now
-        let uploadRecording = uploadsStaged ? uploadRecorder.snapRecording() : nil
-        timings.uploadSnapNs = elapsedNanoseconds(phaseStart, clock.now)
-        let submitStatus: nucleus.skia.Status
+        let submissionResult: nucleus.skia.SubmissionResult
         phaseStart = clock.now
         var waits: [UnsafeMutableRawPointer?] = frameAcquireWaits.map { UnsafeMutableRawPointer($0) }
         switch request.submissionMode {
         case .swapchain(let present):
             if let wait = present.waitSemaphore { waits.append(UnsafeMutableRawPointer(wait)) }
             let signal = present.signalSemaphore.map { UnsafeMutableRawPointer($0) }
-            submitStatus = waits.withUnsafeBufferPointer { waits in
-                if let uploadRecording, uploadRecording.isValid() {
-                    return context.submitForPresentWithUpload(
-                        request.scanout, uploadRecording, recordingHandle,
-                        waits.baseAddress, waits.count, signal, present.queueFamily,
-                        request.frame.frameSerial)
-                }
+            submissionResult = waits.withUnsafeBufferPointer { waits in
                 return context.submitForPresent(
                     request.scanout, recordingHandle, waits.baseAddress, waits.count,
-                    signal, present.queueFamily, request.frame.frameSerial)
+                    signal, present.queueFamily, request.frame.frameSerial, true)
             }
         case .drm(let drmSubmit):
             let signal = UnsafeMutableRawPointer(drmSubmit.signalSemaphore)
-            submitStatus = waits.withUnsafeBufferPointer { waits in
-                if let uploadRecording, uploadRecording.isValid() {
-                    return context.submitWithUploadAndSemaphores(
-                        uploadRecording, recordingHandle, waits.baseAddress, waits.count,
-                        signal, request.frame.frameSerial)
-                }
+            submissionResult = waits.withUnsafeBufferPointer { waits in
                 return context.submitWithSemaphores(
                     recordingHandle, waits.baseAddress, waits.count,
-                    signal, request.frame.frameSerial)
+                    signal, request.frame.frameSerial, true)
             }
         case .offscreen:
-            submitStatus = waits.withUnsafeBufferPointer { waits in
-                if let uploadRecording, uploadRecording.isValid() {
-                    return context.submitWithUploadAndSemaphores(
-                        uploadRecording, recordingHandle, waits.baseAddress, waits.count,
-                        nil, request.frame.frameSerial)
-                }
+            submissionResult = waits.withUnsafeBufferPointer { waits in
                 return context.submitWithSemaphores(
                     recordingHandle, waits.baseAddress, waits.count,
-                    nil, request.frame.frameSerial)
+                    nil, request.frame.frameSerial, false)
             }
         }
         timings.submitNs = elapsedNanoseconds(phaseStart, clock.now)
-        // A snapped recording cannot be replayed after insertion failure. Drop the
-        // staged marker in every case; the surface's next commit can enqueue a new
-        // generation while the last successfully registered texture stays visible.
-        uploadsStaged = false
 
-        let submitted = submitStatus == nucleus.skia.Status.ok
+        let submitted = submissionResult.isOk()
         if presented && submitted {
             submittedLayerSnapshots[request.target.outputId] = plan.layerSnapshots
         }
@@ -753,6 +730,7 @@ final class FrameDriver {
             shadowMaterialCount: summary.shadowMaterials.count,
             backdropBlurRegionCount: summary.backdropBlurRegions.count,
             callbackDuringRecord: sawCallbackWhileRecording,
+            submissionResult: submissionResult,
             timings: timings)
     }
 

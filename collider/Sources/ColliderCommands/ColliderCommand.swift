@@ -245,7 +245,11 @@ struct Build: TaskControlledCommand {
 
 struct Test: TaskControlledCommand {
     @OptionGroup var taskOptions: TaskControlOptions
-    @Argument(help: "all, runtime, android, browser, or a component name.")
+    @Argument(
+        help: """
+            all, runtime, android, browser, loader, gpu-headless, gpu-drm, \
+            or a component name.
+            """)
     var component: ComponentSelection?
 
     mutating func run() async throws {

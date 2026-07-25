@@ -1,5 +1,6 @@
 import CxxStdlib
 import NucleusReactRuntimeCxxBridge
+import NucleusTextRenderingBridge
 
 public struct RuntimeMountReport: Sendable, Equatable {
     public var commitCount: UInt32
@@ -73,6 +74,14 @@ public final class RuntimeHost {
     public let mountConsumer: MountConsumer
 
     public init() throws {
+        guard nucleus.text.installTextRenderingBridge()
+            != nucleus.text.TextRenderingBridgeInstallStatus
+                .conflictingProvider
+        else {
+            throw RuntimeHostOperationError(
+                message:
+                    "conflicting Graphite text borrow provider")
+        }
         let consumer = MountConsumer()
         mountConsumer = consumer
         facade = nucleus.react.ReactRuntimeHostFacade()

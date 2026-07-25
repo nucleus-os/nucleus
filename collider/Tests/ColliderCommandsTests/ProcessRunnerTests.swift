@@ -59,6 +59,20 @@ func capturedCommandsKeepDiagnosticsOutOfMachineReadableOutput() async throws {
 }
 
 @Test
+func commandRunnerCanAcceptInteractiveSIGINTTermination() async throws {
+    let context = WorkspaceContext(
+        root: URL(fileURLWithPath: FileManager.default.currentDirectoryPath),
+        environment: ProcessInfo.processInfo.environment)
+
+    try await context.run(
+        "sh",
+        ["-c", "kill -INT $$"],
+        acceptedExitStatuses: [0, interruptedProcessExitStatus])
+
+    await context.runtime.shutdown()
+}
+
+@Test
 func runningCommandScopeReapsChildAfterSuccessfulBody() async throws {
     let fixture = try RunningCommandFixture()
     defer { fixture.remove() }

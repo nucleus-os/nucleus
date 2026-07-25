@@ -1,24 +1,24 @@
 internal import NucleusRenderModel
 import NucleusSkiaGraphiteBridge
+import Tracy
 
-/// Explicit lifecycle of one renderer image resource. CPU decode and Graphite
-/// residency are distinct states and distinct C++ types; no draw path can
-/// observe a decoded-but-not-resident image.
 enum ImageResourcePhase: Sendable, Equatable, Hashable {
-    case registered
-    case decoding
-    case decoded
-    case uploading
-    case resident
-    case failed
-    case evicted
+    case registered(generation: UInt64)
+    case decoding(generation: UInt64)
+    case ready(generation: UInt64)
+    case failed(generation: UInt64, reason: ImageDecodeFailure)
+
+    var generation: UInt64 {
+        switch self {
+        case .registered(let generation),
+             .decoding(let generation),
+             .ready(let generation),
+             .failed(let generation, _):
+            generation
+        }
+    }
 }
 
-/// Platform-host visibility into the renderer-owned image lifecycle.
-///
-/// Hosts use this only for acceptance/lifecycle decisions. Draw code continues
-/// to consume the stronger `nucleus.skia.Image` type, so observing residency
-/// cannot bypass the decode/upload boundary.
 @_spi(NucleusPlatform)
 public enum RenderImageResidency: Sendable, Equatable {
     case unknown
@@ -37,8 +37,7 @@ struct PaintImageDependencies: Sendable, Equatable, Hashable {
     var versions: [ImageDependencyVersion] = []
 }
 
-/// GPU-independent residency state and invalidation graph. Resource transitions
-/// update only outputs that actually consumed that handle.
+/// GPU-independent generation state and targeted invalidation graph.
 struct ImageResidencyLedger {
     struct Entry: Sendable, Equatable {
         var source: ImageSource
@@ -51,27 +50,37 @@ struct ImageResidencyLedger {
     private(set) var outputRevisions: [UInt64: UInt64] = [:]
     private var nextVersion: UInt64 = 1
 
-    mutating func register(handle: UInt64, source: ImageSource) {
-        if let entry = entries[handle] {
-            precondition(
-                entry.source == source,
-                "an image handle cannot change source before eviction")
-            return
-        }
+    @discardableResult
+    mutating func registerNew(
+        handle: UInt64,
+        source: ImageSource
+    ) -> Bool {
+        guard handle != 0, entries[handle] == nil else { return false }
         entries[handle] = Entry(
             source: source,
-            phase: .registered,
+            phase: .registered(generation: 1),
             version: allocateVersion(),
             outputConsumers: [])
+        return true
     }
 
     mutating func consume(handle: UInt64, outputID: UInt64) {
-        precondition(entries[handle] != nil)
+        guard entries[handle] != nil else { return }
         entries[handle]!.outputConsumers.insert(outputID)
+    }
+
+    func source(for handle: UInt64) -> ImageSource? {
+        entries[handle]?.source
     }
 
     func phase(for handle: UInt64) -> ImageResourcePhase? {
         entries[handle]?.phase
+    }
+
+    func failure(for handle: UInt64) -> ImageDecodeFailure? {
+        guard case .failed(_, let reason) = entries[handle]?.phase
+        else { return nil }
+        return reason
     }
 
     func outputRevision(_ outputID: UInt64) -> UInt64 {
@@ -82,7 +91,9 @@ struct ImageResidencyLedger {
         PaintImageDependencies(versions: handles.map { handle in
             guard let entry = entries[handle] else {
                 return ImageDependencyVersion(
-                    handle: handle, version: 0, phase: .registered)
+                    handle: handle,
+                    version: 0,
+                    phase: .registered(generation: 0))
             }
             return ImageDependencyVersion(
                 handle: handle,
@@ -92,15 +103,99 @@ struct ImageResidencyLedger {
     }
 
     @discardableResult
-    mutating func transition(
+    mutating func beginDecoding(
         handle: UInt64,
-        to phase: ImageResourcePhase,
-        changesVisibleContent: Bool = false
+        generation: UInt64
+    ) -> Bool {
+        guard entries[handle]?.phase
+                == .registered(generation: generation)
+        else { return false }
+        entries[handle]!.phase = .decoding(generation: generation)
+        return true
+    }
+
+    @discardableResult
+    mutating func finishReady(
+        handle: UInt64,
+        generation: UInt64
     ) -> Set<UInt64> {
-        guard let current = entries[handle]?.phase else { return [] }
-        precondition(Self.allowsTransition(from: current, to: phase))
-        entries[handle]!.phase = phase
-        guard changesVisibleContent else { return [] }
+        guard entries[handle]?.phase
+                == .decoding(generation: generation)
+        else { return [] }
+        entries[handle]!.phase = .ready(generation: generation)
+        return invalidateConsumers(handle)
+    }
+
+    @discardableResult
+    mutating func finishFailed(
+        handle: UInt64,
+        generation: UInt64,
+        reason: ImageDecodeFailure
+    ) -> Set<UInt64> {
+        guard entries[handle]?.phase
+                == .decoding(generation: generation)
+        else { return [] }
+        entries[handle]!.phase = .failed(
+            generation: generation,
+            reason: reason)
+        return invalidateConsumers(handle)
+    }
+
+    @discardableResult
+    mutating func failCurrent(
+        handle: UInt64,
+        reason: ImageDecodeFailure
+    ) -> Set<UInt64> {
+        guard let phase = entries[handle]?.phase else { return [] }
+        entries[handle]!.phase = .failed(
+            generation: phase.generation,
+            reason: reason)
+        return invalidateConsumers(handle)
+    }
+
+    @discardableResult
+    mutating func retry(_ handle: UInt64) -> UInt64? {
+        guard let entry = entries[handle] else { return nil }
+        let generation = nextGeneration(after: entry.phase.generation)
+        entries[handle]!.phase = .registered(generation: generation)
+        invalidateConsumers(handle)
+        return generation
+    }
+
+    @discardableResult
+    mutating func replace(
+        _ handle: UInt64,
+        with source: ImageSource
+    ) -> UInt64? {
+        guard let entry = entries[handle] else { return nil }
+        let generation = nextGeneration(after: entry.phase.generation)
+        entries[handle]!.source = source
+        entries[handle]!.phase = .registered(generation: generation)
+        invalidateConsumers(handle)
+        return generation
+    }
+
+    @discardableResult
+    mutating func evict(_ handle: UInt64) -> Set<UInt64> {
+        guard let entry = entries.removeValue(forKey: handle)
+        else { return [] }
+        let revision = allocateVersion()
+        for outputID in entry.outputConsumers {
+            outputRevisions[outputID] = revision
+        }
+        return entry.outputConsumers
+    }
+
+    mutating func removeAll() {
+        entries.removeAll()
+        outputRevisions.removeAll()
+    }
+
+    @discardableResult
+    private mutating func invalidateConsumers(
+        _ handle: UInt64
+    ) -> Set<UInt64> {
+        guard entries[handle] != nil else { return [] }
         let revision = allocateVersion()
         entries[handle]!.version = revision
         let consumers = entries[handle]!.outputConsumers
@@ -110,40 +205,10 @@ struct ImageResidencyLedger {
         return consumers
     }
 
-    @discardableResult
-    mutating func evict(_ handle: UInt64) -> Set<UInt64> {
-        guard let entry = entries[handle] else { return [] }
-        let consumers = entry.outputConsumers
-        if entry.phase == .resident {
-            let revision = allocateVersion()
-            for outputID in consumers {
-                outputRevisions[outputID] = revision
-            }
-        }
-        entries[handle] = nil
-        return consumers
-    }
-
-    mutating func removeAll() {
-        entries.removeAll()
-        outputRevisions.removeAll()
-    }
-
-    private static func allowsTransition(
-        from: ImageResourcePhase,
-        to: ImageResourcePhase
-    ) -> Bool {
-        switch (from, to) {
-        case (.registered, .decoding),
-             (.decoding, .decoded),
-             (.decoding, .failed),
-             (.decoded, .uploading),
-             (.uploading, .resident),
-             (.uploading, .failed):
-            true
-        default:
-            false
-        }
+    private func nextGeneration(after generation: UInt64) -> UInt64 {
+        let next = generation &+ 1
+        precondition(next != 0, "image resource generation exhausted")
+        return next
     }
 
     private mutating func allocateVersion() -> UInt64 {
@@ -154,22 +219,45 @@ struct ImageResidencyLedger {
     }
 }
 
-/// Render-thread owner for decode, upload, residency, dependency versions, and
-/// targeted output invalidation.
+/// Render-thread owner for decode, bounded upload, residency, failure
+/// diagnostics, dependency versions, and targeted output invalidation.
 final class ImageResourceManager {
+    typealias UploadOperation =
+        (nucleus.skia.RasterImage) -> nucleus.skia.Image?
+
     private struct Record {
-        var decoded: nucleus.skia.RasterImage?
         var resident: nucleus.skia.Image?
     }
 
-    private let recorder: nucleus.skia.Recorder
-    private let decodeQueue: ImageDecodeQueue
-    private var records: [UInt64: Record] = [:]
-    private var ledger = ImageResidencyLedger()
+    private static let maximumCompletionDrainPerFrame = 16
+    private static let maximumUploadsPerFrame = 4
+    private static let maximumUploadBytesPerFrame = 64 * 1024 * 1024
 
-    init(recorder: nucleus.skia.Recorder, wakeSink: any AsyncRenderWakeSink) {
-        self.recorder = recorder
+    private let decodeQueue: ImageDecodeQueue
+    private let uploadOperation: UploadOperation
+    private var records: [UInt64: Record] = [:]
+    private var deferredCompletions: [ImageDecodeCompletion] = []
+    private var ledger = ImageResidencyLedger()
+    private(set) var failureCounts: [ImageDecodeFailure: UInt64] = [:]
+    private(set) var totalFailureCount: UInt64 = 0
+
+    init(
+        recorder: nucleus.skia.Recorder,
+        wakeSink: any AsyncRenderWakeSink
+    ) {
         self.decodeQueue = ImageDecodeQueue(wakeSink: wakeSink)
+        self.uploadOperation = { decoded in
+            let resident = recorder.makeTextureImage(decoded)
+            return resident.isValid() ? resident : nil
+        }
+    }
+
+    init(
+        decodeQueue: ImageDecodeQueue,
+        uploadOperation: @escaping UploadOperation
+    ) {
+        self.decodeQueue = decodeQueue
+        self.uploadOperation = uploadOperation
     }
 
     var completionToFrameDemandNanoseconds: UInt64? {
@@ -184,17 +272,51 @@ final class ImageResourceManager {
         ledger.phase(for: handle)
     }
 
+    func failure(for handle: UInt64) -> ImageDecodeFailure? {
+        ledger.failure(for: handle)
+    }
+
     func residency(for handle: UInt64) -> RenderImageResidency {
         switch ledger.phase(for: handle) {
         case nil:
             .unknown
-        case .registered?, .decoding?, .decoded?, .uploading?:
+        case .registered?, .decoding?:
             .pending
-        case .resident?:
+        case .ready?:
             .resident
-        case .failed?, .evicted?:
+        case .failed?:
             .failed
         }
+    }
+
+    @discardableResult
+    func registerNew(
+        handle: UInt64,
+        source: ImageSource
+    ) -> Bool {
+        guard ledger.registerNew(handle: handle, source: source)
+        else { return false }
+        records[handle] = Record(resident: nil)
+        return true
+    }
+
+    @discardableResult
+    func retry(handle: UInt64) -> Bool {
+        guard ledger.phase(for: handle) != nil else { return false }
+        cancelOutstanding(handle)
+        records[handle]?.resident = nil
+        return ledger.retry(handle) != nil
+    }
+
+    @discardableResult
+    func replace(
+        handle: UInt64,
+        with source: ImageSource
+    ) -> Bool {
+        guard ledger.phase(for: handle) != nil else { return false }
+        cancelOutstanding(handle)
+        records[handle]?.resident = nil
+        return ledger.replace(handle, with: source) != nil
     }
 
     func image(
@@ -202,89 +324,168 @@ final class ImageResourceManager {
         source: ImageSource,
         outputID: UInt64
     ) -> nucleus.skia.Image? {
-        ensureRecord(handle: handle, source: source)
-        ledger.consume(handle: handle, outputID: outputID)
-        if let resident = records[handle]!.resident, resident.isValid() {
-            return resident
+        if ledger.phase(for: handle) == nil {
+            guard registerNew(handle: handle, source: source)
+            else { return nil }
         }
+        guard ledger.source(for: handle) == source else {
+            // Preserving a handle across source identity changes is an explicit
+            // mutation. Never draw the prior resident image for mismatched data.
+            cancelOutstanding(handle)
+            records[handle]?.resident = nil
+            _ = ledger.failCurrent(
+                handle: handle,
+                reason: .decodeFailure)
+            recordFailure(.decodeFailure)
+            return nil
+        }
+
+        ledger.consume(handle: handle, outputID: outputID)
         switch ledger.phase(for: handle)! {
-        case .registered:
-            ledger.transition(handle: handle, to: .decoding)
-            if decodeQueue.hasWorkers,
-               decodeQueue.submit(handle: handle, source: source)
-            {
+        case .registered(let generation):
+            guard ledger.beginDecoding(
+                handle: handle,
+                generation: generation)
+            else { return nil }
+            guard decodeQueue.submit(
+                handle: handle,
+                generation: generation,
+                source: source)
+            else {
+                _ = finishFailure(
+                    handle: handle,
+                    generation: generation,
+                    reason: .decodeFailure)
                 return nil
             }
-            adopt(
-                ImageDecodeQueue.decode(source),
-                handle: handle)
-            return records[handle]?.resident
-        case .decoding, .decoded, .uploading, .failed, .evicted:
             return nil
-        case .resident:
-            return records[handle]?.resident
+        case .decoding, .failed:
+            return nil
+        case .ready:
+            guard let resident = records[handle]?.resident,
+                  resident.isValid()
+            else { return nil }
+            return resident
         }
     }
 
-    /// Adopt every worker result before output render-gating reads targeted
-    /// revisions. Returns the outputs whose visible dependencies changed.
+    /// Process a bounded amount of terminal and upload work at the top of a
+    /// frame. Stale completions are dropped by `(handle, generation)` identity;
+    /// dropping a stale success releases its immutable raster image here.
     @discardableResult
     func drainCompletions() -> Set<UInt64> {
+        deferredCompletions.append(contentsOf: decodeQueue.drain(
+            maxCount: Self.maximumCompletionDrainPerFrame))
+
         var changed: Set<UInt64> = []
-        for result in decodeQueue.drain() {
-            changed.formUnion(adopt(result.image, handle: result.handle))
+        var uploads = 0
+        var uploadBytes = 0
+        var consumed = 0
+
+        for completion in deferredCompletions {
+            guard ledger.phase(for: completion.handle)?.generation
+                    == completion.generation,
+                  case .decoding? = ledger.phase(for: completion.handle)
+            else {
+                consumed += 1
+                continue
+            }
+
+            switch completion.result {
+            case .failure(let reason):
+                changed.formUnion(finishFailure(
+                    handle: completion.handle,
+                    generation: completion.generation,
+                    reason: reason))
+                consumed += 1
+            case .success(let decoded):
+                let bytes = decodedByteCount(decoded)
+                let exceedsBudget =
+                    uploads >= Self.maximumUploadsPerFrame
+                    || (uploadBytes > 0
+                        && (uploadBytes >= Self.maximumUploadBytesPerFrame
+                            || bytes > Self.maximumUploadBytesPerFrame - uploadBytes))
+                if exceedsBudget {
+                    break
+                }
+                if let resident = uploadOperation(decoded.image),
+                   resident.isValid()
+                {
+                    records[completion.handle]?.resident = resident
+                    changed.formUnion(ledger.finishReady(
+                        handle: completion.handle,
+                        generation: completion.generation))
+                } else {
+                    changed.formUnion(finishFailure(
+                        handle: completion.handle,
+                        generation: completion.generation,
+                        reason: .uploadFailure))
+                }
+                uploads += 1
+                uploadBytes += bytes
+                consumed += 1
+            }
+        }
+        if consumed > 0 {
+            deferredCompletions.removeFirst(consumed)
         }
         return changed
     }
 
-    func dependencies(for handles: [UInt64]) -> PaintImageDependencies {
+    func dependencies(
+        for handles: [UInt64]
+    ) -> PaintImageDependencies {
         ledger.dependencies(for: handles)
     }
 
     func evict(_ handle: UInt64) {
-        decodeQueue.cancel(handle: handle)
+        cancelOutstanding(handle)
         records[handle] = nil
         ledger.evict(handle)
     }
 
     func shutdown() {
         decodeQueue.shutdown()
+        deferredCompletions.removeAll()
         records.removeAll()
         ledger.removeAll()
     }
 
-    private func ensureRecord(handle: UInt64, source: ImageSource) {
-        ledger.register(handle: handle, source: source)
-        if records[handle] == nil {
-            records[handle] = Record(decoded: nil, resident: nil)
-        }
+    private func cancelOutstanding(_ handle: UInt64) {
+        decodeQueue.cancel(handle: handle)
+        deferredCompletions.removeAll { $0.handle == handle }
     }
 
     @discardableResult
-    private func adopt(
-        _ decoded: nucleus.skia.RasterImage,
-        handle: UInt64
+    private func finishFailure(
+        handle: UInt64,
+        generation: UInt64,
+        reason: ImageDecodeFailure
     ) -> Set<UInt64> {
-        guard records[handle] != nil,
-              ledger.phase(for: handle) == .decoding
+        guard ledger.phase(for: handle)
+                == .decoding(generation: generation)
         else { return [] }
-        guard decoded.isValid() else {
-            ledger.transition(handle: handle, to: .failed)
-            return []
-        }
-        records[handle]!.decoded = decoded
-        ledger.transition(handle: handle, to: .decoded)
-        ledger.transition(handle: handle, to: .uploading)
-        let resident = recorder.makeTextureImage(decoded)
-        records[handle]!.decoded = nil
-        guard resident.isValid() else {
-            ledger.transition(handle: handle, to: .failed)
-            return []
-        }
-        records[handle]!.resident = resident
-        return ledger.transition(
+        let changed = ledger.finishFailed(
             handle: handle,
-            to: .resident,
-            changesVisibleContent: true)
+            generation: generation,
+            reason: reason)
+        recordFailure(reason)
+        return changed
+    }
+
+    private func recordFailure(_ reason: ImageDecodeFailure) {
+        failureCounts[reason, default: 0] &+= 1
+        totalFailureCount &+= 1
+        Trace.plot(
+            "swift.renderer.image_decode.failures",
+            totalFailureCount)
+    }
+
+    private func decodedByteCount(_ decoded: DecodedImage) -> Int {
+        let pixels = Int(decoded.width).multipliedReportingOverflow(
+            by: Int(decoded.height))
+        guard !pixels.overflow else { return Int.max }
+        let bytes = pixels.partialValue.multipliedReportingOverflow(by: 4)
+        return bytes.overflow ? Int.max : bytes.partialValue
     }
 }

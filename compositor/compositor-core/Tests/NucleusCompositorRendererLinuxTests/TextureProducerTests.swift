@@ -8,8 +8,7 @@ import NucleusTypes
 
 // accumulation + the same-content suppression decision (hardware-independent),
 // plus the shadow rasterizer + repaint-vs-suppress
-// counting over a real Graphite recorder (best-effort GPU, asserts nothing
-// hardware-conditional).
+// counting over the mandatory headless Graphite lane.
 @Suite struct TextureProducerTests {
     @Test func producerWorkStats() {
         var a = ProducerWorkStats()
@@ -40,7 +39,7 @@ import NucleusTypes
             layerId: 5, revision: 1,
             imageDependencies: PaintImageDependencies(versions: [
                 ImageDependencyVersion(
-                    handle: 9, version: 1, phase: .resident)
+                    handle: 9, version: 1, phase: .ready(generation: 1))
             ]),
             width: 2, height: 2, kind: .paint),
             "resolved-image-generation-is-cache-identity")
@@ -65,7 +64,7 @@ import NucleusTypes
             layerId: 5, revision: 2,
             imageDependencies: PaintImageDependencies(versions: [
                 ImageDependencyVersion(
-                    handle: 9, version: 1, phase: .resident)
+                    handle: 9, version: 1, phase: .ready(generation: 1))
             ]),
             width: 108, height: 42, kind: .paint)
         #expect(TextureProducer.supersededKeys(
@@ -76,44 +75,15 @@ import NucleusTypes
         #expect(shadow != current, "shadow-and-paint-have-independent-cache-namespaces")
     }
 
-    // Best-effort GPU: decoration rasterization + counting over a real Graphite
-    // recorder. Hardware-gated, so it asserts nothing hardware-conditional.
-    @Test(.disabled("requires a live GPU/Vulkan device")) func decorationRasterizationBestEffort() {
+    @Test func gpuHeadless_decorationRasterization() throws {
         let registry = TextureRegistry()
         let producer = TextureProducer(registry: registry)
         let pixels: [UInt8] = [255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 255, 255]
 
-        let base = VK.loadBaseDispatch()
-        let contract = VkRequirements.contract()
-        guard let instance = InstanceOwner.create(
-            base: base, applicationName: "TextureProducerTests",
-            contract: contract, enableValidation: false
-        ) else { return }
-        guard let selection = DeviceOwner.selectPhysicalDevice(
-            instance: instance.handle, dispatch: instance.dispatch, contract: contract
-        ) else { return }
-        guard let device = DeviceOwner.create(
-            selection: selection, instanceDispatch: instance.dispatch,
-            contract: contract
-        ) else { return }
-        guard let queue = device.queue(family: selection.graphicsQueueFamily) else { return }
-
-        withCStringArray(contract.deviceExtensions) { extPtr, extCount in
-            var desc = nucleus.skia.VulkanContextDescriptor()
-            desc.instance = UnsafeMutableRawPointer(instance.handle)
-            desc.physicalDevice = UnsafeMutableRawPointer(selection.physicalDevice)
-            desc.device = UnsafeMutableRawPointer(device.handle)
-            desc.queue = UnsafeMutableRawPointer(queue)
-            desc.graphicsQueueIndex = selection.graphicsQueueFamily
-            desc.maxApiVersion = VkRequirements.minimumApiVersion.raw
-            desc.deviceExtensions = extPtr
-            desc.deviceExtensionCount = extCount
-
-            let context = nucleus.skia.makeGraphiteVulkanContext(desc)
-            guard context.isValid() else { return }
-            let recorder = context.makeRecorder()
-            guard recorder.isValid() else { return }
-
+        try withRequiredVulkanGraphite(
+            presentation: .headless,
+            applicationName: "TextureProducerTests"
+        ) { _, _, context, recorder in
             var shadowColor = nucleus.skia.Color()
             shadowColor.a = 0.6
             let shadow = ShadowDecoration(
@@ -122,16 +92,27 @@ import NucleusTypes
                 cornerRadii: (8, 7, 6, 5), blurSigma: 4, color: shadowColor)
 
             // First produce rasterizes; same revision suppresses; new revision
-            // repaints into the same handle.
-            guard let sh = producer.produceShadow(recorder: recorder, layerId: 10, revision: 1, shadow: shadow) else {
-                return
-            }
-            _ = producer.drainStats()
-            _ = producer.produceShadow(recorder: recorder, layerId: 10, revision: 1, shadow: shadow)
-            _ = producer.drainStats()
-            _ = producer.produceShadow(recorder: recorder, layerId: 10, revision: 2, shadow: shadow)
-            _ = producer.drainStats()
-            _ = sh
+            // allocates a replacement handle.
+            let firstShadow = try requireValue(
+                producer.produceShadow(
+                    recorder: recorder, layerId: 10,
+                    revision: 1, shadow: shadow),
+                "initial shadow rasterization failed")
+            #expect(producer.drainStats().shadowRepaint == 1)
+            let unchangedShadow = try requireValue(
+                producer.produceShadow(
+                    recorder: recorder, layerId: 10,
+                    revision: 1, shadow: shadow),
+                "cached shadow lookup failed")
+            #expect(producer.drainStats().shadowRepaint == 0)
+            let updatedShadow = try requireValue(
+                producer.produceShadow(
+                    recorder: recorder, layerId: 10,
+                    revision: 2, shadow: shadow),
+                "updated shadow rasterization failed")
+            #expect(producer.drainStats().shadowRepaint == 1)
+            #expect(firstShadow == unchangedShadow)
+            #expect(firstShadow != updatedShadow)
 
             // A path command's geometry rides the payload blob.
             var linePayload: [UInt8] = []
@@ -158,7 +139,7 @@ import NucleusTypes
                 contentWidth: 48, contentHeight: 36,
                 resolveImage: { handle in handle == 77 ? paintImage : nil },
                 resolveEffect: { _ in nil })
-            _ = producer.drainStats()
+            #expect(producer.drainStats().paintRepaint == 1)
             let paintHandle2 = producer.producePaintCommands(
                 recorder: recorder, layerId: 12, revision: 1,
                 commands: paintCommands, payload: linePayload,
@@ -166,13 +147,18 @@ import NucleusTypes
                 contentWidth: 48, contentHeight: 36,
                 resolveImage: { handle in handle == 77 ? paintImage : nil },
                 resolveEffect: { _ in nil })
-            _ = paintHandle
-            _ = paintHandle2
-            _ = producer.drainStats()
+            let firstPaint = try requireValue(
+                paintHandle, "initial paint rasterization failed")
+            let secondPaint = try requireValue(
+                paintHandle2, "cached paint lookup failed")
+            #expect(firstPaint == secondPaint)
+            #expect(producer.drainStats().paintRepaint == 0)
 
             let recording = recorder.snapRecording()
-            _ = submitGraphiteAndWait(
-                context: context, recording: recording, serial: 1)
+            try requireTrue(
+                submitGraphiteAndWait(
+                    context: context, recording: recording, serial: 1),
+                "texture producer submission did not complete")
 
             // GPU-backed images must not outlive the context: drop them here.
             registry.clear()

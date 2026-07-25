@@ -160,7 +160,7 @@ import NucleusCompositorServerTypes
     #expect(server.displayFractionalScaleForOutput(id: 7) == 2)
     #expect(server.displayFractionalScaleForOutput(id: 99) == 0)
     #expect(server.spacesActiveForDisplay(displayID: 7) != 0)
-    #expect(server.spacesOverlayDisplayID() == 7)
+    #expect(try server.spacesOverlayDisplayID() == 7)
 
     let windowID = try server.windowCreate(source: .xdg)
     #expect(windowID != 0)
@@ -255,12 +255,75 @@ import NucleusCompositorServerTypes
     }
     #expect(frontIterated.map(\.windowId) == [windowID, secondWindowID])
 
-    let spaceID = try server.spacesCreate(outputID: 1)
+    let spaceID = try server.spacesCreate(outputID: 7)
     #expect(spaceID != 0)
     #expect(server.spacesAssignWindowToSpace(windowID: windowID, spaceID: spaceID))
 
     try server.windowDestroy(id: windowID)
     try server.windowDestroy(id: secondWindowID)
+}
+
+@MainActor
+@Test func zeroOutputSuspensionKeepsNonOutputStateAndRejectsOutputCalls() throws {
+    let server = NucleusCompositorServer()
+    #expect(server.outputAvailability == .suspendedNoOutputs)
+    #expect(server.spaces.overlayDisplayID(layout: server.layout) == nil)
+
+    #expect(throws: HostCallError.noOutputs) {
+        try server.displayPrimaryID()
+    }
+    #expect(throws: HostCallError.noOutputs) {
+        try server.displayDesktopBounds()
+    }
+    #expect(throws: HostCallError.noOutputs) {
+        try server.spacesOverlayDisplayID()
+    }
+    #expect(throws: HostCallError.noOutputs) {
+        try server.spacesCreate(outputID: 41)
+    }
+
+    let retainedWindowID = try server.windowCreate(source: .xdg)
+    #expect(server.window(id: retainedWindowID) != nil)
+
+    var mode = WireDisplayMode()
+    mode.pixelWidth = 1_920
+    mode.pixelHeight = 1_080
+    mode.refreshMhz = 60_000
+    var configuration = WireDisplayConfiguration()
+    configuration.enabled = true
+    configuration.primary = true
+    configuration.fractionalScale = 1
+    configuration.scale = 1
+    configuration.mode = mode
+
+    try server.displayAdd(id: 11, configuration: configuration)
+    #expect(server.transitionOutputAvailability(to: .available))
+    #expect(!server.transitionOutputAvailability(to: .available))
+    #expect(try server.displayPrimaryID() == 11)
+    #expect(try server.spacesOverlayDisplayID() == 11)
+
+    try server.displayRemove(id: 11)
+    #expect(server.transitionOutputAvailability(to: .suspendedNoOutputs))
+    #expect(server.window(id: retainedWindowID) != nil)
+    #expect(throws: HostCallError.noOutputs) {
+        try server.displayFind(id: 11)
+    }
+
+    try server.displayAdd(id: 29, configuration: configuration)
+    #expect(server.transitionOutputAvailability(to: .available))
+    #expect(try server.displayPrimaryID() == 29)
+    #expect(try server.spacesOverlayDisplayID() == 29)
+    #expect(server.layout.display(id: 11) == nil)
+    #expect(server.window(id: retainedWindowID) != nil)
+
+    try server.displayAdd(id: 37, configuration: configuration)
+    #expect(server.layout.displays.map(\.id).sorted() == [29, 37])
+    try server.displayRemove(id: 29)
+    #expect(server.outputAvailability == .available)
+    #expect(try server.displayPrimaryID() == 37)
+    try server.displayRemove(id: 37)
+    #expect(server.transitionOutputAvailability(to: .suspendedNoOutputs))
+    #expect(!server.transitionOutputAvailability(to: .suspendedNoOutputs))
 }
 
 @MainActor

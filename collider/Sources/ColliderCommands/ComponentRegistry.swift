@@ -29,6 +29,9 @@ enum ComponentSelection: String, CaseIterable, ExpressibleByArgument {
     case compositor
     case shell
     case androidRuntime = "android-runtime"
+    case loader
+    case gpuHeadless = "gpu-headless"
+    case gpuDRM = "gpu-drm"
 }
 
 enum GeneratorComponent {
@@ -59,10 +62,12 @@ struct ComponentRegistry {
             environment: environment))
     }
 
-    private func testTasks() throws -> [TaskDeclaration] {
+    private func testTasks(
+        selection: ComponentSelection?
+    ) throws -> [TaskDeclaration] {
         let root = FilePath(context.root.path)
         let environment = context.taskEnvironment
-        return try buildTasks() + [
+        var tasks = try buildTasks() + [
             TracyColliderRecipe.test(
                 root: root.appending("swift-tracy"), environment: environment),
             VulkanColliderRecipe.test(
@@ -86,6 +91,51 @@ struct ComponentRegistry {
             AndroidRuntimeColliderRecipe.test(
                 root: root.appending("android-runtime"), environment: environment),
         ]
+        let effectiveSelection = selection ?? .all
+        if [.all, .runtime, .compositor, .loader].contains(
+            effectiveSelection)
+        {
+            tasks += [
+            CompositorColliderRecipe.preflightVulkanLoader(
+                root: root.appending("compositor/compositor-core"),
+                environment: environment),
+            CompositorColliderRecipe.testVulkanLoader(
+                root: root.appending("compositor/compositor-core"),
+                environment: environment),
+            ]
+        }
+        if [.all, .runtime, .compositor, .gpuHeadless].contains(
+            effectiveSelection)
+        {
+            let lavapipe = try LavapipeTestArtifact.resolve(context: context)
+            var headlessEnvironment = environment
+            headlessEnvironment["VK_ICD_FILENAMES"] =
+                lavapipe.stagedManifest.string
+            headlessEnvironment["VK_DRIVER_FILES"] =
+                lavapipe.stagedManifest.string
+            tasks += [
+                lavapipe.task,
+            CompositorColliderRecipe.preflightHeadlessGPU(
+                root: root.appending("compositor/compositor-core"),
+                environment: headlessEnvironment,
+                lavapipeTask: lavapipe.task.id),
+            CompositorColliderRecipe.testHeadlessGPU(
+                root: root.appending("compositor/compositor-core"),
+                environment: headlessEnvironment),
+            ]
+        }
+        if effectiveSelection == .gpuDRM {
+            var drmEnvironment = environment
+            drmEnvironment["NUCLEUS_TEST_DRM_RENDER_NODE"] =
+                try requiredDRMRenderNode(environment: environment)
+            tasks.append(CompositorColliderRecipe.preflightDRMGPU(
+                root: root.appending("compositor/compositor-core"),
+                environment: drmEnvironment))
+            tasks.append(CompositorColliderRecipe.testDRMGPU(
+                root: root.appending("compositor/compositor-core"),
+                environment: drmEnvironment))
+        }
+        return tasks
     }
 
     func build(
@@ -103,7 +153,9 @@ struct ComponentRegistry {
         controls: TaskControls
     ) async throws {
         let selection = selection ?? .all
-        guard ![.toolchain, .android, .browser].contains(selection) else {
+        guard ![
+            .toolchain, .android, .browser, .loader, .gpuHeadless, .gpuDRM,
+        ].contains(selection) else {
             throw WorkspaceFailure.message(
                 "\(selection.rawValue) is not a runtime bootstrap component")
         }
@@ -118,6 +170,16 @@ struct ComponentRegistry {
             "all", "runtime", "rn", "compositor", "shell",
         ].contains(name)
         var tasks = try buildTasks()
+        var selected = try selectedBuildTasks(
+            selection == .runtime ? nil : selection)
+
+        if selection == .all || selection == .runtime
+            || selection == .compositor
+        {
+            let lavapipe = try LavapipeTestArtifact.resolve(context: context)
+            tasks.append(lavapipe.task)
+            selected.append(lavapipe.task.id)
+        }
 
         let tracySource = try await tracySourceTask(
             root: root,
@@ -185,8 +247,6 @@ struct ComponentRegistry {
                 in: tasks)
         }
 
-        let selected = try selectedBuildTasks(
-            selection == .runtime ? nil : selection)
         try await context.execute(
             tasks: tasks,
             selected: selected,
@@ -198,7 +258,7 @@ struct ComponentRegistry {
         controls: TaskControls
     ) async throws {
         try await context.execute(
-            tasks: try testTasks(),
+            tasks: try testTasks(selection: selection),
             selected: try selectedTestTasks(selection),
             controls: controls)
     }
@@ -346,6 +406,14 @@ struct ComponentRegistry {
             controls: controls)
     }
 
+    func buildAndroidRuntimeHost() async throws {
+        let tasks = try buildTasks()
+        try await context.execute(
+            tasks: tasks,
+            selected: [TaskID(rawValue: "android-runtime.build")],
+            controls: TaskControls())
+    }
+
     private func selectedBuildTasks(
         _ selection: ComponentSelection?
     ) throws -> [TaskID] {
@@ -356,7 +424,9 @@ struct ComponentRegistry {
                 TaskID(rawValue: "android-runtime.build"),
             ]
         }
-        guard ![.toolchain, .android, .browser].contains(selection) else {
+        guard ![
+            .toolchain, .android, .browser, .loader, .gpuHeadless, .gpuDRM,
+        ].contains(selection) else {
             throw WorkspaceFailure.message(
                 "\(selection.rawValue) is not a runtime build component")
         }
@@ -371,6 +441,8 @@ struct ComponentRegistry {
             return [
                 "tracy.test", "vulkan.test", "wayland.test", "core.test",
                 "linux.test", "rn.test", "compositor-core.test",
+                "compositor-core.test-loader",
+                "compositor-core.test-gpu-headless",
                 "compositor.test", "shell.test",
                 "android-runtime.test",
             ].map { TaskID(rawValue: $0) }
@@ -382,9 +454,17 @@ struct ComponentRegistry {
             .core: ["core.test"],
             .linux: ["linux.test"],
             .reactNative: ["rn.test"],
-            .compositor: ["compositor-core.test", "compositor.test"],
+            .compositor: [
+                "compositor-core.test",
+                "compositor-core.test-loader",
+                "compositor-core.test-gpu-headless",
+                "compositor.test",
+            ],
             .shell: ["shell.test"],
             .androidRuntime: ["android-runtime.test"],
+            .loader: ["compositor-core.test-loader"],
+            .gpuHeadless: ["compositor-core.test-gpu-headless"],
+            .gpuDRM: ["compositor-core.test-gpu-drm"],
         ]
         guard let selected = taskNames[selection] else {
             throw WorkspaceFailure.message(

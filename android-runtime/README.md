@@ -39,10 +39,17 @@ bounded container and presentation workflows.
   notification diagnostics.
 - `nucleus-android-surface-probe` reads real linux-dmabuf feedback, creates an
   `xdg_toplevel`, imports broker dma-bufs and syncobj timelines, commits acquire and
-  release points, and records presentation feedback.
+  release points, and records presentation feedback. It is a Phase 1 hardware
+  qualification harness, not an Android runtime presentation path.
+- The Nucleus Composer3 AIDL HAL forces client composition and submits
+  SurfaceFlinger's client-target dma-buf and acquire fence through an authenticated
+  instance socket. `nucleus-android-display-host` is the production continuation of
+  the Phase 1 surface: it owns the one Android `xdg_toplevel`, commits the real client
+  target with Wayland explicit synchronization, and returns a release fence to
+  SurfaceFlinger. No synthetic color workload runs during framework boot.
 - `NucleusAndroidContainerContract` defines the system-as-root LXC configuration,
-  generated AppArmor confinement, seccomp policy, subordinate-ID mapping, exact
-  device surface, and APEX archive validation.
+  enforced project-owned AppArmor confinement, seccomp policy, subordinate-ID mapping,
+  exact device surface, and APEX archive validation.
 - The `nucleus_x86_64-cp2a-userdebug` Android 17 product emits separate immutable
   system, system-ext, product, and vendor images with release-signed APKs, APEXes, and
   AVB metadata.
@@ -80,14 +87,17 @@ Build and verify the signed Android image:
 collider android-runtime image
 ```
 
-The Phase 1 shared-allocation and combined presentation paths are complete. Phase 2
+The Phase 1 shared-allocation and qualification paths are complete. Phase 2
 source locking, product definition, signing, AVB validation, container configuration,
 host-owned APEX mounting, instance-private delegated bpffs creation, token-aware
-Android BPF loading, and the SELinux-bypassed vold preparation path are implemented.
-The current signed image passed the complete AOSP build, package/APEX signature,
-APEX-payload, and AVB verification pipeline in
-`.nucleus/runs/2026-07-24T21-45-43Z-2922203`. The remaining Phase 2 gate is the
-user-run framework boot:
+Android BPF loading, the SELinux-bypassed vold preparation path, the production
+host-owned gfxstream socket/ring broker, and the Android 17 AIDL audio HAL are
+implemented. Android receives the broker socket but no DRM node; the broker validates
+the mapped Android system UID and `vulkan.nucleus` fails closed rather than entering
+the ranchu render-node path. The Nucleus Composer3 HAL and production Swift display
+host now replace the synthetic presentation workload during framework boot. The
+remaining Phase 2 gate is a signed image build followed by the user-run framework
+boot:
 
 ```sh
 collider android-runtime framework-boot
@@ -102,4 +112,4 @@ tails from every nonempty log.
 
 It must reach `sys.boot_completed=1` under the Phase 2 AppArmor, seccomp, capability,
 device, and subordinate-user-namespace contract. Enforcing Android SELinux lands with
-the integrated Nucleus host policy during Phase 7 security hardening.
+the integrated Nucleus host policy during Phase 6 security hardening.

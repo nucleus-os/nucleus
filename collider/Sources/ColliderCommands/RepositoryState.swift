@@ -108,7 +108,8 @@ struct RepositoryState {
         }
         try await context.run(
             "tail",
-            ["-n", "200", "-f"] + logs.map(\.path))
+            ["-n", "200", "-f"] + logs.map(\.path),
+            acceptedExitStatuses: [0, interruptedProcessExitStatus])
     }
 
     private func retainedLogs(in directory: URL) throws -> [URL] {

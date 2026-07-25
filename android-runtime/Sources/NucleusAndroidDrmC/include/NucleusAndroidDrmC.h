@@ -64,9 +64,13 @@ typedef struct nucleus_android_gpu nucleus_android_gpu;
 typedef struct nucleus_android_gpu_buffer nucleus_android_gpu_buffer;
 typedef struct nucleus_android_syncobj_timeline nucleus_android_syncobj_timeline;
 typedef struct nucleus_android_syncobj_waiter nucleus_android_syncobj_waiter;
+typedef struct nucleus_android_syncobj_bridge nucleus_android_syncobj_bridge;
 
 int nucleus_android_drm_enumerate(
     struct nucleus_android_drm_candidate *output,
+    size_t capacity);
+int nucleus_android_drm_select_display_render_path(
+    char *output,
     size_t capacity);
 int nucleus_android_drm_device_id(
     const char *path,
@@ -167,6 +171,25 @@ int nucleus_android_syncobj_waiter_notification_fd(
     nucleus_android_syncobj_waiter *waiter);
 int nucleus_android_syncobj_waiter_drain(
     nucleus_android_syncobj_waiter *waiter);
+
+nucleus_android_syncobj_bridge *nucleus_android_syncobj_bridge_create(
+    const char *render_path);
+void nucleus_android_syncobj_bridge_destroy(
+    nucleus_android_syncobj_bridge *bridge);
+int nucleus_android_syncobj_bridge_export_acquire_timeline(
+    nucleus_android_syncobj_bridge *bridge);
+int nucleus_android_syncobj_bridge_export_release_timeline(
+    nucleus_android_syncobj_bridge *bridge);
+int nucleus_android_syncobj_bridge_import_acquire_sync_file(
+    nucleus_android_syncobj_bridge *bridge,
+    uint64_t point,
+    int sync_file);
+int nucleus_android_syncobj_bridge_signal_acquire(
+    nucleus_android_syncobj_bridge *bridge,
+    uint64_t point);
+int nucleus_android_syncobj_bridge_export_release_sync_file(
+    nucleus_android_syncobj_bridge *bridge,
+    uint64_t point);
 
 uint32_t nucleus_android_drm_format_xrgb8888(void);
 uint32_t nucleus_android_drm_format_argb8888(void);

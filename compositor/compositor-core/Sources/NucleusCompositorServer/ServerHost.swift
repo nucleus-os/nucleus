@@ -2,12 +2,11 @@ import NucleusTypes
 public import NucleusCompositorServerTypes
 
 /// Shared failure type for NucleusCompositorServer caller-boundary (`*Host`)
-/// requirements that surface a success/failure split as an error. One
-/// case: the receiving reactor wrapper maps any thrown error to its single
-/// `error{HostCallFailed}` tag. translate-swift mirrors `throws(HostCallError)`
-/// requirements as `error{HostCallFailed}!T`.
-public enum HostCallError: Error {
+/// requirements that distinguish an invalid request from transient output
+/// unavailability.
+public enum HostCallError: Error, Equatable {
     case failed
+    case noOutputs
 }
 
 @MainActor
@@ -21,8 +20,8 @@ public protocol ServerHost: AnyObject {
     func displayRemove(id: UInt64) throws(HostCallError)
     func displayConfigure(id: UInt64, changes: WireDisplayConfigurationChanges) throws(HostCallError)
     func displayLayoutUpdate() throws(HostCallError)
-    func displayPrimaryID() -> UInt64
-    func displayFallbackForRemoval(removedID: UInt64) -> UInt64
+    func displayPrimaryID() throws(HostCallError) -> UInt64
+    func displayFallbackForRemoval(removedID: UInt64) throws(HostCallError) -> UInt64
     func displayDesktopBounds() throws(HostCallError) -> WireLogicalRect
     func displayFind(id: UInt64) throws(HostCallError) -> WireLogicalRect
     func displayFractionalScaleAt(x: Double, y: Double) -> Double
@@ -53,7 +52,7 @@ public protocol ServerHost: AnyObject {
     func windowRenderOrderFill(frontToBack: Bool, into out: inout OutputSpan<WireWindowRenderOrderEntry>)
     func spacesActiveForDisplay(displayID: UInt64) -> UInt32
     func spacesSetActive(displayID: UInt64, spaceID: UInt32) -> Bool
-    func spacesOverlayDisplayID() -> UInt64
+    func spacesOverlayDisplayID() throws(HostCallError) -> UInt64
     func spacesCreate(outputID: UInt64) throws(HostCallError) -> UInt32
     func spacesEnsureForOutput(outputID: UInt64, index: UInt32) -> UInt32
     func spacesAppend(outputID: UInt64) -> UInt32
@@ -135,6 +134,8 @@ extension NucleusCompositorServer: ServerHost {
     }
 
     public func displayRemove(id: UInt64) throws(HostCallError) {
+        guard !layout.displays.isEmpty else { throw .noOutputs }
+        guard layout.display(id: id) != nil else { throw .failed }
         let hasFallbackDisplay = layout.fallbackDisplayIDForRemoval(id) != nil
         inputControl?.displayWillRemove(hasFallbackDisplay: hasFallbackDisplay)
         _ = layout.removeDisplay(id: id)
@@ -142,29 +143,38 @@ extension NucleusCompositorServer: ServerHost {
     }
 
     public func displayConfigure(id: UInt64, changes: WireDisplayConfigurationChanges) throws(HostCallError) {
+        guard !layout.displays.isEmpty else { throw .noOutputs }
         guard layout.configureDisplay(id: id, changes: DisplayConfigurationChanges(wireValue: changes)) else {
             throw .failed
         }
     }
 
     public func displayLayoutUpdate() throws(HostCallError) {
-        _ = layout.desktopBounds()
+        guard layout.desktopBounds() != nil else { throw .noOutputs }
     }
 
-    public func displayPrimaryID() -> UInt64 {
-        layout.primaryDisplayID() ?? 0
+    public func displayPrimaryID() throws(HostCallError) -> UInt64 {
+        guard let outputID = layout.primaryDisplayID()
+        else { throw .noOutputs }
+        return outputID
     }
 
-    public func displayFallbackForRemoval(removedID: UInt64) -> UInt64 {
-        layout.fallbackDisplayIDForRemoval(removedID) ?? 0
+    public func displayFallbackForRemoval(
+        removedID: UInt64
+    ) throws(HostCallError) -> UInt64 {
+        guard !layout.displays.isEmpty else { throw .noOutputs }
+        guard let outputID = layout.fallbackDisplayIDForRemoval(removedID)
+        else { throw .failed }
+        return outputID
     }
 
     public func displayDesktopBounds() throws(HostCallError) -> WireLogicalRect {
-        guard let bounds = layout.desktopBounds() else { throw .failed }
+        guard let bounds = layout.desktopBounds() else { throw .noOutputs }
         return bounds
     }
 
     public func displayFind(id: UInt64) throws(HostCallError) -> WireLogicalRect {
+        guard !layout.displays.isEmpty else { throw .noOutputs }
         guard let display = layout.display(id: id) else { throw .failed }
         return display.logicalRect
     }
@@ -185,6 +195,7 @@ extension NucleusCompositorServer: ServerHost {
     }
 
     public func displayUsableArea(id: UInt64) throws(HostCallError) -> WireUsableArea {
+        guard !layout.displays.isEmpty else { throw .noOutputs }
         guard let display = layout.display(id: id) else { throw .failed }
         return UsableArea(
             x: Int32(display.logicalRect.x),
@@ -334,12 +345,16 @@ extension NucleusCompositorServer: ServerHost {
         spaces.isSpaceHidden(window: id)
     }
 
-    public func spacesOverlayDisplayID() -> UInt64 {
-        spaces.overlayDisplayID(layout: layout)
+    public func spacesOverlayDisplayID() throws(HostCallError) -> UInt64 {
+        guard let outputID = spaces.overlayDisplayID(layout: layout)
+        else { throw .noOutputs }
+        return outputID
     }
 
     public func spacesCreate(outputID: UInt64) throws(HostCallError) -> UInt32 {
-        spaces.createSpace(name: "Space", outputID: outputID)
+        guard !layout.displays.isEmpty else { throw .noOutputs }
+        guard layout.display(id: outputID) != nil else { throw .failed }
+        return spaces.createSpace(name: "Space", outputID: outputID)
     }
 
     public func spacesEnsureForOutput(outputID: UInt64, index: UInt32) -> UInt32 {
@@ -359,6 +374,7 @@ extension NucleusCompositorServer: ServerHost {
     }
 
     public func windowCopyPolicySnapshot(windowID: UInt64) throws(HostCallError) -> WireWindowPolicySnapshot {
+        guard !layout.displays.isEmpty else { throw .noOutputs }
         guard let window = window(id: windowID) else { throw .failed }
         return windowPolicySnapshot(for: window)
     }
@@ -367,6 +383,7 @@ extension NucleusCompositorServer: ServerHost {
         outputID: UInt64,
         usable: WireUsableArea
     ) throws(HostCallError) -> WireOutputLayoutSnapshot {
+        guard !layout.displays.isEmpty else { throw .noOutputs }
         guard let output = layout.display(id: outputID) else { throw .failed }
         var snapshot = WireOutputLayoutSnapshot()
         snapshot.fullscreenRect = spaces.fullscreenLayoutRect(for: output).wireValue
@@ -451,7 +468,8 @@ extension NucleusCompositorServer {
     /// Shared by `windowCopyPolicySnapshot` and the per-entry render-order fill.
     fileprivate func windowPolicySnapshot(for window: Window) -> WireWindowPolicySnapshot {
         var snapshot = WireWindowPolicySnapshot()
-        snapshot.policyOutputId = spaces.policyOutputID(for: window, layout: layout)
+        snapshot.policyOutputId =
+            spaces.policyOutputID(for: window, layout: layout) ?? 0
         snapshot.requestedFullscreenOutputId = spaces.resolveSpecialOutputID(
             for: window,
             layout: layout,

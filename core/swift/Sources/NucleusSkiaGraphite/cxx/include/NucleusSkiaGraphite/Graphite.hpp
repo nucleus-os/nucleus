@@ -19,6 +19,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <string>
 
 namespace nucleus::skia {
 
@@ -46,6 +47,34 @@ enum class Status : int32_t {
     recordingFailed = 3,
     submitFailed = 4,
     invalidArgument = 5,
+};
+
+/// Exact result returned by Skia when one Recording is inserted.
+enum class RecordingInsertStatus : int32_t {
+    notAttempted = -1,
+    success = 0,
+    invalidRecording = 1,
+    promiseImageInstantiationFailed = 2,
+    addCommandsFailed = 3,
+    asyncShaderCompilesFailed = 4,
+    outOfOrderRecording = 5,
+};
+
+/// Complete result of one façade submission. `contextUsable` is false only for
+/// insertion failures whose Skia contract leaves command-buffer state
+/// unrecoverable or unknown.
+struct SubmissionResult {
+    Status status = Status::invalidArgument;
+    RecordingInsertStatus insertStatus = RecordingInsertStatus::notAttempted;
+    bool contextUsable = true;
+    std::string diagnostic;
+
+    bool isOk() const { return status == Status::ok; }
+};
+
+enum class SubmissionCallbackResult : int32_t {
+    success = 0,
+    failed = 1,
 };
 
 struct Color {
@@ -157,6 +186,7 @@ class UploadTexture;
 class RasterImage {
 public:
     struct Impl;
+    RasterImage();
     explicit RasterImage(std::shared_ptr<Impl> impl);
     bool isValid() const;
     int32_t width() const;
@@ -168,6 +198,35 @@ public:
 
 private:
     std::shared_ptr<Impl> impl_;
+};
+
+enum class RasterDecodeStatus : uint8_t {
+    success,
+    unreadableInput,
+    unsupportedFormat,
+    invalidDimensions,
+    limitExceeded,
+    decodeFailure,
+};
+
+struct RasterDecodeResult {
+    RasterImage image;
+    RasterDecodeStatus status = RasterDecodeStatus::decodeFailure;
+
+    bool isSuccess() const {
+        return status == RasterDecodeStatus::success && image.isValid();
+    }
+};
+
+struct EncodedImageMetadata {
+    int32_t width = 0;
+    int32_t height = 0;
+    bool isVector = false;
+    RasterDecodeStatus status = RasterDecodeStatus::decodeFailure;
+
+    bool isSuccess() const {
+        return status == RasterDecodeStatus::success;
+    }
 };
 
 /// A canvas-sampleable image. Graphite render paths only receive this type;
@@ -321,13 +380,28 @@ Shader makeRuntimeShader(const char *sksl, const float *uniforms, size_t uniform
 Shader makeRuntimeShaderWithImage(
     const char *sksl, const float *uniforms, size_t uniformFloatCount, const Image &child);
 
-/// Install the resolver the render core uses to turn a text-layout handle into a
-/// borrowed `skia::textlayout::Paragraph*` (returned as `uintptr_t`; 0 if
-/// unknown), which `Canvas::drawTextLayout` paints directly. The text backend
-/// installs this once at startup; the render core has no compile-time dependency
-/// on it (dependency inversion — the render core owns the seam, the text layer
-/// provides the implementation). Idempotent; last writer wins.
-extern "C" void nucleus_skia_set_text_layout_resolver(uintptr_t (*resolve)(uint64_t));
+using TextLayoutBorrowBody =
+    void (*)(uintptr_t paragraph, void *bodyContext);
+using TextLayoutBorrow =
+    bool (*)(
+        uint64_t handle,
+        void *bodyContext,
+        TextLayoutBorrowBody body);
+
+enum class TextLayoutBorrowInstallStatus : uint8_t {
+    installed,
+    alreadyInstalled,
+    conflictingProvider,
+    missingProvider,
+};
+
+/// Install the synchronous owning borrow used by `Canvas::drawTextLayout`.
+/// Reinstalling the same provider is idempotent; a different provider is
+/// rejected. The provider must invoke `body` synchronously while it owns the
+/// paragraph and must not retain `bodyContext`.
+TextLayoutBorrowInstallStatus installTextLayoutBorrow(
+    TextLayoutBorrow borrow);
+bool hasTextLayoutBorrow();
 
 /// A non-owning view of a surface's canvas. Drawing commands are recorded into
 /// the surface's recorder until the next recording snap.
@@ -375,12 +449,11 @@ public:
     /// Draw `path` with `shader` bound. Unifies gradients and SkSL effects —
     /// both are "a Shader bound to a draw".
     void drawPathWithShader(const Path &path, const Shader &shader, Paint paint) const;
-    /// Paint the text-layout paragraph named by `handle` into `dst`. The render
-    /// core resolves the handle to a borrowed `skia::textlayout::Paragraph*` via
-    /// the resolver installed with `nucleus_skia_set_text_layout_resolver` and
-    /// paints it directly. A zero/unknown handle (or no installed resolver) is
-    /// ignored; alpha modulates the paragraph's own colors; the paragraph is
-    /// scaled from its laid-out width to `dst`'s width.
+    /// Paint the text-layout paragraph named by `handle` into `dst`. Painting
+    /// occurs synchronously inside the owning borrow installed with
+    /// `installTextLayoutBorrow`; the paragraph pointer never escapes the body.
+    /// A zero or unknown handle is ignored. Renderer composition must install a
+    /// provider before this method is reachable.
     void drawTextLayout(uint64_t handle, RectF dst, float alpha) const;
 
     void drawRect(RectF rect, Color color) const;
@@ -396,23 +469,21 @@ private:
 RasterImage makeRasterImageRGBA(
     int32_t width, int32_t height, const uint8_t *pixels, size_t byteLength);
 
-/// Decode an encoded image file into an SkImage, at most `maxWidth` x
-/// `maxHeight`. Returned invalid on missing, unreadable, or unsupported files.
-///
-/// A zero bound means unbounded on that axis, which decodes deferred (Skia
-/// decodes on first draw) exactly as an unbounded decode always has. A bounded
-/// decode is eager, because the whole point is to never hold the full-size
-/// pixels: a 4K wallpaper and a 22px tray icon must not cost the same.
-///
-/// Aspect ratio is preserved — the bound is a box the result fits inside, not
-/// the result's size.
-RasterImage makeEncodedImageFromFile(
+/// Read intrinsic encoded-image metadata without allocating decoded pixels.
+EncodedImageMetadata probeEncodedImageFile(const char *path);
+EncodedImageMetadata probeEncodedImageMemory(
+    const uint8_t *bytes, size_t byteLength);
+
+/// Eagerly decode an encoded image file into CPU pixels inside the positive
+/// target box. Aspect ratio is preserved and images are never enlarged.
+/// Invalid input, unsupported formats, invalid bounds, resource-limit
+/// violations, and decode failures are distinguished explicitly.
+RasterDecodeResult decodeEncodedImageFile(
     const char *path, int32_t maxWidth, int32_t maxHeight);
 
-/// Decode encoded image bytes already in memory — a `data:` URI, or any blob
-/// with no path to point at. Same formats, same bounds behaviour, same SVG
-/// detection as the file entry point.
-RasterImage makeEncodedImageFromMemory(
+/// Eagerly decode encoded image bytes already in memory under the same bounds,
+/// limits, and typed-result contract as the file entry point.
+RasterDecodeResult decodeEncodedImageMemory(
     const uint8_t *bytes, size_t byteLength, int32_t maxWidth, int32_t maxHeight);
 
 /// A borrowed Vulkan image to wrap as a Graphite-sampleable `Image` (an imported
@@ -527,17 +598,13 @@ public:
     /// borrowed Vulkan device is still alive. Idempotent.
     void reset();
     Recorder makeRecorder() const;
-    /// Insert frame work (and optional preceding upload work), signal the borrowed
-    /// Vulkan binary semaphore, and submit without waiting on the CPU. The Linux
-    /// DRM backend exports that semaphore as a sync_file for KMS IN_FENCE_FD.
-    Status submitWithSemaphores(
+    /// Insert exactly one recording, signal the borrowed Vulkan binary
+    /// semaphore, and submit without waiting on the CPU. The Linux DRM backend
+    /// exports that semaphore as a sync_file for KMS IN_FENCE_FD.
+    SubmissionResult submitWithSemaphores(
         const Recording &recording, void *const *waitSemaphores,
         size_t waitSemaphoreCount, void *signalSemaphore,
-        uint64_t submissionSerial) const;
-    Status submitWithUploadAndSemaphores(
-        const Recording &upload, const Recording &frame, void *const *waitSemaphores,
-        size_t waitSemaphoreCount, void *signalSemaphore,
-        uint64_t submissionSerial) const;
+        uint64_t submissionSerial, bool requestGpuTiming) const;
     /// Submit a recording that renders into a Vulkan swapchain image for
     /// presentation (the Android WSI path): the GPU work waits on `waitSemaphore`
     /// (the swapchain acquire) before executing and signals `signalSemaphore` (the
@@ -546,20 +613,20 @@ public:
     /// the CPU — `vkQueuePresentKHR` orders against `signalSemaphore`. The semaphore
     /// args are `VkSemaphore` handles as `void *` (0/null skips that semaphore).
     /// Returns ok on success.
-    Status submitForPresent(
+    SubmissionResult submitForPresent(
         const Surface &targetSurface, const Recording &recording,
         void *const *waitSemaphores, size_t waitSemaphoreCount,
         void *signalSemaphore, uint32_t presentQueueFamily,
-        uint64_t submissionSerial) const;
-    Status submitForPresentWithUpload(
-        const Surface &targetSurface, const Recording &upload, const Recording &frame,
-        void *const *waitSemaphores, size_t waitSemaphoreCount,
-        void *signalSemaphore, uint32_t presentQueueFamily,
-        uint64_t submissionSerial) const;
+        uint64_t submissionSerial, bool requestGpuTiming) const;
     /// Submit ordinary Graphite work without a CPU wait. Completion advances the
     /// same monotonically increasing serial observed by
     /// `pollCompletedSubmissionSerial`.
-    Status submitAsync(const Recording &recording, uint64_t submissionSerial) const;
+    SubmissionResult submitAsync(
+        const Recording &recording, uint64_t submissionSerial) const;
+    /// Test-only insertion control using Skia's real simulated-status path.
+    SubmissionResult submitAsyncSimulatingInsertStatus(
+        const Recording &recording, uint64_t submissionSerial,
+        RecordingInsertStatus simulatedStatus) const;
     /// Start a nonblocking readback. The context owner calls
     /// `pollCompletedSubmissionSerial` until the returned readback completes.
     SurfaceReadback beginSurfaceReadbackRGBA(const Surface &surface) const;
@@ -577,6 +644,11 @@ public:
     /// elapsed-time queries are unavailable. Consumption is exact-keyed because
     /// different outputs may deliver pageflips out of submission-serial order.
     uint64_t takeCompletedSubmissionGpuElapsedNs(uint64_t submissionSerial) const;
+    size_t completedSubmissionTimingCount() const;
+    uint64_t droppedSubmissionTimingCount() const;
+    uint64_t submissionCallbackCount() const;
+    uint64_t successfulSubmissionCallbackCount() const;
+    uint64_t failedSubmissionCallbackCount() const;
 private:
     std::shared_ptr<Impl> impl_;
 };

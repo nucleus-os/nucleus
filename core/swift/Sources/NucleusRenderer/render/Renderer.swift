@@ -15,7 +15,7 @@ struct RenderResult {
     var submitOk: Bool
 }
 
-enum NucleusRenderer {
+enum FramePlanRenderer {
     static func rectF(_ r: PlanRect) -> nucleus.skia.RectF {
         var out = nucleus.skia.RectF()
         out.x = r.x; out.y = r.y; out.width = r.w; out.height = r.h
@@ -166,12 +166,12 @@ enum NucleusRenderer {
 
         let image = surface.snapshotImage()
         let recording = recorder.snapRecording()
-        let status = context.submitAsync(recording, submissionSerial)
+        let result = context.submitAsync(recording, submissionSerial)
 
         return RenderResult(
             imageWidth: image.width(),
             imageHeight: image.height(),
             opsDrawn: drawn,
-            submitOk: status == nucleus.skia.Status.ok)
+            submitOk: result.isOk())
     }
 }

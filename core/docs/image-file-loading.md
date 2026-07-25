@@ -1,7 +1,8 @@
 # Image File Loading
 
 **Invariant: an image is a paint command referencing a refcounted source handle, and
-decode is a renderer-side cache keyed by that handle plus the size it is drawn at.**
+residency is a generation-aware renderer state machine over an explicitly bounded
+decode request.**
 
 An image is not layer content. `LayerContent` is `.none`/`.paint`/`.external`/`.snapshot`,
 mirrored across three definitions and a wire format; adding an `.image` case would be
@@ -17,8 +18,8 @@ The pipeline is whole, and this is the correction that resizes this work:
   (path + max bounds), dedupes by `"WxH:path"`, and evicts through `onEvict`.
 - `SwiftImageRegistrar` implements the `ImageRegistrar` protocol seam; the host bundle
   installs it.
-- `FrameDriver.decodedImage(handle:source:)` decodes lazily at rasterization through
-  `nucleus.skia.makeEncodedImageFromFile`, caching by handle.
+- `FrameDriver.decodedImage(handle:source:)` schedules bounded worker decode through
+  `ImageDecodeQueue`, while `ImageResourceManager` owns generation state and residency.
 - `PaintRasterizer` draws `.image` commands; `GraphicsContext.draw(_:in:cornerRadius:)`
   emits them; `ImageView` consumes them.
 - Skia is built and linked with `libpng`, `libjpeg-turbo`, `libwebp`, `wuffs` (GIF), and
@@ -55,20 +56,19 @@ and it belongs beside the other bar services.
 **Animated GIF is deferred to first-frame.** It is real — `desktop_sticker_widget` uses
 it — but it is one optional widget, the reference ships a first-frame fallback for every
 failure mode it has, and its own implementation caps at 512 frames / 96 MiB and uploads
-one texture per frame. `DeferredFromEncodedData` already yields frame zero, so the
-deferral costs nothing structurally and the widget renders a static sticker until it
-lands.
+one texture per frame. The eager decoder yields frame zero, so the widget renders a
+static sticker until animated playback lands.
 
 ## Phase 1 — honour the decode bounds — **complete**
 
-`makeEncodedImageFromFile` gained `maxWidth`/`maxHeight`, and `FrameDriver.decodedImage`
-passes the source's bounds through. The dedupe key is honest now: two handles for one
-path at different bounds are two decodes that differ.
+`decodeEncodedImageFile` takes explicit target width and height, and
+`FrameDriver.decodedImage` passes the source's bounds through. The dedupe key is honest
+now: two handles for one path at different bounds are two decodes that differ.
 
-A zero bound stays deferred, decoding on first draw exactly as before — nothing is known
-about the draw size, so there is nothing to decide. A bounded decode is eager, because
-the entire point is never to hold the full-size pixels. Aspect ratio is preserved and an
-image already inside the box is never enlarged.
+A zero or negative bound is invalid. Callers that need intrinsic geometry use the
+metadata probe and then register a positive target. Decode is always eager on a worker,
+because the render thread must never trigger encoded-image decompression. Aspect ratio
+is preserved and an image already inside the box is never enlarged.
 
 `SkCodec::getScaledDimensions` does the work where the codec can — JPEG scales during the
 DCT, which is faster and better than decoding full and resampling. It never returns
@@ -161,11 +161,10 @@ parse failure one step later.
 Build work turned out to be *zero*: `-I skiaRoot` already covers `modules/svg/include`,
 and `-lsvg` was already linked. No new include paths.
 
-Sizing has three cases. Absolute root dimensions give an intrinsic size, and bounds fit
-that aspect ratio inside the box exactly as they would for a bitmap. Relative units
-("100%") resolve against whatever viewport they are handed, so the bounds are the whole
-answer. A document with neither gets `kDefaultSvgRasterSize` — a vector has no natural
-size, and something must be chosen.
+Absolute root dimensions give an intrinsic size, and bounds fit that aspect ratio inside
+the box exactly as they would for a bitmap. Relative units ("100%") resolve against the
+explicit target viewport. A document with neither still uses the explicit target; no
+unbounded or default raster size exists.
 
 **The load-bearing detail, found by a failing test:** a document sized in absolute units
 has a *fixed* viewport, and `setContainerSize` cannot move it. Scaling the canvas is the
@@ -239,10 +238,11 @@ ever produces an immutable image. Completions are adopted at the top of `renderF
 which is the single point the cache is written — that is what keeps leaving it
 unsynchronized correct rather than merely lucky.
 
-A `DecodedImageResult` carries the Skia image itself, not a pixel array. A raster
+An `ImageDecodeCompletion` carries a handle, generation, and typed success or failure.
+Its successful `DecodedImage` carries the Skia image itself, not a pixel array. A raster
 `SkImage` is immutable once made and its refcount is atomic, so passing one between
-threads is sound; the alternative costs two full-resolution copies of every wallpaper, one
-to read the pixels out and one to rebuild the image.
+threads is sound; the alternative costs two full-resolution copies of every wallpaper,
+one to read the pixels out and one to rebuild the image.
 
 **`ImageStore` did not need a lock, against the plan.** The store is read on the render
 thread and the resulting `ImageSource` — a `Sendable` value — is copied into the request at
@@ -251,21 +251,20 @@ that the actual seam does not have.
 
 Three behaviours that keep this from being subtly wrong:
 
-- **A pending handle is refused re-submission.** A decode in flight draws nothing, so the
-  caller asks again on every subsequent frame; without this the queue fills with
-  duplicates of the same work.
-- **Eviction cancels, and cancellation drops the result on arrival.** A decode already
-  running cannot be stopped. Dropping matters more than stopping: the handle may be
-  re-registered against a different source, and delivering the stale image would draw the
-  wrong picture.
+- **A pending handle-generation is refused re-submission.** A decode in flight draws
+  nothing, so the caller asks again on every subsequent frame; without this the queue
+  fills with duplicates of the same work. A failed generation is terminal until explicit
+  retry or replacement.
+- **Eviction and replacement cancel, and generation checks reject stale results.** A
+  decode already running cannot be stopped. Dropping matters more than stopping:
+  delivering an old generation after replacement would draw the wrong picture.
 - **Completion notifies.** Nothing else schedules a frame when a decode lands — the scene
   did not change, the image simply arrived — so without the callback the result waits for
   an unrelated repaint. The compositor wires this to its frame request.
 
 Shutdown joins the workers rather than only signalling them, because they decode against a
-Graphite context that must outlive them. If a thread cannot be spawned at all, `submit`
-refuses and the caller decodes inline, which is exactly the behaviour that existed before
-this phase.
+Graphite context that must outlive them. If no worker is available, `submit` fails with
+no render-thread decode fallback.
 
 Atlasing small icons through the existing `GuillotineAllocator`/`TextureAtlas` did **not**
 land here. It is a memory optimization with no correctness content, it is unmeasured, and

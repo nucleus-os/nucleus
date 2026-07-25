@@ -10,16 +10,34 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build-and-test:
+  required:
     runs-on: [self-hosted, Linux, X64, nucleus]
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
+      - name: Install Collider
+        run: |
+          ./collider-setup.sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Validate host contract
-        run: tools/nucleus doctor
-      - name: Bootstrap and build all products
-        run: tools/nucleus bootstrap
-      - name: Test all products
-        run: tools/nucleus test all
+        run: collider doctor
+      - name: Test required repository lanes
+        run: collider test all
+
+  gpu-drm:
+    runs-on: [self-hosted, Linux, X64, nucleus, render-node]
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Install Collider
+        run: |
+          ./collider-setup.sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Validate host contract
+        run: collider doctor
+      - name: Test the DRM render-node lane
+        run: collider test gpu-drm

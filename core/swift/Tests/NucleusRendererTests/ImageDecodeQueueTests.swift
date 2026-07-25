@@ -1,18 +1,13 @@
 #if canImport(Glibc)
 import Glibc
 #endif
+import Dispatch
 import Foundation
 import Synchronization
 import Testing
-@testable import NucleusRenderer
-import NucleusSkiaGraphiteBridge
+@testable @_spi(NucleusPlatform) import NucleusRenderer
 import NucleusRenderModel
 
-/// The decode queue: the render core's first background thread.
-///
-/// Tests drive it through real workers rather than a fake clock — the contract
-/// under test *is* that work happens on another thread and comes back safely, and
-/// a fake would test the fake.
 @Suite struct ImageDecodeQueueTests {
     private final class TestWakeSink: AsyncRenderWakeSink, Sendable {
         private let count = Mutex(0)
@@ -26,384 +21,384 @@ import NucleusRenderModel
         }
     }
 
-    /// A small PNG written to a temporary file, removed with the test.
     private final class Fixture {
         let path: String
+        let width: Int
+        let height: Int
 
         init(width: Int = 8, height: Int = 8) {
+            self.width = width
+            self.height = height
             path = "\(NSTemporaryDirectory())nucleus-queue-"
                 + "\(UInt32.random(in: 0...UInt32.max)).png"
-            var rgba: [UInt8] = []
-            for _ in 0..<(width * height) { rgba.append(contentsOf: [200, 100, 50, 255]) }
-            try? PNGWriter.encode(width: width, height: height, rgba: rgba)
-                .write(to: URL(fileURLWithPath: path))
+            let rgba = [UInt8](
+                repeating: 0x80,
+                count: width * height * 4)
+            try? PNGWriter.encode(
+                width: width,
+                height: height,
+                rgba: rgba
+            ).write(to: URL(fileURLWithPath: path))
         }
 
-        deinit { try? FileManager.default.removeItem(atPath: path) }
+        deinit {
+            try? FileManager.default.removeItem(atPath: path)
+        }
+    }
+
+    private final class DecodeGate: @unchecked Sendable {
+        let entered = DispatchSemaphore(value: 0)
+        let release = DispatchSemaphore(value: 0)
     }
 
     private func source(_ fixture: Fixture) -> ImageSource {
-        ImageSource(path: fixture.path, maxWidth: 0, maxHeight: 0)
+        ImageSource(
+            path: fixture.path,
+            maxWidth: UInt32(fixture.width),
+            maxHeight: UInt32(fixture.height))
     }
 
-    /// Drain until something arrives, or give up. Polling rather than blocking:
-    /// the render thread drains at frame boundaries and never waits, so the test
-    /// exercises the same shape.
     private func waitForDrain(
-        _ queue: ImageDecodeQueue, timeout: TimeInterval = 5
-    ) -> [DecodedImageResult] {
+        _ queue: ImageDecodeQueue,
+        minimumCount: Int = 1,
+        timeout: TimeInterval = 5
+    ) -> [ImageDecodeCompletion] {
         let deadline = Date().addingTimeInterval(timeout)
-        while Date() < deadline {
-            let results = queue.drain()
-            if !results.isEmpty { return results }
-            usleep(1000)
+        var completions: [ImageDecodeCompletion] = []
+        while completions.count < minimumCount && Date() < deadline {
+            completions.append(contentsOf: queue.drain())
+            if completions.count < minimumCount {
+                usleep(1_000)
+            }
         }
-        return []
+        return completions
     }
 
-    // MARK: - Decoding
+    private func failure(
+        _ result: Result<DecodedImage, ImageDecodeFailure>
+    ) -> ImageDecodeFailure? {
+        guard case .failure(let reason) = result else { return nil }
+        return reason
+    }
 
-    @Test func aSubmittedImageComesBackDecoded() {
+    @Test func aSubmittedGenerationReturnsDecodedPixels() throws {
         let queue = ImageDecodeQueue(wakeSink: TestWakeSink())
         defer { queue.shutdown() }
         let fixture = Fixture()
 
-        #expect(queue.submit(handle: 1, source: source(fixture)))
-        let results = waitForDrain(queue)
-        #expect(results.count == 1)
-        #expect(results.first?.handle == 1)
-        #expect(results[0].isValid)
-        #expect(results[0].width == 8)
+        #expect(queue.submit(
+            handle: 1,
+            generation: 7,
+            source: source(fixture)))
+        let completion = try #require(waitForDrain(queue).first)
+        #expect(completion.handle == 1)
+        #expect(completion.generation == 7)
+        let decoded = try completion.result.get()
+        #expect(decoded.isValid)
+        #expect(decoded.width == 8)
+        #expect(decoded.height == 8)
     }
 
-    /// Nothing is ready the instant it is asked for — that is the whole point,
-    /// and the caller must be able to cope with an empty drain.
-    @Test func drainingBeforeAnythingFinishesYieldsNothing() {
+    @Test func duplicateHandleGenerationIsCoalesced() {
         let queue = ImageDecodeQueue(wakeSink: TestWakeSink())
         defer { queue.shutdown() }
-        #expect(queue.drain().isEmpty)
-    }
+        let fixture = Fixture(width: 128, height: 128)
 
-    @Test func noWorkerReportsInlineDecodeFallback() {
-        let queue = ImageDecodeQueue(
-            wakeSink: TestWakeSink(),
-            workerCount: 0)
-        let source = ImageSource(content: .raw(RawPixelBuffer(
-            width: 2,
-            height: 3,
-            order: .rgba,
-            pixels: [UInt8](repeating: 0x80, count: 2 * 3 * 4))))
-
-        #expect(!queue.hasWorkers)
-        #expect(!queue.submit(handle: 1, source: source))
-        queue.shutdown()
-    }
-
-    /// A pending decode draws nothing, so the caller asks again every frame.
-    /// Without this the queue would fill with duplicates of the same work.
-    @Test func resubmittingAPendingHandleIsRefused() {
-        let queue = ImageDecodeQueue(wakeSink: TestWakeSink())
-        defer { queue.shutdown() }
-        let fixture = Fixture()
-
-        #expect(queue.submit(handle: 7, source: source(fixture)))
-        #expect(!queue.submit(handle: 7, source: source(fixture)))
-        #expect(!queue.submit(handle: 7, source: source(fixture)))
-
-        let results = waitForDrain(queue)
-        #expect(results.count == 1, "one decode, not three")
-    }
-
-    /// Once drained, the handle is forgotten — a re-registered handle must be
-    /// decodable again.
-    @Test func aHandleCanBeSubmittedAgainAfterDraining() {
-        let queue = ImageDecodeQueue(wakeSink: TestWakeSink())
-        defer { queue.shutdown() }
-        let fixture = Fixture()
-
-        #expect(queue.submit(handle: 3, source: source(fixture)))
-        _ = waitForDrain(queue)
-        #expect(queue.submit(handle: 3, source: source(fixture)))
+        #expect(queue.submit(
+            handle: 3,
+            generation: 1,
+            source: source(fixture)))
+        #expect(!queue.submit(
+            handle: 3,
+            generation: 1,
+            source: source(fixture)))
         #expect(waitForDrain(queue).count == 1)
     }
 
-    @Test func severalImagesAllComeBack() {
+    @Test func corruptBytesProduceOneTypedFailure() throws {
         let queue = ImageDecodeQueue(wakeSink: TestWakeSink())
         defer { queue.shutdown() }
-        let fixtures = (0..<5).map { _ in Fixture() }
+        let source = ImageSource(
+            content: .encoded(bytes: [0xDE, 0xAD, 0xBE, 0xEF]),
+            maxWidth: 32,
+            maxHeight: 32)
 
-        for (index, fixture) in fixtures.enumerated() {
-            #expect(queue.submit(handle: UInt64(index + 1), source: source(fixture)))
-        }
-
-        var completedHandles: Set<UInt64> = []
-        let deadline = Date().addingTimeInterval(10)
-        while completedHandles.count < 5 && Date() < deadline {
-            for result in queue.drain() {
-                completedHandles.insert(result.handle)
-            }
-            usleep(1000)
-        }
-        #expect(completedHandles == [1, 2, 3, 4, 5])
+        #expect(queue.submit(handle: 9, generation: 1, source: source))
+        #expect(!queue.submit(handle: 9, generation: 1, source: source))
+        let completion = try #require(waitForDrain(queue).first)
+        #expect(failure(completion.result) == .unsupportedFormat)
+        #expect(queue.drain().isEmpty)
     }
 
-    /// A file that is not an image fails on the worker and simply never arrives,
-    /// rather than delivering an invalid image the render thread would cache.
-    @Test func anUndecodableSourceDeliversNothing() {
-        let queue = ImageDecodeQueue(wakeSink: TestWakeSink())
-        defer { queue.shutdown() }
-
-        #expect(queue.submit(
-            handle: 1, source: ImageSource(path: "/nonexistent", maxWidth: 0, maxHeight: 0)))
-
-        // Nothing should ever arrive; a short wait is enough to say so.
-        let deadline = Date().addingTimeInterval(0.5)
-        while Date() < deadline {
-            #expect(queue.drain().isEmpty)
-            usleep(2000)
-        }
-    }
-
-    // MARK: - Completion signal
-
-    /// Nothing else schedules a frame when a decode lands — the scene did not
-    /// change, the image simply arrived. Without this the result waits for an
-    /// unrelated repaint.
-    @Test func completionNotifies() {
-        let wakeSink = TestWakeSink()
-        let queue = ImageDecodeQueue(wakeSink: wakeSink)
-        defer { queue.shutdown() }
-        let fixture = Fixture()
-
-        #expect(queue.submit(handle: 1, source: source(fixture)))
-
-        let deadline = Date().addingTimeInterval(5)
-        while wakeSink.signalCount == 0 && Date() < deadline { usleep(1000) }
-        #expect(wakeSink.signalCount == 1)
-        #expect(queue.completionToFrameDemandNanoseconds != nil)
-        _ = queue.drain()
-    }
-
-    @Test func aCompletionBurstCoalescesItsWake() {
-        let wakeSink = TestWakeSink()
-        let queue = ImageDecodeQueue(wakeSink: wakeSink)
-        defer { queue.shutdown() }
-        let fixtures = (0..<8).map { _ in Fixture() }
-
-        for (index, fixture) in fixtures.enumerated() {
-            #expect(queue.submit(handle: UInt64(index + 1), source: source(fixture)))
-        }
-
-        let deadline = Date().addingTimeInterval(5)
-        while Date() < deadline {
-            if wakeSink.signalCount == 1 {
-                usleep(250_000)
-                break
-            }
-            usleep(1000)
-        }
-        #expect(wakeSink.signalCount == 1)
-        #expect(queue.drain().count == fixtures.count)
-    }
-
-    @Test func failedDecodeDoesNotWake() {
+    @Test func missingFileProducesUnreadableCompletionAndWake() throws {
         let wakeSink = TestWakeSink()
         let queue = ImageDecodeQueue(wakeSink: wakeSink)
         defer { queue.shutdown() }
 
         #expect(queue.submit(
-            handle: 1, source: ImageSource(path: "/nonexistent", maxWidth: 0, maxHeight: 0)))
-        usleep(100_000)
-        #expect(wakeSink.signalCount == 0)
+            handle: 2,
+            generation: 1,
+            source: ImageSource(
+                path: "/definitely/missing/nucleus.png",
+                maxWidth: 32,
+                maxHeight: 32)))
+        let completion = try #require(waitForDrain(queue).first)
+        #expect(failure(completion.result) == .unreadableInput)
+        #expect(wakeSink.signalCount == 1)
     }
 
-    // MARK: - Cancellation
-
-    /// An evicted handle may be re-registered for a different source, so a result
-    /// in flight for the old one must not be delivered against it.
-    @Test func cancellingBeforeDrainDropsTheResult() {
-        let wakeSink = TestWakeSink()
-        let queue = ImageDecodeQueue(wakeSink: wakeSink)
-        defer { queue.shutdown() }
+    @Test func cancellationIsATerminalCompletion() throws {
+        let gate = DecodeGate()
+        let queue = ImageDecodeQueue(
+            wakeSink: TestWakeSink(),
+            decodeOperation: { source in
+                gate.entered.signal()
+                gate.release.wait()
+                return ImageDecodeQueue.decode(source)
+            })
+        defer {
+            gate.release.signal()
+            queue.shutdown()
+        }
         let fixture = Fixture()
+        #expect(queue.submit(
+            handle: 4,
+            generation: 1,
+            source: source(fixture)))
+        #expect(gate.entered.wait(timeout: .now() + 2) == .success)
+        queue.cancel(handle: 4)
+        gate.release.signal()
 
-        #expect(queue.submit(handle: 9, source: source(fixture)))
-        queue.cancel(handle: 9)
-
-        let deadline = Date().addingTimeInterval(0.5)
-        while Date() < deadline {
-            #expect(queue.drain().allSatisfy { $0.handle != 9 })
-            usleep(2000)
-        }
-        #expect(wakeSink.signalCount == 0)
+        let completion = try #require(waitForDrain(queue).first)
+        #expect(failure(completion.result) == .cancellation)
     }
 
-    /// Cancelling clears the handle, so the same handle can be submitted again
-    /// immediately — which is exactly what a re-registration does.
-    @Test func cancellingAllowsResubmission() {
-        let queue = ImageDecodeQueue(wakeSink: TestWakeSink())
-        defer { queue.shutdown() }
+    @Test func runningOldGenerationAndNewGenerationBothTerminate()
+        throws
+    {
+        let gate = DecodeGate()
+        let queue = ImageDecodeQueue(
+            wakeSink: TestWakeSink(),
+            decodeOperation: { source in
+                gate.entered.signal()
+                gate.release.wait()
+                return ImageDecodeQueue.decode(source)
+            })
+        defer {
+            gate.release.signal()
+            gate.release.signal()
+            queue.shutdown()
+        }
+        let old = Fixture(width: 16, height: 16)
+        let new = Fixture(width: 3, height: 5)
+        #expect(queue.submit(
+            handle: 5,
+            generation: 1,
+            source: source(old)))
+        #expect(gate.entered.wait(timeout: .now() + 2) == .success)
+        #expect(queue.submit(
+            handle: 5,
+            generation: 2,
+            source: source(new)))
+        gate.release.signal()
+        #expect(gate.entered.wait(timeout: .now() + 2) == .success)
+        gate.release.signal()
+
+        let completions = waitForDrain(queue, minimumCount: 2)
+        #expect(Set(completions.map(\.generation)) == [1, 2])
+        let newest = try #require(
+            completions.first { $0.generation == 2 })
+        let decoded = try newest.result.get()
+        #expect(decoded.width == 3)
+        #expect(decoded.height == 5)
+    }
+
+    @Test func zeroBoundsAreInvalidRatherThanDeferred() {
         let fixture = Fixture()
-
-        #expect(queue.submit(handle: 4, source: source(fixture)))
-        queue.cancel(handle: 4)
-        #expect(queue.submit(handle: 4, source: source(fixture)))
+        #expect(failure(
+            ImageDecodeQueue.decode(ImageSource(
+                path: fixture.path,
+                maxWidth: 0,
+                maxHeight: 8))
+            ) == .invalidDimensions)
     }
 
-    @Test func resubmissionCannotReceiveTheCancelledGeneration() {
-        let queue = ImageDecodeQueue(wakeSink: TestWakeSink())
-        defer { queue.shutdown() }
-        let oldFixture = Fixture(width: 256, height: 256)
-        let newFixture = Fixture(width: 3, height: 5)
-
-        #expect(queue.submit(handle: 4, source: source(oldFixture)))
-        queue.cancel(handle: 4)
-        #expect(queue.submit(handle: 4, source: source(newFixture)))
-
-        let results = waitForDrain(queue)
-        #expect(results.count == 1)
-        #expect(results.first?.width == 3)
-        #expect(results.first?.height == 5)
+    @Test func oversizedTargetDimensionFailsBeforeDecode() {
+        let fixture = Fixture()
+        #expect(failure(
+            ImageDecodeQueue.decode(ImageSource(
+                path: fixture.path,
+                maxWidth: 32_769,
+                maxHeight: 1))
+            ) == .limitExceeded)
     }
 
-    @Test func cancellingAnUnknownHandleIsHarmless() {
-        let queue = ImageDecodeQueue(wakeSink: TestWakeSink())
-        defer { queue.shutdown() }
-        queue.cancel(handle: 999)
+    @Test func oversizedPixelCountFailsBeforeDecode() {
+        let fixture = Fixture()
+        #expect(failure(
+            ImageDecodeQueue.decode(ImageSource(
+                path: fixture.path,
+                maxWidth: 10_000,
+                maxHeight: 10_000))
+            ) == .limitExceeded)
     }
 
-    // MARK: - Shutdown
-
-    /// Workers must be stopped before the Graphite context they decode against is
-    /// torn down, so shutdown joins rather than merely signalling.
-    @Test func shutdownStopsTheWorkers() {
-        let queue = ImageDecodeQueue(wakeSink: TestWakeSink())
-        queue.shutdown()
-        #expect(!queue.hasWorkers)
-        // Submitting after shutdown is refused rather than silently queued
-        // forever.
-        #expect(!queue.submit(handle: 1, source: ImageSource(path: "/x", maxWidth: 0, maxHeight: 0)))
+    @Test func oversizedSvgTargetFailsBeforeRasterization() {
+        let bytes = Array("""
+            <svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>
+            """.utf8)
+        #expect(failure(
+            ImageDecodeQueue.decode(ImageSource(
+                content: .encoded(bytes: bytes),
+                maxWidth: 32_769,
+                maxHeight: 1))
+            ) == .limitExceeded)
     }
 
-    @Test func shutdownIsIdempotent() {
-        let queue = ImageDecodeQueue(wakeSink: TestWakeSink())
-        queue.shutdown()
-        queue.shutdown()
-        #expect(!queue.hasWorkers)
-    }
-
-    /// Shutting down with work outstanding must not hang or crash.
-    @Test func shutdownWithWorkInFlightIsClean() {
-        let queue = ImageDecodeQueue(wakeSink: TestWakeSink())
-        let fixtures = (0..<8).map { _ in Fixture(width: 64, height: 64) }
-        for (index, fixture) in fixtures.enumerated() {
-            queue.submit(handle: UInt64(index + 1), source: source(fixture))
-        }
-        queue.shutdown()
-        #expect(!queue.hasWorkers)
-    }
-
-    @Test func deinitStopsWorkersWithoutExplicitShutdown() {
-        let wakeSink = TestWakeSink()
-        weak var weakQueue: ImageDecodeQueue?
-        do {
-            var queue: ImageDecodeQueue? = ImageDecodeQueue(wakeSink: wakeSink)
-            weakQueue = queue
-            let fixture = Fixture(width: 64, height: 64)
-            queue?.submit(handle: 1, source: source(fixture))
-            queue = nil
-        }
-        #expect(weakQueue == nil)
-    }
-
-    // MARK: - Raw sources
-
-    @Test func rawPixelsDecodeWithoutAFile() {
-        let queue = ImageDecodeQueue(wakeSink: TestWakeSink())
-        defer { queue.shutdown() }
-
+    @Test func rawByteCountOverflowFailsBeforeNormalization() {
         let buffer = RawPixelBuffer(
-            width: 2, height: 2, order: .bgra,
-            pixels: [UInt8](repeating: 128, count: 16))
-        #expect(queue.submit(handle: 1, source: ImageSource(content: .raw(buffer))))
-
-        let results = waitForDrain(queue)
-        #expect(results[0].width == 2)
+            width: Int.max,
+            height: Int.max,
+            rowStride: Int.max,
+            order: .rgba,
+            pixels: [0, 0, 0, 0])
+        #expect(failure(
+            ImageDecodeQueue.decode(ImageSource(content: .raw(buffer)))
+        ) == .limitExceeded)
     }
 
-    /// A buffer that does not describe itself consistently yields no image at
-    /// all, rather than one built from misread bytes.
-    @Test func anInconsistentRawBufferDeliversNothing() {
+    @Test func encodedInputLimitIsEnforced() {
+        let bytes = [UInt8](
+            repeating: 0,
+            count: 64 * 1024 * 1024 + 1)
+        #expect(failure(
+            ImageDecodeQueue.decode(ImageSource(
+                content: .encoded(bytes: bytes),
+                maxWidth: 1,
+                maxHeight: 1))
+            ) == .limitExceeded)
+    }
+
+    @Test func metadataProbeReadsIntrinsicDimensionsWithoutDecode()
+        throws
+    {
+        let fixture = Fixture(width: 13, height: 17)
+        let metadata = try ImageDecodeQueue.probeMetadata(
+            source(fixture)).get()
+        #expect(metadata.width == 13)
+        #expect(metadata.height == 17)
+        #expect(!metadata.isVector)
+    }
+
+    @Test func rawPixelsDecodeToOwnedRasterPixels() throws {
+        let source = ImageSource(content: .raw(RawPixelBuffer(
+            width: 2,
+            height: 3,
+            order: .bgra,
+            pixels: [UInt8](repeating: 0x80, count: 24))))
+        let decoded = try ImageDecodeQueue.decode(source).get()
+        #expect(decoded.width == 2)
+        #expect(decoded.height == 3)
+    }
+
+    @Test func shutdownRefusesNewWork() {
         let queue = ImageDecodeQueue(wakeSink: TestWakeSink())
-        defer { queue.shutdown() }
-
-        let buffer = RawPixelBuffer(
-            width: 64, height: 64, order: .rgba, pixels: [1, 2, 3, 4])
-        #expect(queue.submit(handle: 1, source: ImageSource(content: .raw(buffer))))
-
-        let deadline = Date().addingTimeInterval(0.5)
-        while Date() < deadline {
-            #expect(queue.drain().isEmpty)
-            usleep(2000)
-        }
+        queue.shutdown()
+        #expect(!queue.hasWorkers)
+        #expect(!queue.submit(
+            handle: 1,
+            generation: 1,
+            source: ImageSource(
+                content: .raw(RawPixelBuffer(
+                    width: 1,
+                    height: 1,
+                    order: .rgba,
+                    pixels: [0, 0, 0, 0])))))
     }
 }
 
-/// A minimal PNG encoder, so decode tests can state their input rather than ship
-/// a binary that hides it.
 enum PNGWriter {
-    static func encode(width: Int, height: Int, rgba: [UInt8]) -> Data {
+    static func encode(
+        width: Int,
+        height: Int,
+        rgba: [UInt8]
+    ) -> Data {
         var raw: [UInt8] = []
         for row in 0..<height {
             raw.append(0)
-            raw.append(contentsOf: rgba[(row * width * 4)..<((row + 1) * width * 4)])
+            raw.append(contentsOf:
+                rgba[(row * width * 4)..<((row + 1) * width * 4)])
         }
 
         var zlib: [UInt8] = [0x78, 0x01]
         var offset = 0
         repeat {
-            let count = min(65535, raw.count - offset)
+            let count = min(65_535, raw.count - offset)
             zlib.append(offset + count >= raw.count ? 1 : 0)
-            zlib.append(contentsOf: [UInt8(count & 0xFF), UInt8(count >> 8 & 0xFF)])
+            zlib.append(contentsOf: [
+                UInt8(count & 0xFF),
+                UInt8(count >> 8 & 0xFF),
+            ])
             let inverted = ~UInt16(count)
-            zlib.append(contentsOf: [UInt8(inverted & 0xFF), UInt8(inverted >> 8 & 0xFF)])
+            zlib.append(contentsOf: [
+                UInt8(inverted & 0xFF),
+                UInt8(inverted >> 8 & 0xFF),
+            ])
             zlib.append(contentsOf: raw[offset..<(offset + count)])
             offset += count
         } while offset < raw.count
         zlib.append(contentsOf: beBytes(adler32(raw)))
 
         var png: [UInt8] = [137, 80, 78, 71, 13, 10, 26, 10]
-        png += chunk("IHDR", beBytes(UInt32(width)) + beBytes(UInt32(height)) + [8, 6, 0, 0, 0])
+        png += chunk(
+            "IHDR",
+            beBytes(UInt32(width))
+                + beBytes(UInt32(height))
+                + [8, 6, 0, 0, 0])
         png += chunk("IDAT", zlib)
         png += chunk("IEND", [])
         return Data(png)
     }
 
     private static func beBytes(_ value: UInt32) -> [UInt8] {
-        [UInt8(value >> 24 & 0xFF), UInt8(value >> 16 & 0xFF),
-         UInt8(value >> 8 & 0xFF), UInt8(value & 0xFF)]
+        [
+            UInt8(value >> 24 & 0xFF),
+            UInt8(value >> 16 & 0xFF),
+            UInt8(value >> 8 & 0xFF),
+            UInt8(value & 0xFF),
+        ]
     }
 
-    private static func chunk(_ type: String, _ payload: [UInt8]) -> [UInt8] {
+    private static func chunk(
+        _ type: String,
+        _ payload: [UInt8]
+    ) -> [UInt8] {
         let tagged = Array(type.utf8) + payload
-        return beBytes(UInt32(payload.count)) + tagged + beBytes(crc32(tagged))
+        return beBytes(UInt32(payload.count))
+            + tagged
+            + beBytes(crc32(tagged))
+    }
+
+    private static func adler32(_ bytes: [UInt8]) -> UInt32 {
+        var a: UInt32 = 1
+        var b: UInt32 = 0
+        for byte in bytes {
+            a = (a + UInt32(byte)) % 65_521
+            b = (b + a) % 65_521
+        }
+        return (b << 16) | a
     }
 
     private static func crc32(_ bytes: [UInt8]) -> UInt32 {
         var crc: UInt32 = 0xFFFF_FFFF
         for byte in bytes {
             crc ^= UInt32(byte)
-            for _ in 0..<8 { crc = (crc & 1) != 0 ? (crc >> 1) ^ 0xEDB8_8320 : crc >> 1 }
+            for _ in 0..<8 {
+                crc = (crc & 1) != 0
+                    ? (crc >> 1) ^ 0xEDB8_8320
+                    : crc >> 1
+            }
         }
         return crc ^ 0xFFFF_FFFF
-    }
-
-    private static func adler32(_ bytes: [UInt8]) -> UInt32 {
-        var a: UInt32 = 1, b: UInt32 = 0
-        for byte in bytes {
-            a = (a + UInt32(byte)) % 65521
-            b = (b + a) % 65521
-        }
-        return (b << 16) | a
     }
 }

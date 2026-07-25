@@ -19,3 +19,176 @@ filegroup {
     srcs: ["cgroups.json"],
     visibility: ["//system/core/libprocessgroup/profiles:__pkg__"],
 }
+
+cc_library_headers {
+    name: "libnucleus_android_gralloc_headers",
+    vendor: true,
+    export_include_dirs: ["native/gralloc/include"],
+}
+
+cc_library_headers {
+    name: "libnucleus_android_composer_protocol_headers",
+    vendor: true,
+    export_include_dirs: ["native/composer-protocol/include"],
+}
+
+cc_library_static {
+    name: "libnucleus_android_gfxstream_guest_transport",
+    vendor: true,
+    host_supported: true,
+    srcs: [
+        "native/gfxstream-guest/GfxstreamSocketTransport.cpp",
+        "native/gfxstream-guest/GuestRingFactory.cpp",
+        "native/gfxstream-guest/GuestRingStream.cpp",
+        "native/ipc/NucleusAndroidIPCC.c",
+        "native/shared-ring/NucleusAndroidSharedRingC.c",
+    ],
+    export_include_dirs: [
+        "native/gfxstream-guest/include",
+        "native/ipc/include",
+        "native/shared-ring/include",
+    ],
+    include_dirs: [
+        "external/mesa3d/src/gfxstream/guest/iostream/include",
+    ],
+    c_std: "c17",
+    cpp_std: "c++20",
+    cflags: [
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+    ],
+}
+
+cc_library_static {
+    name: "libnucleus_android_gralloc_broker_client",
+    vendor: true,
+    srcs: [
+        "native/gralloc/NucleusGrallocBrokerClient.cpp",
+        "native/ipc/NucleusAndroidIPCC.c",
+    ],
+    export_include_dirs: [
+        "native/gfxstream-guest/include",
+        "native/gralloc/include",
+        "native/ipc/include",
+    ],
+    shared_libs: [
+        "android.hardware.graphics.allocator-V3-ndk",
+        "libcutils",
+    ],
+    c_std: "c17",
+    cpp_std: "c++20",
+    cflags: [
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+    ],
+}
+
+cc_binary {
+    name: "android.hardware.graphics.allocator-service.nucleus",
+    relative_install_path: "hw",
+    vendor: true,
+    srcs: ["native/gralloc/Allocator.cpp"],
+    init_rc: ["native/gralloc/allocator.nucleus.rc"],
+    vintf_fragments: ["native/gralloc/allocator.nucleus.xml"],
+    static_libs: [
+        "libaidlcommonsupport",
+        "libnucleus_android_gralloc_broker_client",
+    ],
+    shared_libs: [
+        "android.hardware.graphics.allocator-V3-ndk",
+        "libbase",
+        "libbinder_ndk",
+        "libcutils",
+        "libdrm",
+        "liblog",
+    ],
+    cpp_std: "c++20",
+    cflags: [
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+    ],
+}
+
+cc_library_shared {
+    name: "mapper.nucleus",
+    relative_install_path: "hw",
+    vendor: true,
+    srcs: ["native/gralloc/Mapper.cpp"],
+    vintf_fragments: ["native/gralloc/mapper.nucleus.xml"],
+    static_libs: [
+        "libnucleus_android_gralloc_broker_client",
+    ],
+    shared_libs: [
+        "android.hardware.graphics.allocator-V3-ndk",
+        "android.hardware.graphics.mapper@4.0",
+        "libbase",
+        "libcutils",
+        "libdrm",
+        "libgralloctypes",
+        "libhidlbase",
+        "liblog",
+        "libsync",
+    ],
+    header_libs: [
+        "libimapper_providerutils",
+        "libimapper_stablec",
+    ],
+    cpp_std: "c++20",
+    cflags: [
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+    ],
+}
+
+cc_binary {
+    name: "android.hardware.graphics.composer3-service.nucleus",
+    relative_install_path: "hw",
+    vendor: true,
+    srcs: [
+        "//device/generic/goldfish:nucleus_hwc3_common_sources",
+        "native/composer/Device.cpp",
+        "native/composer/DisplayFinder.cpp",
+        "native/composer/Main.cpp",
+        "native/composer/NucleusFrameComposer.cpp",
+        "native/ipc/NucleusAndroidIPCC.c",
+    ],
+    init_rc: ["native/composer/composer.nucleus.rc"],
+    vintf_fragments: ["native/composer/composer.nucleus.xml"],
+    include_dirs: [
+        "device/generic/goldfish/hals/hwc3",
+    ],
+    local_include_dirs: [
+        "native/composer",
+        "native/composer-protocol/include",
+        "native/gralloc/include",
+        "native/ipc/include",
+    ],
+    static_libs: [
+        "libaidlcommonsupport",
+    ],
+    shared_libs: [
+        "android.hardware.graphics.composer@2.1-resources",
+        "android.hardware.graphics.composer@2.2-resources",
+        "android.hardware.graphics.composer3-V5-ndk",
+        "libbase",
+        "libbinder_ndk",
+        "libcutils",
+        "libgralloctypes",
+        "libhidlbase",
+        "liblog",
+        "libsync",
+        "libui",
+        "libutils",
+    ],
+    c_std: "c17",
+    cpp_std: "c++20",
+    cflags: [
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+    ],
+}

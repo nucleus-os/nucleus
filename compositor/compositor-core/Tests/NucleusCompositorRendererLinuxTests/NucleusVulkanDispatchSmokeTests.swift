@@ -9,17 +9,25 @@ import Vulkan
 // instance/device dispatch table types compile. All hardware-independent —
 // exercised against the real loader with no instance + no GPU.
 @Suite struct NucleusVulkanDispatchSmokeTests {
-    @Test(.disabled("invokes the real Vulkan loader (flaky on partial-ICD hosts)")) func baseDispatchAndGlobals() {
+    @Test func gpuLoader_baseDispatchAndGlobals() throws {
         // Base dispatch table loads from the linked loader; core globals resolve.
         let base = VK.loadBaseDispatch()
-        #expect(base.vkEnumerateInstanceVersion != nil, "base-has-enumerate-version")
-        #expect(base.vkCreateInstance != nil, "base-has-create-instance")
-        #expect(base.vkEnumerateInstanceExtensionProperties != nil, "base-has-enumerate-ext")
-        #expect(base.vkEnumerateInstanceLayerProperties != nil, "base-has-enumerate-layers")
+        let enumerateVersion = try requireValue(
+            base.vkEnumerateInstanceVersion,
+            "Vulkan loader is missing vkEnumerateInstanceVersion")
+        _ = try requireValue(
+            base.vkCreateInstance,
+            "Vulkan loader is missing vkCreateInstance")
+        let enumerateExtensions = try requireValue(
+            base.vkEnumerateInstanceExtensionProperties,
+            "Vulkan loader is missing vkEnumerateInstanceExtensionProperties")
+        let enumerateLayers = try requireValue(
+            base.vkEnumerateInstanceLayerProperties,
+            "Vulkan loader is missing vkEnumerateInstanceLayerProperties")
 
         // Typed call through the dispatch table.
         var version: UInt32 = 0
-        let vr = base.vkEnumerateInstanceVersion!(&version)
+        let vr = enumerateVersion(&version)
         #expect(vr == VK_SUCCESS, "enumerate-version-result")
         #expect(version != 0, "enumerate-version-nonzero")
         let major = (version >> 22) & 0x7F
@@ -27,27 +35,30 @@ import Vulkan
 
         // Checked enumeration helper over the two-call protocol.
         let exts = VkEnumerate.array { count, out in
-            base.vkEnumerateInstanceExtensionProperties!(nil, count, out)
+            enumerateExtensions(nil, count, out)
         }
-        #expect(exts != nil, "enumerate-ext-ok")
-        if let exts {
-            // Each VkExtensionProperties carries a NUL-terminated C name array.
-            for ext in exts.prefix(1) {
-                let name = withUnsafeBytes(of: ext.extensionName) { raw -> String in
-                    String(cString: raw.bindMemory(to: CChar.self).baseAddress!)
-                }
-                #expect(!name.isEmpty && name.hasPrefix("VK_"), "ext-name-shape")
+        let extensions = try requireValue(
+            exts, "Vulkan instance-extension enumeration failed")
+        // Each VkExtensionProperties carries a NUL-terminated C name array.
+        for ext in extensions.prefix(1) {
+            let name = withUnsafeBytes(of: ext.extensionName) { raw -> String in
+                String(cString: raw.bindMemory(to: CChar.self).baseAddress!)
             }
-            // No-ICD environments legitimately return an empty set; the helper
-            // still succeeds (non-nil), which the check above already covered.
-            #expect(exts.count >= 0, "enumerate-ext-count")
+            #expect(!name.isEmpty && name.hasPrefix("VK_"), "ext-name-shape")
         }
 
         // Layer enumeration via the same helper (commonly empty).
         let layers = VkEnumerate.array { count, out in
-            base.vkEnumerateInstanceLayerProperties!(count, out)
+            enumerateLayers(count, out)
         }
-        #expect(layers != nil, "enumerate-layers-ok")
+        _ = try requireValue(layers, "Vulkan layer enumeration failed")
+
+        #expect(throws: VulkanLaneTestFailure.self) {
+            _ = try requireValue(
+                vkGetInstanceProcAddr(
+                    nil, "vkNucleusDeliberatelyMissingLoaderSymbol"),
+                "Vulkan loader did not resolve the deliberately missing symbol")
+        }
     }
 
     @Test func inventoriesAndDispatchTypes() {

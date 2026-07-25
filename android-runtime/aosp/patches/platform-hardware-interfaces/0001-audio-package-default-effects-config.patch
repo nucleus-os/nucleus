@@ -1,0 +1,27 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Nucleus Source Lock <source-lock@nucleus.invalid>
+Date: Sat, 1 Jan 2000 00:00:00 +0000
+Subject: [PATCH] Audio: package the default effects config in the HAL APEX
+
+The example effect service resolves its default configuration relative to its
+APEX. Package the existing default configuration beside the service.
+
+Change-Id: I721a75042e1b8222e1f99bb1f09a688b950d610d
+---
+ audio/aidl/default/apex/com.android.hardware.audio/Android.bp | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/audio/aidl/default/apex/com.android.hardware.audio/Android.bp b/audio/aidl/default/apex/com.android.hardware.audio/Android.bp
+index 510fee5f84..3694854e4d 100644
+--- a/audio/aidl/default/apex/com.android.hardware.audio/Android.bp
++++ b/audio/aidl/default/apex/com.android.hardware.audio/Android.bp
+@@ -50,6 +50,7 @@ apex {
+         "android.hardware.bluetooth.audio.xml",
+         "audio_eraser_classifier_model",
+         "audio_eraser_separator_model",
++        "audio_effects_config.xml",
+     ],
+     required: [
+         "aidl_audio_set_configurations_bfbs",
+-- 
+2.53.0

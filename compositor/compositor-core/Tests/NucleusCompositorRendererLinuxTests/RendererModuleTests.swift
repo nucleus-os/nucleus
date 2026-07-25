@@ -7,7 +7,7 @@ import NucleusRenderModel
 
 // FramePlan op-vocabulary assembly is hardware-independent and asserts directly;
 // rendering a FramePlan through NucleusRenderer into an offscreen Graphite target
-// runs best-effort over a real device and asserts nothing hardware-conditional.
+// runs in the mandatory headless Graphite lane.
 @Suite struct RendererModuleTests {
     @Test func framePlanAssembly() {
         // masked fill, a textured quad, and a shadow quad.
@@ -30,9 +30,7 @@ import NucleusRenderModel
 
     }
 
-    // Best-effort GPU: render FramePlans through the real Graphite path. Asserts
-    // nothing hardware-conditional; verifies compile + link and headless safety.
-    @Test(.disabled("requires a live GPU/Vulkan device")) func renderOffscreenBestEffort() {
+    @Test func gpuHeadless_renderOffscreen() throws {
         let plan = FramePlan()
         plan.appendFillQuad(FillQuad(dst: PlanRect(x: 0, y: 0, w: 256, h: 128), color: (0.1, 0.1, 0.1, 1)))
         plan.appendFillQuad(FillQuad(
@@ -49,35 +47,10 @@ import NucleusRenderModel
             src: PlanRect(x: 0, y: 0, w: 1, h: 1),
             alpha: 0.8))
 
-        let base = VK.loadBaseDispatch()
-        let contract = VkRequirements.contract()
-        guard let instance = InstanceOwner.create(
-            base: base, applicationName: "NucleusCompositorRendererLinuxTests",
-            contract: contract, enableValidation: false
-        ) else { return }
-        guard let selection = DeviceOwner.selectPhysicalDevice(
-            instance: instance.handle, dispatch: instance.dispatch, contract: contract
-        ) else { return }
-        guard let device = DeviceOwner.create(
-            selection: selection, instanceDispatch: instance.dispatch,
-            contract: contract
-        ) else { return }
-        guard let queue = device.queue(family: selection.graphicsQueueFamily) else { return }
-
-        withCStringArray(contract.deviceExtensions) { extPtr, extCount in
-            var desc = nucleus.skia.VulkanContextDescriptor()
-            desc.instance = UnsafeMutableRawPointer(instance.handle)
-            desc.physicalDevice = UnsafeMutableRawPointer(selection.physicalDevice)
-            desc.device = UnsafeMutableRawPointer(device.handle)
-            desc.queue = UnsafeMutableRawPointer(queue)
-            desc.graphicsQueueIndex = selection.graphicsQueueFamily
-            desc.maxApiVersion = VkRequirements.minimumApiVersion.raw
-            desc.deviceExtensions = extPtr
-            desc.deviceExtensionCount = extCount
-
-            let context = nucleus.skia.makeGraphiteVulkanContext(desc)
-            guard context.isValid() else { return }
-
+        try withRequiredVulkanGraphite(
+            presentation: .headless,
+            applicationName: "NucleusCompositorRendererLinuxTests"
+        ) { _, _, context, recorder in
             // A 16×16 solid-green source image for the textured quad.
             var pixels = [UInt8](repeating: 0, count: 16 * 16 * 4)
             for i in 0..<(16 * 16) {
@@ -89,14 +62,27 @@ import NucleusRenderModel
             let decodedSource = pixels.withUnsafeBufferPointer { buf in
                 nucleus.skia.makeRasterImageRGBA(16, 16, buf.baseAddress, buf.count)
             }
-            let sourceImage = context.makeRecorder().makeTextureImage(decodedSource)
+            let sourceImage = recorder.makeTextureImage(decodedSource)
+            try requireTrue(sourceImage.isValid(), "texture upload image is invalid")
+            try requireTrue(
+                submitGraphiteAndWait(
+                    context: context,
+                    recording: recorder.snapRecording(),
+                    serial: 1),
+                "texture upload submission did not complete")
 
-            _ = NucleusRenderer.renderOffscreen(
-                context: context, plan: plan, width: 256, height: 128,
-                submissionSerial: 1,
-                resolveTexture: {
-                    $0.handle.raw == 1 ? sourceImage : nil
-                })
+            let basic = try requireValue(
+                FramePlanRenderer.renderOffscreen(
+                    context: context, plan: plan, width: 256, height: 128,
+                    submissionSerial: 2,
+                    resolveTexture: {
+                        $0.handle.raw == 1 ? sourceImage : nil
+                    }),
+                "basic offscreen render failed")
+            #expect(basic.imageWidth == 256)
+            #expect(basic.imageHeight == 128)
+            #expect(basic.opsDrawn == 3)
+            #expect(basic.submitOk)
 
             // The richer composite: src-blend fill, a masked textured quad with a
             // source rect and a shadow with a resolvable texture. Each op type
@@ -116,12 +102,19 @@ import NucleusRenderModel
                 dst: PlanRect(x: 110, y: 20, w: 90, h: 30),
                 src: PlanRect(x: 0, y: 0, w: 16, h: 16),
                 alpha: 0.7))
-            _ = NucleusRenderer.renderOffscreen(
-                context: context, plan: rich, width: 256, height: 128,
-                submissionSerial: 2,
-                resolveTexture: {
-                    $0.handle.raw == 1 ? sourceImage : nil
-                })
+            let result = try requireValue(
+                FramePlanRenderer.renderOffscreen(
+                    context: context, plan: rich, width: 256, height: 128,
+                    submissionSerial: 3,
+                    resolveTexture: {
+                        $0.handle.raw == 1 ? sourceImage : nil
+                    }),
+                "rich offscreen render failed")
+            #expect(result.opsDrawn == 3)
+            #expect(result.submitOk)
+            try requireTrue(
+                waitForGraphiteSerial(context: context, serial: 3),
+                "offscreen submissions did not complete")
         }
     }
 }

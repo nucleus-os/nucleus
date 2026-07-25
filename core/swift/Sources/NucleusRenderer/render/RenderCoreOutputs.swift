@@ -21,6 +21,14 @@ extension RenderCore {
         frameDriver?.imageResidency(handle: handle) ?? .unknown
     }
 
+    /// The terminal reason for the handle's current source generation.
+    @_spi(NucleusPlatform)
+    public func imageFailure(
+        for handle: UInt64
+    ) -> ImageDecodeFailure? {
+        frameDriver?.imageFailure(handle: handle)
+    }
+
     /// Publish the session-lock composition. A change forces a redraw; while locked,
     /// `renderReady` also redraws every ready output each pass so the blank appears
     /// immediately and stays up regardless of tree damage.
@@ -37,6 +45,9 @@ extension RenderCore {
         logicalX: Double, logicalY: Double, logicalWidth: Double, logicalHeight: Double,
         pixelWidth: UInt32, pixelHeight: UInt32, fractionalScale: Double
     ) {
+        if frameDriver == nil {
+            _ = recreateGraphiteRenderer()
+        }
         let metadata = OutputTargetMetadata(
             outputId: outputID,
             logicalRect: LogicalRect(x: logicalX, y: logicalY, width: logicalWidth, height: logicalHeight),

@@ -46,10 +46,14 @@ extension InputDispatch {
 
     package func requestOverlayFrame() {
         let server = host.server
+        guard let outputID = server.spaces.overlayDisplayID(
+            layout: server.layout
+        ) else {
+            return
+        }
         RenderBridge.requestFrame(
             server: server,
-            outputId: server.spaces.overlayDisplayID(
-                layout: server.layout),
+            outputId: outputID,
             reason: .shellOverlay)
     }
 

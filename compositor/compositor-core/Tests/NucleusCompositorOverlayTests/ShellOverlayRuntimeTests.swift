@@ -472,6 +472,43 @@ import Testing
         #expect(controller.scene.notifications.first?.thumbnailHandle == 123)
     }
 
+    @Test func controllerDefersPublicationWhileOutputsAreSuspended() throws {
+        let scene = try ShellOverlayScene(
+            frame: nil,
+            commitSink: InMemoryCommitSink(),
+            services: testHostServices())
+        var publications: [ShellOverlayPublication] = []
+        let controller = ShellOverlayController(scene: scene) { publication in
+            publications.append(publication)
+        }
+
+        controller.beginFrame(.init(
+            outputWidth: 800,
+            outputHeight: 600,
+            devicePixelRatio: 1,
+            overlayRegionX: 0,
+            overlayRegionY: 0,
+            overlayRegionW: 800,
+            overlayRegionH: 600))
+        #expect(publications.count == 1)
+
+        controller.setPublicationSuspended(true)
+        controller.showNotification(.init(
+            id: 8,
+            appName: "Nucleus",
+            summary: "Retained",
+            body: "Published after output resume",
+            thumbnailHandle: 0,
+            showsThumbnail: false,
+            expireTimeoutMs: 5_000))
+        #expect(publications.count == 1)
+
+        controller.setPublicationSuspended(false)
+        #expect(publications.count == 2)
+        #expect(publications.last?.frame.outputWidth == 800)
+        #expect(controller.scene.notifications.map(\.id) == [8])
+    }
+
     @Test func controllerDoesNotRepublishUnchangedStableOverlayFrames() throws {
         let sink = InMemoryCommitSink()
         let scene = try ShellOverlayScene(

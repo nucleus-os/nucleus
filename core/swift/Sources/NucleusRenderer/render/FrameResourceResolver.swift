@@ -54,6 +54,9 @@ final class RenderCoreFrameResourceResolver: FrameResourceResolver {
             }
             return driver.registry.resolve(.renderer(entry.texture.raw))
         case .content:
+            if let staged = owner.stagedShmUploads[reference.handle.raw] {
+                return staged.image
+            }
             return driver.registry.resolve(
                 .clientSurface(reference.handle.raw))
         case .paint, .remoteHost, .shadow, .fill, .shell, .unknown:

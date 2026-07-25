@@ -1,4 +1,6 @@
 import Testing
+import FoundationEssentials
+import Glibc
 import NucleusCompositorDrmC
 import VulkanC
 import Vulkan
@@ -7,13 +9,12 @@ import NucleusSkiaGraphiteBridge
 @testable import NucleusCompositorRendererLinux
 
 // scanout-usage constraint is wired into the descriptor and that the plane-layout
-// packing behaves. The best-effort GPU+GBM path opens a DRM render node, creates
+// packing behaves. The mandatory GPU+GBM lane opens a DRM render node, creates
 // a GBM device, allocates a renderable BO, imports it as a Vulkan image over the
 // SAME Vulkan device, wraps it as a Graphite render-target surface, clears + draws
 // a known color, reads it back, then assembles the `OutputBufferOwner` and lets it
 // deinit — proving the full GBM → Vulkan → Skia round-trip and the reverse-order
-// teardown. Every GPU/GBM stage guards on availability and asserts nothing
-// hardware-conditional.
+// teardown.
 @Suite struct GbmScanoutBufferTests {
     @Test func scanoutUsageAndPlanePacking() {
         #expect(DrmFramebuffer.explicitModifierFlags == UInt32(DRM_MODE_FB_MODIFIERS),
@@ -39,65 +40,43 @@ import NucleusSkiaGraphiteBridge
         #expect(planesAsDmaBuf.count == 1 && planesAsDmaBuf[0].rowPitch == 256, "plane-layout-to-dmabuf")
     }
 
-    // Best-effort GPU + GBM round-trip. Hardware-gated, so it asserts nothing.
-    @Test(.disabled("requires a live GPU/Vulkan device")) func gbmRoundTripBestEffort() {
-        Self.runRoundTrip()
+    @Test func gpuDRM_gbmRoundTrip() throws {
+        try Self.runRoundTrip()
     }
 
     /// Open a render node + GBM device, bring up the Vulkan device + Graphite
     /// context, allocate a renderable BO, import it, wrap it as a surface, draw +
-    /// read back, then assemble + deinit the `OutputBufferOwner`. Each stage
-    /// escapes when its prerequisite is unavailable.
-    static func runRoundTrip() {
-        // Find a DRM render node. Prefer enumeration; fall back to renderD128.
-        let renderPath: String
-        switch DrmDeviceEnumerator.enumerate() {
-        case .success(let candidates) where !candidates.isEmpty:
-            renderPath = candidates[0].renderPath
-        default:
-            renderPath = "/dev/dri/renderD128"
+    /// read back, then assemble + deinit the `OutputBufferOwner`.
+    static func runRoundTrip() throws {
+        let renderPath = try requireValue(
+            ProcessInfo.processInfo.environment["NUCLEUS_TEST_DRM_RENDER_NODE"],
+            "Collider did not provide NUCLEUS_TEST_DRM_RENDER_NODE")
+        guard let drmFd = DrmDeviceFd(openingNode: renderPath) else {
+            throw VulkanLaneTestFailure.requirement(
+                "could not open required DRM render node \(renderPath)")
         }
-
-        let drmFd = DrmDeviceFd(openingNode: renderPath)
-        guard let drmFd, drmFd.isValid else { return }
-        guard let gbm = GbmDevice(borrowingFd: drmFd.fd) else { return }
-        guard let gbmHandle = gbm.handle else { return }
+        try requireTrue(drmFd.isValid, "DRM render-node descriptor is invalid")
+        guard let gbm = GbmDevice(borrowingFd: drmFd.fd) else {
+            throw VulkanLaneTestFailure.requirement(
+                "GBM rejected required render node \(renderPath)")
+        }
+        let gbmHandle = try requireValue(
+            gbm.handle, "GBM returned a null device")
+        let renderIdentity = try Self.renderNodeIdentity(drmFd.fd)
 
         // Bring up the Vulkan device the Graphite context will use. The GBM
-        // allocation and this device should be the same physical GPU for the
-        // dmabuf import to succeed; on a multi-GPU mismatch the import escapes.
-        let base = VK.loadBaseDispatch()
-        let contract = VkRequirements.contract()
-        guard let instance = InstanceOwner.create(
-            base: base, applicationName: "GbmScanoutBufferTests",
-            contract: contract, enableValidation: false
-        ) else { return }
-        guard let selection = DeviceOwner.selectPhysicalDevice(
-            instance: instance.handle, dispatch: instance.dispatch, contract: contract
-        ) else { return }
-        guard let device = DeviceOwner.create(
-            selection: selection, instanceDispatch: instance.dispatch,
-            contract: contract
-        ) else { return }
-        guard let queue = device.queue(family: selection.graphicsQueueFamily) else { return }
-
-        withCStringArray(contract.deviceExtensions) { extPtr, extCount in
-            var ctxDesc = nucleus.skia.VulkanContextDescriptor()
-            ctxDesc.instance = UnsafeMutableRawPointer(instance.handle)
-            ctxDesc.physicalDevice = UnsafeMutableRawPointer(selection.physicalDevice)
-            ctxDesc.device = UnsafeMutableRawPointer(device.handle)
-            ctxDesc.queue = UnsafeMutableRawPointer(queue)
-            ctxDesc.graphicsQueueIndex = selection.graphicsQueueFamily
-            ctxDesc.maxApiVersion = VkRequirements.minimumApiVersion.raw
-            ctxDesc.deviceExtensions = extPtr
-            ctxDesc.deviceExtensionCount = extCount
-
-            let context = nucleus.skia.makeGraphiteVulkanContext(ctxDesc)
-            guard context.isValid() else { return }
-            let recorder = context.makeRecorder()
-            guard recorder.isValid() else { return }
-
-            runGbmImport(
+        // allocation and this device are required to be the same physical GPU.
+        try withRequiredVulkanGraphite(
+            presentation: .platformDefault,
+            applicationName: "GbmScanoutBufferTests",
+            queueFamilyQualification: { instance, physicalDevice, _ in
+                Self.physicalDevice(
+                    physicalDevice,
+                    belongsToRenderNode: renderIdentity,
+                    instance: instance)
+            }
+        ) { device, selection, context, recorder in
+            try runGbmImport(
                 gbmHandle: gbmHandle, device: device, graphicsFamily: selection.graphicsQueueFamily,
                 context: context, recorder: recorder)
         }
@@ -110,7 +89,7 @@ import NucleusSkiaGraphiteBridge
     static func runGbmImport(
         gbmHandle: OpaquePointer, device: borrowing DeviceOwner, graphicsFamily: UInt32,
         context: nucleus.skia.GraphiteContext, recorder: nucleus.skia.Recorder
-    ) {
+    ) throws {
         let width: UInt32 = 64
         let height: UInt32 = 64
 
@@ -125,7 +104,8 @@ import NucleusSkiaGraphiteBridge
             usage: .renderableOnly,
             device: device.handle, dispatch: device.dispatch
         ) else {
-            return
+            throw VulkanLaneTestFailure.requirement(
+                "GBM allocation or DMA-BUF Vulkan import failed")
         }
 
         // Wrap the imported image as a Graphite render-target surface, draw a known
@@ -146,7 +126,9 @@ import NucleusSkiaGraphiteBridge
                 hasAlpha: false)
 
             let surface = ScanoutSurface.wrap(recorder: recorder, params: params)
-            guard surface.isValid() else { skipToOwner(buffer: buffer); return }
+            try requireTrue(
+                surface.isValid(),
+                "Graphite rejected the imported GBM image")
 
             let canvas = surface.getCanvas()
             var color = nucleus.skia.Color()
@@ -158,10 +140,19 @@ import NucleusSkiaGraphiteBridge
             canvas.drawRect(nucleus.skia.RectF(x: 8, y: 8, width: 16, height: 16), paint)
 
             let recording = recorder.snapRecording()
-            _ = submitGraphiteAndWait(
-                context: context, recording: recording, serial: 1)
-            _ = readGraphiteSurfaceRGBA(
-                context: context, surface: surface)
+            try requireTrue(
+                submitGraphiteAndWait(
+                    context: context, recording: recording, serial: 1),
+                "GBM image submission did not complete")
+            let pixels = try requireValue(
+                readGraphiteSurfaceRGBA(
+                    context: context, surface: surface),
+                "GBM image readback failed")
+            #expect(pixels.count == Int(width * height * 4))
+            #expect(pixels[0] >= 60 && pixels[0] <= 68)
+            #expect(pixels[1] >= 124 && pixels[1] <= 132)
+            #expect(pixels[2] >= 188 && pixels[2] <= 196)
+            #expect(pixels[3] >= 250)
         }
         // `surface` destroyed here, before the owner is assembled.
 
@@ -174,10 +165,35 @@ import NucleusSkiaGraphiteBridge
         // `owner` deinits here.
     }
 
-    /// On a surface-wrap failure we still assemble + deinit the owner to prove the
-    /// teardown path runs (consumes the buffer the same way the happy path does).
-    static func skipToOwner(buffer: consuming GbmScanoutBuffer) {
-        let owner = buffer.makeOwner()
-        _ = owner
+    static func renderNodeIdentity(_ fd: Int32) throws -> (major: Int64, minor: Int64) {
+        var deviceStat = stat()
+        try requireTrue(fstat(fd, &deviceStat) == 0, "fstat failed for DRM render node")
+        let deviceID = UInt64(deviceStat.st_rdev)
+        return (
+            Int64(((deviceID >> 8) & 0xfff) | ((deviceID >> 32) & ~0xfff)),
+            Int64((deviceID & 0xff) | ((deviceID >> 12) & ~0xff)))
+    }
+
+    static func physicalDevice(
+        _ physicalDevice: VkPhysicalDevice,
+        belongsToRenderNode identity: (major: Int64, minor: Int64),
+        instance: VkInstance
+    ) -> Bool {
+        guard let raw = vkGetInstanceProcAddr(
+            instance, "vkGetPhysicalDeviceProperties2")
+        else { return false }
+        let getProperties = unsafeBitCast(
+            raw, to: PFN_vkGetPhysicalDeviceProperties2.self)
+        var drm = VkPhysicalDeviceDrmPropertiesEXT()
+        drm.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRM_PROPERTIES_EXT
+        var properties = VkPhysicalDeviceProperties2()
+        properties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2
+        withUnsafeMutablePointer(to: &drm) { pointer in
+            properties.pNext = UnsafeMutableRawPointer(pointer)
+            getProperties(physicalDevice, &properties)
+        }
+        return drm.hasRender != 0
+            && drm.renderMajor == identity.major
+            && drm.renderMinor == identity.minor
     }
 }

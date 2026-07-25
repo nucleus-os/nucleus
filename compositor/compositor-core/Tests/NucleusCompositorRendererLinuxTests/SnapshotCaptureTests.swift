@@ -5,8 +5,7 @@ import NucleusSkiaGraphiteBridge
 @testable import NucleusRenderer
 
 // capture sizing (hardware-independent), plus the device-rect capture → register
-// → resolve lifecycle over a real Graphite recorder (best-effort, asserts nothing
-// hardware-conditional).
+// → resolve lifecycle over the mandatory headless Graphite lane.
 @Suite struct SnapshotCaptureTests {
     @Test func worldToDeviceSizing() {
         let s1 = SnapshotCapture.deviceSize(localWidth: 100, localHeight: 50, scale: 2)
@@ -17,39 +16,11 @@ import NucleusSkiaGraphiteBridge
         #expect(s3.width == 0 && s3.height == 20, "device-size-clamps-negative")
     }
 
-    // Best-effort GPU: capture lifecycle. Hardware-gated, so it asserts nothing.
-    @Test(.disabled("requires a live GPU/Vulkan device")) func captureLifecycleBestEffort() {
-        let base = VK.loadBaseDispatch()
-        let contract = VkRequirements.contract()
-        guard let instance = InstanceOwner.create(
-            base: base, applicationName: "SnapshotCaptureTests",
-            contract: contract, enableValidation: false
-        ) else { return }
-        guard let selection = DeviceOwner.selectPhysicalDevice(
-            instance: instance.handle, dispatch: instance.dispatch, contract: contract
-        ) else { return }
-        guard let device = DeviceOwner.create(
-            selection: selection, instanceDispatch: instance.dispatch,
-            contract: contract
-        ) else { return }
-        guard let queue = device.queue(family: selection.graphicsQueueFamily) else { return }
-
-        withCStringArray(contract.deviceExtensions) { extPtr, extCount in
-            var desc = nucleus.skia.VulkanContextDescriptor()
-            desc.instance = UnsafeMutableRawPointer(instance.handle)
-            desc.physicalDevice = UnsafeMutableRawPointer(selection.physicalDevice)
-            desc.device = UnsafeMutableRawPointer(device.handle)
-            desc.queue = UnsafeMutableRawPointer(queue)
-            desc.graphicsQueueIndex = selection.graphicsQueueFamily
-            desc.maxApiVersion = VkRequirements.minimumApiVersion.raw
-            desc.deviceExtensions = extPtr
-            desc.deviceExtensionCount = extCount
-
-            let context = nucleus.skia.makeGraphiteVulkanContext(desc)
-            guard context.isValid() else { return }
-            let recorder = context.makeRecorder()
-            guard recorder.isValid() else { return }
-
+    @Test func gpuHeadless_captureLifecycle() throws {
+        try withRequiredVulkanGraphite(
+            presentation: .headless,
+            applicationName: "SnapshotCaptureTests"
+        ) { _, _, context, recorder in
             let registry = TextureRegistry()
 
             // A 32×32 source to capture a 16×16 sub-rect from.
@@ -64,28 +35,44 @@ import NucleusSkiaGraphiteBridge
             let source = recorder.makeTextureImage(decodedSource)
 
             // begin() allocates a render texture of the requested size.
-            guard let target = SnapshotCapture.begin(recorder: recorder, width: 16, height: 16) else {
-                registry.clear(); return
-            }
-            _ = target
+            let target = try requireValue(
+                SnapshotCapture.begin(
+                    recorder: recorder, width: 16, height: 16),
+                "could not allocate the snapshot target")
+            #expect(target.width == 16)
+            #expect(target.height == 16)
 
             // captureDeviceRect captures + registers the sub-rect.
-            guard let handle = SnapshotCapture.captureDeviceRect(
-                recorder: recorder, source: source, srcX: 8, srcY: 8, width: 16, height: 16,
-                into: registry, contentRevision: 1)
-            else { registry.clear(); return }
-            _ = registry.resolve(.renderer(handle))
-            _ = registry.size(.renderer(handle))
+            let handle = try requireValue(
+                SnapshotCapture.captureDeviceRect(
+                    recorder: recorder, source: source,
+                    srcX: 8, srcY: 8, width: 16, height: 16,
+                    into: registry, contentRevision: 1),
+                "device-rect snapshot capture failed")
+            let capturedImage = try requireValue(
+                registry.resolve(.renderer(handle)),
+                "captured snapshot was not registered")
+            #expect(capturedImage.isValid())
+            #expect(registry.size(.renderer(handle))?.width == 16)
+            #expect(registry.size(.renderer(handle))?.height == 16)
 
             // captureWorldRect maps through scale then captures.
-            let worldHandle = SnapshotCapture.captureWorldRect(
-                recorder: recorder, source: source, originX: 0, originY: 0, scale: 0.5,
-                localWidth: 32, localHeight: 32, into: registry, contentRevision: 1)
-            _ = registry.size(.renderer(worldHandle ?? 0))
+            let worldHandle = try requireValue(
+                SnapshotCapture.captureWorldRect(
+                    recorder: recorder, source: source,
+                    originX: 0, originY: 0, scale: 0.5,
+                    localWidth: 32, localHeight: 32,
+                    into: registry, contentRevision: 1),
+                "world-rect snapshot capture failed")
+            #expect(registry.size(.renderer(worldHandle))?.width == 16)
+            #expect(registry.size(.renderer(worldHandle))?.height == 16)
 
             let recording = recorder.snapRecording()
-            _ = submitGraphiteAndWait(
-                context: context, recording: recording, serial: 1)
+            try requireTrue(
+                submitGraphiteAndWait(
+                    context: context, recording: recording, serial: 1),
+                "snapshot submission did not complete")
+            #expect(context.completedSubmissionTimingCount() == 0)
             registry.clear()
         }
     }

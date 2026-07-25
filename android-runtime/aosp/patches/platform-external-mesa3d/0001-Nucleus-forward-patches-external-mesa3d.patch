@@ -1,0 +1,632 @@
+From a250716802c785be3663919f2e8e2dab9550cf47 Mon Sep 17 00:00:00 2001
+From: Nucleus Source Lock <source-lock@nucleus.invalid>
+Date: Sat, 1 Jan 2000 00:00:00 +0000
+Subject: [PATCH] Nucleus forward patches: external/mesa3d
+
+Change-Id: Iab96d08f4317a0606ce358f0c57eff285e792be2
+---
+ src/gfxstream/guest/android/Android.bp        |   2 +
+ .../guest/android/GfxStreamGralloc.cpp        |   4 +
+ .../guest/android/GrallocNucleus.cpp          | 146 ++++++++++++++++++
+ src/gfxstream/guest/android/GrallocNucleus.h  |  40 +++++
+ .../gfxstream/guest/GfxStreamGralloc.h        |   1 +
+ .../GfxStreamConnectionManager.cpp            |  43 ++++++
+ .../GfxStreamConnectionManager.h              |   1 +
+ .../GfxStreamExternalIOStream.h               |  34 ++++
+ src/gfxstream/guest/vulkan/Android.bp         |  18 ++-
+ .../guest/vulkan/gfxstream_vk_device.cpp      |  45 +++++-
+ .../vulkan/stubs/GfxStreamRenderControl.cpp   |   5 +
+ .../guest/vulkan_enc/ResourceTracker.cpp      |  24 +++
+ .../guest/vulkan_enc/ResourceTracker.h        |   1 +
+ src/vulkan/vulkan-android.sym                 |   2 +
+ src/vulkan/vulkan.sym                         |   2 +
+ 15 files changed, 361 insertions(+), 7 deletions(-)
+ create mode 100644 src/gfxstream/guest/android/GrallocNucleus.cpp
+ create mode 100644 src/gfxstream/guest/android/GrallocNucleus.h
+ create mode 100644 src/gfxstream/guest/connection-manager/GfxStreamExternalIOStream.h
+
+diff --git a/src/gfxstream/guest/android/Android.bp b/src/gfxstream/guest/android/Android.bp
+index 4a1c2a66f1d..c72480864fd 100644
+--- a/src/gfxstream/guest/android/Android.bp
++++ b/src/gfxstream/guest/android/Android.bp
+@@ -40,6 +40,7 @@ cc_library_static {
+             "libgralloc_cb.ranchu",
+             "libnativebase_headers",
+             "minigbm_headers",
++            "//device/nucleus/nucleus_x86_64:libnucleus_android_gralloc_headers",
+         ],
+         default: [],
+     }),
+@@ -49,6 +50,7 @@ cc_library_static {
+             "GfxStreamGralloc.cpp",
+             "GrallocGoldfish.cpp",
+             "GrallocMinigbm.cpp",
++            "GrallocNucleus.cpp",
+         ],
+         default: [],
+     }) + select((arch(), os(), soong_config_variable("aosp_mesa3d", "perfetto")), {
+diff --git a/src/gfxstream/guest/android/GfxStreamGralloc.cpp b/src/gfxstream/guest/android/GfxStreamGralloc.cpp
+index 1a70a9da5b9..6b4dc2c39f7 100644
+--- a/src/gfxstream/guest/android/GfxStreamGralloc.cpp
++++ b/src/gfxstream/guest/android/GfxStreamGralloc.cpp
+@@ -12,6 +12,7 @@
+ 
+ #include "GrallocGoldfish.h"
+ #include "GrallocMinigbm.h"
++#include "GrallocNucleus.h"
+ #include "android-base/properties.h"
+ 
+ namespace gfxstream {
+@@ -22,6 +23,9 @@ Gralloc* createPlatformGralloc(int32_t descriptor) {
+         auto gralloc = new MinigbmGralloc(descriptor);
+         return gralloc;
+     }
++    if (value == "nucleus") {
++        return new NucleusGralloc();
++    }
+     return new GoldfishGralloc();
+ }
+ 
+diff --git a/src/gfxstream/guest/android/GrallocNucleus.cpp b/src/gfxstream/guest/android/GrallocNucleus.cpp
+new file mode 100644
+index 00000000000..ae777e18a07
+--- /dev/null
++++ b/src/gfxstream/guest/android/GrallocNucleus.cpp
+@@ -0,0 +1,146 @@
++#include "GrallocNucleus.h"
++
++#include <NucleusGrallocHandle.h>
++#include <vndk/hardware_buffer.h>
++
++namespace gfxstream {
++
++namespace {
++const nucleus_gralloc_handle *handle(const native_handle_t *native) {
++    return nucleus_gralloc_handle_cast(native);
++}
++}
++
++GrallocType NucleusGralloc::getGrallocType() {
++    return GRALLOC_TYPE_NUCLEUS;
++}
++
++uint32_t NucleusGralloc::createColorBuffer(int, int, uint32_t) {
++    return 0;
++}
++
++int NucleusGralloc::allocate(
++    uint32_t width,
++    uint32_t height,
++    uint32_t format,
++    uint64_t usage,
++    AHardwareBuffer **output) {
++    const AHardwareBuffer_Desc description = {
++        .width = width,
++        .height = height,
++        .layers = 1,
++        .format = format,
++        .usage = usage,
++    };
++    return AHardwareBuffer_allocate(&description, output);
++}
++
++void NucleusGralloc::acquire(AHardwareBuffer *buffer) {
++    AHardwareBuffer_acquire(buffer);
++}
++
++void NucleusGralloc::release(AHardwareBuffer *buffer) {
++    AHardwareBuffer_release(buffer);
++}
++
++int NucleusGralloc::lock(AHardwareBuffer *buffer, uint8_t **output) {
++    return AHardwareBuffer_lock(
++        buffer,
++        AHARDWAREBUFFER_USAGE_CPU_READ_RARELY,
++        -1,
++        nullptr,
++        reinterpret_cast<void **>(output));
++}
++
++int NucleusGralloc::lockPlanes(
++    AHardwareBuffer *,
++    std::vector<LockedPlane> *) {
++    return -1;
++}
++
++int NucleusGralloc::unlock(AHardwareBuffer *buffer) {
++    return AHardwareBuffer_unlock(buffer, nullptr);
++}
++
++const native_handle_t *NucleusGralloc::getNativeHandle(
++    const AHardwareBuffer *buffer) {
++    return AHardwareBuffer_getNativeHandle(buffer);
++}
++
++uint32_t NucleusGralloc::getHostHandle(
++    const native_handle_t *native) {
++    const auto *nucleus = handle(native);
++    return nucleus == nullptr ? 0 : nucleus->color_buffer_handle;
++}
++
++uint32_t NucleusGralloc::getHostHandle(
++    const AHardwareBuffer *buffer) {
++    return getHostHandle(AHardwareBuffer_getNativeHandle(buffer));
++}
++
++int NucleusGralloc::getFormat(const native_handle_t *native) {
++    const auto *nucleus = handle(native);
++    return nucleus == nullptr ? 0 : nucleus->android_format;
++}
++
++int NucleusGralloc::getFormat(const AHardwareBuffer *buffer) {
++    return getFormat(AHardwareBuffer_getNativeHandle(buffer));
++}
++
++uint32_t NucleusGralloc::getFormatDrmFourcc(
++    const native_handle_t *native) {
++    const auto *nucleus = handle(native);
++    return nucleus == nullptr ? 0 : nucleus->drm_format;
++}
++
++uint32_t NucleusGralloc::getFormatDrmFourcc(
++    const AHardwareBuffer *buffer) {
++    return getFormatDrmFourcc(
++        AHardwareBuffer_getNativeHandle(buffer));
++}
++
++uint32_t NucleusGralloc::getWidth(const AHardwareBuffer *buffer) {
++    AHardwareBuffer_Desc description = {};
++    AHardwareBuffer_describe(buffer, &description);
++    return description.width;
++}
++
++uint32_t NucleusGralloc::getHeight(const AHardwareBuffer *buffer) {
++    AHardwareBuffer_Desc description = {};
++    AHardwareBuffer_describe(buffer, &description);
++    return description.height;
++}
++
++size_t NucleusGralloc::getAllocatedSize(
++    const native_handle_t *native) {
++    const auto *nucleus = handle(native);
++    return nucleus == nullptr ? 0 : nucleus->allocation_size;
++}
++
++size_t NucleusGralloc::getAllocatedSize(
++    const AHardwareBuffer *buffer) {
++    return getAllocatedSize(AHardwareBuffer_getNativeHandle(buffer));
++}
++
++int NucleusGralloc::getId(
++    const AHardwareBuffer *buffer,
++    uint64_t *identifier) {
++    const auto *nucleus =
++        handle(AHardwareBuffer_getNativeHandle(buffer));
++    if (nucleus == nullptr) {
++        return -1;
++    }
++    *identifier = nucleus->allocation_id;
++    return 0;
++}
++
++int32_t NucleusGralloc::getDataspace(
++    const AHardwareBuffer *buffer) {
++    const auto *nucleus =
++        handle(AHardwareBuffer_getNativeHandle(buffer));
++    return nucleus == nullptr
++               ? GFXSTREAM_AHB_DATASPACE_UNKNOWN
++               : nucleus->dataspace;
++}
++
++}  // namespace gfxstream
+diff --git a/src/gfxstream/guest/android/GrallocNucleus.h b/src/gfxstream/guest/android/GrallocNucleus.h
+new file mode 100644
+index 00000000000..1e664c34d57
+--- /dev/null
++++ b/src/gfxstream/guest/android/GrallocNucleus.h
+@@ -0,0 +1,40 @@
++#pragma once
++
++#include "gfxstream/guest/GfxStreamGralloc.h"
++
++namespace gfxstream {
++
++class NucleusGralloc final : public Gralloc {
++  public:
++    GrallocType getGrallocType() override;
++    uint32_t createColorBuffer(int, int, uint32_t) override;
++    int allocate(
++        uint32_t,
++        uint32_t,
++        uint32_t,
++        uint64_t,
++        AHardwareBuffer **) override;
++    void acquire(AHardwareBuffer *) override;
++    void release(AHardwareBuffer *) override;
++    int lock(AHardwareBuffer *, uint8_t **) override;
++    int lockPlanes(
++        AHardwareBuffer *,
++        std::vector<LockedPlane> *) override;
++    int unlock(AHardwareBuffer *) override;
++    const native_handle_t *getNativeHandle(
++        const AHardwareBuffer *) override;
++    uint32_t getHostHandle(const native_handle_t *) override;
++    uint32_t getHostHandle(const AHardwareBuffer *) override;
++    int getFormat(const native_handle_t *) override;
++    int getFormat(const AHardwareBuffer *) override;
++    uint32_t getFormatDrmFourcc(const native_handle_t *) override;
++    uint32_t getFormatDrmFourcc(const AHardwareBuffer *) override;
++    uint32_t getWidth(const AHardwareBuffer *) override;
++    uint32_t getHeight(const AHardwareBuffer *) override;
++    size_t getAllocatedSize(const native_handle_t *) override;
++    size_t getAllocatedSize(const AHardwareBuffer *) override;
++    int getId(const AHardwareBuffer *, uint64_t *) override;
++    int32_t getDataspace(const AHardwareBuffer *) override;
++};
++
++}  // namespace gfxstream
+diff --git a/src/gfxstream/guest/android/include/gfxstream/guest/GfxStreamGralloc.h b/src/gfxstream/guest/android/include/gfxstream/guest/GfxStreamGralloc.h
+index 2dca6618cc8..0cd6b38ea80 100644
+--- a/src/gfxstream/guest/android/include/gfxstream/guest/GfxStreamGralloc.h
++++ b/src/gfxstream/guest/android/include/gfxstream/guest/GfxStreamGralloc.h
+@@ -124,6 +124,7 @@ enum GrallocType {
+     GRALLOC_TYPE_GOLDFISH = 1,
+     GRALLOC_TYPE_MINIGBM = 2,
+     GRALLOC_TYPE_EMULATED = 3,
++    GRALLOC_TYPE_NUCLEUS = 4,
+ };
+ 
+ // Abstraction for gralloc handle conversion
+diff --git a/src/gfxstream/guest/connection-manager/GfxStreamConnectionManager.cpp b/src/gfxstream/guest/connection-manager/GfxStreamConnectionManager.cpp
+index 37a52ffe5de..c381e0f004a 100644
+--- a/src/gfxstream/guest/connection-manager/GfxStreamConnectionManager.cpp
++++ b/src/gfxstream/guest/connection-manager/GfxStreamConnectionManager.cpp
+@@ -5,8 +5,10 @@
+ 
+ #include "GfxStreamConnectionManager.h"
+ 
++#include <atomic>
+ #include <cerrno>
+ 
++#include "GfxStreamExternalIOStream.h"
+ #include "GoldfishAddressSpaceStream.h"
+ #include "QemuPipeStream.h"
+ #include "VirtGpu.h"
+@@ -17,6 +19,23 @@
+ 
+ #define STREAM_BUFFER_SIZE (4 * 1024 * 1024)
+ 
++static std::atomic<gfxstream_external_iostream_factory> external_iostream_factory;
++static std::atomic<void*> external_iostream_factory_context;
++
++extern "C" void gfxstream_vk_set_external_iostream_factory(
++    gfxstream_external_iostream_factory factory, void* context) {
++    external_iostream_factory_context.store(context, std::memory_order_relaxed);
++    external_iostream_factory.store(factory, std::memory_order_release);
++}
++
++extern "C" int gfxstream_vk_has_external_iostream_factory(void) {
++    return external_iostream_factory.load(std::memory_order_acquire) != nullptr;
++}
++
++bool gfxstream_vk_has_external_iostream_factory_internal() {
++    return external_iostream_factory.load(std::memory_order_acquire) != nullptr;
++}
++
+ static tss_t gfxstream_connection_manager_tls_key;
+ static bool gfxstream_connection_manager_tls_key_valid;
+ 
+@@ -145,6 +164,21 @@ bool GfxStreamConnectionManager::initialize() {
+ 
+             break;
+         }
++        case GFXSTREAM_TRANSPORT_EXTERNAL_IOSTREAM: {
++            const auto factory = external_iostream_factory.load(std::memory_order_acquire);
++            if (!factory) {
++                mesa_loge("External IOStream factory is not installed\n");
++                return false;
++            }
++            mStream = static_cast<gfxstream::guest::IOStream*>(
++                factory(external_iostream_factory_context.load(std::memory_order_relaxed),
++                        STREAM_BUFFER_SIZE));
++            if (!mStream) {
++                mesa_loge("External IOStream factory failed\n");
++                return false;
++            }
++            break;
++        }
+         default:
+             return false;
+     }
+@@ -187,6 +221,15 @@ gfxstream::guest::IOStream* GfxStreamConnectionManager::processPipeStream(
+         case GFXSTREAM_TRANSPORT_VIRTIO_GPU_ADDRESS_SPACE:
+         case GFXSTREAM_TRANSPORT_VIRTIO_GPU_PIPE:
+             return new VirtioGpuPipeStream(STREAM_BUFFER_SIZE, mDescriptor);
++        case GFXSTREAM_TRANSPORT_EXTERNAL_IOSTREAM: {
++            const auto factory = external_iostream_factory.load(std::memory_order_acquire);
++            return factory
++                       ? static_cast<gfxstream::guest::IOStream*>(
++                             factory(external_iostream_factory_context.load(
++                                         std::memory_order_relaxed),
++                                     STREAM_BUFFER_SIZE))
++                       : nullptr;
++        }
+         default:
+             return nullptr;
+     }
+diff --git a/src/gfxstream/guest/connection-manager/GfxStreamConnectionManager.h b/src/gfxstream/guest/connection-manager/GfxStreamConnectionManager.h
+index ae82aacbe99..93ff12d6afc 100644
+--- a/src/gfxstream/guest/connection-manager/GfxStreamConnectionManager.h
++++ b/src/gfxstream/guest/connection-manager/GfxStreamConnectionManager.h
+@@ -25,6 +25,7 @@ enum GfxStreamTransportType {
+     GFXSTREAM_TRANSPORT_ADDRESS_SPACE = 2,
+     GFXSTREAM_TRANSPORT_VIRTIO_GPU_PIPE = 3,
+     GFXSTREAM_TRANSPORT_VIRTIO_GPU_ADDRESS_SPACE = 4,
++    GFXSTREAM_TRANSPORT_EXTERNAL_IOSTREAM = 5,
+ };
+ 
+ class GfxStreamConnectionManager {
+diff --git a/src/gfxstream/guest/connection-manager/GfxStreamExternalIOStream.h b/src/gfxstream/guest/connection-manager/GfxStreamExternalIOStream.h
+new file mode 100644
+index 00000000000..87f07120ab2
+--- /dev/null
++++ b/src/gfxstream/guest/connection-manager/GfxStreamExternalIOStream.h
+@@ -0,0 +1,34 @@
++/*
++ * Copyright 2026 Nucleus contributors
++ * SPDX-License-Identifier: MIT
++ */
++
++#ifndef GFXSTREAM_EXTERNAL_IOSTREAM_H
++#define GFXSTREAM_EXTERNAL_IOSTREAM_H
++
++#include <stddef.h>
++
++#if defined(__GNUC__)
++#define GFXSTREAM_EXTERNAL_API __attribute__((visibility("default")))
++#else
++#define GFXSTREAM_EXTERNAL_API
++#endif
++
++#ifdef __cplusplus
++extern "C" {
++#endif
++
++typedef void* (*gfxstream_external_iostream_factory)(void* context, size_t buffer_size);
++
++GFXSTREAM_EXTERNAL_API void gfxstream_vk_set_external_iostream_factory(
++    gfxstream_external_iostream_factory factory, void* context);
++
++GFXSTREAM_EXTERNAL_API int gfxstream_vk_has_external_iostream_factory(void);
++
++#ifdef __cplusplus
++}
++
++bool gfxstream_vk_has_external_iostream_factory_internal();
++#endif
++
++#endif
+diff --git a/src/gfxstream/guest/vulkan/Android.bp b/src/gfxstream/guest/vulkan/Android.bp
+index 31a95d19a38..e75175f3d1e 100644
+--- a/src/gfxstream/guest/vulkan/Android.bp
++++ b/src/gfxstream/guest/vulkan/Android.bp
+@@ -34,8 +34,8 @@ cc_defaults {
+     ],
+ }
+ 
+-cc_library_shared {
+-    name: "vulkan.ranchu",
++cc_defaults {
++    name: "vulkan_gfxstream_library_defaults",
+     vendor: true,
+     c_std: "c11",
+     cpp_std: "c++17",
+@@ -201,3 +201,17 @@ cc_library_shared {
+         },
+     },
+ }
++
++cc_library_shared {
++    name: "vulkan.ranchu",
++    defaults: ["vulkan_gfxstream_library_defaults"],
++}
++
++cc_library_shared {
++    name: "vulkan.nucleus",
++    defaults: ["vulkan_gfxstream_library_defaults"],
++    cflags: ["-DGFXSTREAM_NUCLEUS_SOCKET_TRANSPORT"],
++    whole_static_libs: [
++        "libnucleus_android_gfxstream_guest_transport",
++    ],
++}
+diff --git a/src/gfxstream/guest/vulkan/gfxstream_vk_device.cpp b/src/gfxstream/guest/vulkan/gfxstream_vk_device.cpp
+index 95824d074c9..80c5eb7d161 100644
+--- a/src/gfxstream/guest/vulkan/gfxstream_vk_device.cpp
++++ b/src/gfxstream/guest/vulkan/gfxstream_vk_device.cpp
+@@ -4,6 +4,7 @@
+  */
+ 
+ #include <errno.h>
++#include <mutex>
+ #include <string.h>
+ 
+ #include "GfxStreamConnectionManager.h"
+@@ -18,9 +19,27 @@
+ #include "vk_sync_dummy.h"
+ #include "vk_util.h"
+ 
++#if defined(GFXSTREAM_NUCLEUS_SOCKET_TRANSPORT)
++#include "GfxStreamExternalIOStream.h"
++#include "NucleusAndroidGfxstreamSocketTransport.h"
++#endif
++
+ uint32_t gSeqno = 0;
+ uint32_t gNoRenderControlEnc = 0;
+ 
++#if defined(GFXSTREAM_NUCLEUS_SOCKET_TRANSPORT)
++static bool installNucleusTransport() {
++    static std::once_flag once;
++    static bool installed = false;
++    std::call_once(once, [] {
++        installed = nucleus_android_gfxstream_install_socket_transport(
++                        gfxstream_vk_set_external_iostream_factory,
++                        "/dev/nucleus/gfxstream.sock") == 0;
++    });
++    return installed;
++}
++#endif
++
+ static gfxstream::vk::VkEncoder* getVulkanEncoder(GfxStreamConnectionManager* mgr) {
+     if (!gNoRenderControlEnc) {
+         int32_t ret = renderControlInit(mgr, nullptr);
+@@ -49,6 +68,9 @@ static gfxstream::vk::VkEncoder* getVulkanEncoder(GfxStreamConnectionManager* mg
+ 
+ static GfxStreamConnectionManager* getConnectionManager(void) {
+     auto transport = renderControlGetTransport();
++    if (transport == GFXSTREAM_TRANSPORT_EXTERNAL_IOSTREAM) {
++        gNoRenderControlEnc = 1;
++    }
+     return GfxStreamConnectionManager::getThreadLocalInstance(transport, kCapsetGfxStreamVulkan);
+ }
+ 
+@@ -77,14 +99,27 @@ static bool isGuestEmulatedInstanceExtension(const char* name) {
+ }
+ 
+ static VkResult SetupInstanceForProcess(void) {
++#if defined(GFXSTREAM_NUCLEUS_SOCKET_TRANSPORT)
++    if (!installNucleusTransport()) {
++        mesa_loge("vulkan: Failed to install the Nucleus gfxstream transport\n");
++        return VK_ERROR_INITIALIZATION_FAILED;
++    }
++#endif
++    const auto transport = renderControlGetTransport();
+     auto mgr = getConnectionManager();
+     if (!mgr) {
+         mesa_logd("vulkan: Failed to get host connection\n");
+         return VK_ERROR_INITIALIZATION_FAILED;
+     }
+ 
+-    gfxstream::vk::ResourceTracker::get()->setupCaps(gNoRenderControlEnc);
+-    gfxstream::vk::ResourceTracker::get()->setupPlatformHelpers();
++    auto resources = gfxstream::vk::ResourceTracker::get();
++    if (transport == GFXSTREAM_TRANSPORT_EXTERNAL_IOSTREAM) {
++        gNoRenderControlEnc = 1;
++        resources->setupExternalTransport();
++    } else {
++        resources->setupCaps(gNoRenderControlEnc);
++    }
++    resources->setupPlatformHelpers();
+     // Legacy goldfish path: could be deleted once goldfish not used guest-side.
+     if (!gNoRenderControlEnc) {
+         struct GfxStreamVkFeatureInfo features = {};
+@@ -94,14 +129,14 @@ static VkResult SetupInstanceForProcess(void) {
+             return VK_ERROR_DEVICE_LOST;
+         }
+ 
+-        gfxstream::vk::ResourceTracker::get()->setupFeatures(&features);
++        resources->setupFeatures(&features);
+     }
+ 
+-    gfxstream::vk::ResourceTracker::get()->setThreadingCallbacks({
++    resources->setThreadingCallbacks({
+         .hostConnectionGetFunc = getConnectionManager,
+         .vkEncoderGetFunc = getVulkanEncoder,
+     });
+-    gfxstream::vk::ResourceTracker::get()->setSeqnoPtr(&gSeqno);
++    resources->setSeqnoPtr(&gSeqno);
+     gfxstream::vk::VkEncoder* vkEnc = getVulkanEncoder(mgr);
+     if (!vkEnc) {
+         mesa_loge("vulkan: Failed to get Vulkan encoder\n");
+diff --git a/src/gfxstream/guest/vulkan/stubs/GfxStreamRenderControl.cpp b/src/gfxstream/guest/vulkan/stubs/GfxStreamRenderControl.cpp
+index cf958397b72..f06fd72dd67 100644
+--- a/src/gfxstream/guest/vulkan/stubs/GfxStreamRenderControl.cpp
++++ b/src/gfxstream/guest/vulkan/stubs/GfxStreamRenderControl.cpp
+@@ -6,7 +6,12 @@
+ #include "GfxStreamRenderControl.h"
+ #include <cerrno>
+ 
++#include "GfxStreamExternalIOStream.h"
++
+ GfxStreamTransportType renderControlGetTransport() {
++    if (gfxstream_vk_has_external_iostream_factory_internal()) {
++        return GFXSTREAM_TRANSPORT_EXTERNAL_IOSTREAM;
++    }
+     return GFXSTREAM_TRANSPORT_VIRTIO_GPU_ADDRESS_SPACE;
+ }
+ 
+diff --git a/src/gfxstream/guest/vulkan_enc/ResourceTracker.cpp b/src/gfxstream/guest/vulkan_enc/ResourceTracker.cpp
+index b682be0c167..d57f9735ebb 100644
+--- a/src/gfxstream/guest/vulkan_enc/ResourceTracker.cpp
++++ b/src/gfxstream/guest/vulkan_enc/ResourceTracker.cpp
+@@ -1470,6 +1470,30 @@ void ResourceTracker::setupCaps(uint32_t& noRenderControlEnc) {
+     noRenderControlEnc = mCaps.vulkanCapset.noRenderControlEnc;
+ }
+ 
++void ResourceTracker::setupExternalTransport() {
++    mCaps = {};
++    mCaps.vulkanCapset.colorBufferMemoryIndex = 0xFFFFFFFF;
++    const GfxStreamVkFeatureInfo externalFeatures = {
++        .hasDirectMem = false,
++        .hasVulkan = true,
++        .hasDeferredVulkanCommands = true,
++        .hasVulkanNullOptionalStrings = true,
++        .hasVulkanCreateResourcesWithRequirements = true,
++        .hasVulkanIgnoredHandles = true,
++        .hasVirtioGpuNext = true,
++        .hasVulkanFreeMemorySync = false,
++        .hasVirtioGpuNativeSync = false,
++        .hasVulkanShaderFloat16Int8 = true,
++        .hasVulkanAsyncQueueSubmit = false,
++        .hasVulkanQueueSubmitWithCommands = true,
++        .hasVulkanBatchedDescriptorSetUpdate = true,
++        .hasVulkanAsyncQsri = false,
++        .hasVulkanAuxCommandMemory = false,
++        .setupComplete = false,
++    };
++    setupFeatures(&externalFeatures);
++}
++
+ void ResourceTracker::setupFeatures(const struct GfxStreamVkFeatureInfo* features) {
+     if (mFeatureInfo.setupComplete) {
+         return;
+diff --git a/src/gfxstream/guest/vulkan_enc/ResourceTracker.h b/src/gfxstream/guest/vulkan_enc/ResourceTracker.h
+index b59c09acb89..a75156d0d8e 100644
+--- a/src/gfxstream/guest/vulkan_enc/ResourceTracker.h
++++ b/src/gfxstream/guest/vulkan_enc/ResourceTracker.h
+@@ -522,6 +522,7 @@ class ResourceTracker {
+ 
+     void setupFeatures(const struct GfxStreamVkFeatureInfo* features);
+     void setupCaps(uint32_t& noRenderControlEnc);
++    void setupExternalTransport();
+     void setupPlatformHelpers();
+     void setThreadingCallbacks(const ThreadingCallbacks& callbacks);
+     bool hostSupportsVulkan() const;
+diff --git a/src/vulkan/vulkan-android.sym b/src/vulkan/vulkan-android.sym
+index 7148e0920c6..3e017417677 100644
+--- a/src/vulkan/vulkan-android.sym
++++ b/src/vulkan/vulkan-android.sym
+@@ -4,6 +4,8 @@
+ 		# as HAL_MODULE_INFO_SYM (which is just a #define for HMI) and it's an
+ 		# instance of struct hwvulkan_module_t.
+ 		HMI;
++		gfxstream_vk_has_external_iostream_factory;
++		gfxstream_vk_set_external_iostream_factory;
+ 
+ 	local:
+ 		# When static linking LLVM, all its symbols are public API.
+diff --git a/src/vulkan/vulkan.sym b/src/vulkan/vulkan.sym
+index c85a22e905a..3abb23c88ce 100644
+--- a/src/vulkan/vulkan.sym
++++ b/src/vulkan/vulkan.sym
+@@ -3,6 +3,8 @@
+ 		vk_icdGetInstanceProcAddr;
+ 		vk_icdGetPhysicalDeviceProcAddr;
+ 		vk_icdNegotiateLoaderICDInterfaceVersion;
++		gfxstream_vk_has_external_iostream_factory;
++		gfxstream_vk_set_external_iostream_factory;
+ 
+ 	local:
+ 		# When static linking LLVM, all its symbols are public API.
+-- 
+2.53.0
+

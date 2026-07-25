@@ -71,7 +71,11 @@ extension CompositorRuntime {
 
         // ── Runtime-owned host bundle + overlay controller ────────────────
         let textSystem = TextSystem()
-        SkiaTextLayoutBackend.install(in: textSystem)
+        guard SkiaTextLayoutBackend.install(in: textSystem) else {
+            logRuntime(
+                "render runtime: conflicting Graphite text borrow provider")
+            return false
+        }
         let overlayServices = UIHostServices(
             textSystem: textSystem,
             pasteboard: Pasteboard(adapter: UnavailablePasteboardAdapter()),

@@ -72,3 +72,31 @@ func frameworkBootDrainsEveryCompletedMountInReverseOrder() {
     #expect(ledger.takeInReverseOrder() == mounts.reversed())
     #expect(ledger.takeInReverseOrder().isEmpty)
 }
+
+@Test
+func frameworkBootFailsOnARepeatedSurfaceFlingerCrash() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-framework-health-\(UUID().uuidString)",
+        isDirectory: true)
+    try FileManager.default.createDirectory(
+        at: directory,
+        withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let log = directory.appendingPathComponent("android-kmsg.log")
+    try Data((
+        "<6>init: Service 'surfaceflinger' (pid 1) received SIGABRT\n"
+    ).utf8).write(to: log)
+
+    var monitor = AndroidFrameworkHealthMonitor()
+    try monitor.check(log: log, diagnostics: directory)
+
+    let handle = try FileHandle(forWritingTo: log)
+    try handle.seekToEnd()
+    try handle.write(contentsOf: Data((
+        "<6>init: Service 'surfaceflinger' (pid 2) received SIGABRT\n"
+    ).utf8))
+    try handle.close()
+    #expect(throws: WorkspaceFailure.self) {
+        try monitor.check(log: log, diagnostics: directory)
+    }
+}

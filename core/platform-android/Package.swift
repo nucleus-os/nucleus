@@ -104,6 +104,9 @@ let package = Package(
                 // the `PresentationBackend` the Vulkan swapchain presenter implements.
                 .product(name: "NucleusRenderer", package: "Nucleus"),
                 .product(name: "NucleusRenderModel", package: "Nucleus"),
+                .product(
+                    name: "NucleusTextRenderingBridge",
+                    package: "Nucleus"),
             ],
             path: "swift-core",
             swiftSettings: [

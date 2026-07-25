@@ -8,6 +8,7 @@ package final class ShellOverlayController: ~Sendable {
     private let semanticPublisher: @MainActor () -> Void
     private let scenePublisher: @MainActor (ShellOverlayPublication) -> Void
     private var lastPublication: ShellOverlayPublication?
+    private var publicationSuspended = false
 
     package init(
         scene: ShellOverlayScene,
@@ -80,8 +81,19 @@ package final class ShellOverlayController: ~Sendable {
         }
     }
 
+    package func setPublicationSuspended(_ suspended: Bool) {
+        guard publicationSuspended != suspended else { return }
+        publicationSuspended = suspended
+        if suspended {
+            lastPublication = nil
+        } else {
+            publishScene()
+        }
+    }
+
     package func publishScene() {
         Trace.zone("overlay.controller.publish_scene", color: Trace.Color.blue) {
+            guard !publicationSuspended else { return }
             guard let publication = scene.publishVisuals() else {
                 return
             }

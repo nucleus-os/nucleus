@@ -1,6 +1,24 @@
 {
   "repositories": [
     {
+      "path": "device/generic/goldfish",
+      "patches": [
+        "aosp/patches/device-generic-goldfish/0001-export-composer3-framework-sources-for-nucleus.patch"
+      ]
+    },
+    {
+      "path": "frameworks/base",
+      "patches": [
+        "aosp/patches/platform-frameworks-base/0001-zygote-support-nucleus-container.patch"
+      ]
+    },
+    {
+      "path": "hardware/interfaces",
+      "patches": [
+        "aosp/patches/platform-hardware-interfaces/0001-audio-package-default-effects-config.patch"
+      ]
+    },
+    {
       "path": "system/core",
       "patches": [
         "aosp/patches/platform-system-core/0001-init-add-nucleus-container-entry.patch",
@@ -41,6 +59,12 @@
       "path": "system/bpf",
       "patches": [
         "aosp/patches/platform-system-bpf/0001-bpfloader-use-nucleus-bpf-token.patch"
+      ]
+    },
+    {
+      "path": "external/mesa3d",
+      "patches": [
+        "aosp/patches/platform-external-mesa3d/0001-Nucleus-forward-patches-external-mesa3d.patch"
       ]
     }
   ]

@@ -98,7 +98,10 @@ import NucleusSkiaGraphiteBridge
     private func decode(_ fixture: Fixture, maxWidth: Int32, maxHeight: Int32)
         -> nucleus.skia.RasterImage
     {
-        nucleus.skia.makeEncodedImageFromFile(fixture.path, maxWidth, maxHeight)
+        nucleus.skia.decodeEncodedImageFile(
+            fixture.path,
+            maxWidth,
+            maxHeight).image
     }
 
     // MARK: - The encoder is trustworthy
@@ -107,7 +110,7 @@ import NucleusSkiaGraphiteBridge
     @Test func theTestEncoderProducesADecodablePNG() {
         let fixture = Fixture(width: 4, height: 3,
                               rgba: Self.solid(width: 4, height: 3, 10, 200, 30))
-        let image = decode(fixture, maxWidth: 0, maxHeight: 0)
+        let image = decode(fixture, maxWidth: 4, maxHeight: 3)
         #expect(image.isValid())
         #expect(image.width() == 4)
         #expect(image.height() == 3)
@@ -144,11 +147,11 @@ import NucleusSkiaGraphiteBridge
         #expect(image.height() == 16)
     }
 
-    /// A zero bound means unbounded on that axis.
-    @Test func anUnboundedDecodeIsFullSize() {
+    /// A full-size target preserves the source dimensions without deferring.
+    @Test func aFullSizeDecodeIsEager() {
         let fixture = Fixture(width: 64, height: 48,
                               rgba: Self.solid(width: 64, height: 48, 1, 2, 3))
-        let image = decode(fixture, maxWidth: 0, maxHeight: 0)
+        let image = decode(fixture, maxWidth: 64, maxHeight: 48)
         #expect(image.width() == 64)
         #expect(image.height() == 48)
     }
@@ -225,7 +228,8 @@ import NucleusSkiaGraphiteBridge
             width: 8, height: 8, rgba: Self.solid(width: 8, height: 8, 30, 60, 90))
         let bytes = [UInt8](png)
         let image = bytes.withUnsafeBufferPointer {
-            nucleus.skia.makeEncodedImageFromMemory($0.baseAddress, $0.count, 0, 0)
+            nucleus.skia.decodeEncodedImageMemory(
+                $0.baseAddress, $0.count, 8, 8).image
         }
         #expect(image.isValid())
         #expect(image.width() == 8)
@@ -237,17 +241,20 @@ import NucleusSkiaGraphiteBridge
             width: 64, height: 64, rgba: Self.solid(width: 64, height: 64, 1, 2, 3))
         let bytes = [UInt8](png)
         let image = bytes.withUnsafeBufferPointer {
-            nucleus.skia.makeEncodedImageFromMemory($0.baseAddress, $0.count, 16, 16)
+            nucleus.skia.decodeEncodedImageMemory(
+                $0.baseAddress, $0.count, 16, 16).image
         }
         #expect(image.width() == 16)
     }
 
     @Test func emptyBytesDecodeToNothing() {
         let empty: [UInt8] = []
-        let image = empty.withUnsafeBufferPointer {
-            nucleus.skia.makeEncodedImageFromMemory($0.baseAddress, $0.count, 0, 0)
+        let result = empty.withUnsafeBufferPointer {
+            nucleus.skia.decodeEncodedImageMemory(
+                $0.baseAddress, $0.count, 16, 16)
         }
-        #expect(!image.isValid())
+        #expect(!result.isSuccess())
+        #expect(result.status == .unreadableInput)
     }
 
     // MARK: - ICO
@@ -260,7 +267,8 @@ import NucleusSkiaGraphiteBridge
     /// exists to notice if that ever stops being true.
     @Test func icoPreservesPerPixelAlpha() {
         let fixture = IcoFixture(alphas: [0, 64, 255, 128])
-        let image = nucleus.skia.makeEncodedImageFromFile(fixture.path, 0, 0)
+        let image = nucleus.skia.decodeEncodedImageFile(
+            fixture.path, 2, 2).image
         #expect(image.isValid())
         #expect(image.width() == 2)
 
@@ -320,25 +328,29 @@ import NucleusSkiaGraphiteBridge
     // MARK: - Failure
 
     @Test func aMissingFileDecodesToNothing() {
-        let image = nucleus.skia.makeEncodedImageFromFile(
+        let result = nucleus.skia.decodeEncodedImageFile(
             "\(NSTemporaryDirectory())nucleus-absent-\(UInt32.random(in: 0...UInt32.max)).png",
             32, 32)
-        #expect(!image.isValid())
+        #expect(result.status == .unreadableInput)
     }
 
     @Test func anEmptyPathDecodesToNothing() {
-        #expect(!nucleus.skia.makeEncodedImageFromFile("", 32, 32).isValid())
+        #expect(
+            nucleus.skia.decodeEncodedImageFile("", 32, 32).status
+                == .unreadableInput)
     }
 
-    /// Bounded and unbounded take different code paths, so garbage must be
-    /// rejected on both.
     @Test func anUndecodableFileDecodesToNothing() {
         let path = "\(NSTemporaryDirectory())nucleus-garbage-"
             + "\(UInt32.random(in: 0...UInt32.max)).png"
         try? Data([0xDE, 0xAD, 0xBE, 0xEF]).write(to: URL(fileURLWithPath: path))
         defer { try? FileManager.default.removeItem(atPath: path) }
 
-        #expect(!nucleus.skia.makeEncodedImageFromFile(path, 16, 16).isValid())
-        #expect(!nucleus.skia.makeEncodedImageFromFile(path, 0, 0).isValid())
+        #expect(
+            nucleus.skia.decodeEncodedImageFile(path, 16, 16).status
+                == .unsupportedFormat)
+        #expect(
+            nucleus.skia.decodeEncodedImageFile(path, 0, 0).status
+                == .invalidDimensions)
     }
 }

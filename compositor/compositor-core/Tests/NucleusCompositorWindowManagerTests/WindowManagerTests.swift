@@ -135,6 +135,24 @@ private func nucleus_compositor_window_manager_migrate_off_output(
 }
 
 @MainActor
+@Test func outputlessPlacementSuspendsWithoutDiscardingTheWindow() throws {
+    server.serverReset()
+    windowManager.reset()
+    let windowID = try server.windowCreate(source: .xdg)
+
+    #expect(windowManager.planConfigure(
+        ConfigureRequest(windowID: windowID, reason: .initialMap)) == nil)
+    #expect(server.window(id: windowID) != nil)
+
+    let centered = try #require(windowManager.centeredFirstMapRect(
+        windowID: windowID,
+        contentWidth: 640,
+        contentHeight: 480))
+    #expect(centered == WindowRect(
+        x: 0, y: 0, width: 640, height: 480))
+}
+
+@MainActor
 @Test func interactionStateHostMethodsRoundTrip() throws {
     windowManager.reset()
 

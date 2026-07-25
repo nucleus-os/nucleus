@@ -9,9 +9,12 @@ public enum VkRequirements {
     /// device creation. `platformDefault` keeps the built-in behavior (Android WSI / Linux
     /// DRM); `waylandClientWSI` is an out-of-process Wayland client (nucleus-shell) that
     /// presents onto a client wl_surface via a swapchain — same Linux OS, but WSI not DRM.
-    public enum PresentationMode: Sendable {
+    /// `headless` creates Graphite without any presentation or external-memory contract and
+    /// is the mandatory software-device test architecture.
+    public enum PresentationMode: Sendable, Equatable {
         case platformDefault
         case waylandClientWSI
+        case headless
     }
 
     /// The complete, non-negotiable Vulkan contract for one presentation
@@ -30,15 +33,26 @@ public enum VkRequirements {
     }
 
     public static func contract(for mode: PresentationMode = .platformDefault) -> Contract {
-        let wsi: Bool
+        let presentationEntryPoints: [String]
         switch mode {
-        case .waylandClientWSI: wsi = true
+        case .waylandClientWSI:
+            presentationEntryPoints = [
+                "vkAcquireNextImageKHR", "vkCreateSwapchainKHR", "vkDestroySwapchainKHR",
+                "vkGetSwapchainImagesKHR", "vkQueuePresentKHR", "vkReleaseSwapchainImagesKHR",
+            ]
         case .platformDefault:
             #if os(Android)
-            wsi = true
+            presentationEntryPoints = [
+                "vkAcquireNextImageKHR", "vkCreateSwapchainKHR", "vkDestroySwapchainKHR",
+                "vkGetSwapchainImagesKHR", "vkQueuePresentKHR", "vkReleaseSwapchainImagesKHR",
+            ]
             #else
-            wsi = false
+            presentationEntryPoints = [
+                "vkGetMemoryFdPropertiesKHR", "vkGetSemaphoreFdKHR", "vkImportSemaphoreFdKHR",
+            ]
             #endif
+        case .headless:
+            presentationEntryPoints = []
         }
         let commonDeviceEntryPoints = [
             "vkAllocateMemory", "vkBindImageMemory", "vkBindImageMemory2",
@@ -52,13 +66,6 @@ public enum VkRequirements {
             "vkGetImageMemoryRequirements2", "vkQueueSubmit", "vkQueueWaitIdle",
             "vkResetFences", "vkWaitForFences",
         ]
-        let wsiDeviceEntryPoints = [
-            "vkAcquireNextImageKHR", "vkCreateSwapchainKHR", "vkDestroySwapchainKHR",
-            "vkGetSwapchainImagesKHR", "vkQueuePresentKHR", "vkReleaseSwapchainImagesKHR",
-        ]
-        let drmDeviceEntryPoints = [
-            "vkGetMemoryFdPropertiesKHR", "vkGetSemaphoreFdKHR", "vkImportSemaphoreFdKHR",
-        ]
         let commonInstanceEntryPoints = [
             "vkCreateDevice", "vkDestroyInstance", "vkEnumerateDeviceExtensionProperties",
             "vkEnumeratePhysicalDevices", "vkGetDeviceProcAddr", "vkGetPhysicalDeviceFeatures2",
@@ -69,17 +76,30 @@ public enum VkRequirements {
             "vkDestroySurfaceKHR", "vkGetPhysicalDeviceSurfaceCapabilitiesKHR",
             "vkGetPhysicalDeviceSurfaceFormatsKHR", "vkGetPhysicalDeviceSurfaceSupportKHR",
         ]
+        let requiresWSI: Bool
+        switch mode {
+        case .waylandClientWSI:
+            requiresWSI = true
+        case .platformDefault:
+            #if os(Android)
+            requiresWSI = true
+            #else
+            requiresWSI = false
+            #endif
+        case .headless:
+            requiresWSI = false
+        }
         return Contract(
             presentation: mode,
             minimumApiVersion: minimumApiVersion,
             instanceExtensions: instanceExtensions(for: mode),
             deviceExtensions: deviceExtensions(for: mode),
-            requiredInstanceEntryPoints: commonInstanceEntryPoints + (wsi ? wsiInstanceEntryPoints : []),
-            requiredDeviceEntryPoints: commonDeviceEntryPoints
-                + (wsi ? wsiDeviceEntryPoints : drmDeviceEntryPoints),
+            requiredInstanceEntryPoints: commonInstanceEntryPoints
+                + (requiresWSI ? wsiInstanceEntryPoints : []),
+            requiredDeviceEntryPoints: commonDeviceEntryPoints + presentationEntryPoints,
             requiresTimelineSemaphore: true,
             requiresSamplerYcbcrConversion: true,
-            requiresSwapchainMaintenance1: wsi)
+            requiresSwapchainMaintenance1: requiresWSI)
     }
 
     /// Instance extensions required to create the Nucleus instance. Android adds the WSI
@@ -109,6 +129,8 @@ public enum VkRequirements {
                 VK.Ext.khrAndroidSurface,
             ]
             #endif
+        case .headless:
+            return [VK.Ext.khrGetPhysicalDeviceProperties2]
         }
         return exts
     }
@@ -149,6 +171,15 @@ public enum VkRequirements {
                 VK.Ext.extQueueFamilyForeign,
             ]
             #endif
+        case .headless:
+            return [
+                VK.Ext.khrTimelineSemaphore,
+                VK.Ext.khrGetMemoryRequirements2,
+                VK.Ext.khrSamplerYcbcrConversion,
+                VK.Ext.khrBindMemory2,
+                VK.Ext.khrMaintenance1,
+                VK.Ext.khrMaintenance3,
+            ]
         }
     }
 

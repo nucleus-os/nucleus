@@ -234,7 +234,6 @@ public final class RenderRuntime {
         plotMilliseconds("swift.renderer.frame.composite_ms", timing.compositeNs)
         plotMilliseconds("swift.renderer.frame.blit_ms", timing.blitNs)
         plotMilliseconds("swift.renderer.frame.frame_snap_ms", timing.frameSnapNs)
-        plotMilliseconds("swift.renderer.frame.upload_snap_ms", timing.uploadSnapNs)
         plotMilliseconds("swift.renderer.frame.submit_ms", timing.submitNs)
         plotMilliseconds("swift.renderer.frame.driver_total_ms", timing.totalNs)
         plotMilliseconds(
@@ -242,7 +241,7 @@ public final class RenderRuntime {
             saturatingResidual(total: timing.totalNs, phases: [
                 timing.planNs, timing.resolveNs, timing.accumulatorNs, timing.damageNs,
                 timing.compositeNs, timing.blitNs, timing.frameSnapNs,
-                timing.uploadSnapNs, timing.submitNs,
+                timing.submitNs,
             ]))
         plotMilliseconds(
             "swift.renderer.frame.resource_summary_ms",

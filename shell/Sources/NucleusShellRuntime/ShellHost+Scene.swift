@@ -27,9 +27,14 @@ extension ShellHost {
                 runtimeHost: hostBundle.layersHost,
                 requestFrame: { [weak self] in
                     self?.requestRender(nativeSceneChanged: true)
-                })
+            })
             let textSystem = TextSystem()
-            SkiaTextLayoutBackend.install(in: textSystem)
+            guard SkiaTextLayoutBackend.install(in: textSystem)
+            else {
+                writeErr(
+                    "shell: conflicting Graphite text borrow provider")
+                return
+            }
             let services = UIHostServices(
                 textSystem: textSystem,
                 pasteboard: Pasteboard(

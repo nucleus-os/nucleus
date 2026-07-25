@@ -57,6 +57,8 @@ public final class RenderCore {
     /// that shares this device (the Android swapchain presenter) submits + presents
     /// on it.
     public let graphicsQueue: VkQueue
+    let vulkanContract: VkRequirements.Contract
+    let asyncRenderWakeSink: any AsyncRenderWakeSink
 
     var context: nucleus.skia.GraphiteContext
     var frameDriver: FrameDriver?
@@ -89,6 +91,12 @@ public final class RenderCore {
     var pendingClientAcquireSemaphores: [UInt64: ClientAcquireSemaphore] = [:]
     var retiredClientAcquireSemaphores: [(serial: UInt64, semaphore: ClientAcquireSemaphore)] = []
     var pendingShmUploads = PendingShmUploadQueue()
+    struct StagedShmUpload {
+        var pending: PendingShmUpload
+        var texture: nucleus.skia.UploadTexture
+        var image: nucleus.skia.Image
+    }
+    var stagedShmUploads: [UInt64: StagedShmUpload] = [:]
     var clientUploadTextures: [UInt64: nucleus.skia.UploadTexture] = [:]
     var retiredClientUploadTextures: [(serial: UInt64, texture: nucleus.skia.UploadTexture)] = []
     var nextSnapshotContentRevision: UInt64 = 1
@@ -280,7 +288,9 @@ public final class RenderCore {
         instanceLifetime: VulkanInstanceLifetime, device: consuming DeviceOwner, queue: VkQueue,
         physicalDevice: VkPhysicalDevice, graphicsFamily: UInt32,
         context: nucleus.skia.GraphiteContext, driver: FrameDriver,
-        store: RetainedTreeStore, resourceHost: SwiftResourceHost
+        store: RetainedTreeStore, resourceHost: SwiftResourceHost,
+        vulkanContract: VkRequirements.Contract,
+        asyncRenderWakeSink: any AsyncRenderWakeSink
     ) {
         // Copy the Copyable handles/dispatch out (borrow) before boxing the owners.
         guard let ownedInstanceHandle = instanceLifetime.owner?.handle,
@@ -295,6 +305,8 @@ public final class RenderCore {
         self.deviceDispatch = device.dispatch
         self.graphicsFamily = graphicsFamily
         self.graphicsQueue = queue
+        self.vulkanContract = vulkanContract
+        self.asyncRenderWakeSink = asyncRenderWakeSink
         self.context = context
         self.frameDriver = driver
         self.store = store

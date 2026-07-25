@@ -49,22 +49,26 @@ public final class ImageResource {
     /// caller error, and a view that cannot show an image should draw nothing
     /// rather than take the process down.
     ///
-    /// - Parameter decodeSize: the box to decode within. Zero on an axis means
-    ///   unbounded there, which decodes at full size.
+    /// - Parameter decodeSize: the positive target-pixel box to decode within.
+    ///   Callers that need intrinsic dimensions probe metadata before creating
+    ///   the rasterization request.
     public init?(
-        path: String, decodeSize: Size = .zero,
+        path: String, decodeSize: Size,
         resourceHostHandle: UInt64,
         runtimeHost: LayerRuntimeHost
     ) {
         guard !path.isEmpty, resourceHostHandle != 0 else { return nil }
         let registrar = runtimeHost.operations.imageRegistrar
+        let maxWidth = ImageResource.pixelBound(decodeSize.width)
+        let maxHeight = ImageResource.pixelBound(decodeSize.height)
+        guard maxWidth > 0, maxHeight > 0 else { return nil }
 
         let raw: UInt64
         do {
             raw = try registrar.register(
                 path: path,
-                maxWidth: ImageResource.pixelBound(decodeSize.width),
-                maxHeight: ImageResource.pixelBound(decodeSize.height))
+                maxWidth: maxWidth,
+                maxHeight: maxHeight)
         } catch {
             return nil
         }
@@ -82,7 +86,7 @@ public final class ImageResource {
     /// Callers receive icon strings from applications and desktop entries and
     /// cannot know which they hold, so deciding here means no caller has to.
     public convenience init?(
-        source: String, decodeSize: Size = .zero,
+        source: String, decodeSize: Size,
         resourceHostHandle: UInt64,
         runtimeHost: LayerRuntimeHost
     ) {
@@ -101,19 +105,22 @@ public final class ImageResource {
 
     /// Register encoded bytes already in memory.
     public init?(
-        encoded bytes: [UInt8], decodeSize: Size = .zero,
+        encoded bytes: [UInt8], decodeSize: Size,
         resourceHostHandle: UInt64,
         runtimeHost: LayerRuntimeHost
     ) {
         guard !bytes.isEmpty, resourceHostHandle != 0 else { return nil }
         let registrar = runtimeHost.operations.imageRegistrar
+        let maxWidth = ImageResource.pixelBound(decodeSize.width)
+        let maxHeight = ImageResource.pixelBound(decodeSize.height)
+        guard maxWidth > 0, maxHeight > 0 else { return nil }
 
         let raw: UInt64
         do {
             raw = try registrar.register(
                 encoded: bytes.span,
-                maxWidth: ImageResource.pixelBound(decodeSize.width),
-                maxHeight: ImageResource.pixelBound(decodeSize.height))
+                maxWidth: maxWidth,
+                maxHeight: maxHeight)
         } catch {
             return nil
         }

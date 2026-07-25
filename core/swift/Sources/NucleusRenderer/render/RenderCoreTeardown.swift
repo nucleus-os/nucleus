@@ -29,6 +29,7 @@ extension RenderCore {
         Trace.plot("swift.nucleus.renderer.live_snapshots", UInt64(0))
         frameDriver?.shutdown()
         pendingShmUploads.removeAll()
+        stagedShmUploads.removeAll()
         clientUploadTextures.removeAll()
         retiredClientUploadTextures.removeAll()
         pendingClientAcquireSemaphores.removeAll()

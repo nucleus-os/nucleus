@@ -21,7 +21,8 @@ final class SwiftImageRegistrar: ImageRegistrar {
     }
 
     func register(path: String, maxWidth: UInt32, maxHeight: UInt32) throws(ImageRegistrationError) -> UInt64 {
-        guard !path.isEmpty else { throw ImageRegistrationError.invalidArgument }
+        guard !path.isEmpty, maxWidth > 0, maxHeight > 0
+        else { throw ImageRegistrationError.invalidArgument }
         guard resourceHost.isLive else { throw .invalidHandle }
         return resourceHost.images.register(
             ImageSource(path: path, maxWidth: maxWidth, maxHeight: maxHeight))
@@ -30,7 +31,8 @@ final class SwiftImageRegistrar: ImageRegistrar {
     func register(
         encoded: Span<UInt8>, maxWidth: UInt32, maxHeight: UInt32
     ) throws(ImageRegistrationError) -> UInt64 {
-        guard !encoded.isEmpty else { throw ImageRegistrationError.invalidArgument }
+        guard !encoded.isEmpty, maxWidth > 0, maxHeight > 0
+        else { throw ImageRegistrationError.invalidArgument }
         var bytes = [UInt8](repeating: 0, count: encoded.count)
         for i in 0..<encoded.count { bytes[i] = encoded[i] }
         guard resourceHost.isLive else { throw .invalidHandle }

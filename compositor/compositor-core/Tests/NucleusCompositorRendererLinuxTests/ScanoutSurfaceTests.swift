@@ -7,7 +7,7 @@ import NucleusSkiaGraphiteBridge
 // scanout-surface bridge. The descriptor marshaling is hardware-independent and
 // asserted field-by-field; the live wrap creates a borrowed color-attachment
 // VkImage, wraps it as a Graphite render-target Surface, clears + draws into it,
-// submits, and reads it back — over a real Graphite context, best-effort (every
+// submits, and reads it back — over the mandatory Graphite capability lane (every
 // GPU stage guards on loader/device/context availability and asserts nothing
 // hardware-conditional).
 @Suite struct ScanoutSurfaceTests {
@@ -52,49 +52,20 @@ import NucleusSkiaGraphiteBridge
         #expect(ScanoutSurface.descriptor(nullParams).image == nil, "desc-null-image")
     }
 
-    // Best-effort GPU: borrowed VkImage → Graphite render-target Surface. Every
-    // stage is hardware-gated, so it asserts nothing hardware-conditional.
-    @Test(.disabled("requires a live GPU/Vulkan device")) func scanoutWrapBestEffort() {
-        let base = VK.loadBaseDispatch()
-        let contract = VkRequirements.contract()
-        guard let instance = InstanceOwner.create(
-            base: base, applicationName: "ScanoutSurfaceTests",
-            contract: contract, enableValidation: false
-        ) else { return }
-        guard let selection = DeviceOwner.selectPhysicalDevice(
-            instance: instance.handle, dispatch: instance.dispatch, contract: contract
-        ) else { return }
-        guard let device = DeviceOwner.create(
-            selection: selection, instanceDispatch: instance.dispatch,
-            contract: contract
-        ) else { return }
-        guard let queue = device.queue(family: selection.graphicsQueueFamily) else { return }
-
-        withCStringArray(contract.deviceExtensions) { extPtr, extCount in
-            var ctxDesc = nucleus.skia.VulkanContextDescriptor()
-            ctxDesc.instance = UnsafeMutableRawPointer(instance.handle)
-            ctxDesc.physicalDevice = UnsafeMutableRawPointer(selection.physicalDevice)
-            ctxDesc.device = UnsafeMutableRawPointer(device.handle)
-            ctxDesc.queue = UnsafeMutableRawPointer(queue)
-            ctxDesc.graphicsQueueIndex = selection.graphicsQueueFamily
-            ctxDesc.maxApiVersion = VkRequirements.minimumApiVersion.raw
-            ctxDesc.deviceExtensions = extPtr
-            ctxDesc.deviceExtensionCount = extCount
-
-            let context = nucleus.skia.makeGraphiteVulkanContext(ctxDesc)
-            guard context.isValid() else { return }
-            let recorder = context.makeRecorder()
-            guard recorder.isValid() else { return }
-
+    @Test func gpuHeadless_scanoutWrap() throws {
+        try withRequiredVulkanGraphite(
+            presentation: .headless,
+            applicationName: "ScanoutSurfaceTests"
+        ) { device, selection, context, recorder in
             // A descriptor with a null image wraps to an invalid Surface
             // (fail-closed) — mirrors the registry's wrap-null check.
             var nullDesc = nucleus.skia.VulkanImageDescriptor()
             nullDesc.width = 64
             nullDesc.height = 64
             nullDesc.imageUsageFlags = VK.ImageUsageFlags.colorAttachmentBit.rawValue
-            _ = recorder.wrapBackendSurface(nullDesc)
+            #expect(!recorder.wrapBackendSurface(nullDesc).isValid())
 
-            Self.runScanoutGPU(
+            try Self.runScanoutGPU(
                 device: device, dispatch: device.dispatch,
                 graphicsFamily: selection.graphicsQueueFamily,
                 context: context, recorder: recorder)
@@ -105,12 +76,10 @@ import NucleusSkiaGraphiteBridge
     /// Surface, draw + submit + read back, then tear down in the correct order:
     /// the Surface's scope ends before the image/memory `VkOwned`, which in turn
     /// are destroyed before the Graphite context (the enclosing closure).
-    /// Best-effort: every stage escapes when its prerequisite is unavailable and
-    /// asserts nothing hardware-conditional.
     static func runScanoutGPU(
         device: borrowing DeviceOwner, dispatch: VK.DeviceDispatch, graphicsFamily: UInt32,
         context: nucleus.skia.GraphiteContext, recorder: nucleus.skia.Recorder
-    ) {
+    ) throws {
         let width: Int32 = 64
         let height: Int32 = 64
 
@@ -132,23 +101,42 @@ import NucleusSkiaGraphiteBridge
         imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE
         imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED
 
-        guard let imageOwned = dispatch.createImage(device.handle, info: imageInfo) else { return }
+        guard let imageOwned = dispatch.createImage(
+            device.handle, info: imageInfo)
+        else {
+            throw VulkanLaneTestFailure.requirement(
+                "could not create the borrowed scanout test image")
+        }
 
-        guard let getReqs = dispatch.vkGetImageMemoryRequirements,
-              let bindImage = dispatch.vkBindImageMemory
-        else { return }
+        let getReqs = try requireValue(
+            dispatch.vkGetImageMemoryRequirements,
+            "vkGetImageMemoryRequirements is unavailable")
+        let bindImage = try requireValue(
+            dispatch.vkBindImageMemory,
+            "vkBindImageMemory is unavailable")
 
         var requirements = VkMemoryRequirements()
         getReqs(device.handle, imageOwned.handle, &requirements)
-        guard requirements.memoryTypeBits != 0 else { return }
+        try requireTrue(
+            requirements.memoryTypeBits != 0,
+            "scanout test image has no compatible memory type")
         // Lowest set bit, mirroring the DmaBuf import's selection.
         let memoryTypeIndex = UInt32(requirements.memoryTypeBits.trailingZeroBitCount)
 
         var allocInfo = VkMemoryAllocateInfo()
         allocInfo.allocationSize = requirements.size
         allocInfo.memoryTypeIndex = memoryTypeIndex
-        guard let memoryOwned = dispatch.allocateMemory(device.handle, info: allocInfo) else { return }
-        guard bindImage(device.handle, imageOwned.handle, memoryOwned.handle, 0) == VK_SUCCESS else { return }
+        guard let memoryOwned = dispatch.allocateMemory(
+            device.handle, info: allocInfo)
+        else {
+            throw VulkanLaneTestFailure.requirement(
+                "could not allocate scanout test image memory")
+        }
+        try requireTrue(
+            bindImage(
+                device.handle, imageOwned.handle,
+                memoryOwned.handle, 0) == VK_SUCCESS,
+            "could not bind scanout test image memory")
 
         let params = ScanoutImageParams(
             image: imageOwned.handle,
@@ -170,7 +158,7 @@ import NucleusSkiaGraphiteBridge
         // surfaces backed by a backend texture must not outlive their backing.
         do {
             let surface = ScanoutSurface.wrap(recorder: recorder, params: params)
-            guard surface.isValid() else { return }
+            try requireTrue(surface.isValid(), "Graphite rejected the borrowed image")
 
             // Clear to an opaque known color, then draw a rect in the same color
             // over a sub-region (exercises the Paint/drawRect path on a wrapped RT).
@@ -184,13 +172,20 @@ import NucleusSkiaGraphiteBridge
             canvas.drawRect(nucleus.skia.RectF(x: 8, y: 8, width: 16, height: 16), paint)
 
             let recording = recorder.snapRecording()
-            _ = submitGraphiteAndWait(
-                context: context, recording: recording, serial: 1)
+            try requireTrue(
+                submitGraphiteAndWait(
+                    context: context, recording: recording, serial: 1),
+                "borrowed-image submission did not complete")
 
-            // Read back to exercise the path; the values are not asserted because
-            // the round-trip only runs on real GPU hardware.
-            _ = readGraphiteSurfaceRGBA(
-                context: context, surface: surface)
+            let pixels = try requireValue(
+                readGraphiteSurfaceRGBA(
+                    context: context, surface: surface),
+                "borrowed-image readback failed")
+            #expect(pixels.count == Int(width * height * 4))
+            #expect(pixels[0] >= 60 && pixels[0] <= 68)
+            #expect(pixels[1] >= 124 && pixels[1] <= 132)
+            #expect(pixels[2] >= 188 && pixels[2] <= 196)
+            #expect(pixels[3] >= 250)
         }
         // `surface` destroyed here; `memoryOwned`/`imageOwned` destroyed on return.
     }

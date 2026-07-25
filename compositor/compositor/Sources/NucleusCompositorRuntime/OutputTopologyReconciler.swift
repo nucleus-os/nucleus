@@ -331,17 +331,33 @@ final class OutputTopologyReconciler {
     }
 
     private func refreshDerivedOutputState() {
+        let previousAvailability = server.outputAvailability
+        let nextAvailability: OutputAvailability =
+            applied.isEmpty ? .suspendedNoOutputs : .available
+        server.transitionOutputAvailability(to: nextAvailability)
+
+        guard nextAvailability == .available else {
+            frameDemand.suspendForNoOutputs()
+            overlayScene.suspendForNoOutputs()
+            return
+        }
         guard let primary = server.layout.primaryDisplayID()
             .flatMap({ server.layout.display(id: $0) })
         else { return }
-        frameDemand.requestFrame(reason: .outputChange)
-        overlayScene.frameUpdated(FrameInfo(
+        let frame = FrameInfo(
             outputWidth: UInt32(max(1, primary.logicalRect.width.rounded())),
             outputHeight: UInt32(max(1, primary.logicalRect.height.rounded())),
             devicePixelRatio: Float(primary.fractionalScale),
             overlayRegionX: 0,
             overlayRegionY: 0,
             overlayRegionW: Float(primary.logicalRect.width),
-            overlayRegionH: Float(primary.logicalRect.height)))
+            overlayRegionH: Float(primary.logicalRect.height))
+        if previousAvailability == .suspendedNoOutputs {
+            frameDemand.resumeForOutputs()
+            overlayScene.resumeForOutput(frame)
+        } else {
+            overlayScene.frameUpdated(frame)
+        }
+        frameDemand.requestFrame(reason: .outputChange)
     }
 }

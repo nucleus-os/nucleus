@@ -16,6 +16,7 @@
 
 @_spi(NucleusPlatform) internal import NucleusRenderer
 internal import NucleusRenderModel
+internal import NucleusTextRenderingBridge
 internal import VulkanC
 
 @MainActor
@@ -38,6 +39,12 @@ final class AndroidRenderEngine {
         resourceHost: SwiftResourceHost,
         asyncRenderWakeSink: any AsyncRenderWakeSink
     ) {
+        guard nucleus.text.installTextRenderingBridge()
+            != nucleus.text.TextRenderingBridgeInstallStatus
+                .conflictingProvider
+        else {
+            return nil
+        }
         guard let bootstrap = VulkanBootstrap.create(applicationName: "Nucleus Android"),
               let surface = bootstrap.createSurface({ context in
             let instance = context.vkInstance

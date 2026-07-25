@@ -9,111 +9,159 @@ package import NucleusRenderModel
 import NucleusSkiaGraphiteBridge
 import Tracy
 
-/// A decoded image on its way back to the render thread.
-///
-/// Carries the Skia image itself rather than a pixel array. A raster `SkImage` is
-/// immutable once made and its refcount is atomic, so handing one between threads
-/// is sound — and the alternative costs two full-resolution copies of every
-/// wallpaper, one to read the pixels out and one to build the image again.
-package struct DecodedImageResult: @unchecked Sendable {
-    package var handle: UInt64
+@_spi(NucleusPlatform)
+public enum ImageDecodeFailure: Error, Sendable, Equatable, Hashable {
+    case unreadableInput
+    case unsupportedFormat
+    case invalidDimensions
+    case limitExceeded
+    case decodeFailure
+    case cancellation
+    case uploadFailure
+}
+
+package struct DecodedImage: @unchecked Sendable {
     package var image: nucleus.skia.RasterImage
 
-    // Plain-typed accessors. The C++ `Image` type does not resolve through a
-    // `@testable` import, so anything that wants to assert about a result
-    // without being the renderer needs these.
     package var isValid: Bool { image.isValid() }
     package var width: Int32 { image.width() }
     package var height: Int32 { image.height() }
 }
 
-/// Decodes images off the render thread.
-///
-/// This is the first background thread in the render core, and it is deliberately
-/// a bare one: a worker, a lock, and a condition variable. The work is a single
-/// long CPU job per item with no ordering between items, which is the shape that
-/// needs a queue rather than a scheduler.
-///
-/// **Decode happens here; upload does not.** `TextureRegistry` and the driver's
-/// decoded-image cache are unsynchronized and owned by the render thread, so the
-/// worker only ever produces an immutable image and hands it back. The render
-/// thread drains completions at the top of a frame.
-package final class ImageDecodeQueue {
-    /// State retained by workers. It deliberately has no reference back to the
-    /// queue: dropping the queue must be able to start shutdown and join them.
-    private final class WorkerState: @unchecked Sendable {
-        private struct Request {
-            var handle: UInt64
-            var generation: UInt64
-            var source: ImageSource
-        }
+package struct ImageDecodeCompletion: @unchecked Sendable {
+    package var handle: UInt64
+    package var generation: UInt64
+    package var result: Result<DecodedImage, ImageDecodeFailure>
+}
 
-        private struct Completion {
-            var generation: UInt64
-            var result: DecodedImageResult
+package struct ImageMetadata: Sendable, Equatable {
+    package var width: Int32
+    package var height: Int32
+    package var isVector: Bool
+}
+
+/// A generation-aware eager-decode queue.
+///
+/// Workers return one typed terminal completion for every job they start or
+/// cancel. No encoded object crosses back to the render thread: success owns
+/// immutable CPU pixels and upload remains an explicitly budgeted render-owner
+/// operation.
+package final class ImageDecodeQueue {
+    package typealias DecodeOperation =
+        @Sendable (ImageSource) -> Result<DecodedImage, ImageDecodeFailure>
+
+    private struct JobKey: Hashable, Sendable {
+        var handle: UInt64
+        var generation: UInt64
+    }
+
+    private final class WorkerState: @unchecked Sendable {
+        private struct Request: Sendable {
+            var key: JobKey
+            var source: ImageSource
         }
 
         private var pending: [Request] = []
         private var pendingHead = 0
-        private var completed: [Completion] = []
-        /// The generation currently owned by each submitted handle. Generations
-        /// distinguish an old in-flight decode from an immediate resubmission of
-        /// the same handle after cancellation.
-        private var known: [UInt64: UInt64] = [:]
-        private var nextGeneration: UInt64 = 1
+        private var runningJobs: Set<JobKey> = []
+        private var cancelledJobs: Set<JobKey> = []
+        private var submittedJobs: Set<JobKey> = []
+        private var completed: [ImageDecodeCompletion] = []
         private var running = true
         private var latestCompletionToFrameDemandNs: UInt64?
 
         private let synchronization = BlockingSynchronization()
         private let wakeSink: any AsyncRenderWakeSink
+        private let decodeOperation: DecodeOperation
         private let clock = ContinuousClock()
 
-        init(wakeSink: any AsyncRenderWakeSink) {
+        init(
+            wakeSink: any AsyncRenderWakeSink,
+            decodeOperation: @escaping DecodeOperation
+        ) {
             self.wakeSink = wakeSink
+            self.decodeOperation = decodeOperation
         }
 
-        func submit(handle: UInt64, source: ImageSource) -> Bool {
-            synchronization.withLock {
-                guard running, known[handle] == nil else { return false }
-                let generation = nextGeneration
-                nextGeneration &+= 1
-                if nextGeneration == 0 { nextGeneration = 1 }
-                known[handle] = generation
-                pending.append(Request(
-                    handle: handle,
-                    generation: generation,
-                    source: source))
-                synchronization.signal()
-                return true
-            }
-        }
+        func submit(
+            handle: UInt64,
+            generation: UInt64,
+            source: ImageSource
+        ) -> Bool {
+            let key = JobKey(handle: handle, generation: generation)
+            return synchronization.withLock {
+                guard running, handle != 0, generation != 0,
+                      !submittedJobs.contains(key)
+                else { return false }
 
-        func drain() -> [DecodedImageResult] {
-            synchronization.withLock {
-                guard !completed.isEmpty else { return [] }
-                let results = completed.map(\.result)
-                for completion in completed
-                where known[completion.result.handle] == completion.generation {
-                    known[completion.result.handle] = nil
-                }
-                completed.removeAll(keepingCapacity: true)
-                return results
-            }
-        }
-
-        func cancel(handle: UInt64) {
-            synchronization.withLock {
+                // A newer generation supersedes only non-started work. Running
+                // work completes normally and is rejected as stale by its owner.
                 if pendingHead < pending.count {
-                    pending = pending[pendingHead...].filter {
-                        $0.handle != handle
+                    var retained = Array(pending[pendingHead...])
+                    for request in retained
+                    where request.key.handle == handle
+                        && request.key != key
+                    {
+                        appendCompletion(
+                            key: request.key,
+                            result: .failure(.cancellation))
                     }
+                    retained.removeAll {
+                        $0.key.handle == handle && $0.key != key
+                    }
+                    pending = retained
                     pendingHead = 0
                 } else {
                     pending.removeAll(keepingCapacity: true)
                     pendingHead = 0
                 }
-                completed.removeAll { $0.result.handle == handle }
-                known[handle] = nil
+
+                submittedJobs.insert(key)
+                pending.append(Request(key: key, source: source))
+                synchronization.signal()
+                return true
+            }
+        }
+
+        func drain(maxCount: Int) -> [ImageDecodeCompletion] {
+            synchronization.withLock {
+                guard maxCount > 0, !completed.isEmpty else { return [] }
+                let count = min(maxCount, completed.count)
+                let results = Array(completed.prefix(count))
+                completed.removeFirst(count)
+                for completion in results {
+                    submittedJobs.remove(JobKey(
+                        handle: completion.handle,
+                        generation: completion.generation))
+                }
+                return results
+            }
+        }
+
+        func cancel(handle: UInt64) {
+            let shouldWake = synchronization.withLock {
+                let wasEmpty = completed.isEmpty
+                if pendingHead < pending.count {
+                    var retained = Array(pending[pendingHead...])
+                    for request in retained where request.key.handle == handle {
+                        appendCompletion(
+                            key: request.key,
+                            result: .failure(.cancellation))
+                    }
+                    retained.removeAll { $0.key.handle == handle }
+                    pending = retained
+                    pendingHead = 0
+                } else {
+                    pending.removeAll(keepingCapacity: true)
+                    pendingHead = 0
+                }
+                for key in runningJobs where key.handle == handle {
+                    cancelledJobs.insert(key)
+                }
+                return wasEmpty && !completed.isEmpty
+            }
+            if shouldWake {
+                signalCompletion()
             }
         }
 
@@ -150,53 +198,56 @@ package final class ImageDecodeQueue {
                 }
                 let request = pending[pendingHead]
                 pendingHead += 1
+                runningJobs.insert(request.key)
                 compactPendingIfNeeded()
                 synchronization.unlock()
 
-                let image = ImageDecodeQueue.decode(request.source)
+                let decoded = decodeOperation(request.source)
 
-                let completionInstant: ContinuousClock.Instant? =
-                    synchronization.withLock {
-                        if running,
-                           known[request.handle] == request.generation,
-                           image.isValid()
-                        {
-                            // One wake covers every result waiting in this
-                            // completion burst. Draining empties the burst and
-                            // permits the next wake.
-                            let completionInstant = completed.isEmpty
-                                ? clock.now
-                                : nil
-                            completed.append(Completion(
-                                generation: request.generation,
-                                result: DecodedImageResult(
-                                    handle: request.handle,
-                                    image: image)))
-                            return completionInstant
-                        }
-                        if known[request.handle] == request.generation {
-                            known[request.handle] = nil
-                        }
-                        return nil
+                let shouldWake = synchronization.withLock {
+                    runningJobs.remove(request.key)
+                    let terminal: Result<DecodedImage, ImageDecodeFailure>
+                    if cancelledJobs.remove(request.key) != nil {
+                        terminal = .failure(.cancellation)
+                    } else {
+                        terminal = decoded
                     }
-
-                if let completionInstant {
-                    wakeSink.signalRenderWork()
-                    let latency = elapsedNanoseconds(
-                        completionInstant,
-                        clock.now)
-                    synchronization.withLock {
-                        latestCompletionToFrameDemandNs = latency
-                    }
-                    Trace.plot(
-                        "swift.renderer.image_decode.completion_to_frame_demand_ns",
-                        latency)
+                    let wasEmpty = completed.isEmpty
+                    appendCompletion(key: request.key, result: terminal)
+                    return running && wasEmpty
+                }
+                if shouldWake {
+                    signalCompletion()
                 }
             }
         }
 
+        private func appendCompletion(
+            key: JobKey,
+            result: Result<DecodedImage, ImageDecodeFailure>
+        ) {
+            completed.append(ImageDecodeCompletion(
+                handle: key.handle,
+                generation: key.generation,
+                result: result))
+        }
+
+        private func signalCompletion() {
+            let completionInstant = clock.now
+            wakeSink.signalRenderWork()
+            let latency = elapsedNanoseconds(completionInstant, clock.now)
+            synchronization.withLock {
+                latestCompletionToFrameDemandNs = latency
+            }
+            Trace.plot(
+                "swift.renderer.image_decode.completion_to_frame_demand_ns",
+                latency)
+        }
+
         private func compactPendingIfNeeded() {
-            guard pendingHead >= 64, pendingHead * 2 >= pending.count else { return }
+            guard pendingHead >= 64, pendingHead * 2 >= pending.count else {
+                return
+            }
             pending.removeFirst(pendingHead)
             pendingHead = 0
         }
@@ -205,31 +256,32 @@ package final class ImageDecodeQueue {
     private var state: WorkerState?
     private var workers: [pthread_t] = []
 
-    /// - Parameter workerCount: one is enough for a shell. Decodes are rare,
-    ///   bursty, and individually short; more threads would mostly contend.
-    ///   Zero explicitly selects the same inline fallback used when every
-    ///   requested worker fails to start.
     package init(
         wakeSink: any AsyncRenderWakeSink,
-        workerCount: Int = 1
+        workerCount: Int = 1,
+        decodeOperation: @escaping DecodeOperation = ImageDecodeQueue.decode
     ) {
-        let state = WorkerState(wakeSink: wakeSink)
+        let state = WorkerState(
+            wakeSink: wakeSink,
+            decodeOperation: decodeOperation)
         self.state = state
         for _ in 0..<max(0, workerCount) {
-            let retainedState = Unmanaged.passRetained(state).toOpaque()
+            let retainedState =
+                Unmanaged.passRetained(state).toOpaque()
             var thread = pthread_t()
             let created = pthread_create(&thread, nil, { pointer in
-                let state = Unmanaged<WorkerState>.fromOpaque(pointer!).takeRetainedValue()
+                let state = Unmanaged<WorkerState>
+                    .fromOpaque(pointer!)
+                    .takeRetainedValue()
                 state.workerLoop()
                 return nil
             }, retainedState)
             if created == 0 {
                 workers.append(thread)
             } else {
-                // Failing to spawn is not fatal: `submit` reports that nothing is
-                // pending and the caller decodes inline, which is exactly the
-                // behaviour that existed before this queue.
-                Unmanaged<WorkerState>.fromOpaque(retainedState).release()
+                Unmanaged<WorkerState>
+                    .fromOpaque(retainedState)
+                    .release()
             }
         }
     }
@@ -238,72 +290,235 @@ package final class ImageDecodeQueue {
         shutdown()
     }
 
-    /// Whether any worker is running. With none, callers must decode inline.
     package var hasWorkers: Bool { !workers.isEmpty }
 
-    /// Latest measured interval from making a completion drainable through
-    /// invoking the host's frame-demand sink.
     package var completionToFrameDemandNanoseconds: UInt64? {
         state?.completionToFrameDemandNanoseconds()
     }
 
-    /// Queue a decode. Returns false if this handle is already queued or done,
-    /// so a caller can tell "waiting" from "just asked".
     @discardableResult
-    package func submit(handle: UInt64, source: ImageSource) -> Bool {
+    package func submit(
+        handle: UInt64,
+        generation: UInt64,
+        source: ImageSource
+    ) -> Bool {
         guard hasWorkers, let state else { return false }
-        return state.submit(handle: handle, source: source)
+        return state.submit(
+            handle: handle,
+            generation: generation,
+            source: source)
     }
 
-    /// Take everything decoded since the last call.
-    package func drain() -> [DecodedImageResult] {
-        state?.drain() ?? []
+    package func drain(
+        maxCount: Int = .max
+    ) -> [ImageDecodeCompletion] {
+        state?.drain(maxCount: maxCount) ?? []
     }
 
-    /// Forget a handle whose source was evicted.
-    ///
-    /// A decode already running cannot be stopped, so its result is dropped on
-    /// arrival instead. Dropping matters more than stopping: the handle may be
-    /// re-registered, and delivering a stale image to a reused handle would draw
-    /// the wrong picture.
     package func cancel(handle: UInt64) {
         state?.cancel(handle: handle)
     }
 
-    /// Stop the workers and wait for them. Idempotent.
     package func shutdown() {
         guard let state, state.stop() else { return }
-        for thread in workers { pthread_join(thread, nil) }
+        for thread in workers {
+            pthread_join(thread, nil)
+        }
         workers.removeAll()
-        // Joining releases the workers' retained state references. Dropping the
-        // queue's final reference destroys the C-owned condition and mutex before
-        // shutdown returns.
         self.state = nil
     }
 
-    /// The decode itself — the same work the render thread used to do inline.
-    static func decode(_ source: ImageSource) -> nucleus.skia.RasterImage {
-        let maxWidth = Int32(clamping: source.maxWidth)
-        let maxHeight = Int32(clamping: source.maxHeight)
+    package static func probeMetadata(
+        _ source: ImageSource
+    ) -> Result<ImageMetadata, ImageDecodeFailure> {
+        switch source.content {
+        case .raw(let buffer):
+            guard let dimensions = validatedDimensions(
+                width: buffer.width,
+                height: buffer.height,
+                bytesPerPixel: 4)
+            else { return .failure(.limitExceeded) }
+            guard buffer.isWellFormed else {
+                return .failure(.invalidDimensions)
+            }
+            return .success(ImageMetadata(
+                width: dimensions.width,
+                height: dimensions.height,
+                isVector: false))
+        case .file(let path):
+            guard encodedFileSize(path) != nil else {
+                return .failure(.unreadableInput)
+            }
+            return mapMetadata(
+                nucleus.skia.probeEncodedImageFile(path))
+        case .encoded(let bytes):
+            guard !bytes.isEmpty else {
+                return .failure(.unreadableInput)
+            }
+            guard bytes.count <= Limits.maximumEncodedBytes else {
+                return .failure(.limitExceeded)
+            }
+            return bytes.withUnsafeBufferPointer {
+                mapMetadata(nucleus.skia.probeEncodedImageMemory(
+                    $0.baseAddress,
+                    $0.count))
+            }
+        }
+    }
 
+    package static func decode(
+        _ source: ImageSource
+    ) -> Result<DecodedImage, ImageDecodeFailure> {
         switch source.content {
         case .file(let path):
-            return nucleus.skia.makeEncodedImageFromFile(path, maxWidth, maxHeight)
+            guard let size = encodedFileSize(path) else {
+                return .failure(.unreadableInput)
+            }
+            guard size <= Limits.maximumEncodedBytes else {
+                return .failure(.limitExceeded)
+            }
+            guard let bounds = validatedTargetBounds(source) else {
+                return .failure(targetFailure(source))
+            }
+            return mapDecode(nucleus.skia.decodeEncodedImageFile(
+                path,
+                bounds.width,
+                bounds.height))
         case .encoded(let bytes):
+            guard !bytes.isEmpty else {
+                return .failure(.unreadableInput)
+            }
+            guard bytes.count <= Limits.maximumEncodedBytes else {
+                return .failure(.limitExceeded)
+            }
+            guard let bounds = validatedTargetBounds(source) else {
+                return .failure(targetFailure(source))
+            }
             return bytes.withUnsafeBufferPointer {
-                nucleus.skia.makeEncodedImageFromMemory(
-                    $0.baseAddress, $0.count, maxWidth, maxHeight)
+                mapDecode(nucleus.skia.decodeEncodedImageMemory(
+                    $0.baseAddress,
+                    $0.count,
+                    bounds.width,
+                    bounds.height))
             }
         case .raw(let buffer):
-            // An inconsistent buffer decodes to nothing. Producing an image of
-            // zero size says that in the vocabulary the caller already checks.
+            guard buffer.width > 0, buffer.height > 0 else {
+                return .failure(.invalidDimensions)
+            }
+            guard validatedDimensions(
+                width: buffer.width,
+                height: buffer.height,
+                bytesPerPixel: 4) != nil
+            else { return .failure(.limitExceeded) }
             guard let rgba = buffer.normalizedRGBA() else {
-                return nucleus.skia.makeRasterImageRGBA(0, 0, nil, 0)
+                return .failure(.decodeFailure)
             }
-            return rgba.withUnsafeBufferPointer {
+            let image = rgba.withUnsafeBufferPointer {
                 nucleus.skia.makeRasterImageRGBA(
-                    Int32(buffer.width), Int32(buffer.height), $0.baseAddress, $0.count)
+                    Int32(buffer.width),
+                    Int32(buffer.height),
+                    $0.baseAddress,
+                    $0.count)
             }
+            return image.isValid()
+                ? .success(DecodedImage(image: image))
+                : .failure(.decodeFailure)
+        }
+    }
+
+    private enum Limits {
+        static let maximumEncodedBytes = 64 * 1024 * 1024
+        static let maximumDimension = 32_768
+        static let maximumPixels = 64_000_000
+        static let maximumDecodedBytes = 256 * 1024 * 1024
+    }
+
+    private static func validatedTargetBounds(
+        _ source: ImageSource
+    ) -> (width: Int32, height: Int32)? {
+        validatedDimensions(
+            width: Int(source.maxWidth),
+            height: Int(source.maxHeight),
+            bytesPerPixel: 4)
+    }
+
+    private static func targetFailure(
+        _ source: ImageSource
+    ) -> ImageDecodeFailure {
+        source.maxWidth == 0 || source.maxHeight == 0
+            ? .invalidDimensions
+            : .limitExceeded
+    }
+
+    private static func validatedDimensions(
+        width: Int,
+        height: Int,
+        bytesPerPixel: Int
+    ) -> (width: Int32, height: Int32)? {
+        guard width > 0, height > 0,
+              width <= Limits.maximumDimension,
+              height <= Limits.maximumDimension
+        else { return nil }
+        let pixels = width.multipliedReportingOverflow(by: height)
+        guard !pixels.overflow,
+              pixels.partialValue <= Limits.maximumPixels
+        else { return nil }
+        let bytes = pixels.partialValue.multipliedReportingOverflow(
+            by: bytesPerPixel)
+        guard !bytes.overflow,
+              bytes.partialValue <= Limits.maximumDecodedBytes
+        else { return nil }
+        return (Int32(width), Int32(height))
+    }
+
+    private static func encodedFileSize(_ path: String) -> Int? {
+        guard !path.isEmpty,
+              let file = fopen(path, "rb")
+        else { return nil }
+        defer { fclose(file) }
+        guard fseek(file, 0, SEEK_END) == 0 else { return nil }
+        let length = ftell(file)
+        guard length > 0 else { return nil }
+        return Int(exactly: length)
+    }
+
+    private static func mapMetadata(
+        _ metadata: nucleus.skia.EncodedImageMetadata
+    ) -> Result<ImageMetadata, ImageDecodeFailure> {
+        guard metadata.isSuccess() else {
+            return .failure(mapFailure(metadata.status))
+        }
+        return .success(ImageMetadata(
+            width: metadata.width,
+            height: metadata.height,
+            isVector: metadata.isVector))
+    }
+
+    private static func mapDecode(
+        _ decoded: nucleus.skia.RasterDecodeResult
+    ) -> Result<DecodedImage, ImageDecodeFailure> {
+        guard decoded.isSuccess() else {
+            return .failure(mapFailure(decoded.status))
+        }
+        return .success(DecodedImage(image: decoded.image))
+    }
+
+    private static func mapFailure(
+        _ status: nucleus.skia.RasterDecodeStatus
+    ) -> ImageDecodeFailure {
+        switch status {
+        case .unreadableInput:
+            .unreadableInput
+        case .unsupportedFormat:
+            .unsupportedFormat
+        case .invalidDimensions:
+            .invalidDimensions
+        case .limitExceeded:
+            .limitExceeded
+        case .decodeFailure, .success:
+            .decodeFailure
+        @unknown default:
+            .decodeFailure
         }
     }
 }

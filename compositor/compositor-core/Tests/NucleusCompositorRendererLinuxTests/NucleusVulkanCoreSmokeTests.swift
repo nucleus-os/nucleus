@@ -36,7 +36,7 @@ import Vulkan
         #expect(VK.Buffer(7) == VK.Buffer(7) && VK.Buffer(7) != VK.Buffer.null, "handle-equatable")
     }
 
-    @Test(.disabled("invokes the real Vulkan loader (flaky on partial-ICD hosts)")) func loaderLinks() {
+    @Test func gpuLoader_loaderLinks() {
         // The Vulkan loader links: a global command runs with no instance.
         var apiVersion: UInt32 = 0
         let r = vkEnumerateInstanceVersion(&apiVersion)

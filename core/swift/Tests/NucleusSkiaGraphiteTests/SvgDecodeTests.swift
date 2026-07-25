@@ -36,7 +36,10 @@ import NucleusSkiaGraphiteBridge
     private func decode(_ fixture: Fixture, _ maxWidth: Int32, _ maxHeight: Int32)
         -> nucleus.skia.RasterImage
     {
-        nucleus.skia.makeEncodedImageFromFile(fixture.path, maxWidth, maxHeight)
+        nucleus.skia.decodeEncodedImageFile(
+            fixture.path,
+            maxWidth,
+            maxHeight).image
     }
 
     /// Read the whole image and return one pixel. Reading must be whole-image —
@@ -111,12 +114,15 @@ import NucleusSkiaGraphiteBridge
         #expect(image.height() == 50)
     }
 
-    /// Unbounded means the document's own size, when it states one.
-    @Test func anUnboundedSvgUsesItsIntrinsicSize() {
+    /// Intrinsic dimensions are metadata, not permission to defer rasterization
+    /// until a draw. Every SVG decode still requires positive target bounds.
+    @Test func anSvgWithIntrinsicSizeStillRequiresTargetBounds() {
         let fixture = Fixture(Self.wideRectangle)
-        let image = decode(fixture, 0, 0)
-        #expect(image.width() == 200)
-        #expect(image.height() == 100)
+        let result = nucleus.skia.decodeEncodedImageFile(
+            fixture.path,
+            0,
+            0)
+        #expect(result.status == .invalidDimensions)
     }
 
     /// A document sized in relative units has no intrinsic size, so bounds are
@@ -132,15 +138,14 @@ import NucleusSkiaGraphiteBridge
         #expect(image.height() == 24)
     }
 
-    /// Neither a stated size nor bounds: something has to be picked, and a
-    /// vector at least rasterizes cleanly at whatever is chosen.
-    @Test func aSizelessUnboundedDocumentGetsADefaultSize() {
+    /// A sizeless document rasterizes into its explicit target viewport.
+    @Test func aSizelessDocumentUsesItsRequiredTargetSize() {
         let fixture = Fixture("""
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10">
               <rect width="10" height="10" fill="#FF0000"/>
             </svg>
             """)
-        let image = decode(fixture, 0, 0)
+        let image = decode(fixture, 512, 512)
         #expect(image.isValid())
         #expect(image.width() == 512)
     }

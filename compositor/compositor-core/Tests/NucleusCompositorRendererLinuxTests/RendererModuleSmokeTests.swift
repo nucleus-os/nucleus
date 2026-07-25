@@ -15,12 +15,10 @@ import NucleusRenderModel
         #expect(layout2.offset == 4096 && layout2 != layout, "gbm-plane-layout-distinct")
     }
 
-    // Exercise the renderer-owner's public bring-up entry. With an invalid DRM
-    // fd the GBM-device step fails closed (after Vulkan instance/device select),
-    // so `create` returns nil without constructing a context — proving the
-    // public API compiles + links and the failure path is clean. The live
-    // compositor passes the real DRM master fd at bring-up.
-    @Test(.disabled("creates a real Vulkan instance (flaky on partial-ICD hosts)")) @MainActor func bringUpFailsClosed() {
+    // Exercise the renderer-owner's public bring-up entry. The invalid descriptor
+    // fails the initial fstat check before Vulkan access, proving the public API
+    // compiles, links, and rejects an invalid host handle.
+    @Test @MainActor func bringUpFailsClosed() {
         let resourceHost = SwiftResourceHost()
         let store = RetainedTreeStore(resourceHost: resourceHost)
         #expect(RendererRuntime.create(

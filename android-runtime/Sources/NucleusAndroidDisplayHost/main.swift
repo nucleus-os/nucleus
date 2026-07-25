@@ -1,0 +1,34 @@
+import Foundation
+import NucleusAndroidDisplayHostCore
+
+do {
+    var arguments = Array(CommandLine.arguments.dropFirst())
+    func value(_ name: String) throws -> String {
+        guard let index = arguments.firstIndex(of: name),
+              arguments.indices.contains(index + 1)
+        else { throw DisplayHostError.invalidArguments("missing \(name)") }
+        let result = arguments[index + 1]
+        arguments.removeSubrange(index...(index + 1))
+        return result
+    }
+
+    let socket = try value("--socket")
+    let expectedUserID = try UInt32(value("--expected-uid"))
+    let renderDevice = try value("--render-device")
+    let parentPID = try Int32(value("--parent-pid"))
+    let wayland = try value("--wayland")
+    guard let expectedUserID, let parentPID, arguments.isEmpty else {
+        throw DisplayHostError.invalidArguments("invalid numeric argument or unknown option")
+    }
+    try await NucleusAndroidDisplayHost(
+        socketPath: socket,
+        expectedUserID: expectedUserID,
+        renderDevice: renderDevice,
+        parentProcessID: parentPID,
+        waylandSocket: wayland
+    ).run()
+} catch {
+    FileHandle.standardError.write(
+        Data("nucleus-android-display-host: \(error)\n".utf8))
+    exit(1)
+}

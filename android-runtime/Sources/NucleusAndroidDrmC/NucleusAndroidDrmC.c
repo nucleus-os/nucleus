@@ -2,9 +2,11 @@
 #include "NucleusAndroidDrmC.h"
 
 #include <errno.h>
+#include <dirent.h>
 #include <fcntl.h>
 #include <gbm.h>
 #include <pthread.h>
+#include <limits.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -74,6 +76,12 @@ struct nucleus_android_syncobj_waiter {
     int drm_fd;
     int event_fd;
     uint32_t handle;
+};
+
+struct nucleus_android_syncobj_bridge {
+    int drm_fd;
+    uint32_t acquire_handle;
+    uint32_t release_handle;
 };
 
 static void nucleus_android_gpu_lock(nucleus_android_gpu *gpu) {
@@ -205,6 +213,76 @@ int nucleus_android_drm_enumerate(
         return -1;
     }
     return (int)written;
+}
+
+static bool nucleus_android_card_has_connected_display(
+    const char *primary_path) {
+    if (!primary_path) return false;
+    const char *card = strrchr(primary_path, '/');
+    card = card ? card + 1 : primary_path;
+    DIR *directory = opendir("/sys/class/drm");
+    if (!directory) return false;
+    bool connected = false;
+    struct dirent *entry;
+    const size_t card_length = strlen(card);
+    while ((entry = readdir(directory)) != NULL) {
+        if (strncmp(entry->d_name, card, card_length) != 0 ||
+            entry->d_name[card_length] != '-') {
+            continue;
+        }
+        char path[PATH_MAX];
+        const int length = snprintf(
+            path,
+            sizeof(path),
+            "/sys/class/drm/%s/status",
+            entry->d_name);
+        if (length <= 0 || (size_t)length >= sizeof(path)) continue;
+        FILE *status = fopen(path, "r");
+        if (!status) continue;
+        char value[32] = {};
+        connected = fgets(value, sizeof(value), status) != NULL &&
+            strncmp(value, "connected", 9) == 0;
+        fclose(status);
+        if (connected) break;
+    }
+    closedir(directory);
+    return connected;
+}
+
+int nucleus_android_drm_select_display_render_path(
+    char *output,
+    size_t capacity) {
+    if (!output || capacity == 0) {
+        errno = EINVAL;
+        return -1;
+    }
+    struct nucleus_android_drm_candidate candidates[16] = {0};
+    const int count = nucleus_android_drm_enumerate(candidates, 16);
+    if (count < 0 || count > 16) return -1;
+    const char *selected = NULL;
+    for (int index = 0; index < count; ++index) {
+        if (candidates[index].primary_path[0] == '\0' ||
+            !nucleus_android_card_has_connected_display(
+                candidates[index].primary_path)) {
+            continue;
+        }
+        if (selected) {
+            errno = ENOTUNIQ;
+            return -1;
+        }
+        selected = candidates[index].render_path;
+    }
+    if (!selected) {
+        errno = ENODEV;
+        return -1;
+    }
+    const size_t length = strlen(selected);
+    if (length + 1 > capacity) {
+        errno = ENAMETOOLONG;
+        return -1;
+    }
+    memcpy(output, selected, length + 1);
+    return 0;
 }
 
 static bool nucleus_android_has_extension(
@@ -1164,6 +1242,121 @@ int nucleus_android_syncobj_waiter_drain(
     } while (result < 0 && errno == EINTR);
     if (result < 0 && errno == EAGAIN) return 0;
     return result == (ssize_t)sizeof(value) ? 0 : -1;
+}
+
+nucleus_android_syncobj_bridge *nucleus_android_syncobj_bridge_create(
+    const char *render_path) {
+    if (!render_path) {
+        errno = EINVAL;
+        return NULL;
+    }
+    nucleus_android_syncobj_bridge *bridge = calloc(1, sizeof(*bridge));
+    if (!bridge) return NULL;
+    bridge->drm_fd = -1;
+    bridge->drm_fd = open(render_path, O_RDWR | O_CLOEXEC);
+    if (bridge->drm_fd < 0 ||
+        drmSyncobjCreate(bridge->drm_fd, 0, &bridge->acquire_handle) != 0 ||
+        drmSyncobjCreate(bridge->drm_fd, 0, &bridge->release_handle) != 0) {
+        nucleus_android_syncobj_bridge_destroy(bridge);
+        return NULL;
+    }
+    return bridge;
+}
+
+void nucleus_android_syncobj_bridge_destroy(
+    nucleus_android_syncobj_bridge *bridge) {
+    if (!bridge) return;
+    if (bridge->drm_fd >= 0 && bridge->acquire_handle != 0) {
+        (void)drmSyncobjDestroy(bridge->drm_fd, bridge->acquire_handle);
+    }
+    if (bridge->drm_fd >= 0 && bridge->release_handle != 0) {
+        (void)drmSyncobjDestroy(bridge->drm_fd, bridge->release_handle);
+    }
+    if (bridge->drm_fd >= 0) close(bridge->drm_fd);
+    free(bridge);
+}
+
+static int nucleus_android_syncobj_bridge_export(
+    nucleus_android_syncobj_bridge *bridge,
+    uint32_t handle) {
+    if (!bridge || handle == 0) {
+        errno = EINVAL;
+        return -1;
+    }
+    int fd = -1;
+    return drmSyncobjHandleToFD(bridge->drm_fd, handle, &fd) == 0 ? fd : -1;
+}
+
+int nucleus_android_syncobj_bridge_export_acquire_timeline(
+    nucleus_android_syncobj_bridge *bridge) {
+    return nucleus_android_syncobj_bridge_export(
+        bridge, bridge ? bridge->acquire_handle : 0);
+}
+
+int nucleus_android_syncobj_bridge_export_release_timeline(
+    nucleus_android_syncobj_bridge *bridge) {
+    return nucleus_android_syncobj_bridge_export(
+        bridge, bridge ? bridge->release_handle : 0);
+}
+
+int nucleus_android_syncobj_bridge_import_acquire_sync_file(
+    nucleus_android_syncobj_bridge *bridge,
+    uint64_t point,
+    int sync_file) {
+    if (!bridge || point == 0 || sync_file < 0) {
+        errno = EINVAL;
+        return -1;
+    }
+    uint32_t temporary = 0;
+    if (drmSyncobjCreate(bridge->drm_fd, 0, &temporary) != 0) return -1;
+    int result = drmSyncobjImportSyncFile(
+        bridge->drm_fd, temporary, sync_file);
+    if (result == 0) {
+        result = drmSyncobjTransfer(
+            bridge->drm_fd,
+            bridge->acquire_handle,
+            point,
+            temporary,
+            0,
+            0);
+    }
+    (void)drmSyncobjDestroy(bridge->drm_fd, temporary);
+    return result;
+}
+
+int nucleus_android_syncobj_bridge_signal_acquire(
+    nucleus_android_syncobj_bridge *bridge,
+    uint64_t point) {
+    if (!bridge || point == 0) {
+        errno = EINVAL;
+        return -1;
+    }
+    return drmSyncobjTimelineSignal(
+        bridge->drm_fd, &bridge->acquire_handle, &point, 1);
+}
+
+int nucleus_android_syncobj_bridge_export_release_sync_file(
+    nucleus_android_syncobj_bridge *bridge,
+    uint64_t point) {
+    if (!bridge || point == 0) {
+        errno = EINVAL;
+        return -1;
+    }
+    uint32_t temporary = 0;
+    if (drmSyncobjCreate(bridge->drm_fd, 0, &temporary) != 0) return -1;
+    int result = drmSyncobjTransfer(
+        bridge->drm_fd,
+        temporary,
+        0,
+        bridge->release_handle,
+        point,
+        0);
+    int fd = -1;
+    if (result == 0) {
+        result = drmSyncobjExportSyncFile(bridge->drm_fd, temporary, &fd);
+    }
+    (void)drmSyncobjDestroy(bridge->drm_fd, temporary);
+    return result == 0 ? fd : -1;
 }
 
 int nucleus_android_syncobj_timeline_export_sync_file(

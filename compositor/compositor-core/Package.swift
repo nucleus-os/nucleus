@@ -109,6 +109,9 @@ let package = Package(
     // Products consumed by the sibling compositor executable package (compositor/).
     products: [
         .library(name: "CompositorColliderRecipe", targets: ["CompositorColliderRecipe"]),
+        .executable(
+            name: "NucleusVulkanLaneProbe",
+            targets: ["NucleusVulkanLaneProbe"]),
         .library(name: "NucleusCompositorRendererLinux", targets: ["NucleusCompositorRendererLinux"]),
         .library(name: "NucleusCompositorRenderRuntime", targets: ["NucleusCompositorRenderRuntime"]),
         .library(name: "NucleusCompositorWaylandRuntime", targets: ["NucleusCompositorWaylandRuntime"]),
@@ -366,14 +369,36 @@ let package = Package(
                 .unsafeFlags(vulkanHeadersInclude + drmGbmCcFlags),
             ]
         ),
+        .executableTarget(
+            name: "NucleusVulkanLaneProbe",
+            dependencies: [
+                .product(name: "NucleusRenderer", package: "Nucleus"),
+                .product(
+                    name: "NucleusSkiaGraphiteBridge",
+                    package: "Nucleus"),
+                .product(name: "Vulkan", package: "swift-vulkan"),
+                .product(name: "VulkanC", package: "swift-vulkan"),
+                "NucleusCompositorDrmC",
+            ],
+            path: "Sources/NucleusVulkanLaneProbe",
+            swiftSettings: [
+                .interoperabilityMode(.Cxx),
+                .unsafeFlags(vulkanHeadersInclude + drmGbmCcFlags),
+            ],
+            linkerSettings: [.unsafeFlags(drmGbmLinkFlags + skiaLinkFlags)]
+        ),
 
         // ── Tests (relocated with the modules they cover). ───────────────────────
         .testTarget(
             name: "NucleusCompositorRendererLinuxTests",
             dependencies: [
                 "NucleusCompositorRendererLinux",
+                .product(name: "NucleusRenderer", package: "Nucleus"),
                 .product(name: "NucleusRenderModel", package: "Nucleus"),
                 .product(name: "NucleusTypes", package: "Nucleus"),
+                .product(
+                    name: "NucleusSkiaGraphiteBridge",
+                    package: "Nucleus"),
                 .product(name: "Vulkan", package: "swift-vulkan"),
             ],
             path: "Tests/NucleusCompositorRendererLinuxTests",

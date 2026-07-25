@@ -17,13 +17,73 @@ import WaylandColliderRecipe
     #expect(try registry.selectedTestTasks(nil).map(\.rawValue) == [
         "tracy.test", "vulkan.test", "wayland.test", "core.test",
         "linux.test", "rn.test", "compositor-core.test",
+        "compositor-core.test-loader",
+        "compositor-core.test-gpu-headless",
         "compositor.test", "shell.test", "android-runtime.test",
     ])
     #expect(try registry.selectedTestTasks(.compositor).map(\.rawValue) == [
-        "compositor-core.test", "compositor.test",
+        "compositor-core.test", "compositor-core.test-loader",
+        "compositor-core.test-gpu-headless", "compositor.test",
+    ])
+    #expect(try registry.selectedTestTasks(.loader).map(\.rawValue) == [
+        "compositor-core.test-loader",
+    ])
+    #expect(try registry.selectedTestTasks(.gpuHeadless).map(\.rawValue) == [
+        "compositor-core.test-gpu-headless",
+    ])
+    #expect(try registry.selectedTestTasks(.gpuDRM).map(\.rawValue) == [
+        "compositor-core.test-gpu-drm",
     ])
     #expect(throws: (any Error).self) {
         try ColliderCommand.parseAsRoot(["test", "unknown"])
+    }
+}
+
+@Test func lavapipeArtifactStagesAnAbsoluteValidatedICDManifest() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-lavapipe-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(
+        at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+
+    let library = directory.appendingPathComponent("libvulkan_lvp.so")
+    try Data("fixture".utf8).write(to: library)
+    let manifest = directory.appendingPathComponent("lvp_icd.json")
+    try Data("""
+        {
+          "file_format_version": "1.0.0",
+          "ICD": {
+            "api_version": "1.3.0",
+            "library_path": "\(library.path)"
+          }
+        }
+        """.utf8).write(to: manifest)
+
+    let artifact = try LavapipeTestArtifact.resolve(context: WorkspaceContext(
+        root: directory,
+        environment: [
+            "NUCLEUS_LAVAPIPE_ICD": manifest.path,
+            "XDG_CACHE_HOME": directory.appendingPathComponent("cache").path,
+        ]))
+    #expect(artifact.sourceManifest == FilePath(manifest.path))
+    #expect(artifact.library == FilePath(library.path))
+    #expect(artifact.stagedManifest == FilePath(directory.appendingPathComponent(
+        "cache/nucleus/test-vulkan/lavapipe_icd.json").path))
+    let staged = String(decoding: artifact.stagedBytes, as: UTF8.self)
+    #expect(staged.contains(#""library_path" : "\#(library.path)""#))
+    #expect(artifact.task.id == TaskID(rawValue: "workspace.lavapipe-icd"))
+}
+
+@Test func drmLaneRejectsAConfiguredNonRenderNode() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-not-a-render-node-\(UUID().uuidString)")
+    try Data().write(to: file)
+    defer { try? FileManager.default.removeItem(at: file) }
+
+    #expect(throws: (any Error).self) {
+        try requiredDRMRenderNode(environment: [
+            "NUCLEUS_TEST_DRM_RENDER_NODE": file.path,
+        ])
     }
 }
 

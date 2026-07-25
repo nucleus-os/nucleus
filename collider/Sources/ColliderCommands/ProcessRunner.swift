@@ -10,6 +10,8 @@ import Glibc
 import Darwin
 #endif
 
+let interruptedProcessExitStatus = 128 + Int32(SIGINT)
+
 enum WorkspaceFailure: Error, CustomStringConvertible, Sendable {
     case message(String)
     case process([String], Int32)
@@ -128,6 +130,7 @@ struct WorkspaceContext: Sendable {
         output: CommandSpec.Output? = nil,
         timeoutSeconds: Int? = nil,
         timeoutIsSuccess: Bool = false,
+        acceptedExitStatuses: Set<Int32> = [0],
         terminal: Bool = false,
         stage: TaskID? = nil
     ) async throws -> String {
@@ -151,7 +154,10 @@ struct WorkspaceContext: Sendable {
                         : .inherited),
             timeoutNanoseconds: timeoutSeconds.map { UInt64($0) * 1_000_000_000 })
         let result = try await runtime.execute(specification, stage: stage)
-        guard (result.timedOut && timeoutIsSuccess) || result.status == 0 else {
+        guard
+            (result.timedOut && timeoutIsSuccess)
+                || acceptedExitStatuses.contains(result.status)
+        else {
             throw WorkspaceFailure.process([executable] + arguments, result.status)
         }
         return capture

@@ -135,8 +135,12 @@ extension WindowManager {
 
     private func popupConstraintRect(parentID: UInt64) -> PopupRect? {
         guard let parent = server.window(id: parentID) else { return nil }
-        let outputID = parent.currentOutputID ?? server.spaces.policyOutputID(for: parent, layout: server.layout)
-        guard let output = server.layout.display(id: outputID) else { return nil }
+        guard let outputID = parent.currentOutputID
+                ?? server.spaces.policyOutputID(
+                    for: parent,
+                    layout: server.layout),
+              let output = server.layout.display(id: outputID)
+        else { return nil }
         let parentRect = parent.currentRect()
         return PopupRect(
             x: Int32((output.logicalRect.x - parentRect.x).rounded()),

@@ -7,7 +7,7 @@ import NucleusSkiaGraphiteBridge
 // Converted from OutputAccumulatorFixture: the AccumulatorState
 // resize/invalidation state machine is hardware-independent and asserts
 // directly; the GPU-backed OutputAccumulator lifecycle (allocate → draw →
-// snapshot prefix → present → resize) runs best-effort over a real Graphite
+// snapshot prefix → present → resize) runs over the mandatory headless Graphite
 // context and asserts nothing hardware-conditional.
 @Suite struct OutputAccumulatorTests {
     @Test func accumulatorStateMachine() {
@@ -39,63 +39,4 @@ import NucleusSkiaGraphiteBridge
         #expect(!state.needsFullRedraw, "state-invalidate-redrawn-clears")
     }
 
-    // Best-effort GPU: OutputAccumulator lifecycle. Asserts nothing
-    // hardware-conditional; verifies compile + link and headless safety.
-    @Test(.disabled("requires a live GPU/Vulkan device")) func outputAccumulatorLifecycleBestEffort() {
-        let base = VK.loadBaseDispatch()
-        let contract = VkRequirements.contract()
-        guard let instance = InstanceOwner.create(
-            base: base, applicationName: "OutputAccumulatorTests",
-            contract: contract, enableValidation: false
-        ) else { return }
-        guard let selection = DeviceOwner.selectPhysicalDevice(
-            instance: instance.handle, dispatch: instance.dispatch, contract: contract
-        ) else { return }
-        guard let device = DeviceOwner.create(
-            selection: selection, instanceDispatch: instance.dispatch,
-            contract: contract
-        ) else { return }
-        guard let queue = device.queue(family: selection.graphicsQueueFamily) else { return }
-
-        withCStringArray(contract.deviceExtensions) { extPtr, extCount in
-            var desc = nucleus.skia.VulkanContextDescriptor()
-            desc.instance = UnsafeMutableRawPointer(instance.handle)
-            desc.physicalDevice = UnsafeMutableRawPointer(selection.physicalDevice)
-            desc.device = UnsafeMutableRawPointer(device.handle)
-            desc.queue = UnsafeMutableRawPointer(queue)
-            desc.graphicsQueueIndex = selection.graphicsQueueFamily
-            desc.maxApiVersion = VkRequirements.minimumApiVersion.raw
-            desc.deviceExtensions = extPtr
-            desc.deviceExtensionCount = extCount
-
-            let context = nucleus.skia.makeGraphiteVulkanContext(desc)
-            guard context.isValid() else { return }
-            let recorder = context.makeRecorder()
-            guard recorder.isValid() else { return }
-
-            guard let accumulator = OutputAccumulator.create(
-                recorder: recorder, outputId: 1, width: 256, height: 128
-            ) else { return }
-
-            // Compose into the accumulator, snapshot the prefix, mark redrawn.
-            let canvas = accumulator.canvas
-            var bg = nucleus.skia.Color()
-            bg.r = 0.2; bg.g = 0.3; bg.b = 0.4; bg.a = 1
-            canvas.clear(bg)
-            accumulator.snapshotPrefix()
-            accumulator.markRedrawn()
-
-            // Present the accumulator into a standalone scanout-like surface.
-            let scanout = recorder.makeOffscreenSurface(256, 128)
-            _ = accumulator.present(onto: scanout, alpha: 1)
-
-            // Resize reallocates the surface + re-arms a full redraw.
-            _ = accumulator.ensure(recorder: recorder, width: 320, height: 200)
-
-            // Flush the recorded work so the context tears down cleanly.
-            let recording = recorder.snapRecording()
-            _ = submitGraphiteAndWait(
-                context: context, recording: recording, serial: 1)
-        }
-    }
 }

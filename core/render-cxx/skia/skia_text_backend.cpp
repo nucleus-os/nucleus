@@ -837,32 +837,13 @@ uint64_t registerParagraph(
 
 } // namespace nucleus::text
 
-// ── Text-layout draw seam ───────────────────────────────────────────────────
-// The render core (NucleusSkiaGraphite) paints paragraphs itself but must not
-// depend on this RN-coupled text backend. Dependency inversion: the render core
-// owns the resolver slot (nucleus_skia_set_text_layout_resolver, declared in
-// NucleusSkiaGraphite/Graphite.hpp), and we register our handle→Paragraph*
-// resolver into it at startup. The render core then resolves + paints directly —
-// no global-symbol lookup, no upward link edge from the render core. Forward-
-// declared here (a one-line C-ABI contract) so this file needs no render-core
-// include path.
-extern "C" void nucleus_skia_set_text_layout_resolver(uintptr_t (*resolve)(uint64_t)) __attribute__((weak));
-
-extern "C" uintptr_t nucleus_text_layout_paragraph(uint64_t handle)
+extern "C" bool nucleus_text_borrow_paragraph(
+    uint64_t handle,
+    void *bodyContext,
+    nucleus::text::ParagraphBorrowBody body)
 {
-    return reinterpret_cast<uintptr_t>(nucleus::text::lookupParagraph(handle).get());
+    return nucleus::text::borrowParagraph(
+        handle,
+        bodyContext,
+        body);
 }
-
-namespace {
-struct TextLayoutResolverRegistration {
-    TextLayoutResolverRegistration()
-    {
-        if (nucleus_skia_set_text_layout_resolver) {
-            nucleus_skia_set_text_layout_resolver(&nucleus_text_layout_paragraph);
-        }
-    }
-};
-// Runs at startup (static init); only stores a function pointer, so it is
-// independent of any other static initialization order.
-const TextLayoutResolverRegistration g_text_layout_resolver_registration;
-} // namespace

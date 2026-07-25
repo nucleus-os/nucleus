@@ -134,8 +134,8 @@ import NucleusLayers
         #expect(ImageResource.pixelBound(22.0) == 22)
     }
 
-    /// Zero means unbounded, which is how a full-size decode is asked for.
-    @Test func aNonPositiveSizeIsUnbounded() {
+    /// Non-positive or non-finite values cannot form a raster target.
+    @Test func aNonPositiveSizeIsInvalid() {
         #expect(ImageResource.pixelBound(0) == 0)
         #expect(ImageResource.pixelBound(-5) == 0)
         #expect(ImageResource.pixelBound(.infinity) == 0)
@@ -147,7 +147,8 @@ import NucleusLayers
     @Test func anEmptyPathRegistersNothing() {
         withRecordingHost { registrar, runtimeHost, _ in
             #expect(ImageResource(
-                path: "", resourceHostHandle: 1,
+                path: "", decodeSize: Size(width: 1, height: 1),
+                resourceHostHandle: 1,
                 runtimeHost: runtimeHost) == nil)
             #expect(registrar.registrations.isEmpty)
         }
@@ -158,7 +159,8 @@ import NucleusLayers
     @Test func aZeroResourceHostRegistersNothing() {
         withRecordingHost { registrar, runtimeHost, _ in
             #expect(ImageResource(
-                path: "/a.png", resourceHostHandle: 0,
+                path: "/a.png", decodeSize: Size(width: 1, height: 1),
+                resourceHostHandle: 0,
                 runtimeHost: runtimeHost) == nil)
             #expect(registrar.registrations.isEmpty)
         }
@@ -168,7 +170,8 @@ import NucleusLayers
         withRecordingHost { registrar, runtimeHost, _ in
             registrar.failsWith = .invalidArgument
             #expect(ImageResource(
-                path: "/a.png", resourceHostHandle: 1,
+                path: "/a.png", decodeSize: Size(width: 1, height: 1),
+                resourceHostHandle: 1,
                 runtimeHost: runtimeHost) == nil)
         }
     }
@@ -178,7 +181,8 @@ import NucleusLayers
         withRecordingHost { registrar, runtimeHost, _ in
             registrar.returnsZero = true
             #expect(ImageResource(
-                path: "/a.png", resourceHostHandle: 1,
+                path: "/a.png", decodeSize: Size(width: 1, height: 1),
+                resourceHostHandle: 1,
                 runtimeHost: runtimeHost) == nil)
         }
     }
@@ -198,7 +202,8 @@ import NucleusLayers
     @Test func emptyEncodedBytesRegisterNothing() {
         withRecordingHost { registrar, runtimeHost, _ in
             #expect(ImageResource(
-                encoded: [], resourceHostHandle: 1,
+                encoded: [], decodeSize: Size(width: 1, height: 1),
+                resourceHostHandle: 1,
                 runtimeHost: runtimeHost) == nil)
             #expect(registrar.encodedByteCounts.isEmpty)
         }
@@ -249,13 +254,17 @@ import NucleusLayers
     @Test func aSourceStringRoutesByKind() {
         withRecordingHost { registrar, runtimeHost, _ in
             _ = ImageResource(
-                source: "/icons/app.png", resourceHostHandle: 1,
+                source: "/icons/app.png",
+                decodeSize: Size(width: 1, height: 1),
+                resourceHostHandle: 1,
                 runtimeHost: runtimeHost)
             #expect(registrar.registrations.count == 1)
             #expect(registrar.encodedByteCounts.isEmpty)
 
             _ = ImageResource(
-                source: "data:image/png;base64,SGkh", resourceHostHandle: 1,
+                source: "data:image/png;base64,SGkh",
+                decodeSize: Size(width: 1, height: 1),
+                resourceHostHandle: 1,
                 runtimeHost: runtimeHost)
             #expect(registrar.registrations.count == 1, "not registered as a path")
             #expect(registrar.encodedByteCounts == [3])
@@ -269,7 +278,9 @@ import NucleusLayers
     @Test func anUnparseableDataURIFallsThroughToThePath() {
         withRecordingHost { registrar, runtimeHost, _ in
             let resource = ImageResource(
-                source: "data:;base64,not valid!!", resourceHostHandle: 1,
+                source: "data:;base64,not valid!!",
+                decodeSize: Size(width: 1, height: 1),
+                resourceHostHandle: 1,
                 runtimeHost: runtimeHost)
             #expect(resource != nil)
             #expect(registrar.registrations.count == 1)
@@ -286,7 +297,9 @@ import NucleusLayers
             var handle: UInt64 = 0
             do {
                 let resource = ImageResource(
-                    path: "/a.png", resourceHostHandle: 3,
+                    path: "/a.png",
+                    decodeSize: Size(width: 1, height: 1),
+                    resourceHostHandle: 3,
                     runtimeHost: runtimeHost)
                 handle = resource?.handle.id ?? 0
                 #expect(handle != 0)
@@ -302,7 +315,9 @@ import NucleusLayers
             registrar.returnsZero = true
             do {
                 _ = ImageResource(
-                    path: "/a.png", resourceHostHandle: 1,
+                    path: "/a.png",
+                    decodeSize: Size(width: 1, height: 1),
+                    resourceHostHandle: 1,
                     runtimeHost: runtimeHost)
             }
             #expect(lifecycle.released.isEmpty)

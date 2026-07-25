@@ -63,6 +63,9 @@ let package = Package(
             name: "NucleusAndroidGfxstreamAdapters",
             targets: ["NucleusAndroidGfxstreamAdaptersCxx"]),
         .library(
+            name: "NucleusAndroidGfxstreamGuestTransport",
+            targets: ["NucleusAndroidGfxstreamGuestTransportCxx"]),
+        .library(
             name: "NucleusAndroidGfxstreamHost",
             targets: ["NucleusAndroidGfxstreamHostC"]),
         .library(
@@ -75,6 +78,9 @@ let package = Package(
             name: "NucleusAndroidContainerContract",
             targets: ["NucleusAndroidContainerContract"]),
         .library(
+            name: "NucleusAndroidDisplayHostCore",
+            targets: ["NucleusAndroidDisplayHostCore"]),
+        .library(
             name: "NucleusAndroidSurfaceProbeCore",
             targets: ["NucleusAndroidSurfaceProbeCore"]),
         .executable(name: "nucleus-android-gpu-broker", targets: ["NucleusAndroidGpuBroker"]),
@@ -84,6 +90,12 @@ let package = Package(
         .executable(
             name: "nucleus-android-gfxstream-workload",
             targets: ["NucleusAndroidGfxstreamWorkload"]),
+        .executable(
+            name: "nucleus-android-gfxstream-broker",
+            targets: ["NucleusAndroidGfxstreamBroker"]),
+        .executable(
+            name: "nucleus-android-display-host",
+            targets: ["NucleusAndroidDisplayHost"]),
         .executable(
             name: "nucleus-android-shared-ring-stress",
             targets: ["NucleusAndroidSharedRingStress"]),
@@ -106,19 +118,37 @@ let package = Package(
             dependencies: [.product(name: "ColliderCore", package: "engine")]),
         .target(
             name: "NucleusAndroidIPCC",
-            path: "Sources/NucleusAndroidIPCC",
+            path: "aosp/device/nucleus/nucleus_x86_64/native/ipc",
+            publicHeadersPath: "include"),
+        .target(
+            name: "NucleusAndroidComposerProtocolC",
+            path: "aosp/device/nucleus/nucleus_x86_64/native/composer-protocol",
             publicHeadersPath: "include"),
         .target(
             name: "NucleusAndroidSharedRingC",
-            path: "Sources/NucleusAndroidSharedRingC",
+            path: "aosp/device/nucleus/nucleus_x86_64/native/shared-ring",
             publicHeadersPath: "include"),
         .target(
             name: "NucleusAndroidGfxstreamWorkerProtocolC",
             path: "Sources/NucleusAndroidGfxstreamWorkerProtocolC",
             publicHeadersPath: "include"),
         .target(
+            name: "NucleusAndroidGfxstreamGuestTransportCxx",
+            dependencies: [
+                "NucleusAndroidIPCC",
+                "NucleusAndroidSharedRingC",
+            ],
+            path: "aosp/device/nucleus/nucleus_x86_64/native/gfxstream-guest",
+            publicHeadersPath: "include",
+            cxxSettings: [
+                .unsafeFlags(["-I\(mesaIOStreamInclude)"]),
+            ]),
+        .target(
             name: "NucleusAndroidGfxstreamAdaptersCxx",
-            dependencies: ["NucleusAndroidSharedRingC"],
+            dependencies: [
+                "NucleusAndroidGfxstreamGuestTransportCxx",
+                "NucleusAndroidSharedRingC",
+            ],
             path: "Sources/NucleusAndroidGfxstreamAdaptersCxx",
             publicHeadersPath: "include",
             cxxSettings: [
@@ -225,6 +255,36 @@ let package = Package(
                 .linkedLibrary("dl"),
                 .linkedLibrary("pthread"),
             ]),
+        .executableTarget(
+            name: "NucleusAndroidGfxstreamBroker",
+            dependencies: [
+                "NucleusAndroidDrmC",
+                "NucleusAndroidGfxstreamGuestTransportCxx",
+                "NucleusAndroidGfxstreamHostC",
+                "NucleusAndroidIPCC",
+                "NucleusAndroidSharedRingC",
+            ],
+            path: "Sources/NucleusAndroidGfxstreamBroker",
+            linkerSettings: [.linkedLibrary("pthread")]),
+        .executableTarget(
+            name: "NucleusAndroidDisplayHost",
+            dependencies: ["NucleusAndroidDisplayHostCore"],
+            swiftSettings: [.interoperabilityMode(.Cxx)]),
+        .target(
+            name: "NucleusAndroidDisplayHostCore",
+            dependencies: [
+                "NucleusAndroidComposerProtocolC",
+                "NucleusAndroidDrmC",
+                "NucleusAndroidIPCC",
+                .product(
+                    name: "NucleusLinuxReactor",
+                    package: "NucleusLinuxPlatform"),
+                .product(name: "WaylandClient", package: "swift-wayland"),
+                .product(name: "WaylandClientC", package: "swift-wayland"),
+                .product(name: "WaylandClientDispatch", package: "swift-wayland"),
+                .product(name: "WaylandProtocolsC", package: "swift-wayland"),
+            ],
+            swiftSettings: [.interoperabilityMode(.Cxx)]),
         .executableTarget(
             name: "NucleusAndroidSharedRingStress",
             dependencies: ["NucleusAndroidSharedRingC"],

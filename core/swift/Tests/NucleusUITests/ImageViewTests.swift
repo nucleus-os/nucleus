@@ -123,7 +123,9 @@ private func withHostedContext<T>(_ body: () throws -> T) rethrows -> T {
     @Test func assigningAResourceAdoptsItsHandle() {
         let view = ImageView()
         let resource = ImageResource(
-            path: "/a.png", resourceHostHandle: 5,
+            path: "/a.png",
+            decodeSize: Size(width: 1, height: 1),
+            resourceHostHandle: 5,
             runtimeHost: .inMemory())
         view.resource = resource
         #expect(view.image == resource?.handle)

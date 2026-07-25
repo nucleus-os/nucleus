@@ -12,7 +12,10 @@ extension WindowManager {
         // `!minimized` check the occlusion path enforces, so a minimized fullscreen
         // window wrongly blocked focus-on-map. (owner nil / owner == window both
         // resolve to "not occluded" → focus allowed.)
-        let outputID = server.spaces.policyOutputID(for: window, layout: server.layout)
+        guard let outputID = server.spaces.policyOutputID(
+            for: window,
+            layout: server.layout)
+        else { return false }
         let owner = server.fullscreenOwner(onOutput: outputID)
         return !server.isOccludedByFullscreen(window, owner: owner)
     }

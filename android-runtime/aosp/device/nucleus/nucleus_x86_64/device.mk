@@ -15,18 +15,25 @@
 #
 
 $(call inherit-product, $(SRC_TARGET_DIR)/product/handheld_vendor.mk)
+$(call inherit-product, hardware/interfaces/audio/aidl/default/audio_effects.mk)
 
 PRODUCT_SOONG_NAMESPACES += \
     device/nucleus/nucleus_x86_64
 
 PRODUCT_PACKAGES += \
+    android.hardware.graphics.composer3-service.nucleus \
+    android.hardware.graphics.allocator-service.nucleus \
+    com.android.hardware.audio \
     android.hardware.security.keymint-service.nonsecure \
     ip \
-    netutils-wrapper-1.0
+    mapper.nucleus \
+    netutils-wrapper-1.0 \
+    vulkan.nucleus
 
 PRODUCT_COPY_FILES += \
     device/nucleus/nucleus_x86_64/init.nucleus.rc:$(TARGET_COPY_OUT_VENDOR)/etc/init/init.nucleus.rc \
     device/nucleus/nucleus_x86_64/permissions/nucleus-container.xml:$(TARGET_COPY_OUT_VENDOR)/etc/permissions/nucleus-container.xml
 
 PRODUCT_VENDOR_PROPERTIES += \
-    ro.control_privapp_permissions=enforce
+    ro.control_privapp_permissions=enforce \
+    ro.sf.lcd_density=160

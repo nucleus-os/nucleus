@@ -394,7 +394,7 @@ final class CompositorRuntime {
             loopTurns &+= 1
             Trace.plot("swift.runtime.loop.turn", loopTurns)
             let renderZone = Trace.beginZone("runtime.render_turn", color: Trace.Color.green)
-            if !paused {
+            if !paused && server.outputAvailability == .available {
                 let nowNs = Self.monotonicNowNs()
                 let dueDisplays = server.layout.displays
                     .filter { display in

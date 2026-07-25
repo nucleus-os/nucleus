@@ -8,7 +8,7 @@ import Vulkan
 // and the noncopyable owner's destroy-exactly-once / take-suppresses-destroy
 // semantics (proven with a counter, no Vulkan calls) are hardware-independent
 // and assert directly. The live instance + device + leaf-resource path runs
-// best-effort and asserts nothing hardware-conditional.
+// mandatory in the headless Vulkan lane.
 @Suite struct NucleusVulkanResourcesTests {
     @Test func versionAndRequirements() {
         // Version packing round-trips and orders.
@@ -81,32 +81,38 @@ import Vulkan
         #expect(movedOnce.n == 1, "owner-move-destroys-once")
     }
 
-    // Best-effort live: instance is loader-level (no GPU needed); device + leaf
-    // resources only where a physical device exists. Asserts nothing
-    // hardware-conditional; verifies compile + link and headless safety.
-    @Test(.disabled("requires a live GPU/Vulkan device")) func liveResourcesBestEffort() {
-        let base = VK.loadBaseDispatch()
-        let contract = VkRequirements.contract()
-        guard let instance = InstanceOwner.create(
-            base: base, applicationName: "NucleusVulkanResourcesTests",
-            contract: contract, enableValidation: false
-        ) else { return }
-        guard let selection = DeviceOwner.selectPhysicalDevice(
-            instance: instance.handle, dispatch: instance.dispatch, contract: contract
-        ) else { return }
-        guard let device = DeviceOwner.create(
-            selection: selection,
-            instanceDispatch: instance.dispatch,
-            contract: contract
-        ) else { return }
-
-        // Each leaf owner is consumed by the if-let bind and destroyed by its
-        // deinit at block end (exactly once).
-        if let fence = device.dispatch.createFence(device.handle) { _ = consume fence }
-        if let semaphore = device.dispatch.createSemaphore(device.handle) { _ = consume semaphore }
-        if let pool = device.dispatch.createCommandPool(device.handle, queueFamily: selection.graphicsQueueFamily) {
-            _ = consume pool
+    @Test func gpuHeadless_liveResources() throws {
+        try withRequiredVulkanGraphite(
+            presentation: .headless,
+            applicationName: "NucleusVulkanResourcesTests"
+        ) { device, selection, context, recorder in
+            // Each leaf owner is consumed by the binding and destroyed by its
+            // deinit at block end (exactly once).
+            guard let fence = device.dispatch.createFence(device.handle) else {
+                throw VulkanLaneTestFailure.requirement(
+                    "could not create the required Vulkan fence")
+            }
+            guard let semaphore = device.dispatch.createSemaphore(device.handle) else {
+                throw VulkanLaneTestFailure.requirement(
+                    "could not create the required Vulkan semaphore")
+            }
+            guard let pool = device.dispatch.createCommandPool(
+                device.handle,
+                queueFamily: selection.graphicsQueueFamily
+            ) else {
+                throw VulkanLaneTestFailure.requirement(
+                    "could not create the required Vulkan command pool")
+            }
+            let surface = recorder.makeOffscreenSurface(4, 4)
+            try requireTrue(surface.isValid(), "headless Graphite surface creation failed")
+            let recording = recorder.snapRecording()
+            try requireTrue(
+                submitGraphiteAndWait(
+                    context: context, recording: recording, serial: 1),
+                "headless resource submission did not complete")
+            keepAlive(fence)
+            keepAlive(semaphore)
+            keepAlive(pool)
         }
-
     }
 }

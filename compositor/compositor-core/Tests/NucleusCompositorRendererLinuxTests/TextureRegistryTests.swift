@@ -5,7 +5,7 @@ import NucleusSkiaGraphiteBridge
 @testable import NucleusRenderer
 
 // allocator + atlas + texture registry (handle/refcount/content-revision), all
-// hardware-independent via raster-surface snapshots; plus a best-effort check
+// hardware-independent via raster-surface snapshots; plus a mandatory check
 // that the façade backend-texture wrap fails closed on a null descriptor (the GPU
 // stages assert nothing hardware-conditional).
 @Suite struct TextureRegistryTests {
@@ -105,46 +105,19 @@ import NucleusSkiaGraphiteBridge
         #expect(registry.size(.renderer(h2)) != nil)
     }
 
-    // Best-effort: exercise the façade backend-texture wrap on a real Graphite
-    // context where one is available. Hardware-gated, so it asserts nothing.
-    @Test(.disabled("requires a live GPU/Vulkan device")) func backendImageWrapBestEffort() {
+    @Test func gpuHeadless_backendImageWrapFailsClosed() throws {
         let registry = TextureRegistry()
-        let base = VK.loadBaseDispatch()
-        let contract = VkRequirements.contract()
-        guard let instance = InstanceOwner.create(
-            base: base, applicationName: "TextureRegistryTests",
-            contract: contract, enableValidation: false
-        ) else { return }
-        guard let selection = DeviceOwner.selectPhysicalDevice(
-            instance: instance.handle, dispatch: instance.dispatch, contract: contract
-        ) else { return }
-        guard let device = DeviceOwner.create(
-            selection: selection, instanceDispatch: instance.dispatch,
-            contract: contract
-        ) else { return }
-        guard let queue = device.queue(family: selection.graphicsQueueFamily) else { return }
-
-        withCStringArray(contract.deviceExtensions) { extPtr, extCount in
-            var desc = nucleus.skia.VulkanContextDescriptor()
-            desc.instance = UnsafeMutableRawPointer(instance.handle)
-            desc.physicalDevice = UnsafeMutableRawPointer(selection.physicalDevice)
-            desc.device = UnsafeMutableRawPointer(device.handle)
-            desc.queue = UnsafeMutableRawPointer(queue)
-            desc.graphicsQueueIndex = selection.graphicsQueueFamily
-            desc.maxApiVersion = VkRequirements.minimumApiVersion.raw
-            desc.deviceExtensions = extPtr
-            desc.deviceExtensionCount = extCount
-
-            let context = nucleus.skia.makeGraphiteVulkanContext(desc)
-            guard context.isValid() else { return }
-            let recorder = context.makeRecorder()
-            guard recorder.isValid() else { return }
-
+        try withRequiredVulkanGraphite(
+            presentation: .headless,
+            applicationName: "TextureRegistryTests"
+        ) { _, _, _, recorder in
             // A descriptor with no image wraps to an invalid image (fail-closed).
             var nullDesc = nucleus.skia.VulkanImageDescriptor()
             nullDesc.width = 64
             nullDesc.height = 64
-            _ = registry.wrapBackendImage(recorder: recorder, descriptor: nullDesc)
+            #expect(registry.wrapBackendImage(
+                recorder: recorder, descriptor: nullDesc) == nil)
+            #expect(registry.count == 0)
         }
     }
 }

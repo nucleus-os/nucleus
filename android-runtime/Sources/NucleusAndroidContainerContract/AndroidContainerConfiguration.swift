@@ -1,5 +1,7 @@
 import Foundation
 
+public let nucleusAndroidAppArmorProfileName = "lxc-nucleus-android"
+
 public struct AndroidContainerDevice: Hashable, Sendable {
     public let name: String
     public let source: String
@@ -38,6 +40,7 @@ public struct AndroidContainerConfiguration: Hashable, Sendable {
     public let seccompProfile: String
     public let kernelLogDevice: String
     public let tombstones: String
+    public let gfxstreamSocketDirectory: String
     public let hostUIDStart: UInt32
     public let hostGIDStart: UInt32
     public let hostUIDCount: UInt32
@@ -51,6 +54,7 @@ public struct AndroidContainerConfiguration: Hashable, Sendable {
         seccompProfile: String,
         kernelLogDevice: String,
         tombstones: String,
+        gfxstreamSocketDirectory: String,
         hostUIDStart: UInt32,
         hostGIDStart: UInt32,
         hostUIDCount: UInt32,
@@ -63,6 +67,7 @@ public struct AndroidContainerConfiguration: Hashable, Sendable {
         self.seccompProfile = seccompProfile
         self.kernelLogDevice = kernelLogDevice
         self.tombstones = tombstones
+        self.gfxstreamSocketDirectory = gfxstreamSocketDirectory
         self.hostUIDStart = hostUIDStart
         self.hostGIDStart = hostGIDStart
         self.hostUIDCount = hostUIDCount
@@ -97,6 +102,11 @@ public struct AndroidContainerConfiguration: Hashable, Sendable {
             "lxc.autodev = 0",
             "lxc.pty.max = 1024",
             "lxc.console.path = none",
+            // Android early-init raises RLIMIT_NICE to 40 before dropping
+            // privileges. The container manager must establish that hard
+            // limit because an unprivileged user namespace cannot raise the
+            // host-inherited ceiling itself.
+            "lxc.prlimit.nice = 40",
             // Android init must retain every capability requested by a
             // service in the product, plus SETPCAP to establish those
             // service-specific sets. LXC drops everything not named here.
@@ -106,7 +116,7 @@ public struct AndroidContainerConfiguration: Hashable, Sendable {
                 + "setpcap setuid sys_admin sys_chroot sys_nice sys_ptrace "
                 + "sys_resource syslog wake_alarm",
             "lxc.seccomp.profile = \(seccompProfile)",
-            "lxc.apparmor.profile = generated",
+            "lxc.apparmor.profile = \(nucleusAndroidAppArmorProfileName)",
             "lxc.cgroup.relative = 1",
             "lxc.cgroup2.devices.deny = a",
             "lxc.cgroup2.devices.allow = c 1:3 rwm",
@@ -124,6 +134,7 @@ public struct AndroidContainerConfiguration: Hashable, Sendable {
             "lxc.mount.entry = /dev/urandom dev/urandom none bind,create=file 0 0",
             "lxc.mount.entry = \(kernelLogDevice) dev/kmsg none bind,create=file 0 0",
             "lxc.mount.entry = \(kernelLogDevice) dev/kmsg_debug none bind,create=file 0 0",
+            "lxc.mount.entry = \(gfxstreamSocketDirectory) dev/nucleus none bind,ro,create=dir 0 0",
             "lxc.mount.entry = tmpfs data tmpfs rw,nosuid,nodev,mode=0771,create=dir 0 0",
             "lxc.mount.entry = \(tombstones) data/tombstones none bind,create=dir 0 0",
             "lxc.mount.entry = tmpfs metadata tmpfs rw,nosuid,nodev,noexec,mode=0700,create=dir 0 0",
@@ -151,6 +162,9 @@ public struct AndroidContainerConfiguration: Hashable, Sendable {
         try validateAbsolutePath(seccompProfile, field: "seccompProfile")
         try validateAbsolutePath(kernelLogDevice, field: "kernelLogDevice")
         try validateAbsolutePath(tombstones, field: "tombstones")
+        try validateAbsolutePath(
+            gfxstreamSocketDirectory,
+            field: "gfxstreamSocketDirectory")
         try validateAbsolutePath(
             mountHook.executable,
             field: "mountHook.executable")

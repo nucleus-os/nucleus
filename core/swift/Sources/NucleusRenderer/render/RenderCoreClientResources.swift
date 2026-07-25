@@ -107,6 +107,7 @@ extension RenderCore {
             width: Int32(width), height: Int32(height), contentRevision: contentGeneration)
         pendingClientAcquireSemaphores[iosurfaceID] = acquireSemaphore
         _ = pendingShmUploads.remove(iosurfaceID)
+        stagedShmUploads[iosurfaceID] = nil
         clientUploadStats.pendingBytes = pendingShmUploads.byteCount
         if let old = clientUploadTextures.removeValue(forKey: iosurfaceID) {
             retiredClientUploadTextures.append((lastSubmittedSerial, old))
@@ -251,30 +252,53 @@ extension RenderCore {
             clientUploadStats.failed &+= 1
             return
         }
-        // Switching from DMA-BUF to SHM retires the borrowed image after the
-        // presentation backend reports that asynchronous GPU use is complete.
-        if let old = importedSurfaceImages[iosurfaceID] {
-            retiredSurfaceImages.append((
-                lastSubmittedSerial,
-                old,
-                iosurfaceID))
+        stagedShmUploads[iosurfaceID] = StagedShmUpload(
+            pending: pending,
+            texture: texture,
+            image: image)
+    }
+
+    func commitStagedShmUploads(submissionSerial: UInt64) {
+        for (iosurfaceID, staged) in stagedShmUploads {
+            // Switching from DMA-BUF to SHM retires the borrowed image only
+            // after the recording containing the upload was accepted.
+            if let old = importedSurfaceImages[iosurfaceID] {
+                retiredSurfaceImages.append((
+                    submissionSerial,
+                    old,
+                    iosurfaceID))
+            }
+            importedSurfaceImages[iosurfaceID] = nil
+            if let old = clientUploadTextures.updateValue(
+                staged.texture,
+                forKey: iosurfaceID)
+            {
+                retiredClientUploadTextures.append((
+                    submissionSerial,
+                    old))
+            }
+            frameDriver?.registry.register(
+                key: .clientSurface(iosurfaceID),
+                image: staged.image,
+                width: staged.pending.width,
+                height: staged.pending.height,
+                contentRevision: staged.pending.generation)
+            clientUploadStats.uploaded &+= 1
         }
-        importedSurfaceImages[iosurfaceID] = nil
-        if let old = clientUploadTextures.updateValue(
-            texture,
-            forKey: iosurfaceID)
-        {
-            retiredClientUploadTextures.append((
-                lastSubmittedSerial,
-                old))
+        stagedShmUploads.removeAll(keepingCapacity: true)
+    }
+
+    func rollbackStagedShmUploads() {
+        for (iosurfaceID, staged) in stagedShmUploads {
+            if pendingShmUploads.enqueue(
+                staged.pending,
+                for: iosurfaceID)
+            {
+                clientUploadStats.coalesced &+= 1
+            }
         }
-        driver.registry.register(
-            key: .clientSurface(iosurfaceID),
-            image: image,
-            width: pending.width,
-            height: pending.height,
-            contentRevision: pending.generation)
-        clientUploadStats.uploaded &+= 1
+        stagedShmUploads.removeAll(keepingCapacity: true)
+        clientUploadStats.pendingBytes = pendingShmUploads.byteCount
     }
     /// Drop a client surface's imported texture (surface destroyed / content
     /// detached). Evicts the registry entry + releases the backing VkImage.
@@ -283,6 +307,7 @@ extension RenderCore {
         pendingClientAcquireSemaphores[iosurfaceID] = nil
         _ = frameDriver?.registry.release(.clientSurface(iosurfaceID))
         _ = pendingShmUploads.remove(iosurfaceID)
+        stagedShmUploads[iosurfaceID] = nil
         clientUploadStats.pendingBytes = pendingShmUploads.byteCount
         if let old = clientUploadTextures.removeValue(forKey: iosurfaceID) {
             retiredClientUploadTextures.append((lastSubmittedSerial, old))
