@@ -1,4 +1,5 @@
 import NucleusSkiaGraphiteBridge
+import NucleusDiagnostics
 import VulkanC
 import Vulkan
 import Tracy
@@ -116,16 +117,8 @@ extension RenderCore {
 
     private static func requireTextRenderingBridge() -> Bool {
         guard nucleus.skia.hasTextLayoutBorrow() else {
-            #if canImport(Glibc)
-            let line =
-                "render-core: required Graphite text borrow provider is not installed\n"
-            line.withCString {
-                _ = unsafe write(
-                    STDERR_FILENO,
-                    $0,
-                    strlen($0))
-            }
-            #endif
+            NucleusLogger(subsystem: "render-core").error(
+                "required Graphite text borrow provider is not installed")
             return false
         }
         return true
@@ -196,10 +189,8 @@ extension RenderCore {
             "graphite-submit: status=\(result.status.rawValue) "
             + "insert=\(result.insertStatus.rawValue) "
             + "context_usable=\(result.contextUsable) "
-            + "diagnostic=\(String(result.diagnostic))\n"
-        line.withCString {
-            _ = unsafe write(STDERR_FILENO, $0, strlen($0))
-        }
+            + "diagnostic=\(String(result.diagnostic))"
+        NucleusLogger(subsystem: "render-bringup").info(line)
         #endif
         if !result.contextUsable {
             _ = recreateGraphiteRenderer()

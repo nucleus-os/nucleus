@@ -1,3 +1,4 @@
+#define _GNU_SOURCE
 #include "NucleusLinuxReactorC.h"
 
 #include <errno.h>
@@ -67,22 +68,5 @@ int nucleus_linux_reactor_program_timer(int fd, uint64_t nanoseconds,
 }
 
 int nucleus_linux_reactor_create_pipe(int descriptors[2]) {
-  if (pipe(descriptors) != 0) {
-    return -errno;
-  }
-  for (int index = 0; index < 2; ++index) {
-    int status_flags = fcntl(descriptors[index], F_GETFL);
-    if (status_flags < 0 ||
-        fcntl(descriptors[index], F_SETFD, FD_CLOEXEC) != 0 ||
-        fcntl(descriptors[index], F_SETFL,
-              status_flags | O_NONBLOCK) != 0) {
-      int error = errno;
-      close(descriptors[0]);
-      close(descriptors[1]);
-      descriptors[0] = -1;
-      descriptors[1] = -1;
-      return -error;
-    }
-  }
-  return 0;
+  return pipe2(descriptors, O_CLOEXEC | O_NONBLOCK) == 0 ? 0 : -errno;
 }

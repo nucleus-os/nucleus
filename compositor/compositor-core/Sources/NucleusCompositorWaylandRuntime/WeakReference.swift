@@ -17,15 +17,24 @@
     private var storage: [WeakReference<Value>] = []
 
     var isEmpty: Bool {
-        mutating get { liveValues().isEmpty }
+        mutating get {
+            prune()
+            return storage.isEmpty
+        }
     }
 
     var count: Int {
-        mutating get { liveValues().count }
+        mutating get {
+            prune()
+            return storage.count
+        }
     }
 
     var last: Value? {
-        mutating get { liveValues().last }
+        mutating get {
+            prune()
+            return storage.last?.value
+        }
     }
 
     mutating func append(_ value: Value) {
@@ -47,9 +56,34 @@
         storage.removeAll(keepingCapacity: keepingCapacity)
     }
 
+    mutating func first(
+        where predicate: (Value) -> Bool
+    ) -> Value? {
+        prune()
+        for reference in storage {
+            if let value = reference.value, predicate(value) {
+                return value
+            }
+        }
+        return nil
+    }
+
+    mutating func forEach(_ body: (Value) -> Void) {
+        prune()
+        for reference in storage {
+            if let value = reference.value {
+                body(value)
+            }
+        }
+    }
+
     mutating func liveValues() -> [Value] {
-        storage.removeAll { $0.value == nil }
+        prune()
         return storage.compactMap(\.value)
+    }
+
+    private mutating func prune() {
+        storage.removeAll { $0.value == nil }
     }
 }
 

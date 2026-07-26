@@ -98,11 +98,11 @@ enum InputLatencyProbe {
         for (i, s) in stats.enumerated() {
             if s.count == 0 { continue }
             let kind = Kind(rawValue: i)!
-            let line = "input-latency: \(kind.label) n=\(s.count)"
+            let line = "\(kind.label) n=\(s.count)"
                 + " min=\(us(s.minNs))us mean=\(us(s.sumNs / s.count))us"
                 + " p50=\(us(s.quantileNs(0.50)))us p99=\(us(s.quantileNs(0.99)))us"
-                + " max=\(us(s.maxNs))us\n"
-            line.withCString { _ = unsafe write(2, $0, strlen($0)) }
+                + " max=\(us(s.maxNs))us"
+            NucleusLogger(subsystem: "input-latency").info(line)
         }
     }
 
@@ -114,3 +114,4 @@ enum InputLatencyProbe {
         return "\(whole).\(tenths)"
     }
 }
+import NucleusDiagnostics

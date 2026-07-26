@@ -87,7 +87,27 @@ struct WorkspaceContext: Sendable {
         runtime: ColliderRuntime = ColliderRuntime()
     ) {
         self.root = root
-        self.environment = environment
+        var normalizedEnvironment = environment
+        if normalizedEnvironment["NUCLEUS_NATIVE_SDK_ROOT"]?.isEmpty != false {
+            let cacheRoot: URL
+            if let value = normalizedEnvironment["XDG_CACHE_HOME"],
+               !value.isEmpty
+            {
+                cacheRoot = URL(fileURLWithPath: value, isDirectory: true)
+            } else if let home = normalizedEnvironment["HOME"], !home.isEmpty {
+                cacheRoot = URL(fileURLWithPath: home, isDirectory: true)
+                    .appendingPathComponent(".cache", isDirectory: true)
+            } else {
+                cacheRoot = FileManager.default.homeDirectoryForCurrentUser
+                    .appendingPathComponent(".cache", isDirectory: true)
+            }
+            normalizedEnvironment["NUCLEUS_NATIVE_SDK_ROOT"] =
+                cacheRoot.appendingPathComponent(
+                    "nucleus/nucleus-native-sdk",
+                    isDirectory: true
+                ).path
+        }
+        self.environment = normalizedEnvironment
         self.runtime = runtime
     }
 

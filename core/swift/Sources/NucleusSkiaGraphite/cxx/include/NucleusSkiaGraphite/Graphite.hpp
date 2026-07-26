@@ -478,7 +478,7 @@ RasterImage makeRasterImageRGBA(
     int32_t width, int32_t height, const uint8_t *pixels, size_t byteLength);
 
 /// Read intrinsic encoded-image metadata without allocating decoded pixels.
-EncodedImageMetadata probeEncodedImageFile(const char *path);
+EncodedImageMetadata probeEncodedImageFileDescriptor(int32_t fileDescriptor);
 EncodedImageMetadata probeEncodedImageMemory(
     const uint8_t *bytes, size_t byteLength);
 
@@ -486,8 +486,8 @@ EncodedImageMetadata probeEncodedImageMemory(
 /// target box. Aspect ratio is preserved and images are never enlarged.
 /// Invalid input, unsupported formats, invalid bounds, resource-limit
 /// violations, and decode failures are distinguished explicitly.
-RasterDecodeResult decodeEncodedImageFile(
-    const char *path, int32_t maxWidth, int32_t maxHeight);
+RasterDecodeResult decodeEncodedImageFileDescriptor(
+    int32_t fileDescriptor, int32_t maxWidth, int32_t maxHeight);
 
 /// Eagerly decode encoded image bytes already in memory under the same bounds,
 /// limits, and typed-result contract as the file entry point.

@@ -1,4 +1,5 @@
 import NucleusSkiaGraphiteBridge
+import NucleusDiagnostics
 import VulkanC
 import Vulkan
 import Tracy
@@ -168,8 +169,13 @@ extension RenderCore {
         }
         if startupFrameDiagnosticsRemaining > 0 {
             startupFrameDiagnosticsRemaining -= 1
-            let line = "render-frame: output=\(outputID) serial=\(frameSerial) layers=\(tree.layers.count) ops=\(result.opsDrawn) backdrops=\(result.backdropDraws) damage=\(result.damageRectCount) full_damage=\(result.fullDamage) acquire_waits=\(result.acquireWaitCount) presented=\(result.presented) submitted=\(result.submitted) uploads=\(clientUploadStats.uploaded) upload_failures=\(clientUploadStats.failed)\n"
-            line.withCString { unsafe _ = write(STDERR_FILENO, $0, strlen($0)) }
+            NucleusLogger(subsystem: "render-frame").debug(
+                "output=\(outputID) serial=\(frameSerial) layers=\(tree.layers.count) "
+                    + "ops=\(result.opsDrawn) backdrops=\(result.backdropDraws) "
+                    + "damage=\(result.damageRectCount) full_damage=\(result.fullDamage) "
+                    + "acquire_waits=\(result.acquireWaitCount) presented=\(result.presented) "
+                    + "submitted=\(result.submitted) uploads=\(clientUploadStats.uploaded) "
+                    + "upload_failures=\(clientUploadStats.failed)")
         }
         if let submission = result.submissionResult,
            !submission.isOk()

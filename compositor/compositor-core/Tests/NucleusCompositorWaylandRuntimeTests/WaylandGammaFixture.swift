@@ -80,6 +80,11 @@ enum WaylandGammaFixture {
         close(rampFd)
         client.pump()
         _ = client.drainEvents()
+        let applyDeadline = ContinuousClock.now + .seconds(2)
+        while stub.appliedSize == nil && ContinuousClock.now < applyDeadline {
+            client.pump()
+            usleep(1_000)
+        }
         guard stub.appliedSize == 256, stub.red0 == 0, stub.red255 == 65535 else {
             fail("gamma not applied: size=\(String(describing: stub.appliedSize)) "
                 + "red0=\(String(describing: stub.red0)) red255=\(String(describing: stub.red255))")

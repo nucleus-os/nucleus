@@ -1,5 +1,6 @@
 import Glibc
 import FoundationEssentials
+import NucleusDiagnostics
 
 // Compositor-side session-runtime isolation, Swift-owned. Production session
 // construction lives in the launcher/user unit; this only validates a
@@ -146,8 +147,5 @@ private func envString(_ name: String) -> String? {
 }
 
 private func logSession(_ message: String) {
-    let line = "session runtime: \(message)\n"
-    line.withCString {
-        _ = unsafe write(STDERR_FILENO, $0, strlen($0))
-    }
+    NucleusLogger(subsystem: "session-runtime").info(message)
 }

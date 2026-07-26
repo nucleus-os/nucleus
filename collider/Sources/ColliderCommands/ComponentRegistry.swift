@@ -592,11 +592,7 @@ struct ComponentRegistry {
     }
 
     private var nativeSDKRoot: FilePath {
-        if let explicit = context.taskEnvironment["NUCLEUS_NATIVE_SDK_ROOT"] {
-            return FilePath(explicit)
-        }
-        return FilePath(context.cacheRoot
-            .appendingPathComponent("nucleus/nucleus-native-sdk").path)
+        FilePath(context.nativeSDKRoot.path)
     }
 
     private func addingDependency(

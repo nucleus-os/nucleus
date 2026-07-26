@@ -16,40 +16,18 @@
 import PackageDescription
 import Foundation
 
-// This package's parent is the repo root; all absolute build flags resolve against
-// it (SwiftPM runs clang/ld with the package's parent as the working directory).
-let repoRoot = URL(fileURLWithPath: #filePath)
-    .deletingLastPathComponent().deletingLastPathComponent().path
-
 // ── The Nucleus render native SDK (Skia) ───────────────────────────────────────
-// Consumed from a stable cache path (see the core repo's docs/repo-decomposition.md).
-// This package is a pure Wayland/DRM compositor library — it links zero React, so it
-// consumes only the `render` SDK (Skia). Provisioned by root `tools/collider bootstrap`;
-// the link list points at the monorepo core.
-func provisionSDK(_ name: String, links: [(String, String)]) -> String {
-    let home = ProcessInfo.processInfo.environment["HOME"] ?? ""
-    let sdk = home + "/.cache/nucleus/nucleus-native-sdk/" + name
-    let fm = FileManager.default
-    for (dest, target) in links {
-        let path = sdk + "/" + dest
-        guard fm.fileExists(atPath: target) else { continue }
-        if let existing = try? fm.destinationOfSymbolicLink(atPath: path) {
-            if existing == target { continue }
-            try? fm.removeItem(atPath: path)
-        } else if fm.fileExists(atPath: path) {
-            continue
-        }
-        try? fm.createDirectory(atPath: (path as NSString).deletingLastPathComponent,
-                                withIntermediateDirectories: true)
-        try? fm.createSymbolicLink(atPath: path, withDestinationPath: target)
-    }
-    return sdk
+// Collider publishes the SDK before invoking SwiftPM. Manifest evaluation is
+// deliberately read-only and consumes the one workspace-wide location.
+let environment = ProcessInfo.processInfo.environment
+guard let nativeSDKRoot = environment["NUCLEUS_NATIVE_SDK_ROOT"],
+      !nativeSDKRoot.isEmpty
+else {
+    fatalError(
+        "NUCLEUS_NATIVE_SDK_ROOT is required; run through collider or "
+            + "source tools/host-env.sh")
 }
-let renderSDK = provisionSDK("render", links: [
-    ("include/skia", repoRoot + "/../core/third-party/skia"),
-    ("lib/skia-graphite", repoRoot + "/../core/.skia-build/graphite"),
-    ("include/skia-text", repoRoot + "/../core/render-cxx/skia"),
-])
+let renderSDK = nativeSDKRoot + "/render"
 let skiaRoot = renderSDK + "/include/skia"
 let skiaLibDir = renderSDK + "/lib/skia-graphite"
 
@@ -58,12 +36,25 @@ func pkgConfig(_ args: [String]) -> [String] {
     let p = Process()
     p.executableURL = URL(fileURLWithPath: "/usr/bin/env")
     p.arguments = ["pkg-config"] + args
-    let pipe = Pipe()
-    p.standardOutput = pipe
-    p.standardError = Pipe()
-    do { try p.run() } catch { return [] }
+    let output = Pipe()
+    let errors = Pipe()
+    p.standardOutput = output
+    p.standardError = errors
+    do {
+        try p.run()
+    } catch {
+        fatalError("could not launch pkg-config: \(error)")
+    }
     p.waitUntilExit()
-    let out = pipe.fileHandleForReading.readDataToEndOfFile()
+    let out = output.fileHandleForReading.readDataToEndOfFile()
+    let errorOutput = String(
+        decoding: errors.fileHandleForReading.readDataToEndOfFile(),
+        as: UTF8.self)
+    guard p.terminationStatus == 0 else {
+        fatalError(
+            "pkg-config \(args.joined(separator: " ")) failed: "
+                + errorOutput.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
     return String(decoding: out, as: UTF8.self)
         .split(whereSeparator: { $0 == " " || $0 == "\n" || $0 == "\t" })
         .map(String.init)
@@ -221,6 +212,7 @@ let package = Package(
         .target(
             name: "NucleusCompositorOverlay",
             dependencies: [
+                .product(name: "NucleusDiagnostics", package: "Nucleus"),
                 .product(name: "NucleusUI", package: "Nucleus"),
                 .product(name: "NucleusUIEmbedder", package: "Nucleus"),
                 .product(name: "NucleusLayers", package: "Nucleus"),
@@ -250,6 +242,7 @@ let package = Package(
         .target(
             name: "NucleusCompositorOverlayScene",
             dependencies: [
+                .product(name: "NucleusDiagnostics", package: "Nucleus"),
                 .product(name: "NucleusLayers", package: "Nucleus"),
                 .product(name: "NucleusTypes", package: "Nucleus"),
                 "NucleusCompositorOverlayTypes",
@@ -303,6 +296,7 @@ let package = Package(
         .target(
             name: "NucleusCompositorWaylandRuntime",
             dependencies: [
+                .product(name: "NucleusDiagnostics", package: "Nucleus"),
                 .product(name: "WaylandServerC", package: "swift-wayland"),
                 .product(name: "WaylandProtocolsC", package: "swift-wayland"),
                 .product(name: "WaylandServer", package: "swift-wayland"),
@@ -346,6 +340,7 @@ let package = Package(
         .target(
             name: "NucleusCompositorRendererLinux",
             dependencies: [
+                .product(name: "NucleusDiagnostics", package: "Nucleus"),
                 .product(name: "NucleusRenderer", package: "Nucleus"),
                 .product(name: "NucleusRenderModel", package: "Nucleus"),
                 .product(name: "VulkanC", package: "swift-vulkan"),
@@ -494,6 +489,7 @@ let package = Package(
                 "WaylandTestGraph.swift", "WaylandWireTest.swift",
                 "WaylandTestGlobalCatalog.swift",
                 "WaylandProtocolConformanceTests.swift",
+                "GammaControlTests.swift",
                 "CursorShapeNameTests.swift", "CursorShmRepackTests.swift",
                 "CursorRequestSerialTests.swift", "CursorIntentTests.swift",
                 "SurfaceCommitGeometryTests.swift", "SurfaceTransactionTests.swift",

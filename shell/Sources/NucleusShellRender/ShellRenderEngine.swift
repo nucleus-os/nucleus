@@ -1,5 +1,6 @@
 @_spi(NucleusPlatform) public import NucleusRenderer
 public import NucleusRenderModel
+import NucleusDiagnostics
 import NucleusShellLoop
 import Tracy
 #if canImport(Glibc)
@@ -255,12 +256,7 @@ package enum ShellImageResidency: Sendable, Equatable {
     }
 
     private static func log(_ message: String) {
-        #if canImport(Glibc)
-        let line = message + "\n"
-        line.withCString {
-            _ = unsafe write(STDERR_FILENO, $0, strlen($0))
-        }
-        #endif
+        NucleusLogger(subsystem: "shell-render").info(message)
     }
 
     /// Ordered teardown: presenters (their swapchains/surfaces live on the core's device) →

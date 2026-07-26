@@ -10,6 +10,7 @@
 // the protocol; the platform side conforms and registers.
 
 public import NucleusLayers
+import NucleusDiagnostics
 import NucleusUI
 
 #if canImport(Glibc)
@@ -219,10 +220,6 @@ final class SceneMaterializer {
 
 @MainActor
 func writeStderr(_ message: String) {
-    let bytes = Array(message.utf8)
-    _ = bytes.withUnsafeBytes { buffer in
-        // `buffer` is initialized for exactly `count` bytes and its pointer is
-        // borrowed only for this synchronous POSIX write.
-        unsafe write(STDERR_FILENO, buffer.baseAddress, buffer.count)
-    }
+    NucleusLogger(subsystem: "app-host").error(
+        message.last == "\n" ? String(message.dropLast()) : message)
 }

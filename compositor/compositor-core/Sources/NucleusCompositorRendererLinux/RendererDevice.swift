@@ -1,5 +1,6 @@
 import VulkanC
 import Vulkan
+import NucleusDiagnostics
 public import NucleusRenderModel
 @_spi(NucleusPlatform) public import NucleusRenderer
 import Glibc
@@ -86,14 +87,7 @@ public struct CompositeFenceTelemetry:
 }
 
 func logRendererDrm(_ message: String) {
-    let line = Array(
-        ("renderer-drm: " + message + "\n").utf8)
-    line.withUnsafeBytes { bytes in
-        if let base = bytes.baseAddress {
-            _ = unsafe Glibc.write(
-                STDERR_FILENO, base, bytes.count)
-        }
-    }
+    NucleusLogger(subsystem: "renderer-drm").error(message)
 }
 
 func rendererErrno() -> Int32 {
@@ -109,11 +103,7 @@ func rendererMonotonicNowNs() -> UInt64 {
 }
 
 func logScanout(_ message: String) {
-    let line = "scanout: \(message)\n"
-    line.withCString {
-        _ = unsafe write(
-            STDERR_FILENO, $0, strlen($0))
-    }
+    NucleusLogger(subsystem: "scanout").debug(message)
 }
 
 @MainActor

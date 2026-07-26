@@ -1,4 +1,5 @@
 public import NucleusUI
+import NucleusDiagnostics
 import NucleusUIEmbedder
 import NucleusRenderModel
 import NucleusAppHostBundle
@@ -143,13 +144,8 @@ public final class ShellHost {
         let hostBundle = NucleusAppHostBundle(resourceHost: resourceHost)
         let textSystem = TextSystem()
         guard SkiaTextLayoutBackend.install(in: textSystem) else {
-            #if canImport(Glibc)
-            let message =
-                "shell: conflicting Graphite text borrow provider\n"
-            _ = message.withCString {
-                unsafe write(STDERR_FILENO, $0, strlen($0))
-            }
-            #endif
+            NucleusLogger(subsystem: "shell").error(
+                "conflicting Graphite text borrow provider")
             return nil
         }
         let clockFormatStyle = ShellFormatting.clockStyle()

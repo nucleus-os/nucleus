@@ -9,6 +9,7 @@
 // `enumerate()` half drives real libdrm and runs only where `/dev/dri` exists.
 
 import NucleusCompositorDrmC
+import NucleusDiagnostics
 import Glibc
 // MARK: - Noncopyable resource owners
 
@@ -261,8 +262,7 @@ enum DrmDeviceEnumerator {
 // MARK: - Compositor bring-up discovery entry
 
 private func logDrmDiscover(_ message: String) {
-    let line = "drm-discover: \(message)\n"
-    line.withCString { _ = unsafe write(STDERR_FILENO, $0, strlen($0)) }
+    NucleusLogger(subsystem: "drm-discover").info(message)
 }
 
 /// The DRM device nodes selected for compositor bring-up.

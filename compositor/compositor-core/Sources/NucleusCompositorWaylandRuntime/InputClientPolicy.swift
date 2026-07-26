@@ -114,7 +114,8 @@ final class InputClientPolicy {
     private func logTranslated(keycode: UInt32, pressed: Bool, reason: String) {
         guard logCount < 64 else { return }
         logCount += 1
-        let line = "input policy: keycode=\(keycode) pressed=\(pressed) \(reason)\n"
-        line.withCString { _ = unsafe write(2, $0, strlen($0)) }
+        NucleusLogger(subsystem: "input-policy").debug(
+            "keycode=\(keycode) pressed=\(pressed) \(reason)")
     }
 }
+import NucleusDiagnostics

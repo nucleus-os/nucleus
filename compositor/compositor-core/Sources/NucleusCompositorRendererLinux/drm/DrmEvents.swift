@@ -21,11 +21,11 @@ struct DrmPageFlipEvent: Sendable, Equatable {
 }
 
 /// Per-output context carried as an atomic commit's `user_data` and recovered on
-/// flip completion. Ownership is a retained handoff: arming a page-flip retains the
-/// token into the kernel's `user_data` as a borrowed pointer. The owning output
-/// retains it for its lifetime; the runtime retains tokens from replaced bindings
-/// until device teardown, so late completions remain safe without leaking one ARC
-/// retain for every VT switch whose completion is discarded by the driver.
+/// flip completion. Ownership is a borrowed handoff: `commitUserData()` does not
+/// add an ARC retain. The owning output keeps the token alive while attached, and
+/// the runtime transfers tokens from replaced bindings into `retiredFlipTokens`
+/// until DRM-device teardown. That device-close lifetime barrier is what makes late
+/// kernel callbacks safe; retired tokens must never be trimmed before it.
 final class DrmPageFlipToken: Sendable {
     let onFlip: @MainActor @Sendable (DrmPageFlipEvent) -> Void
 

@@ -378,6 +378,75 @@ import Testing
         output: .captured(limit: 1_024)))
     #expect(status.status == 0)
 
+    let firstPatchedCommit = try String(
+        contentsOf: source.appendingPathComponent(
+            "system/core/.git/refs/heads/master"),
+        encoding: .utf8
+    ).trimmingCharacters(in: .whitespacesAndNewlines)
+    _ = try await ColliderRuntime().execute(
+        graph: TaskGraph([task]),
+        selected: [task.id],
+        stateRoot: FilePath(
+            fixture.root.appendingPathComponent("second-state").path))
+    let preservedCommit = try String(
+        contentsOf: source.appendingPathComponent(
+            "system/core/.git/refs/heads/master"),
+        encoding: .utf8
+    ).trimmingCharacters(in: .whitespacesAndNewlines)
+    #expect(preservedCommit == firstPatchedCommit)
+
+    let revisedPatch =
+        """
+        diff --git a/marker.txt b/marker.txt
+        index df967b9..e66c25f 100644
+        --- a/marker.txt
+        +++ b/marker.txt
+        @@ -1 +1 @@
+        -base
+        +reconciled
+        """
+    try Data((revisedPatch + "\n").utf8).write(to: patch)
+    _ = try await ColliderRuntime().execute(
+        graph: TaskGraph([task]),
+        selected: [task.id],
+        stateRoot: FilePath(
+            fixture.root.appendingPathComponent("third-state").path))
+    let reconciledContents = try String(
+        contentsOf: source.appendingPathComponent(
+            "system/core/marker.txt"),
+        encoding: .utf8)
+    #expect(reconciledContents == "reconciled\n")
+    let reconciledCommit = try String(
+        contentsOf: source.appendingPathComponent(
+            "system/core/.git/refs/heads/master"),
+        encoding: .utf8
+    ).trimmingCharacters(in: .whitespacesAndNewlines)
+
+    try Data(
+        (revisedPatch.replacingOccurrences(
+            of: "-base",
+            with: "-does-not-exist") + "\n").utf8
+    ).write(to: patch)
+    await #expect(throws: (any Error).self) {
+        _ = try await ColliderRuntime().execute(
+            graph: TaskGraph([task]),
+            selected: [task.id],
+            stateRoot: FilePath(
+                fixture.root.appendingPathComponent("fourth-state").path))
+    }
+    let rolledBackCommit = try String(
+        contentsOf: source.appendingPathComponent(
+            "system/core/.git/refs/heads/master"),
+        encoding: .utf8
+    ).trimmingCharacters(in: .whitespacesAndNewlines)
+    #expect(rolledBackCommit == reconciledCommit)
+    #expect(
+        try String(
+            contentsOf: source.appendingPathComponent(
+                "system/core/marker.txt"),
+            encoding: .utf8) == "reconciled\n")
+    try Data((revisedPatch + "\n").utf8).write(to: patch)
+
     try Data("unexpected clean revision\n".utf8).write(
         to: source.appendingPathComponent("system/core/marker.txt"))
     for arguments in [
@@ -412,7 +481,7 @@ import Testing
             graph: TaskGraph([task]),
             selected: [task.id],
             stateRoot: FilePath(
-                fixture.root.appendingPathComponent("second-state").path))
+                fixture.root.appendingPathComponent("fifth-state").path))
     }
 }
 

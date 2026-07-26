@@ -84,16 +84,16 @@ public enum AndroidRuntimeColliderRecipe {
         root: FilePath,
         environment: [String: String]
     ) throws -> [TaskDeclaration] {
-        try aospSourceTasks(
+        let source = try aospSourceTasks(
             root: root,
-            environment: environment) + [
-                aospSigningIdentity(
-                    root: root,
-                    environment: environment),
-                try aospProductImage(
-                    root: root,
-                    environment: environment),
-            ]
+            environment: environment)
+        let signing = aospSigningIdentity(
+            root: root,
+            environment: environment)
+        let product = try aospProductImageTasks(
+            root: root,
+            environment: environment)
+        return source + [signing] + product
     }
 
     private static func aospRepoLauncher(
@@ -217,10 +217,10 @@ public enum AndroidRuntimeColliderRecipe {
                     environment: environment)))
     }
 
-    private static func aospProductImage(
+    private static func aospProductImageTasks(
         root: FilePath,
         environment: [String: String]
-    ) throws -> TaskDeclaration {
+    ) throws -> [TaskDeclaration] {
         let lockPath = root.appending("aosp-product.lock.json")
         let lock = try JSONDecoder().decode(
             AOSPProductLock.self,
@@ -235,25 +235,184 @@ public enum AndroidRuntimeColliderRecipe {
         let buildRoot = root.appending(".aosp-build")
         let signed = buildRoot.appending("signed")
         let images = buildRoot.appending("images")
-        return TaskDeclaration(
-            id: TaskID(rawValue: "android-runtime.aosp-image"),
+        let unsigned = buildRoot.appending(
+            "unsigned/\(lock.product)-target_files.zip")
+        let staged = buildRoot.appending("staged")
+        let stagedTargetFiles = staged.appending(
+            "\(lock.product)-target_files.zip")
+        let stagedImageArchive = staged.appending(
+            "\(lock.product)-images.zip")
+        let stagedImages = staged.appending("images")
+        let stagedProvenance = staged.appending(
+            "image-provenance.json")
+        let hostTools = buildRoot.appending("out/host/linux-x86/bin")
+        let productIdentity = Array(
+            [
+                lock.product,
+                lock.release,
+                lock.variant,
+                lock.buildNumber,
+                String(lock.buildTimestamp),
+                String(lock.platformSDK),
+                String(lock.vendorAPILevel),
+            ].joined(separator: "\0").utf8)
+        let build = AOSPProductBuild(
+            productSource: root.appending(
+                "aosp/device/nucleus/nucleus_x86_64"),
+            source: source,
+            repoLauncher: launcher,
+            sourceProvenance: sourceProvenance,
+            buildRoot: buildRoot,
+            signingIdentity: signingIdentity,
+            product: lock.product,
+            release: lock.release,
+            variant: lock.variant,
+            buildNumber: lock.buildNumber,
+            buildTimestamp: lock.buildTimestamp,
+            buildJobs: lock.buildJobs,
+            expectedPlatformSDK: lock.platformSDK,
+            expectedVendorAPILevel: lock.vendorAPILevel,
+            environment: environment)
+        let requiredImages = [
+            "system.img",
+            "system_ext.img",
+            "product.img",
+            "vendor.img",
+            "vbmeta.img",
+            "vbmeta_system.img",
+        ]
+        let compile = TaskDeclaration(
+            id: TaskID(rawValue: "android-runtime.aosp-compile"),
             component: component,
             dependencies: [
                 TaskID(rawValue: "android-runtime.aosp-repo-launcher"),
                 TaskID(rawValue: "android-runtime.aosp-source"),
-                TaskID(rawValue: "android-runtime.aosp-signing-identity"),
             ],
             inputs: [
-                .file(lockPath),
+                .value(
+                    name: "aosp-product-identity",
+                    bytes: productIdentity),
                 .tree(root.appending(
                     "aosp/device/nucleus/nucleus_x86_64")),
                 .dependencyOutput(launcher),
                 .dependencyOutput(sourceProvenance),
+                .tool(.named("python3")),
+            ],
+            outputs: [
+                OutputDeclaration(
+                    path: unsigned,
+                    validation: .regularFile),
+                OutputDeclaration(
+                    path: hostTools,
+                    validation: .nonEmptyDirectory),
+            ],
+            locks: [
+                .checkout("android-runtime-aosp-source"),
+                .checkout("android-runtime-aosp-build"),
+            ],
+            operation: .compileAOSPProduct(build))
+        let sign = TaskDeclaration(
+            id: TaskID(rawValue: "android-runtime.aosp-sign"),
+            component: component,
+            dependencies: [
+                compile.id,
+                TaskID(rawValue: "android-runtime.aosp-signing-identity"),
+            ],
+            inputs: [
+                .value(
+                    name: "aosp-product-identity",
+                    bytes: productIdentity),
+                .dependencyOutput(unsigned),
+                .dependencyOutput(hostTools),
                 .dependencyOutput(signingIdentity.appending(
                     "signing-identity.json")),
                 .tool(.named("openssl")),
+            ],
+            outputs: [
+                OutputDeclaration(
+                    path: stagedTargetFiles,
+                    validation: .regularFile),
+            ],
+            locks: [
+                .checkout("android-runtime-aosp-source"),
+                .checkout("android-runtime-aosp-build"),
+            ],
+            operation: .signAOSPProduct(build))
+        let assemble = TaskDeclaration(
+            id: TaskID(rawValue: "android-runtime.aosp-assemble-images"),
+            component: component,
+            dependencies: [sign.id, compile.id],
+            inputs: [
+                .value(
+                    name: "aosp-product-identity",
+                    bytes: productIdentity),
+                .dependencyOutput(stagedTargetFiles),
+                .dependencyOutput(hostTools),
                 .tool(.named("unzip")),
             ],
+            outputs: [
+                OutputDeclaration(
+                    path: stagedImageArchive,
+                    validation: .regularFile)
+            ] + requiredImages.map {
+                OutputDeclaration(
+                    path: stagedImages.appending($0),
+                    validation: .regularFile)
+            },
+            locks: [
+                .checkout("android-runtime-aosp-source"),
+                .checkout("android-runtime-aosp-build"),
+            ],
+            operation: .assembleAOSPProductImages(build))
+        let validate = TaskDeclaration(
+            id: TaskID(rawValue: "android-runtime.aosp-validate"),
+            component: component,
+            dependencies: [
+                assemble.id,
+                TaskID(rawValue: "android-runtime.aosp-source"),
+                TaskID(rawValue: "android-runtime.aosp-signing-identity"),
+            ],
+            inputs: [
+                .value(
+                    name: "aosp-product-identity",
+                    bytes: productIdentity),
+                .dependencyOutput(stagedTargetFiles),
+                .dependencyOutput(stagedImageArchive),
+                .dependencyOutput(sourceProvenance),
+                .dependencyOutput(signingIdentity.appending(
+                    "signing-identity.json")),
+                .tree(root.appending(
+                    "aosp/device/nucleus/nucleus_x86_64")),
+                .tool(.named("openssl")),
+                .tool(.named("unzip")),
+            ] + requiredImages.map {
+                .dependencyOutput(stagedImages.appending($0))
+            },
+            outputs: [
+                OutputDeclaration(
+                    path: stagedProvenance,
+                    validation: .json),
+            ],
+            locks: [
+                .checkout("android-runtime-aosp-source"),
+                .checkout("android-runtime-aosp-build"),
+            ],
+            operation: .validateAOSPProduct(build))
+        let publish = TaskDeclaration(
+            id: TaskID(rawValue: "android-runtime.aosp-image"),
+            component: component,
+            dependencies: [
+                validate.id,
+                assemble.id,
+                sign.id,
+            ],
+            inputs: [
+                .dependencyOutput(stagedProvenance),
+                .dependencyOutput(stagedTargetFiles),
+                .dependencyOutput(stagedImageArchive),
+            ] + requiredImages.map {
+                .dependencyOutput(stagedImages.appending($0))
+            },
             outputs: [
                 OutputDeclaration(
                     path: signed.appending("image-provenance.json"),
@@ -266,39 +425,14 @@ public enum AndroidRuntimeColliderRecipe {
                     path: signed.appending(
                         "\(lock.product)-images.zip"),
                     validation: .regularFile),
-            ] + [
-                "system.img",
-                "system_ext.img",
-                "product.img",
-                "vendor.img",
-                "vbmeta.img",
-                "vbmeta_system.img",
-            ].map {
+            ] + requiredImages.map {
                 OutputDeclaration(
                     path: images.appending($0),
                     validation: .regularFile)
             },
-            locks: [
-                .checkout("android-runtime-aosp-source"),
-                .checkout("android-runtime-aosp-build"),
-            ],
-            operation: .buildAOSPProduct(AOSPProductBuild(
-                productSource: root.appending(
-                    "aosp/device/nucleus/nucleus_x86_64"),
-                source: source,
-                repoLauncher: launcher,
-                sourceProvenance: sourceProvenance,
-                buildRoot: buildRoot,
-                signingIdentity: signingIdentity,
-                product: lock.product,
-                release: lock.release,
-                variant: lock.variant,
-                buildNumber: lock.buildNumber,
-                buildTimestamp: lock.buildTimestamp,
-                buildJobs: lock.buildJobs,
-                expectedPlatformSDK: lock.platformSDK,
-                expectedVendorAPILevel: lock.vendorAPILevel,
-                environment: environment)))
+            locks: [.checkout("android-runtime-aosp-build")],
+            operation: .publishAOSPProduct(build))
+        return [compile, sign, assemble, validate, publish]
     }
 
     private static func loadAOSPSourceLock(

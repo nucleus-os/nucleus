@@ -7,6 +7,7 @@
 // uses to decide whether to render a vblank.
 
 import NucleusSkiaGraphiteBridge
+import NucleusDiagnostics
 import VulkanC
 package import NucleusRenderModel
 internal import struct NucleusTypes.OutputPixelRect
@@ -789,8 +790,8 @@ package protocol FrameResourceResolver: AnyObject {
             + "paint=\(plan.resourceSummary.paintRequests.count) "
             + "shadows=\(plan.resourceSummary.shadowMaterials.count) "
             + "blur=\(plan.resourceSummary.backdropBlurRegions.count) "
-            + "ops=[\(operations.joined(separator: ";"))]\n"
-        line.withCString { _ = unsafe write(STDERR_FILENO, $0, strlen($0)) }
+            + "ops=[\(operations.joined(separator: ";"))]"
+        NucleusLogger(subsystem: "frame-driver").debug(line)
         #endif
     }
 

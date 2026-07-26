@@ -57,24 +57,6 @@ protocol ScreencopyDelegate: AnyObject {
     ) -> UInt64?
     func screencopyCancelCapture(_ requestID: UInt64)
 }
-/// Live screencopy-frame activity (M2 direct-scanout prerequisite). A capture reads
-/// the composited output, so while any client holds a screencopy frame (from the
-/// capture request until it destroys the frame) the affected outputs must composite
-/// rather than direct-scanout, or the copy would read a stale/absent framebuffer. The
-/// eligibility gather reads `isCapturing`. Frames, their isolated deinits, and
-/// scanout-fact gathering are all main-actor-owned, so the counter shares that
-/// semantic owner instead of introducing cross-thread mutable state.
-@MainActor
-enum ScreencopyActivity {
-    private static var liveFrames = 0
-    static var isCapturing: Bool { liveFrames > 0 }
-    static func retainFrame() { liveFrames += 1 }
-    static func releaseFrame() {
-        precondition(liveFrames > 0, "unbalanced screencopy frame lifetime")
-        liveFrames -= 1
-    }
-}
-
 @MainActor
 final class ScreencopyManager {
     weak var delegate: (any ScreencopyDelegate)?
@@ -83,9 +65,26 @@ final class ScreencopyManager {
     private var admittedByClient: [WaylandClientID: Int] = [:]
     private var admittedByOutput: [UInt64: Int] = [:]
     private var admittedTotal = 0
+    private var liveFramesByOutput: [UInt64: Int] = [:]
     private static let maximumCapturesPerClient = 8
     private static let maximumCapturesPerOutput = 8
     private static let maximumCapturesGlobal = 32
+
+    /// Whether this server has a live frame that may read the output's
+    /// composited accumulator.
+    func isCapturing(outputID: UInt64) -> Bool {
+        liveFramesByOutput[outputID, default: 0] > 0
+    }
+
+    fileprivate func retainFrame(outputID: UInt64) {
+        guard outputID != 0 else { return }
+        liveFramesByOutput[outputID, default: 0] += 1
+    }
+
+    fileprivate func releaseFrame(outputID: UInt64) {
+        guard let count = liveFramesByOutput[outputID] else { return }
+        liveFramesByOutput[outputID] = count > 1 ? count - 1 : nil
+    }
 
     fileprivate func configuration(
         output: WlOutput?, region: WlRect?
@@ -275,6 +274,7 @@ extension ScreencopyManager: ZwlrScreencopyManagerV1Requests {
     private var captureGeneration: UInt64 = 0
     private var activeCaptureGeneration: UInt64?
     private var admittedOutputID: UInt64?
+    private var activityOutputID: UInt64?
 
     init(
         resource: WaylandResourceHandle<ZwlrScreencopyFrameV1Server>,
@@ -290,14 +290,18 @@ extension ScreencopyManager: ZwlrScreencopyManagerV1Requests {
     }
 
     fileprivate func installed() {
-        ScreencopyActivity.retainFrame()
+        guard let outputID = output?.outputId, outputID != 0 else { return }
+        activityOutputID = outputID
+        manager?.retainFrame(outputID: outputID)
     }
     isolated deinit {
         if let pendingCaptureID {
             manager?.delegate?.screencopyCancelCapture(pendingCaptureID)
         }
         releaseAdmission()
-        ScreencopyActivity.releaseFrame()
+        if let activityOutputID {
+            manager?.releaseFrame(outputID: activityOutputID)
+        }
     }
     /// Whether the client's attached wl_buffer matches the advertised capture params.
     /// shm buffers are validated by format/width/height/stride; dmabuf buffers by

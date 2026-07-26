@@ -106,7 +106,7 @@ extension ColliderRuntime {
             stage: stage)
     }
 
-    func buildAOSPProduct(
+    func compileAOSPProduct(
         _ build: AOSPProductBuild,
         stage: TaskID
     ) async throws {
@@ -173,13 +173,6 @@ extension ColliderRuntime {
                 "current AOSP project revisions do not match signed-build "
                     + "source provenance")
         }
-        try await validateAOSPSigningIdentity(
-            AOSPSigningIdentityPreparation(
-                destination: build.signingIdentity,
-                subject: try aospSigningIdentity(
-                    at: build.signingIdentity).subject,
-                environment: build.environment),
-            stage: stage)
         let productDigest = try ArtifactHasher.digest(
             tree: build.productSource)
         try stageAOSPProduct(build, digest: productDigest)
@@ -248,22 +241,42 @@ extension ColliderRuntime {
         try DurableFile.copy(
             from: builtTargetFiles,
             to: unsignedTargetFiles)
+    }
 
+    func signAOSPProduct(
+        _ build: AOSPProductBuild,
+        stage: TaskID
+    ) async throws {
+        try await validateAOSPSigningIdentity(
+            AOSPSigningIdentityPreparation(
+                destination: build.signingIdentity,
+                subject: try aospSigningIdentity(
+                    at: build.signingIdentity).subject,
+                environment: build.environment),
+            stage: stage)
+        let output = build.buildRoot.appending("out")
+        let unsigned = build.buildRoot.appending("unsigned")
+        let staged = build.buildRoot.appending("staged")
+        try FileManager.default.createDirectory(
+            atPath: staged.string,
+            withIntermediateDirectories: true)
+        let unsignedTargetFiles = unsigned.appending(
+            "\(build.product)-target_files.zip")
         let hostTools = output.appending("host/linux-x86/bin")
         let signingTool = hostTools.appending("sign_target_files_apks")
-        let imageTool = hostTools.appending("img_from_target_files")
-        for tool in [signingTool, imageTool] where
+        for tool in [signingTool] where
             !FileManager.default.isExecutableFile(atPath: tool.string)
         {
             throw RuntimeFailure.invalidOutput(
                 "AOSP host signing tool is missing: \(tool)")
         }
-        environment["PATH"] =
-            hostTools.string + ":" + (environment["PATH"] ?? "/usr/bin:/bin")
+        let environment = aospProductEnvironment(
+            build,
+            hostTools: hostTools)
 
         let releaseKey = build.signingIdentity.appending("releasekey")
         let releasePEM = FilePath(releaseKey.string + ".pem")
-        let signedTargetCandidate = signed.appending(
+        let signedTargetCandidate = staged.appending(
             ".\(build.product)-target_files.candidate-\(UUID().uuidString).zip")
         defer {
             try? FileManager.default.removeItem(
@@ -305,8 +318,34 @@ extension ColliderRuntime {
             environment: environment,
             output: .logged,
             stage: stage)
+        try replaceAOSPProductFile(
+            signedTargetCandidate,
+            with: staged.appending(
+                "\(build.product)-target_files.zip"))
+    }
 
-        let imageArchiveCandidate = signed.appending(
+    func assembleAOSPProductImages(
+        _ build: AOSPProductBuild,
+        stage: TaskID
+    ) async throws {
+        let output = build.buildRoot.appending("out")
+        let staged = build.buildRoot.appending("staged")
+        try FileManager.default.createDirectory(
+            atPath: staged.string,
+            withIntermediateDirectories: true)
+        let hostTools = output.appending("host/linux-x86/bin")
+        let imageTool = hostTools.appending("img_from_target_files")
+        guard FileManager.default.isExecutableFile(atPath: imageTool.string)
+        else {
+            throw RuntimeFailure.invalidOutput(
+                "AOSP host image tool is missing: \(imageTool)")
+        }
+        let environment = aospProductEnvironment(
+            build,
+            hostTools: hostTools)
+        let signedTargetCandidate = staged.appending(
+            "\(build.product)-target_files.zip")
+        let imageArchiveCandidate = staged.appending(
             ".\(build.product)-images.candidate-\(UUID().uuidString).zip")
         defer {
             try? FileManager.default.removeItem(
@@ -344,15 +383,7 @@ extension ColliderRuntime {
             "vbmeta.img",
             "vbmeta_system.img",
         ]
-        let avbTool = hostTools.appending("avbtool")
         let sparseImageTool = hostTools.appending("simg2img")
-        guard FileManager.default.isExecutableFile(
-            atPath: avbTool.string)
-        else {
-            throw RuntimeFailure.invalidOutput(
-                "AOSP avbtool is missing: \(avbTool)")
-        }
-        var images: [AOSPImageProvenance.Image] = []
         for name in requiredImages {
             let image = imageCandidate.appending(name)
             guard image.isRegularFile else {
@@ -382,12 +413,67 @@ extension ColliderRuntime {
                     atPath: rawImage.string,
                     toPath: image.string)
             }
+        }
+        try replaceAOSPProductFile(
+            imageArchiveCandidate,
+            with: staged.appending("\(build.product)-images.zip"))
+        let stagedImages = staged.appending("images")
+        if FileManager.default.fileExists(atPath: stagedImages.string) {
+            try FileManager.default.removeItem(atPath: stagedImages.string)
+        }
+        try FileManager.default.moveItem(
+            atPath: imageCandidate.string,
+            toPath: stagedImages.string)
+    }
+
+    func validateAOSPProduct(
+        _ build: AOSPProductBuild,
+        stage: TaskID
+    ) async throws {
+        let sourceProvenance = try JSONDecoder().decode(
+            AOSPBuildSourceProvenance.self,
+            from: Data(contentsOf: URL(
+                fileURLWithPath: build.sourceProvenance.string)))
+        let productDigest = try ArtifactHasher.digest(
+            tree: build.productSource)
+        let output = build.buildRoot.appending("out")
+        let staged = build.buildRoot.appending("staged")
+        let hostTools = output.appending("host/linux-x86/bin")
+        let signedTargetCandidate = staged.appending(
+            "\(build.product)-target_files.zip")
+        let imageArchiveCandidate = staged.appending(
+            "\(build.product)-images.zip")
+        let imageCandidate = staged.appending("images")
+        let environment = aospProductEnvironment(
+            build,
+            hostTools: hostTools)
+        let releasePEM = build.signingIdentity.appending("releasekey.pem")
+        let avbTool = hostTools.appending("avbtool")
+        guard FileManager.default.isExecutableFile(atPath: avbTool.string)
+        else {
+            throw RuntimeFailure.invalidOutput(
+                "AOSP avbtool is missing: \(avbTool)")
+        }
+        let requiredImages = [
+            "system.img",
+            "system_ext.img",
+            "product.img",
+            "vendor.img",
+            "vbmeta.img",
+            "vbmeta_system.img",
+        ]
+        var images: [AOSPImageProvenance.Image] = []
+        for name in requiredImages {
+            let image = imageCandidate.appending(name)
+            guard image.isRegularFile else {
+                throw RuntimeFailure.invalidOutput(
+                    "validated Android image is missing: \(name)")
+            }
             let attributes = try FileManager.default.attributesOfItem(
                 atPath: image.string)
-            let size = (attributes[.size] as? NSNumber)?.uint64Value ?? 0
             images.append(AOSPImageProvenance.Image(
                 name: name,
-                size: size,
+                size: (attributes[.size] as? NSNumber)?.uint64Value ?? 0,
                 storageFormat: "raw",
                 sha256: try ArtifactHasher.digest(file: image).sha256Hex))
         }
@@ -452,24 +538,6 @@ extension ColliderRuntime {
             file: signedTargetCandidate).sha256Hex
         let imageArchiveDigest = try ArtifactHasher.digest(
             file: imageArchiveCandidate).sha256Hex
-        let signedTargetFiles = signed.appending(
-            "\(build.product)-target_files.zip")
-        let imageArchive = signed.appending(
-            "\(build.product)-images.zip")
-        let finalImages = build.buildRoot.appending("images")
-        try replaceAOSPProductFile(
-            signedTargetCandidate,
-            with: signedTargetFiles)
-        try replaceAOSPProductFile(
-            imageArchiveCandidate,
-            with: imageArchive)
-        if FileManager.default.fileExists(atPath: finalImages.string) {
-            try FileManager.default.removeItem(atPath: finalImages.string)
-        }
-        try FileManager.default.moveItem(
-            atPath: imageCandidate.string,
-            toPath: finalImages.string)
-
         let signing = try aospSigningIdentity(
             at: build.signingIdentity)
         try DurableFile.writeJSON(
@@ -496,6 +564,47 @@ extension ColliderRuntime {
                 targetFilesSHA256: targetFilesDigest,
                 imageArchiveSHA256: imageArchiveDigest,
                 images: images.sorted { $0.name < $1.name }),
+            to: staged.appending("image-provenance.json"))
+    }
+
+    func publishAOSPProduct(
+        _ build: AOSPProductBuild,
+        stage _: TaskID
+    ) async throws {
+        let staged = build.buildRoot.appending("staged")
+        let signed = build.buildRoot.appending("signed")
+        let finalImages = build.buildRoot.appending("images")
+        try FileManager.default.createDirectory(
+            atPath: signed.string,
+            withIntermediateDirectories: true)
+
+        try publishAOSPProductFile(
+            staged.appending("\(build.product)-target_files.zip"),
+            to: signed.appending("\(build.product)-target_files.zip"))
+        try publishAOSPProductFile(
+            staged.appending("\(build.product)-images.zip"),
+            to: signed.appending("\(build.product)-images.zip"))
+
+        let imageCandidate = build.buildRoot.appending(
+            ".images.publish-\(UUID().uuidString)")
+        defer {
+            try? FileManager.default.removeItem(
+                atPath: imageCandidate.string)
+        }
+        try linkAOSPProductTree(
+            staged.appending("images"),
+            to: imageCandidate)
+        if FileManager.default.fileExists(atPath: finalImages.string) {
+            try FileManager.default.removeItem(atPath: finalImages.string)
+        }
+        try FileManager.default.moveItem(
+            atPath: imageCandidate.string,
+            toPath: finalImages.string)
+
+        // Provenance is the publication commit marker. Framework boot rejects
+        // any artifact set whose digests do not match this file.
+        try publishAOSPProductFile(
+            staged.appending("image-provenance.json"),
             to: signed.appending("image-provenance.json"))
     }
 
@@ -620,25 +729,15 @@ extension ColliderRuntime {
         {
             return
         }
-        let candidate = parent.appending(
-            ".nucleus_x86_64.candidate-\(UUID().uuidString)")
-        defer {
-            try? FileManager.default.removeItem(atPath: candidate.string)
-        }
-        try FileManager.default.copyItem(
-            atPath: build.productSource.string,
-            toPath: candidate.string)
+        try synchronizeAOSPProductTree(
+            from: build.productSource,
+            to: destination,
+            preservingAtRoot: [".nucleus-product-stage.json"])
         try DurableFile.writeJSON(
             AOSPProductStage(
                 source: build.productSource.string,
                 sha256: digest.sha256Hex),
-            to: candidate.appending(".nucleus-product-stage.json"))
-        if FileManager.default.fileExists(atPath: destination.string) {
-            try FileManager.default.removeItem(atPath: destination.string)
-        }
-        try FileManager.default.moveItem(
-            atPath: candidate.string,
-            toPath: destination.string)
+            to: stageMetadata)
     }
 
     private func requireAOSPReleaseSigning(
@@ -970,6 +1069,89 @@ private let aospSigningAliases = [
     "networkstack",
 ]
 
+private func aospProductEnvironment(
+    _ build: AOSPProductBuild,
+    hostTools: FilePath
+) -> [String: String] {
+    let outputLink = build.source.appending("out/nucleus")
+    let distributionLink = build.source.appending("out/nucleus-dist")
+    var environment = build.environment
+    environment["TARGET_PRODUCT"] = build.product
+    environment["TARGET_BUILD_VARIANT"] = build.variant
+    environment["TARGET_RELEASE"] = build.release
+    environment["OUT_DIR"] = aospProductRelativePath(
+        outputLink,
+        from: build.source)
+    environment["DIST_DIR"] = aospProductRelativePath(
+        distributionLink,
+        from: build.source)
+    environment["BUILD_NUMBER"] = build.buildNumber
+    environment["BUILD_DATETIME"] = String(build.buildTimestamp)
+    environment["BUILD_USERNAME"] = "nucleus"
+    environment["BUILD_HOSTNAME"] = "collider"
+    environment["TZ"] = "UTC"
+    environment["LANG"] = "C.UTF-8"
+    environment["LC_ALL"] = "C.UTF-8"
+    environment["PATH"] =
+        hostTools.string + ":" + (environment["PATH"] ?? "/usr/bin:/bin")
+    return environment
+}
+
+private func publishAOSPProductFile(
+    _ source: FilePath,
+    to destination: FilePath
+) throws {
+    guard source.isRegularFile else {
+        throw RuntimeFailure.invalidOutput(
+            "AOSP publication input is missing: \(source)")
+    }
+    let candidate = FilePath(
+        destination.string + ".candidate-\(UUID().uuidString)")
+    defer {
+        try? FileManager.default.removeItem(atPath: candidate.string)
+    }
+    try FileManager.default.linkItem(
+        atPath: source.string,
+        toPath: candidate.string)
+    try replaceAOSPProductFile(candidate, with: destination)
+}
+
+private func linkAOSPProductTree(
+    _ source: FilePath,
+    to destination: FilePath
+) throws {
+    let sourceURL = URL(fileURLWithPath: source.string)
+    let values = try? sourceURL.resourceValues(forKeys: [.isDirectoryKey])
+    guard values?.isDirectory == true
+    else {
+        throw RuntimeFailure.invalidOutput(
+            "AOSP image publication tree is missing: \(source)")
+    }
+    try FileManager.default.createDirectory(
+        atPath: destination.string,
+        withIntermediateDirectories: false)
+    for name in try FileManager.default.contentsOfDirectory(
+        atPath: source.string)
+    {
+        let child = source.appending(name)
+        let published = destination.appending(name)
+        let childValues = try? URL(
+            fileURLWithPath: child.string
+        ).resourceValues(forKeys: [.isDirectoryKey])
+        guard let childIsDirectory = childValues?.isDirectory else {
+            throw RuntimeFailure.invalidOutput(
+                "AOSP image publication entry disappeared: \(child)")
+        }
+        if childIsDirectory {
+            try linkAOSPProductTree(child, to: published)
+        } else {
+            try FileManager.default.linkItem(
+                atPath: child.string,
+                toPath: published.string)
+        }
+    }
+}
+
 private func ensureAOSPBuildLink(
     _ link: FilePath,
     pointsTo destination: FilePath
@@ -1091,6 +1273,103 @@ private func replaceAOSPProductFile(
     try FileManager.default.moveItem(
         atPath: candidate.string,
         toPath: destination.string)
+}
+
+func synchronizeAOSPProductTree(
+    from source: FilePath,
+    to destination: FilePath,
+    preservingAtRoot preservedNames: Set<String> = []
+) throws {
+    let manager = FileManager.default
+    let sourceMetadata = try source.stat(followTargetSymlink: false)
+    guard sourceMetadata.type == .directory else {
+        throw RuntimeFailure.invalidOutput(
+            "AOSP product source is not a directory: \(source)")
+    }
+    if let destinationMetadata = try? destination.stat(
+        followTargetSymlink: false),
+        destinationMetadata.type != .directory
+    {
+        try manager.removeItem(atPath: destination.string)
+    }
+    try manager.createDirectory(
+        atPath: destination.string,
+        withIntermediateDirectories: true)
+
+    let sourceNames = Set(try manager.contentsOfDirectory(
+        atPath: source.string))
+    let destinationNames = Set(try manager.contentsOfDirectory(
+        atPath: destination.string))
+    for name in destinationNames
+        .subtracting(sourceNames)
+        .subtracting(preservedNames)
+        .sorted()
+    {
+        try manager.removeItem(
+            atPath: destination.appending(name).string)
+    }
+
+    for name in sourceNames.sorted() {
+        let sourceEntry = source.appending(name)
+        let destinationEntry = destination.appending(name)
+        let sourceEntryMetadata = try sourceEntry.stat(
+            followTargetSymlink: false)
+        let destinationEntryMetadata = try? destinationEntry.stat(
+            followTargetSymlink: false)
+        switch sourceEntryMetadata.type {
+        case .directory:
+            if let destinationEntryMetadata,
+                destinationEntryMetadata.type != .directory
+            {
+                try manager.removeItem(atPath: destinationEntry.string)
+            }
+            try synchronizeAOSPProductTree(
+                from: sourceEntry,
+                to: destinationEntry)
+        case .regular:
+            var sameFile = false
+            if destinationEntryMetadata?.type == .regular,
+                destinationEntryMetadata?.permissions
+                    .contains(.ownerExecute)
+                    == sourceEntryMetadata.permissions
+                        .contains(.ownerExecute)
+            {
+                sameFile =
+                    try ArtifactHasher.digest(file: destinationEntry)
+                    == ArtifactHasher.digest(file: sourceEntry)
+            }
+            if !sameFile {
+                if destinationEntryMetadata?.type != .regular,
+                    destinationEntryMetadata != nil
+                {
+                    try manager.removeItem(atPath: destinationEntry.string)
+                }
+                try DurableFile.copy(
+                    from: sourceEntry,
+                    to: destinationEntry)
+            }
+        case .symbolicLink:
+            let sourceTarget = try manager.destinationOfSymbolicLink(
+                atPath: sourceEntry.string)
+            let destinationTarget =
+                destinationEntryMetadata?.type == .symbolicLink
+                ? try manager.destinationOfSymbolicLink(
+                    atPath: destinationEntry.string)
+                : nil
+            if sourceTarget != destinationTarget {
+                if destinationEntryMetadata != nil {
+                    try manager.removeItem(atPath: destinationEntry.string)
+                }
+                try manager.createSymbolicLink(
+                    atPath: destinationEntry.string,
+                    withDestinationPath: sourceTarget)
+            }
+        default:
+            throw RuntimeFailure.invalidOutput(
+                "AOSP product source contains an unsupported entry: "
+                    + sourceEntry.string)
+        }
+    }
 }
 
 private func aospSigningIdentity(

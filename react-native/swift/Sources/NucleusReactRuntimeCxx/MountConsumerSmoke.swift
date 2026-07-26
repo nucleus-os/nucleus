@@ -179,6 +179,17 @@ public func nucleus_rn_mount_lifecycle_smoke() -> Int32 {
             surfaceID: Int32(surfaceID))
         consumer.unregisterContext(
             surfaceID: surfaceID)
+        consumer.enqueue(.create(
+            surfaceID: surfaceID,
+            tag: 499,
+            componentName: "View",
+            component: .view(
+                MountViewSnapshot(
+                    nativeID: "stale",
+                    frame: Rect(
+                        x: 0, y: 0,
+                        width: 1, height: 1)),
+                backgroundColor: nil)))
 
         let replacement = mountTestContext(
             surfaceID: surfaceID)
@@ -189,7 +200,9 @@ public func nucleus_rn_mount_lifecycle_smoke() -> Int32 {
             replacement.registry.component(
                 for: 410) == nil,
             consumer.metricsSnapshot()
-                .staleBatchesRejected == 1
+                .staleBatchesRejected == 1,
+            consumer.metricsSnapshot()
+                .staleMutationsRejected == 1
         else { return 2 }
 
         consumer.enqueue(.create(

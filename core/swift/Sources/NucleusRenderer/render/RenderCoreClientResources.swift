@@ -1,4 +1,5 @@
 import NucleusSkiaGraphiteBridge
+import NucleusDiagnostics
 import VulkanC
 import Vulkan
 import Tracy
@@ -30,10 +31,9 @@ extension RenderCore {
     ) -> Bool {
         let commitInstant = telemetryClock.now
         func fail(_ stage: String) -> Bool {
-            #if canImport(Glibc)
-            let line = "surface-texture: failed stage=\(stage) id=\(iosurfaceID) size=\(width)x\(height) format=\(drmFormat) modifier=\(modifier) planes=\(planes.count)\n"
-            line.withCString { _ = unsafe write(STDERR_FILENO, $0, strlen($0)) }
-            #endif
+            NucleusLogger(subsystem: "surface-texture").error(
+                "failed stage=\(stage) id=\(iosurfaceID) size=\(width)x\(height) "
+                    + "format=\(drmFormat) modifier=\(modifier) planes=\(planes.count)")
             return false
         }
         guard iosurfaceID != 0 else {

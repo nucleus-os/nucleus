@@ -32,9 +32,9 @@ import WaylandServerDispatch
         clientKey key: WaylandClientID, timestampUs: UInt64,
         dx: Double, dy: Double, dxUnaccel: Double, dyUnaccel: Double
     ) {
-        for b in bindings.liveValues() {
-            guard b.clientKey == key else { continue }
-            b.resource.sendRelativeMotion(
+        bindings.forEach { binding in
+            guard binding.clientKey == key else { return }
+            binding.resource.sendRelativeMotion(
                 utime_hi: UInt32(timestampUs >> 32),
                 utime_lo: UInt32(timestampUs & 0xffff_ffff),
                 dx: dx, dy: dy,

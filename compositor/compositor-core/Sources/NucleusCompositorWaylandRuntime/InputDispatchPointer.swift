@@ -1,6 +1,7 @@
 internal import NucleusCompositorServer
 import NucleusCompositorServerTypes
 internal import NucleusCompositorWindowManager
+import NucleusDiagnostics
 import Glibc
 @MainActor
 extension InputDispatch {
@@ -180,10 +181,9 @@ extension InputDispatch {
             inputRouteDiagnosticsRemaining -= 1
             let source = target == 0 ? 0 : (windowDriver?.windowSource(
                 forSurfaceId: UInt32(truncatingIfNeeded: target)) ?? 0)
-            let line = "input-route: button=\(button) down=\(down) target=\(target) source=\(source) cursor=\(cursorX),\(cursorY)\n"
-            line.withCString {
-                _ = unsafe write(STDERR_FILENO, $0, strlen($0))
-            }
+            NucleusLogger(subsystem: "input-route").debug(
+                "button=\(button) down=\(down) target=\(target) source=\(source) "
+                    + "cursor=\(cursorX),\(cursorY)")
         }
         if target != 0 && !lockBlocks(target) {
             serial = seatDelivery.pointerButton(

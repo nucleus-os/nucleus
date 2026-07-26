@@ -1,5 +1,6 @@
 import FoundationEssentials
 import Glibc
+import NucleusDiagnostics
 import NucleusSessionProtocol
 import NucleusLinuxSessionC
 
@@ -239,37 +240,24 @@ private final class SessionSupervisor {
         command: [String]
     ) throws -> SupervisedChild {
         var pipeDescriptors = [Int32](repeating: -1, count: 2)
-        guard unsafe pipe(&pipeDescriptors) == 0 else {
-            throw SupervisorFailure.system("pipe", errno)
-        }
-        guard fcntl(pipeDescriptors[0], F_SETFD, FD_CLOEXEC) == 0,
-              fcntl(pipeDescriptors[1], F_SETFD, FD_CLOEXEC) == 0,
-              fcntl(pipeDescriptors[0], F_SETFL, O_NONBLOCK) == 0,
-              fcntl(pipeDescriptors[1], F_SETFL, O_NONBLOCK) == 0
+        let readinessPipeResult = unsafe nucleus_session_create_pipe(
+            &pipeDescriptors, 1)
+        guard readinessPipeResult == 0
         else {
-            let error = errno
-            _ = close(pipeDescriptors[0])
-            _ = close(pipeDescriptors[1])
-            throw SupervisorFailure.system("readiness pipe flags", error)
+            throw SupervisorFailure.system(
+                "readiness pipe", -readinessPipeResult)
         }
         let readDescriptor = pipeDescriptors[0]
         let writeDescriptor = pipeDescriptors[1]
         var configurationDescriptors = [Int32](repeating: -1, count: 2)
-        guard unsafe pipe(&configurationDescriptors) == 0 else {
-            let error = errno
+        let configurationPipeResult =
+            unsafe nucleus_session_create_pipe(
+                &configurationDescriptors, 0)
+        guard configurationPipeResult == 0 else {
             _ = close(readDescriptor)
             _ = close(writeDescriptor)
-            throw SupervisorFailure.system("configuration pipe", error)
-        }
-        guard fcntl(configurationDescriptors[0], F_SETFD, FD_CLOEXEC) == 0,
-              fcntl(configurationDescriptors[1], F_SETFD, FD_CLOEXEC) == 0
-        else {
-            let error = errno
-            _ = close(readDescriptor)
-            _ = close(writeDescriptor)
-            _ = close(configurationDescriptors[0])
-            _ = close(configurationDescriptors[1])
-            throw SupervisorFailure.system("configuration pipe flags", error)
+            throw SupervisorFailure.system(
+                "configuration pipe", -configurationPipeResult)
         }
 
         var actions = unsafe posix_spawn_file_actions_t()
@@ -592,10 +580,7 @@ private final class SessionSupervisor {
     }
 
     private func log(_ message: String) {
-        let line = "nucleus-session-supervisor: \(message)\n"
-        _ = line.withCString {
-            unsafe write(STDERR_FILENO, $0, strlen($0))
-        }
+        NucleusLogger(subsystem: "session-supervisor").info(message)
     }
 }
 
@@ -607,10 +592,7 @@ do {
     print(usage)
     status = CommandLine.arguments.contains("--help") ? 0 : 64
 } catch {
-    let line = "nucleus-session-supervisor: \(error)\n"
-    _ = line.withCString {
-        unsafe write(STDERR_FILENO, $0, strlen($0))
-    }
+    NucleusLogger(subsystem: "session-supervisor").error("\(error)")
     status = 1
 }
 exit(status)

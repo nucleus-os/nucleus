@@ -234,7 +234,7 @@ extension ShellHost {
     }
 
     func writeErr(_ message: String) {
-        let message = message + "\n"
-        _ = message.withCString { unsafe write(2, $0, strlen($0)) }
+        NucleusLogger(subsystem: "shell").error(message)
     }
 }
+import NucleusDiagnostics

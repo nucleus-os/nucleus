@@ -1,5 +1,6 @@
 import Glibc
 import NucleusCompositorRuntime
+import NucleusDiagnostics
 import NucleusSessionProtocol
 
 let status: Int32
@@ -10,10 +11,8 @@ do {
         configuration: configuration,
         readinessReporter: readiness)
 } catch {
-    let line = "nucleus-compositor: invalid session launch contract: \(error)\n"
-    _ = line.withCString {
-        unsafe write(STDERR_FILENO, $0, strlen($0))
-    }
+    NucleusLogger(subsystem: "compositor").error(
+        "invalid session launch contract: \(error)")
     status = 1
 }
 exit(status)

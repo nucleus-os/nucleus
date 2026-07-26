@@ -111,6 +111,14 @@ extension ScreencopyManager {
 }
 
 @MainActor
+extension ZwlrGammaControlManager {
+    func register(in router: NucleusWaylandRouter) {
+        router.addGlobal(ZwlrGammaControlManagerV1Server.global(
+            implementation: self))
+    }
+}
+
+@MainActor
 extension ZwpLinuxDmabuf {
     func register(in router: NucleusWaylandRouter) {
         router.addGlobal(ZwpLinuxDmabufV1Server.global(

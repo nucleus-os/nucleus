@@ -1,4 +1,5 @@
 import Glibc
+import NucleusDiagnostics
 package import NucleusUI
 import NucleusUIEmbedder
 package import class NucleusLayers.Layer
@@ -603,10 +604,7 @@ private func monotonicNs() -> UInt64 {
 }
 
 private func logShellOverlayError(_ message: String) {
-    let line = "shell-overlay: \(message)\n"
-    line.withCString { pointer in
-        _ = unsafe write(STDERR_FILENO, pointer, strlen(pointer))
-    }
+    NucleusLogger(subsystem: "shell-overlay").error(message)
 }
 
 private func minDeadline(_ lhs: UInt64?, _ rhs: UInt64) -> UInt64 {

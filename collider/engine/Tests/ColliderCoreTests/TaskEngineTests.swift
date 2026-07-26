@@ -31,6 +31,50 @@ import Testing
             == "sha256:1692de34cf5c17d8652b5c6690407f40a23e63b2d8dc31545836d21e00ed5707")
 }
 
+@Test func aospBuildConcurrencyDoesNotChangeArtifactIdentity() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-aosp-job-identity-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    func task(jobs: UInt32) -> TaskDeclaration {
+        let root = FilePath(directory.path)
+        return TaskDeclaration(
+            id: TaskID(rawValue: "fixture.aosp-publish"),
+            component: ComponentID(rawValue: "fixture"),
+            inputs: [
+                .value(name: "product", bytes: Array("stable".utf8)),
+            ],
+            operation: .publishAOSPProduct(AOSPProductBuild(
+                productSource: root.appending("product"),
+                source: root.appending("source"),
+                repoLauncher: root.appending("repo"),
+                sourceProvenance: root.appending("source-provenance.json"),
+                buildRoot: root.appending("build"),
+                signingIdentity: root.appending("signing"),
+                product: "nucleus_x86_64",
+                release: "cp2a",
+                variant: "userdebug",
+                buildNumber: "nucleus",
+                buildTimestamp: 1,
+                buildJobs: jobs,
+                expectedPlatformSDK: 37,
+                expectedVendorAPILevel: 202604,
+                environment: [:])))
+    }
+    let runtime = ColliderRuntime()
+    let state = FilePath(directory.appendingPathComponent("state").path)
+    let first = try await runtime.execute(
+        graph: TaskGraph([task(jobs: 12)]),
+        selected: [TaskID(rawValue: "fixture.aosp-publish")],
+        stateRoot: state,
+        options: TaskExecutionOptions(dryRun: true))
+    let second = try await runtime.execute(
+        graph: TaskGraph([task(jobs: 24)]),
+        selected: [TaskID(rawValue: "fixture.aosp-publish")],
+        stateRoot: state,
+        options: TaskExecutionOptions(dryRun: true))
+    #expect(first.plan[0].identity == second.plan[0].identity)
+}
+
 @Test func taskEngineExplainsInvalidationAndThenSkipsCleanWork() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
         "collider-engine-\(UUID().uuidString)")

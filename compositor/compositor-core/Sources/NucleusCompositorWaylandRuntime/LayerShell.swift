@@ -12,6 +12,7 @@
 import WaylandServerC
 import WaylandServer
 import WaylandServerDispatch
+import NucleusDiagnostics
 import WaylandProtocolTypes
 import Glibc
 
@@ -303,10 +304,7 @@ extension ZwlrLayerShell: ZwlrLayerShellV1Requests {
     }
 
     private func diagnostic(_ message: String) {
-        let line = "layer-shell: \(message)\n"
-        line.withCString {
-            _ = unsafe write(STDERR_FILENO, $0, strlen($0))
-        }
+        NucleusLogger(subsystem: "layer-shell").warning(message)
     }
 
     /// The pinned output disappeared. Close the role and release its shell-policy

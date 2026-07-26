@@ -11,6 +11,7 @@
 #include <limits>
 #include <memory>
 #include <mutex>
+#include <sys/stat.h>
 #include <vector>
 
 #include <vulkan/vulkan_core.h>
@@ -1155,13 +1156,22 @@ RasterDecodeResult decodeEncodedData(
 
 }  // namespace
 
-EncodedImageMetadata probeEncodedImageFile(const char *path) {
-    if (path == nullptr || path[0] == '\0') {
+EncodedImageMetadata probeEncodedImageFileDescriptor(
+    int32_t fileDescriptor) {
+    struct stat metadata {};
+    if (fileDescriptor < 0
+        || fstat(fileDescriptor, &metadata) != 0
+        || metadata.st_size <= 0) {
         return EncodedImageMetadata{
             .status = RasterDecodeStatus::unreadableInput,
         };
     }
-    return probeEncodedData(SkData::MakeFromFileName(path));
+    if (static_cast<uint64_t>(metadata.st_size) > kMaximumEncodedBytes) {
+        return EncodedImageMetadata{
+            .status = RasterDecodeStatus::limitExceeded,
+        };
+    }
+    return probeEncodedData(SkData::MakeFromFD(fileDescriptor));
 }
 
 EncodedImageMetadata probeEncodedImageMemory(
@@ -1180,12 +1190,19 @@ EncodedImageMetadata probeEncodedImageMemory(
     return probeEncodedData(SkData::MakeWithCopy(bytes, byteLength));
 }
 
-RasterDecodeResult decodeEncodedImageFile(
-    const char *path, int32_t maxWidth, int32_t maxHeight) {
-    if (path == nullptr || path[0] == '\0') {
+RasterDecodeResult decodeEncodedImageFileDescriptor(
+    int32_t fileDescriptor, int32_t maxWidth, int32_t maxHeight) {
+    struct stat metadata {};
+    if (fileDescriptor < 0
+        || fstat(fileDescriptor, &metadata) != 0
+        || metadata.st_size <= 0) {
         return decodeResult(RasterDecodeStatus::unreadableInput);
     }
-    return decodeEncodedData(SkData::MakeFromFileName(path), maxWidth, maxHeight);
+    if (static_cast<uint64_t>(metadata.st_size) > kMaximumEncodedBytes) {
+        return decodeResult(RasterDecodeStatus::limitExceeded);
+    }
+    return decodeEncodedData(
+        SkData::MakeFromFD(fileDescriptor), maxWidth, maxHeight);
 }
 
 RasterDecodeResult decodeEncodedImageMemory(

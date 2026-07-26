@@ -343,6 +343,7 @@ package struct MountDrainMetrics: Sendable, Equatable {
     package var batchesDrained: UInt64 = 0
     package var mutationsMaterialized: UInt64 = 0
     package var staleBatchesRejected: UInt64 = 0
+    package var staleMutationsRejected: UInt64 = 0
     package var pureRemovalBatches: UInt64 = 0
     package var bulkRemovalGroups: UInt64 = 0
     package var bulkRemovedChildren: UInt64 = 0
@@ -436,11 +437,14 @@ public final class MountConsumer: MountingObserverHandler, Sendable {
     }
 
     package func enqueue(_ event: MountEvent) {
-        let accepted = incoming.withLock { state in
+        incoming.withLock { state in
             guard
                 state.activeSurfaces.contains(event.surfaceID),
                 !state.retiredSurfaces.contains(event.surfaceID)
-            else { return false }
+            else {
+                state.metrics.staleMutationsRejected &+= 1
+                return
+            }
             state.pending[event.surfaceID, default: []].append(event)
             let copied = event.copiedBytes
             state.metrics.copiedComponentNameBytes &+=
@@ -448,11 +452,8 @@ public final class MountConsumer: MountingObserverHandler, Sendable {
             state.metrics.copiedTextBytes &+= copied.text
             state.metrics.copiedNativeIDBytes &+= copied.nativeID
             state.metrics.copiedImageBytes &+= copied.image
-            return true
         }
-        if accepted {
-            traceIncomingMetrics()
-        }
+        traceIncomingMetrics()
     }
 
     // MARK: Materializer context lifecycle
@@ -720,6 +721,9 @@ public final class MountConsumer: MountingObserverHandler, Sendable {
         Trace.plot(
             "swift.rn.mounting.stale_batches_rejected",
             metrics.staleBatchesRejected)
+        Trace.plot(
+            "swift.rn.mounting.stale_mutations_rejected",
+            metrics.staleMutationsRejected)
         Trace.plot(
             "swift.rn.mounting.pure_removal_batches",
             metrics.pureRemovalBatches)

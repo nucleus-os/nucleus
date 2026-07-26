@@ -21,6 +21,8 @@ esac
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export NUCLEUS_WORKSPACE_ROOT="$root"
+: "${NUCLEUS_NATIVE_SDK_ROOT:=${XDG_CACHE_HOME:-$HOME/.cache}/nucleus/nucleus-native-sdk}"
+export NUCLEUS_NATIVE_SDK_ROOT
 
 host_env="$root/tools/host-env.sh"
 pkg="$root/collider"

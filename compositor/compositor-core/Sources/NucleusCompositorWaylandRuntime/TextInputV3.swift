@@ -103,16 +103,16 @@ struct TextInputServerEventBatch: Sendable {
         }
         focusedSurface = surface
         guard let key = surface.protocolResource?.clientID else { return }
-        for input in inputs.liveValues()
-        where input.clientKey == key {
+        inputs.forEach { input in
+            guard input.clientKey == key else { return }
             input.focusEntered(surface)
         }
     }
 
     func keyboardLeave(_ surface: WlSurface) {
         guard focusedSurface === surface else { return }
-        for input in inputs.liveValues()
-        where input.focusedSurface === surface {
+        inputs.forEach { input in
+            guard input.focusedSurface === surface else { return }
             input.focusLeft(surface)
         }
         focusedSurface = nil
@@ -120,8 +120,8 @@ struct TextInputServerEventBatch: Sendable {
 
     func focusedSurfaceDestroyed(surfaceID: UInt32) {
         guard focusedSurface?.objectId == surfaceID else { return }
-        for input in inputs.liveValues()
-        where input.focusedSurface?.objectId == surfaceID {
+        inputs.forEach { input in
+            guard input.focusedSurface?.objectId == surfaceID else { return }
             input.focusWasDestroyed()
         }
         focusedSurface = nil

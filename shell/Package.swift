@@ -15,36 +15,18 @@
 import PackageDescription
 import Foundation
 
-let repoRoot = URL(fileURLWithPath: #filePath).deletingLastPathComponent().path
-
 // ── The Nucleus render SDK ─────────────────────────────────────────────────────
-// Same provisioning the compositor uses. Provisioned by the root
-// `tools/collider bootstrap` stage graph;
-// the link lists here point at monorepo-owned sources.
-func provisionSDK(_ name: String, links: [(String, String)]) -> String {
-    let home = ProcessInfo.processInfo.environment["HOME"] ?? ""
-    let sdk = home + "/.cache/nucleus/nucleus-native-sdk/" + name
-    let fm = FileManager.default
-    for (dest, target) in links {
-        let path = sdk + "/" + dest
-        guard fm.fileExists(atPath: target) else { continue }
-        if let existing = try? fm.destinationOfSymbolicLink(atPath: path) {
-            if existing == target { continue }
-            try? fm.removeItem(atPath: path)
-        } else if fm.fileExists(atPath: path) {
-            continue
-        }
-        try? fm.createDirectory(atPath: (path as NSString).deletingLastPathComponent,
-                                withIntermediateDirectories: true)
-        try? fm.createSymbolicLink(atPath: path, withDestinationPath: target)
-    }
-    return sdk
+// Collider publishes the SDK before invoking SwiftPM. Manifest evaluation is
+// deliberately read-only and consumes the one workspace-wide location.
+let environment = ProcessInfo.processInfo.environment
+guard let nativeSDKRoot = environment["NUCLEUS_NATIVE_SDK_ROOT"],
+      !nativeSDKRoot.isEmpty
+else {
+    fatalError(
+        "NUCLEUS_NATIVE_SDK_ROOT is required; run through collider or "
+            + "source tools/host-env.sh")
 }
-let renderSDK = provisionSDK("render", links: [
-    ("include/skia", repoRoot + "/../core/third-party/skia"),
-    ("lib/skia-graphite", repoRoot + "/../core/.skia-build/graphite"),
-    ("include/skia-text", repoRoot + "/../core/render-cxx/skia"),
-])
+let renderSDK = nativeSDKRoot + "/render"
 let skiaRoot = renderSDK + "/include/skia"
 let skiaLibDir = renderSDK + "/lib/skia-graphite"
 
@@ -52,12 +34,25 @@ func pkgConfig(_ args: [String]) -> [String] {
     let p = Process()
     p.executableURL = URL(fileURLWithPath: "/usr/bin/env")
     p.arguments = ["pkg-config"] + args
-    let pipe = Pipe()
-    p.standardOutput = pipe
-    p.standardError = Pipe()
-    do { try p.run() } catch { return [] }
+    let output = Pipe()
+    let errors = Pipe()
+    p.standardOutput = output
+    p.standardError = errors
+    do {
+        try p.run()
+    } catch {
+        fatalError("could not launch pkg-config: \(error)")
+    }
     p.waitUntilExit()
-    let out = pipe.fileHandleForReading.readDataToEndOfFile()
+    let out = output.fileHandleForReading.readDataToEndOfFile()
+    let errorOutput = String(
+        decoding: errors.fileHandleForReading.readDataToEndOfFile(),
+        as: UTF8.self)
+    guard p.terminationStatus == 0 else {
+        fatalError(
+            "pkg-config \(args.joined(separator: " ")) failed: "
+                + errorOutput.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
     return String(decoding: out, as: UTF8.self)
         .split(whereSeparator: { $0 == " " || $0 == "\n" || $0 == "\t" })
         .map(String.init)
@@ -231,6 +226,7 @@ let package = Package(
         .target(
             name: "NucleusShellRender",
             dependencies: [
+                .product(name: "NucleusDiagnostics", package: "Nucleus"),
                 "NucleusShellLoop",
                 .product(name: "WaylandClientC", package: "swift-wayland"),
                 .product(name: "NucleusRenderer", package: "Nucleus"),
@@ -347,6 +343,7 @@ let package = Package(
             dependencies: [
                 "NucleusShellAuth",
                 "NucleusShellAuthWire",
+                "NucleusShellProcessC",
                 "NucleusShellPamAttemptFixture",
                 .product(name: "NucleusUI", package: "Nucleus"),
             ],
@@ -401,6 +398,7 @@ let package = Package(
         .target(
             name: "NucleusShellRuntime",
             dependencies: [
+                .product(name: "NucleusDiagnostics", package: "Nucleus"),
                 "NucleusShellWayland", "NucleusShellRender", "NucleusShellSignalC",
                 "NucleusShellLoop", "NucleusShellPasteboard",
                 "NucleusShellProduct", "NucleusShellInput", "NucleusShellAuth",
@@ -478,6 +476,7 @@ let package = Package(
             name: "NucleusShell",
             dependencies: [
                 "NucleusShellRuntime",
+                .product(name: "NucleusDiagnostics", package: "Nucleus"),
                 .product(
                     name: "NucleusSessionProtocol",
                     package: "engine"),

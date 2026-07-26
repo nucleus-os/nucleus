@@ -60,6 +60,15 @@ extension WorkspaceContext {
             .appendingPathComponent(".cache", isDirectory: true)
     }
 
+    /// The single native SDK location passed to every build and publication
+    /// task. Workspace initialization always establishes this environment
+    /// contract before SwiftPM evaluates a first-party manifest.
+    var nativeSDKRoot: URL {
+        URL(
+            fileURLWithPath: environment["NUCLEUS_NATIVE_SDK_ROOT"]!,
+            isDirectory: true)
+    }
+
     /// Build the task graph, execute the selected tasks against the repository
     /// task-state root, render the report, and return it.
     @discardableResult

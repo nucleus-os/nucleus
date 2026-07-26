@@ -23,6 +23,19 @@ let trackedPropertyAtoms: [AtomId] = [
     ._NET_WM_USER_TIME, ._NET_WM_SYNC_REQUEST_COUNTER,
 ]
 
+/// X11 properties consumed by the compositor are bounded protocol metadata, not
+/// bulk-transfer channels. Request the complete value up to this limit and
+/// reject larger values instead of parsing a silent prefix.
+private let maximumTrackedPropertyBytes: UInt32 = 64 * 1_024
+private let maximumTrackedPropertyWords =
+    maximumTrackedPropertyBytes / UInt32(MemoryLayout<UInt32>.size)
+
+@unsafe private func completePropertyReply(
+    _ reply: UnsafePointer<xcb_get_property_reply_t>
+) -> Bool {
+    unsafe reply.pointee.bytes_after == 0
+}
+
 /// Subscribe to PropertyNotify on a freshly-created X11 window.
 @unsafe func subscribeWindow(_ conn: OpaquePointer, _ window: xcb_window_t) {
     var mask: [UInt32] = [XCB_EVENT_MASK_PROPERTY_CHANGE.rawValue]
@@ -37,12 +50,16 @@ let trackedPropertyAtoms: [AtomId] = [
     for id in trackedPropertyAtoms {
         unsafe cookies.append(xcb_get_property(
             conn, 0, surface.windowID, atoms[id],
-            xcb_atom_t(XCB_ATOM_ANY.rawValue), 0, 2048))
+            xcb_atom_t(XCB_ATOM_ANY.rawValue), 0,
+            maximumTrackedPropertyWords))
     }
     _ = unsafe xcb_flush(conn)
     for (i, id) in trackedPropertyAtoms.enumerated() {
         if let reply = unsafe xcb_get_property_reply(conn, cookies[i], nil) {
-            unsafe readSurfaceProperty(atoms, surface, atoms[id], UnsafePointer(reply))
+            if unsafe completePropertyReply(UnsafePointer(reply)) {
+                unsafe readSurfaceProperty(
+                    atoms, surface, atoms[id], UnsafePointer(reply))
+            }
             unsafe free(reply)
         }
     }
@@ -55,9 +72,11 @@ let trackedPropertyAtoms: [AtomId] = [
     guard atom != 0, isTrackedAtom(atoms, atom) else { return }
     let cookie = unsafe xcb_get_property(
         conn, 0, surface.windowID, atom,
-        xcb_atom_t(XCB_ATOM_ANY.rawValue), 0, 2048)
+        xcb_atom_t(XCB_ATOM_ANY.rawValue), 0,
+        maximumTrackedPropertyWords)
     guard let reply = unsafe xcb_get_property_reply(conn, cookie, nil) else { return }
     defer { unsafe free(reply) }
+    guard unsafe completePropertyReply(UnsafePointer(reply)) else { return }
     unsafe readSurfaceProperty(atoms, surface, atom, UnsafePointer(reply))
 }
 

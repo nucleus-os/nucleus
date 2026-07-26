@@ -94,7 +94,6 @@ public extension WaylandRuntime {
         guard let runtime = host.runtime else { return [:] }
         let compositor = runtime.compositor
         let locked = host.sessionLockGate.isActive()
-        let capturing = ScreencopyActivity.isCapturing
         guard !server.layout.displays.isEmpty else { return [:] }
         let shellOutputID = server.spaces.overlayDisplayID(layout: server.layout)
 
@@ -103,7 +102,8 @@ public extension WaylandRuntime {
             let outputID = display.id
             var facts = OutputScanoutFacts()
             facts.sessionLocked = locked
-            facts.screenshotCaptureActive = capturing
+            facts.screenshotCaptureActive =
+                runtime.screencopy.isCapturing(outputID: outputID)
             facts.isShellOutput = (outputID == shellOutputID)
             facts.layerShellActiveOnOutput = compositor.hasMappedLayerSurface(on: outputID)
             // notificationCount / hotkeyHasContent are the native-overlay inputs; the

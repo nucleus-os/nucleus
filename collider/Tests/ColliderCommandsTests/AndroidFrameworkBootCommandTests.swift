@@ -405,3 +405,114 @@ func frameworkBootAcceptsTheFirstSystemServerStart() throws {
         frameworkLog: frameworkLog,
         diagnostics: directory)
 }
+
+@Test
+func frameworkBootAcceptsImagesBuiltFromTheCurrentInputs() {
+    let fixture = frameworkBootFreshnessFixture()
+
+    #expect(androidImageStalenessReason(
+        image: fixture.image,
+        source: fixture.source,
+        patchManifest: fixture.patchManifest,
+        patchDigests: ["patch-digest"],
+        sourceManifestCommit: "manifest-commit",
+        productLock: fixture.productLock,
+        productTreeSHA256: "product-tree") == nil)
+}
+
+@Test
+func frameworkBootRejectsImagesBuiltFromOlderSource() {
+    let fixture = frameworkBootFreshnessFixture()
+    let staleImage = AndroidImageProvenance(
+        status: fixture.image.status,
+        product: fixture.image.product,
+        release: fixture.image.release,
+        variant: fixture.image.variant,
+        buildNumber: fixture.image.buildNumber,
+        buildTimestamp: fixture.image.buildTimestamp,
+        platformSDK: fixture.image.platformSDK,
+        vendorAPILevel: fixture.image.vendorAPILevel,
+        sourceManifestCommit: fixture.image.sourceManifestCommit,
+        sourceBaseManifestSHA256: fixture.image.sourceBaseManifestSHA256,
+        sourceManifestSHA256: "older-source",
+        sourceForwardPatches: fixture.image.sourceForwardPatches,
+        productTreeSHA256: fixture.image.productTreeSHA256,
+        images: fixture.image.images)
+
+    #expect(androidImageStalenessReason(
+        image: staleImage,
+        source: fixture.source,
+        patchManifest: fixture.patchManifest,
+        patchDigests: ["patch-digest"],
+        sourceManifestCommit: "manifest-commit",
+        productLock: fixture.productLock,
+        productTreeSHA256: "product-tree")
+        == "published images do not match the current AOSP source")
+}
+
+@Test
+func frameworkBootRejectsStaleCanonicalPatchDigest() {
+    let fixture = frameworkBootFreshnessFixture()
+
+    #expect(androidImageStalenessReason(
+        image: fixture.image,
+        source: fixture.source,
+        patchManifest: fixture.patchManifest,
+        patchDigests: ["changed-patch"],
+        sourceManifestCommit: "manifest-commit",
+        productLock: fixture.productLock,
+        productTreeSHA256: "product-tree")
+        == "current AOSP source provenance contains a stale patch digest")
+}
+
+private func frameworkBootFreshnessFixture() -> (
+    image: AndroidImageProvenance,
+    source: AndroidSourceProvenance,
+    patchManifest: AndroidPatchManifest,
+    productLock: AndroidProductLock
+) {
+    let patch = AndroidForwardPatch(
+        path: "aosp/patches/platform-example/0001-example.patch",
+        sha256: "patch-digest")
+    let stack = AndroidForwardPatchStack(
+        repositoryPath: "platform/example",
+        baseCommit: "base",
+        patchedCommit: "patched",
+        patchedTree: "tree",
+        patches: [patch])
+    let source = AndroidSourceProvenance(
+        status: "materialized",
+        manifestCommit: "manifest-commit",
+        baseResolvedManifestSHA256: "base-manifest",
+        resolvedManifestSHA256: "resolved-manifest",
+        forwardPatches: [stack])
+    let productLock = AndroidProductLock(
+        product: "nucleus_x86_64",
+        release: "cp2a",
+        variant: "userdebug",
+        buildNumber: "nucleus-android17-r1",
+        buildTimestamp: 1_781_652_681,
+        platformSDK: 37,
+        vendorAPILevel: 202_604)
+    return (
+        AndroidImageProvenance(
+            status: "signed",
+            product: productLock.product,
+            release: productLock.release,
+            variant: productLock.variant,
+            buildNumber: productLock.buildNumber,
+            buildTimestamp: productLock.buildTimestamp,
+            platformSDK: productLock.platformSDK,
+            vendorAPILevel: productLock.vendorAPILevel,
+            sourceManifestCommit: source.manifestCommit,
+            sourceBaseManifestSHA256: source.baseResolvedManifestSHA256,
+            sourceManifestSHA256: source.resolvedManifestSHA256,
+            sourceForwardPatches: source.forwardPatches,
+            productTreeSHA256: "product-tree",
+            images: []),
+        source,
+        AndroidPatchManifest(repositories: [
+            .init(path: stack.repositoryPath, patches: [patch.path])
+        ]),
+        productLock)
+}

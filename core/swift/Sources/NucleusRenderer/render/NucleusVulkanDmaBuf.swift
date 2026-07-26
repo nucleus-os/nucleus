@@ -7,14 +7,15 @@ import Glibc
 #elseif canImport(Android)
 import Android
 #endif
+import NucleusDiagnostics
 public import VulkanC
 public import Vulkan
 
 private func logDmaBufImportFailure(_ descriptor: DmaBufImageDescriptor, _ stage: String) {
-    #if canImport(Glibc)
-    let line = "dmabuf-import: failed stage=\(stage) size=\(descriptor.width)x\(descriptor.height) format=\(descriptor.drmFormat) modifier=\(descriptor.modifier) planes=\(descriptor.planes.count)\n"
-    line.withCString { _ = unsafe write(STDERR_FILENO, $0, strlen($0)) }
-    #endif
+    NucleusLogger(subsystem: "dmabuf-import").error(
+        "failed stage=\(stage) size=\(descriptor.width)x\(descriptor.height) "
+            + "format=\(descriptor.drmFormat) modifier=\(descriptor.modifier) "
+            + "planes=\(descriptor.planes.count)")
 }
 
 public struct DmaBufPlane: Equatable, Sendable {

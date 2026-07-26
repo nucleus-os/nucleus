@@ -1,6 +1,11 @@
 import Foundation
 import Testing
 import NucleusSkiaGraphiteBridge
+#if canImport(Glibc)
+import Glibc
+#elseif canImport(Darwin)
+import Darwin
+#endif
 
 /// Bounded decode of encoded image files.
 ///
@@ -95,13 +100,29 @@ import NucleusSkiaGraphiteBridge
         return pixels
     }
 
+    private func withFileDescriptor<T>(
+        _ path: String,
+        _ body: (Int32) -> T
+    ) -> T {
+        let descriptor = unsafe open(path, O_RDONLY | O_CLOEXEC)
+        defer {
+            if descriptor >= 0 {
+                close(descriptor)
+            }
+        }
+        return body(descriptor)
+    }
+
     private func decode(_ fixture: Fixture, maxWidth: Int32, maxHeight: Int32)
         -> RasterFixtureImage
     {
-        unsafe RasterFixtureImage(nucleus.skia.decodeEncodedImageFile(
-            fixture.path,
-            maxWidth,
-            maxHeight).image)
+        withFileDescriptor(fixture.path) {
+            unsafe RasterFixtureImage(
+                nucleus.skia.decodeEncodedImageFileDescriptor(
+                    $0,
+                    maxWidth,
+                    maxHeight).image)
+        }
     }
 
     // MARK: - The encoder is trustworthy
@@ -263,8 +284,11 @@ import NucleusSkiaGraphiteBridge
     /// exists to notice if that ever stops being true.
     @Test func icoPreservesPerPixelAlpha() {
         let fixture = IcoFixture(alphas: [0, 64, 255, 128])
-        let image = unsafe RasterFixtureImage(
-            nucleus.skia.decodeEncodedImageFile(fixture.path, 2, 2).image)
+        let image = withFileDescriptor(fixture.path) {
+            unsafe RasterFixtureImage(
+                nucleus.skia.decodeEncodedImageFileDescriptor(
+                    $0, 2, 2).image)
+        }
         #expect(image.isValid)
         #expect(image.width == 2)
 
@@ -342,16 +366,15 @@ import NucleusSkiaGraphiteBridge
     // MARK: - Failure
 
     @Test func aMissingFileDecodesToNothing() {
-        let result = unsafe nucleus.skia.decodeEncodedImageFile(
-            "\(NSTemporaryDirectory())nucleus-absent-\(UInt32.random(in: 0...UInt32.max)).png",
-            32, 32)
+        let result = unsafe nucleus.skia.decodeEncodedImageFileDescriptor(
+            -1, 32, 32)
         let status = unsafe result.status
         #expect(status == .unreadableInput)
     }
 
     @Test func anEmptyPathDecodesToNothing() {
-        let status = unsafe nucleus.skia.decodeEncodedImageFile(
-            "", 32, 32).status
+        let status = unsafe nucleus.skia.decodeEncodedImageFileDescriptor(
+            -1, 32, 32).status
         #expect(status == .unreadableInput)
     }
 
@@ -361,10 +384,15 @@ import NucleusSkiaGraphiteBridge
         try? Data([0xDE, 0xAD, 0xBE, 0xEF]).write(to: URL(fileURLWithPath: path))
         defer { try? FileManager.default.removeItem(atPath: path) }
 
-        let unsupported = unsafe nucleus.skia.decodeEncodedImageFile(
-            path, 16, 16).status
-        let invalidDimensions = unsafe nucleus.skia.decodeEncodedImageFile(
-            path, 0, 0).status
+        let statuses = withFileDescriptor(path) { descriptor in
+            (
+                unsafe nucleus.skia.decodeEncodedImageFileDescriptor(
+                    descriptor, 16, 16).status,
+                unsafe nucleus.skia.decodeEncodedImageFileDescriptor(
+                    descriptor, 0, 0).status
+            )
+        }
+        let (unsupported, invalidDimensions) = statuses
         #expect(unsupported == .unsupportedFormat)
         #expect(invalidDimensions == .invalidDimensions)
     }

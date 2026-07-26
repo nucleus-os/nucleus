@@ -41,6 +41,7 @@ public struct AndroidContainerConfiguration: Hashable, Sendable {
     public let kernelLogDevice: String
     public let tombstones: String
     public let gfxstreamSocketDirectory: String
+    public let hostKernelConfigurationDirectory: String
     public let hostUIDStart: UInt32
     public let hostGIDStart: UInt32
     public let hostUIDCount: UInt32
@@ -55,6 +56,7 @@ public struct AndroidContainerConfiguration: Hashable, Sendable {
         kernelLogDevice: String,
         tombstones: String,
         gfxstreamSocketDirectory: String,
+        hostKernelConfigurationDirectory: String,
         hostUIDStart: UInt32,
         hostGIDStart: UInt32,
         hostUIDCount: UInt32,
@@ -68,6 +70,8 @@ public struct AndroidContainerConfiguration: Hashable, Sendable {
         self.kernelLogDevice = kernelLogDevice
         self.tombstones = tombstones
         self.gfxstreamSocketDirectory = gfxstreamSocketDirectory
+        self.hostKernelConfigurationDirectory =
+            hostKernelConfigurationDirectory
         self.hostUIDStart = hostUIDStart
         self.hostGIDStart = hostGIDStart
         self.hostUIDCount = hostUIDCount
@@ -138,6 +142,7 @@ public struct AndroidContainerConfiguration: Hashable, Sendable {
             "lxc.mount.entry = tmpfs data tmpfs rw,nosuid,nodev,mode=0771,create=dir 0 0",
             "lxc.mount.entry = \(tombstones) data/tombstones none bind,create=dir 0 0",
             "lxc.mount.entry = tmpfs metadata tmpfs rw,nosuid,nodev,noexec,mode=0755,create=dir 0 0",
+            "lxc.mount.entry = \(hostKernelConfigurationDirectory) metadata/nucleus none bind,ro,create=dir 0 0",
             "lxc.mount.entry = tmpfs mnt tmpfs rw,nosuid,nodev,noexec,mode=0755,create=dir 0 0",
             "lxc.mount.entry = tmpfs linkerconfig tmpfs rw,nosuid,nodev,noexec,mode=0755,create=dir 0 0",
             "lxc.mount.entry = tmpfs storage tmpfs rw,nosuid,nodev,noexec,mode=0755,create=dir 0 0",
@@ -165,6 +170,9 @@ public struct AndroidContainerConfiguration: Hashable, Sendable {
         try validateAbsolutePath(
             gfxstreamSocketDirectory,
             field: "gfxstreamSocketDirectory")
+        try validateAbsolutePath(
+            hostKernelConfigurationDirectory,
+            field: "hostKernelConfigurationDirectory")
         try validateAbsolutePath(
             mountHook.executable,
             field: "mountHook.executable")

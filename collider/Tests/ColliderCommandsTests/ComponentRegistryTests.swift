@@ -313,3 +313,56 @@ import WaylandColliderRecipe
             && command.executable != .named("bash")
     })
 }
+
+@Test func androidImageRecipeHasIndependentArtifactBoundaries() throws {
+    let workspace = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+    let tasks = try AndroidRuntimeColliderRecipe.aospImageTasks(
+        root: FilePath(workspace.appendingPathComponent(
+            "android-runtime").path),
+        environment: ["PATH": "/usr/bin"])
+    let pipelineIDs = tasks.map(\.id.rawValue).filter {
+        $0.hasPrefix("android-runtime.aosp-")
+    }
+    #expect(pipelineIDs.suffix(5) == [
+        "android-runtime.aosp-compile",
+        "android-runtime.aosp-sign",
+        "android-runtime.aosp-assemble-images",
+        "android-runtime.aosp-validate",
+        "android-runtime.aosp-image",
+    ])
+    let operations = Array(tasks.suffix(5)).map(\.operation)
+    #expect({
+        guard case .compileAOSPProduct = operations[0] else {
+            return false
+        }
+        return true
+    }())
+    #expect({
+        guard case .signAOSPProduct = operations[1] else {
+            return false
+        }
+        return true
+    }())
+    #expect({
+        guard case .assembleAOSPProductImages = operations[2] else {
+            return false
+        }
+        return true
+    }())
+    #expect({
+        guard case .validateAOSPProduct = operations[3] else {
+            return false
+        }
+        return true
+    }())
+    #expect({
+        guard case .publishAOSPProduct = operations[4] else {
+            return false
+        }
+        return true
+    }())
+}

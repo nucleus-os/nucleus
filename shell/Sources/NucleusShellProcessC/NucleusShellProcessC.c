@@ -36,6 +36,8 @@ int nucleus_shell_reap_nohang(pid_t pid, int32_t *exit_code) {
   if (result < 0) {
     return -errno;
   }
-  *exit_code = WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+  *exit_code = WIFEXITED(status)
+                   ? WEXITSTATUS(status)
+                   : WIFSIGNALED(status) ? 128 + WTERMSIG(status) : -1;
   return 1;
 }

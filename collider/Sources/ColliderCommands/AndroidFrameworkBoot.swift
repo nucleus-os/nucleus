@@ -212,6 +212,9 @@ struct AndroidFrameworkBootCommand {
         let provenance = try JSONDecoder().decode(
             AndroidImageProvenance.self,
             from: Data(contentsOf: layout.provenance))
+        try validateImageFreshness(
+            provenance,
+            layout: layout)
         let expected = Set([
             "system.img",
             "system_ext.img",
@@ -281,6 +284,53 @@ struct AndroidFrameworkBootCommand {
         return provenance
     }
 
+    private func validateImageFreshness(
+        _ image: AndroidImageProvenance,
+        layout: AndroidFrameworkBootLayout
+    ) throws {
+        let decoder = JSONDecoder()
+        let source = try decoder.decode(
+            AndroidSourceProvenance.self,
+            from: Data(contentsOf: layout.sourceProvenance))
+        let patchManifest = try decoder.decode(
+            AndroidPatchManifest.self,
+            from: Data(contentsOf: layout.patchManifest))
+        let sourceLock = try decoder.decode(
+            AndroidSourceLock.self,
+            from: Data(contentsOf: layout.sourceLock))
+        let productLock = try decoder.decode(
+            AndroidProductLock.self,
+            from: Data(contentsOf: layout.productLock))
+
+        var patchDigests: [String] = []
+        for repository in patchManifest.repositories {
+            for patch in repository.patches {
+                patchDigests.append(
+                    try ArtifactHasher.digest(
+                        file: FilePath(
+                            layout.androidRoot.appendingPathComponent(patch)
+                                .path)
+                    ).sha256Hex)
+            }
+        }
+        let productTreeSHA256 = try ArtifactHasher.digest(
+            tree: FilePath(layout.productSource.path)
+        ).sha256Hex
+        if let reason = androidImageStalenessReason(
+            image: image,
+            source: source,
+            patchManifest: patchManifest,
+            patchDigests: patchDigests,
+            sourceManifestCommit: sourceLock.platform.manifestCommit,
+            productLock: productLock,
+            productTreeSHA256: productTreeSHA256)
+        {
+            throw WorkspaceFailure.message(
+                "published Android image is stale: \(reason); "
+                    + "run 'collider android-runtime image'")
+        }
+    }
+
     private func validateHost(
         layout: AndroidFrameworkBootLayout
     ) async throws -> AndroidFrameworkBootHost {
@@ -313,6 +363,7 @@ struct AndroidFrameworkBootCommand {
             "apparmor_parser",
             "modprobe",
             "modinfo",
+            "uname",
             "journalctl",
         ] where resolveExecutable(tool, environment: context.environment) == nil {
             failures.append("missing host tool: \(tool)")
@@ -393,6 +444,25 @@ struct AndroidFrameworkBootCommand {
             }
         }
         let mappingOwner = "root"
+        let kernelRelease: String?
+        do {
+            kernelRelease = try await context.run(
+                "uname",
+                ["--kernel-release"],
+                capture: true
+            ).trimmingCharacters(in: .whitespacesAndNewlines)
+        } catch {
+            kernelRelease = nil
+            failures.append("could not determine the running kernel release")
+        }
+        let hostKernelConfiguration = kernelRelease.flatMap {
+            resolveHostKernelConfiguration(kernelRelease: $0)
+        }
+        if hostKernelConfiguration == nil {
+            failures.append(
+                "the running kernel configuration is unavailable; expected "
+                    + "/proc/config.gz or /boot/config-\(kernelRelease ?? "<release>")")
+        }
         let uidRange = subordinateRange(
             user: mappingOwner,
             contents: (try? String(
@@ -424,7 +494,8 @@ struct AndroidFrameworkBootCommand {
         }
         guard failures.isEmpty,
             let uidRange,
-            let gidRange
+            let gidRange,
+            let hostKernelConfiguration
         else {
             throw WorkspaceFailure.message(
                 "contained Android framework boot prerequisites failed:\n"
@@ -433,6 +504,7 @@ struct AndroidFrameworkBootCommand {
         return AndroidFrameworkBootHost(
             userID: getuid(),
             groupID: getgid(),
+            kernelConfiguration: hostKernelConfiguration,
             subordinateUID: uidRange.start,
             subordinateGID: gidRange.start,
             subordinateUIDCount: uidRange.count,
@@ -624,12 +696,26 @@ private actor AndroidFrameworkBootSession {
         for directory in [
             layout.rootFileSystem,
             layout.binder,
+            layout.hostKernelConfigurationDirectory,
             layout.containerTombstones,
         ] {
             try FileManager.default.createDirectory(
                 at: directory,
                 withIntermediateDirectories: true)
         }
+        let kernelConfiguration = try Data(
+            contentsOf: host.kernelConfiguration)
+        guard isValidHostKernelConfiguration(kernelConfiguration) else {
+            throw WorkspaceFailure.message(
+                "running kernel configuration is empty or malformed: "
+                    + host.kernelConfiguration.path)
+        }
+        try kernelConfiguration.write(
+            to: layout.hostKernelConfiguration,
+            options: .atomic)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o444],
+            ofItemAtPath: layout.hostKernelConfiguration.path)
         let mappedSystemUser = UInt64(host.subordinateUID) + 1_000
         let mappedSystemGroup = UInt64(host.subordinateGID) + 1_000
         try await context.run(
@@ -972,6 +1058,8 @@ private actor AndroidFrameworkBootSession {
             tombstones: layout.containerTombstones.path,
             gfxstreamSocketDirectory:
                 layout.gfxstreamBrokerDirectory.path,
+            hostKernelConfigurationDirectory:
+                layout.hostKernelConfigurationDirectory.path,
             hostUIDStart: host.subordinateUID,
             hostGIDStart: host.subordinateGID,
             hostUIDCount: host.subordinateUIDCount,
@@ -1436,247 +1524,8 @@ struct AndroidFrameworkMountLedger {
     }
 }
 
-struct AndroidFrameworkHealthMonitor {
-    private struct LogCursor {
-        var offset: UInt64 = 0
-        var pending = Data()
-    }
-
-    private var cursors: [String: LogCursor] = [:]
-    private var surfaceFlingerCrashCount = 0
-    private var zygoteCrashCount = 0
-    private var zygoteCrashProcessIDs: Set<Int32> = []
-    private var systemServerCrashCount = 0
-    private var systemServerCrashProcessIDs: Set<Int32> = []
-
-    mutating func check(
-        kernelLog: URL,
-        frameworkLog: URL,
-        diagnostics: URL
-    ) throws {
-        let kernel = try readNewLines(from: kernelLog)
-        if kernel.wasTruncated {
-            surfaceFlingerCrashCount = 0
-            zygoteCrashCount = 0
-            zygoteCrashProcessIDs.removeAll(keepingCapacity: true)
-        }
-        for line in kernel.lines {
-            try inspectKernelLine(line, diagnostics: diagnostics)
-        }
-
-        let framework = try readNewLines(from: frameworkLog)
-        if framework.wasTruncated {
-            systemServerCrashCount = 0
-            systemServerCrashProcessIDs.removeAll(keepingCapacity: true)
-        }
-        for line in framework.lines {
-            try inspectFrameworkLine(line, diagnostics: diagnostics)
-        }
-    }
-
-    private mutating func readNewLines(
-        from log: URL
-    ) throws -> (lines: [String], wasTruncated: Bool) {
-        guard
-            let attributes = try? FileManager.default.attributesOfItem(
-                atPath: log.path),
-            let size = (attributes[.size] as? NSNumber)?.uint64Value
-        else {
-            return ([], false)
-        }
-        var cursor = cursors[log.path] ?? LogCursor()
-        let wasTruncated = size < cursor.offset
-        if wasTruncated {
-            cursor.offset = 0
-            cursor.pending.removeAll(keepingCapacity: true)
-        }
-        guard size > cursor.offset else {
-            cursors[log.path] = cursor
-            return ([], wasTruncated)
-        }
-
-        let handle = try FileHandle(forReadingFrom: log)
-        defer { try? handle.close() }
-        try handle.seek(toOffset: cursor.offset)
-        guard let data = try handle.readToEnd(), !data.isEmpty else {
-            cursors[log.path] = cursor
-            return ([], wasTruncated)
-        }
-        cursor.offset += UInt64(data.count)
-        cursor.pending.append(data)
-
-        var lines: [String] = []
-        while let newline = cursor.pending.firstIndex(of: 0x0A) {
-            let line = String(
-                decoding: cursor.pending[..<newline],
-                as: UTF8.self)
-            cursor.pending.removeSubrange(...newline)
-            lines.append(line)
-        }
-        cursors[log.path] = cursor
-        return (lines, wasTruncated)
-    }
-
-    private mutating func inspectKernelLine(
-        _ line: String,
-        diagnostics: URL
-    ) throws {
-        if line.contains("init: Service 'zygote'"),
-            line.contains("received SIGKILL")
-        {
-            if let processID = initServiceProcessID(line),
-                !zygoteCrashProcessIDs.insert(processID).inserted
-            {
-                return
-            }
-            zygoteCrashCount += 1
-            if zygoteCrashCount >= 2 {
-                throw failure(
-                    "Android zygote was killed \(zygoteCrashCount) times "
-                        + "before framework boot",
-                    diagnostics: diagnostics)
-            }
-            return
-        }
-        if line.contains(
-            "process with updatable components 'surfaceflinger' exited "
-                + "4 times before boot completed")
-        {
-            throw failure(
-                "Android init declared SurfaceFlinger critically crashing",
-                diagnostics: diagnostics)
-        }
-        guard line.contains("init: Service 'surfaceflinger'"),
-            line.contains("received SIGABRT")
-                || line.contains("received SIGSEGV")
-        else {
-            return
-        }
-        surfaceFlingerCrashCount += 1
-        if surfaceFlingerCrashCount >= 2 {
-            throw failure(
-                "SurfaceFlinger crashed \(surfaceFlingerCrashCount) times "
-                    + "before framework boot",
-                diagnostics: diagnostics)
-        }
-    }
-
-    private func initServiceProcessID(_ line: String) -> Int32? {
-        guard
-            let marker = line.range(of: "(pid "),
-            let end = line[marker.upperBound...].firstIndex(of: ")")
-        else {
-            return nil
-        }
-        return Int32(line[marker.upperBound..<end])
-    }
-
-    private mutating func inspectFrameworkLine(
-        _ line: String,
-        diagnostics: URL
-    ) throws {
-        if line.contains("Zygote.nativeSpecializeAppProcess")
-            || line.contains("Zygote.specializeAppProcess")
-        {
-            throw failure(
-                "Android zygote specialization failed before framework boot",
-                diagnostics: diagnostics)
-        }
-        if line.contains("Transaction failed on small parcel") {
-            throw failure(
-                "Android Binder reported a failed small-parcel transaction",
-                diagnostics: diagnostics)
-        }
-        if line.contains("Failed to create app data for") {
-            throw failure(
-                "Android PackageManager reported an installd app-data failure",
-                diagnostics: diagnostics)
-        }
-        if line.contains("Cannot connect to Keystore daemon")
-            || line.contains(
-                "Could not create keystore key: Failed to initialize "
-                    + "keystore key")
-        {
-            throw failure(
-                "Android Keystore became unavailable before framework boot",
-                diagnostics: diagnostics)
-        }
-        if let startCount = systemServerStartCount(line), startCount >= 2 {
-            throw failure(
-                "Android framework restarted system_server "
-                    + "\(startCount) times before framework boot",
-                diagnostics: diagnostics)
-        }
-
-        let processID: Int32?
-        if line.contains(
-            "AndroidRuntime: *** FATAL EXCEPTION IN SYSTEM PROCESS:")
-        {
-            processID = logcatProcessID(line)
-        } else if line.contains("Fatal signal"),
-            line.contains("(system_server)")
-        {
-            processID = nativeCrashProcessID(line)
-        } else {
-            return
-        }
-        if let processID,
-            !systemServerCrashProcessIDs.insert(processID).inserted
-        {
-            return
-        }
-        systemServerCrashCount += 1
-        if systemServerCrashCount >= 2 {
-            throw failure(
-                "system_server crashed \(systemServerCrashCount) times "
-                    + "before framework boot",
-                diagnostics: diagnostics)
-        }
-    }
-
-    private func systemServerStartCount(_ line: String) -> Int? {
-        let marker = "system_server_start: [start_count="
-        guard
-            let start = line.range(of: marker)?.upperBound,
-            let end = line[start...].firstIndex(of: ",")
-        else {
-            return nil
-        }
-        return Int(line[start..<end])
-    }
-
-    private func logcatProcessID(_ line: String) -> Int32? {
-        let fields = line.split(whereSeparator: \.isWhitespace)
-        guard
-            let tag = fields.firstIndex(of: "AndroidRuntime:"),
-            tag >= 3
-        else {
-            return nil
-        }
-        return Int32(fields[tag - 3])
-    }
-
-    private func nativeCrashProcessID(_ line: String) -> Int32? {
-        let fields = line.split(whereSeparator: \.isWhitespace)
-        guard
-            let pid = fields.lastIndex(of: "pid"),
-            fields.indices.contains(pid + 2),
-            fields[pid + 2] == "(system_server)"
-        else {
-            return nil
-        }
-        return Int32(fields[pid + 1])
-    }
-
-    private func failure(
-        _ reason: String,
-        diagnostics: URL
-    ) -> WorkspaceFailure {
-        .message("\(reason); diagnostics: \(diagnostics.path)")
-    }
-}
-
 private struct AndroidFrameworkBootLayout {
+    let androidRoot: URL
     let name: String
     let runtime: URL
     let instance: URL
@@ -1687,6 +1536,8 @@ private struct AndroidFrameworkBootLayout {
     let bpfHookExecutable: URL
     let gfxstreamBrokerDirectory: URL
     let gfxstreamBrokerSocket: URL
+    let hostKernelConfigurationDirectory: URL
+    let hostKernelConfiguration: URL
     let gfxstreamBrokerExecutable: URL
     let displayHostSocket: URL
     let displayHostExecutable: URL
@@ -1704,6 +1555,11 @@ private struct AndroidFrameworkBootLayout {
     let diagnosticTombstones: URL
     let images: URL
     let provenance: URL
+    let sourceProvenance: URL
+    let patchManifest: URL
+    let sourceLock: URL
+    let productLock: URL
+    let productSource: URL
     let signingIdentity: URL
     let hostTools: URL
     let appArmorProfile: URL
@@ -1733,6 +1589,11 @@ private struct AndroidFrameworkBootLayout {
             isDirectory: true)
         gfxstreamBrokerSocket = gfxstreamBrokerDirectory
             .appendingPathComponent("gfxstream.sock")
+        hostKernelConfigurationDirectory = instance.appendingPathComponent(
+            "kernel-configuration",
+            isDirectory: true)
+        hostKernelConfiguration = hostKernelConfigurationDirectory
+            .appendingPathComponent("host-kernel.config")
         displayHostSocket = gfxstreamBrokerDirectory
             .appendingPathComponent("composer.sock")
         swiftRuntime = instance.appendingPathComponent(
@@ -1770,6 +1631,7 @@ private struct AndroidFrameworkBootLayout {
         let android = context.root.appendingPathComponent(
             "android-runtime",
             isDirectory: true)
+        androidRoot = android
         gfxstreamBrokerExecutable = android.appendingPathComponent(
             ".build/debug/nucleus-android-gfxstream-broker")
         displayHostExecutable = android.appendingPathComponent(
@@ -1779,6 +1641,15 @@ private struct AndroidFrameworkBootLayout {
             isDirectory: true)
         provenance = android.appendingPathComponent(
             ".aosp-build/signed/image-provenance.json")
+        sourceProvenance = android.appendingPathComponent(
+            ".aosp-source/.nucleus/source-provenance.json")
+        patchManifest = android.appendingPathComponent("aosp/patches.json")
+        sourceLock = android.appendingPathComponent("aosp.lock.json")
+        productLock = android.appendingPathComponent(
+            "aosp-product.lock.json")
+        productSource = android.appendingPathComponent(
+            "aosp/device/nucleus/nucleus_x86_64",
+            isDirectory: true)
         signingIdentity = android.appendingPathComponent(
             ".aosp-signing/local-development",
             isDirectory: true)
@@ -1832,10 +1703,55 @@ func currentSwiftRuntime() throws -> SwiftRuntime {
 private struct AndroidFrameworkBootHost {
     let userID: uid_t
     let groupID: gid_t
+    let kernelConfiguration: URL
     let subordinateUID: UInt32
     let subordinateGID: UInt32
     let subordinateUIDCount: UInt32
     let subordinateGIDCount: UInt32
+}
+
+private func resolveHostKernelConfiguration(
+    kernelRelease: String
+) -> URL? {
+    guard !kernelRelease.isEmpty,
+        !kernelRelease.contains("/"),
+        !kernelRelease.contains("\0")
+    else {
+        return nil
+    }
+    for path in [
+        "/proc/config.gz",
+        "/boot/config-\(kernelRelease)",
+    ] {
+        let url = URL(fileURLWithPath: path)
+        let values = try? url.resourceValues(forKeys: [.isRegularFileKey])
+        guard values?.isRegularFile == true,
+            FileManager.default.isReadableFile(atPath: path),
+            let data = try? Data(contentsOf: url),
+            isValidHostKernelConfiguration(data)
+        else {
+            continue
+        }
+        return url
+    }
+    return nil
+}
+
+private func isValidHostKernelConfiguration(_ data: Data) -> Bool {
+    guard !data.isEmpty else {
+        return false
+    }
+    if data.count >= 2, data[data.startIndex] == 0x1f,
+        data[data.index(after: data.startIndex)] == 0x8b
+    {
+        return true
+    }
+    guard let contents = String(data: data, encoding: .utf8) else {
+        return false
+    }
+    return contents.split(whereSeparator: \.isNewline).contains {
+        $0.hasPrefix("CONFIG_") || $0.hasPrefix("# CONFIG_")
+    }
 }
 
 struct AndroidLXCStartInvocation: Equatable {
@@ -1895,24 +1811,6 @@ struct AndroidLogcatInvocation: Equatable {
             "\(sinceEpochSecond).000",
         ]
     }
-}
-
-private struct AndroidImageProvenance: Decodable {
-    struct Image: Decodable {
-        let name: String
-        let size: UInt64
-        let storageFormat: String
-        let sha256: String
-    }
-
-    struct ForwardPatch: Decodable {
-        let repositoryPath: String
-    }
-
-    let status: String
-    let product: String
-    let sourceForwardPatches: [ForwardPatch]
-    let images: [Image]
 }
 
 private struct AndroidFrameworkApex {

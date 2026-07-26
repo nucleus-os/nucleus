@@ -213,6 +213,47 @@ import NucleusRenderModel
         #expect(decoded.height == 5)
     }
 
+    @Test func supersedingPendingGenerationSignalsItsCancellation()
+        throws
+    {
+        let gate = DecodeGate()
+        let wakeSink = TestWakeSink()
+        let queue = ImageDecodeQueue(
+            wakeSink: wakeSink,
+            decodeOperation: { source in
+                gate.entered.signal()
+                gate.release.wait()
+                return ImageDecodeQueue.decode(source)
+            })
+        defer {
+            gate.release.signal()
+            gate.release.signal()
+            queue.shutdown()
+        }
+        let blocker = Fixture()
+        let old = Fixture()
+        let new = Fixture()
+        #expect(queue.submit(
+            handle: 41,
+            generation: 1,
+            source: source(blocker)))
+        #expect(gate.entered.wait(timeout: .now() + 2) == .success)
+        #expect(queue.submit(
+            handle: 42,
+            generation: 1,
+            source: source(old)))
+        #expect(queue.submit(
+            handle: 42,
+            generation: 2,
+            source: source(new)))
+
+        let completion = try #require(queue.drain().first)
+        #expect(completion.handle == 42)
+        #expect(completion.generation == 1)
+        #expect(failure(completion.result) == .cancellation)
+        #expect(wakeSink.signalCount == 1)
+    }
+
     @Test func zeroBoundsAreInvalidRatherThanDeferred() {
         let fixture = Fixture()
         #expect(failure(
@@ -314,6 +355,40 @@ import NucleusRenderModel
                     height: 1,
                     order: .rgba,
                     pixels: [0, 0, 0, 0])))))
+    }
+
+    @Test func shutdownReturnsTerminalCancellationForEveryOutstandingJob()
+        throws
+    {
+        let gate = DecodeGate()
+        let queue = ImageDecodeQueue(
+            wakeSink: TestWakeSink(),
+            decodeOperation: { source in
+                gate.entered.signal()
+                gate.release.wait()
+                return ImageDecodeQueue.decode(source)
+            })
+        let running = Fixture()
+        let pending = Fixture()
+        #expect(queue.submit(
+            handle: 51,
+            generation: 1,
+            source: source(running)))
+        #expect(gate.entered.wait(timeout: .now() + 2) == .success)
+        #expect(queue.submit(
+            handle: 52,
+            generation: 1,
+            source: source(pending)))
+        DispatchQueue.global().async {
+            usleep(10_000)
+            gate.release.signal()
+        }
+
+        let completions = queue.shutdown()
+        #expect(Set(completions.map(\.handle)) == [51, 52])
+        #expect(completions.allSatisfy {
+            failure($0.result) == .cancellation
+        })
     }
 }
 

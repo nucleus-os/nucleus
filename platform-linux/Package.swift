@@ -131,6 +131,7 @@ let package = Package(
             name: "NucleusSessionSupervisor",
             dependencies: [
                 "NucleusLinuxSessionC",
+                .product(name: "NucleusDiagnostics", package: "Nucleus"),
                 .product(name: "NucleusSessionProtocol", package: "engine"),
             ],
             path: "Sources/NucleusSessionSupervisor"),

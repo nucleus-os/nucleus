@@ -45,10 +45,7 @@ final class RouterSurfaceSceneDriver {
     }
 
     private func diagnostic(_ message: String) {
-        let line = "surface-scene: \(message)\n"
-        line.withCString {
-            _ = unsafe write(STDERR_FILENO, $0, strlen($0))
-        }
+        NucleusLogger(subsystem: "surface-scene").warning(message)
     }
 
     /// Resolve a surface's model window via the O(1) surface-object-id index (never the
@@ -537,3 +534,4 @@ final class RouterSurfaceSceneDriver {
         }
     }
 }
+import NucleusDiagnostics

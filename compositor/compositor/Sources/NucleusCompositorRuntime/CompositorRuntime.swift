@@ -827,10 +827,7 @@ final class CompositorRuntime {
 }
 
 func logRuntime(_ message: String) {
-    let bytes = Array(("compositor-runtime: " + message + "\n").utf8)
-    _ = bytes.withUnsafeBytes {
-        unsafe write(2, $0.baseAddress, $0.count)
-    }
+    NucleusLogger(subsystem: "compositor-runtime").info(message)
 }
 
 // The composition root's conformer to the inverted session-control seam. The input
@@ -838,3 +835,4 @@ func logRuntime(_ message: String) {
 // the server's `sessionControl`, installed at bring-up.
 extension CompositorRuntime: CompositorSessionControl {
 }
+import NucleusDiagnostics

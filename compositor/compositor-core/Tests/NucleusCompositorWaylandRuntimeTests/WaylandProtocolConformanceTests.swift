@@ -886,6 +886,9 @@ private final class SuccessfulScreencopyStub: ScreencopyDelegate {
     }
     #expect(client.send(capture))
     client.pump()
+    #expect(manager.isCapturing(outputID: outputID))
+    #expect(!manager.isCapturing(outputID: outputID + 1))
+    #expect(!ScreencopyManager().isCapturing(outputID: outputID))
 
     let beforeSubmission = client.drainEvents()
     #expect(
@@ -914,6 +917,12 @@ private final class SuccessfulScreencopyStub: ScreencopyDelegate {
     client.pump()
     #expect(client.drainEvents().isEmpty)
 
+    var destroyCompletedFrame = WireBuilder()
+    destroyCompletedFrame.message(object: frameID, opcode: 1) { _ in }
+    #expect(client.send(destroyCompletedFrame))
+    client.pump()
+    #expect(!manager.isCapturing(outputID: outputID))
+
     // Destroying a frame after its GPU capture begins must cancel that exact
     // request and discard its completion before the retained wl_buffer dies.
     let cancelledFrameID: UInt32 = 9
@@ -937,6 +946,7 @@ private final class SuccessfulScreencopyStub: ScreencopyDelegate {
     destroyFrame.message(object: cancelledFrameID, opcode: 1) { _ in }
     #expect(client.send(destroyFrame))
     client.pump()
+    #expect(!manager.isCapturing(outputID: outputID))
     #expect(stub.cancelledRequestIDs == [88])
     #expect(stub.pendingCompletion == nil)
     stub.repeatLastCompletion()

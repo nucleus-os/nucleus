@@ -19,10 +19,10 @@
 internal import NucleusCompositorServer
 import NucleusCompositorServerTypes
 internal import NucleusCompositorWindowManager
+import NucleusDiagnostics
 
 private func xwmLog(_ s: String) {
-    let line = "[xwm] \(s)\n"
-    _ = line.withCString { ptr in unsafe write(2, ptr, strlen(ptr)) }
+    NucleusLogger(subsystem: "xwm").info(s)
 }
 
 @MainActor

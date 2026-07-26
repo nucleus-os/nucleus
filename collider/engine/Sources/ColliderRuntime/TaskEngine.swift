@@ -482,12 +482,8 @@ extension ColliderRuntime {
                     encoder.append(tag: 193, string: patch.file.string)
                 }
             }
-            encoder.append(
-                tag: 186,
-                integer: UInt64(preparation.syncJobs))
-            encoder.append(
-                tag: 186,
-                integer: UInt64(preparation.retryFetches))
+            // Sync concurrency and retry limits affect execution only, not the
+            // materialized source identity.
             for executable in [
                 CommandSpec.Executable.named("git"),
                 CommandSpec.Executable.named("python3"),
@@ -518,7 +514,27 @@ extension ColliderRuntime {
                 encoder.append(tag: 195, string: name)
                 encoder.append(tag: 196, string: value)
             }
-        case .buildAOSPProduct(let build):
+        case .compileAOSPProduct(let build),
+             .signAOSPProduct(let build),
+             .assembleAOSPProductImages(let build),
+             .validateAOSPProduct(let build),
+             .publishAOSPProduct(let build):
+            let pipelineStage: String
+            switch operation {
+            case .compileAOSPProduct:
+                pipelineStage = "compile"
+            case .signAOSPProduct:
+                pipelineStage = "sign"
+            case .assembleAOSPProductImages:
+                pipelineStage = "assemble-images"
+            case .validateAOSPProduct:
+                pipelineStage = "validate"
+            case .publishAOSPProduct:
+                pipelineStage = "publish"
+            default:
+                preconditionFailure("unreachable AOSP product operation")
+            }
+            encoder.append(tag: 196, string: pipelineStage)
             for path in [
                 build.productSource,
                 build.source,
@@ -537,22 +553,13 @@ extension ColliderRuntime {
             ] {
                 encoder.append(tag: 198, string: value)
             }
+            // Build concurrency affects scheduling, not product contents.
             for value in [
                 build.buildTimestamp,
-                UInt64(build.buildJobs),
                 UInt64(build.expectedPlatformSDK),
                 UInt64(build.expectedVendorAPILevel),
             ] {
                 encoder.append(tag: 199, integer: value)
-            }
-            for executable in [
-                CommandSpec.Executable.named("unzip"),
-            ] {
-                let tool = try resolvedToolIdentity(
-                    executable,
-                    environment: build.environment)
-                encoder.append(tag: 200, string: tool.path.string)
-                encoder.append(tag: 201, bytes: tool.digest.bytes)
             }
             for (name, value) in artifactEnvironment(build.environment) {
                 encoder.append(tag: 202, string: name)
@@ -1004,8 +1011,16 @@ extension ColliderRuntime {
             try await prepareAOSPSigningIdentity(
                 preparation,
                 stage: stage)
-        case .buildAOSPProduct(let build):
-            try await buildAOSPProduct(build, stage: stage)
+        case .compileAOSPProduct(let build):
+            try await compileAOSPProduct(build, stage: stage)
+        case .signAOSPProduct(let build):
+            try await signAOSPProduct(build, stage: stage)
+        case .assembleAOSPProductImages(let build):
+            try await assembleAOSPProductImages(build, stage: stage)
+        case .validateAOSPProduct(let build):
+            try await validateAOSPProduct(build, stage: stage)
+        case .publishAOSPProduct(let build):
+            try await publishAOSPProduct(build, stage: stage)
         case .prepareChromiumSource(let preparation):
             try await prepareChromiumSource(preparation, stage: stage)
         case .buildChromiumProduct(let build):
@@ -1211,7 +1226,11 @@ private func operationEnvironment(_ operation: TaskOperation) -> [String: String
         preparation.environment
     case .prepareAOSPSigningIdentity(let preparation):
         preparation.environment
-    case .buildAOSPProduct(let build):
+    case .compileAOSPProduct(let build),
+         .signAOSPProduct(let build),
+         .assembleAOSPProductImages(let build),
+         .validateAOSPProduct(let build),
+         .publishAOSPProduct(let build):
         build.environment
     case .prepareChromiumSource(let preparation):
         preparation.environment

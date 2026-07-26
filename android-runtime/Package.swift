@@ -8,11 +8,23 @@ func pkgConfig(_ arguments: [String]) -> [String] {
     process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
     process.arguments = ["pkg-config"] + arguments
     let output = Pipe()
+    let errors = Pipe()
     process.standardOutput = output
-    process.standardError = Pipe()
-    do { try process.run() } catch { return [] }
+    process.standardError = errors
+    do {
+        try process.run()
+    } catch {
+        fatalError("could not launch pkg-config: \(error)")
+    }
     process.waitUntilExit()
-    guard process.terminationStatus == 0 else { return [] }
+    let errorOutput = String(
+        decoding: errors.fileHandleForReading.readDataToEndOfFile(),
+        as: UTF8.self)
+    guard process.terminationStatus == 0 else {
+        fatalError(
+            "pkg-config \(arguments.joined(separator: " ")) failed: "
+                + errorOutput.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
     return String(decoding: output.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
         .split(whereSeparator: { $0 == " " || $0 == "\n" || $0 == "\t" })
         .map(String.init)

@@ -1,4 +1,5 @@
 import Glibc
+import NucleusDiagnostics
 public import NucleusCompositorOverlay
 public import NucleusCompositorOverlayTypes
 public import NucleusCompositorServer
@@ -214,8 +215,5 @@ private extension ShellOverlayEvent {
 }
 
 private func logShellOverlayRuntime(_ message: String) {
-    let line = "shell-overlay-runtime: \(message)\n"
-    line.withCString { pointer in
-        _ = unsafe write(STDERR_FILENO, pointer, strlen(pointer))
-    }
+    NucleusLogger(subsystem: "shell-overlay-runtime").error(message)
 }

@@ -292,7 +292,6 @@ struct WorkspaceDoctor {
     }
 
     private func nativeSDKRoot() -> URL {
-        context.cacheRoot.appendingPathComponent(
-            "nucleus/nucleus-native-sdk", isDirectory: true)
+        context.nativeSDKRoot
     }
 }

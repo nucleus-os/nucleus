@@ -20,10 +20,13 @@ let repoRoot = URL(fileURLWithPath: #filePath).deletingLastPathComponent().path
 
 // ── The Nucleus native SDKs (render + RN) ──────────────────────────────────────
 let environment = ProcessInfo.processInfo.environment
-let cacheRoot = environment["XDG_CACHE_HOME"]
-    ?? (environment["HOME"].map { $0 + "/.cache" } ?? "/tmp")
-let nativeSDKRoot = environment["NUCLEUS_NATIVE_SDK_ROOT"]
-    ?? cacheRoot + "/nucleus/nucleus-native-sdk"
+guard let nativeSDKRoot = environment["NUCLEUS_NATIVE_SDK_ROOT"],
+      !nativeSDKRoot.isEmpty
+else {
+    fatalError(
+        "NUCLEUS_NATIVE_SDK_ROOT is required; run through collider or "
+            + "source tools/host-env.sh")
+}
 // The render SDK — Skia Graphite archives + headers and the Skia text-backend source.
 // Owned by the nucleus core repo; here its link targets point INTO the nucleus
 // monorepo core (repoRoot + "/../core/…").
@@ -81,12 +84,25 @@ func pkgConfig(_ args: [String]) -> [String] {
     let p = Process()
     p.executableURL = URL(fileURLWithPath: "/usr/bin/env")
     p.arguments = ["pkg-config"] + args
-    let pipe = Pipe()
-    p.standardOutput = pipe
-    p.standardError = Pipe()
-    do { try p.run() } catch { return [] }
+    let output = Pipe()
+    let errors = Pipe()
+    p.standardOutput = output
+    p.standardError = errors
+    do {
+        try p.run()
+    } catch {
+        fatalError("could not launch pkg-config: \(error)")
+    }
     p.waitUntilExit()
-    let out = pipe.fileHandleForReading.readDataToEndOfFile()
+    let out = output.fileHandleForReading.readDataToEndOfFile()
+    let errorOutput = String(
+        decoding: errors.fileHandleForReading.readDataToEndOfFile(),
+        as: UTF8.self)
+    guard p.terminationStatus == 0 else {
+        fatalError(
+            "pkg-config \(args.joined(separator: " ")) failed: "
+                + errorOutput.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
     return String(decoding: out, as: UTF8.self)
         .split(whereSeparator: { $0 == " " || $0 == "\n" || $0 == "\t" })
         .map(String.init)

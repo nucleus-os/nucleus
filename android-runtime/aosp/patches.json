@@ -57,6 +57,12 @@
       ]
     },
     {
+      "path": "system/libvintf",
+      "patches": [
+        "aosp/patches/platform-system-libvintf/0001-read-nucleus-host-kernel-configuration.patch"
+      ]
+    },
+    {
       "path": "frameworks/native",
       "patches": [
         "aosp/patches/platform-frameworks-native/0001-servicemanager-support-nucleus-container.patch"

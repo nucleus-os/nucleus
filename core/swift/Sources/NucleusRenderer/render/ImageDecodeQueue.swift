@@ -94,22 +94,23 @@ package final class ImageDecodeQueue {
             source: ImageSource
         ) -> Bool {
             let key = JobKey(handle: handle, generation: generation)
-            return synchronization.withLock {
+            let (accepted, shouldWake) = synchronization.withLock {
                 guard running, handle != 0, generation != 0,
                       !submittedJobs.contains(key)
-                else { return false }
+                else { return (false, false) }
 
                 // A newer generation supersedes only non-started work. Running
                 // work completes normally and is rejected as stale by its owner.
+                var shouldWake = false
                 if pendingHead < pending.count {
                     var retained = Array(pending[pendingHead...])
                     for request in retained
                     where request.key.handle == handle
                         && request.key != key
                     {
-                        appendCompletion(
+                        shouldWake = appendCompletion(
                             key: request.key,
-                            result: .failure(.cancellation))
+                            result: .failure(.cancellation)) || shouldWake
                     }
                     retained.removeAll {
                         $0.key.handle == handle && $0.key != key
@@ -124,8 +125,12 @@ package final class ImageDecodeQueue {
                 submittedJobs.insert(key)
                 pending.append(Request(key: key, source: source))
                 synchronization.signal()
-                return true
+                return (true, shouldWake)
             }
+            if shouldWake {
+                signalCompletion()
+            }
+            return accepted
         }
 
         func drain(maxCount: Int) -> [ImageDecodeCompletion] {
@@ -145,13 +150,13 @@ package final class ImageDecodeQueue {
 
         func cancel(handle: UInt64) {
             let shouldWake = synchronization.withLock {
-                let wasEmpty = completed.isEmpty
+                var shouldWake = false
                 if pendingHead < pending.count {
                     var retained = Array(pending[pendingHead...])
                     for request in retained where request.key.handle == handle {
-                        appendCompletion(
+                        shouldWake = appendCompletion(
                             key: request.key,
-                            result: .failure(.cancellation))
+                            result: .failure(.cancellation)) || shouldWake
                     }
                     retained.removeAll { $0.key.handle == handle }
                     pending = retained
@@ -163,7 +168,7 @@ package final class ImageDecodeQueue {
                 for key in runningJobs where key.handle == handle {
                     cancelledJobs.insert(key)
                 }
-                return wasEmpty && !completed.isEmpty
+                return shouldWake
             }
             if shouldWake {
                 signalCompletion()
@@ -174,8 +179,16 @@ package final class ImageDecodeQueue {
             synchronization.withLock {
                 guard running else { return false }
                 running = false
+                if pendingHead < pending.count {
+                    for request in pending[pendingHead...] {
+                        _ = appendCompletion(
+                            key: request.key,
+                            result: .failure(.cancellation))
+                    }
+                }
                 pending.removeAll()
                 pendingHead = 0
+                cancelledJobs.formUnion(runningJobs)
                 synchronization.broadcast()
                 return true
             }
@@ -217,9 +230,9 @@ package final class ImageDecodeQueue {
                     } else {
                         terminal = decoded
                     }
-                    let wasEmpty = completed.isEmpty
-                    appendCompletion(key: request.key, result: terminal)
-                    return running && wasEmpty
+                    return appendCompletion(
+                        key: request.key,
+                        result: terminal) && running
                 }
                 if shouldWake {
                     signalCompletion()
@@ -230,11 +243,13 @@ package final class ImageDecodeQueue {
         private func appendCompletion(
             key: JobKey,
             result: Result<DecodedImage, ImageDecodeFailure>
-        ) {
+        ) -> Bool {
+            let wasEmpty = completed.isEmpty
             completed.append(ImageDecodeCompletion(
                 handle: key.handle,
                 generation: key.generation,
                 result: result))
+            return wasEmpty
         }
 
         private func signalCompletion() {
@@ -324,13 +339,18 @@ package final class ImageDecodeQueue {
         state?.cancel(handle: handle)
     }
 
-    package func shutdown() {
-        guard let state, state.stop() else { return }
+    /// Stop accepting work and return terminal cancellations for every
+    /// outstanding job after workers have exited.
+    @discardableResult
+    package func shutdown() -> [ImageDecodeCompletion] {
+        guard let state, state.stop() else { return [] }
         for thread in workers {
             pthread_join(thread, nil)
         }
         workers.removeAll()
+        let terminalCompletions = state.drain(maxCount: .max)
         self.state = nil
+        return terminalCompletions
     }
 
     package static func probeMetadata(
@@ -351,11 +371,15 @@ package final class ImageDecodeQueue {
                 height: dimensions.height,
                 isVector: false))
         case .file(let path):
-            guard encodedFileSize(path) != nil else {
-                return .failure(.unreadableInput)
+            switch openEncodedFile(path) {
+            case .failure(let failure):
+                return .failure(failure)
+            case .success(let fileDescriptor):
+                defer { close(fileDescriptor) }
+                return mapMetadata(
+                    nucleus.skia.probeEncodedImageFileDescriptor(
+                        fileDescriptor))
             }
-            return unsafe mapMetadata(
-                nucleus.skia.probeEncodedImageFile(path))
         case .encoded(let bytes):
             guard !bytes.isEmpty else {
                 return .failure(.unreadableInput)
@@ -376,19 +400,20 @@ package final class ImageDecodeQueue {
     ) -> Result<DecodedImage, ImageDecodeFailure> {
         switch source.content {
         case .file(let path):
-            guard let size = encodedFileSize(path) else {
-                return .failure(.unreadableInput)
-            }
-            guard size <= Limits.maximumEncodedBytes else {
-                return .failure(.limitExceeded)
-            }
             guard let bounds = validatedTargetBounds(source) else {
                 return .failure(targetFailure(source))
             }
-            return unsafe mapDecode(nucleus.skia.decodeEncodedImageFile(
-                path,
-                bounds.width,
-                bounds.height))
+            switch openEncodedFile(path) {
+            case .failure(let failure):
+                return .failure(failure)
+            case .success(let fileDescriptor):
+                defer { close(fileDescriptor) }
+                return unsafe mapDecode(
+                    nucleus.skia.decodeEncodedImageFileDescriptor(
+                        fileDescriptor,
+                        bounds.width,
+                        bounds.height))
+            }
         case .encoded(let bytes):
             guard !bytes.isEmpty else {
                 return .failure(.unreadableInput)
@@ -476,15 +501,27 @@ package final class ImageDecodeQueue {
         return (Int32(width), Int32(height))
     }
 
-    private static func encodedFileSize(_ path: String) -> Int? {
-        guard !path.isEmpty,
-              let file = unsafe fopen(path, "rb")
-        else { return nil }
-        defer { unsafe fclose(file) }
-        guard unsafe fseek(file, 0, SEEK_END) == 0 else { return nil }
-        let length = unsafe ftell(file)
-        guard length > 0 else { return nil }
-        return Int(exactly: length)
+    private static func openEncodedFile(
+        _ path: String
+    ) -> Result<Int32, ImageDecodeFailure> {
+        guard !path.isEmpty else { return .failure(.unreadableInput) }
+        let fileDescriptor = unsafe open(path, O_RDONLY | O_CLOEXEC)
+        guard fileDescriptor >= 0 else {
+            return .failure(.unreadableInput)
+        }
+        var metadata = stat()
+        guard unsafe fstat(fileDescriptor, &metadata) == 0,
+              metadata.st_size > 0
+        else {
+            close(fileDescriptor)
+            return .failure(.unreadableInput)
+        }
+        guard UInt64(metadata.st_size) <= UInt64(Limits.maximumEncodedBytes)
+        else {
+            close(fileDescriptor)
+            return .failure(.limitExceeded)
+        }
+        return .success(fileDescriptor)
     }
 
     private static func mapMetadata(

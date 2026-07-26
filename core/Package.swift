@@ -36,10 +36,13 @@ let repoRoot = URL(fileURLWithPath: #filePath).deletingLastPathComponent().path
 // Owned by this repo; consumed by the render/UI targets, platform-android, and the
 // compositor.
 let environment = ProcessInfo.processInfo.environment
-let cacheRoot = environment["XDG_CACHE_HOME"]
-    ?? (environment["HOME"].map { $0 + "/.cache" } ?? "/tmp")
-let nativeSDKRoot = environment["NUCLEUS_NATIVE_SDK_ROOT"]
-    ?? cacheRoot + "/nucleus/nucleus-native-sdk"
+guard let nativeSDKRoot = environment["NUCLEUS_NATIVE_SDK_ROOT"],
+      !nativeSDKRoot.isEmpty
+else {
+    fatalError(
+        "NUCLEUS_NATIVE_SDK_ROOT is required; run through collider or "
+            + "source tools/host-env.sh")
+}
 let renderSDK = nativeSDKRoot + "/render"
 
 let skiaRoot = renderSDK + "/include/skia"          // the Skia source/header tree
@@ -96,23 +99,6 @@ let skiaAndroidLinkFlags: [String] = [
     "-lvulkan", "-landroid", "-llog", "-lz", "-ldl", "-lm",
 ]
 
-// Resolve pkg-config flags at manifest-eval time (libdrm/gbm live at dynamic host
-// store paths that cannot be hardcoded). Runs in the dev shell, where pkg-config
-// is on PATH. Used for NucleusCompositorDrmC's include + link flags on the renderer.
-func pkgConfig(_ args: [String]) -> [String] {
-    let p = Process()
-    p.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-    p.arguments = ["pkg-config"] + args
-    let pipe = Pipe()
-    p.standardOutput = pipe
-    p.standardError = Pipe()
-    do { try p.run() } catch { return [] }
-    p.waitUntilExit()
-    let out = pipe.fileHandleForReading.readDataToEndOfFile()
-    return String(decoding: out, as: UTF8.self)
-        .split(whereSeparator: { $0 == " " || $0 == "\n" || $0 == "\t" })
-        .map(String.init)
-}
 // libdrm/gbm and Wayland/xcb/input pkg-config resolution live in compositor-core;
 // this package is a pure portable graph and resolves none of them.
 
@@ -129,6 +115,7 @@ let package = Package(
         .library(
             name: "NucleusAndroidHostLifecycle",
             targets: ["NucleusAndroidHostLifecycle"]),
+        .library(name: "NucleusDiagnostics", targets: ["NucleusDiagnostics"]),
         .library(name: "NucleusRenderModel", targets: ["NucleusRenderModel"]),
         .library(name: "NucleusRenderer", targets: ["NucleusRenderer"]),
         .library(name: "NucleusTextCxxBridge", targets: ["NucleusTextCxxBridge"]),
@@ -177,6 +164,11 @@ let package = Package(
         .target(
             name: "NucleusAndroidHostLifecycle",
             path: "swift/Sources/NucleusAndroidHostLifecycle",
+            swiftSettings: [.strictMemorySafety()]
+        ),
+        .target(
+            name: "NucleusDiagnostics",
+            path: "swift/Sources/NucleusDiagnostics",
             swiftSettings: [.strictMemorySafety()]
         ),
         // ── Shared-type leaves: public value structs + enums + constants, no deps. ─
@@ -276,7 +268,7 @@ let package = Package(
         // and NucleusLayers (the host rendering context).
         .target(
             name: "NucleusApp",
-            dependencies: ["NucleusUI", "NucleusLayers"],
+            dependencies: ["NucleusUI", "NucleusLayers", "NucleusDiagnostics"],
             path: "swift/Sources/NucleusApp",
             swiftSettings: [.strictMemorySafety()]
         ),
@@ -397,6 +389,7 @@ let package = Package(
         .target(
             name: "NucleusRenderer",
             dependencies: [
+                "NucleusDiagnostics",
                 "NucleusTypes",
                 "NucleusRenderModel",
                 "NucleusBlockingSynchronizationC",
@@ -420,6 +413,11 @@ let package = Package(
             path: "swift/Tests/NucleusRendererTests",
             swiftSettings: [.interoperabilityMode(.Cxx)],
             linkerSettings: [.unsafeFlags(skiaLinkFlags)]
+        ),
+        .testTarget(
+            name: "NucleusDiagnosticsTests",
+            dependencies: ["NucleusDiagnostics"],
+            path: "swift/Tests/NucleusDiagnosticsTests"
         ),
         // The DRM/KMS presentation backend and its tests live in compositor-core.
         // ── Tests: the @main render fixtures, migrated into a swift-testing

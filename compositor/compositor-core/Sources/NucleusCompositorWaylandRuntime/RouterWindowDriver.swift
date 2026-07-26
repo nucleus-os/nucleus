@@ -148,10 +148,7 @@ final class RouterWindowDriver {
     }
 
     private func diagnostic(_ message: String) {
-        let line = "xdg-window: \(message)\n"
-        line.withCString {
-            _ = unsafe write(STDERR_FILENO, $0, strlen($0))
-        }
+        NucleusLogger(subsystem: "xdg-window").warning(message)
     }
 
     func configure(
@@ -930,3 +927,4 @@ extension RouterWindowDriver: LayerShellDelegate {
         host.xwaylandHost?.updateScale()
     }
 }
+import NucleusDiagnostics

@@ -3,6 +3,7 @@
 
 package import NucleusCompositorServer
 package import NucleusCompositorWindowManager
+import NucleusDiagnostics
 import Glibc
 
 @MainActor
@@ -50,10 +51,7 @@ package final class RouterHost {
 
     func traceProtocol(_ message: String) {
         guard diagnostics.traceProtocolEffects else { return }
-        let line = "wayland-protocol: \(message)\n"
-        _ = line.withCString {
-            unsafe write(STDERR_FILENO, $0, strlen($0))
-        }
+        NucleusLogger(subsystem: "wayland-protocol").debug(message)
     }
 
     package func install(_ runtime: WaylandRouterRuntime) {

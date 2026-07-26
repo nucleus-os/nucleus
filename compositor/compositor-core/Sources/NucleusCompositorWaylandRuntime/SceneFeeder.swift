@@ -124,10 +124,7 @@ final class SceneFeeder: BackgroundEffectDelegate, KdeBlurDelegate {
         } catch {
             let key = "\(operation):\(surfaceID.map(String.init) ?? "global"): \(error)"
             if reportedAuthorFailures.insert(key).inserted {
-                let line = "scene feeder: \(key)\n"
-                line.withCString {
-                    _ = unsafe write(STDERR_FILENO, $0, strlen($0))
-                }
+                NucleusLogger(subsystem: "scene-feeder").error(key)
             }
             return false
         }
@@ -694,3 +691,4 @@ final class SceneFeeder: BackgroundEffectDelegate, KdeBlurDelegate {
         return anyInFlight
     }
 }
+import NucleusDiagnostics

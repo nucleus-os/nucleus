@@ -1,6 +1,11 @@
 import Foundation
 import Testing
 import NucleusSkiaGraphiteBridge
+#if canImport(Glibc)
+import Glibc
+#elseif canImport(Darwin)
+import Darwin
+#endif
 
 /// SVG rasterization, through the same entry point as every other image file.
 ///
@@ -33,13 +38,29 @@ import NucleusSkiaGraphiteBridge
         </svg>
         """
 
+    private func withFileDescriptor<T>(
+        _ path: String,
+        _ body: (Int32) -> T
+    ) -> T {
+        let descriptor = unsafe open(path, O_RDONLY | O_CLOEXEC)
+        defer {
+            if descriptor >= 0 {
+                close(descriptor)
+            }
+        }
+        return body(descriptor)
+    }
+
     private func decode(_ fixture: Fixture, _ maxWidth: Int32, _ maxHeight: Int32)
         -> RasterFixtureImage
     {
-        unsafe RasterFixtureImage(nucleus.skia.decodeEncodedImageFile(
-            fixture.path,
-            maxWidth,
-            maxHeight).image)
+        withFileDescriptor(fixture.path) {
+            unsafe RasterFixtureImage(
+                nucleus.skia.decodeEncodedImageFileDescriptor(
+                    $0,
+                    maxWidth,
+                    maxHeight).image)
+        }
     }
 
     /// Read the whole image and return one pixel. Reading must be whole-image —
@@ -111,10 +132,12 @@ import NucleusSkiaGraphiteBridge
     /// until a draw. Every SVG decode still requires positive target bounds.
     @Test func anSvgWithIntrinsicSizeStillRequiresTargetBounds() {
         let fixture = Fixture(Self.wideRectangle)
-        let status = unsafe nucleus.skia.decodeEncodedImageFile(
-            fixture.path,
-            0,
-            0).status
+        let status = withFileDescriptor(fixture.path) {
+            unsafe nucleus.skia.decodeEncodedImageFileDescriptor(
+                $0,
+                0,
+                0).status
+        }
         #expect(status == .invalidDimensions)
     }
 

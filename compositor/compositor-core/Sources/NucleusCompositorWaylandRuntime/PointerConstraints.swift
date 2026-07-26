@@ -30,7 +30,7 @@ import WaylandProtocolTypes
     }
 
     fileprivate func constraint(for surface: WlSurface) -> PointerConstraint? {
-        constraints.liveValues().first { $0.surface === surface }
+        constraints.first { $0.surface === surface }
     }
 
     /// The kind of the active constraint on `surface`, or nil if none is active.

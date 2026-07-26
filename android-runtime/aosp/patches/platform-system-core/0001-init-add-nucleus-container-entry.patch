@@ -660,15 +660,6 @@ index 5e26d127a..e21a9990b 100644
  
      # We chown/chmod /data again so because mount is run as root + defaults
      chown system system /data
-@@ -712,7 +712,7 @@ on post-fs-data
-     # we can tell keystore to stop allowing use of early-boot keys,
-     # and access its database for the first time to support creation and
-     # use of MAX_BOOT_LEVEL keys.
--    exec - system system -- /system/bin/vdc keymaster earlyBootEnded
-+    exec_device_storage - system system -- /system/bin/vdc keymaster earlyBootEnded
- 
-     # Multi-installed APEXes are selected using persist props.
-     # Load persist properties and override properties (if enabled) from /data,
 diff --git a/init/reboot.cpp b/init/reboot.cpp
 index 1f2381d85..cc56c96d4 100644
 --- a/init/reboot.cpp
