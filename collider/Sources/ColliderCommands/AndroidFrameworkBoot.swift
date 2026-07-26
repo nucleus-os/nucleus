@@ -1575,6 +1575,39 @@ struct AndroidFrameworkHealthMonitor {
         _ line: String,
         diagnostics: URL
     ) throws {
+        if line.contains("Zygote.nativeSpecializeAppProcess")
+            || line.contains("Zygote.specializeAppProcess")
+        {
+            throw failure(
+                "Android zygote specialization failed before framework boot",
+                diagnostics: diagnostics)
+        }
+        if line.contains("Transaction failed on small parcel") {
+            throw failure(
+                "Android Binder reported a failed small-parcel transaction",
+                diagnostics: diagnostics)
+        }
+        if line.contains("Failed to create app data for") {
+            throw failure(
+                "Android PackageManager reported an installd app-data failure",
+                diagnostics: diagnostics)
+        }
+        if line.contains("Cannot connect to Keystore daemon")
+            || line.contains(
+                "Could not create keystore key: Failed to initialize "
+                    + "keystore key")
+        {
+            throw failure(
+                "Android Keystore became unavailable before framework boot",
+                diagnostics: diagnostics)
+        }
+        if let startCount = systemServerStartCount(line), startCount >= 2 {
+            throw failure(
+                "Android framework restarted system_server "
+                    + "\(startCount) times before framework boot",
+                diagnostics: diagnostics)
+        }
+
         let processID: Int32?
         if line.contains(
             "AndroidRuntime: *** FATAL EXCEPTION IN SYSTEM PROCESS:")
@@ -1599,6 +1632,17 @@ struct AndroidFrameworkHealthMonitor {
                     + "before framework boot",
                 diagnostics: diagnostics)
         }
+    }
+
+    private func systemServerStartCount(_ line: String) -> Int? {
+        let marker = "system_server_start: [start_count="
+        guard
+            let start = line.range(of: marker)?.upperBound,
+            let end = line[start...].firstIndex(of: ",")
+        else {
+            return nil
+        }
+        return Int(line[start..<end])
     }
 
     private func logcatProcessID(_ line: String) -> Int32? {

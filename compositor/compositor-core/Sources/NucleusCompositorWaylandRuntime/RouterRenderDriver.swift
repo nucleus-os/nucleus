@@ -12,6 +12,7 @@ internal import NucleusCompositorServer
 import NucleusCompositorServerTypes
 import NucleusRenderModel
 import Glibc
+import NucleusLinuxPrimitives
 
 @MainActor
 final class RouterRenderDriver {
@@ -365,37 +366,22 @@ extension RouterRenderDriver: ScreencopyDelegate {
               ry <= outH - copyHeight
         else { return false }
 
-        return unsafe buffer.withMutableShmBytes { metadata, destination in
+        return (try? buffer.withMutableShmBytes { metadata, destination in
             guard copyWidth == metadata.width,
                 copyHeight == metadata.height,
                 copyWidth > 0,
                 copyHeight > 0,
-                metadata.stride >= copyWidth * 4,
-                let destinationBase = destination.baseAddress
+                metadata.stride >= copyWidth * 4
             else { return false }
             let rowBytes = copyWidth * 4
-            return capture.pixels.withUnsafeBytes { source in
-                guard let sourceBase = source.baseAddress else {
-                    return false
-                }
-                for row in 0..<copyHeight {
-                    let sourceOffset =
-                        ((ry + row) * outW + rx) * 4
-                    let destinationOffset = row * metadata.stride
-                    guard sourceOffset + rowBytes <= source.count,
-                        destinationOffset + rowBytes
-                            <= destination.count
-                    else { return false }
-                    unsafe destinationBase
-                        .advanced(by: destinationOffset)
-                        .copyMemory(
-                            from: sourceBase.advanced(
-                                by: sourceOffset),
-                            byteCount: rowBytes)
-                }
-                return true
-            }
-        } ?? false
+            return destination.copyRows(
+                from: capture.pixels,
+                sourceOffset: (ry * outW + rx) * 4,
+                sourceStride: outW * 4,
+                destinationStride: metadata.stride,
+                rowBytes: rowBytes,
+                rowCount: copyHeight)
+        }) ?? false
     }
 
     /// Translate a Wayland-owned destination buffer into the neutral capture
@@ -412,11 +398,13 @@ extension RouterRenderDriver: ScreencopyDelegate {
             height: UInt32(bitPattern: attrs.height),
             drmFormat: attrs.format,
             modifier: attrs.modifier,
-            planes: attrs.planes.map {
-                RenderDmabufPlane(
-                    fd: $0.fd,
-                    offset: $0.offset,
-                    stride: $0.stride)
+            planes: attrs.planes.map { plane in
+                plane.withBorrowedDescriptor {
+                    RenderDmabufPlane(
+                        fd: $0.rawValue,
+                        offset: plane.offset,
+                        stride: plane.stride)
+                }
             },
             sourceRegion: sourceRegion,
             overlaysCursor: overlaysCursor)
@@ -461,14 +449,13 @@ extension RouterRenderDriver: ScreencopyDelegate {
     /// A successful capture's result with a monotonic timestamp. Top-down readback, so
     /// no y_invert flag.
     private static func captureResult() -> ScreencopyResult {
-        var ts = timespec()
-        unsafe clock_gettime(CLOCK_MONOTONIC, &ts)
-        let sec = UInt64(ts.tv_sec)
+        let now = LinuxMonotonicClock.nowNanoseconds()
+        let sec = now / 1_000_000_000
         return ScreencopyResult(
             ok: true,
             tvSecHi: UInt32(truncatingIfNeeded: sec >> 32),
             tvSecLo: UInt32(truncatingIfNeeded: sec),
-            tvNsec: UInt32(truncatingIfNeeded: ts.tv_nsec),
+            tvNsec: UInt32(truncatingIfNeeded: now % 1_000_000_000),
             flags: 0)
     }
 }

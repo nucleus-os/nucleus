@@ -4,6 +4,7 @@ import NucleusAndroidDrmC
 import NucleusAndroidGraphicsContract
 import NucleusAndroidIPC
 import NucleusLinuxReactor
+import NucleusLinuxPrimitives
 import WaylandClient
 import WaylandClientDispatch
 import WaylandProtocolTypes
@@ -80,6 +81,43 @@ public struct SurfaceProbeLifecycleEvent: Codable, Equatable, Sendable {
         self.frameNumber = frameNumber
         self.acquirePoint = acquirePoint
         self.releasePoint = releasePoint
+    }
+}
+
+@MainActor
+@safe private final class SyncobjTimelineWaiter {
+    @unsafe private let native: OpaquePointer
+
+    init?(renderNode: String, timelineFileDescriptor: Int32) {
+        guard let native = renderNode.withCString({
+            unsafe nucleus_android_syncobj_waiter_create(
+                $0, timelineFileDescriptor)
+        }) else { return nil }
+        unsafe self.native = native
+    }
+
+    func signalState(at point: UInt64) -> Bool? {
+        switch unsafe nucleus_android_syncobj_waiter_is_signaled(native, point) {
+        case 0: false
+        case 1: true
+        default: nil
+        }
+    }
+
+    func arm(at point: UInt64) -> Bool {
+        unsafe nucleus_android_syncobj_waiter_arm(native, point) == 0
+    }
+
+    var notificationFileDescriptor: Int32 {
+        unsafe nucleus_android_syncobj_waiter_notification_fd(native)
+    }
+
+    func drain() -> Bool {
+        unsafe nucleus_android_syncobj_waiter_drain(native) == 0
+    }
+
+    isolated deinit {
+        unsafe nucleus_android_syncobj_waiter_destroy(native)
     }
 }
 
@@ -259,7 +297,7 @@ private final class WmBaseHandler: XdgWmBaseEvents {
     private var buffers: [UInt64: WaylandProxy<WlBufferClient>] = [:]
     private var releaseTimelines:
         [UInt64: WaylandProxy<WpLinuxDrmSyncobjTimelineV1Client>] = [:]
-    private var releaseWaiters: [UInt64: OpaquePointer] = unsafe [:]
+    private var releaseWaiters: [UInt64: SyncobjTimelineWaiter] = [:]
     private var previousReleasePoint: [UInt64: UInt64] = [:]
     private var presentationFrames:
         [UInt: (
@@ -320,11 +358,10 @@ private final class WmBaseHandler: XdgWmBaseEvents {
         try toplevel.setTitle(title: "Nucleus Android Graphics Probe")
         for description in allocation.buffers {
             guard descriptors.indices.contains(Int(description.releaseTimelineFDIndex)),
-                  let releaseWaiter = allocation.device.renderNode.withCString({ path in
-                    unsafe nucleus_android_syncobj_waiter_create(
-                        path,
+                  let releaseWaiter = SyncobjTimelineWaiter(
+                    renderNode: allocation.device.renderNode,
+                    timelineFileDescriptor:
                         descriptors[Int(description.releaseTimelineFDIndex)])
-                  })
             else {
                 throw SurfaceProbeError.waylandObjectCreationFailed(
                     "per-buffer release timeline")
@@ -337,12 +374,11 @@ private final class WmBaseHandler: XdgWmBaseEvents {
                     fd: try duplicateDescriptor(
                         descriptors[Int(description.releaseTimelineFDIndex)]))
             } catch {
-                unsafe nucleus_android_syncobj_waiter_destroy(releaseWaiter)
                 throw SurfaceProbeError.waylandObjectCreationFailed(
                     "per-buffer release timeline")
             }
             releaseTimelines[description.id] = releaseTimeline
-            unsafe releaseWaiters[description.id] = releaseWaiter
+            releaseWaiters[description.id] = releaseWaiter
             let params: WaylandProxy<ZwpLinuxBufferParamsV1Client>
             do {
                 params = try dmabuf.createParams()
@@ -554,24 +590,21 @@ private final class WmBaseHandler: XdgWmBaseEvents {
         bufferID: UInt64,
         point: UInt64
     ) async throws {
-        guard let waiter = unsafe releaseWaiters[bufferID] else {
+        guard let waiter = releaseWaiters[bufferID] else {
             throw SurfaceProbeError.invalidBrokerReply
         }
-        let initial = unsafe nucleus_android_syncobj_waiter_is_signaled(
-            waiter,
-            point)
-        if initial == 1 { return }
-        guard initial == 0,
-              unsafe nucleus_android_syncobj_waiter_arm(waiter, point) == 0
-        else { throw SurfaceProbeError.compositorClosed }
-        let notification = unsafe nucleus_android_syncobj_waiter_notification_fd(
-            waiter)
-        try await dispatchUntil(extraFileDescriptor: notification) {
-            unsafe nucleus_android_syncobj_waiter_is_signaled(
-                waiter,
-                point) == 1 || closed
+        guard let initial = waiter.signalState(at: point) else {
+            throw SurfaceProbeError.compositorClosed
         }
-        guard unsafe nucleus_android_syncobj_waiter_drain(waiter) == 0 else {
+        if initial { return }
+        guard waiter.arm(at: point)
+        else { throw SurfaceProbeError.compositorClosed }
+        try await dispatchUntil(
+            extraFileDescriptor: waiter.notificationFileDescriptor
+        ) {
+            waiter.signalState(at: point) == true || closed
+        }
+        guard waiter.drain() else {
             throw SurfaceProbeError.compositorClosed
         }
     }
@@ -602,9 +635,7 @@ private final class WmBaseHandler: XdgWmBaseEvents {
         for timeline in releaseTimelines.values {
             try? timeline.destroy()
         }
-        for unsafe waiter in unsafe releaseWaiters.values {
-            unsafe nucleus_android_syncobj_waiter_destroy(waiter)
-        }
+        releaseWaiters.removeAll()
         try? acquireTimeline.destroy()
         try? syncSurface.destroy()
         try? toplevel.destroy()
@@ -723,9 +754,7 @@ private func dispatchWaylandUntil(
 }
 
 private func monotonicMilliseconds() -> Int64 {
-    var time = timespec()
-    _ = unsafe clock_gettime(CLOCK_MONOTONIC, &time)
-    return Int64(time.tv_sec) * 1_000 + Int64(time.tv_nsec) / 1_000_000
+    Int64(clamping: LinuxMonotonicClock.nowNanoseconds() / 1_000_000)
 }
 
 private func duplicateDescriptor(

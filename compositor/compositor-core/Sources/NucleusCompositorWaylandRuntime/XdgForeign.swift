@@ -74,31 +74,22 @@ extension XdgForeignBinding: ZxdgImporterV2Requests {
 @safe final class XdgForeign {
     weak var delegate: (any XdgForeignDelegate)?
 
-    private var handles: [String: WeakReference<WlSurface>] = [:]
+    private var handles = WeakObjectMap<String, WlSurface>()
     private var counter: UInt64 = 0
-
-    func register(in router: NucleusWaylandRouter) {
-        router.addGlobal(
-            ZxdgExporterV2Server.global(
-                implementation: self,
-                owner: { foreign, _ in XdgForeignBinding(foreign) }))
-        router.addGlobal(
-            ZxdgImporterV2Server.global(
-                implementation: self,
-                owner: { foreign, _ in XdgForeignBinding(foreign) }))
-    }
 
     fileprivate func mint(_ surface: WlSurface) -> String {
         counter += 1
         let handle = "nucleus-export-\(counter)"
-        handles[handle] = WeakReference(surface)
+        handles.insert(surface, forKey: handle)
         return handle
     }
 
     fileprivate func surface(forHandle handle: String) -> WlSurface? {
-        handles[handle]?.value
+        handles.value(forKey: handle)
     }
-    fileprivate func release(_ handle: String) { handles[handle] = nil }
+    fileprivate func release(_ handle: String) {
+        handles.removeValue(forKey: handle)
+    }
 
 }
 

@@ -35,11 +35,6 @@ protocol DrmSyncobjDelegate: AnyObject {
 @safe final class WpLinuxDrmSyncobjManager {
     weak var delegate: (any DrmSyncobjDelegate)?
 
-    func register(in router: NucleusWaylandRouter) {
-        router.addGlobal(
-            WpLinuxDrmSyncobjManagerV1Server.global(
-                implementation: self))
-    }
 }
 
 extension WpLinuxDrmSyncobjManager: WpLinuxDrmSyncobjManagerV1Requests {

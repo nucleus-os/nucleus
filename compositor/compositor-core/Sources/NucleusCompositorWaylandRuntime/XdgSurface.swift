@@ -51,9 +51,9 @@ import NucleusRenderModel
     func sendConfigureSerial(
         roleState: XdgRoleConfigure,
         initial: Bool
-    ) -> UInt32 {
+    ) -> XdgConfigureSerial {
         let serial = shell.nextSerial()
-        resource.sendConfigure(serial: serial)
+        resource.sendConfigure(serial: serial.rawValue)
         configureLedger.append(XdgConfigureRecord(
             serial: serial, roleState: roleState, initial: initial))
         return serial
@@ -72,7 +72,7 @@ import NucleusRenderModel
         shell.reconfigureReactivePopups(parent: self)
     }
 
-    func hasConfigure(serial: UInt32) -> Bool {
+    func hasConfigure(serial: XdgConfigureSerial) -> Bool {
         configureLedger.contains(serial: serial)
     }
 
@@ -80,7 +80,7 @@ import NucleusRenderModel
         _ snapshot: XdgPositionerSnapshot
     ) -> Bool {
         if let serial = snapshot.parentConfigureSerial,
-            !hasConfigure(serial: serial)
+            !hasConfigure(serial: XdgConfigureSerial(rawValue: serial))
         {
             return false
         }
@@ -148,7 +148,8 @@ import NucleusRenderModel
                     shell.toplevelDidUnmap(toplevel)
                     shell.delegate?.toplevelDidCommit(
                         toplevel,
-                        ackedSerial: lastConsumedConfigure?.serial ?? 0,
+                        ackedSerial: lastConsumedConfigure?.serial
+                            ?? XdgConfigureSerial(rawValue: 0),
                         hasBuffer: false)
                 }
                 configureLedger.resetForUnmap()
@@ -297,7 +298,8 @@ extension XdgSurface: XdgSurfaceRequests {
 
     func ackConfigure(_ request: WaylandRequest<XdgSurfaceServer>, serial: UInt32) {
         do {
-            try configureLedger.acknowledge(serial: serial)
+            try configureLedger.acknowledge(
+                serial: XdgConfigureSerial(rawValue: serial))
         } catch {
             request.postError(
                 .invalidSerial,

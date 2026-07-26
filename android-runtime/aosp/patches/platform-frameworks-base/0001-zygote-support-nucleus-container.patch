@@ -11,14 +11,97 @@ index c75fb45c8db6..34a95a42fae4 100644
                  final String tcon = SELinux.getFileContext(file.getAbsolutePath());
                  if (!SELinux.checkSELinuxAccess(seLinuxContext, tcon, "file", "write")) {
                      try {
+diff --git a/core/api/module-lib-current.txt b/core/api/module-lib-current.txt
+index ee91e88c9495..b9d72762a630 100644
+--- a/core/api/module-lib-current.txt
++++ b/core/api/module-lib-current.txt
+@@ -588,7 +588,9 @@ package android.os.storage {
+     method @Nullable public String getCloudMediaProvider();
+     method public void notifyAppIoBlocked(@NonNull java.util.UUID, int, int, int);
+     method public void notifyAppIoResumed(@NonNull java.util.UUID, int, int, int);
++    method @RequiresPermission(android.Manifest.permission.WRITE_MEDIA_STORAGE) public void registerFuseDaemon(@NonNull String, @NonNull String, @NonNull android.os.ParcelFileDescriptor);
+     method public void setCloudMediaProvider(@Nullable String);
++    method @RequiresPermission(android.Manifest.permission.WRITE_MEDIA_STORAGE) public void unregisterFuseDaemon(@NonNull String);
+     field public static final int APP_IO_BLOCKED_REASON_TRANSCODING = 1; // 0x1
+     field public static final int APP_IO_BLOCKED_REASON_UNKNOWN = 0; // 0x0
+   }
+diff --git a/core/java/android/os/storage/IStorageManager.aidl b/core/java/android/os/storage/IStorageManager.aidl
+index a5e629978bbb..9e1dceb76ee0 100644
+--- a/core/java/android/os/storage/IStorageManager.aidl
++++ b/core/java/android/os/storage/IStorageManager.aidl
+@@ -170,4 +170,9 @@ interface IStorageManager {
+      * is returned.
+      */
+     int getInternalStorageRemainingLifetime() = 99;
++    @EnforcePermission("WRITE_MEDIA_STORAGE")
++    void registerFuseDaemon(in String sessionId, in String mountPath,
++            in ParcelFileDescriptor fuseFd) = 100;
++    @EnforcePermission("WRITE_MEDIA_STORAGE")
++    void unregisterFuseDaemon(in String sessionId) = 101;
+ }
+diff --git a/core/java/android/os/storage/StorageManager.java b/core/java/android/os/storage/StorageManager.java
+index 81fb975984d8..36c8695f7e10 100644
+--- a/core/java/android/os/storage/StorageManager.java
++++ b/core/java/android/os/storage/StorageManager.java
+@@ -2869,6 +2869,50 @@ public class StorageManager {
+         }
+     }
+ 
++    /**
++     * Registers this external-storage service process as the daemon serving a FUSE mount.
++     *
++     * The file descriptor is the unforgeable mount capability supplied to the service by the
++     * storage session. The system rejects descriptors that do not belong to the named mount.
++     *
++     * @param sessionId the external-storage session identifier
++     * @param mountPath the upper filesystem path supplied with the session
++     * @param fuseFd the FUSE device descriptor supplied with the session
++     * @hide
++     */
++    @SystemApi(client = SystemApi.Client.MODULE_LIBRARIES)
++    @SuppressLint("UnflaggedApi") // Immutable Nucleus product integration, not a feature.
++    @RequiresPermission(android.Manifest.permission.WRITE_MEDIA_STORAGE)
++    public void registerFuseDaemon(@NonNull String sessionId, @NonNull String mountPath,
++            @NonNull ParcelFileDescriptor fuseFd) {
++        Objects.requireNonNull(sessionId);
++        Objects.requireNonNull(mountPath);
++        Objects.requireNonNull(fuseFd);
++        try {
++            mStorageManager.registerFuseDaemon(sessionId, mountPath, fuseFd);
++        } catch (RemoteException e) {
++            throw e.rethrowFromSystemServer();
++        }
++    }
++
++    /**
++     * Removes this external-storage service process from the active FUSE daemon registry.
++     *
++     * @param sessionId the external-storage session identifier
++     * @hide
++     */
++    @SystemApi(client = SystemApi.Client.MODULE_LIBRARIES)
++    @SuppressLint("UnflaggedApi") // Immutable Nucleus product integration, not a feature.
++    @RequiresPermission(android.Manifest.permission.WRITE_MEDIA_STORAGE)
++    public void unregisterFuseDaemon(@NonNull String sessionId) {
++        Objects.requireNonNull(sessionId);
++        try {
++            mStorageManager.unregisterFuseDaemon(sessionId);
++        } catch (RemoteException e) {
++            throw e.rethrowFromSystemServer();
++        }
++    }
++
+     /**
+      * Check if {@code uid} with {@code tid} is blocked on IO for {@code reason}.
+      *
 diff --git a/core/jni/com_android_internal_os_Zygote.cpp b/core/jni/com_android_internal_os_Zygote.cpp
 index 15a7ee4a0a39..8cbd133885fd 100644
 --- a/core/jni/com_android_internal_os_Zygote.cpp
 +++ b/core/jni/com_android_internal_os_Zygote.cpp
 @@ -131,6 +131,23 @@ static jmethodID gPrefetchStandaloneSystemServerJars;
-
+ 
  static bool gIsSecurityEnforced = true;
-
+ 
 +enum class SpecializationSecurityMode {
 +  kSELinux,
 +  kNucleusContainer,
@@ -42,7 +125,7 @@ index 15a7ee4a0a39..8cbd133885fd 100644
 @@ -1282,18 +1299,20 @@ static void isolateAppData(JNIEnv* env, const std::vector<std::string>& merged_d
    snprintf(internalDePath, PATH_MAX, "/data/user_de");
    snprintf(externalPrivateMountPath, PATH_MAX, "/mnt/expand");
-
+ 
 -  // Get the "u:object_r:system_userdir_file:s0" security context.  This can be
 -  // gotten from several different places; we use /data/user.
    char* dataUserdirContext = nullptr;
@@ -68,12 +151,12 @@ index 15a7ee4a0a39..8cbd133885fd 100644
 +      fail_fn(CREATE_ERROR("Unable to getfilecon on /data/misc %s", strerror(errno)));
 +    }
    }
-
+ 
    MountAppDataTmpFs(internalLegacyCePath, fail_fn);
 @@ -1397,44 +1416,37 @@ static void isolateAppData(JNIEnv* env, const std::vector<std::string>& merged_d
        }
    }
-
+ 
 -  // We set the label AFTER everything is done, as we are applying
 -  // the file operations on tmpfs. If we set the label when we mount
 -  // tmpfs, SELinux will not happy as we are changing system_data_files.
@@ -111,7 +194,7 @@ index 15a7ee4a0a39..8cbd133885fd 100644
 +      auto volPath = StringPrintf("%s/%s", externalPrivateMountPath, ent->d_name);
 +      auto cePath = StringPrintf("%s/user", volPath.c_str());
 +      auto dePath = StringPrintf("%s/user_de", volPath.c_str());
-
+ 
 -  // Relabel CE and DE dirs under /mnt/expand
 -  dir = opendir(externalPrivateMountPath);
 -  if (dir == nullptr) {
@@ -128,7 +211,7 @@ index 15a7ee4a0a39..8cbd133885fd 100644
 +      relabelDir(dePath.c_str(), dataUserdirContext, fail_fn);
 +    }
 +    closedir(dir);
-
+ 
 -    relabelSubdirs(cePath.c_str(), dataFileContext, fail_fn);
 -    relabelDir(cePath.c_str(), dataUserdirContext, fail_fn);
 -    relabelSubdirs(dePath.c_str(), dataFileContext, fail_fn);
@@ -141,7 +224,7 @@ index 15a7ee4a0a39..8cbd133885fd 100644
 -  freecon(dataUserdirContext);
 -  freecon(dataFileContext);
  }
-
+ 
  /**
 @@ -1506,15 +1518,18 @@ static void isolateSdkSandboxData(JNIEnv* env, jobjectArray pkg_data_info_list,
      char* context = nullptr;
@@ -169,11 +252,11 @@ index 15a7ee4a0a39..8cbd133885fd 100644
 +            }
          }
      }
-
+ 
 @@ -1557,8 +1572,10 @@ static void isolateSdkSandboxData(JNIEnv* env, jobjectArray pkg_data_info_list,
          createAndMountAppData(packageName, packageName, mirrorCeSandboxPath, ceSandboxPath, fail_fn,
                                true /*call_fail_fn*/);
-
+ 
 -        relabelDir(ceSandboxPath, sandboxContext, fail_fn);
 -        relabelDir(ceUserPath, userContext, fail_fn);
 +        if (IsAndroidSELinuxOperational()) {
@@ -186,7 +269,7 @@ index 15a7ee4a0a39..8cbd133885fd 100644
 @@ -1566,36 +1583,39 @@ static void isolateSdkSandboxData(JNIEnv* env, jobjectArray pkg_data_info_list,
          createAndMountAppData(packageName, packageName, mirrorDeSandboxPath, deSandboxPath, fail_fn,
                                true /*call_fail_fn*/);
-
+ 
 -        relabelDir(deSandboxPath, sandboxContext, fail_fn);
 -        relabelDir(deUserPath, userContext, fail_fn);
 +        if (IsAndroidSELinuxOperational()) {
@@ -194,7 +277,7 @@ index 15a7ee4a0a39..8cbd133885fd 100644
 +            relabelDir(deUserPath, userContext, fail_fn);
 +        }
      }
-
+ 
 -    // We set the label AFTER everything is done, as we are applying
 -    // the file operations on tmpfs. If we set the label when we mount
 -    // tmpfs, SELinux will not happy as we are changing system_data_files.
@@ -205,7 +288,7 @@ index 15a7ee4a0a39..8cbd133885fd 100644
 +        // the file operations on tmpfs.
 +        relabelDir(internalCePath, context, fail_fn);
 +        relabelDir(internalDePath, context, fail_fn);
-
+ 
 -    // Relabel CE and DE dirs under /mnt/expand
 -    dir = opendir(externalPrivateMountPath);
 -    if (dir == nullptr) {
@@ -234,7 +317,7 @@ index 15a7ee4a0a39..8cbd133885fd 100644
 +            relabelDir(externalDePath.c_str(), context, fail_fn);
 +        }
 +        closedir(dir);
-
+ 
 -    if (bindMountDeSandboxDataDirs) {
 -        freecon(sandboxContext);
 -        freecon(userContext);
@@ -246,12 +329,12 @@ index 15a7ee4a0a39..8cbd133885fd 100644
      }
 -    freecon(context);
  }
-
+ 
  static void insertPackagesToMergedList(JNIEnv* env,
 @@ -2171,7 +2191,8 @@ static void SpecializeCommon(JNIEnv* env, uid_t uid, gid_t gid, jintArray gids,
-
+ 
      const char* se_info_ptr = se_info.has_value() ? se_info.value().c_str() : nullptr;
-
+ 
 -    if (selinux_android_setcontext(uid, is_system_server, se_info_ptr, nice_name_ptr) == -1) {
 +    if (IsAndroidSELinuxOperational() &&
 +        selinux_android_setcontext(uid, is_system_server, se_info_ptr, nice_name_ptr) == -1) {
@@ -259,7 +342,7 @@ index 15a7ee4a0a39..8cbd133885fd 100644
                               is_system_server, se_info_ptr, nice_name_ptr));
      }
 @@ -2203,7 +2224,7 @@ static void SpecializeCommon(JNIEnv* env, uid_t uid, gid_t gid, jintArray gids,
-
+ 
          // TODO(b/117874058): Remove hardcoded label here.
          static const char* kSystemServerLabel = "u:r:system_server:s0";
 -        if (selinux_android_setcon(kSystemServerLabel) != 0) {
@@ -270,14 +353,51 @@ index 15a7ee4a0a39..8cbd133885fd 100644
 @@ -2897,7 +2918,9 @@ static void com_android_internal_os_Zygote_nativeInitNativeState(JNIEnv* env, jc
    // the value before zygote forks.
    gIsSecurityEnforced = security_getenforce();
-
+ 
 -  selinux_android_seapp_context_init();
 +  if (IsAndroidSELinuxOperational()) {
 +    selinux_android_seapp_context_init();
 +  }
-
+ 
  #ifdef BUILD_EXECUTE_ONLY_MEMORY
    /*
+diff --git a/services/core/java/com/android/server/StorageManagerService.java b/services/core/java/com/android/server/StorageManagerService.java
+index f97fa7d8fa51..06652b1fe5b8 100644
+--- a/services/core/java/com/android/server/StorageManagerService.java
++++ b/services/core/java/com/android/server/StorageManagerService.java
+@@ -3811,6 +3811,32 @@ class StorageManagerService extends IStorageManager.Stub
+         }
+     }
+ 
++    @Override
++    public void registerFuseDaemon(String sessionId, String mountPath,
++            ParcelFileDescriptor fuseFd) {
++        super.registerFuseDaemon_enforcePermission();
++        Objects.requireNonNull(sessionId);
++        Objects.requireNonNull(mountPath);
++        Objects.requireNonNull(fuseFd);
++        try {
++            mVold.registerFuseDaemon(
++                    sessionId, mountPath, fuseFd.getFileDescriptor(), Binder.getCallingPid());
++        } catch (RemoteException e) {
++            throw e.rethrowAsRuntimeException();
++        }
++    }
++
++    @Override
++    public void unregisterFuseDaemon(String sessionId) {
++        super.unregisterFuseDaemon_enforcePermission();
++        Objects.requireNonNull(sessionId);
++        try {
++            mVold.unregisterFuseDaemon(sessionId, Binder.getCallingPid());
++        } catch (RemoteException e) {
++            throw e.rethrowAsRuntimeException();
++        }
++    }
++
+     @Override
+     public void mkdirs(String callingPkg, String appPath) {
+         final int callingUid = Binder.getCallingUid();
 diff --git a/services/core/java/com/android/server/pm/PackageInstallerService.java b/services/core/java/com/android/server/pm/PackageInstallerService.java
 index 224aa8703669..47bdcb43c67d 100644
 --- a/services/core/java/com/android/server/pm/PackageInstallerService.java
@@ -285,7 +405,7 @@ index 224aa8703669..47bdcb43c67d 100644
 @@ -1427,7 +1427,7 @@ public class PackageInstallerService extends IPackageInstaller.Stub implements
              throw new IOException("Failed to prepare session dir: " + stageDir, e);
          }
-
+ 
 -        if (!SELinux.restorecon(stageDir)) {
 +        if (SELinux.isSELinuxEnabled() && !SELinux.restorecon(stageDir)) {
              String path = stageDir.getCanonicalPath();
@@ -297,7 +417,7 @@ index f2b9969ac74e..322c1c5205c7 100644
 +++ b/services/core/java/com/android/server/pm/Settings.java
 @@ -3177,6 +3177,11 @@ public final class Settings implements Watchable, Snappable, ResilientAtomicFile
      }
-
+ 
      void writePackageListLPr(int creatingUserId) {
 +        if (!SELinux.isSELinuxEnabled()) {
 +            writePackageListLPrInternal(creatingUserId);

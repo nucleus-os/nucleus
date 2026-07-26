@@ -247,7 +247,7 @@ private final class CompositorRequestOwner: WlCompositorRequests {
     guard
       unsafe WaylandResource.create(
         client: id.client,
-        interface: WlSurfaceServer.interface,
+        interface: WlSurfaceServer.descriptor.nativeInterface,
         version: id.version,
         id: id.id,
         vtable: nil,
@@ -264,7 +264,7 @@ private final class CompositorRequestOwner: WlCompositorRequests {
   ) {
     _ = unsafe WaylandResource.create(
       client: id.client,
-      interface: WlRegionServer.interface,
+      interface: WlRegionServer.descriptor.nativeInterface,
       version: id.version,
       id: id.id,
       vtable: nil,
@@ -1065,10 +1065,6 @@ private func drainWaylandMessages(
   func scopedShmAccessValidatesMetadataAndBalancesThrowingAccess()
     throws
   {
-    enum ProbeError: Error {
-      case expected
-    }
-
     let server = try #require(WaylandDisplay(), "wl_display_create")
     var sockets: [Int32] = [0, 0]
     try #require(
@@ -1159,26 +1155,18 @@ private func drainWaylandMessages(
       xrgbReference.shmMetadata?.format
         == WlShmFormat.xrgb8888.rawValue)
 
-    do {
-      _ = try unsafe argbReference.withShmBytes { _, _ in
-        throw ProbeError.expected
-      }
-      Issue.record("throwing SHM body unexpectedly returned")
-    } catch ProbeError.expected {
-    }
-
     var copied: [UInt8] = []
-    _ = unsafe argbReference.withShmBytes { _, bytes in
-      copied = unsafe Array(bytes)
+    try argbReference.withShmBytes { _, bytes in
+      copied = bytes.copiedBytes()
     }
     #expect(copied == Array(initial[0..<16]))
 
-    _ = unsafe xrgbReference.withMutableShmBytes { _, bytes in
-      unsafe bytes[0] = 0xA5
+    try xrgbReference.withMutableShmBytes { _, bytes in
+      bytes[0] = 0xA5
     }
     var firstWrittenByte: UInt8?
-    _ = unsafe xrgbReference.withShmBytes { _, bytes in
-      firstWrittenByte = unsafe bytes[0]
+    try xrgbReference.withShmBytes { _, bytes in
+      firstWrittenByte = bytes[0]
     }
     #expect(firstWrittenByte == 0xA5)
   }

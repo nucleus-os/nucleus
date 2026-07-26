@@ -13,19 +13,13 @@ import WaylandProtocolTypes
 /// the router turns into the protocol's invalid_shape error.
 @MainActor
 protocol CursorShapeDelegate: AnyObject {
-    func applyCursorShape(_ shape: UInt32) -> Bool
+    func applyCursorShape(_ shape: WpCursorShapeDeviceV1Shape) -> Bool
 }
 
 @MainActor
 final class CursorShapeManager {
     weak var delegate: (any CursorShapeDelegate)?
 
-    func register(in router: NucleusWaylandRouter) {
-        router.addGlobal(
-            WpCursorShapeManagerV1Server.global(
-                implementation: self,
-                advertisedVersion: 1))
-    }
 }
 
 extension CursorShapeManager: WpCursorShapeManagerV1Requests {
@@ -58,23 +52,15 @@ extension CursorShapeManager: WpCursorShapeManagerV1Requests {
     }
 }
 
-/// Map a `wp_cursor_shape_v1` shape enum (1–34) to its XCursor / CSS cursor name, or
+/// Map a `wp_cursor_shape_v1` shape enum to its XCursor / CSS cursor name, or
 /// nil for an out-of-range value (which `set_shape` turns into the protocol's
 /// `invalid_shape` error). The name feeds the theme lookup (`CursorTheme.load`), which
 /// falls back to the default arrow for any name the active theme lacks — so an
 /// exotic-but-valid shape still yields a cursor rather than a protocol error.
-func cursorShapeName(_ shape: UInt32) -> String? {
-    // Indexed by shape - 1; order matches the protocol enum exactly.
-    let names = [
-        "default", "context-menu", "help", "pointer", "progress", "wait", "cell",
-        "crosshair", "text", "vertical-text", "alias", "copy", "move", "no-drop",
-        "not-allowed", "grab", "grabbing", "e-resize", "n-resize", "ne-resize",
-        "nw-resize", "s-resize", "se-resize", "sw-resize", "w-resize", "ew-resize",
-        "ns-resize", "nesw-resize", "nwse-resize", "col-resize", "row-resize",
-        "all-scroll", "zoom-in", "zoom-out",
-    ]
-    guard shape >= 1, shape <= UInt32(names.count) else { return nil }
-    return names[Int(shape) - 1]
+func cursorShapeName(_ shape: WpCursorShapeDeviceV1Shape) -> String? {
+    shape.knownName?
+        .split(separator: "_", omittingEmptySubsequences: false)
+        .joined(separator: "-")
 }
 
 /// A wp_cursor_shape_device_v1: maps set_shape to the global cursor.
@@ -98,7 +84,7 @@ final class CursorShapeDevice {
 extension CursorShapeDevice: WpCursorShapeDeviceV1Requests {
     func setShape(_ request: WaylandRequest<WpCursorShapeDeviceV1Server>, serial: UInt32, shape: WpCursorShapeDeviceV1Shape) {
         guard pointer?.authorizesCursor(serial: serial) == true else { return }
-        let ok = manager.delegate?.applyCursorShape(shape.rawValue) ?? false
+        let ok = manager.delegate?.applyCursorShape(shape) ?? false
         if !ok {
             request.postError(.invalidShape, message: "unknown cursor shape")
         }

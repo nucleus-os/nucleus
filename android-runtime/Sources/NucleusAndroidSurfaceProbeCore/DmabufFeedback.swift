@@ -42,6 +42,30 @@ public enum DmabufFeedbackTable {
     }
 }
 
+@safe private final class ReadOnlyFileMapping {
+    @unsafe private let address: UnsafeMutableRawPointer
+    let byteCount: Int
+
+    init?(fileDescriptor: Int32, byteCount: Int) {
+        guard byteCount > 0 else { return nil }
+        let result = unsafe mmap(
+            nil, byteCount, PROT_READ, MAP_PRIVATE, fileDescriptor, 0)
+        guard let address = unsafe result,
+            unsafe address != MAP_FAILED
+        else { return nil }
+        unsafe self.address = address
+        self.byteCount = byteCount
+    }
+
+    func copiedData() -> Data {
+        unsafe Data(bytes: address, count: byteCount)
+    }
+
+    deinit {
+        _ = unsafe munmap(address, byteCount)
+    }
+}
+
 final class DmabufFeedbackAccumulator {
     private(set) var table: [DrmFormatModifier] = []
     private(set) var mainDevice: GraphicsDeviceID?
@@ -113,23 +137,15 @@ final class WaylandDmabufFeedbackCollector: ZwpLinuxDmabufFeedbackV1Events {
             failure = SurfaceProbeError.invalidFormatTable
             return
         }
-        let rawMapping = unsafe mmap(
-            nil,
-            Int(size),
-            PROT_READ,
-            MAP_PRIVATE,
-            descriptor,
-            0)
-        guard let mapping = unsafe rawMapping,
-              unsafe mapping != MAP_FAILED
+        guard let mapping = ReadOnlyFileMapping(
+            fileDescriptor: descriptor,
+            byteCount: Int(size))
         else {
             failure = SurfaceProbeError.invalidFormatTable
             return
         }
-        defer { _ = unsafe munmap(mapping, Int(size)) }
         do {
-            let data = unsafe Data(bytes: mapping, count: Int(size))
-            try accumulator.setFormatTable(data)
+            try accumulator.setFormatTable(mapping.copiedData())
         } catch { failure = error }
     }
 

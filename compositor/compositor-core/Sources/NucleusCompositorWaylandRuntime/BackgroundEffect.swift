@@ -23,17 +23,6 @@ final class ExtBackgroundEffectManager {
     /// Advertised capability bitfield (capability.blur = 1).
     var capabilities: UInt32 = 1
 
-    func register(in router: NucleusWaylandRouter) {
-        router.addGlobal(
-            ExtBackgroundEffectManagerV1Server.global(
-                implementation: self,
-                installed: { manager, handle in
-                    handle.sendCapabilities(
-                        flags: ExtBackgroundEffectManagerV1Capability(
-                            rawValue: manager.capabilities))
-                }))
-    }
-
     fileprivate func publish(surfaceID: UInt32, region: RegionSnapshot?) {
         delegate?.backgroundBlurRegionUpdated(surfaceID: surfaceID, region: region)
     }

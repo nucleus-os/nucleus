@@ -16,6 +16,7 @@ import WaylandProtocolTypes
 import WaylandClient
 import WaylandProtocolsC
 import NucleusShellInputC
+import NucleusShellLoop
 #if canImport(Glibc)
 import Glibc
 #endif
@@ -92,6 +93,117 @@ public protocol ShellSeatDelegate: AnyObject {
     func seat(_ seat: ShellSeat, didProduce event: ShellInputEvent)
 }
 
+@MainActor
+@safe private final class ShellXkbRuntime {
+    @unsafe private let context: OpaquePointer
+    @unsafe private var keymap: OpaquePointer?
+    @unsafe private var state: OpaquePointer?
+
+    init?() {
+        guard let context = unsafe xkb_context_new(XKB_CONTEXT_NO_FLAGS)
+        else { return nil }
+        unsafe self.context = context
+    }
+
+    func applyKeymap(
+        format: WlKeyboardKeymapFormat,
+        fileDescriptor: Int32,
+        size: UInt32
+    ) {
+        defer { close(fileDescriptor) }
+        guard format == .xkbV1,
+            let mapped = unsafe nucleus_shell_map_keymap_fd(
+                fileDescriptor, size)
+        else { return }
+        defer { unsafe nucleus_shell_unmap_keymap(mapped, size) }
+        guard let replacementKeymap = unsafe xkb_keymap_new_from_string(
+            context,
+            mapped,
+            XKB_KEYMAP_FORMAT_TEXT_V1,
+            XKB_KEYMAP_COMPILE_NO_FLAGS)
+        else { return }
+        guard let replacementState = unsafe xkb_state_new(replacementKeymap)
+        else {
+            unsafe xkb_keymap_unref(replacementKeymap)
+            return
+        }
+
+        if let state = unsafe state {
+            unsafe xkb_state_unref(state)
+        }
+        if let keymap = unsafe keymap {
+            unsafe xkb_keymap_unref(keymap)
+        }
+        unsafe keymap = replacementKeymap
+        unsafe state = replacementState
+    }
+
+    func composedText(xkbKeycode: UInt32) -> String? {
+        guard let state = unsafe state else { return nil }
+        let size = unsafe xkb_state_key_get_utf8(state, xkbKeycode, nil, 0)
+        guard size > 0 else { return nil }
+        var buffer = [CChar](repeating: 0, count: Int(size) + 1)
+        let written = buffer.withUnsafeMutableBufferPointer { pointer in
+            unsafe xkb_state_key_get_utf8(
+                state, xkbKeycode, pointer.baseAddress, pointer.count)
+        }
+        guard written == size else { return nil }
+        let bytes = buffer.prefix(Int(written)).map {
+            UInt8(bitPattern: $0)
+        }
+        guard let text = String(validating: bytes, as: UTF8.self),
+            !text.isEmpty
+        else { return nil }
+        guard let scalar = text.unicodeScalars.first,
+            text.unicodeScalars.count > 1
+                || !(scalar.value < 0x20 || scalar.value == 0x7F)
+        else { return nil }
+        return text
+    }
+
+    func updateModifiers(
+        depressed: UInt32,
+        latched: UInt32,
+        locked: UInt32,
+        group: UInt32
+    ) -> ShellModifierState? {
+        guard let state = unsafe state else { return nil }
+        _ = unsafe xkb_state_update_mask(
+            state, depressed, latched, locked, 0, 0, group)
+        var modifiers = ShellModifierState()
+        modifiers.shift = unsafe isModifierActive(
+            XKB_MOD_NAME_SHIFT, state: state)
+        modifiers.control = unsafe isModifierActive(
+            XKB_MOD_NAME_CTRL, state: state)
+        modifiers.alt = unsafe isModifierActive(
+            XKB_MOD_NAME_ALT, state: state)
+        modifiers.logo = unsafe isModifierActive(
+            XKB_MOD_NAME_LOGO, state: state)
+        modifiers.capsLock = unsafe isModifierActive(
+            XKB_MOD_NAME_CAPS, state: state)
+        return modifiers
+    }
+
+    @unsafe
+    private func isModifierActive(
+        _ name: UnsafePointer<CChar>,
+        state: OpaquePointer
+    ) -> Bool {
+        unsafe xkb_state_mod_name_is_active(
+            state, name, XKB_STATE_MODS_EFFECTIVE) > 0
+    }
+
+    isolated deinit {
+        if let state = unsafe state {
+            unsafe xkb_state_unref(state)
+        }
+        if let keymap = unsafe keymap {
+            unsafe xkb_keymap_unref(keymap)
+        }
+        unsafe xkb_context_unref(context)
+    }
+}
+
 /// Binds the seat and its pointer/keyboard, compiles the keymap the compositor
 /// sends, and reports events to a delegate.
 @MainActor
@@ -114,9 +226,7 @@ public protocol ShellSeatDelegate: AnyObject {
     private var pointerListener: ShellPointerListener?
     private var keyboardListener: ShellKeyboardListener?
 
-    private var xkbContext: OpaquePointer?
-    private var xkbKeymap: OpaquePointer?
-    private var xkbState: OpaquePointer?
+    private let xkb: ShellXkbRuntime?
 
     /// `wp_cursor_shape_device_v1` for this seat's pointer, when the compositor
     /// offers the protocol. Absent is normal: a compositor without it simply
@@ -154,11 +264,8 @@ public protocol ShellSeatDelegate: AnyObject {
         self.seat = seat
         self.client = client
         cursorShapeManager = client.cursorShape
+        xkb = ShellXkbRuntime()
         guard client.attachSeatConsumer(self) else { return nil }
-        // Do not allocate native state until the unretained Wayland listener
-        // owner has been accepted. A failed class initializer does not run this
-        // type's deinit, so allocating first would leak the xkb context.
-        unsafe xkbContext = xkb_context_new(XKB_CONTEXT_NO_FLAGS)
     }
 
     private func bindCursorShapeDevice(
@@ -176,15 +283,6 @@ public protocol ShellSeatDelegate: AnyObject {
         try? cursorShapeDevice?.destroy()
         try? pointer?.release()
         try? keyboard?.release()
-        if let xkbState = unsafe xkbState {
-            unsafe xkb_state_unref(xkbState)
-        }
-        if let xkbKeymap = unsafe xkbKeymap {
-            unsafe xkb_keymap_unref(xkbKeymap)
-        }
-        if let xkbContext = unsafe xkbContext {
-            unsafe xkb_context_unref(xkbContext)
-        }
     }
 
     // MARK: - Key repeat
@@ -241,9 +339,7 @@ public protocol ShellSeatDelegate: AnyObject {
     }
 
     private func nowNanoseconds() -> UInt64 {
-        var time = timespec()
-        unsafe clock_gettime(CLOCK_MONOTONIC, &time)
-        return UInt64(time.tv_sec) &* 1_000_000_000 &+ UInt64(time.tv_nsec)
+        ShellMonotonicClock.nowNanoseconds()
     }
 
     // MARK: - Keymap
@@ -253,29 +349,14 @@ public protocol ShellSeatDelegate: AnyObject {
         fd: Int32,
         size: UInt32
     ) {
-        defer { close(fd) }
-        guard format == .xkbV1 else { return }
-        guard let mapped = unsafe nucleus_shell_map_keymap_fd(fd, size) else {
+        guard let xkb else {
+            close(fd)
             return
         }
-        defer { unsafe nucleus_shell_unmap_keymap(mapped, size) }
-        guard let xkbContext = unsafe xkbContext else { return }
-
-        guard let keymap = unsafe xkb_keymap_new_from_string(
-            xkbContext, mapped, XKB_KEYMAP_FORMAT_TEXT_V1, XKB_KEYMAP_COMPILE_NO_FLAGS)
-        else { return }
-        guard let state = unsafe xkb_state_new(keymap) else {
-            unsafe xkb_keymap_unref(keymap)
-            return
-        }
-        if let xkbState = unsafe xkbState {
-            unsafe xkb_state_unref(xkbState)
-        }
-        if let xkbKeymap = unsafe xkbKeymap {
-            unsafe xkb_keymap_unref(xkbKeymap)
-        }
-        unsafe xkbKeymap = keymap
-        unsafe xkbState = state
+        xkb.applyKeymap(
+            format: format,
+            fileDescriptor: fd,
+            size: size)
     }
 
     /// Composed text for a keycode, or nil when the key produces none.
@@ -283,27 +364,8 @@ public protocol ShellSeatDelegate: AnyObject {
     /// Control characters are rejected: Return must not insert U+000D into a
     /// text field, and Escape must not insert U+001B.
     func composedText(evdevKeycode: UInt32) -> String? {
-        guard let xkbState = unsafe xkbState else { return nil }
         let xkbKeycode = evdevKeycode + ShellSeat.evdevKeycodeOffset
-        let size = unsafe xkb_state_key_get_utf8(
-            xkbState, xkbKeycode, nil, 0)
-        guard size > 0 else { return nil }
-        var buffer = [CChar](repeating: 0, count: Int(size) + 1)
-        let written = buffer.withUnsafeMutableBufferPointer { pointer in
-            unsafe xkb_state_key_get_utf8(
-                xkbState, xkbKeycode, pointer.baseAddress, pointer.count)
-        }
-        guard written == size else { return nil }
-        let bytes = buffer.prefix(Int(written)).map {
-            UInt8(bitPattern: $0)
-        }
-        guard let text = String(validating: bytes, as: UTF8.self),
-              !text.isEmpty
-        else { return nil }
-        guard let scalar = text.unicodeScalars.first,
-              text.unicodeScalars.count > 1 || !(scalar.value < 0x20 || scalar.value == 0x7F)
-        else { return nil }
-        return text
+        return xkb?.composedText(xkbKeycode: xkbKeycode)
     }
 
     /// XKB keycodes are evdev keycodes plus 8.
@@ -312,20 +374,13 @@ public protocol ShellSeatDelegate: AnyObject {
     func updateModifiers(
         depressed: UInt32, latched: UInt32, locked: UInt32, group: UInt32
     ) {
-        guard let xkbState = unsafe xkbState else { return }
-        _ = unsafe xkb_state_update_mask(
-            xkbState, depressed, latched, locked, 0, 0, group)
-        modifiers.shift = unsafe isModifierActive(XKB_MOD_NAME_SHIFT)
-        modifiers.control = unsafe isModifierActive(XKB_MOD_NAME_CTRL)
-        modifiers.alt = unsafe isModifierActive(XKB_MOD_NAME_ALT)
-        modifiers.logo = unsafe isModifierActive(XKB_MOD_NAME_LOGO)
-        modifiers.capsLock = unsafe isModifierActive(XKB_MOD_NAME_CAPS)
-    }
-
-    private func isModifierActive(_ name: UnsafePointer<CChar>) -> Bool {
-        guard let xkbState = unsafe xkbState else { return false }
-        return unsafe xkb_state_mod_name_is_active(
-            xkbState, name, XKB_STATE_MODS_EFFECTIVE) > 0
+        guard let updated = xkb?.updateModifiers(
+            depressed: depressed,
+            latched: latched,
+            locked: locked,
+            group: group)
+        else { return }
+        modifiers = updated
     }
 
     func emit(_ event: ShellInputEvent) {

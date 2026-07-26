@@ -5,21 +5,21 @@ extension WaylandResourceReference where Interface == WlBufferServer {
         _shmMetadata
     }
 
-    public func withShmBytes<Result>(
+    public func withShmBytes<Result: ~Copyable>(
         _ body: (
             WaylandShmMetadata,
-            UnsafeRawBufferPointer
-        ) throws -> Result
-    ) rethrows -> Result? {
-        try unsafe _withShmBytes(body)
+            borrowing WaylandShmBytes
+        ) -> Result
+    ) throws(WaylandShmAccessError) -> Result {
+        try _withShmBytes(body)
     }
 
-    public func withMutableShmBytes<Result>(
+    public func withMutableShmBytes<Result: ~Copyable>(
         _ body: (
             WaylandShmMetadata,
-            UnsafeMutableRawBufferPointer
-        ) throws -> Result
-    ) rethrows -> Result? {
-        try unsafe _withMutableShmBytes(body)
+            borrowing MutableWaylandShmBytes
+        ) -> Result
+    ) throws(WaylandShmAccessError) -> Result {
+        try _withMutableShmBytes(body)
     }
 }

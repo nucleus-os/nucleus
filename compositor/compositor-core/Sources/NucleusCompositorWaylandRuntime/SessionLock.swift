@@ -36,12 +36,6 @@ protocol SessionLockDelegate: AnyObject {
         self.display = display
     }
 
-    func register(in router: NucleusWaylandRouter) {
-        router.addGlobal(
-            ExtSessionLockManagerV1Server.global(
-                implementation: self))
-    }
-
     func nextSerial() -> UInt32 {
         display.nextSerial()
     }

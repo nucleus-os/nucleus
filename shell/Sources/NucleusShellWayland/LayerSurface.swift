@@ -11,46 +11,34 @@
 public import WaylandClientDispatch
 import WaylandProtocolTypes
 
-public enum LayerShellLayer: UInt32 {
-    case background = 0
-    case bottom = 1
-    case top = 2
-    case overlay = 3
-}
-
 /// Anchor edges (bitmask). A bar anchors top|left|right and spans the output width.
-public struct LayerAnchor: OptionSet, Sendable {
-    public let rawValue: UInt32
-    public init(rawValue: UInt32) { self.rawValue = rawValue }
-    public static let top = LayerAnchor(rawValue: 1)
-    public static let bottom = LayerAnchor(rawValue: 2)
-    public static let left = LayerAnchor(rawValue: 4)
-    public static let right = LayerAnchor(rawValue: 8)
-    public static let bar: LayerAnchor = [.top, .left, .right]
-    public static let all: LayerAnchor = [.top, .bottom, .left, .right]
-}
-
-public enum KeyboardInteractivity: UInt32 {
-    case none = 0
-    case exclusive = 1
-    case onDemand = 2
+public extension ZwlrLayerSurfaceV1Anchor {
+    static let bar: Self = [.top, .left, .right]
+    static let all: Self = [.top, .bottom, .left, .right]
 }
 
 /// Configuration for a layer surface, decided by the panel before its first commit.
 public struct LayerSurfaceConfig {
-    public var layer: LayerShellLayer
-    public var anchor: LayerAnchor
+    public var layer: ZwlrLayerShellV1Layer
+    public var anchor: ZwlrLayerSurfaceV1Anchor
     /// Logical size; 0 on an anchored axis means "span the anchored edges".
     public var width: UInt32
     public var height: UInt32
     /// Reserve this many logical px of work area on the anchored edge.
     /// `-1` ignores other exclusive zones and uses the complete output.
     public var exclusiveZone: Int32
-    public var keyboard: KeyboardInteractivity
+    public var keyboard: ZwlrLayerSurfaceV1KeyboardInteractivity
     public var namespace: String
 
-    public init(layer: LayerShellLayer, anchor: LayerAnchor, width: UInt32, height: UInt32,
-                exclusiveZone: Int32, keyboard: KeyboardInteractivity = .none, namespace: String) {
+    public init(
+        layer: ZwlrLayerShellV1Layer,
+        anchor: ZwlrLayerSurfaceV1Anchor,
+        width: UInt32,
+        height: UInt32,
+        exclusiveZone: Int32,
+        keyboard: ZwlrLayerSurfaceV1KeyboardInteractivity = .none,
+        namespace: String
+    ) {
         self.layer = layer
         self.anchor = anchor
         self.width = width
@@ -116,8 +104,7 @@ public struct LayerSurfaceConfig {
         guard let layerSurface = try? layerShell.getLayerSurface(
             surface: surface,
             output: output?.proxy,
-            layer: ZwlrLayerShellV1Layer(
-                rawValue: config.layer.rawValue),
+            layer: config.layer,
             namespace: config.namespace)
         else {
             try? surface.destroy()
@@ -126,18 +113,14 @@ public struct LayerSurfaceConfig {
         self.layerSurface = layerSurface
 
         do {
-            try layerSurface.setAnchor(
-                anchor: ZwlrLayerSurfaceV1Anchor(
-                    rawValue: config.anchor.rawValue))
+            try layerSurface.setAnchor(anchor: config.anchor)
             try layerSurface.setSize(
                 width: config.width,
                 height: config.height)
             try layerSurface.setExclusiveZone(
                 zone: config.exclusiveZone)
             try layerSurface.setKeyboardInteractivity(
-                keyboard_interactivity:
-                    ZwlrLayerSurfaceV1KeyboardInteractivity(
-                        rawValue: config.keyboard.rawValue))
+                keyboard_interactivity: config.keyboard)
             try layerSurface.installListener(self)
             try surface.commit()
         } catch {

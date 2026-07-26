@@ -13,6 +13,12 @@
       ]
     },
     {
+      "path": "art",
+      "patches": [
+        "aosp/patches/platform-art/0001-support-nucleus-label-neutral-artifacts.patch"
+      ]
+    },
+    {
       "path": "frameworks/base",
       "patches": [
         "aosp/patches/platform-frameworks-base/0001-zygote-support-nucleus-container.patch"
@@ -28,13 +34,26 @@
       "path": "system/core",
       "patches": [
         "aosp/patches/platform-system-core/0001-init-add-nucleus-container-entry.patch",
-        "aosp/patches/platform-system-core/0002-libprocessgroup-support-nucleus-container-cgroups.patch"
+        "aosp/patches/platform-system-core/0002-libprocessgroup-support-nucleus-container-cgroups.patch",
+        "aosp/patches/platform-system-core/0003-run-as-support-nucleus-container.patch"
       ]
     },
     {
       "path": "system/apex",
       "patches": [
         "aosp/patches/platform-system-apex/0001-apexd-adopt-nucleus-container-mounts.patch"
+      ]
+    },
+    {
+      "path": "system/security",
+      "patches": [
+        "aosp/patches/platform-system-security/0001-keystore2-support-nucleus-authorization.patch"
+      ]
+    },
+    {
+      "path": "system/libartpalette",
+      "patches": [
+        "aosp/patches/platform-system-libartpalette/0001-support-nucleus-label-neutral-staging.patch"
       ]
     },
     {
@@ -47,6 +66,18 @@
       "path": "system/vold",
       "patches": [
         "aosp/patches/platform-system-vold/0001-vold-support-nucleus-container.patch"
+      ]
+    },
+    {
+      "path": "packages/providers/MediaProvider",
+      "patches": [
+        "aosp/patches/platform-packages-providers-mediaprovider/0001-register-fuse-daemon-identity.patch"
+      ]
+    },
+    {
+      "path": "packages/modules/adb",
+      "patches": [
+        "aosp/patches/platform-packages-modules-adb/0001-adbd-support-nucleus-container.patch"
       ]
     },
     {

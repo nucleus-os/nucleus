@@ -7,6 +7,7 @@
 // with explicit teardown rather than a value.
 
 import NucleusCompositorInputC
+import NucleusLinuxPrimitives
 
 /// CGEventFlags-shaped modifier bit positions: the raw `UInt64` the event records
 /// and dispatch policy read.
@@ -30,9 +31,8 @@ enum EventFlagBit {
     private let keymap: OpaquePointer
     private let state: OpaquePointer
 
-    /// Sealed keymap memfd shared with clients via wl_keyboard.keymap; owned here.
-    private(set) var keymapFd: Int32 = -1
-    private(set) var keymapSize: UInt32 = 0
+    /// Sealed keymap shared with clients via wl_keyboard.keymap; owned here.
+    private var keymapFile: LinuxSealedFile?
 
     /// Bitset of currently-pressed evdev keycodes < 128, for physical-modifier
     /// detection independent of the xkb logical state.
@@ -66,7 +66,6 @@ enum EventFlagBit {
     }
 
     isolated deinit {
-        if keymapFd >= 0 { close(keymapFd) }
         unsafe xkb_state_unref(state)
         unsafe xkb_keymap_unref(keymap)
         unsafe xkb_context_unref(context)
@@ -80,12 +79,23 @@ enum EventFlagBit {
             keymap, XKB_KEYMAP_FORMAT_TEXT_V1)
         else { return }
         defer { unsafe free(cstr) }
-        let len = unsafe strlen(cstr)
-        var size: UInt32 = 0
-        let fd = unsafe nucleus_input_keymap_memfd(cstr, len, &size)
-        guard fd >= 0 else { return }
-        keymapFd = fd
-        keymapSize = size
+        let byteCount = unsafe strlen(cstr) + 1
+        let bytes = unsafe Array(
+            UnsafeRawBufferPointer(start: cstr, count: byteCount))
+        keymapFile = try? LinuxSealedFile(
+            name: "nucleus-keymap",
+            bytes: bytes)
+    }
+
+    var keymapSize: UInt32 {
+        guard let size = keymapFile?.size,
+            let result = UInt32(exactly: size)
+        else { return 0 }
+        return result
+    }
+
+    func duplicateKeymapDescriptor() -> LinuxOwnedFileDescriptor? {
+        keymapFile?.duplicateDescriptor()
     }
 
     // MARK: - state advancement

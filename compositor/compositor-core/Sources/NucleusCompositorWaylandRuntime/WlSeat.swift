@@ -15,6 +15,7 @@
 
 @unsafe import WaylandServerC
 internal import NucleusCompositorServer
+import NucleusLinuxPrimitives
 @unsafe import WaylandServer
 import WaylandServerDispatch
 import WaylandProtocolTypes
@@ -53,7 +54,7 @@ import WaylandProtocolTypes
     /// xkb keymap memfd shared with clients via wl_keyboard.keymap (format xkb_v1).
     /// Owned by the input subsystem; the seat only borrows the fd to send it. Set by
     /// the owner before clients bind (a fixture provides a synthetic one).
-    private(set) var keymapFd: Int32 = -1
+    private var keymapDescriptor: LinuxOwnedFileDescriptor?
     private(set) var keymapSize: UInt32 = 0
 
     // Every live device resource eligible in the current capability epoch, keyed
@@ -104,35 +105,13 @@ import WaylandProtocolTypes
         self.display = display
     }
 
-    func register(in router: NucleusWaylandRouter) {
-        router.addGlobal(
-            WlSeatServer.global(
-                implementation: self,
-                advertisedVersion: 9,
-                owner: { seat, handle in
-                    SeatBinding(resource: handle, seat: seat)
-                },
-                installed: { seat, _, handle in
-                    seat.registerSeatResource(handle)
-                    if handle.supportsName {
-                        handle.sendName(name: "seat0")
-                    }
-                    handle.sendCapabilities(
-                        capabilities: WlSeatCapability(
-                            rawValue: seat.capabilities))
-                }))
-        router.addGlobal(
-            ZwpKeyboardShortcutsInhibitManagerV1Server.global(
-                implementation: self))
-    }
-
     private func nextSerial() -> UInt32 {
         display.nextSerial()
     }
 
     // MARK: device registry (called by the get_* handlers / device deinit)
 
-    fileprivate func registerSeatResource(
+    func registerSeatResource(
         _ resource: WaylandResourceHandle<WlSeatServer>
     ) {
         seatResources.append(resource)
@@ -241,14 +220,27 @@ import WaylandProtocolTypes
         capabilities & capability != 0
     }
 
-    func updateKeymap(fd: Int32, size: UInt32) {
-        keymapFd = fd
+    func updateKeymap(
+        descriptor: consuming LinuxOwnedFileDescriptor,
+        size: UInt32
+    ) {
+        keymapDescriptor = consume descriptor
         keymapSize = size
-        guard fd >= 0 else { return }
         for resources in keyboards.values {
             for resource in resources {
-                resource.sendKeymap(format: .xkbV1, fd: fd, size: size)
+                sendKeymap(to: resource)
             }
+        }
+    }
+
+    fileprivate func sendKeymap(
+        to resource: WaylandResourceHandle<WlKeyboardServer>
+    ) {
+        keymapDescriptor?.withBorrowedDescriptor {
+            _ = resource.sendKeymap(
+                format: .xkbV1,
+                fd: $0.rawValue,
+                size: keymapSize)
         }
     }
 
@@ -290,7 +282,7 @@ import WaylandProtocolTypes
         consume: Bool = true
     ) -> Bool {
         serials.authorizes(
-            serial: serial,
+            serial: SeatInputSerial(rawValue: serial),
             kinds: kinds,
             clientKey: clientKey,
             surfaceID: surfaceID,
@@ -319,7 +311,8 @@ import WaylandProtocolTypes
         let serial = nextSerial()
         serials.invalidate(kind: .pointerEnter)
         serials.record(
-            serial: serial, kind: .pointerEnter, clientKey: key,
+            serial: SeatInputSerial(rawValue: serial),
+            kind: .pointerEnter, clientKey: key,
             surfaceID: surface.objectId)
         for pointer in resources {
             pointer.sendEnter(
@@ -370,7 +363,8 @@ import WaylandProtocolTypes
         pointerFocusClientKey == key
             && serial == lastPointerEnterSerial
             && serials.authorizes(
-                serial: serial, kinds: [.pointerEnter], clientKey: key,
+                serial: SeatInputSerial(rawValue: serial),
+                kinds: [.pointerEnter], clientKey: key,
                 surfaceID: pointerFocusSurface?.objectId, consume: false)
     }
 
@@ -420,7 +414,8 @@ import WaylandProtocolTypes
         let serial = nextSerial()
         if state != 0 {
             serials.record(
-                serial: serial, kind: .pointerButton, clientKey: key,
+                serial: SeatInputSerial(rawValue: serial),
+                kind: .pointerButton, clientKey: key,
                 surfaceID: surface?.objectId)
         } else {
             serials.invalidate(kind: .pointerButton, clientKey: key)
@@ -492,7 +487,8 @@ import WaylandProtocolTypes
         else { return 0 }
         let serial = nextSerial()
         serials.record(
-            serial: serial, kind: .touchDown, clientKey: key,
+            serial: SeatInputSerial(rawValue: serial),
+            kind: .touchDown, clientKey: key,
             surfaceID: surface.objectId)
         for touch in resources {
             touch.sendDown(
@@ -573,7 +569,8 @@ import WaylandProtocolTypes
         let serial = nextSerial()
         if keyState != 0 {
             serials.record(
-                serial: serial, kind: .keyboardKey, clientKey: key,
+                serial: SeatInputSerial(rawValue: serial),
+                kind: .keyboardKey, clientKey: key,
                 surfaceID: keyboardFocusSurface?.objectId)
         } else {
             serials.invalidate(kind: .keyboardKey, clientKey: key)
@@ -693,12 +690,7 @@ extension SeatBinding: WlSeatRequests {
                 if me.currentlyAdvertises(2) {
                     me.registerKeyboard(id.clientID, owner.resource)
                 }
-                if me.keymapFd >= 0 {
-                    owner.resource.sendKeymap(
-                        format: .xkbV1,
-                        fd: me.keymapFd,
-                        size: me.keymapSize)
-                }
+                me.sendKeymap(to: owner.resource)
                 if owner.resource.supportsRepeatInfo {
                     owner.resource.sendRepeatInfo(rate: 25, delay: 600)
                 }

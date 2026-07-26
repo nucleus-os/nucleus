@@ -341,3 +341,67 @@ func frameworkBootIgnoresAnApplicationFatalException() throws {
         frameworkLog: frameworkLog,
         diagnostics: directory)
 }
+
+@Test
+func frameworkBootFailsOnSecurityBoundaryHealthSignals() throws {
+    let signals = [
+        "root 4701 F zygote64: at com.android.internal.os.Zygote."
+            + "nativeSpecializeAppProcess(Native method)",
+        "E KeyStore: android.os.DeadObjectException: Transaction failed on "
+            + "small parcel; remote process probably died",
+        "W PackageManager: Failed to create app data for com.android.systemui, "
+            + "but trying to recover",
+        "E KeyStore: Cannot connect to Keystore daemon.",
+        "E odsign: Could not create keystore key: Failed to initialize "
+            + "keystore key.",
+        "I system_server_start: [start_count=2,uptime=100,elapse_time=100]",
+    ]
+
+    for signal in signals {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(
+                "collider-framework-health-\(UUID().uuidString)",
+                isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let kernelLog = directory.appendingPathComponent("android-kmsg.log")
+        let frameworkLog = directory.appendingPathComponent(
+            "android-logcat.log")
+        try Data().write(to: kernelLog)
+        try Data((signal + "\n").utf8).write(to: frameworkLog)
+
+        var monitor = AndroidFrameworkHealthMonitor()
+        #expect(throws: WorkspaceFailure.self) {
+            try monitor.check(
+                kernelLog: kernelLog,
+                frameworkLog: frameworkLog,
+                diagnostics: directory)
+        }
+    }
+}
+
+@Test
+func frameworkBootAcceptsTheFirstSystemServerStart() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-framework-health-\(UUID().uuidString)",
+        isDirectory: true)
+    try FileManager.default.createDirectory(
+        at: directory,
+        withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let kernelLog = directory.appendingPathComponent("android-kmsg.log")
+    let frameworkLog = directory.appendingPathComponent("android-logcat.log")
+    try Data().write(to: kernelLog)
+    try Data((
+        "I system_server_start: "
+            + "[start_count=1,uptime=100,elapse_time=100]\n"
+    ).utf8).write(to: frameworkLog)
+
+    var monitor = AndroidFrameworkHealthMonitor()
+    try monitor.check(
+        kernelLog: kernelLog,
+        frameworkLog: frameworkLog,
+        diagnostics: directory)
+}

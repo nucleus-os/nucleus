@@ -279,6 +279,9 @@ let package = Package(
                 .product(
                     name: "NucleusLinuxReactor",
                     package: "NucleusLinuxPlatform"),
+                .product(
+                    name: "NucleusLinuxPrimitives",
+                    package: "NucleusLinuxPlatform"),
                 .product(name: "WaylandClient", package: "swift-wayland"),
                 .product(name: "WaylandClientC", package: "swift-wayland"),
                 .product(name: "WaylandClientDispatch", package: "swift-wayland"),
@@ -314,6 +317,9 @@ let package = Package(
                 "NucleusAndroidDrmC",
                 .product(
                     name: "NucleusLinuxReactor",
+                    package: "NucleusLinuxPlatform"),
+                .product(
+                    name: "NucleusLinuxPrimitives",
                     package: "NucleusLinuxPlatform"),
                 .product(name: "WaylandClient", package: "swift-wayland"),
                 .product(name: "WaylandClientC", package: "swift-wayland"),

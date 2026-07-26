@@ -114,9 +114,4 @@ extension WlSubsurface: WlSubsurfaceRequests {
 
 @MainActor
 @safe final class WlSubcompositor {
-    func register(in router: NucleusWaylandRouter) {
-        router.addGlobal(
-            WlSubcompositorServer.global(
-                implementation: self))
-    }
 }

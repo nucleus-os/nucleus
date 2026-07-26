@@ -9,7 +9,7 @@ import WaylandServerDispatch
 @safe final class OutputGlobalState {
     private var global: NucleusWaylandRouter.GlobalHandle?
     private(set) var resources: [WaylandResourceHandle<WlOutputServer>] = []
-    private var xdgOutputs: [WeakReference<XdgOutput>] = []
+    private var xdgOutputs = WeakObjectList<XdgOutput>()
 
     func install(_ global: NucleusWaylandRouter.GlobalHandle?) -> Bool {
         self.global = global
@@ -38,12 +38,10 @@ import WaylandServerDispatch
     }
 
     func registerXdgOutput(_ output: XdgOutput) {
-        xdgOutputs.removeAll { $0.value == nil }
-        xdgOutputs.append(WeakReference(output))
+        xdgOutputs.append(output)
     }
 
     func liveXdgOutputs() -> [XdgOutput] {
-        xdgOutputs.removeAll { $0.value == nil }
-        return xdgOutputs.compactMap(\.value)
+        xdgOutputs.liveValues()
     }
 }

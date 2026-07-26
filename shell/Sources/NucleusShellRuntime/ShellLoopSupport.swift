@@ -53,9 +53,7 @@ struct ShellReactorBatchOutcome {
 }
 
 func monotonicNowNs() -> UInt64 {
-    var ts = timespec()
-    unsafe clock_gettime(CLOCK_MONOTONIC, &ts)
-    return UInt64(ts.tv_sec) &* 1_000_000_000 &+ UInt64(ts.tv_nsec)
+    ShellMonotonicClock.nowNanoseconds()
 }
 
 func clampedAdd(_ lhs: UInt64, _ rhs: UInt64) -> UInt64 {

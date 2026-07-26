@@ -17,11 +17,11 @@ import WaylandServerC
         else {
             return nil
         }
-        unsafe self.reference = reference
+        self.reference = reference
     }
 
     package init(reference: WaylandResourceReference<Interface>) {
-        unsafe self.reference = reference
+        self.reference = reference
     }
 
     package var resource: UnsafeMutablePointer<wl_resource>? {
@@ -29,33 +29,33 @@ import WaylandServerC
     }
 
     public var referenceValue: WaylandResourceReference<Interface> {
-        unsafe reference
+        reference
     }
 
     public var isLive: Bool {
-        unsafe reference.isLive
+        reference.isLive
     }
 
     public var version: Int32? {
-        unsafe reference.version
+        reference.version
     }
 
     public var clientID: WaylandClientID? {
-        unsafe reference.clientID
+        reference.clientID
     }
 
     public var objectID: UInt32? {
-        unsafe reference.objectID
+        reference.objectID
     }
 
     @discardableResult
     public func destroy() -> Bool {
-        unsafe reference.destroy()
+        reference.destroy()
     }
 
     @discardableResult
     public func postNoMemory() -> Bool {
-        unsafe reference.postNoMemory()
+        reference.postNoMemory()
     }
 
     @discardableResult

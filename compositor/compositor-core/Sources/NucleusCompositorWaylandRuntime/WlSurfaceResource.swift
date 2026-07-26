@@ -83,7 +83,7 @@ extension WlSurface: WlSurfaceRequests {
         _ request: WaylandRequest<WlSurfaceServer>,
         callback: WlNewId<WlCallbackServer>
     ) {
-        guard unsafe installPendingReleaseCallback(callback) else {
+        guard installPendingReleaseCallback(callback) else {
             request.postError(
                 .noBuffer,
                 message: "get_release without an attached buffer")

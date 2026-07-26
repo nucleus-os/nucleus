@@ -506,8 +506,40 @@ if let typesDir {
     var source = SwiftSourceFileBuilder()
     for proto in closure {
         for interface in proto.interfaces {
+            let interfaceName = upperCamel(interface.name)
+            for (direction, protocolName, messages) in [
+                ("Request", "WaylandRequestOpcode", interface.requests),
+                ("Event", "WaylandEventOpcode", interface.events),
+            ] where !messages.isEmpty {
+                let opcodeName = "\(interfaceName)\(direction)Opcode"
+                let declaration = EnumDeclSyntax(
+                    attributes: [
+                        .attribute(AttributeSyntax(
+                            attributeName: IdentifierTypeSyntax(
+                                name: .identifier("frozen")))),
+                    ],
+                    modifiers: [
+                        DeclModifierSyntax(name: .keyword(.public)),
+                    ],
+                    name: .identifier(opcodeName),
+                    inheritanceClause: InheritanceClauseSyntax {
+                        InheritedTypeSyntax(
+                            type: TypeSyntax(stringLiteral: "UInt16"))
+                        InheritedTypeSyntax(
+                            type: TypeSyntax(stringLiteral: protocolName))
+                    }
+                ) {
+                    for (opcode, message) in messages.enumerated() {
+                        DeclSyntax(
+                            """
+                            case \(raw: memberName(message.name)) = \(raw: opcode)
+                            """)
+                    }
+                }
+                source.add(DeclSyntax(declaration))
+            }
             for enumeration in interface.enumerations {
-                let name = upperCamel(interface.name) + upperCamel(enumeration.name)
+                let name = interfaceName + upperCamel(enumeration.name)
                 let primaryConformance =
                     enumeration.isBitfield
                         ? "OptionSet"
@@ -553,6 +585,20 @@ if let typesDir {
                         DeclSyntax(
                             """
                             public static let \(raw: memberName(entry.name))\(raw: annotation) = \(raw: value)
+                            """)
+                    }
+                    if !enumeration.isBitfield {
+                        let cases = enumeration.entries.map { entry in
+                            "case .\(memberName(entry.name)): \"\(entry.name)\""
+                        }.joined(separator: "\n")
+                        DeclSyntax(
+                            """
+                            public var knownName: String? {
+                                switch self {
+                                \(raw: cases)
+                                default: nil
+                                }
+                            }
                             """)
                     }
                 }
@@ -635,7 +681,7 @@ if mode == .server, let dispatchDir {
             let emitsEvents = !isLibwaylandBootstrap && !iface.events.isEmpty
             let P = upperCamel(iface.name)
             var source = SwiftSourceFileBuilder()
-            source.addImport("WaylandServerC", public: true)
+            source.addImport("WaylandServerC")
             source.addImport("WaylandServer", public: true)
             let usesProtocolValues =
                 iface.enumerations.contains { $0.name == "error" }
@@ -700,15 +746,12 @@ if mode == .server, let dispatchDir {
 
             var serverMembers: [DeclSyntax] = [
                 declaration([
-                    "public nonisolated(unsafe) static let interface = unsafe swift_wayland_iface_\(iface.name)()"
-                ]),
-                declaration([
                     "public nonisolated static let maximumVersion: Int32 = \(iface.version)"
                 ]),
             ]
             if dispatchesRequests {
                 var vtableLines = [
-                    "public nonisolated(unsafe) static let vtable: UnsafeRawPointer = {",
+                    "nonisolated(unsafe) package static let nativeRequestVtable: UnsafeRawPointer = {",
                     "    let size = MemoryLayout<swift_wayland_\(iface.name)_requests>.stride",
                     "    let raw = UnsafeMutableRawPointer.allocate(",
                     "        byteCount: size, alignment: MemoryLayout<swift_wayland_\(iface.name)_requests>.alignment)",
@@ -727,16 +770,12 @@ if mode == .server, let dispatchDir {
                     "}()",
                 ])
                 serverMembers.append(declaration(vtableLines))
-                serverMembers.append(declaration([
-                    "public nonisolated static func requestVtable() -> UnsafeRawPointer? {",
-                    "    unsafe vtable",
-                    "}",
-                ]))
-            } else {
-                serverMembers.append(declaration([
-                    "public nonisolated static func requestVtable() -> UnsafeRawPointer? { nil }"
-                ]))
             }
+            serverMembers.append(declaration([
+                "public nonisolated static let descriptor = unsafe WaylandServerInterfaceDescriptor(",
+                "    nativeInterface: swift_wayland_iface_\(iface.name)(),",
+                "    nativeRequestVtable: \(dispatchesRequests ? "nativeRequestVtable" : "nil"))",
+            ]))
 
             for e in emitsEvents ? iface.events : [] {
                 var sp = ["_ target: UnsafeMutablePointer<wl_resource>"]
@@ -1062,7 +1101,7 @@ if mode == .server, let dispatchDir {
                     "    owner: (WaylandResourceHandle<\(P)Server>) -> Owner?,",
                     "    installed: (Owner) -> Void = { _ in }",
                     ") -> Owner? {",
-                    "    unsafe _create(vtable: \(P)Server.requestVtable(), owner: owner, installed: installed)",
+                    "    unsafe _create(vtable: \(P)Server.descriptor.nativeRequestVtable, owner: owner, installed: installed)",
                     "}",
                 ])
             ]
@@ -1099,7 +1138,7 @@ if mode == .server, let dispatchDir {
                     "    unsafe WaylandGlobalSpecification(",
                     "        implementation: implementation,",
                     "        advertisedVersion: advertisedVersion,",
-                    "        vtable: requestVtable(),",
+                    "        vtable: descriptor.nativeRequestVtable,",
                     "        owner: { implementation, _ in implementation },",
                     "        installed: { implementation, _, handle in",
                     "            installed(implementation, handle)",
@@ -1117,7 +1156,7 @@ if mode == .server, let dispatchDir {
                     "    unsafe WaylandGlobalSpecification(",
                     "        implementation: implementation,",
                     "        advertisedVersion: advertisedVersion,",
-                    "        vtable: requestVtable(), owner: owner,",
+                    "        vtable: descriptor.nativeRequestVtable, owner: owner,",
                     "        installed: installed)",
                     "}",
                 ])
@@ -1324,9 +1363,8 @@ func clientRequestDeclaration(
             "            actual: Bound.maximumVersion)",
             "    }",
             "    let _proxy = try unsafe requireNativeProxy()",
-            "    guard let interface = unsafe Bound.interface,",
-            "          let created = unsafe wl_registry_bind(",
-            "            _proxy, name, interface, version)",
+            "    guard let created = unsafe wl_registry_bind(",
+            "            _proxy, name, Bound.descriptor.nativeInterface, version)",
             "    else { throw .proxyCreationFailed }",
             "    return unsafe makeOwnedProxy(",
             "        adopting: OpaquePointer(created), Bound.self)",
@@ -1444,7 +1482,7 @@ if mode == .client, let dispatchDir {
             // client never adds a listener to it. wl_registry IS listened to, so it stays.
             let P = upperCamel(iface.name)
             var source = SwiftSourceFileBuilder()
-            source.addImport("WaylandClientC", public: true)
+            source.addImport("WaylandClientC")
 
             let descriptor = EnumDeclSyntax(
                 modifiers: [DeclModifierSyntax(name: .keyword(.public))],
@@ -1456,7 +1494,8 @@ if mode == .client, let dispatchDir {
                 }
             ) {
                 clientDeclaration([
-                    "public nonisolated(unsafe) static let interface = unsafe swift_wayland_iface_\(iface.name)()"
+                    "public nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(",
+                    "    nativeInterface: swift_wayland_iface_\(iface.name)())"
                 ])
                 clientDeclaration([
                     "public nonisolated static let maximumVersion: UInt32 = \(iface.version)"

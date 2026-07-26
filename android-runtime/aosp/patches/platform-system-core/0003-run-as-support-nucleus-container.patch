@@ -1,0 +1,16 @@
+diff --git a/run-as/run-as.cpp b/run-as/run-as.cpp
+index 31e0cc276..10b9a083c 100644
+--- a/run-as/run-as.cpp
++++ b/run-as/run-as.cpp
+@@ -281,7 +281,10 @@ int main(int argc, char* argv[]) {
+   minijail_enter(j.get());
+ 
+   std::string seinfo = std::string(info.seinfo) + ":fromRunAs";
+-  if (selinux_android_setcontext(uid, 0, seinfo.c_str(), pkgname) < 0) {
++  const bool android_selinux_operational =
++      !android::base::GetBoolProperty("ro.nucleus.container", false);
++  if (android_selinux_operational &&
++      selinux_android_setcontext(uid, 0, seinfo.c_str(), pkgname) < 0) {
+     error(1, errno, "couldn't set SELinux security context '%s'", seinfo.c_str());
+   }
+ 

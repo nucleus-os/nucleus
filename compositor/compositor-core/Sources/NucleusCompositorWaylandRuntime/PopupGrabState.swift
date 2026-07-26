@@ -3,19 +3,19 @@
 /// one state machine.
 @MainActor
 final class PopupGrabState {
-    private var stack: [WeakReference<XdgPopup>] = []
+    private var stack = WeakObjectList<XdgPopup>()
 
     func begin(_ popup: XdgPopup) {
         compact()
         guard !popup.popupDoneSent else { return }
-        if stack.last?.value !== popup {
-            stack.append(WeakReference(popup))
+        if stack.last !== popup {
+            stack.append(popup)
         }
     }
 
     func deliverySurface(fallback: WlSurface) -> WlSurface {
         compact()
-        return stack.last?.value?.xdgSurface?.surface ?? fallback
+        return stack.last?.xdgSurface?.surface ?? fallback
     }
 
     /// Dismiss the complete grab stack only when the interaction lands outside
@@ -23,8 +23,8 @@ final class PopupGrabState {
     func dismissIfOutside(_ target: WlSurface) -> Bool {
         compact()
         guard !stack.isEmpty else { return false }
-        let grabbedSurfaceIDs = Set(stack.compactMap {
-            $0.value?.xdgSurface?.surface?.objectId
+        let grabbedSurfaceIDs = Set(stack.liveValues().compactMap {
+            $0.xdgSurface?.surface?.objectId
         })
         guard !grabbedSurfaceIDs.contains(target.objectId) else {
             return false
@@ -35,15 +35,13 @@ final class PopupGrabState {
 
     func cancel() {
         compact()
-        for popup in stack.reversed().compactMap(\.value) {
+        for popup in stack.liveValues().reversed() {
             popup.sendPopupDone()
         }
         stack.removeAll(keepingCapacity: true)
     }
 
     private func compact() {
-        stack.removeAll {
-            $0.value == nil || $0.value?.popupDoneSent == true
-        }
+        stack.removeAll { $0.popupDoneSent }
     }
 }

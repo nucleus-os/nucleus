@@ -20,6 +20,8 @@
 internal import NucleusCompositorServer
 package import NucleusCompositorWindowScene
 import WaylandServer
+import WaylandServerDispatch
+import WaylandProtocolTypes
 
 @MainActor
 public final class WaylandRouterRuntime {
@@ -147,37 +149,126 @@ public final class WaylandRouterRuntime {
         seat.pointerConstraints = pointerConstraints
         // The feeder resolves router surfaces to push per-frame output membership.
         feeder.compositor = compositor
-        // Register every global. wl_output globals are added at activation, one per
-        // live Display; wl_shm is libwayland's (WaylandDisplay.init_shm).
-        compositor.register(in: router)
-        subcompositor.register(in: router)
-        seat.register(in: router)
-        xdgShell.register(in: router)
-        layerShell.register(in: router)
-        xdgOutput.register(in: router)
-        cursorShape.register(in: router)
-        decoration.register(in: router)
-        xdgActivation.register(in: router)
-        xdgForeign.register(in: router)
-        viewporter.register(in: router)
-        fractionalScale.register(in: router)
-        idle.register(in: router)
-        blur.register(in: router)
-        backgroundEffect.register(in: router)
-        presentation.register(in: router)
-        dmabuf.register(in: router)
-        syncobj.register(in: router)
-        screencopy.register(in: router)
-        gamma.register(in: router)
-        dataDevice.register(in: router)
-        sessionLock.register(in: router)
-        relativePointer.register(in: router)
-        pointerConstraints.register(in: router)
-        xwaylandShell.register(in: router)
-        foreignToplevel.register(in: router)
-        extWorkspace.register(in: router)
-        extDataControl.register(in: router)
-        textInputManager.register(in: router)
+        // The production global catalog. Versions and bind-time behavior live
+        // here so the advertised protocol contract is one composition decision.
+        router.addGlobal(WlCompositorServer.global(
+            implementation: compositor, advertisedVersion: 6))
+        router.addGlobal(WlSubcompositorServer.global(
+            implementation: subcompositor))
+        router.addGlobal(WlSeatServer.global(
+            implementation: seat,
+            advertisedVersion: 9,
+            owner: { seat, handle in
+                SeatBinding(resource: handle, seat: seat)
+            },
+            installed: { seat, _, handle in
+                seat.registerSeatResource(handle)
+                if handle.supportsName {
+                    handle.sendName(name: "seat0")
+                }
+                handle.sendCapabilities(capabilities: WlSeatCapability(
+                    rawValue: seat.capabilities))
+            }))
+        router.addGlobal(
+            ZwpKeyboardShortcutsInhibitManagerV1Server.global(
+                implementation: seat))
+        router.addGlobal(XdgWmBaseServer.global(
+            implementation: xdgShell,
+            advertisedVersion: 3,
+            owner: { shell, resource in
+                XdgWmBaseBinding(shell, resource: resource)
+            }))
+        router.addGlobal(ZwlrLayerShellV1Server.global(
+            implementation: layerShell, advertisedVersion: 4))
+        router.addGlobal(ZxdgOutputManagerV1Server.global(
+            implementation: xdgOutput, advertisedVersion: 3))
+        router.addGlobal(WpCursorShapeManagerV1Server.global(
+            implementation: cursorShape, advertisedVersion: 1))
+        router.addGlobal(ZxdgDecorationManagerV1Server.global(
+            implementation: decoration, advertisedVersion: 2))
+        router.addGlobal(XdgActivationV1Server.global(
+            implementation: xdgActivation))
+        router.addGlobal(ZxdgExporterV2Server.global(
+            implementation: xdgForeign,
+            owner: { foreign, _ in XdgForeignBinding(foreign) }))
+        router.addGlobal(ZxdgImporterV2Server.global(
+            implementation: xdgForeign,
+            owner: { foreign, _ in XdgForeignBinding(foreign) }))
+        router.addGlobal(WpViewporterServer.global(
+            implementation: viewporter))
+        router.addGlobal(WpFractionalScaleManagerV1Server.global(
+            implementation: fractionalScale))
+        router.addGlobal(ZwpIdleInhibitManagerV1Server.global(
+            implementation: idle))
+        router.addGlobal(ExtIdleNotifierV1Server.global(
+            implementation: idle, advertisedVersion: 2))
+        router.addGlobal(OrgKdeKwinBlurManagerServer.global(
+            implementation: blur))
+        router.addGlobal(ExtBackgroundEffectManagerV1Server.global(
+            implementation: backgroundEffect,
+            installed: { manager, handle in
+                handle.sendCapabilities(
+                    flags: ExtBackgroundEffectManagerV1Capability(
+                        rawValue: manager.capabilities))
+            }))
+        router.addGlobal(WpPresentationServer.global(
+            implementation: presentation,
+            advertisedVersion: 2,
+            installed: { presentation, handle in
+                handle.sendClockId(clk_id: presentation.clockId)
+            }))
+        router.addGlobal(ZwpLinuxDmabufV1Server.global(
+            implementation: dmabuf,
+            advertisedVersion: 5,
+            installed: { manager, handle in
+                if handle.version ?? 1 < 4 {
+                    for format in manager.supportedFormats() {
+                        if handle.supportsModifier {
+                            handle.sendModifier(
+                                format: format.format,
+                                modifier_hi: UInt32(format.modifier >> 32),
+                                modifier_lo: UInt32(
+                                    format.modifier & 0xffff_ffff))
+                        } else {
+                            handle.sendFormat(format: format.format)
+                        }
+                    }
+                }
+            }))
+        router.addGlobal(WpLinuxDrmSyncobjManagerV1Server.global(
+            implementation: syncobj))
+        router.addGlobal(ZwlrScreencopyManagerV1Server.global(
+            implementation: screencopy, advertisedVersion: 3))
+        router.addGlobal(ZwlrGammaControlManagerV1Server.global(
+            implementation: gamma))
+        router.addGlobal(WlDataDeviceManagerServer.global(
+            implementation: dataDevice, advertisedVersion: 3))
+        router.addGlobal(ExtSessionLockManagerV1Server.global(
+            implementation: sessionLock))
+        router.addGlobal(ZwpRelativePointerManagerV1Server.global(
+            implementation: relativePointer))
+        router.addGlobal(ZwpPointerConstraintsV1Server.global(
+            implementation: pointerConstraints))
+        router.addGlobal(XwaylandShellV1Server.global(
+            implementation: xwaylandShell))
+        router.addGlobal(ZwlrForeignToplevelManagerV1Server.global(
+            implementation: foreignToplevel,
+            advertisedVersion: 3,
+            owner: { manager, handle in
+                ForeignToplevelClient(resource: handle, manager: manager)
+            },
+            installed: { _, projection, _ in projection.start() }))
+        router.addGlobal(ExtWorkspaceManagerV1Server.global(
+            implementation: extWorkspace,
+            owner: { manager, handle in
+                ExtWorkspaceClient(resource: handle, manager: manager)
+            },
+            installed: { _, projection, _ in projection.start() }))
+        router.addGlobal(ExtDataControlManagerV1Server.global(
+            implementation: extDataControl))
+        dataDevice.addSelectionObserver(extDataControl)
+        router.addGlobal(ZwpTextInputManagerV3Server.global(
+            implementation: textInputManager, advertisedVersion: 2))
 
         // The compositor impl owns the live-surface registry the frame/presentation
         // completion crossings iterate.
@@ -234,7 +325,17 @@ public final class WaylandRouterRuntime {
             return
         }
         let output = WlOutput(info: info)
-        guard output.register(in: router) else { return }
+        guard output.installGlobal(router.addGlobal(
+            WlOutputServer.global(
+                implementation: output,
+                advertisedVersion: 4,
+                owner: { output, handle in
+                    WlOutputBinding(resource: handle, output: output)
+                },
+                installed: { output, _, handle in
+                    output.resourceInstalled(handle)
+                })))
+        else { return }
         // The compositor also retains the output so surfaces can resolve their
         // overlapping DisplayIDs to bound wl_output resources for enter/leave.
         compositor.addOutput(output)

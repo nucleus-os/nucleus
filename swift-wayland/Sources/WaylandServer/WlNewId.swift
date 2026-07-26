@@ -28,8 +28,8 @@ import WaylandServerC
     @_lifetime(borrow client)
     @unsafe package init(client: borrowing OpaquePointer, id: UInt32, version: Int32) {
         unsafe self.client = copy client
-        unsafe self.id = id
-        unsafe self.version = version
+        self.id = id
+        self.version = version
     }
 
     /// Implementation seam used by generated, interface-specific owner factories.
@@ -56,7 +56,7 @@ import WaylandServerC
     @MainActor
     package func _createBare() -> WaylandResourceReference<Interface>? {
         let resource = unsafe wl_resource_create(
-            client, Interface.interface, version, id)
+            client, Interface.descriptor.nativeInterface, version, id)
         return unsafe WaylandResourceReference<Interface>(resource)
     }
 }

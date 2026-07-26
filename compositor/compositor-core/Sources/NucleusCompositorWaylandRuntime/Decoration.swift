@@ -50,12 +50,6 @@ extension XdgDecorationManager: ZxdgDecorationManagerV1Requests {
 @safe final class XdgDecorationManager {
     weak var delegate: (any DecorationDelegate)?
 
-    func register(in router: NucleusWaylandRouter) {
-        router.addGlobal(
-            ZxdgDecorationManagerV1Server.global(
-                implementation: self,
-                advertisedVersion: 2))
-    }
 }
 
 @MainActor

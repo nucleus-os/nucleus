@@ -119,14 +119,14 @@ public enum WaylandResource {
             interface: Child.self,
             version: Swift.min(version, Child.maximumVersion),
             id: 0,
-            vtable: Child.requestVtable(),
+            vtable: Child.descriptor.nativeRequestVtable,
             owner: { handle in
                 childHandle = handle
-                return unsafe makeOwner(handle)
+                return makeOwner(handle)
             },
             installed: { childOwner in
-                guard let childHandle, unsafe publish(childHandle) else {
-                    unsafe childHandle?.destroy()
+                guard let childHandle, publish(childHandle) else {
+                    childHandle?.destroy()
                     return
                 }
                 published = true
@@ -135,13 +135,13 @@ public enum WaylandResource {
             using: createResource)
 
         guard let created else {
-            if unsafe childHandle == nil {
-                unsafe parent.postNoMemory()
+            if childHandle == nil {
+                parent.postNoMemory()
             }
             return nil
         }
         guard published else {
-            unsafe childHandle?.destroy()
+            childHandle?.destroy()
             return nil
         }
         return created
@@ -161,7 +161,7 @@ public enum WaylandResource {
         using createResource: ResourceFactory
     ) -> Owner? {
         guard let resource = unsafe createResource(
-            client, Interface.interface, version, id)
+            client, Interface.descriptor.nativeInterface, version, id)
         else { return nil }
 
         guard let reference =
@@ -170,9 +170,9 @@ public enum WaylandResource {
             unsafe wl_resource_destroy(resource)
             return nil
         }
-        let handle = unsafe WaylandResourceHandle<Interface>(reference: reference)
+        let handle = WaylandResourceHandle<Interface>(reference: reference)
 
-        guard let owner = unsafe makeOwner(handle) else {
+        guard let owner = makeOwner(handle) else {
             unsafe wl_resource_destroy(resource)
             return nil
         }
@@ -293,11 +293,11 @@ public enum WaylandResource {
             resource,
             retaining: semanticOwner)
         else { return nil }
-        unsafe self.lifetime = lifetime
+        self.lifetime = lifetime
     }
 
     public var handle: WaylandResourceHandle<Interface> {
-        unsafe WaylandResourceHandle(reference: self)
+        WaylandResourceHandle(reference: self)
     }
 
     public var isLive: Bool {
@@ -322,7 +322,7 @@ public enum WaylandResource {
     public func retainedSemanticOwner<Owner: AnyObject>(
         as _: Owner.Type
     ) -> Owner? {
-        unsafe lifetime.semanticOwner as? Owner
+        lifetime.semanticOwner as? Owner
     }
 
     @discardableResult

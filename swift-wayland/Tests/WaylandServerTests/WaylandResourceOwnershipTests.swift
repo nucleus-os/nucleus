@@ -4,10 +4,10 @@ import WaylandServerC
 @testable import WaylandServer
 
 private enum TestCallbackServer: WaylandServerInterface {
-    nonisolated(unsafe) static let interface =
-        unsafe swift_wayland_iface_wl_callback()
+    nonisolated static let descriptor = unsafe WaylandServerInterfaceDescriptor(
+        nativeInterface: swift_wayland_iface_wl_callback(),
+        nativeRequestVtable: nil)
     nonisolated static let maximumVersion: Int32 = 1
-    nonisolated static func requestVtable() -> UnsafeRawPointer? { nil }
 }
 
 @MainActor
@@ -160,7 +160,7 @@ struct WaylandResourceOwnershipTests {
         try #require(unsafe createdClient != nil, "wl_client_create")
         let client = unsafe createdClient!
         let createdResource = unsafe wl_resource_create(
-            client, TestCallbackServer.interface, 1, 2)
+            client, TestCallbackServer.descriptor.nativeInterface, 1, 2)
         try #require(unsafe createdResource != nil, "wl_resource_create")
         let resource = unsafe createdResource!
         let reference = try #require(
@@ -192,7 +192,7 @@ struct WaylandResourceOwnershipTests {
         try #require(unsafe createdClient != nil, "wl_client_create")
         let client = unsafe createdClient!
         let createdResource = unsafe wl_resource_create(
-            client, TestCallbackServer.interface, 1, 2)
+            client, TestCallbackServer.descriptor.nativeInterface, 1, 2)
         try #require(unsafe createdResource != nil, "wl_resource_create")
         let resource = unsafe createdResource!
         var owner: Owner? = Owner()
@@ -253,7 +253,7 @@ struct WaylandResourceOwnershipTests {
         try #require(unsafe createdClient != nil, "wl_client_create")
         let client = unsafe createdClient!
         let createdParent = unsafe wl_resource_create(
-            client, TestCallbackServer.interface, 1, 2)
+            client, TestCallbackServer.descriptor.nativeInterface, 1, 2)
         try #require(unsafe createdParent != nil, "wl_resource_create")
         let parent = try #require(
             unsafe WaylandResourceHandle<TestCallbackServer>(

@@ -1,4 +1,5 @@
 import Testing
+import WaylandProtocolTypes
 @testable import NucleusCompositorWaylandRuntime
 
 // wp_cursor_shape_v1: the shape-enum → theme-name mapping that `applyCursorShape`
@@ -6,25 +7,26 @@ import Testing
 // (the theme load + hardware-plane upload need a device).
 @Suite struct CursorShapeNameTests {
     @Test func mapsTheEnumBoundaries() {
-        #expect(cursorShapeName(1) == "default")
-        #expect(cursorShapeName(4) == "pointer")
-        #expect(cursorShapeName(9) == "text")
-        #expect(cursorShapeName(17) == "grabbing")
-        #expect(cursorShapeName(34) == "zoom-out")
+        #expect(cursorShapeName(.default) == "default")
+        #expect(cursorShapeName(.pointer) == "pointer")
+        #expect(cursorShapeName(.text) == "text")
+        #expect(cursorShapeName(.grabbing) == "grabbing")
+        #expect(cursorShapeName(.zoomOut) == "zoom-out")
+        #expect(cursorShapeName(.dndAsk) == "dnd-ask")
+        #expect(cursorShapeName(.allResize) == "all-resize")
     }
 
     @Test func rejectsOutOfRange() {
-        // 0 and > 34 are invalid_shape (→ nil → the router posts the protocol error).
-        #expect(cursorShapeName(0) == nil)
-        #expect(cursorShapeName(35) == nil)
-        #expect(cursorShapeName(.max) == nil)
+        #expect(cursorShapeName(.init(rawValue: 0)) == nil)
+        #expect(cursorShapeName(.init(rawValue: 37)) == nil)
+        #expect(cursorShapeName(.init(rawValue: .max)) == nil)
     }
 
     @Test func coversEveryValidShapeWithHyphenatedNames() {
-        // All 34 shapes map to a non-empty name; multi-word shapes use the CSS
+        // All protocol shapes map to a non-empty name; multi-word shapes use the CSS
         // hyphenated form the XCursor theme expects (e.g. "e-resize", not "e_resize").
-        for shape in UInt32(1)...34 {
-            let name = cursorShapeName(shape)
+        for rawValue in UInt32(1)...36 {
+            let name = cursorShapeName(.init(rawValue: rawValue))
             #expect(name != nil)
             #expect(name?.contains("_") == false)
             #expect(name?.isEmpty == false)

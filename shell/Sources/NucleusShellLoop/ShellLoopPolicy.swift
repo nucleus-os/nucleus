@@ -1,4 +1,11 @@
 import Glibc
+import NucleusLinuxPrimitives
+
+public enum ShellMonotonicClock {
+    public static func nowNanoseconds() -> UInt64 {
+        LinuxMonotonicClock.nowNanoseconds()
+    }
+}
 
 /// Classification of one poll descriptor's returned events.
 public struct ShellPollResult: Sendable, Equatable {

@@ -11,6 +11,7 @@ import Glibc
 import WaylandServer
 import WaylandServerC
 import WaylandServerDispatch
+import WaylandProtocolTypes
 import NucleusCompositorServer
 import NucleusCompositorServerTypes
 import NucleusCompositorWindowScene
@@ -58,7 +59,11 @@ private struct WireError {
     let objectID: UInt32
     let code: UInt32
     static func first(_ messages: [WireMessage]) -> WireError? {
-        guard let m = WireMessage.first(messages, object: 1, opcode: 0) else { return nil }
+        guard let m = WireMessage.first(
+            messages,
+            object: 1,
+            event: WlDisplayEventOpcode.error)
+        else { return nil }
         return WireError(objectID: m.u32(0), code: m.u32(4))
     }
 }
@@ -71,7 +76,7 @@ private func bind(
     guard let g = globals.first(where: { $0.interface == iface }) else {
         Issue.record("global \(iface) not advertised"); throw CancellationError()
     }
-    b.message(object: 2, opcode: 0) {
+    b.request(object: 2, opcode: WlRegistryRequestOpcode.bind) {
         $0.uint(g.name); $0.string(iface); $0.uint(g.version); $0.newId(id)
     }
 }
@@ -135,7 +140,11 @@ private func bind(
 // MARK: - core surface and XDG construction
 
 @Test func surfaceRejectsInvalidScaleAndTransform() throws {
-    func run(opcode: UInt16, value: Int32, expectedCode: UInt32) throws {
+    func run(
+        opcode: WlSurfaceRequestOpcode,
+        value: Int32,
+        expectedCode: UInt32
+    ) throws {
         let router = try #require(NucleusWaylandRouter())
         graph.compositor().register(in: router)
         let client = try #require(
@@ -146,10 +155,13 @@ private func bind(
         var request = WireBuilder()
         try bind(
             &request, "wl_compositor", compositorID, globals)
-        request.message(object: compositorID, opcode: 0) {
+        request.request(
+            object: compositorID,
+            opcode: WlCompositorRequestOpcode.createSurface
+        ) {
             $0.newId(surfaceID)
         }
-        request.message(object: surfaceID, opcode: opcode) {
+        request.request(object: surfaceID, opcode: opcode) {
             $0.int(value)
         }
         #expect(client.send(request))
@@ -160,8 +172,8 @@ private func bind(
         #expect(error.code == expectedCode)
     }
 
-    try run(opcode: 8, value: 0, expectedCode: 0)
-    try run(opcode: 7, value: 99, expectedCode: 1)
+    try run(opcode: .setBufferScale, value: 0, expectedCode: 0)
+    try run(opcode: .setBufferTransform, value: 99, expectedCode: 1)
 }
 
 @Test func xdgToplevelRejectsSelfParent() throws {
@@ -182,17 +194,29 @@ private func bind(
         &request, "wl_compositor", compositorID, globals)
     try bind(
         &request, "xdg_wm_base", wmBaseID, globals)
-    request.message(object: compositorID, opcode: 0) {
+    request.request(
+        object: compositorID,
+        opcode: WlCompositorRequestOpcode.createSurface
+    ) {
         $0.newId(surfaceID)
     }
-    request.message(object: wmBaseID, opcode: 2) {
+    request.request(
+        object: wmBaseID,
+        opcode: XdgWmBaseRequestOpcode.getXdgSurface
+    ) {
         $0.newId(xdgSurfaceID)
         $0.object(surfaceID)
     }
-    request.message(object: xdgSurfaceID, opcode: 1) {
+    request.request(
+        object: xdgSurfaceID,
+        opcode: XdgSurfaceRequestOpcode.getToplevel
+    ) {
         $0.newId(toplevelID)
     }
-    request.message(object: toplevelID, opcode: 1) {
+    request.request(
+        object: toplevelID,
+        opcode: XdgToplevelRequestOpcode.setParent
+    ) {
         $0.object(toplevelID)
     }
     #expect(client.send(request))

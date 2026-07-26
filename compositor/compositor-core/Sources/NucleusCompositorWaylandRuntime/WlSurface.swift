@@ -386,7 +386,7 @@ import NucleusTypes
         pending.offsetY = y
     }
 
-    @unsafe func installPendingReleaseCallback(
+    func installPendingReleaseCallback(
         _ callback: WlNewId<WlCallbackServer>
     ) -> Bool {
         guard pending.bufferAttached, pending.buffer != nil else {

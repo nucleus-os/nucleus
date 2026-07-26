@@ -25,14 +25,8 @@ protocol GammaControlDelegate: AnyObject {
 @safe final class ZwlrGammaControlManager {
     weak var delegate: (any GammaControlDelegate)?
     /// The active control per output (output identity → control).
-    private var controls:
-        [ObjectIdentifier: WeakReference<ZwlrGammaControl>] = [:]
-
-    func register(in router: NucleusWaylandRouter) {
-        router.addGlobal(
-            ZwlrGammaControlManagerV1Server.global(
-                implementation: self))
-    }
+    private var controls =
+        WeakObjectMap<ObjectIdentifier, ZwlrGammaControl>()
 
     fileprivate func apply(output: WlOutput?, red: [UInt16], green: [UInt16], blue: [UInt16]) {
         delegate?.gammaApply(output: output, red: red, green: green, blue: blue)
@@ -43,21 +37,21 @@ protocol GammaControlDelegate: AnyObject {
     fileprivate func controlDestroyed(_ control: ZwlrGammaControl, output: WlOutput?) {
         guard let output else { return }
         let key = ObjectIdentifier(output)
-        if controls[key]?.value === control {
-            controls[key] = nil
+        if controls.value(forKey: key) === control {
+            controls.removeValue(forKey: key)
             delegate?.gammaClear(output: output)
         }
     }
 
     func outputRemoved(_ output: WlOutput) {
         let key = ObjectIdentifier(output)
-        let control = controls.removeValue(forKey: key)?.value
+        let control = controls.removeValue(forKey: key)
         control?.preempt()
         delegate?.gammaClear(output: output)
     }
 
     func outputRestored(_ output: WlOutput) {
-        controls[ObjectIdentifier(output)]?.value?.reapply()
+        controls.value(forKey: ObjectIdentifier(output))?.reapply()
     }
 
 }
@@ -84,8 +78,8 @@ extension ZwlrGammaControlManager: ZwlrGammaControlManagerV1Requests {
                     return
                 }
                 let key = ObjectIdentifier(output)
-                let previous = self.controls[key]?.value
-                self.controls[key] = WeakReference(control)
+                let previous = self.controls.value(forKey: key)
+                self.controls.insert(control, forKey: key)
                 previous?.preempt()
                 control.resource.sendGammaSize(size: size)
             })

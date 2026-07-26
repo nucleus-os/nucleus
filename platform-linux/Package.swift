@@ -7,6 +7,9 @@ let package = Package(
     products: [
         .library(name: "LinuxColliderRecipe", targets: ["LinuxColliderRecipe"]),
         .library(
+            name: "NucleusLinuxPrimitives",
+            targets: ["NucleusLinuxPrimitives"]),
+        .library(
             name: "NucleusLinuxReactor",
             targets: ["NucleusLinuxReactor"]),
         .library(name: "NucleusLinuxDBus", targets: ["NucleusLinuxDBus"]),
@@ -39,8 +42,22 @@ let package = Package(
             name: "LinuxColliderRecipe",
             dependencies: [.product(name: "ColliderCore", package: "engine")]),
         .target(
+            name: "NucleusLinuxPrimitives",
+            dependencies: ["NucleusLinuxPrimitivesC"],
+            path: "Sources/NucleusLinuxPrimitives",
+            swiftSettings: [
+                .unsafeFlags([
+                    "-enable-experimental-feature", "Lifetimes",
+                ]),
+            ]),
+        .target(
+            name: "NucleusLinuxPrimitivesC",
+            path: "Sources/NucleusLinuxPrimitivesC",
+            publicHeadersPath: "include"),
+        .target(
             name: "NucleusLinuxReactor",
             dependencies: [
+                "NucleusLinuxPrimitives",
                 "NucleusLinuxReactorC",
                 .product(name: "SystemPackage", package: "swift-system"),
             ],
@@ -137,6 +154,18 @@ let package = Package(
             path: "Benchmarks/NucleusLinuxBenchmarks",
             swiftSettings: [
                 .interoperabilityMode(.Cxx),
+                .unsafeFlags([
+                    "-enable-experimental-feature", "Lifetimes",
+                ]),
+            ]),
+        .testTarget(
+            name: "NucleusLinuxPrimitivesTests",
+            dependencies: [
+                "NucleusLinuxPrimitives",
+                "NucleusLinuxPrimitivesC",
+            ],
+            path: "Tests/NucleusLinuxPrimitivesTests",
+            swiftSettings: [
                 .unsafeFlags([
                     "-enable-experimental-feature", "Lifetimes",
                 ]),

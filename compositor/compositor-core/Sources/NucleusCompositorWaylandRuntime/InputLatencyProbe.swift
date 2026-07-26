@@ -10,6 +10,7 @@
 // end-to-end before the next, so the one ingress slot needs no synchronization.
 
 import Glibc
+import NucleusLinuxPrimitives
 
 /// log2(ns) buckets: bucket b holds [2^b, 2^(b+1)) ns. 32 buckets reach ~4.3 s,
 /// far past any sane dispatch latency, so nothing saturates the top. File-level so
@@ -69,9 +70,7 @@ enum InputLatencyProbe {
     private static var sinceDump: UInt64 = 0
 
     private static func nsNow() -> UInt64 {
-        var ts = timespec()
-        unsafe clock_gettime(CLOCK_MONOTONIC, &ts)
-        return UInt64(ts.tv_sec) &* 1_000_000_000 &+ UInt64(ts.tv_nsec)
+        LinuxMonotonicClock.nowNanoseconds()
     }
 
     /// Stamp ingress for a genuine libinput event at dispatch entry.

@@ -1,23 +1,12 @@
 import Dispatch
 import Glibc
+import NucleusLinuxPrimitives
 import NucleusLinuxReactorC
 import Synchronization
 import SystemPackage
 
 private func reactorMonotonicNowNanoseconds() -> UInt64 {
-    var value = timespec()
-    guard unsafe clock_gettime(CLOCK_MONOTONIC, &value) == 0,
-          value.tv_sec >= 0,
-          value.tv_nsec >= 0
-    else { return 0 }
-    let seconds = UInt64(value.tv_sec)
-    let nanoseconds = UInt64(value.tv_nsec)
-    let (scaledSeconds, overflow) = seconds.multipliedReportingOverflow(
-        by: 1_000_000_000)
-    if overflow { return UInt64.max }
-    let (result, additionOverflow) = scaledSeconds.addingReportingOverflow(
-        nanoseconds)
-    return additionOverflow ? UInt64.max : result
+    LinuxMonotonicClock.nowNanoseconds()
 }
 
 public enum LinuxReactorPollMode: Sendable, Equatable {

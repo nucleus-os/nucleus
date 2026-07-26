@@ -40,36 +40,23 @@ not block progress from one implementation phase to the next.
 
 ## Current State
 
-The current Android 17 runtime already handles several early container
-boundaries:
+Phases 1 through 9 are implemented. The Android 17 source inventory now
+contains canonical boundaries for libselinux, Binder, servicemanager, Zygote,
+installd, PackageManager, Keystore, vold, MediaProvider, ART, libartpalette,
+`run-as`, and adbd. Collider classifies the defined framework-health failures
+and routes them through complete session cleanup.
 
-- init skips Android SELinux setup and label-dependent creation work
-- Zygote skips process SELinux transitions
-- servicemanager uses permissive service discovery and registration in the
-  container
-- the Binder context manager does not request caller security identifiers
-- vold creates its primary device nodes and data directories without labels
-- BPF loading does not require `security.selinux` extended attributes
+Every affected Android target compiles from a cleanly materialized patch
+inventory. Host-runnable Binder, vold, libselinux, Collider, and focused
+component tests pass. The generated ART host test runner has a host-wide
+allocator-teardown defect that aborts even its path-only tests; ART production
+and test targets compile and link successfully, and Phase 10 owns their
+in-container behavioral qualification.
 
-The latest runtime evidence identifies four boot-critical gaps:
-
-1. Zygote terminates app children while reading labels for `/data/user`; the
-   captured run contains eight fatal failures across SystemUI,
-   PermissionController, and Provision.
-2. installd rejects app-data work after `lgetfilecon` returns `ENODATA`; the
-   captured run contains 267 failed label reads across 167 paths and 534
-   restorecon errors.
-3. Binder transactions fail when local services request transaction security
-   contexts; the captured run contains 36 small-parcel transaction failures.
-4. Keystore2 authorization requires Binder caller SIDs and SELinux access
-   checks.
-
-The same run also exposes non-fatal PackageSettings label assumptions and
-latent label dependencies in storage lifecycle, ART update paths, `run-as`,
-adb, Incremental FS, and other optional services. Its 1,236
-`SELinux is disabled, skipping restorecon` messages are mostly successful
-libselinux no-ops, but they identify high-volume paths that must call the
-repository's container helper directly.
+No post-implementation container or compositor run has been performed.
+Phase 10 is the only remaining phase and begins with a fresh modern runtime
+provision before exercising boot, application, storage, artifact, adb,
+rendering, shutdown, and TTY behavior in order.
 
 ## Target Architecture
 
@@ -341,6 +328,32 @@ mount isolation without requiring filesystem labels.
 Phase 4 makes installd own one complete container path instead of fixing each
 new restorecon failure after it appears.
 
+### Execution status
+
+- [x] `installd` owns one cached Android-SELinux availability decision derived
+  from `ro.nucleus.container`.
+- [x] Ordinary restorecon, package-directory restorecon, label reads, and
+  symlink label copies pass through one `installd` helper boundary.
+- [x] Lazy app-data restorecon returns before label reads, restore-in-progress
+  xattrs, relabel traversal, or detached relabel work in the Nucleus container.
+- [x] Explicit app-data and SDK-sandbox restorecon requests preserve argument
+  validation and return before label-only path traversal in the container.
+- [x] Profile, app move, native-library symlink, oat-directory, secondary-dex,
+  app-data copy, and app-data move paths use the same boundary.
+- [x] Path validation, directory and symlink operations, ownership, modes,
+  project IDs, quotas, encryption preparation, cache accounting, and dex
+  artifact handling remain unchanged.
+- [x] The Binder, servicemanager, and `installd` work is consolidated in one
+  `frameworks/native` forward patch that materializes into a clean AOSP source
+  tree.
+- [x] `installd`, `installd_service_test`, and `installd_dexopt_test` compile
+  for the Android 17 product after clean materialization.
+- [x] Phase 4 implementation is complete.
+
+Phase 10 executes the compiled device tests and validates first-boot app-data,
+SDK sandbox, profile, dex, move, snapshot, and rollback behavior in the final
+integrated runtime.
+
 ### Implementation
 
 In `frameworks/native/cmds/installd`:
@@ -401,6 +414,37 @@ label-neutral Nucleus path that preserves its non-label contracts.
 Phase 5 starts only after Phase 2 Binder transport succeeds. It replaces
 authorization rather than copying Waydroid's blanket `Ok(())` behavior.
 
+### Execution status
+
+- [x] Keystore2 selects one cached authorization backend from
+  `ro.nucleus.container` at process startup.
+- [x] The stock backend retains caller SID, process-context, selabel lookup,
+  and SELinux access-vector behavior.
+- [x] The Nucleus backend authorizes from Binder caller UID, application-key
+  ownership, explicit grant vectors, and a closed platform namespace table.
+- [x] Application namespaces remain owner-scoped and cross-UID access requires
+  an explicit grant containing the requested operation.
+- [x] The shipped shell, vold, odsign, Wi-Fi, lock-settings, keychain, and
+  resume-on-reboot namespaces have explicit AID and operation mappings;
+  unlisted namespaces deny access.
+- [x] Administrative permissions are assigned explicitly to system, root, and
+  credstore AIDs; all other caller and operation combinations deny access.
+- [x] Operation, security-level, authorization, maintenance, metrics,
+  compatibility, and confirmation call paths share the three central
+  permission entry points and cannot request a caller SID in Nucleus mode.
+- [x] Denials log only caller UID, operation, and namespace.
+- [x] Behavioral tests cover app ownership, grant vectors, mapped and unmapped
+  platform namespaces, blob ownership, and administrative AID permissions.
+- [x] The `system/security` forward patch materializes into a clean AOSP source
+  tree.
+- [x] `keystore2` and `keystore2_test` compile for the Android 17 product after
+  clean materialization.
+- [x] Phase 5 implementation is complete.
+
+Phase 10 executes the compiled device tests and validates Keystore2 boot
+registration, application key lifecycles, cross-UID denial, explicit grants,
+and stock-mode SELinux behavior in the final integrated runtime.
+
 ### Implementation
 
 In `system/security/keystore2`:
@@ -457,6 +501,29 @@ isolation.
 Phase 6 removes the remaining label assumptions from vold without replacing
 them with process-name or UID guesses.
 
+### Execution status
+
+- [x] vold uses one cached storage-security mode for device nodes, directory
+  preparation, user subdirectories, and restorecon requests.
+- [x] Every direct storage label operation is unreachable in Nucleus mode.
+- [x] vold retains the exact FUSE mount capability and associates it with the
+  Android user and mount before invoking the external-storage callback.
+- [x] MediaProvider proves possession of that capability through a
+  permission-protected StorageManager boundary.
+- [x] vold records the accepted daemon PID and process start time, removes the
+  registration on session exit or unmount, and rejects stale PID reuse.
+- [x] Open-file cleanup uses the explicit registry; `killFuseDaemon` remains
+  the explicit override.
+- [x] `vold`, `vold_prepare_subdirs`, `vold_tests`, MediaProvider,
+  system_server, and the affected API/stub surfaces compile.
+- [x] Clean source materialization reproduces the canonical vold,
+  frameworks/base, and MediaProvider patches exactly.
+- [x] Phase 6 implementation is complete.
+
+Phase 10 exercises the FUSE capability handshake, daemon cleanup, PID-reuse
+rejection, user-storage preparation, mount, unmount, and explicit kill
+behavior in the final container.
+
 ### Implementation
 
 In `system/vold`:
@@ -497,6 +564,29 @@ explicit runtime identity instead of filesystem labels.
 
 Phase 7 handles update and recompilation paths that do not execute during every
 boot.
+
+### Execution status
+
+- [x] ART exposes one cached Nucleus container-security mode to artifact
+  producers.
+- [x] artd preserves all artifact work while making restorecon a successful
+  label no-op in Nucleus mode.
+- [x] odrefresh and libartpalette preserve staging, flush, rename, cleanup, and
+  rollback behavior while omitting direct staging-directory labels in Nucleus
+  mode.
+- [x] `artd`, `odrefresh`, `art_odrefresh_tests`, `art_artd_tests`, and
+  `libartpalette-system` compile from the canonical patches.
+- [x] Clean source materialization reproduces the canonical ART and
+  libartpalette patches exactly.
+- [x] Phase 7 implementation is complete.
+
+The generated host `art_artd_tests` runner currently aborts every isolated
+test, including path-only tests, during allocator teardown. This is a host test
+harness failure rather than an ART behavior failure: the production and test
+targets compile and link successfully, while the runner reports zero executed
+tests before the common double-free abort. Phase 10 therefore owns application
+install, update, move, rollback, uninstall, dex compilation, ART APEX update,
+staging, cleanup, and DAC-result validation in the final container.
 
 ### Implementation
 
@@ -539,13 +629,48 @@ production have complete label-neutral paths.
 Phase 8 removes remaining product-visible assumptions after the core runtime is
 stable.
 
+### Execution status
+
+- [x] `run-as` preserves every package, directory, debuggability, UID/GID,
+  supplementary-group, and environment check while omitting only the Android
+  SELinux process transition in Nucleus mode.
+- [x] adbd uses one cached daemon-local security mode for root and trade-in
+  transitions while preserving privilege dropping and authentication.
+- [x] adb file-sync and IncFS restorecon calls use the Phase 1 quiet,
+  successful restorecon contract; neither needs a component-specific bypass.
+- [x] Recovery adbd, DSU, virtualization guests, host tools,
+  hwservicemanager, and legacy HIDL service management remain outside the
+  Nucleus product and unchanged.
+- [x] The final production call-site audit classifies all reachable direct
+  SELinux operations:
+  - init, Binder transport, servicemanager, Zygote, installd, Keystore, vold,
+    MediaProvider, ART, libartpalette, `run-as`, and adbd use their
+    repository-owned Nucleus security capability
+  - restorecon-only adb, IncFS, and APEX paths use the Phase 1 library contract
+  - the framework `SELinux` JNI surface remains a truthful public query API
+  - `cmd` checks are guarded by `is_selinux_enabled()`
+  - compressed-APEX labeling, direct APEX block-device creation, recovery,
+    DSU, virtualization guests, and host-only tools are unreachable in the
+    shipped Nucleus product
+- [x] Shipped AIDL services, including DRM and AI Seal services selected by the
+  platform product, use the common Phase 2 Binder transport policy and require
+  no service-specific exception.
+- [x] `run-as`, `adbd`, and `adbd_test` compile from the canonical patches.
+- [x] Clean source materialization reproduces the canonical system/core and
+  adb patches exactly.
+- [x] Phase 8 implementation is complete.
+
+Phase 10 exercises authenticated adb shell, debuggable and non-debuggable
+`run-as`, optional IncFS behavior when enabled, and SID-requesting shipped
+services in the final container.
+
 ### `run-as` and adb
 
 1. Make `run-as` skip `selinux_android_setcontext` in Nucleus mode.
 2. Preserve package debuggability checks, UID/GID transition, supplementary
    groups, data-directory validation, and environment setup.
 3. Keep adb restorecon calls as successful label no-ops.
-4. Skip adb root and recovery `setcon` transitions in Nucleus mode.
+4. Skip adb root and trade-in `setcon` transitions in Nucleus mode.
 5. Preserve adb privilege dropping and authentication.
 
 ### Incremental FS
@@ -594,6 +719,31 @@ removed.
 Phase 9 makes regressions visible without adding source-shape or
 configuration-inspection tests.
 
+### Execution status
+
+- [x] The Phase 1 restorecon contract is quiet, and repository-owned
+  high-volume container paths bypass label work before reaching libselinux.
+- [x] Init emits the single product-security contract message;
+  servicemanager and Keystore each emit one startup message for their selected
+  authorization backend.
+- [x] Collider treats zygote specialization failure, failed small-parcel
+  Binder transport, installd app-data failure, Keystore unavailability,
+  repeated system_server startup, repeated zygote death, repeated
+  system_server crash, and repeated SurfaceFlinger crash as framework-boot
+  failures.
+- [x] Every health failure enters the existing session cleanup path, which
+  stops the Android container, persists tombstones and host audit data, and
+  tears down the compositor-side session.
+- [x] Host AppArmor, capability, BPF, protected-sysctl, and ptrace diagnostics
+  remain separate from Android framework-health classification.
+- [x] Focused health-monitor tests and the complete Collider test suite pass.
+- [x] Keystore compiles from the cleanly materialized canonical patch with its
+  startup-backend diagnostic.
+- [x] Phase 9 implementation is complete.
+
+Phase 10 owns induced-failure shutdown observation and confirms that a healthy
+final-container run contains none of the classified failure signals.
+
 ### Implementation
 
 1. Keep component diagnostics focused on failed operations, not routine
@@ -601,8 +751,9 @@ configuration-inspection tests.
 2. Stop invoking restorecon in high-volume container paths once their
    repository-level wrapper exists. Do not emit thousands of
    `SELinux is disabled, skipping restorecon` messages.
-3. Retain one startup message per affected daemon describing its selected
-   security backend.
+3. Retain one startup message for each daemon that selects an authorization
+   backend: init states the product contract, servicemanager states its access
+   backend, and Keystore states its authorization backend.
 4. Extend Collider's Android boot health evaluation to identify:
    - Zygote specialization death
    - system_server restart

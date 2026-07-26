@@ -25,11 +25,6 @@ import WaylandProtocolTypes
         self.host = host
     }
 
-    func register(in router: NucleusWaylandRouter) {
-        router.addGlobal(
-            XwaylandShellV1Server.global(
-                implementation: self))
-    }
 }
 
 extension XwaylandShellManager: XwaylandShellV1Requests {

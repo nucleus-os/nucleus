@@ -11,12 +11,6 @@ import WaylandServerDispatch
 
 @MainActor
 @safe final class XdgOutputManager {
-    func register(in router: NucleusWaylandRouter) {
-        router.addGlobal(
-            ZxdgOutputManagerV1Server.global(
-                implementation: self,
-                advertisedVersion: 3))
-    }
 }
 
 extension XdgOutputManager: ZxdgOutputManagerV1Requests {

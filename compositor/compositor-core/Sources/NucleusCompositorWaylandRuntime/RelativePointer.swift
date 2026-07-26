@@ -15,20 +15,14 @@ import WaylandServerDispatch
 /// its wl_resource).
 @MainActor
 @safe final class RelativePointerManager {
-    private var bindings: [WeakReference<RelativePointer>] = []
-
-    func register(in router: NucleusWaylandRouter) {
-        router.addGlobal(
-            ZwpRelativePointerManagerV1Server.global(
-                implementation: self))
-    }
+    private var bindings = WeakObjectList<RelativePointer>()
 
     fileprivate func add(_ binding: RelativePointer) {
-        bindings.append(WeakReference(binding))
+        bindings.append(binding)
     }
 
     fileprivate func remove(_ binding: RelativePointer) {
-        bindings.removeAll { $0.value == nil || $0.value === binding }
+        bindings.remove(binding)
     }
 
     /// Emit relative_motion to every relative-pointer object of `clientKey`, in
@@ -38,10 +32,7 @@ import WaylandServerDispatch
         clientKey key: WaylandClientID, timestampUs: UInt64,
         dx: Double, dy: Double, dxUnaccel: Double, dyUnaccel: Double
     ) {
-        var live: [WeakReference<RelativePointer>] = []
-        for box in bindings {
-            guard let b = box.value else { continue }
-            live.append(box)
+        for b in bindings.liveValues() {
             guard b.clientKey == key else { continue }
             b.resource.sendRelativeMotion(
                 utime_hi: UInt32(timestampUs >> 32),
@@ -49,7 +40,6 @@ import WaylandServerDispatch
                 dx: dx, dy: dy,
                 dx_unaccel: dxUnaccel, dy_unaccel: dyUnaccel)
         }
-        bindings = live
     }
 
 }

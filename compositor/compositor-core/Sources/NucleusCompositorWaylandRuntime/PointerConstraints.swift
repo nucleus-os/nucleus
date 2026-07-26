@@ -19,27 +19,18 @@ import WaylandProtocolTypes
 
 @MainActor
 @safe final class PointerConstraintsManager {
-    private var constraints: [WeakReference<PointerConstraint>] = []
-
-    func register(in router: NucleusWaylandRouter) {
-        router.addGlobal(
-            ZwpPointerConstraintsV1Server.global(
-                implementation: self))
-    }
+    private var constraints = WeakObjectList<PointerConstraint>()
 
     fileprivate func add(_ constraint: PointerConstraint) {
-        constraints.append(WeakReference(constraint))
+        constraints.append(constraint)
     }
 
     fileprivate func remove(_ constraint: PointerConstraint) {
-        constraints.removeAll { $0.value == nil || $0.value === constraint }
+        constraints.remove(constraint)
     }
 
     fileprivate func constraint(for surface: WlSurface) -> PointerConstraint? {
-        for box in constraints where box.value?.surface === surface {
-            return box.value
-        }
-        return nil
+        constraints.liveValues().first { $0.surface === surface }
     }
 
     /// The kind of the active constraint on `surface`, or nil if none is active.

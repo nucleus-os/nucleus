@@ -307,15 +307,16 @@ struct ServerDispatchIsolationTests {
         let offerOwner = TypedDataOfferOwner()
         let createdOfferResource = unsafe WaylandResource.create(
                 client: client,
-                interface: WlDataOfferServer.interface,
+                interface: WlDataOfferServer.descriptor.nativeInterface,
                 version: WlDataOfferServer.maximumVersion,
                 id: 2,
-                vtable: WlDataOfferServer.vtable,
+                vtable: WlDataOfferServer.descriptor.nativeRequestVtable,
                 owner: offerOwner)
         let hasOfferResource = unsafe createdOfferResource != nil
         try #require(hasOfferResource)
         let offerResource = unsafe createdOfferResource!
-        let offerVtable = unsafe WlDataOfferServer.vtable.assumingMemoryBound(
+        let offerVtable = unsafe WlDataOfferServer.descriptor
+            .nativeRequestVtable!.assumingMemoryBound(
             to: swift_wayland_wl_data_offer_requests.self).pointee
 
         unsafe offerVtable.accept!(client, offerResource, 1, nil)
@@ -345,15 +346,16 @@ struct ServerDispatchIsolationTests {
         let viewportOwner = TypedViewportOwner()
         let createdViewportResource = unsafe WaylandResource.create(
                 client: client,
-                interface: WpViewportServer.interface,
+                interface: WpViewportServer.descriptor.nativeInterface,
                 version: WpViewportServer.maximumVersion,
                 id: 3,
-                vtable: WpViewportServer.vtable,
+                vtable: WpViewportServer.descriptor.nativeRequestVtable,
                 owner: viewportOwner)
         let hasViewportResource = unsafe createdViewportResource != nil
         try #require(hasViewportResource)
         let viewportResource = unsafe createdViewportResource!
-        let viewportVtable = unsafe WpViewportServer.vtable
+        let viewportVtable = unsafe WpViewportServer.descriptor
+            .nativeRequestVtable!
             .assumingMemoryBound(
                 to: swift_wayland_wp_viewport_requests.self).pointee
         unsafe viewportVtable.set_source!(
@@ -372,20 +374,20 @@ struct ServerDispatchIsolationTests {
         let parentSurfaceOwner = TestSurfaceOwner()
         let createdChildSurface = unsafe WaylandResource.create(
                 client: client,
-                interface: WlSurfaceServer.interface,
+                interface: WlSurfaceServer.descriptor.nativeInterface,
                 version: WlSurfaceServer.maximumVersion,
                 id: 4,
-                vtable: WlSurfaceServer.vtable,
+                vtable: WlSurfaceServer.descriptor.nativeRequestVtable,
                 owner: childSurfaceOwner)
         let hasChildSurface = unsafe createdChildSurface != nil
         try #require(hasChildSurface)
         let childSurface = unsafe createdChildSurface!
         let createdParentSurface = unsafe WaylandResource.create(
                 client: client,
-                interface: WlSurfaceServer.interface,
+                interface: WlSurfaceServer.descriptor.nativeInterface,
                 version: WlSurfaceServer.maximumVersion,
                 id: 5,
-                vtable: WlSurfaceServer.vtable,
+                vtable: WlSurfaceServer.descriptor.nativeRequestVtable,
                 owner: parentSurfaceOwner)
         let hasParentSurface = unsafe createdParentSurface != nil
         try #require(hasParentSurface)
@@ -395,16 +397,17 @@ struct ServerDispatchIsolationTests {
             tracker: DispatchTracker())
         let createdBufferResource = unsafe WaylandResource.create(
                 client: client,
-                interface: WlBufferServer.interface,
+                interface: WlBufferServer.descriptor.nativeInterface,
                 version: WlBufferServer.maximumVersion,
                 id: 6,
-                vtable: WlBufferServer.vtable,
+                vtable: WlBufferServer.descriptor.nativeRequestVtable,
                 owner: bufferOwner)
         let hasBufferResource = unsafe createdBufferResource != nil
         try #require(hasBufferResource)
         let bufferResource = unsafe createdBufferResource!
         childSurfaceOwner.expectedBufferOwner = bufferOwner
-        let surfaceVtable = unsafe WlSurfaceServer.vtable
+        let surfaceVtable = unsafe WlSurfaceServer.descriptor
+            .nativeRequestVtable!
             .assumingMemoryBound(
                 to: swift_wayland_wl_surface_requests.self).pointee
         unsafe surfaceVtable.attach!(
@@ -419,16 +422,17 @@ struct ServerDispatchIsolationTests {
             expectedParent: parentSurfaceOwner)
         let createdSubcompositorResource = unsafe WaylandResource.create(
                 client: client,
-                interface: WlSubcompositorServer.interface,
+                interface: WlSubcompositorServer.descriptor.nativeInterface,
                 version: WlSubcompositorServer.maximumVersion,
                 id: 7,
-                vtable: WlSubcompositorServer.vtable,
+                vtable: WlSubcompositorServer.descriptor.nativeRequestVtable,
                 owner: subcompositorOwner)
         let hasSubcompositorResource =
             unsafe createdSubcompositorResource != nil
         try #require(hasSubcompositorResource)
         let subcompositorResource = unsafe createdSubcompositorResource!
-        let subcompositorVtable = unsafe WlSubcompositorServer.vtable
+        let subcompositorVtable = unsafe WlSubcompositorServer.descriptor
+            .nativeRequestVtable!
             .assumingMemoryBound(
                 to: swift_wayland_wl_subcompositor_requests.self).pointee
         unsafe subcompositorVtable.get_subsurface!(
@@ -454,7 +458,8 @@ struct ServerDispatchIsolationTests {
         let client = unsafe createdClient!
         let tracker = DispatchTracker()
         let compositorInterface = unsafe swift_wayland_iface_wl_compositor()
-        let requestTable = unsafe WlCompositorServer.vtable
+        let requestTable = unsafe WlCompositorServer.descriptor
+            .nativeRequestVtable!
             .assumingMemoryBound(
                 to: swift_wayland_wl_compositor_requests.self
             ).pointee
@@ -476,7 +481,7 @@ struct ServerDispatchIsolationTests {
             interface: compositorInterface,
             version: 6,
             id: 2,
-            vtable: WlCompositorServer.vtable,
+            vtable: WlCompositorServer.descriptor.nativeRequestVtable,
             owner: defaultOwner!)
         let hasDefaultResource = unsafe createdDefaultResource != nil
         try #require(
@@ -499,7 +504,7 @@ struct ServerDispatchIsolationTests {
             interface: compositorInterface,
             version: 6,
             id: 4,
-            vtable: WlCompositorServer.vtable,
+            vtable: WlCompositorServer.descriptor.nativeRequestVtable,
             owner: overrideOwner!)
         let hasOverrideResource = unsafe createdOverrideResource != nil
         try #require(
@@ -512,7 +517,8 @@ struct ServerDispatchIsolationTests {
         #expect(tracker.overrideReleaseCount == 1)
         #expect(tracker.overrideOwnerDeinitCount == 1)
 
-        let bufferRequestTable = unsafe WlBufferServer.vtable
+        let bufferRequestTable = unsafe WlBufferServer.descriptor
+            .nativeRequestVtable!
             .assumingMemoryBound(
                 to: swift_wayland_wl_buffer_requests.self
             ).pointee
@@ -525,10 +531,10 @@ struct ServerDispatchIsolationTests {
             DestroyOnlyFallbackOwner(tracker: tracker)
         let createdFallbackResource = unsafe WaylandResource.create(
                 client: client,
-                interface: WlBufferServer.interface,
+                interface: WlBufferServer.descriptor.nativeInterface,
                 version: WlBufferServer.maximumVersion,
                 id: 5,
-                vtable: WlBufferServer.vtable,
+                vtable: WlBufferServer.descriptor.nativeRequestVtable,
                 owner: fallbackOwner!)
         let hasFallbackResource = unsafe createdFallbackResource != nil
         try #require(hasFallbackResource, "destroy-only fallback resource")
@@ -545,10 +551,10 @@ struct ServerDispatchIsolationTests {
             DestroyOnlyOverrideOwner(tracker: tracker)
         let createdDestroyOverrideResource = unsafe WaylandResource.create(
                 client: client,
-                interface: WlBufferServer.interface,
+                interface: WlBufferServer.descriptor.nativeInterface,
                 version: WlBufferServer.maximumVersion,
                 id: 6,
-                vtable: WlBufferServer.vtable,
+                vtable: WlBufferServer.descriptor.nativeRequestVtable,
                 owner: destroyOverrideOwner!)
         let hasDestroyOverrideResource =
             unsafe createdDestroyOverrideResource != nil

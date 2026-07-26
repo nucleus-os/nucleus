@@ -109,37 +109,19 @@ extension WaylandBorrowedObject where Interface == WlOutputServer {
             height: info.logicalHeight > 0 ? info.logicalHeight : fallbackHeight)
     }
 
-    /// Resolve the WlOutput backing a wl_output resource, or nil.
-    @unsafe static func from(
-        _ resource: UnsafeMutablePointer<wl_resource>?
-    ) -> WlOutput? {
-        guard let resource = unsafe resource,
-              let b = unsafe WaylandResource.owner(
-                of: resource, as: WlOutputBinding.self)
-        else { return nil }
-        return b.output
-    }
-
     init(info: OutputInfo) {
         self.info = info
     }
 
-    @discardableResult
-    func register(in router: NucleusWaylandRouter) -> Bool {
-        globalState.install(
-            router.addGlobal(
-                WlOutputServer.global(
-                    implementation: self,
-                    advertisedVersion: 4,
-                    owner: { output, handle in
-                        WlOutputBinding(
-                            resource: handle,
-                            output: output)
-                    },
-                    installed: { output, _, handle in
-                        output.globalState.addResource(handle)
-                        output.sendState(to: handle)
-                    })))
+    func installGlobal(_ handle: NucleusWaylandRouter.GlobalHandle?) -> Bool {
+        globalState.install(handle)
+    }
+
+    func resourceInstalled(
+        _ handle: WaylandResourceHandle<WlOutputServer>
+    ) {
+        globalState.addResource(handle)
+        sendState(to: handle)
     }
 
     /// Stop advertising this output. Existing wl_output resources remain valid

@@ -131,20 +131,20 @@ final class PointerCursorSurface {
     static func cursorImageFromShm(
         _ buffer: WaylandResourceReference<WlBufferServer>
     ) -> (pixels: [UInt8], width: UInt32, height: UInt32)? {
-        unsafe buffer.withShmBytes { metadata, bytes in
+        (try? buffer.withShmBytes { metadata, bytes in
             guard isReadableCursorShmFormat(metadata.format),
                 metadata.stride >= metadata.width * 4
             else { return nil }
-            let pixels = unsafe repackTightARGB(
-                source: bytes,
-                width: metadata.width,
-                height: metadata.height,
+            guard let pixels = bytes.copiedRows(
+                rowBytes: metadata.width * 4,
+                rowCount: metadata.height,
                 sourceStride: metadata.stride)
+            else { return nil }
             return (
                 pixels,
                 UInt32(metadata.width),
                 UInt32(metadata.height))
-        } ?? nil
+        }) ?? nil
     }
 
     /// Whether a wl_shm format is a 32-bit ARGB/XRGB variant readable as ARGB8888 (the
@@ -157,21 +157,18 @@ final class PointerCursorSurface {
     /// tightly-packed `width*height*4` buffer, stripping stride padding. Copies one full
     /// `width*4`-byte row per line, clamped to the source length; short/degenerate inputs
     /// yield a zero-filled buffer of the correct size (never over-reads).
-    @unsafe nonisolated static func repackTightARGB(
-        source: UnsafeRawBufferPointer, width: Int, height: Int, sourceStride: Int
+    nonisolated static func repackTightARGB(
+        source: [UInt8], width: Int, height: Int, sourceStride: Int
     ) -> [UInt8] {
         let rowBytes = width * 4
         var out = [UInt8](repeating: 0, count: max(0, rowBytes * height))
         guard width > 0, height > 0, sourceStride >= rowBytes else { return out }
-        out.withUnsafeMutableBytes { dst in
-            guard let dstBase = dst.baseAddress,
-                  let srcBase = source.baseAddress else { return }
-            for row in 0..<height {
-                let srcOff = row * sourceStride
-                guard srcOff + rowBytes <= source.count else { break }
-                unsafe dstBase.advanced(by: row * rowBytes).copyMemory(
-                    from: srcBase.advanced(by: srcOff), byteCount: rowBytes)
-            }
+        for row in 0..<height {
+            let sourceOffset = row * sourceStride
+            guard sourceOffset + rowBytes <= source.count else { break }
+            out.replaceSubrange(
+                row * rowBytes..<(row + 1) * rowBytes,
+                with: source[sourceOffset..<sourceOffset + rowBytes])
         }
         return out
     }

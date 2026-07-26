@@ -16,6 +16,7 @@
 // nominal XdgToplevelID only for persistent model correlation.
 
 import WaylandServer
+import WaylandProtocolTypes
 @_spi(NucleusCompositor) import NucleusLayers
 internal import NucleusCompositorServer
 import NucleusCompositorServerTypes
@@ -192,7 +193,7 @@ final class RouterWindowDriver {
 
     func toplevelConfigureSent(
         _ toplevel: XdgToplevel,
-        serial: UInt32,
+        serial: XdgConfigureSerial,
         initial: Bool
     ) {
         let wm = windowManager
@@ -202,9 +203,13 @@ final class RouterWindowDriver {
         if initial {
             _ = window.protocolState.queueConfigure(
                 rect: WindowRect(), activeMaximized: false, activeFullscreen: false,
-                specialOutputID: nil, layoutTransitionID: 0, serial: serial)
+                specialOutputID: nil, layoutTransitionID: 0,
+                serial: serial.rawValue)
         } else if let plan = entry.pendingPlan {
-            let pending = wm.recordConfigureSent(windowID: entry.windowID, serial: serial, plan: plan)
+            let pending = wm.recordConfigureSent(
+                windowID: entry.windowID,
+                serial: serial.rawValue,
+                plan: plan)
             // The compositor has committed to a new slot: begin a tiling spring toward
             // the configured frame. The presented frame eases there at the display rate
             // while the client renders its new-size buffer (scaled onto the eased frame),
@@ -234,7 +239,7 @@ final class RouterWindowDriver {
 
     func toplevelDidCommit(
         _ toplevel: XdgToplevel,
-        ackedSerial: UInt32,
+        ackedSerial: XdgConfigureSerial,
         hasBuffer: Bool
     ) {
         let surface = toplevel.xdgSurface?.surface
@@ -258,7 +263,8 @@ final class RouterWindowDriver {
         }
         // Latch the configure the client acked (active maximize/fullscreen + the
         // layout position from the configured rect).
-        let acceptedConfigure = window.consumeAckedConfigure(serial: ackedSerial)
+        let acceptedConfigure = window.consumeAckedConfigure(
+            serial: ackedSerial.rawValue)
         // Visible content is the declared window geometry (a sub-rect of the buffer);
         // absent a geometry, the last committed logical size stands.
         let contentSize = xdgCommittedContentSize(
@@ -873,7 +879,7 @@ extension RouterWindowDriver: CursorShapeDelegate {
     /// theme pixels into the cursor model → the hardware cursor plane), then request a
     /// frame so the new image reaches a commit. Returns false only for an out-of-range
     /// shape, which the router reports as `invalid_shape`.
-    func applyCursorShape(_ shape: UInt32) -> Bool {
+    func applyCursorShape(_ shape: WpCursorShapeDeviceV1Shape) -> Bool {
         guard let name = cursorShapeName(shape) else { return false }
         server.shellPolicy?.cursorApplyNamed(name)
         RenderBridge.requestCursorFrame(server: server)

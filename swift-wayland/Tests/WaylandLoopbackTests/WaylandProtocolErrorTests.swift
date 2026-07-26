@@ -48,7 +48,7 @@ private func captureProtocolError<
     let client = unsafe createdClient!
     let createdResource = unsafe wl_resource_create(
         client,
-        Interface.interface,
+        Interface.descriptor.nativeInterface,
         Interface.maximumVersion,
         objectID)
     try #require(
@@ -58,11 +58,11 @@ private func captureProtocolError<
     let createdHandle =
         unsafe WaylandResourceHandle<Interface>(nativeResource)
     try #require(
-        unsafe createdHandle != nil,
+        createdHandle != nil,
         "WaylandResourceHandle")
     let handle = createdHandle!
 
-    let didPost = unsafe post(handle)
+    let didPost = post(handle)
     #expect(didPost)
     display.flushClients()
 
@@ -110,7 +110,7 @@ struct WaylandProtocolErrorTests {
         let client = unsafe createdClient!
         let createdParent = unsafe wl_resource_create(
             client,
-            WlCallbackServer.interface,
+            WlCallbackServer.descriptor.nativeInterface,
             1,
             2)
         try #require(
@@ -223,7 +223,7 @@ struct WaylandProtocolErrorTests {
         let createdDecorationResource =
             unsafe wl_resource_create(
                 client,
-                ZxdgDecorationManagerV1Server.interface,
+                ZxdgDecorationManagerV1Server.descriptor.nativeInterface,
                 1,
                 2)
         try #require(unsafe createdDecorationResource != nil)
@@ -243,7 +243,7 @@ struct WaylandProtocolErrorTests {
         let createdLayerResource =
             unsafe wl_resource_create(
                 client,
-                ZwlrLayerSurfaceV1Server.interface,
+                ZwlrLayerSurfaceV1Server.descriptor.nativeInterface,
                 1,
                 3)
         try #require(unsafe createdLayerResource != nil)

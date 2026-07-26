@@ -135,6 +135,11 @@ let package = Package(
         ),
         .target(
             name: "NucleusShellLoop",
+            dependencies: [
+                .product(
+                    name: "NucleusLinuxPrimitives",
+                    package: "NucleusLinuxPlatform"),
+            ],
             path: "Sources/NucleusShellLoop"
         ),
         .testTarget(
@@ -156,6 +161,7 @@ let package = Package(
             name: "NucleusShellWayland",
             dependencies: [
                 "NucleusShellInputC",
+                "NucleusShellLoop",
                 .product(name: "WaylandClientC", package: "swift-wayland"),
                 .product(name: "WaylandClientDispatch", package: "swift-wayland"),
                 .product(name: "WaylandClient", package: "swift-wayland"),

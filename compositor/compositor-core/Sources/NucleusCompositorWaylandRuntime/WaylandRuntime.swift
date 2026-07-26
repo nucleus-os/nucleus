@@ -8,6 +8,7 @@
 // the compositor's main actor (the loop drives them on that thread) and crosses only Sendable values.
 
 import Glibc
+import NucleusLinuxPrimitives
 import WaylandServer
 import WaylandServerC
 public import NucleusCompositorServer
@@ -164,10 +165,7 @@ public final class WaylandRuntime {
     }
 
     private func monotonicNowNs() -> UInt64 {
-        var timestamp = timespec()
-        unsafe clock_gettime(CLOCK_MONOTONIC, &timestamp)
-        return UInt64(timestamp.tv_sec) &* 1_000_000_000
-            &+ UInt64(timestamp.tv_nsec)
+        LinuxMonotonicClock.nowNanoseconds()
     }
 
     // MARK: - Per-frame authoring + presentation

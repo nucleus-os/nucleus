@@ -44,13 +44,6 @@ protocol LayerShellDelegate: AnyObject {
         self.display = display
     }
 
-    func register(in router: NucleusWaylandRouter) {
-        router.addGlobal(
-            ZwlrLayerShellV1Server.global(
-                implementation: self,
-                advertisedVersion: 4))
-    }
-
     func nextSerial() -> UInt32 {
         display.nextSerial()
     }

@@ -79,7 +79,7 @@ struct TextInputServerEventBatch: Sendable {
 @MainActor
 @safe final class TextInputManagerV3 {
     private unowned let seat: WlSeat
-    private var inputs: [WeakReference<TextInputV3>] = []
+    private var inputs = WeakObjectList<TextInputV3>()
     private weak var enabledInput: TextInputV3?
     private weak var focusedSurface: WlSurface?
     private(set) var snapshots: [TextInputServerSnapshot] = []
@@ -88,15 +88,7 @@ struct TextInputServerEventBatch: Sendable {
         self.seat = seat
     }
 
-    func register(in router: NucleusWaylandRouter) {
-        router.addGlobal(
-            ZwpTextInputManagerV3Server.global(
-                implementation: self,
-                advertisedVersion: 2))
-    }
-
     var liveResourceCount: Int {
-        compactInputs()
         return inputs.count
     }
 
@@ -110,9 +102,8 @@ struct TextInputServerEventBatch: Sendable {
             keyboardLeave(previous)
         }
         focusedSurface = surface
-        compactInputs()
         guard let key = surface.protocolResource?.clientID else { return }
-        for input in inputs.compactMap(\.value)
+        for input in inputs.liveValues()
         where input.clientKey == key {
             input.focusEntered(surface)
         }
@@ -120,8 +111,7 @@ struct TextInputServerEventBatch: Sendable {
 
     func keyboardLeave(_ surface: WlSurface) {
         guard focusedSurface === surface else { return }
-        compactInputs()
-        for input in inputs.compactMap(\.value)
+        for input in inputs.liveValues()
         where input.focusedSurface === surface {
             input.focusLeft(surface)
         }
@@ -130,8 +120,7 @@ struct TextInputServerEventBatch: Sendable {
 
     func focusedSurfaceDestroyed(surfaceID: UInt32) {
         guard focusedSurface?.objectId == surfaceID else { return }
-        compactInputs()
-        for input in inputs.compactMap(\.value)
+        for input in inputs.liveValues()
         where input.focusedSurface?.objectId == surfaceID {
             input.focusWasDestroyed()
         }
@@ -149,8 +138,7 @@ struct TextInputServerEventBatch: Sendable {
     }
 
     fileprivate func register(_ input: TextInputV3) {
-        compactInputs()
-        inputs.append(WeakReference(input))
+        inputs.append(input)
         guard let focusedSurface,
               focusedSurface.protocolResource?.clientID == input.clientKey
         else { return }
@@ -161,9 +149,7 @@ struct TextInputServerEventBatch: Sendable {
         if enabledInput === input {
             enabledInput = nil
         }
-        inputs.removeAll {
-            $0.value == nil || $0.value === input
-        }
+        inputs.remove(input)
     }
 
     fileprivate func enable(_ input: TextInputV3) -> Bool {
@@ -182,10 +168,6 @@ struct TextInputServerEventBatch: Sendable {
 
     fileprivate func record(_ snapshot: TextInputServerSnapshot) {
         snapshots.append(snapshot)
-    }
-
-    private func compactInputs() {
-        inputs.removeAll { $0.value == nil }
     }
 
 }

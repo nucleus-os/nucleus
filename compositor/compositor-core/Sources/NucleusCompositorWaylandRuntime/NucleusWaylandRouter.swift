@@ -47,7 +47,7 @@ final class NucleusWaylandRouter {
     func addGlobal<Interface: WaylandServerInterface>(
         _ specification: WaylandGlobalSpecification<Interface>
     ) -> GlobalHandle? {
-        guard let registration = unsafe WaylandGlobalRegistration(
+        guard let registration = WaylandGlobalRegistration(
             display: display,
             specification: specification)
         else { return nil }

@@ -79,7 +79,7 @@ private final class WeakSelectionObserver {
     fileprivate unowned let host: RouterHost
     fileprivate unowned let dataExchange: DataExchangeService
 
-    private var devices: [WeakReference<WlDataDevice>] = []
+    private var devices = WeakObjectList<WlDataDevice>()
     private let display: WaylandDisplay
     private var activeDrag: ActiveWaylandDrag?
     var dragActive: Bool { activeDrag != nil }
@@ -114,17 +114,8 @@ private final class WeakSelectionObserver {
         selectionObservers.append(WeakSelectionObserver(observer))
     }
 
-    func register(in router: NucleusWaylandRouter) {
-        // libwayland's wl_data_device_manager is v3 (no manager `release`); data
-        // source/offer/device get their v3 set_actions/finish at this version.
-        router.addGlobal(
-            WlDataDeviceManagerServer.global(
-                implementation: self,
-                advertisedVersion: 3))
-    }
-
     fileprivate func addDevice(_ device: WlDataDevice) {
-        devices.append(WeakReference(device))
+        devices.append(device)
         // A newly-created device for the focused client immediately learns the
         // current selection.
         if delegate?.dataDeviceClientFocused(device.clientKey) == true {
@@ -133,7 +124,7 @@ private final class WeakSelectionObserver {
     }
 
     fileprivate func removeDevice(_ device: WlDataDevice) {
-        devices.removeAll { $0.value == nil || $0.value === device }
+        devices.remove(device)
     }
 
     /// Set the clipboard selection and deliver it to every focused device. Called
@@ -146,8 +137,7 @@ private final class WeakSelectionObserver {
         }
         selection = source
         selectionIdentity = replacementIdentity
-        for box in devices {
-            guard let device = box.value else { continue }
+        for device in devices.liveValues() {
             if delegate?.dataDeviceClientFocused(device.clientKey) == true {
                 device.sendSelectionOffer(source)
             }
@@ -165,8 +155,9 @@ private final class WeakSelectionObserver {
     /// Deliver the current selection to one client's devices on keyboard focus
     /// change.
     func deliverSelection(toClient clientKey: WaylandClientID) {
-        for box in devices where box.value?.clientKey == clientKey {
-            box.value?.sendSelectionOffer(selection)
+        for device in devices.liveValues()
+        where device.clientKey == clientKey {
+            device.sendSelectionOffer(selection)
         }
     }
 
@@ -318,7 +309,7 @@ private final class WeakSelectionObserver {
         guard let surfaceResource = surface.protocolResource,
             let clientKey = surfaceResource.clientID
         else { return }
-        let targets = devices.compactMap(\.value).filter {
+        let targets = devices.liveValues().filter {
             $0.clientKey == clientKey
         }
         drag.targetSurfaceID = surface.objectId

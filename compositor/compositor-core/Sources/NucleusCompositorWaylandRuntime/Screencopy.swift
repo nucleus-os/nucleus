@@ -79,20 +79,13 @@ enum ScreencopyActivity {
 final class ScreencopyManager {
     weak var delegate: (any ScreencopyDelegate)?
     private var pendingFrames:
-        [UInt64: [WeakReference<ScreencopyFrame>]] = [:]
+        [UInt64: WeakObjectList<ScreencopyFrame>] = [:]
     private var admittedByClient: [WaylandClientID: Int] = [:]
     private var admittedByOutput: [UInt64: Int] = [:]
     private var admittedTotal = 0
     private static let maximumCapturesPerClient = 8
     private static let maximumCapturesPerOutput = 8
     private static let maximumCapturesGlobal = 32
-
-    func register(in router: NucleusWaylandRouter) {
-        router.addGlobal(
-            ZwlrScreencopyManagerV1Server.global(
-                implementation: self,
-                advertisedVersion: 3))
-    }
 
     fileprivate func configuration(
         output: WlOutput?, region: WlRect?
@@ -127,10 +120,7 @@ final class ScreencopyManager {
             return
         }
         frame.holdAdmission(outputID: outputID)
-        var frames = pendingFrames[outputID, default: []]
-        frames.removeAll { $0.value == nil }
-        frames.append(WeakReference(frame))
-        pendingFrames[outputID] = frames
+        pendingFrames[outputID, default: WeakObjectList()].append(frame)
         delegate?.screencopyRequestFrame(output: output)
     }
 
@@ -139,8 +129,9 @@ final class ScreencopyManager {
     /// frame requested by `copy`, rather than an older frame that happened to be
     /// resident while the Wayland request was dispatched.
     func outputSubmitted(_ outputID: UInt64) {
-        let frames = pendingFrames.removeValue(forKey: outputID) ?? []
-        let liveFrames = frames.compactMap(\.value)
+        var frames = pendingFrames.removeValue(forKey: outputID)
+            ?? WeakObjectList()
+        let liveFrames = frames.liveValues()
         let preferRegionReadback = liveFrames.count == 1
         for frame in liveFrames {
             frame.completeQueuedCopy(
@@ -152,8 +143,9 @@ final class ScreencopyManager {
     /// captures. Existing frame resources remain valid and receive one terminal
     /// `failed` event.
     func outputRemoved(_ outputID: UInt64) {
-        let frames = pendingFrames.removeValue(forKey: outputID) ?? []
-        for frame in frames.compactMap(\.value) {
+        var frames = pendingFrames.removeValue(forKey: outputID)
+            ?? WeakObjectList()
+        for frame in frames.liveValues() {
             frame.failQueuedCopy()
         }
     }

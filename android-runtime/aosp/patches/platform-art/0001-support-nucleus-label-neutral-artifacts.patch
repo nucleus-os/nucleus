@@ -1,0 +1,96 @@
+diff --git a/artd/artd.cc b/artd/artd.cc
+index 1093ecae0a..fb81bdfe97 100644
+--- a/artd/artd.cc
++++ b/artd/artd.cc
+@@ -74,6 +74,7 @@
+ #include "base/macros.h"
+ #include "base/mem_map.h"
+ #include "base/memfd.h"
++#include "base/nucleus_security.h"
+ #include "base/os.h"
+ #include "base/pidfd.h"
+ #include "base/time_utils.h"
+@@ -677,6 +678,9 @@ Result<void> ArtdInjector::Restorecon(
+   if (!kIsTargetAndroid) {
+     return {};
+   }
++  if (!IsAndroidSelinuxOperational()) {
++    return {};
++  }
+ 
+   unsigned int flags = recurse ? SELINUX_ANDROID_RESTORECON_RECURSE : 0;
+   int res = 0;
+diff --git a/libartbase/base/nucleus_security.h b/libartbase/base/nucleus_security.h
+new file mode 100644
+index 0000000000..f88659529c
+--- /dev/null
++++ b/libartbase/base/nucleus_security.h
+@@ -0,0 +1,32 @@
++/*
++ * Copyright (C) 2026 The Nucleus Project
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *      http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++
++#ifndef ART_LIBARTBASE_BASE_NUCLEUS_SECURITY_H_
++#define ART_LIBARTBASE_BASE_NUCLEUS_SECURITY_H_
++
++#include "android-base/properties.h"
++
++namespace art {
++
++inline bool IsAndroidSelinuxOperational() {
++  static const bool operational =
++      !android::base::GetBoolProperty("ro.nucleus.container", false);
++  return operational;
++}
++
++}  // namespace art
++
++#endif  // ART_LIBARTBASE_BASE_NUCLEUS_SECURITY_H_
+diff --git a/odrefresh/odrefresh_main.cc b/odrefresh/odrefresh_main.cc
+index 22551f96f1..2e371ae77f 100644
+--- a/odrefresh/odrefresh_main.cc
++++ b/odrefresh/odrefresh_main.cc
+@@ -28,6 +28,7 @@
+ #include "base/file_utils.h"
+ #include "base/globals.h"
+ #include "base/mem_map.h"
++#include "base/nucleus_security.h"
+ #include "base/stl_util.h"
+ #include "odr_common.h"
+ #include "odr_compilation_log.h"
+@@ -59,6 +60,14 @@ using ::art::odrefresh::SystemPropertyConfig;
+ using ::art::odrefresh::SystemPropertyForeach;
+ using ::art::odrefresh::ZygoteKind;
+ 
++int SetFileContext(const char* path, const char* context) {
++  return art::IsAndroidSelinuxOperational() ? setfilecon(path, context) : 0;
++}
++
++int RestoreFileContext(const char* path, unsigned int flags) {
++  return art::IsAndroidSelinuxOperational() ? selinux_android_restorecon(path, flags) : 0;
++}
++
+ void UsageMsgV(const char* fmt, va_list ap) {
+   std::string error;
+   android::base::StringAppendV(&error, fmt, ap);
+@@ -280,7 +289,7 @@ int main(int argc, char** argv) {
+   GetSystemProperties(config.MutableSystemProperties());
+ 
+   OdrMetrics metrics(config.GetArtifactDirectory());
+-  OnDeviceRefresh odr(config, setfilecon, selinux_android_restorecon);
++  OnDeviceRefresh odr(config, SetFileContext, RestoreFileContext);
+ 
+   std::string_view action(argv[0]);
+   CompilationOptions compilation_options;

@@ -28,12 +28,6 @@ protocol XdgActivationDelegate: AnyObject {
         self.tokenGenerator = tokenGenerator ?? Self.randomToken
     }
 
-    func register(in router: NucleusWaylandRouter) {
-        router.addGlobal(
-            XdgActivationV1Server.global(
-                implementation: self))
-    }
-
     func mintToken(authorized: Bool) -> String {
         while true {
             let token = tokenGenerator()

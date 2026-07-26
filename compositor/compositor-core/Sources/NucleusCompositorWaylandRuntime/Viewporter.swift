@@ -16,11 +16,6 @@ import NucleusTypes
 
 @MainActor
 @safe final class WpViewporter {
-    func register(in router: NucleusWaylandRouter) {
-        router.addGlobal(
-            WpViewporterServer.global(
-                implementation: self))
-    }
 }
 
 // get_viewport(id, surface): one viewport per surface (viewport_exists = 0). The manager owner is

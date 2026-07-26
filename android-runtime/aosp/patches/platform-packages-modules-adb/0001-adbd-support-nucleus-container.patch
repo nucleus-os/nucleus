@@ -1,0 +1,74 @@
+diff --git a/daemon/main.cpp b/daemon/main.cpp
+index 3d3f3024..91299f6d 100644
+--- a/daemon/main.cpp
++++ b/daemon/main.cpp
+@@ -56,6 +56,7 @@
+ #include "daemon/adbd_wifi.h"
+ #include "daemon/jdwp_service.h"
+ #include "daemon/mdns.h"
++#include "daemon/nucleus_security.h"
+ #include "daemon/transport_daemon.h"
+ #include "daemon/watchdog.h"
+ 
+@@ -173,7 +174,7 @@ static void drop_privileges() {
+         // minijail_enter() will abort if any priv-dropping step fails.
+         minijail_enter(jail.get());
+ 
+-        if (root_seclabel != nullptr) {
++        if (root_seclabel != nullptr && adbd_android_selinux_operational()) {
+             if (selinux_android_setcon(root_seclabel) < 0) {
+                 // If we failed to become root, don't try again to avoid a
+                 // restart loop.
+diff --git a/daemon/nucleus_security.h b/daemon/nucleus_security.h
+new file mode 100644
+index 00000000..a040a88b
+--- /dev/null
++++ b/daemon/nucleus_security.h
+@@ -0,0 +1,25 @@
++/*
++ * Copyright (C) 2026 The Nucleus Project
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *      http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++
++#pragma once
++
++#include <android-base/properties.h>
++
++inline bool adbd_android_selinux_operational() {
++    static const bool operational =
++            !android::base::GetBoolProperty("ro.nucleus.container", false);
++    return operational;
++}
+diff --git a/daemon/tradeinmode.cpp b/daemon/tradeinmode.cpp
+index fbac8eb0..d38c6e82 100644
+--- a/daemon/tradeinmode.cpp
++++ b/daemon/tradeinmode.cpp
+@@ -30,6 +30,8 @@
+ #include <com_android_tradeinmode_flags.h>
+ #endif
+ 
++#include "daemon/nucleus_security.h"
++
+ static bool in_tradeinmode = false;
+ static constexpr char kTradeInModeProp[] = "persist.adb.tradeinmode";
+ 
+@@ -54,7 +56,7 @@ bool should_enter_tradeinmode() {
+ 
+ void enter_tradeinmode(const char* seclabel) {
+ #if defined(__ANDROID__)
+-    if (selinux_android_setcon(seclabel) < 0) {
++    if (adbd_android_selinux_operational() && selinux_android_setcon(seclabel) < 0) {
+         PLOG(ERROR) << "Could not set SELinux context";
+ 
+         // Flag TIM as failed so we don't enter a restart loop.

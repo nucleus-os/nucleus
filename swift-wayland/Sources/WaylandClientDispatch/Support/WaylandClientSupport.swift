@@ -1,6 +1,6 @@
 // Stable client-side runtime types used by generated listener dispatch.
 
-public import WaylandClientC
+import WaylandClientC
 
 #if canImport(Glibc)
   import Glibc
@@ -8,12 +8,37 @@ public import WaylandClientC
   import Darwin
 #endif
 
-/// Metadata implemented by each generated client interface descriptor.
+/// Safe, immutable metadata for one generated client interface.
+///
+/// The native `wl_interface` pointer is package-private and process-lifetime.
+/// Consumers get the wire name without importing or manipulating libwayland
+/// metadata directly.
+@safe public struct WaylandClientInterfaceDescriptor: Sendable {
+  public let wireName: String
+  private let nativeInterfaceAddress: UInt
+
+  @unsafe package var nativeInterface: UnsafePointer<wl_interface> {
+    unsafe UnsafePointer<wl_interface>(
+      bitPattern: nativeInterfaceAddress)!
+  }
+
+  @unsafe package init(
+    nativeInterface: UnsafePointer<wl_interface>?
+  ) {
+    unsafe precondition(
+      nativeInterface != nil,
+      "generated Wayland interface is missing")
+    unsafe nativeInterfaceAddress = UInt(bitPattern: nativeInterface!)
+    unsafe wireName = String(cString: nativeInterface!.pointee.name)
+  }
+}
+
+/// Metadata implemented by each generated client interface type.
 ///
 /// Client descriptors are distinct from server descriptors so native object
 /// identities cannot cross protocol roles accidentally.
 public protocol WaylandClientInterface {
-  static var interface: UnsafePointer<wl_interface>? { get }
+  static var descriptor: WaylandClientInterfaceDescriptor { get }
   static var maximumVersion: UInt32 { get }
 }
 

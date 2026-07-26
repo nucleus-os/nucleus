@@ -12,6 +12,7 @@ import Glibc
 import WaylandWireTestC
 import WaylandServerC
 import WaylandServer
+import WaylandProtocolTypes
 @testable import NucleusCompositorWaylandRuntime
 
 // SOCK_NONBLOCK == O_NONBLOCK on Linux; OR'd into socketpair's type so reads on
@@ -56,6 +57,14 @@ struct WireBuilder {
         append32(object)
         append32((size << 16) | UInt32(opcode))
         bytes.append(contentsOf: payload.bytes)
+    }
+
+    mutating func request<Opcode: WaylandRequestOpcode>(
+        object: UInt32,
+        opcode: Opcode,
+        _ build: (inout WireBuilder) -> Void
+    ) {
+        message(object: object, opcode: opcode.rawValue, build)
     }
 
     private mutating func append32(_ v: UInt32) {
@@ -112,6 +121,14 @@ struct WireMessage {
     /// First message matching object id and opcode, or nil.
     static func first(_ messages: [WireMessage], object: UInt32, opcode: UInt16) -> WireMessage? {
         messages.first { $0.objectId == object && $0.opcode == opcode }
+    }
+
+    static func first<Opcode: WaylandEventOpcode>(
+        _ messages: [WireMessage],
+        object: UInt32,
+        event: Opcode
+    ) -> WireMessage? {
+        first(messages, object: object, opcode: event.rawValue)
     }
 
     /// Byte offset of the argument following a 32-bit-padded string starting at

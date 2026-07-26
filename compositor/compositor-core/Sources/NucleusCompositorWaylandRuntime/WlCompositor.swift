@@ -310,13 +310,6 @@ final class WlCompositor {
         return nil
     }
 
-    func register(in router: NucleusWaylandRouter) {
-        router.addGlobal(
-            WlCompositorServer.global(
-                implementation: self,
-                advertisedVersion: 6))
-    }
-
     // MARK: surface registry (weak; for the presentation tick)
 
     func registerSurface(_ surface: WlSurface) {

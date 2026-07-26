@@ -22,17 +22,7 @@ import WaylandServerDispatch
     private(set) var inhibitorCount = 0
     /// Last user-input time (ms, monotonic). Notification deadlines are relative.
     private var lastInputMs: UInt64 = 0
-    private var notifications: [WeakReference<ExtIdleNotification>] = []
-
-    func register(in router: NucleusWaylandRouter) {
-        router.addGlobal(
-            ZwpIdleInhibitManagerV1Server.global(
-                implementation: self))
-        router.addGlobal(
-            ExtIdleNotifierV1Server.global(
-                implementation: self,
-                advertisedVersion: 2))
-    }
+    private var notifications = WeakObjectList<ExtIdleNotification>()
 
     // MARK: compositor / reactor seam
 
@@ -40,8 +30,8 @@ import WaylandServerDispatch
     /// none are armed. Regular notifications are excluded while inhibited.
     var nextDeadlineMs: UInt64? {
         var best: UInt64?
-        for box in notifications {
-            guard let n = box.value, !n.idled else { continue }
+        for n in notifications.liveValues() {
+            guard !n.idled else { continue }
             if !n.inputOnly, inhibitorCount > 0 { continue }
             let deadline = lastInputMs + UInt64(n.timeoutMs)
             if best == nil || deadline < best! { best = deadline }
@@ -53,16 +43,17 @@ import WaylandServerDispatch
     /// idle clock.
     func noteUserInput(atMs: UInt64) {
         lastInputMs = atMs
-        for box in notifications where box.value?.idled == true {
-            box.value?.sendResumed()
+        for notification in notifications.liveValues()
+        where notification.idled {
+            notification.sendResumed()
         }
     }
 
     /// Advance the idle clock to `nowMs`: fire `idled` for notifications whose
     /// deadline has elapsed and that are not suppressed by an inhibitor.
     func idleTick(nowMs: UInt64) {
-        for box in notifications {
-            guard let n = box.value, !n.idled else { continue }
+        for n in notifications.liveValues() {
+            guard !n.idled else { continue }
             if !n.inputOnly, inhibitorCount > 0 { continue }
             if nowMs >= lastInputMs + UInt64(n.timeoutMs) { n.sendIdled() }
         }
@@ -77,10 +68,10 @@ import WaylandServerDispatch
         if inhibitorCount > 0 { inhibitorCount -= 1 }
     }
     fileprivate func addNotification(_ n: ExtIdleNotification) {
-        notifications.append(WeakReference(n))
+        notifications.append(n)
     }
     fileprivate func removeNotification(_ n: ExtIdleNotification) {
-        notifications.removeAll { $0.value == nil || $0.value === n }
+        notifications.remove(n)
     }
 
     // The inhibitor and notification children use generated destroy-only dispatch.

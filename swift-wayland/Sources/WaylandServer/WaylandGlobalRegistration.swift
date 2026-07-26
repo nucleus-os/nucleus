@@ -32,8 +32,8 @@ public struct WaylandGlobalSpecification<
             WaylandResourceHandle<Interface>
         ) -> Void
     ) {
-        unsafe self.implementation = implementation
-        unsafe self.advertisedVersion = Swift.min(
+        self.implementation = implementation
+        self.advertisedVersion = Swift.min(
             advertisedVersion, Interface.maximumVersion)
         unsafe self.makeOwner = { client, version, id in
             var installedHandle: WaylandResourceHandle<Interface>?
@@ -45,11 +45,11 @@ public struct WaylandGlobalSpecification<
                 vtable: vtable,
                 owner: { handle in
                     installedHandle = handle
-                    return unsafe owner(implementation, handle)
+                    return owner(implementation, handle)
                 },
                 installed: { resourceOwner in
                     guard let installedHandle else { return }
-                    unsafe installed(
+                    installed(
                         implementation, resourceOwner, installedHandle)
                 })
             return created
@@ -78,15 +78,15 @@ public final class WaylandGlobalRegistration {
         display: WaylandDisplay,
         specification: WaylandGlobalSpecification<Interface>
     ) {
-        unsafe implementation = specification.implementation
+        implementation = specification.implementation
         unsafe bindOwner = specification.makeOwner
-        unsafe advertisedVersion = specification.advertisedVersion
+        advertisedVersion = specification.advertisedVersion
         global = nil
 
         let data = unsafe Unmanaged.passUnretained(self).toOpaque()
         guard let nativeGlobal = unsafe WaylandGlobal(
             display: display,
-            interface: Interface.interface,
+            interface: Interface.descriptor.nativeInterface,
             version: specification.advertisedVersion,
             data: data,
             bind: waylandGlobalBind)

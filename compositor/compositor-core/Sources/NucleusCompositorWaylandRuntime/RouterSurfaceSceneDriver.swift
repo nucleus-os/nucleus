@@ -115,24 +115,27 @@ final class RouterSurfaceSceneDriver {
         }
 
         if buffer.shmMetadata != nil {
-            let newId: UInt32 = unsafe buffer.withShmBytes {
+            let newId: UInt32 = (try? buffer.withShmBytes {
                 metadata, bytes -> UInt32 in
-                guard let data = bytes.baseAddress,
-                    let renderService = server.renderService
+                guard let renderService = server.renderService
                 else { return UInt32(0) }
-                let pixels = unsafe Span<UInt8>(
-                    _unsafeStart:
-                        data.assumingMemoryBound(to: UInt8.self),
-                    count: bytes.count)
-                return renderService.importShm(
-                    previousIOSurfaceID: surface.renderIosurfaceId,
-                    width: UInt32(metadata.width),
-                    height: UInt32(metadata.height),
-                    drmFormat: Self.drmFormat(
-                        fromShm: metadata.format),
-                    stride: UInt32(metadata.stride),
-                    pixels: pixels)
-            } ?? 0
+                return unsafe bytes.withUnsafeBytes { rawBytes in
+                    guard let data = rawBytes.baseAddress
+                    else { return UInt32(0) }
+                    let pixels = unsafe Span<UInt8>(
+                        _unsafeStart:
+                            data.assumingMemoryBound(to: UInt8.self),
+                        count: rawBytes.count)
+                    return renderService.importShm(
+                        previousIOSurfaceID: surface.renderIosurfaceId,
+                        width: UInt32(metadata.width),
+                        height: UInt32(metadata.height),
+                        drmFormat: Self.drmFormat(
+                            fromShm: metadata.format),
+                        stride: UInt32(metadata.stride),
+                        pixels: pixels)
+                }
+            }) ?? 0
             guard newId != 0 else {
                 importFailed(surface)
                 return
@@ -204,11 +207,13 @@ final class RouterSurfaceSceneDriver {
             height: UInt32(attrs.height),
             drmFormat: attrs.format,
             modifier: attrs.modifier,
-            planes: attrs.planes.map {
-                RenderDmabufPlane(
-                    fd: $0.fd,
-                    offset: $0.offset,
-                    stride: $0.stride)
+            planes: attrs.planes.map { plane in
+                plane.withBorrowedDescriptor {
+                    RenderDmabufPlane(
+                        fd: $0.rawValue,
+                        offset: plane.offset,
+                        stride: plane.stride)
+                }
             },
             acquire: acquire.map {
                 RenderSyncPoint(handle: $0.handle, point: $0.point)

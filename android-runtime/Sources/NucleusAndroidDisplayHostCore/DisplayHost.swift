@@ -4,6 +4,7 @@ import NucleusAndroidComposerProtocolC
 import NucleusAndroidDrmC
 import NucleusAndroidIPCC
 import NucleusLinuxReactor
+import NucleusLinuxPrimitives
 import WaylandClient
 import WaylandClientDispatch
 import WaylandProtocolTypes
@@ -26,6 +27,44 @@ public enum DisplayHostError: Error, CustomStringConvertible {
         case .invalidRequest: return "invalid Composer3 display request"
         case .wayland(let message): return "Wayland display failure: \(message)"
         }
+    }
+}
+
+@MainActor
+@safe private final class SyncobjBridge {
+    @unsafe private let native: OpaquePointer
+
+    init?(renderNode: String) {
+        guard let native = renderNode.withCString({
+            unsafe nucleus_android_syncobj_bridge_create($0)
+        }) else { return nil }
+        unsafe self.native = native
+    }
+
+    func importAcquireSyncFile(point: UInt64, fileDescriptor: Int32) -> Bool {
+        unsafe nucleus_android_syncobj_bridge_import_acquire_sync_file(
+            native, point, fileDescriptor) == 0
+    }
+
+    func signalAcquire(point: UInt64) -> Bool {
+        unsafe nucleus_android_syncobj_bridge_signal_acquire(native, point) == 0
+    }
+
+    func exportReleaseSyncFile(point: UInt64) -> Int32 {
+        unsafe nucleus_android_syncobj_bridge_export_release_sync_file(
+            native, point)
+    }
+
+    func exportAcquireTimeline() -> Int32 {
+        unsafe nucleus_android_syncobj_bridge_export_acquire_timeline(native)
+    }
+
+    func exportReleaseTimeline() -> Int32 {
+        unsafe nucleus_android_syncobj_bridge_export_release_timeline(native)
+    }
+
+    isolated deinit {
+        unsafe nucleus_android_syncobj_bridge_destroy(native)
     }
 }
 
@@ -218,7 +257,7 @@ public enum DisplayHostError: Error, CustomStringConvertible {
     private let registry: WaylandRegistry
     private let reactor: LinuxHostReactor
     private let wmHandler = DisplayWmBaseHandler()
-    private let bridge: OpaquePointer
+    private let bridge: SyncobjBridge
     private let compositor: WaylandProxy<WlCompositorClient>
     private let dmabuf: WaylandProxy<ZwpLinuxDmabufV1Client>
     private let wmBase: WaylandProxy<XdgWmBaseClient>
@@ -279,13 +318,12 @@ public enum DisplayHostError: Error, CustomStringConvertible {
               let syncobjManager = registry.singleton(
                 WpLinuxDrmSyncobjManagerV1Client.self)
         else { throw DisplayHostError.wayland("required protocol is unavailable") }
-        guard let bridge = selectedRenderDevice.withCString({
-            unsafe nucleus_android_syncobj_bridge_create($0)
-        }) else { throw systemError("creating syncobj bridge") }
+        guard let bridge = SyncobjBridge(renderNode: selectedRenderDevice)
+        else { throw systemError("creating syncobj bridge") }
         self.connection = connection
         self.registry = registry
         self.reactor = reactor
-        unsafe self.bridge = bridge
+        self.bridge = bridge
         self.compositor = compositor
         self.dmabuf = dmabuf
         self.wmBase = wmBase
@@ -311,19 +349,17 @@ public enum DisplayHostError: Error, CustomStringConvertible {
         let acquirePoint = nextAcquirePoint
         nextAcquirePoint &+= 1
         if request.has_acquire_fence == 1 {
-            guard unsafe nucleus_android_syncobj_bridge_import_acquire_sync_file(
-                bridge, acquirePoint, descriptors[2]) == 0
+            guard bridge.importAcquireSyncFile(
+                point: acquirePoint,
+                fileDescriptor: descriptors[2])
             else { throw systemError("importing Composer3 acquire fence") }
         } else {
-            guard unsafe nucleus_android_syncobj_bridge_signal_acquire(
-                bridge, acquirePoint) == 0
+            guard bridge.signalAcquire(point: acquirePoint)
             else { throw systemError("signaling empty acquire point") }
         }
         let releasePoint = nextReleasePoint
         nextReleasePoint &+= 1
-        let releaseFence =
-            unsafe nucleus_android_syncobj_bridge_export_release_sync_file(
-                bridge, releasePoint)
+        let releaseFence = bridge.exportReleaseSyncFile(point: releasePoint)
         guard releaseFence >= 0 else {
             throw systemError("exporting Composer3 release fence")
         }
@@ -417,10 +453,8 @@ public enum DisplayHostError: Error, CustomStringConvertible {
         } catch {
             throw DisplayHostError.wayland("surface creation failed")
         }
-        let acquireFD =
-            unsafe nucleus_android_syncobj_bridge_export_acquire_timeline(bridge)
-        let releaseFD =
-            unsafe nucleus_android_syncobj_bridge_export_release_timeline(bridge)
+        let acquireFD = bridge.exportAcquireTimeline()
+        let releaseFD = bridge.exportReleaseTimeline()
         guard acquireFD >= 0, releaseFD >= 0 else {
             if acquireFD >= 0 { _ = Glibc.close(acquireFD) }
             if releaseFD >= 0 { _ = Glibc.close(releaseFD) }
@@ -498,7 +532,7 @@ public enum DisplayHostError: Error, CustomStringConvertible {
         }
         let buffer = DisplayBuffer(
             proxy: proxy,
-            lifetime: lifetime,
+            lifetime: LinuxOwnedFileDescriptor(adopting: lifetime),
             width: request.width,
             height: request.height,
             format: request.drm_format,
@@ -593,13 +627,12 @@ public enum DisplayHostError: Error, CustomStringConvertible {
         if let surface {
             try? surface.destroy()
         }
-        unsafe nucleus_android_syncobj_bridge_destroy(bridge)
     }
 }
 
 @safe private final class DisplayBuffer {
     let proxy: WaylandProxy<WlBufferClient>
-    let lifetime: Int32
+    let lifetime: LinuxOwnedFileDescriptor
     let width: UInt32
     let height: UInt32
     let format: UInt32
@@ -609,7 +642,7 @@ public enum DisplayHostError: Error, CustomStringConvertible {
 
     init(
         proxy: WaylandProxy<WlBufferClient>,
-        lifetime: Int32,
+        lifetime: consuming LinuxOwnedFileDescriptor,
         width: UInt32,
         height: UInt32,
         format: UInt32,
@@ -618,7 +651,7 @@ public enum DisplayHostError: Error, CustomStringConvertible {
         stride: UInt32
     ) {
         self.proxy = proxy
-        self.lifetime = lifetime
+        self.lifetime = consume lifetime
         self.width = width
         self.height = height
         self.format = format
@@ -626,8 +659,6 @@ public enum DisplayHostError: Error, CustomStringConvertible {
         self.offset = offset
         self.stride = stride
     }
-
-    deinit { _ = close(lifetime) }
 }
 
 @MainActor

@@ -25,18 +25,10 @@ import WaylandProtocolTypes
     /// The shared clipboard owner both protocols project + set.
     private unowned let dataDevice: WlDataDeviceManager
 
-    private var devices: [WeakReference<ExtDataControlDevice>] = []
+    private var devices = WeakObjectList<ExtDataControlDevice>()
 
     init(dataDevice: WlDataDeviceManager) {
         self.dataDevice = dataDevice
-    }
-
-    func register(in router: NucleusWaylandRouter) {
-        router.addGlobal(
-            ExtDataControlManagerV1Server.global(
-                implementation: self))
-        // Observe the shared clipboard so every data-control device stays current.
-        dataDevice.addSelectionObserver(self)
     }
 
     fileprivate func setClipboard(_ source: (any SelectionSource)?) { dataDevice.setSelection(source) }
@@ -46,15 +38,16 @@ import WaylandProtocolTypes
     }
 
     fileprivate func addDevice(_ device: ExtDataControlDevice) {
-        devices.append(WeakReference(device))
+        devices.append(device)
         device.projectSelection(currentClipboard)
     }
 
     // MARK: SelectionObserver
 
     func clipboardSelectionChanged(_ source: (any SelectionSource)?) {
-        devices.removeAll { $0.value == nil }
-        for box in devices { box.value?.projectSelection(source) }
+        for device in devices.liveValues() {
+            device.projectSelection(source)
+        }
     }
 
 }

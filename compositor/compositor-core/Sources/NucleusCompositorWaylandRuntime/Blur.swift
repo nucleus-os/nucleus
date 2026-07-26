@@ -22,12 +22,6 @@ protocol KdeBlurDelegate: AnyObject {
 final class OrgKdeKwinBlurManager {
     weak var delegate: (any KdeBlurDelegate)?
 
-    func register(in router: NucleusWaylandRouter) {
-        router.addGlobal(
-            OrgKdeKwinBlurManagerServer.global(
-                implementation: self))
-    }
-
     fileprivate func publish(_ surface: WlSurface, region: RegionSnapshot?, wholeSurface: Bool) {
         delegate?.kdeBlurUpdated(surface, region: region, wholeSurface: wholeSurface)
     }

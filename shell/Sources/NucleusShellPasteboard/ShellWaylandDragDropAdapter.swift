@@ -758,11 +758,7 @@ import WaylandProtocolTypes
     }
 
     private func monotonicNowNanoseconds() -> UInt64 {
-        var time = timespec()
-        _ = unsafe clock_gettime(CLOCK_MONOTONIC, &time)
-        return UInt64(max(0, time.tv_sec))
-            .saturatingMultiply(1_000_000_000)
-            .saturatingAdd(UInt64(max(0, time.tv_nsec)))
+        ShellMonotonicClock.nowNanoseconds()
     }
 
     fileprivate nonisolated static func operations(

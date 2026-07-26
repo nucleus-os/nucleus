@@ -14,11 +14,6 @@ import WaylandProtocolTypes
 
 @MainActor
 @safe final class WpFractionalScaleManager {
-    func register(in router: NucleusWaylandRouter) {
-        router.addGlobal(
-            WpFractionalScaleManagerV1Server.global(
-                implementation: self))
-    }
 }
 
 extension WpFractionalScaleManager: WpFractionalScaleManagerV1Requests {

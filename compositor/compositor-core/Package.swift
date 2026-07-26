@@ -313,6 +313,9 @@ let package = Package(
                 .product(name: "NucleusTypes", package: "Nucleus"),
                 .product(name: "NucleusLayers", package: "Nucleus"),
                 .product(name: "NucleusRenderModel", package: "Nucleus"),
+                .product(
+                    name: "NucleusLinuxPrimitives",
+                    package: "NucleusLinuxPlatform"),
                 .product(name: "Tracy", package: "swift-tracy"),
             ],
             path: "Sources/NucleusCompositorWaylandRuntime",
@@ -468,6 +471,7 @@ let package = Package(
                 .product(name: "WaylandServerC", package: "swift-wayland"),
                 .product(name: "WaylandProtocolsC", package: "swift-wayland"),
                 .product(name: "WaylandServer", package: "swift-wayland"),
+                .product(name: "WaylandProtocolTypes", package: "swift-wayland"),
                 "WaylandWireTestC",
             ],
             path: "Tests/NucleusCompositorWaylandRuntimeTests",
@@ -488,6 +492,7 @@ let package = Package(
             ],
             sources: [
                 "WaylandTestGraph.swift", "WaylandWireTest.swift",
+                "WaylandTestGlobalCatalog.swift",
                 "WaylandProtocolConformanceTests.swift",
                 "CursorShapeNameTests.swift", "CursorShmRepackTests.swift",
                 "CursorRequestSerialTests.swift", "CursorIntentTests.swift",

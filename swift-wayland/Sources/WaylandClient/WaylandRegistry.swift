@@ -60,7 +60,7 @@ public final class DesiredGlobal<
     precondition(
       maximumVersion <= Interface.maximumVersion,
       "consumer maximum exceeds the generated protocol maximum")
-    let name = unsafe String(cString: Interface.interface!.pointee.name)
+    let name = Interface.descriptor.wireName
     super.init(
       interfaceName: name,
       interfaceID: ObjectIdentifier(Interface.self),

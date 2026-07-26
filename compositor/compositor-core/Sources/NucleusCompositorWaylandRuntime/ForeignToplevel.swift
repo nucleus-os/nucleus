@@ -47,21 +47,6 @@ protocol ForeignToplevelActions: AnyObject {
         self.server = server
     }
 
-    func register(in router: NucleusWaylandRouter) {
-        router.addGlobal(
-            ZwlrForeignToplevelManagerV1Server.global(
-                implementation: self,
-                advertisedVersion: 3,
-                owner: { manager, handle in
-                    ForeignToplevelClient(
-                        resource: handle,
-                        manager: manager)
-                },
-                installed: { _, projection, _ in
-                    projection.start()
-                }))
-    }
-
     /// A client's bound wl_output resource for `displayID`, or nil if unbound.
     fileprivate func outputResource(
         forClient client: WaylandClientID?, displayID: UInt64
@@ -92,8 +77,7 @@ extension ForeignToplevelClient: ZwlrForeignToplevelManagerV1Requests {
         WaylandResourceHandle<ZwlrForeignToplevelManagerV1Server>
     /// Per-window wire handle, held weakly (the wl_resource owns it). A destroyed
     /// handle's box self-clears; the projection skips nil boxes.
-    private var handles:
-        [UInt64: WeakReference<ForeignToplevelHandle>] = [:]
+    private var handles = WeakObjectMap<UInt64, ForeignToplevelHandle>()
     private var finished = false
 
     init(
@@ -107,7 +91,7 @@ extension ForeignToplevelClient: ZwlrForeignToplevelManagerV1Requests {
     }
 
     /// Register as a model observer; the snapshot replay enumerates current windows.
-    fileprivate func start() { manager.server.addObserver(self) }
+    func start() { manager.server.addObserver(self) }
 
     fileprivate func stop() {
         finished = true
@@ -116,12 +100,7 @@ extension ForeignToplevelClient: ZwlrForeignToplevelManagerV1Requests {
     }
 
     private func handle(_ windowID: UInt64) -> ForeignToplevelHandle? {
-        guard let box = handles[windowID] else { return nil }
-        guard let h = box.value else {
-            handles[windowID] = nil
-            return nil
-        }
-        return h
+        handles.value(forKey: windowID)
     }
 
     // MARK: DesktopModelObserver
@@ -221,22 +200,21 @@ extension ForeignToplevelClient: ZwlrForeignToplevelManagerV1Requests {
                     windowID: windowID)
             },
             installed: { handleObj in
-                self.handles[windowID] = WeakReference(handleObj)
+                self.handles.insert(handleObj, forKey: windowID)
             })
     }
 
     private func closeHandle(_ windowID: UInt64) {
         guard let handle = handle(windowID) else { return }
         handle.resource.sendClosed()
-        handles[windowID] = nil
+        handles.removeValue(forKey: windowID)
         // The wire object lives until the client `destroy`s it (wlr lifecycle: server
         // `closed`, then client `destroy`); its handler stays attached and its windowID
         // is now stale, so late requests resolve to nil and no-op.
     }
 
     private func refocus(to focused: UInt64?) {
-        for windowID in Array(handles.keys) {
-            guard let handle = handle(windowID) else { continue }
+        for (windowID, handle) in handles.liveEntries() {
             let shouldActivate = (windowID == focused)
             guard handle.activated != shouldActivate else { continue }
             handle.activated = shouldActivate

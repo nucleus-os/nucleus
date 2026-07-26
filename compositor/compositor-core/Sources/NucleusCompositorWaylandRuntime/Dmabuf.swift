@@ -10,6 +10,7 @@
 // closed by the params/buffer owner otherwise.
 
 import Glibc
+import NucleusLinuxPrimitives
 import WaylandServerC
 import WaylandServer
 import WaylandServerDispatch
@@ -21,32 +22,22 @@ struct DmabufFormat: Equatable {
     var modifier: UInt64
 }
 
-/// Reference ownership for one fd transferred by a linux-dmabuf `add` request.
-/// Struct copies of a plane share this owner and therefore cannot double-close.
-final class DmabufPlaneFD {
-    private(set) var rawValue: Int32
-
-    init(consuming rawValue: Int32) {
-        self.rawValue = rawValue
-    }
-
-    deinit {
-        if rawValue >= 0 { close(rawValue) }
-    }
-}
-
 /// One dmabuf plane plus its shared, single-close fd owner.
 struct DmabufPlane {
-    let fdOwner: DmabufPlaneFD
+    let fdOwner: LinuxSharedFileDescriptor
     var offset: UInt32
     var stride: UInt32
 
-    var fd: Int32 { fdOwner.rawValue }
-
     init(consumingFd fd: Int32, offset: UInt32, stride: UInt32) {
-        fdOwner = DmabufPlaneFD(consuming: fd)
+        fdOwner = LinuxSharedFileDescriptor(adopting: fd)
         self.offset = offset
         self.stride = stride
+    }
+
+    borrowing func withBorrowedDescriptor<Result: ~Copyable, Failure: Error>(
+        _ body: (borrowing LinuxBorrowedFileDescriptor) throws(Failure) -> Result
+    ) throws(Failure) -> Result {
+        try fdOwner.withBorrowedDescriptor(body)
     }
 }
 
@@ -80,8 +71,13 @@ struct DmabufProbeSnapshot: Sendable {
         height = UInt32(attrs.height)
         format = attrs.format
         modifier = attrs.modifier
-        planes = attrs.planes.map {
-            DmabufProbePlane(fd: $0.fd, offset: $0.offset, stride: $0.stride)
+        planes = attrs.planes.map { plane in
+            plane.withBorrowedDescriptor {
+                DmabufProbePlane(
+                    fd: $0.rawValue,
+                    offset: plane.offset,
+                    stride: plane.stride)
+            }
         }
     }
 }
@@ -99,32 +95,7 @@ protocol DmabufDelegate: AnyObject {
 @safe final class ZwpLinuxDmabuf {
     weak var delegate: (any DmabufDelegate)?
 
-    func register(in router: NucleusWaylandRouter) {
-        router.addGlobal(
-            ZwpLinuxDmabufV1Server.global(
-                implementation: self,
-                advertisedVersion: 5,
-                installed: { manager, handle in
-                    if handle.version ?? 1 < 4 {
-                        for format in manager.supportedFormats() {
-                            if handle.supportsModifier {
-                                handle.sendModifier(
-                                    format: format.format,
-                                    modifier_hi:
-                                        UInt32(format.modifier >> 32),
-                                    modifier_lo:
-                                        UInt32(
-                                            format.modifier
-                                                & 0xffff_ffff))
-                            } else {
-                                handle.sendFormat(format: format.format)
-                            }
-                        }
-                    }
-                }))
-    }
-
-    fileprivate func supportedFormats() -> [DmabufFormat] { delegate?.dmabufSupportedFormats() ?? [] }
+    func supportedFormats() -> [DmabufFormat] { delegate?.dmabufSupportedFormats() ?? [] }
     fileprivate func mainDevice() -> UInt64 { delegate?.dmabufMainDevice() ?? 0 }
     fileprivate func importDmabuf(_ attrs: DmabufAttrs) -> Bool {
         delegate?.dmabufImport(attrs) ?? false
@@ -163,30 +134,18 @@ protocol DmabufDelegate: AnyObject {
             appendLE32(&table, 0)
             appendLE64(&table, f.modifier)
         }
-        let fd = unsafe memfd_create(
-            "nucleus-dmabuf-table",
-            UInt32(0x0001 /* MFD_CLOEXEC */ | 0x0002 /* MFD_ALLOW_SEALING */))
-        if fd >= 0 {
-            var tableReady = ftruncate(fd, off_t(table.count)) == 0
-            if tableReady, !table.isEmpty {
-                tableReady = table.withUnsafeBytes {
-                    unsafe writeAll(fd: fd, bytes: $0)
-                }
-            }
-            if tableReady {
-                tableReady = fcntl(
-                    fd, F_ADD_SEALS,
-                    F_SEAL_SHRINK | F_SEAL_GROW | F_SEAL_WRITE | F_SEAL_SEAL) == 0
-            }
-            if tableReady {
-                resource.sendFormatTable(fd: fd, size: UInt32(table.count))
-            } else {
-                resource.postNoMemory()
-            }
-            close(fd)
-        } else {
+        guard let tableFile = try? LinuxSealedFile(
+            name: "nucleus-dmabuf-table",
+            bytes: table)
+        else {
             resource.postNoMemory()
             return
+        }
+        let tableSize = UInt32(tableFile.size)
+        tableFile.withBorrowedDescriptor {
+            _ = resource.sendFormatTable(
+                fd: $0.rawValue,
+                size: tableSize)
         }
 
         var device = dev_t(mainDevice())
@@ -426,21 +385,4 @@ private func appendLE32(_ out: inout [UInt8], _ v: UInt32) {
 }
 private func appendLE64(_ out: inout [UInt8], _ v: UInt64) {
     for i in 0..<8 { out.append(UInt8((v >> (8 * UInt64(i))) & 0xff)) }
-}
-
-@unsafe private func writeAll(fd: Int32, bytes: UnsafeRawBufferPointer) -> Bool {
-    var written = 0
-    while written < bytes.count {
-        guard let base = bytes.baseAddress else { return unsafe bytes.isEmpty }
-        let result = unsafe write(
-            fd, base.advanced(by: written), bytes.count - written)
-        if result > 0 {
-            written += result
-        } else if result < 0, errno == EINTR {
-            continue
-        } else {
-            return false
-        }
-    }
-    return true
 }

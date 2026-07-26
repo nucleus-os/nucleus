@@ -10,6 +10,7 @@
 
 import Glibc
 import WaylandServerC
+import WaylandProtocolTypes
 
 private func fail(_ msg: String) -> Never {
     print("FAIL: \(msg)")
@@ -19,14 +20,14 @@ private func fail(_ msg: String) -> Never {
 private final class AuxDelegate:
     CursorShapeDelegate, DecorationDelegate, XdgActivationDelegate, XdgForeignDelegate
 {
-    var appliedShape: UInt32?
+    var appliedShape: WpCursorShapeDeviceV1Shape?
     var activatedToken: String?
     var activatedSurfaceId: UInt32?
     var foreignChildId: UInt32?
     var foreignParentId: UInt32?
 
-    func applyCursorShape(_ shape: UInt32) -> Bool {
-        guard shape >= 1, shape <= 36 else { return false }
+    func applyCursorShape(_ shape: WpCursorShapeDeviceV1Shape) -> Bool {
+        guard shape.knownName != nil else { return false }
         appliedShape = shape
         return true
     }
@@ -137,7 +138,7 @@ enum WaylandShellAuxFixture {
         guard client.send(c) else { fail("send c") }
         client.pump()
         _ = client.drainEvents()
-        guard delegate.appliedShape == 4 else { fail("cursor shape not applied") }
+        guard delegate.appliedShape == .pointer else { fail("cursor shape not applied") }
 
         // activation: commit → done(token); activate(token, surface) → delegate.
         var d = WireBuilder()

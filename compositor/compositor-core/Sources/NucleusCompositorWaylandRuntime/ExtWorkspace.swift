@@ -31,20 +31,6 @@ final class ExtWorkspaceManager {
         self.server = server
     }
 
-    func register(in router: NucleusWaylandRouter) {
-        router.addGlobal(
-            ExtWorkspaceManagerV1Server.global(
-                implementation: self,
-                owner: { manager, handle in
-                    ExtWorkspaceClient(
-                        resource: handle,
-                        manager: manager)
-                },
-                installed: { _, projection, _ in
-                    projection.start()
-                }))
-    }
-
     fileprivate func outputResource(
         forClient client: WaylandClientID?,
         displayID: UInt64
@@ -70,10 +56,8 @@ final class ExtWorkspaceManager {
     private static let workspaceCaps: UInt32 = 1 | 4
     private static let stateActive: UInt32 = 1
 
-    private var groups:
-        [DisplayID: WeakReference<ExtWorkspaceGroup>] = [:]
-    private var workspaces:
-        [SpaceID: WeakReference<ExtWorkspaceHandle>] = [:]
+    private var groups = WeakObjectMap<DisplayID, ExtWorkspaceGroup>()
+    private var workspaces = WeakObjectMap<SpaceID, ExtWorkspaceHandle>()
 
     fileprivate enum PendingRequest {
         case activate(space: SpaceID, output: DisplayID)
@@ -91,25 +75,15 @@ final class ExtWorkspaceManager {
         self.manager = manager
         version = resource.version ?? 1
     }
-    fileprivate func start() { manager.server.addObserver(self) }
+    func start() { manager.server.addObserver(self) }
 
     private var spaces: Spaces { manager.server.spaces }
 
     private func group(_ outputID: DisplayID) -> ExtWorkspaceGroup? {
-        guard let box = groups[outputID] else { return nil }
-        guard let g = box.value else {
-            groups[outputID] = nil
-            return nil
-        }
-        return g
+        groups.value(forKey: outputID)
     }
     private func workspace(_ spaceID: SpaceID) -> ExtWorkspaceHandle? {
-        guard let box = workspaces[spaceID] else { return nil }
-        guard let w = box.value else {
-            workspaces[spaceID] = nil
-            return nil
-        }
-        return w
+        workspaces.value(forKey: spaceID)
     }
 
     // MARK: DesktopModelObserver
@@ -149,7 +123,7 @@ final class ExtWorkspaceManager {
                 },
                 installed: { handleObj in
                     handleObj.active = active
-                    self.workspaces[spaceID] = WeakReference(handleObj)
+                    self.workspaces.insert(handleObj, forKey: spaceID)
                     if let group {
                         group.resource.sendWorkspaceEnter(
                             workspace: handleObj.resource)
@@ -196,7 +170,7 @@ final class ExtWorkspaceManager {
                         outputID: outputID)
                 },
                 installed: { groupObj in
-                    self.groups[outputID] = WeakReference(groupObj)
+                    self.groups.insert(groupObj, forKey: outputID)
                     groupObj.resource.sendCapabilities(
                         capabilities: ExtWorkspaceGroupHandleV1GroupCapabilities(
                             rawValue: Self.groupCaps))
@@ -222,15 +196,13 @@ final class ExtWorkspaceManager {
         }
         handle.resource.sendRemoved()
         let outputID = handle.outputID
-        workspaces[spaceID] = nil
+        workspaces.removeValue(forKey: spaceID)
         // An output keeps ≥1 workspace unless the output itself is gone, so a now-empty
         // group means the output was removed.
-        if !workspaces.values.contains(where: {
-            $0.value?.outputID == outputID
-        }) {
+        if !workspaces.liveValues().contains(where: { $0.outputID == outputID }) {
             if let group = group(outputID) {
                 group.resource.sendRemoved()
-                groups[outputID] = nil
+                groups.removeValue(forKey: outputID)
             }
         }
         return true
@@ -239,8 +211,8 @@ final class ExtWorkspaceManager {
     private func refreshActive(forOutput outputID: DisplayID) -> Bool {
         let activeID = spaces.activeSpace(forDisplay: outputID)
         var emitted = false
-        for spaceID in Array(workspaces.keys) {
-            guard let handle = workspace(spaceID), handle.outputID == outputID else { continue }
+        for (spaceID, handle) in workspaces.liveEntries()
+        where handle.outputID == outputID {
             let active = (spaceID == activeID)
             guard handle.active != active else { continue }
             handle.active = active

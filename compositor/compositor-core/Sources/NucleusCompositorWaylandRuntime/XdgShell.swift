@@ -36,7 +36,7 @@ enum XdgRoleConfigure: Equatable {
 }
 
 struct XdgConfigureRecord: Equatable {
-    let serial: UInt32
+    let serial: XdgConfigureSerial
     let roleState: XdgRoleConfigure
     let initial: Bool
 }
@@ -69,10 +69,16 @@ protocol XdgShellDelegate: AnyObject {
     /// xdg_surface.configure serial half). The driver records `serial` against the
     /// window so the ack→commit latch can match the pending configure. `initial`
     /// marks the first configure (sent on the surface's first bufferless commit).
-    func toplevelConfigureSent(_ toplevel: XdgToplevel, serial: UInt32, initial: Bool)
+    func toplevelConfigureSent(
+        _ toplevel: XdgToplevel,
+        serial: XdgConfigureSerial,
+        initial: Bool)
     /// The client committed after acknowledging a configure. `hasBuffer` distinguishes
     /// map/re-layout from the null-buffer commit that unmaps the toplevel.
-    func toplevelDidCommit(_ toplevel: XdgToplevel, ackedSerial: UInt32, hasBuffer: Bool)
+    func toplevelDidCommit(
+        _ toplevel: XdgToplevel,
+        ackedSerial: XdgConfigureSerial,
+        hasBuffer: Bool)
     /// A toplevel request the window policy reacts to.
     func toplevelDidRequest(_ toplevel: XdgToplevel, _ request: XdgToplevelRequest)
     /// Validate the request's seat and user-input serial before an interactive
@@ -109,28 +115,16 @@ protocol XdgShellDelegate: AnyObject {
     weak var delegate: (any XdgShellDelegate)?
     private let display: WaylandDisplay
     private var popupStacks:
-        [WaylandClientID: [WeakReference<XdgPopup>]] = [:]
-    private var toplevels: [WeakReference<XdgToplevel>] = []
+        [WaylandClientID: WeakObjectList<XdgPopup>] = [:]
+    private var toplevels = WeakObjectList<XdgToplevel>()
     private var nextToplevelRawID: UInt64 = 1
 
     init(display: WaylandDisplay) {
         self.display = display
     }
 
-    func register(in router: NucleusWaylandRouter) {
-        // Version 3 is implemented through positioner snapshots, parent configure
-        // correlation, and reactive popup repositioning.
-        router.addGlobal(
-            XdgWmBaseServer.global(
-                implementation: self,
-                advertisedVersion: 3,
-                owner: { shell, resource in
-                    XdgWmBaseBinding(shell, resource: resource)
-                }))
-    }
-
-    func nextSerial() -> UInt32 {
-        display.nextSerial()
+    func nextSerial() -> XdgConfigureSerial {
+        XdgConfigureSerial(rawValue: display.nextSerial())
     }
 
     func mintToplevelID() -> XdgToplevelID {
@@ -147,8 +141,7 @@ protocol XdgShellDelegate: AnyObject {
         clientID: WaylandClientID?
     ) {
         guard let key = clientID else { return }
-        popupStacks[key, default: []].removeAll { $0.value == nil }
-        popupStacks[key, default: []].append(WeakReference(popup))
+        popupStacks[key, default: WeakObjectList()].append(popup)
     }
 
     func canDestroyPopup(
@@ -156,8 +149,7 @@ protocol XdgShellDelegate: AnyObject {
         clientID: WaylandClientID?
     ) -> Bool {
         guard let key = clientID else { return false }
-        popupStacks[key, default: []].removeAll { $0.value == nil }
-        return popupStacks[key]?.last?.value === popup
+        return popupStacks[key]?.last === popup
     }
 
     func unregisterPopup(
@@ -165,15 +157,12 @@ protocol XdgShellDelegate: AnyObject {
         clientID: WaylandClientID?
     ) {
         guard let key = clientID else { return }
-        popupStacks[key]?.removeAll {
-            $0.value == nil || $0.value === popup
-        }
+        popupStacks[key]?.remove(popup)
         if popupStacks[key]?.isEmpty == true { popupStacks[key] = nil }
     }
 
     func reconfigureReactivePopups(parent: XdgSurface) {
-        let popups = popupStacks.values.flatMap { $0.compactMap(\.value) }
-        for popup in popups where popup.parent === parent {
+        for popup in livePopups() where popup.parent === parent {
             popup.reconfigureIfReactive()
         }
     }
@@ -181,23 +170,18 @@ protocol XdgShellDelegate: AnyObject {
     /// Output geometry, scale, work-area, or membership changed. Re-plan mapped
     /// toplevels and reactive popups from the same new topology snapshot.
     func outputTopologyChanged() {
-        toplevels.removeAll { $0.value == nil }
-        for toplevel in toplevels.compactMap(\.value)
+        for toplevel in toplevels.liveValues()
         where toplevel.isMapped {
             toplevel.xdgSurface?.configureToplevel(
                 initial: false)
         }
-        let popups = popupStacks.values.flatMap {
-            $0.compactMap(\.value)
-        }
-        for popup in popups {
+        for popup in livePopups() {
             popup.reconfigureIfReactive()
         }
     }
 
     func dismissPopups(parent: XdgSurface) {
-        let descendants = popupStacks.values
-            .flatMap { $0.compactMap(\.value) }
+        let descendants = livePopups()
             .filter { $0.parent === parent }
         for popup in descendants.reversed() {
             if let childSurface = popup.xdgSurface {
@@ -208,28 +192,35 @@ protocol XdgShellDelegate: AnyObject {
     }
 
     func registerToplevel(_ toplevel: XdgToplevel) {
-        toplevels.removeAll { $0.value == nil }
-        toplevels.append(WeakReference(toplevel))
+        toplevels.append(toplevel)
     }
 
     func unregisterToplevel(_ toplevel: XdgToplevel) {
-        toplevels.removeAll {
-            $0.value == nil || $0.value === toplevel
-        }
+        toplevels.remove(toplevel)
     }
 
     /// Preserve the transient hierarchy when a mapped parent disappears: every
     /// direct child is reparented to the disappearing toplevel's own mapped
     /// parent, exactly as xdg-shell specifies.
     func toplevelDidUnmap(_ toplevel: XdgToplevel) {
-        toplevels.removeAll { $0.value == nil }
         let replacement = toplevel.protocolParent?.isMapped == true
             ? toplevel.protocolParent
             : nil
-        for child in toplevels.compactMap(\.value)
+        for child in toplevels.liveValues()
         where child.protocolParent === toplevel {
             child.applyProtocolParent(replacement)
         }
+    }
+
+    private func livePopups() -> [XdgPopup] {
+        var result: [XdgPopup] = []
+        for key in Array(popupStacks.keys) {
+            result.append(contentsOf: popupStacks[key]?.liveValues() ?? [])
+            if popupStacks[key]?.isEmpty == true {
+                popupStacks[key] = nil
+            }
+        }
+        return result
     }
 
 }

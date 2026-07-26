@@ -131,8 +131,12 @@ final class InputHost {
     /// Hand the compiled keymap fd + size to the router seat (Swift owns it now),
     /// which relays wl_keyboard.keymap to clients. Re-callable at router activation.
     func publishKeymap() {
-        guard xkb.keymapFd >= 0, let seatObj = host.runtime?.seat else { return }
-        seatObj.updateKeymap(fd: xkb.keymapFd, size: xkb.keymapSize)
+        guard let descriptor = xkb.duplicateKeymapDescriptor(),
+            let seatObj = host.runtime?.seat
+        else { return }
+        seatObj.updateKeymap(
+            descriptor: consume descriptor,
+            size: xkb.keymapSize)
     }
 
     var seatFd: Int32 { seat.fd }

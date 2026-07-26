@@ -2,13 +2,11 @@ internal import NucleusCompositorServer
 import NucleusCompositorServerTypes
 internal import NucleusCompositorWindowManager
 import Glibc
+import NucleusLinuxPrimitives
 @MainActor
 extension InputDispatch {
     static func monotonicNowNs() -> UInt64 {
-        var timestamp = timespec()
-        unsafe clock_gettime(CLOCK_MONOTONIC, &timestamp)
-        return UInt64(timestamp.tv_sec) &* 1_000_000_000
-            &+ UInt64(timestamp.tv_nsec)
+        LinuxMonotonicClock.nowNanoseconds()
     }
 
     // MARK: - backend-facing surface (the input host drives these)

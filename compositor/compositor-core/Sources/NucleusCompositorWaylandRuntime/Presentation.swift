@@ -26,15 +26,6 @@ protocol PresentationDelegate: AnyObject {
         delegate?.presentationClockId ?? UInt32(CLOCK_MONOTONIC)
     }
 
-    func register(in router: NucleusWaylandRouter) {
-        router.addGlobal(
-            WpPresentationServer.global(
-                implementation: self,
-                advertisedVersion: 2,
-                installed: { presentation, handle in
-                    handle.sendClockId(clk_id: presentation.clockId)
-                }))
-    }
 }
 
 extension WpPresentation: WpPresentationRequests {

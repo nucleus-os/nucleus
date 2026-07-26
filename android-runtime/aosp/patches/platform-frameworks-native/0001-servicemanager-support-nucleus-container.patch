@@ -1,3 +1,361 @@
+diff --git a/cmds/installd/Android.bp b/cmds/installd/Android.bp
+index 694d7458e8..df4d81adc3 100644
+--- a/cmds/installd/Android.bp
++++ b/cmds/installd/Android.bp
+@@ -39,6 +39,7 @@ cc_defaults {
+         "CrateManager.cpp",
+         "InstalldNativeService.cpp",
+         "QuotaUtils.cpp",
++        "SelinuxUtils.cpp",
+         "SysTrace.cpp",
+         "dexopt.cpp",
+         "execv_helper.cpp",
+diff --git a/cmds/installd/InstalldNativeService.cpp b/cmds/installd/InstalldNativeService.cpp
+index 21dbf89fe2..c48f20b311 100644
+--- a/cmds/installd/InstalldNativeService.cpp
++++ b/cmds/installd/InstalldNativeService.cpp
+@@ -75,6 +75,7 @@
+ #include "CrateManager.h"
+ #include "MatchExtensionGen.h"
+ #include "QuotaUtils.h"
++#include "SelinuxUtils.h"
+ #include "SysTrace.h"
+
+ #include <android_installd_flags.h>
+@@ -493,17 +494,6 @@ status_t InstalldNativeService::dump(int fd, const Vector<String16>& /* args */)
+
+ constexpr const char kXattrRestoreconInProgress[] = "user.restorecon_in_progress";
+
+-static std::string lgetfilecon(const std::string& path) {
+-    char* context;
+-    if (::lgetfilecon(path.c_str(), &context) < 0) {
+-        PLOG(ERROR) << "Failed to lgetfilecon for " << path;
+-        return {};
+-    }
+-    std::string result{context};
+-    free(context);
+-    return result;
+-}
+-
+ static bool getRestoreconInProgress(const std::string& path) {
+     bool inProgress = false;
+     if (getxattr(path.c_str(), kXattrRestoreconInProgress, &inProgress, sizeof(inProgress)) !=
+@@ -542,10 +532,13 @@ private:
+ static int restorecon_app_data_lazy(const std::string& path, const std::string& seInfo, uid_t uid,
+         bool existing) {
+     ScopedTrace tracer("restorecon-lazy");
++    if (!IsAndroidSelinuxOperational()) {
++        return 0;
++    }
+     if (!existing) {
+         ScopedTrace tracer("new-path");
+-        if (selinux_android_restorecon_pkgdir(path.c_str(), seInfo.c_str(), uid,
+-                SELINUX_ANDROID_RESTORECON_RECURSE) < 0) {
++        if (RestoreconPackage(path.c_str(), seInfo.c_str(), uid,
++                              SELINUX_ANDROID_RESTORECON_RECURSE) < 0) {
+             PLOG(ERROR) << "Failed recursive restorecon for " << path;
+             return -1;
+         }
+@@ -558,18 +551,22 @@ static int restorecon_app_data_lazy(const std::string& path, const std::string&
+     bool inProgress = getRestoreconInProgress(path);
+     std::string before, after;
+     if (!inProgress) {
+-        if (before = lgetfilecon(path); before.empty()) {
++        auto context = ReadFileContext(path.c_str());
++        if (!context) {
+             PLOG(ERROR) << "Failed before getfilecon for " << path;
+             return -1;
+         }
+-        if (selinux_android_restorecon_pkgdir(path.c_str(), seInfo.c_str(), uid, 0) < 0) {
++        before = std::move(*context);
++        if (RestoreconPackage(path.c_str(), seInfo.c_str(), uid, 0) < 0) {
+             PLOG(ERROR) << "Failed top-level restorecon for " << path;
+             return -1;
+         }
+-        if (after = lgetfilecon(path); after.empty()) {
++        context = ReadFileContext(path.c_str());
++        if (!context) {
+             PLOG(ERROR) << "Failed after getfilecon for " << path;
+             return -1;
+         }
++        after = std::move(*context);
+     }
+
+     // If the initial top-level restorecon above changed the label, then go
+@@ -586,8 +583,8 @@ static int restorecon_app_data_lazy(const std::string& path, const std::string&
+             // Temporary mark the folder as "in-progress" to resume in case of reboot/other failure.
+             RestoreconInProgress fence(path);
+
+-            if (selinux_android_restorecon_pkgdir(path.c_str(), seInfo.c_str(), uid,
+-                                                  SELINUX_ANDROID_RESTORECON_RECURSE) < 0) {
++            if (RestoreconPackage(path.c_str(), seInfo.c_str(), uid,
++                                  SELINUX_ANDROID_RESTORECON_RECURSE) < 0) {
+                 PLOG(ERROR) << "Failed recursive restorecon for " << path;
+                 return -1;
+             }
+@@ -669,7 +666,7 @@ static bool prepare_app_profile_dir(const std::string& packageName, int32_t appI
+         PLOG(ERROR) << "Failed to prepare " << profile_dir;
+         return false;
+     }
+-    if (selinux_android_restorecon(profile_dir.c_str(), 0)) {
++    if (Restorecon(profile_dir.c_str(), 0)) {
+         PLOG(ERROR) << "Failed to restorecon " << profile_dir;
+         return false;
+     }
+@@ -2217,7 +2214,7 @@ binder::Status InstalldNativeService::moveCompleteApp(const std::optional<std::s
+             goto fail;
+         }
+
+-        if (selinux_android_restorecon(to_app_package_path.c_str(), SELINUX_ANDROID_RESTORECON_RECURSE) != 0) {
++        if (Restorecon(to_app_package_path.c_str(), SELINUX_ANDROID_RESTORECON_RECURSE) != 0) {
+             res = error("Failed to restorecon " + to_app_package_path);
+             goto fail;
+         }
+@@ -3736,11 +3733,6 @@ binder::Status InstalldNativeService::linkNativeLibraryDirectory(
+         return error("Failed to stat " + _pkgdir);
+     }
+
+-    char *con = nullptr;
+-    if (::lgetfilecon(pkgdir, &con) < 0) {
+-        return error("Failed to lgetfilecon " + _pkgdir);
+-    }
+-
+     if (chown(pkgdir, AID_INSTALL, AID_INSTALL) < 0) {
+         res = error("Failed to chown " + _pkgdir);
+         goto out;
+@@ -3775,13 +3767,12 @@ binder::Status InstalldNativeService::linkNativeLibraryDirectory(
+         goto out;
+     }
+
+-    if (lsetfilecon(libsymlink, con) < 0) {
+-        res = error("Failed to lsetfilecon " + _libsymlink);
++    if (CopyFileContextToSymlink(pkgdir, libsymlink) < 0) {
++        res = error("Failed to copy file context from " + _pkgdir + " to " + _libsymlink);
+         goto out;
+     }
+
+ out:
+-    free(con);
+     if (chmod(pkgdir, s.st_mode) < 0) {
+         auto msg = "Failed to cleanup chmod " + _pkgdir;
+         if (res.isOk()) {
+@@ -3822,6 +3813,10 @@ binder::Status InstalldNativeService::restoreconAppDataLocked(
+     CHECK_ARGUMENT_UUID(uuid);
+     CHECK_ARGUMENT_PACKAGE_NAME(packageName);
+
++    if (!IsAndroidSelinuxOperational()) {
++        return ok();
++    }
++
+     binder::Status res = ok();
+
+     // SELINUX_ANDROID_RESTORECON_DATADATA flag is set by libselinux. Not needed here.
+@@ -3833,13 +3828,13 @@ binder::Status InstalldNativeService::restoreconAppDataLocked(
+     uid_t uid = multiuser_get_uid(userId, appId);
+     if (flags & FLAG_STORAGE_CE) {
+         auto path = create_data_user_ce_package_path(uuid_, userId, pkgName);
+-        if (selinux_android_restorecon_pkgdir(path.c_str(), seinfo, uid, seflags) < 0) {
++        if (RestoreconPackage(path.c_str(), seinfo, uid, seflags) < 0) {
+             res = error("restorecon failed for " + path);
+         }
+     }
+     if (flags & FLAG_STORAGE_DE) {
+         auto path = create_data_user_de_package_path(uuid_, userId, pkgName);
+-        if (selinux_android_restorecon_pkgdir(path.c_str(), seinfo, uid, seflags) < 0) {
++        if (RestoreconPackage(path.c_str(), seinfo, uid, seflags) < 0) {
+             res = error("restorecon failed for " + path);
+         }
+     }
+@@ -3854,6 +3849,10 @@ binder::Status InstalldNativeService::restoreconSdkDataLocked(
+     CHECK_ARGUMENT_UUID(uuid);
+     CHECK_ARGUMENT_PACKAGE_NAME(packageName);
+
++    if (!IsAndroidSelinuxOperational()) {
++        return ok();
++    }
++
+     binder::Status res = ok();
+
+     // SELINUX_ANDROID_RESTORECON_DATADATA flag is set by libselinux. Not needed here.
+@@ -3878,7 +3877,7 @@ binder::Status InstalldNativeService::restoreconSdkDataLocked(
+         const auto subDirHandler = [&packagePath, &seinfo, &uid, &seflags,
+                                     &res](const std::string& subDir) {
+             const auto& fullpath = packagePath + "/" + subDir;
+-            if (selinux_android_restorecon_pkgdir(fullpath.c_str(), seinfo, uid, seflags) < 0) {
++            if (RestoreconPackage(fullpath.c_str(), seinfo, uid, seflags) < 0) {
+                 res = error("restorecon failed for " + fullpath);
+             }
+         };
+@@ -4038,7 +4037,7 @@ binder::Status InstalldNativeService::createOatDirs(const std::string& packageNa
+     if (fs_prepare_dir(oat_dir, S_IRWXU | S_IRWXG | S_IXOTH, AID_SYSTEM, AID_INSTALL)) {
+         return error("Failed to prepare " + oatDir);
+     }
+-    if (selinux_android_restorecon(oat_dir, 0)) {
++    if (Restorecon(oat_dir, 0)) {
+         return error("Failed to restorecon " + oatDir);
+     }
+     for (const std::string& sub_dir : oatSubDirs) {
+@@ -4913,8 +4912,8 @@ static void copy_app_data(const std::optional<std::string>& uuid, const std::str
+     copy_app_data_recursive(source->fd.get(), target->fd.get(), source->name.c_str(), from, uid,
+                             &failed_files);
+
+-    if (selinux_android_restorecon_pkgdir(target->appDataPath.c_str(), seInfo.c_str(), uid,
+-                                          SELINUX_ANDROID_RESTORECON_RECURSE) < 0) {
++    if (RestoreconPackage(target->appDataPath.c_str(), seInfo.c_str(), uid,
++                          SELINUX_ANDROID_RESTORECON_RECURSE) < 0) {
+         notifyStatus(IAppDataOperationCallback::STATUS_FAILURE, "Restorecon failed", failed_files);
+     } else if (!failed_files.empty()) {
+         notifyStatus(IAppDataOperationCallback::STATUS_FAILURE, "Some files failed to copy",
+@@ -5000,8 +4999,8 @@ static void move_app_data(const std::optional<std::string>& uuid, const std::str
+         }
+     }
+
+-    if (selinux_android_restorecon_pkgdir(target->appDataPath.c_str(), seInfo.c_str(), uid,
+-                                          SELINUX_ANDROID_RESTORECON_RECURSE) < 0) {
++    if (RestoreconPackage(target->appDataPath.c_str(), seInfo.c_str(), uid,
++                          SELINUX_ANDROID_RESTORECON_RECURSE) < 0) {
+         notifyStatus(IAppDataOperationCallback::STATUS_FAILURE, "Restorecon failed", failed_files);
+     } else if (!failed_files.empty()) {
+         notifyStatus(IAppDataOperationCallback::STATUS_FAILURE, "Some files failed to chown",
+diff --git a/cmds/installd/SelinuxUtils.cpp b/cmds/installd/SelinuxUtils.cpp
+new file mode 100644
+index 0000000000..423c9a2838
+--- /dev/null
++++ b/cmds/installd/SelinuxUtils.cpp
+@@ -0,0 +1,72 @@
++/*
++ * Copyright (C) 2026 The Android Open Source Project
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *      http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++
++#include "SelinuxUtils.h"
++
++#include <memory>
++
++#include <android-base/properties.h>
++#include <selinux/android.h>
++#include <selinux/selinux.h>
++
++namespace android::installd {
++
++bool IsAndroidSelinuxOperational() {
++    static const bool operational =
++            !android::base::GetBoolProperty("ro.nucleus.container", false);
++    return operational;
++}
++
++int Restorecon(const char* path, unsigned int flags) {
++    if (!IsAndroidSelinuxOperational()) {
++        return 0;
++    }
++    return selinux_android_restorecon(path, flags);
++}
++
++int RestoreconPackage(const char* path, const char* seInfo, uid_t uid, unsigned int flags) {
++    if (!IsAndroidSelinuxOperational()) {
++        return 0;
++    }
++    return selinux_android_restorecon_pkgdir(path, seInfo, uid, flags);
++}
++
++std::optional<std::string> ReadFileContext(const char* path) {
++    if (!IsAndroidSelinuxOperational()) {
++        return std::nullopt;
++    }
++
++    char* rawContext = nullptr;
++    if (lgetfilecon(path, &rawContext) < 0) {
++        return std::nullopt;
++    }
++    std::unique_ptr<char, decltype(&freecon)> context(rawContext, freecon);
++    return std::string(context.get());
++}
++
++int CopyFileContextToSymlink(const char* source, const char* destination) {
++    if (!IsAndroidSelinuxOperational()) {
++        return 0;
++    }
++
++    auto context = ReadFileContext(source);
++    if (!context) {
++        return -1;
++    }
++    return lsetfilecon(destination, context->c_str());
++}
++
++}  // namespace android::installd
+diff --git a/cmds/installd/SelinuxUtils.h b/cmds/installd/SelinuxUtils.h
+new file mode 100644
+index 0000000000..8b35176936
+--- /dev/null
++++ b/cmds/installd/SelinuxUtils.h
+@@ -0,0 +1,33 @@
++/*
++ * Copyright (C) 2026 The Android Open Source Project
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *      http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++
++#pragma once
++
++#include <sys/types.h>
++
++#include <optional>
++#include <string>
++
++namespace android::installd {
++
++bool IsAndroidSelinuxOperational();
++
++int Restorecon(const char* path, unsigned int flags);
++int RestoreconPackage(const char* path, const char* seInfo, uid_t uid, unsigned int flags);
++std::optional<std::string> ReadFileContext(const char* path);
++int CopyFileContextToSymlink(const char* source, const char* destination);
++
++}  // namespace android::installd
+diff --git a/cmds/installd/dexopt.cpp b/cmds/installd/dexopt.cpp
+index fe13aeb204..a5f4f411d7 100644
+--- a/cmds/installd/dexopt.cpp
++++ b/cmds/installd/dexopt.cpp
+@@ -62,6 +62,7 @@
+ #include "installd_deps.h"
+ #include "restorable_file.h"
+ #include "run_dex2oat.h"
++#include "SelinuxUtils.h"
+ #include "unique_file.h"
+ #include "utils.h"
+
+@@ -1902,8 +1903,7 @@ int dexopt(const char* dex_path, uid_t uid, const char* pkgname, const char* ins
+     // Note that for primary apk the oat files are created before, in a separate installd
+     // call which also does the restorecon. TODO(calin): unify the paths.
+     if (is_secondary_dex) {
+-        if (selinux_android_restorecon_pkgdir(oat_dir, se_info, uid,
+-                SELINUX_ANDROID_RESTORECON_RECURSE)) {
++        if (RestoreconPackage(oat_dir, se_info, uid, SELINUX_ANDROID_RESTORECON_RECURSE)) {
+             *error_msg = std::string("Failed to restorecon ").append(oat_dir);
+             LOG(ERROR) << *error_msg;
+             return -1;
 diff --git a/cmds/servicemanager/Access.cpp b/cmds/servicemanager/Access.cpp
 index 6e2abf65e2..59695fdc55 100644
 --- a/cmds/servicemanager/Access.cpp

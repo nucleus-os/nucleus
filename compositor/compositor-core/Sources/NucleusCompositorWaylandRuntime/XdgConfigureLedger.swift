@@ -13,13 +13,15 @@ final class XdgConfigureLedger {
         outstanding.append(record)
     }
 
-    func contains(serial: UInt32) -> Bool {
+    func contains(serial: XdgConfigureSerial) -> Bool {
         outstanding.contains { $0.serial == serial }
             || acknowledged?.serial == serial
             || lastConsumed?.serial == serial
     }
 
-    func acknowledge(serial: UInt32) throws(XdgConfigureLedgerError) {
+    func acknowledge(
+        serial: XdgConfigureSerial
+    ) throws(XdgConfigureLedgerError) {
         guard let index = outstanding.firstIndex(where: {
             $0.serial == serial
         }) else {

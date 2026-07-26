@@ -472,12 +472,7 @@ struct ShellPasteboardResourceCounts: Equatable {
     }
 
     private func monotonicNowNanoseconds() -> UInt64 {
-        var time = timespec()
-        _ = unsafe clock_gettime(CLOCK_MONOTONIC, &time)
-        let seconds = UInt64(max(0, time.tv_sec))
-        let nanoseconds = UInt64(max(0, time.tv_nsec))
-        return seconds.saturatingMultiply(1_000_000_000)
-            .saturatingAdd(nanoseconds)
+        ShellMonotonicClock.nowNanoseconds()
     }
 }
 
