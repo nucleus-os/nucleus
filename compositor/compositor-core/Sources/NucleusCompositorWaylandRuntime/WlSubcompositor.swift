@@ -11,15 +11,7 @@ import WaylandServer
 import WaylandServerDispatch
 import WaylandProtocolTypes
 
-/// Owner bound to each wl_subcompositor resource (Rule 9). Routes get_subsurface
-/// back to the shared WlSubcompositor.
-@MainActor
-@safe final class SubcompositorBinding {
-    unowned let subcompositor: WlSubcompositor
-    init(_ subcompositor: WlSubcompositor) { self.subcompositor = subcompositor }
-}
-
-extension SubcompositorBinding: WlSubcompositorRequests {
+extension WlSubcompositor: WlSubcompositorRequests {
     func getSubsurface(
         _ request: WaylandRequest<WlSubcompositorServer>,
         id: WlNewId<WlSubsurfaceServer>,
@@ -37,7 +29,7 @@ extension SubcompositorBinding: WlSubcompositorRequests {
             return
         }
 
-        guard unsafe id.create(
+        guard id.create(
             owner: { handle in
                 WlSubsurface(
                     resource: handle, surface: surface, parent: parent)
@@ -125,9 +117,6 @@ extension WlSubsurface: WlSubsurfaceRequests {
     func register(in router: NucleusWaylandRouter) {
         router.addGlobal(
             WlSubcompositorServer.global(
-                implementation: self,
-                owner: { subcompositor, _ in
-                    SubcompositorBinding(subcompositor)
-                }))
+                implementation: self))
     }
 }

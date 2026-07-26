@@ -6,3 +6,22 @@ public enum ExtTransientSeatManagerV1Client: WaylandClientInterface {
     public nonisolated(unsafe) static let interface = unsafe swift_wayland_iface_ext_transient_seat_manager_v1()
     public nonisolated static let maximumVersion: UInt32 = 1
 }
+public extension WaylandProxy where Interface == ExtTransientSeatManagerV1Client {
+    func create() throws(WaylandProxyError) -> WaylandProxy<ExtTransientSeatV1Client> {
+        let _proxy = try unsafe requireNativeProxy()
+        guard let _created = unsafe swift_wayland_client_request_ext_transient_seat_manager_v1_create(_proxy) else {
+            throw WaylandProxyError.proxyCreationFailed
+        }
+        return unsafe makeOwnedProxy(
+            adopting: _created, ExtTransientSeatV1Client.self)
+    }
+    func destroy() throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        let _send = { () throws(WaylandProxyError) -> Void in
+            unsafe swift_wayland_client_request_ext_transient_seat_manager_v1_destroy(_proxy)
+            return
+        }
+        try _send()
+        try unsafe invalidateAfterProtocolDestructor()
+    }
+}

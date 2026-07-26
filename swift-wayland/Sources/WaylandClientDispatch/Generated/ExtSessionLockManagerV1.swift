@@ -6,3 +6,22 @@ public enum ExtSessionLockManagerV1Client: WaylandClientInterface {
     public nonisolated(unsafe) static let interface = unsafe swift_wayland_iface_ext_session_lock_manager_v1()
     public nonisolated static let maximumVersion: UInt32 = 1
 }
+public extension WaylandProxy where Interface == ExtSessionLockManagerV1Client {
+    func destroy() throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        let _send = { () throws(WaylandProxyError) -> Void in
+            unsafe swift_wayland_client_request_ext_session_lock_manager_v1_destroy(_proxy)
+            return
+        }
+        try _send()
+        try unsafe invalidateAfterProtocolDestructor()
+    }
+    func lock() throws(WaylandProxyError) -> WaylandProxy<ExtSessionLockV1Client> {
+        let _proxy = try unsafe requireNativeProxy()
+        guard let _created = unsafe swift_wayland_client_request_ext_session_lock_manager_v1_lock(_proxy) else {
+            throw WaylandProxyError.proxyCreationFailed
+        }
+        return unsafe makeOwnedProxy(
+            adopting: _created, ExtSessionLockV1Client.self)
+    }
+}

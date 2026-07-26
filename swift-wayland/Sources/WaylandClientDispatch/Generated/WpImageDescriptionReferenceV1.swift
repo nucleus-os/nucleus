@@ -6,3 +6,14 @@ public enum WpImageDescriptionReferenceV1Client: WaylandClientInterface {
     public nonisolated(unsafe) static let interface = unsafe swift_wayland_iface_wp_image_description_reference_v1()
     public nonisolated static let maximumVersion: UInt32 = 1
 }
+public extension WaylandProxy where Interface == WpImageDescriptionReferenceV1Client {
+    func destroy() throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        let _send = { () throws(WaylandProxyError) -> Void in
+            unsafe swift_wayland_client_request_wp_image_description_reference_v1_destroy(_proxy)
+            return
+        }
+        try _send()
+        try unsafe invalidateAfterProtocolDestructor()
+    }
+}

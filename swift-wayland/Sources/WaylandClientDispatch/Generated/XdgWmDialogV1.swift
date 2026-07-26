@@ -6,3 +6,23 @@ public enum XdgWmDialogV1Client: WaylandClientInterface {
     public nonisolated(unsafe) static let interface = unsafe swift_wayland_iface_xdg_wm_dialog_v1()
     public nonisolated static let maximumVersion: UInt32 = 1
 }
+public extension WaylandProxy where Interface == XdgWmDialogV1Client {
+    func destroy() throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        let _send = { () throws(WaylandProxyError) -> Void in
+            unsafe swift_wayland_client_request_xdg_wm_dialog_v1_destroy(_proxy)
+            return
+        }
+        try _send()
+        try unsafe invalidateAfterProtocolDestructor()
+    }
+    func getXdgDialog(toplevel: WaylandProxy<XdgToplevelClient>) throws(WaylandProxyError) -> WaylandProxy<XdgDialogV1Client> {
+        let _proxy = try unsafe requireNativeProxy()
+        let _toplevelProxy = try unsafe toplevel.requireNativeProxy()
+        guard let _created = unsafe swift_wayland_client_request_xdg_wm_dialog_v1_get_xdg_dialog(_proxy, _toplevelProxy) else {
+            throw WaylandProxyError.proxyCreationFailed
+        }
+        return unsafe makeOwnedProxy(
+            adopting: _created, XdgDialogV1Client.self)
+    }
+}

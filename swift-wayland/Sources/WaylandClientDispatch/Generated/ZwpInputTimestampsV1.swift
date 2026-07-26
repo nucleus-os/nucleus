@@ -6,6 +6,18 @@ public enum ZwpInputTimestampsV1Client: WaylandClientInterface {
     public nonisolated(unsafe) static let interface = unsafe swift_wayland_iface_zwp_input_timestamps_v1()
     public nonisolated static let maximumVersion: UInt32 = 1
 }
+public extension WaylandProxy where Interface == ZwpInputTimestampsV1Client {
+    func destroy() throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        let _send = { () throws(WaylandProxyError) -> Void in
+            unsafe swift_wayland_client_request_zwp_input_timestamps_v1_destroy(_proxy)
+            return
+        }
+        try _send()
+        try unsafe invalidateAfterProtocolDestructor()
+    }
+}
+@MainActor
 public protocol ZwpInputTimestampsV1Events: AnyObject {
     func timestamp(_ proxy: WaylandBorrowedProxy<ZwpInputTimestampsV1Client>, tv_sec_hi: UInt32, tv_sec_lo: UInt32, tv_nsec: UInt32)
 }
@@ -16,18 +28,29 @@ public extension ZwpInputTimestampsV1Client {
         unsafe p.pointee.timestamp = timestamp_impl
         return unsafe p
     }()
-    /// Wire the listener to a proxy. The owner is borrowed (unretained); the caller must keep it alive for the proxy's lifetime, matching libwayland's user_data contract.
-    @discardableResult
-    static func addListener(_ proxy: OpaquePointer, owner: AnyObject) -> Int32 {
-        unsafe zwp_input_timestamps_v1_add_listener(proxy, listener, Unmanaged.passUnretained(owner).toOpaque())
-    }
-    private static func handler(_ data: UnsafeMutableRawPointer) -> any ZwpInputTimestampsV1Events? {
-        unsafe Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? any ZwpInputTimestampsV1Events
+    private static func handler(_ context: WaylandClientListenerContext) -> any ZwpInputTimestampsV1Events? {
+        context.owner as? any ZwpInputTimestampsV1Events
     }
     private static let timestamp_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, UInt32, UInt32) -> Void = { data, proxy, tv_sec_hi, tv_sec_lo, tv_nsec in
-        guard let data = unsafe data, let proxy = unsafe proxy, let h = unsafe handler(data) else {
+        guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
-        unsafe h.timestamp(WaylandBorrowedProxy<ZwpInputTimestampsV1Client>(proxy), tv_sec_hi: tv_sec_hi, tv_sec_lo: tv_sec_lo, tv_nsec: tv_nsec)
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
+        }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        MainActor.assumeIsolated {
+            unsafe eventHandler.timestamp(WaylandBorrowedProxy<ZwpInputTimestampsV1Client>(eventProxy), tv_sec_hi: tv_sec_hi, tv_sec_lo: tv_sec_lo, tv_nsec: tv_nsec)
+        }
+    }
+}
+public extension WaylandProxy where Interface == ZwpInputTimestampsV1Client {
+    func installListener(_ owner: any ZwpInputTimestampsV1Events) throws(WaylandProxyError) {
+        try unsafe installListener(owner: owner) { proxy, data in
+            unsafe zwp_input_timestamps_v1_add_listener(proxy, ZwpInputTimestampsV1Client.listener, data)
+        }
     }
 }

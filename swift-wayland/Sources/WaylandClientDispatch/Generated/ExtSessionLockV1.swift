@@ -6,6 +6,37 @@ public enum ExtSessionLockV1Client: WaylandClientInterface {
     public nonisolated(unsafe) static let interface = unsafe swift_wayland_iface_ext_session_lock_v1()
     public nonisolated static let maximumVersion: UInt32 = 1
 }
+public extension WaylandProxy where Interface == ExtSessionLockV1Client {
+    func destroy() throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        let _send = { () throws(WaylandProxyError) -> Void in
+            unsafe swift_wayland_client_request_ext_session_lock_v1_destroy(_proxy)
+            return
+        }
+        try _send()
+        try unsafe invalidateAfterProtocolDestructor()
+    }
+    func getLockSurface(surface: WaylandProxy<WlSurfaceClient>, output: WaylandProxy<WlOutputClient>) throws(WaylandProxyError) -> WaylandProxy<ExtSessionLockSurfaceV1Client> {
+        let _proxy = try unsafe requireNativeProxy()
+        let _surfaceProxy = try unsafe surface.requireNativeProxy()
+        let _outputProxy = try unsafe output.requireNativeProxy()
+        guard let _created = unsafe swift_wayland_client_request_ext_session_lock_v1_get_lock_surface(_proxy, _surfaceProxy, _outputProxy) else {
+            throw WaylandProxyError.proxyCreationFailed
+        }
+        return unsafe makeOwnedProxy(
+            adopting: _created, ExtSessionLockSurfaceV1Client.self)
+    }
+    func unlockAndDestroy() throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        let _send = { () throws(WaylandProxyError) -> Void in
+            unsafe swift_wayland_client_request_ext_session_lock_v1_unlock_and_destroy(_proxy)
+            return
+        }
+        try _send()
+        try unsafe invalidateAfterProtocolDestructor()
+    }
+}
+@MainActor
 public protocol ExtSessionLockV1Events: AnyObject {
     func locked(_ proxy: WaylandBorrowedProxy<ExtSessionLockV1Client>)
     func finished(_ proxy: WaylandBorrowedProxy<ExtSessionLockV1Client>)
@@ -18,24 +49,44 @@ public extension ExtSessionLockV1Client {
         unsafe p.pointee.finished = finished_impl
         return unsafe p
     }()
-    /// Wire the listener to a proxy. The owner is borrowed (unretained); the caller must keep it alive for the proxy's lifetime, matching libwayland's user_data contract.
-    @discardableResult
-    static func addListener(_ proxy: OpaquePointer, owner: AnyObject) -> Int32 {
-        unsafe ext_session_lock_v1_add_listener(proxy, listener, Unmanaged.passUnretained(owner).toOpaque())
-    }
-    private static func handler(_ data: UnsafeMutableRawPointer) -> any ExtSessionLockV1Events? {
-        unsafe Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? any ExtSessionLockV1Events
+    private static func handler(_ context: WaylandClientListenerContext) -> any ExtSessionLockV1Events? {
+        context.owner as? any ExtSessionLockV1Events
     }
     private static let locked_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
-        guard let data = unsafe data, let proxy = unsafe proxy, let h = unsafe handler(data) else {
+        guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
-        unsafe h.locked(WaylandBorrowedProxy<ExtSessionLockV1Client>(proxy))
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
+        }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        MainActor.assumeIsolated {
+            unsafe eventHandler.locked(WaylandBorrowedProxy<ExtSessionLockV1Client>(eventProxy))
+        }
     }
     private static let finished_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
-        guard let data = unsafe data, let proxy = unsafe proxy, let h = unsafe handler(data) else {
+        guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
-        unsafe h.finished(WaylandBorrowedProxy<ExtSessionLockV1Client>(proxy))
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
+        }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        MainActor.assumeIsolated {
+            unsafe eventHandler.finished(WaylandBorrowedProxy<ExtSessionLockV1Client>(eventProxy))
+        }
+    }
+}
+public extension WaylandProxy where Interface == ExtSessionLockV1Client {
+    func installListener(_ owner: any ExtSessionLockV1Events) throws(WaylandProxyError) {
+        try unsafe installListener(owner: owner) { proxy, data in
+            unsafe ext_session_lock_v1_add_listener(proxy, ExtSessionLockV1Client.listener, data)
+        }
     }
 }

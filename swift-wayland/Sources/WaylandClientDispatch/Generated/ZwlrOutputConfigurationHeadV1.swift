@@ -6,3 +6,41 @@ public enum ZwlrOutputConfigurationHeadV1Client: WaylandClientInterface {
     public nonisolated(unsafe) static let interface = unsafe swift_wayland_iface_zwlr_output_configuration_head_v1()
     public nonisolated static let maximumVersion: UInt32 = 4
 }
+public import WaylandProtocolTypes
+public extension WaylandProxy where Interface == ZwlrOutputConfigurationHeadV1Client {
+    func setMode(mode: WaylandProxy<ZwlrOutputModeV1Client>) throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        let _modeProxy = try unsafe mode.requireNativeProxy()
+        unsafe swift_wayland_client_request_zwlr_output_configuration_head_v1_set_mode(_proxy, _modeProxy)
+        return
+    }
+    func setCustomMode(width: Int32, height: Int32, refresh: Int32) throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        unsafe swift_wayland_client_request_zwlr_output_configuration_head_v1_set_custom_mode(_proxy, width, height, refresh)
+        return
+    }
+    func setPosition(x: Int32, y: Int32) throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        unsafe swift_wayland_client_request_zwlr_output_configuration_head_v1_set_position(_proxy, x, y)
+        return
+    }
+    func setTransform(transform: WlOutputTransform) throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        unsafe swift_wayland_client_request_zwlr_output_configuration_head_v1_set_transform(_proxy, Int32(bitPattern: transform.rawValue))
+        return
+    }
+    func setScale(scale: Double) throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        unsafe swift_wayland_client_request_zwlr_output_configuration_head_v1_set_scale(_proxy, swift_wayland_fixed_from_double(scale))
+        return
+    }
+    func setAdaptiveSync(state: ZwlrOutputHeadV1AdaptiveSyncState) throws(WaylandProxyError) {
+        guard version >= 4 else {
+            throw .unsupportedVersion(
+                required: 4, actual: version)
+        }
+        let _proxy = try unsafe requireNativeProxy()
+        unsafe swift_wayland_client_request_zwlr_output_configuration_head_v1_set_adaptive_sync(_proxy, state.rawValue)
+        return
+    }
+}

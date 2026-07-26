@@ -10,7 +10,7 @@
 // only keyboard focus, which follows window activation.
 
 internal import NucleusCompositorServer
-import WaylandServerC
+import WaylandServer
 
 @MainActor
 final class RouterSeatDriver {
@@ -32,13 +32,15 @@ final class RouterSeatDriver {
 
     func authorizeUserIntent(
         serial: UInt32,
-        seatResource: UnsafeMutablePointer<wl_resource>?,
+        seat candidate: WlSeat,
+        clientID: WaylandClientID,
         surfaceID: UInt32
     ) -> Bool {
-        unsafe seat.authorize(
+        guard candidate === seat else { return false }
+        return seat.authorize(
             serial: serial,
-            seatResource: seatResource,
-            surface: compositor.surface(id: surfaceID),
+            clientKey: clientID,
+            surfaceID: surfaceID,
             kinds: [.pointerButton, .touchDown])
     }
 

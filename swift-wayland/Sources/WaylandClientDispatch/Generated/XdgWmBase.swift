@@ -6,6 +6,40 @@ public enum XdgWmBaseClient: WaylandClientInterface {
     public nonisolated(unsafe) static let interface = unsafe swift_wayland_iface_xdg_wm_base()
     public nonisolated static let maximumVersion: UInt32 = 7
 }
+public extension WaylandProxy where Interface == XdgWmBaseClient {
+    func destroy() throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        let _send = { () throws(WaylandProxyError) -> Void in
+            unsafe swift_wayland_client_request_xdg_wm_base_destroy(_proxy)
+            return
+        }
+        try _send()
+        try unsafe invalidateAfterProtocolDestructor()
+    }
+    func createPositioner() throws(WaylandProxyError) -> WaylandProxy<XdgPositionerClient> {
+        let _proxy = try unsafe requireNativeProxy()
+        guard let _created = unsafe swift_wayland_client_request_xdg_wm_base_create_positioner(_proxy) else {
+            throw WaylandProxyError.proxyCreationFailed
+        }
+        return unsafe makeOwnedProxy(
+            adopting: _created, XdgPositionerClient.self)
+    }
+    func getXdgSurface(surface: WaylandProxy<WlSurfaceClient>) throws(WaylandProxyError) -> WaylandProxy<XdgSurfaceClient> {
+        let _proxy = try unsafe requireNativeProxy()
+        let _surfaceProxy = try unsafe surface.requireNativeProxy()
+        guard let _created = unsafe swift_wayland_client_request_xdg_wm_base_get_xdg_surface(_proxy, _surfaceProxy) else {
+            throw WaylandProxyError.proxyCreationFailed
+        }
+        return unsafe makeOwnedProxy(
+            adopting: _created, XdgSurfaceClient.self)
+    }
+    func pong(serial: UInt32) throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        unsafe swift_wayland_client_request_xdg_wm_base_pong(_proxy, serial)
+        return
+    }
+}
+@MainActor
 public protocol XdgWmBaseEvents: AnyObject {
     func ping(_ proxy: WaylandBorrowedProxy<XdgWmBaseClient>, serial: UInt32)
 }
@@ -16,18 +50,29 @@ public extension XdgWmBaseClient {
         unsafe p.pointee.ping = ping_impl
         return unsafe p
     }()
-    /// Wire the listener to a proxy. The owner is borrowed (unretained); the caller must keep it alive for the proxy's lifetime, matching libwayland's user_data contract.
-    @discardableResult
-    static func addListener(_ proxy: OpaquePointer, owner: AnyObject) -> Int32 {
-        unsafe xdg_wm_base_add_listener(proxy, listener, Unmanaged.passUnretained(owner).toOpaque())
-    }
-    private static func handler(_ data: UnsafeMutableRawPointer) -> any XdgWmBaseEvents? {
-        unsafe Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? any XdgWmBaseEvents
+    private static func handler(_ context: WaylandClientListenerContext) -> any XdgWmBaseEvents? {
+        context.owner as? any XdgWmBaseEvents
     }
     private static let ping_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, serial in
-        guard let data = unsafe data, let proxy = unsafe proxy, let h = unsafe handler(data) else {
+        guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
-        unsafe h.ping(WaylandBorrowedProxy<XdgWmBaseClient>(proxy), serial: serial)
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
+        }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        MainActor.assumeIsolated {
+            unsafe eventHandler.ping(WaylandBorrowedProxy<XdgWmBaseClient>(eventProxy), serial: serial)
+        }
+    }
+}
+public extension WaylandProxy where Interface == XdgWmBaseClient {
+    func installListener(_ owner: any XdgWmBaseEvents) throws(WaylandProxyError) {
+        try unsafe installListener(owner: owner) { proxy, data in
+            unsafe xdg_wm_base_add_listener(proxy, XdgWmBaseClient.listener, data)
+        }
     }
 }

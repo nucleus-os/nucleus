@@ -6,3 +6,23 @@ public enum WpFifoManagerV1Client: WaylandClientInterface {
     public nonisolated(unsafe) static let interface = unsafe swift_wayland_iface_wp_fifo_manager_v1()
     public nonisolated static let maximumVersion: UInt32 = 1
 }
+public extension WaylandProxy where Interface == WpFifoManagerV1Client {
+    func destroy() throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        let _send = { () throws(WaylandProxyError) -> Void in
+            unsafe swift_wayland_client_request_wp_fifo_manager_v1_destroy(_proxy)
+            return
+        }
+        try _send()
+        try unsafe invalidateAfterProtocolDestructor()
+    }
+    func getFifo(surface: WaylandProxy<WlSurfaceClient>) throws(WaylandProxyError) -> WaylandProxy<WpFifoV1Client> {
+        let _proxy = try unsafe requireNativeProxy()
+        let _surfaceProxy = try unsafe surface.requireNativeProxy()
+        guard let _created = unsafe swift_wayland_client_request_wp_fifo_manager_v1_get_fifo(_proxy, _surfaceProxy) else {
+            throw WaylandProxyError.proxyCreationFailed
+        }
+        return unsafe makeOwnedProxy(
+            adopting: _created, WpFifoV1Client.self)
+    }
+}

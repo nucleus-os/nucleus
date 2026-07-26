@@ -7,12 +7,11 @@
 // compositor's. The runtime projects `windows` into typed native product state and routes typed
 // taskbar actions directly back through the handle.
 
-import WaylandClientC
 public import WaylandClientDispatch
 
 /// A window as seen over foreign-toplevel. Value snapshot the native taskbar reads.
 public struct ToplevelWindow: Identifiable, Sendable {
-    public let id: UInt64          // stable per-handle id (the proxy pointer bits)
+    public let id: UInt64
     public var title: String = ""
     public var appID: String = ""
     public var activated: Bool = false
@@ -23,7 +22,8 @@ public struct ToplevelWindow: Identifiable, Sendable {
 
 @MainActor
 @safe public final class ForeignToplevelManager {
-    private let manager: OpaquePointer
+    private let manager:
+        WaylandProxy<ZwlrForeignToplevelManagerV1Client>
     private weak var client: ShellWaylandClient?
 
     /// Live windows keyed by handle id, in arrival order.
@@ -33,14 +33,22 @@ public struct ToplevelWindow: Identifiable, Sendable {
 
     // Per-handle: the proxy, a scratch record accumulating events until `done` publishes it,
     // and a back-reference to the owning manager so the handle's events can publish/remove.
+    @MainActor
     @safe fileprivate final class HandleBox {
-        let handle: OpaquePointer
+        let handle:
+            WaylandProxy<ZwlrForeignToplevelHandleV1Client>
         let id: UInt64
         var pending = ToplevelWindow(id: 0)
         // Weak to avoid a retain cycle (the manager retains the box via `handles`).
         weak var manager: ForeignToplevelManager?
-        init(handle: OpaquePointer, id: UInt64) {
-            unsafe self.handle = handle
+        init(
+            handle:
+                WaylandProxy<
+                    ZwlrForeignToplevelHandleV1Client
+                >,
+            id: UInt64
+        ) {
+            self.handle = handle
             self.id = id
             self.pending = ToplevelWindow(id: id)
         }
@@ -48,14 +56,14 @@ public struct ToplevelWindow: Identifiable, Sendable {
     private var handles: [UInt64: HandleBox] = [:]
 
     public init?(client: ShellWaylandClient) {
-        guard let manager = unsafe client.proxy(.foreignToplevel) else { return nil }
-        unsafe self.manager = manager
+        guard let manager = client.foreignToplevel else { return nil }
+        self.manager = manager
         self.client = client
-        installManagerListener()
-    }
-
-    private func installManagerListener() {
-        unsafe ZwlrForeignToplevelManagerV1Client.addListener(manager, owner: self)
+        do {
+            try manager.installListener(self)
+        } catch {
+            return nil
+        }
     }
 
     // Register a freshly-created per-handle box into the live window set (main-actor state).
@@ -74,7 +82,7 @@ public struct ToplevelWindow: Identifiable, Sendable {
 
     fileprivate func removeHandle(id: UInt64) {
         if let box = handles[id] {
-            unsafe zwlr_foreign_toplevel_handle_v1_destroy(box.handle)
+            try? box.handle.destroy()
         }
         handles[id] = nil
         windows.removeAll { $0.id == id }
@@ -84,76 +92,85 @@ public struct ToplevelWindow: Identifiable, Sendable {
     // MARK: - Actions (routed from the native taskbar → the compositor's model)
 
     public func activate(id: UInt64) {
-        guard let box = handles[id], let seat = unsafe client?.proxy(.seat) else { return }
-        unsafe zwlr_foreign_toplevel_handle_v1_activate(box.handle, seat)
+        guard let box = handles[id],
+              let seat = client?.seat
+        else {
+            return
+        }
+        try? box.handle.activate(seat: seat)
     }
     public func close(id: UInt64) {
         guard let box = handles[id] else { return }
-        unsafe zwlr_foreign_toplevel_handle_v1_close(box.handle)
+        try? box.handle.close()
     }
     public func setMinimized(id: UInt64, _ minimized: Bool) {
         guard let box = handles[id] else { return }
-        if minimized { unsafe zwlr_foreign_toplevel_handle_v1_set_minimized(box.handle) }
-        else { unsafe zwlr_foreign_toplevel_handle_v1_unset_minimized(box.handle) }
+        if minimized {
+            try? box.handle.setMinimized()
+        } else {
+            try? box.handle.unsetMinimized()
+        }
     }
     public func setMaximized(id: UInt64, _ maximized: Bool) {
         guard let box = handles[id] else { return }
-        if maximized { unsafe zwlr_foreign_toplevel_handle_v1_set_maximized(box.handle) }
-        else { unsafe zwlr_foreign_toplevel_handle_v1_unset_maximized(box.handle) }
+        if maximized {
+            try? box.handle.setMaximized()
+        } else {
+            try? box.handle.unsetMaximized()
+        }
     }
     public func setFullscreen(id: UInt64, _ fullscreen: Bool) {
         guard let box = handles[id] else { return }
-        if fullscreen { unsafe zwlr_foreign_toplevel_handle_v1_set_fullscreen(box.handle, nil) }
-        else { unsafe zwlr_foreign_toplevel_handle_v1_unset_fullscreen(box.handle) }
+        if fullscreen {
+            try? box.handle.setFullscreen(output: nil)
+        } else {
+            try? box.handle.unsetFullscreen()
+        }
     }
 }
 
-// The manager's `toplevel` event delivers a brand-new handle proxy. We build its per-handle owner
-// box, wire the handle listener (a C call, so the new proxy stays out of the actor hop), then send
-// the box into the main actor to register it. The generated dispatch is nonisolated.
 extension ForeignToplevelManager: ZwlrForeignToplevelManagerV1Events {
-    public nonisolated func toplevel(
+    public func toplevel(
         _ proxy: WaylandBorrowedProxy<ZwlrForeignToplevelManagerV1Client>,
-        toplevel: WaylandBorrowedProxy<ZwlrForeignToplevelHandleV1Client>
+        toplevel: WaylandProxy<ZwlrForeignToplevelHandleV1Client>
     ) {
-        let bits = unsafe Int(bitPattern: UnsafeRawPointer(toplevel.proxy))
-        MainActor.assumeIsolated {
-            guard let h = unsafe OpaquePointer(bitPattern: bits) else { return }
-            let box = unsafe HandleBox(handle: h, id: UInt64(UInt(bitPattern: bits)))
-            unsafe ZwlrForeignToplevelHandleV1Client.addListener(h, owner: box)
+        let box = HandleBox(
+            handle: toplevel,
+            id: UInt64(toplevel.identity))
+        do {
+            try toplevel.installListener(box)
             register(box)
+        } catch {
+            try? toplevel.destroy()
         }
     }
-    public nonisolated func finished(
+    public func finished(
         _ proxy: WaylandBorrowedProxy<ZwlrForeignToplevelManagerV1Client>
     ) {}
 }
 
-// The per-handle owner. Not @MainActor, so its own scratch `pending` is mutated directly; only the
-// cross-object publish/remove (which touch the @MainActor manager's state) hop onto the main actor,
-// carrying just Sendable values (the Sendable manager reference, the window snapshot, the id).
 extension ForeignToplevelManager.HandleBox: ZwlrForeignToplevelHandleV1Events {
-    nonisolated func title(
+    func title(
         _ proxy: WaylandBorrowedProxy<ZwlrForeignToplevelHandleV1Client>,
         title: String
     ) {
         pending.title = title
     }
-    nonisolated func appId(
+    func appId(
         _ proxy: WaylandBorrowedProxy<ZwlrForeignToplevelHandleV1Client>,
         app_id: String
     ) {
         pending.appID = app_id
     }
-    nonisolated func outputEnter(
+    func outputEnter(
         _ proxy: WaylandBorrowedProxy<ZwlrForeignToplevelHandleV1Client>,
         output: WaylandBorrowedProxy<WlOutputClient>
     ) {}
-    nonisolated func outputLeave(
+    func outputLeave(
         _ proxy: WaylandBorrowedProxy<ZwlrForeignToplevelHandleV1Client>,
         output: WaylandBorrowedProxy<WlOutputClient>
     ) {}
-    nonisolated func state(
+    func state(
         _ proxy: WaylandBorrowedProxy<ZwlrForeignToplevelHandleV1Client>,
         state: WaylandClientArrayView
     ) {
@@ -174,22 +191,18 @@ extension ForeignToplevelManager.HandleBox: ZwlrForeignToplevelHandleV1Events {
             }
         }
     }
-    nonisolated func parent(
+    func parent(
         _ proxy: WaylandBorrowedProxy<ZwlrForeignToplevelHandleV1Client>,
         parent: WaylandBorrowedProxy<ZwlrForeignToplevelHandleV1Client>?
     ) {}
-    nonisolated func done(
+    func done(
         _ proxy: WaylandBorrowedProxy<ZwlrForeignToplevelHandleV1Client>
     ) {
-        let mgr = manager                 // Sendable (@MainActor class)
-        let snapshot = pending            // ToplevelWindow is Sendable
-        MainActor.assumeIsolated { mgr?.publish(snapshot) }
+        manager?.publish(pending)
     }
-    nonisolated func closed(
+    func closed(
         _ proxy: WaylandBorrowedProxy<ZwlrForeignToplevelHandleV1Client>
     ) {
-        let mgr = manager
-        let handleID = id
-        MainActor.assumeIsolated { mgr?.removeHandle(id: handleID) }
+        manager?.removeHandle(id: id)
     }
 }

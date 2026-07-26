@@ -80,10 +80,9 @@ internal import NucleusCompositorWindowManager
 
 extension XdgToplevel: XdgToplevelRequests {
     func destroy(_ context: WaylandRequest<XdgToplevelServer>) {
-        let resource = unsafe context.resource
         shell.toplevelDidUnmap(self)
         xdgSurface?.roleObjectDestroyed(self)
-        unsafe wl_resource_destroy(resource)
+        context.destroy()
     }
 
     func setParent(
@@ -115,8 +114,13 @@ extension XdgToplevel: XdgToplevelRequests {
         _ context: WaylandRequest<XdgToplevelServer>, seat: WaylandBorrowedObject<WlSeatServer>,
         serial: UInt32, x: Int32, y: Int32
     ) {
-        guard unsafe shell.delegate?.authorizeInteractiveRequest(
-            self, seat: seat.resource, serial: serial) == true
+        guard let seatOwner = seat.owner(as: SeatBinding.self)?.seat,
+            let seatClientID = seat.clientID,
+            shell.delegate?.authorizeInteractiveRequest(
+                self,
+                seat: seatOwner,
+                seatClientID: seatClientID,
+                serial: serial) == true
         else { return }
         request(.showWindowMenu(serial: serial, x: x, y: y), replan: false)
     }
@@ -124,8 +128,13 @@ extension XdgToplevel: XdgToplevelRequests {
     func move(
         _ context: WaylandRequest<XdgToplevelServer>, seat: WaylandBorrowedObject<WlSeatServer>, serial: UInt32
     ) {
-        guard unsafe shell.delegate?.authorizeInteractiveRequest(
-            self, seat: seat.resource, serial: serial) == true
+        guard let seatOwner = seat.owner(as: SeatBinding.self)?.seat,
+            let seatClientID = seat.clientID,
+            shell.delegate?.authorizeInteractiveRequest(
+                self,
+                seat: seatOwner,
+                seatClientID: seatClientID,
+                serial: serial) == true
         else { return }
         request(.move(serial: serial), replan: false)
     }
@@ -141,8 +150,13 @@ extension XdgToplevel: XdgToplevelRequests {
                 message: "invalid resize edge")
             return
         }
-        guard unsafe shell.delegate?.authorizeInteractiveRequest(
-            self, seat: seat.resource, serial: serial) == true
+        guard let seatOwner = seat.owner(as: SeatBinding.self)?.seat,
+            let seatClientID = seat.clientID,
+            shell.delegate?.authorizeInteractiveRequest(
+                self,
+                seat: seatOwner,
+                seatClientID: seatClientID,
+                serial: serial) == true
         else { return }
         request(.resize(serial: serial, edges: edges.rawValue), replan: false)
     }

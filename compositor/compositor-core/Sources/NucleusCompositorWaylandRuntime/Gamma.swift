@@ -31,8 +31,7 @@ protocol GammaControlDelegate: AnyObject {
     func register(in router: NucleusWaylandRouter) {
         router.addGlobal(
             ZwlrGammaControlManagerV1Server.global(
-                implementation: self,
-                owner: { manager, _ in manager }))
+                implementation: self))
     }
 
     fileprivate func apply(output: WlOutput?, red: [UInt16], green: [UInt16], blue: [UInt16]) {
@@ -71,7 +70,7 @@ extension ZwlrGammaControlManager: ZwlrGammaControlManagerV1Requests {
                          output outputRes: WaylandBorrowedObject<WlOutputServer>) {
         let output = outputRes.output
         let size = delegate?.gammaRampSize(output: output) ?? 0
-        _ = unsafe id.create(
+        _ = id.create(
             owner: { handle in
                 ZwlrGammaControl(
                     resource: handle,

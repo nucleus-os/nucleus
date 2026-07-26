@@ -240,15 +240,15 @@ private final class DefaultReleaseCompositor: WlCompositorRequests {
     ) {
         MainActor.preconditionIsolated()
         tracker.createCount += 1
-        tracker.createdVersion = unsafe id.version
-        _ = unsafe id.create { _ in TestSurfaceOwner() }
+        tracker.createdVersion = id.version
+        _ = id.create { _ in TestSurfaceOwner() }
     }
 
     func createRegion(
         _ request: WaylandRequest<WlCompositorServer>,
         id: WlNewId<WlRegionServer>
     ) {
-        _ = unsafe id.create { _ in TestRegionOwner() }
+        _ = id.create { _ in TestRegionOwner() }
     }
 }
 
@@ -268,14 +268,14 @@ private final class OverrideReleaseCompositor: WlCompositorRequests {
         _ request: WaylandRequest<WlCompositorServer>,
         id: WlNewId<WlSurfaceServer>
     ) {
-        _ = unsafe id.create { _ in TestSurfaceOwner() }
+        _ = id.create { _ in TestSurfaceOwner() }
     }
 
     func createRegion(
         _ request: WaylandRequest<WlCompositorServer>,
         id: WlNewId<WlRegionServer>
     ) {
-        _ = unsafe id.create { _ in TestRegionOwner() }
+        _ = id.create { _ in TestRegionOwner() }
     }
 
     func release(_ request: WaylandRequest<WlCompositorServer>) {

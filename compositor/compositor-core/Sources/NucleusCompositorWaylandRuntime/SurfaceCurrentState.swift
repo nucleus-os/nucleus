@@ -1,5 +1,6 @@
 import WaylandServerC
 import WaylandServer
+import WaylandServerDispatch
 import NucleusTypes
 
 /// The applied core content state of one wl_surface. Surface-adjacent protocol
@@ -7,9 +8,9 @@ import NucleusTypes
 /// forwarding copy. The pending → transaction → current ownership progression
 /// remains singular for buffers, geometry, and render identity.
 struct SurfaceCurrentState {
-    var buffer: WaylandResourceReference?
+    var buffer: WaylandResourceReference<WlBufferServer>?
     var bufferPixelSize = BufferPixelSize()
-    var releaseCallback: WaylandResourceReference?
+    var releaseCallback: WaylandResourceReference<WlCallbackServer>?
     var bufferReleased = false
 
     var bufferScale: Int32 = 1

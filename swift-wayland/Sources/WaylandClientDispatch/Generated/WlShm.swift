@@ -7,6 +7,35 @@ public enum WlShmClient: WaylandClientInterface {
     public nonisolated static let maximumVersion: UInt32 = 2
 }
 public import WaylandProtocolTypes
+public extension WaylandProxy where Interface == WlShmClient {
+    func createPool(fd: consuming WaylandClientOwnedFileDescriptor, size: Int32) throws(WaylandProxyError) -> WaylandProxy<WlShmPoolClient> {
+        let _proxy = try unsafe requireNativeProxy()
+        let _fdDescriptor = fd.take()
+        defer {
+            WaylandClientOwnedFileDescriptor.closeTransferred(
+                _fdDescriptor)
+        }
+        guard let _created = unsafe swift_wayland_client_request_wl_shm_create_pool(_proxy, _fdDescriptor, size) else {
+            throw WaylandProxyError.proxyCreationFailed
+        }
+        return unsafe makeOwnedProxy(
+            adopting: _created, WlShmPoolClient.self)
+    }
+    func release() throws(WaylandProxyError) {
+        guard version >= 2 else {
+            throw .unsupportedVersion(
+                required: 2, actual: version)
+        }
+        let _proxy = try unsafe requireNativeProxy()
+        let _send = { () throws(WaylandProxyError) -> Void in
+            unsafe swift_wayland_client_request_wl_shm_release(_proxy)
+            return
+        }
+        try _send()
+        try unsafe invalidateAfterProtocolDestructor()
+    }
+}
+@MainActor
 public protocol WlShmEvents: AnyObject {
     func format(_ proxy: WaylandBorrowedProxy<WlShmClient>, format: WlShmFormat)
 }
@@ -17,18 +46,29 @@ public extension WlShmClient {
         unsafe p.pointee.format = format_impl
         return unsafe p
     }()
-    /// Wire the listener to a proxy. The owner is borrowed (unretained); the caller must keep it alive for the proxy's lifetime, matching libwayland's user_data contract.
-    @discardableResult
-    static func addListener(_ proxy: OpaquePointer, owner: AnyObject) -> Int32 {
-        unsafe wl_shm_add_listener(proxy, listener, Unmanaged.passUnretained(owner).toOpaque())
-    }
-    private static func handler(_ data: UnsafeMutableRawPointer) -> any WlShmEvents? {
-        unsafe Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? any WlShmEvents
+    private static func handler(_ context: WaylandClientListenerContext) -> any WlShmEvents? {
+        context.owner as? any WlShmEvents
     }
     private static let format_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, format in
-        guard let data = unsafe data, let proxy = unsafe proxy, let h = unsafe handler(data) else {
+        guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
-        unsafe h.format(WaylandBorrowedProxy<WlShmClient>(proxy), format: WlShmFormat(rawValue: format))
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
+        }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        MainActor.assumeIsolated {
+            unsafe eventHandler.format(WaylandBorrowedProxy<WlShmClient>(eventProxy), format: WlShmFormat(rawValue: format))
+        }
+    }
+}
+public extension WaylandProxy where Interface == WlShmClient {
+    func installListener(_ owner: any WlShmEvents) throws(WaylandProxyError) {
+        try unsafe installListener(owner: owner) { proxy, data in
+            unsafe wl_shm_add_listener(proxy, WlShmClient.listener, data)
+        }
     }
 }

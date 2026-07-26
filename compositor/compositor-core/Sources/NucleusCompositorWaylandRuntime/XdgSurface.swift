@@ -198,7 +198,6 @@ import NucleusRenderModel
 
 extension XdgSurface: XdgSurfaceRequests {
     func destroy(_ request: WaylandRequest<XdgSurfaceServer>) {
-        let resource = unsafe request.resource
         guard toplevel == nil, popup == nil else {
             request.postError(
                 .defunctRoleObject,
@@ -206,7 +205,7 @@ extension XdgSurface: XdgSurfaceRequests {
             return
         }
         surface?.releaseXdgConstruction()
-        unsafe wl_resource_destroy(resource)
+        request.destroy()
     }
 
     func getToplevel(
@@ -214,7 +213,7 @@ extension XdgSurface: XdgSurfaceRequests {
         id: WlNewId<XdgToplevelServer>
     ) {
         guard let surface else { return }
-        _ = unsafe id.create(
+        _ = id.create(
             owner: { handle -> XdgToplevel? in
                 guard !self.roleAssigned, surface.assignRole(self) else {
                     self.resource.postError(
@@ -257,7 +256,7 @@ extension XdgSurface: XdgSurfaceRequests {
                     "positioner is not valid for the mapped parent geometry")
             return
         }
-        _ = unsafe id.create(
+        _ = id.create(
             owner: { handle -> XdgPopup? in
                 guard !self.roleAssigned, surface.assignRole(self) else {
                     self.resource.postError(

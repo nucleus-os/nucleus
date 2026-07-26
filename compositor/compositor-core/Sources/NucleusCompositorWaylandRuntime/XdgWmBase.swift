@@ -25,7 +25,7 @@ extension XdgWmBaseBinding: XdgWmBaseRequests {
         _ request: WaylandRequest<XdgWmBaseServer>,
         id: WlNewId<XdgPositionerServer>
     ) {
-        _ = unsafe id.create { handle in
+        _ = id.create { handle in
             XdgPositioner(resource: handle)
         }
     }
@@ -43,7 +43,7 @@ extension XdgWmBaseBinding: XdgWmBaseRequests {
                     "wl_surface already has an XDG construction or committed state")
             return
         }
-        guard unsafe id.create(
+        guard id.create(
             owner: { handle in
                 XdgSurface(
                     resource: handle,

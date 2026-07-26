@@ -6,3 +6,26 @@ public enum WpLinuxDrmSyncobjSurfaceV1Client: WaylandClientInterface {
     public nonisolated(unsafe) static let interface = unsafe swift_wayland_iface_wp_linux_drm_syncobj_surface_v1()
     public nonisolated static let maximumVersion: UInt32 = 1
 }
+public extension WaylandProxy where Interface == WpLinuxDrmSyncobjSurfaceV1Client {
+    func destroy() throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        let _send = { () throws(WaylandProxyError) -> Void in
+            unsafe swift_wayland_client_request_wp_linux_drm_syncobj_surface_v1_destroy(_proxy)
+            return
+        }
+        try _send()
+        try unsafe invalidateAfterProtocolDestructor()
+    }
+    func setAcquirePoint(timeline: WaylandProxy<WpLinuxDrmSyncobjTimelineV1Client>, point_hi: UInt32, point_lo: UInt32) throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        let _timelineProxy = try unsafe timeline.requireNativeProxy()
+        unsafe swift_wayland_client_request_wp_linux_drm_syncobj_surface_v1_set_acquire_point(_proxy, _timelineProxy, point_hi, point_lo)
+        return
+    }
+    func setReleasePoint(timeline: WaylandProxy<WpLinuxDrmSyncobjTimelineV1Client>, point_hi: UInt32, point_lo: UInt32) throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        let _timelineProxy = try unsafe timeline.requireNativeProxy()
+        unsafe swift_wayland_client_request_wp_linux_drm_syncobj_surface_v1_set_release_point(_proxy, _timelineProxy, point_hi, point_lo)
+        return
+    }
+}

@@ -17,8 +17,7 @@ import WaylandProtocolTypes
     func register(in router: NucleusWaylandRouter) {
         router.addGlobal(
             WpFractionalScaleManagerV1Server.global(
-                implementation: self,
-                owner: { manager, _ in manager }))
+                implementation: self))
     }
 }
 
@@ -33,7 +32,7 @@ extension WpFractionalScaleManager: WpFractionalScaleManagerV1Requests {
             request.postError(.fractionalScaleExists, message: "wl_surface already has a fractional scale")
             return
         }
-        guard unsafe id.create(
+        guard id.create(
             owner: { handle in
                 WpFractionalScale(resource: handle, surface: surface)
             },

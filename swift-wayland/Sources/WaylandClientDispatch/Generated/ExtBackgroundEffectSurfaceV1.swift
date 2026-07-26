@@ -6,3 +6,20 @@ public enum ExtBackgroundEffectSurfaceV1Client: WaylandClientInterface {
     public nonisolated(unsafe) static let interface = unsafe swift_wayland_iface_ext_background_effect_surface_v1()
     public nonisolated static let maximumVersion: UInt32 = 1
 }
+public extension WaylandProxy where Interface == ExtBackgroundEffectSurfaceV1Client {
+    func destroy() throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        let _send = { () throws(WaylandProxyError) -> Void in
+            unsafe swift_wayland_client_request_ext_background_effect_surface_v1_destroy(_proxy)
+            return
+        }
+        try _send()
+        try unsafe invalidateAfterProtocolDestructor()
+    }
+    func setBlurRegion(region: WaylandProxy<WlRegionClient>?) throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        let _regionProxy = try unsafe region?.requireNativeProxy()
+        unsafe swift_wayland_client_request_ext_background_effect_surface_v1_set_blur_region(_proxy, _regionProxy)
+        return
+    }
+}

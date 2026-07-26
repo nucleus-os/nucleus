@@ -5,7 +5,7 @@ index 6e2abf65e2..59695fdc55 100644
 @@ -90,8 +90,12 @@ std::string Access::CallingContext::toDebugString() const {
      return ss.str();
  }
- 
+
 -Access::Access() {
 +Access::Access(Mode mode) : mMode(mode) {
  #ifdef __ANDROID__
@@ -14,7 +14,7 @@ index 6e2abf65e2..59695fdc55 100644
 +    }
 +
      union selinux_callback cb;
- 
+
      cb.func_audit = auditCallback;
 @@ -120,7 +124,9 @@ Access::CallingContext Access::getCallingContext() {
      return CallingContext {
@@ -29,22 +29,22 @@ index 6e2abf65e2..59695fdc55 100644
      return CallingContext();
 @@ -128,14 +134,17 @@ Access::CallingContext Access::getCallingContext() {
  }
- 
+
  bool Access::canFind(const CallingContext& ctx,const std::string& name) {
 +    if (mMode == Mode::kPermissive) return true;
      return actionAllowedFromLookup(ctx, name, "find");
  }
- 
+
  bool Access::canAdd(const CallingContext& ctx, const std::string& name) {
 +    if (mMode == Mode::kPermissive) return true;
      return actionAllowedFromLookup(ctx, name, "add");
  }
- 
+
  bool Access::canList(const CallingContext& ctx) {
 +    if (mMode == Mode::kPermissive) return true;
      return actionAllowed(ctx, mThisProcessContext, "list", "service_manager");
  }
- 
+
 diff --git a/cmds/servicemanager/Access.h b/cmds/servicemanager/Access.h
 index 4ee9b907d7..e74f9449c6 100644
 --- a/cmds/servicemanager/Access.h
@@ -61,45 +61,44 @@ index 4ee9b907d7..e74f9449c6 100644
 +
 +    explicit Access(Mode mode = Mode::kSELinux);
      virtual ~Access();
- 
+
      Access(const Access&) = delete;
 @@ -52,6 +57,7 @@ private:
      bool actionAllowedFromLookup(const CallingContext& sctx, const std::string& name,
              const char *perm);
- 
+
 +    Mode mMode;
      char* mThisProcessContext = nullptr;
  };
- 
+
 diff --git a/cmds/servicemanager/ServiceManager.cpp b/cmds/servicemanager/ServiceManager.cpp
 index 0697c36372..c1d2679f91 100644
 --- a/cmds/servicemanager/ServiceManager.cpp
 +++ b/cmds/servicemanager/ServiceManager.cpp
 @@ -516,11 +516,14 @@ Status ServiceManager::addService(const std::string& name, const sp<IBinder>& bi
      auto ctx = mAccess->getCallingContext();
- 
+
      if (multiuser_get_app_id(ctx.uid) >= AID_APP) {
 +        LOG(ERROR) << ctx.toDebugString() << " App UID cannot add service '" << name << "'";
          return Status::fromExceptionCode(Status::EX_SECURITY, "App UIDs cannot add services.");
      }
- 
+
      std::optional<std::string> accessorName;
      if (auto status = canAddService(ctx, name, &accessorName); !status.isOk()) {
 +        LOG(ERROR) << ctx.toDebugString() << " Cannot add service '" << name
 +                   << "': " << status.toString8().c_str();
          return status;
      }
- 
+
 diff --git a/cmds/servicemanager/main.cpp b/cmds/servicemanager/main.cpp
-index df5a8ed0d1..0b02a78492 100644
+index df5a8ed0d1..7fc8c2e51b 100644
 --- a/cmds/servicemanager/main.cpp
 +++ b/cmds/servicemanager/main.cpp
-@@ -164,14 +164,23 @@ int main(int argc, char** argv) {
- 
+@@ -164,7 +164,15 @@ int main(int argc, char** argv) {
+
      IPCThreadState::self()->disableBackgroundScheduling(true);
- 
+
 -    sp<ServiceManager> manager = sp<ServiceManager>::make(std::make_unique<Access>());
--    manager->setRequestingSid(true);
 +    const bool isNucleusContainer =
 +            android::base::GetBoolProperty("ro.nucleus.container", false);
 +    if (isNucleusContainer) {
@@ -107,52 +106,203 @@ index df5a8ed0d1..0b02a78492 100644
 +    }
 +    const Access::Mode accessMode =
 +            isNucleusContainer ? Access::Mode::kPermissive : Access::Mode::kSELinux;
-+    const bool requestSid = !isNucleusContainer;
 +    sp<ServiceManager> manager =
 +            sp<ServiceManager>::make(std::make_unique<Access>(accessMode));
-+    manager->setRequestingSid(requestSid);
+     manager->setRequestingSid(true);
      if (!manager->addService("manager", manager, false /*allowIsolated*/, IServiceManager::DUMP_FLAG_PRIORITY_DEFAULT).isOk()) {
          LOG(ERROR) << "Could not self register servicemanager";
-     }
- 
-     IPCThreadState::self()->setTheContextObject(manager);
--    if (!ps->becomeContextManager()) {
-+    if (!ps->becomeContextManager(requestSid)) {
-         LOG(FATAL) << "Could not become context manager";
-     }
- 
+diff --git a/libs/binder/Android.bp b/libs/binder/Android.bp
+index b3caaaee6b..5a967037de 100644
+--- a/libs/binder/Android.bp
++++ b/libs/binder/Android.bp
+@@ -273,6 +273,7 @@ cc_defaults {
+
+     srcs: [
+         "Binder.cpp",
++        "BinderSecurityContext.cpp",
+         "BpBinder.cpp",
+         "Debug.cpp",
+         "FdTrigger.cpp",
+diff --git a/libs/binder/BinderSecurityContext.cpp b/libs/binder/BinderSecurityContext.cpp
+new file mode 100644
+index 0000000000..8f062e13c0
+--- /dev/null
++++ b/libs/binder/BinderSecurityContext.cpp
+@@ -0,0 +1,39 @@
++/*
++ * Copyright (C) 2026 Nucleus
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *      http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++
++#include "BinderSecurityContext.h"
++
++#if defined(__ANDROID__)
++#include <string.h>
++#include <sys/system_properties.h>
++#endif
++
++namespace android::binder::internal {
++
++bool transactionSecurityContextsAvailable() {
++#if defined(__ANDROID__)
++    static const bool available = [] {
++        char value[PROP_VALUE_MAX] = {};
++        const int length = __system_property_get("ro.nucleus.container", value);
++        return length <= 0 || strcmp(value, "true") != 0;
++    }();
++    return available;
++#else
++    return true;
++#endif
++}
++
++}  // namespace android::binder::internal
+diff --git a/libs/binder/BinderSecurityContext.h b/libs/binder/BinderSecurityContext.h
+new file mode 100644
+index 0000000000..68e97ca924
+--- /dev/null
++++ b/libs/binder/BinderSecurityContext.h
+@@ -0,0 +1,23 @@
++/*
++ * Copyright (C) 2026 Nucleus
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *      http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++
++#pragma once
++
++namespace android::binder::internal {
++
++bool transactionSecurityContextsAvailable();
++
++}  // namespace android::binder::internal
+diff --git a/libs/binder/Parcel.cpp b/libs/binder/Parcel.cpp
+index 1ae7af3223..847fb00984 100644
+--- a/libs/binder/Parcel.cpp
++++ b/libs/binder/Parcel.cpp
+@@ -48,6 +48,7 @@
+ #include <utils/String8.h>
+
+ #include "OS.h"
++#include "BinderSecurityContext.h"
+ #include "RpcState.h"
+ #include "Static.h"
+ #include "Utils.h"
+@@ -319,7 +320,8 @@ status_t Parcel::flattenBinder(const sp<IBinder>& binder) {
+                 schedBits = schedPolicyMask(policy, priority);
+             }
+             obj.flags = FLAT_BINDER_FLAG_ACCEPTS_FDS;
+-            if (local->isRequestingSid()) {
++            if (local->isRequestingSid() &&
++                binder::internal::transactionSecurityContextsAvailable()) {
+                 obj.flags |= FLAT_BINDER_FLAG_TXN_SECURITY_CTX;
+             }
+             if (local->isInheritRt()) {
 diff --git a/libs/binder/ProcessState.cpp b/libs/binder/ProcessState.cpp
-index dd4444b9c7..bcb35de611 100644
+index dd4444b9c7..e2275be469 100644
 --- a/libs/binder/ProcessState.cpp
 +++ b/libs/binder/ProcessState.cpp
-@@ -231,12 +231,13 @@ void ProcessState::startThreadPool()
-     }
- }
- 
--bool ProcessState::becomeContextManager()
-+bool ProcessState::becomeContextManager(bool requestSid)
+@@ -29,6 +29,7 @@
+ #include <utils/Thread.h>
+
+ #include "Static.h"
++#include "BinderSecurityContext.h"
+ #include "Utils.h"
+ #include "binder_module.h"
+ #include "observer/BinderObserver.h"
+@@ -235,9 +236,10 @@ bool ProcessState::becomeContextManager()
  {
      std::unique_lock<std::mutex> _l(mLock);
- 
+
 -    flat_binder_object obj {
 -        .flags = FLAT_BINDER_FLAG_TXN_SECURITY_CTX,
 -    };
 +    flat_binder_object obj {};
-+    if (requestSid) {
++    if (binder::internal::transactionSecurityContextsAvailable()) {
 +        obj.flags = FLAT_BINDER_FLAG_TXN_SECURITY_CTX;
 +    }
- 
+
      int result = ioctl(mDriverFD, BINDER_SET_CONTEXT_MGR_EXT, &obj);
-diff --git a/libs/binder/include/binder/ProcessState.h b/libs/binder/include/binder/ProcessState.h
-index d4ddacb3bb..d9cf5e6f10 100644
---- a/libs/binder/include/binder/ProcessState.h
-+++ b/libs/binder/include/binder/ProcessState.h
-@@ -89,7 +89,7 @@ public:
-     // are all called, then up to 5 threads can be started.
-     LIBBINDER_EXPORTED void startThreadPool();
- 
--    [[nodiscard]] LIBBINDER_EXPORTED bool becomeContextManager();
-+    [[nodiscard]] LIBBINDER_EXPORTED bool becomeContextManager(bool requestSid);
- 
-     LIBBINDER_EXPORTED sp<IBinder> getStrongProxyForHandle(int32_t handle);
-     LIBBINDER_EXPORTED void expungeHandle(int32_t handle, IBinder* binder);
+
+diff --git a/libs/binder/tests/Android.bp b/libs/binder/tests/Android.bp
+index a38a21af0a..0ccd4874fe 100644
+--- a/libs/binder/tests/Android.bp
++++ b/libs/binder/tests/Android.bp
+@@ -180,6 +180,9 @@ cc_test {
+ cc_test {
+     name: "binderUnitTest",
+     host_supported: true,
++    include_dirs: [
++        "bionic/libc/kernel/uapi/",
++    ],
+     target: {
+         darwin: {
+             enabled: false,
+@@ -197,6 +200,7 @@ cc_test {
+         "HistogramUnitTest.cpp",
+     ],
+     shared_libs: [
++        "libbase",
+         "libbinder",
+         "libcutils",
+         "libutils",
+diff --git a/libs/binder/tests/binderParcelUnitTest.cpp b/libs/binder/tests/binderParcelUnitTest.cpp
+index 5dbe8e7b99..9e944c3672 100644
+--- a/libs/binder/tests/binderParcelUnitTest.cpp
++++ b/libs/binder/tests/binderParcelUnitTest.cpp
+@@ -17,8 +17,11 @@
+ #include <binder/IPCThreadState.h>
+ #include <binder/Parcel.h>
+ #include <binder/Status.h>
++#include <android-base/properties.h>
+ #include <cutils/ashmem.h>
+ #include <gtest/gtest.h>
++#undef B_PACK_CHARS
++#include <linux/android/binder.h>
+
+ using android::BBinder;
+ using android::IBinder;
+@@ -132,6 +135,22 @@ TEST(Parcel, DebugReadAllBinders) {
+     EXPECT_EQ(ret[1], binder2);
+ }
+
++TEST(Parcel, TransactionSecurityContextMatchesProductCapability) {
++    sp<BBinder> binder = sp<BBinder>::make();
++    binder->setRequestingSid(true);
++
++    Parcel parcel;
++    ASSERT_EQ(OK, parcel.writeStrongBinder(binder));
++    ASSERT_GE(parcel.dataSize(), sizeof(flat_binder_object));
++
++    const auto* object = reinterpret_cast<const flat_binder_object*>(parcel.data());
++    const bool transportsSecurityContext =
++            (object->flags & FLAT_BINDER_FLAG_TXN_SECURITY_CTX) != 0;
++    const bool expected =
++            !android::base::GetBoolProperty("ro.nucleus.container", false);
++    EXPECT_EQ(expected, transportsSecurityContext);
++}
++
+ TEST(Parcel, DebugReadAllFds) {
+     Parcel p;
+     p.writeInt32(4);

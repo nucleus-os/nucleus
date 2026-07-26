@@ -6,3 +6,28 @@ public enum WlShmPoolClient: WaylandClientInterface {
     public nonisolated(unsafe) static let interface = unsafe swift_wayland_iface_wl_shm_pool()
     public nonisolated static let maximumVersion: UInt32 = 2
 }
+public import WaylandProtocolTypes
+public extension WaylandProxy where Interface == WlShmPoolClient {
+    func createBuffer(offset: Int32, width: Int32, height: Int32, stride: Int32, format: WlShmFormat) throws(WaylandProxyError) -> WaylandProxy<WlBufferClient> {
+        let _proxy = try unsafe requireNativeProxy()
+        guard let _created = unsafe swift_wayland_client_request_wl_shm_pool_create_buffer(_proxy, offset, width, height, stride, format.rawValue) else {
+            throw WaylandProxyError.proxyCreationFailed
+        }
+        return unsafe makeOwnedProxy(
+            adopting: _created, WlBufferClient.self)
+    }
+    func destroy() throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        let _send = { () throws(WaylandProxyError) -> Void in
+            unsafe swift_wayland_client_request_wl_shm_pool_destroy(_proxy)
+            return
+        }
+        try _send()
+        try unsafe invalidateAfterProtocolDestructor()
+    }
+    func resize(size: Int32) throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        unsafe swift_wayland_client_request_wl_shm_pool_resize(_proxy, size)
+        return
+    }
+}

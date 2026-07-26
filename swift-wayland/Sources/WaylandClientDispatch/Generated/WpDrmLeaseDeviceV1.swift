@@ -6,9 +6,25 @@ public enum WpDrmLeaseDeviceV1Client: WaylandClientInterface {
     public nonisolated(unsafe) static let interface = unsafe swift_wayland_iface_wp_drm_lease_device_v1()
     public nonisolated static let maximumVersion: UInt32 = 1
 }
+public extension WaylandProxy where Interface == WpDrmLeaseDeviceV1Client {
+    func createLeaseRequest() throws(WaylandProxyError) -> WaylandProxy<WpDrmLeaseRequestV1Client> {
+        let _proxy = try unsafe requireNativeProxy()
+        guard let _created = unsafe swift_wayland_client_request_wp_drm_lease_device_v1_create_lease_request(_proxy) else {
+            throw WaylandProxyError.proxyCreationFailed
+        }
+        return unsafe makeOwnedProxy(
+            adopting: _created, WpDrmLeaseRequestV1Client.self)
+    }
+    func release() throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        unsafe swift_wayland_client_request_wp_drm_lease_device_v1_release(_proxy)
+        return
+    }
+}
+@MainActor
 public protocol WpDrmLeaseDeviceV1Events: AnyObject {
     func drmFd(_ proxy: WaylandBorrowedProxy<WpDrmLeaseDeviceV1Client>, fd: consuming WaylandClientOwnedFileDescriptor)
-    func connector(_ proxy: WaylandBorrowedProxy<WpDrmLeaseDeviceV1Client>, id: WaylandBorrowedProxy<WpDrmLeaseConnectorV1Client>)
+    func connector(_ proxy: WaylandBorrowedProxy<WpDrmLeaseDeviceV1Client>, id: WaylandProxy<WpDrmLeaseConnectorV1Client>)
     func done(_ proxy: WaylandBorrowedProxy<WpDrmLeaseDeviceV1Client>)
     func released(_ proxy: WaylandBorrowedProxy<WpDrmLeaseDeviceV1Client>)
 }
@@ -22,36 +38,75 @@ public extension WpDrmLeaseDeviceV1Client {
         unsafe p.pointee.released = released_impl
         return unsafe p
     }()
-    /// Wire the listener to a proxy. The owner is borrowed (unretained); the caller must keep it alive for the proxy's lifetime, matching libwayland's user_data contract.
-    @discardableResult
-    static func addListener(_ proxy: OpaquePointer, owner: AnyObject) -> Int32 {
-        unsafe wp_drm_lease_device_v1_add_listener(proxy, listener, Unmanaged.passUnretained(owner).toOpaque())
-    }
-    private static func handler(_ data: UnsafeMutableRawPointer) -> any WpDrmLeaseDeviceV1Events? {
-        unsafe Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? any WpDrmLeaseDeviceV1Events
+    private static func handler(_ context: WaylandClientListenerContext) -> any WpDrmLeaseDeviceV1Events? {
+        context.owner as? any WpDrmLeaseDeviceV1Events
     }
     private static let drmFd_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, Int32) -> Void = { data, proxy, fd in
-        guard let data = unsafe data, let proxy = unsafe proxy, let h = unsafe handler(data) else {
+        guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
-        unsafe h.drmFd(WaylandBorrowedProxy<WpDrmLeaseDeviceV1Client>(proxy), fd: WaylandClientOwnedFileDescriptor(fd))
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
+        }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        MainActor.assumeIsolated {
+            unsafe eventHandler.drmFd(WaylandBorrowedProxy<WpDrmLeaseDeviceV1Client>(eventProxy), fd: WaylandClientOwnedFileDescriptor(fd))
+        }
     }
     private static let connector_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, OpaquePointer?) -> Void = { data, proxy, id in
-        guard let data = unsafe data, let proxy = unsafe proxy, let h = unsafe handler(data) else {
+        guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
-        unsafe h.connector(WaylandBorrowedProxy<WpDrmLeaseDeviceV1Client>(proxy), id: WaylandBorrowedProxy<WpDrmLeaseConnectorV1Client>(id!))
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
+        }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        nonisolated(unsafe) let _event_id = unsafe id
+        MainActor.assumeIsolated {
+            unsafe eventHandler.connector(WaylandBorrowedProxy<WpDrmLeaseDeviceV1Client>(eventProxy), id: WaylandProxy<WpDrmLeaseConnectorV1Client>(adopting: _event_id!, connectionLifetime: eventContext.connectionLifetime))
+        }
     }
     private static let done_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
-        guard let data = unsafe data, let proxy = unsafe proxy, let h = unsafe handler(data) else {
+        guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
-        unsafe h.done(WaylandBorrowedProxy<WpDrmLeaseDeviceV1Client>(proxy))
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
+        }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        MainActor.assumeIsolated {
+            unsafe eventHandler.done(WaylandBorrowedProxy<WpDrmLeaseDeviceV1Client>(eventProxy))
+        }
     }
     private static let released_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
-        guard let data = unsafe data, let proxy = unsafe proxy, let h = unsafe handler(data) else {
+        guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
-        unsafe h.released(WaylandBorrowedProxy<WpDrmLeaseDeviceV1Client>(proxy))
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
+        }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        MainActor.assumeIsolated {
+            unsafe eventHandler.released(WaylandBorrowedProxy<WpDrmLeaseDeviceV1Client>(eventProxy))
+        }
+    }
+}
+public extension WaylandProxy where Interface == WpDrmLeaseDeviceV1Client {
+    func installListener(_ owner: any WpDrmLeaseDeviceV1Events) throws(WaylandProxyError) {
+        try unsafe installListener(owner: owner) { proxy, data in
+            unsafe wp_drm_lease_device_v1_add_listener(proxy, WpDrmLeaseDeviceV1Client.listener, data)
+        }
     }
 }

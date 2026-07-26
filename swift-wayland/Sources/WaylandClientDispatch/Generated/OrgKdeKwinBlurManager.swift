@@ -6,3 +6,20 @@ public enum OrgKdeKwinBlurManagerClient: WaylandClientInterface {
     public nonisolated(unsafe) static let interface = unsafe swift_wayland_iface_org_kde_kwin_blur_manager()
     public nonisolated static let maximumVersion: UInt32 = 1
 }
+public extension WaylandProxy where Interface == OrgKdeKwinBlurManagerClient {
+    func create(surface: WaylandProxy<WlSurfaceClient>) throws(WaylandProxyError) -> WaylandProxy<OrgKdeKwinBlurClient> {
+        let _proxy = try unsafe requireNativeProxy()
+        let _surfaceProxy = try unsafe surface.requireNativeProxy()
+        guard let _created = unsafe swift_wayland_client_request_org_kde_kwin_blur_manager_create(_proxy, _surfaceProxy) else {
+            throw WaylandProxyError.proxyCreationFailed
+        }
+        return unsafe makeOwnedProxy(
+            adopting: _created, OrgKdeKwinBlurClient.self)
+    }
+    func unset(surface: WaylandProxy<WlSurfaceClient>) throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        let _surfaceProxy = try unsafe surface.requireNativeProxy()
+        unsafe swift_wayland_client_request_org_kde_kwin_blur_manager_unset(_proxy, _surfaceProxy)
+        return
+    }
+}

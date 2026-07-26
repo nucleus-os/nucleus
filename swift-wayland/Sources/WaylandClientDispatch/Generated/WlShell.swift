@@ -6,3 +6,14 @@ public enum WlShellClient: WaylandClientInterface {
     public nonisolated(unsafe) static let interface = unsafe swift_wayland_iface_wl_shell()
     public nonisolated static let maximumVersion: UInt32 = 1
 }
+public extension WaylandProxy where Interface == WlShellClient {
+    func getShellSurface(surface: WaylandProxy<WlSurfaceClient>) throws(WaylandProxyError) -> WaylandProxy<WlShellSurfaceClient> {
+        let _proxy = try unsafe requireNativeProxy()
+        let _surfaceProxy = try unsafe surface.requireNativeProxy()
+        guard let _created = unsafe swift_wayland_client_request_wl_shell_get_shell_surface(_proxy, _surfaceProxy) else {
+            throw WaylandProxyError.proxyCreationFailed
+        }
+        return unsafe makeOwnedProxy(
+            adopting: _created, WlShellSurfaceClient.self)
+    }
+}

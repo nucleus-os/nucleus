@@ -6,3 +6,24 @@ public enum WpViewportClient: WaylandClientInterface {
     public nonisolated(unsafe) static let interface = unsafe swift_wayland_iface_wp_viewport()
     public nonisolated static let maximumVersion: UInt32 = 1
 }
+public extension WaylandProxy where Interface == WpViewportClient {
+    func destroy() throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        let _send = { () throws(WaylandProxyError) -> Void in
+            unsafe swift_wayland_client_request_wp_viewport_destroy(_proxy)
+            return
+        }
+        try _send()
+        try unsafe invalidateAfterProtocolDestructor()
+    }
+    func setSource(x: Double, y: Double, width: Double, height: Double) throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        unsafe swift_wayland_client_request_wp_viewport_set_source(_proxy, swift_wayland_fixed_from_double(x), swift_wayland_fixed_from_double(y), swift_wayland_fixed_from_double(width), swift_wayland_fixed_from_double(height))
+        return
+    }
+    func setDestination(width: Int32, height: Int32) throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        unsafe swift_wayland_client_request_wp_viewport_set_destination(_proxy, width, height)
+        return
+    }
+}

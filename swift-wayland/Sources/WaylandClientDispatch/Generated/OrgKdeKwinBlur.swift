@@ -6,3 +6,25 @@ public enum OrgKdeKwinBlurClient: WaylandClientInterface {
     public nonisolated(unsafe) static let interface = unsafe swift_wayland_iface_org_kde_kwin_blur()
     public nonisolated static let maximumVersion: UInt32 = 1
 }
+public extension WaylandProxy where Interface == OrgKdeKwinBlurClient {
+    func commit() throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        unsafe swift_wayland_client_request_org_kde_kwin_blur_commit(_proxy)
+        return
+    }
+    func setRegion(region: WaylandProxy<WlRegionClient>?) throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        let _regionProxy = try unsafe region?.requireNativeProxy()
+        unsafe swift_wayland_client_request_org_kde_kwin_blur_set_region(_proxy, _regionProxy)
+        return
+    }
+    func release() throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        let _send = { () throws(WaylandProxyError) -> Void in
+            unsafe swift_wayland_client_request_org_kde_kwin_blur_release(_proxy)
+            return
+        }
+        try _send()
+        try unsafe invalidateAfterProtocolDestructor()
+    }
+}

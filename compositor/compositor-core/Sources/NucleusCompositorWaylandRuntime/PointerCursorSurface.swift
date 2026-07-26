@@ -13,6 +13,7 @@
 
 import WaylandServerC
 import WaylandServer
+import WaylandServerDispatch
 internal import NucleusCompositorServer
 import Glibc
 
@@ -75,8 +76,8 @@ final class PointerCursorSurface {
     func applyCommittedImage(_ surface: WlSurface) {
         guard surface.objectId == surfaceId, surfaceId != 0 else { return }
         cancelPendingCapture()
-        if let buffer = unsafe surface.currentBuffer,
-           let shm = unsafe Self.cursorImageFromShm(buffer) {
+        if let buffer = surface.currentBuffer,
+           let shm = Self.cursorImageFromShm(buffer) {
             surface.releaseCurrentBufferImmediately()
             server.cursor.setImage(
                 pixels: shm.pixels,
@@ -127,23 +128,23 @@ final class PointerCursorSurface {
     /// ARGB8888 (0) / XRGB8888 (1) wl_shm formats — whose byte order matches the cursor
     /// plane's ARGB8888 — repacking away any stride padding. Returns nil otherwise. The
     /// libwayland access is here; the format gate + repack are the pure, tested units.
-    @unsafe static func cursorImageFromShm(
-        _ buffer: UnsafeMutablePointer<wl_resource>
+    static func cursorImageFromShm(
+        _ buffer: WaylandResourceReference<WlBufferServer>
     ) -> (pixels: [UInt8], width: UInt32, height: UInt32)? {
-        guard let shm = unsafe wl_shm_buffer_get(buffer) else { return nil }
-        guard isReadableCursorShmFormat(unsafe wl_shm_buffer_get_format(shm)) else { return nil }
-        let w = Int(unsafe wl_shm_buffer_get_width(shm))
-        let h = Int(unsafe wl_shm_buffer_get_height(shm))
-        let stride = Int(unsafe wl_shm_buffer_get_stride(shm))
-        guard w > 0, h > 0, stride >= w * 4 else { return nil }
-
-        unsafe wl_shm_buffer_begin_access(shm)
-        defer { unsafe wl_shm_buffer_end_access(shm) }
-        guard let data = unsafe wl_shm_buffer_get_data(shm) else { return nil }
-        let pixels = unsafe repackTightARGB(
-            source: UnsafeRawBufferPointer(start: data, count: stride * h),
-            width: w, height: h, sourceStride: stride)
-        return (pixels, UInt32(w), UInt32(h))
+        unsafe buffer.withShmBytes { metadata, bytes in
+            guard isReadableCursorShmFormat(metadata.format),
+                metadata.stride >= metadata.width * 4
+            else { return nil }
+            let pixels = unsafe repackTightARGB(
+                source: bytes,
+                width: metadata.width,
+                height: metadata.height,
+                sourceStride: metadata.stride)
+            return (
+                pixels,
+                UInt32(metadata.width),
+                UInt32(metadata.height))
+        } ?? nil
     }
 
     /// Whether a wl_shm format is a 32-bit ARGB/XRGB variant readable as ARGB8888 (the

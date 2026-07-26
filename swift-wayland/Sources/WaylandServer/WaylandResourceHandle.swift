@@ -1,5 +1,4 @@
-public import WaylandServerC
-public import WaylandProtocolTypes
+import WaylandServerC
 
 /// A typed, lifetime-checked view of one server-side Wayland resource.
 ///
@@ -9,50 +8,62 @@ public import WaylandProtocolTypes
 /// being mixed at Swift call sites.
 @MainActor
 @safe public final class WaylandResourceHandle<Interface: WaylandServerInterface> {
-    private let reference: WaylandResourceReference
+    private let reference: WaylandResourceReference<Interface>
 
     @unsafe
-    public init?(_ resource: UnsafeMutablePointer<wl_resource>?) {
-        guard let reference = unsafe WaylandResourceReference(resource) else {
+    package init?(_ resource: UnsafeMutablePointer<wl_resource>?) {
+        guard let reference =
+            unsafe WaylandResourceReference<Interface>(resource)
+        else {
             return nil
         }
         unsafe self.reference = reference
     }
 
-    init(reference: WaylandResourceReference) {
+    package init(reference: WaylandResourceReference<Interface>) {
         unsafe self.reference = reference
     }
 
-    /// The resource while it remains live. This raw escape exists for generated
-    /// dispatch and narrow interoperability code; policy code should use typed
-    /// operations on the handle.
-    @unsafe
-    public var resource: UnsafeMutablePointer<wl_resource>? {
-        unsafe reference.resource
+    package var resource: UnsafeMutablePointer<wl_resource>? {
+        unsafe reference.nativeResource
+    }
+
+    public var referenceValue: WaylandResourceReference<Interface> {
+        unsafe reference
+    }
+
+    public var isLive: Bool {
+        unsafe reference.isLive
     }
 
     public var version: Int32? {
-        guard let resource = unsafe reference.resource else { return nil }
-        return unsafe wl_resource_get_version(resource)
+        unsafe reference.version
     }
 
     public var clientID: WaylandClientID? {
-        guard let resource = unsafe reference.resource else { return nil }
-        return unsafe WaylandClientID(wl_resource_get_client(resource))
+        unsafe reference.clientID
+    }
+
+    public var objectID: UInt32? {
+        unsafe reference.objectID
+    }
+
+    @discardableResult
+    public func destroy() -> Bool {
+        unsafe reference.destroy()
+    }
+
+    @discardableResult
+    public func postNoMemory() -> Bool {
+        unsafe reference.postNoMemory()
     }
 
     @discardableResult
     package func postError(code: UInt32, message: String) -> Bool {
-        guard let resource = unsafe reference.resource else { return false }
+        guard let resource = unsafe reference.nativeResource else {
+            return false
+        }
         unsafe swift_wayland_resource_post_error(resource, code, message)
         return true
-    }
-
-    @discardableResult
-    public func postError<Code: WaylandProtocolErrorValue>(
-        _ code: Code,
-        message: String
-    ) -> Bool {
-        unsafe postError(code: code.rawValue, message: message)
     }
 }

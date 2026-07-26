@@ -36,9 +36,6 @@ import NucleusTypes
     var protocolResource: WaylandResourceHandle<WlSurfaceServer>? {
         resourceHandle
     }
-    @unsafe var resource: UnsafeMutablePointer<wl_resource>? {
-        unsafe resourceHandle?.resource
-    }
 
     private var pending = SurfacePendingState()
     private var current = SurfaceCurrentState()
@@ -46,20 +43,22 @@ import NucleusTypes
     /// The live wire resource for the committed buffer. Clients may destroy a
     /// wl_buffer while its pixels remain current, so this is nil once the wire
     /// object is gone even though `hasCurrentBuffer` remains true.
-    var currentBuffer: UnsafeMutablePointer<wl_resource>? {
-        unsafe current.buffer?.resource
+    var currentBuffer:
+        WaylandResourceReference<WlBufferServer>?
+    {
+        current.buffer
     }
     /// Whether the surface logically has attached content, independent of the
     /// lifetime of the client-side wl_buffer object used to supply those pixels.
     var hasCurrentBuffer: Bool { current.buffer != nil }
     private var currentBufferReference:
-        WaylandResourceReference?
+        WaylandResourceReference<WlBufferServer>?
     {
         get { current.buffer }
         set { current.buffer = newValue }
     }
     private var currentReleaseCallback:
-        WaylandResourceReference?
+        WaylandResourceReference<WlCallbackServer>?
     {
         get { current.releaseCallback }
         set { current.releaseCallback = newValue }
@@ -152,15 +151,10 @@ import NucleusTypes
     /// recording that its release transition has already occurred.
     func releaseCurrentBufferImmediately() {
         guard hasCurrentBuffer, !currentBufferReleased else { return }
-        currentBufferReference?
-            .typedHandle(as: WlBufferServer.self)?
-            .sendRelease()
+        currentBufferReference?.handle.sendRelease()
         if let callback = currentReleaseCallback {
-            callback.typedHandle(as: WlCallbackServer.self)?
-                .sendDone(callback_data: 0)
-            if let resource = unsafe callback.resource {
-                unsafe wl_resource_destroy(resource)
-            }
+            callback.handle.sendDone(callback_data: 0)
+            callback.destroy()
             currentReleaseCallback = nil
         }
         currentBufferReleased = true
@@ -224,7 +218,7 @@ import NucleusTypes
     /// The client-scoped protocol object id. Use only for wire diagnostics;
     /// compositor state must use `objectId`.
     var wireObjectId: UInt32 {
-        unsafe resource.map { unsafe wl_resource_get_id($0) } ?? 0
+        resourceHandle?.objectID ?? 0
     }
 
     // MARK: role (xdg_surface / layer surface)
@@ -340,14 +334,15 @@ import NucleusTypes
 
     // MARK: request application (called from the shared surface vtable)
 
-    @unsafe func attach(buffer: UnsafeMutablePointer<wl_resource>?, x: Int32, y: Int32) {
+    func attach(
+        buffer: WaylandBorrowedObject<WlBufferServer>?,
+        x: Int32,
+        y: Int32
+    ) {
         pending.bufferAttached = true
-        let dmabufOwner: DmabufBuffer? = unsafe buffer.flatMap {
-            unsafe wl_shm_buffer_get($0) == nil
-                ? unsafe WaylandResource.owner(of: $0, as: DmabufBuffer.self)
-                : nil
-        }
-        pending.buffer = unsafe WaylandResourceReference(buffer, retaining: dmabufOwner)
+        let dmabufOwner = buffer?.owner(as: DmabufBuffer.self)
+        pending.buffer = buffer?.retainedReference(
+            retaining: dmabufOwner)
         // attach x/y is superseded by the offset request in v5+; record either way.
         pending.offsetX = x
         pending.offsetY = y
@@ -369,16 +364,17 @@ import NucleusTypes
             && !rect.y.addingReportingOverflow(rect.height).overflow
     }
 
-    @unsafe func addFrameCallback(_ callback: UnsafeMutablePointer<wl_resource>) {
-        if let reference = unsafe WaylandResourceReference(callback) {
-            pending.frameCallbacks.append(reference)
-        }
+    func addFrameCallback(
+        _ callback: WaylandResourceReference<WlCallbackServer>
+    ) {
+        pending.frameCallbacks.append(callback)
     }
 
-    @unsafe func addPresentationFeedback(_ feedback: UnsafeMutablePointer<wl_resource>) {
-        if let reference = unsafe WaylandResourceReference(feedback) {
-            pending.presentationFeedbacks.append(reference)
-        }
+    func addPresentationFeedback(
+        _ feedback:
+            WaylandResourceReference<WpPresentationFeedbackServer>
+    ) {
+        pending.presentationFeedbacks.append(feedback)
     }
 
     func setOpaqueRegion(_ snapshot: RegionSnapshot?) { pending.opaque = .set(snapshot) }
@@ -397,11 +393,9 @@ import NucleusTypes
             return false
         }
         if let stale = pending.releaseCallback {
-            if let resource = unsafe stale.resource {
-                unsafe wl_resource_destroy(resource)
-            }
+            stale.destroy()
         }
-        pending.releaseCallback = unsafe WaylandResourceReference(callback.createBare())
+        pending.releaseCallback = callback.createBare()
         return true
     }
 
@@ -511,12 +505,12 @@ import NucleusTypes
         let commitID = nextCommitID
         nextCommitID &+= 1
         if nextCommitID == 0 { nextCommitID = 1 }
-        let pendingBufferResource = unsafe pending.buffer?.resource
-        let attachedBufferIsNonNull = unsafe pending.bufferAttached
-            && pendingBufferResource != nil
+        let attachedBufferIsNonNull = pending.bufferAttached
+            && pending.buffer?.isLive == true
         let attachedBufferSupportsExplicitSync =
             attachedBufferIsNonNull
-            && pending.buffer?.semanticOwner is DmabufBuffer
+            && pending.buffer?.retainedSemanticOwner(
+                as: DmabufBuffer.self) != nil
         var capturedAux = SurfaceAuxState()
         var effects: [() -> Void] = []
         var observerStateValid = true
@@ -556,22 +550,17 @@ import NucleusTypes
             // buffer, and roll its frame callbacks into the new latch so none leak.
             if let prev = subsurfaceTopology.cachedCommit {
                 if prev.bufferAttached, let buffer = prev.buffer {
-                    buffer.typedHandle(as: WlBufferServer.self)?.sendRelease()
+                    buffer.handle.sendRelease()
                     if let callback = prev.releaseCallback {
-                        callback.typedHandle(as: WlCallbackServer.self)?
-                            .sendDone(callback_data: 0)
-                        if let cb = unsafe callback.resource {
-                            unsafe wl_resource_destroy(cb)
-                        }
+                        callback.handle.sendDone(callback_data: 0)
+                        callback.destroy()
                     }
                 }
                 next.frameCallbacks = prev.frameCallbacks + next.frameCallbacks
                 // A superseded content update is never presented: discard its feedbacks.
                 for fb in prev.presentationFeedbacks {
-                    guard let resource = unsafe fb.resource else { continue }
-                    fb.typedHandle(as: WpPresentationFeedbackServer.self)?
-                        .sendDiscarded()
-                    unsafe wl_resource_destroy(resource)
+                    fb.handle.sendDiscarded()
+                    fb.destroy()
                 }
             }
             subsurfaceTopology.cachedCommit = next
@@ -589,10 +578,10 @@ import NucleusTypes
             return
         }
         let willHaveBuffer = latch.bufferAttached
-            ? unsafe latch.buffer?.resource != nil
+            ? latch.buffer?.isLive == true
             : hasCurrentBuffer
         let roleBufferPixelSize = latch.bufferAttached
-            ? unsafe bufferPixelSize(latch.buffer?.resource)
+            ? bufferPixelSize(latch.buffer)
             : committedBufferPixelSize()
         guard role?.validateSurfaceCommit(
             self,
@@ -609,19 +598,20 @@ import NucleusTypes
             committedBufferGeneration &+= 1
             if committedBufferGeneration == 0 { committedBufferGeneration = 1 }
             let oldReference = currentBufferReference
-            let old = unsafe oldReference?.resource
-            let new = unsafe latch.buffer?.resource
             let oldWasReleased = currentBufferReleased
             currentBufferReference = latch.buffer
             current.bufferPixelSize = latch.buffer == nil
                 ? BufferPixelSize()
                 : roleBufferPixelSize
             // A replaced buffer is no longer referenced; release it for client reuse.
-            let replaced = unsafe oldReference != nil
-                && (latch.buffer == nil || old == nil || old != new)
+            let replaced = oldReference != nil
+                && (latch.buffer == nil
+                    || oldReference?.isLive != true
+                    || oldReference !== latch.buffer)
             if replaced && !oldWasReleased {
                 if let oldReference,
-                   oldReference.semanticOwner is DmabufBuffer,
+                   oldReference.retainedSemanticOwner(
+                    as: DmabufBuffer.self) != nil,
                    renderIosurfaceId != 0 {
                     // The imported VkImage aliases client memory. Renderer retirement,
                     // not the next commit, determines when reuse is legal.
@@ -630,15 +620,12 @@ import NucleusTypes
                         callback: currentReleaseCallback)
                 } else {
                     // SHM pixels were copied during commit and can be released now.
-                    if let old = currentBufferReference {
-                        old.typedHandle(as: WlBufferServer.self)?.sendRelease()
+                    if let oldReference {
+                        oldReference.handle.sendRelease()
                     }
-                    if let callback = currentReleaseCallback,
-                        let cb = unsafe callback.resource
-                    {
-                        callback.typedHandle(as: WlCallbackServer.self)?
-                            .sendDone(callback_data: 0)
-                        unsafe wl_resource_destroy(cb)
+                    if let callback = currentReleaseCallback {
+                        callback.handle.sendDone(callback_data: 0)
+                        callback.destroy()
                     }
                 }
             }
@@ -709,21 +696,15 @@ import NucleusTypes
 
     private func discardUnapplied(_ latch: SurfaceTransaction) {
         if latch.bufferAttached {
-            latch.buffer?.typedHandle(as: WlBufferServer.self)?.sendRelease()
+            latch.buffer?.handle.sendRelease()
         }
-        if let callback = unsafe latch.releaseCallback?.resource {
-            unsafe wl_resource_destroy(callback)
-        }
+        latch.releaseCallback?.destroy()
         for callback in latch.frameCallbacks {
-            if let resource = unsafe callback.resource {
-                unsafe wl_resource_destroy(resource)
-            }
+            callback.destroy()
         }
         for feedback in latch.presentationFeedbacks {
-            guard let resource = unsafe feedback.resource else { continue }
-            feedback.typedHandle(as: WpPresentationFeedbackServer.self)?
-                .sendDiscarded()
-            unsafe wl_resource_destroy(resource)
+            feedback.handle.sendDiscarded()
+            feedback.destroy()
         }
     }
 
@@ -745,7 +726,7 @@ import NucleusTypes
             return false
         }
         let pixels = latch.bufferAttached
-            ? unsafe bufferPixelSize(latch.buffer?.resource)
+            ? bufferPixelSize(latch.buffer)
             : committedBufferPixelSize()
         guard pixels.width != 0, pixels.height != 0 else { return true }
         let unviewported = resolveSurfaceLogicalSize(
@@ -772,16 +753,18 @@ import NucleusTypes
         current.bufferPixelSize
     }
 
-    @unsafe private func bufferPixelSize(
-        _ buffer: UnsafeMutablePointer<wl_resource>?
+    private func bufferPixelSize(
+        _ buffer: WaylandResourceReference<WlBufferServer>?
     ) -> BufferPixelSize {
-        guard let buffer = unsafe buffer else { return BufferPixelSize() }
-        if let shm = unsafe wl_shm_buffer_get(buffer) {
+        guard let buffer else { return BufferPixelSize() }
+        if let shm = buffer.shmMetadata {
             return BufferPixelSize(
-                width: UInt32(max(0, unsafe wl_shm_buffer_get_width(shm))),
-                height: UInt32(max(0, unsafe wl_shm_buffer_get_height(shm))))
+                width: UInt32(shm.width),
+                height: UInt32(shm.height))
         }
-        if let dmabuf = unsafe WaylandResource.owner(of: buffer, as: DmabufBuffer.self) {
+        if let dmabuf = buffer.retainedSemanticOwner(
+            as: DmabufBuffer.self)
+        {
             return BufferPixelSize(
                 width: UInt32(max(0, dmabuf.attrs.width)),
                 height: UInt32(max(0, dmabuf.attrs.height)))
@@ -832,30 +815,22 @@ import NucleusTypes
         // otherwise be cleaned up only at client teardown.)
         presentation.destroyAll()
         for cb in pending.frameCallbacks {
-            if let resource = unsafe cb.resource {
-                unsafe wl_resource_destroy(resource)
-            }
+            cb.destroy()
         }
         if let latch = subsurfaceTopology.cachedCommit {
             for cb in latch.frameCallbacks {
-                if let resource = unsafe cb.resource {
-                    unsafe wl_resource_destroy(resource)
-                }
+                cb.destroy()
             }
         }
         // Presentation feedbacks for never-presented content are discarded.
         for fb in pending.presentationFeedbacks {
-            guard let resource = unsafe fb.resource else { continue }
-            fb.typedHandle(as: WpPresentationFeedbackServer.self)?
-                .sendDiscarded()
-            unsafe wl_resource_destroy(resource)
+            fb.handle.sendDiscarded()
+            fb.destroy()
         }
         if let latch = subsurfaceTopology.cachedCommit {
             for fb in latch.presentationFeedbacks {
-                guard let resource = unsafe fb.resource else { continue }
-                fb.typedHandle(as: WpPresentationFeedbackServer.self)?
-                    .sendDiscarded()
-                unsafe wl_resource_destroy(resource)
+                fb.handle.sendDiscarded()
+                fb.destroy()
             }
         }
         // Retire the current buffer under the same GPU-lifetime contract as a
@@ -863,27 +838,23 @@ import NucleusTypes
         // queue, so a destroyed wl_surface cannot orphan its wl_buffer release.
         if !currentBufferReleased,
            let currentBufferReference,
-           currentBufferReference.semanticOwner is DmabufBuffer,
+           currentBufferReference.retainedSemanticOwner(
+            as: DmabufBuffer.self) != nil,
            renderIosurfaceId != 0 {
             compositor?.deferBufferRelease(
                 iosurfaceID: renderIosurfaceId, buffer: currentBufferReference,
                 callback: currentReleaseCallback)
         } else {
-            if let callback = currentReleaseCallback,
-                let cb = unsafe callback.resource
-            {
-                callback.typedHandle(as: WlCallbackServer.self)?
-                    .sendDone(callback_data: 0)
-                unsafe wl_resource_destroy(cb)
+            if let callback = currentReleaseCallback {
+                callback.handle.sendDone(callback_data: 0)
+                callback.destroy()
             }
         }
-        if let cb = unsafe pending.releaseCallback?.resource {
-            unsafe wl_resource_destroy(cb)
-        }
+        pending.releaseCallback?.destroy()
         if let latch = subsurfaceTopology.cachedCommit,
-            let cb = unsafe latch.releaseCallback?.resource
+            let callback = latch.releaseCallback
         {
-            unsafe wl_resource_destroy(cb)
+            callback.destroy()
         }
         role?.roleSurfaceDestroyed(self)
         detachFromParent()

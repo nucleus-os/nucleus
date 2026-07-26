@@ -79,7 +79,8 @@ protocol XdgShellDelegate: AnyObject {
     /// operation is forwarded to policy.
     func authorizeInteractiveRequest(
         _ toplevel: XdgToplevel,
-        seat: UnsafeMutablePointer<wl_resource>?,
+        seat: WlSeat,
+        seatClientID: WaylandClientID,
         serial: UInt32
     ) -> Bool
     /// A toplevel's wire object is being destroyed; drop its window.
@@ -93,7 +94,8 @@ protocol XdgShellDelegate: AnyObject {
     ) -> WlRect
     func popupGrabRequested(
         _ popup: XdgPopup,
-        seat: UnsafeMutablePointer<wl_resource>?,
+        seat: WlSeat,
+        seatClientID: WaylandClientID,
         serial: UInt32
     ) -> Bool
 }
@@ -105,14 +107,17 @@ protocol XdgShellDelegate: AnyObject {
 @MainActor
 @safe final class XdgShell {
     weak var delegate: (any XdgShellDelegate)?
-    private var display: OpaquePointer?
+    private let display: WaylandDisplay
     private var popupStacks:
         [WaylandClientID: [WeakReference<XdgPopup>]] = [:]
     private var toplevels: [WeakReference<XdgToplevel>] = []
     private var nextToplevelRawID: UInt64 = 1
 
+    init(display: WaylandDisplay) {
+        self.display = display
+    }
+
     func register(in router: NucleusWaylandRouter) {
-        unsafe display = router.display.display
         // Version 3 is implemented through positioner snapshots, parent configure
         // correlation, and reactive popup repositioning.
         router.addGlobal(
@@ -125,8 +130,7 @@ protocol XdgShellDelegate: AnyObject {
     }
 
     func nextSerial() -> UInt32 {
-        guard let display = unsafe display else { return 0 }
-        return unsafe wl_display_next_serial(display)
+        display.nextSerial()
     }
 
     func mintToplevelID() -> XdgToplevelID {
@@ -138,35 +142,29 @@ protocol XdgShellDelegate: AnyObject {
         return id
     }
 
-    @unsafe func registerPopup(
-        _ popup: XdgPopup, resource: UnsafeMutablePointer<wl_resource>
+    func registerPopup(
+        _ popup: XdgPopup,
+        clientID: WaylandClientID?
     ) {
-        guard let key = unsafe WaylandClientID(
-            wl_resource_get_client(resource))
-        else { return }
+        guard let key = clientID else { return }
         popupStacks[key, default: []].removeAll { $0.value == nil }
         popupStacks[key, default: []].append(WeakReference(popup))
     }
 
-    @unsafe func canDestroyPopup(
+    func canDestroyPopup(
         _ popup: XdgPopup,
-        resource: UnsafeMutablePointer<wl_resource>
+        clientID: WaylandClientID?
     ) -> Bool {
-        guard let key = unsafe WaylandClientID(
-            wl_resource_get_client(resource))
-        else { return false }
+        guard let key = clientID else { return false }
         popupStacks[key, default: []].removeAll { $0.value == nil }
         return popupStacks[key]?.last?.value === popup
     }
 
-    @unsafe func unregisterPopup(
+    func unregisterPopup(
         _ popup: XdgPopup,
-        resource: UnsafeMutablePointer<wl_resource>?
+        clientID: WaylandClientID?
     ) {
-        guard let resource = unsafe resource else { return }
-        guard let key = unsafe WaylandClientID(
-            wl_resource_get_client(resource))
-        else { return }
+        guard let key = clientID else { return }
         popupStacks[key]?.removeAll {
             $0.value == nil || $0.value === popup
         }

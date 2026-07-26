@@ -7,6 +7,46 @@ public enum WlSeatClient: WaylandClientInterface {
     public nonisolated static let maximumVersion: UInt32 = 10
 }
 public import WaylandProtocolTypes
+public extension WaylandProxy where Interface == WlSeatClient {
+    func getPointer() throws(WaylandProxyError) -> WaylandProxy<WlPointerClient> {
+        let _proxy = try unsafe requireNativeProxy()
+        guard let _created = unsafe swift_wayland_client_request_wl_seat_get_pointer(_proxy) else {
+            throw WaylandProxyError.proxyCreationFailed
+        }
+        return unsafe makeOwnedProxy(
+            adopting: _created, WlPointerClient.self)
+    }
+    func getKeyboard() throws(WaylandProxyError) -> WaylandProxy<WlKeyboardClient> {
+        let _proxy = try unsafe requireNativeProxy()
+        guard let _created = unsafe swift_wayland_client_request_wl_seat_get_keyboard(_proxy) else {
+            throw WaylandProxyError.proxyCreationFailed
+        }
+        return unsafe makeOwnedProxy(
+            adopting: _created, WlKeyboardClient.self)
+    }
+    func getTouch() throws(WaylandProxyError) -> WaylandProxy<WlTouchClient> {
+        let _proxy = try unsafe requireNativeProxy()
+        guard let _created = unsafe swift_wayland_client_request_wl_seat_get_touch(_proxy) else {
+            throw WaylandProxyError.proxyCreationFailed
+        }
+        return unsafe makeOwnedProxy(
+            adopting: _created, WlTouchClient.self)
+    }
+    func release() throws(WaylandProxyError) {
+        guard version >= 5 else {
+            throw .unsupportedVersion(
+                required: 5, actual: version)
+        }
+        let _proxy = try unsafe requireNativeProxy()
+        let _send = { () throws(WaylandProxyError) -> Void in
+            unsafe swift_wayland_client_request_wl_seat_release(_proxy)
+            return
+        }
+        try _send()
+        try unsafe invalidateAfterProtocolDestructor()
+    }
+}
+@MainActor
 public protocol WlSeatEvents: AnyObject {
     func capabilities(_ proxy: WaylandBorrowedProxy<WlSeatClient>, capabilities: WlSeatCapability)
     func name(_ proxy: WaylandBorrowedProxy<WlSeatClient>, name: String)
@@ -19,24 +59,45 @@ public extension WlSeatClient {
         unsafe p.pointee.name = name_impl
         return unsafe p
     }()
-    /// Wire the listener to a proxy. The owner is borrowed (unretained); the caller must keep it alive for the proxy's lifetime, matching libwayland's user_data contract.
-    @discardableResult
-    static func addListener(_ proxy: OpaquePointer, owner: AnyObject) -> Int32 {
-        unsafe wl_seat_add_listener(proxy, listener, Unmanaged.passUnretained(owner).toOpaque())
-    }
-    private static func handler(_ data: UnsafeMutableRawPointer) -> any WlSeatEvents? {
-        unsafe Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? any WlSeatEvents
+    private static func handler(_ context: WaylandClientListenerContext) -> any WlSeatEvents? {
+        context.owner as? any WlSeatEvents
     }
     private static let capabilities_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, capabilities in
-        guard let data = unsafe data, let proxy = unsafe proxy, let h = unsafe handler(data) else {
+        guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
-        unsafe h.capabilities(WaylandBorrowedProxy<WlSeatClient>(proxy), capabilities: WlSeatCapability(rawValue: capabilities))
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
+        }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        MainActor.assumeIsolated {
+            unsafe eventHandler.capabilities(WaylandBorrowedProxy<WlSeatClient>(eventProxy), capabilities: WlSeatCapability(rawValue: capabilities))
+        }
     }
     private static let name_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UnsafePointer<CChar>?) -> Void = { data, proxy, name in
-        guard let data = unsafe data, let proxy = unsafe proxy, let h = unsafe handler(data) else {
+        guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
-        unsafe h.name(WaylandBorrowedProxy<WlSeatClient>(proxy), name: unsafe String(cString: name!))
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
+        }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        nonisolated(unsafe) let _event_name = unsafe name
+        MainActor.assumeIsolated {
+            unsafe eventHandler.name(WaylandBorrowedProxy<WlSeatClient>(eventProxy), name: unsafe String(cString: _event_name!))
+        }
+    }
+}
+public extension WaylandProxy where Interface == WlSeatClient {
+    func installListener(_ owner: any WlSeatEvents) throws(WaylandProxyError) {
+        try unsafe installListener(owner: owner) { proxy, data in
+            unsafe wl_seat_add_listener(proxy, WlSeatClient.listener, data)
+        }
     }
 }

@@ -1,5 +1,4 @@
 public import WaylandServerC
-public import WaylandProtocolTypes
 
 /// The typed resource on which one generated server request arrived.
 ///
@@ -9,7 +8,7 @@ public import WaylandProtocolTypes
 @safe public struct WaylandRequest<
     Interface: WaylandServerInterface
 >: ~Escapable {
-    @unsafe public let resource: UnsafeMutablePointer<wl_resource>
+    @unsafe package let resource: UnsafeMutablePointer<wl_resource>
 
     @_lifetime(borrow resource)
     package init(_ resource: UnsafeMutablePointer<wl_resource>) {
@@ -24,16 +23,21 @@ public import WaylandProtocolTypes
         unsafe WaylandClientID(wl_resource_get_client(resource))
     }
 
+    public var objectID: UInt32 {
+        unsafe wl_resource_get_id(resource)
+    }
+
+    public func destroy() {
+        unsafe wl_resource_destroy(resource)
+    }
+
+    public func postNoMemory() {
+        unsafe wl_resource_post_no_memory(resource)
+    }
+
     package func postError(code: UInt32, message: String) {
         unsafe swift_wayland_resource_post_error(
             resource, code, message)
-    }
-
-    public func postError<Code: WaylandProtocolErrorValue>(
-        _ code: Code,
-        message: String
-    ) {
-        unsafe postError(code: code.rawValue, message: message)
     }
 }
 
@@ -46,7 +50,7 @@ public import WaylandProtocolTypes
 @safe public struct WaylandBorrowedObject<
     Interface: WaylandServerInterface
 >: ~Escapable {
-    @unsafe public let resource: UnsafeMutablePointer<wl_resource>
+    @unsafe package let resource: UnsafeMutablePointer<wl_resource>
 
     @_lifetime(borrow resource)
     package init(_ resource: UnsafeMutablePointer<wl_resource>) {
@@ -65,5 +69,13 @@ public import WaylandProtocolTypes
 
     public var clientID: WaylandClientID? {
         unsafe WaylandClientID(wl_resource_get_client(resource))
+    }
+
+    public func retainedReference(
+        retaining semanticOwner: AnyObject? = nil
+    ) -> WaylandResourceReference<Interface>? {
+        unsafe WaylandResourceReference<Interface>(
+            resource,
+            retaining: semanticOwner)
     }
 }

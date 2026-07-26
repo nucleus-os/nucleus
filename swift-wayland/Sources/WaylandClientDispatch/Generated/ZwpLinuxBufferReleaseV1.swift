@@ -6,6 +6,7 @@ public enum ZwpLinuxBufferReleaseV1Client: WaylandClientInterface {
     public nonisolated(unsafe) static let interface = unsafe swift_wayland_iface_zwp_linux_buffer_release_v1()
     public nonisolated static let maximumVersion: UInt32 = 1
 }
+@MainActor
 public protocol ZwpLinuxBufferReleaseV1Events: AnyObject {
     func fencedRelease(_ proxy: WaylandBorrowedProxy<ZwpLinuxBufferReleaseV1Client>, fence: consuming WaylandClientOwnedFileDescriptor)
     func immediateRelease(_ proxy: WaylandBorrowedProxy<ZwpLinuxBufferReleaseV1Client>)
@@ -18,24 +19,44 @@ public extension ZwpLinuxBufferReleaseV1Client {
         unsafe p.pointee.immediate_release = immediateRelease_impl
         return unsafe p
     }()
-    /// Wire the listener to a proxy. The owner is borrowed (unretained); the caller must keep it alive for the proxy's lifetime, matching libwayland's user_data contract.
-    @discardableResult
-    static func addListener(_ proxy: OpaquePointer, owner: AnyObject) -> Int32 {
-        unsafe zwp_linux_buffer_release_v1_add_listener(proxy, listener, Unmanaged.passUnretained(owner).toOpaque())
-    }
-    private static func handler(_ data: UnsafeMutableRawPointer) -> any ZwpLinuxBufferReleaseV1Events? {
-        unsafe Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? any ZwpLinuxBufferReleaseV1Events
+    private static func handler(_ context: WaylandClientListenerContext) -> any ZwpLinuxBufferReleaseV1Events? {
+        context.owner as? any ZwpLinuxBufferReleaseV1Events
     }
     private static let fencedRelease_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, Int32) -> Void = { data, proxy, fence in
-        guard let data = unsafe data, let proxy = unsafe proxy, let h = unsafe handler(data) else {
+        guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
-        unsafe h.fencedRelease(WaylandBorrowedProxy<ZwpLinuxBufferReleaseV1Client>(proxy), fence: WaylandClientOwnedFileDescriptor(fence))
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
+        }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        MainActor.assumeIsolated {
+            unsafe eventHandler.fencedRelease(WaylandBorrowedProxy<ZwpLinuxBufferReleaseV1Client>(eventProxy), fence: WaylandClientOwnedFileDescriptor(fence))
+        }
     }
     private static let immediateRelease_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
-        guard let data = unsafe data, let proxy = unsafe proxy, let h = unsafe handler(data) else {
+        guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
-        unsafe h.immediateRelease(WaylandBorrowedProxy<ZwpLinuxBufferReleaseV1Client>(proxy))
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
+        }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        MainActor.assumeIsolated {
+            unsafe eventHandler.immediateRelease(WaylandBorrowedProxy<ZwpLinuxBufferReleaseV1Client>(eventProxy))
+        }
+    }
+}
+public extension WaylandProxy where Interface == ZwpLinuxBufferReleaseV1Client {
+    func installListener(_ owner: any ZwpLinuxBufferReleaseV1Events) throws(WaylandProxyError) {
+        try unsafe installListener(owner: owner) { proxy, data in
+            unsafe zwp_linux_buffer_release_v1_add_listener(proxy, ZwpLinuxBufferReleaseV1Client.listener, data)
+        }
     }
 }

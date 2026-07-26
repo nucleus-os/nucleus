@@ -6,6 +6,18 @@ public enum ZxdgExportedV1Client: WaylandClientInterface {
     public nonisolated(unsafe) static let interface = unsafe swift_wayland_iface_zxdg_exported_v1()
     public nonisolated static let maximumVersion: UInt32 = 1
 }
+public extension WaylandProxy where Interface == ZxdgExportedV1Client {
+    func destroy() throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        let _send = { () throws(WaylandProxyError) -> Void in
+            unsafe swift_wayland_client_request_zxdg_exported_v1_destroy(_proxy)
+            return
+        }
+        try _send()
+        try unsafe invalidateAfterProtocolDestructor()
+    }
+}
+@MainActor
 public protocol ZxdgExportedV1Events: AnyObject {
     func handle(_ proxy: WaylandBorrowedProxy<ZxdgExportedV1Client>, handle: String)
 }
@@ -16,18 +28,30 @@ public extension ZxdgExportedV1Client {
         unsafe p.pointee.handle = handle_impl
         return unsafe p
     }()
-    /// Wire the listener to a proxy. The owner is borrowed (unretained); the caller must keep it alive for the proxy's lifetime, matching libwayland's user_data contract.
-    @discardableResult
-    static func addListener(_ proxy: OpaquePointer, owner: AnyObject) -> Int32 {
-        unsafe zxdg_exported_v1_add_listener(proxy, listener, Unmanaged.passUnretained(owner).toOpaque())
-    }
-    private static func handler(_ data: UnsafeMutableRawPointer) -> any ZxdgExportedV1Events? {
-        unsafe Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? any ZxdgExportedV1Events
+    private static func handler(_ context: WaylandClientListenerContext) -> any ZxdgExportedV1Events? {
+        context.owner as? any ZxdgExportedV1Events
     }
     private static let handle_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UnsafePointer<CChar>?) -> Void = { data, proxy, handle in
-        guard let data = unsafe data, let proxy = unsafe proxy, let h = unsafe handler(data) else {
+        guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
-        unsafe h.handle(WaylandBorrowedProxy<ZxdgExportedV1Client>(proxy), handle: unsafe String(cString: handle!))
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
+        }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        nonisolated(unsafe) let _event_handle = unsafe handle
+        MainActor.assumeIsolated {
+            unsafe eventHandler.handle(WaylandBorrowedProxy<ZxdgExportedV1Client>(eventProxy), handle: unsafe String(cString: _event_handle!))
+        }
+    }
+}
+public extension WaylandProxy where Interface == ZxdgExportedV1Client {
+    func installListener(_ owner: any ZxdgExportedV1Events) throws(WaylandProxyError) {
+        try unsafe installListener(owner: owner) { proxy, data in
+            unsafe zxdg_exported_v1_add_listener(proxy, ZxdgExportedV1Client.listener, data)
+        }
     }
 }

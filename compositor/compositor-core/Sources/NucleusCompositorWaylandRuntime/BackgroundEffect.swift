@@ -27,16 +27,10 @@ final class ExtBackgroundEffectManager {
         router.addGlobal(
             ExtBackgroundEffectManagerV1Server.global(
                 implementation: self,
-                owner: { manager, _ in manager },
-                installed: { manager, _, handle in
-                    guard let resource = unsafe handle.resource else {
-                        return
-                    }
-                    unsafe ExtBackgroundEffectManagerV1Server
-                        .sendCapabilities(
-                            resource,
-                            flags: ExtBackgroundEffectManagerV1Capability(
-                                rawValue: manager.capabilities))
+                installed: { manager, handle in
+                    handle.sendCapabilities(
+                        flags: ExtBackgroundEffectManagerV1Capability(
+                            rawValue: manager.capabilities))
                 }))
     }
 
@@ -56,7 +50,7 @@ extension ExtBackgroundEffectManager: ExtBackgroundEffectManagerV1Requests {
             request.postError(.backgroundEffectExists, message: "surface already has a background effect")
             return
         }
-        guard unsafe id.create(
+        guard id.create(
             owner: { handle in
                 ExtBackgroundEffectSurface(
                     resource: handle,

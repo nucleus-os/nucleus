@@ -6,6 +6,30 @@ public enum ZwpPrimarySelectionOfferV1Client: WaylandClientInterface {
     public nonisolated(unsafe) static let interface = unsafe swift_wayland_iface_zwp_primary_selection_offer_v1()
     public nonisolated static let maximumVersion: UInt32 = 1
 }
+public extension WaylandProxy where Interface == ZwpPrimarySelectionOfferV1Client {
+    func receive(mime_type: String, fd: consuming WaylandClientOwnedFileDescriptor) throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        let _fdDescriptor = fd.take()
+        defer {
+            WaylandClientOwnedFileDescriptor.closeTransferred(
+                _fdDescriptor)
+        }
+        return try mime_type.withCString { (_mime_typeCString: UnsafePointer<CChar>) throws(WaylandProxyError) -> Void in
+            unsafe swift_wayland_client_request_zwp_primary_selection_offer_v1_receive(_proxy, _mime_typeCString, _fdDescriptor)
+            return
+        }
+    }
+    func destroy() throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        let _send = { () throws(WaylandProxyError) -> Void in
+            unsafe swift_wayland_client_request_zwp_primary_selection_offer_v1_destroy(_proxy)
+            return
+        }
+        try _send()
+        try unsafe invalidateAfterProtocolDestructor()
+    }
+}
+@MainActor
 public protocol ZwpPrimarySelectionOfferV1Events: AnyObject {
     func offer(_ proxy: WaylandBorrowedProxy<ZwpPrimarySelectionOfferV1Client>, mime_type: String)
 }
@@ -16,18 +40,30 @@ public extension ZwpPrimarySelectionOfferV1Client {
         unsafe p.pointee.offer = offer_impl
         return unsafe p
     }()
-    /// Wire the listener to a proxy. The owner is borrowed (unretained); the caller must keep it alive for the proxy's lifetime, matching libwayland's user_data contract.
-    @discardableResult
-    static func addListener(_ proxy: OpaquePointer, owner: AnyObject) -> Int32 {
-        unsafe zwp_primary_selection_offer_v1_add_listener(proxy, listener, Unmanaged.passUnretained(owner).toOpaque())
-    }
-    private static func handler(_ data: UnsafeMutableRawPointer) -> any ZwpPrimarySelectionOfferV1Events? {
-        unsafe Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? any ZwpPrimarySelectionOfferV1Events
+    private static func handler(_ context: WaylandClientListenerContext) -> any ZwpPrimarySelectionOfferV1Events? {
+        context.owner as? any ZwpPrimarySelectionOfferV1Events
     }
     private static let offer_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UnsafePointer<CChar>?) -> Void = { data, proxy, mime_type in
-        guard let data = unsafe data, let proxy = unsafe proxy, let h = unsafe handler(data) else {
+        guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
-        unsafe h.offer(WaylandBorrowedProxy<ZwpPrimarySelectionOfferV1Client>(proxy), mime_type: unsafe String(cString: mime_type!))
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
+        }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        nonisolated(unsafe) let _event_mime_type = unsafe mime_type
+        MainActor.assumeIsolated {
+            unsafe eventHandler.offer(WaylandBorrowedProxy<ZwpPrimarySelectionOfferV1Client>(eventProxy), mime_type: unsafe String(cString: _event_mime_type!))
+        }
+    }
+}
+public extension WaylandProxy where Interface == ZwpPrimarySelectionOfferV1Client {
+    func installListener(_ owner: any ZwpPrimarySelectionOfferV1Events) throws(WaylandProxyError) {
+        try unsafe installListener(owner: owner) { proxy, data in
+            unsafe zwp_primary_selection_offer_v1_add_listener(proxy, ZwpPrimarySelectionOfferV1Client.listener, data)
+        }
     }
 }

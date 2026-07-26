@@ -6,3 +6,27 @@ public enum XdgToplevelIconV1Client: WaylandClientInterface {
     public nonisolated(unsafe) static let interface = unsafe swift_wayland_iface_xdg_toplevel_icon_v1()
     public nonisolated static let maximumVersion: UInt32 = 1
 }
+public extension WaylandProxy where Interface == XdgToplevelIconV1Client {
+    func destroy() throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        let _send = { () throws(WaylandProxyError) -> Void in
+            unsafe swift_wayland_client_request_xdg_toplevel_icon_v1_destroy(_proxy)
+            return
+        }
+        try _send()
+        try unsafe invalidateAfterProtocolDestructor()
+    }
+    func setName(icon_name: String) throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        return try icon_name.withCString { (_icon_nameCString: UnsafePointer<CChar>) throws(WaylandProxyError) -> Void in
+            unsafe swift_wayland_client_request_xdg_toplevel_icon_v1_set_name(_proxy, _icon_nameCString)
+            return
+        }
+    }
+    func addBuffer(buffer: WaylandProxy<WlBufferClient>, scale: Int32) throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        let _bufferProxy = try unsafe buffer.requireNativeProxy()
+        unsafe swift_wayland_client_request_xdg_toplevel_icon_v1_add_buffer(_proxy, _bufferProxy, scale)
+        return
+    }
+}

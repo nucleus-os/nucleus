@@ -6,6 +6,7 @@
 import Glibc
 import WaylandServer
 import WaylandServerC
+import WaylandServerDispatch
 
 private func fail(_ msg: String) -> Never {
     print("FAIL: \(msg)")
@@ -25,7 +26,7 @@ private final class ScreencopyStub: ScreencopyDelegate {
     func screencopyCapture(
         output: WlOutput?, configuration: ScreencopyConfiguration,
         overlayCursor: Bool,
-        buffer: WaylandResourceReference, withDamage: Bool,
+        buffer: WaylandResourceReference<WlBufferServer>, withDamage: Bool,
         preferRegionReadback: Bool,
         completion: @escaping @MainActor (ScreencopyResult) -> Void
     ) -> UInt64? {

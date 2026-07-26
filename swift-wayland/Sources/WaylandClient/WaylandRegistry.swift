@@ -1,148 +1,244 @@
-// Generic registry binding — the client mirror of the server advertising globals with WaylandGlobal.
-// A consumer declares the globals it wants (interface + max version + whether it may appear more than
-// once); the registry watches wl_registry, binds each match (version-capped), tracks it by registry
-// name, and fires onBind / onRemove so the consumer can attach a listener and react to hotplug.
-//
-// It is @MainActor: the registry mutates its bound-set from the wl_registry listener, which libwayland
-// invokes synchronously from whatever thread pumps the connection. The common client pumps its display
-// on the main actor (as a GUI event loop does), so the listener reasserts that with assumeIsolated and
-// the consumer's callbacks run main-actor-clean. A client dispatching off the main thread should drive
-// WaylandClientDispatch's WlRegistryClient directly instead.
+// Typed registry binding for Wayland client globals.
 
-public import WaylandClientC
 public import WaylandClientDispatch
 
-/// A global the consumer wants bound. Matched against the registry's advertised interface by name
-/// (read from the interface descriptor); bound at min(advertised, maxVersion).
-/// The interface descriptor points at process-lifetime generated protocol storage.
-@safe public struct DesiredGlobal {
-    public let interface: UnsafePointer<wl_interface>
-    public let maxVersion: UInt32
-    /// wl_output / wl_seat and friends can be advertised multiple times; a manager global once.
-    public let allowsMultiple: Bool
+/// The type-erased storage accepted by `WaylandRegistry`.
+///
+/// Consumers construct the generic `DesiredGlobal<Interface>` subclass. Erasure
+/// exists only so requirements for different interfaces can share one array; the
+/// bind closure has already captured and checked the concrete interface type.
+@MainActor
+@safe public class AnyDesiredGlobal {
+  fileprivate let interfaceName: String
+  fileprivate let interfaceID: ObjectIdentifier
+  fileprivate let allowsMultiple: Bool
+  fileprivate let bind:
+    (
+      WaylandProxy<WlRegistryClient>,
+      UInt32,
+      UInt32
+    ) throws(WaylandProxyError) -> AnyBoundGlobal
 
-    public init(_ interface: UnsafePointer<wl_interface>, maxVersion: UInt32, allowsMultiple: Bool = false) {
-        unsafe self.interface = interface
-        self.maxVersion = maxVersion
-        self.allowsMultiple = allowsMultiple
-    }
+  fileprivate init(
+    interfaceName: String,
+    interfaceID: ObjectIdentifier,
+    allowsMultiple: Bool,
+    bind:
+      @escaping (
+        WaylandProxy<WlRegistryClient>,
+        UInt32,
+        UInt32
+      ) throws(WaylandProxyError) -> AnyBoundGlobal
+  ) {
+    self.interfaceName = interfaceName
+    self.interfaceID = interfaceID
+    self.allowsMultiple = allowsMultiple
+    self.bind = bind
+  }
 
-    /// The wire interface name (the registry advertises globals by this string).
-    public var interfaceName: String { unsafe String(cString: interface.pointee.name) }
+  public var wireInterfaceName: String {
+    interfaceName
+  }
+
+  public var acceptsMultiple: Bool {
+    allowsMultiple
+  }
 }
 
-/// A bound registry global: its numeric registry `name`, the bound proxy, the negotiated `version`,
-/// and the interface it satisfies (pointer-identical to the DesiredGlobal's, for reverse lookup).
-/// Retains the display connection so the borrowed proxy cannot outlive its
-/// owning native connection. Interface descriptors have process lifetime.
-@safe public struct BoundGlobal {
-    public let name: UInt32
-    public let proxy: OpaquePointer
-    public let version: UInt32
-    public let interface: UnsafePointer<wl_interface>
-    private let connectionOwner: WaylandConnection
+/// A typed registry-global requirement and its lifecycle callbacks.
+@MainActor
+@safe
+public final class DesiredGlobal<
+  Interface: WaylandClientInterface
+>: AnyDesiredGlobal {
+  public init(
+    maximumVersion: UInt32 = Interface.maximumVersion,
+    allowsMultiple: Bool = false,
+    onBind: @escaping (BoundGlobal<Interface>) -> Void = { _ in },
+    onRemove: @escaping (BoundGlobal<Interface>) -> Void = { _ in }
+  ) {
+    precondition(
+      maximumVersion <= Interface.maximumVersion,
+      "consumer maximum exceeds the generated protocol maximum")
+    let name = unsafe String(cString: Interface.interface!.pointee.name)
+    super.init(
+      interfaceName: name,
+      interfaceID: ObjectIdentifier(Interface.self),
+      allowsMultiple: allowsMultiple,
+      bind: {
+        (
+          registry: WaylandProxy<WlRegistryClient>,
+          name: UInt32,
+          advertisedVersion: UInt32
+        ) throws(WaylandProxyError) -> AnyBoundGlobal in
+        let version = min(advertisedVersion, maximumVersion)
+        let proxy = try registry.bind(
+          name: name,
+          version: version,
+          as: Interface.self)
+        let bound = BoundGlobal(
+          name: name,
+          proxy: proxy,
+          version: version)
+        return AnyBoundGlobal(
+          interfaceType: Interface.self,
+          value: bound,
+          proxy: proxy,
+          onRemove: { onRemove(bound) },
+          onBind: { onBind(bound) })
+      })
+  }
+}
 
-    fileprivate init(
-        name: UInt32,
-        proxy: OpaquePointer,
-        version: UInt32,
-        interface: UnsafePointer<wl_interface>,
-        connectionOwner: WaylandConnection
-    ) {
-        self.name = name
-        unsafe self.proxy = proxy
-        self.version = version
-        unsafe self.interface = interface
-        self.connectionOwner = connectionOwner
-    }
+/// One interface-typed registry binding.
+@safe
+public struct BoundGlobal<
+  Interface: WaylandClientInterface
+> {
+  public let name: UInt32
+  public let proxy: WaylandProxy<Interface>
+  public let version: UInt32
 }
 
 @MainActor
-/// Owns its registry proxy and confines listener-driven mutation to the main actor.
-@safe public final class WaylandRegistry {
-    /// The registry proxy is valid only while its display connection is alive.
-    private let connection: WaylandConnection
-    private let registry: OpaquePointer
-    /// Desired globals keyed by interface name (the registry advertises by name).
-    private let wanted: [String: DesiredGlobal]
-    /// Bound globals keyed by registry name, so global_remove can find and drop them.
-    private var bound: [UInt32: BoundGlobal] = [:]
+@safe private final class AnyBoundGlobal {
+  let interfaceID: ObjectIdentifier
+  let value: Any
+  let proxy: AnyObject
+  let onRemove: () -> Void
+  let onBind: () -> Void
 
-    /// Fired when a wanted global is bound (attach its listener here). Runs on the main actor.
-    public var onBind: ((BoundGlobal) -> Void)?
-    /// Fired when a previously bound global is removed (hotplug / compositor teardown).
-    public var onRemove: ((BoundGlobal) -> Void)?
-
-    public init?(_ connection: WaylandConnection, wanting: [DesiredGlobal]) {
-        guard let reg = unsafe connection.getRegistry() else { return nil }
-        self.connection = connection
-        unsafe registry = reg
-        var m: [String: DesiredGlobal] = [:]
-        for g in wanting { m[g.interfaceName] = g }
-        wanted = m
-        unsafe WlRegistryClient.addListener(registry, owner: self)
-    }
-
-    isolated deinit {
-        unsafe wl_registry_destroy(registry)
-    }
-
-    /// The single bound global for an interface (nil if none / not yet advertised).
-    public func singleton(_ interface: UnsafePointer<wl_interface>) -> BoundGlobal? {
-        bound.values.first { unsafe $0.interface == interface }
-    }
-
-    /// Every bound global for a multi-instance interface (e.g. all wl_outputs).
-    public func instances(_ interface: UnsafePointer<wl_interface>) -> [BoundGlobal] {
-        bound.values.filter { unsafe $0.interface == interface }
-    }
-
-    private func bindGlobal(name: UInt32, interfaceName: String, version: UInt32) {
-        guard let want = wanted[interfaceName] else { return }
-        // Singleton globals: first advertisement wins; ignore duplicates.
-        if !want.allowsMultiple,
-           bound.values.contains(where: { unsafe $0.interface == want.interface })
-        {
-            return
-        }
-        let useVersion = min(version, want.maxVersion)
-        guard let raw = unsafe wl_registry_bind(registry, name, want.interface, useVersion) else {
-            return
-        }
-        let global = unsafe BoundGlobal(
-            name: name,
-            proxy: OpaquePointer(raw),
-            version: useVersion,
-            interface: want.interface,
-            connectionOwner: connection)
-        bound[name] = global
-        onBind?(global)
-    }
-
-    private func removeGlobal(name: UInt32) {
-        guard let gone = bound.removeValue(forKey: name) else { return }
-        onRemove?(gone)
-    }
+  init<Interface: WaylandClientInterface>(
+    interfaceType: Interface.Type,
+    value: BoundGlobal<Interface>,
+    proxy: WaylandProxy<Interface>,
+    onRemove: @escaping () -> Void,
+    onBind: @escaping () -> Void
+  ) {
+    interfaceID = ObjectIdentifier(interfaceType)
+    self.value = value
+    self.proxy = proxy
+    self.onRemove = onRemove
+    self.onBind = onBind
+  }
 }
 
-// The generated listener copies the interface name before invoking this synchronous
-// callback, so only Sendable values cross into the main actor.
+/// Owns the registry proxy and exposes only interface-typed bound proxies.
+@MainActor
+@safe public final class WaylandRegistry {
+  private let registry: WaylandProxy<WlRegistryClient>
+  private let wanted: [String: AnyDesiredGlobal]
+  private var bound: [UInt32: AnyBoundGlobal] = [:]
+
+  public init?(
+    _ connection: WaylandConnection,
+    wanting requirements: [AnyDesiredGlobal]
+  ) {
+    guard let registry = try? connection.getRegistry() else {
+      return nil
+    }
+    self.registry = registry
+    var wanted: [String: AnyDesiredGlobal] = [:]
+    for requirement in requirements {
+      precondition(
+        wanted[requirement.interfaceName] == nil,
+        "duplicate desired Wayland interface \(requirement.interfaceName)")
+      wanted[requirement.interfaceName] = requirement
+    }
+    self.wanted = wanted
+    do {
+      try registry.installListener(self)
+    } catch {
+      return nil
+    }
+  }
+
+  isolated deinit {
+    try? registry.destroyLocally()
+  }
+
+  public func singleton<Interface: WaylandClientInterface>(
+    _ interface: Interface.Type
+  ) -> WaylandProxy<Interface>? {
+    binding(interface)?.proxy
+  }
+
+  public func instances<Interface: WaylandClientInterface>(
+    _ interface: Interface.Type
+  ) -> [WaylandProxy<Interface>] {
+    bindings(interface).map(\.proxy)
+  }
+
+  public func binding<Interface: WaylandClientInterface>(
+    _ interface: Interface.Type
+  ) -> BoundGlobal<Interface>? {
+    bindings(interface).first
+  }
+
+  public func bindings<Interface: WaylandClientInterface>(
+    _ interface: Interface.Type
+  ) -> [BoundGlobal<Interface>] {
+    let interfaceID = ObjectIdentifier(interface)
+    return bound.values.compactMap { entry in
+      guard entry.interfaceID == interfaceID else {
+        return nil
+      }
+      return entry.value as? BoundGlobal<Interface>
+    }
+  }
+
+  private func bindGlobal(
+    name: UInt32,
+    interfaceName: String,
+    version: UInt32
+  ) {
+    guard let requirement = wanted[interfaceName] else {
+      return
+    }
+    if !requirement.allowsMultiple,
+      bound.values.contains(where: {
+        $0.interfaceID == requirement.interfaceID
+      })
+    {
+      return
+    }
+    guard
+      let global = try? requirement.bind(
+        registry,
+        name,
+        version)
+    else {
+      return
+    }
+    bound[name] = global
+    global.onBind()
+  }
+
+  private func removeGlobal(name: UInt32) {
+    guard let removed = bound.removeValue(forKey: name) else {
+      return
+    }
+    removed.onRemove()
+  }
+}
+
 extension WaylandRegistry: WlRegistryEvents {
-    public nonisolated func global(
-        _ proxy: WaylandBorrowedProxy<WlRegistryClient>,
-        name: UInt32,
-        interface: String,
-        version: UInt32
-    ) {
-        MainActor.assumeIsolated {
-            bindGlobal(
-                name: name, interfaceName: interface, version: version)
-        }
-    }
-    public nonisolated func globalRemove(
-        _ proxy: WaylandBorrowedProxy<WlRegistryClient>,
-        name: UInt32
-    ) {
-        MainActor.assumeIsolated { removeGlobal(name: name) }
-    }
+  public func global(
+    _ proxy: WaylandBorrowedProxy<WlRegistryClient>,
+    name: UInt32,
+    interface: String,
+    version: UInt32
+  ) {
+    bindGlobal(
+      name: name,
+      interfaceName: interface,
+      version: version)
+  }
+
+  public func globalRemove(
+    _ proxy: WaylandBorrowedProxy<WlRegistryClient>,
+    name: UInt32
+  ) {
+    removeGlobal(name: name)
+  }
 }

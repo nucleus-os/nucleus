@@ -6,3 +6,20 @@ public enum WpCursorShapeDeviceV1Client: WaylandClientInterface {
     public nonisolated(unsafe) static let interface = unsafe swift_wayland_iface_wp_cursor_shape_device_v1()
     public nonisolated static let maximumVersion: UInt32 = 2
 }
+public import WaylandProtocolTypes
+public extension WaylandProxy where Interface == WpCursorShapeDeviceV1Client {
+    func destroy() throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        let _send = { () throws(WaylandProxyError) -> Void in
+            unsafe swift_wayland_client_request_wp_cursor_shape_device_v1_destroy(_proxy)
+            return
+        }
+        try _send()
+        try unsafe invalidateAfterProtocolDestructor()
+    }
+    func setShape(serial: UInt32, shape: WpCursorShapeDeviceV1Shape) throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        unsafe swift_wayland_client_request_wp_cursor_shape_device_v1_set_shape(_proxy, serial, shape.rawValue)
+        return
+    }
+}

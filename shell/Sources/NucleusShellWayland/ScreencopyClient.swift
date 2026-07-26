@@ -4,62 +4,70 @@
 // wl_shm buffer allocation + pixel readback is the fleshing-out step when a screenshot/overview
 // panel lands. The compositor is the screencopy PRODUCER; this is its client counterpart.
 
-import WaylandClientC
 public import WaylandClientDispatch
 import WaylandProtocolTypes
 
 @MainActor
 @safe public final class ScreencopyClient {
-    private let manager: OpaquePointer
+    private let manager:
+        WaylandProxy<ZwlrScreencopyManagerV1Client>
     private weak var client: ShellWaylandClient?
 
     public init?(client: ShellWaylandClient) {
-        guard let manager = unsafe client.proxy(.screencopy) else { return nil }
-        unsafe self.manager = manager
+        guard let manager = client.screencopy else { return nil }
+        self.manager = manager
         self.client = client
     }
 
     /// A single capture request for one output. The completion receives the raw pixels once
     /// the compositor signals `ready`. Skeleton: `capture` binds the frame + listener; the
     /// buffer/format negotiation + wl_shm copy is the additive step.
+    @MainActor
     @safe public final class Capture {
-        let frame: OpaquePointer
+        let frame: WaylandProxy<ZwlrScreencopyFrameV1Client>
         var onReady: ((_ width: UInt32, _ height: UInt32) -> Void)?
-        init(frame: OpaquePointer) { unsafe self.frame = frame }
+        init(frame: WaylandProxy<ZwlrScreencopyFrameV1Client>) {
+            self.frame = frame
+        }
 
-        deinit {
+        isolated deinit {
             // The generated listener borrows this object. Destroy the owned
             // proxy before ARC releases the callback target.
-            unsafe zwlr_screencopy_frame_v1_destroy(frame)
+            try? frame.destroy()
         }
     }
 
     /// Request a capture of `output` (optionally including the cursor).
     public func capture(output: WaylandOutput, includeCursor: Bool,
                         onReady: @escaping (UInt32, UInt32) -> Void) -> Capture? {
-        guard let frame = unsafe zwlr_screencopy_manager_v1_capture_output(
-            manager, includeCursor ? 1 : 0, output.proxy) else { return nil }
-        let capture = unsafe Capture(frame: frame)
+        guard let frame = try? manager.captureOutput(
+            overlay_cursor: includeCursor ? 1 : 0,
+            output: output.proxy)
+        else {
+            return nil
+        }
+        let capture = Capture(frame: frame)
         capture.onReady = onReady
-        unsafe ZwlrScreencopyFrameV1Client.addListener(frame, owner: capture)
+        do {
+            try frame.installListener(capture)
+        } catch {
+            try? frame.destroy()
+            return nil
+        }
         return capture
     }
 }
 
-// The generated event dispatch is nonisolated (a @convention(c) libwayland callback). The owner is
-// the per-capture object (not @MainActor), so its own scratch state is reached directly.
 extension ScreencopyClient.Capture: ZwlrScreencopyFrameV1Events {
-    public nonisolated func buffer(_ proxy: WaylandBorrowedProxy<ZwlrScreencopyFrameV1Client>, format: WlShmFormat, width: UInt32, height: UInt32, stride: UInt32) {
+    public func buffer(_ proxy: WaylandBorrowedProxy<ZwlrScreencopyFrameV1Client>, format: WlShmFormat, width: UInt32, height: UInt32, stride: UInt32) {
         // Allocate a wl_shm buffer of this size, then zwlr_screencopy_frame_v1_copy(proxy, buffer). (additive)
     }
-    public nonisolated func flags(_ proxy: WaylandBorrowedProxy<ZwlrScreencopyFrameV1Client>, flags: ZwlrScreencopyFrameV1Flags) {}
-    public nonisolated func ready(_ proxy: WaylandBorrowedProxy<ZwlrScreencopyFrameV1Client>, tv_sec_hi: UInt32, tv_sec_lo: UInt32, tv_nsec: UInt32) {
-        // Capture is a plain (non-@MainActor) per-capture owner, so onReady is nonisolated state
-        // reached directly — no actor hop, and nothing non-Sendable crosses a boundary.
-        onReady?(0, 0)  // dimensions filled from the buffer event once wired
+    public func flags(_ proxy: WaylandBorrowedProxy<ZwlrScreencopyFrameV1Client>, flags: ZwlrScreencopyFrameV1Flags) {}
+    public func ready(_ proxy: WaylandBorrowedProxy<ZwlrScreencopyFrameV1Client>, tv_sec_hi: UInt32, tv_sec_lo: UInt32, tv_nsec: UInt32) {
+        onReady?(0, 0)
     }
-    public nonisolated func failed(_ proxy: WaylandBorrowedProxy<ZwlrScreencopyFrameV1Client>) {}
-    public nonisolated func damage(_ proxy: WaylandBorrowedProxy<ZwlrScreencopyFrameV1Client>, x: UInt32, y: UInt32, width: UInt32, height: UInt32) {}
-    public nonisolated func linuxDmabuf(_ proxy: WaylandBorrowedProxy<ZwlrScreencopyFrameV1Client>, format: UInt32, width: UInt32, height: UInt32) {}
-    public nonisolated func bufferDone(_ proxy: WaylandBorrowedProxy<ZwlrScreencopyFrameV1Client>) {}
+    public func failed(_ proxy: WaylandBorrowedProxy<ZwlrScreencopyFrameV1Client>) {}
+    public func damage(_ proxy: WaylandBorrowedProxy<ZwlrScreencopyFrameV1Client>, x: UInt32, y: UInt32, width: UInt32, height: UInt32) {}
+    public func linuxDmabuf(_ proxy: WaylandBorrowedProxy<ZwlrScreencopyFrameV1Client>, format: UInt32, width: UInt32, height: UInt32) {}
+    public func bufferDone(_ proxy: WaylandBorrowedProxy<ZwlrScreencopyFrameV1Client>) {}
 }

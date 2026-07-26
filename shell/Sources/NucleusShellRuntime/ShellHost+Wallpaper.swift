@@ -67,7 +67,7 @@ extension ShellHost {
                     "shell: failed to create wallpaper for output \(outputID)")
                 continue
             }
-            let surfaceID = unsafe surfaceRegistry.register(
+            let surfaceID = surfaceRegistry.register(
                 window: window,
                 waylandSurface: layerSurface.wlSurface,
                 refreshMillihertz: output.refreshMillihertz)

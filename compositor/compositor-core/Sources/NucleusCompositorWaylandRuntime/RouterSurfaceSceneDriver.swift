@@ -89,7 +89,7 @@ final class RouterSurfaceSceneDriver {
             return
         }
         defer { requestRedraw(for: surface) }
-        guard let buffer = unsafe commit.buffer?.resource
+        guard let buffer = commit.buffer, buffer.isLive
         else {
             // Capture before releasing the renderer texture. The role callback
             // that follows this scene commit flips `mapped` off and clears input;
@@ -114,50 +114,25 @@ final class RouterSurfaceSceneDriver {
             return
         }
 
-        if let shm = unsafe wl_shm_buffer_get(buffer) {
-            let signedWidth = unsafe wl_shm_buffer_get_width(shm)
-            let signedHeight = unsafe wl_shm_buffer_get_height(shm)
-            let signedStride = unsafe wl_shm_buffer_get_stride(shm)
-            guard signedWidth > 0, signedHeight > 0, signedStride > 0 else {
-                importFailed(surface)
-                return
-            }
-            let width = UInt32(signedWidth)
-            let height = UInt32(signedHeight)
-            let stride = UInt32(signedStride)
-            let (sourceByteCount, sourceByteCountOverflow) =
-                UInt64(stride).multipliedReportingOverflow(by: UInt64(height))
-            guard
-                !sourceByteCountOverflow,
-                let boundedSourceByteCount = Int(exactly: sourceByteCount)
-            else {
-                importFailed(surface)
-                return
-            }
-
-            unsafe wl_shm_buffer_begin_access(shm)
-            defer { unsafe wl_shm_buffer_end_access(shm) }
-            guard
-                let data = unsafe wl_shm_buffer_get_data(shm),
-                let renderService = server.renderService
-            else {
-                importFailed(surface)
-                return
-            }
-            // wl_shm keeps this mapping readable between begin_access and
-            // end_access. Convert the C pointer to a bounded borrow exactly
-            // once; the render service synchronously copies the bytes.
-            let pixels = unsafe Span<UInt8>(
-                _unsafeStart: data.assumingMemoryBound(to: UInt8.self),
-                count: boundedSourceByteCount)
-            let newId = renderService.importShm(
-                previousIOSurfaceID: surface.renderIosurfaceId,
-                width: width,
-                height: height,
-                drmFormat: Self.drmFormat(
-                    fromShm: unsafe wl_shm_buffer_get_format(shm)),
-                stride: stride,
-                pixels: pixels)
+        if buffer.shmMetadata != nil {
+            let newId: UInt32 = unsafe buffer.withShmBytes {
+                metadata, bytes -> UInt32 in
+                guard let data = bytes.baseAddress,
+                    let renderService = server.renderService
+                else { return UInt32(0) }
+                let pixels = unsafe Span<UInt8>(
+                    _unsafeStart:
+                        data.assumingMemoryBound(to: UInt8.self),
+                    count: bytes.count)
+                return renderService.importShm(
+                    previousIOSurfaceID: surface.renderIosurfaceId,
+                    width: UInt32(metadata.width),
+                    height: UInt32(metadata.height),
+                    drmFormat: Self.drmFormat(
+                        fromShm: metadata.format),
+                    stride: UInt32(metadata.stride),
+                    pixels: pixels)
+            } ?? 0
             guard newId != 0 else {
                 importFailed(surface)
                 return
@@ -167,16 +142,24 @@ final class RouterSurfaceSceneDriver {
             // SHM pixels are copied by uploadShm; neither Vulkan nor KMS retains the
             // client allocation after this call.
             surface.releaseCurrentBufferImmediately()
-            if reportedImports.insert(surfaceId).inserted {
-                diagnostic("surface=\(surfaceId) shm=\(width)x\(height) texture=\(newId) generation=\(surface.renderContentGeneration)")
+            if reportedImports.insert(surfaceId).inserted,
+                let metadata = buffer.shmMetadata
+            {
+                diagnostic("surface=\(surfaceId) shm=\(metadata.width)x\(metadata.height) texture=\(newId) generation=\(surface.renderContentGeneration)")
             }
-            recordBufferSize(surfaceId: surfaceId, width: width, height: height)
+            if let metadata = buffer.shmMetadata {
+                recordBufferSize(
+                    surfaceId: surfaceId,
+                    width: UInt32(metadata.width),
+                    height: UInt32(metadata.height))
+            }
             publishContent(surface, commit: commit)
             return
         }
 
-        if let dmabuf = unsafe WaylandResource.owner(
-            of: buffer, as: DmabufBuffer.self) {
+        if let dmabuf = buffer.retainedSemanticOwner(
+            as: DmabufBuffer.self)
+        {
             let attrs = dmabuf.attrs
             // The plane fds are borrowed (owned by DmabufBuffer); the renderer
             // duplicates them before this synchronous call returns.

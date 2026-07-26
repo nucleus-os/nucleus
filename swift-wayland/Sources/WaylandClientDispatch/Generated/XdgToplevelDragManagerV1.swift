@@ -6,3 +6,23 @@ public enum XdgToplevelDragManagerV1Client: WaylandClientInterface {
     public nonisolated(unsafe) static let interface = unsafe swift_wayland_iface_xdg_toplevel_drag_manager_v1()
     public nonisolated static let maximumVersion: UInt32 = 1
 }
+public extension WaylandProxy where Interface == XdgToplevelDragManagerV1Client {
+    func destroy() throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        let _send = { () throws(WaylandProxyError) -> Void in
+            unsafe swift_wayland_client_request_xdg_toplevel_drag_manager_v1_destroy(_proxy)
+            return
+        }
+        try _send()
+        try unsafe invalidateAfterProtocolDestructor()
+    }
+    func getXdgToplevelDrag(data_source: WaylandProxy<WlDataSourceClient>) throws(WaylandProxyError) -> WaylandProxy<XdgToplevelDragV1Client> {
+        let _proxy = try unsafe requireNativeProxy()
+        let _data_sourceProxy = try unsafe data_source.requireNativeProxy()
+        guard let _created = unsafe swift_wayland_client_request_xdg_toplevel_drag_manager_v1_get_xdg_toplevel_drag(_proxy, _data_sourceProxy) else {
+            throw WaylandProxyError.proxyCreationFailed
+        }
+        return unsafe makeOwnedProxy(
+            adopting: _created, XdgToplevelDragV1Client.self)
+    }
+}

@@ -8,8 +8,8 @@
 // report the size → the render backend sizes its swapchain and presents (the WSI does the
 // buffer attach + commit). Resizes re-fire onConfigure.
 
-import WaylandClientC
 public import WaylandClientDispatch
+import WaylandProtocolTypes
 
 public enum LayerShellLayer: UInt32 {
     case background = 0
@@ -83,8 +83,9 @@ public struct LayerSurfaceConfig {
 
 @MainActor
 @safe public final class LayerSurface {
-    public let wlSurface: OpaquePointer
-    public let layerSurface: OpaquePointer
+    public let wlSurface: WaylandProxy<WlSurfaceClient>
+    public let layerSurface:
+        WaylandProxy<ZwlrLayerSurfaceV1Client>
     public let config: LayerSurfaceConfig
     /// The output this panel is on (nil = compositor picks).
     public let output: WaylandOutput?
@@ -103,48 +104,60 @@ public struct LayerSurfaceConfig {
     private var isDestroyed = false
 
     public init?(client: ShellWaylandClient, config: LayerSurfaceConfig, output: WaylandOutput?) {
-        guard let layerShell = unsafe client.proxy(.layerShell),
-              let surface = unsafe client.createSurface() else { return nil }
-        unsafe self.wlSurface = surface
+        guard let layerShell = client.layerShell,
+              let surface = try? client.createSurface()
+        else {
+            return nil
+        }
+        wlSurface = surface
         self.config = config
         self.output = output
 
-        guard let ls = config.namespace.withCString({ nsPtr -> OpaquePointer? in
-            unsafe zwlr_layer_shell_v1_get_layer_surface(
-                layerShell, surface, output?.proxy, config.layer.rawValue, nsPtr)
-        }) else {
-            unsafe wl_surface_destroy(surface)
+        guard let layerSurface = try? layerShell.getLayerSurface(
+            surface: surface,
+            output: output?.proxy,
+            layer: ZwlrLayerShellV1Layer(
+                rawValue: config.layer.rawValue),
+            namespace: config.namespace)
+        else {
+            try? surface.destroy()
             return nil
         }
-        unsafe self.layerSurface = ls
+        self.layerSurface = layerSurface
 
-        unsafe zwlr_layer_surface_v1_set_anchor(ls, config.anchor.rawValue)
-        unsafe zwlr_layer_surface_v1_set_size(ls, config.width, config.height)
-        unsafe zwlr_layer_surface_v1_set_exclusive_zone(
-            ls, config.exclusiveZone)
-        unsafe zwlr_layer_surface_v1_set_keyboard_interactivity(
-            ls, config.keyboard.rawValue)
-
-        installListener()
-        // Commit with no buffer to elicit the initial configure.
-        unsafe wl_surface_commit(surface)
-    }
-
-    private func installListener() {
-        unsafe ZwlrLayerSurfaceV1Client.addListener(layerSurface, owner: self)
+        do {
+            try layerSurface.setAnchor(
+                anchor: ZwlrLayerSurfaceV1Anchor(
+                    rawValue: config.anchor.rawValue))
+            try layerSurface.setSize(
+                width: config.width,
+                height: config.height)
+            try layerSurface.setExclusiveZone(
+                zone: config.exclusiveZone)
+            try layerSurface.setKeyboardInteractivity(
+                keyboard_interactivity:
+                    ZwlrLayerSurfaceV1KeyboardInteractivity(
+                        rawValue: config.keyboard.rawValue))
+            try layerSurface.installListener(self)
+            try surface.commit()
+        } catch {
+            try? layerSurface.destroy()
+            try? surface.destroy()
+            return nil
+        }
     }
 
     /// Update the reserved work area (e.g. when the bar height changes).
     public func setExclusiveZone(_ zone: Int32) {
-        unsafe zwlr_layer_surface_v1_set_exclusive_zone(layerSurface, zone)
-        unsafe wl_surface_commit(wlSurface)
+        try? layerSurface.setExclusiveZone(zone: zone)
+        try? wlSurface.commit()
     }
 
     public func destroy() {
         guard !isDestroyed else { return }
         isDestroyed = true
-        unsafe zwlr_layer_surface_v1_destroy(layerSurface)
-        unsafe wl_surface_destroy(wlSurface)
+        try? layerSurface.destroy()
+        try? wlSurface.destroy()
     }
 
     isolated deinit {
@@ -152,20 +165,15 @@ public struct LayerSurfaceConfig {
     }
 }
 
-// The generated event dispatch is nonisolated (a @convention(c) libwayland callback); the shell
-// pumps wl_display on its main-thread event loop, so each handler reasserts the main actor.
 extension LayerSurface: ZwlrLayerSurfaceV1Events {
-    public nonisolated func configure(_ proxy: WaylandBorrowedProxy<ZwlrLayerSurfaceV1Client>, serial: UInt32, width: UInt32, height: UInt32) {
-        unsafe zwlr_layer_surface_v1_ack_configure(
-            proxy.proxy, serial)
-        MainActor.assumeIsolated {
-            acked = true
-            configuredWidth = width
-            configuredHeight = height
-            onConfigure?(width, height)
-        }
+    public func configure(_ proxy: WaylandBorrowedProxy<ZwlrLayerSurfaceV1Client>, serial: UInt32, width: UInt32, height: UInt32) {
+        try? layerSurface.ackConfigure(serial: serial)
+        acked = true
+        configuredWidth = width
+        configuredHeight = height
+        onConfigure?(width, height)
     }
-    public nonisolated func closed(_ proxy: WaylandBorrowedProxy<ZwlrLayerSurfaceV1Client>) {
-        MainActor.assumeIsolated { onClosed?() }
+    public func closed(_ proxy: WaylandBorrowedProxy<ZwlrLayerSurfaceV1Client>) {
+        onClosed?()
     }
 }

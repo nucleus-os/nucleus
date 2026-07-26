@@ -18,15 +18,7 @@ protocol DecorationDelegate: AnyObject {
     func resolveDecorationMode(for toplevel: XdgToplevel?, clientRequested: UInt32?) -> UInt32
 }
 
-@MainActor
-final class XdgDecorationManagerBinding {
-    unowned let manager: XdgDecorationManager
-    init(_ manager: XdgDecorationManager) { self.manager = manager }
-}
-
-// The zxdg_decoration_manager_v1 request handlers, recovered by
-// ZxdgDecorationManagerV1Server.vtable from the per-resource binding owner.
-extension XdgDecorationManagerBinding: ZxdgDecorationManagerV1Requests {
+extension XdgDecorationManager: ZxdgDecorationManagerV1Requests {
     func getToplevelDecoration(
         _ request: WaylandRequest<ZxdgDecorationManagerV1Server>,
         id: WlNewId<ZxdgToplevelDecorationV1Server>,
@@ -34,16 +26,15 @@ extension XdgDecorationManagerBinding: ZxdgDecorationManagerV1Requests {
     ) {
         guard let toplevel = toplevelRes.owner(as: XdgToplevel.self) else { return }
         guard toplevel.decoration == nil else {
-            request.postError(
-                ZxdgToplevelDecorationV1Error.alreadyConstructed,
+            request.postToplevelDecorationAlreadyConstructedError(
                 message: "xdg_toplevel already has a decoration object")
             return
         }
-        _ = unsafe id.create(
+        _ = id.create(
             owner: { handle in
                 XdgToplevelDecoration(
                     resource: handle,
-                    manager: manager,
+                    manager: self,
                     toplevel: toplevel)
             },
             installed: { decoration in
@@ -63,10 +54,7 @@ extension XdgDecorationManagerBinding: ZxdgDecorationManagerV1Requests {
         router.addGlobal(
             ZxdgDecorationManagerV1Server.global(
                 implementation: self,
-                advertisedVersion: 2,
-                owner: { manager, _ in
-                    XdgDecorationManagerBinding(manager)
-                }))
+                advertisedVersion: 2))
     }
 }
 

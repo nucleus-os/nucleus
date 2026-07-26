@@ -17,12 +17,6 @@ protocol XdgActivationDelegate: AnyObject {
 }
 
 @MainActor
-@safe final class XdgActivationBinding {
-    unowned let manager: XdgActivationManager
-    init(_ manager: XdgActivationManager) { self.manager = manager }
-}
-
-@MainActor
 @safe final class XdgActivationManager {
     weak var delegate: (any XdgActivationDelegate)?
     weak var seat: WlSeat?
@@ -37,10 +31,7 @@ protocol XdgActivationDelegate: AnyObject {
     func register(in router: NucleusWaylandRouter) {
         router.addGlobal(
             XdgActivationV1Server.global(
-                implementation: self,
-                owner: { manager, _ in
-                    XdgActivationBinding(manager)
-                }))
+                implementation: self))
     }
 
     func mintToken(authorized: Bool) -> String {
@@ -78,21 +69,21 @@ protocol XdgActivationDelegate: AnyObject {
 
 }
 
-extension XdgActivationBinding: XdgActivationV1Requests {
+extension XdgActivationManager: XdgActivationV1Requests {
     func getActivationToken(
         _ request: WaylandRequest<XdgActivationV1Server>,
         id: WlNewId<XdgActivationTokenV1Server>
     ) {
-        _ = unsafe id.create { handle in
-            XdgActivationToken(resource: handle, manager: manager)
+        _ = id.create { handle in
+            XdgActivationToken(resource: handle, manager: self)
         }
     }
 
     func activate(_ request: WaylandRequest<XdgActivationV1Server>, token: String,
-                  surface surfaceRes: WaylandBorrowedObject<WlSurfaceServer>) {
+        surface surfaceRes: WaylandBorrowedObject<WlSurfaceServer>) {
         let surface = surfaceRes.owner(as: WlSurface.self)
-        guard surface != nil, manager.consumeToken(token) else { return }
-        manager.delegate?.activateSurface(surface, token: token)
+        guard surface != nil, consumeToken(token) else { return }
+        delegate?.activateSurface(surface, token: token)
     }
 }
 
@@ -155,12 +146,11 @@ extension XdgActivationToken: XdgActivationTokenV1Requests {
         let authorized: Bool
         if let serial, let seat, let managerSeat = manager.seat,
             seat === managerSeat, let surface,
-            let surfaceResource = unsafe surface.resource,
-            let client = unsafe wl_resource_get_client(surfaceResource)
+            let clientID = surface.protocolResource?.clientID
         {
-            authorized = unsafe seat.authorize(
+            authorized = seat.authorize(
                 serial: serial,
-                clientKey: WlSeat.clientKey(client),
+                clientKey: clientID,
                 surfaceID: surface.objectId,
                 kinds: [.pointerButton, .touchDown, .keyboardKey])
         } else {

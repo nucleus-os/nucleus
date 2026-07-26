@@ -6,6 +6,40 @@ public enum ZxdgShellV6Client: WaylandClientInterface {
     public nonisolated(unsafe) static let interface = unsafe swift_wayland_iface_zxdg_shell_v6()
     public nonisolated static let maximumVersion: UInt32 = 1
 }
+public extension WaylandProxy where Interface == ZxdgShellV6Client {
+    func destroy() throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        let _send = { () throws(WaylandProxyError) -> Void in
+            unsafe swift_wayland_client_request_zxdg_shell_v6_destroy(_proxy)
+            return
+        }
+        try _send()
+        try unsafe invalidateAfterProtocolDestructor()
+    }
+    func createPositioner() throws(WaylandProxyError) -> WaylandProxy<ZxdgPositionerV6Client> {
+        let _proxy = try unsafe requireNativeProxy()
+        guard let _created = unsafe swift_wayland_client_request_zxdg_shell_v6_create_positioner(_proxy) else {
+            throw WaylandProxyError.proxyCreationFailed
+        }
+        return unsafe makeOwnedProxy(
+            adopting: _created, ZxdgPositionerV6Client.self)
+    }
+    func getXdgSurface(surface: WaylandProxy<WlSurfaceClient>) throws(WaylandProxyError) -> WaylandProxy<ZxdgSurfaceV6Client> {
+        let _proxy = try unsafe requireNativeProxy()
+        let _surfaceProxy = try unsafe surface.requireNativeProxy()
+        guard let _created = unsafe swift_wayland_client_request_zxdg_shell_v6_get_xdg_surface(_proxy, _surfaceProxy) else {
+            throw WaylandProxyError.proxyCreationFailed
+        }
+        return unsafe makeOwnedProxy(
+            adopting: _created, ZxdgSurfaceV6Client.self)
+    }
+    func pong(serial: UInt32) throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        unsafe swift_wayland_client_request_zxdg_shell_v6_pong(_proxy, serial)
+        return
+    }
+}
+@MainActor
 public protocol ZxdgShellV6Events: AnyObject {
     func ping(_ proxy: WaylandBorrowedProxy<ZxdgShellV6Client>, serial: UInt32)
 }
@@ -16,18 +50,29 @@ public extension ZxdgShellV6Client {
         unsafe p.pointee.ping = ping_impl
         return unsafe p
     }()
-    /// Wire the listener to a proxy. The owner is borrowed (unretained); the caller must keep it alive for the proxy's lifetime, matching libwayland's user_data contract.
-    @discardableResult
-    static func addListener(_ proxy: OpaquePointer, owner: AnyObject) -> Int32 {
-        unsafe zxdg_shell_v6_add_listener(proxy, listener, Unmanaged.passUnretained(owner).toOpaque())
-    }
-    private static func handler(_ data: UnsafeMutableRawPointer) -> any ZxdgShellV6Events? {
-        unsafe Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? any ZxdgShellV6Events
+    private static func handler(_ context: WaylandClientListenerContext) -> any ZxdgShellV6Events? {
+        context.owner as? any ZxdgShellV6Events
     }
     private static let ping_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, serial in
-        guard let data = unsafe data, let proxy = unsafe proxy, let h = unsafe handler(data) else {
+        guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
-        unsafe h.ping(WaylandBorrowedProxy<ZxdgShellV6Client>(proxy), serial: serial)
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
+        }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        MainActor.assumeIsolated {
+            unsafe eventHandler.ping(WaylandBorrowedProxy<ZxdgShellV6Client>(eventProxy), serial: serial)
+        }
+    }
+}
+public extension WaylandProxy where Interface == ZxdgShellV6Client {
+    func installListener(_ owner: any ZxdgShellV6Events) throws(WaylandProxyError) {
+        try unsafe installListener(owner: owner) { proxy, data in
+            unsafe zxdg_shell_v6_add_listener(proxy, ZxdgShellV6Client.listener, data)
+        }
     }
 }

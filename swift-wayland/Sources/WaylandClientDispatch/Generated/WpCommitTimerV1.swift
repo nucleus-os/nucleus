@@ -6,3 +6,19 @@ public enum WpCommitTimerV1Client: WaylandClientInterface {
     public nonisolated(unsafe) static let interface = unsafe swift_wayland_iface_wp_commit_timer_v1()
     public nonisolated static let maximumVersion: UInt32 = 1
 }
+public extension WaylandProxy where Interface == WpCommitTimerV1Client {
+    func setTimestamp(tv_sec_hi: UInt32, tv_sec_lo: UInt32, tv_nsec: UInt32) throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        unsafe swift_wayland_client_request_wp_commit_timer_v1_set_timestamp(_proxy, tv_sec_hi, tv_sec_lo, tv_nsec)
+        return
+    }
+    func destroy() throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        let _send = { () throws(WaylandProxyError) -> Void in
+            unsafe swift_wayland_client_request_wp_commit_timer_v1_destroy(_proxy)
+            return
+        }
+        try _send()
+        try unsafe invalidateAfterProtocolDestructor()
+    }
+}

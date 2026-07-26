@@ -8,8 +8,8 @@ import WaylandServerC
 /// The native pointers remain valid until this owner deinitializes; every
 /// operation is serialized by the caller on the Wayland event-loop thread.
 @safe public final class WaylandDisplay {
-    public let display: OpaquePointer
-    public let eventLoop: OpaquePointer
+    package let display: OpaquePointer
+    package let eventLoop: OpaquePointer
 
     public init?() {
         guard let display = unsafe wl_display_create() else { return nil }
@@ -61,6 +61,10 @@ import WaylandServerC
 
     public func flushClients() {
         unsafe wl_display_flush_clients(display)
+    }
+
+    public func nextSerial() -> UInt32 {
+        unsafe wl_display_next_serial(display)
     }
 
     deinit {

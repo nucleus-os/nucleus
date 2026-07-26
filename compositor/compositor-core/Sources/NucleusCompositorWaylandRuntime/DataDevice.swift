@@ -80,7 +80,7 @@ private final class WeakSelectionObserver {
     fileprivate unowned let dataExchange: DataExchangeService
 
     private var devices: [WeakReference<WlDataDevice>] = []
-    private var display: OpaquePointer?
+    private let display: WaylandDisplay
     private var activeDrag: ActiveWaylandDrag?
     var dragActive: Bool { activeDrag != nil }
     /// The current clipboard selection source (held weakly — owned by its resource).
@@ -100,11 +100,13 @@ private final class WeakSelectionObserver {
     init(
         compositor: WlCompositor,
         host: RouterHost,
-        dataExchange: DataExchangeService
+        dataExchange: DataExchangeService,
+        display: WaylandDisplay
     ) {
         self.compositor = compositor
         self.host = host
         self.dataExchange = dataExchange
+        self.display = display
     }
 
     func addSelectionObserver(_ observer: any SelectionObserver) {
@@ -118,9 +120,7 @@ private final class WeakSelectionObserver {
         router.addGlobal(
             WlDataDeviceManagerServer.global(
                 implementation: self,
-                advertisedVersion: 3,
-                owner: { manager, _ in manager }))
-        unsafe display = router.display.display
+                advertisedVersion: 3))
     }
 
     fileprivate func addDevice(_ device: WlDataDevice) {
@@ -219,9 +219,7 @@ private final class WeakSelectionObserver {
         let surface = surfaceID == 0
             ? nil
             : compositor.surface(id: UInt32(truncatingIfNeeded: surfaceID))
-        let targetClientKey = unsafe surface?.resource
-            .flatMap(wl_resource_get_client)
-            .map(WlSeat.clientKey)
+        let targetClientKey = surface?.protocolResource?.clientID
         let permittedSurface: WlSurface?
         if drag.source == nil,
             targetClientKey != drag.initiatingClientKey
@@ -325,7 +323,7 @@ private final class WeakSelectionObserver {
         }
         drag.targetSurfaceID = surface.objectId
         drag.targetDevices = targets.map(WeakReference.init)
-        let serial = unsafe display.map(wl_display_next_serial) ?? 0
+        let serial = display.nextSerial()
         for device in targets {
             let offer = drag.source.flatMap {
                 device.makeDragOffer(source: $0, manager: self)
@@ -362,12 +360,12 @@ extension WlDataDeviceManager: WlDataDeviceManagerRequests {
         _ request: WaylandRequest<WlDataDeviceManagerServer>,
         id: WlNewId<WlDataSourceServer>
     ) {
-        _ = unsafe id.create(
+        _ = id.create(
             owner: { handle in
-                unsafe WlDataSource(
+                WlDataSource(
                     resource: handle,
                     manager: self,
-                    clientKey: WlSeat.clientKey(id.client))
+                    clientKey: id.clientID)
             },
             installed: { source in
                 source.installed()
@@ -380,15 +378,15 @@ extension WlDataDeviceManager: WlDataDeviceManagerRequests {
         id: WlNewId<WlDataDeviceServer>,
                        seat: WaylandBorrowedObject<WlSeatServer>) {
         guard let binding = seat.owner(as: SeatBinding.self),
-            unsafe wl_resource_get_client(seat.resource) == id.client
+            seat.clientID == id.clientID
         else { return }
-        _ = unsafe id.create(
+        _ = id.create(
             owner: { handle in
-                unsafe WlDataDevice(
+                WlDataDevice(
                     resource: handle,
                     manager: self,
                     seat: binding.seat,
-                    clientKey: WlSeat.clientKey(id.client))
+                    clientKey: id.clientID)
             },
             installed: { device in
                 self.addDevice(device)
@@ -411,9 +409,6 @@ extension WlDataDeviceManager: WlDataDeviceManagerRequests {
     private(set) var mimes: [String] = []
     private(set) var actions: UInt32 = 0
     private let resourceHandle: WaylandResourceHandle<WlDataSourceServer>
-    @unsafe fileprivate var resource: UnsafeMutablePointer<wl_resource>? {
-        unsafe resourceHandle.resource
-    }
     private var use: Use = .unused
     private var actionsSet = false
 
@@ -440,7 +435,7 @@ extension WlDataDeviceManager: WlDataDeviceManagerRequests {
         dataExchange.registerSourceEvents(
                 handle,
                 onSend: { mime, fd in
-                    guard unsafe resourceHandle.resource != nil else {
+                    guard resourceHandle.isLive else {
                         if fd >= 0 { close(fd) }
                         return
                     }
@@ -455,7 +450,7 @@ extension WlDataDeviceManager: WlDataDeviceManagerRequests {
     /// Relay a receiving client's fd to this source as a `send` event; the source
     /// client writes the data and closes the fd. The server owns the relayed fd.
     fileprivate func send(mime: String, fd: Int32) {
-        guard unsafe resourceHandle.resource != nil else {
+        guard resourceHandle.isLive else {
             if fd >= 0 { close(fd) }
             return
         }
@@ -556,9 +551,6 @@ extension WlDataSource: SelectionSource {
     private let resourceHandle: WaylandResourceHandle<WlDataOfferServer>
     fileprivate var protocolResource:
         WaylandResourceHandle<WlDataOfferServer> { resourceHandle }
-    @unsafe var resource: UnsafeMutablePointer<wl_resource>? {
-        unsafe resourceHandle.resource
-    }
     private(set) var version: Int32
     fileprivate var acceptedMimeType: String?
     private var selectedAction: UInt32 = 0
@@ -672,9 +664,6 @@ extension WlDataOffer: WlDataOfferRequests {
     private let resourceHandle: WaylandResourceHandle<WlDataDeviceServer>
     fileprivate var protocolResource:
         WaylandResourceHandle<WlDataDeviceServer> { resourceHandle }
-    @unsafe fileprivate var resource: UnsafeMutablePointer<wl_resource>? {
-        unsafe resourceHandle.resource
-    }
 
     init(
         resource: WaylandResourceHandle<WlDataDeviceServer>,
@@ -690,21 +679,15 @@ extension WlDataOffer: WlDataOfferRequests {
     /// Emit data_offer + offer(mime)* + selection(offer) for `source`, or
     /// selection(null) to clear.
     fileprivate func sendSelectionOffer(_ source: (any SelectionSource)?) {
-        guard let deviceRes = unsafe resource,
-            let client = unsafe wl_resource_get_client(deviceRes)
-        else { return }
         guard let source else {
             resourceHandle.sendSelection(id: nil)
             return
         }
-        _ = unsafe WlDataOfferServer.createResource(
-            client: client,
-            version: Int32(wl_resource_get_version(deviceRes)),
+        _ = resourceHandle.createDataOffer(
             owner: { handle in
                 WlDataOffer(resource: handle, source: source)
             },
             installed: { offer in
-                resourceHandle.sendDataOffer(id: offer.protocolResource)
                 for mime in source.selectionMimeTypes {
                     offer.protocolResource.sendOffer(mime_type: mime)
                 }
@@ -716,18 +699,12 @@ extension WlDataOffer: WlDataOfferRequests {
         source: WlDataSource,
         manager: WlDataDeviceManager
     ) -> WlDataOffer? {
-        guard let deviceRes = unsafe resource,
-            let client = unsafe wl_resource_get_client(deviceRes)
-        else { return nil }
-        return unsafe WlDataOfferServer.createResource(
-            client: client,
-            version: Int32(wl_resource_get_version(deviceRes)),
+        resourceHandle.createDataOffer(
             owner: { handle in
                 WlDataOffer(
                     resource: handle, source: source, manager: manager)
             },
             installed: { offer in
-                resourceHandle.sendDataOffer(id: offer.protocolResource)
                 for mime in source.mimes {
                     offer.protocolResource.sendOffer(mime_type: mime)
                 }

@@ -6,3 +6,16 @@ public enum ZwpInputPanelSurfaceV1Client: WaylandClientInterface {
     public nonisolated(unsafe) static let interface = unsafe swift_wayland_iface_zwp_input_panel_surface_v1()
     public nonisolated static let maximumVersion: UInt32 = 1
 }
+public extension WaylandProxy where Interface == ZwpInputPanelSurfaceV1Client {
+    func setToplevel(output: WaylandProxy<WlOutputClient>, position: UInt32) throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        let _outputProxy = try unsafe output.requireNativeProxy()
+        unsafe swift_wayland_client_request_zwp_input_panel_surface_v1_set_toplevel(_proxy, _outputProxy, position)
+        return
+    }
+    func setOverlayPanel() throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        unsafe swift_wayland_client_request_zwp_input_panel_surface_v1_set_overlay_panel(_proxy)
+        return
+    }
+}

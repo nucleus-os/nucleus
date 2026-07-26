@@ -62,9 +62,9 @@ public final class WaylandRouterRuntime {
         // Protocol impls.
         let compositor = WlCompositor(host: host)
         let subcompositor = WlSubcompositor()
-        let seat = WlSeat(host: host)
-        let xdgShell = XdgShell()
-        let layerShell = ZwlrLayerShell()
+        let seat = WlSeat(host: host, display: router.display)
+        let xdgShell = XdgShell(display: router.display)
+        let layerShell = ZwlrLayerShell(display: router.display)
         let xdgOutput = XdgOutputManager()
         let cursorShape = CursorShapeManager()
         let decoration = XdgDecorationManager()
@@ -83,11 +83,13 @@ public final class WaylandRouterRuntime {
         let dataDevice = WlDataDeviceManager(
             compositor: compositor,
             host: host,
-            dataExchange: host.server.dataExchange)
+            dataExchange: host.server.dataExchange,
+            display: router.display)
         seat.dataDeviceManager = dataDevice
         let textInputManager = TextInputManagerV3(seat: seat)
         seat.textInputManager = textInputManager
-        let sessionLock = SessionLockManager()
+        let sessionLock = SessionLockManager(
+            display: router.display)
         let relativePointer = RelativePointerManager()
         let pointerConstraints = PointerConstraintsManager()
         // Xwayland surface association. Dormant until Xwayland attaches to the

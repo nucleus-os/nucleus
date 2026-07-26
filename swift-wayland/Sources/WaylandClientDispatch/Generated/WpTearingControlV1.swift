@@ -6,3 +6,20 @@ public enum WpTearingControlV1Client: WaylandClientInterface {
     public nonisolated(unsafe) static let interface = unsafe swift_wayland_iface_wp_tearing_control_v1()
     public nonisolated static let maximumVersion: UInt32 = 1
 }
+public import WaylandProtocolTypes
+public extension WaylandProxy where Interface == WpTearingControlV1Client {
+    func setPresentationHint(hint: WpTearingControlV1PresentationHint) throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        unsafe swift_wayland_client_request_wp_tearing_control_v1_set_presentation_hint(_proxy, hint.rawValue)
+        return
+    }
+    func destroy() throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        let _send = { () throws(WaylandProxyError) -> Void in
+            unsafe swift_wayland_client_request_wp_tearing_control_v1_destroy(_proxy)
+            return
+        }
+        try _send()
+        try unsafe invalidateAfterProtocolDestructor()
+    }
+}

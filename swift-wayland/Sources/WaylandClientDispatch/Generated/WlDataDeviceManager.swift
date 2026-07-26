@@ -6,3 +6,35 @@ public enum WlDataDeviceManagerClient: WaylandClientInterface {
     public nonisolated(unsafe) static let interface = unsafe swift_wayland_iface_wl_data_device_manager()
     public nonisolated static let maximumVersion: UInt32 = 4
 }
+public extension WaylandProxy where Interface == WlDataDeviceManagerClient {
+    func createDataSource() throws(WaylandProxyError) -> WaylandProxy<WlDataSourceClient> {
+        let _proxy = try unsafe requireNativeProxy()
+        guard let _created = unsafe swift_wayland_client_request_wl_data_device_manager_create_data_source(_proxy) else {
+            throw WaylandProxyError.proxyCreationFailed
+        }
+        return unsafe makeOwnedProxy(
+            adopting: _created, WlDataSourceClient.self)
+    }
+    func getDataDevice(seat: WaylandProxy<WlSeatClient>) throws(WaylandProxyError) -> WaylandProxy<WlDataDeviceClient> {
+        let _proxy = try unsafe requireNativeProxy()
+        let _seatProxy = try unsafe seat.requireNativeProxy()
+        guard let _created = unsafe swift_wayland_client_request_wl_data_device_manager_get_data_device(_proxy, _seatProxy) else {
+            throw WaylandProxyError.proxyCreationFailed
+        }
+        return unsafe makeOwnedProxy(
+            adopting: _created, WlDataDeviceClient.self)
+    }
+    func release() throws(WaylandProxyError) {
+        guard version >= 4 else {
+            throw .unsupportedVersion(
+                required: 4, actual: version)
+        }
+        let _proxy = try unsafe requireNativeProxy()
+        let _send = { () throws(WaylandProxyError) -> Void in
+            unsafe swift_wayland_client_request_wl_data_device_manager_release(_proxy)
+            return
+        }
+        try _send()
+        try unsafe invalidateAfterProtocolDestructor()
+    }
+}

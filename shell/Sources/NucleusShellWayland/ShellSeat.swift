@@ -11,7 +11,6 @@
 // records and the runtime translates them, the same tier split the compositor's
 // overlay adapter uses.
 
-import WaylandClientC
 public import WaylandClientDispatch
 import WaylandProtocolTypes
 import WaylandClient
@@ -104,13 +103,13 @@ public protocol ShellSeatDelegate: AnyObject {
     public private(set) var repeatRateHz: Int32 = 25
     public private(set) var repeatDelayMs: Int32 = 600
 
-    private let seat: OpaquePointer
+    private let seat: WaylandProxy<WlSeatClient>
     private let client: ShellWaylandClient
 
     /// Borrowed seat proxy used to create seat-scoped protocol extensions.
-    public var protocolSeat: OpaquePointer { unsafe seat }
-    private var pointer: OpaquePointer?
-    private var keyboard: OpaquePointer?
+    public var protocolSeat: WaylandProxy<WlSeatClient> { seat }
+    private var pointer: WaylandProxy<WlPointerClient>?
+    private var keyboard: WaylandProxy<WlKeyboardClient>?
     // Retained for the proxies' lifetime: `addListener` borrows its owner.
     private var pointerListener: ShellPointerListener?
     private var keyboardListener: ShellKeyboardListener?
@@ -122,7 +121,8 @@ public protocol ShellSeatDelegate: AnyObject {
     /// `wp_cursor_shape_device_v1` for this seat's pointer, when the compositor
     /// offers the protocol. Absent is normal: a compositor without it simply
     /// keeps whatever cursor it was already showing.
-    private var cursorShapeDevice: OpaquePointer?
+    private var cursorShapeDevice:
+        WaylandProxy<WpCursorShapeDeviceV1Client>?
     /// The serial of the last `wl_pointer.enter`. `set_shape` must quote it —
     /// the compositor rejects a cursor request that does not name the enter that
     /// gave this client the pointer.
@@ -146,13 +146,14 @@ public protocol ShellSeatDelegate: AnyObject {
     /// The cursor-shape manager, captured at bring-up. `nil` when the compositor
     /// does not offer the protocol, which the cursor path treats as "leave the
     /// cursor alone" rather than as an error.
-    private let cursorShapeManager: OpaquePointer?
+    private let cursorShapeManager:
+        WaylandProxy<WpCursorShapeManagerV1Client>?
 
     public init?(client: ShellWaylandClient) {
-        guard let seat = unsafe client.proxy(.seat) else { return nil }
-        unsafe self.seat = seat
+        guard let seat = client.seat else { return nil }
+        self.seat = seat
         self.client = client
-        unsafe cursorShapeManager = client.proxy(.cursorShape)
+        cursorShapeManager = client.cursorShape
         guard client.attachSeatConsumer(self) else { return nil }
         // Do not allocate native state until the unretained Wayland listener
         // owner has been accepted. A failed class initializer does not run this
@@ -160,10 +161,11 @@ public protocol ShellSeatDelegate: AnyObject {
         unsafe xkbContext = xkb_context_new(XKB_CONTEXT_NO_FLAGS)
     }
 
-    private func bindCursorShapeDevice(for pointer: OpaquePointer) {
-        guard let manager = unsafe cursorShapeManager else { return }
-        unsafe cursorShapeDevice =
-            wp_cursor_shape_manager_v1_get_pointer(manager, pointer)
+    private func bindCursorShapeDevice(
+        for pointer: WaylandProxy<WlPointerClient>
+    ) {
+        guard let manager = cursorShapeManager else { return }
+        cursorShapeDevice = try? manager.getPointer(pointer: pointer)
     }
 
     // `isolated deinit`: the xkb handles are @MainActor-confined state, so the
@@ -171,15 +173,9 @@ public protocol ShellSeatDelegate: AnyObject {
     // boundary with non-Sendable pointers.
     isolated deinit {
         client.detachSeatConsumer(self)
-        if let cursorShapeDevice = unsafe cursorShapeDevice {
-            unsafe wp_cursor_shape_device_v1_destroy(cursorShapeDevice)
-        }
-        if let pointer = unsafe pointer {
-            unsafe wl_pointer_release(pointer)
-        }
-        if let keyboard = unsafe keyboard {
-            unsafe wl_keyboard_release(keyboard)
-        }
+        try? cursorShapeDevice?.destroy()
+        try? pointer?.release()
+        try? keyboard?.release()
         if let xkbState = unsafe xkbState {
             unsafe xkb_state_unref(xkbState)
         }
@@ -252,9 +248,13 @@ public protocol ShellSeatDelegate: AnyObject {
 
     // MARK: - Keymap
 
-    func applyKeymap(format: UInt32, fd: Int32, size: UInt32) {
+    func applyKeymap(
+        format: WlKeyboardKeymapFormat,
+        fd: Int32,
+        size: UInt32
+    ) {
         defer { close(fd) }
-        guard format == UInt32(WL_KEYBOARD_KEYMAP_FORMAT_XKB_V1.rawValue) else { return }
+        guard format == .xkbV1 else { return }
         guard let mapped = unsafe nucleus_shell_map_keymap_fd(fd, size) else {
             return
         }
@@ -339,44 +339,42 @@ public protocol ShellSeatDelegate: AnyObject {
         return event
     }
 
-    func bindPointerIfNeeded(_ capabilities: UInt32) {
-        let hasPointer = capabilities & UInt32(WL_SEAT_CAPABILITY_POINTER.rawValue) != 0
-        let pointerIsNil = unsafe pointer == nil
+    func bindPointerIfNeeded(_ capabilities: WlSeatCapability) {
+        let hasPointer = capabilities.contains(.pointer)
+        let pointerIsNil = pointer == nil
         if hasPointer, pointerIsNil {
-            unsafe pointer = wl_seat_get_pointer(seat)
+            pointer = try? seat.getPointer()
             let listener = ShellPointerListener(seat: self)
             pointerListener = listener
-            if let pointer = unsafe pointer {
-                _ = unsafe WlPointerClient.addListener(
-                    pointer, owner: listener)
-                unsafe bindCursorShapeDevice(for: pointer)
+            if let pointer {
+                try? pointer.installListener(listener)
+                bindCursorShapeDevice(for: pointer)
             }
-        } else if !hasPointer, let existing = unsafe pointer {
-            if let device = unsafe cursorShapeDevice {
-                unsafe wp_cursor_shape_device_v1_destroy(device)
-                unsafe cursorShapeDevice = nil
+        } else if !hasPointer, let existing = pointer {
+            if let device = cursorShapeDevice {
+                try? device.destroy()
+                cursorShapeDevice = nil
             }
-            unsafe wl_pointer_release(existing)
-            unsafe pointer = nil
+            try? existing.release()
+            pointer = nil
             pointerListener = nil
             pointerEnterSerial = 0
         }
     }
 
-    func bindKeyboardIfNeeded(_ capabilities: UInt32) {
-        let hasKeyboard = capabilities & UInt32(WL_SEAT_CAPABILITY_KEYBOARD.rawValue) != 0
-        let keyboardIsNil = unsafe keyboard == nil
+    func bindKeyboardIfNeeded(_ capabilities: WlSeatCapability) {
+        let hasKeyboard = capabilities.contains(.keyboard)
+        let keyboardIsNil = keyboard == nil
         if hasKeyboard, keyboardIsNil {
-            unsafe keyboard = wl_seat_get_keyboard(seat)
+            keyboard = try? seat.getKeyboard()
             let listener = ShellKeyboardListener(seat: self)
             keyboardListener = listener
-            if let keyboard = unsafe keyboard {
-                _ = unsafe WlKeyboardClient.addListener(
-                    keyboard, owner: listener)
+            if let keyboard {
+                try? keyboard.installListener(listener)
             }
-        } else if !hasKeyboard, let existing = unsafe keyboard {
-            unsafe wl_keyboard_release(existing)
-            unsafe keyboard = nil
+        } else if !hasKeyboard, let existing = keyboard {
+            try? existing.release()
+            keyboard = nil
             keyboardListener = nil
             cancelKeyRepeat()
         }
@@ -407,10 +405,12 @@ public protocol ShellSeatDelegate: AnyObject {
     public func setCursor(_ shape: ShellCursorShape) {
         guard shape != currentCursor else { return }
         currentCursor = shape
-        guard let device = unsafe cursorShapeDevice,
+        guard let device = cursorShapeDevice,
               pointerEnterSerial != 0 else { return }
-        unsafe wp_cursor_shape_device_v1_set_shape(
-            device, pointerEnterSerial, shape.rawValue)
+        try? device.setShape(
+            serial: pointerEnterSerial,
+            shape: WpCursorShapeDeviceV1Shape(
+                rawValue: shape.rawValue))
     }
 
     func noteKeyboardSurface(_ surfaceID: UInt) {
@@ -456,11 +456,11 @@ public protocol ShellSeatDelegate: AnyObject {
     /// `wl_data_device.start_drag`. It is intentionally one-shot, matching the
     /// compositor's serial ledger.
     public func takeDragAuthorization(
-        for surface: OpaquePointer
+        for surface: WaylandProxy<WlSurfaceClient>
     ) -> ShellDragAuthorization? {
         guard !pressedPointerButtons.isEmpty,
               let authorization = dragAuthorization,
-              authorization.surface == UInt(bitPattern: surface)
+              authorization.surface == surface.identity
         else {
             return nil
         }
@@ -521,15 +521,10 @@ public protocol ShellSeatDelegate: AnyObject {
     }
 }
 
-// The generated event dispatch is nonisolated (a @convention(c) libwayland
-// callback); the shell pumps wl_display on its main-thread event loop, so each
-// handler reasserts the main actor.
-//
 // Pointer and keyboard get their own listener owners rather than both hanging
 // off `ShellSeat`: `wl_pointer.leave` and `wl_keyboard.leave` have identical
 // Swift signatures, so one type cannot conform to both protocols. The seat owns
-// these boxes for the proxies' lifetime, which is also what `addListener`'s
-// unretained owner requires.
+// these boxes for the proxies' lifetime.
 @MainActor
 final class ShellPointerListener: WlPointerEvents {
     // Unowned: the seat owns this box, so it cannot outlive the seat.
@@ -539,148 +534,131 @@ final class ShellPointerListener: WlPointerEvents {
         self.seat = seat
     }
 
-    nonisolated func enter(
+    func enter(
         _ proxy: WaylandBorrowedProxy<WlPointerClient>, serial: UInt32,
         surface: WaylandBorrowedProxy<WlSurfaceClient>,
         surface_x: Double, surface_y: Double
     ) {
-        let surfaceID = unsafe UInt(bitPattern: surface.proxy)
-        MainActor.assumeIsolated {
-            seat.notePointerSurface(surfaceID)
-            seat.notePointerEnterSerial(serial)
-            seat.notePointerPosition(x: surface_x, y: surface_y)
-            var event = seat.makeEvent(.pointerEnter)
-            event.surface = seat.currentPointerSurface
-            event.x = surface_x
-            event.y = surface_y
-            event.activeButtonCodes = seat.currentPointerButtons
-            seat.emit(event)
-        }
+        seat.notePointerSurface(surface.identity)
+        seat.notePointerEnterSerial(serial)
+        seat.notePointerPosition(x: surface_x, y: surface_y)
+        var event = seat.makeEvent(.pointerEnter)
+        event.surface = seat.currentPointerSurface
+        event.x = surface_x
+        event.y = surface_y
+        event.activeButtonCodes = seat.currentPointerButtons
+        seat.emit(event)
     }
 
-    nonisolated func leave(
+    func leave(
         _ proxy: WaylandBorrowedProxy<WlPointerClient>, serial: UInt32,
         surface: WaylandBorrowedProxy<WlSurfaceClient>
     ) {
-        let surfaceID = unsafe UInt(bitPattern: surface.proxy)
-        MainActor.assumeIsolated {
-            var event = seat.makeEvent(.pointerLeave)
-            event.surface = surfaceID
-            seat.emit(event)
-            seat.clearPointerButtons()
-            seat.notePointerSurface(0)
-        }
+        var event = seat.makeEvent(.pointerLeave)
+        event.surface = surface.identity
+        seat.emit(event)
+        seat.clearPointerButtons()
+        seat.notePointerSurface(0)
     }
 
-    nonisolated func motion(
+    func motion(
         _ proxy: WaylandBorrowedProxy<WlPointerClient>, time: UInt32, surface_x: Double, surface_y: Double
     ) {
-        MainActor.assumeIsolated {
-            seat.notePointerPosition(x: surface_x, y: surface_y)
-            var event = seat.makeEvent(.pointerMotion)
-            event.surface = seat.currentPointerSurface
-            event.x = surface_x
-            event.y = surface_y
-            event.activeButtonCodes = seat.currentPointerButtons
-            seat.emit(event)
-        }
+        seat.notePointerPosition(x: surface_x, y: surface_y)
+        var event = seat.makeEvent(.pointerMotion)
+        event.surface = seat.currentPointerSurface
+        event.x = surface_x
+        event.y = surface_y
+        event.activeButtonCodes = seat.currentPointerButtons
+        seat.emit(event)
     }
 
-    nonisolated func button(
+    func button(
         _ proxy: WaylandBorrowedProxy<WlPointerClient>, serial: UInt32,
         time: UInt32, button: UInt32, state: WlPointerButtonState
     ) {
-        MainActor.assumeIsolated {
-            let pressed = state == .pressed
-            seat.notePointerButton(button, pressed: pressed)
-            if pressed {
-                seat.noteDragAuthorization(serial: serial)
-            }
-            var event = seat.makeEvent(pressed ? .pointerButtonDown : .pointerButtonUp)
-            event.surface = seat.currentPointerSurface
-            event.button = button
-            event.x = seat.pointerPosition.x
-            event.y = seat.pointerPosition.y
-            event.activeButtonCodes = seat.currentPointerButtons
-            seat.emit(event)
+        let pressed = state == .pressed
+        seat.notePointerButton(button, pressed: pressed)
+        if pressed {
+            seat.noteDragAuthorization(serial: serial)
         }
+        var event = seat.makeEvent(
+            pressed ? .pointerButtonDown : .pointerButtonUp)
+        event.surface = seat.currentPointerSurface
+        event.button = button
+        event.x = seat.pointerPosition.x
+        event.y = seat.pointerPosition.y
+        event.activeButtonCodes = seat.currentPointerButtons
+        seat.emit(event)
     }
 
-    nonisolated func axis(
+    func axis(
         _ proxy: WaylandBorrowedProxy<WlPointerClient>, time: UInt32,
         axis: WlPointerAxis, value: Double
     ) {
-        MainActor.assumeIsolated {
-            var event = seat.makeEvent(.pointerAxis)
-            event.surface = seat.currentPointerSurface
-            event.x = seat.pointerPosition.x
-            event.y = seat.pointerPosition.y
-            if axis == .verticalScroll {
-                event.scrollY = value
-            } else {
-                event.scrollX = value
-            }
-            event.scrollSource = seat.currentAxisSource
-            event.scrollDetentsX = seat.pendingAxisDetents.x
-            event.scrollDetentsY = seat.pendingAxisDetents.y
-            seat.pendingAxisDetents = (0, 0)
-            seat.emit(event)
+        var event = seat.makeEvent(.pointerAxis)
+        event.surface = seat.currentPointerSurface
+        event.x = seat.pointerPosition.x
+        event.y = seat.pointerPosition.y
+        if axis == .verticalScroll {
+            event.scrollY = value
+        } else {
+            event.scrollX = value
         }
+        event.scrollSource = seat.currentAxisSource
+        event.scrollDetentsX = seat.pendingAxisDetents.x
+        event.scrollDetentsY = seat.pendingAxisDetents.y
+        seat.pendingAxisDetents = (0, 0)
+        seat.emit(event)
     }
 
-    nonisolated func frame(_ proxy: WaylandBorrowedProxy<WlPointerClient>) {}
+    func frame(_ proxy: WaylandBorrowedProxy<WlPointerClient>) {}
 
-    nonisolated func axisSource(
+    func axisSource(
         _ proxy: WaylandBorrowedProxy<WlPointerClient>,
         axis_source: WlPointerAxisSource
     ) {
-        MainActor.assumeIsolated {
-            // A finger or continuous source scrolls smoothly; a wheel is detented.
-            seat.noteAxisSource(axis_source.rawValue)
-        }
+        // A finger or continuous source scrolls smoothly; a wheel is detented.
+        seat.noteAxisSource(axis_source.rawValue)
     }
 
     /// The finger lifted. There is no momentum phase to follow — the compositor
     /// does not synthesize inertia, so a view wanting kinetic scrolling starts
     /// it from here.
-    nonisolated func axisStop(
+    func axisStop(
         _ proxy: WaylandBorrowedProxy<WlPointerClient>, time: UInt32,
         axis: WlPointerAxis
     ) {
-        MainActor.assumeIsolated {
-            var event = seat.makeEvent(.pointerAxis)
-            event.surface = seat.currentPointerSurface
-            event.x = seat.pointerPosition.x
-            event.y = seat.pointerPosition.y
-            event.scrollSource = seat.currentAxisSource
-            event.scrollEnded = true
-            seat.emit(event)
-        }
+        var event = seat.makeEvent(.pointerAxis)
+        event.surface = seat.currentPointerSurface
+        event.x = seat.pointerPosition.x
+        event.y = seat.pointerPosition.y
+        event.scrollSource = seat.currentAxisSource
+        event.scrollEnded = true
+        seat.emit(event)
     }
 
     /// Superseded by `axis_value120` since `wl_pointer` v8, and ignored here:
     /// a compositor sending both would otherwise have the notch counted twice.
-    nonisolated func axisDiscrete(
+    func axisDiscrete(
         _ proxy: WaylandBorrowedProxy<WlPointerClient>,
         axis: WlPointerAxis, discrete: Int32
     ) {}
 
     /// High-resolution wheel travel: 120 units to a detent. This is the only
     /// place a free-spinning wheel's sub-notch movement is reported.
-    nonisolated func axisValue120(
+    func axisValue120(
         _ proxy: WaylandBorrowedProxy<WlPointerClient>,
         axis: WlPointerAxis, value120: Int32
     ) {
-        MainActor.assumeIsolated {
-            let detents = Double(value120) / 120
-            if axis == .verticalScroll {
-                seat.pendingAxisDetents.y = detents
-            } else {
-                seat.pendingAxisDetents.x = detents
-            }
+        let detents = Double(value120) / 120
+        if axis == .verticalScroll {
+            seat.pendingAxisDetents.y = detents
+        } else {
+            seat.pendingAxisDetents.x = detents
         }
     }
-    nonisolated func axisRelativeDirection(
+    func axisRelativeDirection(
         _ proxy: WaylandBorrowedProxy<WlPointerClient>,
         axis: WlPointerAxis,
         direction: WlPointerAxisRelativeDirection
@@ -695,73 +673,59 @@ final class ShellKeyboardListener: WlKeyboardEvents {
         self.seat = seat
     }
 
-    nonisolated func keymap(
+    func keymap(
         _ proxy: WaylandBorrowedProxy<WlKeyboardClient>,
         format: WlKeyboardKeymapFormat,
         fd: consuming WaylandClientOwnedFileDescriptor,
         size: UInt32
     ) {
         let descriptor = fd.take()
-        MainActor.assumeIsolated {
-            seat.applyKeymap(
-                format: format.rawValue, fd: descriptor, size: size)
-        }
+        seat.applyKeymap(
+            format: format, fd: descriptor, size: size)
     }
 
-    nonisolated func enter(
+    func enter(
         _ proxy: WaylandBorrowedProxy<WlKeyboardClient>, serial: UInt32,
         surface: WaylandBorrowedProxy<WlSurfaceClient>,
         keys: WaylandClientArrayView
     ) {
-        let surfaceID = unsafe UInt(bitPattern: surface.proxy)
-        MainActor.assumeIsolated {
-            seat.noteKeyboardSurface(surfaceID)
-            var event = seat.makeEvent(.keyboardEnter)
-            event.surface = seat.currentKeyboardSurface
-            seat.emit(event)
-        }
+        seat.noteKeyboardSurface(surface.identity)
+        var event = seat.makeEvent(.keyboardEnter)
+        event.surface = seat.currentKeyboardSurface
+        seat.emit(event)
     }
 
-    nonisolated func leave(
+    func leave(
         _ proxy: WaylandBorrowedProxy<WlKeyboardClient>, serial: UInt32,
         surface: WaylandBorrowedProxy<WlSurfaceClient>
     ) {
-        let surfaceID = unsafe UInt(bitPattern: surface.proxy)
-        MainActor.assumeIsolated {
-            var event = seat.makeEvent(.keyboardLeave)
-            event.surface = surfaceID
-            seat.emit(event)
-            seat.noteKeyboardSurface(0)
-            // Focus left, so nothing is held any more whatever the last state was.
-            seat.cancelKeyRepeat()
-        }
+        var event = seat.makeEvent(.keyboardLeave)
+        event.surface = surface.identity
+        seat.emit(event)
+        seat.noteKeyboardSurface(0)
+        // Focus left, so nothing is held any more whatever the last state was.
+        seat.cancelKeyRepeat()
     }
 
-    nonisolated func key(
+    func key(
         _ proxy: WaylandBorrowedProxy<WlKeyboardClient>, serial: UInt32,
         time: UInt32, key: UInt32, state: WlKeyboardKeyState
     ) {
-        MainActor.assumeIsolated {
-            seat.handleKey(
-                keycode: key,
-                pressed: state == .pressed)
-        }
+        seat.handleKey(
+            keycode: key,
+            pressed: state == .pressed)
     }
 
-    nonisolated func modifiers(
+    func modifiers(
         _ proxy: WaylandBorrowedProxy<WlKeyboardClient>, serial: UInt32, mods_depressed: UInt32,
         mods_latched: UInt32, mods_locked: UInt32, group: UInt32
     ) {
-        MainActor.assumeIsolated {
-            seat.updateModifiers(
-                depressed: mods_depressed, latched: mods_latched,
-                locked: mods_locked, group: group)
-        }
+        seat.updateModifiers(
+            depressed: mods_depressed, latched: mods_latched,
+            locked: mods_locked, group: group)
     }
 
-    nonisolated func repeatInfo(_ proxy: WaylandBorrowedProxy<WlKeyboardClient>, rate: Int32, delay: Int32) {
-        MainActor.assumeIsolated {
-            seat.noteRepeatInfo(rate: rate, delay: delay)
-        }
+    func repeatInfo(_ proxy: WaylandBorrowedProxy<WlKeyboardClient>, rate: Int32, delay: Int32) {
+        seat.noteRepeatInfo(rate: rate, delay: delay)
     }
 }

@@ -6,3 +6,49 @@ public enum ZwpPointerGesturesV1Client: WaylandClientInterface {
     public nonisolated(unsafe) static let interface = unsafe swift_wayland_iface_zwp_pointer_gestures_v1()
     public nonisolated static let maximumVersion: UInt32 = 3
 }
+public extension WaylandProxy where Interface == ZwpPointerGesturesV1Client {
+    func getSwipeGesture(pointer: WaylandProxy<WlPointerClient>) throws(WaylandProxyError) -> WaylandProxy<ZwpPointerGestureSwipeV1Client> {
+        let _proxy = try unsafe requireNativeProxy()
+        let _pointerProxy = try unsafe pointer.requireNativeProxy()
+        guard let _created = unsafe swift_wayland_client_request_zwp_pointer_gestures_v1_get_swipe_gesture(_proxy, _pointerProxy) else {
+            throw WaylandProxyError.proxyCreationFailed
+        }
+        return unsafe makeOwnedProxy(
+            adopting: _created, ZwpPointerGestureSwipeV1Client.self)
+    }
+    func getPinchGesture(pointer: WaylandProxy<WlPointerClient>) throws(WaylandProxyError) -> WaylandProxy<ZwpPointerGesturePinchV1Client> {
+        let _proxy = try unsafe requireNativeProxy()
+        let _pointerProxy = try unsafe pointer.requireNativeProxy()
+        guard let _created = unsafe swift_wayland_client_request_zwp_pointer_gestures_v1_get_pinch_gesture(_proxy, _pointerProxy) else {
+            throw WaylandProxyError.proxyCreationFailed
+        }
+        return unsafe makeOwnedProxy(
+            adopting: _created, ZwpPointerGesturePinchV1Client.self)
+    }
+    func release() throws(WaylandProxyError) {
+        guard version >= 2 else {
+            throw .unsupportedVersion(
+                required: 2, actual: version)
+        }
+        let _proxy = try unsafe requireNativeProxy()
+        let _send = { () throws(WaylandProxyError) -> Void in
+            unsafe swift_wayland_client_request_zwp_pointer_gestures_v1_release(_proxy)
+            return
+        }
+        try _send()
+        try unsafe invalidateAfterProtocolDestructor()
+    }
+    func getHoldGesture(pointer: WaylandProxy<WlPointerClient>) throws(WaylandProxyError) -> WaylandProxy<ZwpPointerGestureHoldV1Client> {
+        guard version >= 3 else {
+            throw .unsupportedVersion(
+                required: 3, actual: version)
+        }
+        let _proxy = try unsafe requireNativeProxy()
+        let _pointerProxy = try unsafe pointer.requireNativeProxy()
+        guard let _created = unsafe swift_wayland_client_request_zwp_pointer_gestures_v1_get_hold_gesture(_proxy, _pointerProxy) else {
+            throw WaylandProxyError.proxyCreationFailed
+        }
+        return unsafe makeOwnedProxy(
+            adopting: _created, ZwpPointerGestureHoldV1Client.self)
+    }
+}

@@ -6,3 +6,26 @@ public enum WpColorManagementSurfaceV1Client: WaylandClientInterface {
     public nonisolated(unsafe) static let interface = unsafe swift_wayland_iface_wp_color_management_surface_v1()
     public nonisolated static let maximumVersion: UInt32 = 2
 }
+public import WaylandProtocolTypes
+public extension WaylandProxy where Interface == WpColorManagementSurfaceV1Client {
+    func destroy() throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        let _send = { () throws(WaylandProxyError) -> Void in
+            unsafe swift_wayland_client_request_wp_color_management_surface_v1_destroy(_proxy)
+            return
+        }
+        try _send()
+        try unsafe invalidateAfterProtocolDestructor()
+    }
+    func setImageDescription(image_description: WaylandProxy<WpImageDescriptionV1Client>, render_intent: WpColorManagerV1RenderIntent) throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        let _image_descriptionProxy = try unsafe image_description.requireNativeProxy()
+        unsafe swift_wayland_client_request_wp_color_management_surface_v1_set_image_description(_proxy, _image_descriptionProxy, render_intent.rawValue)
+        return
+    }
+    func unsetImageDescription() throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        unsafe swift_wayland_client_request_wp_color_management_surface_v1_unset_image_description(_proxy)
+        return
+    }
+}

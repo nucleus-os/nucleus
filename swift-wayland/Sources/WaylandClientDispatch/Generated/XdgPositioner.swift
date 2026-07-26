@@ -6,3 +6,72 @@ public enum XdgPositionerClient: WaylandClientInterface {
     public nonisolated(unsafe) static let interface = unsafe swift_wayland_iface_xdg_positioner()
     public nonisolated static let maximumVersion: UInt32 = 7
 }
+public import WaylandProtocolTypes
+public extension WaylandProxy where Interface == XdgPositionerClient {
+    func destroy() throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        let _send = { () throws(WaylandProxyError) -> Void in
+            unsafe swift_wayland_client_request_xdg_positioner_destroy(_proxy)
+            return
+        }
+        try _send()
+        try unsafe invalidateAfterProtocolDestructor()
+    }
+    func setSize(width: Int32, height: Int32) throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        unsafe swift_wayland_client_request_xdg_positioner_set_size(_proxy, width, height)
+        return
+    }
+    func setAnchorRect(x: Int32, y: Int32, width: Int32, height: Int32) throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        unsafe swift_wayland_client_request_xdg_positioner_set_anchor_rect(_proxy, x, y, width, height)
+        return
+    }
+    func setAnchor(anchor: XdgPositionerAnchor) throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        unsafe swift_wayland_client_request_xdg_positioner_set_anchor(_proxy, anchor.rawValue)
+        return
+    }
+    func setGravity(gravity: XdgPositionerGravity) throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        unsafe swift_wayland_client_request_xdg_positioner_set_gravity(_proxy, gravity.rawValue)
+        return
+    }
+    func setConstraintAdjustment(constraint_adjustment: XdgPositionerConstraintAdjustment) throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        unsafe swift_wayland_client_request_xdg_positioner_set_constraint_adjustment(_proxy, constraint_adjustment.rawValue)
+        return
+    }
+    func setOffset(x: Int32, y: Int32) throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        unsafe swift_wayland_client_request_xdg_positioner_set_offset(_proxy, x, y)
+        return
+    }
+    func setReactive() throws(WaylandProxyError) {
+        guard version >= 3 else {
+            throw .unsupportedVersion(
+                required: 3, actual: version)
+        }
+        let _proxy = try unsafe requireNativeProxy()
+        unsafe swift_wayland_client_request_xdg_positioner_set_reactive(_proxy)
+        return
+    }
+    func setParentSize(parent_width: Int32, parent_height: Int32) throws(WaylandProxyError) {
+        guard version >= 3 else {
+            throw .unsupportedVersion(
+                required: 3, actual: version)
+        }
+        let _proxy = try unsafe requireNativeProxy()
+        unsafe swift_wayland_client_request_xdg_positioner_set_parent_size(_proxy, parent_width, parent_height)
+        return
+    }
+    func setParentConfigure(serial: UInt32) throws(WaylandProxyError) {
+        guard version >= 3 else {
+            throw .unsupportedVersion(
+                required: 3, actual: version)
+        }
+        let _proxy = try unsafe requireNativeProxy()
+        unsafe swift_wayland_client_request_xdg_positioner_set_parent_configure(_proxy, serial)
+        return
+    }
+}

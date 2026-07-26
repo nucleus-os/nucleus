@@ -6,8 +6,48 @@ public enum ZwpLinuxBufferParamsV1Client: WaylandClientInterface {
     public nonisolated(unsafe) static let interface = unsafe swift_wayland_iface_zwp_linux_buffer_params_v1()
     public nonisolated static let maximumVersion: UInt32 = 5
 }
+public import WaylandProtocolTypes
+public extension WaylandProxy where Interface == ZwpLinuxBufferParamsV1Client {
+    func destroy() throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        let _send = { () throws(WaylandProxyError) -> Void in
+            unsafe swift_wayland_client_request_zwp_linux_buffer_params_v1_destroy(_proxy)
+            return
+        }
+        try _send()
+        try unsafe invalidateAfterProtocolDestructor()
+    }
+    func add(fd: consuming WaylandClientOwnedFileDescriptor, plane_idx: UInt32, offset: UInt32, stride: UInt32, modifier_hi: UInt32, modifier_lo: UInt32) throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        let _fdDescriptor = fd.take()
+        defer {
+            WaylandClientOwnedFileDescriptor.closeTransferred(
+                _fdDescriptor)
+        }
+        unsafe swift_wayland_client_request_zwp_linux_buffer_params_v1_add(_proxy, _fdDescriptor, plane_idx, offset, stride, modifier_hi, modifier_lo)
+        return
+    }
+    func create(width: Int32, height: Int32, format: UInt32, flags: ZwpLinuxBufferParamsV1Flags) throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        unsafe swift_wayland_client_request_zwp_linux_buffer_params_v1_create(_proxy, width, height, format, flags.rawValue)
+        return
+    }
+    func createImmed(width: Int32, height: Int32, format: UInt32, flags: ZwpLinuxBufferParamsV1Flags) throws(WaylandProxyError) -> WaylandProxy<WlBufferClient> {
+        guard version >= 2 else {
+            throw .unsupportedVersion(
+                required: 2, actual: version)
+        }
+        let _proxy = try unsafe requireNativeProxy()
+        guard let _created = unsafe swift_wayland_client_request_zwp_linux_buffer_params_v1_create_immed(_proxy, width, height, format, flags.rawValue) else {
+            throw WaylandProxyError.proxyCreationFailed
+        }
+        return unsafe makeOwnedProxy(
+            adopting: _created, WlBufferClient.self)
+    }
+}
+@MainActor
 public protocol ZwpLinuxBufferParamsV1Events: AnyObject {
-    func created(_ proxy: WaylandBorrowedProxy<ZwpLinuxBufferParamsV1Client>, buffer: WaylandBorrowedProxy<WlBufferClient>)
+    func created(_ proxy: WaylandBorrowedProxy<ZwpLinuxBufferParamsV1Client>, buffer: WaylandProxy<WlBufferClient>)
     func failed(_ proxy: WaylandBorrowedProxy<ZwpLinuxBufferParamsV1Client>)
 }
 public extension ZwpLinuxBufferParamsV1Client {
@@ -18,24 +58,45 @@ public extension ZwpLinuxBufferParamsV1Client {
         unsafe p.pointee.failed = failed_impl
         return unsafe p
     }()
-    /// Wire the listener to a proxy. The owner is borrowed (unretained); the caller must keep it alive for the proxy's lifetime, matching libwayland's user_data contract.
-    @discardableResult
-    static func addListener(_ proxy: OpaquePointer, owner: AnyObject) -> Int32 {
-        unsafe zwp_linux_buffer_params_v1_add_listener(proxy, listener, Unmanaged.passUnretained(owner).toOpaque())
-    }
-    private static func handler(_ data: UnsafeMutableRawPointer) -> any ZwpLinuxBufferParamsV1Events? {
-        unsafe Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? any ZwpLinuxBufferParamsV1Events
+    private static func handler(_ context: WaylandClientListenerContext) -> any ZwpLinuxBufferParamsV1Events? {
+        context.owner as? any ZwpLinuxBufferParamsV1Events
     }
     private static let created_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, OpaquePointer?) -> Void = { data, proxy, buffer in
-        guard let data = unsafe data, let proxy = unsafe proxy, let h = unsafe handler(data) else {
+        guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
-        unsafe h.created(WaylandBorrowedProxy<ZwpLinuxBufferParamsV1Client>(proxy), buffer: WaylandBorrowedProxy<WlBufferClient>(buffer!))
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
+        }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        nonisolated(unsafe) let _event_buffer = unsafe buffer
+        MainActor.assumeIsolated {
+            unsafe eventHandler.created(WaylandBorrowedProxy<ZwpLinuxBufferParamsV1Client>(eventProxy), buffer: WaylandProxy<WlBufferClient>(adopting: _event_buffer!, connectionLifetime: eventContext.connectionLifetime))
+        }
     }
     private static let failed_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
-        guard let data = unsafe data, let proxy = unsafe proxy, let h = unsafe handler(data) else {
+        guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
-        unsafe h.failed(WaylandBorrowedProxy<ZwpLinuxBufferParamsV1Client>(proxy))
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
+        }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        MainActor.assumeIsolated {
+            unsafe eventHandler.failed(WaylandBorrowedProxy<ZwpLinuxBufferParamsV1Client>(eventProxy))
+        }
+    }
+}
+public extension WaylandProxy where Interface == ZwpLinuxBufferParamsV1Client {
+    func installListener(_ owner: any ZwpLinuxBufferParamsV1Events) throws(WaylandProxyError) {
+        try unsafe installListener(owner: owner) { proxy, data in
+            unsafe zwp_linux_buffer_params_v1_add_listener(proxy, ZwpLinuxBufferParamsV1Client.listener, data)
+        }
     }
 }

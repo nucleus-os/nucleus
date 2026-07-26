@@ -3,6 +3,7 @@ import NucleusShellInput
 import NucleusShellRender
 import NucleusUI
 import NucleusUIEmbedder
+import WaylandClientDispatch
 
 /// The single host for every native shell view presented on a Wayland surface.
 /// Role objects own protocol handshakes; this registry owns the shared
@@ -11,7 +12,7 @@ import NucleusUIEmbedder
 @safe final class NativeSurfaceRegistry {
     @safe struct Record {
         let surfaceID: UInt
-        let waylandSurface: OpaquePointer
+        let waylandSurface: WaylandProxy<WlSurfaceClient>
         let window: Window
         var renderOutputID: UInt64?
         var refreshMillihertz: Int32
@@ -42,16 +43,16 @@ import NucleusUIEmbedder
     @discardableResult
     func register(
         window: Window,
-        waylandSurface: OpaquePointer,
+        waylandSurface: WaylandProxy<WlSurfaceClient>,
         refreshMillihertz: Int32 = 0
     ) -> UInt {
-        let surfaceID = UInt(bitPattern: waylandSurface)
+        let surfaceID = waylandSurface.identity
         precondition(surfaceID != 0, "a hosted Wayland surface must be non-null")
         precondition(records[surfaceID] == nil, "a Wayland surface may be hosted only once")
         scene.addWindow(window)
         window.orderFront()
         inputRouter?.register(window: window, forSurface: surfaceID)
-        records[surfaceID] = unsafe Record(
+        records[surfaceID] = Record(
             surfaceID: surfaceID,
             waylandSurface: waylandSurface,
             window: window,
@@ -98,15 +99,20 @@ import NucleusUIEmbedder
                 scale: scale)
             engine.setRefreshMillihertz(refresh, forSurface: renderOutputID)
         } else {
-            guard let renderOutputID = unsafe engine.addSurface(
-                waylandSurface: record.waylandSurface,
-                width: pixelWidth,
-                height: pixelHeight,
-                scale: scale,
-                presentationContextID:
-                    publicationContext.visualContext.id.rawValue,
-                refreshMillihertz: refresh)
-            else { return false }
+            let renderOutputID = try? unsafe record.waylandSurface
+                .withUnsafeNativeProxy { nativeSurface in
+                    unsafe engine.addSurface(
+                        waylandSurface: nativeSurface,
+                        width: pixelWidth,
+                        height: pixelHeight,
+                        scale: scale,
+                        presentationContextID:
+                            publicationContext.visualContext.id.rawValue,
+                        refreshMillihertz: refresh)
+                }
+            guard let renderOutputID = renderOutputID ?? nil else {
+                return false
+            }
             record.renderOutputID = renderOutputID
         }
         if let renderOutputID = record.renderOutputID {

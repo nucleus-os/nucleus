@@ -37,19 +37,11 @@ import WaylandProtocolTypes
     }
 }
 
-/// Owner bound to each zwp_keyboard_shortcuts_inhibit_manager_v1 resource.
-@MainActor
-final class ShortcutsInhibitManagerBinding {
-    unowned let seat: WlSeat
-    init(_ seat: WlSeat) { self.seat = seat }
-}
-
 @MainActor
 @safe final class WlSeat {
     unowned let host: RouterHost
 
-    /// Display handle for serial minting; set on register.
-    private var display: OpaquePointer?
+    private let display: WaylandDisplay
 
     /// wl_seat capability bits: pointer=1, keyboard=2, touch=4. History is
     /// retained because get_* is valid while a capability is absent only when
@@ -107,12 +99,12 @@ final class ShortcutsInhibitManagerBinding {
     private var inhibitors: [InhibitorKey: Inhibitor] = [:]
     private struct InhibitorKey: Hashable { let clientKey: WaylandClientID; let objectId: UInt32 }
 
-    init(host: RouterHost) {
+    init(host: RouterHost, display: WaylandDisplay) {
         self.host = host
+        self.display = display
     }
 
     func register(in router: NucleusWaylandRouter) {
-        unsafe display = unsafe router.display.display
         router.addGlobal(
             WlSeatServer.global(
                 implementation: self,
@@ -131,19 +123,11 @@ final class ShortcutsInhibitManagerBinding {
                 }))
         router.addGlobal(
             ZwpKeyboardShortcutsInhibitManagerV1Server.global(
-                implementation: self,
-                owner: { seat, _ in
-                    ShortcutsInhibitManagerBinding(seat)
-                }))
-    }
-
-    static func clientKey(_ client: OpaquePointer) -> WaylandClientID {
-        unsafe WaylandClientID(client)!
+                implementation: self))
     }
 
     private func nextSerial() -> UInt32 {
-        guard let display = unsafe display else { return 0 }
-        return unsafe wl_display_next_serial(display)
+        display.nextSerial()
     }
 
     // MARK: device registry (called by the get_* handlers / device deinit)
@@ -294,32 +278,6 @@ final class ShortcutsInhibitManagerBinding {
 
     func cancelPopupGrabs() {
         popupGrabs.cancel()
-    }
-
-    /// Validate a serial-authorized request against this exact seat resource,
-    /// requesting client, input-event kind, and originating surface.
-    func authorize(
-        serial: UInt32,
-        seatResource: UnsafeMutablePointer<wl_resource>?,
-        surface: WlSurface?,
-        kinds: Set<SeatSerialKind>,
-        consume: Bool = true
-    ) -> Bool {
-        guard let seatResource = unsafe seatResource,
-            let binding = unsafe WaylandResource.owner(of: seatResource, as: SeatBinding.self),
-            binding.seat === self,
-            let seatClient = unsafe wl_resource_get_client(seatResource),
-            let surface,
-            let surfaceResource = unsafe surface.resource,
-            let surfaceClient = unsafe wl_resource_get_client(surfaceResource),
-            seatClient == surfaceClient
-        else { return false }
-        return unsafe serials.authorizes(
-            serial: serial,
-            kinds: kinds,
-            clientKey: Self.clientKey(surfaceClient),
-            surfaceID: surface.objectId,
-            consume: consume)
     }
 
     /// Serial authority for requests scoped to a client rather than one exact
@@ -706,15 +664,14 @@ extension SeatBinding: WlSeatRequests {
             request.postError(.missingCapability, message: "seat has never advertised pointer capability")
             return
         }
-        _ = unsafe id.create(
+        _ = id.create(
             owner: { handle in
-                unsafe WlPointer(
-                    resource: handle, seat: me, client: id.client)
+                WlPointer(
+                    resource: handle, seat: me, clientKey: id.clientID)
             },
             installed: { owner in
                 guard me.currentlyAdvertises(1) else { return }
-                unsafe me.registerPointer(
-                    WlSeat.clientKey(id.client), owner.resource)
+                me.registerPointer(id.clientID, owner.resource)
             })
     }
 
@@ -727,15 +684,14 @@ extension SeatBinding: WlSeatRequests {
             request.postError(.missingCapability, message: "seat has never advertised keyboard capability")
             return
         }
-        _ = unsafe id.create(
+        _ = id.create(
             owner: { handle in
-                unsafe WlKeyboard(
-                    resource: handle, seat: me, client: id.client)
+                WlKeyboard(
+                    resource: handle, seat: me, clientKey: id.clientID)
             },
             installed: { owner in
                 if me.currentlyAdvertises(2) {
-                    unsafe me.registerKeyboard(
-                        WlSeat.clientKey(id.client), owner.resource)
+                    me.registerKeyboard(id.clientID, owner.resource)
                 }
                 if me.keymapFd >= 0 {
                     owner.resource.sendKeymap(
@@ -758,48 +714,45 @@ extension SeatBinding: WlSeatRequests {
             request.postError(.missingCapability, message: "seat has never advertised touch capability")
             return
         }
-        _ = unsafe id.create(
+        _ = id.create(
             owner: { handle in
-                unsafe WlTouch(
-                    resource: handle, seat: me, client: id.client)
+                WlTouch(
+                    resource: handle, seat: me, clientKey: id.clientID)
             },
             installed: { owner in
                 guard me.currentlyAdvertises(4) else { return }
-                unsafe me.registerTouch(
-                    WlSeat.clientKey(id.client), owner.resource)
+                me.registerTouch(id.clientID, owner.resource)
             })
     }
 }
 
 // MARK: - zwp_keyboard_shortcuts_inhibit_manager_v1 + inhibitor
 
-// inhibit_shortcuts recovered from the per-resource ShortcutsInhibitManagerBinding owner.
 // The minted zwp_keyboard_shortcuts_inhibitor_v1 uses generated destroy dispatch.
-extension ShortcutsInhibitManagerBinding: ZwpKeyboardShortcutsInhibitManagerV1Requests {
+extension WlSeat: ZwpKeyboardShortcutsInhibitManagerV1Requests {
     func inhibitShortcuts(
         _ request: WaylandRequest<ZwpKeyboardShortcutsInhibitManagerV1Server>,
         id: WlNewId<ZwpKeyboardShortcutsInhibitorV1Server>,
         surface surfaceRes: WaylandBorrowedObject<WlSurfaceServer>,
         seat seatRes: WaylandBorrowedObject<WlSeatServer>
     ) {
-        let me = seat
         guard let surface = surfaceRes.owner(as: WlSurface.self) else { return }
-        let key = unsafe WlSeat.clientKey(id.client)
+        let key = id.clientID
         // already_inhibited (code 0): one inhibitor per (surface, seat) — a fatal error.
-        guard !me.hasInhibitor(clientKey: key, surfaceId: surface.objectId) else {
+        guard !hasInhibitor(clientKey: key, surfaceId: surface.objectId) else {
             request.postError(.alreadyInhibited, message: "shortcuts already inhibited for surface")
             return
         }
-        _ = unsafe id.create(
+        _ = id.create(
             owner: { handle in
-                unsafe WlShortcutsInhibitor(
+                WlShortcutsInhibitor(
                     resource: handle,
-                    seat: me,
+                    seat: self,
                     clientKey: key,
                     objectId: id.id)
             },
             installed: { owner in
-                unsafe me.registerInhibitor(
+                self.registerInhibitor(
                     clientKey: key,
                     objectId: id.id,
                     surfaceId: surface.objectId,
@@ -821,11 +774,11 @@ extension ShortcutsInhibitManagerBinding: ZwpKeyboardShortcutsInhibitManagerV1Re
     init(
         resource: WaylandResourceHandle<WlPointerServer>,
         seat: WlSeat,
-        client: OpaquePointer
+        clientKey: WaylandClientID
     ) {
         self.resource = resource
         self.seat = seat
-        self.clientKey = unsafe WlSeat.clientKey(client)
+        self.clientKey = clientKey
     }
     func authorizesCursor(serial: UInt32) -> Bool {
         seat?.acceptsCursorRequest(client: clientKey, serial: serial) == true
@@ -878,11 +831,11 @@ extension WlPointer: WlPointerRequests {
     init(
         resource: WaylandResourceHandle<WlKeyboardServer>,
         seat: WlSeat,
-        client: OpaquePointer
+        clientKey: WaylandClientID
     ) {
         self.resource = resource
         self.seat = seat
-        self.clientKey = unsafe WlSeat.clientKey(client)
+        self.clientKey = clientKey
     }
     isolated deinit {
         seat?.unregisterKeyboard(clientKey, resource)
@@ -898,11 +851,11 @@ extension WlPointer: WlPointerRequests {
     init(
         resource: WaylandResourceHandle<WlTouchServer>,
         seat: WlSeat,
-        client: OpaquePointer
+        clientKey: WaylandClientID
     ) {
         self.resource = resource
         self.seat = seat
-        self.clientKey = unsafe WlSeat.clientKey(client)
+        self.clientKey = clientKey
     }
     isolated deinit {
         seat?.unregisterTouch(clientKey, resource)

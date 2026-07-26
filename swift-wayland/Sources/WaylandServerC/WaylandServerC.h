@@ -170,7 +170,6 @@ static inline void swift_wayland_resource_lifetime_listener_destroy(
 static inline wl_fixed_t swift_wayland_fixed_from_double(double d) { return wl_fixed_from_double(d); }
 static inline double swift_wayland_fixed_to_double(wl_fixed_t f) { return wl_fixed_to_double(f); }
 
-
 /* Interface-descriptor accessors — the client binds/creates by &<name>_interface; the server
  * reads them for globals. Expose each as a plain accessor so Swift gets a clean pointer. */
 static inline const struct wl_interface *swift_wayland_iface_wl_display(void) { return &wl_display_interface; }

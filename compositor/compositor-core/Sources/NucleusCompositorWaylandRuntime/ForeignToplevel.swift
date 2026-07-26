@@ -146,12 +146,12 @@ extension ForeignToplevelClient: ZwlrForeignToplevelManagerV1Requests {
     }
 
     private func reconcile(_ windowID: UInt64) {
-        guard let managerResource = unsafe resource.resource,
+        guard resource.isLive,
               let window = manager.server.window(id: windowID)
         else { return }
         guard qualifies(window) else { closeHandle(windowID); return }
         if handle(windowID) == nil {
-            unsafe createHandle(windowID, managerRes: managerResource)
+            createHandle(windowID)
         }
         guard let handle = handle(windowID) else { return }
         if handle.titleSent != window.title {
@@ -212,14 +212,8 @@ extension ForeignToplevelClient: ZwlrForeignToplevelManagerV1Requests {
         }
     }
 
-    @unsafe private func createHandle(
-        _ windowID: UInt64,
-        managerRes: UnsafeMutablePointer<wl_resource>
-    ) {
-        guard let client = unsafe wl_resource_get_client(managerRes) else { return }
-        _ = unsafe ZwlrForeignToplevelHandleV1Server.createResource(
-            client: client,
-            version: version,
+    private func createHandle(_ windowID: UInt64) {
+        _ = resource.createToplevel(
             owner: { handle in
                 ForeignToplevelHandle(
                     resource: handle,
@@ -228,7 +222,6 @@ extension ForeignToplevelClient: ZwlrForeignToplevelManagerV1Requests {
             },
             installed: { handleObj in
                 self.handles[windowID] = WeakReference(handleObj)
-                self.resource.sendToplevel(toplevel: handleObj.resource)
             })
     }
 
@@ -316,22 +309,6 @@ extension ForeignToplevelClient: ZwlrForeignToplevelManagerV1Requests {
         manager.runActions { body($0, windowID) }
     }
 
-    @unsafe private func act(
-        requiring seat: UnsafeMutablePointer<wl_resource>?,
-        requestResource: UnsafeMutablePointer<wl_resource>,
-        _ body: (
-            any ForeignToplevelActions, UInt64
-        ) -> Void
-    ) {
-        guard
-            let seatResource = unsafe seat,
-            unsafe WaylandResource.owner(
-                of: seatResource, as: SeatBinding.self) != nil,
-            unsafe wl_resource_get_client(seatResource)
-                == wl_resource_get_client(requestResource)
-        else { return }
-        manager.runActions { body($0, windowID) }
-    }
 }
 
 extension ForeignToplevelHandle: ZwlrForeignToplevelHandleV1Requests {
@@ -349,10 +326,10 @@ extension ForeignToplevelHandle: ZwlrForeignToplevelHandleV1Requests {
     }
     func activate(_ request: WaylandRequest<ZwlrForeignToplevelHandleV1Server>,
                               seat: WaylandBorrowedObject<WlSeatServer>) {
-        let resource = unsafe request.resource
-        unsafe act(requiring: seat.resource, requestResource: resource) {
-            $0.foreignActivate(windowID: $1)
-        }
+        guard seat.owner(as: SeatBinding.self) != nil,
+            seat.clientID == request.clientID
+        else { return }
+        act { $0.foreignActivate(windowID: $1) }
     }
     func close(_ request: WaylandRequest<ZwlrForeignToplevelHandleV1Server>) {
         act { $0.foreignClose(windowID: $1) }

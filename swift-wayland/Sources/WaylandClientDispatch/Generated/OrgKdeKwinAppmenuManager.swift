@@ -6,3 +6,27 @@ public enum OrgKdeKwinAppmenuManagerClient: WaylandClientInterface {
     public nonisolated(unsafe) static let interface = unsafe swift_wayland_iface_org_kde_kwin_appmenu_manager()
     public nonisolated static let maximumVersion: UInt32 = 2
 }
+public extension WaylandProxy where Interface == OrgKdeKwinAppmenuManagerClient {
+    func create(surface: WaylandProxy<WlSurfaceClient>) throws(WaylandProxyError) -> WaylandProxy<OrgKdeKwinAppmenuClient> {
+        let _proxy = try unsafe requireNativeProxy()
+        let _surfaceProxy = try unsafe surface.requireNativeProxy()
+        guard let _created = unsafe swift_wayland_client_request_org_kde_kwin_appmenu_manager_create(_proxy, _surfaceProxy) else {
+            throw WaylandProxyError.proxyCreationFailed
+        }
+        return unsafe makeOwnedProxy(
+            adopting: _created, OrgKdeKwinAppmenuClient.self)
+    }
+    func release() throws(WaylandProxyError) {
+        guard version >= 2 else {
+            throw .unsupportedVersion(
+                required: 2, actual: version)
+        }
+        let _proxy = try unsafe requireNativeProxy()
+        let _send = { () throws(WaylandProxyError) -> Void in
+            unsafe swift_wayland_client_request_org_kde_kwin_appmenu_manager_release(_proxy)
+            return
+        }
+        try _send()
+        try unsafe invalidateAfterProtocolDestructor()
+    }
+}

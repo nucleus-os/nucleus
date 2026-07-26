@@ -6,3 +6,40 @@ public enum WpSecurityContextV1Client: WaylandClientInterface {
     public nonisolated(unsafe) static let interface = unsafe swift_wayland_iface_wp_security_context_v1()
     public nonisolated static let maximumVersion: UInt32 = 1
 }
+public extension WaylandProxy where Interface == WpSecurityContextV1Client {
+    func destroy() throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        let _send = { () throws(WaylandProxyError) -> Void in
+            unsafe swift_wayland_client_request_wp_security_context_v1_destroy(_proxy)
+            return
+        }
+        try _send()
+        try unsafe invalidateAfterProtocolDestructor()
+    }
+    func setSandboxEngine(name: String) throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        return try name.withCString { (_nameCString: UnsafePointer<CChar>) throws(WaylandProxyError) -> Void in
+            unsafe swift_wayland_client_request_wp_security_context_v1_set_sandbox_engine(_proxy, _nameCString)
+            return
+        }
+    }
+    func setAppId(app_id: String) throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        return try app_id.withCString { (_app_idCString: UnsafePointer<CChar>) throws(WaylandProxyError) -> Void in
+            unsafe swift_wayland_client_request_wp_security_context_v1_set_app_id(_proxy, _app_idCString)
+            return
+        }
+    }
+    func setInstanceId(instance_id: String) throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        return try instance_id.withCString { (_instance_idCString: UnsafePointer<CChar>) throws(WaylandProxyError) -> Void in
+            unsafe swift_wayland_client_request_wp_security_context_v1_set_instance_id(_proxy, _instance_idCString)
+            return
+        }
+    }
+    func commit() throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        unsafe swift_wayland_client_request_wp_security_context_v1_commit(_proxy)
+        return
+    }
+}

@@ -6,3 +6,24 @@ public enum WlSubcompositorClient: WaylandClientInterface {
     public nonisolated(unsafe) static let interface = unsafe swift_wayland_iface_wl_subcompositor()
     public nonisolated static let maximumVersion: UInt32 = 1
 }
+public extension WaylandProxy where Interface == WlSubcompositorClient {
+    func destroy() throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        let _send = { () throws(WaylandProxyError) -> Void in
+            unsafe swift_wayland_client_request_wl_subcompositor_destroy(_proxy)
+            return
+        }
+        try _send()
+        try unsafe invalidateAfterProtocolDestructor()
+    }
+    func getSubsurface(surface: WaylandProxy<WlSurfaceClient>, parent: WaylandProxy<WlSurfaceClient>) throws(WaylandProxyError) -> WaylandProxy<WlSubsurfaceClient> {
+        let _proxy = try unsafe requireNativeProxy()
+        let _surfaceProxy = try unsafe surface.requireNativeProxy()
+        let _parentProxy = try unsafe parent.requireNativeProxy()
+        guard let _created = unsafe swift_wayland_client_request_wl_subcompositor_get_subsurface(_proxy, _surfaceProxy, _parentProxy) else {
+            throw WaylandProxyError.proxyCreationFailed
+        }
+        return unsafe makeOwnedProxy(
+            adopting: _created, WlSubsurfaceClient.self)
+    }
+}

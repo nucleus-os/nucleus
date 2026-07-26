@@ -36,10 +36,9 @@ final class RouterDataDeviceDriver {
         let focused = server.seatFocus.keyboardSurfaceID
         guard focused != 0,
             let surface = compositor.surface(id: UInt32(truncatingIfNeeded: focused)),
-            let sres = unsafe surface.resource,
-            let client = unsafe wl_resource_get_client(sres)
+            let focusedClientKey = surface.protocolResource?.clientID
         else { return false }
-        return unsafe WlSeat.clientKey(client) == clientKey
+        return focusedClientKey == clientKey
     }
 }
 

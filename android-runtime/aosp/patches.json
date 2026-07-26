@@ -7,6 +7,12 @@
       ]
     },
     {
+      "path": "external/selinux",
+      "patches": [
+        "aosp/patches/platform-external-selinux/0001-libselinux-define-disabled-security-contract.patch"
+      ]
+    },
+    {
       "path": "frameworks/base",
       "patches": [
         "aosp/patches/platform-frameworks-base/0001-zygote-support-nucleus-container.patch"

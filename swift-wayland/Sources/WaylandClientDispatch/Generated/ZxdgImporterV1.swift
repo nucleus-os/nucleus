@@ -6,3 +6,24 @@ public enum ZxdgImporterV1Client: WaylandClientInterface {
     public nonisolated(unsafe) static let interface = unsafe swift_wayland_iface_zxdg_importer_v1()
     public nonisolated static let maximumVersion: UInt32 = 1
 }
+public extension WaylandProxy where Interface == ZxdgImporterV1Client {
+    func destroy() throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        let _send = { () throws(WaylandProxyError) -> Void in
+            unsafe swift_wayland_client_request_zxdg_importer_v1_destroy(_proxy)
+            return
+        }
+        try _send()
+        try unsafe invalidateAfterProtocolDestructor()
+    }
+    func `import`(handle: String) throws(WaylandProxyError) -> WaylandProxy<ZxdgImportedV1Client> {
+        let _proxy = try unsafe requireNativeProxy()
+        return try handle.withCString { (_handleCString: UnsafePointer<CChar>) throws(WaylandProxyError) -> WaylandProxy<ZxdgImportedV1Client> in
+            guard let _created = unsafe swift_wayland_client_request_zxdg_importer_v1_import(_proxy, _handleCString) else {
+                throw WaylandProxyError.proxyCreationFailed
+            }
+            return unsafe makeOwnedProxy(
+                adopting: _created, ZxdgImportedV1Client.self)
+        }
+    }
+}

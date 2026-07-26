@@ -45,11 +45,12 @@ final class ExtWorkspaceManager {
                 }))
     }
 
-    @unsafe fileprivate func outputResource(
-        forClient client: OpaquePointer, displayID: UInt64
+    fileprivate func outputResource(
+        forClient client: WaylandClientID?,
+        displayID: UInt64
     ) -> WaylandResourceHandle<WlOutputServer>? {
-        unsafe compositor.output(id: displayID)?
-            .resources(forClient: WaylandClientID(client)).first
+        compositor.output(id: displayID)?
+            .resources(forClient: client).first
     }
 
 }
@@ -129,7 +130,7 @@ final class ExtWorkspaceManager {
     }
 
     private func reconcileWorkspace(_ spaceID: SpaceID) -> Bool {
-        guard let resource = unsafe resource.resource,
+        guard resource.isLive,
               let space = spaces.spaces.first(where: { $0.id == spaceID })
         else {
             return dropWorkspace(spaceID)
@@ -138,10 +139,7 @@ final class ExtWorkspaceManager {
         let group = ensureGroup(forOutput: space.outputID)
 
         if workspace(spaceID) == nil {
-            guard let client = unsafe wl_resource_get_client(resource) else { return false }
-            guard unsafe ExtWorkspaceHandleV1Server.createResource(
-                client: client,
-                version: version,
+            guard resource.createWorkspace(
                 owner: { handle in
                     ExtWorkspaceHandle(
                         resource: handle,
@@ -152,8 +150,6 @@ final class ExtWorkspaceManager {
                 installed: { handleObj in
                     handleObj.active = active
                     self.workspaces[spaceID] = WeakReference(handleObj)
-                    self.resource.sendWorkspace(
-                        workspace: handleObj.resource)
                     if let group {
                         group.resource.sendWorkspaceEnter(
                             workspace: handleObj.resource)
@@ -190,13 +186,9 @@ final class ExtWorkspaceManager {
     /// Get-or-create the wire group for an output, retrying the (possibly deferred)
     /// output_enter each call.
     private func ensureGroup(forOutput outputID: DisplayID) -> ExtWorkspaceGroup? {
-        guard let resource = unsafe resource.resource,
-              let client = unsafe wl_resource_get_client(resource)
-        else { return nil }
+        guard resource.isLive else { return nil }
         if group(outputID) == nil {
-            guard unsafe ExtWorkspaceGroupHandleV1Server.createResource(
-                client: client,
-                version: version,
+            guard resource.createWorkspaceGroup(
                 owner: { handle in
                     ExtWorkspaceGroup(
                         resource: handle,
@@ -205,8 +197,6 @@ final class ExtWorkspaceManager {
                 },
                 installed: { groupObj in
                     self.groups[outputID] = WeakReference(groupObj)
-                    self.resource.sendWorkspaceGroup(
-                        workspace_group: groupObj.resource)
                     groupObj.resource.sendCapabilities(
                         capabilities: ExtWorkspaceGroupHandleV1GroupCapabilities(
                             rawValue: Self.groupCaps))
@@ -215,8 +205,9 @@ final class ExtWorkspaceManager {
         }
         guard let group = group(outputID) else { return nil }
         if !group.outputAdvertised,
-            let output = unsafe manager.outputResource(
-                forClient: client, displayID: outputID)
+            let output = manager.outputResource(
+                forClient: resource.clientID,
+                displayID: outputID)
         {
             group.resource.sendOutputEnter(output: output)
             group.outputAdvertised = true

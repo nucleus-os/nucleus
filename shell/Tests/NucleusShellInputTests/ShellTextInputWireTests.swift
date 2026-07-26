@@ -4,6 +4,7 @@ import NucleusShellWayland
 import NucleusUI
 import Testing
 import WaylandClientC
+import WaylandClientDispatch
 @testable import NucleusCompositorWaylandRuntime
 @testable import NucleusShellInput
 
@@ -36,7 +37,7 @@ struct ShellTextInputWireTests {
         let client: ShellWaylandClient
         let seat: ShellSeat
         let textInput: ShellTextInput
-        let surface: OpaquePointer
+        let surface: WaylandProxy<WlSurfaceClient>
         let surfaceID: UInt
         let serverSurfaceID: UInt32
 
@@ -59,22 +60,23 @@ struct ShellTextInputWireTests {
                 connectedFileDescriptor: sockets[1]))
             Self.pump(runtime, client: client)
             seat = try #require(ShellSeat(client: client))
-            guard let createdTextInput = unsafe ShellTextInput(
+            guard let createdTextInput = ShellTextInput(
                 client: client,
                 seat: seat.protocolSeat)
             else { throw TextInputWireFailure.serverAttach }
             textInput = createdTextInput
-            guard let createdSurface = unsafe client.createSurface()
-            else { throw TextInputWireFailure.serverAttach }
-            unsafe surface = createdSurface
-            surfaceID = UInt(bitPattern: createdSurface)
-            serverSurfaceID = unsafe wl_proxy_get_id(createdSurface)
+            let createdSurface = try client.createSurface()
+            surface = createdSurface
+            surfaceID = createdSurface.identity
+            serverSurfaceID = try unsafe createdSurface.withUnsafeNativeProxy {
+                unsafe wl_proxy_get_id($0)
+            }
             Self.pump(runtime, client: client)
         }
 
         func shutdown(runtime: WaylandRouterRuntime) {
             textInput.close()
-            unsafe wl_surface_destroy(surface)
+            try? surface.destroy()
             Self.pump(runtime, client: client)
         }
 
@@ -151,7 +153,7 @@ struct ShellTextInputWireTests {
         #expect(initial.contentHint & 0x3 == 0x3)
         #expect(initial.cursorRectangle == nil)
 
-        unsafe wl_surface_commit(peer.surface)
+        try peer.surface.commit()
         Peer.pump(runtime, client: peer.client)
         let appliedGeometry = try #require(
             runtime.textInputManager.latestSnapshot?.cursorRectangle)
@@ -169,7 +171,7 @@ struct ShellTextInputWireTests {
         ) throws {
             mutation()
             Peer.pump(runtime, client: peer.client)
-            unsafe wl_surface_commit(peer.surface)
+            try peer.surface.commit()
             Peer.pump(runtime, client: peer.client)
             let candidate = try #require(
                 field.textInputCandidateGeometry)

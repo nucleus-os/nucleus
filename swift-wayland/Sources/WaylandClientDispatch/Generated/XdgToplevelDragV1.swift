@@ -6,3 +6,20 @@ public enum XdgToplevelDragV1Client: WaylandClientInterface {
     public nonisolated(unsafe) static let interface = unsafe swift_wayland_iface_xdg_toplevel_drag_v1()
     public nonisolated static let maximumVersion: UInt32 = 1
 }
+public extension WaylandProxy where Interface == XdgToplevelDragV1Client {
+    func destroy() throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        let _send = { () throws(WaylandProxyError) -> Void in
+            unsafe swift_wayland_client_request_xdg_toplevel_drag_v1_destroy(_proxy)
+            return
+        }
+        try _send()
+        try unsafe invalidateAfterProtocolDestructor()
+    }
+    func attach(toplevel: WaylandProxy<XdgToplevelClient>, x_offset: Int32, y_offset: Int32) throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        let _toplevelProxy = try unsafe toplevel.requireNativeProxy()
+        unsafe swift_wayland_client_request_xdg_toplevel_drag_v1_attach(_proxy, _toplevelProxy, x_offset, y_offset)
+        return
+    }
+}

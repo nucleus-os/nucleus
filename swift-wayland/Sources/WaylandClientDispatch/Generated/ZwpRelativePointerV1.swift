@@ -6,6 +6,18 @@ public enum ZwpRelativePointerV1Client: WaylandClientInterface {
     public nonisolated(unsafe) static let interface = unsafe swift_wayland_iface_zwp_relative_pointer_v1()
     public nonisolated static let maximumVersion: UInt32 = 1
 }
+public extension WaylandProxy where Interface == ZwpRelativePointerV1Client {
+    func destroy() throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        let _send = { () throws(WaylandProxyError) -> Void in
+            unsafe swift_wayland_client_request_zwp_relative_pointer_v1_destroy(_proxy)
+            return
+        }
+        try _send()
+        try unsafe invalidateAfterProtocolDestructor()
+    }
+}
+@MainActor
 public protocol ZwpRelativePointerV1Events: AnyObject {
     func relativeMotion(_ proxy: WaylandBorrowedProxy<ZwpRelativePointerV1Client>, utime_hi: UInt32, utime_lo: UInt32, dx: Double, dy: Double, dx_unaccel: Double, dy_unaccel: Double)
 }
@@ -16,18 +28,29 @@ public extension ZwpRelativePointerV1Client {
         unsafe p.pointee.relative_motion = relativeMotion_impl
         return unsafe p
     }()
-    /// Wire the listener to a proxy. The owner is borrowed (unretained); the caller must keep it alive for the proxy's lifetime, matching libwayland's user_data contract.
-    @discardableResult
-    static func addListener(_ proxy: OpaquePointer, owner: AnyObject) -> Int32 {
-        unsafe zwp_relative_pointer_v1_add_listener(proxy, listener, Unmanaged.passUnretained(owner).toOpaque())
-    }
-    private static func handler(_ data: UnsafeMutableRawPointer) -> any ZwpRelativePointerV1Events? {
-        unsafe Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? any ZwpRelativePointerV1Events
+    private static func handler(_ context: WaylandClientListenerContext) -> any ZwpRelativePointerV1Events? {
+        context.owner as? any ZwpRelativePointerV1Events
     }
     private static let relativeMotion_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, UInt32, wl_fixed_t, wl_fixed_t, wl_fixed_t, wl_fixed_t) -> Void = { data, proxy, utime_hi, utime_lo, dx, dy, dx_unaccel, dy_unaccel in
-        guard let data = unsafe data, let proxy = unsafe proxy, let h = unsafe handler(data) else {
+        guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
-        unsafe h.relativeMotion(WaylandBorrowedProxy<ZwpRelativePointerV1Client>(proxy), utime_hi: utime_hi, utime_lo: utime_lo, dx: swift_wayland_fixed_to_double(dx), dy: swift_wayland_fixed_to_double(dy), dx_unaccel: swift_wayland_fixed_to_double(dx_unaccel), dy_unaccel: swift_wayland_fixed_to_double(dy_unaccel))
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
+        }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        MainActor.assumeIsolated {
+            unsafe eventHandler.relativeMotion(WaylandBorrowedProxy<ZwpRelativePointerV1Client>(eventProxy), utime_hi: utime_hi, utime_lo: utime_lo, dx: swift_wayland_fixed_to_double(dx), dy: swift_wayland_fixed_to_double(dy), dx_unaccel: swift_wayland_fixed_to_double(dx_unaccel), dy_unaccel: swift_wayland_fixed_to_double(dy_unaccel))
+        }
+    }
+}
+public extension WaylandProxy where Interface == ZwpRelativePointerV1Client {
+    func installListener(_ owner: any ZwpRelativePointerV1Events) throws(WaylandProxyError) {
+        try unsafe installListener(owner: owner) { proxy, data in
+            unsafe zwp_relative_pointer_v1_add_listener(proxy, ZwpRelativePointerV1Client.listener, data)
+        }
     }
 }

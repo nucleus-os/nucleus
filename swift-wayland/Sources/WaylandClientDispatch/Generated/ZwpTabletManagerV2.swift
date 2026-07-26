@@ -6,3 +6,23 @@ public enum ZwpTabletManagerV2Client: WaylandClientInterface {
     public nonisolated(unsafe) static let interface = unsafe swift_wayland_iface_zwp_tablet_manager_v2()
     public nonisolated static let maximumVersion: UInt32 = 2
 }
+public extension WaylandProxy where Interface == ZwpTabletManagerV2Client {
+    func getTabletSeat(seat: WaylandProxy<WlSeatClient>) throws(WaylandProxyError) -> WaylandProxy<ZwpTabletSeatV2Client> {
+        let _proxy = try unsafe requireNativeProxy()
+        let _seatProxy = try unsafe seat.requireNativeProxy()
+        guard let _created = unsafe swift_wayland_client_request_zwp_tablet_manager_v2_get_tablet_seat(_proxy, _seatProxy) else {
+            throw WaylandProxyError.proxyCreationFailed
+        }
+        return unsafe makeOwnedProxy(
+            adopting: _created, ZwpTabletSeatV2Client.self)
+    }
+    func destroy() throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        let _send = { () throws(WaylandProxyError) -> Void in
+            unsafe swift_wayland_client_request_zwp_tablet_manager_v2_destroy(_proxy)
+            return
+        }
+        try _send()
+        try unsafe invalidateAfterProtocolDestructor()
+    }
+}

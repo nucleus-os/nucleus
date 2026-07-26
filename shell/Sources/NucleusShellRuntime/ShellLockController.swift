@@ -50,14 +50,12 @@ public final class ShellLockController {
             lockOutputs[index].logicalOrigin = Point(
                 x: Double(output.logicalX),
                 y: Double(output.logicalY))
-            unsafe surfaceRegistry.updateRefreshRate(
+            surfaceRegistry.updateRefreshRate(
                 output.refreshMillihertz,
-                surfaceID: UInt(bitPattern:
-                    lockOutputs[index].surface.wlSurface))
+                surfaceID: lockOutputs[index].surface.wlSurface.identity)
             if lockOutputs[index].surface.hasConfigure {
-                unsafe configureLockSurface(
-                    surfaceID: UInt(bitPattern:
-                        lockOutputs[index].surface.wlSurface),
+                configureLockSurface(
+                    surfaceID: lockOutputs[index].surface.wlSurface.identity,
                     width: lockOutputs[index].surface.configuredWidth,
                     height: lockOutputs[index].surface.configuredHeight,
                     focusPasswordField: false)
@@ -148,11 +146,11 @@ public final class ShellLockController {
                 logicalOrigin: origin)
 
             surface.onConfigure = { [weak self] width, height in
-                unsafe self?.configureLockSurface(
-                    surfaceID: UInt(bitPattern: surface.wlSurface),
+                self?.configureLockSurface(
+                    surfaceID: surface.wlSurface.identity,
                     width: width, height: height)
             }
-            unsafe surfaceRegistry.register(
+            surfaceRegistry.register(
                 window: window,
                 waylandSurface: surface.wlSurface,
                 refreshMillihertz: output.refreshMillihertz)
@@ -170,7 +168,7 @@ public final class ShellLockController {
         focusPasswordField: Bool = true
     ) {
         guard let index = lockOutputs.firstIndex(where: {
-            unsafe UInt(bitPattern: $0.surface.wlSurface) == surfaceID
+            $0.surface.wlSurface.identity == surfaceID
         }) else { return }
 
         let scale = Double(max(1, lockOutputs[index].surface.output.scale))
@@ -224,8 +222,8 @@ public final class ShellLockController {
         // The password field may still hold text if the lock is being torn
         // down mid-attempt.
         record.view.clearPassword()
-        unsafe surfaceRegistry.unregister(
-            surfaceID: UInt(bitPattern: record.surface.wlSurface))
+        surfaceRegistry.unregister(
+            surfaceID: record.surface.wlSurface.identity)
         record.surface.destroy()
     }
 

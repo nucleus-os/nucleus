@@ -7,6 +7,35 @@ public enum ZwpFullscreenShellV1Client: WaylandClientInterface {
     public nonisolated static let maximumVersion: UInt32 = 1
 }
 public import WaylandProtocolTypes
+public extension WaylandProxy where Interface == ZwpFullscreenShellV1Client {
+    func release() throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        let _send = { () throws(WaylandProxyError) -> Void in
+            unsafe swift_wayland_client_request_zwp_fullscreen_shell_v1_release(_proxy)
+            return
+        }
+        try _send()
+        try unsafe invalidateAfterProtocolDestructor()
+    }
+    func presentSurface(surface: WaylandProxy<WlSurfaceClient>?, method: ZwpFullscreenShellV1PresentMethod, output: WaylandProxy<WlOutputClient>?) throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        let _surfaceProxy = try unsafe surface?.requireNativeProxy()
+        let _outputProxy = try unsafe output?.requireNativeProxy()
+        unsafe swift_wayland_client_request_zwp_fullscreen_shell_v1_present_surface(_proxy, _surfaceProxy, method.rawValue, _outputProxy)
+        return
+    }
+    func presentSurfaceForMode(surface: WaylandProxy<WlSurfaceClient>, output: WaylandProxy<WlOutputClient>, framerate: Int32) throws(WaylandProxyError) -> WaylandProxy<ZwpFullscreenShellModeFeedbackV1Client> {
+        let _proxy = try unsafe requireNativeProxy()
+        let _surfaceProxy = try unsafe surface.requireNativeProxy()
+        let _outputProxy = try unsafe output.requireNativeProxy()
+        guard let _created = unsafe swift_wayland_client_request_zwp_fullscreen_shell_v1_present_surface_for_mode(_proxy, _surfaceProxy, _outputProxy, framerate) else {
+            throw WaylandProxyError.proxyCreationFailed
+        }
+        return unsafe makeOwnedProxy(
+            adopting: _created, ZwpFullscreenShellModeFeedbackV1Client.self)
+    }
+}
+@MainActor
 public protocol ZwpFullscreenShellV1Events: AnyObject {
     func capability(_ proxy: WaylandBorrowedProxy<ZwpFullscreenShellV1Client>, capability: ZwpFullscreenShellV1Capability)
 }
@@ -17,18 +46,29 @@ public extension ZwpFullscreenShellV1Client {
         unsafe p.pointee.capability = capability_impl
         return unsafe p
     }()
-    /// Wire the listener to a proxy. The owner is borrowed (unretained); the caller must keep it alive for the proxy's lifetime, matching libwayland's user_data contract.
-    @discardableResult
-    static func addListener(_ proxy: OpaquePointer, owner: AnyObject) -> Int32 {
-        unsafe zwp_fullscreen_shell_v1_add_listener(proxy, listener, Unmanaged.passUnretained(owner).toOpaque())
-    }
-    private static func handler(_ data: UnsafeMutableRawPointer) -> any ZwpFullscreenShellV1Events? {
-        unsafe Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? any ZwpFullscreenShellV1Events
+    private static func handler(_ context: WaylandClientListenerContext) -> any ZwpFullscreenShellV1Events? {
+        context.owner as? any ZwpFullscreenShellV1Events
     }
     private static let capability_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, capability in
-        guard let data = unsafe data, let proxy = unsafe proxy, let h = unsafe handler(data) else {
+        guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
-        unsafe h.capability(WaylandBorrowedProxy<ZwpFullscreenShellV1Client>(proxy), capability: ZwpFullscreenShellV1Capability(rawValue: capability))
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
+        }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        MainActor.assumeIsolated {
+            unsafe eventHandler.capability(WaylandBorrowedProxy<ZwpFullscreenShellV1Client>(eventProxy), capability: ZwpFullscreenShellV1Capability(rawValue: capability))
+        }
+    }
+}
+public extension WaylandProxy where Interface == ZwpFullscreenShellV1Client {
+    func installListener(_ owner: any ZwpFullscreenShellV1Events) throws(WaylandProxyError) {
+        try unsafe installListener(owner: owner) { proxy, data in
+            unsafe zwp_fullscreen_shell_v1_add_listener(proxy, ZwpFullscreenShellV1Client.listener, data)
+        }
     }
 }

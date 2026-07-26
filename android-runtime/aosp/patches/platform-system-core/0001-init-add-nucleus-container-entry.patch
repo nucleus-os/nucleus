@@ -255,7 +255,7 @@ index bb09f3073..e898196fd 100644
  #include "selinux.h"
  #include "subcontext.h"
  #include "ueventd.h"
-@@ -77,6 +78,13 @@ int main(int argc, char** argv) {
+@@ -77,6 +78,14 @@ int main(int argc, char** argv) {
          if (!strcmp(argv[1], "second_stage")) {
              return SecondStageMain(argc, argv);
          }
@@ -264,6 +264,7 @@ index bb09f3073..e898196fd 100644
 +            if (auto result = EnterNucleusContainer(); !result.ok()) {
 +                LOG(FATAL) << "Could not enter the Nucleus container: " << result.error();
 +            }
++            LOG(INFO) << "Nucleus container mode: Android SELinux is unavailable";
 +            return SecondStageMain(argc, argv);
 +        }
      }

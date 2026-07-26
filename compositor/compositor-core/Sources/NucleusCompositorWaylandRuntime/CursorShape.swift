@@ -17,12 +17,6 @@ protocol CursorShapeDelegate: AnyObject {
 }
 
 @MainActor
-final class CursorShapeManagerBinding {
-    unowned let manager: CursorShapeManager
-    init(_ manager: CursorShapeManager) { self.manager = manager }
-}
-
-@MainActor
 final class CursorShapeManager {
     weak var delegate: (any CursorShapeDelegate)?
 
@@ -30,14 +24,11 @@ final class CursorShapeManager {
         router.addGlobal(
             WpCursorShapeManagerV1Server.global(
                 implementation: self,
-                advertisedVersion: 1,
-                owner: { manager, _ in
-                    CursorShapeManagerBinding(manager)
-                }))
+                advertisedVersion: 1))
     }
 }
 
-extension CursorShapeManagerBinding: WpCursorShapeManagerV1Requests {
+extension CursorShapeManager: WpCursorShapeManagerV1Requests {
     /// Both get_pointer and get_tablet_tool_v2 mint the same device kind; the cursor
     /// is global, so the pointer/tablet arg only names which input the device tracks
     /// (unused today — the shape applies to the one global cursor).
@@ -47,10 +38,10 @@ extension CursorShapeManagerBinding: WpCursorShapeManagerV1Requests {
         pointer: WaylandBorrowedObject<WlPointerServer>
     ) {
         let pointerOwner = pointer.owner(as: WlPointer.self)
-        _ = unsafe cursor_shape_device.create { handle in
+        _ = cursor_shape_device.create { handle in
             CursorShapeDevice(
                 resource: handle,
-                manager: manager,
+                manager: self,
                 pointer: pointerOwner)
         }
     }
@@ -60,9 +51,9 @@ extension CursorShapeManagerBinding: WpCursorShapeManagerV1Requests {
         cursor_shape_device: WlNewId<WpCursorShapeDeviceV1Server>,
         tablet_tool: WaylandBorrowedObject<ZwpTabletToolV2Server>
     ) {
-        _ = unsafe cursor_shape_device.create { handle in
+        _ = cursor_shape_device.create { handle in
             CursorShapeDevice(
-                resource: handle, manager: manager, pointer: nil)
+                resource: handle, manager: self, pointer: nil)
         }
     }
 }

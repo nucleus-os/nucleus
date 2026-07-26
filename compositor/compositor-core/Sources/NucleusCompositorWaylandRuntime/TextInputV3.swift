@@ -92,8 +92,7 @@ struct TextInputServerEventBatch: Sendable {
         router.addGlobal(
             ZwpTextInputManagerV3Server.global(
                 implementation: self,
-                advertisedVersion: 2,
-                owner: { manager, _ in manager }))
+                advertisedVersion: 2))
     }
 
     var liveResourceCount: Int {
@@ -112,9 +111,7 @@ struct TextInputServerEventBatch: Sendable {
         }
         focusedSurface = surface
         compactInputs()
-        guard let client = unsafe surface.resource.flatMap(wl_resource_get_client)
-        else { return }
-        let key = unsafe WlSeat.clientKey(client)
+        guard let key = surface.protocolResource?.clientID else { return }
         for input in inputs.compactMap(\.value)
         where input.clientKey == key {
             input.focusEntered(surface)
@@ -155,9 +152,7 @@ struct TextInputServerEventBatch: Sendable {
         compactInputs()
         inputs.append(WeakReference(input))
         guard let focusedSurface,
-              unsafe focusedSurface.resource
-                .flatMap(wl_resource_get_client)
-                .map(WlSeat.clientKey) == input.clientKey
+              focusedSurface.protocolResource?.clientID == input.clientKey
         else { return }
         input.focusEntered(focusedSurface)
     }
@@ -203,15 +198,15 @@ extension TextInputManagerV3: ZwpTextInputManagerV3Requests {
     ) {
         guard let binding = seatResource.owner(as: SeatBinding.self),
               binding.seat === seat,
-              unsafe wl_resource_get_client(seatResource.resource) == id.client
+              seatResource.clientID == id.clientID
         else { return }
-        _ = unsafe id.create(
+        _ = id.create(
             owner: { handle in
                 TextInputV3(
                     resource: handle,
                     manager: self,
-                    clientKey: unsafe WlSeat.clientKey(id.client),
-                    version: unsafe id.version)
+                    clientKey: id.clientID,
+                    version: id.version)
             },
             installed: { input in
                 self.register(input)
@@ -514,9 +509,7 @@ private struct PendingTextInputState {
 
     private func recordSnapshot() {
         manager?.record(TextInputServerSnapshot(
-            resourceID: unsafe resource.resource.map {
-                unsafe wl_resource_get_id($0)
-            } ?? 0,
+            resourceID: resource.objectID ?? 0,
             focusedSurfaceID: focusedSurface?.objectId,
             enabled: enabled,
             surroundingText: surrounding?.text,

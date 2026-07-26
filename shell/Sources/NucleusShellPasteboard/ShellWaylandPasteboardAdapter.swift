@@ -3,9 +3,7 @@ import FoundationEssentials
 public import NucleusShellLoop
 public import NucleusShellWayland
 public import NucleusUI
-import WaylandClientC
 public import WaylandClientDispatch
-import WaylandProtocolsC
 
 public struct ShellDataTransferLimits: Sendable, Equatable {
     public var maximumBytes: Int
@@ -52,12 +50,12 @@ struct ShellPasteboardResourceCounts: Equatable {
 
     @MainActor
     @safe private final class Offer: ExtDataControlOfferV1Events {
-        let proxy: OpaquePointer
+        let proxy: WaylandProxy<ExtDataControlOfferV1Client>
         private(set) var mimeTypes: Set<String> = []
 
-        init(proxy: OpaquePointer) {
-            unsafe self.proxy = proxy
-            unsafe ExtDataControlOfferV1Client.addListener(proxy, owner: self)
+        init(proxy: WaylandProxy<ExtDataControlOfferV1Client>) throws {
+            self.proxy = proxy
+            try proxy.installListener(self)
         }
 
         var preferredMIMEType: String? {
@@ -65,61 +63,55 @@ struct ShellPasteboardResourceCounts: Equatable {
                 in: mimeTypes)
         }
 
-        nonisolated func offer(
+        func offer(
             _ proxy: WaylandBorrowedProxy<ExtDataControlOfferV1Client>,
             mime_type: String
         ) {
-            _ = MainActor.assumeIsolated {
-                mimeTypes.insert(mime_type)
-            }
+            mimeTypes.insert(mime_type)
         }
     }
 
     @MainActor
     @safe private final class Source: ExtDataControlSourceV1Events {
-        let proxy: OpaquePointer
+        let proxy: WaylandProxy<ExtDataControlSourceV1Client>
         let payload: [UInt8]
         weak var adapter: ShellWaylandPasteboardAdapter?
 
         init(
-            proxy: OpaquePointer,
+            proxy: WaylandProxy<ExtDataControlSourceV1Client>,
             payload: [UInt8],
             adapter: ShellWaylandPasteboardAdapter
-        ) {
-            unsafe self.proxy = proxy
+        ) throws {
+            self.proxy = proxy
             self.payload = payload
             self.adapter = adapter
-            unsafe ExtDataControlSourceV1Client.addListener(proxy, owner: self)
+            try proxy.installListener(self)
         }
 
-        nonisolated func send(
+        func send(
             _ proxy: WaylandBorrowedProxy<ExtDataControlSourceV1Client>,
             mime_type: String,
             fd: consuming WaylandClientOwnedFileDescriptor
         ) {
             let descriptor = fd.take()
-            MainActor.assumeIsolated {
-                guard let adapter else {
-                    if descriptor >= 0 { _ = Glibc.close(descriptor) }
-                    return
-                }
-                adapter.source(
-                    self, send: mime_type, owning: descriptor)
+            guard let adapter else {
+                if descriptor >= 0 { _ = Glibc.close(descriptor) }
+                return
             }
+            adapter.source(
+                self, send: mime_type, owning: descriptor)
         }
 
-        nonisolated func cancelled(
+        func cancelled(
             _ proxy: WaylandBorrowedProxy<ExtDataControlSourceV1Client>
         ) {
-            MainActor.assumeIsolated {
-                adapter?.sourceWasCancelled(self)
-            }
+            adapter?.sourceWasCancelled(self)
         }
     }
 
     private let client: ShellWaylandClient
-    private let manager: OpaquePointer
-    private var device: OpaquePointer?
+    private let manager: WaylandProxy<ExtDataControlManagerV1Client>
+    private var device: WaylandProxy<ExtDataControlDeviceV1Client>?
     private let limits: ShellDataTransferLimits
     private let diagnosticHandler: DiagnosticHandler
     private let pollSetDidChange: @MainActor () -> Void
@@ -147,20 +139,23 @@ struct ShellPasteboardResourceCounts: Equatable {
         pollSetDidChange: @escaping @MainActor () -> Void = {},
         diagnosticHandler: @escaping DiagnosticHandler = { _, _ in }
     ) {
-        guard let manager = unsafe client.proxy(.dataControl),
-              let device = unsafe ext_data_control_manager_v1_get_data_device(
-                manager,
-                seat.protocolSeat)
+        guard let manager = client.dataControl,
+              let device = try? manager.getDataDevice(seat: seat.protocolSeat)
         else {
             return nil
         }
         self.client = client
-        unsafe self.manager = manager
-        unsafe self.device = device
+        self.manager = manager
+        self.device = device
         self.limits = limits
         self.pollSetDidChange = pollSetDidChange
         self.diagnosticHandler = diagnosticHandler
-        unsafe ExtDataControlDeviceV1Client.addListener(device, owner: self)
+        do {
+            try device.installListener(self)
+        } catch {
+            try? device.destroy()
+            return nil
+        }
     }
 
     public var pollDescriptors: [ShellDataTransferPollDescriptor] {
@@ -173,7 +168,7 @@ struct ShellPasteboardResourceCounts: Equatable {
 
     var resourceCounts: ShellPasteboardResourceCounts {
         let deviceCount: Int
-        if let _ = unsafe device {
+        if device != nil {
             deviceCount = 1
         } else {
             deviceCount = 0
@@ -262,31 +257,55 @@ struct ShellPasteboardResourceCounts: Equatable {
     func publish(payload: [UInt8], mimeTypes: [String])
         throws(PasteboardFailure)
     {
-        guard !isShutdown, let device = unsafe device else { throw .unavailable }
-        guard let proxy = unsafe ext_data_control_manager_v1_create_data_source(manager)
-        else {
+        guard !isShutdown, let device else { throw .unavailable }
+        let proxy: WaylandProxy<ExtDataControlSourceV1Client>
+        do {
+            proxy = try manager.createDataSource()
+        } catch {
             throw .transport("failed to create a Wayland data-control source")
         }
 
-        let source = unsafe Source(
-            proxy: proxy,
-            payload: payload,
-            adapter: self)
-        let sourceKey = unsafe key(proxy)
+        let source: Source
+        do {
+            source = try Source(
+                proxy: proxy,
+                payload: payload,
+                adapter: self)
+        } catch {
+            try? proxy.destroy()
+            throw .transport("failed to listen to a Wayland data-control source")
+        }
+        let sourceKey = proxy.identity
         sources[sourceKey] = source
         for mime in mimeTypes {
-            mime.withCString {
-                unsafe ext_data_control_source_v1_offer(proxy, $0)
+            do {
+                try proxy.offer(mime_type: mime)
+            } catch {
+                sources.removeValue(forKey: sourceKey)
+                source.adapter = nil
+                try? proxy.destroy()
+                throw .transport("failed to advertise a Wayland selection type")
             }
         }
-        unsafe ext_data_control_device_v1_set_selection(device, proxy)
+        do {
+            try device.setSelection(source: proxy)
+        } catch {
+            sources.removeValue(forKey: sourceKey)
+            source.adapter = nil
+            try? proxy.destroy()
+            throw .transport("failed to set the Wayland selection")
+        }
         selectedSourceKey = sourceKey
         try flush(operation: "write-selection")
     }
 
     public func clear() async throws(PasteboardFailure) {
-        guard !isShutdown, let device = unsafe device else { throw .unavailable }
-        unsafe ext_data_control_device_v1_set_selection(device, nil)
+        guard !isShutdown, let device else { throw .unavailable }
+        do {
+            try device.setSelection(source: nil)
+        } catch {
+            throw .transport("failed to clear the Wayland selection")
+        }
         selectedSourceKey = nil
         try flush(operation: "clear-selection")
     }
@@ -298,18 +317,18 @@ struct ShellPasteboardResourceCounts: Equatable {
         readRequestTokens.removeAll()
         activeOffer = nil
         for offer in offers.values {
-            unsafe ext_data_control_offer_v1_destroy(offer.proxy)
+            try? offer.proxy.destroy()
         }
         offers.removeAll()
         for source in sources.values {
             source.adapter = nil
-            unsafe ext_data_control_source_v1_destroy(source.proxy)
+            try? source.proxy.destroy()
         }
         sources.removeAll()
         selectedSourceKey = nil
-        if let device = unsafe device {
-            unsafe ext_data_control_device_v1_destroy(device)
-            unsafe self.device = nil
+        if let device {
+            try? device.destroy()
+            self.device = nil
         }
     }
 
@@ -338,11 +357,14 @@ struct ShellPasteboardResourceCounts: Equatable {
         }
         let readDescriptor = TransferFileDescriptor(owning: descriptors[0])
         let writeDescriptor = TransferFileDescriptor(owning: descriptors[1])
-        mime.withCString {
-            unsafe ext_data_control_offer_v1_receive(
-                offer.proxy,
-                $0,
-                writeDescriptor.rawValue)
+        do {
+            try offer.proxy.receive(
+                mime_type: mime,
+                fd: WaylandClientOwnedFileDescriptor(writeDescriptor.release()))
+        } catch {
+            continuation.resume(returning: .failure(
+                .transport("failed to request the Wayland selection payload")))
+            return
         }
         let deadline = monotonicNowNanoseconds().saturatingAdd(
             limits.transferTimeoutNanoseconds)
@@ -419,13 +441,13 @@ struct ShellPasteboardResourceCounts: Equatable {
     }
 
     private func sourceWasCancelled(_ source: Source) {
-        let sourceKey = unsafe key(source.proxy)
+        let sourceKey = source.proxy.identity
         if selectedSourceKey == sourceKey {
             selectedSourceKey = nil
         }
         guard sources.removeValue(forKey: sourceKey) != nil else { return }
         source.adapter = nil
-        unsafe ext_data_control_source_v1_destroy(source.proxy)
+        try? source.proxy.destroy()
     }
 
     private func flush(
@@ -436,10 +458,6 @@ struct ShellPasteboardResourceCounts: Equatable {
         throw .transport(
             "\(operation) flush failed: "
                 + (unsafe String(cString: strerror(errno))))
-    }
-
-    private func key(_ proxy: OpaquePointer) -> UInt {
-        UInt(bitPattern: proxy)
     }
 
     private nonisolated static func pasteboardFailure(
@@ -464,68 +482,62 @@ struct ShellPasteboardResourceCounts: Equatable {
 }
 
 extension ShellWaylandPasteboardAdapter: ExtDataControlDeviceV1Events {
-    public nonisolated func dataOffer(
+    public func dataOffer(
         _ proxy: WaylandBorrowedProxy<ExtDataControlDeviceV1Client>,
-        id: WaylandBorrowedProxy<ExtDataControlOfferV1Client>
+        id: WaylandProxy<ExtDataControlOfferV1Client>
     ) {
-        let rawID = unsafe UInt(bitPattern: id.proxy)
-        MainActor.assumeIsolated {
-            guard let id = unsafe OpaquePointer(bitPattern: rawID) else { return }
-            offers[rawID] = unsafe Offer(proxy: id)
+        do {
+            offers[id.identity] = try Offer(proxy: id)
+        } catch {
+            try? id.destroy()
         }
     }
 
-    public nonisolated func selection(
+    public func selection(
         _ proxy: WaylandBorrowedProxy<ExtDataControlDeviceV1Client>,
         id: WaylandBorrowedProxy<ExtDataControlOfferV1Client>?
     ) {
         let rawID: UInt?
         if let id {
-            rawID = unsafe UInt(bitPattern: id.proxy)
+            rawID = id.identity
         } else {
             rawID = nil
         }
-        MainActor.assumeIsolated {
-            let replacement = rawID.flatMap { offers[$0] }
-            let oldOffer = activeOffer
-            activeOffer = replacement
-            if let oldOffer, oldOffer !== replacement {
-                offers.removeValue(forKey: unsafe key(oldOffer.proxy))
-                unsafe ext_data_control_offer_v1_destroy(oldOffer.proxy)
-            }
-            if rawID == nil {
-                activeOffer = nil
-            }
+        let replacement = rawID.flatMap { offers[$0] }
+        let oldOffer = activeOffer
+        activeOffer = replacement
+        if let oldOffer, oldOffer !== replacement {
+            offers.removeValue(forKey: oldOffer.proxy.identity)
+            try? oldOffer.proxy.destroy()
+        }
+        if rawID == nil {
+            activeOffer = nil
         }
     }
 
-    public nonisolated func finished(
+    public func finished(
         _ proxy: WaylandBorrowedProxy<ExtDataControlDeviceV1Client>
     ) {
-        MainActor.assumeIsolated {
-            shutdown()
-            diagnosticHandler(
-                "data-control-device",
-                .transport("compositor finished the data-control device"))
-        }
+        shutdown()
+        diagnosticHandler(
+            "data-control-device",
+            .transport("compositor finished the data-control device"))
     }
 
-    public nonisolated func primarySelection(
+    public func primarySelection(
         _ proxy: WaylandBorrowedProxy<ExtDataControlDeviceV1Client>,
         id: WaylandBorrowedProxy<ExtDataControlOfferV1Client>?
     ) {
         let rawID: UInt?
         if let id {
-            rawID = unsafe UInt(bitPattern: id.proxy)
+            rawID = id.identity
         } else {
             rawID = nil
         }
-        MainActor.assumeIsolated {
-            guard let rawID,
-                  let offer = offers.removeValue(forKey: rawID)
-            else { return }
-            unsafe ext_data_control_offer_v1_destroy(offer.proxy)
-        }
+        guard let rawID,
+              let offer = offers.removeValue(forKey: rawID)
+        else { return }
+        try? offer.proxy.destroy()
     }
 }
 

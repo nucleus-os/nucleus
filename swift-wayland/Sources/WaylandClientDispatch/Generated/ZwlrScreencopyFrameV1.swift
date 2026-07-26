@@ -7,6 +7,34 @@ public enum ZwlrScreencopyFrameV1Client: WaylandClientInterface {
     public nonisolated static let maximumVersion: UInt32 = 3
 }
 public import WaylandProtocolTypes
+public extension WaylandProxy where Interface == ZwlrScreencopyFrameV1Client {
+    func copy(buffer: WaylandProxy<WlBufferClient>) throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        let _bufferProxy = try unsafe buffer.requireNativeProxy()
+        unsafe swift_wayland_client_request_zwlr_screencopy_frame_v1_copy(_proxy, _bufferProxy)
+        return
+    }
+    func destroy() throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        let _send = { () throws(WaylandProxyError) -> Void in
+            unsafe swift_wayland_client_request_zwlr_screencopy_frame_v1_destroy(_proxy)
+            return
+        }
+        try _send()
+        try unsafe invalidateAfterProtocolDestructor()
+    }
+    func copyWithDamage(buffer: WaylandProxy<WlBufferClient>) throws(WaylandProxyError) {
+        guard version >= 2 else {
+            throw .unsupportedVersion(
+                required: 2, actual: version)
+        }
+        let _proxy = try unsafe requireNativeProxy()
+        let _bufferProxy = try unsafe buffer.requireNativeProxy()
+        unsafe swift_wayland_client_request_zwlr_screencopy_frame_v1_copy_with_damage(_proxy, _bufferProxy)
+        return
+    }
+}
+@MainActor
 public protocol ZwlrScreencopyFrameV1Events: AnyObject {
     func buffer(_ proxy: WaylandBorrowedProxy<ZwlrScreencopyFrameV1Client>, format: WlShmFormat, width: UInt32, height: UInt32, stride: UInt32)
     func flags(_ proxy: WaylandBorrowedProxy<ZwlrScreencopyFrameV1Client>, flags: ZwlrScreencopyFrameV1Flags)
@@ -29,54 +57,119 @@ public extension ZwlrScreencopyFrameV1Client {
         unsafe p.pointee.buffer_done = bufferDone_impl
         return unsafe p
     }()
-    /// Wire the listener to a proxy. The owner is borrowed (unretained); the caller must keep it alive for the proxy's lifetime, matching libwayland's user_data contract.
-    @discardableResult
-    static func addListener(_ proxy: OpaquePointer, owner: AnyObject) -> Int32 {
-        unsafe zwlr_screencopy_frame_v1_add_listener(proxy, listener, Unmanaged.passUnretained(owner).toOpaque())
-    }
-    private static func handler(_ data: UnsafeMutableRawPointer) -> any ZwlrScreencopyFrameV1Events? {
-        unsafe Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? any ZwlrScreencopyFrameV1Events
+    private static func handler(_ context: WaylandClientListenerContext) -> any ZwlrScreencopyFrameV1Events? {
+        context.owner as? any ZwlrScreencopyFrameV1Events
     }
     private static let buffer_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, UInt32, UInt32, UInt32) -> Void = { data, proxy, format, width, height, stride in
-        guard let data = unsafe data, let proxy = unsafe proxy, let h = unsafe handler(data) else {
+        guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
-        unsafe h.buffer(WaylandBorrowedProxy<ZwlrScreencopyFrameV1Client>(proxy), format: WlShmFormat(rawValue: format), width: width, height: height, stride: stride)
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
+        }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        MainActor.assumeIsolated {
+            unsafe eventHandler.buffer(WaylandBorrowedProxy<ZwlrScreencopyFrameV1Client>(eventProxy), format: WlShmFormat(rawValue: format), width: width, height: height, stride: stride)
+        }
     }
     private static let flags_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, flags in
-        guard let data = unsafe data, let proxy = unsafe proxy, let h = unsafe handler(data) else {
+        guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
-        unsafe h.flags(WaylandBorrowedProxy<ZwlrScreencopyFrameV1Client>(proxy), flags: ZwlrScreencopyFrameV1Flags(rawValue: flags))
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
+        }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        MainActor.assumeIsolated {
+            unsafe eventHandler.flags(WaylandBorrowedProxy<ZwlrScreencopyFrameV1Client>(eventProxy), flags: ZwlrScreencopyFrameV1Flags(rawValue: flags))
+        }
     }
     private static let ready_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, UInt32, UInt32) -> Void = { data, proxy, tv_sec_hi, tv_sec_lo, tv_nsec in
-        guard let data = unsafe data, let proxy = unsafe proxy, let h = unsafe handler(data) else {
+        guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
-        unsafe h.ready(WaylandBorrowedProxy<ZwlrScreencopyFrameV1Client>(proxy), tv_sec_hi: tv_sec_hi, tv_sec_lo: tv_sec_lo, tv_nsec: tv_nsec)
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
+        }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        MainActor.assumeIsolated {
+            unsafe eventHandler.ready(WaylandBorrowedProxy<ZwlrScreencopyFrameV1Client>(eventProxy), tv_sec_hi: tv_sec_hi, tv_sec_lo: tv_sec_lo, tv_nsec: tv_nsec)
+        }
     }
     private static let failed_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
-        guard let data = unsafe data, let proxy = unsafe proxy, let h = unsafe handler(data) else {
+        guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
-        unsafe h.failed(WaylandBorrowedProxy<ZwlrScreencopyFrameV1Client>(proxy))
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
+        }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        MainActor.assumeIsolated {
+            unsafe eventHandler.failed(WaylandBorrowedProxy<ZwlrScreencopyFrameV1Client>(eventProxy))
+        }
     }
     private static let damage_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, UInt32, UInt32, UInt32) -> Void = { data, proxy, x, y, width, height in
-        guard let data = unsafe data, let proxy = unsafe proxy, let h = unsafe handler(data) else {
+        guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
-        unsafe h.damage(WaylandBorrowedProxy<ZwlrScreencopyFrameV1Client>(proxy), x: x, y: y, width: width, height: height)
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
+        }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        MainActor.assumeIsolated {
+            unsafe eventHandler.damage(WaylandBorrowedProxy<ZwlrScreencopyFrameV1Client>(eventProxy), x: x, y: y, width: width, height: height)
+        }
     }
     private static let linuxDmabuf_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, UInt32, UInt32) -> Void = { data, proxy, format, width, height in
-        guard let data = unsafe data, let proxy = unsafe proxy, let h = unsafe handler(data) else {
+        guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
-        unsafe h.linuxDmabuf(WaylandBorrowedProxy<ZwlrScreencopyFrameV1Client>(proxy), format: format, width: width, height: height)
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
+        }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        MainActor.assumeIsolated {
+            unsafe eventHandler.linuxDmabuf(WaylandBorrowedProxy<ZwlrScreencopyFrameV1Client>(eventProxy), format: format, width: width, height: height)
+        }
     }
     private static let bufferDone_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
-        guard let data = unsafe data, let proxy = unsafe proxy, let h = unsafe handler(data) else {
+        guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
-        unsafe h.bufferDone(WaylandBorrowedProxy<ZwlrScreencopyFrameV1Client>(proxy))
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
+        }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        MainActor.assumeIsolated {
+            unsafe eventHandler.bufferDone(WaylandBorrowedProxy<ZwlrScreencopyFrameV1Client>(eventProxy))
+        }
+    }
+}
+public extension WaylandProxy where Interface == ZwlrScreencopyFrameV1Client {
+    func installListener(_ owner: any ZwlrScreencopyFrameV1Events) throws(WaylandProxyError) {
+        try unsafe installListener(owner: owner) { proxy, data in
+            unsafe zwlr_screencopy_frame_v1_add_listener(proxy, ZwlrScreencopyFrameV1Client.listener, data)
+        }
     }
 }

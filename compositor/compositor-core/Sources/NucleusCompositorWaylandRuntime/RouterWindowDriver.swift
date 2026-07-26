@@ -15,7 +15,7 @@
 // graph. This driver therefore receives typed protocol objects directly and uses a
 // nominal XdgToplevelID only for persistent model correlation.
 
-import WaylandServerC
+import WaylandServer
 @_spi(NucleusCompositor) import NucleusLayers
 internal import NucleusCompositorServer
 import NucleusCompositorServerTypes
@@ -771,13 +771,15 @@ extension RouterWindowDriver: XdgShellDelegate {
 
     func authorizeInteractiveRequest(
         _ toplevel: XdgToplevel,
-        seat: UnsafeMutablePointer<wl_resource>?,
+        seat: WlSeat,
+        seatClientID: WaylandClientID,
         serial: UInt32
     ) -> Bool {
         let surfaceID = toplevel.xdgSurface?.surface?.objectId ?? 0
-        return unsafe seatDriver.authorizeUserIntent(
+        return seatDriver.authorizeUserIntent(
             serial: serial,
-            seatResource: seat,
+            seat: seat,
+            clientID: seatClientID,
             surfaceID: surfaceID)
     }
 
@@ -811,13 +813,15 @@ extension RouterWindowDriver: XdgShellDelegate {
 
     func popupGrabRequested(
         _ popup: XdgPopup,
-        seat: UnsafeMutablePointer<wl_resource>?,
+        seat: WlSeat,
+        seatClientID: WaylandClientID,
         serial: UInt32
     ) -> Bool {
         let surfaceID = popup.grabOriginSurface?.objectId ?? 0
-        guard unsafe seatDriver.authorizeUserIntent(
+        guard seatDriver.authorizeUserIntent(
             serial: serial,
-            seatResource: seat,
+            seat: seat,
+            clientID: seatClientID,
             surfaceID: surfaceID)
         else { return false }
         seatDriver.beginPopupGrab(popup)

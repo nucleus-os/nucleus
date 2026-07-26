@@ -19,8 +19,7 @@ import NucleusTypes
     func register(in router: NucleusWaylandRouter) {
         router.addGlobal(
             WpViewporterServer.global(
-                implementation: self,
-                owner: { viewporter, _ in viewporter }))
+                implementation: self))
     }
 }
 
@@ -38,7 +37,7 @@ extension WpViewporter: WpViewporterRequests {
                 message: "wl_surface already has a viewport")
             return
         }
-        guard unsafe id.create(
+        guard id.create(
             owner: { handle in
                 WpViewport(resource: handle, surface: surface)
             },

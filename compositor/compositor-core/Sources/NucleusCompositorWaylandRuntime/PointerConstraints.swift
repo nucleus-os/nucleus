@@ -17,13 +17,6 @@ import WaylandServer
 import WaylandServerDispatch
 import WaylandProtocolTypes
 
-/// Owner bound to each zwp_pointer_constraints_v1 resource (Rule 9).
-@MainActor
-final class PointerConstraintsManagerBinding {
-    unowned let manager: PointerConstraintsManager
-    init(_ manager: PointerConstraintsManager) { self.manager = manager }
-}
-
 @MainActor
 @safe final class PointerConstraintsManager {
     private var constraints: [WeakReference<PointerConstraint>] = []
@@ -31,10 +24,7 @@ final class PointerConstraintsManagerBinding {
     func register(in router: NucleusWaylandRouter) {
         router.addGlobal(
             ZwpPointerConstraintsV1Server.global(
-                implementation: self,
-                owner: { manager, _ in
-                    PointerConstraintsManagerBinding(manager)
-                }))
+                implementation: self))
     }
 
     fileprivate func add(_ constraint: PointerConstraint) {
@@ -99,14 +89,14 @@ final class PointerConstraintsManagerBinding {
 
 // The zwp_pointer_constraints_v1 manager owner is shared across every bound resource, so
 // already_constrained is posted on the specific request `resource`.
-extension PointerConstraintsManagerBinding: ZwpPointerConstraintsV1Requests {
+extension PointerConstraintsManager: ZwpPointerConstraintsV1Requests {
     func lockPointer(
         _ request: WaylandRequest<ZwpPointerConstraintsV1Server>,
         id: WlNewId<ZwpLockedPointerV1Server>,
         surface: WaylandBorrowedObject<WlSurfaceServer>, pointer: WaylandBorrowedObject<WlPointerServer>,
         region: WaylandBorrowedObject<WlRegionServer>?, lifetime: ZwpPointerConstraintsV1Lifetime
     ) {
-        guard let prepared = manager.prepareConstraint(
+        guard let prepared = prepareConstraint(
             surfaceRes: surface,
             regionRes: region,
             lifetimeRaw: lifetime.rawValue,
@@ -117,18 +107,18 @@ extension PointerConstraintsManagerBinding: ZwpPointerConstraintsV1Requests {
                     message: "pointer already constrained for surface")
             })
         else { return }
-        _ = unsafe id.create(
+        _ = id.create(
             owner: { handle in
                 PointerConstraint(
                     resource: .locked(handle),
-                    manager: manager,
+                    manager: self,
                     surface: prepared.surface,
                     kind: .locked,
                     lifetime: prepared.lifetime,
                     region: prepared.region)
             },
             installed: { constraint in
-                manager.add(constraint)
+                self.add(constraint)
             })
     }
 
@@ -138,7 +128,7 @@ extension PointerConstraintsManagerBinding: ZwpPointerConstraintsV1Requests {
         surface: WaylandBorrowedObject<WlSurfaceServer>, pointer: WaylandBorrowedObject<WlPointerServer>,
         region: WaylandBorrowedObject<WlRegionServer>?, lifetime: ZwpPointerConstraintsV1Lifetime
     ) {
-        guard let prepared = manager.prepareConstraint(
+        guard let prepared = prepareConstraint(
             surfaceRes: surface,
             regionRes: region,
             lifetimeRaw: lifetime.rawValue,
@@ -149,18 +139,18 @@ extension PointerConstraintsManagerBinding: ZwpPointerConstraintsV1Requests {
                     message: "pointer already constrained for surface")
             })
         else { return }
-        _ = unsafe id.create(
+        _ = id.create(
             owner: { handle in
                 PointerConstraint(
                     resource: .confined(handle),
-                    manager: manager,
+                    manager: self,
                     surface: prepared.surface,
                     kind: .confined,
                     lifetime: prepared.lifetime,
                     region: prepared.region)
             },
             installed: { constraint in
-                manager.add(constraint)
+                self.add(constraint)
             })
     }
 }
@@ -227,13 +217,11 @@ extension PointerConstraint: ZwpLockedPointerV1Requests, ZwpConfinedPointerV1Req
     // Both protocols default `destroy`; conforming to both makes that default ambiguous, so pin it
     // explicitly (plain teardown — the constraint's release runs in deinit when the owner is freed).
     func destroy(_ request: WaylandRequest<ZwpLockedPointerV1Server>) {
-        let resource = unsafe request.resource
-        unsafe wl_resource_destroy(resource)
+        request.destroy()
     }
 
     func destroy(_ request: WaylandRequest<ZwpConfinedPointerV1Server>) {
-        let resource = unsafe request.resource
-        unsafe wl_resource_destroy(resource)
+        request.destroy()
     }
 
     func setCursorPositionHint(

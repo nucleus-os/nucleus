@@ -6,3 +6,24 @@ public enum ZwpXwaylandKeyboardGrabManagerV1Client: WaylandClientInterface {
     public nonisolated(unsafe) static let interface = unsafe swift_wayland_iface_zwp_xwayland_keyboard_grab_manager_v1()
     public nonisolated static let maximumVersion: UInt32 = 1
 }
+public extension WaylandProxy where Interface == ZwpXwaylandKeyboardGrabManagerV1Client {
+    func destroy() throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        let _send = { () throws(WaylandProxyError) -> Void in
+            unsafe swift_wayland_client_request_zwp_xwayland_keyboard_grab_manager_v1_destroy(_proxy)
+            return
+        }
+        try _send()
+        try unsafe invalidateAfterProtocolDestructor()
+    }
+    func grabKeyboard(surface: WaylandProxy<WlSurfaceClient>, seat: WaylandProxy<WlSeatClient>) throws(WaylandProxyError) -> WaylandProxy<ZwpXwaylandKeyboardGrabV1Client> {
+        let _proxy = try unsafe requireNativeProxy()
+        let _surfaceProxy = try unsafe surface.requireNativeProxy()
+        let _seatProxy = try unsafe seat.requireNativeProxy()
+        guard let _created = unsafe swift_wayland_client_request_zwp_xwayland_keyboard_grab_manager_v1_grab_keyboard(_proxy, _surfaceProxy, _seatProxy) else {
+            throw WaylandProxyError.proxyCreationFailed
+        }
+        return unsafe makeOwnedProxy(
+            adopting: _created, ZwpXwaylandKeyboardGrabV1Client.self)
+    }
+}

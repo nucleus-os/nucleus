@@ -6,3 +6,23 @@ public enum ZwpLinuxExplicitSynchronizationV1Client: WaylandClientInterface {
     public nonisolated(unsafe) static let interface = unsafe swift_wayland_iface_zwp_linux_explicit_synchronization_v1()
     public nonisolated static let maximumVersion: UInt32 = 2
 }
+public extension WaylandProxy where Interface == ZwpLinuxExplicitSynchronizationV1Client {
+    func destroy() throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        let _send = { () throws(WaylandProxyError) -> Void in
+            unsafe swift_wayland_client_request_zwp_linux_explicit_synchronization_v1_destroy(_proxy)
+            return
+        }
+        try _send()
+        try unsafe invalidateAfterProtocolDestructor()
+    }
+    func getSynchronization(surface: WaylandProxy<WlSurfaceClient>) throws(WaylandProxyError) -> WaylandProxy<ZwpLinuxSurfaceSynchronizationV1Client> {
+        let _proxy = try unsafe requireNativeProxy()
+        let _surfaceProxy = try unsafe surface.requireNativeProxy()
+        guard let _created = unsafe swift_wayland_client_request_zwp_linux_explicit_synchronization_v1_get_synchronization(_proxy, _surfaceProxy) else {
+            throw WaylandProxyError.proxyCreationFailed
+        }
+        return unsafe makeOwnedProxy(
+            adopting: _created, ZwpLinuxSurfaceSynchronizationV1Client.self)
+    }
+}

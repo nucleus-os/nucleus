@@ -18,7 +18,7 @@ extension WlSurface: WlSurfaceRequests {
             request.postError(.invalidOffset, message: "non-zero attach offset is invalid at wl_surface v5+")
             return
         }
-        unsafe attach(buffer: buffer?.resource, x: x, y: y)
+        attach(buffer: buffer, x: x, y: y)
     }
 
     func damage(
@@ -47,8 +47,8 @@ extension WlSurface: WlSurfaceRequests {
         _ request: WaylandRequest<WlSurfaceServer>,
         callback: WlNewId<WlCallbackServer>
     ) {
-        guard let callback = unsafe callback.createBare() else { return }
-        unsafe addFrameCallback(callback)
+        guard let callback = callback.createBare() else { return }
+        addFrameCallback(callback)
     }
 
     func setOpaqueRegion(
@@ -126,9 +126,9 @@ extension WlCompositor {
     func makeSurface(
         id: WlNewId<WlSurfaceServer>
     ) -> WlSurface? {
-        unsafe id.create(
+        id.create(
             owner: { handle in
-                unsafe WlSurface(
+                WlSurface(
                     resource: handle,
                     compositor: self,
                     pointerCursorSurface: self.host.pointerCursorSurface,

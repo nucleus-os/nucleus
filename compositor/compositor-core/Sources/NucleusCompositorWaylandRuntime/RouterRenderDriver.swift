@@ -7,6 +7,7 @@
 
 import WaylandServerC
 import WaylandServer
+import WaylandServerDispatch
 internal import NucleusCompositorServer
 import NucleusCompositorServerTypes
 import NucleusRenderModel
@@ -216,7 +217,8 @@ extension RouterRenderDriver: ScreencopyDelegate {
     func screencopyCapture(
         output: WlOutput?, configuration: ScreencopyConfiguration,
         overlayCursor: Bool,
-        buffer: WaylandResourceReference, withDamage _: Bool,
+        buffer: WaylandResourceReference<WlBufferServer>,
+        withDamage _: Bool,
         preferRegionReadback: Bool,
         completion: @escaping @MainActor (ScreencopyResult) -> Void
     ) -> UInt64? {
@@ -242,10 +244,10 @@ extension RouterRenderDriver: ScreencopyDelegate {
         configuration: ScreencopyConfiguration,
         overlayCursor: Bool,
         preferRegionReadback: Bool,
-        buffer: WaylandResourceReference,
+        buffer: WaylandResourceReference<WlBufferServer>,
         completion: @escaping @MainActor (ScreencopyResult) -> Void
     ) -> UInt64? {
-        guard let bufferResource = unsafe buffer.resource else { return nil }
+        guard buffer.isLive else { return nil }
         guard let currentParams = RenderBridge.screencopyParams(
             server: server,
             outputId: outputId)
@@ -271,8 +273,8 @@ extension RouterRenderDriver: ScreencopyDelegate {
         // dmabuf target: blit the composited frame straight into the client buffer on the
         // GPU (no CPU round-trip), sampling either the whole accumulator or the
         // requested clipped source region into the client-sized target.
-        if let dmabuf = unsafe WaylandResource.owner(
-            of: bufferResource, as: DmabufBuffer.self)
+        if let dmabuf = buffer.retainedSemanticOwner(
+            as: DmabufBuffer.self)
         {
             let attrs = dmabuf.attrs
             let sourceRegion = configuration.sourceRegion.map {
@@ -295,7 +297,7 @@ extension RouterRenderDriver: ScreencopyDelegate {
         // SHM target: read the composited frame back (whole output, BGRA8888 = the wl_shm
         // XRGB8888 byte order — the block forces composition so this is current content),
         // then copy the requested region into the client buffer.
-        guard unsafe wl_shm_buffer_get(bufferResource) != nil else { return nil }
+        guard buffer.shmMetadata != nil else { return nil }
         let sourceRegion = preferRegionReadback
             ? configuration.sourceRegion.map {
                 RenderCaptureRegion(
@@ -322,7 +324,7 @@ extension RouterRenderDriver: ScreencopyDelegate {
                     captureOriginX: capture.originX,
                     captureOriginY: capture.originY)
             }
-            let copied = unsafe Self.copyCapture(
+            let copied = Self.copyCapture(
                 capture,
                 configuration: configuration,
                 toShmResource: buffer)
@@ -330,14 +332,11 @@ extension RouterRenderDriver: ScreencopyDelegate {
         }
     }
 
-    @unsafe private static func copyCapture(
+    private static func copyCapture(
         _ capture: RenderPixelCapture,
         configuration: ScreencopyConfiguration,
-        toShmResource buffer: WaylandResourceReference
+        toShmResource buffer: WaylandResourceReference<WlBufferServer>
     ) -> Bool {
-        guard let resource = unsafe buffer.resource,
-              let shm = unsafe wl_shm_buffer_get(resource)
-        else { return false }
         let outW = capture.width
         let outH = capture.height
         let pixelCount = outW.multipliedReportingOverflow(by: outH)
@@ -366,38 +365,37 @@ extension RouterRenderDriver: ScreencopyDelegate {
               ry <= outH - copyHeight
         else { return false }
 
-        unsafe wl_shm_buffer_begin_access(shm)
-        defer { unsafe wl_shm_buffer_end_access(shm) }
-        guard let destination = unsafe wl_shm_buffer_get_data(shm) else {
-            return false
-        }
-        let destinationStride = Int(unsafe wl_shm_buffer_get_stride(shm))
-        let destinationHeight = Int(unsafe wl_shm_buffer_get_height(shm))
-        guard copyWidth == Int(unsafe wl_shm_buffer_get_width(shm)),
-              copyHeight == destinationHeight,
-              copyWidth > 0,
-              copyHeight > 0,
-              destinationStride >= copyWidth * 4
-        else { return false }
-        let rowBytes = copyWidth * 4
-        let destinationCount = destinationStride.multipliedReportingOverflow(
-            by: destinationHeight)
-        guard !destinationCount.overflow else { return false }
-        return capture.pixels.withUnsafeBytes { source in
-            guard let sourceBase = source.baseAddress else { return false }
-            for row in 0..<copyHeight {
-                let sourceOffset = ((ry + row) * outW + rx) * 4
-                let destinationOffset = row * destinationStride
-                guard sourceOffset + rowBytes <= source.count,
-                      destinationOffset + rowBytes
-                        <= destinationCount.partialValue
-                else { return false }
-                unsafe destination.advanced(by: destinationOffset).copyMemory(
-                    from: sourceBase.advanced(by: sourceOffset),
-                    byteCount: rowBytes)
+        return unsafe buffer.withMutableShmBytes { metadata, destination in
+            guard copyWidth == metadata.width,
+                copyHeight == metadata.height,
+                copyWidth > 0,
+                copyHeight > 0,
+                metadata.stride >= copyWidth * 4,
+                let destinationBase = destination.baseAddress
+            else { return false }
+            let rowBytes = copyWidth * 4
+            return capture.pixels.withUnsafeBytes { source in
+                guard let sourceBase = source.baseAddress else {
+                    return false
+                }
+                for row in 0..<copyHeight {
+                    let sourceOffset =
+                        ((ry + row) * outW + rx) * 4
+                    let destinationOffset = row * metadata.stride
+                    guard sourceOffset + rowBytes <= source.count,
+                        destinationOffset + rowBytes
+                            <= destination.count
+                    else { return false }
+                    unsafe destinationBase
+                        .advanced(by: destinationOffset)
+                        .copyMemory(
+                            from: sourceBase.advanced(
+                                by: sourceOffset),
+                            byteCount: rowBytes)
+                }
+                return true
             }
-            return true
-        }
+        } ?? false
     }
 
     /// Translate a Wayland-owned destination buffer into the neutral capture

@@ -14,5 +14,9 @@ import WaylandServer
         // No clients connected: dispatch + flush must be safe no-ops.
         display.dispatch()
         display.flushClients()
+        let firstSerial = display.nextSerial()
+        let secondSerial = display.nextSerial()
+        #expect(firstSerial != 0)
+        #expect(secondSerial == firstSerial &+ 1)
     }
 }

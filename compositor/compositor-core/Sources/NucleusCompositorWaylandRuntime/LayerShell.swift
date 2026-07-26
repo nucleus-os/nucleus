@@ -36,33 +36,28 @@ protocol LayerShellDelegate: AnyObject {
 // MARK: - zwlr_layer_shell_v1 global
 
 @MainActor
-final class ZwlrLayerShellBinding {
-    unowned let shell: ZwlrLayerShell
-    init(_ shell: ZwlrLayerShell) { self.shell = shell }
-}
-
-@MainActor
 @safe final class ZwlrLayerShell {
     weak var delegate: (any LayerShellDelegate)?
-    private var display: OpaquePointer?
+    private let display: WaylandDisplay
+
+    init(display: WaylandDisplay) {
+        self.display = display
+    }
 
     func register(in router: NucleusWaylandRouter) {
-        unsafe display = router.display.display
         router.addGlobal(
             ZwlrLayerShellV1Server.global(
                 implementation: self,
-                advertisedVersion: 4,
-                owner: { shell, _ in ZwlrLayerShellBinding(shell) }))
+                advertisedVersion: 4))
     }
 
     func nextSerial() -> UInt32 {
-        guard let display = unsafe display else { return 0 }
-        return unsafe wl_display_next_serial(display)
+        display.nextSerial()
     }
 
 }
 
-extension ZwlrLayerShellBinding: ZwlrLayerShellV1Requests {
+extension ZwlrLayerShell: ZwlrLayerShellV1Requests {
     func getLayerSurface(
         _ request: WaylandRequest<ZwlrLayerShellV1Server>,
         id: WlNewId<ZwlrLayerSurfaceV1Server>,
@@ -70,7 +65,6 @@ extension ZwlrLayerShellBinding: ZwlrLayerShellV1Requests {
         output outputRes: WaylandBorrowedObject<WlOutputServer>?, layer: ZwlrLayerShellV1Layer,
         namespace namespacePtr: String
     ) {
-        let me = shell
         guard let surface = surfaceRes.owner(as: WlSurface.self) else { return }
         guard layer.rawValue <= 3 else {
             request.postError(.invalidLayer, message: "layer out of range")
@@ -85,8 +79,8 @@ extension ZwlrLayerShellBinding: ZwlrLayerShellV1Requests {
             return
         }
         let output = outputRes?.output
-        let outputID = output?.info.outputId ?? me.delegate?.defaultLayerOutputID() ?? 0
-        let rect = output?.logicalRect ?? me.delegate?.defaultLayerOutputRect()
+        let outputID = output?.info.outputId ?? delegate?.defaultLayerOutputID() ?? 0
+        let rect = output?.logicalRect ?? delegate?.defaultLayerOutputRect()
         guard let rect else {
             request.postError(.invalidLayer, message: "no output for layer surface")
             return
@@ -96,11 +90,11 @@ extension ZwlrLayerShellBinding: ZwlrLayerShellV1Requests {
             request.postError(.role, message: "surface already has a role")
             return
         }
-        _ = unsafe id.create(
+        _ = id.create(
             owner: { handle in
                 ZwlrLayerSurface(
                     resource: handle,
-                    shell: me,
+                    shell: self,
                     surface: surface,
                     outputID: outputID,
                     outputRect: rect,
@@ -459,7 +453,8 @@ extension ZwlrLayerSurface: ZwlrLayerSurfaceV1Requests {
         guard layer.rawValue <= 3 else {
             // invalid_layer belongs to the zwlr_layer_shell_v1 error enum (value 1);
             // wlroots posts it on the layer_surface resource, matching get_layer_surface.
-            request.postError(.invalidSize, message: "layer out of range")
+            request.postLayerShellInvalidLayerError(
+                message: "layer out of range")
             return
         }
         pendingLayer = layer.rawValue

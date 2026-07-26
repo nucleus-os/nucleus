@@ -1,5 +1,6 @@
 import WaylandServerC
 import WaylandServer
+import WaylandServerDispatch
 
 /// One field's double-buffered mutation. `set(nil)` is an explicit clear.
 enum SurfacePendingField<T> {
@@ -13,8 +14,8 @@ enum SurfacePendingField<T> {
 struct SurfaceTransaction {
     let commitID: UInt64
     let bufferAttached: Bool
-    let buffer: WaylandResourceReference?
-    let releaseCallback: WaylandResourceReference?
+    let buffer: WaylandResourceReference<WlBufferServer>?
+    let releaseCallback: WaylandResourceReference<WlCallbackServer>?
     let offsetX: Int32
     let offsetY: Int32
     let bufferScale: Int32
@@ -23,8 +24,9 @@ struct SurfaceTransaction {
     let input: SurfacePendingField<RegionSnapshot>
     let surfaceDamage: [WlRect]
     let bufferDamage: [WlRect]
-    var frameCallbacks: [WaylandResourceReference]
-    var presentationFeedbacks: [WaylandResourceReference]
+    var frameCallbacks: [WaylandResourceReference<WlCallbackServer>]
+    var presentationFeedbacks:
+        [WaylandResourceReference<WpPresentationFeedbackServer>]
     let isInitial: Bool
     let auxViewportSource: WlFRect?
     let auxViewportSourceSet: Bool

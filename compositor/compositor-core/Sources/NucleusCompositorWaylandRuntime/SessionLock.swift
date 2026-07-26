@@ -26,23 +26,24 @@ protocol SessionLockDelegate: AnyObject {
 @MainActor
 @safe final class SessionLockManager {
     weak var delegate: (any SessionLockDelegate)?
-    private var display: OpaquePointer?
+    private let display: WaylandDisplay
 
     /// At most one lock is live at a time (the gate is single-owner). The reactor
     /// calls `currentLock?.emitLocked()` once every output presents a locked frame.
     private(set) weak var currentLock: ExtSessionLock?
 
+    init(display: WaylandDisplay) {
+        self.display = display
+    }
+
     func register(in router: NucleusWaylandRouter) {
-        unsafe display = router.display.display
         router.addGlobal(
             ExtSessionLockManagerV1Server.global(
-                implementation: self,
-                owner: { manager, _ in manager }))
+                implementation: self))
     }
 
     func nextSerial() -> UInt32 {
-        guard let display = unsafe display else { return 0 }
-        return unsafe wl_display_next_serial(display)
+        display.nextSerial()
     }
 
     fileprivate func begin() -> Bool { delegate?.sessionLockBegin() ?? false }
@@ -62,7 +63,7 @@ extension SessionLockManager: ExtSessionLockManagerV1Requests {
         _ request: WaylandRequest<ExtSessionLockManagerV1Server>,
         id: WlNewId<ExtSessionLockV1Server>
     ) {
-        _ = unsafe id.create(
+        _ = id.create(
             owner: { handle in
                 ExtSessionLock(resource: handle, manager: self)
             },
@@ -112,25 +113,23 @@ extension ExtSessionLock: ExtSessionLockV1Requests {
     // manager.end() disarms the lock gate; without this override the default auto-destroy would
     // leave the session locked forever. (clearLock also runs in deinit; it is idempotent.)
     func unlockAndDestroy(_ request: WaylandRequest<ExtSessionLockV1Server>) {
-        let resource = unsafe request.resource
         guard locked else {
             request.postError(.invalidUnlock, message: "unlock before locked")  // invalid_unlock
             return
         }
         manager?.end()
         manager?.clearLock(self)
-        unsafe wl_resource_destroy(resource)
+        request.destroy()
     }
 
     // destroy: only valid before `locked` (the deny path); destroying a live lock is a protocol error.
     func destroy(_ request: WaylandRequest<ExtSessionLockV1Server>) {
-        let resource = unsafe request.resource
         guard !locked else {
             request.postError(.invalidDestroy, message: "destroy after locked")  // invalid_destroy
             return
         }
         manager?.clearLock(self)
-        unsafe wl_resource_destroy(resource)
+        request.destroy()
     }
 
     // get_lock_surface(id, surface, output)
@@ -161,7 +160,7 @@ extension ExtSessionLock: ExtSessionLockV1Requests {
                 return
             }
         }
-        _ = unsafe id.create(
+        _ = id.create(
             owner: { handle in
                 ExtSessionLockSurface(
                     resource: handle,
@@ -217,9 +216,7 @@ extension ExtSessionLock: ExtSessionLockV1Requests {
     /// remains fail-closed and the locker may create a surface for a new output.
     func outputRemoved() {
         output = nil
-        if let resource = unsafe resource.resource {
-            unsafe wl_resource_destroy(resource)
-        }
+        resource.destroy()
     }
 
     /// Configure the lock surface to its output's size (surface-local).

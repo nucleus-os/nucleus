@@ -1,5 +1,6 @@
 import WaylandServerC
 import WaylandServer
+import WaylandServerDispatch
 import NucleusCompositorServerTypes
 import NucleusTypes
 
@@ -76,7 +77,7 @@ struct SurfaceCommit {
     let commitID: UInt64
     let bufferAttached: Bool
     let bufferGeneration: UInt64
-    let buffer: WaylandResourceReference?
+    let buffer: WaylandResourceReference<WlBufferServer>?
     let bufferPixelSize: BufferPixelSize
     let logicalContentSize: SurfaceLogicalSize
     let bufferScale: Int32
@@ -100,14 +101,15 @@ protocol SurfaceSceneDelegate: AnyObject {
 /// `SurfaceTransaction`.
 struct SurfacePendingState {
     var bufferAttached = false
-    var buffer: WaylandResourceReference?
-    var releaseCallback: WaylandResourceReference?
+    var buffer: WaylandResourceReference<WlBufferServer>?
+    var releaseCallback: WaylandResourceReference<WlCallbackServer>?
     var offsetX: Int32 = 0
     var offsetY: Int32 = 0
     var surfaceDamage: [WlRect] = []
     var bufferDamage: [WlRect] = []
-    var frameCallbacks: [WaylandResourceReference] = []
-    var presentationFeedbacks: [WaylandResourceReference] = []
+    var frameCallbacks: [WaylandResourceReference<WlCallbackServer>] = []
+    var presentationFeedbacks:
+        [WaylandResourceReference<WpPresentationFeedbackServer>] = []
     var bufferScale: Int32 = 1
     var bufferTransform: Int32 = 0
     var opaque: SurfacePendingField<RegionSnapshot> = .unchanged

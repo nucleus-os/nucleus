@@ -28,8 +28,7 @@ import WaylandProtocolTypes
     func register(in router: NucleusWaylandRouter) {
         router.addGlobal(
             XwaylandShellV1Server.global(
-                implementation: self,
-                owner: { manager, _ in manager }))
+                implementation: self))
     }
 }
 
@@ -46,7 +45,7 @@ extension XwaylandShellManager: XwaylandShellV1Requests {
             request.postError(.role, message: "surface already has a role")
             return
         }
-        _ = unsafe id.create(
+        _ = id.create(
             owner: { handle in
                 XwaylandSurfaceRole(
                     resource: handle, surface: surface, host: host)

@@ -6,3 +6,30 @@ public enum WpColorRepresentationSurfaceV1Client: WaylandClientInterface {
     public nonisolated(unsafe) static let interface = unsafe swift_wayland_iface_wp_color_representation_surface_v1()
     public nonisolated static let maximumVersion: UInt32 = 1
 }
+public import WaylandProtocolTypes
+public extension WaylandProxy where Interface == WpColorRepresentationSurfaceV1Client {
+    func destroy() throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        let _send = { () throws(WaylandProxyError) -> Void in
+            unsafe swift_wayland_client_request_wp_color_representation_surface_v1_destroy(_proxy)
+            return
+        }
+        try _send()
+        try unsafe invalidateAfterProtocolDestructor()
+    }
+    func setAlphaMode(alpha_mode: WpColorRepresentationSurfaceV1AlphaMode) throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        unsafe swift_wayland_client_request_wp_color_representation_surface_v1_set_alpha_mode(_proxy, alpha_mode.rawValue)
+        return
+    }
+    func setCoefficientsAndRange(coefficients: WpColorRepresentationSurfaceV1Coefficients, range: WpColorRepresentationSurfaceV1Range) throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        unsafe swift_wayland_client_request_wp_color_representation_surface_v1_set_coefficients_and_range(_proxy, coefficients.rawValue, range.rawValue)
+        return
+    }
+    func setChromaLocation(chroma_location: WpColorRepresentationSurfaceV1ChromaLocation) throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        unsafe swift_wayland_client_request_wp_color_representation_surface_v1_set_chroma_location(_proxy, chroma_location.rawValue)
+        return
+    }
+}

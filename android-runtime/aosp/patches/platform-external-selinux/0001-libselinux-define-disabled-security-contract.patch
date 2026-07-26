@@ -1,0 +1,176 @@
+diff --git a/libselinux/Android.bp b/libselinux/Android.bp
+index 53e9a4c..0872430 100644
+--- a/libselinux/Android.bp
++++ b/libselinux/Android.bp
+@@ -221,5 +221,17 @@ cc_test_host {
+     stl: "",
+ }
+ 
++cc_test {
++    name: "libselinux_nucleus_disabled_test",
++    srcs: ["src/android/nucleus_disabled_unittest.cpp"],
++    shared_libs: [
++        "libbase",
++        "libselinux",
++    ],
++    test_suites: ["general-tests"],
++    auto_gen_config: true,
++    stl: "libc++_static",
++}
++
+ cc_binary_host {
+     name: "sefcontext_compile",
+diff --git a/libselinux/src/android/android_device.c b/libselinux/src/android/android_device.c
+index 3cf2015..1365675 100644
+--- a/libselinux/src/android/android_device.c
++++ b/libselinux/src/android/android_device.c
+@@ -457,10 +457,8 @@ static int selinux_android_restorecon_common(const char* pathname_orig,
+ 		ftsflags |= FTS_XDEV;
+ 	}
+ 
+-	if (is_selinux_enabled() <= 0) {
+-		selinux_log(SELINUX_WARNING, "SELinux: SELinux is disabled, skipping restorecon");
++	if (is_selinux_enabled() <= 0)
+ 		return 0;
+-	}
+ 
+ 	__selinux_once(fc_once, file_context_init);
+ 
+diff --git a/libselinux/src/android/android_unittest.cpp b/libselinux/src/android/android_unittest.cpp
+index dc8161a..1120072 100644
+--- a/libselinux/src/android/android_unittest.cpp
++++ b/libselinux/src/android/android_unittest.cpp
+@@ -1,8 +1,11 @@
++#include <errno.h>
++
+ #include <gtest/gtest.h>
+ 
+ #include <android-base/file.h>
+ #include <android-base/macros.h>
+ #include <android-base/stringprintf.h>
++#include <selinux/selinux.h>
+ 
+ #include <private/android_filesystem_config.h>
+ #include "android_internal.h"
+@@ -11,7 +14,18 @@
+ using android::base::StringPrintf;
+ using android::base::WriteStringToFile;
+ using std::string;
+ 
++TEST(DisabledSELinuxContractTest, AccessChecksDoNotGrantWithoutPolicy)
++{
++	ASSERT_EQ(0, is_selinux_enabled());
++
++	errno = 0;
++	EXPECT_EQ(-1, selinux_check_access(
++			      "u:r:test:s0", "u:r:test:s0",
++			      "service_manager", "find", nullptr));
++	EXPECT_EQ(ENOTSUP, errno);
++}
++
+ class AndroidSELinuxTest : public ::testing::Test {
+     protected:
+ 	const char* kUnknownDomain = "u:r:unknown";
+diff --git a/libselinux/src/android/nucleus_disabled_unittest.cpp b/libselinux/src/android/nucleus_disabled_unittest.cpp
+new file mode 100644
+index 0000000..ab84c41
+--- /dev/null
++++ b/libselinux/src/android/nucleus_disabled_unittest.cpp
+@@ -0,0 +1,80 @@
++#include <errno.h>
++
++#include <gtest/gtest.h>
++
++#include <android-base/file.h>
++#include <selinux/android.h>
++#include <selinux/selinux.h>
++
++namespace {
++
++constexpr char kSyntheticContext[] = "u:r:nucleus_test:s0";
++
++class DisabledSELinuxTest : public ::testing::Test {
++  protected:
++    void SetUp() override {
++        if (is_selinux_enabled() > 0) {
++            GTEST_SKIP() << "requires a runtime without Android SELinux";
++        }
++    }
++};
++
++TEST_F(DisabledSELinuxTest, RestoreconIsAQuietNoOp) {
++    constexpr char kMissingPath[] =
++            "/data/local/tmp/nucleus-selinux-test-path-that-must-not-exist";
++
++    EXPECT_EQ(0, selinux_android_restorecon(
++                         kMissingPath, SELINUX_ANDROID_RESTORECON_RECURSE));
++    EXPECT_EQ(0, selinux_android_restorecon_pkgdir(
++                         kMissingPath, "platform", 10000,
++                         SELINUX_ANDROID_RESTORECON_RECURSE));
++}
++
++TEST_F(DisabledSELinuxTest, AccessChecksDoNotGrantWithoutPolicy) {
++    errno = 0;
++    EXPECT_EQ(-1, selinux_check_access(
++                          kSyntheticContext, kSyntheticContext,
++                          "service_manager", "find", nullptr));
++    EXPECT_EQ(ENOTSUP, errno);
++}
++
++TEST_F(DisabledSELinuxTest, LabelGettersDoNotFabricateContexts) {
++    TemporaryFile file;
++    ASSERT_NE(-1, file.fd);
++
++    char* context = reinterpret_cast<char*>(1);
++    EXPECT_EQ(-1, getfilecon(file.path, &context));
++    EXPECT_EQ(nullptr, context);
++
++    context = reinterpret_cast<char*>(1);
++    EXPECT_EQ(-1, lgetfilecon(file.path, &context));
++    EXPECT_EQ(nullptr, context);
++
++    context = reinterpret_cast<char*>(1);
++    EXPECT_EQ(-1, fgetfilecon(file.fd, &context));
++    EXPECT_EQ(nullptr, context);
++}
++
++TEST_F(DisabledSELinuxTest, LabelWritersDoNotSilentlySucceed) {
++    TemporaryFile file;
++    ASSERT_NE(-1, file.fd);
++
++    EXPECT_EQ(-1, setfilecon(file.path, kSyntheticContext));
++    EXPECT_EQ(-1, lsetfilecon(file.path, kSyntheticContext));
++    EXPECT_EQ(-1, fsetfilecon(file.fd, kSyntheticContext));
++}
++
++TEST_F(DisabledSELinuxTest, ProcessTransitionsDoNotSilentlySucceed) {
++    EXPECT_EQ(-1, setcon(kSyntheticContext));
++    EXPECT_EQ(-1, setexeccon(kSyntheticContext));
++    EXPECT_EQ(-1, setfscreatecon(kSyntheticContext));
++    EXPECT_EQ(-1, setsockcreatecon(kSyntheticContext));
++}
++
++TEST_F(DisabledSELinuxTest, EnforcementStateIsUnavailable) {
++    errno = 0;
++    EXPECT_EQ(-1, security_getenforce());
++    EXPECT_EQ(ENOENT, errno);
++}
++
++}  // namespace
+diff --git a/libselinux/src/checkAccess.c b/libselinux/src/checkAccess.c
+index 8db3555..6aaf863 100644
+--- a/libselinux/src/checkAccess.c
++++ b/libselinux/src/checkAccess.c
+@@ -27,8 +27,10 @@ int selinux_check_access(const char *scon, const char *tcon, const char *class,
+ 
+ 	__selinux_once(once, avc_init_once);
+ 
+-	if (selinux_enabled != 1)
+-		return 0;
++	if (selinux_enabled != 1) {
++		errno = ENOTSUP;
++		return -1;
++	}
+ 
+ 	rc = avc_context_to_sid(scon, &scon_id);
+ 	if (rc < 0)

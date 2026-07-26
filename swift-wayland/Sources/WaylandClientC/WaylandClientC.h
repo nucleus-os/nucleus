@@ -117,6 +117,4796 @@
 static inline wl_fixed_t swift_wayland_fixed_from_double(double d) { return wl_fixed_from_double(d); }
 static inline double swift_wayland_fixed_to_double(wl_fixed_t f) { return wl_fixed_to_double(f); }
 
+/* Non-variadic request façades generated from the selected XML. These keep
+ * Swift out of wayland-scanner inlines and cover core requests newer than the
+ * distribution's wayland-client-protocol.h. */
+static inline struct wl_proxy *
+swift_wayland_client_request_wl_display_sync(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, &wl_callback_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_wl_display_get_registry(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, &wl_registry_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_wl_compositor_create_surface(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, &wl_surface_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_wl_compositor_create_region(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, &wl_region_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL);
+}
+
+static inline void
+swift_wayland_client_request_wl_compositor_release(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 2, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_wl_shm_pool_create_buffer(
+    struct wl_proxy *swift_wayland_proxy, int32_t swift_wayland_arg_offset, int32_t swift_wayland_arg_width, int32_t swift_wayland_arg_height, int32_t swift_wayland_arg_stride, uint32_t swift_wayland_arg_format
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, &wl_buffer_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL, swift_wayland_arg_offset, swift_wayland_arg_width, swift_wayland_arg_height, swift_wayland_arg_stride, swift_wayland_arg_format);
+}
+
+static inline void
+swift_wayland_client_request_wl_shm_pool_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_wl_shm_pool_resize(
+    struct wl_proxy *swift_wayland_proxy, int32_t swift_wayland_arg_size
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 2, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_size);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_wl_shm_create_pool(
+    struct wl_proxy *swift_wayland_proxy, int32_t swift_wayland_arg_fd, int32_t swift_wayland_arg_size
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, &wl_shm_pool_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL, swift_wayland_arg_fd, swift_wayland_arg_size);
+}
+
+static inline void
+swift_wayland_client_request_wl_shm_release(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_wl_buffer_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_wl_data_offer_accept(
+    struct wl_proxy *swift_wayland_proxy, uint32_t swift_wayland_arg_serial, const char * swift_wayland_arg_mime_type
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_serial, swift_wayland_arg_mime_type);
+}
+
+static inline void
+swift_wayland_client_request_wl_data_offer_receive(
+    struct wl_proxy *swift_wayland_proxy, const char * swift_wayland_arg_mime_type, int32_t swift_wayland_arg_fd
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_mime_type, swift_wayland_arg_fd);
+}
+
+static inline void
+swift_wayland_client_request_wl_data_offer_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 2, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_wl_data_offer_finish(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 3, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0);
+}
+
+static inline void
+swift_wayland_client_request_wl_data_offer_set_actions(
+    struct wl_proxy *swift_wayland_proxy, uint32_t swift_wayland_arg_dnd_actions, uint32_t swift_wayland_arg_preferred_action
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 4, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_dnd_actions, swift_wayland_arg_preferred_action);
+}
+
+static inline void
+swift_wayland_client_request_wl_data_source_offer(
+    struct wl_proxy *swift_wayland_proxy, const char * swift_wayland_arg_mime_type
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_mime_type);
+}
+
+static inline void
+swift_wayland_client_request_wl_data_source_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_wl_data_source_set_actions(
+    struct wl_proxy *swift_wayland_proxy, uint32_t swift_wayland_arg_dnd_actions
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 2, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_dnd_actions);
+}
+
+static inline void
+swift_wayland_client_request_wl_data_device_start_drag(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_source, struct wl_proxy * swift_wayland_arg_origin, struct wl_proxy * swift_wayland_arg_icon, uint32_t swift_wayland_arg_serial
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_source, swift_wayland_arg_origin, swift_wayland_arg_icon, swift_wayland_arg_serial);
+}
+
+static inline void
+swift_wayland_client_request_wl_data_device_set_selection(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_source, uint32_t swift_wayland_arg_serial
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_source, swift_wayland_arg_serial);
+}
+
+static inline void
+swift_wayland_client_request_wl_data_device_release(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 2, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_wl_data_device_manager_create_data_source(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, &wl_data_source_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_wl_data_device_manager_get_data_device(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_seat
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, &wl_data_device_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL, swift_wayland_arg_seat);
+}
+
+static inline void
+swift_wayland_client_request_wl_data_device_manager_release(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 2, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_wl_shell_get_shell_surface(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_surface
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, &wl_shell_surface_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL, swift_wayland_arg_surface);
+}
+
+static inline void
+swift_wayland_client_request_wl_shell_surface_pong(
+    struct wl_proxy *swift_wayland_proxy, uint32_t swift_wayland_arg_serial
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_serial);
+}
+
+static inline void
+swift_wayland_client_request_wl_shell_surface_move(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_seat, uint32_t swift_wayland_arg_serial
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_seat, swift_wayland_arg_serial);
+}
+
+static inline void
+swift_wayland_client_request_wl_shell_surface_resize(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_seat, uint32_t swift_wayland_arg_serial, uint32_t swift_wayland_arg_edges
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 2, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_seat, swift_wayland_arg_serial, swift_wayland_arg_edges);
+}
+
+static inline void
+swift_wayland_client_request_wl_shell_surface_set_toplevel(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 3, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0);
+}
+
+static inline void
+swift_wayland_client_request_wl_shell_surface_set_transient(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_parent, int32_t swift_wayland_arg_x, int32_t swift_wayland_arg_y, uint32_t swift_wayland_arg_flags
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 4, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_parent, swift_wayland_arg_x, swift_wayland_arg_y, swift_wayland_arg_flags);
+}
+
+static inline void
+swift_wayland_client_request_wl_shell_surface_set_fullscreen(
+    struct wl_proxy *swift_wayland_proxy, uint32_t swift_wayland_arg_method, uint32_t swift_wayland_arg_framerate, struct wl_proxy * swift_wayland_arg_output
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 5, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_method, swift_wayland_arg_framerate, swift_wayland_arg_output);
+}
+
+static inline void
+swift_wayland_client_request_wl_shell_surface_set_popup(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_seat, uint32_t swift_wayland_arg_serial, struct wl_proxy * swift_wayland_arg_parent, int32_t swift_wayland_arg_x, int32_t swift_wayland_arg_y, uint32_t swift_wayland_arg_flags
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 6, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_seat, swift_wayland_arg_serial, swift_wayland_arg_parent, swift_wayland_arg_x, swift_wayland_arg_y, swift_wayland_arg_flags);
+}
+
+static inline void
+swift_wayland_client_request_wl_shell_surface_set_maximized(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_output
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 7, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_output);
+}
+
+static inline void
+swift_wayland_client_request_wl_shell_surface_set_title(
+    struct wl_proxy *swift_wayland_proxy, const char * swift_wayland_arg_title
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 8, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_title);
+}
+
+static inline void
+swift_wayland_client_request_wl_shell_surface_set_class(
+    struct wl_proxy *swift_wayland_proxy, const char * swift_wayland_arg_class_
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 9, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_class_);
+}
+
+static inline void
+swift_wayland_client_request_wl_surface_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_wl_surface_attach(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_buffer, int32_t swift_wayland_arg_x, int32_t swift_wayland_arg_y
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_buffer, swift_wayland_arg_x, swift_wayland_arg_y);
+}
+
+static inline void
+swift_wayland_client_request_wl_surface_damage(
+    struct wl_proxy *swift_wayland_proxy, int32_t swift_wayland_arg_x, int32_t swift_wayland_arg_y, int32_t swift_wayland_arg_width, int32_t swift_wayland_arg_height
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 2, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_x, swift_wayland_arg_y, swift_wayland_arg_width, swift_wayland_arg_height);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_wl_surface_frame(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 3, &wl_callback_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL);
+}
+
+static inline void
+swift_wayland_client_request_wl_surface_set_opaque_region(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_region
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 4, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_region);
+}
+
+static inline void
+swift_wayland_client_request_wl_surface_set_input_region(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_region
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 5, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_region);
+}
+
+static inline void
+swift_wayland_client_request_wl_surface_commit(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 6, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0);
+}
+
+static inline void
+swift_wayland_client_request_wl_surface_set_buffer_transform(
+    struct wl_proxy *swift_wayland_proxy, int32_t swift_wayland_arg_transform
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 7, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_transform);
+}
+
+static inline void
+swift_wayland_client_request_wl_surface_set_buffer_scale(
+    struct wl_proxy *swift_wayland_proxy, int32_t swift_wayland_arg_scale
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 8, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_scale);
+}
+
+static inline void
+swift_wayland_client_request_wl_surface_damage_buffer(
+    struct wl_proxy *swift_wayland_proxy, int32_t swift_wayland_arg_x, int32_t swift_wayland_arg_y, int32_t swift_wayland_arg_width, int32_t swift_wayland_arg_height
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 9, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_x, swift_wayland_arg_y, swift_wayland_arg_width, swift_wayland_arg_height);
+}
+
+static inline void
+swift_wayland_client_request_wl_surface_offset(
+    struct wl_proxy *swift_wayland_proxy, int32_t swift_wayland_arg_x, int32_t swift_wayland_arg_y
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 10, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_x, swift_wayland_arg_y);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_wl_surface_get_release(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 11, &wl_callback_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_wl_seat_get_pointer(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, &wl_pointer_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_wl_seat_get_keyboard(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, &wl_keyboard_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_wl_seat_get_touch(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 2, &wl_touch_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL);
+}
+
+static inline void
+swift_wayland_client_request_wl_seat_release(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 3, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_wl_pointer_set_cursor(
+    struct wl_proxy *swift_wayland_proxy, uint32_t swift_wayland_arg_serial, struct wl_proxy * swift_wayland_arg_surface, int32_t swift_wayland_arg_hotspot_x, int32_t swift_wayland_arg_hotspot_y
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_serial, swift_wayland_arg_surface, swift_wayland_arg_hotspot_x, swift_wayland_arg_hotspot_y);
+}
+
+static inline void
+swift_wayland_client_request_wl_pointer_release(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_wl_keyboard_release(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_wl_touch_release(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_wl_output_release(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_wl_region_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_wl_region_add(
+    struct wl_proxy *swift_wayland_proxy, int32_t swift_wayland_arg_x, int32_t swift_wayland_arg_y, int32_t swift_wayland_arg_width, int32_t swift_wayland_arg_height
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_x, swift_wayland_arg_y, swift_wayland_arg_width, swift_wayland_arg_height);
+}
+
+static inline void
+swift_wayland_client_request_wl_region_subtract(
+    struct wl_proxy *swift_wayland_proxy, int32_t swift_wayland_arg_x, int32_t swift_wayland_arg_y, int32_t swift_wayland_arg_width, int32_t swift_wayland_arg_height
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 2, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_x, swift_wayland_arg_y, swift_wayland_arg_width, swift_wayland_arg_height);
+}
+
+static inline void
+swift_wayland_client_request_wl_subcompositor_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_wl_subcompositor_get_subsurface(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_surface, struct wl_proxy * swift_wayland_arg_parent
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, &wl_subsurface_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL, swift_wayland_arg_surface, swift_wayland_arg_parent);
+}
+
+static inline void
+swift_wayland_client_request_wl_subsurface_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_wl_subsurface_set_position(
+    struct wl_proxy *swift_wayland_proxy, int32_t swift_wayland_arg_x, int32_t swift_wayland_arg_y
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_x, swift_wayland_arg_y);
+}
+
+static inline void
+swift_wayland_client_request_wl_subsurface_place_above(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_sibling
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 2, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_sibling);
+}
+
+static inline void
+swift_wayland_client_request_wl_subsurface_place_below(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_sibling
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 3, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_sibling);
+}
+
+static inline void
+swift_wayland_client_request_wl_subsurface_set_sync(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 4, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0);
+}
+
+static inline void
+swift_wayland_client_request_wl_subsurface_set_desync(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 5, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0);
+}
+
+static inline void
+swift_wayland_client_request_wl_fixes_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_wl_fixes_destroy_registry(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_registry
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_registry);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_org_kde_kwin_blur_manager_create(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_surface
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, &org_kde_kwin_blur_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL, swift_wayland_arg_surface);
+}
+
+static inline void
+swift_wayland_client_request_org_kde_kwin_blur_manager_unset(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_surface
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_surface);
+}
+
+static inline void
+swift_wayland_client_request_org_kde_kwin_blur_commit(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0);
+}
+
+static inline void
+swift_wayland_client_request_org_kde_kwin_blur_set_region(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_region
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_region);
+}
+
+static inline void
+swift_wayland_client_request_org_kde_kwin_blur_release(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 2, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_org_kde_kwin_appmenu_manager_create(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_surface
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, &org_kde_kwin_appmenu_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL, swift_wayland_arg_surface);
+}
+
+static inline void
+swift_wayland_client_request_org_kde_kwin_appmenu_manager_release(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_org_kde_kwin_appmenu_set_address(
+    struct wl_proxy *swift_wayland_proxy, const char * swift_wayland_arg_service_name, const char * swift_wayland_arg_object_path
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_service_name, swift_wayland_arg_object_path);
+}
+
+static inline void
+swift_wayland_client_request_org_kde_kwin_appmenu_release(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_zwlr_foreign_toplevel_manager_v1_stop(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0);
+}
+
+static inline void
+swift_wayland_client_request_zwlr_foreign_toplevel_handle_v1_set_maximized(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0);
+}
+
+static inline void
+swift_wayland_client_request_zwlr_foreign_toplevel_handle_v1_unset_maximized(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0);
+}
+
+static inline void
+swift_wayland_client_request_zwlr_foreign_toplevel_handle_v1_set_minimized(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 2, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0);
+}
+
+static inline void
+swift_wayland_client_request_zwlr_foreign_toplevel_handle_v1_unset_minimized(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 3, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0);
+}
+
+static inline void
+swift_wayland_client_request_zwlr_foreign_toplevel_handle_v1_activate(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_seat
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 4, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_seat);
+}
+
+static inline void
+swift_wayland_client_request_zwlr_foreign_toplevel_handle_v1_close(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 5, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0);
+}
+
+static inline void
+swift_wayland_client_request_zwlr_foreign_toplevel_handle_v1_set_rectangle(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_surface, int32_t swift_wayland_arg_x, int32_t swift_wayland_arg_y, int32_t swift_wayland_arg_width, int32_t swift_wayland_arg_height
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 6, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_surface, swift_wayland_arg_x, swift_wayland_arg_y, swift_wayland_arg_width, swift_wayland_arg_height);
+}
+
+static inline void
+swift_wayland_client_request_zwlr_foreign_toplevel_handle_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 7, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_zwlr_foreign_toplevel_handle_v1_set_fullscreen(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_output
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 8, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_output);
+}
+
+static inline void
+swift_wayland_client_request_zwlr_foreign_toplevel_handle_v1_unset_fullscreen(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 9, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_zwlr_gamma_control_manager_v1_get_gamma_control(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_output
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, &zwlr_gamma_control_v1_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL, swift_wayland_arg_output);
+}
+
+static inline void
+swift_wayland_client_request_zwlr_gamma_control_manager_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_zwlr_gamma_control_v1_set_gamma(
+    struct wl_proxy *swift_wayland_proxy, int32_t swift_wayland_arg_fd
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_fd);
+}
+
+static inline void
+swift_wayland_client_request_zwlr_gamma_control_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_zwlr_layer_shell_v1_get_layer_surface(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_surface, struct wl_proxy * swift_wayland_arg_output, uint32_t swift_wayland_arg_layer, const char * swift_wayland_arg_namespace
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, &zwlr_layer_surface_v1_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL, swift_wayland_arg_surface, swift_wayland_arg_output, swift_wayland_arg_layer, swift_wayland_arg_namespace);
+}
+
+static inline void
+swift_wayland_client_request_zwlr_layer_shell_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_zwlr_layer_surface_v1_set_size(
+    struct wl_proxy *swift_wayland_proxy, uint32_t swift_wayland_arg_width, uint32_t swift_wayland_arg_height
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_width, swift_wayland_arg_height);
+}
+
+static inline void
+swift_wayland_client_request_zwlr_layer_surface_v1_set_anchor(
+    struct wl_proxy *swift_wayland_proxy, uint32_t swift_wayland_arg_anchor
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_anchor);
+}
+
+static inline void
+swift_wayland_client_request_zwlr_layer_surface_v1_set_exclusive_zone(
+    struct wl_proxy *swift_wayland_proxy, int32_t swift_wayland_arg_zone
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 2, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_zone);
+}
+
+static inline void
+swift_wayland_client_request_zwlr_layer_surface_v1_set_margin(
+    struct wl_proxy *swift_wayland_proxy, int32_t swift_wayland_arg_top, int32_t swift_wayland_arg_right, int32_t swift_wayland_arg_bottom, int32_t swift_wayland_arg_left
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 3, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_top, swift_wayland_arg_right, swift_wayland_arg_bottom, swift_wayland_arg_left);
+}
+
+static inline void
+swift_wayland_client_request_zwlr_layer_surface_v1_set_keyboard_interactivity(
+    struct wl_proxy *swift_wayland_proxy, uint32_t swift_wayland_arg_keyboard_interactivity
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 4, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_keyboard_interactivity);
+}
+
+static inline void
+swift_wayland_client_request_zwlr_layer_surface_v1_get_popup(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_popup
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 5, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_popup);
+}
+
+static inline void
+swift_wayland_client_request_zwlr_layer_surface_v1_ack_configure(
+    struct wl_proxy *swift_wayland_proxy, uint32_t swift_wayland_arg_serial
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 6, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_serial);
+}
+
+static inline void
+swift_wayland_client_request_zwlr_layer_surface_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 7, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_zwlr_layer_surface_v1_set_layer(
+    struct wl_proxy *swift_wayland_proxy, uint32_t swift_wayland_arg_layer
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 8, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_layer);
+}
+
+static inline void
+swift_wayland_client_request_zwlr_layer_surface_v1_set_exclusive_edge(
+    struct wl_proxy *swift_wayland_proxy, uint32_t swift_wayland_arg_edge
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 9, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_edge);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_zwlr_output_manager_v1_create_configuration(
+    struct wl_proxy *swift_wayland_proxy, uint32_t swift_wayland_arg_serial
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, &zwlr_output_configuration_v1_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL, swift_wayland_arg_serial);
+}
+
+static inline void
+swift_wayland_client_request_zwlr_output_manager_v1_stop(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0);
+}
+
+static inline void
+swift_wayland_client_request_zwlr_output_head_v1_release(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_zwlr_output_mode_v1_release(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_zwlr_output_configuration_v1_enable_head(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_head
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, &zwlr_output_configuration_head_v1_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL, swift_wayland_arg_head);
+}
+
+static inline void
+swift_wayland_client_request_zwlr_output_configuration_v1_disable_head(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_head
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_head);
+}
+
+static inline void
+swift_wayland_client_request_zwlr_output_configuration_v1_apply(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 2, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0);
+}
+
+static inline void
+swift_wayland_client_request_zwlr_output_configuration_v1_test(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 3, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0);
+}
+
+static inline void
+swift_wayland_client_request_zwlr_output_configuration_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 4, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_zwlr_output_configuration_head_v1_set_mode(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_mode
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_mode);
+}
+
+static inline void
+swift_wayland_client_request_zwlr_output_configuration_head_v1_set_custom_mode(
+    struct wl_proxy *swift_wayland_proxy, int32_t swift_wayland_arg_width, int32_t swift_wayland_arg_height, int32_t swift_wayland_arg_refresh
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_width, swift_wayland_arg_height, swift_wayland_arg_refresh);
+}
+
+static inline void
+swift_wayland_client_request_zwlr_output_configuration_head_v1_set_position(
+    struct wl_proxy *swift_wayland_proxy, int32_t swift_wayland_arg_x, int32_t swift_wayland_arg_y
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 2, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_x, swift_wayland_arg_y);
+}
+
+static inline void
+swift_wayland_client_request_zwlr_output_configuration_head_v1_set_transform(
+    struct wl_proxy *swift_wayland_proxy, int32_t swift_wayland_arg_transform
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 3, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_transform);
+}
+
+static inline void
+swift_wayland_client_request_zwlr_output_configuration_head_v1_set_scale(
+    struct wl_proxy *swift_wayland_proxy, wl_fixed_t swift_wayland_arg_scale
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 4, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_scale);
+}
+
+static inline void
+swift_wayland_client_request_zwlr_output_configuration_head_v1_set_adaptive_sync(
+    struct wl_proxy *swift_wayland_proxy, uint32_t swift_wayland_arg_state
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 5, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_state);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_zwlr_screencopy_manager_v1_capture_output(
+    struct wl_proxy *swift_wayland_proxy, int32_t swift_wayland_arg_overlay_cursor, struct wl_proxy * swift_wayland_arg_output
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, &zwlr_screencopy_frame_v1_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL, swift_wayland_arg_overlay_cursor, swift_wayland_arg_output);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_zwlr_screencopy_manager_v1_capture_output_region(
+    struct wl_proxy *swift_wayland_proxy, int32_t swift_wayland_arg_overlay_cursor, struct wl_proxy * swift_wayland_arg_output, int32_t swift_wayland_arg_x, int32_t swift_wayland_arg_y, int32_t swift_wayland_arg_width, int32_t swift_wayland_arg_height
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, &zwlr_screencopy_frame_v1_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL, swift_wayland_arg_overlay_cursor, swift_wayland_arg_output, swift_wayland_arg_x, swift_wayland_arg_y, swift_wayland_arg_width, swift_wayland_arg_height);
+}
+
+static inline void
+swift_wayland_client_request_zwlr_screencopy_manager_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 2, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_zwlr_screencopy_frame_v1_copy(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_buffer
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_buffer);
+}
+
+static inline void
+swift_wayland_client_request_zwlr_screencopy_frame_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_zwlr_screencopy_frame_v1_copy_with_damage(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_buffer
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 2, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_buffer);
+}
+
+static inline void
+swift_wayland_client_request_zwp_linux_dmabuf_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_zwp_linux_dmabuf_v1_create_params(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, &zwp_linux_buffer_params_v1_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_zwp_linux_dmabuf_v1_get_default_feedback(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 2, &zwp_linux_dmabuf_feedback_v1_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_zwp_linux_dmabuf_v1_get_surface_feedback(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_surface
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 3, &zwp_linux_dmabuf_feedback_v1_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL, swift_wayland_arg_surface);
+}
+
+static inline void
+swift_wayland_client_request_zwp_linux_buffer_params_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_zwp_linux_buffer_params_v1_add(
+    struct wl_proxy *swift_wayland_proxy, int32_t swift_wayland_arg_fd, uint32_t swift_wayland_arg_plane_idx, uint32_t swift_wayland_arg_offset, uint32_t swift_wayland_arg_stride, uint32_t swift_wayland_arg_modifier_hi, uint32_t swift_wayland_arg_modifier_lo
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_fd, swift_wayland_arg_plane_idx, swift_wayland_arg_offset, swift_wayland_arg_stride, swift_wayland_arg_modifier_hi, swift_wayland_arg_modifier_lo);
+}
+
+static inline void
+swift_wayland_client_request_zwp_linux_buffer_params_v1_create(
+    struct wl_proxy *swift_wayland_proxy, int32_t swift_wayland_arg_width, int32_t swift_wayland_arg_height, uint32_t swift_wayland_arg_format, uint32_t swift_wayland_arg_flags
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 2, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_width, swift_wayland_arg_height, swift_wayland_arg_format, swift_wayland_arg_flags);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_zwp_linux_buffer_params_v1_create_immed(
+    struct wl_proxy *swift_wayland_proxy, int32_t swift_wayland_arg_width, int32_t swift_wayland_arg_height, uint32_t swift_wayland_arg_format, uint32_t swift_wayland_arg_flags
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 3, &wl_buffer_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL, swift_wayland_arg_width, swift_wayland_arg_height, swift_wayland_arg_format, swift_wayland_arg_flags);
+}
+
+static inline void
+swift_wayland_client_request_zwp_linux_dmabuf_feedback_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_wp_presentation_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_wp_presentation_feedback(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_surface
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, &wp_presentation_feedback_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_surface, NULL);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_zwp_tablet_manager_v2_get_tablet_seat(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_seat
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, &zwp_tablet_seat_v2_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL, swift_wayland_arg_seat);
+}
+
+static inline void
+swift_wayland_client_request_zwp_tablet_manager_v2_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_zwp_tablet_seat_v2_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_zwp_tablet_tool_v2_set_cursor(
+    struct wl_proxy *swift_wayland_proxy, uint32_t swift_wayland_arg_serial, struct wl_proxy * swift_wayland_arg_surface, int32_t swift_wayland_arg_hotspot_x, int32_t swift_wayland_arg_hotspot_y
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_serial, swift_wayland_arg_surface, swift_wayland_arg_hotspot_x, swift_wayland_arg_hotspot_y);
+}
+
+static inline void
+swift_wayland_client_request_zwp_tablet_tool_v2_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_zwp_tablet_v2_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_zwp_tablet_pad_ring_v2_set_feedback(
+    struct wl_proxy *swift_wayland_proxy, const char * swift_wayland_arg_description, uint32_t swift_wayland_arg_serial
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_description, swift_wayland_arg_serial);
+}
+
+static inline void
+swift_wayland_client_request_zwp_tablet_pad_ring_v2_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_zwp_tablet_pad_strip_v2_set_feedback(
+    struct wl_proxy *swift_wayland_proxy, const char * swift_wayland_arg_description, uint32_t swift_wayland_arg_serial
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_description, swift_wayland_arg_serial);
+}
+
+static inline void
+swift_wayland_client_request_zwp_tablet_pad_strip_v2_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_zwp_tablet_pad_group_v2_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_zwp_tablet_pad_v2_set_feedback(
+    struct wl_proxy *swift_wayland_proxy, uint32_t swift_wayland_arg_button, const char * swift_wayland_arg_description, uint32_t swift_wayland_arg_serial
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_button, swift_wayland_arg_description, swift_wayland_arg_serial);
+}
+
+static inline void
+swift_wayland_client_request_zwp_tablet_pad_v2_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_zwp_tablet_pad_dial_v2_set_feedback(
+    struct wl_proxy *swift_wayland_proxy, const char * swift_wayland_arg_description, uint32_t swift_wayland_arg_serial
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_description, swift_wayland_arg_serial);
+}
+
+static inline void
+swift_wayland_client_request_zwp_tablet_pad_dial_v2_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_wp_viewporter_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_wp_viewporter_get_viewport(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_surface
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, &wp_viewport_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL, swift_wayland_arg_surface);
+}
+
+static inline void
+swift_wayland_client_request_wp_viewport_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_wp_viewport_set_source(
+    struct wl_proxy *swift_wayland_proxy, wl_fixed_t swift_wayland_arg_x, wl_fixed_t swift_wayland_arg_y, wl_fixed_t swift_wayland_arg_width, wl_fixed_t swift_wayland_arg_height
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_x, swift_wayland_arg_y, swift_wayland_arg_width, swift_wayland_arg_height);
+}
+
+static inline void
+swift_wayland_client_request_wp_viewport_set_destination(
+    struct wl_proxy *swift_wayland_proxy, int32_t swift_wayland_arg_width, int32_t swift_wayland_arg_height
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 2, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_width, swift_wayland_arg_height);
+}
+
+static inline void
+swift_wayland_client_request_xdg_wm_base_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_xdg_wm_base_create_positioner(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, &xdg_positioner_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_xdg_wm_base_get_xdg_surface(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_surface
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 2, &xdg_surface_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL, swift_wayland_arg_surface);
+}
+
+static inline void
+swift_wayland_client_request_xdg_wm_base_pong(
+    struct wl_proxy *swift_wayland_proxy, uint32_t swift_wayland_arg_serial
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 3, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_serial);
+}
+
+static inline void
+swift_wayland_client_request_xdg_positioner_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_xdg_positioner_set_size(
+    struct wl_proxy *swift_wayland_proxy, int32_t swift_wayland_arg_width, int32_t swift_wayland_arg_height
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_width, swift_wayland_arg_height);
+}
+
+static inline void
+swift_wayland_client_request_xdg_positioner_set_anchor_rect(
+    struct wl_proxy *swift_wayland_proxy, int32_t swift_wayland_arg_x, int32_t swift_wayland_arg_y, int32_t swift_wayland_arg_width, int32_t swift_wayland_arg_height
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 2, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_x, swift_wayland_arg_y, swift_wayland_arg_width, swift_wayland_arg_height);
+}
+
+static inline void
+swift_wayland_client_request_xdg_positioner_set_anchor(
+    struct wl_proxy *swift_wayland_proxy, uint32_t swift_wayland_arg_anchor
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 3, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_anchor);
+}
+
+static inline void
+swift_wayland_client_request_xdg_positioner_set_gravity(
+    struct wl_proxy *swift_wayland_proxy, uint32_t swift_wayland_arg_gravity
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 4, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_gravity);
+}
+
+static inline void
+swift_wayland_client_request_xdg_positioner_set_constraint_adjustment(
+    struct wl_proxy *swift_wayland_proxy, uint32_t swift_wayland_arg_constraint_adjustment
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 5, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_constraint_adjustment);
+}
+
+static inline void
+swift_wayland_client_request_xdg_positioner_set_offset(
+    struct wl_proxy *swift_wayland_proxy, int32_t swift_wayland_arg_x, int32_t swift_wayland_arg_y
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 6, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_x, swift_wayland_arg_y);
+}
+
+static inline void
+swift_wayland_client_request_xdg_positioner_set_reactive(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 7, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0);
+}
+
+static inline void
+swift_wayland_client_request_xdg_positioner_set_parent_size(
+    struct wl_proxy *swift_wayland_proxy, int32_t swift_wayland_arg_parent_width, int32_t swift_wayland_arg_parent_height
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 8, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_parent_width, swift_wayland_arg_parent_height);
+}
+
+static inline void
+swift_wayland_client_request_xdg_positioner_set_parent_configure(
+    struct wl_proxy *swift_wayland_proxy, uint32_t swift_wayland_arg_serial
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 9, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_serial);
+}
+
+static inline void
+swift_wayland_client_request_xdg_surface_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_xdg_surface_get_toplevel(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, &xdg_toplevel_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_xdg_surface_get_popup(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_parent, struct wl_proxy * swift_wayland_arg_positioner
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 2, &xdg_popup_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL, swift_wayland_arg_parent, swift_wayland_arg_positioner);
+}
+
+static inline void
+swift_wayland_client_request_xdg_surface_set_window_geometry(
+    struct wl_proxy *swift_wayland_proxy, int32_t swift_wayland_arg_x, int32_t swift_wayland_arg_y, int32_t swift_wayland_arg_width, int32_t swift_wayland_arg_height
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 3, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_x, swift_wayland_arg_y, swift_wayland_arg_width, swift_wayland_arg_height);
+}
+
+static inline void
+swift_wayland_client_request_xdg_surface_ack_configure(
+    struct wl_proxy *swift_wayland_proxy, uint32_t swift_wayland_arg_serial
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 4, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_serial);
+}
+
+static inline void
+swift_wayland_client_request_xdg_toplevel_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_xdg_toplevel_set_parent(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_parent
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_parent);
+}
+
+static inline void
+swift_wayland_client_request_xdg_toplevel_set_title(
+    struct wl_proxy *swift_wayland_proxy, const char * swift_wayland_arg_title
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 2, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_title);
+}
+
+static inline void
+swift_wayland_client_request_xdg_toplevel_set_app_id(
+    struct wl_proxy *swift_wayland_proxy, const char * swift_wayland_arg_app_id
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 3, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_app_id);
+}
+
+static inline void
+swift_wayland_client_request_xdg_toplevel_show_window_menu(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_seat, uint32_t swift_wayland_arg_serial, int32_t swift_wayland_arg_x, int32_t swift_wayland_arg_y
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 4, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_seat, swift_wayland_arg_serial, swift_wayland_arg_x, swift_wayland_arg_y);
+}
+
+static inline void
+swift_wayland_client_request_xdg_toplevel_move(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_seat, uint32_t swift_wayland_arg_serial
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 5, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_seat, swift_wayland_arg_serial);
+}
+
+static inline void
+swift_wayland_client_request_xdg_toplevel_resize(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_seat, uint32_t swift_wayland_arg_serial, uint32_t swift_wayland_arg_edges
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 6, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_seat, swift_wayland_arg_serial, swift_wayland_arg_edges);
+}
+
+static inline void
+swift_wayland_client_request_xdg_toplevel_set_max_size(
+    struct wl_proxy *swift_wayland_proxy, int32_t swift_wayland_arg_width, int32_t swift_wayland_arg_height
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 7, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_width, swift_wayland_arg_height);
+}
+
+static inline void
+swift_wayland_client_request_xdg_toplevel_set_min_size(
+    struct wl_proxy *swift_wayland_proxy, int32_t swift_wayland_arg_width, int32_t swift_wayland_arg_height
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 8, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_width, swift_wayland_arg_height);
+}
+
+static inline void
+swift_wayland_client_request_xdg_toplevel_set_maximized(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 9, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0);
+}
+
+static inline void
+swift_wayland_client_request_xdg_toplevel_unset_maximized(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 10, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0);
+}
+
+static inline void
+swift_wayland_client_request_xdg_toplevel_set_fullscreen(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_output
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 11, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_output);
+}
+
+static inline void
+swift_wayland_client_request_xdg_toplevel_unset_fullscreen(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 12, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0);
+}
+
+static inline void
+swift_wayland_client_request_xdg_toplevel_set_minimized(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 13, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0);
+}
+
+static inline void
+swift_wayland_client_request_xdg_popup_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_xdg_popup_grab(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_seat, uint32_t swift_wayland_arg_serial
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_seat, swift_wayland_arg_serial);
+}
+
+static inline void
+swift_wayland_client_request_xdg_popup_reposition(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_positioner, uint32_t swift_wayland_arg_token
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 2, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_positioner, swift_wayland_arg_token);
+}
+
+static inline void
+swift_wayland_client_request_wp_alpha_modifier_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_wp_alpha_modifier_v1_get_surface(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_surface
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, &wp_alpha_modifier_surface_v1_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL, swift_wayland_arg_surface);
+}
+
+static inline void
+swift_wayland_client_request_wp_alpha_modifier_surface_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_wp_alpha_modifier_surface_v1_set_multiplier(
+    struct wl_proxy *swift_wayland_proxy, uint32_t swift_wayland_arg_factor
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_factor);
+}
+
+static inline void
+swift_wayland_client_request_wp_color_manager_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_wp_color_manager_v1_get_output(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_output
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, &wp_color_management_output_v1_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL, swift_wayland_arg_output);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_wp_color_manager_v1_get_surface(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_surface
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 2, &wp_color_management_surface_v1_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL, swift_wayland_arg_surface);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_wp_color_manager_v1_get_surface_feedback(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_surface
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 3, &wp_color_management_surface_feedback_v1_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL, swift_wayland_arg_surface);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_wp_color_manager_v1_create_icc_creator(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 4, &wp_image_description_creator_icc_v1_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_wp_color_manager_v1_create_parametric_creator(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 5, &wp_image_description_creator_params_v1_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_wp_color_manager_v1_create_windows_scrgb(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 6, &wp_image_description_v1_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_wp_color_manager_v1_get_image_description(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_reference
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 7, &wp_image_description_v1_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL, swift_wayland_arg_reference);
+}
+
+static inline void
+swift_wayland_client_request_wp_color_management_output_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_wp_color_management_output_v1_get_image_description(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, &wp_image_description_v1_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL);
+}
+
+static inline void
+swift_wayland_client_request_wp_color_management_surface_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_wp_color_management_surface_v1_set_image_description(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_image_description, uint32_t swift_wayland_arg_render_intent
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_image_description, swift_wayland_arg_render_intent);
+}
+
+static inline void
+swift_wayland_client_request_wp_color_management_surface_v1_unset_image_description(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 2, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0);
+}
+
+static inline void
+swift_wayland_client_request_wp_color_management_surface_feedback_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_wp_color_management_surface_feedback_v1_get_preferred(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, &wp_image_description_v1_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_wp_color_management_surface_feedback_v1_get_preferred_parametric(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 2, &wp_image_description_v1_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_wp_image_description_creator_icc_v1_create(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, &wp_image_description_v1_interface,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY, NULL);
+}
+
+static inline void
+swift_wayland_client_request_wp_image_description_creator_icc_v1_set_icc_file(
+    struct wl_proxy *swift_wayland_proxy, int32_t swift_wayland_arg_icc_profile, uint32_t swift_wayland_arg_offset, uint32_t swift_wayland_arg_length
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_icc_profile, swift_wayland_arg_offset, swift_wayland_arg_length);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_wp_image_description_creator_params_v1_create(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, &wp_image_description_v1_interface,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY, NULL);
+}
+
+static inline void
+swift_wayland_client_request_wp_image_description_creator_params_v1_set_tf_named(
+    struct wl_proxy *swift_wayland_proxy, uint32_t swift_wayland_arg_tf
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_tf);
+}
+
+static inline void
+swift_wayland_client_request_wp_image_description_creator_params_v1_set_tf_power(
+    struct wl_proxy *swift_wayland_proxy, uint32_t swift_wayland_arg_eexp
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 2, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_eexp);
+}
+
+static inline void
+swift_wayland_client_request_wp_image_description_creator_params_v1_set_primaries_named(
+    struct wl_proxy *swift_wayland_proxy, uint32_t swift_wayland_arg_primaries
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 3, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_primaries);
+}
+
+static inline void
+swift_wayland_client_request_wp_image_description_creator_params_v1_set_primaries(
+    struct wl_proxy *swift_wayland_proxy, int32_t swift_wayland_arg_r_x, int32_t swift_wayland_arg_r_y, int32_t swift_wayland_arg_g_x, int32_t swift_wayland_arg_g_y, int32_t swift_wayland_arg_b_x, int32_t swift_wayland_arg_b_y, int32_t swift_wayland_arg_w_x, int32_t swift_wayland_arg_w_y
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 4, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_r_x, swift_wayland_arg_r_y, swift_wayland_arg_g_x, swift_wayland_arg_g_y, swift_wayland_arg_b_x, swift_wayland_arg_b_y, swift_wayland_arg_w_x, swift_wayland_arg_w_y);
+}
+
+static inline void
+swift_wayland_client_request_wp_image_description_creator_params_v1_set_luminances(
+    struct wl_proxy *swift_wayland_proxy, uint32_t swift_wayland_arg_min_lum, uint32_t swift_wayland_arg_max_lum, uint32_t swift_wayland_arg_reference_lum
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 5, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_min_lum, swift_wayland_arg_max_lum, swift_wayland_arg_reference_lum);
+}
+
+static inline void
+swift_wayland_client_request_wp_image_description_creator_params_v1_set_mastering_display_primaries(
+    struct wl_proxy *swift_wayland_proxy, int32_t swift_wayland_arg_r_x, int32_t swift_wayland_arg_r_y, int32_t swift_wayland_arg_g_x, int32_t swift_wayland_arg_g_y, int32_t swift_wayland_arg_b_x, int32_t swift_wayland_arg_b_y, int32_t swift_wayland_arg_w_x, int32_t swift_wayland_arg_w_y
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 6, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_r_x, swift_wayland_arg_r_y, swift_wayland_arg_g_x, swift_wayland_arg_g_y, swift_wayland_arg_b_x, swift_wayland_arg_b_y, swift_wayland_arg_w_x, swift_wayland_arg_w_y);
+}
+
+static inline void
+swift_wayland_client_request_wp_image_description_creator_params_v1_set_mastering_luminance(
+    struct wl_proxy *swift_wayland_proxy, uint32_t swift_wayland_arg_min_lum, uint32_t swift_wayland_arg_max_lum
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 7, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_min_lum, swift_wayland_arg_max_lum);
+}
+
+static inline void
+swift_wayland_client_request_wp_image_description_creator_params_v1_set_max_cll(
+    struct wl_proxy *swift_wayland_proxy, uint32_t swift_wayland_arg_max_cll
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 8, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_max_cll);
+}
+
+static inline void
+swift_wayland_client_request_wp_image_description_creator_params_v1_set_max_fall(
+    struct wl_proxy *swift_wayland_proxy, uint32_t swift_wayland_arg_max_fall
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 9, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_max_fall);
+}
+
+static inline void
+swift_wayland_client_request_wp_image_description_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_wp_image_description_v1_get_information(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, &wp_image_description_info_v1_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL);
+}
+
+static inline void
+swift_wayland_client_request_wp_image_description_reference_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_wp_color_representation_manager_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_wp_color_representation_manager_v1_get_surface(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_surface
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, &wp_color_representation_surface_v1_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL, swift_wayland_arg_surface);
+}
+
+static inline void
+swift_wayland_client_request_wp_color_representation_surface_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_wp_color_representation_surface_v1_set_alpha_mode(
+    struct wl_proxy *swift_wayland_proxy, uint32_t swift_wayland_arg_alpha_mode
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_alpha_mode);
+}
+
+static inline void
+swift_wayland_client_request_wp_color_representation_surface_v1_set_coefficients_and_range(
+    struct wl_proxy *swift_wayland_proxy, uint32_t swift_wayland_arg_coefficients, uint32_t swift_wayland_arg_range
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 2, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_coefficients, swift_wayland_arg_range);
+}
+
+static inline void
+swift_wayland_client_request_wp_color_representation_surface_v1_set_chroma_location(
+    struct wl_proxy *swift_wayland_proxy, uint32_t swift_wayland_arg_chroma_location
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 3, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_chroma_location);
+}
+
+static inline void
+swift_wayland_client_request_wp_commit_timing_manager_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_wp_commit_timing_manager_v1_get_timer(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_surface
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, &wp_commit_timer_v1_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL, swift_wayland_arg_surface);
+}
+
+static inline void
+swift_wayland_client_request_wp_commit_timer_v1_set_timestamp(
+    struct wl_proxy *swift_wayland_proxy, uint32_t swift_wayland_arg_tv_sec_hi, uint32_t swift_wayland_arg_tv_sec_lo, uint32_t swift_wayland_arg_tv_nsec
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_tv_sec_hi, swift_wayland_arg_tv_sec_lo, swift_wayland_arg_tv_nsec);
+}
+
+static inline void
+swift_wayland_client_request_wp_commit_timer_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_wp_content_type_manager_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_wp_content_type_manager_v1_get_surface_content_type(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_surface
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, &wp_content_type_v1_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL, swift_wayland_arg_surface);
+}
+
+static inline void
+swift_wayland_client_request_wp_content_type_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_wp_content_type_v1_set_content_type(
+    struct wl_proxy *swift_wayland_proxy, uint32_t swift_wayland_arg_content_type
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_content_type);
+}
+
+static inline void
+swift_wayland_client_request_wp_cursor_shape_manager_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_wp_cursor_shape_manager_v1_get_pointer(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_pointer
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, &wp_cursor_shape_device_v1_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL, swift_wayland_arg_pointer);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_wp_cursor_shape_manager_v1_get_tablet_tool_v2(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_tablet_tool
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 2, &wp_cursor_shape_device_v1_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL, swift_wayland_arg_tablet_tool);
+}
+
+static inline void
+swift_wayland_client_request_wp_cursor_shape_device_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_wp_cursor_shape_device_v1_set_shape(
+    struct wl_proxy *swift_wayland_proxy, uint32_t swift_wayland_arg_serial, uint32_t swift_wayland_arg_shape
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_serial, swift_wayland_arg_shape);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_wp_drm_lease_device_v1_create_lease_request(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, &wp_drm_lease_request_v1_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL);
+}
+
+static inline void
+swift_wayland_client_request_wp_drm_lease_device_v1_release(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0);
+}
+
+static inline void
+swift_wayland_client_request_wp_drm_lease_connector_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_wp_drm_lease_request_v1_request_connector(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_connector
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_connector);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_wp_drm_lease_request_v1_submit(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, &wp_drm_lease_v1_interface,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY, NULL);
+}
+
+static inline void
+swift_wayland_client_request_wp_drm_lease_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_ext_background_effect_manager_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_ext_background_effect_manager_v1_get_background_effect(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_surface
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, &ext_background_effect_surface_v1_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL, swift_wayland_arg_surface);
+}
+
+static inline void
+swift_wayland_client_request_ext_background_effect_surface_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_ext_background_effect_surface_v1_set_blur_region(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_region
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_region);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_ext_data_control_manager_v1_create_data_source(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, &ext_data_control_source_v1_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_ext_data_control_manager_v1_get_data_device(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_seat
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, &ext_data_control_device_v1_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL, swift_wayland_arg_seat);
+}
+
+static inline void
+swift_wayland_client_request_ext_data_control_manager_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 2, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_ext_data_control_device_v1_set_selection(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_source
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_source);
+}
+
+static inline void
+swift_wayland_client_request_ext_data_control_device_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_ext_data_control_device_v1_set_primary_selection(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_source
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 2, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_source);
+}
+
+static inline void
+swift_wayland_client_request_ext_data_control_source_v1_offer(
+    struct wl_proxy *swift_wayland_proxy, const char * swift_wayland_arg_mime_type
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_mime_type);
+}
+
+static inline void
+swift_wayland_client_request_ext_data_control_source_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_ext_data_control_offer_v1_receive(
+    struct wl_proxy *swift_wayland_proxy, const char * swift_wayland_arg_mime_type, int32_t swift_wayland_arg_fd
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_mime_type, swift_wayland_arg_fd);
+}
+
+static inline void
+swift_wayland_client_request_ext_data_control_offer_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_ext_foreign_toplevel_list_v1_stop(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0);
+}
+
+static inline void
+swift_wayland_client_request_ext_foreign_toplevel_list_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_ext_foreign_toplevel_handle_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_ext_idle_notifier_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_ext_idle_notifier_v1_get_idle_notification(
+    struct wl_proxy *swift_wayland_proxy, uint32_t swift_wayland_arg_timeout, struct wl_proxy * swift_wayland_arg_seat
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, &ext_idle_notification_v1_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL, swift_wayland_arg_timeout, swift_wayland_arg_seat);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_ext_idle_notifier_v1_get_input_idle_notification(
+    struct wl_proxy *swift_wayland_proxy, uint32_t swift_wayland_arg_timeout, struct wl_proxy * swift_wayland_arg_seat
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 2, &ext_idle_notification_v1_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL, swift_wayland_arg_timeout, swift_wayland_arg_seat);
+}
+
+static inline void
+swift_wayland_client_request_ext_idle_notification_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_ext_image_capture_source_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_ext_output_image_capture_source_manager_v1_create_source(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_output
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, &ext_image_capture_source_v1_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL, swift_wayland_arg_output);
+}
+
+static inline void
+swift_wayland_client_request_ext_output_image_capture_source_manager_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_ext_foreign_toplevel_image_capture_source_manager_v1_create_source(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_toplevel_handle
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, &ext_image_capture_source_v1_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL, swift_wayland_arg_toplevel_handle);
+}
+
+static inline void
+swift_wayland_client_request_ext_foreign_toplevel_image_capture_source_manager_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_ext_image_copy_capture_manager_v1_create_session(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_source, uint32_t swift_wayland_arg_options
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, &ext_image_copy_capture_session_v1_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL, swift_wayland_arg_source, swift_wayland_arg_options);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_ext_image_copy_capture_manager_v1_create_pointer_cursor_session(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_source, struct wl_proxy * swift_wayland_arg_pointer
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, &ext_image_copy_capture_cursor_session_v1_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL, swift_wayland_arg_source, swift_wayland_arg_pointer);
+}
+
+static inline void
+swift_wayland_client_request_ext_image_copy_capture_manager_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 2, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_ext_image_copy_capture_session_v1_create_frame(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, &ext_image_copy_capture_frame_v1_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL);
+}
+
+static inline void
+swift_wayland_client_request_ext_image_copy_capture_session_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_ext_image_copy_capture_frame_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_ext_image_copy_capture_frame_v1_attach_buffer(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_buffer
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_buffer);
+}
+
+static inline void
+swift_wayland_client_request_ext_image_copy_capture_frame_v1_damage_buffer(
+    struct wl_proxy *swift_wayland_proxy, int32_t swift_wayland_arg_x, int32_t swift_wayland_arg_y, int32_t swift_wayland_arg_width, int32_t swift_wayland_arg_height
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 2, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_x, swift_wayland_arg_y, swift_wayland_arg_width, swift_wayland_arg_height);
+}
+
+static inline void
+swift_wayland_client_request_ext_image_copy_capture_frame_v1_capture(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 3, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0);
+}
+
+static inline void
+swift_wayland_client_request_ext_image_copy_capture_cursor_session_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_ext_image_copy_capture_cursor_session_v1_get_capture_session(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, &ext_image_copy_capture_session_v1_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL);
+}
+
+static inline void
+swift_wayland_client_request_ext_session_lock_manager_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_ext_session_lock_manager_v1_lock(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, &ext_session_lock_v1_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL);
+}
+
+static inline void
+swift_wayland_client_request_ext_session_lock_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_ext_session_lock_v1_get_lock_surface(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_surface, struct wl_proxy * swift_wayland_arg_output
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, &ext_session_lock_surface_v1_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL, swift_wayland_arg_surface, swift_wayland_arg_output);
+}
+
+static inline void
+swift_wayland_client_request_ext_session_lock_v1_unlock_and_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 2, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_ext_session_lock_surface_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_ext_session_lock_surface_v1_ack_configure(
+    struct wl_proxy *swift_wayland_proxy, uint32_t swift_wayland_arg_serial
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_serial);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_ext_transient_seat_manager_v1_create(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, &ext_transient_seat_v1_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL);
+}
+
+static inline void
+swift_wayland_client_request_ext_transient_seat_manager_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_ext_transient_seat_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_ext_workspace_manager_v1_commit(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0);
+}
+
+static inline void
+swift_wayland_client_request_ext_workspace_manager_v1_stop(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0);
+}
+
+static inline void
+swift_wayland_client_request_ext_workspace_group_handle_v1_create_workspace(
+    struct wl_proxy *swift_wayland_proxy, const char * swift_wayland_arg_workspace
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_workspace);
+}
+
+static inline void
+swift_wayland_client_request_ext_workspace_group_handle_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_ext_workspace_handle_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_ext_workspace_handle_v1_activate(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0);
+}
+
+static inline void
+swift_wayland_client_request_ext_workspace_handle_v1_deactivate(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 2, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0);
+}
+
+static inline void
+swift_wayland_client_request_ext_workspace_handle_v1_assign(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_workspace_group
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 3, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_workspace_group);
+}
+
+static inline void
+swift_wayland_client_request_ext_workspace_handle_v1_remove(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 4, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0);
+}
+
+static inline void
+swift_wayland_client_request_wp_fifo_manager_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_wp_fifo_manager_v1_get_fifo(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_surface
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, &wp_fifo_v1_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL, swift_wayland_arg_surface);
+}
+
+static inline void
+swift_wayland_client_request_wp_fifo_v1_set_barrier(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0);
+}
+
+static inline void
+swift_wayland_client_request_wp_fifo_v1_wait_barrier(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0);
+}
+
+static inline void
+swift_wayland_client_request_wp_fifo_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 2, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_wp_fractional_scale_manager_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_wp_fractional_scale_manager_v1_get_fractional_scale(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_surface
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, &wp_fractional_scale_v1_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL, swift_wayland_arg_surface);
+}
+
+static inline void
+swift_wayland_client_request_wp_fractional_scale_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_wp_linux_drm_syncobj_manager_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_wp_linux_drm_syncobj_manager_v1_get_surface(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_surface
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, &wp_linux_drm_syncobj_surface_v1_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL, swift_wayland_arg_surface);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_wp_linux_drm_syncobj_manager_v1_import_timeline(
+    struct wl_proxy *swift_wayland_proxy, int32_t swift_wayland_arg_fd
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 2, &wp_linux_drm_syncobj_timeline_v1_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL, swift_wayland_arg_fd);
+}
+
+static inline void
+swift_wayland_client_request_wp_linux_drm_syncobj_timeline_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_wp_linux_drm_syncobj_surface_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_wp_linux_drm_syncobj_surface_v1_set_acquire_point(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_timeline, uint32_t swift_wayland_arg_point_hi, uint32_t swift_wayland_arg_point_lo
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_timeline, swift_wayland_arg_point_hi, swift_wayland_arg_point_lo);
+}
+
+static inline void
+swift_wayland_client_request_wp_linux_drm_syncobj_surface_v1_set_release_point(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_timeline, uint32_t swift_wayland_arg_point_hi, uint32_t swift_wayland_arg_point_lo
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 2, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_timeline, swift_wayland_arg_point_hi, swift_wayland_arg_point_lo);
+}
+
+static inline void
+swift_wayland_client_request_wp_pointer_warp_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_wp_pointer_warp_v1_warp_pointer(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_surface, struct wl_proxy * swift_wayland_arg_pointer, wl_fixed_t swift_wayland_arg_x, wl_fixed_t swift_wayland_arg_y, uint32_t swift_wayland_arg_serial
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_surface, swift_wayland_arg_pointer, swift_wayland_arg_x, swift_wayland_arg_y, swift_wayland_arg_serial);
+}
+
+static inline void
+swift_wayland_client_request_wp_security_context_manager_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_wp_security_context_manager_v1_create_listener(
+    struct wl_proxy *swift_wayland_proxy, int32_t swift_wayland_arg_listen_fd, int32_t swift_wayland_arg_close_fd
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, &wp_security_context_v1_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL, swift_wayland_arg_listen_fd, swift_wayland_arg_close_fd);
+}
+
+static inline void
+swift_wayland_client_request_wp_security_context_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_wp_security_context_v1_set_sandbox_engine(
+    struct wl_proxy *swift_wayland_proxy, const char * swift_wayland_arg_name
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_name);
+}
+
+static inline void
+swift_wayland_client_request_wp_security_context_v1_set_app_id(
+    struct wl_proxy *swift_wayland_proxy, const char * swift_wayland_arg_app_id
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 2, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_app_id);
+}
+
+static inline void
+swift_wayland_client_request_wp_security_context_v1_set_instance_id(
+    struct wl_proxy *swift_wayland_proxy, const char * swift_wayland_arg_instance_id
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 3, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_instance_id);
+}
+
+static inline void
+swift_wayland_client_request_wp_security_context_v1_commit(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 4, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0);
+}
+
+static inline void
+swift_wayland_client_request_wp_single_pixel_buffer_manager_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_wp_single_pixel_buffer_manager_v1_create_u32_rgba_buffer(
+    struct wl_proxy *swift_wayland_proxy, uint32_t swift_wayland_arg_r, uint32_t swift_wayland_arg_g, uint32_t swift_wayland_arg_b, uint32_t swift_wayland_arg_a
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, &wl_buffer_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL, swift_wayland_arg_r, swift_wayland_arg_g, swift_wayland_arg_b, swift_wayland_arg_a);
+}
+
+static inline void
+swift_wayland_client_request_wp_tearing_control_manager_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_wp_tearing_control_manager_v1_get_tearing_control(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_surface
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, &wp_tearing_control_v1_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL, swift_wayland_arg_surface);
+}
+
+static inline void
+swift_wayland_client_request_wp_tearing_control_v1_set_presentation_hint(
+    struct wl_proxy *swift_wayland_proxy, uint32_t swift_wayland_arg_hint
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_hint);
+}
+
+static inline void
+swift_wayland_client_request_wp_tearing_control_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_xdg_activation_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_xdg_activation_v1_get_activation_token(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, &xdg_activation_token_v1_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL);
+}
+
+static inline void
+swift_wayland_client_request_xdg_activation_v1_activate(
+    struct wl_proxy *swift_wayland_proxy, const char * swift_wayland_arg_token, struct wl_proxy * swift_wayland_arg_surface
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 2, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_token, swift_wayland_arg_surface);
+}
+
+static inline void
+swift_wayland_client_request_xdg_activation_token_v1_set_serial(
+    struct wl_proxy *swift_wayland_proxy, uint32_t swift_wayland_arg_serial, struct wl_proxy * swift_wayland_arg_seat
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_serial, swift_wayland_arg_seat);
+}
+
+static inline void
+swift_wayland_client_request_xdg_activation_token_v1_set_app_id(
+    struct wl_proxy *swift_wayland_proxy, const char * swift_wayland_arg_app_id
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_app_id);
+}
+
+static inline void
+swift_wayland_client_request_xdg_activation_token_v1_set_surface(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_surface
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 2, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_surface);
+}
+
+static inline void
+swift_wayland_client_request_xdg_activation_token_v1_commit(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 3, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0);
+}
+
+static inline void
+swift_wayland_client_request_xdg_activation_token_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 4, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_xdg_wm_dialog_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_xdg_wm_dialog_v1_get_xdg_dialog(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_toplevel
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, &xdg_dialog_v1_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL, swift_wayland_arg_toplevel);
+}
+
+static inline void
+swift_wayland_client_request_xdg_dialog_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_xdg_dialog_v1_set_modal(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0);
+}
+
+static inline void
+swift_wayland_client_request_xdg_dialog_v1_unset_modal(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 2, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0);
+}
+
+static inline void
+swift_wayland_client_request_xdg_session_manager_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_xdg_session_manager_v1_get_session(
+    struct wl_proxy *swift_wayland_proxy, uint32_t swift_wayland_arg_reason, const char * swift_wayland_arg_session_id
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, &xdg_session_v1_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL, swift_wayland_arg_reason, swift_wayland_arg_session_id);
+}
+
+static inline void
+swift_wayland_client_request_xdg_session_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_xdg_session_v1_remove(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_xdg_session_v1_add_toplevel(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_toplevel, const char * swift_wayland_arg_name
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 2, &xdg_toplevel_session_v1_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL, swift_wayland_arg_toplevel, swift_wayland_arg_name);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_xdg_session_v1_restore_toplevel(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_toplevel, const char * swift_wayland_arg_name
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 3, &xdg_toplevel_session_v1_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL, swift_wayland_arg_toplevel, swift_wayland_arg_name);
+}
+
+static inline void
+swift_wayland_client_request_xdg_session_v1_remove_toplevel(
+    struct wl_proxy *swift_wayland_proxy, const char * swift_wayland_arg_name
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 4, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_name);
+}
+
+static inline void
+swift_wayland_client_request_xdg_toplevel_session_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_xdg_toplevel_session_v1_rename(
+    struct wl_proxy *swift_wayland_proxy, const char * swift_wayland_arg_name
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_name);
+}
+
+static inline void
+swift_wayland_client_request_xdg_system_bell_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_xdg_system_bell_v1_ring(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_surface
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_surface);
+}
+
+static inline void
+swift_wayland_client_request_xdg_toplevel_drag_manager_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_xdg_toplevel_drag_manager_v1_get_xdg_toplevel_drag(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_data_source
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, &xdg_toplevel_drag_v1_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL, swift_wayland_arg_data_source);
+}
+
+static inline void
+swift_wayland_client_request_xdg_toplevel_drag_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_xdg_toplevel_drag_v1_attach(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_toplevel, int32_t swift_wayland_arg_x_offset, int32_t swift_wayland_arg_y_offset
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_toplevel, swift_wayland_arg_x_offset, swift_wayland_arg_y_offset);
+}
+
+static inline void
+swift_wayland_client_request_xdg_toplevel_icon_manager_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_xdg_toplevel_icon_manager_v1_create_icon(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, &xdg_toplevel_icon_v1_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL);
+}
+
+static inline void
+swift_wayland_client_request_xdg_toplevel_icon_manager_v1_set_icon(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_toplevel, struct wl_proxy * swift_wayland_arg_icon
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 2, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_toplevel, swift_wayland_arg_icon);
+}
+
+static inline void
+swift_wayland_client_request_xdg_toplevel_icon_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_xdg_toplevel_icon_v1_set_name(
+    struct wl_proxy *swift_wayland_proxy, const char * swift_wayland_arg_icon_name
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_icon_name);
+}
+
+static inline void
+swift_wayland_client_request_xdg_toplevel_icon_v1_add_buffer(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_buffer, int32_t swift_wayland_arg_scale
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 2, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_buffer, swift_wayland_arg_scale);
+}
+
+static inline void
+swift_wayland_client_request_xdg_toplevel_tag_manager_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_xdg_toplevel_tag_manager_v1_set_toplevel_tag(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_toplevel, const char * swift_wayland_arg_tag
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_toplevel, swift_wayland_arg_tag);
+}
+
+static inline void
+swift_wayland_client_request_xdg_toplevel_tag_manager_v1_set_toplevel_description(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_toplevel, const char * swift_wayland_arg_description
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 2, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_toplevel, swift_wayland_arg_description);
+}
+
+static inline void
+swift_wayland_client_request_xwayland_shell_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_xwayland_shell_v1_get_xwayland_surface(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_surface
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, &xwayland_surface_v1_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL, swift_wayland_arg_surface);
+}
+
+static inline void
+swift_wayland_client_request_xwayland_surface_v1_set_serial(
+    struct wl_proxy *swift_wayland_proxy, uint32_t swift_wayland_arg_serial_lo, uint32_t swift_wayland_arg_serial_hi
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_serial_lo, swift_wayland_arg_serial_hi);
+}
+
+static inline void
+swift_wayland_client_request_xwayland_surface_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_zwp_fullscreen_shell_v1_release(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_zwp_fullscreen_shell_v1_present_surface(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_surface, uint32_t swift_wayland_arg_method, struct wl_proxy * swift_wayland_arg_output
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_surface, swift_wayland_arg_method, swift_wayland_arg_output);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_zwp_fullscreen_shell_v1_present_surface_for_mode(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_surface, struct wl_proxy * swift_wayland_arg_output, int32_t swift_wayland_arg_framerate
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 2, &zwp_fullscreen_shell_mode_feedback_v1_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_surface, swift_wayland_arg_output, swift_wayland_arg_framerate, NULL);
+}
+
+static inline void
+swift_wayland_client_request_zwp_idle_inhibit_manager_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_zwp_idle_inhibit_manager_v1_create_inhibitor(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_surface
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, &zwp_idle_inhibitor_v1_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL, swift_wayland_arg_surface);
+}
+
+static inline void
+swift_wayland_client_request_zwp_idle_inhibitor_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_zwp_input_method_context_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_zwp_input_method_context_v1_commit_string(
+    struct wl_proxy *swift_wayland_proxy, uint32_t swift_wayland_arg_serial, const char * swift_wayland_arg_text
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_serial, swift_wayland_arg_text);
+}
+
+static inline void
+swift_wayland_client_request_zwp_input_method_context_v1_preedit_string(
+    struct wl_proxy *swift_wayland_proxy, uint32_t swift_wayland_arg_serial, const char * swift_wayland_arg_text, const char * swift_wayland_arg_commit
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 2, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_serial, swift_wayland_arg_text, swift_wayland_arg_commit);
+}
+
+static inline void
+swift_wayland_client_request_zwp_input_method_context_v1_preedit_styling(
+    struct wl_proxy *swift_wayland_proxy, uint32_t swift_wayland_arg_index, uint32_t swift_wayland_arg_length, uint32_t swift_wayland_arg_style
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 3, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_index, swift_wayland_arg_length, swift_wayland_arg_style);
+}
+
+static inline void
+swift_wayland_client_request_zwp_input_method_context_v1_preedit_cursor(
+    struct wl_proxy *swift_wayland_proxy, int32_t swift_wayland_arg_index
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 4, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_index);
+}
+
+static inline void
+swift_wayland_client_request_zwp_input_method_context_v1_delete_surrounding_text(
+    struct wl_proxy *swift_wayland_proxy, int32_t swift_wayland_arg_index, uint32_t swift_wayland_arg_length
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 5, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_index, swift_wayland_arg_length);
+}
+
+static inline void
+swift_wayland_client_request_zwp_input_method_context_v1_cursor_position(
+    struct wl_proxy *swift_wayland_proxy, int32_t swift_wayland_arg_index, int32_t swift_wayland_arg_anchor
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 6, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_index, swift_wayland_arg_anchor);
+}
+
+static inline void
+swift_wayland_client_request_zwp_input_method_context_v1_modifiers_map(
+    struct wl_proxy *swift_wayland_proxy, struct wl_array * swift_wayland_arg_map
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 7, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_map);
+}
+
+static inline void
+swift_wayland_client_request_zwp_input_method_context_v1_keysym(
+    struct wl_proxy *swift_wayland_proxy, uint32_t swift_wayland_arg_serial, uint32_t swift_wayland_arg_time, uint32_t swift_wayland_arg_sym, uint32_t swift_wayland_arg_state, uint32_t swift_wayland_arg_modifiers
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 8, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_serial, swift_wayland_arg_time, swift_wayland_arg_sym, swift_wayland_arg_state, swift_wayland_arg_modifiers);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_zwp_input_method_context_v1_grab_keyboard(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 9, &wl_keyboard_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL);
+}
+
+static inline void
+swift_wayland_client_request_zwp_input_method_context_v1_key(
+    struct wl_proxy *swift_wayland_proxy, uint32_t swift_wayland_arg_serial, uint32_t swift_wayland_arg_time, uint32_t swift_wayland_arg_key, uint32_t swift_wayland_arg_state
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 10, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_serial, swift_wayland_arg_time, swift_wayland_arg_key, swift_wayland_arg_state);
+}
+
+static inline void
+swift_wayland_client_request_zwp_input_method_context_v1_modifiers(
+    struct wl_proxy *swift_wayland_proxy, uint32_t swift_wayland_arg_serial, uint32_t swift_wayland_arg_mods_depressed, uint32_t swift_wayland_arg_mods_latched, uint32_t swift_wayland_arg_mods_locked, uint32_t swift_wayland_arg_group
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 11, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_serial, swift_wayland_arg_mods_depressed, swift_wayland_arg_mods_latched, swift_wayland_arg_mods_locked, swift_wayland_arg_group);
+}
+
+static inline void
+swift_wayland_client_request_zwp_input_method_context_v1_language(
+    struct wl_proxy *swift_wayland_proxy, uint32_t swift_wayland_arg_serial, const char * swift_wayland_arg_language
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 12, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_serial, swift_wayland_arg_language);
+}
+
+static inline void
+swift_wayland_client_request_zwp_input_method_context_v1_text_direction(
+    struct wl_proxy *swift_wayland_proxy, uint32_t swift_wayland_arg_serial, uint32_t swift_wayland_arg_direction
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 13, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_serial, swift_wayland_arg_direction);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_zwp_input_panel_v1_get_input_panel_surface(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_surface
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, &zwp_input_panel_surface_v1_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL, swift_wayland_arg_surface);
+}
+
+static inline void
+swift_wayland_client_request_zwp_input_panel_surface_v1_set_toplevel(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_output, uint32_t swift_wayland_arg_position
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_output, swift_wayland_arg_position);
+}
+
+static inline void
+swift_wayland_client_request_zwp_input_panel_surface_v1_set_overlay_panel(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0);
+}
+
+static inline void
+swift_wayland_client_request_zwp_input_timestamps_manager_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_zwp_input_timestamps_manager_v1_get_keyboard_timestamps(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_keyboard
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, &zwp_input_timestamps_v1_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL, swift_wayland_arg_keyboard);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_zwp_input_timestamps_manager_v1_get_pointer_timestamps(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_pointer
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 2, &zwp_input_timestamps_v1_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL, swift_wayland_arg_pointer);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_zwp_input_timestamps_manager_v1_get_touch_timestamps(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_touch
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 3, &zwp_input_timestamps_v1_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL, swift_wayland_arg_touch);
+}
+
+static inline void
+swift_wayland_client_request_zwp_input_timestamps_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_zwp_keyboard_shortcuts_inhibit_manager_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_zwp_keyboard_shortcuts_inhibit_manager_v1_inhibit_shortcuts(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_surface, struct wl_proxy * swift_wayland_arg_seat
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, &zwp_keyboard_shortcuts_inhibitor_v1_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL, swift_wayland_arg_surface, swift_wayland_arg_seat);
+}
+
+static inline void
+swift_wayland_client_request_zwp_keyboard_shortcuts_inhibitor_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_zwp_linux_explicit_synchronization_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_zwp_linux_explicit_synchronization_v1_get_synchronization(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_surface
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, &zwp_linux_surface_synchronization_v1_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL, swift_wayland_arg_surface);
+}
+
+static inline void
+swift_wayland_client_request_zwp_linux_surface_synchronization_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_zwp_linux_surface_synchronization_v1_set_acquire_fence(
+    struct wl_proxy *swift_wayland_proxy, int32_t swift_wayland_arg_fd
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_fd);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_zwp_linux_surface_synchronization_v1_get_release(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 2, &zwp_linux_buffer_release_v1_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL);
+}
+
+static inline void
+swift_wayland_client_request_zwp_pointer_constraints_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_zwp_pointer_constraints_v1_lock_pointer(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_surface, struct wl_proxy * swift_wayland_arg_pointer, struct wl_proxy * swift_wayland_arg_region, uint32_t swift_wayland_arg_lifetime
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, &zwp_locked_pointer_v1_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL, swift_wayland_arg_surface, swift_wayland_arg_pointer, swift_wayland_arg_region, swift_wayland_arg_lifetime);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_zwp_pointer_constraints_v1_confine_pointer(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_surface, struct wl_proxy * swift_wayland_arg_pointer, struct wl_proxy * swift_wayland_arg_region, uint32_t swift_wayland_arg_lifetime
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 2, &zwp_confined_pointer_v1_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL, swift_wayland_arg_surface, swift_wayland_arg_pointer, swift_wayland_arg_region, swift_wayland_arg_lifetime);
+}
+
+static inline void
+swift_wayland_client_request_zwp_locked_pointer_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_zwp_locked_pointer_v1_set_cursor_position_hint(
+    struct wl_proxy *swift_wayland_proxy, wl_fixed_t swift_wayland_arg_surface_x, wl_fixed_t swift_wayland_arg_surface_y
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_surface_x, swift_wayland_arg_surface_y);
+}
+
+static inline void
+swift_wayland_client_request_zwp_locked_pointer_v1_set_region(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_region
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 2, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_region);
+}
+
+static inline void
+swift_wayland_client_request_zwp_confined_pointer_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_zwp_confined_pointer_v1_set_region(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_region
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_region);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_zwp_pointer_gestures_v1_get_swipe_gesture(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_pointer
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, &zwp_pointer_gesture_swipe_v1_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL, swift_wayland_arg_pointer);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_zwp_pointer_gestures_v1_get_pinch_gesture(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_pointer
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, &zwp_pointer_gesture_pinch_v1_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL, swift_wayland_arg_pointer);
+}
+
+static inline void
+swift_wayland_client_request_zwp_pointer_gestures_v1_release(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 2, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_zwp_pointer_gestures_v1_get_hold_gesture(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_pointer
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 3, &zwp_pointer_gesture_hold_v1_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL, swift_wayland_arg_pointer);
+}
+
+static inline void
+swift_wayland_client_request_zwp_pointer_gesture_swipe_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_zwp_pointer_gesture_pinch_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_zwp_pointer_gesture_hold_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_zwp_primary_selection_device_manager_v1_create_source(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, &zwp_primary_selection_source_v1_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_zwp_primary_selection_device_manager_v1_get_device(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_seat
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, &zwp_primary_selection_device_v1_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL, swift_wayland_arg_seat);
+}
+
+static inline void
+swift_wayland_client_request_zwp_primary_selection_device_manager_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 2, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_zwp_primary_selection_device_v1_set_selection(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_source, uint32_t swift_wayland_arg_serial
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_source, swift_wayland_arg_serial);
+}
+
+static inline void
+swift_wayland_client_request_zwp_primary_selection_device_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_zwp_primary_selection_offer_v1_receive(
+    struct wl_proxy *swift_wayland_proxy, const char * swift_wayland_arg_mime_type, int32_t swift_wayland_arg_fd
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_mime_type, swift_wayland_arg_fd);
+}
+
+static inline void
+swift_wayland_client_request_zwp_primary_selection_offer_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_zwp_primary_selection_source_v1_offer(
+    struct wl_proxy *swift_wayland_proxy, const char * swift_wayland_arg_mime_type
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_mime_type);
+}
+
+static inline void
+swift_wayland_client_request_zwp_primary_selection_source_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_zwp_relative_pointer_manager_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_zwp_relative_pointer_manager_v1_get_relative_pointer(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_pointer
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, &zwp_relative_pointer_v1_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL, swift_wayland_arg_pointer);
+}
+
+static inline void
+swift_wayland_client_request_zwp_relative_pointer_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_zwp_tablet_manager_v1_get_tablet_seat(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_seat
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, &zwp_tablet_seat_v1_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL, swift_wayland_arg_seat);
+}
+
+static inline void
+swift_wayland_client_request_zwp_tablet_manager_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_zwp_tablet_seat_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_zwp_tablet_tool_v1_set_cursor(
+    struct wl_proxy *swift_wayland_proxy, uint32_t swift_wayland_arg_serial, struct wl_proxy * swift_wayland_arg_surface, int32_t swift_wayland_arg_hotspot_x, int32_t swift_wayland_arg_hotspot_y
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_serial, swift_wayland_arg_surface, swift_wayland_arg_hotspot_x, swift_wayland_arg_hotspot_y);
+}
+
+static inline void
+swift_wayland_client_request_zwp_tablet_tool_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_zwp_tablet_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_zwp_text_input_v1_activate(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_seat, struct wl_proxy * swift_wayland_arg_surface
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_seat, swift_wayland_arg_surface);
+}
+
+static inline void
+swift_wayland_client_request_zwp_text_input_v1_deactivate(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_seat
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_seat);
+}
+
+static inline void
+swift_wayland_client_request_zwp_text_input_v1_show_input_panel(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 2, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0);
+}
+
+static inline void
+swift_wayland_client_request_zwp_text_input_v1_hide_input_panel(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 3, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0);
+}
+
+static inline void
+swift_wayland_client_request_zwp_text_input_v1_reset(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 4, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0);
+}
+
+static inline void
+swift_wayland_client_request_zwp_text_input_v1_set_surrounding_text(
+    struct wl_proxy *swift_wayland_proxy, const char * swift_wayland_arg_text, uint32_t swift_wayland_arg_cursor, uint32_t swift_wayland_arg_anchor
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 5, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_text, swift_wayland_arg_cursor, swift_wayland_arg_anchor);
+}
+
+static inline void
+swift_wayland_client_request_zwp_text_input_v1_set_content_type(
+    struct wl_proxy *swift_wayland_proxy, uint32_t swift_wayland_arg_hint, uint32_t swift_wayland_arg_purpose
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 6, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_hint, swift_wayland_arg_purpose);
+}
+
+static inline void
+swift_wayland_client_request_zwp_text_input_v1_set_cursor_rectangle(
+    struct wl_proxy *swift_wayland_proxy, int32_t swift_wayland_arg_x, int32_t swift_wayland_arg_y, int32_t swift_wayland_arg_width, int32_t swift_wayland_arg_height
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 7, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_x, swift_wayland_arg_y, swift_wayland_arg_width, swift_wayland_arg_height);
+}
+
+static inline void
+swift_wayland_client_request_zwp_text_input_v1_set_preferred_language(
+    struct wl_proxy *swift_wayland_proxy, const char * swift_wayland_arg_language
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 8, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_language);
+}
+
+static inline void
+swift_wayland_client_request_zwp_text_input_v1_commit_state(
+    struct wl_proxy *swift_wayland_proxy, uint32_t swift_wayland_arg_serial
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 9, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_serial);
+}
+
+static inline void
+swift_wayland_client_request_zwp_text_input_v1_invoke_action(
+    struct wl_proxy *swift_wayland_proxy, uint32_t swift_wayland_arg_button, uint32_t swift_wayland_arg_index
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 10, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_button, swift_wayland_arg_index);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_zwp_text_input_manager_v1_create_text_input(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, &zwp_text_input_v1_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL);
+}
+
+static inline void
+swift_wayland_client_request_zwp_text_input_v3_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_zwp_text_input_v3_enable(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0);
+}
+
+static inline void
+swift_wayland_client_request_zwp_text_input_v3_disable(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 2, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0);
+}
+
+static inline void
+swift_wayland_client_request_zwp_text_input_v3_set_surrounding_text(
+    struct wl_proxy *swift_wayland_proxy, const char * swift_wayland_arg_text, int32_t swift_wayland_arg_cursor, int32_t swift_wayland_arg_anchor
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 3, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_text, swift_wayland_arg_cursor, swift_wayland_arg_anchor);
+}
+
+static inline void
+swift_wayland_client_request_zwp_text_input_v3_set_text_change_cause(
+    struct wl_proxy *swift_wayland_proxy, uint32_t swift_wayland_arg_cause
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 4, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_cause);
+}
+
+static inline void
+swift_wayland_client_request_zwp_text_input_v3_set_content_type(
+    struct wl_proxy *swift_wayland_proxy, uint32_t swift_wayland_arg_hint, uint32_t swift_wayland_arg_purpose
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 5, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_hint, swift_wayland_arg_purpose);
+}
+
+static inline void
+swift_wayland_client_request_zwp_text_input_v3_set_cursor_rectangle(
+    struct wl_proxy *swift_wayland_proxy, int32_t swift_wayland_arg_x, int32_t swift_wayland_arg_y, int32_t swift_wayland_arg_width, int32_t swift_wayland_arg_height
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 6, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_x, swift_wayland_arg_y, swift_wayland_arg_width, swift_wayland_arg_height);
+}
+
+static inline void
+swift_wayland_client_request_zwp_text_input_v3_commit(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 7, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0);
+}
+
+static inline void
+swift_wayland_client_request_zwp_text_input_v3_set_available_actions(
+    struct wl_proxy *swift_wayland_proxy, struct wl_array * swift_wayland_arg_available_actions
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 8, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_available_actions);
+}
+
+static inline void
+swift_wayland_client_request_zwp_text_input_v3_show_input_panel(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 9, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0);
+}
+
+static inline void
+swift_wayland_client_request_zwp_text_input_v3_hide_input_panel(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 10, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0);
+}
+
+static inline void
+swift_wayland_client_request_zwp_text_input_manager_v3_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_zwp_text_input_manager_v3_get_text_input(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_seat
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, &zwp_text_input_v3_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL, swift_wayland_arg_seat);
+}
+
+static inline void
+swift_wayland_client_request_zxdg_decoration_manager_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_zxdg_decoration_manager_v1_get_toplevel_decoration(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_toplevel
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, &zxdg_toplevel_decoration_v1_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL, swift_wayland_arg_toplevel);
+}
+
+static inline void
+swift_wayland_client_request_zxdg_toplevel_decoration_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_zxdg_toplevel_decoration_v1_set_mode(
+    struct wl_proxy *swift_wayland_proxy, uint32_t swift_wayland_arg_mode
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_mode);
+}
+
+static inline void
+swift_wayland_client_request_zxdg_toplevel_decoration_v1_unset_mode(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 2, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0);
+}
+
+static inline void
+swift_wayland_client_request_zxdg_exporter_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_zxdg_exporter_v1_export(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_surface
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, &zxdg_exported_v1_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL, swift_wayland_arg_surface);
+}
+
+static inline void
+swift_wayland_client_request_zxdg_importer_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_zxdg_importer_v1_import(
+    struct wl_proxy *swift_wayland_proxy, const char * swift_wayland_arg_handle
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, &zxdg_imported_v1_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL, swift_wayland_arg_handle);
+}
+
+static inline void
+swift_wayland_client_request_zxdg_exported_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_zxdg_imported_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_zxdg_imported_v1_set_parent_of(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_surface
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_surface);
+}
+
+static inline void
+swift_wayland_client_request_zxdg_exporter_v2_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_zxdg_exporter_v2_export_toplevel(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_surface
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, &zxdg_exported_v2_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL, swift_wayland_arg_surface);
+}
+
+static inline void
+swift_wayland_client_request_zxdg_importer_v2_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_zxdg_importer_v2_import_toplevel(
+    struct wl_proxy *swift_wayland_proxy, const char * swift_wayland_arg_handle
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, &zxdg_imported_v2_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL, swift_wayland_arg_handle);
+}
+
+static inline void
+swift_wayland_client_request_zxdg_exported_v2_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_zxdg_imported_v2_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_zxdg_imported_v2_set_parent_of(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_surface
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_surface);
+}
+
+static inline void
+swift_wayland_client_request_zxdg_output_manager_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_zxdg_output_manager_v1_get_xdg_output(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_output
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, &zxdg_output_v1_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL, swift_wayland_arg_output);
+}
+
+static inline void
+swift_wayland_client_request_zxdg_output_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_zxdg_shell_v6_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_zxdg_shell_v6_create_positioner(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, &zxdg_positioner_v6_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_zxdg_shell_v6_get_xdg_surface(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_surface
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 2, &zxdg_surface_v6_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL, swift_wayland_arg_surface);
+}
+
+static inline void
+swift_wayland_client_request_zxdg_shell_v6_pong(
+    struct wl_proxy *swift_wayland_proxy, uint32_t swift_wayland_arg_serial
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 3, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_serial);
+}
+
+static inline void
+swift_wayland_client_request_zxdg_positioner_v6_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_zxdg_positioner_v6_set_size(
+    struct wl_proxy *swift_wayland_proxy, int32_t swift_wayland_arg_width, int32_t swift_wayland_arg_height
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_width, swift_wayland_arg_height);
+}
+
+static inline void
+swift_wayland_client_request_zxdg_positioner_v6_set_anchor_rect(
+    struct wl_proxy *swift_wayland_proxy, int32_t swift_wayland_arg_x, int32_t swift_wayland_arg_y, int32_t swift_wayland_arg_width, int32_t swift_wayland_arg_height
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 2, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_x, swift_wayland_arg_y, swift_wayland_arg_width, swift_wayland_arg_height);
+}
+
+static inline void
+swift_wayland_client_request_zxdg_positioner_v6_set_anchor(
+    struct wl_proxy *swift_wayland_proxy, uint32_t swift_wayland_arg_anchor
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 3, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_anchor);
+}
+
+static inline void
+swift_wayland_client_request_zxdg_positioner_v6_set_gravity(
+    struct wl_proxy *swift_wayland_proxy, uint32_t swift_wayland_arg_gravity
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 4, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_gravity);
+}
+
+static inline void
+swift_wayland_client_request_zxdg_positioner_v6_set_constraint_adjustment(
+    struct wl_proxy *swift_wayland_proxy, uint32_t swift_wayland_arg_constraint_adjustment
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 5, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_constraint_adjustment);
+}
+
+static inline void
+swift_wayland_client_request_zxdg_positioner_v6_set_offset(
+    struct wl_proxy *swift_wayland_proxy, int32_t swift_wayland_arg_x, int32_t swift_wayland_arg_y
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 6, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_x, swift_wayland_arg_y);
+}
+
+static inline void
+swift_wayland_client_request_zxdg_surface_v6_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_zxdg_surface_v6_get_toplevel(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, &zxdg_toplevel_v6_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_zxdg_surface_v6_get_popup(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_parent, struct wl_proxy * swift_wayland_arg_positioner
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 2, &zxdg_popup_v6_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL, swift_wayland_arg_parent, swift_wayland_arg_positioner);
+}
+
+static inline void
+swift_wayland_client_request_zxdg_surface_v6_set_window_geometry(
+    struct wl_proxy *swift_wayland_proxy, int32_t swift_wayland_arg_x, int32_t swift_wayland_arg_y, int32_t swift_wayland_arg_width, int32_t swift_wayland_arg_height
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 3, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_x, swift_wayland_arg_y, swift_wayland_arg_width, swift_wayland_arg_height);
+}
+
+static inline void
+swift_wayland_client_request_zxdg_surface_v6_ack_configure(
+    struct wl_proxy *swift_wayland_proxy, uint32_t swift_wayland_arg_serial
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 4, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_serial);
+}
+
+static inline void
+swift_wayland_client_request_zxdg_toplevel_v6_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_zxdg_toplevel_v6_set_parent(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_parent
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_parent);
+}
+
+static inline void
+swift_wayland_client_request_zxdg_toplevel_v6_set_title(
+    struct wl_proxy *swift_wayland_proxy, const char * swift_wayland_arg_title
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 2, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_title);
+}
+
+static inline void
+swift_wayland_client_request_zxdg_toplevel_v6_set_app_id(
+    struct wl_proxy *swift_wayland_proxy, const char * swift_wayland_arg_app_id
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 3, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_app_id);
+}
+
+static inline void
+swift_wayland_client_request_zxdg_toplevel_v6_show_window_menu(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_seat, uint32_t swift_wayland_arg_serial, int32_t swift_wayland_arg_x, int32_t swift_wayland_arg_y
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 4, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_seat, swift_wayland_arg_serial, swift_wayland_arg_x, swift_wayland_arg_y);
+}
+
+static inline void
+swift_wayland_client_request_zxdg_toplevel_v6_move(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_seat, uint32_t swift_wayland_arg_serial
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 5, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_seat, swift_wayland_arg_serial);
+}
+
+static inline void
+swift_wayland_client_request_zxdg_toplevel_v6_resize(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_seat, uint32_t swift_wayland_arg_serial, uint32_t swift_wayland_arg_edges
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 6, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_seat, swift_wayland_arg_serial, swift_wayland_arg_edges);
+}
+
+static inline void
+swift_wayland_client_request_zxdg_toplevel_v6_set_max_size(
+    struct wl_proxy *swift_wayland_proxy, int32_t swift_wayland_arg_width, int32_t swift_wayland_arg_height
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 7, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_width, swift_wayland_arg_height);
+}
+
+static inline void
+swift_wayland_client_request_zxdg_toplevel_v6_set_min_size(
+    struct wl_proxy *swift_wayland_proxy, int32_t swift_wayland_arg_width, int32_t swift_wayland_arg_height
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 8, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_width, swift_wayland_arg_height);
+}
+
+static inline void
+swift_wayland_client_request_zxdg_toplevel_v6_set_maximized(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 9, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0);
+}
+
+static inline void
+swift_wayland_client_request_zxdg_toplevel_v6_unset_maximized(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 10, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0);
+}
+
+static inline void
+swift_wayland_client_request_zxdg_toplevel_v6_set_fullscreen(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_output
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 11, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_output);
+}
+
+static inline void
+swift_wayland_client_request_zxdg_toplevel_v6_unset_fullscreen(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 12, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0);
+}
+
+static inline void
+swift_wayland_client_request_zxdg_toplevel_v6_set_minimized(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 13, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0);
+}
+
+static inline void
+swift_wayland_client_request_zxdg_popup_v6_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_zxdg_popup_v6_grab(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_seat, uint32_t swift_wayland_arg_serial
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_seat, swift_wayland_arg_serial);
+}
+
+static inline void
+swift_wayland_client_request_zwp_xwayland_keyboard_grab_manager_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_zwp_xwayland_keyboard_grab_manager_v1_grab_keyboard(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_surface, struct wl_proxy * swift_wayland_arg_seat
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, &zwp_xwayland_keyboard_grab_v1_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL, swift_wayland_arg_surface, swift_wayland_arg_seat);
+}
+
+static inline void
+swift_wayland_client_request_zwp_xwayland_keyboard_grab_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
 
 /* Interface-descriptor accessors — the client binds/creates by &<name>_interface; the server
  * reads them for globals. Expose each as a plain accessor so Swift gets a clean pointer. */

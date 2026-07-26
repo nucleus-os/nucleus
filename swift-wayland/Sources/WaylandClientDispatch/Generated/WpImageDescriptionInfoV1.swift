@@ -7,6 +7,7 @@ public enum WpImageDescriptionInfoV1Client: WaylandClientInterface {
     public nonisolated static let maximumVersion: UInt32 = 2
 }
 public import WaylandProtocolTypes
+@MainActor
 public protocol WpImageDescriptionInfoV1Events: AnyObject {
     func done(_ proxy: WaylandBorrowedProxy<WpImageDescriptionInfoV1Client>)
     func iccFile(_ proxy: WaylandBorrowedProxy<WpImageDescriptionInfoV1Client>, icc: consuming WaylandClientOwnedFileDescriptor, icc_size: UInt32)
@@ -37,78 +38,179 @@ public extension WpImageDescriptionInfoV1Client {
         unsafe p.pointee.target_max_fall = targetMaxFall_impl
         return unsafe p
     }()
-    /// Wire the listener to a proxy. The owner is borrowed (unretained); the caller must keep it alive for the proxy's lifetime, matching libwayland's user_data contract.
-    @discardableResult
-    static func addListener(_ proxy: OpaquePointer, owner: AnyObject) -> Int32 {
-        unsafe wp_image_description_info_v1_add_listener(proxy, listener, Unmanaged.passUnretained(owner).toOpaque())
-    }
-    private static func handler(_ data: UnsafeMutableRawPointer) -> any WpImageDescriptionInfoV1Events? {
-        unsafe Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? any WpImageDescriptionInfoV1Events
+    private static func handler(_ context: WaylandClientListenerContext) -> any WpImageDescriptionInfoV1Events? {
+        context.owner as? any WpImageDescriptionInfoV1Events
     }
     private static let done_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
-        guard let data = unsafe data, let proxy = unsafe proxy, let h = unsafe handler(data) else {
+        guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
-        unsafe h.done(WaylandBorrowedProxy<WpImageDescriptionInfoV1Client>(proxy))
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
+        }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        MainActor.assumeIsolated {
+            unsafe eventHandler.done(WaylandBorrowedProxy<WpImageDescriptionInfoV1Client>(eventProxy))
+        }
     }
     private static let iccFile_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, Int32, UInt32) -> Void = { data, proxy, icc, icc_size in
-        guard let data = unsafe data, let proxy = unsafe proxy, let h = unsafe handler(data) else {
+        guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
-        unsafe h.iccFile(WaylandBorrowedProxy<WpImageDescriptionInfoV1Client>(proxy), icc: WaylandClientOwnedFileDescriptor(icc), icc_size: icc_size)
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
+        }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        MainActor.assumeIsolated {
+            unsafe eventHandler.iccFile(WaylandBorrowedProxy<WpImageDescriptionInfoV1Client>(eventProxy), icc: WaylandClientOwnedFileDescriptor(icc), icc_size: icc_size)
+        }
     }
     private static let primaries_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, Int32, Int32, Int32, Int32, Int32, Int32, Int32, Int32) -> Void = { data, proxy, r_x, r_y, g_x, g_y, b_x, b_y, w_x, w_y in
-        guard let data = unsafe data, let proxy = unsafe proxy, let h = unsafe handler(data) else {
+        guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
-        unsafe h.primaries(WaylandBorrowedProxy<WpImageDescriptionInfoV1Client>(proxy), r_x: r_x, r_y: r_y, g_x: g_x, g_y: g_y, b_x: b_x, b_y: b_y, w_x: w_x, w_y: w_y)
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
+        }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        MainActor.assumeIsolated {
+            unsafe eventHandler.primaries(WaylandBorrowedProxy<WpImageDescriptionInfoV1Client>(eventProxy), r_x: r_x, r_y: r_y, g_x: g_x, g_y: g_y, b_x: b_x, b_y: b_y, w_x: w_x, w_y: w_y)
+        }
     }
     private static let primariesNamed_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, primaries in
-        guard let data = unsafe data, let proxy = unsafe proxy, let h = unsafe handler(data) else {
+        guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
-        unsafe h.primariesNamed(WaylandBorrowedProxy<WpImageDescriptionInfoV1Client>(proxy), primaries: WpColorManagerV1Primaries(rawValue: primaries))
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
+        }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        MainActor.assumeIsolated {
+            unsafe eventHandler.primariesNamed(WaylandBorrowedProxy<WpImageDescriptionInfoV1Client>(eventProxy), primaries: WpColorManagerV1Primaries(rawValue: primaries))
+        }
     }
     private static let tfPower_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, eexp in
-        guard let data = unsafe data, let proxy = unsafe proxy, let h = unsafe handler(data) else {
+        guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
-        unsafe h.tfPower(WaylandBorrowedProxy<WpImageDescriptionInfoV1Client>(proxy), eexp: eexp)
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
+        }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        MainActor.assumeIsolated {
+            unsafe eventHandler.tfPower(WaylandBorrowedProxy<WpImageDescriptionInfoV1Client>(eventProxy), eexp: eexp)
+        }
     }
     private static let tfNamed_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, tf in
-        guard let data = unsafe data, let proxy = unsafe proxy, let h = unsafe handler(data) else {
+        guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
-        unsafe h.tfNamed(WaylandBorrowedProxy<WpImageDescriptionInfoV1Client>(proxy), tf: WpColorManagerV1TransferFunction(rawValue: tf))
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
+        }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        MainActor.assumeIsolated {
+            unsafe eventHandler.tfNamed(WaylandBorrowedProxy<WpImageDescriptionInfoV1Client>(eventProxy), tf: WpColorManagerV1TransferFunction(rawValue: tf))
+        }
     }
     private static let luminances_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, UInt32, UInt32) -> Void = { data, proxy, min_lum, max_lum, reference_lum in
-        guard let data = unsafe data, let proxy = unsafe proxy, let h = unsafe handler(data) else {
+        guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
-        unsafe h.luminances(WaylandBorrowedProxy<WpImageDescriptionInfoV1Client>(proxy), min_lum: min_lum, max_lum: max_lum, reference_lum: reference_lum)
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
+        }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        MainActor.assumeIsolated {
+            unsafe eventHandler.luminances(WaylandBorrowedProxy<WpImageDescriptionInfoV1Client>(eventProxy), min_lum: min_lum, max_lum: max_lum, reference_lum: reference_lum)
+        }
     }
     private static let targetPrimaries_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, Int32, Int32, Int32, Int32, Int32, Int32, Int32, Int32) -> Void = { data, proxy, r_x, r_y, g_x, g_y, b_x, b_y, w_x, w_y in
-        guard let data = unsafe data, let proxy = unsafe proxy, let h = unsafe handler(data) else {
+        guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
-        unsafe h.targetPrimaries(WaylandBorrowedProxy<WpImageDescriptionInfoV1Client>(proxy), r_x: r_x, r_y: r_y, g_x: g_x, g_y: g_y, b_x: b_x, b_y: b_y, w_x: w_x, w_y: w_y)
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
+        }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        MainActor.assumeIsolated {
+            unsafe eventHandler.targetPrimaries(WaylandBorrowedProxy<WpImageDescriptionInfoV1Client>(eventProxy), r_x: r_x, r_y: r_y, g_x: g_x, g_y: g_y, b_x: b_x, b_y: b_y, w_x: w_x, w_y: w_y)
+        }
     }
     private static let targetLuminance_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, UInt32) -> Void = { data, proxy, min_lum, max_lum in
-        guard let data = unsafe data, let proxy = unsafe proxy, let h = unsafe handler(data) else {
+        guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
-        unsafe h.targetLuminance(WaylandBorrowedProxy<WpImageDescriptionInfoV1Client>(proxy), min_lum: min_lum, max_lum: max_lum)
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
+        }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        MainActor.assumeIsolated {
+            unsafe eventHandler.targetLuminance(WaylandBorrowedProxy<WpImageDescriptionInfoV1Client>(eventProxy), min_lum: min_lum, max_lum: max_lum)
+        }
     }
     private static let targetMaxCll_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, max_cll in
-        guard let data = unsafe data, let proxy = unsafe proxy, let h = unsafe handler(data) else {
+        guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
-        unsafe h.targetMaxCll(WaylandBorrowedProxy<WpImageDescriptionInfoV1Client>(proxy), max_cll: max_cll)
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
+        }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        MainActor.assumeIsolated {
+            unsafe eventHandler.targetMaxCll(WaylandBorrowedProxy<WpImageDescriptionInfoV1Client>(eventProxy), max_cll: max_cll)
+        }
     }
     private static let targetMaxFall_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, max_fall in
-        guard let data = unsafe data, let proxy = unsafe proxy, let h = unsafe handler(data) else {
+        guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
-        unsafe h.targetMaxFall(WaylandBorrowedProxy<WpImageDescriptionInfoV1Client>(proxy), max_fall: max_fall)
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
+        }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        MainActor.assumeIsolated {
+            unsafe eventHandler.targetMaxFall(WaylandBorrowedProxy<WpImageDescriptionInfoV1Client>(eventProxy), max_fall: max_fall)
+        }
+    }
+}
+public extension WaylandProxy where Interface == WpImageDescriptionInfoV1Client {
+    func installListener(_ owner: any WpImageDescriptionInfoV1Events) throws(WaylandProxyError) {
+        try unsafe installListener(owner: owner) { proxy, data in
+            unsafe wp_image_description_info_v1_add_listener(proxy, WpImageDescriptionInfoV1Client.listener, data)
+        }
     }
 }

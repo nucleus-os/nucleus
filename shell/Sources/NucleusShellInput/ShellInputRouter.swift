@@ -34,7 +34,7 @@ public final class ShellInputRouter: ShellSeatDelegate {
         self.scene = scene
         self.seat = seat
         if let seat, let client {
-            self.textInput = unsafe ShellTextInput(
+            self.textInput = ShellTextInput(
                 client: client,
                 seat: seat.protocolSeat
             )
@@ -54,7 +54,7 @@ public final class ShellInputRouter: ShellSeatDelegate {
         textInput?.close()
         seat = replacement
         textInput = replacement.flatMap {
-            unsafe ShellTextInput(client: client, seat: $0.protocolSeat)
+            ShellTextInput(client: client, seat: $0.protocolSeat)
         }
         replacement?.delegate = self
         for window in windowsBySurface.values {

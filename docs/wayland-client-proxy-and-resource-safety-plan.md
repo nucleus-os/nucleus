@@ -34,9 +34,497 @@ Macros are not part of this architecture. XML-derived APIs are emitted as visibl
 cacheable Swift source through the existing SwiftSyntax generator. Non-XML native
 mechanics use ordinary handwritten types with narrow unsafe implementations.
 
-Status: planned
+Status: complete — Phases 1–11 complete
 
-## Current Inventory
+## Progress
+
+- [x] Phase 1: Establish owned client proxy semantics.
+- [x] Phase 2: Generate the complete client request surface.
+- [x] Phase 3: Generate typed client registry binding.
+- [x] Phase 4: Migrate client consumers and delete raw paths.
+- [x] Phase 5: Restore interface-specific error checking.
+- [x] Phase 6: Type retained server resource references.
+- [x] Phase 7: Add scoped SHM buffer access.
+- [x] Phase 8: Generate parent-scoped server-created objects.
+- [x] Phase 9: Consolidate display operations.
+- [x] Phase 10: Remove pure forwarding global bindings.
+- [x] Phase 11: Run the final unsafe and boilerplate audit.
+
+### 2026-07-25 Baseline Audit
+
+Phase 1 is the first incomplete phase. The tree already generates typed client
+interface descriptors and nonescapable `WaylandBorrowedProxy` event values, but it
+does not define `WaylandProxy`, retain listener owners in proxy-scoped contexts, or
+represent event `new_id` arguments as owned proxies. `WaylandRegistry` and all
+production client consumers still own raw `OpaquePointer` values. Generated
+listeners still install `Unmanaged.passUnretained(owner)` directly.
+
+The later server phases also remain incomplete. Existing typed server request
+dispatch is retained as the starting substrate, not counted as completion of
+Phases 5–10.
+
+### 2026-07-25 Phase 1 Complete
+
+`WaylandProxy<Interface>` now privately owns its native proxy, negotiated version,
+live state, connection lifetime, and one retained listener context. Local
+destruction and generated protocol-destructor invalidation are distinct operations;
+both reject duplicate use, and deinitialization only destroys local proxy storage.
+`WaylandConnection` moved native display ownership into the shared connection token,
+so a proxy prevents `wl_display_disconnect` until its own teardown completes.
+
+Generated listeners now install only through `WaylandProxy.installListener(_:)`.
+There is no raw `addListener` compatibility overload. Listener userdata recovers the
+retained proxy-owned context, ordinary object arguments remain
+`WaylandBorrowedProxy`, and event `new_id` arguments become owned
+`WaylandProxy` values using the parent proxy's connection token.
+
+Verified:
+
+- `swift build --package-path swift-wayland`;
+- `swift test --package-path swift-wayland`;
+- connection retention through proxy release;
+- local and protocol-destructor invalidation;
+- duplicate destruction and post-destruction rejection;
+- listener-owner retention, duplicate installation rejection, and teardown;
+- a real foreign-toplevel loopback event whose `new_id` proxy escapes and remains
+  live after the callback.
+
+Shell and Android raw listener call sites no longer compile against the generated
+surface. This is intentional forward-only staging: Phases 2–4 replace their raw
+request, registry, proxy, and listener paths without a compatibility API.
+
+### 2026-07-25 Phase 2 Implementation Progress
+
+The generator now emits the complete request surface for all 192 selected client
+interfaces. Every ordinary request is a constrained method on its typed
+`WaylandProxy`; `wl_registry.bind` is a generated generic typed bind operation.
+Generated nonvariadic C wrappers marshal requests from XML opcodes and signatures,
+so the Swift surface does not depend on the host's possibly older
+wayland-scanner inline declarations.
+
+The generated methods now cover integers, open enums, bitfields, fixed-point
+values, nullable and nonnullable strings and objects, scoped array arguments,
+consuming owned file descriptors, typed `new_id` results, request version gates,
+and protocol destructors. File descriptors close after the marshalling call,
+including failure paths. A destructor invalidates the owned proxy only after its
+wire request has been emitted.
+
+Verified:
+
+- the entire generated client dispatch target compiles;
+- the full `swift-wayland` test suite passes;
+- a real compositor loopback creates a typed `wl_surface`;
+- an unsupported `wl_surface.damage_buffer` is rejected before entering C;
+- a real release-style request reaches the server and invalidates its proxy
+  exactly once;
+- array request storage is copied and scoped to the marshalling call;
+- consuming request file descriptors close after marshalling.
+
+The named protocol-family matrix now runs over one real libwayland client/server
+socket. It binds the selected globals, creates the typed client object graph, and
+checks the exact emitted object/opcode pairs before server dispatch can mask a
+client marshalling error. The matrix covers:
+
+- core surfaces;
+- XDG surfaces and toplevels;
+- layer surfaces;
+- session-lock surfaces;
+- text input;
+- data sources, devices, and offers;
+- DMA-BUF parameters and immediate buffers;
+- explicit-sync timelines, surfaces, and acquire/release points;
+- presentation feedback.
+
+The dedicated matrix and the complete `swift-wayland` suite pass. Phase 2 is
+complete.
+
+### 2026-07-25 Typed Registry Progress
+
+The old descriptor-based `DesiredGlobal`, raw `BoundGlobal.proxy`, registry-wide
+untyped bind callbacks, and `WaylandConnection.adoptProxy` escape hatch have been
+deleted. `DesiredGlobal<Interface>` now captures typed bind and removal policy,
+`BoundGlobal<Interface>` carries an owned typed proxy, and registry lookup returns
+`WaylandProxy<Interface>` values. Heterogeneous desired globals use one
+`AnyDesiredGlobal` requirement box; bound values are erased only after the generic
+requirement has checked and bound the generated interface type.
+
+The `swift-wayland` singleton, multi-instance, version-clamping, removal, listener,
+and connection-lifetime loopbacks use the typed API and pass. Shell now uses the
+typed registry throughout. Android still requires its Phase 3/4 consumer migration;
+the removed raw listener and registry APIs intentionally leave that package red
+until its migration lands.
+
+### 2026-07-25 Main-Actor Client Object Model
+
+`WaylandConnection`, prepared reads, the typed registry, and every owned
+`WaylandProxy` are `@MainActor`. Proxy deinitialization is isolated. Generated C
+callbacks recover listener context outside isolation, then enter
+`MainActor.assumeIsolated` once at the generated ABI boundary and deliver typed
+values to generated `@MainActor` event protocols.
+
+This promotes the shell event-loop invariant into the type system. Owned proxies
+are Sendable by global-actor isolation, while mutable access stays checked.
+Consumers no longer need `@unchecked Sendable`, pointer-address tokens, or
+handwritten actor bridge thunks. Existing consumer thunks are removed as their
+clusters migrate; the final audit rejects any that remain outside generated C
+dispatch.
+
+Both owned and borrowed proxies expose a stable integer `identity` for routing.
+Identity cannot recover a native pointer. The only public raw-proxy operation is
+the explicitly unsafe, synchronous `withUnsafeNativeProxy`, used for genuine native
+integration boundaries.
+
+### 2026-07-25 Shell Client Migration Complete
+
+The shell connection, typed globals, compositor, outputs, seat, pointer, keyboard,
+cursor shape, layer shell, session lock, foreign toplevel, screencopy, text input,
+data control, clipboard, and data-device drag/drop clusters now retain typed owned
+proxies and issue generated requests. Event-created foreign-toplevel, data-control,
+and core data-offer objects arrive as owned proxies. Dictionary keys use safe proxy
+identity; no consumer reconstructs a pointer from that identity.
+
+Clipboard and drag/drop request file descriptors transfer through the generated
+move-only descriptor API. Their existing client/server behavior tests pass.
+
+`NativeSurfaceRegistry` retains typed `WlSurfaceClient` proxies. It opens the
+native pointer only lexically when `ShellRenderEngine` creates the Vulkan Wayland
+surface, using `withUnsafeNativeProxy`. The renderer remains the sole shell
+consumer of that native proxy seam.
+
+Verified:
+
+- `swift build --package-path shell`;
+- `swift build --package-path shell --target NucleusShellWayland`;
+- `swift build --package-path shell --target NucleusShellPasteboard`;
+- `swift test --package-path swift-wayland`;
+- shell data-control client/server behavior;
+- shell drag/drop negotiation, transfer, cancellation, and teardown;
+- shell platform transport stress coverage.
+
+The complete shell test command compiles all test targets. Its first combined run
+was stopped after an aggregate runner stall; the affected Wayland pasteboard,
+drag/drop, and transport suites pass when run directly. Repeat the complete suite
+after the Android migration and final generated-handler cleanup.
+
+### 2026-07-25 Android Client Migration Complete
+
+The Android surface probe and display host now use typed registry requirements and
+retain typed compositor, DMA-BUF, XDG shell, syncobj, presentation, surface,
+timeline, buffer, and feedback proxies. Their manual descriptor switches,
+`BoundGlobal` pointer extraction, raw listener installation, and direct protocol
+request calls are deleted.
+
+DMA-BUF and syncobj file descriptors cross generated requests as move-only owned
+descriptors. Descriptors whose lifetime remains owned by an IPC packet or native
+waiter are duplicated before transfer. Exported one-shot timeline descriptors
+transfer directly. Presentation feedback is retained by owned proxy rather than
+an address that is later reconstructed for destruction.
+
+Verified:
+
+- `swift build --package-path android-runtime`;
+- `swift build --package-path android-runtime --target
+  NucleusAndroidSurfaceProbeCore`;
+- `swift build --package-path android-runtime --target
+  NucleusAndroidDisplayHostCore`;
+- no direct Wayland client request call remains in shell or Android Swift
+  production sources;
+- no routine Wayland client proxy remains stored as `OpaquePointer` in those
+  consumers.
+
+Phase 3 is complete.
+
+### 2026-07-25 Phase 4 Complete
+
+Generated client event protocols are `@MainActor`. Generated C callbacks perform
+the single executor assertion at the ABI boundary, then call actor-isolated
+handlers. Every handwritten shell listener and `WaylandRegistry` conformance is an
+ordinary actor-checked method.
+
+The obsolete handwritten `nonisolated`/`MainActor.assumeIsolated` shells and their
+comments are deleted. Production shell and Android Swift sources contain no direct
+Wayland client requests. Their retained Wayland proxies are typed; the remaining
+`OpaquePointer` values belong to XKB, Android syncobj native helpers, and the
+renderer-facing native display seam.
+
+Verified:
+
+- zero `nonisolated func` and `MainActor.assumeIsolated` occurrences in shell
+  Wayland, input, pasteboard, and typed registry sources;
+- `swift build --package-path shell`;
+- `swift build --package-path android-runtime`;
+- `swift test --package-path swift-wayland`.
+
+Phase 4 is complete.
+
+### 2026-07-25 Phase 5 Complete
+
+The public generic `postError<Code: WaylandProtocolErrorValue>` escape hatch is
+deleted from both `WaylandRequest` and `WaylandResourceHandle`. The raw numeric
+operation is package-scoped inside `WaylandServer`. Generated per-interface
+extensions remain the only ordinary public `postError` surface, so the resource
+interface and error enum must agree at compile time.
+
+`WaylandCrossInterfaceErrorPolicy.swift` declares the two protocol-defined
+exceptions as named request and retained-handle operations:
+
+- `postToplevelDecorationAlreadyConstructedError` on
+  `ZxdgDecorationManagerV1Server`, carrying
+  `ZxdgToplevelDecorationV1Error.alreadyConstructed`;
+- `postLayerShellInvalidLayerError` on `ZwlrLayerSurfaceV1Server`, carrying
+  `ZwlrLayerShellV1Error.invalidLayer`.
+
+Compositor policy uses these explicit names. The layer-surface `set_layer` path no
+longer relies on the numeric coincidence between layer-shell `invalidLayer` and
+layer-surface `invalidSize`.
+
+Verified:
+
+- removing the generic method makes the decoration mismatch fail to type-check;
+- the complete compositor-core package builds with only same-interface posts and
+  the two named exceptions;
+- loopback tests inspect the `wl_display.error` wire event and verify the offending
+  object ID and numeric code for one same-interface error and both exceptions;
+- retained-handle operations return `false` and emit no wire data after native
+  resource destruction;
+- no public generic or raw-code error-posting API remains.
+
+Phase 5 is complete.
+
+### 2026-07-25 Phase 6 Implementation Progress
+
+`WaylandResourceReference` now carries its `WaylandServerInterface` type for its
+complete lifetime. One private type-erased lifetime object owns the native destroy
+listener and optional retained semantic owner; native destruction clears that
+shared state before libwayland frees the resource. The public typed reference and
+handle expose only liveness, version, client identity, object ID, destruction,
+no-memory reporting, and retained semantic-owner recovery.
+
+Raw handle construction and native-resource access are package-scoped. Compositor
+policy can no longer reconstruct a retained resource as another protocol
+interface. Ownerless callback and presentation-feedback factories return typed
+references, and callback/feedback call sites no longer recover handles from raw
+resources.
+
+The compositor migration landed directly on this end state. Raw convenience
+properties were deleted as the compiler found them: liveness uses `isLive`, wire
+diagnostics use `objectID`, client association uses `clientID`, and teardown uses
+`destroy()`. No compatibility handle or temporary public pointer escape is being
+introduced.
+
+Verified:
+
+- native destruction and client disconnect clear typed liveness;
+- explicit destruction is idempotent and clears version, client, and object ID;
+- retained semantic storage survives wire destruction and releases with the typed
+  reference;
+- typed owner construction failure rolls back the native resource;
+- the complete `swift-wayland` test suite passes;
+- `swift build --package-path compositor/compositor-core`;
+- compositor production policy contains no direct `wl_resource_destroy`.
+
+Phase 6 is complete.
+
+### 2026-07-25 Phase 7 Complete
+
+`WaylandResourceReference<WlBufferServer>` now exposes validated SHM metadata and
+two synchronous scoped storage operations: read-only `withShmBytes` and writable
+`withMutableShmBytes`. The implementation recognizes SHM buffers, rejects
+nonpositive dimensions and negative strides, checks byte-count multiplication,
+and balances libwayland begin/end access with `defer`, including throwing bodies.
+The raw pixel pointer remains closure-scoped.
+
+Core surface metadata, cursor extraction, screencopy validation, scene import,
+renderer upload, and screencopy readback use the typed wrapper. Read and write
+access are distinct at the API level; screencopy does not cast read-only storage
+back to mutable memory. DMA-BUF paths continue to use retained semantic owners.
+
+Verified:
+
+- real ARGB8888 and XRGB8888 SHM buffers report the expected metadata;
+- read-only pixels can be copied and remain valid after the access scope;
+- mutable screencopy-style access writes through to the SHM pool;
+- a throwing body is followed by successful access, proving balanced teardown;
+- zero, negative, and otherwise invalid native layout values are rejected;
+- compositor production sources contain no direct `wl_shm_buffer_*` operation;
+- `swift build --package-path compositor/compositor-core`;
+- targeted SHM and resource-ownership tests pass.
+
+Phase 7 is complete.
+
+### 2026-07-25 Phase 8 Complete
+
+The generator emits parent-scoped factories for all 15 selected XML events whose
+sole argument is a typed `new_id`. Each generated method supplies only the
+interface-specific child type, version contract, owner constraint, and event
+publisher. `WaylandResource.createChild` owns the common transaction:
+
+1. require a live parent;
+2. derive its native client;
+3. clamp the child version;
+4. allocate and install the typed child owner;
+5. publish the event;
+6. run the policy installation callback only after publication;
+7. destroy the child on owner or publication failure;
+8. post `wl_display.no_memory` through the parent on allocation failure.
+
+Foreign-toplevel, workspace/group, core data-offer, data-control-offer, and
+DMA-BUF server-created buffers use these generated methods. The old public
+`Interface.createResource(client:...)` generated surface is deleted, and
+compositor policy has no manual related-object allocation site.
+
+The server-dispatch source layout now separates generated and handwritten
+ownership. The 192 XML-derived interfaces live under `Generated/`; the
+cross-interface error policy and typed SHM façade live under `Support/`.
+Regeneration replaces only `Generated/`, so it cannot erase handwritten support.
+
+Verified:
+
+- parent/client association and child version clamping;
+- owner construction rollback;
+- event publication rollback;
+- owner installation after successful publication;
+- deterministic native allocation failure and the exact
+  `wl_display.no_memory` wire error;
+- dead-parent rejection before allocation;
+- a real foreign-toplevel `new_id` event published through its generated factory;
+- all 15 eligible event interfaces call the shared transaction;
+- no compositor production `createResource` call remains;
+- `swift test --package-path swift-wayland`;
+- `swift build --package-path compositor/compositor-core`.
+
+Phase 8 is complete.
+
+### 2026-07-25 Phase 9 Complete
+
+`WaylandDisplay` now owns serial minting through `nextSerial()`. Its native display
+and event-loop pointers are package-scoped implementation details rather than
+public server API.
+
+XDG shell, layer shell, session lock, seat, and the core data-device manager retain
+the `WaylandDisplay` that backs their router. Their constructors require the
+display, so a manager cannot silently cache a borrowed native pointer or mint
+serials against an unrelated display. `WaylandRouterRuntime` establishes this
+ownership when it constructs the complete protocol graph.
+
+Verified:
+
+- successive `WaylandDisplay.nextSerial()` calls produce nonzero increasing
+  serials;
+- compositor production sources contain no direct
+  `wl_display_next_serial` call;
+- compositor production managers contain no cached native display pointer;
+- `swift test --package-path swift-wayland`;
+- `swift build --package-path compositor/compositor-core`;
+- the compositor Wayland test target compiles after its typed-resource fixtures
+  were brought forward from Phase 6.
+
+The focused compositor runtime test run exposed heap corruption in
+`layerShellRejectsBufferBeforeAckConfigure`. Phase 11 traced it with AddressSanitizer
+to foreign `wl_shm_buffer` userdata being interpreted as a Swift resource owner and
+replaced that unchecked recovery with a checked runtime-owned resource registry.
+
+Phase 9 is complete.
+
+### 2026-07-25 Phase 10 Complete
+
+Every generated server interface now has a constrained
+`global(implementation:advertisedVersion:installed:)` overload for implementations
+that directly conform to the interface request protocol. The implementation is the
+resource owner, and the shorter installation callback receives the implementation
+and typed resource handle. The existing generic owner factory remains for globals
+that genuinely construct per-client binding state.
+
+Compositor registration uses the direct overload everywhere an identity owner
+closure previously returned the implementation. Request conformances moved onto
+the shared manager and ten one-property binding classes were deleted:
+
+- compositor;
+- decoration manager;
+- layer-shell manager;
+- subcompositor;
+- relative-pointer manager;
+- pointer-constraints manager;
+- cursor-shape manager;
+- XDG activation manager;
+- XDG output manager;
+- keyboard-shortcuts-inhibit manager.
+
+Four binding types remain because they encode real ownership:
+
+- `SeatBinding` tracks a per-client seat resource and unregisters it on teardown;
+- `WlOutputBinding` tracks a per-client output resource;
+- `XdgWmBaseBinding` retains the per-client wm-base resource used by shell
+  behavior;
+- `XdgForeignBinding` deliberately projects one shared policy object into exporter
+  and importer protocol roles.
+
+Verified:
+
+- no identity owner closure remains in compositor production sources;
+- no semantically empty binding class remains;
+- the generated direct-owner overload drives a real output loopback;
+- `swift test --package-path swift-wayland`;
+- `swift build --package-path compositor/compositor-core`.
+
+Phase 10 is complete.
+
+### 2026-07-25 Phase 11 Complete
+
+The final audit landed directly on the intended ownership model. No transitional
+proxy, resource, binding, or compatibility API remains.
+
+Two lifetime faults surfaced during the complete gates:
+
+- a proxy-owned listener context strongly retained the listener owner while the
+  owner retained the proxy, preventing client disconnect; the context now retains
+  the connection lifetime and weakly references the owner, so callbacks acquire a
+  live owner for their duration without creating an ownership cycle;
+- generic resource-owner lookup interpreted foreign libwayland userdata as a Swift
+  object; `WaylandResource` now registers only resources it creates and returns
+  `nil` for foreign resources without reading their userdata.
+
+The production audit confirms:
+
+- shell and Android contain no routine direct client requests, raw stored proxies,
+  pointer-bit proxy escape or reconstruction, or direct listener installation;
+- compositor policy contains no direct `wl_resource_destroy`,
+  `wl_resource_get_client`, `wl_shm_buffer_*`, or `wl_display_next_serial` call;
+- no public generic cross-interface error API, untyped retained resource, raw-client
+  child factory, identity owner closure, or empty forwarding binding remains;
+- the four remaining binding types encode per-client state, teardown, or deliberate
+  multi-role projection;
+- remaining unsafe sites belong to generated protocol ABI, connection/resource
+  substrate, scoped SHM access, XCB/Xwayland, libinput/XKB, Vulkan/DRM, file
+  descriptor/syscall integration, or another explicit native boundary.
+
+Generated output produced the identical aggregate SHA-256
+`54a8e64e29fdbe4877a3eb60da85ae56500b9e7f803968bbd3277de9ef958dab`
+before and after regeneration.
+
+Verified:
+
+- generator and protocol-model tests;
+- `swift build --package-path swift-wayland`;
+- `swift test --package-path swift-wayland`;
+- `swift build --package-path shell`;
+- `swift test --package-path shell`;
+- `swift build --package-path android-runtime`;
+- `swift test --package-path android-runtime`;
+- `swift build --package-path compositor/compositor-core`;
+- `swift test --package-path compositor/compositor-core`;
+- `collider generate wayland`;
+- `collider build`;
+- `collider test`, including loopback, loader, GPU-headless, and release stress
+  lanes.
+
+The checkout-wide test workflow encountered two unrelated intermittent failures in
+core observation and compositor-shell tests. Each exact failing test passed on its
+immediate isolated rerun, and the resumed complete Collider workflow passed.
+
+Phase 11 is complete.
+
+## Completion Inventory
 
 The server request/event generator has already removed the major handwritten ABI
 surface:
@@ -48,25 +536,17 @@ surface:
 - no routine raw server event senders;
 - no numeric compositor protocol-error posts.
 
-The remaining high-value work is concentrated in the client and server resource
-substrates:
+The client and server resource substrates now provide:
 
-- approximately 150 direct client request calls across shell and Android consumers;
-- 15 manually mapped shell registry-global kinds;
-- 26 direct generated-listener attachment calls in shell and Android consumers;
-- client models that retain raw `OpaquePointer` proxies;
-- event `new_id` proxies represented as nonescapable borrowed values, forcing at
-  least one pointer-bit escape and reconstruction;
-- 104 compositor protocol-error posts backed by a public generic error method that
-  accepts an error value from any interface;
-- 33 direct `wl_resource_destroy` calls in compositor Wayland policy;
-- 19 direct `wl_resource_get_client` calls;
-- 34 direct `wl_shm_buffer_*` calls;
-- four direct `wl_display_next_serial` calls;
-- 25 handwritten raw `wl_resource` pointer declarations;
-- seven server-created-resource sites that manually recover a client, create a
-  resource, install its owner, and send the corresponding `new_id` event;
-- 13 binding-owner classes, several of which contain only one forwarding property.
+- typed owned proxies for registry, request-created, and event-created objects;
+- generated typed client requests and listener installation;
+- typed registry binding and lookup;
+- interface-specific protocol errors;
+- typed retained server resources;
+- scoped SHM access;
+- parent-scoped server-created objects;
+- display-owned serial minting;
+- direct-owner globals for shared implementations.
 
 Generated trampoline `unsafe` markers, XCB/Xwayland native operations, libinput/XKB
 callbacks, and the four libinput `Unmanaged` userdata operations are expected native
@@ -190,9 +670,10 @@ Define these lifecycle rules:
     teardown can outlive `wl_display`.
 
 Represent listener userdata with a dedicated retained context owned by
-`WaylandProxy`. The context contains the event handler and connection token.
-Generated C callbacks recover that context, not an arbitrary unretained consumer
-object.
+`WaylandProxy`. The context weakly references the event handler and strongly retains
+the connection token. Generated C callbacks recover that context and acquire the
+handler for the callback duration. The consumer owns its handler explicitly, and a
+handler that owns its proxy does not form a cycle.
 
 Keep `WaylandBorrowedProxy` nonescapable. Remove every pointer-bit conversion used
 to evade its lifetime.
@@ -203,7 +684,7 @@ Test:
 - explicit destructor invalidation;
 - duplicate destruction rejection;
 - no request after destruction;
-- listener owner lifetime;
+- listener owner non-retention and callback lifetime;
 - listener teardown;
 - ordinary borrowed object nonescape;
 - event-created owned proxy escape;
@@ -719,7 +1200,8 @@ The work is complete when:
 - all selected client requests have generated typed methods;
 - request-created and event-created proxies are owned and interface-typed;
 - ordinary event object arguments remain nonescapable borrowed proxies;
-- listener owners have proxy-scoped retained lifetimes;
+- listener contexts have proxy-scoped retained lifetimes without retaining their
+  owners;
 - registry binding and lookup are interface-typed;
 - shell and Android production consumers retain no routine raw proxies;
 - shell and Android production consumers make no routine direct client request

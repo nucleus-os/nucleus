@@ -34,8 +34,7 @@ import WaylandProtocolTypes
     func register(in router: NucleusWaylandRouter) {
         router.addGlobal(
             ExtDataControlManagerV1Server.global(
-                implementation: self,
-                owner: { manager, _ in manager }))
+                implementation: self))
         // Observe the shared clipboard so every data-control device stays current.
         dataDevice.addSelectionObserver(self)
     }
@@ -66,7 +65,7 @@ extension ExtDataControlManager: ExtDataControlManagerV1Requests {
         _ request: WaylandRequest<ExtDataControlManagerV1Server>,
         id: WlNewId<ExtDataControlSourceV1Server>
     ) {
-        _ = unsafe id.create { handle in
+        _ = id.create { handle in
             ExtDataControlSource(resource: handle, manager: self)
         }
     }
@@ -76,7 +75,7 @@ extension ExtDataControlManager: ExtDataControlManagerV1Requests {
         _ request: WaylandRequest<ExtDataControlManagerV1Server>,
         id: WlNewId<ExtDataControlDeviceV1Server>,
                        seat: WaylandBorrowedObject<WlSeatServer>) {
-        _ = unsafe id.create(
+        _ = id.create(
             owner: { handle in
                 ExtDataControlDevice(resource: handle, manager: self)
             },
@@ -117,7 +116,7 @@ extension ExtDataControlManager: ExtDataControlManagerV1Requests {
     var selectionMimeTypes: [String] { mimes }
 
     func sendSelection(mime: String, fd: Int32) {
-        guard unsafe resource.resource != nil else {
+        guard resource.isLive else {
             if fd >= 0 { close(fd) }
             return
         }
@@ -156,21 +155,16 @@ extension ExtDataControlManager: ExtDataControlManagerV1Requests {
     /// Emit data_offer + offer(mime)* + selection(offer) for the current selection,
     /// or selection(null) to clear.
     fileprivate func projectSelection(_ source: (any SelectionSource)?) {
-        guard let deviceRes = unsafe resource.resource,
-              let client = unsafe wl_resource_get_client(deviceRes)
-        else { return }
+        guard resource.isLive else { return }
         guard let source else {
             resource.sendSelection(id: nil)
             return
         }
-        _ = unsafe ExtDataControlOfferV1Server.createResource(
-            client: client,
-            version: Int32(wl_resource_get_version(deviceRes)),
+        _ = resource.createDataOffer(
             owner: { handle in
                 ExtDataControlOffer(resource: handle, source: source)
             },
             installed: { offer in
-                resource.sendDataOffer(id: offer.resource)
                 for mime in source.selectionMimeTypes {
                     offer.resource.sendOffer(mime_type: mime)
                 }

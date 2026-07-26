@@ -38,8 +38,7 @@ protocol DrmSyncobjDelegate: AnyObject {
     func register(in router: NucleusWaylandRouter) {
         router.addGlobal(
             WpLinuxDrmSyncobjManagerV1Server.global(
-                implementation: self,
-                owner: { manager, _ in manager }))
+                implementation: self))
     }
 }
 
@@ -59,7 +58,7 @@ extension WpLinuxDrmSyncobjManager: WpLinuxDrmSyncobjManagerV1Requests {
                 message: "cannot import drm syncobj timeline")
             return
         }
-        _ = unsafe id.create { resource in
+        _ = id.create { resource in
             WpDrmSyncobjTimeline(
                 resource: resource,
                 handle: handle
@@ -82,7 +81,7 @@ extension WpLinuxDrmSyncobjManager: WpLinuxDrmSyncobjManagerV1Requests {
                 message: "surface already has a syncobj surface")
             return
         }
-        guard unsafe id.create(
+        guard id.create(
             owner: { handle in
                 WpDrmSyncobjSurface(resource: handle, surface: surface)
             },

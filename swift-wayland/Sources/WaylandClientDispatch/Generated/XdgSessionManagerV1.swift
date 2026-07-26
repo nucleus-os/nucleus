@@ -6,3 +6,33 @@ public enum XdgSessionManagerV1Client: WaylandClientInterface {
     public nonisolated(unsafe) static let interface = unsafe swift_wayland_iface_xdg_session_manager_v1()
     public nonisolated static let maximumVersion: UInt32 = 1
 }
+public import WaylandProtocolTypes
+public extension WaylandProxy where Interface == XdgSessionManagerV1Client {
+    func destroy() throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        let _send = { () throws(WaylandProxyError) -> Void in
+            unsafe swift_wayland_client_request_xdg_session_manager_v1_destroy(_proxy)
+            return
+        }
+        try _send()
+        try unsafe invalidateAfterProtocolDestructor()
+    }
+    func getSession(reason: XdgSessionManagerV1Reason, session_id: String?) throws(WaylandProxyError) -> WaylandProxy<XdgSessionV1Client> {
+        let _proxy = try unsafe requireNativeProxy()
+        if let session_id {
+            return try session_id.withCString { (_session_idCString: UnsafePointer<CChar>) throws(WaylandProxyError) -> WaylandProxy<XdgSessionV1Client> in
+                guard let _created = unsafe swift_wayland_client_request_xdg_session_manager_v1_get_session(_proxy, reason.rawValue, _session_idCString) else {
+                    throw WaylandProxyError.proxyCreationFailed
+                }
+                return unsafe makeOwnedProxy(
+                    adopting: _created, XdgSessionV1Client.self)
+            }
+        }
+        let _session_idCString: UnsafePointer<CChar>? = nil
+        guard let _created = unsafe swift_wayland_client_request_xdg_session_manager_v1_get_session(_proxy, reason.rawValue, _session_idCString) else {
+            throw WaylandProxyError.proxyCreationFailed
+        }
+        return unsafe makeOwnedProxy(
+            adopting: _created, XdgSessionV1Client.self)
+    }
+}

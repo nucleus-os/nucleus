@@ -8,13 +8,13 @@
 // holding a blank fail-closed session, so getting this wrong is not a cosmetic
 // bug.
 
-import WaylandClientC
 public import WaylandClientDispatch
 
 @MainActor
 @safe public final class SessionLockSurface {
-    public let wlSurface: OpaquePointer
-    public let lockSurface: OpaquePointer
+    public let wlSurface: WaylandProxy<WlSurfaceClient>
+    public let lockSurface:
+        WaylandProxy<ExtSessionLockSurfaceV1Client>
     public let output: WaylandOutput
 
     /// The size the compositor requires this surface to be. Authoritative: a
@@ -28,19 +28,31 @@ public import WaylandClientDispatch
     public var onConfigure: ((UInt32, UInt32) -> Void)?
     private var isDestroyed = false
 
-    public init?(lock: OpaquePointer, client: ShellWaylandClient, output: WaylandOutput) {
-        guard let surface = unsafe client.createSurface() else { return nil }
-        guard let lockSurface = unsafe ext_session_lock_v1_get_lock_surface(
-            lock, surface, output.proxy)
-        else {
-            unsafe wl_surface_destroy(surface)
+    public init?(
+        lock: WaylandProxy<ExtSessionLockV1Client>,
+        client: ShellWaylandClient,
+        output: WaylandOutput
+    ) {
+        guard let surface = try? client.createSurface() else {
             return nil
         }
-        unsafe self.wlSurface = surface
-        unsafe self.lockSurface = lockSurface
+        guard let lockSurface = try? lock.getLockSurface(
+            surface: surface,
+            output: output.proxy)
+        else {
+            try? surface.destroy()
+            return nil
+        }
+        wlSurface = surface
+        self.lockSurface = lockSurface
         self.output = output
-        unsafe ExtSessionLockSurfaceV1Client.addListener(
-            lockSurface, owner: self)
+        do {
+            try lockSurface.installListener(self)
+        } catch {
+            try? lockSurface.destroy()
+            try? surface.destroy()
+            return nil
+        }
         // No commit here: unlike layer-shell, the compositor sends the first
         // configure unprompted, and committing a bufferless surface first is
         // not part of this protocol's handshake.
@@ -49,8 +61,8 @@ public import WaylandClientDispatch
     public func destroy() {
         guard !isDestroyed else { return }
         isDestroyed = true
-        unsafe ext_session_lock_surface_v1_destroy(lockSurface)
-        unsafe wl_surface_destroy(wlSurface)
+        try? lockSurface.destroy()
+        try? wlSurface.destroy()
     }
 
     isolated deinit {
@@ -58,22 +70,14 @@ public import WaylandClientDispatch
     }
 }
 
-// The generated event dispatch is nonisolated (a @convention(c) libwayland
-// callback); the shell pumps wl_display on its main-thread event loop, so each
-// handler reasserts the main actor.
 extension SessionLockSurface: ExtSessionLockSurfaceV1Events {
-    public nonisolated func configure(
+    public func configure(
         _ proxy: WaylandBorrowedProxy<ExtSessionLockSurfaceV1Client>, serial: UInt32, width: UInt32, height: UInt32
     ) {
-        // Acked before the actor hop, as layer-shell does: it is a C call on the
-        // proxy, and the protocol wants the ack promptly.
-        unsafe ext_session_lock_surface_v1_ack_configure(
-            proxy.proxy, serial)
-        MainActor.assumeIsolated {
-            hasConfigure = true
-            configuredWidth = width
-            configuredHeight = height
-            onConfigure?(width, height)
-        }
+        try? lockSurface.ackConfigure(serial: serial)
+        hasConfigure = true
+        configuredWidth = width
+        configuredHeight = height
+        onConfigure?(width, height)
     }
 }

@@ -29,8 +29,7 @@ import WaylandServerDispatch
     }
 
     package func installed() {
-        guard let resource = unsafe resource.resource else { return }
-        unsafe shell.registerPopup(self, resource: resource)
+        shell.registerPopup(self, clientID: resource.clientID)
     }
 
     var grabOriginSurface: WlSurface? {
@@ -119,30 +118,37 @@ import WaylandServerDispatch
     }
 
     isolated deinit {
-        unsafe shell.unregisterPopup(self, resource: resource.resource)
+        shell.unregisterPopup(self, clientID: resource.clientID)
         xdgSurface?.roleObjectDestroyed(self)
     }
 }
 
 extension XdgPopup: XdgPopupRequests {
     func destroy(_ request: WaylandRequest<XdgPopupServer>) {
-        let resource = unsafe request.resource
-        guard unsafe shell.canDestroyPopup(self, resource: resource) else {
+        guard shell.canDestroyPopup(
+            self,
+            clientID: request.clientID)
+        else {
             xdgSurface?.postWmError(
                 .notTheTopmostPopup,
                 "popup destruction must proceed topmost-first")
             return
         }
-        unsafe shell.unregisterPopup(self, resource: resource)
+        shell.unregisterPopup(self, clientID: request.clientID)
         xdgSurface?.roleObjectDestroyed(self)
-        unsafe wl_resource_destroy(resource)
+        request.destroy()
     }
 
     func grab(
         _ request: WaylandRequest<XdgPopupServer>, seat: WaylandBorrowedObject<WlSeatServer>, serial: UInt32
     ) {
-        guard unsafe shell.delegate?.popupGrabRequested(
-            self, seat: seat.resource, serial: serial) == true
+        guard let seatOwner = seat.owner(as: SeatBinding.self)?.seat,
+            let seatClientID = seat.clientID,
+            shell.delegate?.popupGrabRequested(
+                self,
+                seat: seatOwner,
+                seatClientID: seatClientID,
+                serial: serial) == true
         else {
             xdgSurface?.postWmError(
                 .invalidSurfaceState,

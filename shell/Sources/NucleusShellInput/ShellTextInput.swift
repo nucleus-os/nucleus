@@ -1,4 +1,3 @@
-import WaylandClientC
 import WaylandClientDispatch
 import WaylandProtocolTypes
 public import NucleusShellWayland
@@ -22,7 +21,7 @@ public import NucleusUI
     // through `close()`. All access stays on the main actor, the generated
     // listener borrows `listener`, and the proxy is destroyed before that
     // listener owner is released.
-    private var textInput: OpaquePointer?
+    private var textInput: WaylandProxy<ZwpTextInputV3Client>?
     /// The surface this text input is scoped to, set from `enter`.
     private var focusedSurface: UInt = 0
 
@@ -51,17 +50,24 @@ public import NucleusUI
     /// Bind the manager and create a text input for `seat`. Returns nil when the
     /// compositor offers no text-input manager, which is a normal configuration —
     /// direct key events still reach fields, only composition is unavailable.
-    public init?(client: ShellWaylandClient, seat: OpaquePointer) {
-        guard let manager = unsafe client.proxy(.textInputManager) else { return nil }
-        guard let textInput = unsafe zwp_text_input_manager_v3_get_text_input(
-            manager, seat)
+    public init?(
+        client: ShellWaylandClient,
+        seat: WaylandProxy<WlSeatClient>
+    ) {
+        guard let manager = client.textInputManager else { return nil }
+        guard let textInput = try? manager.getTextInput(seat: seat)
         else {
             return nil
         }
-        unsafe self.textInput = textInput
+        self.textInput = textInput
         let listener = ShellTextInputListener(owner: self)
         self.listener = listener
-        _ = unsafe ZwpTextInputV3Client.addListener(textInput, owner: listener)
+        do {
+            try textInput.installListener(listener)
+        } catch {
+            try? textInput.destroy()
+            return nil
+        }
     }
 
     isolated deinit {
@@ -71,16 +77,16 @@ public import NucleusUI
     /// Destroy the protocol object. Idempotent so host teardown and actor
     /// destruction may both call it.
     public func close() {
-        guard let textInput = unsafe textInput else { return }
+        guard let textInput else { return }
         if activeClient != nil, focusedSurface != 0 {
-            unsafe zwp_text_input_v3_disable(textInput)
+            try? textInput.disable()
             commitState()
         }
         activeClient = nil
         focusedSurface = 0
         beginSessionEpoch()
-        unsafe self.textInput = nil
-        unsafe zwp_text_input_v3_destroy(textInput)
+        self.textInput = nil
+        try? textInput.destroy()
         // The proxy borrows the listener through its C user_data. Release the
         // Swift owner only after destroying that proxy.
         listener = nil
@@ -94,16 +100,16 @@ public import NucleusUI
         }
         activeClient = client
         beginSessionEpoch()
-        guard let textInput = unsafe textInput, focusedSurface != 0 else { return }
-        unsafe zwp_text_input_v3_enable(textInput)
+        guard let textInput, focusedSurface != 0 else { return }
+        try? textInput.enable()
         applyState(for: client, cause: .other)
         commitState()
     }
 
     public func textInputDidDeactivate(_ client: any TextInputClient) {
         guard activeClient === client else { return }
-        if let textInput = unsafe textInput, focusedSurface != 0 {
-            unsafe zwp_text_input_v3_disable(textInput)
+        if let textInput, focusedSurface != 0 {
+            try? textInput.disable()
             commitState()
         }
         activeClient = nil
@@ -128,7 +134,7 @@ public import NucleusUI
         cause: TextInputChangeCause,
         surroundingContext: TextInputSurroundingContext? = nil
     ) {
-        guard let textInput = unsafe textInput else { return }
+        guard let textInput else { return }
         // A refusing client — a secure field — sends no surrounding text at all.
         // Sending an empty string instead would still tell the input method the
         // caret moved, which is more than a password field should reveal.
@@ -137,25 +143,24 @@ public import NucleusUI
            let wireContext = ShellTextInput.boundedSurroundingContext(
             context)
         {
-            wireContext.text.withCString { pointer in
-                unsafe zwp_text_input_v3_set_surrounding_text(
-                    textInput, pointer,
-                    wireContext.cursor,
-                    wireContext.anchor)
-            }
+            try? textInput.setSurroundingText(
+                text: wireContext.text,
+                cursor: wireContext.cursor,
+                anchor: wireContext.anchor)
         }
 
-        unsafe zwp_text_input_v3_set_text_change_cause(
-            textInput,
-            cause == .inputMethod
-                ? UInt32(ZWP_TEXT_INPUT_V3_CHANGE_CAUSE_INPUT_METHOD.rawValue)
-                : UInt32(ZWP_TEXT_INPUT_V3_CHANGE_CAUSE_OTHER.rawValue)
-        )
+        try? textInput.setTextChangeCause(
+            cause: cause == .inputMethod
+                ? .inputMethod
+                : .other)
 
-        unsafe zwp_text_input_v3_set_content_type(
-            textInput,
-            ShellTextInput.contentHint(client.textInputHints),
-            ShellTextInput.contentPurpose(client.textInputContentType))
+        try? textInput.setContentType(
+            hint: ZwpTextInputV3ContentHint(
+                rawValue: ShellTextInput.contentHint(
+                    client.textInputHints)),
+            purpose: ZwpTextInputV3ContentPurpose(
+                rawValue: ShellTextInput.contentPurpose(
+                    client.textInputContentType)))
 
         guard let candidate = client.textInputCandidateGeometry,
               candidate.surfaceID.rawValue == UInt64(focusedSurface),
@@ -164,17 +169,16 @@ public import NucleusUI
         else {
             return
         }
-        unsafe zwp_text_input_v3_set_cursor_rectangle(
-            textInput,
-            rectangle.x,
-            rectangle.y,
-            rectangle.width,
-            rectangle.height)
+        try? textInput.setCursorRectangle(
+            x: rectangle.x,
+            y: rectangle.y,
+            width: rectangle.width,
+            height: rectangle.height)
     }
 
     private func commitState() {
-        guard let textInput = unsafe textInput else { return }
-        unsafe zwp_text_input_v3_commit(textInput)
+        guard let textInput else { return }
+        try? textInput.commit()
         committedStateSerial &+= 1
         validDoneSerials.insert(committedStateSerial)
     }
@@ -187,8 +191,8 @@ public import NucleusUI
         beginSessionEpoch()
         // A client that already has a focused field re-enables for the new
         // surface; otherwise the input method stays disabled until one is.
-        if let activeClient, let textInput = unsafe textInput {
-            unsafe zwp_text_input_v3_enable(textInput)
+        if let activeClient, let textInput {
+            try? textInput.enable()
             applyState(for: activeClient, cause: .other)
             commitState()
         }
@@ -196,8 +200,8 @@ public import NucleusUI
 
     fileprivate func handleLeave(surfaceID: UInt) {
         guard surfaceID == focusedSurface else { return }
-        if let textInput = unsafe textInput, activeClient != nil {
-            unsafe zwp_text_input_v3_disable(textInput)
+        if let textInput, activeClient != nil {
+            try? textInput.disable()
             commitState()
         }
         focusedSurface = 0
@@ -278,7 +282,7 @@ public import NucleusUI
             }
         }
         if pendingAction
-            == UInt32(ZWP_TEXT_INPUT_V3_ACTION_SUBMIT.rawValue)
+            == ZwpTextInputV3Action.submit.rawValue
         {
             client.performTextInputAction()
         }
@@ -333,17 +337,17 @@ public import NucleusUI
 
     private static func preeditStyle(_ hint: UInt32) -> TextInputPreeditStyle {
         switch hint {
-        case UInt32(ZWP_TEXT_INPUT_V3_PREEDIT_HINT_SELECTION.rawValue):
+        case ZwpTextInputV3PreeditHint.selection.rawValue:
             .selected
-        case UInt32(ZWP_TEXT_INPUT_V3_PREEDIT_HINT_PREDICTION.rawValue):
+        case ZwpTextInputV3PreeditHint.prediction.rawValue:
             .highlighted
-        case UInt32(ZWP_TEXT_INPUT_V3_PREEDIT_HINT_PREFIX.rawValue),
-             UInt32(ZWP_TEXT_INPUT_V3_PREEDIT_HINT_SUFFIX.rawValue):
+        case ZwpTextInputV3PreeditHint.prefix.rawValue,
+             ZwpTextInputV3PreeditHint.suffix.rawValue:
             .inactive
-        case UInt32(ZWP_TEXT_INPUT_V3_PREEDIT_HINT_SPELLING_ERROR.rawValue),
-             UInt32(ZWP_TEXT_INPUT_V3_PREEDIT_HINT_COMPOSE_ERROR.rawValue):
+        case ZwpTextInputV3PreeditHint.spellingError.rawValue,
+             ZwpTextInputV3PreeditHint.composeError.rawValue:
             .incorrect
-        case UInt32(ZWP_TEXT_INPUT_V3_PREEDIT_HINT_WHOLE.rawValue):
+        case ZwpTextInputV3PreeditHint.whole.rawValue:
             .active
         default:
             .none
@@ -484,44 +488,43 @@ public import NucleusUI
     /// The framework's neutral content type onto the protocol's purpose.
     static func contentPurpose(_ type: TextInputContentType) -> UInt32 {
         switch type {
-        case .normal: return UInt32(ZWP_TEXT_INPUT_V3_CONTENT_PURPOSE_NORMAL.rawValue)
-        case .password: return UInt32(ZWP_TEXT_INPUT_V3_CONTENT_PURPOSE_PASSWORD.rawValue)
-        case .pin: return UInt32(ZWP_TEXT_INPUT_V3_CONTENT_PURPOSE_PIN.rawValue)
-        case .email: return UInt32(ZWP_TEXT_INPUT_V3_CONTENT_PURPOSE_EMAIL.rawValue)
-        case .url: return UInt32(ZWP_TEXT_INPUT_V3_CONTENT_PURPOSE_URL.rawValue)
-        case .number: return UInt32(ZWP_TEXT_INPUT_V3_CONTENT_PURPOSE_NUMBER.rawValue)
-        case .phone: return UInt32(ZWP_TEXT_INPUT_V3_CONTENT_PURPOSE_PHONE.rawValue)
-        case .name: return UInt32(ZWP_TEXT_INPUT_V3_CONTENT_PURPOSE_NAME.rawValue)
-        case .search: return UInt32(ZWP_TEXT_INPUT_V3_CONTENT_PURPOSE_NORMAL.rawValue)
+        case .normal: return ZwpTextInputV3ContentPurpose.normal.rawValue
+        case .password: return ZwpTextInputV3ContentPurpose.password.rawValue
+        case .pin: return ZwpTextInputV3ContentPurpose.pin.rawValue
+        case .email: return ZwpTextInputV3ContentPurpose.email.rawValue
+        case .url: return ZwpTextInputV3ContentPurpose.url.rawValue
+        case .number: return ZwpTextInputV3ContentPurpose.number.rawValue
+        case .phone: return ZwpTextInputV3ContentPurpose.phone.rawValue
+        case .name: return ZwpTextInputV3ContentPurpose.name.rawValue
+        case .search: return ZwpTextInputV3ContentPurpose.normal.rawValue
         }
     }
 
     static func contentHint(_ hints: TextInputHints) -> UInt32 {
-        var value: UInt32 = UInt32(ZWP_TEXT_INPUT_V3_CONTENT_HINT_NONE.rawValue)
+        var value = ZwpTextInputV3ContentHint.none
         if hints.contains(.spellcheck) {
-            value |= UInt32(ZWP_TEXT_INPUT_V3_CONTENT_HINT_SPELLCHECK.rawValue)
+            value.insert(.spellcheck)
         }
         if hints.contains(.autocorrect) {
-            value |= UInt32(ZWP_TEXT_INPUT_V3_CONTENT_HINT_COMPLETION.rawValue)
+            value.insert(.completion)
         }
         if hints.contains(.autocapitalize) {
-            value |= UInt32(ZWP_TEXT_INPUT_V3_CONTENT_HINT_AUTO_CAPITALIZATION.rawValue)
+            value.insert(.autoCapitalization)
         }
         if hints.contains(.multiline) {
-            value |= UInt32(ZWP_TEXT_INPUT_V3_CONTENT_HINT_MULTILINE.rawValue)
+            value.insert(.multiline)
         }
         if hints.contains(.sensitiveData) {
             // Both flags: `sensitive_data` asks the input method not to learn
             // from or log the content, `hidden_text` that it not display it.
-            value |= UInt32(ZWP_TEXT_INPUT_V3_CONTENT_HINT_SENSITIVE_DATA.rawValue)
-            value |= UInt32(ZWP_TEXT_INPUT_V3_CONTENT_HINT_HIDDEN_TEXT.rawValue)
+            value.insert(.sensitiveData)
+            value.insert(.hiddenText)
         }
-        return value
+        return value.rawValue
     }
 }
 
-/// Separate listener owner, matching the seat's pointer/keyboard boxes: the
-/// generated dispatch is nonisolated and `addListener` borrows its owner.
+/// Separate listener owner, matching the seat's pointer/keyboard boxes.
 @MainActor
 final class ShellTextInputListener: ZwpTextInputV3Events {
     private unowned let owner: ShellTextInput
@@ -530,71 +533,65 @@ final class ShellTextInputListener: ZwpTextInputV3Events {
         self.owner = owner
     }
 
-    nonisolated func enter(
+    func enter(
         _ proxy: WaylandBorrowedProxy<ZwpTextInputV3Client>,
         surface: WaylandBorrowedProxy<WlSurfaceClient>
     ) {
-        let surfaceID = unsafe UInt(bitPattern: surface.proxy)
-        MainActor.assumeIsolated { owner.handleEnter(surfaceID: surfaceID) }
+        owner.handleEnter(surfaceID: surface.identity)
     }
 
-    nonisolated func leave(
+    func leave(
         _ proxy: WaylandBorrowedProxy<ZwpTextInputV3Client>,
         surface: WaylandBorrowedProxy<WlSurfaceClient>
     ) {
-        let surfaceID = unsafe UInt(bitPattern: surface.proxy)
-        MainActor.assumeIsolated { owner.handleLeave(surfaceID: surfaceID) }
+        owner.handleLeave(surfaceID: surface.identity)
     }
 
-    nonisolated func preeditString(
+    func preeditString(
         _ proxy: WaylandBorrowedProxy<ZwpTextInputV3Client>, text: String?,
         cursor_begin: Int32, cursor_end: Int32
     ) {
-        MainActor.assumeIsolated {
-            owner.handlePreedit(
-                text: text, cursorBegin: cursor_begin, cursorEnd: cursor_end)
-        }
+        owner.handlePreedit(
+            text: text, cursorBegin: cursor_begin, cursorEnd: cursor_end)
     }
 
-    nonisolated func commitString(
+    func commitString(
         _ proxy: WaylandBorrowedProxy<ZwpTextInputV3Client>, text: String?
     ) {
-        MainActor.assumeIsolated { owner.handleCommitString(text) }
+        owner.handleCommitString(text)
     }
 
-    nonisolated func deleteSurroundingText(
+    func deleteSurroundingText(
         _ proxy: WaylandBorrowedProxy<ZwpTextInputV3Client>, before_length: UInt32, after_length: UInt32
     ) {
-        MainActor.assumeIsolated {
-            owner.handleDeleteSurrounding(before: before_length, after: after_length)
-        }
+        owner.handleDeleteSurrounding(
+            before: before_length,
+            after: after_length)
     }
 
-    nonisolated func done(_ proxy: WaylandBorrowedProxy<ZwpTextInputV3Client>, serial: UInt32) {
-        MainActor.assumeIsolated { owner.handleDone(serial: serial) }
+    func done(_ proxy: WaylandBorrowedProxy<ZwpTextInputV3Client>, serial: UInt32) {
+        owner.handleDone(serial: serial)
     }
 
-    nonisolated func action(
+    func action(
         _ proxy: WaylandBorrowedProxy<ZwpTextInputV3Client>,
         action: ZwpTextInputV3Action,
         serial: UInt32
     ) {
-        MainActor.assumeIsolated { owner.handleAction(action.rawValue) }
+        owner.handleAction(action.rawValue)
     }
-    nonisolated func language(
+    func language(
         _ proxy: WaylandBorrowedProxy<ZwpTextInputV3Client>,
         language: String
     ) {
-        MainActor.assumeIsolated { owner.handleLanguage(language) }
+        owner.handleLanguage(language)
     }
-    nonisolated func preeditHint(
+    func preeditHint(
         _ proxy: WaylandBorrowedProxy<ZwpTextInputV3Client>,
         start: UInt32, end: UInt32,
         hint: ZwpTextInputV3PreeditHint
     ) {
-        MainActor.assumeIsolated {
-            owner.handlePreeditHint(
-                start: start, end: end, hint: hint.rawValue)
-        }
+        owner.handlePreeditHint(
+            start: start, end: end, hint: hint.rawValue)
     }
 }

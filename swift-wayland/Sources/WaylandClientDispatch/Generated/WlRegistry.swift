@@ -6,6 +6,29 @@ public enum WlRegistryClient: WaylandClientInterface {
     public nonisolated(unsafe) static let interface = unsafe swift_wayland_iface_wl_registry()
     public nonisolated static let maximumVersion: UInt32 = 1
 }
+public extension WaylandProxy where Interface == WlRegistryClient {
+    func bind<Bound: WaylandClientInterface>(
+        name: UInt32,
+        version: UInt32,
+        as _: Bound.Type
+    ) throws(WaylandProxyError) -> WaylandProxy<Bound> {
+        guard version <= Bound.maximumVersion else {
+            throw .unsupportedVersion(
+                required: version,
+                actual: Bound.maximumVersion)
+        }
+        let _proxy = try unsafe requireNativeProxy()
+        guard let interface = unsafe Bound.interface,
+              let created = unsafe wl_registry_bind(
+                _proxy, name, interface, version)
+        else {
+            throw .proxyCreationFailed
+        }
+        return unsafe makeOwnedProxy(
+            adopting: OpaquePointer(created), Bound.self)
+    }
+}
+@MainActor
 public protocol WlRegistryEvents: AnyObject {
     func global(_ proxy: WaylandBorrowedProxy<WlRegistryClient>, name: UInt32, interface: String, version: UInt32)
     func globalRemove(_ proxy: WaylandBorrowedProxy<WlRegistryClient>, name: UInt32)
@@ -18,24 +41,45 @@ public extension WlRegistryClient {
         unsafe p.pointee.global_remove = globalRemove_impl
         return unsafe p
     }()
-    /// Wire the listener to a proxy. The owner is borrowed (unretained); the caller must keep it alive for the proxy's lifetime, matching libwayland's user_data contract.
-    @discardableResult
-    static func addListener(_ proxy: OpaquePointer, owner: AnyObject) -> Int32 {
-        unsafe wl_registry_add_listener(proxy, listener, Unmanaged.passUnretained(owner).toOpaque())
-    }
-    private static func handler(_ data: UnsafeMutableRawPointer) -> any WlRegistryEvents? {
-        unsafe Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? any WlRegistryEvents
+    private static func handler(_ context: WaylandClientListenerContext) -> any WlRegistryEvents? {
+        context.owner as? any WlRegistryEvents
     }
     private static let global_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, UnsafePointer<CChar>?, UInt32) -> Void = { data, proxy, name, interface, version in
-        guard let data = unsafe data, let proxy = unsafe proxy, let h = unsafe handler(data) else {
+        guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
-        unsafe h.global(WaylandBorrowedProxy<WlRegistryClient>(proxy), name: name, interface: unsafe String(cString: interface!), version: version)
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
+        }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        nonisolated(unsafe) let _event_interface = unsafe interface
+        MainActor.assumeIsolated {
+            unsafe eventHandler.global(WaylandBorrowedProxy<WlRegistryClient>(eventProxy), name: name, interface: unsafe String(cString: _event_interface!), version: version)
+        }
     }
     private static let globalRemove_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, name in
-        guard let data = unsafe data, let proxy = unsafe proxy, let h = unsafe handler(data) else {
+        guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
-        unsafe h.globalRemove(WaylandBorrowedProxy<WlRegistryClient>(proxy), name: name)
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
+        }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        MainActor.assumeIsolated {
+            unsafe eventHandler.globalRemove(WaylandBorrowedProxy<WlRegistryClient>(eventProxy), name: name)
+        }
+    }
+}
+public extension WaylandProxy where Interface == WlRegistryClient {
+    func installListener(_ owner: any WlRegistryEvents) throws(WaylandProxyError) {
+        try unsafe installListener(owner: owner) { proxy, data in
+            unsafe wl_registry_add_listener(proxy, WlRegistryClient.listener, data)
+        }
     }
 }

@@ -10,31 +10,22 @@ import WaylandServer
 import WaylandServerDispatch
 
 @MainActor
-@safe final class XdgOutputManagerBinding {
-    unowned let manager: XdgOutputManager
-    init(_ manager: XdgOutputManager) { self.manager = manager }
-}
-
-@MainActor
 @safe final class XdgOutputManager {
     func register(in router: NucleusWaylandRouter) {
         router.addGlobal(
             ZxdgOutputManagerV1Server.global(
                 implementation: self,
-                advertisedVersion: 3,
-                owner: { manager, _ in
-                    XdgOutputManagerBinding(manager)
-                }))
+                advertisedVersion: 3))
     }
 }
 
-extension XdgOutputManagerBinding: ZxdgOutputManagerV1Requests {
+extension XdgOutputManager: ZxdgOutputManagerV1Requests {
     func getXdgOutput(
         _ request: WaylandRequest<ZxdgOutputManagerV1Server>,
         id: WlNewId<ZxdgOutputV1Server>,
                       output outputRes: WaylandBorrowedObject<WlOutputServer>) {
         guard let output = outputRes.output else { return }
-        _ = unsafe id.create(
+        _ = id.create(
             owner: { handle in
                 XdgOutput(resource: handle, output: output)
             },

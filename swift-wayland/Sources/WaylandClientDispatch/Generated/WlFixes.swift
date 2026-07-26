@@ -6,3 +6,20 @@ public enum WlFixesClient: WaylandClientInterface {
     public nonisolated(unsafe) static let interface = unsafe swift_wayland_iface_wl_fixes()
     public nonisolated static let maximumVersion: UInt32 = 1
 }
+public extension WaylandProxy where Interface == WlFixesClient {
+    func destroy() throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        let _send = { () throws(WaylandProxyError) -> Void in
+            unsafe swift_wayland_client_request_wl_fixes_destroy(_proxy)
+            return
+        }
+        try _send()
+        try unsafe invalidateAfterProtocolDestructor()
+    }
+    func destroyRegistry(registry: WaylandProxy<WlRegistryClient>) throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        let _registryProxy = try unsafe registry.requireNativeProxy()
+        unsafe swift_wayland_client_request_wl_fixes_destroy_registry(_proxy, _registryProxy)
+        return
+    }
+}

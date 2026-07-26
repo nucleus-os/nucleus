@@ -6,3 +6,21 @@ public enum WpPointerWarpV1Client: WaylandClientInterface {
     public nonisolated(unsafe) static let interface = unsafe swift_wayland_iface_wp_pointer_warp_v1()
     public nonisolated static let maximumVersion: UInt32 = 1
 }
+public extension WaylandProxy where Interface == WpPointerWarpV1Client {
+    func destroy() throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        let _send = { () throws(WaylandProxyError) -> Void in
+            unsafe swift_wayland_client_request_wp_pointer_warp_v1_destroy(_proxy)
+            return
+        }
+        try _send()
+        try unsafe invalidateAfterProtocolDestructor()
+    }
+    func warpPointer(surface: WaylandProxy<WlSurfaceClient>, pointer: WaylandProxy<WlPointerClient>, x: Double, y: Double, serial: UInt32) throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        let _surfaceProxy = try unsafe surface.requireNativeProxy()
+        let _pointerProxy = try unsafe pointer.requireNativeProxy()
+        unsafe swift_wayland_client_request_wp_pointer_warp_v1_warp_pointer(_proxy, _surfaceProxy, _pointerProxy, swift_wayland_fixed_from_double(x), swift_wayland_fixed_from_double(y), serial)
+        return
+    }
+}

@@ -14,7 +14,9 @@ public enum WaylandColliderRecipe {
         let server = root.appending("Sources/WaylandServerC")
         let client = root.appending("Sources/WaylandClientC")
         let protocols = root.appending("Sources/WaylandProtocolsC")
-        let serverDispatch = root.appending("Sources/WaylandServerDispatch")
+        let serverDispatchRoot = root.appending(
+            "Sources/WaylandServerDispatch")
+        let serverDispatch = serverDispatchRoot.appending("Generated")
         let clientDispatchRoot = root.appending(
             "Sources/WaylandClientDispatch")
         let clientDispatch = clientDispatchRoot.appending("Generated")

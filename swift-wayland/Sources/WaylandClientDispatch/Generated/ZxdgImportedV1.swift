@@ -6,6 +6,24 @@ public enum ZxdgImportedV1Client: WaylandClientInterface {
     public nonisolated(unsafe) static let interface = unsafe swift_wayland_iface_zxdg_imported_v1()
     public nonisolated static let maximumVersion: UInt32 = 1
 }
+public extension WaylandProxy where Interface == ZxdgImportedV1Client {
+    func destroy() throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        let _send = { () throws(WaylandProxyError) -> Void in
+            unsafe swift_wayland_client_request_zxdg_imported_v1_destroy(_proxy)
+            return
+        }
+        try _send()
+        try unsafe invalidateAfterProtocolDestructor()
+    }
+    func setParentOf(surface: WaylandProxy<WlSurfaceClient>) throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        let _surfaceProxy = try unsafe surface.requireNativeProxy()
+        unsafe swift_wayland_client_request_zxdg_imported_v1_set_parent_of(_proxy, _surfaceProxy)
+        return
+    }
+}
+@MainActor
 public protocol ZxdgImportedV1Events: AnyObject {
     func destroyed(_ proxy: WaylandBorrowedProxy<ZxdgImportedV1Client>)
 }
@@ -16,18 +34,29 @@ public extension ZxdgImportedV1Client {
         unsafe p.pointee.destroyed = destroyed_impl
         return unsafe p
     }()
-    /// Wire the listener to a proxy. The owner is borrowed (unretained); the caller must keep it alive for the proxy's lifetime, matching libwayland's user_data contract.
-    @discardableResult
-    static func addListener(_ proxy: OpaquePointer, owner: AnyObject) -> Int32 {
-        unsafe zxdg_imported_v1_add_listener(proxy, listener, Unmanaged.passUnretained(owner).toOpaque())
-    }
-    private static func handler(_ data: UnsafeMutableRawPointer) -> any ZxdgImportedV1Events? {
-        unsafe Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? any ZxdgImportedV1Events
+    private static func handler(_ context: WaylandClientListenerContext) -> any ZxdgImportedV1Events? {
+        context.owner as? any ZxdgImportedV1Events
     }
     private static let destroyed_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
-        guard let data = unsafe data, let proxy = unsafe proxy, let h = unsafe handler(data) else {
+        guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
-        unsafe h.destroyed(WaylandBorrowedProxy<ZxdgImportedV1Client>(proxy))
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
+        }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        MainActor.assumeIsolated {
+            unsafe eventHandler.destroyed(WaylandBorrowedProxy<ZxdgImportedV1Client>(eventProxy))
+        }
+    }
+}
+public extension WaylandProxy where Interface == ZxdgImportedV1Client {
+    func installListener(_ owner: any ZxdgImportedV1Events) throws(WaylandProxyError) {
+        try unsafe installListener(owner: owner) { proxy, data in
+            unsafe zxdg_imported_v1_add_listener(proxy, ZxdgImportedV1Client.listener, data)
+        }
     }
 }

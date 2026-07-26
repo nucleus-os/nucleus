@@ -6,3 +6,21 @@ public enum WlDisplayClient: WaylandClientInterface {
     public nonisolated(unsafe) static let interface = unsafe swift_wayland_iface_wl_display()
     public nonisolated static let maximumVersion: UInt32 = 1
 }
+public extension WaylandProxy where Interface == WlDisplayClient {
+    func sync() throws(WaylandProxyError) -> WaylandProxy<WlCallbackClient> {
+        let _proxy = try unsafe requireNativeProxy()
+        guard let _created = unsafe swift_wayland_client_request_wl_display_sync(_proxy) else {
+            throw WaylandProxyError.proxyCreationFailed
+        }
+        return unsafe makeOwnedProxy(
+            adopting: _created, WlCallbackClient.self)
+    }
+    func getRegistry() throws(WaylandProxyError) -> WaylandProxy<WlRegistryClient> {
+        let _proxy = try unsafe requireNativeProxy()
+        guard let _created = unsafe swift_wayland_client_request_wl_display_get_registry(_proxy) else {
+            throw WaylandProxyError.proxyCreationFailed
+        }
+        return unsafe makeOwnedProxy(
+            adopting: _created, WlRegistryClient.self)
+    }
+}

@@ -31,8 +31,7 @@ protocol PresentationDelegate: AnyObject {
             WpPresentationServer.global(
                 implementation: self,
                 advertisedVersion: 2,
-                owner: { presentation, _ in presentation },
-                installed: { presentation, _, handle in
+                installed: { presentation, handle in
                     handle.sendClockId(clk_id: presentation.clockId)
                 }))
     }
@@ -46,7 +45,7 @@ extension WpPresentation: WpPresentationRequests {
         guard let surface = surfaceRes.owner(as: WlSurface.self) else { return }
         // wp_presentation_feedback has no requests: create it with no implementation,
         // exactly as wl_surface.frame does for wl_callback.
-        guard let feedback = unsafe callback.createBare() else { return }
-        unsafe surface.addPresentationFeedback(feedback)
+        guard let feedback = callback.createBare() else { return }
+        surface.addPresentationFeedback(feedback)
     }
 }

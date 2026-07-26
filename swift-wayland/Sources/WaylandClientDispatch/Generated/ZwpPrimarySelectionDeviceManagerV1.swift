@@ -6,3 +6,31 @@ public enum ZwpPrimarySelectionDeviceManagerV1Client: WaylandClientInterface {
     public nonisolated(unsafe) static let interface = unsafe swift_wayland_iface_zwp_primary_selection_device_manager_v1()
     public nonisolated static let maximumVersion: UInt32 = 1
 }
+public extension WaylandProxy where Interface == ZwpPrimarySelectionDeviceManagerV1Client {
+    func createSource() throws(WaylandProxyError) -> WaylandProxy<ZwpPrimarySelectionSourceV1Client> {
+        let _proxy = try unsafe requireNativeProxy()
+        guard let _created = unsafe swift_wayland_client_request_zwp_primary_selection_device_manager_v1_create_source(_proxy) else {
+            throw WaylandProxyError.proxyCreationFailed
+        }
+        return unsafe makeOwnedProxy(
+            adopting: _created, ZwpPrimarySelectionSourceV1Client.self)
+    }
+    func getDevice(seat: WaylandProxy<WlSeatClient>) throws(WaylandProxyError) -> WaylandProxy<ZwpPrimarySelectionDeviceV1Client> {
+        let _proxy = try unsafe requireNativeProxy()
+        let _seatProxy = try unsafe seat.requireNativeProxy()
+        guard let _created = unsafe swift_wayland_client_request_zwp_primary_selection_device_manager_v1_get_device(_proxy, _seatProxy) else {
+            throw WaylandProxyError.proxyCreationFailed
+        }
+        return unsafe makeOwnedProxy(
+            adopting: _created, ZwpPrimarySelectionDeviceV1Client.self)
+    }
+    func destroy() throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        let _send = { () throws(WaylandProxyError) -> Void in
+            unsafe swift_wayland_client_request_zwp_primary_selection_device_manager_v1_destroy(_proxy)
+            return
+        }
+        try _send()
+        try unsafe invalidateAfterProtocolDestructor()
+    }
+}

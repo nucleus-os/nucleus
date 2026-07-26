@@ -20,8 +20,9 @@ import WaylandProtocolTypes
     }
 
     private struct CommitResources {
-        var frameCallbacks: [WaylandResourceReference]
-        var feedbacks: [WaylandResourceReference]
+        var frameCallbacks: [WaylandResourceReference<WlCallbackServer>]
+        var feedbacks:
+            [WaylandResourceReference<WpPresentationFeedbackServer>]
         var sampledSubmissionIDs: Set<UInt64> = []
         var presented: PresentedSample?
     }
@@ -32,8 +33,9 @@ import WaylandProtocolTypes
 
     func install(
         commitID: UInt64,
-        frameCallbacks: [WaylandResourceReference],
-        feedbacks: [WaylandResourceReference]
+        frameCallbacks: [WaylandResourceReference<WlCallbackServer>],
+        feedbacks:
+            [WaylandResourceReference<WpPresentationFeedbackServer>]
     ) {
         var callbacks = frameCallbacks
         if currentCommitID != 0,
@@ -42,10 +44,8 @@ import WaylandProtocolTypes
         {
             callbacks = superseded.frameCallbacks + callbacks
             for feedback in superseded.feedbacks {
-                guard let resource = unsafe feedback.resource else { continue }
-                unsafe WaylandResourceHandle<WpPresentationFeedbackServer>(resource)?
-                    .sendDiscarded()
-                unsafe wl_resource_destroy(resource)
+                feedback.handle.sendDiscarded()
+                feedback.destroy()
             }
             superseded.frameCallbacks.removeAll()
             superseded.feedbacks.removeAll()
@@ -86,10 +86,10 @@ import WaylandProtocolTypes
                 &* 1_000_000_000
                 &+ UInt64(tvNsec)
         for callback in resources.frameCallbacks {
-            guard let resource = unsafe callback.resource else { continue }
-            unsafe WaylandResourceHandle<WlCallbackServer>(resource)?
-                .sendDone(callback_data: timeMs)
-            unsafe wl_resource_destroy(resource)
+            guard callback.handle.sendDone(callback_data: timeMs) else {
+                continue
+            }
+            callback.destroy()
             completedFrameCallbacks += 1
         }
         resources.frameCallbacks.removeAll()
@@ -150,15 +150,11 @@ import WaylandProtocolTypes
     func destroyAll() {
         for resources in commits.values {
             for callback in resources.frameCallbacks {
-                if let resource = unsafe callback.resource {
-                    unsafe wl_resource_destroy(resource)
-                }
+                callback.destroy()
             }
             for feedback in resources.feedbacks {
-                guard let resource = unsafe feedback.resource else { continue }
-                unsafe WaylandResourceHandle<WpPresentationFeedbackServer>(resource)?
-                    .sendDiscarded()
-                unsafe wl_resource_destroy(resource)
+                feedback.handle.sendDiscarded()
+                feedback.destroy()
             }
         }
         commits.removeAll()
@@ -185,11 +181,8 @@ import WaylandProtocolTypes
         guard resources.sampledSubmissionIDs.isEmpty else { return }
         if let presented = resources.presented {
             for feedback in resources.feedbacks {
-                guard let feedbackResource = unsafe feedback.resource else { continue }
-                guard let feedbackHandle =
-                    unsafe WaylandResourceHandle<WpPresentationFeedbackServer>(
-                        feedbackResource)
-                else { continue }
+                guard feedback.isLive else { continue }
+                let feedbackHandle = feedback.handle
                 let client = feedbackHandle.clientID
                 for output in presented.outputs {
                     for outputResource in output.resources(
@@ -207,14 +200,12 @@ import WaylandProtocolTypes
                     seq_lo: presented.seqLo,
                     flags: WpPresentationFeedbackKind(
                         rawValue: presented.flags))
-                unsafe wl_resource_destroy(feedbackResource)
+                feedback.destroy()
             }
         } else {
             for feedback in resources.feedbacks {
-                guard let resource = unsafe feedback.resource else { continue }
-                unsafe WaylandResourceHandle<WpPresentationFeedbackServer>(resource)?
-                    .sendDiscarded()
-                unsafe wl_resource_destroy(resource)
+                feedback.handle.sendDiscarded()
+                feedback.destroy()
             }
         }
         resources.feedbacks.removeAll()

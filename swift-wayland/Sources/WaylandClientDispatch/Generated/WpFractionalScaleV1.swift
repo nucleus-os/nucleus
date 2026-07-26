@@ -6,6 +6,18 @@ public enum WpFractionalScaleV1Client: WaylandClientInterface {
     public nonisolated(unsafe) static let interface = unsafe swift_wayland_iface_wp_fractional_scale_v1()
     public nonisolated static let maximumVersion: UInt32 = 1
 }
+public extension WaylandProxy where Interface == WpFractionalScaleV1Client {
+    func destroy() throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        let _send = { () throws(WaylandProxyError) -> Void in
+            unsafe swift_wayland_client_request_wp_fractional_scale_v1_destroy(_proxy)
+            return
+        }
+        try _send()
+        try unsafe invalidateAfterProtocolDestructor()
+    }
+}
+@MainActor
 public protocol WpFractionalScaleV1Events: AnyObject {
     func preferredScale(_ proxy: WaylandBorrowedProxy<WpFractionalScaleV1Client>, scale: UInt32)
 }
@@ -16,18 +28,29 @@ public extension WpFractionalScaleV1Client {
         unsafe p.pointee.preferred_scale = preferredScale_impl
         return unsafe p
     }()
-    /// Wire the listener to a proxy. The owner is borrowed (unretained); the caller must keep it alive for the proxy's lifetime, matching libwayland's user_data contract.
-    @discardableResult
-    static func addListener(_ proxy: OpaquePointer, owner: AnyObject) -> Int32 {
-        unsafe wp_fractional_scale_v1_add_listener(proxy, listener, Unmanaged.passUnretained(owner).toOpaque())
-    }
-    private static func handler(_ data: UnsafeMutableRawPointer) -> any WpFractionalScaleV1Events? {
-        unsafe Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? any WpFractionalScaleV1Events
+    private static func handler(_ context: WaylandClientListenerContext) -> any WpFractionalScaleV1Events? {
+        context.owner as? any WpFractionalScaleV1Events
     }
     private static let preferredScale_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, scale in
-        guard let data = unsafe data, let proxy = unsafe proxy, let h = unsafe handler(data) else {
+        guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
-        unsafe h.preferredScale(WaylandBorrowedProxy<WpFractionalScaleV1Client>(proxy), scale: scale)
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
+        }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        MainActor.assumeIsolated {
+            unsafe eventHandler.preferredScale(WaylandBorrowedProxy<WpFractionalScaleV1Client>(eventProxy), scale: scale)
+        }
+    }
+}
+public extension WaylandProxy where Interface == WpFractionalScaleV1Client {
+    func installListener(_ owner: any WpFractionalScaleV1Events) throws(WaylandProxyError) {
+        try unsafe installListener(owner: owner) { proxy, data in
+            unsafe wp_fractional_scale_v1_add_listener(proxy, WpFractionalScaleV1Client.listener, data)
+        }
     }
 }

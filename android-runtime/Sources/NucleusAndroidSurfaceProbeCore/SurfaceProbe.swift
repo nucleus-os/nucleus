@@ -5,7 +5,6 @@ import NucleusAndroidGraphicsContract
 import NucleusAndroidIPC
 import NucleusLinuxReactor
 import WaylandClient
-import WaylandClientC
 import WaylandClientDispatch
 import WaylandProtocolTypes
 
@@ -89,11 +88,12 @@ public struct SurfaceProbeLifecycleEvent: Codable, Equatable, Sendable {
     private let configuration: SurfaceProbeConfiguration
     private let connection: WaylandConnection
     private let registry: WaylandRegistry
-    private var compositor: OpaquePointer?
-    private var dmabuf: OpaquePointer?
-    private var wmBase: OpaquePointer?
-    private var syncobjManager: OpaquePointer?
-    private var presentation: OpaquePointer?
+    private let compositor: WaylandProxy<WlCompositorClient>
+    private let dmabuf: WaylandProxy<ZwpLinuxDmabufV1Client>
+    private let wmBase: WaylandProxy<XdgWmBaseClient>
+    private let syncobjManager:
+        WaylandProxy<WpLinuxDrmSyncobjManagerV1Client>
+    private let presentation: WaylandProxy<WpPresentationClient>
     private let wmHandler = WmBaseHandler()
     private let reactor: LinuxHostReactor
 
@@ -101,24 +101,35 @@ public struct SurfaceProbeLifecycleEvent: Codable, Equatable, Sendable {
         guard let connection = WaylandConnection(socket: configuration.waylandSocket) else {
             throw SurfaceProbeError.waylandConnectionFailed
         }
-        guard let registry = unsafe WaylandRegistry(connection, wanting: [
-            DesiredGlobal(swift_wayland_iface_wl_compositor(), maxVersion: 6),
-            DesiredGlobal(swift_wayland_iface_zwp_linux_dmabuf_v1(), maxVersion: 5),
-            DesiredGlobal(swift_wayland_iface_xdg_wm_base(), maxVersion: 6),
-            DesiredGlobal(
-                swift_wayland_iface_wp_linux_drm_syncobj_manager_v1(),
-                maxVersion: 1),
-            DesiredGlobal(swift_wayland_iface_wp_presentation(), maxVersion: 1),
+        guard let registry = WaylandRegistry(connection, wanting: [
+            DesiredGlobal<WlCompositorClient>(maximumVersion: 6),
+            DesiredGlobal<ZwpLinuxDmabufV1Client>(maximumVersion: 5),
+            DesiredGlobal<XdgWmBaseClient>(maximumVersion: 6),
+            DesiredGlobal<WpLinuxDrmSyncobjManagerV1Client>(
+                maximumVersion: 1),
+            DesiredGlobal<WpPresentationClient>(maximumVersion: 1),
         ]) else { throw SurfaceProbeError.waylandConnectionFailed }
         self.configuration = configuration
         self.connection = connection
         self.registry = registry
         self.reactor = try LinuxHostReactor()
-        registry.onBind = { [weak self] global in self?.bound(global) }
         guard connection.bootstrapRoundtrip() >= 0 else {
             throw SurfaceProbeError.roundtripFailed
         }
-        try requireGlobals()
+        guard let compositor = registry.singleton(WlCompositorClient.self),
+              let dmabuf = registry.singleton(ZwpLinuxDmabufV1Client.self),
+              let wmBase = registry.singleton(XdgWmBaseClient.self),
+              let syncobjManager = registry.singleton(
+                WpLinuxDrmSyncobjManagerV1Client.self),
+              let presentation = registry.singleton(WpPresentationClient.self)
+        else { throw SurfaceProbeError.missingGlobal("required probe protocol") }
+        self.compositor = compositor
+        self.dmabuf = dmabuf
+        self.wmBase = wmBase
+        self.syncobjManager = syncobjManager
+        self.presentation = presentation
+        wmHandler.proxy = wmBase
+        try wmBase.installListener(wmHandler)
     }
 
     public func run() async throws -> SurfaceProbeReport {
@@ -157,16 +168,7 @@ public struct SurfaceProbeLifecycleEvent: Codable, Equatable, Sendable {
         else { throw brokerError(allocationPacket.envelope) }
         let descriptors = allocationPacket.takeDescriptors()
         defer { for descriptor in descriptors { _ = close(descriptor) } }
-        let compositor = try unsafe require(compositor, "wl_compositor")
-        let dmabuf = try unsafe require(dmabuf, "zwp_linux_dmabuf_v1")
-        let wmBase = try unsafe require(wmBase, "xdg_wm_base")
-        let syncobjManager = try unsafe require(
-            syncobjManager,
-            "wp_linux_drm_syncobj_manager_v1")
-        let presentation = try unsafe require(
-            presentation,
-            "wp_presentation")
-        let presenter = try await unsafe SurfacePresenter(
+        let presenter = try await SurfacePresenter(
             connection: connection,
             reactor: reactor,
             compositor: compositor,
@@ -191,42 +193,17 @@ public struct SurfaceProbeLifecycleEvent: Codable, Equatable, Sendable {
             lifecycleEvents: lifecycleEvents)
     }
 
-    private func bound(_ global: BoundGlobal) {
-        switch unsafe String(cString: global.interface.pointee.name) {
-        case "wl_compositor": unsafe compositor = global.proxy
-        case "zwp_linux_dmabuf_v1": unsafe dmabuf = global.proxy
-        case "xdg_wm_base":
-            unsafe wmBase = global.proxy
-            unsafe XdgWmBaseClient.addListener(
-                global.proxy,
-                owner: wmHandler)
-        case "wp_linux_drm_syncobj_manager_v1":
-            unsafe syncobjManager = global.proxy
-        case "wp_presentation": unsafe presentation = global.proxy
-        default: break
-        }
-    }
-
-    private func requireGlobals() throws {
-        _ = try unsafe require(compositor, "wl_compositor")
-        _ = try unsafe require(dmabuf, "zwp_linux_dmabuf_v1")
-        _ = try unsafe require(wmBase, "xdg_wm_base")
-        _ = try unsafe require(
-            syncobjManager,
-            "wp_linux_drm_syncobj_manager_v1")
-        _ = try unsafe require(presentation, "wp_presentation")
-    }
-
     private func collectFeedback() async throws -> WaylandDmabufFeedback {
-        let dmabuf = try unsafe require(dmabuf, "zwp_linux_dmabuf_v1")
-        guard let proxy = unsafe zwp_linux_dmabuf_v1_get_default_feedback(
-            dmabuf)
-        else { throw SurfaceProbeError.waylandObjectCreationFailed("dma-buf feedback") }
-        defer { unsafe zwp_linux_dmabuf_feedback_v1_destroy(proxy) }
+        let proxy: WaylandProxy<ZwpLinuxDmabufFeedbackV1Client>
+        do {
+            proxy = try dmabuf.getDefaultFeedback()
+        } catch {
+            throw SurfaceProbeError.waylandObjectCreationFailed(
+                "dma-buf feedback")
+        }
+        defer { try? proxy.destroy() }
         let collector = WaylandDmabufFeedbackCollector()
-        unsafe ZwpLinuxDmabufFeedbackV1Client.addListener(
-            proxy,
-            owner: collector)
+        try proxy.installListener(collector)
         try await dispatchWaylandUntil(
             connection: connection,
             reactor: reactor,
@@ -249,20 +226,16 @@ public struct SurfaceProbeLifecycleEvent: Codable, Equatable, Sendable {
             terminalError: .invalidBrokerReply)
         return try broker.receive()
     }
-
-    private func require(_ proxy: OpaquePointer?, _ name: String) throws -> OpaquePointer {
-        guard let proxy = unsafe proxy else {
-            throw SurfaceProbeError.missingGlobal(name)
-        }
-        return unsafe proxy
-    }
 }
 
+@MainActor
 private final class WmBaseHandler: XdgWmBaseEvents {
+    weak var proxy: WaylandProxy<XdgWmBaseClient>?
+
     func ping(
         _ proxy: WaylandBorrowedProxy<XdgWmBaseClient>, serial: UInt32
     ) {
-        unsafe xdg_wm_base_pong(proxy.proxy, serial)
+        try? self.proxy?.pong(serial: serial)
     }
 }
 
@@ -274,18 +247,25 @@ private final class WmBaseHandler: XdgWmBaseEvents {
 {
     private let connection: WaylandConnection
     private let reactor: LinuxHostReactor
-    private let surface: OpaquePointer
-    private let xdgSurface: OpaquePointer
-    private let toplevel: OpaquePointer
-    private let syncSurface: OpaquePointer
-    private let acquireTimeline: OpaquePointer
-    private let presentation: OpaquePointer
+    private let surface: WaylandProxy<WlSurfaceClient>
+    private let xdgSurface: WaylandProxy<XdgSurfaceClient>
+    private let toplevel: WaylandProxy<XdgToplevelClient>
+    private let syncSurface:
+        WaylandProxy<WpLinuxDrmSyncobjSurfaceV1Client>
+    private let acquireTimeline:
+        WaylandProxy<WpLinuxDrmSyncobjTimelineV1Client>
+    private let presentation: WaylandProxy<WpPresentationClient>
     private let timeoutMilliseconds: Int32
-    private var buffers: [UInt64: OpaquePointer] = unsafe [:]
-    private var releaseTimelines: [UInt64: OpaquePointer] = unsafe [:]
+    private var buffers: [UInt64: WaylandProxy<WlBufferClient>] = [:]
+    private var releaseTimelines:
+        [UInt64: WaylandProxy<WpLinuxDrmSyncobjTimelineV1Client>] = [:]
     private var releaseWaiters: [UInt64: OpaquePointer] = unsafe [:]
     private var previousReleasePoint: [UInt64: UInt64] = [:]
-    private var presentationFrames: [UInt: SurfaceProbeLifecycleEvent] = [:]
+    private var presentationFrames:
+        [UInt: (
+            proxy: WaylandProxy<WpPresentationFeedbackClient>,
+            event: SurfaceProbeLifecycleEvent
+        )] = [:]
     private var lifecycleEvents: [SurfaceProbeLifecycleEvent] = []
     private var configured = false
     private var closed = false
@@ -297,47 +277,49 @@ private final class WmBaseHandler: XdgWmBaseEvents {
     init(
         connection: WaylandConnection,
         reactor: LinuxHostReactor,
-        compositor: OpaquePointer,
-        dmabuf: OpaquePointer,
-        wmBase: OpaquePointer,
-        syncobjManager: OpaquePointer,
-        presentation: OpaquePointer,
+        compositor: WaylandProxy<WlCompositorClient>,
+        dmabuf: WaylandProxy<ZwpLinuxDmabufV1Client>,
+        wmBase: WaylandProxy<XdgWmBaseClient>,
+        syncobjManager: WaylandProxy<WpLinuxDrmSyncobjManagerV1Client>,
+        presentation: WaylandProxy<WpPresentationClient>,
         allocation: BufferAllocationReply,
         descriptors: [Int32],
         timeoutMilliseconds: Int32
     ) async throws {
-        guard let surface = unsafe wl_compositor_create_surface(compositor),
-              let xdgSurface = unsafe xdg_wm_base_get_xdg_surface(wmBase, surface),
-              let toplevel = unsafe xdg_surface_get_toplevel(xdgSurface),
-              let syncSurface = unsafe wp_linux_drm_syncobj_manager_v1_get_surface(
-                syncobjManager, surface),
-              descriptors.indices.contains(Int(allocation.acquireTimelineFDIndex)),
-              let acquireTimeline = unsafe wp_linux_drm_syncobj_manager_v1_import_timeline(
-                syncobjManager,
-                descriptors[Int(allocation.acquireTimelineFDIndex)])
-        else { throw SurfaceProbeError.waylandObjectCreationFailed("surface tree") }
+        guard descriptors.indices.contains(
+            Int(allocation.acquireTimelineFDIndex))
+        else { throw SurfaceProbeError.invalidBrokerReply }
+        let surface: WaylandProxy<WlSurfaceClient>
+        let xdgSurface: WaylandProxy<XdgSurfaceClient>
+        let toplevel: WaylandProxy<XdgToplevelClient>
+        let syncSurface: WaylandProxy<WpLinuxDrmSyncobjSurfaceV1Client>
+        let acquireTimeline: WaylandProxy<WpLinuxDrmSyncobjTimelineV1Client>
+        do {
+            surface = try compositor.createSurface()
+            xdgSurface = try wmBase.getXdgSurface(surface: surface)
+            toplevel = try xdgSurface.getToplevel()
+            syncSurface = try syncobjManager.getSurface(surface: surface)
+            acquireTimeline = try syncobjManager.importTimeline(
+                fd: try duplicateDescriptor(
+                    descriptors[Int(allocation.acquireTimelineFDIndex)]))
+        } catch {
+            throw SurfaceProbeError.waylandObjectCreationFailed("surface tree")
+        }
         self.connection = connection
         self.reactor = reactor
-        unsafe self.surface = surface
-        unsafe self.xdgSurface = xdgSurface
-        unsafe self.toplevel = toplevel
-        unsafe self.syncSurface = syncSurface
-        unsafe self.acquireTimeline = acquireTimeline
-        unsafe self.presentation = presentation
+        self.surface = surface
+        self.xdgSurface = xdgSurface
+        self.toplevel = toplevel
+        self.syncSurface = syncSurface
+        self.acquireTimeline = acquireTimeline
+        self.presentation = presentation
         self.timeoutMilliseconds = timeoutMilliseconds
-        unsafe XdgSurfaceClient.addListener(xdgSurface, owner: self)
-        unsafe XdgToplevelClient.addListener(toplevel, owner: self)
-        "android.dev.nucleus.graphics-probe".withCString {
-            unsafe xdg_toplevel_set_app_id(toplevel, $0)
-        }
-        "Nucleus Android Graphics Probe".withCString {
-            unsafe xdg_toplevel_set_title(toplevel, $0)
-        }
+        try xdgSurface.installListener(self)
+        try toplevel.installListener(self)
+        try toplevel.setAppId(app_id: "android.dev.nucleus.graphics-probe")
+        try toplevel.setTitle(title: "Nucleus Android Graphics Probe")
         for description in allocation.buffers {
             guard descriptors.indices.contains(Int(description.releaseTimelineFDIndex)),
-                  let releaseTimeline = unsafe wp_linux_drm_syncobj_manager_v1_import_timeline(
-                    syncobjManager,
-                    descriptors[Int(description.releaseTimelineFDIndex)]),
                   let releaseWaiter = allocation.device.renderNode.withCString({ path in
                     unsafe nucleus_android_syncobj_waiter_create(
                         path,
@@ -347,40 +329,54 @@ private final class WmBaseHandler: XdgWmBaseEvents {
                 throw SurfaceProbeError.waylandObjectCreationFailed(
                     "per-buffer release timeline")
             }
-            unsafe releaseTimelines[description.id] = releaseTimeline
+            let releaseTimeline: WaylandProxy<
+                WpLinuxDrmSyncobjTimelineV1Client
+            >
+            do {
+                releaseTimeline = try syncobjManager.importTimeline(
+                    fd: try duplicateDescriptor(
+                        descriptors[Int(description.releaseTimelineFDIndex)]))
+            } catch {
+                unsafe nucleus_android_syncobj_waiter_destroy(releaseWaiter)
+                throw SurfaceProbeError.waylandObjectCreationFailed(
+                    "per-buffer release timeline")
+            }
+            releaseTimelines[description.id] = releaseTimeline
             unsafe releaseWaiters[description.id] = releaseWaiter
-            guard let params = unsafe zwp_linux_dmabuf_v1_create_params(dmabuf) else {
+            let params: WaylandProxy<ZwpLinuxBufferParamsV1Client>
+            do {
+                params = try dmabuf.createParams()
+            } catch {
                 throw SurfaceProbeError.waylandObjectCreationFailed("dma-buf params")
             }
-            defer { unsafe zwp_linux_buffer_params_v1_destroy(params) }
+            defer { try? params.destroy() }
             for (planeIndex, plane) in description.planes.enumerated() {
                 guard descriptors.indices.contains(Int(plane.fdIndex)) else {
                     throw SurfaceProbeError.invalidBrokerReply
                 }
-                unsafe zwp_linux_buffer_params_v1_add(
-                    params,
-                    descriptors[Int(plane.fdIndex)],
-                    UInt32(planeIndex),
-                    plane.offset,
-                    plane.stride,
-                    UInt32(description.modifier >> 32),
-                    UInt32(truncatingIfNeeded: description.modifier))
+                try params.add(
+                    fd: try duplicateDescriptor(
+                        descriptors[Int(plane.fdIndex)]),
+                    plane_idx: UInt32(planeIndex),
+                    offset: plane.offset,
+                    stride: plane.stride,
+                    modifier_hi: UInt32(description.modifier >> 32),
+                    modifier_lo: UInt32(
+                        truncatingIfNeeded: description.modifier))
             }
-            guard let buffer = unsafe zwp_linux_buffer_params_v1_create_immed(
-                params,
-                Int32(description.width),
-                Int32(description.height),
-                description.format,
-                0)
-            else { throw SurfaceProbeError.waylandObjectCreationFailed("wl_buffer") }
-            unsafe buffers[description.id] = buffer
+            let buffer = try params.createImmed(
+                width: Int32(description.width),
+                height: Int32(description.height),
+                format: description.format,
+                flags: ZwpLinuxBufferParamsV1Flags(rawValue: 0))
+            buffers[description.id] = buffer
             lifecycleEvents.append(SurfaceProbeLifecycleEvent(
                 stage: "wayland.buffer-import",
                 bufferID: description.id))
         }
         lifecycleEvents.append(SurfaceProbeLifecycleEvent(
             stage: "wayland.configure-commit"))
-        unsafe wl_surface_commit(surface)
+        try surface.commit()
         guard connection.flush() >= 0 else { throw SurfaceProbeError.compositorClosed }
         try await dispatchUntil { configured || closed }
         if closed { throw SurfaceProbeError.compositorClosed }
@@ -392,11 +388,11 @@ private final class WmBaseHandler: XdgWmBaseEvents {
         frames: UInt64,
         through broker: BrokerPacketConnection
     ) async throws {
-        guard unsafe !buffers.isEmpty else {
+        guard !buffers.isEmpty else {
             throw SurfaceProbeError.invalidBrokerReply
         }
         guard frames > 0 else { return }
-        let ordered = unsafe buffers.keys.sorted()
+        let ordered = buffers.keys.sorted()
         for frame in 1...frames {
             let bufferID = ordered[Int((frame - 1) % UInt64(ordered.count))]
             if let priorRelease = previousReleasePoint[bufferID] {
@@ -430,8 +426,8 @@ private final class WmBaseHandler: XdgWmBaseEvents {
                   let render = packet.envelope.renderReply,
                   render.bufferID == bufferID,
                   render.frameNumber == frame,
-                  let buffer = unsafe buffers[bufferID],
-                  let releaseTimeline = unsafe releaseTimelines[bufferID]
+                  let buffer = buffers[bufferID],
+                  let releaseTimeline = releaseTimelines[bufferID]
             else { throw brokerError(packet.envelope) }
             lifecycleEvents.append(SurfaceProbeLifecycleEvent(
                 stage: "broker.guest-submission-accepted",
@@ -439,37 +435,30 @@ private final class WmBaseHandler: XdgWmBaseEvents {
                 frameNumber: frame,
                 acquirePoint: render.acquirePoint,
                 releasePoint: render.releasePoint))
-            unsafe wp_linux_drm_syncobj_surface_v1_set_acquire_point(
-                syncSurface,
-                acquireTimeline,
-                UInt32(render.acquirePoint >> 32),
-                UInt32(truncatingIfNeeded: render.acquirePoint))
-            unsafe wp_linux_drm_syncobj_surface_v1_set_release_point(
-                syncSurface,
-                releaseTimeline,
-                UInt32(render.releasePoint >> 32),
-                UInt32(truncatingIfNeeded: render.releasePoint))
-            unsafe wl_surface_attach(surface, buffer, 0, 0)
-            unsafe wl_surface_damage_buffer(
-                surface,
-                0,
-                0,
-                Int32.max,
-                Int32.max)
-            if let feedback = unsafe wp_presentation_feedback(
-                presentation,
-                surface)
-            {
-                unsafe WpPresentationFeedbackClient.addListener(
-                    feedback,
-                    owner: self)
-                presentationFrames[UInt(bitPattern: feedback)] =
-                    SurfaceProbeLifecycleEvent(
+            try syncSurface.setAcquirePoint(
+                timeline: acquireTimeline,
+                point_hi: UInt32(render.acquirePoint >> 32),
+                point_lo: UInt32(truncatingIfNeeded: render.acquirePoint))
+            try syncSurface.setReleasePoint(
+                timeline: releaseTimeline,
+                point_hi: UInt32(render.releasePoint >> 32),
+                point_lo: UInt32(truncatingIfNeeded: render.releasePoint))
+            try surface.attach(buffer: buffer, x: 0, y: 0)
+            try surface.damageBuffer(
+                x: 0,
+                y: 0,
+                width: Int32.max,
+                height: Int32.max)
+            if let feedback = try? presentation.feedback(surface: surface) {
+                try feedback.installListener(self)
+                presentationFrames[feedback.identity] = (
+                    proxy: feedback,
+                    event: SurfaceProbeLifecycleEvent(
                         stage: "wayland.presentation-pending",
                         bufferID: bufferID,
                         frameNumber: frame,
                         acquirePoint: render.acquirePoint,
-                        releasePoint: render.releasePoint)
+                        releasePoint: render.releasePoint))
             }
             lifecycleEvents.append(SurfaceProbeLifecycleEvent(
                 stage: "wayland.commit",
@@ -477,7 +466,7 @@ private final class WmBaseHandler: XdgWmBaseEvents {
                 frameNumber: frame,
                 acquirePoint: render.acquirePoint,
                 releasePoint: render.releasePoint))
-            unsafe wl_surface_commit(surface)
+            try surface.commit()
             guard connection.flush() >= 0 else { throw SurfaceProbeError.compositorClosed }
             previousReleasePoint[bufferID] = render.releasePoint
             submitted &+= 1
@@ -491,7 +480,7 @@ private final class WmBaseHandler: XdgWmBaseEvents {
     func configure(
         _ proxy: WaylandBorrowedProxy<XdgSurfaceClient>, serial: UInt32
     ) {
-        unsafe xdg_surface_ack_configure(proxy.proxy, serial)
+        try? xdgSurface.ackConfigure(serial: serial)
         configured = true
     }
 
@@ -530,26 +519,26 @@ private final class WmBaseHandler: XdgWmBaseEvents {
         flags: WpPresentationFeedbackKind
     ) {
         presented &+= 1
-        if var event = presentationFrames.removeValue(
-            forKey: unsafe UInt(bitPattern: proxy.proxy)
+        if let entry = presentationFrames.removeValue(
+            forKey: proxy.identity
         ) {
+            var event = entry.event
             event.stage = "wayland.presented"
             lifecycleEvents.append(event)
         }
-        unsafe wp_presentation_feedback_destroy(proxy.proxy)
     }
 
     func discarded(
         _ proxy: WaylandBorrowedProxy<WpPresentationFeedbackClient>
     ) {
         discarded &+= 1
-        if var event = presentationFrames.removeValue(
-            forKey: unsafe UInt(bitPattern: proxy.proxy)
+        if let entry = presentationFrames.removeValue(
+            forKey: proxy.identity
         ) {
+            var event = entry.event
             event.stage = "wayland.discarded"
             lifecycleEvents.append(event)
         }
-        unsafe wp_presentation_feedback_destroy(proxy.proxy)
     }
 
     func finish() -> [SurfaceProbeLifecycleEvent] {
@@ -606,26 +595,21 @@ private final class WmBaseHandler: XdgWmBaseEvents {
     private func tearDown() {
         guard !didTearDown else { return }
         didTearDown = true
-        for feedback in presentationFrames.keys {
-            if let proxy = unsafe OpaquePointer(bitPattern: feedback) {
-                unsafe wp_presentation_feedback_destroy(proxy)
-            }
-        }
         presentationFrames.removeAll()
-        for unsafe buffer in unsafe buffers.values {
-            unsafe wl_buffer_destroy(buffer)
+        for buffer in buffers.values {
+            try? buffer.destroy()
         }
-        for unsafe timeline in unsafe releaseTimelines.values {
-            unsafe wp_linux_drm_syncobj_timeline_v1_destroy(timeline)
+        for timeline in releaseTimelines.values {
+            try? timeline.destroy()
         }
         for unsafe waiter in unsafe releaseWaiters.values {
             unsafe nucleus_android_syncobj_waiter_destroy(waiter)
         }
-        unsafe wp_linux_drm_syncobj_timeline_v1_destroy(acquireTimeline)
-        unsafe wp_linux_drm_syncobj_surface_v1_destroy(syncSurface)
-        unsafe xdg_toplevel_destroy(toplevel)
-        unsafe xdg_surface_destroy(xdgSurface)
-        unsafe wl_surface_destroy(surface)
+        try? acquireTimeline.destroy()
+        try? syncSurface.destroy()
+        try? toplevel.destroy()
+        try? xdgSurface.destroy()
+        try? surface.destroy()
     }
 }
 
@@ -742,6 +726,16 @@ private func monotonicMilliseconds() -> Int64 {
     var time = timespec()
     _ = unsafe clock_gettime(CLOCK_MONOTONIC, &time)
     return Int64(time.tv_sec) * 1_000 + Int64(time.tv_nsec) / 1_000_000
+}
+
+private func duplicateDescriptor(
+    _ descriptor: Int32
+) throws -> WaylandClientOwnedFileDescriptor {
+    let duplicate = dup(descriptor)
+    guard duplicate >= 0 else {
+        throw SurfaceProbeError.invalidBrokerReply
+    }
+    return WaylandClientOwnedFileDescriptor(duplicate)
 }
 
 private func brokerError(_ envelope: BrokerEnvelope) -> Error {

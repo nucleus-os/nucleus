@@ -6,6 +6,7 @@ public enum ZwpFullscreenShellModeFeedbackV1Client: WaylandClientInterface {
     public nonisolated(unsafe) static let interface = unsafe swift_wayland_iface_zwp_fullscreen_shell_mode_feedback_v1()
     public nonisolated static let maximumVersion: UInt32 = 1
 }
+@MainActor
 public protocol ZwpFullscreenShellModeFeedbackV1Events: AnyObject {
     func modeSuccessful(_ proxy: WaylandBorrowedProxy<ZwpFullscreenShellModeFeedbackV1Client>)
     func modeFailed(_ proxy: WaylandBorrowedProxy<ZwpFullscreenShellModeFeedbackV1Client>)
@@ -20,30 +21,59 @@ public extension ZwpFullscreenShellModeFeedbackV1Client {
         unsafe p.pointee.present_cancelled = presentCancelled_impl
         return unsafe p
     }()
-    /// Wire the listener to a proxy. The owner is borrowed (unretained); the caller must keep it alive for the proxy's lifetime, matching libwayland's user_data contract.
-    @discardableResult
-    static func addListener(_ proxy: OpaquePointer, owner: AnyObject) -> Int32 {
-        unsafe zwp_fullscreen_shell_mode_feedback_v1_add_listener(proxy, listener, Unmanaged.passUnretained(owner).toOpaque())
-    }
-    private static func handler(_ data: UnsafeMutableRawPointer) -> any ZwpFullscreenShellModeFeedbackV1Events? {
-        unsafe Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? any ZwpFullscreenShellModeFeedbackV1Events
+    private static func handler(_ context: WaylandClientListenerContext) -> any ZwpFullscreenShellModeFeedbackV1Events? {
+        context.owner as? any ZwpFullscreenShellModeFeedbackV1Events
     }
     private static let modeSuccessful_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
-        guard let data = unsafe data, let proxy = unsafe proxy, let h = unsafe handler(data) else {
+        guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
-        unsafe h.modeSuccessful(WaylandBorrowedProxy<ZwpFullscreenShellModeFeedbackV1Client>(proxy))
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
+        }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        MainActor.assumeIsolated {
+            unsafe eventHandler.modeSuccessful(WaylandBorrowedProxy<ZwpFullscreenShellModeFeedbackV1Client>(eventProxy))
+        }
     }
     private static let modeFailed_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
-        guard let data = unsafe data, let proxy = unsafe proxy, let h = unsafe handler(data) else {
+        guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
-        unsafe h.modeFailed(WaylandBorrowedProxy<ZwpFullscreenShellModeFeedbackV1Client>(proxy))
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
+        }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        MainActor.assumeIsolated {
+            unsafe eventHandler.modeFailed(WaylandBorrowedProxy<ZwpFullscreenShellModeFeedbackV1Client>(eventProxy))
+        }
     }
     private static let presentCancelled_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
-        guard let data = unsafe data, let proxy = unsafe proxy, let h = unsafe handler(data) else {
+        guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
-        unsafe h.presentCancelled(WaylandBorrowedProxy<ZwpFullscreenShellModeFeedbackV1Client>(proxy))
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
+        }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        MainActor.assumeIsolated {
+            unsafe eventHandler.presentCancelled(WaylandBorrowedProxy<ZwpFullscreenShellModeFeedbackV1Client>(eventProxy))
+        }
+    }
+}
+public extension WaylandProxy where Interface == ZwpFullscreenShellModeFeedbackV1Client {
+    func installListener(_ owner: any ZwpFullscreenShellModeFeedbackV1Events) throws(WaylandProxyError) {
+        try unsafe installListener(owner: owner) { proxy, data in
+            unsafe zwp_fullscreen_shell_mode_feedback_v1_add_listener(proxy, ZwpFullscreenShellModeFeedbackV1Client.listener, data)
+        }
     }
 }

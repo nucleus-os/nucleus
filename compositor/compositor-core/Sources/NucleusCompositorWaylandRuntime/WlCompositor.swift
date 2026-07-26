@@ -1,8 +1,6 @@
 // wl_compositor on the router. Mints wl_surface and wl_region objects and owns
 // the three shared request vtables (compositor/surface/region) plus the scene
-// delegate every surface reports commits to. Each bound compositor resource
-// carries a CompositorBinding that points back here so generated request
-// handlers — which cannot capture — can reach the shared state.
+// delegate every surface reports commits to.
 //
 // The compositor holds weak references to live surfaces only (Rule 9: each
 // wl_surface is owned solely by its resource's user_data), used to drive the
@@ -28,28 +26,18 @@ struct SubmittedOutputFrame: Sendable, Equatable {
     let targetPresentationNs: UInt64
 }
 
-/// Owner bound to each wl_compositor resource (Rule 9). Routes create_surface /
-/// create_region back to the shared WlCompositor.
-@MainActor
-final class CompositorBinding {
-    unowned let compositor: WlCompositor
-    init(_ compositor: WlCompositor) { self.compositor = compositor }
-}
-
-// The wl_compositor request handlers, recovered by WlCompositorServer.vtable from the
-// per-resource CompositorBinding owner and forwarded to the shared WlCompositor factory verbs.
-extension CompositorBinding: WlCompositorRequests {
+extension WlCompositor: WlCompositorRequests {
     func createSurface(
         _ request: WaylandRequest<WlCompositorServer>,
         id: WlNewId<WlSurfaceServer>
     ) {
-        _ = unsafe compositor.makeSurface(id: id)
+        _ = makeSurface(id: id)
     }
     func createRegion(
         _ request: WaylandRequest<WlCompositorServer>,
         id: WlNewId<WlRegionServer>
     ) {
-        _ = unsafe compositor.makeRegion(id: id)
+        _ = makeRegion(id: id)
     }
 }
 
@@ -98,8 +86,8 @@ final class WlCompositor {
     private var surfacesByRenderIOSurfaceID: [UInt32: WeakSurface] = [:]
     private var submittedFrames: [SubmittedFrameKey: SubmittedOutputFrame] = [:]
     private struct DeferredBufferRelease {
-        let buffer: WaylandResourceReference
-        let callback: WaylandResourceReference?
+        let buffer: WaylandResourceReference<WlBufferServer>
+        let callback: WaylandResourceReference<WlCallbackServer>?
     }
     private var deferredBufferReleases: [UInt32: [DeferredBufferRelease]] = [:]
 
@@ -108,15 +96,15 @@ final class WlCompositor {
     }
 
     func deferBufferRelease(
-        iosurfaceID: UInt32, buffer: WaylandResourceReference,
-        callback: WaylandResourceReference?
+        iosurfaceID: UInt32,
+        buffer: WaylandResourceReference<WlBufferServer>,
+        callback: WaylandResourceReference<WlCallbackServer>?
     ) {
         guard iosurfaceID != 0 else {
-            buffer.typedHandle(as: WlBufferServer.self)?.sendRelease()
-            if let callback, let resource = unsafe callback.resource {
-                callback.typedHandle(as: WlCallbackServer.self)?
-                    .sendDone(callback_data: 0)
-                unsafe wl_resource_destroy(resource)
+            buffer.handle.sendRelease()
+            if let callback {
+                callback.handle.sendDone(callback_data: 0)
+                callback.destroy()
             }
             return
         }
@@ -132,13 +120,10 @@ final class WlCompositor {
         let release = releases.removeFirst()
         if releases.isEmpty { deferredBufferReleases[iosurfaceID] = nil }
         else { deferredBufferReleases[iosurfaceID] = releases }
-        release.buffer.typedHandle(as: WlBufferServer.self)?.sendRelease()
-        if let callback = release.callback,
-            let resource = unsafe callback.resource
-        {
-            callback.typedHandle(as: WlCallbackServer.self)?
-                .sendDone(callback_data: 0)
-            unsafe wl_resource_destroy(resource)
+        release.buffer.handle.sendRelease()
+        if let callback = release.callback {
+            callback.handle.sendDone(callback_data: 0)
+            callback.destroy()
         }
     }
 
@@ -329,10 +314,7 @@ final class WlCompositor {
         router.addGlobal(
             WlCompositorServer.global(
                 implementation: self,
-                advertisedVersion: 6,
-                owner: { compositor, _ in
-                    CompositorBinding(compositor)
-                }))
+                advertisedVersion: 6))
     }
 
     // MARK: surface registry (weak; for the presentation tick)
@@ -505,7 +487,7 @@ final class WlCompositor {
 
     /// Complete frame callbacks on every live surface (presentation tick).
     func makeRegion(id: WlNewId<WlRegionServer>) -> WlRegion? {
-        unsafe id.create { handle in
+        id.create { handle in
             WlRegion(resource: handle)
         }
     }

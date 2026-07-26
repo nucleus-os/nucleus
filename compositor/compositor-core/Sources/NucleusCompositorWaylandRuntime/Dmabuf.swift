@@ -104,8 +104,7 @@ protocol DmabufDelegate: AnyObject {
             ZwpLinuxDmabufV1Server.global(
                 implementation: self,
                 advertisedVersion: 5,
-                owner: { manager, _ in manager },
-                installed: { manager, _, handle in
+                installed: { manager, handle in
                     if handle.version ?? 1 < 4 {
                         for format in manager.supportedFormats() {
                             if handle.supportsModifier {
@@ -138,7 +137,7 @@ protocol DmabufDelegate: AnyObject {
     fileprivate func makeFeedback(
         _ id: WlNewId<ZwpLinuxDmabufFeedbackV1Server>
     ) {
-        _ = unsafe id.create(
+        _ = id.create(
             owner: { handle in
                 DmabufFeedback(resource: handle)
             },
@@ -153,9 +152,7 @@ protocol DmabufDelegate: AnyObject {
     ) {
         let formats = supportedFormats()
         guard formats.count <= Int(UInt16.max) else {
-            if let raw = unsafe resource.resource {
-                unsafe wl_resource_post_no_memory(raw)
-            }
+            resource.postNoMemory()
             return
         }
 
@@ -184,15 +181,11 @@ protocol DmabufDelegate: AnyObject {
             if tableReady {
                 resource.sendFormatTable(fd: fd, size: UInt32(table.count))
             } else {
-                if let raw = unsafe resource.resource {
-                    unsafe wl_resource_post_no_memory(raw)
-                }
+                resource.postNoMemory()
             }
             close(fd)
         } else {
-            if let raw = unsafe resource.resource {
-                unsafe wl_resource_post_no_memory(raw)
-            }
+            resource.postNoMemory()
             return
         }
 
@@ -215,7 +208,7 @@ extension ZwpLinuxDmabuf: ZwpLinuxDmabufV1Requests {
         _ request: WaylandRequest<ZwpLinuxDmabufV1Server>,
         params_id: WlNewId<ZwpLinuxBufferParamsV1Server>
     ) {
-        _ = unsafe params_id.create { handle in
+        _ = params_id.create { handle in
             ZwpLinuxBufferParams(resource: handle, manager: self)
         }
     }
@@ -224,7 +217,7 @@ extension ZwpLinuxDmabuf: ZwpLinuxDmabufV1Requests {
         _ request: WaylandRequest<ZwpLinuxDmabufV1Server>,
         id: WlNewId<ZwpLinuxDmabufFeedbackV1Server>
     ) {
-        unsafe makeFeedback(id)
+        makeFeedback(id)
     }
 
     func getSurfaceFeedback(
@@ -232,7 +225,7 @@ extension ZwpLinuxDmabuf: ZwpLinuxDmabufV1Requests {
         id: WlNewId<ZwpLinuxDmabufFeedbackV1Server>,
         surface: WaylandBorrowedObject<WlSurfaceServer>
     ) {
-        unsafe makeFeedback(id)
+        makeFeedback(id)
     }
 }
 
@@ -356,8 +349,7 @@ extension ZwpLinuxBufferParams: ZwpLinuxBufferParamsV1Requests {
         _ request: WaylandRequest<ZwpLinuxBufferParamsV1Server>, width: Int32, height: Int32,
         format: UInt32, flags: ZwpLinuxBufferParamsV1Flags
     ) {
-        let resource = unsafe request.resource
-        guard let client = unsafe wl_resource_get_client(resource), let manager = manager else { return }
+        guard let manager = manager else { return }
         guard let attrs = assemble(
             width: width, height: height, format: format,
             flags: flags.rawValue)
@@ -369,14 +361,9 @@ extension ZwpLinuxBufferParams: ZwpLinuxBufferParamsV1Requests {
             self.resource.sendFailed()
             return
         }
-        _ = unsafe WlBufferServer.createResource(
-            client: client,
-            version: 1,
+        _ = resource.createCreated(
             owner: { handle in
                 DmabufBuffer(resource: handle, attrs: attrs)
-            },
-            installed: { buffer in
-                self.resource.sendCreated(buffer: buffer.resource)
             })
     }
 
@@ -400,7 +387,7 @@ extension ZwpLinuxBufferParams: ZwpLinuxBufferParamsV1Requests {
                 message: "dmabuf import failed")
             return
         }
-        _ = unsafe bufferId.create { handle in
+        _ = bufferId.create { handle in
             DmabufBuffer(resource: handle, attrs: attrs)
         }
     }

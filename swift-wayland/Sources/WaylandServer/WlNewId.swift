@@ -16,13 +16,17 @@ import WaylandServerC
 
 /// A request-scoped carrier of borrowed libwayland pointers. The client and
 /// interface must remain valid until one create method returns.
-@unsafe public struct WlNewId<Interface: WaylandServerInterface>: ~Escapable {
-    public let client: OpaquePointer
+@safe public struct WlNewId<Interface: WaylandServerInterface>: ~Escapable {
+    @unsafe package let client: OpaquePointer
     public let id: UInt32
     public let version: Int32
 
+    public var clientID: WaylandClientID {
+        unsafe WaylandClientID(client)!
+    }
+
     @_lifetime(borrow client)
-    public init(client: borrowing OpaquePointer, id: UInt32, version: Int32) {
+    @unsafe package init(client: borrowing OpaquePointer, id: UInt32, version: Int32) {
         unsafe self.client = copy client
         unsafe self.id = id
         unsafe self.version = version
@@ -50,7 +54,9 @@ import WaylandServerC
     /// factories for genuinely ownerless, requestless notification resources.
     @discardableResult
     @MainActor
-    package func _createBare() -> UnsafeMutablePointer<wl_resource>? {
-        unsafe wl_resource_create(client, Interface.interface, version, id)
+    package func _createBare() -> WaylandResourceReference<Interface>? {
+        let resource = unsafe wl_resource_create(
+            client, Interface.interface, version, id)
+        return unsafe WaylandResourceReference<Interface>(resource)
     }
 }

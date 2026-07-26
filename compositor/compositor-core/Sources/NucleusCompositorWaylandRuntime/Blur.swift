@@ -25,8 +25,7 @@ final class OrgKdeKwinBlurManager {
     func register(in router: NucleusWaylandRouter) {
         router.addGlobal(
             OrgKdeKwinBlurManagerServer.global(
-                implementation: self,
-                owner: { manager, _ in manager }))
+                implementation: self))
     }
 
     fileprivate func publish(_ surface: WlSurface, region: RegionSnapshot?, wholeSurface: Bool) {
@@ -42,7 +41,7 @@ extension OrgKdeKwinBlurManager: OrgKdeKwinBlurManagerRequests {
         id: WlNewId<OrgKdeKwinBlurServer>,
                 surface surfaceRes: WaylandBorrowedObject<WlSurfaceServer>) {
         guard let surface = surfaceRes.owner(as: WlSurface.self) else { return }
-        _ = unsafe id.create { handle in
+        _ = id.create { handle in
             OrgKdeKwinBlur(resource: handle, manager: self, surface: surface)
         }
     }

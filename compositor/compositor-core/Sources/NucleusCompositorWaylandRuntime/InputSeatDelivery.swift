@@ -25,10 +25,7 @@ final class SeatDelivery {
     }
 
     private func clientKey(_ surface: WlSurface) -> WaylandClientID? {
-        guard let sres = unsafe surface.resource,
-              let c = unsafe wl_resource_get_client(sres)
-        else { return nil }
-        return unsafe WlSeat.clientKey(c)
+        surface.protocolResource?.clientID
     }
 
     private func pointerDeliverySurface(_ id: UInt64) -> WlSurface? {

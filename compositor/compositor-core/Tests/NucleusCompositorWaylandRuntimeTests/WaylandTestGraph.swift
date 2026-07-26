@@ -1,6 +1,7 @@
 import NucleusCompositorServer
 import NucleusCompositorWindowManager
 import NucleusCompositorWindowScene
+import WaylandServer
 @testable import NucleusCompositorWaylandRuntime
 
 @MainActor
@@ -8,6 +9,7 @@ final class WaylandTestGraph {
     let server: NucleusCompositorServer
     let windowManager: WindowManager
     let host: RouterHost
+    let display: WaylandDisplay
 
     init() {
         let server = NucleusCompositorServer()
@@ -15,14 +17,15 @@ final class WaylandTestGraph {
         self.server = server
         self.windowManager = windowManager
         self.host = RouterHost(server: server, windowManager: windowManager)
+        self.display = WaylandDisplay()!
     }
 
     func compositor() -> WlCompositor {
         WlCompositor(host: host)
     }
 
-    func seat() -> WlSeat {
-        WlSeat(host: host)
+    func seat(display: WaylandDisplay) -> WlSeat {
+        WlSeat(host: host, display: display)
     }
 
     func surface(

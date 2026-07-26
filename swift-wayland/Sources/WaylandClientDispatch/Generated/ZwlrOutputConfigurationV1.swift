@@ -6,6 +6,43 @@ public enum ZwlrOutputConfigurationV1Client: WaylandClientInterface {
     public nonisolated(unsafe) static let interface = unsafe swift_wayland_iface_zwlr_output_configuration_v1()
     public nonisolated static let maximumVersion: UInt32 = 4
 }
+public extension WaylandProxy where Interface == ZwlrOutputConfigurationV1Client {
+    func enableHead(head: WaylandProxy<ZwlrOutputHeadV1Client>) throws(WaylandProxyError) -> WaylandProxy<ZwlrOutputConfigurationHeadV1Client> {
+        let _proxy = try unsafe requireNativeProxy()
+        let _headProxy = try unsafe head.requireNativeProxy()
+        guard let _created = unsafe swift_wayland_client_request_zwlr_output_configuration_v1_enable_head(_proxy, _headProxy) else {
+            throw WaylandProxyError.proxyCreationFailed
+        }
+        return unsafe makeOwnedProxy(
+            adopting: _created, ZwlrOutputConfigurationHeadV1Client.self)
+    }
+    func disableHead(head: WaylandProxy<ZwlrOutputHeadV1Client>) throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        let _headProxy = try unsafe head.requireNativeProxy()
+        unsafe swift_wayland_client_request_zwlr_output_configuration_v1_disable_head(_proxy, _headProxy)
+        return
+    }
+    func apply() throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        unsafe swift_wayland_client_request_zwlr_output_configuration_v1_apply(_proxy)
+        return
+    }
+    func test() throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        unsafe swift_wayland_client_request_zwlr_output_configuration_v1_test(_proxy)
+        return
+    }
+    func destroy() throws(WaylandProxyError) {
+        let _proxy = try unsafe requireNativeProxy()
+        let _send = { () throws(WaylandProxyError) -> Void in
+            unsafe swift_wayland_client_request_zwlr_output_configuration_v1_destroy(_proxy)
+            return
+        }
+        try _send()
+        try unsafe invalidateAfterProtocolDestructor()
+    }
+}
+@MainActor
 public protocol ZwlrOutputConfigurationV1Events: AnyObject {
     func succeeded(_ proxy: WaylandBorrowedProxy<ZwlrOutputConfigurationV1Client>)
     func failed(_ proxy: WaylandBorrowedProxy<ZwlrOutputConfigurationV1Client>)
@@ -20,30 +57,59 @@ public extension ZwlrOutputConfigurationV1Client {
         unsafe p.pointee.cancelled = cancelled_impl
         return unsafe p
     }()
-    /// Wire the listener to a proxy. The owner is borrowed (unretained); the caller must keep it alive for the proxy's lifetime, matching libwayland's user_data contract.
-    @discardableResult
-    static func addListener(_ proxy: OpaquePointer, owner: AnyObject) -> Int32 {
-        unsafe zwlr_output_configuration_v1_add_listener(proxy, listener, Unmanaged.passUnretained(owner).toOpaque())
-    }
-    private static func handler(_ data: UnsafeMutableRawPointer) -> any ZwlrOutputConfigurationV1Events? {
-        unsafe Unmanaged<AnyObject>.fromOpaque(data).takeUnretainedValue() as? any ZwlrOutputConfigurationV1Events
+    private static func handler(_ context: WaylandClientListenerContext) -> any ZwlrOutputConfigurationV1Events? {
+        context.owner as? any ZwlrOutputConfigurationV1Events
     }
     private static let succeeded_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
-        guard let data = unsafe data, let proxy = unsafe proxy, let h = unsafe handler(data) else {
+        guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
-        unsafe h.succeeded(WaylandBorrowedProxy<ZwlrOutputConfigurationV1Client>(proxy))
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
+        }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        MainActor.assumeIsolated {
+            unsafe eventHandler.succeeded(WaylandBorrowedProxy<ZwlrOutputConfigurationV1Client>(eventProxy))
+        }
     }
     private static let failed_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
-        guard let data = unsafe data, let proxy = unsafe proxy, let h = unsafe handler(data) else {
+        guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
-        unsafe h.failed(WaylandBorrowedProxy<ZwlrOutputConfigurationV1Client>(proxy))
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
+        }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        MainActor.assumeIsolated {
+            unsafe eventHandler.failed(WaylandBorrowedProxy<ZwlrOutputConfigurationV1Client>(eventProxy))
+        }
     }
     private static let cancelled_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
-        guard let data = unsafe data, let proxy = unsafe proxy, let h = unsafe handler(data) else {
+        guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
-        unsafe h.cancelled(WaylandBorrowedProxy<ZwlrOutputConfigurationV1Client>(proxy))
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
+        }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        MainActor.assumeIsolated {
+            unsafe eventHandler.cancelled(WaylandBorrowedProxy<ZwlrOutputConfigurationV1Client>(eventProxy))
+        }
+    }
+}
+public extension WaylandProxy where Interface == ZwlrOutputConfigurationV1Client {
+    func installListener(_ owner: any ZwlrOutputConfigurationV1Events) throws(WaylandProxyError) {
+        try unsafe installListener(owner: owner) { proxy, data in
+            unsafe zwlr_output_configuration_v1_add_listener(proxy, ZwlrOutputConfigurationV1Client.listener, data)
+        }
     }
 }

@@ -10,6 +10,7 @@ import Testing
 import Glibc
 import WaylandServer
 import WaylandServerC
+import WaylandServerDispatch
 import NucleusCompositorServer
 import NucleusCompositorServerTypes
 import NucleusCompositorWindowScene
@@ -26,8 +27,7 @@ private func surface(
     compositor.liveSurfaceIDs.lazy
         .compactMap { compositor.surface(id: $0) }
         .first {
-            guard let resource = unsafe $0.resource else { return false }
-            return unsafe wl_resource_get_id(resource) == wireObjectID
+            $0.protocolResource?.objectID == wireObjectID
         }
 }
 
@@ -167,7 +167,7 @@ private func bind(
 @Test func xdgToplevelRejectsSelfParent() throws {
     let router = try #require(NucleusWaylandRouter())
     graph.compositor().register(in: router)
-    XdgShell().register(in: router)
+    XdgShell(display: router.display).register(in: router)
     let client = try #require(
         WaylandTestClient(display: router.display))
     let globals = client.globals()
@@ -206,7 +206,7 @@ private func bind(
 @Test func decorationModeIsBatchedIntoXdgConfigureCycle() throws {
     let router = try #require(NucleusWaylandRouter())
     graph.compositor().register(in: router)
-    XdgShell().register(in: router)
+    XdgShell(display: router.display).register(in: router)
     XdgDecorationManager().register(in: router)
     let client = try #require(
         WaylandTestClient(display: router.display))
@@ -281,7 +281,7 @@ private func bind(
     ) {
         let router = try #require(NucleusWaylandRouter())
         graph.compositor().register(in: router)
-        XdgShell().register(in: router)
+        XdgShell(display: router.display).register(in: router)
         XdgDecorationManager().register(in: router)
         let client = try #require(
             WaylandTestClient(display: router.display))
@@ -359,11 +359,12 @@ private func bind(
 @Test func dataDeviceDragNegotiatesAndFinishesOnTheWire() throws {
     let router = try #require(NucleusWaylandRouter())
     let compositor = graph.compositor()
-    let seat = graph.seat()
+    let seat = graph.seat(display: router.display)
     let dataDevice = WlDataDeviceManager(
         compositor: compositor,
         host: graph.host,
-        dataExchange: graph.server.dataExchange)
+        dataExchange: graph.server.dataExchange,
+        display: router.display)
     compositor.register(in: router)
     seat.updateCapabilities(
         pointer: true, keyboard: false, touch: false)
@@ -412,9 +413,7 @@ private func bind(
 
     let surface = try #require(surface(
         in: compositor, withWireObjectID: surfaceID))
-    let wlClient = unsafe surface.resource.flatMap(wl_resource_get_client)
-    let clientKeyValue = unsafe wlClient.map(WlSeat.clientKey)
-    let clientKey = try #require(clientKeyValue)
+    let clientKey = try #require(surface.protocolResource?.clientID)
     _ = seat.pointerEnter(
         surface, surfaceX: 4, surfaceY: 5)
     let serial = seat.pointerButton(
@@ -505,7 +504,7 @@ private func bind(
     WlOutput(info: OutputInfo(
         physicalWidthMm: 600, physicalHeightMm: 340, pixelWidth: 1920, pixelHeight: 1080,
         refreshMhz: 60000, scale: 1, name: "DP-1", description: "Out")).register(in: router)
-    let layerShell = ZwlrLayerShell(); layerShell.register(in: router)
+    let layerShell = ZwlrLayerShell(display: router.display); layerShell.register(in: router)
 
     let client = try #require(WaylandTestClient(display: router.display))
     let globals = client.globals()
@@ -536,7 +535,7 @@ private func bind(
     WlOutput(info: OutputInfo(
         physicalWidthMm: 600, physicalHeightMm: 340, pixelWidth: 1920, pixelHeight: 1080,
         refreshMhz: 60000, scale: 1, name: "DP-1", description: "Out")).register(in: router)
-    ZwlrLayerShell().register(in: router)
+    ZwlrLayerShell(display: router.display).register(in: router)
 
     let client = try #require(WaylandTestClient(display: router.display))
     let globals = client.globals()
@@ -571,7 +570,7 @@ private func bind(
         refreshMhz: 60_000, scale: 1,
         name: "DP-1", description: "Out"
     )).register(in: router)
-    ZwlrLayerShell().register(in: router)
+    ZwlrLayerShell(display: router.display).register(in: router)
 
     let client = try #require(
         WaylandTestClient(display: router.display))
@@ -711,7 +710,7 @@ private final class ScreencopyStub: ScreencopyDelegate {
         output: WlOutput?,
         configuration: ScreencopyConfiguration,
         overlayCursor: Bool,
-        buffer: WaylandResourceReference,
+        buffer: WaylandResourceReference<WlBufferServer>,
         withDamage: Bool,
         preferRegionReadback: Bool,
         completion: @escaping @MainActor (ScreencopyResult) -> Void
@@ -749,7 +748,7 @@ private final class SuccessfulScreencopyStub: ScreencopyDelegate {
         output: WlOutput?,
         configuration: ScreencopyConfiguration,
         overlayCursor: Bool,
-        buffer: WaylandResourceReference,
+        buffer: WaylandResourceReference<WlBufferServer>,
         withDamage: Bool,
         preferRegionReadback: Bool,
         completion: @escaping @MainActor (ScreencopyResult) -> Void
@@ -1403,9 +1402,7 @@ private final class PreferredScaleProbe: PreferredScaleSink {
     let surface = try #require(surface(
         in: compositor, withWireObjectID: surfId))
     #expect(surface.hasCurrentBuffer)
-    let currentBufferID = unsafe surface.currentBuffer.map {
-        unsafe wl_resource_get_id($0)
-    }
+    let currentBufferID = surface.currentBuffer?.objectID
     #expect(currentBufferID == bufB)
 }
 
@@ -1547,7 +1544,7 @@ private final class PreferredScaleProbe: PreferredScaleSink {
     WlOutput(info: OutputInfo(
         physicalWidthMm: 600, physicalHeightMm: 340, pixelWidth: 1920, pixelHeight: 1080,
         refreshMhz: 60000, scale: 1, name: "DP-1", description: "Out")).register(in: router)
-    ZwlrLayerShell().register(in: router)
+    ZwlrLayerShell(display: router.display).register(in: router)
 
     let client = try #require(WaylandTestClient(display: router.display))
     let globals = client.globals()
@@ -1587,7 +1584,7 @@ private final class PreferredScaleProbe: PreferredScaleSink {
 @MainActor @Test func foreignToplevelUnminimizeRestoresWindow() throws {
     let graph = WaylandTestGraph()
     let compositor = graph.compositor()
-    let seat = graph.seat()
+    let seat = graph.seat(display: graph.display)
     let driver = RouterWindowDriver(
         seatDriver: RouterSeatDriver(
             seat: seat, compositor: compositor, server: graph.server),
@@ -1625,7 +1622,9 @@ private final class LockGateStub: SessionLockDelegate {
         physicalWidthMm: 600, physicalHeightMm: 340, pixelWidth: 64, pixelHeight: 48,
         refreshMhz: 60000, scale: 1, name: "LOCK-1", description: "Lock")).register(in: router)
     let gate = LockGateStub()
-    let lockMgr = SessionLockManager(); lockMgr.delegate = gate; lockMgr.register(in: router)
+    let lockMgr = SessionLockManager(display: router.display)
+    lockMgr.delegate = gate
+    lockMgr.register(in: router)
 
     let client = try #require(WaylandTestClient(display: router.display))
     let globals = client.globals()
@@ -1666,7 +1665,9 @@ private final class LockGateStub: SessionLockDelegate {
         physicalWidthMm: 600, physicalHeightMm: 340, pixelWidth: 64, pixelHeight: 48,
         refreshMhz: 60000, scale: 1, name: "LOCK-1", description: "Lock")).register(in: router)
     let gate = LockGateStub()
-    let lockMgr = SessionLockManager(); lockMgr.delegate = gate; lockMgr.register(in: router)
+    let lockMgr = SessionLockManager(display: router.display)
+    lockMgr.delegate = gate
+    lockMgr.register(in: router)
 
     let client = try #require(WaylandTestClient(display: router.display))
     let globals = client.globals()

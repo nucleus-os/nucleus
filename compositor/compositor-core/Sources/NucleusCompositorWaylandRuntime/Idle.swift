@@ -27,13 +27,11 @@ import WaylandServerDispatch
     func register(in router: NucleusWaylandRouter) {
         router.addGlobal(
             ZwpIdleInhibitManagerV1Server.global(
-                implementation: self,
-                owner: { manager, _ in manager }))
+                implementation: self))
         router.addGlobal(
             ExtIdleNotifierV1Server.global(
                 implementation: self,
-                advertisedVersion: 2,
-                owner: { manager, _ in manager }))
+                advertisedVersion: 2))
     }
 
     // MARK: compositor / reactor seam
@@ -91,7 +89,7 @@ import WaylandServerDispatch
         timeout: UInt32,
         inputOnly: Bool
     ) {
-        _ = unsafe id.create(
+        _ = id.create(
             owner: { handle in
                 ExtIdleNotification(
                     resource: handle,
@@ -109,8 +107,7 @@ extension IdleManager: ZwpIdleInhibitManagerV1Requests {
     // Both the inhibit-manager and notifier protocols default `destroy`; conforming to both makes the
     // default ambiguous, so pin it explicitly (plain teardown — the manager outlives its resources).
     func destroy(_ request: WaylandRequest<ZwpIdleInhibitManagerV1Server>) {
-        let resource = unsafe request.resource
-        unsafe wl_resource_destroy(resource)
+        request.destroy()
     }
 
     // create_inhibitor(id, surface)
@@ -119,7 +116,7 @@ extension IdleManager: ZwpIdleInhibitManagerV1Requests {
         id: WlNewId<ZwpIdleInhibitorV1Server>,
                          surface surfaceRes: WaylandBorrowedObject<WlSurfaceServer>) {
         let surface = surfaceRes.owner(as: WlSurface.self)
-        _ = unsafe id.create(
+        _ = id.create(
             owner: { handle in
                 IdleInhibitor(
                     resource: handle, manager: self, surface: surface)
@@ -135,13 +132,13 @@ extension IdleManager: ExtIdleNotifierV1Requests {
         _ request: WaylandRequest<ExtIdleNotifierV1Server>,
         id: WlNewId<ExtIdleNotificationV1Server>,
                              timeout: UInt32, seat: WaylandBorrowedObject<WlSeatServer>) {
-        unsafe makeNotification(id: id, timeout: timeout, inputOnly: false)
+        makeNotification(id: id, timeout: timeout, inputOnly: false)
     }
     func getInputIdleNotification(
         _ request: WaylandRequest<ExtIdleNotifierV1Server>,
         id: WlNewId<ExtIdleNotificationV1Server>,
                                   timeout: UInt32, seat: WaylandBorrowedObject<WlSeatServer>) {
-        unsafe makeNotification(id: id, timeout: timeout, inputOnly: true)
+        makeNotification(id: id, timeout: timeout, inputOnly: true)
     }
 }
 

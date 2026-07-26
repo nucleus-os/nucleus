@@ -33,8 +33,7 @@ extension XdgForeignBinding: ZxdgExporterV2Requests {
     // Both exporter and importer default `destroy`; conforming to both makes the default ambiguous,
     // so pin it explicitly here (plain teardown — the binding is released with its resource).
     func destroy(_ request: WaylandRequest<ZxdgExporterV2Server>) {
-        let resource = unsafe request.resource
-        unsafe wl_resource_destroy(resource)
+        request.destroy()
     }
 
     func exportToplevel(
@@ -44,7 +43,7 @@ extension XdgForeignBinding: ZxdgExporterV2Requests {
     ) {
         guard let surface = surfaceRes.owner(as: WlSurface.self) else { return }
         let handle = foreign.mint(surface)
-        _ = unsafe id.create(
+        _ = id.create(
             owner: { resource in
                 ZxdgExported(
                     resource: resource,
@@ -64,7 +63,7 @@ extension XdgForeignBinding: ZxdgImporterV2Requests {
         handle handlePtr: String
     ) {
         let parent = foreign.surface(forHandle: handlePtr)
-        _ = unsafe id.create { resource in
+        _ = id.create { resource in
             ZxdgImported(
                 resource: resource, foreign: foreign, parent: parent)
         }
