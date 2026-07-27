@@ -9,6 +9,13 @@ extern "C" {
 
 int nucleus_android_gfxstream_install_socket_transport(
     nucleus_android_gfxstream_set_external_iostream_factory setter,
+    nucleus_android_gfxstream_set_external_memory_mapper memory_setter,
+    nucleus_android_gfxstream_set_external_vulkan_fence_exporter
+        fence_exporter_setter,
+    nucleus_android_gfxstream_set_external_vulkan_semaphore_exporter
+        semaphore_exporter_setter,
+    nucleus_android_gfxstream_set_external_vulkan_qsri_exporter
+        qsri_exporter_setter,
     const char *socket_path);
 
 #ifdef __cplusplus

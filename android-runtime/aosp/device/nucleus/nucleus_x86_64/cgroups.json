@@ -10,11 +10,34 @@
         "Path": "."
       },
       {
+        "Controller": "cpu",
+        "Path": ".",
+        "NeedsActivation": true,
+        "MaxActivationDepth": 3
+      },
+      {
+        "Controller": "cpuset",
+        "Path": ".",
+        "NeedsActivation": true,
+        "MaxActivationDepth": 3
+      },
+      {
+        "Controller": "io",
+        "Path": ".",
+        "NeedsActivation": true,
+        "MaxActivationDepth": 3
+      },
+      {
         "Controller": "memory",
         "Path": ".",
         "NeedsActivation": true,
-        "MaxActivationDepth": 3,
-        "Optional": true
+        "MaxActivationDepth": 3
+      },
+      {
+        "Controller": "pids",
+        "Path": ".",
+        "NeedsActivation": true,
+        "MaxActivationDepth": 3
       }
     ]
   }

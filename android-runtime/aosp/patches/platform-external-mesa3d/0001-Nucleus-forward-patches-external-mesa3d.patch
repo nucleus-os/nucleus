@@ -1,26 +1,28 @@
-From a250716802c785be3663919f2e8e2dab9550cf47 Mon Sep 17 00:00:00 2001
+From e0c61f60792ef4afb2b10add835f5cbe4b0e77ed Mon Sep 17 00:00:00 2001
 From: Nucleus Source Lock <source-lock@nucleus.invalid>
 Date: Sat, 1 Jan 2000 00:00:00 +0000
 Subject: [PATCH] Nucleus forward patches: external/mesa3d
 
-Change-Id: Iab96d08f4317a0606ce358f0c57eff285e792be2
+Change-Id: I4cd26ede28238ee5c2dec3e473fa754f01abb686
 ---
  src/gfxstream/guest/android/Android.bp        |   2 +
  .../guest/android/GfxStreamGralloc.cpp        |   4 +
- .../guest/android/GrallocNucleus.cpp          | 146 ++++++++++++++++++
- src/gfxstream/guest/android/GrallocNucleus.h  |  40 +++++
+ .../guest/android/GrallocNucleus.cpp          | 146 ++++++++++++++
+ src/gfxstream/guest/android/GrallocNucleus.h  |  40 ++++
  .../gfxstream/guest/GfxStreamGralloc.h        |   1 +
- .../GfxStreamConnectionManager.cpp            |  43 ++++++
+ .../GfxStreamConnectionManager.cpp            | 166 ++++++++++++++++
  .../GfxStreamConnectionManager.h              |   1 +
- .../GfxStreamExternalIOStream.h               |  34 ++++
- src/gfxstream/guest/vulkan/Android.bp         |  18 ++-
- .../guest/vulkan/gfxstream_vk_device.cpp      |  45 +++++-
+ .../GfxStreamExternalIOStream.h               |  75 +++++++
+ src/gfxstream/guest/vulkan/Android.bp         |  18 +-
+ .../guest/vulkan/gfxstream_vk_device.cpp      |  49 ++++-
  .../vulkan/stubs/GfxStreamRenderControl.cpp   |   5 +
- .../guest/vulkan_enc/ResourceTracker.cpp      |  24 +++
+ .../HostVisibleMemoryVirtualization.cpp       |  11 ++
+ .../HostVisibleMemoryVirtualization.h         |   4 +
+ .../guest/vulkan_enc/ResourceTracker.cpp      | 184 ++++++++++++++++--
  .../guest/vulkan_enc/ResourceTracker.h        |   1 +
- src/vulkan/vulkan-android.sym                 |   2 +
- src/vulkan/vulkan.sym                         |   2 +
- 15 files changed, 361 insertions(+), 7 deletions(-)
+ src/vulkan/vulkan-android.sym                 |   6 +
+ src/vulkan/vulkan.sym                         |   6 +
+ 17 files changed, 700 insertions(+), 19 deletions(-)
  create mode 100644 src/gfxstream/guest/android/GrallocNucleus.cpp
  create mode 100644 src/gfxstream/guest/android/GrallocNucleus.h
  create mode 100644 src/gfxstream/guest/connection-manager/GfxStreamExternalIOStream.h
@@ -278,7 +280,7 @@ index 2dca6618cc8..0cd6b38ea80 100644
  
  // Abstraction for gralloc handle conversion
 diff --git a/src/gfxstream/guest/connection-manager/GfxStreamConnectionManager.cpp b/src/gfxstream/guest/connection-manager/GfxStreamConnectionManager.cpp
-index 37a52ffe5de..c381e0f004a 100644
+index 37a52ffe5de..ffc2a7dd9ce 100644
 --- a/src/gfxstream/guest/connection-manager/GfxStreamConnectionManager.cpp
 +++ b/src/gfxstream/guest/connection-manager/GfxStreamConnectionManager.cpp
 @@ -5,8 +5,10 @@
@@ -292,12 +294,24 @@ index 37a52ffe5de..c381e0f004a 100644
  #include "GoldfishAddressSpaceStream.h"
  #include "QemuPipeStream.h"
  #include "VirtGpu.h"
-@@ -17,6 +19,23 @@
+@@ -17,6 +19,146 @@
  
  #define STREAM_BUFFER_SIZE (4 * 1024 * 1024)
  
 +static std::atomic<gfxstream_external_iostream_factory> external_iostream_factory;
 +static std::atomic<void*> external_iostream_factory_context;
++static std::atomic<gfxstream_external_memory_mapper> external_memory_mapper;
++static std::atomic<gfxstream_external_memory_unmapper> external_memory_unmapper;
++static std::atomic<void*> external_memory_context;
++static std::atomic<gfxstream_external_vulkan_fence_exporter>
++    external_vulkan_fence_exporter;
++static std::atomic<void*> external_vulkan_fence_context;
++static std::atomic<gfxstream_external_vulkan_semaphore_exporter>
++    external_vulkan_semaphore_exporter;
++static std::atomic<void*> external_vulkan_semaphore_context;
++static std::atomic<gfxstream_external_vulkan_qsri_exporter>
++    external_vulkan_qsri_exporter;
++static std::atomic<void*> external_vulkan_qsri_context;
 +
 +extern "C" void gfxstream_vk_set_external_iostream_factory(
 +    gfxstream_external_iostream_factory factory, void* context) {
@@ -309,14 +323,125 @@ index 37a52ffe5de..c381e0f004a 100644
 +    return external_iostream_factory.load(std::memory_order_acquire) != nullptr;
 +}
 +
++extern "C" void gfxstream_vk_set_external_memory_mapper(
++    gfxstream_external_memory_mapper mapper,
++    gfxstream_external_memory_unmapper unmapper,
++    void* context) {
++    external_memory_context.store(context, std::memory_order_relaxed);
++    external_memory_unmapper.store(unmapper, std::memory_order_relaxed);
++    external_memory_mapper.store(mapper, std::memory_order_release);
++}
++
++extern "C" void gfxstream_vk_set_external_vulkan_fence_exporter(
++    gfxstream_external_vulkan_fence_exporter exporter, void* context) {
++    external_vulkan_fence_context.store(context, std::memory_order_relaxed);
++    external_vulkan_fence_exporter.store(exporter, std::memory_order_release);
++}
++
++extern "C" void gfxstream_vk_set_external_vulkan_semaphore_exporter(
++    gfxstream_external_vulkan_semaphore_exporter exporter, void* context) {
++    external_vulkan_semaphore_context.store(
++        context, std::memory_order_relaxed);
++    external_vulkan_semaphore_exporter.store(
++        exporter, std::memory_order_release);
++}
++
++extern "C" void gfxstream_vk_set_external_vulkan_qsri_exporter(
++    gfxstream_external_vulkan_qsri_exporter exporter, void* context) {
++    external_vulkan_qsri_context.store(context, std::memory_order_relaxed);
++    external_vulkan_qsri_exporter.store(exporter, std::memory_order_release);
++}
++
 +bool gfxstream_vk_has_external_iostream_factory_internal() {
 +    return external_iostream_factory.load(std::memory_order_acquire) != nullptr;
++}
++
++bool gfxstream_vk_has_external_memory_mapper_internal() {
++    return external_memory_mapper.load(std::memory_order_acquire) != nullptr;
++}
++
++bool gfxstream_vk_has_external_vulkan_fence_exporter_internal() {
++    return external_vulkan_fence_exporter.load(std::memory_order_acquire) != nullptr;
++}
++
++bool gfxstream_vk_has_external_vulkan_semaphore_exporter_internal() {
++    return external_vulkan_semaphore_exporter.load(
++               std::memory_order_acquire) != nullptr;
++}
++
++bool gfxstream_vk_has_external_vulkan_qsri_exporter_internal() {
++    return external_vulkan_qsri_exporter.load(
++               std::memory_order_acquire) != nullptr;
++}
++
++int gfxstream_vk_map_external_memory(uint64_t blobId, size_t size, void** address) {
++    const auto mapper = external_memory_mapper.load(std::memory_order_acquire);
++    if (!mapper) {
++        return -1;
++    }
++    return mapper(
++        external_memory_context.load(std::memory_order_relaxed),
++        blobId,
++        size,
++        address);
++}
++
++void gfxstream_vk_unmap_external_memory(void* address, size_t size) {
++    const auto unmapper = external_memory_unmapper.load(std::memory_order_acquire);
++    if (unmapper) {
++        unmapper(
++            external_memory_context.load(std::memory_order_relaxed),
++            address,
++            size);
++    }
++}
++
++int gfxstream_vk_export_external_vulkan_fence(
++    uint64_t deviceHandle, uint64_t fenceHandle) {
++    const auto exporter =
++        external_vulkan_fence_exporter.load(std::memory_order_acquire);
++    if (!exporter) {
++        errno = ENOTSUP;
++        return -1;
++    }
++    return exporter(
++        external_vulkan_fence_context.load(std::memory_order_relaxed),
++        deviceHandle,
++        fenceHandle);
++}
++
++int gfxstream_vk_export_external_vulkan_semaphore(
++    uint64_t deviceHandle, uint64_t semaphoreHandle) {
++    const auto exporter =
++        external_vulkan_semaphore_exporter.load(
++            std::memory_order_acquire);
++    if (!exporter) {
++        errno = ENOTSUP;
++        return -1;
++    }
++    return exporter(
++        external_vulkan_semaphore_context.load(
++            std::memory_order_relaxed),
++        deviceHandle,
++        semaphoreHandle);
++}
++
++int gfxstream_vk_export_external_vulkan_qsri(uint64_t imageHandle) {
++    const auto exporter =
++        external_vulkan_qsri_exporter.load(std::memory_order_acquire);
++    if (!exporter) {
++        errno = ENOTSUP;
++        return -1;
++    }
++    return exporter(
++        external_vulkan_qsri_context.load(std::memory_order_relaxed),
++        imageHandle);
 +}
 +
  static tss_t gfxstream_connection_manager_tls_key;
  static bool gfxstream_connection_manager_tls_key_valid;
  
-@@ -145,6 +164,21 @@ bool GfxStreamConnectionManager::initialize() {
+@@ -145,6 +287,21 @@ bool GfxStreamConnectionManager::initialize() {
  
              break;
          }
@@ -338,7 +463,7 @@ index 37a52ffe5de..c381e0f004a 100644
          default:
              return false;
      }
-@@ -187,6 +221,15 @@ gfxstream::guest::IOStream* GfxStreamConnectionManager::processPipeStream(
+@@ -187,6 +344,15 @@ gfxstream::guest::IOStream* GfxStreamConnectionManager::processPipeStream(
          case GFXSTREAM_TRANSPORT_VIRTIO_GPU_ADDRESS_SPACE:
          case GFXSTREAM_TRANSPORT_VIRTIO_GPU_PIPE:
              return new VirtioGpuPipeStream(STREAM_BUFFER_SIZE, mDescriptor);
@@ -368,10 +493,10 @@ index ae82aacbe99..93ff12d6afc 100644
  class GfxStreamConnectionManager {
 diff --git a/src/gfxstream/guest/connection-manager/GfxStreamExternalIOStream.h b/src/gfxstream/guest/connection-manager/GfxStreamExternalIOStream.h
 new file mode 100644
-index 00000000000..87f07120ab2
+index 00000000000..54b169d039f
 --- /dev/null
 +++ b/src/gfxstream/guest/connection-manager/GfxStreamExternalIOStream.h
-@@ -0,0 +1,34 @@
+@@ -0,0 +1,75 @@
 +/*
 + * Copyright 2026 Nucleus contributors
 + * SPDX-License-Identifier: MIT
@@ -381,6 +506,7 @@ index 00000000000..87f07120ab2
 +#define GFXSTREAM_EXTERNAL_IOSTREAM_H
 +
 +#include <stddef.h>
++#include <stdint.h>
 +
 +#if defined(__GNUC__)
 +#define GFXSTREAM_EXTERNAL_API __attribute__((visibility("default")))
@@ -394,8 +520,37 @@ index 00000000000..87f07120ab2
 +
 +typedef void* (*gfxstream_external_iostream_factory)(void* context, size_t buffer_size);
 +
++typedef int (*gfxstream_external_memory_mapper)(
++    void* context, uint64_t blob_id, size_t size, void** address);
++
++typedef void (*gfxstream_external_memory_unmapper)(
++    void* context, void* address, size_t size);
++
++typedef int (*gfxstream_external_vulkan_fence_exporter)(
++    void* context, uint64_t device_handle, uint64_t fence_handle);
++
++typedef int (*gfxstream_external_vulkan_semaphore_exporter)(
++    void* context, uint64_t device_handle, uint64_t semaphore_handle);
++
++typedef int (*gfxstream_external_vulkan_qsri_exporter)(
++    void* context, uint64_t image_handle);
++
 +GFXSTREAM_EXTERNAL_API void gfxstream_vk_set_external_iostream_factory(
 +    gfxstream_external_iostream_factory factory, void* context);
++
++GFXSTREAM_EXTERNAL_API void gfxstream_vk_set_external_memory_mapper(
++    gfxstream_external_memory_mapper mapper,
++    gfxstream_external_memory_unmapper unmapper,
++    void* context);
++
++GFXSTREAM_EXTERNAL_API void gfxstream_vk_set_external_vulkan_fence_exporter(
++    gfxstream_external_vulkan_fence_exporter exporter, void* context);
++
++GFXSTREAM_EXTERNAL_API void gfxstream_vk_set_external_vulkan_semaphore_exporter(
++    gfxstream_external_vulkan_semaphore_exporter exporter, void* context);
++
++GFXSTREAM_EXTERNAL_API void gfxstream_vk_set_external_vulkan_qsri_exporter(
++    gfxstream_external_vulkan_qsri_exporter exporter, void* context);
 +
 +GFXSTREAM_EXTERNAL_API int gfxstream_vk_has_external_iostream_factory(void);
 +
@@ -403,11 +558,22 @@ index 00000000000..87f07120ab2
 +}
 +
 +bool gfxstream_vk_has_external_iostream_factory_internal();
++bool gfxstream_vk_has_external_memory_mapper_internal();
++bool gfxstream_vk_has_external_vulkan_fence_exporter_internal();
++bool gfxstream_vk_has_external_vulkan_semaphore_exporter_internal();
++bool gfxstream_vk_has_external_vulkan_qsri_exporter_internal();
++int gfxstream_vk_map_external_memory(uint64_t blob_id, size_t size, void** address);
++void gfxstream_vk_unmap_external_memory(void* address, size_t size);
++int gfxstream_vk_export_external_vulkan_fence(
++    uint64_t device_handle, uint64_t fence_handle);
++int gfxstream_vk_export_external_vulkan_semaphore(
++    uint64_t device_handle, uint64_t semaphore_handle);
++int gfxstream_vk_export_external_vulkan_qsri(uint64_t image_handle);
 +#endif
 +
 +#endif
 diff --git a/src/gfxstream/guest/vulkan/Android.bp b/src/gfxstream/guest/vulkan/Android.bp
-index 31a95d19a38..e75175f3d1e 100644
+index 31a95d19a38..e031a781ccf 100644
 --- a/src/gfxstream/guest/vulkan/Android.bp
 +++ b/src/gfxstream/guest/vulkan/Android.bp
 @@ -34,8 +34,8 @@ cc_defaults {
@@ -440,7 +606,7 @@ index 31a95d19a38..e75175f3d1e 100644
 +    ],
 +}
 diff --git a/src/gfxstream/guest/vulkan/gfxstream_vk_device.cpp b/src/gfxstream/guest/vulkan/gfxstream_vk_device.cpp
-index 95824d074c9..80c5eb7d161 100644
+index 95824d074c9..da362b88a51 100644
 --- a/src/gfxstream/guest/vulkan/gfxstream_vk_device.cpp
 +++ b/src/gfxstream/guest/vulkan/gfxstream_vk_device.cpp
 @@ -4,6 +4,7 @@
@@ -451,7 +617,7 @@ index 95824d074c9..80c5eb7d161 100644
  #include <string.h>
  
  #include "GfxStreamConnectionManager.h"
-@@ -18,9 +19,27 @@
+@@ -18,9 +19,31 @@
  #include "vk_sync_dummy.h"
  #include "vk_util.h"
  
@@ -470,6 +636,10 @@ index 95824d074c9..80c5eb7d161 100644
 +    std::call_once(once, [] {
 +        installed = nucleus_android_gfxstream_install_socket_transport(
 +                        gfxstream_vk_set_external_iostream_factory,
++                        gfxstream_vk_set_external_memory_mapper,
++                        gfxstream_vk_set_external_vulkan_fence_exporter,
++                        gfxstream_vk_set_external_vulkan_semaphore_exporter,
++                        gfxstream_vk_set_external_vulkan_qsri_exporter,
 +                        "/dev/nucleus/gfxstream.sock") == 0;
 +    });
 +    return installed;
@@ -479,7 +649,7 @@ index 95824d074c9..80c5eb7d161 100644
  static gfxstream::vk::VkEncoder* getVulkanEncoder(GfxStreamConnectionManager* mgr) {
      if (!gNoRenderControlEnc) {
          int32_t ret = renderControlInit(mgr, nullptr);
-@@ -49,6 +68,9 @@ static gfxstream::vk::VkEncoder* getVulkanEncoder(GfxStreamConnectionManager* mg
+@@ -49,6 +72,9 @@ static gfxstream::vk::VkEncoder* getVulkanEncoder(GfxStreamConnectionManager* mg
  
  static GfxStreamConnectionManager* getConnectionManager(void) {
      auto transport = renderControlGetTransport();
@@ -489,7 +659,7 @@ index 95824d074c9..80c5eb7d161 100644
      return GfxStreamConnectionManager::getThreadLocalInstance(transport, kCapsetGfxStreamVulkan);
  }
  
-@@ -77,14 +99,27 @@ static bool isGuestEmulatedInstanceExtension(const char* name) {
+@@ -77,14 +103,27 @@ static bool isGuestEmulatedInstanceExtension(const char* name) {
  }
  
  static VkResult SetupInstanceForProcess(void) {
@@ -519,7 +689,7 @@ index 95824d074c9..80c5eb7d161 100644
      // Legacy goldfish path: could be deleted once goldfish not used guest-side.
      if (!gNoRenderControlEnc) {
          struct GfxStreamVkFeatureInfo features = {};
-@@ -94,14 +129,14 @@ static VkResult SetupInstanceForProcess(void) {
+@@ -94,14 +133,14 @@ static VkResult SetupInstanceForProcess(void) {
              return VK_ERROR_DEVICE_LOST;
          }
  
@@ -554,11 +724,87 @@ index cf958397b72..f06fd72dd67 100644
      return GFXSTREAM_TRANSPORT_VIRTIO_GPU_ADDRESS_SPACE;
  }
  
+diff --git a/src/gfxstream/guest/vulkan_enc/HostVisibleMemoryVirtualization.cpp b/src/gfxstream/guest/vulkan_enc/HostVisibleMemoryVirtualization.cpp
+index c5c87e7c07a..eadb07e4921 100644
+--- a/src/gfxstream/guest/vulkan_enc/HostVisibleMemoryVirtualization.cpp
++++ b/src/gfxstream/guest/vulkan_enc/HostVisibleMemoryVirtualization.cpp
+@@ -6,6 +6,7 @@
+ 
+ #include <set>
+ 
++#include "GfxStreamExternalIOStream.h"
+ #include "ResourceTracker.h"
+ #include "Resources.h"
+ #include "VkEncoder.h"
+@@ -22,6 +23,13 @@ CoherentMemory::CoherentMemory(VirtGpuResourceMappingPtr blobMapping, uint64_t s
+     mBaseAddr = blobMapping->asRawPtr();
+ }
+ 
++CoherentMemory::CoherentMemory(uint8_t* externalMapping, uint64_t size, VkDevice device,
++                               VkDeviceMemory memory)
++    : mSize(size), mOwnsExternalMapping(true), mDevice(device), mMemory(memory),
++      mBaseAddr(externalMapping) {
++    mHeap = u_mmInit(0, mSize);
++}
++
+ #if DETECT_OS_ANDROID
+ CoherentMemory::CoherentMemory(GoldfishAddressSpaceBlockPtr block, uint64_t gpuAddr, uint64_t size,
+                                VkDevice device, VkDeviceMemory memory)
+@@ -35,6 +43,9 @@ CoherentMemory::~CoherentMemory() {
+     ResourceTracker::getThreadLocalEncoder()->vkFreeMemorySyncGOOGLE(mDevice, mMemory, nullptr,
+                                                                      false);
+     u_mmDestroy(mHeap);
++    if (mOwnsExternalMapping) {
++        gfxstream_vk_unmap_external_memory(mBaseAddr, mSize);
++    }
+ }
+ 
+ VkDeviceMemory CoherentMemory::getDeviceMemory() const { return mMemory; }
+diff --git a/src/gfxstream/guest/vulkan_enc/HostVisibleMemoryVirtualization.h b/src/gfxstream/guest/vulkan_enc/HostVisibleMemoryVirtualization.h
+index c0b47877de7..c6b2e7863bb 100644
+--- a/src/gfxstream/guest/vulkan_enc/HostVisibleMemoryVirtualization.h
++++ b/src/gfxstream/guest/vulkan_enc/HostVisibleMemoryVirtualization.h
+@@ -30,6 +30,9 @@ class CoherentMemory {
+     CoherentMemory(VirtGpuResourceMappingPtr blobMapping, uint64_t size, VkDevice device,
+                    VkDeviceMemory memory);
+ 
++    CoherentMemory(uint8_t* externalMapping, uint64_t size, VkDevice device,
++                   VkDeviceMemory memory);
++
+ #if DETECT_OS_ANDROID
+     CoherentMemory(GoldfishAddressSpaceBlockPtr block, uint64_t gpuAddr, uint64_t size,
+                    VkDevice device, VkDeviceMemory memory);
+@@ -49,6 +52,7 @@ class CoherentMemory {
+     uint64_t mSize;
+     VirtGpuResourceMappingPtr mBlobMapping;
+     GoldfishAddressSpaceBlockPtr mBlock;
++    bool mOwnsExternalMapping = false;
+     VkDevice mDevice;
+     VkDeviceMemory mMemory;
+ 
 diff --git a/src/gfxstream/guest/vulkan_enc/ResourceTracker.cpp b/src/gfxstream/guest/vulkan_enc/ResourceTracker.cpp
-index b682be0c167..d57f9735ebb 100644
+index b682be0c167..93b764b31d2 100644
 --- a/src/gfxstream/guest/vulkan_enc/ResourceTracker.cpp
 +++ b/src/gfxstream/guest/vulkan_enc/ResourceTracker.cpp
-@@ -1470,6 +1470,30 @@ void ResourceTracker::setupCaps(uint32_t& noRenderControlEnc) {
+@@ -7,6 +7,7 @@
+ 
+ #include "CommandBufferStagingStream.h"
+ #include "DescriptorSetVirtualization.h"
++#include "GfxStreamExternalIOStream.h"
+ #include "HostVisibleMemoryVirtualization.h"
+ #include "Resources.h"
+ #include "VkEncoder.h"
+@@ -29,7 +30,9 @@
+ #include <stdint.h>
+ 
+ #include <algorithm>
++#include <cerrno>
+ #include <chrono>
++#include <cstring>
+ #include <random>
+ #include <set>
+ #include <string>
+@@ -1470,6 +1473,30 @@ void ResourceTracker::setupCaps(uint32_t& noRenderControlEnc) {
      noRenderControlEnc = mCaps.vulkanCapset.noRenderControlEnc;
  }
  
@@ -572,11 +818,11 @@ index b682be0c167..d57f9735ebb 100644
 +        .hasVulkanNullOptionalStrings = true,
 +        .hasVulkanCreateResourcesWithRequirements = true,
 +        .hasVulkanIgnoredHandles = true,
-+        .hasVirtioGpuNext = true,
++        .hasVirtioGpuNext = false,
 +        .hasVulkanFreeMemorySync = false,
 +        .hasVirtioGpuNativeSync = false,
 +        .hasVulkanShaderFloat16Int8 = true,
-+        .hasVulkanAsyncQueueSubmit = false,
++        .hasVulkanAsyncQueueSubmit = true,
 +        .hasVulkanQueueSubmitWithCommands = true,
 +        .hasVulkanBatchedDescriptorSetUpdate = true,
 +        .hasVulkanAsyncQsri = false,
@@ -589,6 +835,253 @@ index b682be0c167..d57f9735ebb 100644
  void ResourceTracker::setupFeatures(const struct GfxStreamVkFeatureInfo* features) {
      if (mFeatureInfo.setupComplete) {
          return;
+@@ -1531,7 +1558,10 @@ void ResourceTracker::setupFeatures(const struct GfxStreamVkFeatureInfo* feature
+ 
+ void ResourceTracker::setupPlatformHelpers() {
+ #if defined(VK_USE_PLATFORM_ANDROID_KHR)
+-    VirtGpuDevice* instance = VirtGpuDevice::getInstance(kCapsetGfxStreamVulkan);
++    VirtGpuDevice* instance =
++        gfxstream_vk_has_external_iostream_factory_internal()
++            ? nullptr
++            : VirtGpuDevice::getInstance(kCapsetGfxStreamVulkan);
+     auto deviceHandle = instance ? instance->getDeviceHandle() : INVALID_DESCRIPTOR;
+     if (mGralloc == nullptr) {
+         mGralloc.reset(gfxstream::createPlatformGralloc(deviceHandle));
+@@ -2180,7 +2210,10 @@ void ResourceTracker::on_vkGetPhysicalDeviceProperties2(void* context,
+                                                         VkPhysicalDevice physicalDevice,
+                                                         VkPhysicalDeviceProperties2* pProperties) {
+     VkEncoder* enc = (VkEncoder*)context;
+-    VirtGpuDevice* instance = VirtGpuDevice::getInstance();
++    const bool externalTransport =
++        gfxstream_vk_has_external_iostream_factory_internal();
++    VirtGpuDevice* instance =
++        externalTransport ? nullptr : VirtGpuDevice::getInstance();
+     if (!pProperties) {
+         return;
+     }
+@@ -2236,7 +2269,10 @@ void ResourceTracker::on_vkGetPhysicalDeviceProperties2(void* context,
+                  "Mesa " PACKAGE_VERSION MESA_GIT_SHA1);
+     }
+ 
+-    const char* transport_name = instance ? "Virtio-GPU GFXStream" : "Goldfish GFXStream";
++    const char* transport_name =
++        externalTransport
++            ? "Nucleus GFXStream"
++            : (instance ? "Virtio-GPU GFXStream" : "Goldfish GFXStream");
+     char device_name[VK_MAX_PHYSICAL_DEVICE_NAME_SIZE];
+     int device_name_len = snprintf(device_name, sizeof(device_name), "%s (%s)",
+                                    transport_name, pProperties->properties.deviceName);
+@@ -3116,7 +3152,36 @@ CoherentMemoryPtr ResourceTracker::createCoherentMemory(
+         }
+     } else
+ #endif  // DETECT_OS_ANDROID
+-        if (mFeatureInfo.hasVirtioGpuNext) {
++        if (gfxstream_vk_has_external_memory_mapper_internal()) {
++            uint64_t hvaSizeId[3];
++            res = enc->vkGetMemoryHostAddressInfoGOOGLE(
++                device, mem, &hvaSizeId[0], &hvaSizeId[1], &hvaSizeId[2],
++                true /* do lock */);
++            if (res != VK_SUCCESS) {
++                mesa_loge(
++                    "Failed to create coherent memory: "
++                    "vkGetMemoryHostAddressInfoGOOGLE returned:%d.",
++                    res);
++                return coherentMemory;
++            }
++            void* address = nullptr;
++            if (gfxstream_vk_map_external_memory(
++                    hvaSizeId[2],
++                    hostAllocationInfo.allocationSize,
++                    &address) != 0 ||
++                address == nullptr) {
++                mesa_loge(
++                    "Failed to create coherent memory: external memory "
++                    "mapping failed.");
++                res = VK_ERROR_MEMORY_MAP_FAILED;
++                return coherentMemory;
++            }
++            coherentMemory = std::make_shared<CoherentMemory>(
++                static_cast<uint8_t*>(address),
++                hostAllocationInfo.allocationSize,
++                device,
++                mem);
++        } else if (mFeatureInfo.hasVirtioGpuNext) {
+             struct VirtGpuCreateBlob createBlob = {0};
+             uint64_t hvaSizeId[3];
+             res = enc->vkGetMemoryHostAddressInfoGOOGLE(device, mem, &hvaSizeId[0], &hvaSizeId[1],
+@@ -4750,6 +4815,14 @@ void ResourceTracker::on_vkGetPhysicalDeviceExternalFenceProperties(
+     }
+ 
+ #if defined(VK_USE_PLATFORM_ANDROID_KHR) || DETECT_OS_LINUX
++    if (gfxstream_vk_has_external_iostream_factory_internal() &&
++        !gfxstream_vk_has_external_vulkan_fence_exporter_internal()) {
++        pExternalFenceProperties->compatibleHandleTypes =
++            VK_EXTERNAL_FENCE_HANDLE_TYPE_SYNC_FD_BIT;
++        pExternalFenceProperties->externalFenceFeatures =
++            VK_EXTERNAL_FENCE_FEATURE_IMPORTABLE_BIT;
++        return;
++    }
+     pExternalFenceProperties->exportFromImportedHandleTypes =
+         VK_EXTERNAL_FENCE_HANDLE_TYPE_SYNC_FD_BIT;
+     pExternalFenceProperties->compatibleHandleTypes = VK_EXTERNAL_FENCE_HANDLE_TYPE_SYNC_FD_BIT;
+@@ -4780,7 +4853,8 @@ VkResult ResourceTracker::on_vkCreateFence(void* context, VkResult input_result,
+ 
+ #if defined(VK_USE_PLATFORM_ANDROID_KHR) || DETECT_OS_LINUX
+     if (exportSyncFd) {
+-        if (!mFeatureInfo.hasVirtioGpuNativeSync) {
++        if (!mFeatureInfo.hasVirtioGpuNativeSync &&
++            !gfxstream_vk_has_external_vulkan_fence_exporter_internal()) {
+             MESA_TRACE_SCOPE("%s: ensure sync device\n", __func__);
+             ensureSyncDeviceFd();
+         }
+@@ -4968,12 +5042,26 @@ VkResult ResourceTracker::on_vkGetFenceFdKHR(void* context, VkResult, VkDevice d
+             if (result != VK_SUCCESS) return result;
+ 
+             *pFd = osHandle;
++        } else if (
++            gfxstream_vk_has_external_iostream_factory_internal() &&
++            gfxstream_vk_has_external_vulkan_fence_exporter_internal()) {
++            *pFd = gfxstream_vk_export_external_vulkan_fence(
++                get_host_u64_VkDevice(device),
++                get_host_u64_VkFence(pGetFdInfo->fence));
++            if (*pFd < 0) {
++                mesa_loge("%s: external Vulkan fence export failed: %s\n",
++                          __func__, strerror(errno));
++                return VK_ERROR_OUT_OF_HOST_MEMORY;
++            }
+         } else {
+ #if GFXSTREAM_ENABLE_GUEST_GOLDFISH
+             goldfish_sync_queue_work(
+                 mSyncDeviceFd, get_host_u64_VkFence(pGetFdInfo->fence) /* the handle */,
+                 GOLDFISH_SYNC_VULKAN_SEMAPHORE_SYNC /* thread handle (doubling as type field) */,
+                 pFd);
++#else
++            mesa_loge("%s: no native sync transport is installed\n", __func__);
++            return VK_ERROR_FEATURE_NOT_PRESENT;
+ #endif
+         }
+ 
+@@ -5787,7 +5875,8 @@ VkResult ResourceTracker::on_vkCreateSemaphore(void* context, VkResult input_res
+     bool exportSyncFd = exportSemaphoreInfoPtr && (exportSemaphoreInfoPtr->handleTypes &
+                                                    VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_SYNC_FD_BIT);
+ 
+-    if (exportSyncFd) {
++    if (exportSyncFd &&
++        !gfxstream_vk_has_external_vulkan_semaphore_exporter_internal()) {
+         finalCreateInfo.pNext = nullptr;
+         // If we have timeline semaphores externally, leave it there.
+         const VkSemaphoreTypeCreateInfo* typeCi =
+@@ -5821,7 +5910,11 @@ VkResult ResourceTracker::on_vkCreateSemaphore(void* context, VkResult input_res
+ 
+ #if defined(VK_USE_PLATFORM_ANDROID_KHR) || DETECT_OS_LINUX
+     if (exportSyncFd) {
+-        if (mFeatureInfo.hasVirtioGpuNativeSync &&
++        if (gfxstream_vk_has_external_vulkan_semaphore_exporter_internal()) {
++            // The external exporter materializes a fresh sync-file when the
++            // application calls vkGetSemaphoreFdKHR. Do not create a
++            // goldfish/virtgpu sync object in this transport mode.
++        } else if (mFeatureInfo.hasVirtioGpuNativeSync &&
+             !(mCaps.params[kParamFencePassing] && mCaps.vulkanCapset.externalSync)) {
+             VkResult result;
+             int64_t osHandle;
+@@ -5870,6 +5963,22 @@ VkResult ResourceTracker::on_vkGetSemaphoreFdKHR(void* context, VkResult, VkDevi
+     bool getSyncFd = pGetFdInfo->handleType & VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_SYNC_FD_BIT;
+ 
+     if (getSyncFd) {
++        if (gfxstream_vk_has_external_vulkan_semaphore_exporter_internal()) {
++            // Async queue submission leaves the encoded submit buffered in this
++            // process. Publish it before the broker registers a wait for the host
++            // semaphore over its independent control connection.
++            enc->flush();
++            *pFd = gfxstream_vk_export_external_vulkan_semaphore(
++                get_host_u64_VkDevice(device),
++                get_host_u64_VkSemaphore(pGetFdInfo->semaphore));
++            if (*pFd < 0) {
++                mesa_loge(
++                    "%s: external Vulkan semaphore export failed: %s\n",
++                    __func__, strerror(errno));
++                return VK_ERROR_INVALID_EXTERNAL_HANDLE;
++            }
++            return VK_SUCCESS;
++        }
+         if (mCaps.params[kParamFencePassing] && mCaps.vulkanCapset.externalSync) {
+             uint64_t syncId = ++mAtomicId;
+             int64_t osHandle = -1;
+@@ -7185,11 +7294,23 @@ void ResourceTracker::on_vkGetPhysicalDeviceExternalSemaphoreProperties(
+                VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_SYNC_FD_BIT) {
+         pExternalSemaphoreProperties->compatibleHandleTypes |=
+             VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_SYNC_FD_BIT;
+-        pExternalSemaphoreProperties->exportFromImportedHandleTypes |=
+-            VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_SYNC_FD_BIT;
+-        pExternalSemaphoreProperties->externalSemaphoreFeatures |=
+-            VK_EXTERNAL_SEMAPHORE_FEATURE_EXPORTABLE_BIT |
+-            VK_EXTERNAL_SEMAPHORE_FEATURE_IMPORTABLE_BIT;
++        if (gfxstream_vk_has_external_iostream_factory_internal()) {
++            pExternalSemaphoreProperties->exportFromImportedHandleTypes =
++                gfxstream_vk_has_external_vulkan_semaphore_exporter_internal()
++                    ? VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_SYNC_FD_BIT
++                    : 0;
++            pExternalSemaphoreProperties->externalSemaphoreFeatures =
++                VK_EXTERNAL_SEMAPHORE_FEATURE_IMPORTABLE_BIT |
++                (gfxstream_vk_has_external_vulkan_semaphore_exporter_internal()
++                     ? VK_EXTERNAL_SEMAPHORE_FEATURE_EXPORTABLE_BIT
++                     : 0);
++        } else {
++            pExternalSemaphoreProperties->exportFromImportedHandleTypes |=
++                VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_SYNC_FD_BIT;
++            pExternalSemaphoreProperties->externalSemaphoreFeatures |=
++                VK_EXTERNAL_SEMAPHORE_FEATURE_EXPORTABLE_BIT |
++                VK_EXTERNAL_SEMAPHORE_FEATURE_IMPORTABLE_BIT;
++        }
+     }
+ #endif  // VK_USE_PLATFORM_FUCHSIA
+ }
+@@ -7598,6 +7719,45 @@ VkResult ResourceTracker::on_vkQueueSignalReleaseImageANDROID(void* context, VkR
+     (void)input_result;
+ 
+     VkEncoder* enc = (VkEncoder*)context;
++    static std::once_flag releasePathDiagnostic;
++    std::call_once(releasePathDiagnostic, [this] {
++        mesa_logi(
++            "Nucleus Vulkan release-image path: externalQsri=%s asyncQsri=%s",
++            gfxstream_vk_has_external_vulkan_qsri_exporter_internal()
++                ? "true"
++                : "false",
++            mFeatureInfo.hasVulkanAsyncQsri ? "true" : "false");
++    });
++
++    if (gfxstream_vk_has_external_vulkan_qsri_exporter_internal()) {
++        uint64_t hostImageHandle = 0;
++        {
++            std::lock_guard<std::recursive_mutex> lock(mLock);
++            auto it = info_VkImage.find(image);
++            if (it == info_VkImage.end()) {
++                if (pNativeFenceFd) *pNativeFenceFd = -1;
++                return VK_ERROR_INITIALIZATION_FAILED;
++            }
++            hostImageHandle = get_host_u64_VkImage(image);
++        }
++        enc->vkQueueSignalReleaseImageANDROIDAsyncGOOGLE(
++            queue, waitSemaphoreCount, pWaitSemaphores, image, true /* lock */);
++        const int syncFd =
++            gfxstream_vk_export_external_vulkan_qsri(hostImageHandle);
++        if (syncFd < 0) {
++            if (pNativeFenceFd) *pNativeFenceFd = -1;
++            mesa_loge(
++                "%s: external Vulkan QSRI export failed: %s\n",
++                __func__, strerror(errno));
++            return VK_ERROR_INVALID_EXTERNAL_HANDLE;
++        }
++        if (pNativeFenceFd) {
++            *pNativeFenceFd = syncFd;
++        } else {
++            mSyncHelper->close(syncFd);
++        }
++        return VK_SUCCESS;
++    }
+ 
+     if (!mFeatureInfo.hasVulkanAsyncQsri) {
+         return enc->vkQueueSignalReleaseImageANDROID(queue, waitSemaphoreCount, pWaitSemaphores,
 diff --git a/src/gfxstream/guest/vulkan_enc/ResourceTracker.h b/src/gfxstream/guest/vulkan_enc/ResourceTracker.h
 index b59c09acb89..a75156d0d8e 100644
 --- a/src/gfxstream/guest/vulkan_enc/ResourceTracker.h
@@ -602,30 +1095,39 @@ index b59c09acb89..a75156d0d8e 100644
      void setThreadingCallbacks(const ThreadingCallbacks& callbacks);
      bool hostSupportsVulkan() const;
 diff --git a/src/vulkan/vulkan-android.sym b/src/vulkan/vulkan-android.sym
-index 7148e0920c6..3e017417677 100644
+index 7148e0920c6..b134c98e9eb 100644
 --- a/src/vulkan/vulkan-android.sym
 +++ b/src/vulkan/vulkan-android.sym
-@@ -4,6 +4,8 @@
+@@ -4,6 +4,12 @@
  		# as HAL_MODULE_INFO_SYM (which is just a #define for HMI) and it's an
  		# instance of struct hwvulkan_module_t.
  		HMI;
 +		gfxstream_vk_has_external_iostream_factory;
 +		gfxstream_vk_set_external_iostream_factory;
++		gfxstream_vk_set_external_memory_mapper;
++		gfxstream_vk_set_external_vulkan_fence_exporter;
++		gfxstream_vk_set_external_vulkan_semaphore_exporter;
++		gfxstream_vk_set_external_vulkan_qsri_exporter;
  
  	local:
  		# When static linking LLVM, all its symbols are public API.
 diff --git a/src/vulkan/vulkan.sym b/src/vulkan/vulkan.sym
-index c85a22e905a..3abb23c88ce 100644
+index c85a22e905a..47bbbe3bccd 100644
 --- a/src/vulkan/vulkan.sym
 +++ b/src/vulkan/vulkan.sym
-@@ -3,6 +3,8 @@
+@@ -3,6 +3,12 @@
  		vk_icdGetInstanceProcAddr;
  		vk_icdGetPhysicalDeviceProcAddr;
  		vk_icdNegotiateLoaderICDInterfaceVersion;
 +		gfxstream_vk_has_external_iostream_factory;
 +		gfxstream_vk_set_external_iostream_factory;
++		gfxstream_vk_set_external_memory_mapper;
++		gfxstream_vk_set_external_vulkan_fence_exporter;
++		gfxstream_vk_set_external_vulkan_semaphore_exporter;
++		gfxstream_vk_set_external_vulkan_qsri_exporter;
  
  	local:
  		# When static linking LLVM, all its symbols are public API.
 -- 
 2.53.0
+

@@ -118,9 +118,11 @@ parts that follow from owning the complete OS:
 The initial audience is the prosumer and enthusiast desktop market: users who want a
 cohesive Linux system, first-class RTX support, and Android applications integrated
 into the same launcher and window manager. Nucleus does not claim universal Android
-application compatibility. The initial runtime supports ABI-independent and x86-64
-applications; ARM-only native applications, Play-certified applications, and
-hardware-attestation-gated applications are outside the product contract.
+application compatibility. The runtime supports ABI-independent and x86-64
+applications plus admitted `arm64-v8a` ordinary applications through the verified
+translation boundary in `docs/android-runtime-production-security-plan.md`.
+Play-certified applications and hardware-attestation-gated applications remain outside
+the product contract.
 
 ## Source and ownership boundaries
 
@@ -213,11 +215,10 @@ below passed their focused tests and the locally applicable hardware gates:
   revisions. The staged Collider workflow verifies its declared inputs and builds the
   static host backend and Linux guest Vulkan ICD under
   `android-runtime/.gfxstream-build/`.
-- [x] The patched inputs are immutable fork revisions: gfxstream
-  `f28ae4544cfadbc7c2d1a3f5edb0ae7d1c97d393` and Mesa
-  `6736232a53716737f30ffb7014f02aa20b4ee156`. Both input trees are clean, the lock
-  records their upstream bases and fork locations, and the staged Android-runtime
-  build passes exact-revision validation.
+- [x] Git owns gfxstream and Mesa checkout initialization and records their fork
+  URLs, integration branches, and committed revisions through ordinary submodule
+  metadata. Collider does not duplicate or police that state; it fingerprints the
+  checked-out source trees it actually builds.
 - [x] The guest ICD has a project-owned external `IOStream` factory seam. Every
   gfxstream connection receives a fresh duplex-ring endpoint instead of opening an
   Android transport.
@@ -232,6 +233,12 @@ below passed their focused tests and the locally applicable hardware gates:
 - [x] The guest ICD accepts `VkImportColorBufferGOOGLE` supplied by the client,
   carries the color-buffer identity through gfxstream allocation, and bypasses the
   host-visible coherent-memory path.
+- [x] Ordinary host-visible Vulkan allocations use gfxstream's shared-memory-backed
+  `SystemBlob` path. The renderer registers each descriptor under the allocating
+  Android process context and blob ID; the authenticated broker exports that exact
+  descriptor only to the same process, and the guest maps it through the external
+  transport. The external transport does not advertise a virtio-gpu device or
+  dereference a synthetic virtgpu capset.
 - [x] The external transport initializes guest Vulkan capabilities without opening
   virtgpu or render-control devices. Guest instance and device creation now execute
   through the live ring-backed decoder.
@@ -444,8 +451,12 @@ allocation metadata, damage, and acquire fence through an authenticated instance
 socket. The host `nucleus-android-display-host` promotes the Phase 1 presentation demo
 into a persistent service. It owns the Android `xdg_toplevel`, imports each allocation
 once, translates Android sync-file fences to Wayland syncobj timeline points, commits
-damage, and returns a release fence to SurfaceFlinger. The demo does not survive as a
-second renderer or synthetic workload path.
+damage, and returns a release fence to SurfaceFlinger. Because a future DRM syncobj
+point cannot itself be exported as a `sync_file`, the host registers an eventfd for
+each compositor release point and forwards completed values into a private Vulkan
+timeline. Vulkan queue waits materialize immediately exportable Android fences that
+remain unsignaled until the compositor releases the matching buffer. The demo does not
+survive as a second renderer or synthetic workload path.
 
 The image build is reproducible and produces signed system, vendor, product, and
 metadata artifacts. Runtime data remains separate from the immutable image. Updates
@@ -494,7 +505,7 @@ Phase 2 begins with one strict four-step bring-up sequence:
    files, and emit exact schema-free source and image provenance. Nucleus does not
    rebuild, rename, or weaken validation for the CTS shim. The retained passing run is
    `.nucleus/runs/2026-07-25T03-24-50Z-125959`.
-4. [ ] Mount the four immutable images read-only, mount every immutable APEX payload
+4. [x] Mount the four immutable images read-only, mount every immutable APEX payload
    on a host-owned `/apex` tmpfs, create a private binderfs instance, enter the
    user/id/mount/PID/network/cgroup namespace contract through LXC, boot
    `/system/bin/init nucleus_container`, capture init and LXC diagnostics, and require
@@ -543,6 +554,13 @@ Phase 2 begins with one strict four-step bring-up sequence:
    tail of every nonempty diagnostic on failure. No Android daemon contains
    Nucleus-specific logger selection or stderr duplication.
 
+   The framework-boot workflow launches one session-owned Kitty toplevel on the
+   private Nucleus Wayland display. It follows both `android-kmsg.log` and
+   `android-logcat.log` by name with retry enabled, so the window opens before `logd`
+   and transitions from early init/kernel output into the complete framework stream.
+   The Kitty process and its `tail` child terminate with the compositor session;
+   launch diagnostics remain in `android-boot-log-window.log`.
+
    Collider builds and starts `nucleus-android-gfxstream-broker` before LXC. The
    broker selects the one display-connected host GPU, initializes the gfxstream host
    renderer against that device UUID, and creates one sealed duplex-ring endpoint for
@@ -566,6 +584,16 @@ Phase 2 begins with one strict four-step bring-up sequence:
    broker imports each allocation into gfxstream once and assigns the color-buffer
    handle consumed directly by the Nucleus Mesa gralloc backend. Android still receives
    no DRM node.
+
+   Host-visible Vulkan buffers that are not Android graphic buffers follow a separate
+   zero-copy contract. Gfxstream allocates them from `SystemBlob` shared memory and
+   imports that address into the host Vulkan allocation. After the guest receives the
+   opaque blob ID through the gfxstream command stream, it requests the descriptor over
+   the authenticated broker socket. The broker keys the export by the requesting
+   process ID and blob ID, validates the backing size, transfers one `SCM_RIGHTS`
+   descriptor, and the guest maps it for the allocation lifetime. This path replaces
+   the invalid assumption that the Nucleus socket transport provides a virtio-gpu
+   capset.
 
    The signed vendor image includes Android 17's AIDL reference audio HAL in
    `com.android.hardware.audio`, so `audioserver` has a declared module/effects
@@ -598,8 +626,62 @@ Phase 2 begins with one strict four-step bring-up sequence:
    `.nucleus/runs/2026-07-25T05-33-29Z-655228`. The next retained user run validates
    framework boot and real Composer3 presentation through the former demo surface.
 
-   Step 4 completes when the newly signed image reaches
-   `sys.boot_completed=1` in one retained user-run framework-boot session:
+   The retained framework attempt
+   `.nucleus/runs/2026-07-26T17-07-56Z-2463995` then proved production dma-buf import,
+   ANGLE device creation, and deterministic failure supervision before exposing a
+   null virtgpu-device dereference in coherent-memory allocation. The process-scoped
+   `SystemBlob` transport described above replaces that path. Its host backend, guest
+   ICD, broker, Android HAL build, release signing, package/APEX checks, and AVB checks
+   passed in `.nucleus/runs/2026-07-26T17-25-25Z-2503594`.
+
+   The retained framework run
+   `.nucleus/runs/2026-07-26T17-34-36Z-2561655` completed Step 4. Android reached
+   `sys.boot_completed=1`; SurfaceFlinger remained alive; no tombstone was generated;
+   and ten process-scoped coherent-memory exports succeeded while ANGLE and
+   SurfaceFlinger created their production gfxstream devices and buffers. Collider
+   then performed its bounded framework-boot teardown.
+
+   That run exposed the next presentation defect: the display host attempted to
+   convert an unmaterialized future compositor release point directly into a
+   `sync_file`, so Composer3 lost its presentation socket and returned
+   `NO_RESOURCES`. The release bridge now creates each Android fence through an
+   asynchronous Vulkan timeline wait and forwards compositor DRM release
+   notifications through the display-host reactor. A hardware behavior test proves
+   that multiple outstanding fences exist immediately, remain unsignaled, and signal
+   in release-point order.
+
+   The same retained run exposed two independent product-definition defects after
+   framework boot: SystemUI inherited ART's 16 MiB fallback heap and Launcher3 started
+   without the app-widget feature it requires. The product now inherits AOSP's standard
+   10-inch xhdpi tablet heap profile and publishes
+   `android.software.app_widgets`. The rebuilt signed image passed compilation,
+   release signing, image assembly, package/APEX verification, and AVB verification in
+   `.nucleus/runs/2026-07-26T18-05-25Z-2599072`; its vendor output contains the
+   resulting ART heap properties and app-widget permission declaration.
+
+   The retained framework run
+   `.nucleus/runs/2026-07-26T18-25-28Z-2674380` confirmed that the product fixes
+   removed the SystemUI heap failure and Launcher app-widget exception. Android and
+   SurfaceFlinger completed boot, but the compositor rejected the first Composer3
+   client target because Android correctly exported RGBA content as
+   `DRM_FORMAT_ABGR8888` while the compositor advertised only the XRGB8888 and
+   ARGB8888 families. The disconnected display host then caused repeated
+   `NO_RESOURCES` presents; those retries eventually exhausted the gfxstream broker's
+   inherited 1,024-file-descriptor soft limit and destabilized SystemUI and Launcher.
+
+   The render core now maps XRGB8888/ARGB8888 to Vulkan BGRA, maps
+   XBGR8888/ABGR8888 to Vulkan RGBA, advertises all four importable families, and
+   rejects unknown fourcc values instead of silently interpreting them as BGRA. The
+   gfxstream broker raises its soft descriptor limit to the host-approved hard limit
+   at startup. The display host reports the first compositor-released frame, and
+   Collider continuously supervises both graphics services and requires that release
+   marker alongside `sys.boot_completed=1`. A display-host or broker failure now
+   terminates the framework attempt and its container immediately instead of allowing
+   an Android presentation retry loop.
+
+   The next retained user run validates visible Composer3 presentation through the
+   complete fourcc contract, corrected release bridge, and stable SystemUI/Launcher
+   processes:
 
    ```sh
    collider android-runtime framework-boot
@@ -760,11 +842,15 @@ not isomorphic; this phase owns that mapping and its shell lifecycle as one cont
 ## Phase 4 — Application compatibility and distribution
 
 Phase 4 defines and verifies the application contract Nucleus actually ships. The
-runtime supports applications without native code and applications containing x86-64
-native libraries. PackageManager reports x86-64 as the supported ABI and rejects
-ARM-only packages with a clear compatibility diagnostic. Nucleus does not redistribute
-Houdini, `libndk_translation`, or another proprietary native bridge, and it does not
-claim ARM application compatibility.
+runtime supports applications without native code, applications containing x86-64
+native libraries, and ordinary third-party applications containing admitted
+`arm64-v8a` libraries. PackageManager reports x86-64 as the primary ABI, always selects
+a complete x86-64 payload when available, and selects ARM64 only through the one
+verified Native Bridge architecture defined in
+`docs/android-runtime-production-security-plan.md`. The platform, framework, HALs,
+privileged applications, WebView, and host integration remain x86-64. Nucleus does not
+redistribute Houdini, `libndk_translation`, another proprietary bridge, or an
+unqualified JIT translator.
 
 The base runtime ships microG and F-Droid. It does not ship Google Mobile Services,
 Google Play, or GApps. The product does not enable a hidden user-selectable GApps image
@@ -780,6 +866,10 @@ not package-name allowlists or source shape.
 Components:
 
 - supported-ABI policy and PackageManager diagnostics;
+- PackageManager admission and immutable-artifact integration for the verified ARM64
+  translation service;
+- public-NDK-only ARM64 guest-linker/proxy policy, translated-app secure spawning,
+  typed guest-syscall/seccomp handling, and authenticated ARM64 helper execution;
 - microG and F-Droid product integration;
 - current WebView and certificate trust configuration;
 - application compatibility corpus and automated launch/interaction probes;
@@ -790,11 +880,18 @@ Acceptance gates:
 
 - every application in the supported corpus installs, launches, renders, receives
   input, backgrounds, resumes, updates, and uninstalls under automated tests;
-- x86-64 native libraries load with the advertised ABI while ARM-only packages fail
-  installation with an actionable explanation;
+- x86-64 native libraries load directly; a complete x86-64 payload is always preferred;
+  and admitted ARM64-only libraries run solely through verified install-time AOT
+  artifacts or the non-executable interpreter under the translated-app policy;
+- ARM32, mixed/incomplete ABI payloads, unsupported ISA features, private Android
+  native-library dependencies, arbitrary helper executables, and unverifiable
+  translation inputs fail with an actionable explanation;
+- translated applications pass the Native Bridge, Bionic/JNI/linker, real-ARM64
+  differential, guest-seccomp, CET/SFI/MPK, artifact-invalidation, fuzz, and resource
+  gates required by the production security plan;
 - microG and F-Droid are reproducibly built, updated through the signed runtime image,
   and do not add signature bypasses or weaken the Phase 2 container boundary;
-- unsupported Play Integrity, Widevine L1, GMS, ABI, hardware, and feature requirements
+- unsupported Play Integrity, Widevine L1, GMS, hardware, and feature requirements
   are reported consistently in the launcher and runtime diagnostics.
 
 Risk surface: high in product terms. The supported Android application set is defined
@@ -952,9 +1049,11 @@ than a packaging epilogue.
   syncobj, or qualified-driver support fails runtime startup.
 - **There is no host epoll compatibility reactor.** New host runtime services use the
   existing io_uring architecture.
-- **ARM-only Android applications are unsupported.** The product does not redistribute
-  a proprietary native bridge or describe incomplete binary translation as app
-  compatibility.
+- **There is no ARM32, proprietary, or unverified translation path.** ARM support is
+  limited to admitted `arm64-v8a` ordinary applications under the production
+  security plan. Houdini, `libndk_translation`, runtime host-code generation, global
+  `binfmt_misc`, private-library compatibility shims, and translated
+  platform/privileged processes are absent.
 - **Google Play certification and GApps are not shipped.** Play Integrity,
   hardware-backed attestation, Widevine L1, banking applications that require a
   certified device, and other certification-gated software are outside the contract.

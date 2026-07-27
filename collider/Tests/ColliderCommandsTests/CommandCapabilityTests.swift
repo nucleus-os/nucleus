@@ -72,6 +72,7 @@ func everyTaskControlledLeafParsesTheCompleteControlSet() throws {
         #expect(command.taskOptions.dryRun)
         #expect(command.taskOptions.explain)
         #expect(command.taskOptions.verbose)
+        #expect(!command.taskOptions.quiet)
         #expect(command.taskOptions.json)
         #expect(
             command.taskOptions.runID?.value
@@ -83,6 +84,24 @@ func everyTaskControlledLeafParsesTheCompleteControlSet() throws {
 }
 
 @Test
+func taskControlledLeavesAcceptQuietOutput() throws {
+    for path in taskControlledLeaves {
+        let parsed = try ColliderCommand.parseAsRoot(path + ["--quiet"])
+        let command = try #require(parsed as? any TaskControlledCommand)
+        #expect(command.taskOptions.quiet)
+    }
+}
+
+@Test
+func quietAndVerboseTaskOutputAreMutuallyExclusive() {
+    for path in taskControlledLeaves {
+        #expect(throws: (any Error).self) {
+            try ColliderCommand.parseAsRoot(path + ["--quiet", "--verbose"])
+        }
+    }
+}
+
+@Test
 func nonTaskLeavesExposeOnlyTheirDeclaredControls() throws {
     for path in reportLeaves {
         _ = try ColliderCommand.parseAsRoot(path + ["--json"])
@@ -90,6 +109,7 @@ func nonTaskLeavesExposeOnlyTheirDeclaredControls() throws {
             "--dry-run",
             "--explain",
             "--verbose",
+            "--quiet",
             "--run-id", "not-supported",
         ])
     }
@@ -100,6 +120,7 @@ func nonTaskLeavesExposeOnlyTheirDeclaredControls() throws {
         awaitRejects(path, options: [
             "--explain",
             "--verbose",
+            "--quiet",
             "--run-id", "not-supported",
         ])
     }
@@ -109,6 +130,7 @@ func nonTaskLeavesExposeOnlyTheirDeclaredControls() throws {
         awaitRejects(path, options: [
             "--explain",
             "--verbose",
+            "--quiet",
             "--json",
             "--run-id", "not-supported",
         ])
@@ -119,6 +141,7 @@ func nonTaskLeavesExposeOnlyTheirDeclaredControls() throws {
             "--dry-run",
             "--explain",
             "--verbose",
+            "--quiet",
             "--json",
             "--run-id", "not-supported",
         ])

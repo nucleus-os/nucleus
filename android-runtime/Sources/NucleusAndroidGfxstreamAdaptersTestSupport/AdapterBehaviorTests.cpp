@@ -8,7 +8,9 @@
 #include <deque>
 #include <memory>
 #include <poll.h>
+#include <sys/socket.h>
 #include <thread>
+#include <unistd.h>
 #include <utility>
 #include <vector>
 
@@ -238,8 +240,10 @@ struct FactoryProviderContext {
     nucleus_android_shared_ring_mapping *responses = nullptr;
     nucleus_android_shared_ring_consumer *commandConsumer = nullptr;
     nucleus_android_shared_ring_producer *responseProducer = nullptr;
+    int lifetimePeer = -1;
 
     ~FactoryProviderContext() {
+        if (lifetimePeer >= 0) close(lifetimePeer);
         nucleus_android_shared_ring_producer_destroy(responseProducer);
         nucleus_android_shared_ring_consumer_destroy(commandConsumer);
         nucleus_android_shared_ring_mapping_destroy(responses);
@@ -326,6 +330,16 @@ int provideEndpoint(
         responseConsumer.data_notification_fd;
     descriptors->response_space_notification_fd =
         responseConsumer.space_notification_fd;
+    int lifetimeDescriptors[2] = {-1, -1};
+    if (socketpair(
+            AF_UNIX,
+            SOCK_SEQPACKET | SOCK_CLOEXEC,
+            0,
+            lifetimeDescriptors) < 0) {
+        return -1;
+    }
+    descriptors->lifetime_fd = lifetimeDescriptors[0];
+    provider->lifetimePeer = lifetimeDescriptors[1];
     return 0;
 }
 
@@ -393,6 +407,12 @@ extern "C" int nucleus_android_test_guest_ring_factory_registration(void) {
     auto *stream = static_cast<::gfxstream::guest::IOStream *>(
         capturedFactory(capturedFactoryContext, 128));
     CHECK_OR_RETURN(stream != nullptr);
+    pollfd lifetime = {
+        .fd = provider.lifetimePeer,
+        .events = POLLIN,
+        .revents = 0,
+    };
+    CHECK_OR_RETURN(poll(&lifetime, 1, 0) == 0);
 
     const std::vector<std::uint8_t> command = {3, 1, 4};
     CHECK_OR_RETURN(stream->writeFully(command.data(), command.size()) == 0);
@@ -416,6 +436,10 @@ extern "C" int nucleus_android_test_guest_ring_factory_registration(void) {
         stream->readFully(received.data(), received.size()) == received.data());
     CHECK_OR_RETURN(received == response);
     CHECK_OR_RETURN(stream->decRef());
+    lifetime.revents = 0;
+    CHECK_OR_RETURN(poll(&lifetime, 1, 0) == 1);
+    CHECK_OR_RETURN(
+        (lifetime.revents & (POLLHUP | POLLRDHUP)) != 0);
 
     nucleus_android_gfxstream_factory_registration_destroy(registration);
     CHECK_OR_RETURN(capturedFactory == nullptr);

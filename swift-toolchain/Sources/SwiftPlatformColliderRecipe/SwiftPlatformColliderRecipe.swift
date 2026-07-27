@@ -368,7 +368,7 @@ public enum SwiftPlatformColliderRecipe {
     ) throws -> SwiftPlatformTaskSet {
         let component = ComponentID(rawValue: "toolchain")
         let swiftRepository = configuration.sourceWorkspace.appending("swift")
-        let revision: GitCheckoutSync.Revision = switch
+        let reference: SwiftSourcePreparation.Reference = switch
             configuration.checkoutMode
         {
         case .branch: .branch(configuration.sourceRef)
@@ -392,10 +392,10 @@ public enum SwiftPlatformColliderRecipe {
             ],
             locks: [.checkout("swift-platform-source")],
             cachePolicy: .contentAddressed,
-            operation: .syncGitCheckout(GitCheckoutSync(
+            operation: .prepareSwiftSource(SwiftSourcePreparation(
                 repository: swiftRepository,
                 remote: "https://github.com/swiftlang/swift.git",
-                revision: revision,
+                reference: reference,
                 environment: configuration.environment)))
         var updateArguments = [
             configuration.sourceWorkspace.appending(

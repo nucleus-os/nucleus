@@ -29,7 +29,7 @@ struct RepositoryCache {
     }
 
     func prune(keepingRuns keepCount: Int, dryRun: Bool, json: Bool) throws {
-        let runs = context.root.appendingPathComponent(".nucleus/runs", isDirectory: true)
+        let runs = context.layout.runs
         guard FileManager.default.fileExists(atPath: runs.path) else {
             try emit(PruneResult(removedRuns: [], reclaimedBytes: 0, dryRun: dryRun), json: json)
             return
@@ -69,7 +69,7 @@ struct RepositoryCache {
     private func ownedRoots() -> [(String, URL)] {
         let cache = cacheRoot()
         return [
-            ("checkout-state", context.root.appendingPathComponent(".nucleus")),
+            ("checkout-state", context.layout.state),
             ("downloads", cache.appendingPathComponent("downloads")),
             ("native-sdk", cache.appendingPathComponent("nucleus-native-sdk")),
             ("swift-platforms", cache.appendingPathComponent("swift-platforms")),

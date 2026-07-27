@@ -28,6 +28,26 @@ host_env="$root/tools/host-env.sh"
 pkg="$root/collider"
 bin="$pkg/.build/release/collider"
 
+# Collider builds a complete monorepo checkout. Initialize only absent
+# submodules before compiling Collider itself. Existing checkouts are user
+# source state and must never be reset to the index by setup/repair.
+initialize_missing_submodules() {
+  local line submodule_path
+  while IFS= read -r line; do
+    [[ "${line:0:1}" == "-" ]] || continue
+    line="${line:1}"
+    submodule_path="${line#* }"
+    submodule_path="${submodule_path%% *}"
+    if git -C "$root/$submodule_path" rev-parse --is-inside-work-tree \
+        >/dev/null 2>&1; then
+      continue
+    fi
+    echo "collider-setup: initializing submodule $submodule_path..." >&2
+    git -C "$root" submodule update --init --recursive -- "$submodule_path"
+  done < <(git -C "$root" submodule status --recursive)
+}
+initialize_missing_submodules
+
 # True when a Nucleus toolchain resolves; host-env exits nonzero otherwise.
 toolchain_present() { ( source "$host_env" ) >/dev/null 2>&1; }
 

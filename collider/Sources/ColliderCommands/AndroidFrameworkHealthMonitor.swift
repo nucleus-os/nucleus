@@ -12,6 +12,7 @@ struct AndroidFrameworkHealthMonitor {
     private var zygoteCrashProcessIDs: Set<Int32> = []
     private var systemServerCrashCount = 0
     private var systemServerCrashProcessIDs: Set<Int32> = []
+    private var homeLauncherCrashCount = 0
 
     mutating func check(
         kernelLog: URL,
@@ -32,6 +33,7 @@ struct AndroidFrameworkHealthMonitor {
         if framework.wasTruncated {
             systemServerCrashCount = 0
             systemServerCrashProcessIDs.removeAll(keepingCapacity: true)
+            homeLauncherCrashCount = 0
         }
         for line in framework.lines {
             try inspectFrameworkLine(line, diagnostics: diagnostics)
@@ -139,6 +141,13 @@ struct AndroidFrameworkHealthMonitor {
         _ line: String,
         diagnostics: URL
     ) throws {
+        if line.contains("failed to dup EGL native fence sync")
+            || line.contains("external Vulkan fence export failed")
+        {
+            throw failure(
+                "Android graphics failed to export its native acquire fence",
+                diagnostics: diagnostics)
+        }
         if line.contains("Zygote.nativeSpecializeAppProcess")
             || line.contains("Zygote.specializeAppProcess")
         {
@@ -170,6 +179,18 @@ struct AndroidFrameworkHealthMonitor {
                 "Android framework restarted system_server "
                     + "\(startCount) times before framework boot",
                 diagnostics: diagnostics)
+        }
+        if line.contains("am_crash:"),
+            line.contains("Process Name=com.android.launcher3")
+        {
+            homeLauncherCrashCount += 1
+            if homeLauncherCrashCount >= 2 {
+                throw failure(
+                    "Android home launcher crashed "
+                        + "\(homeLauncherCrashCount) times during framework boot",
+                    diagnostics: diagnostics)
+            }
+            return
         }
 
         let processID: Int32?

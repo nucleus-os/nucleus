@@ -58,6 +58,34 @@ func frameworkBootRunsLXCInADelegatedSystemScope() {
 }
 
 @Test
+func frameworkBootLogWindowFollowsBootDiagnosticStreams() {
+    let invocation = AndroidBootLogWindowInvocation(
+        kittyExecutable: "/opt/kitty",
+        tailExecutable: "/usr/bin/tail",
+        kernelLog: "/run/nucleus/android-kmsg.log",
+        frameworkLog: "/run/nucleus/android-logcat.log",
+        brokerLog: "/run/nucleus/android-gfxstream-broker.log",
+        progressLog: "/run/nucleus/android-progress.jsonl")
+
+    #expect(invocation.executable == "/opt/kitty")
+    #expect(invocation.arguments == [
+        "--class",
+        "nucleus.android.boot-log",
+        "--title",
+        "Nucleus Android Boot Log",
+        "--",
+        "/usr/bin/tail",
+        "--lines=200",
+        "--follow=name",
+        "--retry",
+        "/run/nucleus/android-kmsg.log",
+        "/run/nucleus/android-logcat.log",
+        "/run/nucleus/android-gfxstream-broker.log",
+        "/run/nucleus/android-progress.jsonl",
+    ])
+}
+
+@Test
 func frameworkBootDrainsEveryCompletedMountInReverseOrder() {
     let mounts = [
         URL(fileURLWithPath: "/run/nucleus/root"),
@@ -101,6 +129,31 @@ func frameworkBootFailsOnARepeatedSurfaceFlingerCrash() throws {
         "<6>init: Service 'surfaceflinger' (pid 2) received SIGABRT\n"
     ).utf8))
     try handle.close()
+    #expect(throws: WorkspaceFailure.self) {
+        try monitor.check(
+            kernelLog: kernelLog,
+            frameworkLog: frameworkLog,
+            diagnostics: directory)
+    }
+}
+
+@Test
+func frameworkBootFailsWhenNativeFenceExportFails() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-framework-health-\(UUID().uuidString)",
+        isDirectory: true)
+    try FileManager.default.createDirectory(
+        at: directory,
+        withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let kernelLog = directory.appendingPathComponent("android-kmsg.log")
+    let frameworkLog = directory.appendingPathComponent("android-logcat.log")
+    try Data().write(to: kernelLog)
+    try Data((
+        "SurfaceFlinger: failed to dup EGL native fence sync: 0x3000\n"
+    ).utf8).write(to: frameworkLog)
+
+    var monitor = AndroidFrameworkHealthMonitor()
     #expect(throws: WorkspaceFailure.self) {
         try monitor.check(
             kernelLog: kernelLog,
@@ -340,6 +393,42 @@ func frameworkBootIgnoresAnApplicationFatalException() throws {
         kernelLog: kernelLog,
         frameworkLog: frameworkLog,
         diagnostics: directory)
+}
+
+@Test
+func frameworkBootFailsOnARepeatedHomeLauncherCrash() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-framework-health-\(UUID().uuidString)",
+        isDirectory: true)
+    try FileManager.default.createDirectory(
+        at: directory,
+        withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let kernelLog = directory.appendingPathComponent("android-kmsg.log")
+    let frameworkLog = directory.appendingPathComponent("android-logcat.log")
+    try Data().write(to: kernelLog)
+    let crash =
+        "2026-07-26 22:01:23.012356  1000   352  4345 I "
+        + "am_crash: [User=4543,PID=0,"
+        + "Process Name=com.android.launcher3,Recoverable=0]\n"
+    try Data(crash.utf8).write(to: frameworkLog)
+
+    var monitor = AndroidFrameworkHealthMonitor()
+    try monitor.check(
+        kernelLog: kernelLog,
+        frameworkLog: frameworkLog,
+        diagnostics: directory)
+
+    let handle = try FileHandle(forWritingTo: frameworkLog)
+    try handle.seekToEnd()
+    try handle.write(contentsOf: Data(crash.utf8))
+    try handle.close()
+    #expect(throws: WorkspaceFailure.self) {
+        try monitor.check(
+            kernelLog: kernelLog,
+            frameworkLog: frameworkLog,
+            diagnostics: directory)
+    }
 }
 
 @Test

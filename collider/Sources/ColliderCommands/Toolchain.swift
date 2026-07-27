@@ -169,7 +169,7 @@ struct ToolchainCommand {
         } ?? URL(fileURLWithPath: cacheRoot, isDirectory: true)
             .appendingPathComponent("nucleus/swift-source/\(platformID)")
         let platformLogs = platformRoot.appendingPathComponent("logs")
-        let toolchainRecipe = context.root.appendingPathComponent("swift-toolchain")
+        let toolchainRecipe = context.layout.swiftToolchain
         var environment = context.taskEnvironment
         environment.merge([
             "NUCLEUS_SWIFT_SOURCE_INSTALL": toolchainInstall.path,
@@ -193,7 +193,7 @@ struct ToolchainCommand {
             androidInstallRoot: FilePath(androidInstall.path),
             ndkRoot: FilePath(androidNDKHome.path),
             architectures: options.architectures.map(\.rawValue),
-            apiLevel: 36,
+            apiLevel: 37,
             jobs: UInt32(min(
                 ProcessInfo.processInfo.activeProcessorCount, 16)),
             environment: environment)
@@ -296,7 +296,7 @@ struct ToolchainCommand {
             return URL(fileURLWithPath: explicit, isDirectory: true)
         }
         let version = context.environment["NUCLEUS_ANDROID_NDK_VERSION"]
-            ?? "30.0.14904198"
+            ?? "30.0.15729638"
         #if os(macOS)
         return homeDirectory.appendingPathComponent(
             "Library/Android/sdk/ndk/\(version)", isDirectory: true)
@@ -313,8 +313,8 @@ struct ToolchainCommand {
             return URL(fileURLWithPath: runDirectory, isDirectory: true)
                 .appendingPathComponent("work/android-sdk", isDirectory: true)
         }
-        return context.root.appendingPathComponent(
-            ".nucleus/work/android-sdk", isDirectory: true)
+        return context.layout.work.appendingPathComponent(
+            "android-sdk", isDirectory: true)
     }
 }
 
@@ -367,7 +367,8 @@ struct ToolchainInstallation {
         identity: ArtifactDigest?,
         dryRun: Bool
     ) async throws {
-        let helper = context.root.appendingPathComponent("swift-toolchain/install.sh")
+        let helper = context.layout.swiftToolchain
+            .appendingPathComponent("install.sh")
         guard FileManager.default.isExecutableFile(atPath: helper.path) else {
             throw WorkspaceFailure.message(
                 "privileged toolchain helper is not executable: \(helper.path)")

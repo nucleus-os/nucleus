@@ -21,7 +21,7 @@ enum SanitizerSelection: String, CaseIterable, ExpressibleByArgument {
     }
 }
 
-private extension RuntimeSanitizer {
+extension RuntimeSanitizer {
     /// The strict runtime option strings used when `sanitize` drives a suite or
     /// harness (leak detection on, deterministic aborts). The interactive
     /// `run` command uses a distinct, more permissive policy.
@@ -196,8 +196,7 @@ struct SanitizerCommand {
         seed: String
     ) async throws {
         let packageDirectory = context.repository(invocation.package)
-        let scratch = context.root
-            .appendingPathComponent(".build/nucleus-sanitizers", isDirectory: true)
+        let scratch = context.layout.sanitizerBuilds
             .appendingPathComponent(sanitizer.rawValue, isDirectory: true)
             .appendingPathComponent(invocation.id, isDirectory: true)
         var commonArguments = [
@@ -219,8 +218,8 @@ struct SanitizerCommand {
             environment[key] = value
         }
         if sanitizer == .address {
-            let suppressions = context.root.appendingPathComponent(
-                "tools/lsan-suppressions.txt")
+            let suppressions = context.layout.tools.appendingPathComponent(
+                "lsan-suppressions.txt")
             environment["LSAN_OPTIONS", default: ""] +=
                 ":suppressions=\(suppressions.path)"
         }

@@ -5,10 +5,8 @@ public enum CoreColliderRecipe {
     public static func build(root: FilePath, environment: [String: String]) -> TaskDeclaration { task("core.build", root, environment, ["build"], [TaskID(rawValue: "tracy.build"), TaskID(rawValue: "vulkan.build"), TaskID(rawValue: "wayland.build")]) }
     public static func test(root: FilePath, environment: [String: String]) -> TaskDeclaration { task("core.test", root, environment, ["test"], [TaskID(rawValue: "core.build")]) }
 
-    public static func synchronizeSources(
+    public static func prepareSkiaDependencies(
         root: FilePath,
-        repositoryRoot: FilePath,
-        sourceIdentity: [UInt8],
         environment: [String: String]
     ) -> TaskDeclaration {
         let skia = root.appending("third-party/skia")
@@ -18,9 +16,8 @@ public enum CoreColliderRecipe {
             id: TaskID(rawValue: "core.sources"),
             component: ComponentID(rawValue: "core"),
             inputs: [
-                .file(repositoryRoot.appending(".gitmodules")),
                 .file(patch),
-                .optionalTree(skia, fallback: sourceIdentity),
+                .tree(skia),
                 .tool(.named("git")),
                 .tool(.named("python3")),
             ],
@@ -34,16 +31,6 @@ public enum CoreColliderRecipe {
             ],
             locks: [.checkout("core-sources")],
             operation: .sequence([
-                .command(CommandSpec(
-                    executable: .named("git"),
-                    arguments: [
-                        "submodule", "update", "--init", "--recursive",
-                        "core/third-party",
-                        "third-party/swift-java",
-                        "third-party/swift-java-jni-core",
-                    ],
-                    workingDirectory: repositoryRoot,
-                    environment: environment)),
                 .command(CommandSpec(
                     executable: .named("python3"),
                     arguments: [
@@ -200,7 +187,7 @@ public enum CoreColliderRecipe {
     }
 }
 
-private let androidNDKVersion = "30.0.14904198"
+private let androidNDKVersion = "30.0.15729638"
 private let ninjaTargets = ["skia", "skshaper", "skparagraph", "skunicode", "svg"]
 private let requiredArchives = [
     "libskia.a", "libskshaper.a", "libskparagraph.a",

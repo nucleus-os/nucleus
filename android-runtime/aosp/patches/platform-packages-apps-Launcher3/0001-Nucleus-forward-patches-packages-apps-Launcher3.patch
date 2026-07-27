@@ -1,0 +1,27 @@
+From 777bc51a10a02da712c65bfc3c65314c167c87a7 Mon Sep 17 00:00:00 2001
+From: Nucleus Source Lock <source-lock@nucleus.invalid>
+Date: Sat, 1 Jan 2000 00:00:00 +0000
+Subject: [PATCH] Nucleus forward patches: packages/apps/Launcher3
+
+---
+ .../android/launcher3/taskbar/TaskbarNavButtonController.java | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/quickstep/src/com/android/launcher3/taskbar/TaskbarNavButtonController.java b/quickstep/src/com/android/launcher3/taskbar/TaskbarNavButtonController.java
+index f2fd227df2..c713382e65 100644
+--- a/quickstep/src/com/android/launcher3/taskbar/TaskbarNavButtonController.java
++++ b/quickstep/src/com/android/launcher3/taskbar/TaskbarNavButtonController.java
+@@ -286,7 +286,9 @@ public class TaskbarNavButtonController implements TaskbarControllers.LoggableTa
+      */
+     public void onRecentsButtonLayoutChanged(Rect bounds) {
+         mSystemUiProxy.notifyRecentsButtonPositionChanged(bounds);
+-        if (cueBarAceMigration() && mControllers.cueBarController != null) {
++        if (cueBarAceMigration()
++                && mControllers != null
++                && mControllers.cueBarController != null) {
+             mControllers.cueBarController.onRecentsButtonLayoutChanged(bounds);
+         }
+     }
+-- 
+2.53.0
+

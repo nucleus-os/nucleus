@@ -112,12 +112,13 @@ public enum ChromiumColliderRecipe {
             ],
             locks: [.shared(cache.appending("locks/depot-tools.lock"))],
             cachePolicy: .always,
-            operation: .syncGitCheckout(GitCheckoutSync(
+            operation: .prepareChromiumDepotTools(
+                ChromiumDepotToolsPreparation(
                 repository: depotTools,
                 remote:
                     "https://chromium.googlesource.com/chromium/"
                     + "tools/depot_tools.git",
-                revision: .commit(depotToolsRevision),
+                commit: depotToolsRevision,
                 environment: childEnvironment)))
         let depotBootstrap = TaskDeclaration(
             id: TaskID(rawValue: "browser.depot-tools-bootstrap"),

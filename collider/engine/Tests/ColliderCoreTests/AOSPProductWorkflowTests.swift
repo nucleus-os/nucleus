@@ -1,8 +1,108 @@
+import ColliderCore
 import Foundation
 import SystemPackage
 import Testing
 
 @testable import ColliderRuntime
+
+@Test func aospContainerInvocationHasTheRequiredIsolationBoundary() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-aosp-container-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: root) }
+    try FileManager.default.createDirectory(
+        at: root,
+        withIntermediateDirectories: true)
+    let imageID = root.appendingPathComponent("image-id")
+    try Data(
+        ("sha256:" + String(repeating: "a", count: 64) + "\n").utf8
+    ).write(to: imageID)
+    let path = { (name: String) in FilePath(
+        root.appendingPathComponent(name).path) }
+    let build = AOSPProductBuild(
+        productSource: path("product"),
+        source: path("source"),
+        repoLauncher: path("repo"),
+        sourceProvenance: path("source-provenance.json"),
+        buildRoot: path("build"),
+        ccacheDirectory: path("ccache"),
+        containerImageID: FilePath(imageID.path),
+        signingIdentity: path("keys"),
+        product: "nucleus_x86_64",
+        release: "cp2a",
+        variant: "userdebug",
+        buildNumber: "nucleus",
+        buildTimestamp: 1,
+        buildJobs: 16,
+        expectedPlatformSDK: 37,
+        expectedVendorAPILevel: 202604,
+        environment: [:])
+
+    let arguments = try aospContainerArguments(
+        build: build,
+        writableMounts: [
+            (path("output"), "/output"),
+            (path("ccache"), "/src/out/nucleus/.ccache"),
+        ],
+        readOnlyMounts: [(path("source"), "/src")],
+        environment: ["TZ": "UTC"],
+        command: ["/bin/true"])
+
+    #expect(arguments.contains("--network=none"))
+    #expect(arguments.contains("--cap-drop=all"))
+    #expect(arguments.contains("--security-opt=no-new-privileges"))
+    #expect(arguments.contains("--security-opt=unmask=/proc/*"))
+    #expect(arguments.contains("--hostname=android-build"))
+    #expect(arguments.contains("--read-only"))
+    #expect(arguments.contains("--tmpfs=/tmp:rw,nosuid,nodev,size=8g"))
+    #expect(arguments.contains(
+        "--tmpfs=/home/nucleus-build:rw,nosuid,nodev,noexec,size=1g"))
+    #expect(!arguments.contains("--privileged"))
+    #expect(!arguments.contains("--security-opt=seccomp=unconfined"))
+    #expect(!arguments.contains("--security-opt=unmask=ALL"))
+    #expect(arguments.contains(
+        "type=bind,src=\(path("source").string),target=/src,ro=true"))
+    #expect(arguments.contains(
+        "type=bind,src=\(path("output").string),target=/output,rw=true"))
+    #expect(arguments.contains(
+        "type=bind,src=\(path("ccache").string),"
+            + "target=/src/out/nucleus/.ccache,rw=true"))
+    #expect(!arguments.contains(where: {
+        $0.contains("SSH_AUTH_SOCK") || $0.contains("WAYLAND_DISPLAY")
+    }))
+}
+
+@Test func aospSandboxDegradationIsFatal() throws {
+    #expect(throws: RuntimeFailure.self) {
+        try rejectAOSPSandboxDegradation(
+            "Build sandboxing disabled due to nsjail error.",
+            status: 0)
+    }
+    #expect(throws: RuntimeFailure.self) {
+        try rejectAOSPSandboxDegradation("", status: 1)
+    }
+    try rejectAOSPSandboxDegradation("sandbox active", status: 0)
+}
+
+@Test func aospContainerToolsUseThePinnedJDK() {
+    let environment = aospContainerToolEnvironment()
+    let javaHome = "/src/prebuilts/jdk/jdk21/linux-x86"
+    #expect(environment["JAVA_HOME"] == javaHome)
+    #expect(environment["ANDROID_JAVA_HOME"] == javaHome)
+    #expect(environment["PATH"]?.hasPrefix("\(javaHome)/bin:") == true)
+}
+
+@Test func aospReleaseSigningMetadataUsesStableContainerKeyPaths() {
+    let metadata = """
+        avb_vbmeta_key_path=/keys/releasekey.pem
+        avb_vbmeta_system_key_path=/keys/releasekey.pem
+        default_system_dev_certificate=/keys/releasekey
+        """
+    #expect(aospReleaseSigningMetadataUsesContainerKeys(metadata))
+    #expect(!aospReleaseSigningMetadataUsesContainerKeys(
+        metadata.replacingOccurrences(
+            of: "/keys/releasekey",
+            with: "/home/user/signing/releasekey")))
+}
 
 @Test func aospProductStagingPreservesUnchangedFiles() throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(

@@ -1,0 +1,32 @@
+From 04bf06c4b9d260c4dd8ed82a6c85b2748f8de902 Mon Sep 17 00:00:00 2001
+From: Nucleus Android Build Security <noreply@nucleus.invalid>
+Date: Mon, 27 Jul 2026 00:00:00 +0000
+Subject: [PATCH] releasetools: preserve read-only OTA certificates
+
+Signing keys are mounted read-only in the Nucleus signing container.
+ZipWrite temporarily changes the source file mode and timestamps, so it
+cannot archive a certificate from that mount.
+
+Read the public certificate and emit a deterministic regular-file entry
+instead. This also prevents an absolute key path from becoming the ZIP
+entry name. Private key material remains on the read-only key mount.
+---
+ tools/releasetools/sign_target_files_apks.py | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/tools/releasetools/sign_target_files_apks.py b/tools/releasetools/sign_target_files_apks.py
+index 9f6defd08..13f6a67a2 100755
+--- a/tools/releasetools/sign_target_files_apks.py
++++ b/tools/releasetools/sign_target_files_apks.py
+@@ -1344,7 +1344,8 @@ def WriteOtacerts(output_dir, filename, keys):
+   temp_file = io.BytesIO()
+   certs_zip = zipfile.ZipFile(temp_file, "w", allowZip64=True)
+   for k in keys:
+-    common.ZipWrite(certs_zip, k)
++    with open(k, "rb") as cert:
++      common.ZipWriteStr(certs_zip, os.path.basename(k), cert.read())
+   common.ZipClose(certs_zip)
+   WriteOutputData(output_dir, filename, temp_file.getvalue())
+ 
+-- 
+2.43.0

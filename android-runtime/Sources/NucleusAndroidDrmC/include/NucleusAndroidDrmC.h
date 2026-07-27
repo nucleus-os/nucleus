@@ -63,6 +63,7 @@ struct nucleus_android_format_modifier_properties {
 typedef struct nucleus_android_gpu nucleus_android_gpu;
 typedef struct nucleus_android_gpu_buffer nucleus_android_gpu_buffer;
 typedef struct nucleus_android_syncobj_timeline nucleus_android_syncobj_timeline;
+typedef struct nucleus_android_native_fence nucleus_android_native_fence;
 typedef struct nucleus_android_syncobj_waiter nucleus_android_syncobj_waiter;
 typedef struct nucleus_android_syncobj_bridge nucleus_android_syncobj_bridge;
 
@@ -157,6 +158,18 @@ int nucleus_android_syncobj_timeline_import_sync_file(
     uint64_t point,
     int sync_file);
 
+nucleus_android_native_fence *nucleus_android_native_fence_create(
+    nucleus_android_gpu *gpu,
+    int *sync_file,
+    char *error_message,
+    size_t error_capacity);
+int nucleus_android_native_fence_signal(
+    nucleus_android_native_fence *fence,
+    char *error_message,
+    size_t error_capacity);
+void nucleus_android_native_fence_destroy(
+    nucleus_android_native_fence *fence);
+
 nucleus_android_syncobj_waiter *nucleus_android_syncobj_waiter_create(
     const char *render_path,
     int timeline_fd);
@@ -173,7 +186,9 @@ int nucleus_android_syncobj_waiter_drain(
     nucleus_android_syncobj_waiter *waiter);
 
 nucleus_android_syncobj_bridge *nucleus_android_syncobj_bridge_create(
-    const char *render_path);
+    const char *render_path,
+    char *error_message,
+    size_t error_capacity);
 void nucleus_android_syncobj_bridge_destroy(
     nucleus_android_syncobj_bridge *bridge);
 int nucleus_android_syncobj_bridge_export_acquire_timeline(
@@ -187,9 +202,17 @@ int nucleus_android_syncobj_bridge_import_acquire_sync_file(
 int nucleus_android_syncobj_bridge_signal_acquire(
     nucleus_android_syncobj_bridge *bridge,
     uint64_t point);
+int nucleus_android_syncobj_bridge_release_notification_fd(
+    nucleus_android_syncobj_bridge *bridge);
+int nucleus_android_syncobj_bridge_dispatch_releases(
+    nucleus_android_syncobj_bridge *bridge);
+uint64_t nucleus_android_syncobj_bridge_forwarded_release_point(
+    nucleus_android_syncobj_bridge *bridge);
 int nucleus_android_syncobj_bridge_export_release_sync_file(
     nucleus_android_syncobj_bridge *bridge,
-    uint64_t point);
+    uint64_t point,
+    char *error_message,
+    size_t error_capacity);
 
 uint32_t nucleus_android_drm_format_xrgb8888(void);
 uint32_t nucleus_android_drm_format_argb8888(void);

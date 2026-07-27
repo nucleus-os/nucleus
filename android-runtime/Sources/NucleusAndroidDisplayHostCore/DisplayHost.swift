@@ -9,6 +9,20 @@ import WaylandClient
 import WaylandClientDispatch
 import WaylandProtocolTypes
 
+private func elapsedMicroseconds(
+    since began: ContinuousClock.Instant
+) -> Int64 {
+    let components = began.duration(to: ContinuousClock.now).components
+    let seconds = components.seconds.multipliedReportingOverflow(
+        by: 1_000_000)
+    if seconds.overflow {
+        return components.seconds >= 0 ? .max : .min
+    }
+    return seconds.partialValue.addingReportingOverflow(
+        Int64(components.attoseconds / 1_000_000_000_000)
+    ).partialValue
+}
+
 public enum DisplayHostError: Error, CustomStringConvertible {
     case invalidArguments(String)
     case systemCall(String, Int32)
@@ -34,10 +48,17 @@ public enum DisplayHostError: Error, CustomStringConvertible {
 @safe private final class SyncobjBridge {
     @unsafe private let native: OpaquePointer
 
-    init?(renderNode: String) {
+    init(renderNode: String) throws {
+        var error = [CChar](repeating: 0, count: 1_024)
         guard let native = renderNode.withCString({
-            unsafe nucleus_android_syncobj_bridge_create($0)
-        }) else { return nil }
+            unsafe nucleus_android_syncobj_bridge_create(
+                $0, &error, error.count)
+        }) else {
+            throw DisplayHostError.wayland(
+                error.withUnsafeBufferPointer {
+                    unsafe String(cString: $0.baseAddress!)
+                })
+        }
         unsafe self.native = native
     }
 
@@ -50,9 +71,33 @@ public enum DisplayHostError: Error, CustomStringConvertible {
         unsafe nucleus_android_syncobj_bridge_signal_acquire(native, point) == 0
     }
 
-    func exportReleaseSyncFile(point: UInt64) -> Int32 {
-        unsafe nucleus_android_syncobj_bridge_export_release_sync_file(
-            native, point)
+    var releaseNotificationFileDescriptor: Int32 {
+        unsafe nucleus_android_syncobj_bridge_release_notification_fd(native)
+    }
+
+    func dispatchReleases() -> UInt64? {
+        guard unsafe nucleus_android_syncobj_bridge_dispatch_releases(
+            native) == 0
+        else {
+            return nil
+        }
+        let point = unsafe nucleus_android_syncobj_bridge_forwarded_release_point(
+            native)
+        return point
+    }
+
+    func exportReleaseSyncFile(point: UInt64) throws -> Int32 {
+        var error = [CChar](repeating: 0, count: 1_024)
+        let descriptor =
+            unsafe nucleus_android_syncobj_bridge_export_release_sync_file(
+                native, point, &error, error.count)
+        guard descriptor >= 0 else {
+            throw DisplayHostError.wayland(
+                error.withUnsafeBufferPointer {
+                    unsafe String(cString: $0.baseAddress!)
+                })
+        }
+        return descriptor
     }
 
     func exportAcquireTimeline() -> Int32 {
@@ -251,7 +296,8 @@ public enum DisplayHostError: Error, CustomStringConvertible {
 @safe private final class AndroidDisplayPresenter:
     @MainActor XdgSurfaceEvents,
     @MainActor XdgToplevelEvents,
-    @MainActor WlBufferEvents
+    @MainActor WlBufferEvents,
+    @MainActor WpPresentationFeedbackEvents
 {
     private let connection: WaylandConnection
     private let registry: WaylandRegistry
@@ -263,6 +309,8 @@ public enum DisplayHostError: Error, CustomStringConvertible {
     private let wmBase: WaylandProxy<XdgWmBaseClient>
     private let syncobjManager:
         WaylandProxy<WpLinuxDrmSyncobjManagerV1Client>
+    private let presentation:
+        WaylandProxy<WpPresentationClient>
     private var surface: WaylandProxy<WlSurfaceClient>?
     private var xdgSurface: WaylandProxy<XdgSurfaceClient>?
     private var toplevel: WaylandProxy<XdgToplevelClient>?
@@ -275,8 +323,18 @@ public enum DisplayHostError: Error, CustomStringConvertible {
     private var buffers: [UInt64: DisplayBuffer] = [:]
     private var configured = false
     private var closed = false
+    private var reportedRelease = false
     private var nextAcquirePoint: UInt64 = 1
     private var nextReleasePoint: UInt64 = 1
+    private var presentationDiagnosticBudget = 16
+    private var pendingPresentations:
+        [UInt64: (frameNumber: UInt64, committed: ContinuousClock.Instant)] = [:]
+    private var presentationFeedback:
+        [UInt: (
+            proxy: WaylandProxy<WpPresentationFeedbackClient>,
+            frameNumber: UInt64,
+            committed: ContinuousClock.Instant
+        )] = [:]
 
     init(
         waylandSocket: String,
@@ -307,6 +365,8 @@ public enum DisplayHostError: Error, CustomStringConvertible {
                 DesiredGlobal<XdgWmBaseClient>(maximumVersion: 6),
                 DesiredGlobal<WpLinuxDrmSyncobjManagerV1Client>(
                     maximumVersion: 1),
+                DesiredGlobal<WpPresentationClient>(
+                    maximumVersion: 1),
             ])
         else { throw DisplayHostError.wayland("connection failed") }
         guard connection.bootstrapRoundtrip() >= 0 else {
@@ -316,10 +376,11 @@ public enum DisplayHostError: Error, CustomStringConvertible {
               let dmabuf = registry.singleton(ZwpLinuxDmabufV1Client.self),
               let wmBase = registry.singleton(XdgWmBaseClient.self),
               let syncobjManager = registry.singleton(
-                WpLinuxDrmSyncobjManagerV1Client.self)
+                WpLinuxDrmSyncobjManagerV1Client.self),
+              let presentation = registry.singleton(
+                WpPresentationClient.self)
         else { throw DisplayHostError.wayland("required protocol is unavailable") }
-        guard let bridge = SyncobjBridge(renderNode: selectedRenderDevice)
-        else { throw systemError("creating syncobj bridge") }
+        let bridge = try SyncobjBridge(renderNode: selectedRenderDevice)
         self.connection = connection
         self.registry = registry
         self.reactor = reactor
@@ -328,6 +389,7 @@ public enum DisplayHostError: Error, CustomStringConvertible {
         self.dmabuf = dmabuf
         self.wmBase = wmBase
         self.syncobjManager = syncobjManager
+        self.presentation = presentation
         wmHandler.proxy = wmBase
         try wmBase.installListener(wmHandler)
     }
@@ -336,6 +398,7 @@ public enum DisplayHostError: Error, CustomStringConvertible {
         _ request: nucleus_composer_present_request,
         descriptors: [Int32]
     ) async throws -> Int32 {
+        let presentationBegan = ContinuousClock.now
         if surface == nil {
             try await createSurface(width: request.width, height: request.height)
         }
@@ -345,9 +408,12 @@ public enum DisplayHostError: Error, CustomStringConvertible {
               let acquireTimeline,
               let releaseTimeline
         else { throw DisplayHostError.wayland("surface closed") }
+        let importBegan = ContinuousClock.now
         let buffer = try importBuffer(request, descriptors: descriptors)
+        let bufferImportMicroseconds = elapsedMicroseconds(since: importBegan)
         let acquirePoint = nextAcquirePoint
         nextAcquirePoint &+= 1
+        let acquireBegan = ContinuousClock.now
         if request.has_acquire_fence == 1 {
             guard bridge.importAcquireSyncFile(
                 point: acquirePoint,
@@ -357,12 +423,15 @@ public enum DisplayHostError: Error, CustomStringConvertible {
             guard bridge.signalAcquire(point: acquirePoint)
             else { throw systemError("signaling empty acquire point") }
         }
+        let acquireMicroseconds = elapsedMicroseconds(since: acquireBegan)
         let releasePoint = nextReleasePoint
         nextReleasePoint &+= 1
-        let releaseFence = bridge.exportReleaseSyncFile(point: releasePoint)
-        guard releaseFence >= 0 else {
-            throw systemError("exporting Composer3 release fence")
-        }
+        let releaseExportBegan = ContinuousClock.now
+        let releaseFence = try bridge.exportReleaseSyncFile(
+            point: releasePoint)
+        let releaseExportMicroseconds = elapsedMicroseconds(
+            since: releaseExportBegan)
+        let commitBegan = ContinuousClock.now
         try syncSurface.setAcquirePoint(
             timeline: acquireTimeline,
             point_hi: UInt32(acquirePoint >> 32),
@@ -377,10 +446,47 @@ public enum DisplayHostError: Error, CustomStringConvertible {
             y: request.damage_top,
             width: request.damage_right - request.damage_left,
             height: request.damage_bottom - request.damage_top)
+        let feedback = try presentation.feedback(
+            surface: surface)
+        try feedback.installListener(self)
+        presentationFeedback[feedback.identity] = (
+            proxy: feedback,
+            frameNumber: request.frame_number,
+            committed: ContinuousClock.now)
         try surface.commit()
         guard connection.flush() >= 0 || errno == EAGAIN else {
             _ = Glibc.close(releaseFence)
             throw DisplayHostError.wayland("commit flush failed")
+        }
+        let commitMicroseconds = elapsedMicroseconds(since: commitBegan)
+        let totalMicroseconds = elapsedMicroseconds(
+            since: presentationBegan)
+        pendingPresentations[releasePoint] = (
+            frameNumber: request.frame_number,
+            committed: ContinuousClock.now)
+        if presentationDiagnosticBudget > 0
+            || totalMicroseconds >= 50_000
+        {
+            if presentationDiagnosticBudget > 0 {
+                presentationDiagnosticBudget -= 1
+            }
+            let fields = [
+                "\"component\":\"nucleus-android-display-host\"",
+                "\"stage\":\"presentation.committed\"",
+                "\"requestId\":\(request.request_id)",
+                "\"frameNumber\":\(request.frame_number)",
+                "\"allocationId\":\(request.allocation_id)",
+                "\"acquirePoint\":\(acquirePoint)",
+                "\"releasePoint\":\(releasePoint)",
+                "\"hasAcquireFence\":\(request.has_acquire_fence)",
+                "\"bufferImportMicroseconds\":\(bufferImportMicroseconds)",
+                "\"acquireMicroseconds\":\(acquireMicroseconds)",
+                "\"releaseExportMicroseconds\":\(releaseExportMicroseconds)",
+                "\"commitMicroseconds\":\(commitMicroseconds)",
+                "\"totalMicroseconds\":\(totalMicroseconds)",
+            ]
+            let diagnostic = "{\(fields.joined(separator: ","))}\n"
+            FileHandle.standardError.write(Data(diagnostic.utf8))
         }
         return releaseFence
     }
@@ -409,6 +515,11 @@ public enum DisplayHostError: Error, CustomStringConvertible {
                         token: 2,
                         fileDescriptor: descriptor,
                         events: Int16(POLLIN)),
+                    LinuxReactorInterest(
+                        token: 3,
+                        fileDescriptor:
+                            bridge.releaseNotificationFileDescriptor,
+                        events: Int16(POLLIN)),
                 ], timeoutNanoseconds: nil)
             } catch {
                 preparation.read.cancel()
@@ -416,7 +527,11 @@ public enum DisplayHostError: Error, CustomStringConvertible {
             }
             let displayEvent = batch.events.first { $0.token == 1 }
             let socketEvent = batch.events.first { $0.token == 2 }
-            if let failure = displayEvent?.failureCode ?? socketEvent?.failureCode {
+            let releaseEvent = batch.events.first { $0.token == 3 }
+            if let failure = displayEvent?.failureCode
+                ?? socketEvent?.failureCode
+                ?? releaseEvent?.failureCode
+            {
                 preparation.read.cancel()
                 throw DisplayHostError.systemCall("io_uring poll", failure)
             }
@@ -427,6 +542,33 @@ public enum DisplayHostError: Error, CustomStringConvertible {
                 throw DisplayHostError.wayland("event dispatch failed")
             }
             if closed { throw DisplayHostError.wayland("surface closed") }
+            if let releaseEvent,
+               LinuxPollResult(
+                returnedEvents: releaseEvent.returnedEvents).isReadable {
+                guard let completedPoint = bridge.dispatchReleases() else {
+                    throw systemError("forwarding compositor release fences")
+                }
+                let released = pendingPresentations
+                    .filter { $0.key <= completedPoint }
+                for point in released.keys {
+                    pendingPresentations.removeValue(forKey: point)
+                }
+                let releaseMicroseconds = released.values.map {
+                    elapsedMicroseconds(since: $0.committed)
+                }.max() ?? 0
+                if !reportedRelease
+                    || releaseMicroseconds >= 50_000
+                {
+                    reportedRelease = true
+                    let diagnostic =
+                        "{\"component\":\"nucleus-android-display-host\","
+                        + "\"stage\":\"presentation.released\","
+                        + "\"completedPoint\":\(completedPoint),"
+                        + "\"releasedFrames\":\(released.count),"
+                        + "\"releaseMicroseconds\":\(releaseMicroseconds)}\n"
+                    FileHandle.standardError.write(Data(diagnostic.utf8))
+                }
+            }
             if let socketEvent,
                LinuxPollResult(
                 returnedEvents: socketEvent.returnedEvents).isReadable {
@@ -595,6 +737,53 @@ public enum DisplayHostError: Error, CustomStringConvertible {
         if let removed = buffers.removeValue(forKey: allocation) {
             try? removed.proxy.destroy()
         }
+    }
+    func syncOutput(
+        _ proxy: WaylandBorrowedProxy<
+            WpPresentationFeedbackClient>,
+        output: WaylandBorrowedProxy<WlOutputClient>
+    ) {}
+    func presented(
+        _ proxy: WaylandBorrowedProxy<
+            WpPresentationFeedbackClient>,
+        tv_sec_hi: UInt32,
+        tv_sec_lo: UInt32,
+        tv_nsec: UInt32,
+        refresh: UInt32,
+        seq_hi: UInt32,
+        seq_lo: UInt32,
+        flags: WpPresentationFeedbackKind
+    ) {
+        guard let entry = presentationFeedback.removeValue(
+            forKey: proxy.identity)
+        else { return }
+        let sequence =
+            UInt64(seq_hi) << 32 | UInt64(seq_lo)
+        let latency = elapsedMicroseconds(
+            since: entry.committed)
+        let diagnostic =
+            "{\"component\":\"nucleus-android-display-host\","
+            + "\"stage\":\"presentation.physically-presented\","
+            + "\"frameNumber\":\(entry.frameNumber),"
+            + "\"sequence\":\(sequence),"
+            + "\"refreshNanoseconds\":\(refresh),"
+            + "\"presentationLatencyMicroseconds\":\(latency)}\n"
+        FileHandle.standardError.write(
+            Data(diagnostic.utf8))
+    }
+    func discarded(
+        _ proxy: WaylandBorrowedProxy<
+            WpPresentationFeedbackClient>
+    ) {
+        guard let entry = presentationFeedback.removeValue(
+            forKey: proxy.identity)
+        else { return }
+        let diagnostic =
+            "{\"component\":\"nucleus-android-display-host\","
+            + "\"stage\":\"presentation.discarded\","
+            + "\"frameNumber\":\(entry.frameNumber)}\n"
+        FileHandle.standardError.write(
+            Data(diagnostic.utf8))
     }
     func configureBounds(
         _ proxy: WaylandBorrowedProxy<XdgToplevelClient>,

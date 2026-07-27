@@ -44,8 +44,10 @@ public struct ColliderCommand: AsyncParsableCommand {
         var command = try parseAsRoot(arguments)
         let environment = ProcessInfo.processInfo.environment
         let workspace = try resolveWorkspaceRoot(environment: environment)
+        let layout = WorkspaceLayout(
+            root: URL(fileURLWithPath: workspace, isDirectory: true))
         let registry = RunRegistry(
-            root: FilePath(workspace).appending(".nucleus"))
+            root: FilePath(layout.state.path))
         let requestedRunID = requestedRunID(for: command)
         let run =
             if let requestedRunID {
@@ -144,8 +146,11 @@ struct TaskControlOptions: ParsableArguments {
     @Flag(help: "Explain why each selected task is clean or dirty.")
     var explain = false
 
-    @Flag(help: "Stream leaf commands and complete stage output.")
+    @Flag(help: "Print each leaf command before executing it.")
     var verbose = false
+
+    @Flag(help: "Keep task output in the durable run log without streaming it.")
+    var quiet = false
 
     @Flag(help: "Emit stable machine-readable records.")
     var json = false
@@ -153,8 +158,19 @@ struct TaskControlOptions: ParsableArguments {
     @Option(name: .customLong("run-id"), help: "Resume an interrupted run.")
     var runID: RunIDArgument?
 
+    mutating func validate() throws {
+        guard !quiet || !verbose else {
+            throw ValidationError("--quiet and --verbose are mutually exclusive")
+        }
+    }
+
     var controls: TaskControls {
-        TaskControls(dryRun: dryRun, explain: explain, verbose: verbose, json: json)
+        TaskControls(
+            dryRun: dryRun,
+            explain: explain,
+            verbose: verbose,
+            quiet: quiet,
+            json: json)
     }
 }
 
@@ -511,6 +527,13 @@ struct Android: AsyncParsableCommand {
     }
 }
 
+enum AndroidFrameworkBrokerSanitizer:
+    String,
+    ExpressibleByArgument
+{
+    case address
+}
+
 struct AndroidRuntime: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "android-runtime",
@@ -570,6 +593,15 @@ struct AndroidRuntime: AsyncParsableCommand {
             help: "Maximum framework readiness wait.")
         var timeoutSeconds: UInt32 = 180
 
+        @Flag(
+            name: .customLong("vk-validation"),
+            help: "Enable Vulkan validation for the Nucleus compositor.")
+        var validation = false
+
+        @Option(
+            help: "Instrument the gfxstream broker with address sanitizer.")
+        var sanitize: AndroidFrameworkBrokerSanitizer?
+
         mutating func validate() throws {
             guard timeoutSeconds > 0 else {
                 throw ValidationError(
@@ -580,7 +612,9 @@ struct AndroidRuntime: AsyncParsableCommand {
         mutating func run() async throws {
             try await AndroidFrameworkBootCommand(
                 context: context(),
-                timeoutSeconds: timeoutSeconds
+                timeoutSeconds: timeoutSeconds,
+                enableVulkanValidation: validation,
+                brokerSanitizer: sanitize
             ).run()
         }
     }

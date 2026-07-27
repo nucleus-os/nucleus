@@ -4,6 +4,21 @@ import SystemPackage
 import Testing
 @testable import ColliderRuntime
 
+@Test func taskOutputStreamsLoggedCommandsByDefaultAndQuietSuppressesInheritedOutput() {
+    #expect(
+        TaskOutputPresentation.stream.output(for: .logged)
+            == CommandSpec.Output.inherited)
+    #expect(
+        TaskOutputPresentation.quiet.output(for: .inherited)
+            == CommandSpec.Output.logged)
+    #expect(
+        TaskOutputPresentation.stream.output(for: .captured(limit: 4096))
+            == CommandSpec.Output.captured(limit: 4096))
+    #expect(
+        TaskOutputPresentation.quiet.output(for: .file(FilePath("/tmp/output")))
+            == CommandSpec.Output.file(FilePath("/tmp/output")))
+}
+
 @Test func taskIdentityEncodingRemainsByteStableAcrossWorkflowMoves() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
         "collider-engine-identity-\(UUID().uuidString)")
@@ -49,7 +64,9 @@ import Testing
                 repoLauncher: root.appending("repo"),
                 sourceProvenance: root.appending("source-provenance.json"),
                 buildRoot: root.appending("build"),
-                signingIdentity: root.appending("signing"),
+                ccacheDirectory: root.appending("ccache"),
+                containerImageID: root.appending("container-image-id"),
+                signingIdentity: root.appending("signing-identity"),
                 product: "nucleus_x86_64",
                 release: "cp2a",
                 variant: "userdebug",
@@ -381,7 +398,7 @@ import Testing
     let ndk = directory.appendingPathComponent("ndk")
     try FileManager.default.createDirectory(
         at: ndk, withIntermediateDirectories: true)
-    try Data("Pkg.Revision = 30.0.14904198\n".utf8).write(
+    try Data("Pkg.Revision = 30.0.15729638\n".utf8).write(
         to: ndk.appendingPathComponent("source.properties"),
         options: .atomic)
     let prebuilt = ndk.appendingPathComponent(
@@ -487,7 +504,7 @@ import Testing
             bundle: FilePath(bundle.path),
             sourceID: "test",
             architectures: ["aarch64"],
-            apiLevel: 36)))
+            apiLevel: 37)))
     _ = try await ColliderRuntime().execute(
         graph: TaskGraph([task]),
         selected: [task.id],
@@ -526,7 +543,7 @@ import Testing
         with: Data(contentsOf: bundle.appendingPathComponent(
             "swift-android/swift-sdk.json"))) as? [String: Any]
     let triples = sdk?["targetTriples"] as? [String: Any]
-    #expect(triples?["aarch64-unknown-linux-android36"] != nil)
+    #expect(triples?["aarch64-unknown-linux-android37"] != nil)
 }
 
 @Test func hostToolchainPreparationAndAssemblyPreserveTheRelocatableRuntime() async throws {
@@ -588,16 +605,21 @@ import Testing
         staging.appendingPathComponent(
             "usr/lib/swift_static/linux/static-stdlib-args.lnk"))
     let archive = workspace.appendingPathComponent("toolchain.tar.gz")
-    let tar = Process()
-    tar.executableURL = URL(fileURLWithPath: "/usr/bin/tar")
-    tar.arguments = [
-        "-C", staging.path,
-        "-czf", archive.path,
-        "usr",
-    ]
-    try tar.run()
-    tar.waitUntilExit()
-    #expect(tar.terminationStatus == 0)
+    let tar = try await ColliderRuntime().execute(
+        CommandSpec(
+            executable: .path(FilePath("/usr/bin/tar")),
+            arguments: [
+                "-C", staging.path,
+                "-czf", archive.path,
+                "usr",
+            ],
+            workingDirectory: FilePath(workspace.path),
+            environment: [
+                "PATH": ProcessInfo.processInfo.environment["PATH"]
+                    ?? "/usr/bin:/bin",
+            ],
+            output: .combined(limit: 1_024 * 1_024)))
+    #expect(tar.status == 0)
     let assembly = TaskDeclaration(
         id: TaskID(rawValue: "fixture.assemble-host-toolchain"),
         component: ComponentID(rawValue: "fixture"),
@@ -740,7 +762,7 @@ import Testing
             bundleName: bundleName,
             ndk: FilePath(ndk.path),
             architecture: "aarch64",
-            apiLevel: 36,
+            apiLevel: 37,
             workDirectory: FilePath(work.path),
             environment: [
                 "PATH": ProcessInfo.processInfo.environment["PATH"]

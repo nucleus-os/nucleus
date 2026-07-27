@@ -101,11 +101,11 @@ struct AndroidPresentationQualificationCommand {
                 controls: TaskControls())
             installation = try await RuntimeInstaller(context: context).install(
                 .session,
-                prefix: context.root.appendingPathComponent(".install"),
+                prefix: context.layout.installPrefix,
                 options: runtimeOptions)
         } else {
             installation = try RuntimeInstaller(context: context).existingSession(
-                prefix: context.root.appendingPathComponent(".install"),
+                prefix: context.layout.installPrefix,
                 options: runtimeOptions)
         }
         let products = try await androidProducts()
@@ -125,9 +125,9 @@ struct AndroidPresentationQualificationCommand {
             to: output.appendingPathComponent("drm-preflight.json"),
             options: .atomic)
         try FileManager.default.copyItem(
-            at: context.root.appendingPathComponent(
-                "android-runtime/gfxstream.lock.json"),
-            to: output.appendingPathComponent("gfxstream.lock.json"))
+            at: context.layout.androidRuntime.appendingPathComponent(
+                "graphics-upstream.json"),
+            to: output.appendingPathComponent("graphics-upstream.json"))
 
         let sessionStatus = output.appendingPathComponent("session-status.bin")
         let sessionLog = output.appendingPathComponent("session.log")
@@ -234,7 +234,7 @@ struct AndroidPresentationQualificationCommand {
         broker: URL,
         workload: URL
     ) {
-        let package = context.root.appendingPathComponent("android-runtime")
+        let package = context.layout.androidRuntime
         let raw = try await context.run(
             "swift",
             [
@@ -273,9 +273,7 @@ struct AndroidPresentationQualificationCommand {
             let timestamp = ISO8601DateFormatter()
                 .string(from: Date())
                 .replacingOccurrences(of: ":", with: "-")
-            output = context.root
-                .appendingPathComponent(
-                    ".nucleus/qualifications/android-presentation")
+            output = context.layout.androidPresentationQualifications
                 .appendingPathComponent(
                     "\(timestamp)-\(UUID().uuidString.lowercased())")
         }

@@ -25,6 +25,7 @@ public actor ColliderRuntime {
     let logging: CommandLogging?
     let downloads: ColliderDownloads
     var toolIdentityCache: [String: (FilePath, ArtifactDigest)] = [:]
+    var taskOutputPresentation: TaskOutputPresentation?
     public let cancellation: RuntimeCancellation
 
     public init(
@@ -64,7 +65,7 @@ public actor ColliderRuntime {
     public func execute(
         _ command: CommandSpec,
         stage: TaskID?,
-        onStarted: (@Sendable () async -> Void)? = nil
+        onStarted: (@Sendable (Int32) async -> Void)? = nil
     ) async throws -> CommandResult {
         let process = CommandProcessCancellation()
         let operation = Task {
@@ -111,7 +112,7 @@ public actor ColliderRuntime {
     private func executeRegistered(
         _ command: CommandSpec,
         stage: TaskID?,
-        onStarted: (@Sendable () async -> Void)?,
+        onStarted: (@Sendable (Int32) async -> Void)?,
         process: CommandProcessCancellation
     ) async throws -> CommandResult {
         guard let timeout = command.timeoutNanoseconds else {
@@ -174,9 +175,16 @@ public actor ColliderRuntime {
     private func executeWithoutTimeout(
         _ command: CommandSpec,
         stage: TaskID?,
-        onStarted: (@Sendable () async -> Void)?,
+        onStarted: (@Sendable (Int32) async -> Void)?,
         process: CommandProcessCancellation
     ) async throws -> CommandResult {
+        let command =
+            if let taskOutputPresentation {
+                command.withOutput(
+                    taskOutputPresentation.output(for: command.output))
+            } else {
+                command
+            }
         let executable: Subprocess.Executable =
             switch command.executable {
             case .named(let name): .name(name)
@@ -239,7 +247,7 @@ public actor ColliderRuntime {
         platform: Subprocess.PlatformOptions,
         input: consuming Input,
         stage: TaskID?,
-        onStarted: (@Sendable () async -> Void)?,
+        onStarted: (@Sendable (Int32) async -> Void)?,
         process: CommandProcessCancellation
     ) async throws -> CommandResult {
         if command.output == .terminal {
@@ -256,7 +264,7 @@ public actor ColliderRuntime {
                 process.started(
                     processIdentifier: execution.processIdentifier.value,
                     processGroup: false)
-                await onStarted?()
+                await onStarted?(execution.processIdentifier.value)
             }
             return CommandResult(status: statusCode(result.terminationStatus))
         }
@@ -281,7 +289,7 @@ public actor ColliderRuntime {
         input: consuming Input,
         logging: CommandLogging?,
         stage: TaskID?,
-        onStarted: (@Sendable () async -> Void)?,
+        onStarted: (@Sendable (Int32) async -> Void)?,
         process: CommandProcessCancellation
     ) async throws -> CommandResult {
         let file: FilePath? =
@@ -312,7 +320,7 @@ public actor ColliderRuntime {
                         processGroup: true)
                     let registration = await self.cancellation.registerProcessGroup(
                         execution.processIdentifier.value)
-                    await onStarted?()
+                    await onStarted?(execution.processIdentifier.value)
                     do {
                         let bytes = try await collect(
                             execution.standardOutput,
@@ -350,7 +358,7 @@ public actor ColliderRuntime {
                         processGroup: true)
                     let registration = await self.cancellation.registerProcessGroup(
                         execution.processIdentifier.value)
-                    await onStarted?()
+                    await onStarted?(execution.processIdentifier.value)
                     do {
                         let bytes = try await withThrowingTaskGroup(
                             of: StreamResult.self,
@@ -402,6 +410,36 @@ public actor ColliderRuntime {
         }
         try await sink.finish()
         return commandResult
+    }
+}
+
+enum TaskOutputPresentation: Sendable {
+    case stream
+    case quiet
+
+    func output(for output: CommandSpec.Output) -> CommandSpec.Output {
+        switch (self, output) {
+        case (.stream, .logged):
+            .inherited
+        case (.quiet, .inherited):
+            .logged
+        default:
+            output
+        }
+    }
+}
+
+private extension CommandSpec {
+    func withOutput(_ output: Output) -> CommandSpec {
+        guard output != self.output else { return self }
+        return CommandSpec(
+            executable: executable,
+            arguments: arguments,
+            workingDirectory: workingDirectory,
+            environment: environment,
+            input: input,
+            output: output,
+            timeoutNanoseconds: timeoutNanoseconds)
     }
 }
 

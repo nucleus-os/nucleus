@@ -225,8 +225,9 @@ struct WorkspaceContext: Sendable {
                         let result = try await runtime.execute(
                             specification,
                             stage: stage
-                        ) {
-                            await state.started()
+                        ) { processIdentifier in
+                            await state.started(
+                                processIdentifier: processIdentifier)
                         }
                         outcome = .success(result)
                     } catch {
@@ -281,8 +282,7 @@ struct WorkspaceContext: Sendable {
         _ body: () async throws -> Result
     ) async throws -> Result {
         let directory =
-            root
-            .appendingPathComponent(".nucleus/locks", isDirectory: true)
+            layout.locks
         try FileManager.default.createDirectory(
             at: directory,
             withIntermediateDirectories: true)
@@ -307,6 +307,10 @@ struct RunningCommand: Sendable {
 
     var terminationStatus: Int32? {
         get async { await state.terminationStatus }
+    }
+
+    var processIdentifier: Int32? {
+        get async { await state.processIdentifier }
     }
 
     func wait() async throws -> CommandResult {
@@ -336,6 +340,7 @@ private actor RunningCommandState {
     }
 
     private var phase = Phase.starting
+    private(set) var processIdentifier: Int32?
     private var readiness: [
         CheckedContinuation<Result<Void, RunningCommandFailure>, Never>
     ] = []
@@ -360,8 +365,9 @@ private actor RunningCommandState {
         return result.status
     }
 
-    func started() {
+    func started(processIdentifier: Int32) {
         guard case .starting = phase else { return }
+        self.processIdentifier = processIdentifier
         phase = .running
         let waiters = readiness
         readiness.removeAll(keepingCapacity: false)
@@ -427,6 +433,7 @@ private func sanitizedEnvironment(
     let fixed = Set([
         "PATH", "HOME", "USER", "LOGNAME", "TMPDIR", "LANG", "TERM",
         "SHELL", "SDKROOT", "JAVA_HOME", "CC", "CXX", "LD_LIBRARY_PATH",
+        "WAYLAND_DISPLAY",
         "PKG_CONFIG_PATH", "SWIFTCI_USE_LOCAL_DEPS",
     ])
     let deniedFragments = ["TOKEN", "PASSWORD", "SECRET", "CREDENTIAL"]

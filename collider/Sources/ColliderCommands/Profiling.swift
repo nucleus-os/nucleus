@@ -4,27 +4,16 @@ struct TracyTools {
     let context: WorkspaceContext
 
     func buildReceivers() async throws {
-        let compositor = context.root.appendingPathComponent("compositor")
-        let build = compositor.appendingPathComponent(".tracy-build")
+        let build = context.layout.tracyBuild
         let relativeSource = "swift-tracy/third-party/tracy"
-        let source = context.root.appendingPathComponent(relativeSource)
-        let commit = try await context.run(
-            "git", ["rev-parse", "HEAD:\(relativeSource)"], directory: context.root, capture: true
-        )
-        guard commit.wholeMatch(of: /[0-9a-f]{40}/) != nil else {
-            throw WorkspaceFailure.message("could not read the pinned Tracy submodule commit")
-        }
-        guard FileManager.default.fileExists(atPath: source.appendingPathComponent(".git").path) else {
+        let source = context.layout.root
+            .appendingPathComponent(relativeSource)
+        guard FileManager.default.fileExists(
+            atPath: source.appendingPathComponent(
+                "public/TracyClient.cpp").path)
+        else {
             throw WorkspaceFailure.message(
-                "Tracy submodule is not initialized; run collider bootstrap tracy")
-        }
-        let checkout = try await context.run(
-            "git", ["rev-parse", "HEAD"], directory: source, capture: true
-        )
-        guard checkout == commit else {
-            throw WorkspaceFailure.message(
-                "Tracy submodule is at \(checkout), expected pinned commit \(commit); "
-                + "run git submodule update --init --recursive swift-tracy/third-party/tracy")
+                "Tracy sources are absent; rerun ./collider-setup.sh")
         }
         // The pre-submodule receiver builder cloned Tracy under `source/` and its
         // CMake caches permanently record that path. Remove those ignored build

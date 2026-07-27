@@ -8,12 +8,13 @@ packaging, debug signing, alignment, and device install tasks.
 
 The checked-in baseline is:
 
-- AGP `9.2.1`
-- Gradle wrapper `9.4.1`
+- AGP `9.3.1`
+- Gradle wrapper `9.5.0`
 - `compileSdk` API `37.0`
 - app `targetSdk` API `37`
 - `minSdk` API `24`
-- NDK `30.0.14904198` for the Swift Android artifactbundle/toolchain path
+- SDK Build Tools `37.0.0`
+- NDK `30.0.15729638` for the Swift Android artifactbundle/toolchain path
 
 The Android framework and smoke app source are Kotlin under `src/main/kotlin`.
 This uses AGP 9's built-in Kotlin compilation path; there is no separate Kotlin

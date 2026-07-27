@@ -59,6 +59,22 @@ func capturedCommandsKeepDiagnosticsOutOfMachineReadableOutput() async throws {
 }
 
 @Test
+func commandEnvironmentPreservesExplicitWaylandDisplay() async throws {
+    let context = WorkspaceContext(
+        root: URL(fileURLWithPath: FileManager.default.currentDirectoryPath),
+        environment: ProcessInfo.processInfo.environment)
+
+    let output = try await context.run(
+        "sh",
+        ["-c", "printf '%s' \"$WAYLAND_DISPLAY\""],
+        capture: true,
+        environmentOverrides: ["WAYLAND_DISPLAY": "wayland-nucleus"])
+
+    #expect(output == "wayland-nucleus")
+    await context.runtime.shutdown()
+}
+
+@Test
 func commandRunnerCanAcceptInteractiveSIGINTTermination() async throws {
     let context = WorkspaceContext(
         root: URL(fileURLWithPath: FileManager.default.currentDirectoryPath),
@@ -86,6 +102,9 @@ func runningCommandScopeReapsChildAfterSuccessfulBody() async throws {
         output: .captured(limit: 1_024)
     ) { child in
         try await child.waitUntilReady()
+        let processIdentifier = await child.processIdentifier
+        #expect(processIdentifier != nil)
+        #expect((processIdentifier ?? 0) > 0)
         try await fixture.waitForFile(fixture.ready("child"))
         return 42
     }

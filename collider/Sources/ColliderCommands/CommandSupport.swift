@@ -18,6 +18,7 @@ struct TaskControls: Sendable {
     var dryRun = false
     var explain = false
     var verbose = false
+    var quiet = false
     var json = false
 
     var executionOptions: TaskExecutionOptions {
@@ -25,6 +26,7 @@ struct TaskControls: Sendable {
             dryRun: dryRun,
             explain: explain,
             verbose: verbose,
+            quiet: quiet,
             machineReadable: json)
     }
 
@@ -79,8 +81,7 @@ extension WorkspaceContext {
         workflowLocks: [TaskLock] = []
     ) async throws -> TaskExecutionReport {
         let graph = try TaskGraph(tasks)
-        let stateRoot = FilePath(
-            root.appendingPathComponent(".nucleus/tasks").path)
+        let stateRoot = FilePath(layout.tasks.path)
         let report = try await runtime.execute(
             graph: graph,
             selected: selected,

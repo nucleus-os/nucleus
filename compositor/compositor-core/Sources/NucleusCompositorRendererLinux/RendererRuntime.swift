@@ -53,10 +53,10 @@ import Glibc
     public var dmabufMainDevice: UInt64 = 0
 
     var bindings: [UInt64: RenderOutputBinding] = [:]
-    /// Render-complete semaphores from GPU submissions that could not be handed to
-    /// KMS (sync-file export or atomic-commit failure). Their submission serial is
-    /// the lifetime fence; the main loop polls and destroys them after completion.
-    var unpresentedRenderSyncs: [DrmRenderSync] = []
+    /// Render-complete semaphores borrowed by submitted GPU work. Their submission
+    /// serial is the lifetime fence; page-flip completion and failed KMS handoff
+    /// both transfer ownership here until Graphite observes GPU completion.
+    var renderSyncsAwaitingGpuCompletion: [DrmRenderSync] = []
     var scheduledOutputIDs: Set<UInt64>?
     /// Borrowed page-flip user_data must remain valid even if a replaced driver's
     /// kernel queues a late callback. These are released with the DRM runtime.
@@ -280,9 +280,9 @@ import Glibc
             !bindings.values.contains(where: { $0.drm.active }),
             "active KMS scanout requires device revocation before renderer teardown")
         // Queue-idle is the final device-lifetime barrier. Normal operation retires
-        // unpresented submission semaphores by completion serial without blocking.
+        // submitted render semaphores by completion serial without blocking.
         core.waitForGpuIdle()
-        unpresentedRenderSyncs.removeAll()
+        renderSyncsAwaitingGpuCompletion.removeAll()
         precondition(retireOutputs(Set(bindings.keys)) == .complete)
         logRendererDrm("shutdown: scanout disabled")
         finishResourceShutdown()
@@ -295,7 +295,7 @@ import Glibc
         precondition(drmDevice.isRevoked)
         logRendererDrm("shutdown: DRM device revoked; releasing renderer resources")
         core.waitForGpuIdle()
-        unpresentedRenderSyncs.removeAll()
+        renderSyncsAwaitingGpuCompletion.removeAll()
         releaseBindingsAfterDrmDeviceLoss()
         finishResourceShutdown()
     }

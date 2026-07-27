@@ -17,6 +17,7 @@ std::unique_ptr<GuestRingStream> GuestRingStream::attach(
     int responseMemoryFD,
     int responseDataNotificationFD,
     int responseSpaceNotificationFD,
+    int lifetimeFD,
     std::size_t bufferSize) {
     auto *commandProducer =
         nucleus_android_shared_ring_producer_attach({
@@ -28,6 +29,7 @@ std::unique_ptr<GuestRingStream> GuestRingStream::attach(
         if (responseSpaceNotificationFD >= 0) close(responseSpaceNotificationFD);
         if (responseDataNotificationFD >= 0) close(responseDataNotificationFD);
         if (responseMemoryFD >= 0) close(responseMemoryFD);
+        if (lifetimeFD >= 0) close(lifetimeFD);
         return nullptr;
     }
     auto *responseConsumer =
@@ -38,24 +40,28 @@ std::unique_ptr<GuestRingStream> GuestRingStream::attach(
         });
     if (responseConsumer == nullptr) {
         nucleus_android_shared_ring_producer_destroy(commandProducer);
+        if (lifetimeFD >= 0) close(lifetimeFD);
         return nullptr;
     }
     return std::make_unique<GuestRingStream>(
         commandProducer,
         responseConsumer,
         true,
-        bufferSize);
+        bufferSize,
+        lifetimeFD);
 }
 
 GuestRingStream::GuestRingStream(
     nucleus_android_shared_ring_producer *commandProducer,
     nucleus_android_shared_ring_consumer *responseConsumer,
     bool ownsRings,
-    std::size_t bufferSize)
+    std::size_t bufferSize,
+    int lifetimeFD)
     : IOStream(bufferSize),
       mCommandProducer(commandProducer),
       mResponseConsumer(responseConsumer),
-      mOwnsRings(ownsRings) {}
+      mOwnsRings(ownsRings),
+      mLifetimeFD(lifetimeFD) {}
 
 GuestRingStream::~GuestRingStream() {
     (void)nucleus_android_shared_ring_consumer_close(mResponseConsumer);
@@ -63,6 +69,9 @@ GuestRingStream::~GuestRingStream() {
     if (mOwnsRings) {
         nucleus_android_shared_ring_consumer_destroy(mResponseConsumer);
         nucleus_android_shared_ring_producer_destroy(mCommandProducer);
+    }
+    if (mLifetimeFD >= 0) {
+        close(mLifetimeFD);
     }
 }
 

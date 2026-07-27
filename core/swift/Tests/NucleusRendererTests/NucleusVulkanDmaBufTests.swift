@@ -249,6 +249,26 @@ private enum FakeDmaBufImporter {
         #expect(errno == EBADF)
     }
 
+    @Test func unsupportedFourccClosesDescriptorsBeforeAnyVulkanCall() {
+        let descriptor = descriptorWithPipe()
+        defer { _ = close(descriptor.writeFD) }
+        var unsupported = descriptor.value
+        unsupported.drmFormat = 0xffff_ffff
+        FakeDmaBufImporter.reset(failure: .none)
+
+        if let unexpected = unsafe importDmaBufImage(
+            device: fakeDevice,
+            operations: FakeDmaBufImporter.operations,
+            descriptor: unsupported)
+        {
+            Issue.record("unsupported DRM fourcc unexpectedly imported an image")
+            _ = unsafe consume unexpected
+        }
+        #expect(FakeDmaBufImporter.events.isEmpty)
+        #expect(fcntl(descriptor.readFD, F_GETFD) == -1)
+        #expect(errno == EBADF)
+    }
+
     @Test func eachVulkanFailureRollsBackAcquiredResources() throws {
         let cases: [(DmaBufImportFailure, [String])] = [
             (.createImage, ["create-image"]),

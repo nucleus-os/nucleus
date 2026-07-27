@@ -308,6 +308,36 @@ import Testing
     #expect(try openDescriptorCount() <= baseline + 2)
 }
 
+@Test func concurrentCommandsCompleteWithoutPreExecDeadlock() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-concurrent-processes-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(
+        at: directory,
+        withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let environment = [
+        "PATH": ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin",
+    ]
+
+    try await withThrowingTaskGroup(of: Int32.self) { group in
+        for _ in 0..<32 {
+            group.addTask {
+                try await ColliderRuntime().execute(
+                    CommandSpec(
+                        executable: .named("true"),
+                        arguments: [],
+                        workingDirectory: FilePath(directory.path),
+                        environment: environment,
+                        output: .captured(limit: 1)))
+                    .status
+            }
+        }
+        for try await status in group {
+            #expect(status == 0)
+        }
+    }
+}
+
 private func openDescriptorCount() throws -> Int {
     try FileManager.default.contentsOfDirectory(
         atPath: "/proc/self/fd"

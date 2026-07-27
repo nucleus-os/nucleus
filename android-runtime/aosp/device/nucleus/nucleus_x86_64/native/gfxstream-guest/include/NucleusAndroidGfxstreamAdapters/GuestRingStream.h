@@ -18,13 +18,15 @@ public:
         int responseMemoryFD,
         int responseDataNotificationFD,
         int responseSpaceNotificationFD,
+        int lifetimeFD,
         std::size_t bufferSize = 4 * 1024 * 1024);
 
     GuestRingStream(
         nucleus_android_shared_ring_producer *commandProducer,
         nucleus_android_shared_ring_consumer *responseConsumer,
         bool ownsRings,
-        std::size_t bufferSize = 4 * 1024 * 1024);
+        std::size_t bufferSize = 4 * 1024 * 1024,
+        int lifetimeFD = -1);
     ~GuestRingStream() override;
 
     void *allocBuffer(std::size_t minimumSize) override;
@@ -45,6 +47,7 @@ private:
     nucleus_android_shared_ring_producer *mCommandProducer;
     nucleus_android_shared_ring_consumer *mResponseConsumer;
     bool mOwnsRings;
+    int mLifetimeFD;
     std::unique_ptr<unsigned char[]> mCommitBuffer;
     std::size_t mCommitCapacity = 0;
     std::unique_ptr<unsigned char[]> mResponseBuffer;

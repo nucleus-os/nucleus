@@ -8,39 +8,40 @@ import Glibc
 
 @MainActor
 extension RendererRuntime {
-    /// Keep an explicit-sync semaphore alive when its submitted GPU work did not
-    /// reach KMS. Completion serials replace exceptional queue-idle stalls on the
-    /// compositor thread.
-    private func retainUnpresentedRenderSync(
+    /// Keep an explicit-sync semaphore alive until Graphite observes completion of
+    /// the submission that borrowed it. A KMS page flip proves scanout accepted the
+    /// rendered image, but it does not update Vulkan validation's queue-lifetime
+    /// tracking; the Graphite completion callback is the destruction authority.
+    func retainRenderSyncUntilGpuCompletion(
         _ sync: DrmRenderSync,
         submissionSerial: UInt64
     ) {
         precondition(submissionSerial != 0)
         sync.submissionSerial = submissionSerial
         sync.closeSyncFd()
-        unpresentedRenderSyncs.append(sync)
+        renderSyncsAwaitingGpuCompletion.append(sync)
         Trace.plot(
-            "swift.renderer.unpresented_render_syncs",
-            UInt64(unpresentedRenderSyncs.count))
+            "swift.renderer.render_syncs_awaiting_gpu_completion",
+            UInt64(renderSyncsAwaitingGpuCompletion.count))
     }
 
-    func retireCompletedUnpresentedRenderSyncs() {
-        guard !unpresentedRenderSyncs.isEmpty else { return }
+    func retireCompletedRenderSyncs() {
+        guard !renderSyncsAwaitingGpuCompletion.isEmpty else { return }
         let completedSerial = core.pollCompletedSubmissionSerial()
-        unpresentedRenderSyncs.removeAll {
+        renderSyncsAwaitingGpuCompletion.removeAll {
             $0.submissionSerial <= completedSerial
         }
         core.releaseRetiredGpuResources(
             completedSubmissionSerial: completedSerial)
         Trace.plot(
-            "swift.renderer.unpresented_render_syncs",
-            UInt64(unpresentedRenderSyncs.count))
+            "swift.renderer.render_syncs_awaiting_gpu_completion",
+            UInt64(renderSyncsAwaitingGpuCompletion.count))
     }
 
     public func renderReadyOutputs(
         outputIDs: Set<UInt64>
     ) -> Bool {
-        retireCompletedUnpresentedRenderSyncs()
+        retireCompletedRenderSyncs()
         guard !outputIDs.isEmpty else { return false }
         scheduledOutputIDs = outputIDs
         defer { scheduledOutputIDs = nil }
@@ -216,7 +217,7 @@ extension RendererRuntime {
     public func isReadyToPresent(
         _ outputID: UInt64
     ) -> Bool {
-        retireCompletedUnpresentedRenderSyncs()
+        retireCompletedRenderSyncs()
         guard backendState.admitsPresentation,
             let binding = bindings[outputID],
             binding.drm.lifecycleState.admitsScanoutCommit
@@ -272,7 +273,7 @@ extension RendererRuntime {
                 pendingClientAcquireFenceDiagnostics[
                     surfaceID] = nil
             }
-            retainUnpresentedRenderSync(
+            retainRenderSyncUntilGpuCompletion(
                 sync,
                 submissionSerial: core.lastSubmittedSerial)
             binding.currentRenderSync = nil
@@ -294,7 +295,8 @@ extension RendererRuntime {
             return
         }
         // A failed record never submitted the semaphore. Submitted failures in
-        // finalize/present move it to `unpresentedRenderSyncs` before this cleanup.
+        // finalize/present move it to `renderSyncsAwaitingGpuCompletion`
+        // before this cleanup.
         binding.currentRenderSync = nil
         binding.currentSlot = nil
     }
@@ -356,7 +358,7 @@ extension RendererRuntime {
                 acceptedNs,
                 core.lastFrameAcquiredSurfaceIDs)
         } else {
-            retainUnpresentedRenderSync(
+            retainRenderSyncUntilGpuCompletion(
                 sync,
                 submissionSerial: sync.submissionSerial)
             binding.currentRenderSync = nil

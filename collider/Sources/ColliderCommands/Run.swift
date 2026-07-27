@@ -109,7 +109,7 @@ struct RunCommand {
             environment: context.environment)
         try requireLaunchableSeatEnvironment()
 
-        let prefix = context.root.appendingPathComponent(".install")
+        let prefix = context.layout.installPrefix
         let installer = RuntimeInstaller(context: context)
         let installation =
             if options.build {
@@ -213,7 +213,7 @@ struct RunCommand {
     }
 
     private func createOutputDirectory(_ options: RunOptions) throws -> URL {
-        let compositor = context.root.appendingPathComponent("compositor")
+        let compositor = context.layout.compositor
         let root = URL(
             fileURLWithPath: options.output,
             relativeTo: compositor

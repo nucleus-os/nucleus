@@ -4,12 +4,16 @@
 #include <stdint.h>
 
 #define NUCLEUS_ANDROID_GFXSTREAM_SOCKET_MAGIC UINT32_C(0x4e475846)
-#define NUCLEUS_ANDROID_GFXSTREAM_SOCKET_VERSION UINT32_C(2)
+#define NUCLEUS_ANDROID_GFXSTREAM_SOCKET_VERSION UINT32_C(6)
 #define NUCLEUS_ANDROID_GFXSTREAM_DESCRIPTOR_COUNT 6
 
 enum nucleus_android_gfxstream_socket_operation {
     NUCLEUS_ANDROID_GFXSTREAM_OPEN_STREAM = 1,
     NUCLEUS_ANDROID_GFXSTREAM_ALLOCATE_BUFFER = 2,
+    NUCLEUS_ANDROID_GFXSTREAM_MAP_HOST_MEMORY = 3,
+    NUCLEUS_ANDROID_GFXSTREAM_EXPORT_VULKAN_FENCE = 4,
+    NUCLEUS_ANDROID_GFXSTREAM_EXPORT_VULKAN_SEMAPHORE = 5,
+    NUCLEUS_ANDROID_GFXSTREAM_EXPORT_VULKAN_QSRI = 6,
 };
 
 struct nucleus_android_gfxstream_socket_message {
@@ -21,6 +25,10 @@ struct nucleus_android_gfxstream_socket_message {
     uint64_t usage;
     uint64_t drm_modifier;
     uint64_t allocation_size;
+    uint64_t vulkan_device_handle;
+    uint64_t vulkan_fence_handle;
+    uint64_t vulkan_semaphore_handle;
+    uint64_t vulkan_image_handle;
     uint32_t width;
     uint32_t height;
     uint32_t android_format;

@@ -277,43 +277,6 @@ import WaylandColliderRecipe
         ".cxx-build/debug/libNucleusReactRuntimeHostCxx.a").path))
 }
 
-@Test func gfxstreamRecipeUsesTypedValidationAndMesonOperations() throws {
-    let workspace = URL(fileURLWithPath: #filePath)
-        .deletingLastPathComponent()
-        .deletingLastPathComponent()
-        .deletingLastPathComponent()
-        .deletingLastPathComponent()
-    let tasks = try AndroidRuntimeColliderRecipe.tasks(
-        root: FilePath(workspace.appendingPathComponent(
-            "android-runtime").path),
-        repositoryRoot: FilePath(workspace.path),
-        environment: [
-            "PATH": "/usr/bin",
-            "SWIFT_TOOLCHAIN": "/toolchain",
-        ])
-    let task = try #require(tasks.first {
-        $0.id == TaskID(rawValue: "android-runtime.gfxstream")
-    })
-    guard case .sequence(let operations) = task.operation else {
-        Issue.record("gfxstream must be one typed task sequence")
-        return
-    }
-    #expect(operations.count == 6)
-    #expect(operations.filter {
-        if case .validateGitCheckout = $0 { return true }
-        return false
-    }.count == 2)
-    #expect(operations.filter {
-        if case .configureMeson = $0 { return true }
-        return false
-    }.count == 2)
-    #expect(operations.allSatisfy {
-        guard case .command(let command) = $0 else { return true }
-        return command.executable != .named("sh")
-            && command.executable != .named("bash")
-    })
-}
-
 @Test func androidImageRecipeHasIndependentArtifactBoundaries() throws {
     let workspace = URL(fileURLWithPath: #filePath)
         .deletingLastPathComponent()
@@ -327,6 +290,8 @@ import WaylandColliderRecipe
     let pipelineIDs = tasks.map(\.id.rawValue).filter {
         $0.hasPrefix("android-runtime.aosp-")
     }
+    #expect(pipelineIDs.contains(
+        "android-runtime.aosp-build-container"))
     #expect(pipelineIDs.suffix(5) == [
         "android-runtime.aosp-compile",
         "android-runtime.aosp-sign",
@@ -334,6 +299,15 @@ import WaylandColliderRecipe
         "android-runtime.aosp-validate",
         "android-runtime.aosp-image",
     ])
+    let container = try #require(tasks.first {
+        $0.id.rawValue == "android-runtime.aosp-build-container"
+    })
+    #expect({
+        guard case .prepareAOSPBuildContainer = container.operation else {
+            return false
+        }
+        return true
+    }())
     let operations = Array(tasks.suffix(5)).map(\.operation)
     #expect({
         guard case .compileAOSPProduct = operations[0] else {

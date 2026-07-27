@@ -272,7 +272,8 @@ extension ColliderRuntime {
             CommandSpec(
                 executable: .named("unshare"),
                 arguments: ["--user", "--map-root-user", "--", "true"],
-                workingDirectory: FilePath("/tmp"),
+                workingDirectory: FilePath(
+                    FileManager.default.temporaryDirectory.path),
                 environment: environment,
                 output: .captured(limit: 64 * 1_024)),
             stage: stage)
@@ -289,7 +290,8 @@ extension ColliderRuntime {
             CommandSpec(
                 executable: executable,
                 arguments: arguments,
-                workingDirectory: FilePath("/tmp"),
+                workingDirectory: FilePath(
+                    FileManager.default.temporaryDirectory.path),
                 environment: environment),
             stage: stage)
         guard result.status == 0 else {

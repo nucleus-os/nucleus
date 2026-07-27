@@ -17,6 +17,7 @@
 # Framework and architecture.
 $(call inherit-product, $(SRC_TARGET_DIR)/product/core_64_bit_only.mk)
 $(call inherit-product, $(SRC_TARGET_DIR)/product/generic_system.mk)
+$(call inherit-product, frameworks/native/build/tablet-10in-xhdpi-2048-dalvik-heap.mk)
 
 # Framework extensions and the current AOSP application/WebView product.
 $(call inherit-product, $(SRC_TARGET_DIR)/product/handheld_system_ext.mk)

@@ -5,44 +5,6 @@ import SystemPackage
 public enum ReactNativeColliderRecipe {
     public static func build(root: FilePath, environment: [String: String]) -> TaskDeclaration { task("rn.build", root, environment, ["build"], [TaskID(rawValue: "linux.build")]) }
     public static func test(root: FilePath, environment: [String: String]) -> TaskDeclaration { task("rn.test", root, environment, ["test"], [TaskID(rawValue: "rn.build")]) }
-    public static func synchronizeSources(
-        root: FilePath,
-        repositoryRoot: FilePath,
-        sourceIdentity: [UInt8],
-        environment: [String: String]
-    ) -> TaskDeclaration {
-        let sourceDirectories = [
-            "double-conversion", "fast_float", "fmt", "folly", "glog",
-            "hermes", "react-native",
-        ].map { root.appending("third-party/\($0)") }
-        return TaskDeclaration(
-            id: TaskID(rawValue: "rn.sources"),
-            component: ComponentID(rawValue: "rn"),
-            inputs: [
-                .file(repositoryRoot.appending(".gitmodules")),
-                .tool(.named("git")),
-            ] + sourceDirectories.map {
-                .optionalTree($0, fallback: sourceIdentity)
-            },
-            outputs: [
-                OutputDeclaration(
-                    path: root.appending("third-party/hermes/CMakeLists.txt"),
-                    validation: .regularFile),
-                OutputDeclaration(
-                    path: root.appending(
-                        "third-party/react-native/package.json"),
-                    validation: .regularFile),
-            ],
-            locks: [.checkout("rn-sources")],
-            operation: .command(CommandSpec(
-                executable: .named("git"),
-                arguments: [
-                    "submodule", "update", "--init", "--recursive",
-                    "react-native/third-party",
-                ],
-                workingDirectory: repositoryRoot,
-                environment: environment)))
-    }
 
     public static func installJavaScriptDependencies(
         root: FilePath,
@@ -51,7 +13,6 @@ public enum ReactNativeColliderRecipe {
         TaskDeclaration(
             id: TaskID(rawValue: "rn.javascript-dependencies"),
             component: ComponentID(rawValue: "rn"),
-            dependencies: [TaskID(rawValue: "rn.sources")],
             inputs: [
                 .file(root.appending(
                     "third-party/react-native/yarn.lock")),
@@ -139,7 +100,6 @@ public enum ReactNativeColliderRecipe {
         return TaskDeclaration(
             id: TaskID(rawValue: "rn.boost"),
             component: ComponentID(rawValue: "rn"),
-            dependencies: [TaskID(rawValue: "rn.sources")],
             inputs: [
                 .value(
                     name: "boost-version",
@@ -215,7 +175,6 @@ public enum ReactNativeColliderRecipe {
         return TaskDeclaration(
             id: TaskID(rawValue: "rn.hermes"),
             component: ComponentID(rawValue: "rn"),
-            dependencies: [TaskID(rawValue: "rn.sources")],
             inputs: [
                 .dependencyOutput(source),
                 .tree(host.icuIncludeDirectory),
@@ -273,7 +232,6 @@ public enum ReactNativeColliderRecipe {
         return TaskDeclaration(
             id: TaskID(rawValue: "rn.support"),
             component: ComponentID(rawValue: "rn"),
-            dependencies: [TaskID(rawValue: "rn.sources")],
             inputs: [
                 .dependencyOutput(root.appending("third-party/fmt")),
                 .dependencyOutput(root.appending(

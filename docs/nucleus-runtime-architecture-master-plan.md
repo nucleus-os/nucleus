@@ -578,7 +578,7 @@ This phase makes the command tree authoritative.
 Introduce:
 
 - `TaskControlOptions` containing `--dry-run`, `--explain`, `--verbose`,
-  `--json`, and a typed `RunIDArgument` for `--run-id`;
+  `--quiet`, `--json`, and a typed `RunIDArgument` for `--run-id`;
 - `ReportOptions` containing only `--json`;
 - `TaskControlledCommand`, whose `taskOptions` produces `TaskControls`.
 
@@ -630,8 +630,8 @@ Delete `GlobalOptions`, `rejectUnsupportedControls`, `unavailable`, and the
 
 - Parser tests cover every row of the capability matrix.
 - Every supported control parses on every listed leaf.
-- `--run-id`, `--explain`, and `--verbose` fail on every non-task leaf before a
-  run is created.
+- `--run-id`, `--explain`, `--verbose`, and `--quiet` fail on every non-task
+  leaf before a run is created.
 - Command-specific preview and JSON behavior remains intact.
 - Installation help exposes one browser installation command.
 - Root help never exposes `__android-apex-mount`.

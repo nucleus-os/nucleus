@@ -45,9 +45,14 @@ extension RendererRuntime {
                     submissionSerial)
             core.releaseRetiredGpuResources(
                 completedSubmissionSerial: submissionSerial)
+            if let sync = binding.pendingRenderSync {
+                retainRenderSyncUntilGpuCompletion(
+                    sync,
+                    submissionSerial: submissionSerial)
+            }
         }
-        retireCompletedUnpresentedRenderSyncs()
         binding.pendingRenderSync = nil
+        retireCompletedRenderSyncs()
         scanoutSurfaces.flipCompleted(output: outputID)
 
         guard let normalizedEvent else {
@@ -73,6 +78,6 @@ extension RendererRuntime {
 
     public func handleDrmEvents() {
         _ = DrmEventPump.dispatchIfReady(fd: drmDeviceFd)
-        retireCompletedUnpresentedRenderSyncs()
+        retireCompletedRenderSyncs()
     }
 }

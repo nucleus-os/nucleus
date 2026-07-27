@@ -42,8 +42,12 @@ let gfxstreamHostInclude = workspaceRoot
     .appendingPathComponent("third-party/gfxstream/host/include").path
 let gfxstreamHostRoot = workspaceRoot
     .appendingPathComponent("third-party/gfxstream").path
-let gfxstreamHostLibrary = packageRoot
-    .appendingPathComponent(".gfxstream-build/host/host/libgfxstream_backend.a").path
+let gfxstreamHostLibrary =
+    ProcessInfo.processInfo.environment["NUCLEUS_GFXSTREAM_HOST_LIBRARY"]
+    ?? packageRoot
+        .appendingPathComponent(
+            ".gfxstream-build/host/host/libgfxstream_backend.a"
+        ).path
 let gfxstreamGuestLibrary = packageRoot
     .appendingPathComponent(
         ".gfxstream-build/guest/src/gfxstream/guest/vulkan/libvulkan_gfxstream.so").path
@@ -277,7 +281,10 @@ let package = Package(
                 "NucleusAndroidSharedRingC",
             ],
             path: "Sources/NucleusAndroidGfxstreamBroker",
-            linkerSettings: [.linkedLibrary("pthread")]),
+            linkerSettings: [
+                .linkedLibrary("pthread"),
+                .unsafeFlags(["-Wl,--export-dynamic"]),
+            ]),
         .executableTarget(
             name: "NucleusAndroidDisplayHost",
             dependencies: ["NucleusAndroidDisplayHostCore"],

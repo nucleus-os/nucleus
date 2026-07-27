@@ -74,6 +74,22 @@ func boundedCommandValuesRejectUnknownSpellingsDuringParsing() {
 }
 
 @Test
+func frameworkBootAcceptsOnlyAddressSanitizerInstrumentation() throws {
+    let command = try AndroidRuntime.FrameworkBoot.parse([
+        "--sanitize", "address",
+        "--vk-validation",
+    ])
+
+    #expect(command.sanitize == .address)
+    #expect(command.validation)
+    #expect(throws: (any Error).self) {
+        try AndroidRuntime.FrameworkBoot.parse([
+            "--sanitize", "thread",
+        ])
+    }
+}
+
+@Test
 func compositorPassthroughRequiresTheTerminatorAndRemainsOpaque() throws {
     let command = try Run.parse([
         "--scale", "1.5",

@@ -15,6 +15,10 @@ typedef struct nucleus_android_gfxstream_host_renderer
 typedef struct nucleus_android_gfxstream_host_connection
     nucleus_android_gfxstream_host_connection;
 
+typedef void (*nucleus_android_gfxstream_host_fence_completion)(
+    void *context,
+    int status);
+
 typedef int (*nucleus_android_gfxstream_host_export_release_sync_file)(
     void *context,
     uint32_t color_buffer_handle);
@@ -67,6 +71,27 @@ int nucleus_android_gfxstream_host_import_dmabuf(
 int nucleus_android_gfxstream_host_release_dmabuf(
     nucleus_android_gfxstream_host_renderer *renderer,
     uint32_t color_buffer_handle);
+/* Transfers ownership of the returned shared-memory descriptor. */
+int nucleus_android_gfxstream_host_export_memory(
+    nucleus_android_gfxstream_host_renderer *renderer,
+    uint32_t context_id,
+    uint64_t blob_id);
+int nucleus_android_gfxstream_host_wait_vulkan_fence(
+    nucleus_android_gfxstream_host_renderer *renderer,
+    uint64_t device_handle,
+    uint64_t fence_handle,
+    nucleus_android_gfxstream_host_fence_completion completion,
+    void *completion_context);
+/* Transfers ownership of the returned Linux sync_file descriptor. */
+int nucleus_android_gfxstream_host_export_vulkan_semaphore(
+    nucleus_android_gfxstream_host_renderer *renderer,
+    uint64_t device_handle,
+    uint64_t semaphore_handle);
+int nucleus_android_gfxstream_host_wait_vulkan_qsri(
+    nucleus_android_gfxstream_host_renderer *renderer,
+    uint64_t image_handle,
+    nucleus_android_gfxstream_host_fence_completion completion,
+    void *completion_context);
 
 /* Takes ownership of all six endpoint descriptors on success and failure. */
 nucleus_android_gfxstream_host_connection *

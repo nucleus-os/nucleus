@@ -119,8 +119,7 @@ struct RuntimeInstaller {
             active: FilePath(prefix.path))
         published = true
         try DirectoryLifecycle.prune(DirectoryRetentionPlan(
-            safetyRoot: FilePath(
-                context.root.appendingPathComponent(".nucleus/runtime").path),
+            safetyRoot: FilePath(context.layout.runtimeState.path),
             rules: [
                 DirectoryRetentionRule(
                     root: FilePath(generationsRoot.path),
@@ -135,9 +134,11 @@ struct RuntimeInstaller {
     /// Per-prefix generations root under the repository's ignored `.nucleus/`
     /// tree, e.g. `.nucleus/runtime/install/generations` for `<root>/.install`.
     private func generationsRoot(for prefix: URL) -> URL {
-        context.root.appendingPathComponent(
-            ".nucleus/runtime/\(generationKey(for: prefix))/generations",
-            isDirectory: true)
+        context.layout.runtimeState
+            .appendingPathComponent(
+                generationKey(for: prefix),
+                isDirectory: true)
+            .appendingPathComponent("generations", isDirectory: true)
     }
 
     private func generationKey(for prefix: URL) -> String {
@@ -210,20 +211,19 @@ struct RuntimeInstaller {
     ) async throws {
         let executable = try await buildProduct(
             "NucleusCompositor",
-            packagePath: "compositor/compositor",
+            package: context.layout.compositorApp,
             component: "compositor",
             options: options)
         try copyExecutable(executable, to: installation.compositor)
 
         let supervisor = try await buildProduct(
             "NucleusSessionSupervisor",
-            packagePath: "platform-linux",
+            package: context.layout.platformLinux,
             component: "session-supervisor",
             options: options)
         try copyExecutable(supervisor, to: installation.sessionSupervisor)
 
-        let sessionPackage = context.root.appendingPathComponent(
-            "compositor/packages/session")
+        let sessionPackage = context.layout.compositorSessionPackage
         for name in ["nucleus-session", "nucleus-session-validate"] {
             let source = sessionPackage.appendingPathComponent(name)
             try await context.run("bash", ["-n", source.path])
@@ -269,12 +269,12 @@ struct RuntimeInstaller {
     ) async throws {
         let shell = try await buildProduct(
             "NucleusShell",
-            packagePath: "shell",
+            package: context.layout.shell,
             component: "shell",
             options: options)
         let helper = try await buildProduct(
             "NucleusShellPamHelper",
-            packagePath: "shell",
+            package: context.layout.shell,
             component: "shell",
             options: options)
         try copyExecutable(shell, to: installation.shell)
@@ -283,13 +283,13 @@ struct RuntimeInstaller {
 
     private func buildProduct(
         _ product: String,
-        packagePath: String,
+        package: URL,
         component: String,
         options: RuntimeBuildOptions
     ) async throws -> URL {
         var arguments = [
             "build",
-            "--package-path", packagePath,
+            "--package-path", package.path,
             "--configuration", options.optimization.rawValue,
             "--product", product,
         ]
@@ -303,8 +303,7 @@ struct RuntimeInstaller {
             }
         }
         if options.tracy || options.sanitizer != nil {
-            let scratch = context.root
-                .appendingPathComponent(".build/nucleus-runtime")
+            let scratch = context.layout.runtimeBuilds
                 .appendingPathComponent(options.identity)
                 .appendingPathComponent(component)
             arguments += ["--scratch-path", scratch.path]
@@ -423,11 +422,11 @@ struct InstallCommand {
     private func defaultPrefix(for component: RuntimeInstaller.Component) -> URL {
         switch component {
         case .compositor:
-            context.root.appendingPathComponent("compositor/compositor/.install")
+            context.layout.compositorInstallPrefix
         case .shell:
-            context.root.appendingPathComponent("shell/.install")
+            context.layout.shellInstallPrefix
         case .session:
-            context.root.appendingPathComponent(".install")
+            context.layout.installPrefix
         }
     }
 }

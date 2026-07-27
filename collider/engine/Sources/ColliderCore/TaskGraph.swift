@@ -94,46 +94,26 @@ public struct GitPatchApplication: Hashable, Sendable {
     }
 }
 
-public struct GitCheckoutValidation: Hashable, Sendable {
-    public let repository: FilePath
-    public let expectedCommit: String
-    public let requireClean: Bool
-    public let environment: [String: String]
-
-    public init(
-        repository: FilePath,
-        expectedCommit: String,
-        requireClean: Bool = true,
-        environment: [String: String]
-    ) {
-        self.repository = repository
-        self.expectedCommit = expectedCommit
-        self.requireClean = requireClean
-        self.environment = environment
-    }
-}
-
-public struct GitCheckoutSync: Hashable, Sendable {
-    public enum Revision: Hashable, Sendable {
+public struct SwiftSourcePreparation: Hashable, Sendable {
+    public enum Reference: Hashable, Sendable {
         case branch(String)
         case tag(String)
-        case commit(String)
     }
 
     public let repository: FilePath
     public let remote: String
-    public let revision: Revision
+    public let reference: Reference
     public let environment: [String: String]
 
     public init(
         repository: FilePath,
         remote: String,
-        revision: Revision,
+        reference: Reference,
         environment: [String: String]
     ) {
         self.repository = repository
         self.remote = remote
-        self.revision = revision
+        self.reference = reference
         self.environment = environment
     }
 }
@@ -588,6 +568,28 @@ public struct AOSPSourcePreparation: Hashable, Sendable {
     }
 }
 
+public struct AOSPBuildContainerPreparation: Hashable, Sendable {
+    public let context: FilePath
+    public let containerFile: FilePath
+    public let imageID: FilePath
+    public let imageName: String
+    public let environment: [String: String]
+
+    public init(
+        context: FilePath,
+        containerFile: FilePath,
+        imageID: FilePath,
+        imageName: String,
+        environment: [String: String]
+    ) {
+        self.context = context
+        self.containerFile = containerFile
+        self.imageID = imageID
+        self.imageName = imageName
+        self.environment = environment
+    }
+}
+
 public struct AOSPSigningIdentityPreparation: Hashable, Sendable {
     public let destination: FilePath
     public let subject: String
@@ -610,6 +612,8 @@ public struct AOSPProductBuild: Hashable, Sendable {
     public let repoLauncher: FilePath
     public let sourceProvenance: FilePath
     public let buildRoot: FilePath
+    public let ccacheDirectory: FilePath
+    public let containerImageID: FilePath
     public let signingIdentity: FilePath
     public let product: String
     public let release: String
@@ -627,6 +631,8 @@ public struct AOSPProductBuild: Hashable, Sendable {
         repoLauncher: FilePath,
         sourceProvenance: FilePath,
         buildRoot: FilePath,
+        ccacheDirectory: FilePath,
+        containerImageID: FilePath,
         signingIdentity: FilePath,
         product: String,
         release: String,
@@ -643,6 +649,8 @@ public struct AOSPProductBuild: Hashable, Sendable {
         self.repoLauncher = repoLauncher
         self.sourceProvenance = sourceProvenance
         self.buildRoot = buildRoot
+        self.ccacheDirectory = ccacheDirectory
+        self.containerImageID = containerImageID
         self.signingIdentity = signingIdentity
         self.product = product
         self.release = release
@@ -663,6 +671,25 @@ public struct ChromiumPatchStack: Hashable, Sendable {
     public init(repository: FilePath, directory: FilePath) {
         self.repository = repository
         self.directory = directory
+    }
+}
+
+public struct ChromiumDepotToolsPreparation: Hashable, Sendable {
+    public let repository: FilePath
+    public let remote: String
+    public let commit: String
+    public let environment: [String: String]
+
+    public init(
+        repository: FilePath,
+        remote: String,
+        commit: String,
+        environment: [String: String]
+    ) {
+        self.repository = repository
+        self.remote = remote
+        self.commit = commit
+        self.environment = environment
     }
 }
 
@@ -857,8 +884,7 @@ public enum TaskOperation: Hashable, Sendable {
     case removePath(FilePath)
     case replaceSymlink(path: FilePath, target: String)
     case writeFile(FilePath, bytes: [UInt8])
-    case syncGitCheckout(GitCheckoutSync)
-    case validateGitCheckout(GitCheckoutValidation)
+    case prepareSwiftSource(SwiftSourcePreparation)
     case prepareHostToolchainBuild(HostToolchainBuildPreparation)
     case assembleHostToolchain(HostToolchainAssembly)
     case validateHostToolchain(HostToolchainValidation)
@@ -873,12 +899,14 @@ public enum TaskOperation: Hashable, Sendable {
     case pruneDirectories(DirectoryRetentionPlan)
     case verifyAOSPSourceLock(AOSPSourceLockVerification)
     case prepareAOSPSource(AOSPSourcePreparation)
+    case prepareAOSPBuildContainer(AOSPBuildContainerPreparation)
     case prepareAOSPSigningIdentity(AOSPSigningIdentityPreparation)
     case compileAOSPProduct(AOSPProductBuild)
     case signAOSPProduct(AOSPProductBuild)
     case assembleAOSPProductImages(AOSPProductBuild)
     case validateAOSPProduct(AOSPProductBuild)
     case publishAOSPProduct(AOSPProductBuild)
+    case prepareChromiumDepotTools(ChromiumDepotToolsPreparation)
     case prepareChromiumSource(ChromiumSourcePreparation)
     case buildChromiumProduct(ChromiumProductBuild)
     case assembleBrowserArtifact(BrowserArtifactAssembly)

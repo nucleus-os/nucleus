@@ -24,6 +24,7 @@
 
 #define VK_GFXSTREAM_STRUCTURE_TYPE_EXT
 #include "vulkan_gfxstream.h"
+#include "vk_android_native_buffer_gfxstream.h"
 
 #include "NucleusAndroidDrmC.h"
 #include "NucleusAndroidGfxstreamAdapters/GuestRingFactory.h"
@@ -45,6 +46,8 @@ constexpr uint32_t kResizedHeight = 72;
 constexpr uint32_t kBufferCount = 3;
 constexpr uint32_t kFramesPerGeneration = 24;
 constexpr uint32_t kFirstColorBufferHandle = 1;
+constexpr uint32_t kNativeBufferWidth = 1280;
+constexpr uint32_t kNativeBufferHeight = 720;
 constexpr int kCompletionTimeoutMilliseconds = 10000;
 
 void traceStage(const char *stage) {
@@ -94,6 +97,7 @@ void closeEndpointDescriptors(
         descriptors->response_memory_fd,
         descriptors->response_data_notification_fd,
         descriptors->response_space_notification_fd,
+        descriptors->lifetime_fd,
     };
     for (const int descriptor : values) {
         if (descriptor >= 0) {
@@ -107,6 +111,7 @@ void closeEndpointDescriptors(
         .response_memory_fd = -1,
         .response_data_notification_fd = -1,
         .response_space_notification_fd = -1,
+        .lifetime_fd = -1,
     };
 }
 
@@ -118,6 +123,7 @@ nucleus_android_gfxstream_endpoint_descriptors emptyEndpointDescriptors() {
         .response_memory_fd = -1,
         .response_data_notification_fd = -1,
         .response_space_notification_fd = -1,
+        .lifetime_fd = -1,
     };
 }
 
@@ -1267,7 +1273,8 @@ class GuestWorkload {
         uint64_t modifier,
         uint32_t planeOffset,
         uint32_t planeStride,
-        const std::array<float, 4> &clearColor) {
+        const std::array<float, 4> &clearColor,
+        bool deferredAndroidNativeBuffer = false) {
         const std::size_t resourceIndex = mResources.size();
         mResources.push_back({
             .colorBufferHandle = colorBufferHandle,
@@ -1299,7 +1306,9 @@ class GuestWorkload {
         };
         const VkImageCreateInfo imageCreateInfo = {
             .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
-            .pNext = &externalInfo,
+            .pNext = deferredAndroidNativeBuffer
+                ? nullptr
+                : &externalInfo,
             .flags = 0,
             .imageType = VK_IMAGE_TYPE_2D,
             .format = VK_FORMAT_B8G8R8A8_UNORM,
@@ -1311,7 +1320,9 @@ class GuestWorkload {
             .mipLevels = 1,
             .arrayLayers = 1,
             .samples = VK_SAMPLE_COUNT_1_BIT,
-            .tiling = VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT,
+            .tiling = deferredAndroidNativeBuffer
+                ? VK_IMAGE_TILING_OPTIMAL
+                : VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT,
             .usage =
                 VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
                 VK_IMAGE_USAGE_TRANSFER_DST_BIT,
@@ -1337,68 +1348,94 @@ class GuestWorkload {
             resource.image,
             &requirements);
         traceStage("guest.vkGetImageMemoryRequirements.complete");
-        VkPhysicalDeviceMemoryProperties memoryProperties = {};
-        mGetPhysicalDeviceMemoryProperties(
-            mPhysicalDevice,
-            &memoryProperties);
-        uint32_t memoryTypeIndex = UINT32_MAX;
-        for (uint32_t index = 0;
-             index < memoryProperties.memoryTypeCount;
-             ++index) {
-            if ((requirements.memoryTypeBits & (1u << index)) == 0) {
-                continue;
-            }
-            if ((memoryProperties.memoryTypes[index].propertyFlags &
-                 VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) != 0) {
-                memoryTypeIndex = index;
-                break;
+        if (deferredAndroidNativeBuffer) {
+            const uint32_t nativeHandle = colorBufferHandle;
+            const VkNativeBufferANDROID nativeBuffer = {
+                .sType = VK_STRUCTURE_TYPE_NATIVE_BUFFER_ANDROID,
+                .pNext = nullptr,
+                .handle = &nativeHandle,
+                .stride = static_cast<int>(planeStride / 4),
+                .format = 1,
+                .usage = 0,
+                .usage2 = {},
+                .usage3 = 0,
+            };
+            const VkBindImageMemoryInfo bindInfo = {
+                .sType = VK_STRUCTURE_TYPE_BIND_IMAGE_MEMORY_INFO,
+                .pNext = &nativeBuffer,
+                .image = resource.image,
+                .memory = VK_NULL_HANDLE,
+                .memoryOffset = 0,
+            };
+            traceStage("guest.vkBindImageMemory2-deferred-native-buffer.begin");
+            check(
+                mBindImageMemory2(mDevice, 1, &bindInfo),
+                "vkBindImageMemory2(VkNativeBufferANDROID)");
+            traceStage("guest.vkBindImageMemory2-deferred-native-buffer.complete");
+        } else {
+            VkPhysicalDeviceMemoryProperties memoryProperties = {};
+            mGetPhysicalDeviceMemoryProperties(
+                mPhysicalDevice,
+                &memoryProperties);
+            uint32_t memoryTypeIndex = UINT32_MAX;
+            for (uint32_t index = 0;
+                 index < memoryProperties.memoryTypeCount;
+                 ++index) {
+                if ((requirements.memoryTypeBits & (1u << index)) == 0) {
+                    continue;
+                }
+                if ((memoryProperties.memoryTypes[index].propertyFlags &
+                     VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) != 0) {
+                    memoryTypeIndex = index;
+                    break;
+                }
+                if (memoryTypeIndex == UINT32_MAX) {
+                    memoryTypeIndex = index;
+                }
             }
             if (memoryTypeIndex == UINT32_MAX) {
-                memoryTypeIndex = index;
+                throw std::runtime_error(
+                    "the guest image has no compatible memory type");
             }
-        }
-        if (memoryTypeIndex == UINT32_MAX) {
-            throw std::runtime_error(
-                "the guest image has no compatible memory type");
-        }
 
-        VkMemoryDedicatedAllocateInfo dedicatedInfo = {
-            .sType =
-                VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO,
-            .pNext = nullptr,
-            .image = resource.image,
-            .buffer = VK_NULL_HANDLE,
-        };
-        VkImportColorBufferGOOGLE importInfo = {
-            .sType =
-                VK_STRUCTURE_TYPE_IMPORT_COLOR_BUFFER_GOOGLE,
-            .pNext = &dedicatedInfo,
-            .colorBuffer = colorBufferHandle,
-        };
-        const VkMemoryAllocateInfo allocateInfo = {
-            .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-            .pNext = &importInfo,
-            .allocationSize = requirements.size,
-            .memoryTypeIndex = memoryTypeIndex,
-        };
-        traceStage("guest.vkAllocateMemory-import-color-buffer.begin");
-        check(
-            mAllocateMemory(
-                mDevice,
-                &allocateInfo,
-                nullptr,
-                &resource.memory),
-            "vkAllocateMemory(VkImportColorBufferGOOGLE)");
-        traceStage("guest.vkAllocateMemory-import-color-buffer.complete");
-        traceStage("guest.vkBindImageMemory.begin");
-        check(
-            mBindImageMemory(
-                mDevice,
-                resource.image,
-                resource.memory,
-                0),
-            "vkBindImageMemory");
-        traceStage("guest.vkBindImageMemory.complete");
+            VkMemoryDedicatedAllocateInfo dedicatedInfo = {
+                .sType =
+                    VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO,
+                .pNext = nullptr,
+                .image = resource.image,
+                .buffer = VK_NULL_HANDLE,
+            };
+            VkImportColorBufferGOOGLE importInfo = {
+                .sType =
+                    VK_STRUCTURE_TYPE_IMPORT_COLOR_BUFFER_GOOGLE,
+                .pNext = &dedicatedInfo,
+                .colorBuffer = colorBufferHandle,
+            };
+            const VkMemoryAllocateInfo allocateInfo = {
+                .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+                .pNext = &importInfo,
+                .allocationSize = requirements.size,
+                .memoryTypeIndex = memoryTypeIndex,
+            };
+            traceStage("guest.vkAllocateMemory-import-color-buffer.begin");
+            check(
+                mAllocateMemory(
+                    mDevice,
+                    &allocateInfo,
+                    nullptr,
+                    &resource.memory),
+                "vkAllocateMemory(VkImportColorBufferGOOGLE)");
+            traceStage("guest.vkAllocateMemory-import-color-buffer.complete");
+            traceStage("guest.vkBindImageMemory.begin");
+            check(
+                mBindImageMemory(
+                    mDevice,
+                    resource.image,
+                    resource.memory,
+                    0),
+                "vkBindImageMemory");
+            traceStage("guest.vkBindImageMemory.complete");
+        }
 
         if (!mCommandPool) {
             const VkCommandPoolCreateInfo poolCreateInfo = {
@@ -1563,6 +1600,12 @@ class GuestWorkload {
         traceStage("guest.vkQueueSubmit.complete");
     }
 
+    void waitIdle() {
+        traceStage("guest.vkQueueWaitIdle.begin");
+        check(mQueueWaitIdle(mQueue), "vkQueueWaitIdle");
+        traceStage("guest.vkQueueWaitIdle.complete");
+    }
+
     const char *deviceName() const {
         return mPhysicalDeviceProperties.deviceName;
     }
@@ -1599,6 +1642,7 @@ class GuestWorkload {
         LOAD_DEVICE(AllocateMemory);
         LOAD_DEVICE(FreeMemory);
         LOAD_DEVICE(BindImageMemory);
+        LOAD_DEVICE(BindImageMemory2);
         LOAD_DEVICE(CreateCommandPool);
         LOAD_DEVICE(DestroyCommandPool);
         LOAD_DEVICE(AllocateCommandBuffers);
@@ -1607,6 +1651,7 @@ class GuestWorkload {
         LOAD_DEVICE(CmdClearColorImage);
         LOAD_DEVICE(EndCommandBuffer);
         LOAD_DEVICE(QueueSubmit);
+        LOAD_DEVICE(QueueWaitIdle);
 #undef LOAD_DEVICE
     }
 
@@ -1633,6 +1678,7 @@ class GuestWorkload {
     PFN_vkAllocateMemory mAllocateMemory = nullptr;
     PFN_vkFreeMemory mFreeMemory = nullptr;
     PFN_vkBindImageMemory mBindImageMemory = nullptr;
+    PFN_vkBindImageMemory2 mBindImageMemory2 = nullptr;
     PFN_vkCreateCommandPool mCreateCommandPool = nullptr;
     PFN_vkDestroyCommandPool mDestroyCommandPool = nullptr;
     PFN_vkAllocateCommandBuffers mAllocateCommandBuffers = nullptr;
@@ -1640,6 +1686,7 @@ class GuestWorkload {
     PFN_vkCmdPipelineBarrier mCmdPipelineBarrier = nullptr;
     PFN_vkCmdClearColorImage mCmdClearColorImage = nullptr;
     PFN_vkEndCommandBuffer mEndCommandBuffer = nullptr;
+    PFN_vkQueueWaitIdle mQueueWaitIdle = nullptr;
     PFN_vkQueueSubmit mQueueSubmit = nullptr;
 
     VkInstance mInstance = VK_NULL_HANDLE;
@@ -2472,6 +2519,32 @@ int main(int argc, char **argv) {
                 GuestWorkload guest(icdHandle);
                 traceStage("guest.workload-construction.complete");
                 guestDeviceName = guest.deviceName();
+                traceStage("guest.deferred-native-buffer.begin");
+                auto nativeBuffer = std::make_unique<BufferSlot>(
+                    gpu.get(),
+                    renderer.get(),
+                    format,
+                    modifiers,
+                    kFirstColorBufferHandle + (kBufferCount * 2),
+                    kNativeBufferWidth,
+                    kNativeBufferHeight,
+                    error,
+                    sizeof(error));
+                const std::size_t nativeResource =
+                    guest.createResource(
+                        nativeBuffer->colorBufferHandle(),
+                        nativeBuffer->width(),
+                        nativeBuffer->height(),
+                        nativeBuffer->modifier(),
+                        nativeBuffer->plane().offset,
+                        nativeBuffer->plane().stride,
+                        {0.18f, 0.36f, 0.82f, 1.0f},
+                        true);
+                guest.submit(nativeResource);
+                guest.waitIdle();
+                guest.destroyResources();
+                nativeBuffer.reset();
+                traceStage("guest.deferred-native-buffer.complete");
                 traceStage("failure-paths.guest-import.begin");
                 verifyGuestImportFailure(
                     guest,
@@ -2572,6 +2645,7 @@ int main(int argc, char **argv) {
             "\"orderlyTeardown\":true,"
             "\"unsupportedCapabilityFailures\":true,"
             "\"guestImportColorBuffer\":true,"
+            "\"deferredAndroidNativeBuffer\":true,"
             "\"liveRingDecoder\":true,"
             "\"releaseSyncFileWait\":true,"
             "\"acquireSyncFileSignal\":true,"

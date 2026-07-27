@@ -315,12 +315,173 @@ extension ColliderRuntime {
             preparation,
             stage: stage)
         let digest = ArtifactHasher.digest(bytes: current)
-        guard digest.sha256Hex == provenance.resolvedManifestSHA256 else {
+        if digest.sha256Hex != provenance.resolvedManifestSHA256 {
+            if let adopted = try await adoptCanonicalAOSPForwardPatchState(
+                preparation,
+                provenance: provenance,
+                currentResolvedManifest: current,
+                stage: stage)
+            {
+                return adopted
+            }
             throw RuntimeFailure.invalidOutput(
                 "existing AOSP project revisions do not match their "
-                    + "recorded provenance; refusing to run Repo sync")
+                    + "recorded provenance or the canonical forward-patch "
+                    + "state; refusing to run Repo sync")
         }
         return provenance
+    }
+
+    private func adoptCanonicalAOSPForwardPatchState(
+        _ preparation: AOSPSourcePreparation,
+        provenance: AOSPSourceProvenance,
+        currentResolvedManifest: Data,
+        stage: TaskID
+    ) async throws -> AOSPSourceProvenance? {
+        let existingByPath = Dictionary(
+            uniqueKeysWithValues:
+                provenance.forwardPatches.map { ($0.repositoryPath, $0) })
+        let desiredByPath = Dictionary(
+            uniqueKeysWithValues:
+                preparation.patchStacks.map { ($0.repositoryPath, $0) })
+        guard Set(existingByPath.keys) == Set(desiredByPath.keys) else {
+            return nil
+        }
+
+        let metadata = preparation.source.appending(".nucleus")
+        let recordedManifestPath = metadata.appending(
+            "patched-resolved-manifest.xml")
+        guard FileManager.default.fileExists(
+            atPath: recordedManifestPath.string)
+        else {
+            return nil
+        }
+        let recordedManifest = try Data(contentsOf: URL(
+            fileURLWithPath: recordedManifestPath.string))
+        guard ArtifactHasher.digest(bytes: recordedManifest).sha256Hex
+                == provenance.resolvedManifestSHA256
+        else {
+            return nil
+        }
+        var expectedManifest = String(
+            decoding: recordedManifest,
+            as: UTF8.self)
+        var adoptedStacks: [AOSPSourceProvenance.ForwardPatchStack] = []
+        for repositoryPath in existingByPath.keys.sorted() {
+            guard let previous = existingByPath[repositoryPath],
+                  let desired = desiredByPath[repositoryPath]
+            else {
+                return nil
+            }
+            let repository = preparation.source.appending(repositoryPath)
+            let head = try await aospGitRevision(
+                repository: repository,
+                revision: "HEAD",
+                environment: preparation.environment,
+                stage: stage)
+            let tree = try await aospGitRevision(
+                repository: repository,
+                revision: "HEAD^{tree}",
+                environment: preparation.environment,
+                stage: stage)
+            let canonicalTree = try await canonicalAOSPForwardPatchTree(
+                repository: repository,
+                baseCommit: previous.baseCommit,
+                stack: desired,
+                preparation: preparation,
+                stage: stage)
+            guard tree == canonicalTree else {
+                return nil
+            }
+            guard let updatedManifest = replacingAOSPProjectRevision(
+                in: expectedManifest,
+                repositoryPath: repositoryPath,
+                oldRevision: previous.patchedCommit,
+                newRevision: head)
+            else {
+                return nil
+            }
+            expectedManifest = updatedManifest
+            adoptedStacks.append(.init(
+                repositoryPath: repositoryPath,
+                baseCommit: previous.baseCommit,
+                patchedCommit: head,
+                patchedTree: tree,
+                patches: try desiredPatchIdentity(desired)))
+        }
+        guard Data(expectedManifest.utf8) == currentResolvedManifest else {
+            return nil
+        }
+
+        let adopted = AOSPSourceProvenance(
+            status: provenance.status,
+            release: provenance.release,
+            revision: provenance.revision,
+            manifestCommit: provenance.manifestCommit,
+            superprojectCommit: provenance.superprojectCommit,
+            repoCommit: provenance.repoCommit,
+            baseResolvedManifestSHA256:
+                provenance.baseResolvedManifestSHA256,
+            resolvedManifestSHA256:
+                ArtifactHasher.digest(
+                    bytes: currentResolvedManifest).sha256Hex,
+            forwardPatches: adoptedStacks)
+        try withTaskCancellationShield {
+            try DurableFile.write(
+                currentResolvedManifest,
+                to: recordedManifestPath)
+            try DurableFile.writeJSON(
+                adopted,
+                to: metadata.appending("source-provenance.json"))
+        }
+        return adopted
+    }
+
+    private func canonicalAOSPForwardPatchTree(
+        repository: FilePath,
+        baseCommit: String,
+        stack: AOSPSourcePatchStack,
+        preparation: AOSPSourcePreparation,
+        stage: TaskID
+    ) async throws -> String {
+        let temporary = FilePath(
+            FileManager.default.temporaryDirectory
+                .appendingPathComponent(
+                    "nucleus-aosp-index-\(UUID().uuidString)"
+                ).path)
+        defer {
+            try? FileManager.default.removeItem(atPath: temporary.string)
+            try? FileManager.default.removeItem(
+                atPath: temporary.string + ".lock")
+        }
+        let environment = preparation.environment.merging([
+            "GIT_INDEX_FILE": temporary.string,
+        ]) { _, required in required }
+        try await aospChecked(
+            .named("git"),
+            ["-C", repository.string, "read-tree", baseCommit],
+            in: preparation.source,
+            environment: environment,
+            stage: stage)
+        for patch in stack.patches {
+            try await aospChecked(
+                .named("git"),
+                [
+                    "-C", repository.string,
+                    "apply", "--cached", "--whitespace=error-all",
+                    patch.file.string,
+                ],
+                in: preparation.source,
+                environment: environment,
+                stage: stage)
+        }
+        return try await aospCaptured(
+            .named("git"),
+            ["-C", repository.string, "write-tree"],
+            in: preparation.source,
+            environment: environment,
+            stage: stage
+        ).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private func reconcileAOSPForwardPatches(
@@ -616,7 +777,7 @@ extension ColliderRuntime {
         let output = try await aospCaptured(
             .named("git"),
             ["ls-remote", url] + revisions,
-            in: FilePath("/"),
+            in: FilePath(FileManager.default.temporaryDirectory.path),
             environment: environment,
             stage: stage)
         var refs: [String: String] = [:]
@@ -799,6 +960,38 @@ extension ColliderRuntime {
             environment: environment,
             stage: stage)
     }
+}
+
+private func replacingAOSPProjectRevision(
+    in manifest: String,
+    repositoryPath: String,
+    oldRevision: String,
+    newRevision: String
+) -> String? {
+    let pathAttribute = "path=\"\(repositoryPath)\""
+    let nameAttribute = "name=\"\(repositoryPath)\""
+    let oldRevisionAttribute = "revision=\"\(oldRevision)\""
+    let newRevisionAttribute = "revision=\"\(newRevision)\""
+    var lines = manifest.split(
+        separator: "\n",
+        omittingEmptySubsequences: false
+    ).map(String.init)
+    let matching = lines.indices.filter {
+        lines[$0].contains(pathAttribute)
+            || (
+                !lines[$0].contains(" path=\"")
+                    && lines[$0].contains(nameAttribute)
+            )
+    }
+    guard matching.count == 1,
+          lines[matching[0]].contains(oldRevisionAttribute)
+    else {
+        return nil
+    }
+    lines[matching[0]] = lines[matching[0]].replacingOccurrences(
+        of: oldRevisionAttribute,
+        with: newRevisionAttribute)
+    return lines.joined(separator: "\n")
 }
 
 private func requireAOSPRemoteRef(

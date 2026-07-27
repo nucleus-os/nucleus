@@ -4,7 +4,7 @@
 
 Collider has one execution model, one typed run-event model, one output policy, one headless observation and control model, and one human presentation layer.
 
-Every command writes requested machine data to stdout, human diagnostics and progress to stderr, and complete task output to durable per-run logs. Interactive child processes retain direct terminal ownership. Non-interactive child output never becomes an unframed default-terminal firehose.
+Every command writes requested machine data to stdout, human diagnostics and progress to stderr, and complete task output to durable per-run logs. Interactive child processes retain direct terminal ownership. Non-interactive task output streams to the invoking terminal by default while the durable log remains the authoritative replay source.
 
 The CLI is verb-first. Parser types describe valid domains, invalid command combinations fail during parsing, and replaced spellings are deleted with their callers in the same phase. The task graph remains the source of truth for dependency selection, caching, execution, resumption, and reporting.
 
@@ -21,9 +21,9 @@ Collider exposes four disclosure levels:
 | Level | Behavior |
 | --- | --- |
 | `-q` | Print only the terminal result or failure block. |
-| Default | Show framed task progress. Keep leaf output in stage logs and show a bounded tail on failure. |
-| `-v` | Show framed task progress and stream leaf output under the active task. |
-| `-vv` | Add scrubbed resolved commands, working directories, and environment deltas. |
+| Default | Show framed task progress and stream leaf output under the active task. |
+| `-v` | Add scrubbed resolved commands and working directories. |
+| `-vv` | Add scrubbed environment deltas and detailed runtime diagnostics. |
 
 The output contract is:
 

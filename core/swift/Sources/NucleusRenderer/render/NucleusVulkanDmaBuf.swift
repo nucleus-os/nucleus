@@ -65,6 +65,8 @@ public struct DmaBufImageDescriptor {
 public enum DrmFourcc {
     public static let xrgb8888: UInt32 = 0x3432_5258  // 'XR24'
     public static let argb8888: UInt32 = 0x3432_5241  // 'AR24'
+    public static let xbgr8888: UInt32 = 0x3432_4258  // 'XB24'
+    public static let abgr8888: UInt32 = 0x3432_4241  // 'AB24'
 }
 
 struct ClientShmConversionMetrics: Equatable, Sendable {
@@ -190,8 +192,10 @@ public func vulkanFormatForDrm(_ fourcc: UInt32) -> VkFormat {
     switch fourcc {
     case DrmFourcc.xrgb8888, DrmFourcc.argb8888:
         return VK_FORMAT_B8G8R8A8_UNORM
+    case DrmFourcc.xbgr8888, DrmFourcc.abgr8888:
+        return VK_FORMAT_R8G8B8A8_UNORM
     default:
-        return VK_FORMAT_B8G8R8A8_UNORM
+        return VK_FORMAT_UNDEFINED
     }
 }
 
@@ -202,7 +206,12 @@ public func vulkanFormatForDrm(_ fourcc: UInt32) -> VkFormat {
 public func querySampleableDmaBufFormats(
     physicalDevice: VkPhysicalDevice,
     instanceDispatch: VK.InstanceDispatch,
-    drmFormats: [UInt32] = [DrmFourcc.xrgb8888, DrmFourcc.argb8888]
+    drmFormats: [UInt32] = [
+        DrmFourcc.xrgb8888,
+        DrmFourcc.argb8888,
+        DrmFourcc.xbgr8888,
+        DrmFourcc.abgr8888,
+    ]
 ) -> [DmaBufFormatModifier] {
     guard let getFormatProperties = unsafe instanceDispatch.vkGetPhysicalDeviceFormatProperties2,
           let getImageFormatProperties = unsafe instanceDispatch.vkGetPhysicalDeviceImageFormatProperties2
@@ -212,6 +221,8 @@ public func querySampleableDmaBufFormats(
 
     var out: [DmaBufFormatModifier] = []
     for drmFormat in drmFormats {
+        let vulkanFormat = vulkanFormatForDrm(drmFormat)
+        guard vulkanFormat != VK_FORMAT_UNDEFINED else { continue }
         var list = unsafe VkDrmFormatModifierPropertiesList2EXT()
         unsafe list.sType = VK_STRUCTURE_TYPE_DRM_FORMAT_MODIFIER_PROPERTIES_LIST_2_EXT
 
@@ -219,7 +230,7 @@ public func querySampleableDmaBufFormats(
         unsafe props.sType = VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_2
         withUnsafeMutablePointer(to: &list) { listPtr in
             unsafe props.pNext = UnsafeMutableRawPointer(listPtr)
-            unsafe getFormatProperties(physicalDevice, vulkanFormatForDrm(drmFormat), &props)
+            unsafe getFormatProperties(physicalDevice, vulkanFormat, &props)
         }
         guard unsafe list.drmFormatModifierCount > 0 else { continue }
 
@@ -230,7 +241,7 @@ public func querySampleableDmaBufFormats(
             unsafe list.pDrmFormatModifierProperties = buffer.baseAddress
             withUnsafeMutablePointer(to: &list) { listPtr in
                 unsafe props.pNext = UnsafeMutableRawPointer(listPtr)
-                unsafe getFormatProperties(physicalDevice, vulkanFormatForDrm(drmFormat), &props)
+                unsafe getFormatProperties(physicalDevice, vulkanFormat, &props)
             }
         }
 
@@ -254,7 +265,7 @@ public func querySampleableDmaBufFormats(
 
             var imageInfo = unsafe VkPhysicalDeviceImageFormatInfo2()
             unsafe imageInfo.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_FORMAT_INFO_2
-            unsafe imageInfo.format = vulkanFormatForDrm(drmFormat)
+            unsafe imageInfo.format = vulkanFormat
             unsafe imageInfo.type = VK_IMAGE_TYPE_2D
             unsafe imageInfo.tiling = VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT
             unsafe imageInfo.usage = DmaBufImageDescriptor.sampledUsage.rawValue
@@ -448,6 +459,7 @@ func importDmaBufImage(
     let distinctPlaneFds = Set(ownedPlaneFds)
     guard descriptor.width > 0,
           descriptor.height > 0,
+          vulkanFormatForDrm(descriptor.drmFormat) != VK_FORMAT_UNDEFINED,
           (1...3).contains(descriptor.planes.count),
           ownedPlaneFds.allSatisfy({ $0 >= 0 }),
           distinctPlaneFds.count == 1

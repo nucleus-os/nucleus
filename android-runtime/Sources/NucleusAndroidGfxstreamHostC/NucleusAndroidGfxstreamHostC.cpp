@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <array>
+#include <condition_variable>
 #include <cstdint>
 #include <cstdlib>
 #include <cstdio>
@@ -28,6 +29,10 @@ struct nucleus_android_gfxstream_host_renderer {
     gfxstream::RendererPtr renderer;
     std::mutex processMutex;
     std::unordered_map<uint32_t, std::size_t> processReferences;
+    std::mutex fenceMutex;
+    std::condition_variable fenceCondition;
+    std::size_t activeFenceCallbacks = 0;
+    bool destroying = false;
 };
 
 struct nucleus_android_gfxstream_host_connection {
@@ -46,6 +51,24 @@ struct nucleus_android_gfxstream_host_connection {
 };
 
 namespace {
+
+struct VulkanFenceCallback {
+    nucleus_android_gfxstream_host_renderer *renderer;
+    nucleus_android_gfxstream_host_fence_completion completion;
+    void *context;
+    uint64_t deviceHandle;
+    uint64_t fenceHandle;
+};
+
+void completeVulkanFence(void *opaque, int status) {
+    std::unique_ptr<VulkanFenceCallback> callback(
+        static_cast<VulkanFenceCallback *>(opaque));
+    callback->completion(callback->context, status);
+    std::lock_guard<std::mutex> lock(callback->renderer->fenceMutex);
+    if (--callback->renderer->activeFenceCallbacks == 0) {
+        callback->renderer->fenceCondition.notify_all();
+    }
+}
 
 void writeError(
     char *output,
@@ -119,6 +142,7 @@ void closeEndpointDescriptors(
         descriptors.response_memory_fd,
         descriptors.response_data_notification_fd,
         descriptors.response_space_notification_fd,
+        descriptors.lifetime_fd,
     };
     for (const int descriptor : values) {
         if (descriptor >= 0) {
@@ -223,7 +247,7 @@ nucleus_android_gfxstream_host_renderer_create(
         return nullptr;
     }
     host->library->setRenderer(SELECTED_RENDERER_HOST);
-    host->library->setGuestAndroidApiLevel(35);
+    host->library->setGuestAndroidApiLevel(37);
 
     gfxstream::host::FeatureSet features;
     enable(&features.Vulkan);
@@ -235,6 +259,9 @@ nucleus_android_gfxstream_host_renderer_create(
     enable(&features.VulkanQueueSubmitWithCommands);
     enable(&features.VulkanShaderFloat16Int8);
     enable(&features.VulkanEnsureCachedCoherentMemoryAvailable);
+    enable(&features.VulkanExternalSync);
+    enable(&features.ExternalBlob);
+    enable(&features.SystemBlob);
     enable(&features.VirtioGpuNext);
 
     host->renderer =
@@ -253,6 +280,16 @@ nucleus_android_gfxstream_host_renderer_create(
 
 extern "C" void nucleus_android_gfxstream_host_renderer_destroy(
     nucleus_android_gfxstream_host_renderer *renderer) {
+    if (!renderer) {
+        return;
+    }
+    {
+        std::unique_lock<std::mutex> lock(renderer->fenceMutex);
+        renderer->destroying = true;
+        renderer->fenceCondition.wait(lock, [renderer] {
+            return renderer->activeFenceCallbacks == 0;
+        });
+    }
     delete renderer;
 }
 
@@ -287,6 +324,108 @@ extern "C" int nucleus_android_gfxstream_host_release_dmabuf(
         return -EINVAL;
     }
     return gfxstream_nucleus_release_color_buffer(colorBufferHandle);
+}
+
+extern "C" int nucleus_android_gfxstream_host_export_memory(
+    nucleus_android_gfxstream_host_renderer *renderer,
+    uint32_t contextId,
+    uint64_t blobId) {
+    if (!renderer || !renderer->renderer) {
+        return -EINVAL;
+    }
+    return gfxstream_nucleus_export_host_memory(contextId, blobId);
+}
+
+extern "C" int nucleus_android_gfxstream_host_wait_vulkan_fence(
+    nucleus_android_gfxstream_host_renderer *renderer,
+    uint64_t deviceHandle,
+    uint64_t fenceHandle,
+    nucleus_android_gfxstream_host_fence_completion completion,
+    void *completionContext) {
+    if (!renderer || !renderer->renderer || deviceHandle == 0 ||
+        fenceHandle == 0 || !completion) {
+        return -EINVAL;
+    }
+    {
+        std::lock_guard<std::mutex> lock(renderer->fenceMutex);
+        if (renderer->destroying) {
+            return -ESHUTDOWN;
+        }
+        ++renderer->activeFenceCallbacks;
+    }
+    auto callback = std::make_unique<VulkanFenceCallback>(
+        VulkanFenceCallback{
+            renderer,
+            completion,
+            completionContext,
+            deviceHandle,
+            fenceHandle,
+        });
+    const int result = gfxstream_nucleus_wait_vulkan_fence(
+        deviceHandle,
+        fenceHandle,
+        completeVulkanFence,
+        callback.get());
+    if (result != 0) {
+        std::lock_guard<std::mutex> lock(renderer->fenceMutex);
+        if (--renderer->activeFenceCallbacks == 0) {
+            renderer->fenceCondition.notify_all();
+        }
+        return result;
+    }
+    (void)callback.release();
+    return 0;
+}
+
+extern "C" int nucleus_android_gfxstream_host_export_vulkan_semaphore(
+    nucleus_android_gfxstream_host_renderer *renderer,
+    uint64_t deviceHandle,
+    uint64_t semaphoreHandle) {
+    if (!renderer || !renderer->renderer ||
+        deviceHandle == 0 || semaphoreHandle == 0) {
+        return -EINVAL;
+    }
+    return gfxstream_nucleus_export_vulkan_semaphore_sync_file(
+        deviceHandle,
+        semaphoreHandle);
+}
+
+extern "C" int nucleus_android_gfxstream_host_wait_vulkan_qsri(
+    nucleus_android_gfxstream_host_renderer *renderer,
+    uint64_t imageHandle,
+    nucleus_android_gfxstream_host_fence_completion completion,
+    void *completionContext) {
+    if (!renderer || !renderer->renderer || imageHandle == 0 || !completion) {
+        return -EINVAL;
+    }
+    {
+        std::lock_guard<std::mutex> lock(renderer->fenceMutex);
+        if (renderer->destroying) {
+            return -ESHUTDOWN;
+        }
+        ++renderer->activeFenceCallbacks;
+    }
+    auto callback = std::make_unique<VulkanFenceCallback>(
+        VulkanFenceCallback{
+            renderer,
+            completion,
+            completionContext,
+            0,
+            imageHandle,
+        });
+    const int result = gfxstream_nucleus_wait_vulkan_qsri(
+        imageHandle,
+        completeVulkanFence,
+        callback.get());
+    if (result != 0) {
+        std::lock_guard<std::mutex> lock(renderer->fenceMutex);
+        if (--renderer->activeFenceCallbacks == 0) {
+            renderer->fenceCondition.notify_all();
+        }
+        return result;
+    }
+    (void)callback.release();
+    return 0;
 }
 
 extern "C" nucleus_android_gfxstream_host_connection *

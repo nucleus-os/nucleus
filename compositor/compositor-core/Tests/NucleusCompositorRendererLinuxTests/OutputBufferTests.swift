@@ -30,7 +30,11 @@ import Vulkan
         #expect(ring.acquireSlot() == 0, "mailbox-wrap")
 
         #expect(ScanoutCopy(sourceGeneration: 4, targetGeneration: 7) == ScanoutCopy(sourceGeneration: 4, targetGeneration: 7), "scanout-copy-eq")
-        #expect(vulkanFormatForDrm(DrmFourcc.xrgb8888) == VK_FORMAT_B8G8R8A8_UNORM, "drm-format-map")
+        #expect(vulkanFormatForDrm(DrmFourcc.xrgb8888) == VK_FORMAT_B8G8R8A8_UNORM)
+        #expect(vulkanFormatForDrm(DrmFourcc.argb8888) == VK_FORMAT_B8G8R8A8_UNORM)
+        #expect(vulkanFormatForDrm(DrmFourcc.xbgr8888) == VK_FORMAT_R8G8B8A8_UNORM)
+        #expect(vulkanFormatForDrm(DrmFourcc.abgr8888) == VK_FORMAT_R8G8B8A8_UNORM)
+        #expect(vulkanFormatForDrm(0xffff_ffff) == VK_FORMAT_UNDEFINED)
     }
 
     @Test func dmaBufImportChain() {

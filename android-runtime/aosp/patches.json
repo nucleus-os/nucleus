@@ -1,6 +1,19 @@
 {
   "repositories": [
     {
+      "path": "build/soong",
+      "patches": [
+        "aosp/patches/platform-build-soong/0001-soong-fail-closed-when-nsjail-is-unavailable.patch",
+        "aosp/patches/platform-build-soong/0002-soong-use-container-uts-for-nested-nsjail.patch"
+      ]
+    },
+    {
+      "path": "build/make",
+      "patches": [
+        "aosp/patches/platform-build-make/0001-releasetools-preserve-read-only-ota-certificates.patch"
+      ]
+    },
+    {
       "path": "device/generic/goldfish",
       "patches": [
         "aosp/patches/device-generic-goldfish/0001-export-composer3-framework-sources-for-nucleus.patch"
@@ -78,6 +91,12 @@
       "path": "packages/providers/MediaProvider",
       "patches": [
         "aosp/patches/platform-packages-providers-mediaprovider/0001-register-fuse-daemon-identity.patch"
+      ]
+    },
+    {
+      "path": "packages/apps/Launcher3",
+      "patches": [
+        "aosp/patches/platform-packages-apps-Launcher3/0001-Nucleus-forward-patches-packages-apps-Launcher3.patch"
       ]
     },
     {

@@ -87,13 +87,16 @@ public enum AndroidRuntimeColliderRecipe {
         let source = try aospSourceTasks(
             root: root,
             environment: environment)
+        let container = aospBuildContainer(
+            root: root,
+            environment: environment)
         let signing = aospSigningIdentity(
             root: root,
             environment: environment)
         let product = try aospProductImageTasks(
             root: root,
             environment: environment)
-        return source + [signing] + product
+        return source + [container, signing] + product
     }
 
     private static func aospRepoLauncher(
@@ -217,6 +220,33 @@ public enum AndroidRuntimeColliderRecipe {
                     environment: environment)))
     }
 
+    private static func aospBuildContainer(
+        root: FilePath,
+        environment: [String: String]
+    ) -> TaskDeclaration {
+        let context = root.appending("build-container")
+        let containerFile = context.appending("Containerfile")
+        let imageID = root.appending(".aosp-build/container/image-id")
+        return TaskDeclaration(
+            id: TaskID(rawValue: "android-runtime.aosp-build-container"),
+            component: component,
+            inputs: [
+                .tree(context),
+                .tool(.named("podman")),
+            ],
+            outputs: [
+                OutputDeclaration(path: imageID, validation: .regularFile),
+            ],
+            locks: [.checkout("android-runtime-aosp-container")],
+            operation: .prepareAOSPBuildContainer(
+                AOSPBuildContainerPreparation(
+                    context: context,
+                    containerFile: containerFile,
+                    imageID: imageID,
+                    imageName: "localhost/nucleus-aosp-build",
+                    environment: environment)))
+    }
+
     private static func aospProductImageTasks(
         root: FilePath,
         environment: [String: String]
@@ -233,6 +263,8 @@ public enum AndroidRuntimeColliderRecipe {
         let signingIdentity = root.appending(
             ".aosp-signing/local-development")
         let buildRoot = root.appending(".aosp-build")
+        let ccacheDirectory = aospCCacheDirectory(environment: environment)
+        let containerImageID = buildRoot.appending("container/image-id")
         let signed = buildRoot.appending("signed")
         let images = buildRoot.appending("images")
         let unsigned = buildRoot.appending(
@@ -263,6 +295,8 @@ public enum AndroidRuntimeColliderRecipe {
             repoLauncher: launcher,
             sourceProvenance: sourceProvenance,
             buildRoot: buildRoot,
+            ccacheDirectory: ccacheDirectory,
+            containerImageID: containerImageID,
             signingIdentity: signingIdentity,
             product: lock.product,
             release: lock.release,
@@ -287,6 +321,7 @@ public enum AndroidRuntimeColliderRecipe {
             dependencies: [
                 TaskID(rawValue: "android-runtime.aosp-repo-launcher"),
                 TaskID(rawValue: "android-runtime.aosp-source"),
+                TaskID(rawValue: "android-runtime.aosp-build-container"),
             ],
             inputs: [
                 .value(
@@ -296,7 +331,9 @@ public enum AndroidRuntimeColliderRecipe {
                     "aosp/device/nucleus/nucleus_x86_64")),
                 .dependencyOutput(launcher),
                 .dependencyOutput(sourceProvenance),
+                .dependencyOutput(containerImageID),
                 .tool(.named("python3")),
+                .tool(.named("podman")),
             ],
             outputs: [
                 OutputDeclaration(
@@ -309,6 +346,7 @@ public enum AndroidRuntimeColliderRecipe {
             locks: [
                 .checkout("android-runtime-aosp-source"),
                 .checkout("android-runtime-aosp-build"),
+                .checkout("android-runtime-aosp-ccache"),
             ],
             operation: .compileAOSPProduct(build))
         let sign = TaskDeclaration(
@@ -326,7 +364,9 @@ public enum AndroidRuntimeColliderRecipe {
                 .dependencyOutput(hostTools),
                 .dependencyOutput(signingIdentity.appending(
                     "signing-identity.json")),
+                .dependencyOutput(containerImageID),
                 .tool(.named("openssl")),
+                .tool(.named("podman")),
             ],
             outputs: [
                 OutputDeclaration(
@@ -348,7 +388,9 @@ public enum AndroidRuntimeColliderRecipe {
                     bytes: productIdentity),
                 .dependencyOutput(stagedTargetFiles),
                 .dependencyOutput(hostTools),
+                .dependencyOutput(containerImageID),
                 .tool(.named("unzip")),
+                .tool(.named("podman")),
             ],
             outputs: [
                 OutputDeclaration(
@@ -381,10 +423,12 @@ public enum AndroidRuntimeColliderRecipe {
                 .dependencyOutput(sourceProvenance),
                 .dependencyOutput(signingIdentity.appending(
                     "signing-identity.json")),
+                .dependencyOutput(containerImageID),
                 .tree(root.appending(
                     "aosp/device/nucleus/nucleus_x86_64")),
                 .tool(.named("openssl")),
                 .tool(.named("unzip")),
+                .tool(.named("podman")),
             ] + requiredImages.map {
                 .dependencyOutput(stagedImages.appending($0))
             },
@@ -433,6 +477,17 @@ public enum AndroidRuntimeColliderRecipe {
             locks: [.checkout("android-runtime-aosp-build")],
             operation: .publishAOSPProduct(build))
         return [compile, sign, assemble, validate, publish]
+    }
+
+    private static func aospCCacheDirectory(
+        environment: [String: String]
+    ) -> FilePath {
+        if let xdg = environment["XDG_CACHE_HOME"], !xdg.isEmpty {
+            return FilePath(xdg).appending("nucleus").appending("aosp-ccache")
+        }
+        let home = environment["HOME"] ?? "/tmp"
+        return FilePath(home).appending(".cache").appending("nucleus")
+            .appending("aosp-ccache")
     }
 
     private static func loadAOSPSourceLock(
@@ -509,10 +564,6 @@ public enum AndroidRuntimeColliderRecipe {
         repositoryRoot: FilePath,
         environment: [String: String]
     ) throws -> TaskDeclaration {
-        let lockPath = root.appending("gfxstream.lock.json")
-        let lock = try JSONDecoder().decode(
-            GfxstreamLock.self,
-            from: Data(contentsOf: URL(fileURLWithPath: lockPath.string)))
         let buildRoot = root.appending(".gfxstream-build")
         let hostSource = repositoryRoot.appending("third-party/gfxstream")
         let guestSource = repositoryRoot.appending("third-party/mesa")
@@ -531,7 +582,6 @@ public enum AndroidRuntimeColliderRecipe {
             id: TaskID(rawValue: "android-runtime.gfxstream"),
             component: component,
             inputs: [
-                .file(lockPath),
                 .tree(hostSource),
                 .tree(guestSource),
                 .tool(.named("git")),
@@ -552,14 +602,6 @@ public enum AndroidRuntimeColliderRecipe {
                 .checkout("mesa"),
             ],
             operation: .sequence([
-                .validateGitCheckout(GitCheckoutValidation(
-                    repository: hostSource,
-                    expectedCommit: lock.gfxstream.commit,
-                    environment: buildEnvironment)),
-                .validateGitCheckout(GitCheckoutValidation(
-                    repository: guestSource,
-                    expectedCommit: lock.mesa.commit,
-                    environment: buildEnvironment)),
                 .configureMeson(MesonSetup(
                     source: hostSource,
                     build: hostBuild,
@@ -661,12 +703,6 @@ public enum AndroidRuntimeColliderRecipe {
                 workingDirectory: root,
                 environment: environment)))
     }
-}
-
-private struct GfxstreamLock: Decodable {
-    struct Checkout: Decodable { let commit: String }
-    let gfxstream: Checkout
-    let mesa: Checkout
 }
 
 private struct AOSPSourceLock: Decodable {

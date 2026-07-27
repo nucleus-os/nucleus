@@ -1,0 +1,49 @@
+From d82cd6ed0a8b0e4f304ab49f8845b33f90e18454 Mon Sep 17 00:00:00 2001
+From: Nucleus Android Build Security <noreply@nucleus.invalid>
+Date: Mon, 27 Jul 2026 00:00:00 +0000
+Subject: [PATCH] soong: use container UTS for nested nsjail
+
+The rootless AOSP build container already owns a private UTS namespace
+with the android-build hostname. Reuse it for nested nsjail processes so
+the outer seccomp profile can continue denying sethostname rather than
+granting CAP_SYS_ADMIN or weakening seccomp.
+
+Keep the nested user, mount, PID, IPC, and network namespaces. Also place
+the nsjail probe output in fatal diagnostics so failures identify the
+denied operation without requiring Soong verbose logging.
+---
+ ui/build/sandbox_linux.go | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/ui/build/sandbox_linux.go b/ui/build/sandbox_linux.go
+index a26def1d8..52c536261 100644
+--- a/ui/build/sandbox_linux.go
++++ b/ui/build/sandbox_linux.go
+@@ -105,6 +105,7 @@ func (c *Cmd) sandboxSupported() bool {
+ 		var sandboxArgs []string
+ 		sandboxArgs = append(sandboxArgs,
+ 			"-H", "android-build",
++			"--disable_clone_newuts",
+ 			"-e",
+ 			"-u", "nobody",
+ 			"-g", sandboxConfig.group,
+@@ -149,7 +150,8 @@ func (c *Cmd) sandboxSupported() bool {
+ 		if err == nil {
+ 			c.ctx.Fatalf("nsjail exited successfully without proving the sandbox contract")
+ 		} else if e, ok := err.(*exec.ExitError); ok {
+-			c.ctx.Fatalf("nsjail sandbox probe failed with %v", e.ProcessState.String())
++			c.ctx.Fatalf("nsjail sandbox probe failed with %v:\n%s",
++				e.ProcessState.String(), strings.TrimSpace(string(data)))
+ 		} else {
+ 			c.ctx.Fatalf("nsjail sandbox probe failed: %v", err)
+ 		}
+@@ -260,6 +262,7 @@ func (c *Cmd) wrapSandbox() {
+ 
+ 		// Set the hostname to something consistent
+ 		"-H", "android-build",
++		"--disable_clone_newuts",
+ 
+ 		// Use the current working dir
+ 		"--cwd", wd,
+-- 
+2.43.0

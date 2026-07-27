@@ -2,6 +2,7 @@
 #define NUCLEUS_ANDROID_GFXSTREAM_GUEST_RING_FACTORY_H
 
 #include <stddef.h>
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -14,6 +15,7 @@ typedef struct nucleus_android_gfxstream_endpoint_descriptors {
     int response_memory_fd;
     int response_data_notification_fd;
     int response_space_notification_fd;
+    int lifetime_fd;
 } nucleus_android_gfxstream_endpoint_descriptors;
 
 typedef int (*nucleus_android_gfxstream_endpoint_provider)(
@@ -26,6 +28,49 @@ typedef void *(*nucleus_android_gfxstream_external_iostream_factory)(
 
 typedef void (*nucleus_android_gfxstream_set_external_iostream_factory)(
     nucleus_android_gfxstream_external_iostream_factory factory,
+    void *context);
+
+typedef int (*nucleus_android_gfxstream_external_memory_mapper)(
+    void *context,
+    uint64_t blob_id,
+    size_t size,
+    void **address);
+
+typedef void (*nucleus_android_gfxstream_external_memory_unmapper)(
+    void *context,
+    void *address,
+    size_t size);
+
+typedef void (*nucleus_android_gfxstream_set_external_memory_mapper)(
+    nucleus_android_gfxstream_external_memory_mapper mapper,
+    nucleus_android_gfxstream_external_memory_unmapper unmapper,
+    void *context);
+
+typedef int (*nucleus_android_gfxstream_external_vulkan_fence_exporter)(
+    void *context,
+    uint64_t device_handle,
+    uint64_t fence_handle);
+
+typedef void (*nucleus_android_gfxstream_set_external_vulkan_fence_exporter)(
+    nucleus_android_gfxstream_external_vulkan_fence_exporter exporter,
+    void *context);
+
+typedef int (*nucleus_android_gfxstream_external_vulkan_semaphore_exporter)(
+    void *context,
+    uint64_t device_handle,
+    uint64_t semaphore_handle);
+
+typedef void (
+    *nucleus_android_gfxstream_set_external_vulkan_semaphore_exporter)(
+    nucleus_android_gfxstream_external_vulkan_semaphore_exporter exporter,
+    void *context);
+
+typedef int (*nucleus_android_gfxstream_external_vulkan_qsri_exporter)(
+    void *context,
+    uint64_t image_handle);
+
+typedef void (*nucleus_android_gfxstream_set_external_vulkan_qsri_exporter)(
+    nucleus_android_gfxstream_external_vulkan_qsri_exporter exporter,
     void *context);
 
 typedef struct nucleus_android_gfxstream_factory_registration

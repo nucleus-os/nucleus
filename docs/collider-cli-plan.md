@@ -113,7 +113,10 @@ Commands accept the same global controls:
 
 - `--dry-run` prints the resolved task graph without executing it.
 - `--explain` reports why every selected task is clean or dirty.
-- `--verbose` streams leaf command lines and full stage output.
+- Task output streams to the invoking terminal by default and remains available
+  in the durable run log.
+- `--verbose` additionally prints each leaf command before execution.
+- `--quiet` keeps task output in the durable run log without streaming it.
 - `--json` emits stable machine-readable status and result records.
 - `--run-id` selects an existing interrupted run for explicit resumption when
   every recorded input identity still matches.

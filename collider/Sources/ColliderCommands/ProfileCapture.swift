@@ -48,7 +48,7 @@ struct ProfileCapture {
         environment configuredEnvironment: [String: String],
         sessionLog: URL?
     ) async throws {
-        let compositor = context.root.appendingPathComponent("compositor")
+        let compositor = context.layout.compositor
         let receiver = compositor.appendingPathComponent(".tracy-build/tracy-capture")
         let exporter = compositor.appendingPathComponent(".tracy-build/tracy-csvexport")
         guard FileManager.default.isExecutableFile(atPath: receiver.path), FileManager.default.isExecutableFile(atPath: exporter.path) else {

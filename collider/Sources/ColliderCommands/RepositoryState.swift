@@ -13,7 +13,7 @@ struct RepositoryState {
     let context: WorkspaceContext
 
     private var runsDirectory: URL {
-        context.root.appendingPathComponent(".nucleus/runs", isDirectory: true)
+        context.layout.runs
     }
 
     func runs(kind: String? = nil) throws -> [(URL, RepositoryRun)] {

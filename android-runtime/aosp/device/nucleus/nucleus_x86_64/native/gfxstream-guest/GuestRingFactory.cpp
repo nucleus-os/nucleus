@@ -24,6 +24,7 @@ void closeDescriptors(
         descriptors.response_memory_fd,
         descriptors.response_data_notification_fd,
         descriptors.response_space_notification_fd,
+        descriptors.lifetime_fd,
     };
     for (const int descriptor : values) {
         if (descriptor >= 0) {
@@ -42,6 +43,7 @@ void *createGuestRingStream(void *context, std::size_t bufferSize) {
         .response_memory_fd = -1,
         .response_data_notification_fd = -1,
         .response_space_notification_fd = -1,
+        .lifetime_fd = -1,
     };
     if (registration->provider(
             registration->providerContext,
@@ -57,6 +59,7 @@ void *createGuestRingStream(void *context, std::size_t bufferSize) {
         descriptors.response_memory_fd,
         descriptors.response_data_notification_fd,
         descriptors.response_space_notification_fd,
+        descriptors.lifetime_fd,
         bufferSize);
     if (!stream) {
         return nullptr;

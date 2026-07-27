@@ -295,7 +295,7 @@ import Testing
             ;;
           manifest)
             revision=$(/usr/bin/git -C system/core rev-parse HEAD)
-            printf '<manifest><project path="system/core" revision="%s"/></manifest>\\n' \
+            printf '<manifest><project name="system/core" revision="%s"/></manifest>\\n' \
               "$revision"
             ;;
           *)
@@ -395,6 +395,48 @@ import Testing
     ).trimmingCharacters(in: .whitespacesAndNewlines)
     #expect(preservedCommit == firstPatchedCommit)
 
+    let equivalentCommitResult = try await ColliderRuntime().execute(
+        CommandSpec(
+            executable: .path(FilePath("/usr/bin/git")),
+            arguments: [
+                "-C",
+                source.appendingPathComponent("system/core").path,
+                "-c", "user.name=Fixture",
+                "-c", "user.email=fixture@nucleus.invalid",
+                "commit", "--amend", "--quiet",
+                "--message=equivalent-forward-patch",
+            ],
+            workingDirectory: FilePath(source.path),
+            environment: fixture.environment,
+            output: .captured(limit: 1_024)))
+    #expect(equivalentCommitResult.status == 0)
+    let equivalentCommit = try await ColliderRuntime().execute(
+        CommandSpec(
+            executable: .path(FilePath("/usr/bin/git")),
+            arguments: [
+                "-C",
+                source.appendingPathComponent("system/core").path,
+                "rev-parse", "HEAD",
+            ],
+            workingDirectory: FilePath(source.path),
+            environment: fixture.environment,
+            output: .captured(limit: 1_024)))
+    #expect(equivalentCommit.status == 0)
+    let equivalentRevision = equivalentCommit.standardOutput
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+    #expect(equivalentRevision != preservedCommit)
+    _ = try await ColliderRuntime().execute(
+        graph: TaskGraph([task]),
+        selected: [task.id],
+        stateRoot: FilePath(
+            fixture.root.appendingPathComponent("adopted-state").path))
+    let adoptedMaterialization = try JSONDecoder().decode(
+        AOSPSourceProvenance.self,
+        from: Data(contentsOf: provenance))
+    #expect(
+        adoptedMaterialization.forwardPatches.first?.patchedCommit
+            == equivalentRevision)
+
     let revisedPatch =
         """
         diff --git a/marker.txt b/marker.txt
@@ -406,6 +448,35 @@ import Testing
         +reconciled
         """
     try Data((revisedPatch + "\n").utf8).write(to: patch)
+    let adoptedStack = try #require(
+        adoptedMaterialization.forwardPatches.first)
+    for arguments in [
+        [
+            "-C",
+            source.appendingPathComponent("system/core").path,
+            "reset", "--hard", adoptedStack.baseCommit,
+        ],
+        [
+            "-C",
+            source.appendingPathComponent("system/core").path,
+            "apply", "--index", "--whitespace=error-all", patch.path,
+        ],
+        [
+            "-C",
+            source.appendingPathComponent("system/core").path,
+            "-c", "user.name=Fixture",
+            "-c", "user.email=fixture@nucleus.invalid",
+            "commit", "--quiet", "--message=preapplied-revised-patch",
+        ],
+    ] {
+        let result = try await ColliderRuntime().execute(CommandSpec(
+            executable: .path(FilePath("/usr/bin/git")),
+            arguments: arguments,
+            workingDirectory: FilePath(source.path),
+            environment: fixture.environment,
+            output: .captured(limit: 1_024)))
+        #expect(result.status == 0)
+    }
     _ = try await ColliderRuntime().execute(
         graph: TaskGraph([task]),
         selected: [task.id],

@@ -24,6 +24,12 @@ filegroup {
     visibility: ["//system/core/libprocessgroup/profiles:__pkg__"],
 }
 
+filegroup {
+    name: "nucleus_task_profiles_config",
+    srcs: ["task_profiles.json"],
+    visibility: ["//system/core/libprocessgroup/profiles:__pkg__"],
+}
+
 prebuilt_etc {
     name: "audio_policy_configuration.xml",
     src: "audio_policy_configuration.xml",

@@ -19,9 +19,7 @@ struct BenchmarkCommand {
         let benchmarkContext = WorkspaceContext(
             root: context.root,
             environment: environment)
-        let outputRoot = context.root
-            .appendingPathComponent(".build", isDirectory: true)
-            .appendingPathComponent("nucleus-benchmarks", isDirectory: true)
+        let outputRoot = context.layout.benchmarkBuilds
         let suites = [
             Suite(
                 package: "core",

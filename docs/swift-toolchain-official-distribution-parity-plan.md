@@ -48,7 +48,7 @@ Status: active
   duplicate. The qualified host compiler from generation
   `2026-07-23T00-15-15Z-1452180` contains `swift/0001`'s Android ClangImporter
   wchar guard. With `0006` temporarily reversed and the aarch64/API 36 graph
-  forcibly reconfigured against NDK 30.0.14904198, the generated graph
+  forcibly reconfigured against NDK 30.0.15729638, the generated graph
   contained no explicit workaround flag and rebuilt the Android stdlib,
   dynamic/static Foundation, Swift Testing, and XCTest successfully. Both
   dynamic and static resource trees then compiled fresh `CxxStdlib` consumers.

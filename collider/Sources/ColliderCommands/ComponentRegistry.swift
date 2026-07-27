@@ -44,52 +44,76 @@ struct ComponentRegistry {
     let context: WorkspaceContext
 
     private func buildTasks() throws -> [TaskDeclaration] {
-        let root = FilePath(context.root.path)
+        let layout = context.layout
         let environment = context.taskEnvironment
         return [
-            TracyColliderRecipe.build(root: root.appending("swift-tracy"), environment: environment),
-            VulkanColliderRecipe.build(root: root.appending("swift-vulkan"), environment: environment),
-            WaylandColliderRecipe.build(root: root.appending("swift-wayland"), environment: environment),
-            CoreColliderRecipe.build(root: root.appending("core"), environment: environment),
-            LinuxColliderRecipe.build(root: root.appending("platform-linux"), environment: environment),
-            ReactNativeColliderRecipe.build(root: root.appending("react-native"), environment: environment),
-            CompositorColliderRecipe.build(root: root.appending("compositor/compositor-core"), environment: environment),
-            CompositorAppColliderRecipe.build(root: root.appending("compositor/compositor"), environment: environment),
-            ShellColliderRecipe.build(root: root.appending("shell"), environment: environment),
+            TracyColliderRecipe.build(
+                root: FilePath(layout.swiftTracy.path),
+                environment: environment),
+            VulkanColliderRecipe.build(
+                root: FilePath(layout.swiftVulkan.path),
+                environment: environment),
+            WaylandColliderRecipe.build(
+                root: FilePath(layout.swiftWayland.path),
+                environment: environment),
+            CoreColliderRecipe.build(
+                root: FilePath(layout.core.path),
+                environment: environment),
+            LinuxColliderRecipe.build(
+                root: FilePath(layout.platformLinux.path),
+                environment: environment),
+            ReactNativeColliderRecipe.build(
+                root: FilePath(layout.reactNative.path),
+                environment: environment),
+            CompositorColliderRecipe.build(
+                root: FilePath(layout.compositorCore.path),
+                environment: environment),
+            CompositorAppColliderRecipe.build(
+                root: FilePath(layout.compositorApp.path),
+                environment: environment),
+            ShellColliderRecipe.build(
+                root: FilePath(layout.shell.path),
+                environment: environment),
         ] + (try AndroidRuntimeColliderRecipe.tasks(
-            root: root.appending("android-runtime"),
-            repositoryRoot: root,
+            root: FilePath(layout.androidRuntime.path),
+            repositoryRoot: layout.rootPath,
             environment: environment))
     }
 
     private func testTasks(
         selection: ComponentSelection?
     ) throws -> [TaskDeclaration] {
-        let root = FilePath(context.root.path)
+        let layout = context.layout
         let environment = context.taskEnvironment
         var tasks = try buildTasks() + [
             TracyColliderRecipe.test(
-                root: root.appending("swift-tracy"), environment: environment),
+                root: FilePath(layout.swiftTracy.path),
+                environment: environment),
             VulkanColliderRecipe.test(
-                root: root.appending("swift-vulkan"), environment: environment),
+                root: FilePath(layout.swiftVulkan.path),
+                environment: environment),
             WaylandColliderRecipe.test(
-                root: root.appending("swift-wayland"), environment: environment),
+                root: FilePath(layout.swiftWayland.path),
+                environment: environment),
             CoreColliderRecipe.test(
-                root: root.appending("core"), environment: environment),
+                root: FilePath(layout.core.path), environment: environment),
             LinuxColliderRecipe.test(
-                root: root.appending("platform-linux"), environment: environment),
+                root: FilePath(layout.platformLinux.path),
+                environment: environment),
             ReactNativeColliderRecipe.test(
-                root: root.appending("react-native"), environment: environment),
+                root: FilePath(layout.reactNative.path),
+                environment: environment),
             CompositorColliderRecipe.test(
-                root: root.appending("compositor/compositor-core"),
+                root: FilePath(layout.compositorCore.path),
                 environment: environment),
             CompositorAppColliderRecipe.test(
-                root: root.appending("compositor/compositor"),
+                root: FilePath(layout.compositorApp.path),
                 environment: environment),
             ShellColliderRecipe.test(
-                root: root.appending("shell"), environment: environment),
+                root: FilePath(layout.shell.path), environment: environment),
             AndroidRuntimeColliderRecipe.test(
-                root: root.appending("android-runtime"), environment: environment),
+                root: FilePath(layout.androidRuntime.path),
+                environment: environment),
         ]
         let effectiveSelection = selection ?? .all
         if [.all, .runtime, .compositor, .loader].contains(
@@ -97,10 +121,10 @@ struct ComponentRegistry {
         {
             tasks += [
             CompositorColliderRecipe.preflightVulkanLoader(
-                root: root.appending("compositor/compositor-core"),
+                root: FilePath(layout.compositorCore.path),
                 environment: environment),
             CompositorColliderRecipe.testVulkanLoader(
-                root: root.appending("compositor/compositor-core"),
+                root: FilePath(layout.compositorCore.path),
                 environment: environment),
             ]
         }
@@ -116,11 +140,11 @@ struct ComponentRegistry {
             tasks += [
                 lavapipe.task,
             CompositorColliderRecipe.preflightHeadlessGPU(
-                root: root.appending("compositor/compositor-core"),
+                root: FilePath(layout.compositorCore.path),
                 environment: headlessEnvironment,
                 lavapipeTask: lavapipe.task.id),
             CompositorColliderRecipe.testHeadlessGPU(
-                root: root.appending("compositor/compositor-core"),
+                root: FilePath(layout.compositorCore.path),
                 environment: headlessEnvironment),
             ]
         }
@@ -129,10 +153,10 @@ struct ComponentRegistry {
             drmEnvironment["NUCLEUS_TEST_DRM_RENDER_NODE"] =
                 try requiredDRMRenderNode(environment: environment)
             tasks.append(CompositorColliderRecipe.preflightDRMGPU(
-                root: root.appending("compositor/compositor-core"),
+                root: FilePath(layout.compositorCore.path),
                 environment: drmEnvironment))
             tasks.append(CompositorColliderRecipe.testDRMGPU(
-                root: root.appending("compositor/compositor-core"),
+                root: FilePath(layout.compositorCore.path),
                 environment: drmEnvironment))
         }
         return tasks
@@ -160,7 +184,7 @@ struct ComponentRegistry {
                 "\(selection.rawValue) is not a runtime bootstrap component")
         }
         let name = selection.rawValue
-        let root = FilePath(context.root.path)
+        let layout = context.layout
         let environment = context.taskEnvironment
         let needsCore = [
             "all", "runtime", "core", "linux", "rn", "compositor",
@@ -181,18 +205,9 @@ struct ComponentRegistry {
             selected.append(lavapipe.task.id)
         }
 
-        let tracySource = try await tracySourceTask(
-            root: root,
-            environment: environment)
-        tasks.append(tracySource)
-        tasks = addingDependency(
-            TaskID(rawValue: "workspace.tracy-sources"),
-            to: TaskID(rawValue: "tracy.build"),
-            in: tasks)
-
         if needsCore {
-            let coreRoot = root.appending("core")
-            let source = try await coreSourceTask(
+            let coreRoot = FilePath(layout.core.path)
+            let source = CoreColliderRecipe.prepareSkiaDependencies(
                 root: coreRoot, environment: environment)
             let skia = CoreColliderRecipe.buildSkia(
                 root: coreRoot, environment: environment)
@@ -207,9 +222,7 @@ struct ComponentRegistry {
         }
 
         if needsRN {
-            let rnRoot = root.appending("react-native")
-            let source = try await reactNativeSourceTask(
-                root: rnRoot, environment: environment)
+            let rnRoot = FilePath(layout.reactNative.path)
             let javascript =
                 ReactNativeColliderRecipe.installJavaScriptDependencies(
                     root: rnRoot, environment: environment)
@@ -238,7 +251,7 @@ struct ComponentRegistry {
                 root: rnRoot,
                 sdkRoot: nativeSDKRoot)
             tasks += [
-                source, javascript, types, generate, boost, hermes, support,
+                javascript, types, generate, boost, hermes, support,
                 cxx, swiftCxx, swiftHost, stage, sdk,
             ]
             tasks = addingDependency(
@@ -267,32 +280,32 @@ struct ComponentRegistry {
         _ component: GeneratorComponent,
         controls: TaskControls
     ) async throws {
-        let root = FilePath(context.root.path)
+        let layout = context.layout
         let environment = context.taskEnvironment
         let task: TaskDeclaration
         var tasks: [TaskDeclaration]
         switch component {
         case .reactNative:
-            let source = try await reactNativeSourceTask(
-                root: root.appending("react-native"),
-                environment: environment)
+            let root = FilePath(layout.reactNative.path)
             let dependencies =
                 ReactNativeColliderRecipe.installJavaScriptDependencies(
-                    root: root.appending("react-native"),
+                    root: root,
                     environment: environment)
             let types = ReactNativeColliderRecipe.generateStrictTypes(
-                root: root.appending("react-native"),
+                root: root,
                 environment: environment)
             task = ReactNativeColliderRecipe.generate(
-                root: root.appending("react-native"), environment: environment)
-            tasks = [source, dependencies, types, task]
+                root: root, environment: environment)
+            tasks = [dependencies, types, task]
         case .vulkan:
             task = VulkanColliderRecipe.generate(
-                root: root.appending("swift-vulkan"), environment: environment)
+                root: FilePath(layout.swiftVulkan.path),
+                environment: environment)
             tasks = [task]
         case .wayland:
             task = try WaylandColliderRecipe.generate(
-                root: root.appending("swift-wayland"), environment: environment)
+                root: FilePath(layout.swiftWayland.path),
+                environment: environment)
             tasks = [task]
         }
         try await context.execute(
@@ -306,7 +319,7 @@ struct ComponentRegistry {
         controls: TaskControls
     ) async throws {
         let tasks = try await androidHostTasks()
-        let android = FilePath(context.root.path).appending("core/android")
+        let android = FilePath(context.layout.core.path).appending("android")
         let gradle = TaskDeclaration(
             id: TaskID(rawValue: "core.android.build"),
             component: ComponentID(rawValue: "core"),
@@ -349,7 +362,7 @@ struct ComponentRegistry {
         library: String?,
         controls: TaskControls
     ) async throws {
-        let core = FilePath(context.root.path).appending("core")
+        let core = FilePath(context.layout.core.path)
         let supplied = library.map {
             FilePath(URL(
                 fileURLWithPath: $0,
@@ -369,7 +382,7 @@ struct ComponentRegistry {
     func verifyAndroidRuntimeSourceLock(
         controls: TaskControls
     ) async throws {
-        let root = FilePath(context.root.path).appending("android-runtime")
+        let root = FilePath(context.layout.androidRuntime.path)
         let tasks = try AndroidRuntimeColliderRecipe.aospSourceTasks(
             root: root,
             environment: context.taskEnvironment)
@@ -384,7 +397,7 @@ struct ComponentRegistry {
         controls: TaskControls
     ) async throws {
         let tasks = try AndroidRuntimeColliderRecipe.aospSourceTasks(
-            root: FilePath(context.root.path).appending("android-runtime"),
+            root: FilePath(context.layout.androidRuntime.path),
             environment: context.taskEnvironment)
         let selected = TaskID(rawValue: "android-runtime.aosp-source")
         try await context.execute(
@@ -397,7 +410,7 @@ struct ComponentRegistry {
         controls: TaskControls
     ) async throws {
         let tasks = try AndroidRuntimeColliderRecipe.aospImageTasks(
-            root: FilePath(context.root.path).appending("android-runtime"),
+            root: FilePath(context.layout.androidRuntime.path),
             environment: context.taskEnvironment)
         let selected = TaskID(rawValue: "android-runtime.aosp-image")
         try await context.execute(
@@ -496,27 +509,11 @@ struct ComponentRegistry {
                 capture: true)))
     }
 
-    private func coreSourceTask(
-        root: FilePath,
-        environment: [String: String]
-    ) async throws -> TaskDeclaration {
-        CoreColliderRecipe.synchronizeSources(
-            root: root,
-            repositoryRoot: FilePath(context.root.path),
-            sourceIdentity: try await sourceIdentity([
-                "core/third-party",
-                "third-party/swift-java",
-                "third-party/swift-java-jni-core",
-            ]),
-            environment: environment)
-    }
-
     private func androidHostTasks() async throws -> [TaskDeclaration] {
-        let root = FilePath(context.root.path).appending("core")
+        let root = FilePath(context.layout.core.path)
         let environment = context.taskEnvironment
-        let source = try await coreSourceTask(
-            root: root,
-            environment: environment)
+        let source = CoreColliderRecipe.prepareSkiaDependencies(
+            root: root, environment: environment)
         let skia = CoreColliderRecipe.buildSkiaAndroid(
             root: root, environment: environment)
         let sdk = CoreColliderRecipe.publishRenderSDK(
@@ -535,60 +532,6 @@ struct ComponentRegistry {
             environment: environment,
             dependencies: [build.id])
         return [source, skia, sdk, build, validate]
-    }
-
-    private func tracySourceTask(
-        root: FilePath,
-        environment: [String: String]
-    ) async throws -> TaskDeclaration {
-        let source = root.appending("swift-tracy/third-party/tracy")
-        return TaskDeclaration(
-            id: TaskID(rawValue: "workspace.tracy-sources"),
-            component: ComponentID(rawValue: "tracy"),
-            inputs: [
-                .file(root.appending(".gitmodules")),
-                .optionalTree(
-                    source,
-                    fallback: try await sourceIdentity([
-                        "swift-tracy/third-party/tracy",
-                    ])),
-                .tool(.named("git")),
-            ],
-            outputs: [
-                OutputDeclaration(
-                    path: source.appending("public/TracyClient.cpp"),
-                    validation: .regularFile),
-            ],
-            locks: [.checkout("tracy-sources")],
-            operation: .command(CommandSpec(
-                executable: .named("git"),
-                arguments: [
-                    "submodule", "update", "--init", "--recursive",
-                    "swift-tracy/third-party/tracy",
-                ],
-                workingDirectory: root,
-                environment: environment)))
-    }
-
-    private func reactNativeSourceTask(
-        root: FilePath,
-        environment: [String: String]
-    ) async throws -> TaskDeclaration {
-        ReactNativeColliderRecipe.synchronizeSources(
-            root: root,
-            repositoryRoot: FilePath(context.root.path),
-            sourceIdentity: try await sourceIdentity([
-                "react-native/third-party",
-            ]),
-            environment: environment)
-    }
-
-    private func sourceIdentity(_ paths: [String]) async throws -> [UInt8] {
-        Array(try await context.run(
-            "git",
-            ["ls-files", "--stage"] + paths,
-            directory: context.root,
-            capture: true).utf8)
     }
 
     private var nativeSDKRoot: FilePath {

@@ -72,6 +72,14 @@ struct nucleus_android_syncobj_timeline {
     uint32_t handle;
 };
 
+struct nucleus_android_native_fence {
+    nucleus_android_gpu *gpu;
+    VkSemaphore completion_semaphore;
+    VkSemaphore export_semaphore;
+    VkFence submission_fence;
+    bool completion_signaled;
+};
+
 struct nucleus_android_syncobj_waiter {
     int drm_fd;
     int event_fd;
@@ -79,9 +87,13 @@ struct nucleus_android_syncobj_waiter {
 };
 
 struct nucleus_android_syncobj_bridge {
-    int drm_fd;
+    nucleus_android_gpu *gpu;
     uint32_t acquire_handle;
     uint32_t release_handle;
+    int release_event_fd;
+    VkSemaphore release_semaphore;
+    uint64_t highest_release_point;
+    uint64_t forwarded_release_point;
 };
 
 static void nucleus_android_gpu_lock(nucleus_android_gpu *gpu) {
@@ -525,8 +537,24 @@ static bool nucleus_android_create_device(
         VK_KHR_EXTERNAL_SEMAPHORE_FD_EXTENSION_NAME,
         VK_EXT_IMAGE_DRM_FORMAT_MODIFIER_EXTENSION_NAME,
     };
+    VkPhysicalDeviceTimelineSemaphoreFeatures timeline_features = {
+        .sType =
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_FEATURES};
+    VkPhysicalDeviceFeatures2 features = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
+        .pNext = &timeline_features};
+    vkGetPhysicalDeviceFeatures2(gpu->physical_device, &features);
+    if (!timeline_features.timelineSemaphore) {
+        nucleus_android_error(
+            error_message,
+            error_capacity,
+            "Vulkan timeline semaphores are unavailable");
+        return false;
+    }
+    timeline_features.timelineSemaphore = VK_TRUE;
     VkDeviceCreateInfo create_info = {
         .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+        .pNext = &timeline_features,
         .queueCreateInfoCount = 1,
         .pQueueCreateInfos = &queue,
         .enabledExtensionCount = sizeof(extensions) / sizeof(extensions[0]),
@@ -1308,18 +1336,67 @@ int nucleus_android_syncobj_waiter_drain(
 }
 
 nucleus_android_syncobj_bridge *nucleus_android_syncobj_bridge_create(
-    const char *render_path) {
+    const char *render_path,
+    char *error_message,
+    size_t error_capacity) {
     if (!render_path) {
         errno = EINVAL;
+        nucleus_android_error(
+            error_message, error_capacity, "render path is required");
         return NULL;
     }
     nucleus_android_syncobj_bridge *bridge = calloc(1, sizeof(*bridge));
-    if (!bridge) return NULL;
-    bridge->drm_fd = -1;
-    bridge->drm_fd = open(render_path, O_RDWR | O_CLOEXEC);
-    if (bridge->drm_fd < 0 ||
-        drmSyncobjCreate(bridge->drm_fd, 0, &bridge->acquire_handle) != 0 ||
-        drmSyncobjCreate(bridge->drm_fd, 0, &bridge->release_handle) != 0) {
+    if (!bridge) {
+        nucleus_android_error(
+            error_message, error_capacity, "out of memory");
+        return NULL;
+    }
+    bridge->release_event_fd = -1;
+    bridge->gpu = nucleus_android_gpu_create(
+        render_path, error_message, error_capacity);
+    if (!bridge->gpu) {
+        nucleus_android_syncobj_bridge_destroy(bridge);
+        return NULL;
+    }
+    if (drmSyncobjCreate(
+            bridge->gpu->drm_fd, 0, &bridge->acquire_handle) != 0 ||
+        drmSyncobjCreate(
+            bridge->gpu->drm_fd, 0, &bridge->release_handle) != 0) {
+        int saved_errno = errno;
+        nucleus_android_errno_error(
+            error_message, error_capacity, "creating DRM syncobj timelines");
+        nucleus_android_syncobj_bridge_destroy(bridge);
+        errno = saved_errno;
+        return NULL;
+    }
+    bridge->release_event_fd = eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK);
+    if (bridge->release_event_fd < 0) {
+        int saved_errno = errno;
+        nucleus_android_errno_error(
+            error_message, error_capacity, "creating release eventfd");
+        nucleus_android_syncobj_bridge_destroy(bridge);
+        errno = saved_errno;
+        return NULL;
+    }
+    VkSemaphoreTypeCreateInfo timeline = {
+        .sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO,
+        .semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE,
+        .initialValue = 0};
+    VkSemaphoreCreateInfo semaphore = {
+        .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
+        .pNext = &timeline};
+    VkResult result = vkCreateSemaphore(
+        bridge->gpu->device,
+        &semaphore,
+        NULL,
+        &bridge->release_semaphore);
+    if (result != VK_SUCCESS) {
+        errno = EIO;
+        nucleus_android_vulkan_error(
+            error_message,
+            error_capacity,
+            "creating release timeline semaphore",
+            result);
         nucleus_android_syncobj_bridge_destroy(bridge);
         return NULL;
     }
@@ -1329,13 +1406,33 @@ nucleus_android_syncobj_bridge *nucleus_android_syncobj_bridge_create(
 void nucleus_android_syncobj_bridge_destroy(
     nucleus_android_syncobj_bridge *bridge) {
     if (!bridge) return;
-    if (bridge->drm_fd >= 0 && bridge->acquire_handle != 0) {
-        (void)drmSyncobjDestroy(bridge->drm_fd, bridge->acquire_handle);
+    if (bridge->gpu && bridge->release_semaphore &&
+        bridge->highest_release_point > 0) {
+        VkSemaphoreSignalInfo signal = {
+            .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SIGNAL_INFO,
+            .semaphore = bridge->release_semaphore,
+            .value = bridge->highest_release_point};
+        (void)vkSignalSemaphore(bridge->gpu->device, &signal);
     }
-    if (bridge->drm_fd >= 0 && bridge->release_handle != 0) {
-        (void)drmSyncobjDestroy(bridge->drm_fd, bridge->release_handle);
+    if (bridge->gpu && bridge->gpu->device) {
+        (void)vkDeviceWaitIdle(bridge->gpu->device);
     }
-    if (bridge->drm_fd >= 0) close(bridge->drm_fd);
+    if (bridge->gpu && bridge->release_semaphore) {
+        vkDestroySemaphore(
+            bridge->gpu->device, bridge->release_semaphore, NULL);
+    }
+    if (bridge->gpu && bridge->acquire_handle != 0) {
+        (void)drmSyncobjDestroy(
+            bridge->gpu->drm_fd, bridge->acquire_handle);
+    }
+    if (bridge->gpu && bridge->release_handle != 0) {
+        (void)drmSyncobjDestroy(
+            bridge->gpu->drm_fd, bridge->release_handle);
+    }
+    if (bridge->release_event_fd >= 0) {
+        close(bridge->release_event_fd);
+    }
+    nucleus_android_gpu_destroy(bridge->gpu);
     free(bridge);
 }
 
@@ -1347,7 +1444,8 @@ static int nucleus_android_syncobj_bridge_export(
         return -1;
     }
     int fd = -1;
-    return drmSyncobjHandleToFD(bridge->drm_fd, handle, &fd) == 0 ? fd : -1;
+    return drmSyncobjHandleToFD(
+        bridge->gpu->drm_fd, handle, &fd) == 0 ? fd : -1;
 }
 
 int nucleus_android_syncobj_bridge_export_acquire_timeline(
@@ -1371,19 +1469,20 @@ int nucleus_android_syncobj_bridge_import_acquire_sync_file(
         return -1;
     }
     uint32_t temporary = 0;
-    if (drmSyncobjCreate(bridge->drm_fd, 0, &temporary) != 0) return -1;
+    if (drmSyncobjCreate(
+            bridge->gpu->drm_fd, 0, &temporary) != 0) return -1;
     int result = drmSyncobjImportSyncFile(
-        bridge->drm_fd, temporary, sync_file);
+        bridge->gpu->drm_fd, temporary, sync_file);
     if (result == 0) {
         result = drmSyncobjTransfer(
-            bridge->drm_fd,
+            bridge->gpu->drm_fd,
             bridge->acquire_handle,
             point,
             temporary,
             0,
             0);
     }
-    (void)drmSyncobjDestroy(bridge->drm_fd, temporary);
+    (void)drmSyncobjDestroy(bridge->gpu->drm_fd, temporary);
     return result;
 }
 
@@ -1395,31 +1494,197 @@ int nucleus_android_syncobj_bridge_signal_acquire(
         return -1;
     }
     return drmSyncobjTimelineSignal(
-        bridge->drm_fd, &bridge->acquire_handle, &point, 1);
+        bridge->gpu->drm_fd, &bridge->acquire_handle, &point, 1);
+}
+
+int nucleus_android_syncobj_bridge_release_notification_fd(
+    nucleus_android_syncobj_bridge *bridge) {
+    if (!bridge || bridge->release_event_fd < 0) {
+        errno = EINVAL;
+        return -1;
+    }
+    return bridge->release_event_fd;
+}
+
+int nucleus_android_syncobj_bridge_dispatch_releases(
+    nucleus_android_syncobj_bridge *bridge) {
+    if (!bridge || !bridge->gpu || bridge->release_event_fd < 0 ||
+        !bridge->release_semaphore) {
+        errno = EINVAL;
+        return -1;
+    }
+    uint64_t notifications = 0;
+    ssize_t read_result;
+    do {
+        read_result = read(
+            bridge->release_event_fd,
+            &notifications,
+            sizeof(notifications));
+    } while (read_result < 0 && errno == EINTR);
+    if (read_result < 0 && errno != EAGAIN) return -1;
+
+    uint64_t completed = 0;
+    if (drmSyncobjQuery(
+            bridge->gpu->drm_fd,
+            &bridge->release_handle,
+            &completed,
+            1) != 0) {
+        return -1;
+    }
+    if (completed <= bridge->forwarded_release_point) return 0;
+    VkSemaphoreSignalInfo signal = {
+        .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SIGNAL_INFO,
+        .semaphore = bridge->release_semaphore,
+        .value = completed};
+    VkResult result = vkSignalSemaphore(
+        bridge->gpu->device, &signal);
+    if (result != VK_SUCCESS) {
+        errno = EIO;
+        return -1;
+    }
+    bridge->forwarded_release_point = completed;
+    return 0;
+}
+
+uint64_t nucleus_android_syncobj_bridge_forwarded_release_point(
+    nucleus_android_syncobj_bridge *bridge) {
+    return bridge ? bridge->forwarded_release_point : 0;
 }
 
 int nucleus_android_syncobj_bridge_export_release_sync_file(
     nucleus_android_syncobj_bridge *bridge,
-    uint64_t point) {
-    if (!bridge || point == 0) {
+    uint64_t point,
+    char *error_message,
+    size_t error_capacity) {
+    if (!bridge || !bridge->gpu || !bridge->release_semaphore ||
+        point == 0 || point <= bridge->highest_release_point) {
         errno = EINVAL;
+        nucleus_android_error(
+            error_message,
+            error_capacity,
+            "invalid or non-monotonic release point");
         return -1;
     }
-    uint32_t temporary = 0;
-    if (drmSyncobjCreate(bridge->drm_fd, 0, &temporary) != 0) return -1;
-    int result = drmSyncobjTransfer(
-        bridge->drm_fd,
-        temporary,
-        0,
-        bridge->release_handle,
-        point,
-        0);
-    int fd = -1;
-    if (result == 0) {
-        result = drmSyncobjExportSyncFile(bridge->drm_fd, temporary, &fd);
+    nucleus_android_gpu *gpu = bridge->gpu;
+    nucleus_android_gpu_lock(gpu);
+    VkResult result = nucleus_android_collect_submissions_locked(gpu);
+    if (result != VK_SUCCESS) {
+        nucleus_android_gpu_unlock(gpu);
+        errno = EIO;
+        nucleus_android_vulkan_error(
+            error_message,
+            error_capacity,
+            "collecting release-fence submissions",
+            result);
+        return -1;
     }
-    (void)drmSyncobjDestroy(bridge->drm_fd, temporary);
-    return result == 0 ? fd : -1;
+    if (gpu->next_submission_serial == UINT64_MAX) {
+        nucleus_android_gpu_unlock(gpu);
+        errno = EOVERFLOW;
+        nucleus_android_error(
+            error_message,
+            error_capacity,
+            "release-fence submission serial space exhausted");
+        return -1;
+    }
+    struct nucleus_android_submission *submission =
+        calloc(1, sizeof(*submission));
+    if (!submission) {
+        nucleus_android_gpu_unlock(gpu);
+        nucleus_android_error(
+            error_message, error_capacity, "out of memory");
+        return -1;
+    }
+    const char *operation = "creating release-fence semaphore";
+    VkExportSemaphoreCreateInfo export = {
+        .sType = VK_STRUCTURE_TYPE_EXPORT_SEMAPHORE_CREATE_INFO,
+        .handleTypes = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_SYNC_FD_BIT};
+    VkSemaphoreCreateInfo semaphore = {
+        .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
+        .pNext = &export};
+    result = vkCreateSemaphore(
+        gpu->device,
+        &semaphore,
+        NULL,
+        &submission->signal_semaphore);
+    if (result != VK_SUCCESS) goto fail;
+    operation = "creating release-fence submission fence";
+    VkFenceCreateInfo fence = {
+        .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
+    result = vkCreateFence(
+        gpu->device, &fence, NULL, &submission->fence);
+    if (result != VK_SUCCESS) goto fail;
+
+    if (drmSyncobjEventfd(
+            gpu->drm_fd,
+            bridge->release_handle,
+            point,
+            bridge->release_event_fd,
+            0) != 0) {
+        int saved_errno = errno;
+        nucleus_android_errno_error(
+            error_message,
+            error_capacity,
+            "arming compositor release notification");
+        nucleus_android_destroy_submission_locked(gpu, submission);
+        nucleus_android_gpu_unlock(gpu);
+        errno = saved_errno;
+        return -1;
+    }
+    uint64_t signal_value = 0;
+    VkTimelineSemaphoreSubmitInfo timeline = {
+        .sType = VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO,
+        .waitSemaphoreValueCount = 1,
+        .pWaitSemaphoreValues = &point,
+        .signalSemaphoreValueCount = 1,
+        .pSignalSemaphoreValues = &signal_value};
+    VkPipelineStageFlags wait_stage =
+        VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
+    VkSubmitInfo submit = {
+        .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+        .pNext = &timeline,
+        .waitSemaphoreCount = 1,
+        .pWaitSemaphores = &bridge->release_semaphore,
+        .pWaitDstStageMask = &wait_stage,
+        .signalSemaphoreCount = 1,
+        .pSignalSemaphores = &submission->signal_semaphore};
+    operation = "submitting release-fence timeline wait";
+    result = vkQueueSubmit(
+        gpu->queue, 1, &submit, submission->fence);
+    if (result != VK_SUCCESS) goto fail;
+
+    submission->serial = gpu->next_submission_serial++;
+    submission->next = gpu->submissions;
+    gpu->submissions = submission;
+    gpu->diagnostic.submitted_serial = submission->serial;
+    bridge->highest_release_point = point;
+
+    int fd = -1;
+    VkSemaphoreGetFdInfoKHR get_fd = {
+        .sType = VK_STRUCTURE_TYPE_SEMAPHORE_GET_FD_INFO_KHR,
+        .semaphore = submission->signal_semaphore,
+        .handleType = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_SYNC_FD_BIT};
+    result = gpu->get_semaphore_fd(
+        gpu->device, &get_fd, &fd);
+    nucleus_android_gpu_unlock(gpu);
+    if (result != VK_SUCCESS || fd < 0) {
+        errno = EIO;
+        nucleus_android_vulkan_error(
+            error_message,
+            error_capacity,
+            "exporting Android release sync_file",
+            result);
+        return -1;
+    }
+    return fd;
+
+fail:
+    nucleus_android_vulkan_error(
+        error_message, error_capacity, operation, result);
+    nucleus_android_destroy_submission_locked(gpu, submission);
+    nucleus_android_gpu_unlock(gpu);
+    errno = EIO;
+    return -1;
 }
 
 int nucleus_android_syncobj_timeline_export_sync_file(
@@ -1469,6 +1734,171 @@ int nucleus_android_syncobj_timeline_import_sync_file(
     }
     (void)drmSyncobjDestroy(timeline->gpu->drm_fd, temporary);
     return result;
+}
+
+static VkResult nucleus_android_native_fence_complete(
+    nucleus_android_native_fence *fence) {
+    if (!fence || !fence->gpu || !fence->gpu->device) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    if (!fence->completion_signaled) {
+        VkSemaphoreSignalInfo signal = {
+            .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SIGNAL_INFO,
+            .semaphore = fence->completion_semaphore,
+            .value = 1};
+        VkResult result = vkSignalSemaphore(fence->gpu->device, &signal);
+        if (result != VK_SUCCESS) return result;
+        fence->completion_signaled = true;
+    }
+    return vkWaitForFences(
+        fence->gpu->device,
+        1,
+        &fence->submission_fence,
+        VK_TRUE,
+        UINT64_MAX);
+}
+
+nucleus_android_native_fence *nucleus_android_native_fence_create(
+    nucleus_android_gpu *gpu,
+    int *sync_file,
+    char *error_message,
+    size_t error_capacity) {
+    if (!gpu || !gpu->device || !sync_file) {
+        errno = EINVAL;
+        nucleus_android_error(
+            error_message, error_capacity, "invalid native-fence request");
+        return NULL;
+    }
+    *sync_file = -1;
+    nucleus_android_native_fence *fence = calloc(1, sizeof(*fence));
+    if (!fence) {
+        nucleus_android_error(error_message, error_capacity, "out of memory");
+        return NULL;
+    }
+    fence->gpu = gpu;
+
+    const char *operation = "creating native-fence completion semaphore";
+    VkSemaphoreTypeCreateInfo timeline = {
+        .sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO,
+        .semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE,
+        .initialValue = 0};
+    VkSemaphoreCreateInfo semaphore = {
+        .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
+        .pNext = &timeline};
+    VkResult result = vkCreateSemaphore(
+        gpu->device, &semaphore, NULL, &fence->completion_semaphore);
+    if (result != VK_SUCCESS) goto fail;
+
+    operation = "creating exportable native-fence semaphore";
+    VkExportSemaphoreCreateInfo export = {
+        .sType = VK_STRUCTURE_TYPE_EXPORT_SEMAPHORE_CREATE_INFO,
+        .handleTypes = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_SYNC_FD_BIT};
+    semaphore.pNext = &export;
+    result = vkCreateSemaphore(
+        gpu->device, &semaphore, NULL, &fence->export_semaphore);
+    if (result != VK_SUCCESS) goto fail;
+
+    operation = "creating native-fence submission fence";
+    VkFenceCreateInfo fence_create = {
+        .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
+    result = vkCreateFence(
+        gpu->device, &fence_create, NULL, &fence->submission_fence);
+    if (result != VK_SUCCESS) goto fail;
+
+    uint64_t wait_value = 1;
+    uint64_t signal_value = 0;
+    VkTimelineSemaphoreSubmitInfo timeline_submit = {
+        .sType = VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO,
+        .waitSemaphoreValueCount = 1,
+        .pWaitSemaphoreValues = &wait_value,
+        .signalSemaphoreValueCount = 1,
+        .pSignalSemaphoreValues = &signal_value};
+    VkPipelineStageFlags wait_stage = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
+    VkSubmitInfo submit = {
+        .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+        .pNext = &timeline_submit,
+        .waitSemaphoreCount = 1,
+        .pWaitSemaphores = &fence->completion_semaphore,
+        .pWaitDstStageMask = &wait_stage,
+        .signalSemaphoreCount = 1,
+        .pSignalSemaphores = &fence->export_semaphore};
+    operation = "submitting native-fence materialization";
+    nucleus_android_gpu_lock(gpu);
+    result = vkQueueSubmit(gpu->queue, 1, &submit, fence->submission_fence);
+    nucleus_android_gpu_unlock(gpu);
+    if (result != VK_SUCCESS) goto fail;
+
+    VkSemaphoreGetFdInfoKHR get_fd = {
+        .sType = VK_STRUCTURE_TYPE_SEMAPHORE_GET_FD_INFO_KHR,
+        .semaphore = fence->export_semaphore,
+        .handleType = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_SYNC_FD_BIT};
+    operation = "exporting materialized native-fence sync_file";
+    result = gpu->get_semaphore_fd(gpu->device, &get_fd, sync_file);
+    if (result != VK_SUCCESS || *sync_file < 0) {
+        if (result == VK_SUCCESS) result = VK_ERROR_UNKNOWN;
+        goto fail_submitted;
+    }
+    return fence;
+
+fail_submitted:
+    (void)nucleus_android_native_fence_complete(fence);
+fail:
+    errno = EIO;
+    nucleus_android_vulkan_error(
+        error_message, error_capacity, operation, result);
+    if (fence->submission_fence) {
+        vkDestroyFence(gpu->device, fence->submission_fence, NULL);
+    }
+    if (fence->export_semaphore) {
+        vkDestroySemaphore(gpu->device, fence->export_semaphore, NULL);
+    }
+    if (fence->completion_semaphore) {
+        vkDestroySemaphore(gpu->device, fence->completion_semaphore, NULL);
+    }
+    free(fence);
+    return NULL;
+}
+
+int nucleus_android_native_fence_signal(
+    nucleus_android_native_fence *fence,
+    char *error_message,
+    size_t error_capacity) {
+    if (!fence) {
+        errno = EINVAL;
+        nucleus_android_error(
+            error_message, error_capacity, "native fence is required");
+        return -1;
+    }
+    VkResult result = nucleus_android_native_fence_complete(fence);
+    if (result == VK_SUCCESS) return 0;
+    errno = EIO;
+    nucleus_android_vulkan_error(
+        error_message,
+        error_capacity,
+        fence->completion_signaled
+            ? "waiting for native-fence materialization"
+            : "signaling native-fence completion",
+        result);
+    return -1;
+}
+
+void nucleus_android_native_fence_destroy(
+    nucleus_android_native_fence *fence) {
+    if (!fence) return;
+    (void)nucleus_android_native_fence_complete(fence);
+    if (fence->submission_fence) {
+        vkDestroyFence(
+            fence->gpu->device, fence->submission_fence, NULL);
+    }
+    if (fence->export_semaphore) {
+        vkDestroySemaphore(
+            fence->gpu->device, fence->export_semaphore, NULL);
+    }
+    if (fence->completion_semaphore) {
+        vkDestroySemaphore(
+            fence->gpu->device, fence->completion_semaphore, NULL);
+    }
+    free(fence);
 }
 
 static VkClearColorValue nucleus_android_frame_color(uint64_t frame) {

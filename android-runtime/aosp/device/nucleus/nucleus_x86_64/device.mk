@@ -34,6 +34,7 @@ PRODUCT_PACKAGES += \
     vulkan.nucleus
 
 PRODUCT_COPY_FILES += \
+    frameworks/native/data/etc/android.software.app_widgets.xml:$(TARGET_COPY_OUT_VENDOR)/etc/permissions/android.software.app_widgets.xml \
     device/nucleus/nucleus_x86_64/init.nucleus.rc:$(TARGET_COPY_OUT_VENDOR)/etc/init/init.nucleus.rc \
     device/nucleus/nucleus_x86_64/permissions/nucleus-container.xml:$(TARGET_COPY_OUT_VENDOR)/etc/permissions/nucleus-container.xml
 

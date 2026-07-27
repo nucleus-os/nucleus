@@ -357,6 +357,22 @@ final class RouterSurfaceSceneDriver {
             height: height,
             iosurfaceID: surface.renderIosurfaceId,
             sample: contentSample(for: surface))
+        // The role callback publishes this root after the commit import's redraw
+        // request. Arm the intersecting physical output from the completed
+        // first-map state so the retained root and its content land together.
+        if let windowID = windowID(
+            forSurfaceId: surfaceID)
+        {
+            RenderBridge.requestFrame(
+                server: server,
+                forWindowID: windowID,
+                reason: .surfaceDamage)
+        } else {
+            RenderBridge.requestFrame(
+                server: server,
+                outputId: 0,
+                reason: .surfaceDamage)
+        }
     }
 
     /// Publish the surface's freshly-uploaded IOSurface as its backing layer's

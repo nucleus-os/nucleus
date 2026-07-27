@@ -349,6 +349,132 @@ private struct RawGraphicsTestError: Error, CustomStringConvertible {
     #expect(isSignaled == 1)
 }
 
+@Test func releaseBridgeMaterializesFutureTimelinePointAsSyncFile() throws {
+    guard let candidate = try DrmDeviceDiscovery.enumerate().first else { return }
+    var bridgeError = [CChar](repeating: 0, count: 1_024)
+    let bridge = candidate.renderNode.withCString { path in
+        unsafe nucleus_android_syncobj_bridge_create(
+            path, &bridgeError, bridgeError.count)
+    }
+    guard let bridge = unsafe bridge else {
+        throw RawGraphicsTestError(
+            description: bridgeError.withUnsafeBufferPointer {
+                unsafe String(cString: $0.baseAddress!)
+            })
+    }
+    defer { unsafe nucleus_android_syncobj_bridge_destroy(bridge) }
+
+    var error = [CChar](repeating: 0, count: 1_024)
+    let gpu = candidate.renderNode.withCString { path in
+        unsafe nucleus_android_gpu_create(path, &error, error.count)
+    }
+    guard let gpu = unsafe gpu else {
+        throw RawGraphicsTestError(
+            description: error.withUnsafeBufferPointer {
+                unsafe String(cString: $0.baseAddress!)
+            })
+    }
+    defer { unsafe nucleus_android_gpu_destroy(gpu) }
+
+    let timelineFD = unsafe nucleus_android_syncobj_bridge_export_release_timeline(
+        bridge)
+    guard timelineFD >= 0 else {
+        throw RawGraphicsTestError(
+            description: "release timeline export failed")
+    }
+    guard let timeline = unsafe nucleus_android_syncobj_timeline_import_fd(
+        gpu, timelineFD)
+    else {
+        _ = close(timelineFD)
+        throw RawGraphicsTestError(
+            description: "release timeline import failed")
+    }
+    _ = close(timelineFD)
+    defer { unsafe nucleus_android_syncobj_timeline_destroy(timeline) }
+
+    var releaseError = [CChar](repeating: 0, count: 1_024)
+    let releaseFence = unsafe nucleus_android_syncobj_bridge_export_release_sync_file(
+        bridge, 7, &releaseError, releaseError.count)
+    guard releaseFence >= 0 else {
+        throw RawGraphicsTestError(
+            description: releaseError.withUnsafeBufferPointer {
+                unsafe String(cString: $0.baseAddress!)
+            })
+    }
+    defer { _ = close(releaseFence) }
+    let nextReleaseFence =
+        unsafe nucleus_android_syncobj_bridge_export_release_sync_file(
+            bridge, 8, &releaseError, releaseError.count)
+    guard nextReleaseFence >= 0 else {
+        throw RawGraphicsTestError(
+            description: releaseError.withUnsafeBufferPointer {
+                unsafe String(cString: $0.baseAddress!)
+            })
+    }
+    defer { _ = close(nextReleaseFence) }
+
+    var descriptor = pollfd(
+        fd: releaseFence,
+        events: Int16(POLLIN),
+        revents: 0)
+    var nextDescriptor = pollfd(
+        fd: nextReleaseFence,
+        events: Int16(POLLIN),
+        revents: 0)
+    #expect(unsafe poll(&descriptor, 1, 0) == 0)
+    #expect(unsafe poll(&nextDescriptor, 1, 0) == 0)
+    #expect(unsafe nucleus_android_syncobj_timeline_signal(timeline, 7) == 0)
+    var notification = pollfd(
+        fd: unsafe nucleus_android_syncobj_bridge_release_notification_fd(
+            bridge),
+        events: Int16(POLLIN),
+        revents: 0)
+    #expect(unsafe poll(&notification, 1, 1_000) == 1)
+    #expect(unsafe nucleus_android_syncobj_bridge_dispatch_releases(
+        bridge) == 0)
+    #expect(unsafe poll(&descriptor, 1, 1_000) == 1)
+    #expect(unsafe poll(&nextDescriptor, 1, 0) == 0)
+    #expect(unsafe nucleus_android_syncobj_timeline_signal(timeline, 8) == 0)
+    notification.revents = 0
+    #expect(unsafe poll(&notification, 1, 1_000) == 1)
+    #expect(unsafe nucleus_android_syncobj_bridge_dispatch_releases(
+        bridge) == 0)
+    #expect(unsafe poll(&nextDescriptor, 1, 1_000) == 1)
+}
+
+@Test func nativeFenceExportsUnsignaledSyncFileThenSignalsIt() throws {
+    guard let candidate = try DrmDeviceDiscovery.enumerate().first else { return }
+    let gpu = try RawGraphicsTestGPU(candidate: candidate)
+    var syncFile: Int32 = -1
+    var error = [CChar](repeating: 0, count: 1_024)
+    guard let nativeFence = unsafe nucleus_android_native_fence_create(
+        gpu.handle,
+        &syncFile,
+        &error,
+        error.count)
+    else {
+        throw RawGraphicsTestError(
+            description: error.withUnsafeBufferPointer {
+                unsafe String(cString: $0.baseAddress!)
+            })
+    }
+    defer {
+        unsafe nucleus_android_native_fence_destroy(nativeFence)
+        _ = close(syncFile)
+    }
+
+    var descriptor = pollfd(
+        fd: syncFile,
+        events: Int16(POLLIN),
+        revents: 0)
+    #expect(unsafe poll(&descriptor, 1, 0) == 0)
+    #expect(unsafe nucleus_android_native_fence_signal(
+        nativeFence,
+        &error,
+        error.count) == 0)
+    #expect(unsafe poll(&descriptor, 1, 1_000) == 1)
+}
+
 @Test func neverSubmittedBufferIsReclaimedWhileGPUStaysAlive() throws {
     guard let candidate = try DrmDeviceDiscovery.enumerate().first else { return }
     let gpu = try RawGraphicsTestGPU(candidate: candidate)

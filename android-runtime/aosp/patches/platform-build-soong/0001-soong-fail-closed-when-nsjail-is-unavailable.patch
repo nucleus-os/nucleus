@@ -1,0 +1,40 @@
+From 8e8a8f2df5f11d0963e2b6acd54b3bde5123a822 Mon Sep 17 00:00:00 2001
+From: Nucleus Android Build Security <noreply@nucleus.invalid>
+Date: Sun, 26 Jul 2026 00:00:00 +0000
+Subject: [PATCH] soong: fail closed when nsjail is unavailable
+
+Nucleus release artifacts must never be produced after the build sandbox
+probe fails. Treat every failed or indeterminate nsjail probe as fatal
+instead of silently continuing with sandboxConfig.working left false.
+---
+ ui/build/sandbox_linux.go | 8 +++-----
+ 1 file changed, 3 insertions(+), 5 deletions(-)
+
+diff --git a/ui/build/sandbox_linux.go b/ui/build/sandbox_linux.go
+index d07e26b61..a26def1d8 100644
+--- a/ui/build/sandbox_linux.go
++++ b/ui/build/sandbox_linux.go
+@@ -142,18 +142,16 @@ func (c *Cmd) sandboxSupported() bool {
+ 			return
+ 		}
+ 
+-		c.ctx.Println("Build sandboxing disabled due to nsjail error.")
+-
+ 		for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
+ 			c.ctx.Verboseln(line)
+ 		}
+ 
+ 		if err == nil {
+-			c.ctx.Verboseln("nsjail exited successfully, but without the correct output")
++			c.ctx.Fatalf("nsjail exited successfully without proving the sandbox contract")
+ 		} else if e, ok := err.(*exec.ExitError); ok {
+-			c.ctx.Verbosef("nsjail failed with %v", e.ProcessState.String())
++			c.ctx.Fatalf("nsjail sandbox probe failed with %v", e.ProcessState.String())
+ 		} else {
+-			c.ctx.Verbosef("nsjail failed with %v", err)
++			c.ctx.Fatalf("nsjail sandbox probe failed: %v", err)
+ 		}
+ 	})
+ 
+-- 
+2.43.0

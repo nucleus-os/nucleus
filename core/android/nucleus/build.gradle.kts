@@ -150,12 +150,14 @@ extensions.configure<com.android.build.api.dsl.LibraryExtension>("android") {
             // jextract-generated bindings (AndroidHost.java) produced by the native
             // build. The generated directory is populated by buildNucleusAndroidNative,
             // which the compile tasks depend on (wired below).
-            java.srcDir(coreRoot.dir("../third-party/swift-java/SwiftKitCore/src/main/java"))
-            java.srcDir(
+            java.directories.add(
+                coreRoot.dir("../third-party/swift-java/SwiftKitCore/src/main/java").asFile.path
+            )
+            java.directories.add(
                 coreRoot.dir(
                     "platform-android/.build/plugins/outputs/platform-android/" +
                         "NucleusAndroidJNI/destination/JExtractSwiftPlugin/src/generated/java"
-                )
+                ).asFile.path
             )
         }
     }

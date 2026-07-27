@@ -35,7 +35,7 @@ struct ChromiumCommand {
                 json: false,
                 quiet: true)
         }
-        let root = FilePath(context.root.path)
+        let root = context.layout.rootPath
         let cache = context.cacheRoot.path
         let prefix = installPrefix
             ?? context.environment["PREFIX"]

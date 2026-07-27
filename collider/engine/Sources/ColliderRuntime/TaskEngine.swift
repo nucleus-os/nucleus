@@ -6,17 +6,20 @@ public struct TaskExecutionOptions: Sendable {
     public var dryRun: Bool
     public var explain: Bool
     public var verbose: Bool
+    public var quiet: Bool
     public var machineReadable: Bool
 
     public init(
         dryRun: Bool = false,
         explain: Bool = false,
         verbose: Bool = false,
+        quiet: Bool = false,
         machineReadable: Bool = false
     ) {
         self.dryRun = dryRun
         self.explain = explain
         self.verbose = verbose
+        self.quiet = quiet
         self.machineReadable = machineReadable
     }
 }
@@ -60,6 +63,11 @@ extension ColliderRuntime {
         registry: RunRegistry? = nil,
         options: TaskExecutionOptions = TaskExecutionOptions()
     ) async throws -> TaskExecutionReport {
+        let previousOutputPresentation = taskOutputPresentation
+        taskOutputPresentation =
+            options.quiet || options.machineReadable ? .quiet : .stream
+        defer { taskOutputPresentation = previousOutputPresentation }
+
         let ordered = try graph.orderedTasks(selecting: selected)
         try FileManager.default.createDirectory(
             atPath: stateRoot.string, withIntermediateDirectories: true)
@@ -309,43 +317,27 @@ extension ColliderRuntime {
         case .writeFile(let path, let bytes):
             encoder.append(tag: 44, string: path.string)
             encoder.append(tag: 45, bytes: bytes)
-        case .syncGitCheckout(let synchronization):
+        case .prepareSwiftSource(let preparation):
             let tool = try resolvedToolIdentity(
                 .named("git"),
-                environment: synchronization.environment)
-            encoder.append(tag: 118, string: synchronization.repository.string)
-            encoder.append(tag: 119, string: synchronization.remote)
-            switch synchronization.revision {
+                environment: preparation.environment)
+            encoder.append(tag: 118, string: preparation.repository.string)
+            encoder.append(tag: 119, string: preparation.remote)
+            switch preparation.reference {
             case .branch(let branch):
                 encoder.append(tag: 120, string: "branch")
                 encoder.append(tag: 121, string: branch)
             case .tag(let tag):
                 encoder.append(tag: 120, string: "tag")
                 encoder.append(tag: 121, string: tag)
-            case .commit(let commit):
-                encoder.append(tag: 120, string: "commit")
-                encoder.append(tag: 121, string: commit)
             }
             encoder.append(tag: 122, string: tool.path.string)
             encoder.append(tag: 123, bytes: tool.digest.bytes)
             for (name, value) in artifactEnvironment(
-                synchronization.environment)
+                preparation.environment)
             {
                 encoder.append(tag: 124, string: name)
                 encoder.append(tag: 125, string: value)
-            }
-        case .validateGitCheckout(let validation):
-            let tool = try resolvedToolIdentity(
-                .named("git"),
-                environment: validation.environment)
-            encoder.append(tag: 82, string: validation.repository.string)
-            encoder.append(tag: 83, string: validation.expectedCommit)
-            encoder.append(tag: 84, integer: validation.requireClean ? 1 : 0)
-            encoder.append(tag: 85, string: tool.path.string)
-            encoder.append(tag: 86, bytes: tool.digest.bytes)
-            for (name, value) in artifactEnvironment(validation.environment) {
-                encoder.append(tag: 87, string: name)
-                encoder.append(tag: 88, string: value)
             }
         case .prepareHostToolchainBuild(let preparation):
             encoder.append(tag: 126, string: preparation.workspace.string)
@@ -500,6 +492,20 @@ extension ColliderRuntime {
                 encoder.append(tag: 189, string: name)
                 encoder.append(tag: 190, string: value)
             }
+        case .prepareAOSPBuildContainer(let preparation):
+            for path in [
+                preparation.context,
+                preparation.containerFile,
+                preparation.imageID,
+            ] {
+                encoder.append(tag: 191, string: path.string)
+            }
+            encoder.append(tag: 192, string: preparation.imageName)
+            let tool = try resolvedToolIdentity(
+                .named("podman"),
+                environment: preparation.environment)
+            encoder.append(tag: 193, string: tool.path.string)
+            encoder.append(tag: 194, bytes: tool.digest.bytes)
         case .prepareAOSPSigningIdentity(let preparation):
             encoder.append(tag: 191, string: preparation.destination.string)
             encoder.append(tag: 192, string: preparation.subject)
@@ -541,6 +547,8 @@ extension ColliderRuntime {
                 build.repoLauncher,
                 build.sourceProvenance,
                 build.buildRoot,
+                build.ccacheDirectory,
+                build.containerImageID,
                 build.signingIdentity,
             ] {
                 encoder.append(tag: 197, string: path.string)
@@ -564,6 +572,19 @@ extension ColliderRuntime {
             for (name, value) in artifactEnvironment(build.environment) {
                 encoder.append(tag: 202, string: name)
                 encoder.append(tag: 203, string: value)
+            }
+        case .prepareChromiumDepotTools(let preparation):
+            let tool = try resolvedToolIdentity(
+                .named("git"),
+                environment: preparation.environment)
+            encoder.append(tag: 211, string: preparation.repository.string)
+            encoder.append(tag: 212, string: preparation.remote)
+            encoder.append(tag: 213, string: preparation.commit)
+            encoder.append(tag: 214, string: tool.path.string)
+            encoder.append(tag: 215, bytes: tool.digest.bytes)
+            for (name, value) in artifactEnvironment(preparation.environment) {
+                encoder.append(tag: 216, string: name)
+                encoder.append(tag: 217, string: value)
             }
         case .prepareChromiumSource(let preparation):
             for path in [
@@ -857,17 +878,7 @@ extension ColliderRuntime {
                 }
                 try FileDescriptor.standardError.writeAll(Array(line.utf8))
             }
-            let effectiveCommand = options.machineReadable
-                ? CommandSpec(
-                    executable: command.executable,
-                    arguments: command.arguments,
-                    workingDirectory: command.workingDirectory,
-                    environment: command.environment,
-                    input: command.input,
-                    output: .logged,
-                    timeoutNanoseconds: command.timeoutNanoseconds)
-                : command
-            let result = try await execute(effectiveCommand, stage: stage)
+            let result = try await execute(command, stage: stage)
             guard result.status == 0 else {
                 throw RuntimeFailure.commandFailed(status: result.status)
             }
@@ -971,10 +982,8 @@ extension ColliderRuntime {
                 withDestinationPath: target)
         case .writeFile(let path, let bytes):
             try DurableFile.write(Data(bytes), to: path)
-        case .syncGitCheckout(let synchronization):
-            try await syncGitCheckout(synchronization, stage: stage)
-        case .validateGitCheckout(let validation):
-            try await validateGitCheckout(validation, stage: stage)
+        case .prepareSwiftSource(let preparation):
+            try await prepareSwiftSource(preparation, stage: stage)
         case .prepareHostToolchainBuild(let preparation):
             try prepareHostToolchainBuild(preparation)
         case .assembleHostToolchain(let assembly):
@@ -1007,6 +1016,10 @@ extension ColliderRuntime {
             try await prepareAOSPSource(
                 preparation,
                 stage: stage)
+        case .prepareAOSPBuildContainer(let preparation):
+            try await prepareAOSPBuildContainer(
+                preparation,
+                stage: stage)
         case .prepareAOSPSigningIdentity(let preparation):
             try await prepareAOSPSigningIdentity(
                 preparation,
@@ -1021,6 +1034,8 @@ extension ColliderRuntime {
             try await validateAOSPProduct(build, stage: stage)
         case .publishAOSPProduct(let build):
             try await publishAOSPProduct(build, stage: stage)
+        case .prepareChromiumDepotTools(let preparation):
+            try await prepareChromiumDepotTools(preparation, stage: stage)
         case .prepareChromiumSource(let preparation):
             try await prepareChromiumSource(preparation, stage: stage)
         case .buildChromiumProduct(let build):
@@ -1194,10 +1209,8 @@ private func operationEnvironment(_ operation: TaskOperation) -> [String: String
         setup.environment
     case .mergeStaticArchives(let merge):
         merge.environment
-    case .syncGitCheckout(let synchronization):
-        synchronization.environment
-    case .validateGitCheckout(let validation):
-        validation.environment
+    case .prepareSwiftSource(let preparation):
+        preparation.environment
     case .prepareHostToolchainBuild:
         [:]
     case .assembleHostToolchain(let assembly):
@@ -1224,6 +1237,8 @@ private func operationEnvironment(_ operation: TaskOperation) -> [String: String
         verification.environment
     case .prepareAOSPSource(let preparation):
         preparation.environment
+    case .prepareAOSPBuildContainer(let preparation):
+        preparation.environment
     case .prepareAOSPSigningIdentity(let preparation):
         preparation.environment
     case .compileAOSPProduct(let build),
@@ -1232,6 +1247,8 @@ private func operationEnvironment(_ operation: TaskOperation) -> [String: String
          .validateAOSPProduct(let build),
          .publishAOSPProduct(let build):
         build.environment
+    case .prepareChromiumDepotTools(let preparation):
+        preparation.environment
     case .prepareChromiumSource(let preparation):
         preparation.environment
     case .buildChromiumProduct(let build):
