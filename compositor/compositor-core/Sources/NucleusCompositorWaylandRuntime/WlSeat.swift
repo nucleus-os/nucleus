@@ -56,6 +56,10 @@ import WaylandProtocolTypes
     /// the owner before clients bind (a fixture provides a synthetic one).
     private var keymapDescriptor: LinuxOwnedFileDescriptor?
     private(set) var keymapSize: UInt32 = 0
+    /// Key repeat, in repeats per second and milliseconds before the first
+    /// repeat. Sent to each wl_keyboard on bind and rebroadcast on reload.
+    fileprivate var repeatRate: Int32 = 25
+    fileprivate var repeatDelay: Int32 = 600
 
     // Every live device resource eligible in the current capability epoch, keyed
     // by wl_client. On capability removal the maps are cleared: v5+ objects made
@@ -229,6 +233,25 @@ import WaylandProtocolTypes
         for resources in keyboards.values {
             for resource in resources {
                 sendKeymap(to: resource)
+            }
+        }
+    }
+
+    /// Adopt new key repeat timing and push it to every bound keyboard.
+    ///
+    /// A rate of 0 disables repeat entirely, which is what the protocol
+    /// specifies and what accessibility settings rely on.
+    func updateRepeatInfo(rate: Int32, delay: Int32) {
+        let clampedRate = max(0, min(rate, 1000))
+        let clampedDelay = max(0, delay)
+        guard clampedRate != repeatRate || clampedDelay != repeatDelay else {
+            return
+        }
+        repeatRate = clampedRate
+        repeatDelay = clampedDelay
+        for resources in keyboards.values {
+            for resource in resources where resource.supportsRepeatInfo {
+                resource.sendRepeatInfo(rate: clampedRate, delay: clampedDelay)
             }
         }
     }
@@ -692,7 +715,8 @@ extension SeatBinding: WlSeatRequests {
                 }
                 me.sendKeymap(to: owner.resource)
                 if owner.resource.supportsRepeatInfo {
-                    owner.resource.sendRepeatInfo(rate: 25, delay: 600)
+                    owner.resource.sendRepeatInfo(
+                        rate: me.repeatRate, delay: me.repeatDelay)
                 }
             })
     }

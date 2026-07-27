@@ -65,10 +65,14 @@ import WaylandColliderRecipe
 
     #expect(try registry.selectedTestTasks(nil).map(\.rawValue) == [
         "tracy.test", "vulkan.test", "wayland.test", "core.test",
+        "config.test",
         "linux.test", "rn.test", "compositor-core.test",
         "compositor-core.test-loader",
         "compositor-core.test-gpu-headless",
         "compositor.test", "shell.test", "android-runtime.test",
+    ])
+    #expect(try registry.selectedTestTasks(.config).map(\.rawValue) == [
+        "config.test",
     ])
     #expect(try registry.selectedTestTasks(.compositor).map(\.rawValue) == [
         "compositor-core.test", "compositor-core.test-loader",

@@ -15,6 +15,7 @@ let package = Package(
         .package(name: "swift-vulkan", path: "../swift-vulkan"),
         .package(name: "swift-wayland", path: "../swift-wayland"),
         .package(name: "Nucleus", path: "../core"),
+        .package(name: "NucleusConfigPackage", path: "../config"),
         .package(name: "NucleusLinuxPlatform", path: "../platform-linux"),
         .package(name: "android-runtime", path: "../android-runtime"),
         .package(name: "NucleusReactNative", path: "../react-native"),
@@ -41,6 +42,9 @@ let package = Package(
                 .product(name: "VulkanColliderRecipe", package: "swift-vulkan"),
                 .product(name: "WaylandColliderRecipe", package: "swift-wayland"),
                 .product(name: "CoreColliderRecipe", package: "Nucleus"),
+                .product(
+                    name: "ConfigColliderRecipe",
+                    package: "NucleusConfigPackage"),
                 .product(name: "LinuxColliderRecipe", package: "NucleusLinuxPlatform"),
                 .product(name: "AndroidRuntimeColliderRecipe", package: "android-runtime"),
                 .product(name: "NucleusAndroidContainerContract", package: "android-runtime"),

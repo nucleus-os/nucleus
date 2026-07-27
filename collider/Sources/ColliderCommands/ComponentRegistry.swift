@@ -4,6 +4,7 @@ import ColliderCore
 import ColliderRuntime
 import CompositorAppColliderRecipe
 import CompositorColliderRecipe
+import ConfigColliderRecipe
 import CoreColliderRecipe
 import Foundation
 import LinuxColliderRecipe
@@ -24,6 +25,7 @@ enum ComponentSelection: String, CaseIterable, ExpressibleByArgument {
     case vulkan
     case wayland
     case core
+    case config
     case linux
     case reactNative = "rn"
     case compositor
@@ -62,6 +64,10 @@ struct ComponentRegistry {
                 swiftPM: swiftPM),
             CoreColliderRecipe.build(
                 root: FilePath(layout.core.path),
+                environment: environment,
+                swiftPM: swiftPM),
+            ConfigColliderRecipe.build(
+                root: FilePath(layout.config.path),
                 environment: environment,
                 swiftPM: swiftPM),
             LinuxColliderRecipe.build(
@@ -112,6 +118,10 @@ struct ComponentRegistry {
                 swiftPM: swiftPM),
             CoreColliderRecipe.test(
                 root: FilePath(layout.core.path),
+                environment: environment,
+                swiftPM: swiftPM),
+            ConfigColliderRecipe.test(
+                root: FilePath(layout.config.path),
                 environment: environment,
                 swiftPM: swiftPM),
             LinuxColliderRecipe.test(
@@ -507,6 +517,7 @@ struct ComponentRegistry {
         if selection == .all || selection == .runtime {
             return [
                 "tracy.test", "vulkan.test", "wayland.test", "core.test",
+                "config.test",
                 "linux.test", "rn.test", "compositor-core.test",
                 "compositor-core.test-loader",
                 "compositor-core.test-gpu-headless",
@@ -519,6 +530,7 @@ struct ComponentRegistry {
             .vulkan: ["vulkan.test"],
             .wayland: ["wayland.test"],
             .core: ["core.test"],
+            .config: ["config.test"],
             .linux: ["linux.test"],
             .reactNative: ["rn.test"],
             .compositor: [

@@ -13,6 +13,7 @@ import Glibc
 import NucleusCompositorInputC
 internal import NucleusCompositorServer
 import NucleusCompositorServerTypes
+public import NucleusConfig
 
 /// Opaque identity for a live C-owned libinput device. It pairs inventory events
 /// and is never converted back into a pointer.
@@ -46,6 +47,20 @@ final class InputHost {
         }
     }
 
+    /// One live device: its capabilities, and a retained handle so a
+    /// configuration reload can re-apply settings to hardware that is already
+    /// connected. libinput hands out no device enumeration, so the only way to
+    /// revisit a device later is to have held a reference to it.
+    /// `@safe` because the record's whole job is to make the handle's lifetime
+    /// an invariant of `InputHost`: it is reffed on the way in, unreffed on
+    /// removal and on teardown, and never escapes. Individual uses of the
+    /// handle are still marked `unsafe` at their call sites.
+    @safe private struct DeviceRecord {
+        var capabilities: DeviceCapabilities
+        /// Retained with `libinput_device_ref`; released on removal.
+        var device: OpaquePointer
+    }
+
     let seat: SeatSession
     let xkb: XkbKeyboard
     let dispatch: InputDispatch
@@ -53,14 +68,23 @@ final class InputHost {
     /// DRM connector-hotplug monitor over libinput's udev context. Released before
     /// the backend that owns that context (udev refcounting makes the order safe).
     private var drmHotplug: UdevMonitor?
-    private var devices: [LibinputDeviceID: DeviceCapabilities] = [:]
+    private var devices: [LibinputDeviceID: DeviceRecord] = [:]
     private var advertisedCapabilities = DeviceCapabilities()
     private(set) var active = false
+    /// Settings applied to every device on arrival and on reload. Defaults hold
+    /// until the composition root loads a configuration file.
+    private var inputConfiguration = InputConfig.defaults
 
-    private init(host: RouterHost, seat: SeatSession, xkb: XkbKeyboard) {
+    private init(
+        host: RouterHost,
+        seat: SeatSession,
+        xkb: XkbKeyboard,
+        configuration: InputConfig
+    ) {
         self.host = host
         self.seat = seat
         self.xkb = xkb
+        self.inputConfiguration = configuration
         self.dispatch = InputDispatch(xkb: xkb, host: host)
         host.server.inputControl = self.dispatch
     }
@@ -68,9 +92,14 @@ final class InputHost {
     /// Open the libseat session + compile the keymap. The session is not active until
     /// libseat fires enable; `waitForActivation` pumps the FD until it does. Returns
     /// nil if seatd/logind or xkb is unavailable.
-    static func open(host: RouterHost) -> InputHost? {
-        guard let seat = SeatSession.open(), let xkb = XkbKeyboard() else { return nil }
-        let inputHost = InputHost(host: host, seat: seat, xkb: xkb)
+    static func open(
+        host: RouterHost, configuration: InputConfig = .defaults
+    ) -> InputHost? {
+        guard let seat = SeatSession.open(),
+            let xkb = XkbKeyboard(rules: xkbRules(for: configuration))
+        else { return nil }
+        let inputHost = InputHost(
+            host: host, seat: seat, xkb: xkb, configuration: configuration)
         seat.onEnable = { [weak inputHost] in inputHost?.handleSeatEnable() }
         seat.onDisable = { [weak inputHost] in inputHost?.handleSeatDisable() ?? true }
         return inputHost
@@ -137,6 +166,56 @@ final class InputHost {
         seatObj.updateKeymap(
             descriptor: consume descriptor,
             size: xkb.keymapSize)
+        // Repeat timing belongs to the same keyboard publication: the seat is
+        // only reachable once the router is active, which is also the first
+        // moment a client could bind a keyboard and read it.
+        seatObj.updateRepeatInfo(
+            rate: Int32(clamping: inputConfiguration.keyboard.repeatRate),
+            delay: Int32(clamping: inputConfiguration.keyboard.repeatDelay))
+    }
+
+    /// Adopt a new input configuration.
+    ///
+    /// Applies to every device already connected, not only to ones that arrive
+    /// afterwards — a reload that only affected future hardware would look like
+    /// it had silently failed. Key repeat goes to the seat, which rebroadcasts
+    /// it to bound keyboards.
+    ///
+    /// The xkb rule set is deliberately *not* recompiled here. A new keymap
+    /// invalidates every client's key state, so it belongs with the session
+    /// transition path that already resets modifiers and grabs, not in the
+    /// middle of a settings reload.
+    func updateInputConfiguration(_ configuration: InputConfig) {
+        inputConfiguration = configuration
+        for record in devices.values {
+            unsafe InputDeviceConfiguration.apply(
+                configuration, to: record.device)
+        }
+        host.runtime?.seat.updateRepeatInfo(
+            rate: Int32(clamping: configuration.keyboard.repeatRate),
+            delay: Int32(clamping: configuration.keyboard.repeatDelay))
+    }
+
+    /// The rule set the keymap should be compiled from. Read at bring-up, where
+    /// a fresh keymap costs nothing because no client is bound yet.
+    nonisolated static func xkbRules(
+        for configuration: InputConfig
+    ) -> XkbRules {
+        let xkb = configuration.keyboard.xkb
+        return XkbRules(
+            rules: xkb.rules,
+            model: xkb.model,
+            layout: xkb.layout,
+            variant: xkb.variant,
+            options: xkb.options)
+    }
+
+    isolated deinit {
+        // libinput devices are retained so a reload can revisit them; release
+        // them with the host that holds them.
+        for record in devices.values {
+            _ = unsafe libinput_device_unref(record.device)
+        }
     }
 
     var seatFd: Int32 { seat.fd }
@@ -205,18 +284,27 @@ final class InputHost {
 
         let key = unsafe LibinputDeviceID(device)
         if type == LIBINPUT_EVENT_DEVICE_ADDED {
-            devices[key] = DeviceCapabilities(
-                pointer: unsafe libinput_device_has_capability(
-                    device, LIBINPUT_DEVICE_CAP_POINTER) != 0,
-                keyboard: unsafe libinput_device_has_capability(
-                    device, LIBINPUT_DEVICE_CAP_KEYBOARD) != 0,
-                touch: unsafe libinput_device_has_capability(
-                    device, LIBINPUT_DEVICE_CAP_TOUCH) != 0)
-        } else {
-            devices[key] = nil
+            // Configure before the device is announced, so its first event is
+            // already produced under the user's settings.
+            unsafe InputDeviceConfiguration.apply(
+                inputConfiguration, to: device)
+            _ = unsafe libinput_device_ref(device)
+            unsafe devices[key] = DeviceRecord(
+                capabilities: DeviceCapabilities(
+                    pointer: unsafe libinput_device_has_capability(
+                        device, LIBINPUT_DEVICE_CAP_POINTER) != 0,
+                    keyboard: unsafe libinput_device_has_capability(
+                        device, LIBINPUT_DEVICE_CAP_KEYBOARD) != 0,
+                    touch: unsafe libinput_device_has_capability(
+                        device, LIBINPUT_DEVICE_CAP_TOUCH) != 0),
+                device: device)
+        } else if let record = devices.removeValue(forKey: key) {
+            _ = unsafe libinput_device_unref(record.device)
         }
 
-        let next = devices.values.reduce(DeviceCapabilities(), |)
+        let next = devices.values.reduce(DeviceCapabilities()) {
+            $0 | $1.capabilities
+        }
         guard next != advertisedCapabilities else { return true }
         if (advertisedCapabilities.pointer && !next.pointer)
             || (advertisedCapabilities.keyboard && !next.keyboard)
@@ -243,11 +331,23 @@ final class InputHost {
 // MARK: - composition-root lifecycle
 
 public extension WaylandRuntime {
-    func openSeat() -> Bool {
-        guard let inputHost = InputHost.open(host: host) else { return false }
+    /// Open the seat and compile the keymap under a configuration.
+    ///
+    /// The configuration arrives here rather than being applied afterwards
+    /// because the xkb rule set is an input to keymap compilation, and the
+    /// keymap is built exactly once, before any client can bind a keyboard.
+    func openSeat(configuration: InputConfig = .defaults) -> Bool {
+        guard let inputHost = InputHost.open(
+            host: host, configuration: configuration)
+        else { return false }
         host.inputHost = inputHost
         inputHost.waitForActivation()
         return inputHost.active
+    }
+
+    /// Adopt a configuration after bring-up, applying it to connected devices.
+    func updateInputConfiguration(_ configuration: InputConfig) {
+        host.inputHost?.updateInputConfiguration(configuration)
     }
 
     func startLibinput() -> Bool { host.inputHost?.startLibinput() ?? false }

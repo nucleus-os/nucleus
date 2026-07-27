@@ -80,6 +80,9 @@ struct WorkspaceLayout: Sendable {
     var core: URL {
         root.appendingPathComponent("core", isDirectory: true)
     }
+    var config: URL {
+        root.appendingPathComponent("config", isDirectory: true)
+    }
     var reactNative: URL {
         root.appendingPathComponent("react-native", isDirectory: true)
     }

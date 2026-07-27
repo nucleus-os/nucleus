@@ -111,6 +111,7 @@ let package = Package(
         // policy/shell (Wayland/DRM/input, the DRM renderer backend, the window/seat
         // policy, the shell overlay). Consumes core via the @_spi(NucleusCompositor)
         .package(path: "../compositor-core"),
+        .package(name: "NucleusConfigPackage", path: "../../config"),
         .package(
             name: "NucleusLinuxPlatform",
             path: "../../platform-linux"),
@@ -164,6 +165,7 @@ let package = Package(
                 .product(name: "NucleusCompositorServer", package: "compositor-core"),
                 .product(name: "NucleusCompositorWindowManager", package: "compositor-core"),
                 .product(name: "NucleusCompositorShell", package: "compositor-core"),
+                .product(name: "NucleusConfig", package: "NucleusConfigPackage"),
                 .product(
                     name: "NucleusLinuxDBus",
                     package: "NucleusLinuxPlatform"),

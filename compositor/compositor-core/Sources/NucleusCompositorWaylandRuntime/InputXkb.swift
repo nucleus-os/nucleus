@@ -20,6 +20,55 @@ enum EventFlagBit {
     static let numericPad: UInt64 = 1 << 21
 }
 
+/// The five xkbcommon rule fields.
+///
+/// Each is independently optional: an empty field becomes NULL so xkbcommon
+/// resolves that one from its own defaults, rather than forcing a user who wants
+/// a layout to also name a model and a rule set.
+struct XkbRules: Equatable, Sendable {
+    var rules = ""
+    var model = ""
+    var layout = ""
+    var variant = ""
+    var options = ""
+
+    var isEmpty: Bool {
+        rules.isEmpty && model.isEmpty && layout.isEmpty
+            && variant.isEmpty && options.isEmpty
+    }
+
+    /// Borrow the fields as a C rule-names struct. The pointers are valid only
+    /// for the duration of `body`, which is why xkb compilation happens inside.
+    func withNativeNames<R>(
+        _ body: (xkb_rule_names) throws -> R
+    ) rethrows -> R {
+        try unsafe withOptionalCString(rules) { rules in
+            try unsafe withOptionalCString(model) { model in
+                try unsafe withOptionalCString(layout) { layout in
+                    try unsafe withOptionalCString(variant) { variant in
+                        try unsafe withOptionalCString(options) { options in
+                            try unsafe body(xkb_rule_names(
+                                rules: rules,
+                                model: model,
+                                layout: layout,
+                                variant: variant,
+                                options: options))
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private func withOptionalCString<R>(
+    _ value: String,
+    _ body: (UnsafePointer<CChar>?) throws -> R
+) rethrows -> R {
+    guard !value.isEmpty else { return try body(nil) }
+    return try value.withCString(body)
+}
+
 @MainActor
 @safe final class XkbKeyboard {
     /// XKB keycodes are evdev keycodes plus 8. Named rather than spelled `+ 8`
@@ -46,10 +95,26 @@ enum EventFlagBit {
     private static let modNum = "Mod2"
     private static let modLogo = "Mod4"
 
-    init?() {
+    /// Compile a keymap from an explicit rule set.
+    ///
+    /// Every field is optional independently: an empty string is passed as NULL
+    /// so xkbcommon falls back to its own default for that field alone, which
+    /// is what makes `{"layout": "us,de"}` work without also naming a model and
+    /// a rule set. Passing no rules at all reproduces the previous behavior,
+    /// where only `XKB_DEFAULT_*` in the environment had any effect.
+    convenience init?() {
+        self.init(rules: XkbRules())
+    }
+
+    init?(rules: XkbRules) {
         guard let ctx = unsafe xkb_context_new(XKB_CONTEXT_NO_FLAGS) else { return nil }
-        guard let km = unsafe xkb_keymap_new_from_names(
-            ctx, nil, XKB_KEYMAP_COMPILE_NO_FLAGS)
+        guard let km = unsafe rules.withNativeNames({ names in
+            withUnsafePointer(to: names) { pointer in
+                unsafe xkb_keymap_new_from_names(
+                    ctx, rules.isEmpty ? nil : pointer,
+                    XKB_KEYMAP_COMPILE_NO_FLAGS)
+            }
+        })
         else {
             unsafe xkb_context_unref(ctx)
             return nil

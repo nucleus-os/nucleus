@@ -132,6 +132,9 @@ let package = Package(
         // shared marshalling); this package no longer generates a Wayland module of its own.
         .package(name: "swift-wayland", path: "../../swift-wayland"),
         .package(name: "swift-tracy", path: "../../swift-tracy"),
+        // The session configuration model. Shared with the shell and the control
+        // CLI, and dependent on none of them.
+        .package(name: "NucleusConfigPackage", path: "../../config"),
         .package(
             name: "NucleusLinuxPlatform",
             path: "../../platform-linux"),
@@ -310,6 +313,9 @@ let package = Package(
                 .product(
                     name: "NucleusLinuxPrimitives",
                     package: "NucleusLinuxPlatform"),
+                .product(
+                    name: "NucleusConfig",
+                    package: "NucleusConfigPackage"),
                 .product(name: "Tracy", package: "swift-tracy"),
             ],
             path: "Sources/NucleusCompositorWaylandRuntime",
@@ -459,6 +465,7 @@ let package = Package(
             dependencies: [
                 "NucleusCompositorWaylandRuntime", "NucleusCompositorServer",
                 "NucleusCompositorWindowManager", "NucleusCompositorWindowScene",
+                .product(name: "NucleusConfig", package: "NucleusConfigPackage"),
                 .product(name: "NucleusLayers", package: "Nucleus"),
                 // Direct deps on the C façades so their systemLibrary pkgConfig cflags
                 // (xcb/libinput include dirs) reach this target's @testable recompile.
@@ -504,6 +511,7 @@ let package = Package(
                 "SceneTransitionTests.swift",
                 "DndActionNegotiationTests.swift",
                 "XwaylandProcessSecurityTests.swift",
+                "InputDeviceSettingsTests.swift",
             ],
             swiftSettings: [
                 .interoperabilityMode(.Cxx),

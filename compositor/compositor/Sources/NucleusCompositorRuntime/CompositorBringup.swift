@@ -6,6 +6,7 @@ import NucleusCompositorOverlayTypes
 import NucleusAppHostBundle
 import NucleusCompositorRenderRuntime
 import NucleusCompositorRenderSession
+import NucleusConfig
 import NucleusRenderer
 import NucleusRenderHost
 import NucleusUI
@@ -30,6 +31,25 @@ extension CompositorRuntime {
     /// router/shell/input. Returns false on a fatal bring-up failure (the caller
     /// tears down + exits non-zero).
     func bringUp() -> Bool {
+        // ── Session configuration ─────────────────────────────────────────
+        // Read before the seat, because the xkb rule set is an input to keymap
+        // compilation and the keymap is built exactly once, inside openSeat.
+        // A malformed file is never fatal: bring-up continues on defaults and
+        // says why, since a session that refuses to start leaves no way to fix
+        // the file that stopped it.
+        let sessionConfiguration: NucleusConfiguration
+        switch ConfigFile.loadDefault() {
+        case .loaded(let resolved, let warnings):
+            sessionConfiguration = resolved
+            for warning in warnings { logRuntime("config: \(warning.display)") }
+        case .failed(let diagnostics):
+            sessionConfiguration = .defaults
+            for diagnostic in diagnostics {
+                logRuntime("config: \(diagnostic.display)")
+            }
+            logRuntime("config: continuing with built-in defaults")
+        }
+
         // ── DRM device discovery (Swift-owned, over libdrm) ───────────────
         guard let drmDevice = discoverDrmDevice(
             preferredRenderPath: configuration.drmDevicePath)
@@ -39,7 +59,9 @@ extension CompositorRuntime {
         }
 
         // ── libseat session + DRM primary node (Swift-owned) ──────────────
-        guard waylandRuntime.openSeat() else {
+        guard waylandRuntime.openSeat(
+            configuration: sessionConfiguration.input)
+        else {
             logRuntime("session: failed to open Swift-owned seat")
             return false
         }
