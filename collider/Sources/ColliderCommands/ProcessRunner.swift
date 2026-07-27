@@ -138,7 +138,21 @@ struct WorkspaceContext: Sendable {
 
     func repository(_ name: String) -> URL { root.appendingPathComponent(name) }
 
-    var taskEnvironment: [String: String] { sanitizedEnvironment(environment) }
+    var taskEnvironment: [String: String] {
+        var environment = sanitizedEnvironment(self.environment)
+        environment["CCACHE_BASEDIR"] = root.path
+        environment["CCACHE_COMPILERCHECK"] = "content"
+        environment["CCACHE_DIR"] = cacheRoot
+            .appendingPathComponent("nucleus/host-ccache", isDirectory: true)
+            .path
+        environment["CCACHE_MAXSIZE"] = "50G"
+        // Header ctime/mtime affect cache validation but not preprocessed
+        // contents. Locale affects diagnostics only; warnings are errors in
+        // first-party builds, so successful object bytes remain unchanged.
+        environment["CCACHE_SLOPPINESS"] =
+            "include_file_ctime,include_file_mtime,locale"
+        return environment
+    }
 
     @discardableResult
     func run(

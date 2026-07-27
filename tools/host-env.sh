@@ -1,6 +1,20 @@
 #!/usr/bin/env bash
 # Shared host environment for Nucleus build entry points. Source this file.
 
+if ! command -v fnm >/dev/null 2>&1; then
+  echo "error: fnm is required to activate the Nucleus Node.js toolchain" >&2
+  return 127 2>/dev/null || exit 127
+fi
+nucleus_fnm_environment="$(fnm env --shell bash)" || {
+  echo "error: fnm could not initialize the Nucleus Node.js environment" >&2
+  return 127 2>/dev/null || exit 127
+}
+eval "$nucleus_fnm_environment"
+if ! fnm use --log-level quiet 26; then
+  echo "error: Node.js 26 is not installed under fnm" >&2
+  return 127 2>/dev/null || exit 127
+fi
+
 nucleus_toolchain=""
 nucleus_source_id="${NUCLEUS_SWIFT_SOURCE_ID:-release-6.4.x}"
 nucleus_platform_id="$nucleus_source_id"
@@ -43,4 +57,5 @@ fi
 nucleus_workspace_root="$(cd "$(dirname "$nucleus_host_env_source")/.." && pwd)"
 export SWIFT_JAVA_JNI_CORE_PATH="$nucleus_workspace_root/third-party/swift-java-jni-core"
 unset nucleus_host_env_source nucleus_workspace_root
+unset nucleus_fnm_environment
 unset nucleus_toolchain nucleus_source_id nucleus_platform_id

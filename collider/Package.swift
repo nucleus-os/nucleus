@@ -60,6 +60,7 @@ let package = Package(
                 .product(name: "CoreColliderRecipe", package: "Nucleus"),
                 .product(name: "NucleusSessionProtocol", package: "engine"),
                 .product(name: "ReactNativeColliderRecipe", package: "NucleusReactNative"),
+                .product(name: "TracyColliderRecipe", package: "swift-tracy"),
                 .product(name: "VulkanColliderRecipe", package: "swift-vulkan"),
                 .product(name: "WaylandColliderRecipe", package: "swift-wayland"),
             ]),

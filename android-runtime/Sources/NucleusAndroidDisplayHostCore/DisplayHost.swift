@@ -173,6 +173,9 @@ public enum DisplayHostError: Error, CustomStringConvertible {
         presenter.topologySink = { [weak self] update in
             self?.publishTopology(update)
         }
+        presenter.presentationSink = { [weak self] sample in
+            self?.publishPresentation(sample)
+        }
     }
 
     public func run() async throws {
@@ -413,6 +416,34 @@ public enum DisplayHostError: Error, CustomStringConvertible {
         }
     }
 
+    private func publishPresentation(
+        _ sample: AndroidDisplayPresenter.PresentationSample
+    ) {
+        guard let subscriber = topologySubscriber else { return }
+        var event = nucleus_composer_topology_event()
+        event.magic = NUCLEUS_COMPOSER_PROTOCOL_MAGIC
+        event.version = NUCLEUS_COMPOSER_PROTOCOL_VERSION
+        event.operation = UInt16(
+            NUCLEUS_COMPOSER_OUTPUT_PRESENTED.rawValue)
+        event.byte_count = UInt32(MemoryLayout.size(ofValue: event))
+        event.generation = presenter.topologyGeneration
+        event.display_id = sample.displayID
+        event.refresh_period_ns = sample.refreshPeriodNanoseconds
+        event.presentation_timestamp_ns = sample.timestampNanoseconds
+        event.presentation_sequence = sample.sequence
+        event.status = UInt32(NUCLEUS_COMPOSER_STATUS_OK.rawValue)
+        event.connected = 1
+        let eventSize = MemoryLayout.size(ofValue: event)
+        let sent = withUnsafePointer(to: &event) {
+            unsafe nucleus_android_ipc_send(
+                subscriber, $0, eventSize, nil, 0)
+        }
+        if sent != 0 {
+            _ = close(subscriber)
+            topologySubscriber = nil
+        }
+    }
+
     private func sendTopology(
         _ output: AndroidOutputTopology.Output,
         operation: nucleus_composer_operation,
@@ -515,21 +546,8 @@ public enum DisplayHostError: Error, CustomStringConvertible {
 
 @MainActor
 @safe private final class AndroidOutputTopology: WlOutputEvents {
-    struct Output: Equatable {
-        let name: String
-        let displayID: UInt64
-        let connected: Bool
-        let width: Int32
-        let height: Int32
-        let refreshMillihertz: Int32
-        let refreshPeriodNanoseconds: UInt64
-        let generation: UInt64
-    }
-
-    struct Update {
-        let operation: nucleus_composer_operation
-        let output: Output
-    }
+    typealias Output = ComposerOutputTopologyState.Output
+    typealias Update = ComposerOutputTopologyState.Update
 
     private struct Pending {
         let globalName: UInt32
@@ -544,14 +562,11 @@ public enum DisplayHostError: Error, CustomStringConvertible {
     var sink: ((Update) -> Void)?
     private var pendingByProxy: [UInt: Pending] = [:]
     private var proxyByGlobal: [UInt32: UInt] = [:]
-    private var displayIDByName: [String: UInt64] = [:]
-    private var nextDisplayID: UInt64 = 0
-    private(set) var generation: UInt64 = 0
+    private var state = ComposerOutputTopologyState()
+    var generation: UInt64 { state.generation }
 
     var connectedOutputs: [Output] {
-        pendingByProxy.values.compactMap(\.published)
-            .filter(\.connected)
-            .sorted { $0.displayID < $1.displayID }
+        state.connectedOutputs
     }
 
     func bind(_ global: BoundGlobal<WlOutputClient>) {
@@ -565,27 +580,34 @@ public enum DisplayHostError: Error, CustomStringConvertible {
 
     func remove(globalName: UInt32) {
         guard let identity = proxyByGlobal.removeValue(forKey: globalName),
-              var pending = pendingByProxy.removeValue(forKey: identity),
+              let pending = pendingByProxy.removeValue(forKey: identity),
               let published = pending.published
         else { return }
-        generation &+= 1
-        pending.published = Output(
-            name: published.name,
-            displayID: published.displayID,
-            connected: false,
-            width: published.width,
-            height: published.height,
-            refreshMillihertz: published.refreshMillihertz,
-            refreshPeriodNanoseconds: published.refreshPeriodNanoseconds,
-            generation: generation)
-        sink?(Update(
-            operation: NUCLEUS_COMPOSER_OUTPUT_DISCONNECTED,
-            output: pending.published!))
+        if let update = state.disconnect(name: published.name) {
+            sink?(update)
+        }
         try? pending.proxy.release()
     }
 
     func isConnected(displayID: UInt64) -> Bool {
         connectedOutputs.contains { $0.displayID == displayID }
+    }
+
+    func displayID(proxyIdentity: UInt) -> UInt64? {
+        pendingByProxy[proxyIdentity]?.published?.displayID
+    }
+
+    func proxy(displayID: UInt64) -> WaylandProxy<WlOutputClient>? {
+        pendingByProxy.values.first {
+            $0.published?.displayID == displayID
+                && $0.published?.connected == true
+        }?.proxy
+    }
+
+    func refreshPeriodNanoseconds(displayID: UInt64) -> UInt64? {
+        connectedOutputs.first {
+            $0.displayID == displayID
+        }?.refreshPeriodNanoseconds
     }
 
     func geometry(
@@ -645,38 +667,28 @@ public enum DisplayHostError: Error, CustomStringConvertible {
               let period = composerRefreshPeriodNanoseconds(
                 refreshMillihertz: refreshMillihertz)
         else { return }
-        let displayID: UInt64
-        if let existing = displayIDByName[name] {
-            displayID = existing
-        } else {
-            displayID = nextDisplayID
-            nextDisplayID &+= 1
-            displayIDByName[name] = displayID
-        }
-        let unchanged = pending.published.map {
-            $0.name == name
-                && $0.width == width
-                && $0.height == height
-                && $0.refreshMillihertz == refreshMillihertz
-        } ?? false
-        guard !unchanged else { return }
-        generation &+= 1
-        let operation: nucleus_composer_operation =
-            pending.published == nil
-            ? NUCLEUS_COMPOSER_OUTPUT_CONNECTED
-            : NUCLEUS_COMPOSER_OUTPUT_MODE_CHANGED
-        let output = Output(
-            name: name,
-            displayID: displayID,
-            connected: true,
-            width: width,
-            height: height,
-            refreshMillihertz: refreshMillihertz,
-            refreshPeriodNanoseconds: period,
-            generation: generation)
-        pending.published = output
+        guard period > 0,
+              let update = state.publish(
+                name: name,
+                width: width,
+                height: height,
+                refreshMillihertz: refreshMillihertz)
+        else { return }
+        pending.published = update.output
         pendingByProxy[identity] = pending
-        sink?(Update(operation: operation, output: output))
+        sink?(update)
+    }
+}
+
+@MainActor
+private final class PresentationClockHandler: WpPresentationEvents {
+    private(set) var clockID: UInt32?
+
+    func clockId(
+        _ proxy: WaylandBorrowedProxy<WpPresentationClient>,
+        clk_id: UInt32
+    ) {
+        clockID = clk_id
     }
 }
 
@@ -687,6 +699,49 @@ public enum DisplayHostError: Error, CustomStringConvertible {
     @MainActor WlBufferEvents,
     @MainActor WpPresentationFeedbackEvents
 {
+    struct PresentationSample {
+        let displayID: UInt64
+        let timestampNanoseconds: UInt64
+        let refreshPeriodNanoseconds: UInt64
+        let sequence: UInt64
+    }
+
+    private final class DisplaySurface {
+        let displayID: UInt64
+        let surface: WaylandProxy<WlSurfaceClient>
+        let xdgSurface: WaylandProxy<XdgSurfaceClient>
+        let toplevel: WaylandProxy<XdgToplevelClient>
+        let syncSurface:
+            WaylandProxy<WpLinuxDrmSyncobjSurfaceV1Client>
+        let acquireTimeline:
+            WaylandProxy<WpLinuxDrmSyncobjTimelineV1Client>
+        let releaseTimeline:
+            WaylandProxy<WpLinuxDrmSyncobjTimelineV1Client>
+        var configured = false
+        var closed = false
+
+        init(
+            displayID: UInt64,
+            surface: WaylandProxy<WlSurfaceClient>,
+            xdgSurface: WaylandProxy<XdgSurfaceClient>,
+            toplevel: WaylandProxy<XdgToplevelClient>,
+            syncSurface:
+                WaylandProxy<WpLinuxDrmSyncobjSurfaceV1Client>,
+            acquireTimeline:
+                WaylandProxy<WpLinuxDrmSyncobjTimelineV1Client>,
+            releaseTimeline:
+                WaylandProxy<WpLinuxDrmSyncobjTimelineV1Client>
+        ) {
+            self.displayID = displayID
+            self.surface = surface
+            self.xdgSurface = xdgSurface
+            self.toplevel = toplevel
+            self.syncSurface = syncSurface
+            self.acquireTimeline = acquireTimeline
+            self.releaseTimeline = releaseTimeline
+        }
+    }
+
     private let connection: WaylandConnection
     private let registry: WaylandRegistry
     private let reactor: LinuxHostReactor
@@ -699,27 +754,30 @@ public enum DisplayHostError: Error, CustomStringConvertible {
         WaylandProxy<WpLinuxDrmSyncobjManagerV1Client>
     private let presentation:
         WaylandProxy<WpPresentationClient>
+    private let presentationClock: PresentationClockHandler
     private let outputTopology: AndroidOutputTopology
     var topologySink: ((AndroidOutputTopology.Update) -> Void)? {
-        get { outputTopology.sink }
-        set { outputTopology.sink = newValue }
+        didSet {
+            outputTopology.sink = { [weak self] update in
+                if update.operation
+                    == NUCLEUS_COMPOSER_OUTPUT_DISCONNECTED
+                {
+                    self?.retireSurface(
+                        displayID: update.output.displayID)
+                }
+                self?.topologySink?(update)
+            }
+        }
     }
     var topologyGeneration: UInt64 { outputTopology.generation }
     var connectedOutputs: [AndroidOutputTopology.Output] {
         outputTopology.connectedOutputs
     }
-    private var surface: WaylandProxy<WlSurfaceClient>?
-    private var xdgSurface: WaylandProxy<XdgSurfaceClient>?
-    private var toplevel: WaylandProxy<XdgToplevelClient>?
-    private var syncSurface:
-        WaylandProxy<WpLinuxDrmSyncobjSurfaceV1Client>?
-    private var acquireTimeline:
-        WaylandProxy<WpLinuxDrmSyncobjTimelineV1Client>?
-    private var releaseTimeline:
-        WaylandProxy<WpLinuxDrmSyncobjTimelineV1Client>?
+    var presentationSink: ((PresentationSample) -> Void)?
+    private var surfaces: [UInt64: DisplaySurface] = [:]
+    private var displayIDByXdgSurface: [UInt: UInt64] = [:]
+    private var displayIDByToplevel: [UInt: UInt64] = [:]
     private var buffers: [UInt64: DisplayBuffer] = [:]
-    private var configured = false
-    private var closed = false
     private var reportedBufferRelease = false
     private var nextAcquirePoint: UInt64 = 1
     private var nextReleasePoint: UInt64 = 1
@@ -731,6 +789,7 @@ public enum DisplayHostError: Error, CustomStringConvertible {
     private var presentationFeedback:
         [UInt: (
             proxy: WaylandProxy<WpPresentationFeedbackClient>,
+            displayID: UInt64,
             frameNumber: UInt64,
             presentPoint: UInt64,
             committed: ContinuousClock.Instant
@@ -762,6 +821,7 @@ public enum DisplayHostError: Error, CustomStringConvertible {
               true
         else { throw DisplayHostError.wayland("connection failed") }
         let outputTopology = AndroidOutputTopology()
+        let presentationClock = PresentationClockHandler()
         guard let registry = WaylandRegistry(connection, wanting: [
                 DesiredGlobal<WlCompositorClient>(maximumVersion: 6),
                 DesiredGlobal<ZwpLinuxDmabufV1Client>(maximumVersion: 5),
@@ -769,7 +829,11 @@ public enum DisplayHostError: Error, CustomStringConvertible {
                 DesiredGlobal<WpLinuxDrmSyncobjManagerV1Client>(
                     maximumVersion: 1),
                 DesiredGlobal<WpPresentationClient>(
-                    maximumVersion: 1),
+                    maximumVersion: 1,
+                    onBind: {
+                        try? $0.proxy.installListener(
+                            presentationClock)
+                    }),
                 DesiredGlobal<WlOutputClient>(
                     maximumVersion: 4,
                     allowsMultiple: true,
@@ -785,6 +849,10 @@ public enum DisplayHostError: Error, CustomStringConvertible {
         guard connection.bootstrapRoundtrip() >= 0 else {
             throw DisplayHostError.wayland("output-state roundtrip failed")
         }
+        guard presentationClock.clockID == UInt32(CLOCK_MONOTONIC) else {
+            throw DisplayHostError.wayland(
+                "wp_presentation does not use CLOCK_MONOTONIC")
+        }
         guard let compositor = registry.singleton(WlCompositorClient.self),
               let dmabuf = registry.singleton(ZwpLinuxDmabufV1Client.self),
               let wmBase = registry.singleton(XdgWmBaseClient.self),
@@ -793,6 +861,10 @@ public enum DisplayHostError: Error, CustomStringConvertible {
               let presentation = registry.singleton(
                 WpPresentationClient.self)
         else { throw DisplayHostError.wayland("required protocol is unavailable") }
+        try validateDisplayFormatContract(
+            connection: connection,
+            dmabuf: dmabuf,
+            renderDevice: selectedRenderDevice)
         let bridge = try SyncobjBridge(renderNode: selectedRenderDevice)
         self.connection = connection
         self.registry = registry
@@ -803,6 +875,7 @@ public enum DisplayHostError: Error, CustomStringConvertible {
         self.wmBase = wmBase
         self.syncobjManager = syncobjManager
         self.presentation = presentation
+        self.presentationClock = presentationClock
         self.outputTopology = outputTopology
         wmHandler.proxy = wmBase
         try wmBase.installListener(wmHandler)
@@ -812,20 +885,40 @@ public enum DisplayHostError: Error, CustomStringConvertible {
         outputTopology.isConnected(displayID: displayID)
     }
 
+    private func retireSurface(displayID: UInt64) {
+        guard let displaySurface = surfaces.removeValue(
+            forKey: displayID)
+        else { return }
+        displayIDByXdgSurface.removeValue(
+            forKey: displaySurface.xdgSurface.identity)
+        displayIDByToplevel.removeValue(
+            forKey: displaySurface.toplevel.identity)
+        try? displaySurface.acquireTimeline.destroy()
+        try? displaySurface.releaseTimeline.destroy()
+        try? displaySurface.syncSurface.destroy()
+        try? displaySurface.toplevel.destroy()
+        try? displaySurface.xdgSurface.destroy()
+        try? displaySurface.surface.destroy()
+    }
+
     func present(
         _ request: nucleus_composer_present_request,
         descriptors: [Int32]
     ) async throws -> Int32 {
         let presentationBegan = ContinuousClock.now
-        if surface == nil {
-            try await createSurface(width: request.width, height: request.height)
+        if surfaces[request.display_id] == nil {
+            try await createSurface(
+                displayID: request.display_id,
+                width: request.width,
+                height: request.height)
         }
-        guard !closed,
-              let surface,
-              let syncSurface,
-              let acquireTimeline,
-              let releaseTimeline
+        guard let displaySurface = surfaces[request.display_id],
+              !displaySurface.closed
         else { throw DisplayHostError.wayland("surface closed") }
+        let surface = displaySurface.surface
+        let syncSurface = displaySurface.syncSurface
+        let acquireTimeline = displaySurface.acquireTimeline
+        let releaseTimeline = displaySurface.releaseTimeline
         let importBegan = ContinuousClock.now
         let buffer = try importBuffer(request, descriptors: descriptors)
         let bufferImportMicroseconds = elapsedMicroseconds(since: importBegan)
@@ -880,6 +973,7 @@ public enum DisplayHostError: Error, CustomStringConvertible {
         try feedback.installListener(self)
         presentationFeedback[feedback.identity] = (
             proxy: feedback,
+            displayID: request.display_id,
             frameNumber: request.frame_number,
             presentPoint: presentPoint,
             committed: ContinuousClock.now)
@@ -975,7 +1069,9 @@ public enum DisplayHostError: Error, CustomStringConvertible {
             if let deferredFailure {
                 throw deferredFailure
             }
-            if closed { throw DisplayHostError.wayland("surface closed") }
+            if surfaces.values.contains(where: \.closed) {
+                throw DisplayHostError.wayland("surface closed")
+            }
             if let releaseEvent,
                LinuxPollResult(
                 returnedEvents: releaseEvent.returnedEvents).isReadable {
@@ -1016,7 +1112,17 @@ public enum DisplayHostError: Error, CustomStringConvertible {
         }
     }
 
-    private func createSurface(width: UInt32, height: UInt32) async throws {
+    private func createSurface(
+        displayID: UInt64,
+        width: UInt32,
+        height: UInt32
+    ) async throws {
+        guard surfaces[displayID] == nil,
+              let output = outputTopology.proxy(displayID: displayID)
+        else {
+            throw DisplayHostError.wayland(
+                "display \(displayID) has no connected Wayland output")
+        }
         let surface: WaylandProxy<WlSurfaceClient>
         let xdgSurface: WaylandProxy<XdgSurfaceClient>
         let toplevel: WaylandProxy<XdgToplevelClient>
@@ -1046,25 +1152,31 @@ public enum DisplayHostError: Error, CustomStringConvertible {
         } catch {
             throw DisplayHostError.wayland("timeline import failed")
         }
-        self.surface = surface
-        self.xdgSurface = xdgSurface
-        self.toplevel = toplevel
-        self.syncSurface = syncSurface
-        self.acquireTimeline = acquireTimeline
-        self.releaseTimeline = releaseTimeline
+        let displaySurface = DisplaySurface(
+            displayID: displayID,
+            surface: surface,
+            xdgSurface: xdgSurface,
+            toplevel: toplevel,
+            syncSurface: syncSurface,
+            acquireTimeline: acquireTimeline,
+            releaseTimeline: releaseTimeline)
+        surfaces[displayID] = displaySurface
+        displayIDByXdgSurface[xdgSurface.identity] = displayID
+        displayIDByToplevel[toplevel.identity] = displayID
         try xdgSurface.installListener(self)
         try toplevel.installListener(self)
         try toplevel.setAppId(app_id: "android.runtime")
-        try toplevel.setTitle(title: "Android")
+        try toplevel.setTitle(title: "Android Display \(displayID)")
         try toplevel.setMinSize(
             width: Int32(width),
             height: Int32(height))
+        try toplevel.setFullscreen(output: output)
         try surface.commit()
         guard connection.flush() >= 0 else {
             throw DisplayHostError.wayland("initial commit failed")
         }
-        while !configured {
-            try await dispatchWaylandOnce()
+        while !displaySurface.configured {
+            try await dispatchWaylandOnce(displayID: displayID)
         }
     }
 
@@ -1120,7 +1232,7 @@ public enum DisplayHostError: Error, CustomStringConvertible {
         return buffer
     }
 
-    private func dispatchWaylandOnce() async throws {
+    private func dispatchWaylandOnce(displayID: UInt64) async throws {
         guard let preparation = connection.prepareRead() else {
             throw DisplayHostError.wayland("prepare-read failed")
         }
@@ -1145,14 +1257,19 @@ public enum DisplayHostError: Error, CustomStringConvertible {
         if let deferredFailure {
             throw deferredFailure
         }
-        if closed { throw DisplayHostError.wayland("surface closed") }
+        if surfaces[displayID]?.closed != false {
+            throw DisplayHostError.wayland("surface closed")
+        }
     }
 
     func configure(
         _ proxy: WaylandBorrowedProxy<XdgSurfaceClient>, serial: UInt32
     ) {
-        try? xdgSurface?.ackConfigure(serial: serial)
-        configured = true
+        guard let displayID = displayIDByXdgSurface[proxy.identity],
+              let displaySurface = surfaces[displayID]
+        else { return }
+        try? displaySurface.xdgSurface.ackConfigure(serial: serial)
+        displaySurface.configured = true
     }
 
     func configure(
@@ -1163,7 +1280,10 @@ public enum DisplayHostError: Error, CustomStringConvertible {
     ) {}
 
     func close(_ proxy: WaylandBorrowedProxy<XdgToplevelClient>) {
-        closed = true
+        guard let displayID = displayIDByToplevel[proxy.identity] else {
+            return
+        }
+        surfaces[displayID]?.closed = true
     }
     func release(_ proxy: WaylandBorrowedProxy<WlBufferClient>) {
         guard let allocation = buffers.first(where: {
@@ -1179,7 +1299,14 @@ public enum DisplayHostError: Error, CustomStringConvertible {
         _ proxy: WaylandBorrowedProxy<
             WpPresentationFeedbackClient>,
         output: WaylandBorrowedProxy<WlOutputClient>
-    ) {}
+    ) {
+        guard var entry = presentationFeedback[proxy.identity],
+              let displayID = outputTopology.displayID(
+                proxyIdentity: output.identity)
+        else { return }
+        entry.displayID = displayID
+        presentationFeedback[proxy.identity] = entry
+    }
     func presented(
         _ proxy: WaylandBorrowedProxy<
             WpPresentationFeedbackClient>,
@@ -1201,6 +1328,30 @@ public enum DisplayHostError: Error, CustomStringConvertible {
         }
         let sequence =
             UInt64(seq_hi) << 32 | UInt64(seq_lo)
+        let seconds = UInt64(tv_sec_hi) << 32 | UInt64(tv_sec_lo)
+        let (secondNanoseconds, secondsOverflow) =
+            seconds.multipliedReportingOverflow(by: 1_000_000_000)
+        let (timestampNanoseconds, timestampOverflow) =
+            secondNanoseconds.addingReportingOverflow(UInt64(tv_nsec))
+        guard tv_nsec < 1_000_000_000,
+              !secondsOverflow,
+              !timestampOverflow,
+              let selectedPeriod =
+                outputTopology.refreshPeriodNanoseconds(
+                    displayID: entry.displayID)
+        else {
+            deferredFailure = .wayland(
+                "invalid physical presentation timestamp")
+            return
+        }
+        let refreshPeriod = refresh == 0
+            ? selectedPeriod
+            : UInt64(refresh)
+        presentationSink?(PresentationSample(
+            displayID: entry.displayID,
+            timestampNanoseconds: timestampNanoseconds,
+            refreshPeriodNanoseconds: refreshPeriod,
+            sequence: sequence))
         let latency = elapsedMicroseconds(
             since: entry.committed)
         let diagnostic =
@@ -1250,23 +1401,13 @@ public enum DisplayHostError: Error, CustomStringConvertible {
         for buffer in buffers.values {
             try? buffer.proxy.destroy()
         }
-        if let acquireTimeline {
-            try? acquireTimeline.destroy()
-        }
-        if let releaseTimeline {
-            try? releaseTimeline.destroy()
-        }
-        if let syncSurface {
-            try? syncSurface.destroy()
-        }
-        if let toplevel {
-            try? toplevel.destroy()
-        }
-        if let xdgSurface {
-            try? xdgSurface.destroy()
-        }
-        if let surface {
-            try? surface.destroy()
+        for displaySurface in surfaces.values {
+            try? displaySurface.acquireTimeline.destroy()
+            try? displaySurface.releaseTimeline.destroy()
+            try? displaySurface.syncSurface.destroy()
+            try? displaySurface.toplevel.destroy()
+            try? displaySurface.xdgSurface.destroy()
+            try? displaySurface.surface.destroy()
         }
     }
 }

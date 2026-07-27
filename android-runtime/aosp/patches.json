@@ -17,7 +17,8 @@
       "path": "device/generic/goldfish",
       "patches": [
         "aosp/patches/device-generic-goldfish/0001-export-composer3-framework-sources-for-nucleus.patch",
-        "aosp/patches/device-generic-goldfish/0002-make-composer-contract-output-aware.patch"
+        "aosp/patches/device-generic-goldfish/0002-make-composer-contract-output-aware.patch",
+        "aosp/patches/device-generic-goldfish/0003-rephase-vsync-from-physical-presentation.patch"
       ]
     },
     {

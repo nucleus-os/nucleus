@@ -2,8 +2,37 @@ import ColliderCore
 import SystemPackage
 
 public enum CoreColliderRecipe {
-    public static func build(root: FilePath, environment: [String: String]) -> TaskDeclaration { task("core.build", root, environment, ["build"], [TaskID(rawValue: "tracy.build"), TaskID(rawValue: "vulkan.build"), TaskID(rawValue: "wayland.build")]) }
-    public static func test(root: FilePath, environment: [String: String]) -> TaskDeclaration { task("core.test", root, environment, ["test"], [TaskID(rawValue: "core.build")]) }
+    public static func build(
+        root: FilePath,
+        environment: [String: String],
+        swiftPM: SwiftPMInvocation
+    ) -> TaskDeclaration {
+        task(
+            "core.build",
+            root,
+            environment,
+            ["build"],
+            [
+                TaskID(rawValue: "tracy.build"),
+                TaskID(rawValue: "vulkan.build"),
+                TaskID(rawValue: "wayland.build"),
+            ],
+            swiftPM)
+    }
+
+    public static func test(
+        root: FilePath,
+        environment: [String: String],
+        swiftPM: SwiftPMInvocation
+    ) -> TaskDeclaration {
+        task(
+            "core.test",
+            root,
+            environment,
+            ["test"],
+            [TaskID(rawValue: "core.build")],
+            swiftPM)
+    }
 
     public static func prepareSkiaDependencies(
         root: FilePath,
@@ -79,14 +108,13 @@ public enum CoreColliderRecipe {
 
     public static func buildAndroidHost(
         root: FilePath,
-        sourceID: String,
         environment: [String: String],
+        swiftPM: SwiftPMInvocation,
         dependencies: [TaskID] = [TaskID(rawValue: "core.native-sdk")]
     ) -> TaskDeclaration {
         let package = root.appending("platform-android")
-        let product = package.appending(
-            ".build/out/Products/Release-android-aarch64/"
-                + "libnucleus-android.so")
+        let product = swiftPM.configurationProducts.appending(
+            "libnucleus-android.so")
         return TaskDeclaration(
             id: TaskID(rawValue: "core.android-host.build"),
             component: ComponentID(rawValue: "core"),
@@ -96,21 +124,20 @@ public enum CoreColliderRecipe {
                 .tree(package.appending("c")),
                 .tree(package.appending("swift-core")),
                 .tree(package.appending("swift-jni")),
-                .value(name: "swift-source-id", bytes: Array(sourceID.utf8)),
+                swiftPM.identityInput,
                 .tool(.named("swift")),
             ],
-            outputs: [
-                OutputDeclaration(path: product, validation: .regularFile),
+            postconditions: [
+                swiftPM.postcondition,
+                PathPostcondition(
+                    path: product,
+                    validation: .regularFile),
             ],
-            locks: [.checkout("core-android-host")],
-            operation: .command(CommandSpec(
-                executable: .named("swift"),
+            locks: [.checkout("core-android-host"), swiftPM.lock],
+            operation: .command(swiftPM.command(
                 arguments: [
                     "build",
                     "--package-path", package.string,
-                    "--swift-sdk", "swift-\(sourceID)_android",
-                    "--static-swift-stdlib",
-                    "-c", "release",
                 ],
                 workingDirectory: root,
                 environment: environment)))
@@ -118,14 +145,12 @@ public enum CoreColliderRecipe {
 
     public static func validateAndroidHost(
         root: FilePath,
-        library: FilePath? = nil,
+        library: FilePath,
         ndk: FilePath,
         environment: [String: String],
         dependencies: [TaskID] = [TaskID(rawValue: "core.android-host.build")]
     ) -> TaskDeclaration {
-        let hostLibrary = library ?? root.appending(
-            "platform-android/.build/out/Products/"
-                + "Release-android-aarch64/libnucleus-android.so")
+        let hostLibrary = library
         let kotlinContract = root.appending(
             "android/nucleus/src/main/kotlin/dev/nucleus/android/"
                 + "NucleusNative.kt")
@@ -199,6 +224,7 @@ private let requiredArchives = [
     "libpiex.a",
 ]
 private let commonGNArguments = [
+    #"cc_wrapper="ccache""#,
     "is_official_build=true", "skia_enable_tools=false",
     "skia_enable_graphite=true", "skia_use_dawn=false", "skia_use_vulkan=true",
     "skia_use_freetype=true", "skia_use_harfbuzz=true", "skia_use_icu=true",
@@ -251,6 +277,7 @@ private func skiaTask(
                 name: "gn-arguments",
                 bytes: Array(gnArguments.joined(separator: "\u{0}").utf8)),
             .tool(.named("ninja")),
+            .tool(.named("ccache")),
         ],
         outputs: requiredArchives.map {
             OutputDeclaration(
@@ -275,6 +302,29 @@ private func skiaTask(
         ]))
 }
 
-private func task(_ id: String, _ root: FilePath, _ environment: [String: String], _ arguments: [String], _ dependencies: [TaskID]) -> TaskDeclaration {
-    TaskDeclaration(id: TaskID(rawValue: id), component: ComponentID(rawValue: "core"), dependencies: dependencies, inputs: [.file(root.appending("Package.swift")), .tree(root.appending("swift")), .tree(root.appending("render-cxx")), .tool(.named("swift"))], outputs: [OutputDeclaration(path: root.appending(".build"), validation: .nonEmptyDirectory)], locks: [.checkout("core")], operation: .command(CommandSpec(executable: .named("swift"), arguments: arguments, workingDirectory: root, environment: environment)))
+private func task(
+    _ id: String,
+    _ root: FilePath,
+    _ environment: [String: String],
+    _ arguments: [String],
+    _ dependencies: [TaskID],
+    _ swiftPM: SwiftPMInvocation
+) -> TaskDeclaration {
+    TaskDeclaration(
+        id: TaskID(rawValue: id),
+        component: ComponentID(rawValue: "core"),
+        dependencies: dependencies,
+        inputs: [
+            .file(root.appending("Package.swift")),
+            .tree(root.appending("swift")),
+            .tree(root.appending("render-cxx")),
+            swiftPM.identityInput,
+            .tool(.named("swift")),
+        ],
+        postconditions: [swiftPM.postcondition],
+        locks: [.checkout("core"), swiftPM.lock],
+        operation: .command(swiftPM.command(
+            arguments: arguments,
+            workingDirectory: root,
+            environment: environment)))
 }

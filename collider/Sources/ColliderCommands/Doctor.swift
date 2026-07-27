@@ -117,7 +117,7 @@ struct WorkspaceDoctor {
             + executables(
                 [
                     "swift", "swiftc", "git", "cmake", "ninja", "pkg-config",
-                    "corepack", "bun", "tar", "python3",
+                    "corepack", "bun", "tar", "python3", "ccache",
                 ],
                 scope: "runtime")
             + paths(
@@ -145,7 +145,10 @@ struct WorkspaceDoctor {
     private var toolchainPrerequisites: [HostPrerequisite] {
         [swiftVersion(scope: "toolchain")]
             + executables(
-                ["swift", "swiftc", "git", "cmake", "ninja", "python3", "tar"],
+                [
+                    "swift", "swiftc", "git", "cmake", "ninja", "python3",
+                    "tar", "ccache",
+                ],
                 scope: "toolchain")
             + paths(
                 [
@@ -158,7 +161,7 @@ struct WorkspaceDoctor {
     }
 
     private var androidPrerequisites: [HostPrerequisite] {
-        executables(["swift", "swiftc", "java"], scope: "android")
+        executables(["swift", "swiftc", "java", "ccache"], scope: "android")
             + paths(
                 [
                     "core/android/gradlew", "core/platform-android/Package.swift",

@@ -7,7 +7,8 @@
 //   swift build --package-path platform-android \
 //     --swift-sdk swift-release-6.4.x_android --static-swift-stdlib -c release
 //
-// → .build/out/Products/Release-android-aarch64/libnucleus-android.so
+// → Collider's context-keyed
+//   .nucleus/swiftpm/.../out/Products/Release-android-aarch64/libnucleus-android.so
 //
 // --static-swift-stdlib bakes the Swift runtime into the .so (so no libswiftCore.so
 // ships) by selecting the SDK's swift_static-aarch64 resources. It is a build flag,

@@ -76,26 +76,26 @@ The existing file locks are still meaningful: they protect shared checkouts and
 state from concurrent Collider processes. They are underused by the serial
 in-process executor, not vestigial.
 
-### Build capacity is consumed by duplicated work
+### Phase 1 baseline: build capacity was consumed by duplicated work
 
-The workspace occupies roughly 492 GB across the checkout and Nucleus caches.
-`android-runtime/` accounts for roughly 325 GB through its AOSP source and build
-trees.
+At the Phase 1 audit, the workspace occupied roughly 492 GB across the checkout
+and Nucleus caches. `android-runtime/` accounted for roughly 325 GB through its
+AOSP source and build trees.
 
-Each package currently invokes `swift build` from its own root without a shared
-scratch path. Shared first-party modules are consequently compiled into several
-package-local `.build` trees. SwiftPM build directories occupy roughly 58 GB.
+Each package invoked `swift build` from its own root without a shared scratch
+path. Shared first-party modules were consequently compiled into several
+package-local `.build` trees. SwiftPM build directories occupied roughly 58 GB.
 
-The AOSP ccache uses `CCACHE_COMPILERCHECK=content` and reaches direct mode. The
+The AOSP ccache used `CCACHE_COMPILERCHECK=content` and reached direct mode. The
 host ccache used by Skia, gfxstream, the React Native C++ stack, and the
-toolchain resolves most hits through preprocessed mode and treats most calls as
-uncacheable. Per-package absolute build paths contribute to that result.
+toolchain resolved most hits through preprocessed mode and treated most calls
+as uncacheable. Per-package absolute build paths contributed to that result.
 
-Retention exists for Chromium generations and installations but not for AOSP
-product generations or sanitizer scratch trees. `.aosp-source/out` appears to be
-a default-`OUT_DIR` tree outside the declared AOSP product flow. Podman also has
-inactive images, and the Swift source checkout lacks the partial-clone filtering
-used by the AOSP sync.
+Retention existed for Chromium generations and installations but not for AOSP
+product generations or sanitizer scratch trees. `.aosp-source/out` was a
+default-`OUT_DIR` tree outside the declared AOSP product flow. Podman also had
+inactive images, and the Swift source checkout lacked the partial-clone
+filtering used by the AOSP sync.
 
 ### Identity data is not a proof of machine equivalence
 
@@ -112,81 +112,99 @@ one proves complete environmental equivalence.
 
 ## Phase 1 — Establish compatible Swift build contexts and reclaim capacity
 
-This phase lands first because later full replays need storage headroom and a
-stable definition of which Swift builds may share artifacts.
+**Status: complete.** Later full replays now have storage headroom and one
+enforced definition of which Swift compilations may share artifacts.
 
-### Define the build-context key
+### Shared Swift build contexts
 
-`ColliderCore` gains a `SwiftBuildContext` value containing every axis that can
-change module compatibility:
+`ColliderCore` owns `SwiftBuildContext` and `SwiftPMInvocation`. The context key
+contains configuration, host/triple/Swift SDK target identity, installed
+toolchain identity, sanitizer, traits, Swift/C/C++/linker flags, and static
+standard-library selection. Canonical bytes from that complete key select:
 
-- build configuration;
-- target triple;
-- installed toolchain identity;
-- sanitizer;
-- SwiftPM traits;
-- effective Swift, C, and C++ compiler settings.
+```text
+.nucleus/swiftpm/<sanitizer-or-unsanitized>/sha256-<context-digest>
+```
 
-`WorkspaceLayout` maps that value to one scratch path under the workspace state
-directory. Build, test, sanitizer, installation, and Android framework tasks use
-the same accessor. No task constructs a scratch path directly.
+Every Collider-owned Swift build, test, sanitizer, benchmark, installation,
+Android host, and presentation path uses this invocation. Recipes receive the
+invocation instead of constructing SwiftPM arguments or package-local `.build`
+paths. Each task declares the context identity, postcondition, and shared
+scratch lock. Android cross-compilation uses its Swift SDK, target triple,
+static standard library, and target-specific products directory as a distinct
+context.
 
-Before migrating all tasks, representative root packages alternate sequential
-builds against the same compatible scratch path. The proof records SwiftPM graph
-planning and compilation output and establishes that:
+Sequential builds from the shell, core, Wayland, Vulkan, and React Native roots
+reused the same compatible scratch directory. Returning to earlier roots caused
+no recompilation. Unit coverage proves that incompatible target, toolchain,
+sanitizer, traits, compiler flags, linker flags, and standard-library settings
+produce different identities and paths. The active ordinary host context is the
+only retained unsanitized generation and occupies 2.9 GB.
 
-- shared modules are reused across roots;
-- returning to an earlier root remains warm;
-- incompatible context keys do not reuse module artifacts;
-- SwiftPM root-package metadata remains valid across the alternation.
+### Host native caching
 
-The consolidated layout lands only after this proof passes.
+Collider exports the workspace root as `CCACHE_BASEDIR`, uses
+`CCACHE_COMPILERCHECK=content`, stores host entries under
+`$XDG_CACHE_HOME/nucleus/host-ccache`, and enforces a 50 GB limit. The reviewed
+sloppiness list ignores header ctime/mtime and diagnostic locale; neither input
+changes successful object bytes. Skia GN uses `cc_wrapper="ccache"`, React
+Native CMake builds use compiler launchers, and the Swift toolchain CMake
+override installs the same launchers. Each owning task declares the `ccache`
+tool.
 
-Every task that currently declares `root/.build` as an output follows the new
-scratch path. Compatible tasks declare the scratch path as a shared resource so
-the later scheduler can serialize SwiftPM mutations intentionally.
+A cold Skia and React Native bootstrap produced 3,157 cacheable compiler calls
+with a 100% cacheable-call rate. Its immediate replay produced 387 hits, all in
+direct mode and none in preprocessed mode. The replay completed successfully
+through Hermes, ReactCommon, and the Swift C++ facade.
 
-### Configure host native caching
+### Bounded generations
 
-Host native builds use the workspace as `CCACHE_BASEDIR`,
-`CCACHE_COMPILERCHECK=content`, and an explicit reviewed set of
-`CCACHE_SLOPPINESS` values. Each sloppiness setting documents the input it
-ignores and why that input cannot affect the produced artifact. The host cache
-limit becomes 50 GB.
+AOSP products live under
+`.aosp-build/generations/<validated-product-generation>/`. Compilation,
+unsigned, staged, signed, and image outputs move together as one generation.
+Validation and publication finish before `current` is atomically activated.
+Retention keeps the current generation and one predecessor.
 
-The configuration lands after scratch consolidation so its measured direct-mode
-rate reflects the final path layout.
+Address, undefined, and thread sanitizer contexts use the shared context naming
+contract and retain two generations per sanitizer. Native sanitizer scratch
+state lives under `.nucleus/native-sanitizers`. Every retention rule operates
+below an explicit safety root and accepts only a strict generation-name
+grammar.
 
-### Bound retained generations
+When an AOSP build-container recipe changes, Collider replaces the recorded
+content-addressed image ID and asks Podman to remove only the exact displaced
+ID. Podman preserves it when an extant container still references it; no broad
+image prune is used.
 
-`DirectoryRetentionPlan` covers:
+### Reclaimed and reduced source state
 
-- AOSP `staged`, `signed`, `unsigned`, and `images` generations;
-- address, undefined, and thread sanitizer scratch generations;
-- container images owned by Collider execution sessions.
+A complete AOSP compile, sign, assemble, validate, and publish run succeeded
+while the legacy `.aosp-source/out` tree was displaced. The immediately
+following product run was clean, proving that no declared stage depended on the
+legacy tree. Collider then removed that exact 36 GB orphan and the obsolete
+2.9 GB Swift context. Free space increased by approximately 39 GB;
+`.aosp-source/out` now contains only its 12 KB mountpoint structure.
 
-Retention runs only against explicit generation roots. It never targets a
-workspace root, package root, or unresolved path.
+Swift source synchronization uses blobless partial clones, no implicit tag
+fetches, and exact branch or tag fetches. Upstream `update-checkout` receives
+`--partial-clone`, `--skip-history`, and `--skip-tags`, extending the same
+storage contract to every repository in the Swift workspace.
 
-### Reclaim confirmed orphaned state
+### Verification evidence
 
-A full AOSP product build records every access to the effective output roots.
-`.aosp-source/out` is removed only after the trace proves that no declared stage
-reads or writes it. Inactive Podman images are pruned by exact image identity.
-The Swift source checkout adopts partial clone, blob filtering, no-tag fetches,
-and current-branch fetch behavior appropriate to its pinned revision flow.
-
-### Verification gate
-
-For every migrated Swift build context:
-
-1. The first run after output relocation executes the affected tasks.
-2. The immediately following run is fully clean.
-3. Alternating representative package roots remains warm.
-4. Incompatible contexts occupy different scratch paths.
-5. SwiftPM storage drops to one copy per compatible build context.
-6. Host ccache direct-mode and cacheable-call rates improve without changing
-   produced artifacts.
+1. The relocated ordinary host context built once and all immediate SwiftPM
+   replays remained warm.
+2. Alternating package roots preserved valid root metadata and reused shared
+   modules.
+3. Android Swift SDK products resolved from the context-derived
+   `Release-android-aarch64` directory.
+4. AOSP publication activated one validated generation through `current`; its
+   immediate replay was clean.
+5. Host native compilation was 100% cacheable and every observed repeat hit was
+   direct.
+6. ColliderCore and ColliderCommands unit suites, the complete shell build
+   graph, the RN native bootstrap, and the focused AOSP/context/retention tests
+   passed.
 
 ## Phase 2 — Introduce the action, capability, and identity contracts
 

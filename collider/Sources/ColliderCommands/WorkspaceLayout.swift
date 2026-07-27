@@ -1,3 +1,5 @@
+import ColliderCore
+import ColliderRuntime
 import Foundation
 import SystemPackage
 
@@ -27,19 +29,25 @@ struct WorkspaceLayout: Sendable {
     var work: URL {
         state.appendingPathComponent("work", isDirectory: true)
     }
-    var runtimeBuilds: URL {
-        root.appendingPathComponent(
-            ".build/nucleus-runtime",
-            isDirectory: true)
+    func swiftScratch(for context: SwiftBuildContext) -> URL {
+        let identity = ArtifactHasher.digest(bytes: context.identityBytes)
+            .description
+            .replacingOccurrences(of: ":", with: "-")
+        return state
+            .appendingPathComponent("swiftpm", isDirectory: true)
+            .appendingPathComponent(
+                context.sanitizer ?? "unsanitized",
+                isDirectory: true)
+            .appendingPathComponent(identity, isDirectory: true)
     }
     var benchmarkBuilds: URL {
-        root.appendingPathComponent(
-            ".build/nucleus-benchmarks",
+        state.appendingPathComponent(
+            "benchmarks",
             isDirectory: true)
     }
-    var sanitizerBuilds: URL {
-        root.appendingPathComponent(
-            ".build/nucleus-sanitizers",
+    var nativeSanitizerBuilds: URL {
+        state.appendingPathComponent(
+            "native-sanitizers",
             isDirectory: true)
     }
     var androidPresentationQualifications: URL {

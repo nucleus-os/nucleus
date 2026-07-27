@@ -22,6 +22,10 @@ extension ColliderRuntime {
             withIntermediateDirectories: true)
         let candidate = parent.appending(
             ".image-id.candidate-\(UUID().uuidString)")
+        let previousImageID = try? String(
+            contentsOfFile: preparation.imageID.string,
+            encoding: .utf8)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
         defer {
             try? FileManager.default.removeItem(atPath: candidate.string)
         }
@@ -48,6 +52,23 @@ extension ColliderRuntime {
                 "Podman did not produce a content-addressed AOSP image ID")
         }
         try replaceAOSPProductFile(candidate, with: preparation.imageID)
+        if let previousImageID,
+           previousImageID != imageID,
+           previousImageID.hasPrefix("sha256:"),
+           previousImageID.count == 71
+        {
+            // Remove only the exact image Collider previously recorded.
+            // Podman refuses while a container still references it, preserving
+            // active external use without broad image-prune semantics.
+            _ = try await execute(
+                CommandSpec(
+                    executable: .named("podman"),
+                    arguments: ["image", "rm", previousImageID],
+                    workingDirectory: preparation.context,
+                    environment: preparation.environment,
+                    output: .logged),
+                stage: stage)
+        }
     }
 
     func prepareAOSPSigningIdentity(
@@ -725,6 +746,23 @@ extension ColliderRuntime {
         try publishAOSPProductFile(
             staged.appending("image-provenance.json"),
             to: signed.appending("image-provenance.json"))
+
+        let generations = build.buildRoot.removingLastComponent()
+        let aospBuildRoot = generations.removingLastComponent()
+        let active = aospBuildRoot.appending("current")
+        let generationName = build.buildRoot.lastComponent?.string ?? ""
+        try DirectoryLifecycle.activate(
+            target: "generations/\(generationName)",
+            link: active)
+        try DirectoryLifecycle.prune(DirectoryRetentionPlan(
+            safetyRoot: aospBuildRoot,
+            rules: [
+                DirectoryRetentionRule(
+                    root: generations,
+                    current: active,
+                    retain: 2,
+                    naming: .aospProduct),
+            ]))
     }
 
     private func validateAOSPSigningIdentity(

@@ -287,38 +287,25 @@ struct RuntimeInstaller {
         component: String,
         options: RuntimeBuildOptions
     ) async throws -> URL {
-        var arguments = [
+        let swiftPM = try context.swiftPMInvocation(
+            configuration: options.optimization == .debug ? .debug : .release,
+            sanitizer: options.sanitizer?.rawValue,
+            cFlags: options.tracy ? ["-DTRACY_ENABLE"] : [],
+            linkerFlags: options.sanitizer == .undefined ? ["-lubsan"] : [])
+        let arguments = [
             "build",
             "--package-path", package.path,
-            "--configuration", options.optimization.rawValue,
             "--product", product,
         ]
-        if options.tracy {
-            arguments += ["-Xcc", "-DTRACY_ENABLE"]
-        }
-        if let sanitizer = options.sanitizer {
-            arguments += ["--sanitize", sanitizer.rawValue]
-            if sanitizer == .undefined {
-                arguments += ["-Xlinker", "-lubsan"]
-            }
-        }
-        if options.tracy || options.sanitizer != nil {
-            let scratch = context.layout.runtimeBuilds
-                .appendingPathComponent(options.identity)
-                .appendingPathComponent(component)
-            arguments += ["--scratch-path", scratch.path]
-        }
 
         print("==> build runtime product=\(product) variant=\(options.identity)")
-        try await context.run("swift", arguments)
-        let binPath = try await context.run(
-            "swift", arguments + ["--show-bin-path"], capture: true)
-        guard let lastLine = binPath.split(separator: "\n").last else {
-            throw WorkspaceFailure.message(
-                "SwiftPM did not report a binary path for \(product)")
-        }
-        let executable = URL(fileURLWithPath: String(lastLine))
-            .appendingPathComponent(product)
+        try await context.run(
+            "swift",
+            swiftPM.commandArguments(arguments),
+            environmentOverrides: swiftPM.commandEnvironment(
+                context.taskEnvironment))
+        let executable = URL(
+            fileURLWithPath: swiftPM.executable(product).string)
         guard FileManager.default.isExecutableFile(atPath: executable.path) else {
             throw WorkspaceFailure.message(
                 "runtime product is missing after build: \(executable.path)")

@@ -66,12 +66,16 @@ struct AndroidFrameworkBootCommand {
         }
         try await ComponentRegistry(context: context).buildAndroidRuntimeHost()
         let brokerLaunch = try await buildBrokerLaunch()
+        let swiftPM = try context.swiftPMInvocation()
         let installation = try await RuntimeInstaller(context: context).install(
             .session,
             prefix: context.layout.installPrefix)
         let layout = AndroidFrameworkBootLayout(
             context: context,
-            gfxstreamBrokerExecutable: brokerLaunch.executable)
+            gfxstreamBrokerExecutable: brokerLaunch.executable,
+            displayHostExecutable: URL(
+                fileURLWithPath: swiftPM.executable(
+                    "nucleus-android-display-host").string))
         let provenance = try await loadAndValidateImages(layout: layout)
         let host = try await validateHost(layout: layout)
         try requireFreeSeat()
@@ -370,51 +374,40 @@ struct AndroidFrameworkBootCommand {
         -> AndroidFrameworkBrokerLaunch
     {
         guard let brokerSanitizer else {
+            let swiftPM = try context.swiftPMInvocation()
             return AndroidFrameworkBrokerLaunch(
-                executable: context.layout.androidRuntime.appendingPathComponent(
-                    ".build/debug/nucleus-android-gfxstream-broker"),
+                executable: URL(
+                    fileURLWithPath: swiftPM.executable(
+                        "nucleus-android-gfxstream-broker").string),
                 environment: [:])
         }
-        let scratch = context.layout.sanitizerBuilds
-            .appendingPathComponent(
-                brokerSanitizer.rawValue,
-                isDirectory: true)
-            .appendingPathComponent(
-                "android-framework-broker",
-                isDirectory: true)
         let gfxstreamHostLibrary =
             try await buildAddressSanitizedGfxstreamHost()
         let buildEnvironment = [
             "NUCLEUS_GFXSTREAM_HOST_LIBRARY":
                 gfxstreamHostLibrary.path,
         ]
-        let arguments = [
+        let swiftPM = try context.swiftPMInvocation(
+            sanitizer: brokerSanitizer.rawValue)
+        let arguments = swiftPM.commandArguments([
             "build",
-            "--scratch-path", scratch.path,
-            "--sanitize", brokerSanitizer.rawValue,
             "--product", "nucleus-android-gfxstream-broker",
-        ]
+        ])
         print(
             "==> build Android framework broker "
                 + "sanitizer=\(brokerSanitizer.rawValue) "
-                + "scratch=\(scratch.path)")
+                + "scratch=\(swiftPM.scratchPath)")
         try await context.run(
             "swift",
             arguments,
             directory: context.layout.androidRuntime,
-            environmentOverrides: buildEnvironment)
-        let output = try await context.run(
-            "swift",
-            arguments + ["--show-bin-path"],
-            directory: context.layout.androidRuntime,
-            capture: true,
-            environmentOverrides: buildEnvironment)
-        guard let binPath = output.split(separator: "\n").last else {
-            throw WorkspaceFailure.message(
-                "SwiftPM did not report the sanitized broker path")
-        }
-        let executable = URL(fileURLWithPath: String(binPath))
-            .appendingPathComponent("nucleus-android-gfxstream-broker")
+            environmentOverrides: swiftPM.commandEnvironment(
+                context.taskEnvironment.merging(buildEnvironment) {
+                    _, selected in selected
+                }))
+        let executable = URL(
+            fileURLWithPath: swiftPM.executable(
+                "nucleus-android-gfxstream-broker").string)
         guard FileManager.default.isExecutableFile(
             atPath: executable.path)
         else {
@@ -463,7 +456,7 @@ struct AndroidFrameworkBootCommand {
                 "SWIFT_TOOLCHAIN is required to build the sanitized "
                     + "gfxstream host backend")
         }
-        let build = context.layout.sanitizerBuilds
+        let build = context.layout.nativeSanitizerBuilds
             .appendingPathComponent("address", isDirectory: true)
             .appendingPathComponent(
                 "android-framework-gfxstream-host",
@@ -2128,7 +2121,8 @@ private struct AndroidFrameworkBootLayout {
 
     init(
         context: WorkspaceContext,
-        gfxstreamBrokerExecutable: URL? = nil
+        gfxstreamBrokerExecutable: URL,
+        displayHostExecutable: URL
     ) {
         name = "nucleus-framework-\(ProcessInfo.processInfo.processIdentifier)"
         runtime = URL(
@@ -2202,17 +2196,13 @@ private struct AndroidFrameworkBootLayout {
             isDirectory: true)
         let android = context.layout.androidRuntime
         androidRoot = android
-        self.gfxstreamBrokerExecutable =
-            gfxstreamBrokerExecutable
-            ?? android.appendingPathComponent(
-                ".build/debug/nucleus-android-gfxstream-broker")
-        displayHostExecutable = android.appendingPathComponent(
-            ".build/debug/nucleus-android-display-host")
+        self.gfxstreamBrokerExecutable = gfxstreamBrokerExecutable
+        self.displayHostExecutable = displayHostExecutable
         images = android.appendingPathComponent(
-            ".aosp-build/images",
+            ".aosp-build/current/images",
             isDirectory: true)
         provenance = android.appendingPathComponent(
-            ".aosp-build/signed/image-provenance.json")
+            ".aosp-build/current/signed/image-provenance.json")
         sourceProvenance = android.appendingPathComponent(
             ".aosp-source/.nucleus/source-provenance.json")
         patchManifest = android.appendingPathComponent("aosp/patches.json")
@@ -2226,7 +2216,7 @@ private struct AndroidFrameworkBootLayout {
             ".aosp-signing/local-development",
             isDirectory: true)
         hostTools = android.appendingPathComponent(
-            ".aosp-build/out/host/linux-x86/bin",
+            ".aosp-build/current/out/host/linux-x86/bin",
             isDirectory: true)
         appArmorProfile = android.appendingPathComponent(
             "container/lxc-nucleus-android.apparmor")

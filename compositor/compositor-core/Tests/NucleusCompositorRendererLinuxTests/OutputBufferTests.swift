@@ -34,6 +34,12 @@ import Vulkan
         #expect(vulkanFormatForDrm(DrmFourcc.argb8888) == VK_FORMAT_B8G8R8A8_UNORM)
         #expect(vulkanFormatForDrm(DrmFourcc.xbgr8888) == VK_FORMAT_R8G8B8A8_UNORM)
         #expect(vulkanFormatForDrm(DrmFourcc.abgr8888) == VK_FORMAT_R8G8B8A8_UNORM)
+        #expect(
+            vulkanFormatForDrm(DrmFourcc.abgr16161616f)
+                == VK_FORMAT_R16G16B16A16_SFLOAT)
+        #expect(
+            vulkanFormatForDrm(DrmFourcc.abgr2101010)
+                == VK_FORMAT_A2B10G10R10_UNORM_PACK32)
         #expect(vulkanFormatForDrm(0xffff_ffff) == VK_FORMAT_UNDEFINED)
     }
 

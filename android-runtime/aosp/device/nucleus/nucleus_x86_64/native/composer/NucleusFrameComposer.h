@@ -1,7 +1,9 @@
 #pragma once
 
 #include <atomic>
+#include <condition_variable>
 #include <mutex>
+#include <string>
 #include <thread>
 #include <unordered_map>
 
@@ -16,6 +18,9 @@ class NucleusFrameComposer final : public FrameComposer {
     HWC3::Error init() override;
     HWC3::Error registerOnHotplugCallback(const HotplugCallback& callback) override;
     HWC3::Error unregisterOnHotplugCallback() override;
+    HWC3::Error registerOnPhysicalVsyncCallback(
+        const PhysicalVsyncCallback& callback) override;
+    HWC3::Error unregisterOnPhysicalVsyncCallback() override;
     HWC3::Error onDisplayCreate(Display*) override;
     HWC3::Error onDisplayDestroy(Display*) override;
     HWC3::Error onDisplayClientTargetSet(Display*) override;
@@ -35,16 +40,23 @@ class NucleusFrameComposer final : public FrameComposer {
         int32_t vsync_period_ns;
     };
 
+    bool connectTopologySubscriber();
     void topologyLoop();
     void handleTopologyEvent(const nucleus_composer_topology_event& event);
 
     std::mutex socket_mutex_;
     ::android::base::unique_fd socket_;
-    std::mutex topology_mutex_;
+    std::mutex topology_connection_mutex_;
     ::android::base::unique_fd topology_socket_;
     std::thread topology_thread_;
     std::atomic<bool> stopping_ = false;
+    std::mutex stop_mutex_;
+    std::condition_variable stop_condition_;
+    std::string socket_path_;
+    std::mutex topology_mutex_;
+    std::mutex callback_mutex_;
     HotplugCallback hotplug_callback_;
+    PhysicalVsyncCallback physical_vsync_callback_;
     std::unordered_map<uint32_t, DisplayTopology> displays_;
     uint64_t topology_generation_ = 0;
     uint64_t next_request_id_ = 1;

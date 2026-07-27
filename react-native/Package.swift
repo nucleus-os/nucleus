@@ -236,7 +236,9 @@ let rnRuntimeHostCxxFlags: [String] =
     ["-std=c++20", "-fexceptions", "-frtti"] +
     rnRuntimeIncludeDirs.flatMap { ["-I", $0] } + [
         "-I", repoRoot + "/swiftpm/shims/NucleusReactRuntimeSwift",
-        "-I", repoRoot + "/.build/out/Intermediates.noindex/GeneratedModuleMaps-linux-x86_64",
+        "-I", Context.environment["NUCLEUS_SWIFTPM_GENERATED_MODULE_MAPS_PATH"]
+            ?? repoRoot + "/.build/out/Intermediates.noindex/"
+                + "GeneratedModuleMaps-linux-x86_64",
         "-DJS_RUNTIME_HERMES=1", "-DHERMES_V1_ENABLED=1", "-DREACT_NATIVE_DEBUG=1",
         "-DFOLLY_NO_CONFIG=1", "-DFOLLY_MOBILE=0", "-DFOLLY_CFG_NO_COROUTINES=1",
         "-DFMT_USE_CONSTEVAL=0", "-DSK_GRAPHITE", "-DSK_VULKAN",

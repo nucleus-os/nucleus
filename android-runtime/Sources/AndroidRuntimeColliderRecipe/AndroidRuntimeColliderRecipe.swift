@@ -8,27 +8,33 @@ public enum AndroidRuntimeColliderRecipe {
     public static func tasks(
         root: FilePath,
         repositoryRoot: FilePath,
-        environment: [String: String]
+        environment: [String: String],
+        swiftPM: SwiftPMInvocation
     ) throws -> [TaskDeclaration] {
         [
             try gfxstream(
                 root: root,
                 repositoryRoot: repositoryRoot,
                 environment: environment),
-            build(root: root, environment: environment),
+            build(
+                root: root,
+                environment: environment,
+                swiftPM: swiftPM),
         ]
     }
 
     public static func test(
         root: FilePath,
-        environment: [String: String]
+        environment: [String: String],
+        swiftPM: SwiftPMInvocation
     ) -> TaskDeclaration {
         swiftTask(
             id: "android-runtime.test",
             root: root,
             environment: environment,
             arguments: ["test"],
-            dependencies: [TaskID(rawValue: "android-runtime.build")])
+            dependencies: [TaskID(rawValue: "android-runtime.build")],
+            swiftPM: swiftPM)
     }
 
     public static func verifyAOSPSourceLock(
@@ -262,9 +268,32 @@ public enum AndroidRuntimeColliderRecipe {
             ".nucleus/source-provenance.json")
         let signingIdentity = root.appending(
             ".aosp-signing/local-development")
-        let buildRoot = root.appending(".aosp-build")
+        let aospBuildRoot = root.appending(".aosp-build")
         let ccacheDirectory = aospCCacheDirectory(environment: environment)
-        let containerImageID = buildRoot.appending("container/image-id")
+        let productIdentity = Array(
+            [
+                lock.product,
+                lock.release,
+                lock.variant,
+                lock.buildNumber,
+                String(lock.buildTimestamp),
+                String(lock.platformSDK),
+                String(lock.vendorAPILevel),
+            ].joined(separator: "\0").utf8)
+        let generationID = [
+            String(lock.buildTimestamp),
+            lock.buildNumber,
+            lock.release,
+            lock.product,
+            lock.variant,
+            String(lock.platformSDK),
+            String(lock.vendorAPILevel),
+        ].joined(separator: "-")
+        let buildRoot = aospBuildRoot
+            .appending("generations")
+            .appending(generationID)
+        let active = aospBuildRoot.appending("current")
+        let containerImageID = aospBuildRoot.appending("container/image-id")
         let signed = buildRoot.appending("signed")
         let images = buildRoot.appending("images")
         let unsigned = buildRoot.appending(
@@ -280,16 +309,6 @@ public enum AndroidRuntimeColliderRecipe {
         let stagedProvenance = staged.appending(
             "image-provenance.json")
         let hostTools = buildRoot.appending("out/host/linux-x86/bin")
-        let productIdentity = Array(
-            [
-                lock.product,
-                lock.release,
-                lock.variant,
-                lock.buildNumber,
-                String(lock.buildTimestamp),
-                String(lock.platformSDK),
-                String(lock.vendorAPILevel),
-            ].joined(separator: "\0").utf8)
         let build = AOSPProductBuild(
             productSource: root.appending(
                 "aosp/device/nucleus/nucleus_x86_64"),
@@ -474,6 +493,9 @@ public enum AndroidRuntimeColliderRecipe {
                     path: signed.appending(
                         "\(lock.product)-images.zip"),
                     validation: .regularFile),
+                OutputDeclaration(
+                    path: active,
+                    validation: .exists),
             ] + requiredImages.map {
                 OutputDeclaration(
                     path: images.appending($0),
@@ -664,7 +686,8 @@ public enum AndroidRuntimeColliderRecipe {
 
     private static func build(
         root: FilePath,
-        environment: [String: String]
+        environment: [String: String],
+        swiftPM: SwiftPMInvocation
     ) -> TaskDeclaration {
         swiftTask(
             id: "android-runtime.build",
@@ -674,7 +697,8 @@ public enum AndroidRuntimeColliderRecipe {
             dependencies: [
                 TaskID(rawValue: "linux.build"),
                 TaskID(rawValue: "android-runtime.gfxstream"),
-            ])
+            ],
+            swiftPM: swiftPM)
     }
 
     private static func swiftTask(
@@ -682,7 +706,8 @@ public enum AndroidRuntimeColliderRecipe {
         root: FilePath,
         environment: [String: String],
         arguments: [String],
-        dependencies: [TaskID]
+        dependencies: [TaskID],
+        swiftPM: SwiftPMInvocation
     ) -> TaskDeclaration {
         TaskDeclaration(
             id: TaskID(rawValue: id),
@@ -694,16 +719,12 @@ public enum AndroidRuntimeColliderRecipe {
                 .tree(root.appending("Tests")),
                 .tree(root.appending(
                     "aosp/device/nucleus/nucleus_x86_64/native")),
+                swiftPM.identityInput,
                 .tool(.named("swift")),
             ],
-            outputs: [
-                OutputDeclaration(
-                    path: root.appending(".build"),
-                    validation: .nonEmptyDirectory),
-            ],
-            locks: [.checkout("android-runtime")],
-            operation: .command(CommandSpec(
-                executable: .named("swift"),
+            postconditions: [swiftPM.postcondition],
+            locks: [.checkout("android-runtime"), swiftPM.lock],
+            operation: .command(swiftPM.command(
                 arguments: arguments,
                 workingDirectory: root,
                 environment: environment)))

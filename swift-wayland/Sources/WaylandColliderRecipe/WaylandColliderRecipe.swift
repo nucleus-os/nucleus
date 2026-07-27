@@ -3,11 +3,31 @@ import Foundation
 import SystemPackage
 
 public enum WaylandColliderRecipe {
-    public static func build(root: FilePath, environment: [String: String]) -> TaskDeclaration { task("wayland.build", root, environment, ["build"]) }
-    public static func test(root: FilePath, environment: [String: String]) -> TaskDeclaration { task("wayland.test", root, environment, ["test"], [TaskID(rawValue: "wayland.build")]) }
+    public static func build(
+        root: FilePath,
+        environment: [String: String],
+        swiftPM: SwiftPMInvocation
+    ) -> TaskDeclaration {
+        task(
+            "wayland.build", root, environment, ["build"],
+            swiftPM: swiftPM)
+    }
+
+    public static func test(
+        root: FilePath,
+        environment: [String: String],
+        swiftPM: SwiftPMInvocation
+    ) -> TaskDeclaration {
+        task(
+            "wayland.test", root, environment, ["test"],
+            [TaskID(rawValue: "wayland.build")],
+            swiftPM: swiftPM)
+    }
+
     public static func generate(
         root: FilePath,
-        environment: [String: String]
+        environment: [String: String],
+        swiftPM: SwiftPMInvocation
     ) throws -> TaskDeclaration {
         let protocolsRoot = root.appending("Protocols")
         let records = try protocolRecords(under: protocolsRoot)
@@ -31,10 +51,9 @@ public enum WaylandColliderRecipe {
             "--search-dir", protocolsRoot.appending("protocols").string,
             "--search-dir", protocolsRoot.appending("wayland-protocols").string,
         ]
-        let generator = root.appending(".build/debug/SwiftWaylandGen")
+        let generator = swiftPM.executable("SwiftWaylandGen")
         var operations: [TaskOperation] = [
-            .command(CommandSpec(
-                executable: .named("swift"),
+            .command(swiftPM.command(
                 arguments: ["build", "--product", "SwiftWaylandGen"],
                 workingDirectory: root,
                 environment: environment)),
@@ -108,6 +127,7 @@ public enum WaylandColliderRecipe {
                 .tree(root.appending("Sources/SwiftWaylandGenerator")),
                 .tree(root.appending("Sources/WaylandProtocolModel")),
                 .tree(root.appending("Protocols")),
+                swiftPM.identityInput,
                 .tool(.named("swift")),
                 .tool(.named("wayland-scanner")),
             ],
@@ -119,7 +139,7 @@ public enum WaylandColliderRecipe {
                     path: root.appending("Sources").appending($0),
                     validation: .nonEmptyDirectory)
             },
-            locks: [.checkout("wayland")],
+            locks: [.checkout("wayland"), swiftPM.lock],
             operation: .sequence(operations))
     }
 }
@@ -192,6 +212,28 @@ public enum WaylandRecipeFailure: Error, CustomStringConvertible {
     }
 }
 
-private func task(_ id: String, _ root: FilePath, _ environment: [String: String], _ arguments: [String], _ dependencies: [TaskID] = []) -> TaskDeclaration {
-    TaskDeclaration(id: TaskID(rawValue: id), component: ComponentID(rawValue: "wayland"), dependencies: dependencies, inputs: [.file(root.appending("Package.swift")), .tree(root.appending("Sources")), .tool(.named("swift"))], outputs: [OutputDeclaration(path: root.appending(".build"), validation: .nonEmptyDirectory)], locks: [.checkout("wayland")], operation: .command(CommandSpec(executable: .named("swift"), arguments: arguments, workingDirectory: root, environment: environment)))
+private func task(
+    _ id: String,
+    _ root: FilePath,
+    _ environment: [String: String],
+    _ arguments: [String],
+    _ dependencies: [TaskID] = [],
+    swiftPM: SwiftPMInvocation
+) -> TaskDeclaration {
+    TaskDeclaration(
+        id: TaskID(rawValue: id),
+        component: ComponentID(rawValue: "wayland"),
+        dependencies: dependencies,
+        inputs: [
+            .file(root.appending("Package.swift")),
+            .tree(root.appending("Sources")),
+            swiftPM.identityInput,
+            .tool(.named("swift")),
+        ],
+        postconditions: [swiftPM.postcondition],
+        locks: [.checkout("wayland"), swiftPM.lock],
+        operation: .command(swiftPM.command(
+            arguments: arguments,
+            workingDirectory: root,
+            environment: environment)))
 }

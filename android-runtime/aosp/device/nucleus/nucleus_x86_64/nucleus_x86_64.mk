@@ -33,7 +33,7 @@ PRODUCT_PACKAGES += \
     Settings \
     SettingsIntelligence \
     frameworks-base-overlays \
-    preinstalled-packages-platform-handheld-product.xml
+    preinstalled-packages-nucleus.xml
 
 # Container-owned vendor surface.
 $(call inherit-product, device/nucleus/nucleus_x86_64/device.mk)

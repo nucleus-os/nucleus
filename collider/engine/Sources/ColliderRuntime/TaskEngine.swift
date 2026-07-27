@@ -218,6 +218,10 @@ extension ColliderRuntime {
             encoder.append(tag: 40, string: output.path.string)
             encoder.append(tag: 41, string: output.validation.rawValue)
         }
+        for postcondition in task.postconditions {
+            encoder.append(tag: 218, string: postcondition.path.string)
+            encoder.append(tag: 219, string: postcondition.validation.rawValue)
+        }
         try encode(operation: task.operation, into: &encoder)
         return ArtifactHasher.digest(bytes: encoder.bytes)
     }
@@ -1088,37 +1092,48 @@ extension ColliderRuntime {
     }
 
 
-    private func validate(_ outputs: [OutputDeclaration]) throws {
-        for output in outputs {
-            switch output.validation {
+    private func validate(
+        _ paths: [(path: FilePath, validation: PathValidation)]
+    ) throws {
+        for path in paths {
+            switch path.validation {
             case .exists:
-                _ = try output.path.stat(followTargetSymlink: false)
+                _ = try path.path.stat(followTargetSymlink: false)
             case .regularFile, .json:
-                let metadata = try output.path.stat()
+                let metadata = try path.path.stat()
                 guard metadata.type == .regular else {
-                    throw RuntimeFailure.invalidOutput(output.path.string)
+                    throw RuntimeFailure.invalidOutput(path.path.string)
                 }
-                if output.validation == .json {
+                if path.validation == .json {
                     _ = try JSONSerialization.jsonObject(
-                        with: Data(contentsOf: URL(fileURLWithPath: output.path.string)))
+                        with: Data(contentsOf: URL(fileURLWithPath: path.path.string)))
                 }
             case .executableFile:
-                let metadata = try output.path.stat()
+                let metadata = try path.path.stat()
                 guard metadata.type == .regular,
                       metadata.permissions.contains(.ownerExecute)
-                else { throw RuntimeFailure.invalidOutput(output.path.string) }
+                else { throw RuntimeFailure.invalidOutput(path.path.string) }
             case .nonEmptyDirectory:
-                let metadata = try output.path.stat()
+                let metadata = try path.path.stat()
                 guard metadata.type == .directory,
                       !(try FileManager.default.contentsOfDirectory(
-                        atPath: output.path.string)).isEmpty
-                else { throw RuntimeFailure.invalidOutput(output.path.string) }
+                        atPath: path.path.string)).isEmpty
+                else { throw RuntimeFailure.invalidOutput(path.path.string) }
             }
         }
     }
 
+    private func validate(_ outputs: [OutputDeclaration]) throws {
+        try validate(outputs.map { ($0.path, $0.validation) })
+    }
+
+    private func validate(_ postconditions: [PathPostcondition]) throws {
+        try validate(postconditions.map { ($0.path, $0.validation) })
+    }
+
     private func validate(_ task: TaskDeclaration) throws {
         try validate(task.outputs)
+        try validate(task.postconditions)
         try validateArtifactOutputs(task.operation)
     }
 

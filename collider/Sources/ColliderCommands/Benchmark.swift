@@ -1,3 +1,4 @@
+import ColliderCore
 import FoundationEssentials
 
 struct BenchmarkCommand {
@@ -10,6 +11,7 @@ struct BenchmarkCommand {
     let context: WorkspaceContext
 
     func run() async throws {
+        let swiftPM = try context.swiftPMInvocation(configuration: .release)
         let toolchain = try await context.run(
             "swift", ["--version"], capture: true)
             .split(whereSeparator: \Character.isNewline)
@@ -39,14 +41,16 @@ struct BenchmarkCommand {
             try await run(
                 suite,
                 outputRoot: outputRoot,
-                context: benchmarkContext)
+                context: benchmarkContext,
+                swiftPM: swiftPM)
         }
     }
 
     private func run(
         _ suite: Suite,
         outputRoot: URL,
-        context: WorkspaceContext
+        context: WorkspaceContext,
+        swiftPM: SwiftPMInvocation
     ) async throws {
         let package = context.repository(suite.package)
         print(
@@ -54,17 +58,14 @@ struct BenchmarkCommand {
                 + "configuration=release schema=nucleus.headless.v3")
         try await context.run(
             "swift",
-            [
-                "build", "-c", "release",
-                "--product", suite.product,
-            ],
-            directory: package)
-        let binaryDirectory = try await context.run(
-            "swift", ["build", "-c", "release", "--show-bin-path"],
+            swiftPM.commandArguments([
+                "build", "--product", suite.product,
+            ]),
             directory: package,
-            capture: true)
-        let executable = URL(fileURLWithPath: binaryDirectory)
-            .appendingPathComponent(suite.product)
+            environmentOverrides: swiftPM.commandEnvironment(
+                context.taskEnvironment))
+        let executable = URL(
+            fileURLWithPath: swiftPM.executable(suite.product).string)
         guard FileManager.default.isExecutableFile(atPath: executable.path) else {
             throw WorkspaceFailure.message(
                 "release benchmark product is not executable: \(executable.path)")

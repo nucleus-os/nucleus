@@ -1,3 +1,8 @@
+set(CMAKE_C_COMPILER_LAUNCHER ccache CACHE STRING
+    "Nucleus host C compiler launcher" FORCE)
+set(CMAKE_CXX_COMPILER_LAUNCHER ccache CACHE STRING
+    "Nucleus host C++ compiler launcher" FORCE)
+
 foreach(_nucleus_cxx_root IN ITEMS "${LLVM_BINARY_DIR}" "${CMAKE_BINARY_DIR}")
   if(NOT "${_nucleus_cxx_root}" STREQUAL "")
     set(_nucleus_cxx_dir "${_nucleus_cxx_root}/include/c++")

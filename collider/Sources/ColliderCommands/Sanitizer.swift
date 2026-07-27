@@ -1,4 +1,5 @@
 import ArgumentParser
+import ColliderCore
 import FoundationEssentials
 
 enum SanitizerSelection: String, CaseIterable, ExpressibleByArgument {
@@ -99,6 +100,7 @@ struct SanitizerCommand {
                     sanitizer: kind,
                     seed: seed)
             }
+            try context.pruneSanitizerBuildContexts()
         }
     }
 
@@ -196,19 +198,13 @@ struct SanitizerCommand {
         seed: String
     ) async throws {
         let packageDirectory = context.repository(invocation.package)
-        let scratch = context.layout.sanitizerBuilds
-            .appendingPathComponent(sanitizer.rawValue, isDirectory: true)
-            .appendingPathComponent(invocation.id, isDirectory: true)
-        var commonArguments = [
-            "--scratch-path", scratch.path,
-            "--sanitize", sanitizer.rawValue,
-        ]
+        let swiftPM = try context.swiftPMInvocation(
+            sanitizer: sanitizer.rawValue,
+            linkerFlags: sanitizer == .undefined ? ["-lubsan"] : [])
+        var commonArguments: [String] = []
         // SwiftPM instruments every product in the package graph. Its Linux
         // UBSan link invocation does not add the runtime for unrelated C++
         // executable products, so make that runtime explicit for every link.
-        if sanitizer == .undefined {
-            commonArguments += ["-Xlinker", "-lubsan"]
-        }
         if let packagePath = invocation.packagePath {
             commonArguments += ["--package-path", packagePath]
         }
@@ -235,30 +231,25 @@ struct SanitizerCommand {
         print(
             "==> sanitize package=\(packageIdentity) "
                 + "sanitizer=\(sanitizer.rawValue) \(invocation.workload.label) "
-                + "seed=\(seed) scratch=\(scratch.path) \(options)")
+                + "seed=\(seed) scratch=\(swiftPM.scratchPath) \(options)")
         do {
             switch invocation.workload {
             case .test(let suite):
                 try await instrumentedContext.run(
                     "swift",
-                    ["test"] + commonArguments + ["--filter", suite],
-                    directory: packageDirectory)
+                    swiftPM.commandArguments(
+                        ["test"] + commonArguments + ["--filter", suite]),
+                    directory: packageDirectory,
+                    environmentOverrides: swiftPM.commandEnvironment(environment))
             case .executable(let product):
-                let buildArguments = ["build"] + commonArguments
-                    + ["--product", product]
+                let buildArguments = swiftPM.commandArguments(
+                    ["build"] + commonArguments + ["--product", product])
                 try await instrumentedContext.run(
                     "swift", buildArguments,
-                    directory: packageDirectory)
-                let output = try await instrumentedContext.run(
-                    "swift", buildArguments + ["--show-bin-path"],
                     directory: packageDirectory,
-                    capture: true)
-                guard let binPath = output.split(separator: "\n").last else {
-                    throw WorkspaceFailure.message(
-                        "SwiftPM did not report a binary path for \(product)")
-                }
-                let executable = URL(fileURLWithPath: String(binPath))
-                    .appendingPathComponent(product)
+                    environmentOverrides: swiftPM.commandEnvironment(environment))
+                let executable = URL(
+                    fileURLWithPath: swiftPM.executable(product).string)
                 guard FileManager.default.isExecutableFile(
                     atPath: executable.path)
                 else {

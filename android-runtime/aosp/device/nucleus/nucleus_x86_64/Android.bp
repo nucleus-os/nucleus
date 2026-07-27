@@ -31,6 +31,13 @@ filegroup {
 }
 
 prebuilt_etc {
+    name: "preinstalled-packages-nucleus.xml",
+    src: "preinstalled-packages-nucleus.xml",
+    sub_dir: "sysconfig",
+    product_specific: true,
+}
+
+prebuilt_etc {
     name: "audio_policy_configuration.xml",
     src: "audio_policy_configuration.xml",
     vendor: true,

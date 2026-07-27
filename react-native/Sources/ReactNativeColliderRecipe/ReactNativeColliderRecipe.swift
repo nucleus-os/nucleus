@@ -3,8 +3,26 @@ import Foundation
 import SystemPackage
 
 public enum ReactNativeColliderRecipe {
-    public static func build(root: FilePath, environment: [String: String]) -> TaskDeclaration { task("rn.build", root, environment, ["build"], [TaskID(rawValue: "linux.build")]) }
-    public static func test(root: FilePath, environment: [String: String]) -> TaskDeclaration { task("rn.test", root, environment, ["test"], [TaskID(rawValue: "rn.build")]) }
+    public static func build(
+        root: FilePath,
+        environment: [String: String],
+        swiftPM: SwiftPMInvocation
+    ) -> TaskDeclaration {
+        task(
+            "rn.build", root, environment, ["build"],
+            [TaskID(rawValue: "linux.build")], swiftPM,
+            prebuildTargets: ["NucleusReactRuntimeCxx"])
+    }
+
+    public static func test(
+        root: FilePath,
+        environment: [String: String],
+        swiftPM: SwiftPMInvocation
+    ) -> TaskDeclaration {
+        task(
+            "rn.test", root, environment, ["test"],
+            [TaskID(rawValue: "rn.build")], swiftPM)
+    }
 
     public static func installJavaScriptDependencies(
         root: FilePath,
@@ -184,6 +202,7 @@ public enum ReactNativeColliderRecipe {
                 .file(host.cxxRuntimeLibrary),
                 .tool(.named("cmake")),
                 .tool(.named("ninja")),
+                .tool(.named("ccache")),
                 .tool(.named("ar")),
                 .tool(.named("ranlib")),
             ],
@@ -238,6 +257,7 @@ public enum ReactNativeColliderRecipe {
                     "third-party/double-conversion")),
                 .tool(.named("cmake")),
                 .tool(.named("ninja")),
+                .tool(.named("ccache")),
             ],
             outputs: [
                 OutputDeclaration(
@@ -368,13 +388,11 @@ public enum ReactNativeColliderRecipe {
 
     public static func stageHostArchive(
         root: FilePath,
-        configuration: String
+        swiftPM: SwiftPMInvocation
     ) throws -> TaskDeclaration {
-        guard configuration == "debug" || configuration == "release" else {
-            throw ReactNativeRecipeFailure.invalidConfiguration(configuration)
-        }
+        let configuration = swiftPM.context.configuration.rawValue
         let archive = "libNucleusReactRuntimeHostCxx.a"
-        let products = root.appending(".build/out/Products")
+        let products = swiftPM.productsRoot
         let prefix = configuration.prefix(1).uppercased()
             + String(configuration.dropFirst())
         let destination = root.appending(
@@ -382,6 +400,10 @@ public enum ReactNativeColliderRecipe {
         return TaskDeclaration(
             id: TaskID(rawValue: "rn.host-archive.\(configuration)"),
             component: ComponentID(rawValue: "rn"),
+            inputs: [
+                swiftPM.identityInput,
+                .dependencyOutput(products),
+            ],
             outputs: [
                 OutputDeclaration(
                     path: destination,
@@ -397,7 +419,8 @@ public enum ReactNativeColliderRecipe {
 
     public static func buildSwiftCxxFacade(
         root: FilePath,
-        environment: [String: String]
+        environment: [String: String],
+        swiftPM: SwiftPMInvocation
     ) -> TaskDeclaration {
         TaskDeclaration(
             id: TaskID(rawValue: "rn.swift-cxx"),
@@ -406,16 +429,18 @@ public enum ReactNativeColliderRecipe {
             inputs: [
                 .file(root.appending("Package.swift")),
                 .tree(root.appending("swift")),
+                swiftPM.identityInput,
                 .tool(.named("swift")),
             ],
-            outputs: [
-                OutputDeclaration(
-                    path: root.appending(".build/out/Products"),
-                    validation: .nonEmptyDirectory),
+            postconditions: [
+                swiftPM.postcondition,
+                PathPostcondition(
+                    path: swiftPM.generatedSwiftHeader(
+                        "NucleusReactRuntimeCxx"),
+                    validation: .regularFile),
             ],
-            locks: [.checkout("rn-swift")],
-            operation: .command(CommandSpec(
-                executable: .named("swift"),
+            locks: [.checkout("rn-swift"), swiftPM.lock],
+            operation: .command(swiftPM.command(
                 arguments: [
                     "build", "--target", "NucleusReactRuntimeCxx",
                 ],
@@ -425,7 +450,8 @@ public enum ReactNativeColliderRecipe {
 
     public static func buildSwiftHostCxx(
         root: FilePath,
-        environment: [String: String]
+        environment: [String: String],
+        swiftPM: SwiftPMInvocation
     ) -> TaskDeclaration {
         TaskDeclaration(
             id: TaskID(rawValue: "rn.swift-host-cxx"),
@@ -434,16 +460,12 @@ public enum ReactNativeColliderRecipe {
             inputs: [
                 .file(root.appending("Package.swift")),
                 .tree(root.appending("swift")),
+                swiftPM.identityInput,
                 .tool(.named("swift")),
             ],
-            outputs: [
-                OutputDeclaration(
-                    path: root.appending(".build/out/Products"),
-                    validation: .nonEmptyDirectory),
-            ],
-            locks: [.checkout("rn-swift")],
-            operation: .command(CommandSpec(
-                executable: .named("swift"),
+            postconditions: [swiftPM.postcondition],
+            locks: [.checkout("rn-swift"), swiftPM.lock],
+            operation: .command(swiftPM.command(
                 arguments: [
                     "build", "--product",
                     "NucleusReactRuntimeHostCxx",
@@ -542,14 +564,11 @@ public struct HermesHostDependencies: Hashable, Sendable {
 
 public enum ReactNativeRecipeFailure: Error, CustomStringConvertible {
     case invalidBoostSpecification
-    case invalidConfiguration(String)
 
     public var description: String {
         switch self {
         case .invalidBoostSpecification:
             "the pinned Boost download specification is invalid"
-        case .invalidConfiguration(let value):
-            "invalid RN host archive configuration '\(value)'"
         }
     }
 }
@@ -560,6 +579,8 @@ private let commonCMakeArguments = [
     "-DCMAKE_POSITION_INDEPENDENT_CODE=ON",
     "-DCMAKE_C_COMPILER=clang",
     "-DCMAKE_CXX_COMPILER=clang++",
+    "-DCMAKE_C_COMPILER_LAUNCHER=ccache",
+    "-DCMAKE_CXX_COMPILER_LAUNCHER=ccache",
 ]
 
 private func cmake(
@@ -593,6 +614,42 @@ private func ninja(
         environment: environment))
 }
 
-private func task(_ id: String, _ root: FilePath, _ environment: [String: String], _ arguments: [String], _ dependencies: [TaskID]) -> TaskDeclaration {
-    TaskDeclaration(id: TaskID(rawValue: id), component: ComponentID(rawValue: "rn"), dependencies: dependencies, inputs: [.file(root.appending("Package.swift")), .tree(root.appending("Sources")), .tool(.named("swift"))], outputs: [OutputDeclaration(path: root.appending(".build"), validation: .nonEmptyDirectory)], locks: [.checkout("rn")], operation: .command(CommandSpec(executable: .named("swift"), arguments: arguments, workingDirectory: root, environment: environment)))
+private func task(
+    _ id: String,
+    _ root: FilePath,
+    _ environment: [String: String],
+    _ arguments: [String],
+    _ dependencies: [TaskID],
+    _ swiftPM: SwiftPMInvocation,
+    prebuildTargets: [String] = []
+) -> TaskDeclaration {
+    let commands = prebuildTargets.map { target in
+        TaskOperation.command(swiftPM.command(
+            arguments: ["build", "--target", target],
+            workingDirectory: root,
+            environment: environment))
+    } + [
+        TaskOperation.command(swiftPM.command(
+            arguments: arguments,
+            workingDirectory: root,
+            environment: environment)),
+    ]
+    return TaskDeclaration(
+        id: TaskID(rawValue: id),
+        component: ComponentID(rawValue: "rn"),
+        dependencies: dependencies,
+        inputs: [
+            .file(root.appending("Package.swift")),
+            .tree(root.appending("Sources")),
+            .tree(root.appending("swift")),
+            swiftPM.identityInput,
+            .tool(.named("swift")),
+        ],
+        postconditions: [swiftPM.postcondition] + prebuildTargets.map {
+            PathPostcondition(
+                path: swiftPM.generatedSwiftHeader($0),
+                validation: .regularFile)
+        },
+        locks: [.checkout("rn"), swiftPM.lock],
+        operation: commands.count == 1 ? commands[0] : .sequence(commands))
 }

@@ -200,8 +200,10 @@ index 72be5bcf..e971a27a 100644
 --- a/hals/hwc3/FrameComposer.h
 +++ b/hals/hwc3/FrameComposer.h
 @@ -17,6 +17,7 @@
- #ifndef ANDROID_HWC_COMPOSER_H
- #define ANDROID_HWC_COMPOSER_H
+-#ifndef ANDROID_HWC_COMPOSER_H
+-#define ANDROID_HWC_COMPOSER_H
++#ifndef ANDROID_HWC_FRAME_COMPOSER_H
++#define ANDROID_HWC_FRAME_COMPOSER_H
 
 +#include <aidl/android/hardware/graphics/composer3/Capability.h>
  #include <android-base/unique_fd.h>
@@ -216,7 +218,7 @@ index 72be5bcf..e971a27a 100644
 
      virtual HWC3::Error registerOnHotplugCallback(const HotplugCallback& cb) = 0;
 
-@@ -68,6 +68,22 @@ class FrameComposer {
+@@ -68,5 +68,21 @@ class FrameComposer {
 
      virtual HWC3::Error onActiveConfigChange(Display* display) = 0;
 

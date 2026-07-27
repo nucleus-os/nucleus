@@ -5,6 +5,7 @@ import Foundation
 import ReactNativeColliderRecipe
 import SystemPackage
 import Testing
+import TracyColliderRecipe
 import VulkanColliderRecipe
 import WaylandColliderRecipe
 @testable import ColliderCommands
@@ -87,6 +88,120 @@ import WaylandColliderRecipe
     }
 }
 
+@Test func compatibleSwiftTasksShareOneDeclaredBuildContext() {
+    let root = FilePath("/workspace")
+    let environment = ["PATH": "/toolchain/bin"]
+    let context = SwiftBuildContext(
+        configuration: .debug,
+        target: .host(identity: "x86_64-linux"),
+        toolchainIdentity: "/toolchain/bin/swiftc@fixture")
+    let scratch = root.appending(".nucleus/swiftpm/fixture")
+    let swiftPM = SwiftPMInvocation(
+        context: context,
+        scratchPath: scratch)
+
+    let tasks = [
+        TracyColliderRecipe.build(
+            root: root.appending("swift-tracy"),
+            environment: environment,
+            swiftPM: swiftPM),
+        CoreColliderRecipe.build(
+            root: root.appending("core"),
+            environment: environment,
+            swiftPM: swiftPM),
+    ]
+
+    for task in tasks {
+        #expect(task.inputs.contains(swiftPM.identityInput))
+        #expect(task.outputs.isEmpty)
+        #expect(task.postconditions == [swiftPM.postcondition])
+        #expect(task.locks.contains(swiftPM.lock))
+        guard case .command(let command) = task.operation else {
+            Issue.record("SwiftPM task must be a typed command")
+            continue
+        }
+        #expect(command.arguments.suffix(4) == [
+            "--configuration", "debug",
+            "--scratch-path", scratch.string,
+        ])
+    }
+}
+
+@Test func incompatibleSwiftBuildContextsUseDifferentScratchPaths() {
+    let layout = WorkspaceLayout(root: URL(fileURLWithPath: "/workspace"))
+    let debug = SwiftBuildContext(
+        configuration: .debug,
+        target: .host(identity: "x86_64-linux"),
+        toolchainIdentity: "swiftc@first")
+    let release = SwiftBuildContext(
+        configuration: .release,
+        target: .host(identity: "x86_64-linux"),
+        toolchainIdentity: "swiftc@first")
+    let otherToolchain = SwiftBuildContext(
+        configuration: .debug,
+        target: .host(identity: "x86_64-linux"),
+        toolchainIdentity: "swiftc@second")
+
+    #expect(layout.swiftScratch(for: debug) != layout.swiftScratch(for: release))
+    #expect(
+        layout.swiftScratch(for: debug)
+            != layout.swiftScratch(for: otherToolchain))
+    #expect(layout.swiftScratch(for: debug) == layout.swiftScratch(for: debug))
+}
+
+@Test func workspaceEnvironmentDefinesOneReviewedHostCCachePolicy() {
+    let context = WorkspaceContext(
+        root: URL(fileURLWithPath: "/workspace"),
+        environment: [
+            "HOME": "/home/fixture",
+            "XDG_CACHE_HOME": "/cache",
+        ])
+
+    #expect(context.taskEnvironment["CCACHE_BASEDIR"] == "/workspace")
+    #expect(context.taskEnvironment["CCACHE_DIR"]
+        == "/cache/nucleus/host-ccache")
+    #expect(context.taskEnvironment["CCACHE_COMPILERCHECK"] == "content")
+    #expect(context.taskEnvironment["CCACHE_MAXSIZE"] == "50G")
+    #expect(context.taskEnvironment["CCACHE_SLOPPINESS"]
+        == "include_file_ctime,include_file_mtime,locale")
+}
+
+@Test func reactNativeBuildProducesTheSwiftHeaderBeforeCompilingTheHost() {
+    let root = FilePath("/workspace/react-native")
+    let scratch = FilePath("/workspace/.nucleus/swiftpm/fixture")
+    let swiftPM = SwiftPMInvocation(
+        context: SwiftBuildContext(
+            configuration: .debug,
+            target: .host(identity: "x86_64-linux"),
+            toolchainIdentity: "swiftc@fixture"),
+        scratchPath: scratch)
+
+    let task = ReactNativeColliderRecipe.build(
+        root: root,
+        environment: ["PATH": "/usr/bin"],
+        swiftPM: swiftPM)
+
+    guard case .sequence(let operations) = task.operation,
+          operations.count == 2,
+          case .command(let facade) = operations[0],
+          case .command(let package) = operations[1]
+    else {
+        Issue.record("RN build must build the Swift façade before the package")
+        return
+    }
+    #expect(facade.arguments.prefix(3) == [
+        "build", "--target", "NucleusReactRuntimeCxx",
+    ])
+    #expect(package.arguments.first == "build")
+    #expect(facade.environment["NUCLEUS_SWIFTPM_SCRATCH_PATH"]
+        == scratch.string)
+    #expect(facade.environment["NUCLEUS_SWIFTPM_GENERATED_MODULE_MAPS_PATH"]
+        == swiftPM.generatedModuleMaps.string)
+    #expect(task.postconditions.contains(PathPostcondition(
+        path: swiftPM.generatedSwiftHeader("NucleusReactRuntimeCxx"),
+        validation: .regularFile)))
+}
+
 @Test func lavapipeArtifactStagesAnAbsoluteValidatedICDManifest() throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
         "collider-lavapipe-\(UUID().uuidString)", isDirectory: true)
@@ -138,10 +253,17 @@ import WaylandColliderRecipe
 @Test func migratedGeneratorsInvokeComponentToolsWithoutCommandPlugins() {
     let root = FilePath("/workspace")
     let environment = ["PATH": "/usr/bin"]
+    let swiftPM = SwiftPMInvocation(
+        context: SwiftBuildContext(
+            configuration: .debug,
+            target: .host(identity: "x86_64-linux"),
+            toolchainIdentity: "swiftc@fixture"),
+        scratchPath: root.appending(".nucleus/swiftpm/fixture"))
 
     let vulkan = VulkanColliderRecipe.generate(
         root: root.appending("swift-vulkan"),
-        environment: environment)
+        environment: environment,
+        swiftPM: swiftPM)
     guard case .command(let vulkanCommand) = vulkan.operation else {
         Issue.record("Vulkan generation must be a typed command")
         return
@@ -152,6 +274,8 @@ import WaylandColliderRecipe
         "/workspace/swift-vulkan/third-party/vk.xml",
         "/workspace/swift-vulkan/Sources/Vulkan/Vulkan.swift",
         "1",
+        "--configuration", "debug",
+        "--scratch-path", "/workspace/.nucleus/swiftpm/fixture",
     ])
 
     let reactNative = ReactNativeColliderRecipe.generate(
@@ -175,7 +299,15 @@ import WaylandColliderRecipe
         .deletingLastPathComponent()
     let task = try WaylandColliderRecipe.generate(
         root: FilePath(workspace.appendingPathComponent("swift-wayland").path),
-        environment: ["PATH": "/usr/bin"])
+        environment: ["PATH": "/usr/bin"],
+        swiftPM: SwiftPMInvocation(
+            context: SwiftBuildContext(
+                configuration: .debug,
+                target: .host(identity: "x86_64-linux"),
+                toolchainIdentity: "swiftc@fixture"),
+            scratchPath: FilePath(
+                workspace.appendingPathComponent(
+                    ".nucleus/swiftpm/fixture").path)))
     guard case .sequence(let operations) = task.operation else {
         Issue.record("Wayland generation must be one ordered task sequence")
         return
@@ -305,8 +437,9 @@ import WaylandColliderRecipe
 @Test func reactNativeHostArchiveStagingIsATypedCopy() throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
         "collider-rn-host-archive-\(UUID().uuidString)")
-    let product = directory.appendingPathComponent(
-        ".build/out/Products/Debug-linux-x86_64")
+    let scratch = directory.appendingPathComponent("scratch")
+    let product = scratch.appendingPathComponent(
+        "out/Products/Debug-linux-x86_64")
     try FileManager.default.createDirectory(
         at: product, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: directory) }
@@ -315,13 +448,18 @@ import WaylandColliderRecipe
     try Data("archive".utf8).write(to: archive)
     let task = try ReactNativeColliderRecipe.stageHostArchive(
         root: FilePath(directory.path),
-        configuration: "debug")
+        swiftPM: SwiftPMInvocation(
+            context: SwiftBuildContext(
+                configuration: .debug,
+                target: .host(identity: "x86_64-linux"),
+                toolchainIdentity: "swiftc@fixture"),
+            scratchPath: FilePath(scratch.path)))
     guard case .copyMatchingFile(let copy) = task.operation else {
         Issue.record("RN host archive staging must be a typed matched copy")
         return
     }
     #expect(copy.searchDirectory == FilePath(directory.appendingPathComponent(
-        ".build/out/Products").path))
+        "scratch/out/Products").path))
     #expect(copy.childDirectoryPrefix == "Debug-")
     #expect(copy.fileName == "libNucleusReactRuntimeHostCxx.a")
     #expect(copy.destination == FilePath(directory.appendingPathComponent(
@@ -360,6 +498,14 @@ import WaylandColliderRecipe
         return true
     }())
     let operations = Array(tasks.suffix(5)).map(\.operation)
+    let publication = try #require(tasks.last)
+    #expect(publication.outputs.contains {
+        $0.path.string.hasSuffix(".aosp-build/current")
+    })
+    #expect(publication.outputs.contains {
+        $0.path.string.contains(".aosp-build/generations/")
+            && $0.path.string.hasSuffix("/images/system.img")
+    })
     #expect({
         guard case .compileAOSPProduct = operations[0] else {
             return false

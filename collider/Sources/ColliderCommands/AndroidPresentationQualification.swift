@@ -234,16 +234,9 @@ struct AndroidPresentationQualificationCommand {
         broker: URL,
         workload: URL
     ) {
-        let package = context.layout.androidRuntime
-        let raw = try await context.run(
-            "swift",
-            [
-                "build",
-                "--package-path", package.path,
-                "--show-bin-path",
-            ],
-            capture: true)
-        let directory = URL(fileURLWithPath: raw)
+        let swiftPM = try context.swiftPMInvocation()
+        let directory = URL(
+            fileURLWithPath: swiftPM.configurationProducts.string)
         let products = (
             qualifier: directory.appendingPathComponent(
                 "nucleus-android-presentation-qualifier"),

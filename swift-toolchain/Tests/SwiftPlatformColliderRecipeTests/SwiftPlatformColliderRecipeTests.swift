@@ -107,6 +107,16 @@ import Testing
     #expect(index("toolchain.activate-generation")
         < index("toolchain.publish-sdk-discovery"))
 
+    guard case .command(let sourceUpdate)? =
+        tasks["toolchain.source-update"]?.operation
+    else {
+        Issue.record("toolchain.source-update must be a command")
+        return
+    }
+    #expect(sourceUpdate.arguments.contains("--partial-clone"))
+    #expect(sourceUpdate.arguments.contains("--skip-history"))
+    #expect(sourceUpdate.arguments.contains("--skip-tags"))
+
     let upstreamArchive = FilePath(
         "/source/.nucleus-upstream-toolchain.tar.gz")
     let installedDriver = FilePath(

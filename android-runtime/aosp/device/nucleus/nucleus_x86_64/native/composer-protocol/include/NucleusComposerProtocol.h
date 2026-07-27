@@ -20,6 +20,7 @@ enum nucleus_composer_operation {
     NUCLEUS_COMPOSER_OUTPUT_CONNECTED = 4,
     NUCLEUS_COMPOSER_OUTPUT_MODE_CHANGED = 5,
     NUCLEUS_COMPOSER_OUTPUT_DISCONNECTED = 6,
+    NUCLEUS_COMPOSER_OUTPUT_PRESENTED = 7,
 };
 
 enum nucleus_composer_status {
@@ -57,6 +58,8 @@ struct nucleus_composer_topology_event {
     uint64_t generation;
     uint64_t display_id;
     uint64_t refresh_period_ns;
+    uint64_t presentation_timestamp_ns;
+    uint64_t presentation_sequence;
     int32_t mode_width;
     int32_t mode_height;
     int32_t refresh_millihertz;

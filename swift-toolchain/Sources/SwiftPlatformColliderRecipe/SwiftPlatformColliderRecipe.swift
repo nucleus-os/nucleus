@@ -401,6 +401,9 @@ public enum SwiftPlatformColliderRecipe {
             configuration.sourceWorkspace.appending(
                 "swift/utils/update-checkout").string,
             "--clone",
+            "--partial-clone",
+            "--skip-history",
+            "--skip-tags",
             "--scheme", configuration.sourceScheme,
             "--source-root", configuration.sourceWorkspace.string,
         ]

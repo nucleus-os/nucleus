@@ -1,6 +1,20 @@
 import Testing
 @testable import NucleusAndroidGraphicsContract
 
+@Test
+func requiredRenderingFormatsDescribeExactCrossApiLayouts() {
+    let formats = AndroidGraphicBufferFormat.requiredRenderingFormats
+    #expect(formats.map(\.androidFormat) == [1, 22, 43])
+    #expect(formats.map(\.bytesPerPixel) == [4, 8, 4])
+    #expect(formats.map(\.componentBits) == [
+        [8, 8, 8, 8],
+        [16, 16, 16, 16],
+        [10, 10, 10, 2],
+    ])
+    #expect(formats.map(\.vulkanFormat) == [37, 97, 64])
+    #expect(formats.allSatisfy { $0.planes.count == 1 })
+}
+
 private let feedback = WaylandDmabufFeedback(
     mainDevice: GraphicsDeviceID(major: 226, minor: 1),
     tranches: [

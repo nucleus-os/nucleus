@@ -16,19 +16,32 @@ public enum ArtifactInput: Hashable, Sendable {
     case tool(CommandSpec.Executable)
 }
 
+public enum PathValidation: String, Hashable, Codable, Sendable {
+    case exists
+    case regularFile
+    case executableFile
+    case nonEmptyDirectory
+    case json
+}
+
 public struct OutputDeclaration: Hashable, Sendable {
-    public enum Validation: String, Hashable, Codable, Sendable {
-        case exists
-        case regularFile
-        case executableFile
-        case nonEmptyDirectory
-        case json
-    }
-
+    public typealias Validation = PathValidation
     public let path: FilePath
-    public let validation: Validation
+    public let validation: PathValidation
 
-    public init(path: FilePath, validation: Validation) {
+    public init(path: FilePath, validation: PathValidation) {
+        self.path = path
+        self.validation = validation
+    }
+}
+
+/// A path whose validity is required for task cleanliness but which is shared
+/// state rather than an output owned by that task.
+public struct PathPostcondition: Hashable, Sendable {
+    public let path: FilePath
+    public let validation: PathValidation
+
+    public init(path: FilePath, validation: PathValidation) {
         self.path = path
         self.validation = validation
     }
@@ -396,6 +409,8 @@ public struct DirectoryRetentionRule: Hashable, Sendable {
     public enum Naming: String, Hashable, Sendable {
         case contentIdentity
         case colliderRun
+        case swiftBuildContext
+        case aospProduct
     }
 
     public let root: FilePath
@@ -936,6 +951,7 @@ public struct TaskDeclaration: Hashable, Sendable {
     public let dependencies: [TaskID]
     public let inputs: [ArtifactInput]
     public let outputs: [OutputDeclaration]
+    public let postconditions: [PathPostcondition]
     public let locks: [TaskLock]
     public let cachePolicy: TaskCachePolicy
     public let operation: TaskOperation
@@ -946,6 +962,7 @@ public struct TaskDeclaration: Hashable, Sendable {
         dependencies: [TaskID] = [],
         inputs: [ArtifactInput] = [],
         outputs: [OutputDeclaration] = [],
+        postconditions: [PathPostcondition] = [],
         locks: [TaskLock] = [],
         cachePolicy: TaskCachePolicy = .contentAddressed,
         operation: TaskOperation
@@ -955,6 +972,7 @@ public struct TaskDeclaration: Hashable, Sendable {
         self.dependencies = dependencies
         self.inputs = inputs
         self.outputs = outputs
+        self.postconditions = postconditions
         self.locks = locks
         self.cachePolicy = cachePolicy
         self.operation = operation
@@ -971,6 +989,7 @@ public struct TaskDeclaration: Hashable, Sendable {
             },
             inputs: inputs,
             outputs: outputs,
+            postconditions: postconditions,
             locks: locks,
             cachePolicy: cachePolicy,
             operation: operation)

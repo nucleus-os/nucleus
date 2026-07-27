@@ -48,6 +48,22 @@ struct TaskControls: Sendable {
 }
 
 extension WorkspaceContext {
+    func pruneSanitizerBuildContexts() throws {
+        let swiftPM = layout.state.appendingPathComponent(
+            "swiftpm",
+            isDirectory: true)
+        try DirectoryLifecycle.prune(DirectoryRetentionPlan(
+            safetyRoot: FilePath(layout.state.path),
+            rules: RuntimeSanitizer.allCases.map {
+                DirectoryRetentionRule(
+                    root: FilePath(swiftPM.appendingPathComponent(
+                        $0.rawValue,
+                        isDirectory: true).path),
+                    retain: 2,
+                    naming: .swiftBuildContext)
+            }))
+    }
+
     /// The user cache root: `$XDG_CACHE_HOME`, else `$HOME/.cache`, else the
     /// process home directory's `.cache`.
     var cacheRoot: URL {
@@ -71,6 +87,36 @@ extension WorkspaceContext {
             isDirectory: true)
     }
 
+    func swiftPMInvocation(
+        configuration: SwiftBuildConfiguration = .debug,
+        sanitizer: String? = nil,
+        traits: [String] = [],
+        swiftFlags: [String] = [],
+        cFlags: [String] = [],
+        cxxFlags: [String] = [],
+        linkerFlags: [String] = [],
+        staticSwiftStandardLibrary: Bool = false,
+        target: SwiftBuildTarget? = nil
+    ) throws -> SwiftPMInvocation {
+        let compiler = try swiftCompilerPath()
+        let compilerIdentity = try ArtifactHasher.digest(file: compiler)
+            .description
+        let context = SwiftBuildContext(
+            configuration: configuration,
+            target: target ?? .host(identity: hostSwiftTarget),
+            toolchainIdentity: "\(compiler.string)@\(compilerIdentity)",
+            sanitizer: sanitizer,
+            traits: traits,
+            swiftFlags: swiftFlags,
+            cFlags: cFlags,
+            cxxFlags: cxxFlags,
+            linkerFlags: linkerFlags,
+            staticSwiftStandardLibrary: staticSwiftStandardLibrary)
+        return SwiftPMInvocation(
+            context: context,
+            scratchPath: FilePath(layout.swiftScratch(for: context).path))
+    }
+
     /// Build the task graph, execute the selected tasks against the repository
     /// task-state root, render the report, and return it.
     @discardableResult
@@ -92,3 +138,51 @@ extension WorkspaceContext {
         return report
     }
 }
+
+private extension WorkspaceContext {
+    func swiftCompilerPath() throws -> FilePath {
+        if let value = environment["SWIFTC"], !value.isEmpty {
+            return FilePath(
+                URL(fileURLWithPath: value).resolvingSymlinksInPath().path)
+        }
+        if let toolchain = environment["SWIFT_TOOLCHAIN"], !toolchain.isEmpty {
+            return FilePath(
+                URL(fileURLWithPath: toolchain)
+                    .appendingPathComponent("bin/swiftc")
+                    .resolvingSymlinksInPath()
+                    .path)
+        }
+        let searchPath = environment["PATH"]
+            ?? ProcessInfo.processInfo.environment["PATH"]
+            ?? ""
+        for directory in searchPath.split(separator: ":") {
+            let candidate = URL(fileURLWithPath: String(directory))
+                .appendingPathComponent("swiftc")
+            if FileManager.default.isExecutableFile(atPath: candidate.path) {
+                return FilePath(candidate.resolvingSymlinksInPath().path)
+            }
+        }
+        throw WorkspaceFailure.message(
+            "unable to resolve swiftc for the shared SwiftPM build context")
+    }
+}
+
+private let hostSwiftTarget: String = {
+    #if os(macOS)
+    let operatingSystem = "macos"
+    #elseif os(Linux)
+    let operatingSystem = "linux"
+    #else
+    let operatingSystem = "unknown"
+    #endif
+
+    #if arch(x86_64)
+    let architecture = "x86_64"
+    #elseif arch(arm64)
+    let architecture = "aarch64"
+    #else
+    let architecture = "unknown"
+    #endif
+
+    return "\(architecture)-\(operatingSystem)"
+}()

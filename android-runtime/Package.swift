@@ -294,6 +294,8 @@ let package = Package(
             dependencies: [
                 "NucleusAndroidComposerProtocolC",
                 "NucleusAndroidDrmC",
+                "NucleusAndroidGraphicsContract",
+                "NucleusAndroidGraphicsPlatform",
                 "NucleusAndroidIPCC",
                 .product(
                     name: "NucleusLinuxReactor",

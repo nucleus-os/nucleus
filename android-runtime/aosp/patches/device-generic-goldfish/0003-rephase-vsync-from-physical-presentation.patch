@@ -1,0 +1,224 @@
+diff --git a/hals/hwc3/ComposerClient.cpp b/hals/hwc3/ComposerClient.cpp
+index e9617d4c..247fc99f 100644
+--- a/hals/hwc3/ComposerClient.cpp
++++ b/hals/hwc3/ComposerClient.cpp
+@@ -101,6 +101,11 @@ ComposerClient::ComposerClient() { DEBUG_LOG("%s", __FUNCTION__); }
+ ComposerClient::~ComposerClient() {
+     DEBUG_LOG("%s", __FUNCTION__);
+ 
++    if (mComposer) {
++        mComposer->unregisterOnPhysicalVsyncCallback();
++        mComposer->unregisterOnHotplugCallback();
++    }
++
+     std::lock_guard<std::mutex> lock(mDisplaysMutex);
+ 
+     destroyDisplaysLocked();
+@@ -149,6 +154,25 @@ HWC3::Error ComposerClient::init() {
+         ALOGE("%s failed to register hotplug callback", __FUNCTION__);
+         return error;
+     }
++    const auto PhysicalVsyncCallback = [this](
++            int64_t displayId, int64_t timestampNanos,
++            int32_t vsyncPeriodNanos) {
++        std::shared_ptr<Display> display;
++        {
++            std::lock_guard<std::mutex> lock(mDisplaysMutex);
++            const auto found = mDisplays.find(displayId);
++            if (found != mDisplays.end()) display = found->second;
++        }
++        if (display) {
++            display->rephaseVsync(timestampNanos, vsyncPeriodNanos);
++        }
++    };
++    error = mComposer->registerOnPhysicalVsyncCallback(
++            PhysicalVsyncCallback);
++    if (error != HWC3::Error::None) {
++        ALOGE("%s failed to register physical-vsync callback", __FUNCTION__);
++        return error;
++    }
+ 
+     error = createDisplaysLocked();
+     if (error != HWC3::Error::None) {
+diff --git a/hals/hwc3/Display.cpp b/hals/hwc3/Display.cpp
+index d101b214..15c53c3d 100644
+--- a/hals/hwc3/Display.cpp
++++ b/hals/hwc3/Display.cpp
+@@ -172,6 +172,11 @@ HWC3::Error Display::updateParameters(uint32_t width, uint32_t height, uint32_t
+     return HWC3::Error::None;
+ }
+ 
++HWC3::Error Display::rephaseVsync(
++        int64_t timestampNanos, int32_t vsyncPeriodNanos) {
++    return mVsyncThread.rephase(timestampNanos, vsyncPeriodNanos);
++}
++
+ HWC3::Error Display::createLayer(int64_t* outLayerId) {
+     DEBUG_LOG("%s: display:%" PRId64, __FUNCTION__, mId);
+ 
+diff --git a/hals/hwc3/Display.h b/hals/hwc3/Display.h
+index d7e3eacf..4161c230 100644
+--- a/hals/hwc3/Display.h
++++ b/hals/hwc3/Display.h
+@@ -74,6 +74,7 @@ class Display {
+     HWC3::Error updateParameters(uint32_t width, uint32_t height, uint32_t dpiX, uint32_t dpiY,
+                                  int32_t vsyncPeriodNanos,
+                                  const std::optional<std::vector<uint8_t>>& edid = std::nullopt);
++    HWC3::Error rephaseVsync(int64_t timestampNanos, int32_t vsyncPeriodNanos);
+ 
+     // HWComposer3 interface.
+     HWC3::Error createLayer(int64_t* outLayerId);
+diff --git a/hals/hwc3/FrameComposer.h b/hals/hwc3/FrameComposer.h
+index 81e97591..e316c1cc 100644
+--- a/hals/hwc3/FrameComposer.h
++++ b/hals/hwc3/FrameComposer.h
+@@ -51,6 +51,20 @@ class FrameComposer {
+ 
+     virtual HWC3::Error unregisterOnHotplugCallback() = 0;
+ 
++    using PhysicalVsyncCallback = std::function<void(
++        int64_t /*displayId*/,
++        int64_t /*timestampNanos*/,
++        int32_t /*vsyncPeriodNanos*/)>;
++
++    virtual HWC3::Error registerOnPhysicalVsyncCallback(
++        const PhysicalVsyncCallback&) {
++        return HWC3::Error::None;
++    }
++
++    virtual HWC3::Error unregisterOnPhysicalVsyncCallback() {
++        return HWC3::Error::None;
++    }
++
+     virtual HWC3::Error onDisplayCreate(Display* display) = 0;
+ 
+     virtual HWC3::Error onDisplayDestroy(Display* display) = 0;
+diff --git a/hals/hwc3/VsyncThread.cpp b/hals/hwc3/VsyncThread.cpp
+index 0ec1b23e..c302533c 100644
+--- a/hals/hwc3/VsyncThread.cpp
++++ b/hals/hwc3/VsyncThread.cpp
+@@ -76,7 +76,10 @@ HWC3::Error VsyncThread::start(int32_t vsyncPeriodNanos) {
+ 
+ HWC3::Error VsyncThread::stop() {
+     mShuttingDown.store(true);
+-    mThread.join();
++    mStateCondition.notify_all();
++    if (mThread.joinable()) {
++        mThread.join();
++    }
+ 
+     return HWC3::Error::None;
+ }
+@@ -101,6 +104,22 @@ HWC3::Error VsyncThread::setVsyncEnabled(bool enabled) {
+     return HWC3::Error::None;
+ }
+ 
++HWC3::Error VsyncThread::rephase(
++        int64_t timestampNanos, int32_t periodNanos) {
++    if (timestampNanos <= 0 || periodNanos <= 0) {
++        return HWC3::Error::BadParameter;
++    }
++    {
++        std::unique_lock<std::mutex> lock(mStateMutex);
++        mPreviousVsync = TimePoint(Nanoseconds(timestampNanos));
++        mVsyncPeriod = Nanoseconds(periodNanos);
++        mPendingUpdate.reset();
++        ++mPhaseGeneration;
++    }
++    mStateCondition.notify_all();
++    return HWC3::Error::None;
++}
++
+ HWC3::Error VsyncThread::scheduleVsyncUpdate(int32_t newVsyncPeriod,
+                                              const VsyncPeriodChangeConstraints& constraints,
+                                              VsyncPeriodChangeTimeline* outTimeline) {
+@@ -140,34 +159,44 @@ void VsyncThread::threadLoop() {
+     TimePoint previousLog = std::chrono::steady_clock::now();
+ 
+     while (!mShuttingDown.load()) {
+-        TimePoint now = std::chrono::steady_clock::now();
+-        TimePoint nextVsync = GetNextVsyncInPhase(vsyncPeriod, mPreviousVsync, now);
+-
+-        std::this_thread::sleep_until(nextVsync);
++        std::shared_ptr<IComposerCallback> callbacks;
++        bool vsyncEnabled = false;
++        TimePoint nextVsync;
+         {
+             std::unique_lock<std::mutex> lock(mStateMutex);
+-
++            const TimePoint now = std::chrono::steady_clock::now();
++            nextVsync = GetNextVsyncInPhase(
++                    mVsyncPeriod, mPreviousVsync, now);
++            const uint64_t phaseGeneration = mPhaseGeneration;
++            if (mStateCondition.wait_until(lock, nextVsync, [this, phaseGeneration] {
++                    return mShuttingDown.load() ||
++                           mPhaseGeneration != phaseGeneration;
++                })) {
++                continue;
++            }
+             mPreviousVsync = nextVsync;
+-
+-            // Display has finished refreshing at previous vsync period. Update the
+-            // vsync period if there was a pending update.
+             vsyncPeriod = updateVsyncPeriodLocked(mPreviousVsync);
++            callbacks = mCallbacks;
++            vsyncEnabled = mVsyncEnabled;
+         }
+ 
+-        if (mVsyncEnabled) {
+-            if (mCallbacks) {
+-                DEBUG_LOG("%s: for display:%" PRIu64 " calling vsync", __FUNCTION__, mDisplayId);
+-                mCallbacks->onVsync(mDisplayId, asNanosTimePoint(nextVsync),
+-                                    static_cast<int32_t>(asNanosDuration(vsyncPeriod)));
++        if (vsyncEnabled) {
++            if (callbacks) {
++                DEBUG_LOG("%s: for display:%" PRIu64 " calling vsync",
++                          __FUNCTION__, mDisplayId);
++                callbacks->onVsync(
++                        mDisplayId, asNanosTimePoint(nextVsync),
++                        static_cast<int32_t>(asNanosDuration(vsyncPeriod)));
+             }
+         }
+ 
+         static constexpr const int kLogIntervalSeconds = 60;
+-        if (now > (previousLog + std::chrono::seconds(kLogIntervalSeconds))) {
++        const TimePoint logNow = std::chrono::steady_clock::now();
++        if (logNow > (previousLog + std::chrono::seconds(kLogIntervalSeconds))) {
+             DEBUG_LOG("%s: for display:%" PRIu64 " send %" PRIu32 " in last %d seconds",
+                       __FUNCTION__, mDisplayId, vsyncs, kLogIntervalSeconds);
+             (void)vsyncs;
+-            previousLog = now;
++            previousLog = logNow;
+             vsyncs = 0;
+         }
+         ++vsyncs;
+diff --git a/hals/hwc3/VsyncThread.h b/hals/hwc3/VsyncThread.h
+index 0c477632..ee7bb214 100644
+--- a/hals/hwc3/VsyncThread.h
++++ b/hals/hwc3/VsyncThread.h
+@@ -22,6 +22,7 @@
+ #include <android/hardware/graphics/common/1.0/types.h>
+ 
+ #include <chrono>
++#include <condition_variable>
+ #include <mutex>
+ #include <optional>
+ #include <thread>
+@@ -48,6 +49,8 @@ class VsyncThread {
+ 
+     HWC3::Error setVsyncEnabled(bool enabled);
+ 
++    HWC3::Error rephase(int64_t timestampNanos, int32_t periodNanos);
++
+     HWC3::Error scheduleVsyncUpdate(
+         int32_t newVsyncPeriod, const VsyncPeriodChangeConstraints& newVsyncPeriodChangeConstraints,
+         VsyncPeriodChangeTimeline* timeline);
+@@ -65,6 +68,8 @@ class VsyncThread {
+     std::thread mThread;
+ 
+     std::mutex mStateMutex;
++    std::condition_variable mStateCondition;
++    uint64_t mPhaseGeneration = 0;
+ 
+     std::atomic<bool> mShuttingDown{false};
+ 

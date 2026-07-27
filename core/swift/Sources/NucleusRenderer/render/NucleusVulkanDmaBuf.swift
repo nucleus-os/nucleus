@@ -67,6 +67,8 @@ public enum DrmFourcc {
     public static let argb8888: UInt32 = 0x3432_5241  // 'AR24'
     public static let xbgr8888: UInt32 = 0x3432_4258  // 'XB24'
     public static let abgr8888: UInt32 = 0x3432_4241  // 'AB24'
+    public static let abgr16161616f: UInt32 = 0x4834_4241  // 'AB4H'
+    public static let abgr2101010: UInt32 = 0x3033_4241  // 'AB30'
 }
 
 struct ClientShmConversionMetrics: Equatable, Sendable {
@@ -194,6 +196,10 @@ public func vulkanFormatForDrm(_ fourcc: UInt32) -> VkFormat {
         return VK_FORMAT_B8G8R8A8_UNORM
     case DrmFourcc.xbgr8888, DrmFourcc.abgr8888:
         return VK_FORMAT_R8G8B8A8_UNORM
+    case DrmFourcc.abgr16161616f:
+        return VK_FORMAT_R16G16B16A16_SFLOAT
+    case DrmFourcc.abgr2101010:
+        return VK_FORMAT_A2B10G10R10_UNORM_PACK32
     default:
         return VK_FORMAT_UNDEFINED
     }
@@ -211,6 +217,8 @@ public func querySampleableDmaBufFormats(
         DrmFourcc.argb8888,
         DrmFourcc.xbgr8888,
         DrmFourcc.abgr8888,
+        DrmFourcc.abgr16161616f,
+        DrmFourcc.abgr2101010,
     ]
 ) -> [DmaBufFormatModifier] {
     guard let getFormatProperties = unsafe instanceDispatch.vkGetPhysicalDeviceFormatProperties2,

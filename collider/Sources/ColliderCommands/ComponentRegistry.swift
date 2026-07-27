@@ -46,38 +46,49 @@ struct ComponentRegistry {
     private func buildTasks() throws -> [TaskDeclaration] {
         let layout = context.layout
         let environment = context.taskEnvironment
+        let swiftPM = try context.swiftPMInvocation()
         return [
             TracyColliderRecipe.build(
                 root: FilePath(layout.swiftTracy.path),
-                environment: environment),
+                environment: environment,
+                swiftPM: swiftPM),
             VulkanColliderRecipe.build(
                 root: FilePath(layout.swiftVulkan.path),
-                environment: environment),
+                environment: environment,
+                swiftPM: swiftPM),
             WaylandColliderRecipe.build(
                 root: FilePath(layout.swiftWayland.path),
-                environment: environment),
+                environment: environment,
+                swiftPM: swiftPM),
             CoreColliderRecipe.build(
                 root: FilePath(layout.core.path),
-                environment: environment),
+                environment: environment,
+                swiftPM: swiftPM),
             LinuxColliderRecipe.build(
                 root: FilePath(layout.platformLinux.path),
-                environment: environment),
+                environment: environment,
+                swiftPM: swiftPM),
             ReactNativeColliderRecipe.build(
                 root: FilePath(layout.reactNative.path),
-                environment: environment),
+                environment: environment,
+                swiftPM: swiftPM),
             CompositorColliderRecipe.build(
                 root: FilePath(layout.compositorCore.path),
-                environment: environment),
+                environment: environment,
+                swiftPM: swiftPM),
             CompositorAppColliderRecipe.build(
                 root: FilePath(layout.compositorApp.path),
-                environment: environment),
+                environment: environment,
+                swiftPM: swiftPM),
             ShellColliderRecipe.build(
                 root: FilePath(layout.shell.path),
-                environment: environment),
+                environment: environment,
+                swiftPM: swiftPM),
         ] + (try AndroidRuntimeColliderRecipe.tasks(
             root: FilePath(layout.androidRuntime.path),
             repositoryRoot: layout.rootPath,
-            environment: environment))
+            environment: environment,
+            swiftPM: swiftPM))
     }
 
     private func testTasks(
@@ -85,35 +96,48 @@ struct ComponentRegistry {
     ) throws -> [TaskDeclaration] {
         let layout = context.layout
         let environment = context.taskEnvironment
+        let swiftPM = try context.swiftPMInvocation()
         var tasks = try buildTasks() + [
             TracyColliderRecipe.test(
                 root: FilePath(layout.swiftTracy.path),
-                environment: environment),
+                environment: environment,
+                swiftPM: swiftPM),
             VulkanColliderRecipe.test(
                 root: FilePath(layout.swiftVulkan.path),
-                environment: environment),
+                environment: environment,
+                swiftPM: swiftPM),
             WaylandColliderRecipe.test(
                 root: FilePath(layout.swiftWayland.path),
-                environment: environment),
+                environment: environment,
+                swiftPM: swiftPM),
             CoreColliderRecipe.test(
-                root: FilePath(layout.core.path), environment: environment),
+                root: FilePath(layout.core.path),
+                environment: environment,
+                swiftPM: swiftPM),
             LinuxColliderRecipe.test(
                 root: FilePath(layout.platformLinux.path),
-                environment: environment),
+                environment: environment,
+                swiftPM: swiftPM),
             ReactNativeColliderRecipe.test(
                 root: FilePath(layout.reactNative.path),
-                environment: environment),
+                environment: environment,
+                swiftPM: swiftPM),
             CompositorColliderRecipe.test(
                 root: FilePath(layout.compositorCore.path),
-                environment: environment),
+                environment: environment,
+                swiftPM: swiftPM),
             CompositorAppColliderRecipe.test(
                 root: FilePath(layout.compositorApp.path),
-                environment: environment),
+                environment: environment,
+                swiftPM: swiftPM),
             ShellColliderRecipe.test(
-                root: FilePath(layout.shell.path), environment: environment),
+                root: FilePath(layout.shell.path),
+                environment: environment,
+                swiftPM: swiftPM),
             AndroidRuntimeColliderRecipe.test(
                 root: FilePath(layout.androidRuntime.path),
-                environment: environment),
+                environment: environment,
+                swiftPM: swiftPM),
         ]
         let effectiveSelection = selection ?? .all
         if [.all, .runtime, .compositor, .loader].contains(
@@ -122,10 +146,12 @@ struct ComponentRegistry {
             tasks += [
             CompositorColliderRecipe.preflightVulkanLoader(
                 root: FilePath(layout.compositorCore.path),
-                environment: environment),
+                environment: environment,
+                swiftPM: swiftPM),
             CompositorColliderRecipe.testVulkanLoader(
                 root: FilePath(layout.compositorCore.path),
-                environment: environment),
+                environment: environment,
+                swiftPM: swiftPM),
             ]
         }
         if [.all, .runtime, .compositor, .gpuHeadless].contains(
@@ -142,10 +168,12 @@ struct ComponentRegistry {
             CompositorColliderRecipe.preflightHeadlessGPU(
                 root: FilePath(layout.compositorCore.path),
                 environment: headlessEnvironment,
-                lavapipeTask: lavapipe.task.id),
+                lavapipeTask: lavapipe.task.id,
+                swiftPM: swiftPM),
             CompositorColliderRecipe.testHeadlessGPU(
                 root: FilePath(layout.compositorCore.path),
-                environment: headlessEnvironment),
+                environment: headlessEnvironment,
+                swiftPM: swiftPM),
             ]
         }
         if effectiveSelection == .gpuDRM {
@@ -154,10 +182,12 @@ struct ComponentRegistry {
                 try requiredDRMRenderNode(environment: environment)
             tasks.append(CompositorColliderRecipe.preflightDRMGPU(
                 root: FilePath(layout.compositorCore.path),
-                environment: drmEnvironment))
+                environment: drmEnvironment,
+                swiftPM: swiftPM))
             tasks.append(CompositorColliderRecipe.testDRMGPU(
                 root: FilePath(layout.compositorCore.path),
-                environment: drmEnvironment))
+                environment: drmEnvironment,
+                swiftPM: swiftPM))
         }
         return tasks
     }
@@ -186,6 +216,7 @@ struct ComponentRegistry {
         let name = selection.rawValue
         let layout = context.layout
         let environment = context.taskEnvironment
+        let swiftPM = try context.swiftPMInvocation()
         let needsCore = [
             "all", "runtime", "core", "linux", "rn", "compositor",
             "shell", "android-runtime",
@@ -241,11 +272,16 @@ struct ComponentRegistry {
             let cxx = ReactNativeColliderRecipe.buildCxxRuntime(
                 root: rnRoot, environment: environment)
             let swiftCxx = ReactNativeColliderRecipe.buildSwiftCxxFacade(
-                root: rnRoot, environment: environment)
+                root: rnRoot,
+                environment: environment,
+                swiftPM: swiftPM)
             let swiftHost = ReactNativeColliderRecipe.buildSwiftHostCxx(
-                root: rnRoot, environment: environment)
+                root: rnRoot,
+                environment: environment,
+                swiftPM: swiftPM)
             let stage = try ReactNativeColliderRecipe.stageHostArchive(
-                root: rnRoot, configuration: "debug")
+                root: rnRoot,
+                swiftPM: swiftPM)
                 .addingDependencies([swiftHost.id])
             let sdk = ReactNativeColliderRecipe.publishNativeSDK(
                 root: rnRoot,
@@ -282,6 +318,7 @@ struct ComponentRegistry {
     ) async throws {
         let layout = context.layout
         let environment = context.taskEnvironment
+        let swiftPM = try context.swiftPMInvocation()
         let task: TaskDeclaration
         var tasks: [TaskDeclaration]
         switch component {
@@ -300,12 +337,14 @@ struct ComponentRegistry {
         case .vulkan:
             task = VulkanColliderRecipe.generate(
                 root: FilePath(layout.swiftVulkan.path),
-                environment: environment)
+                environment: environment,
+                swiftPM: swiftPM)
             tasks = [task]
         case .wayland:
             task = try WaylandColliderRecipe.generate(
                 root: FilePath(layout.swiftWayland.path),
-                environment: environment)
+                environment: environment,
+                swiftPM: swiftPM)
             tasks = [task]
         }
         try await context.execute(
@@ -371,9 +410,20 @@ struct ComponentRegistry {
                 fileURLWithPath: $0,
                 relativeTo: context.root).standardizedFileURL.path)
         }
+        let sourceID =
+            context.taskEnvironment["NUCLEUS_SWIFT_SOURCE_ID"]
+                ?? "release-6.4.x"
+        let swiftPM = try context.swiftPMInvocation(
+            configuration: .release,
+            staticSwiftStandardLibrary: true,
+            target: .swiftSDK(
+                name: "swift-\(sourceID)_android",
+                targetTriple:
+                    "aarch64-unknown-linux-android\(toolchain.minimumSDK)"))
         let task = CoreColliderRecipe.validateAndroidHost(
             root: core,
-            library: supplied,
+            library: supplied ?? swiftPM.configurationProducts.appending(
+                "libnucleus-android.so"),
             ndk: FilePath(ndk.path),
             environment: context.taskEnvironment,
             dependencies: [])
@@ -533,13 +583,22 @@ struct ComponentRegistry {
             dependencies: [skia.id])
         let sourceID =
             environment["NUCLEUS_SWIFT_SOURCE_ID"] ?? "release-6.4.x"
+        let swiftPM = try context.swiftPMInvocation(
+            configuration: .release,
+            staticSwiftStandardLibrary: true,
+            target: .swiftSDK(
+                name: "swift-\(sourceID)_android",
+                targetTriple:
+                    "aarch64-unknown-linux-android\(toolchain.minimumSDK)"))
         let build = CoreColliderRecipe.buildAndroidHost(
             root: root,
-            sourceID: sourceID,
             environment: environment,
+            swiftPM: swiftPM,
             dependencies: [sdk.id])
         let validate = CoreColliderRecipe.validateAndroidHost(
             root: root,
+            library: swiftPM.configurationProducts.appending(
+                "libnucleus-android.so"),
             ndk: ndk,
             environment: environment,
             dependencies: [build.id])

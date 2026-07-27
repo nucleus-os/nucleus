@@ -1,5 +1,82 @@
 import Foundation
 
+public struct AndroidGraphicBufferFormat: Equatable, Sendable {
+    public struct Plane: Equatable, Sendable {
+        public let horizontalSubsampling: UInt8
+        public let verticalSubsampling: UInt8
+        public let bytesPerElement: UInt8
+
+        public init(
+            horizontalSubsampling: UInt8 = 1,
+            verticalSubsampling: UInt8 = 1,
+            bytesPerElement: UInt8
+        ) {
+            self.horizontalSubsampling = horizontalSubsampling
+            self.verticalSubsampling = verticalSubsampling
+            self.bytesPerElement = bytesPerElement
+        }
+    }
+
+    public let name: String
+    public let androidFormat: UInt32
+    public let bytesPerPixel: UInt8
+    public let componentBits: [UInt8]
+    public let drmFormat: UInt32
+    public let vulkanFormat: UInt32
+    public let planes: [Plane]
+
+    public init(
+        name: String,
+        androidFormat: UInt32,
+        bytesPerPixel: UInt8,
+        componentBits: [UInt8],
+        drmFormat: UInt32,
+        vulkanFormat: UInt32,
+        planes: [Plane]
+    ) {
+        self.name = name
+        self.androidFormat = androidFormat
+        self.bytesPerPixel = bytesPerPixel
+        self.componentBits = componentBits
+        self.drmFormat = drmFormat
+        self.vulkanFormat = vulkanFormat
+        self.planes = planes
+    }
+
+    public static let requiredRenderingFormats: [Self] = [
+        Self(
+            name: "RGBA_8888",
+            androidFormat: 1,
+            bytesPerPixel: 4,
+            componentBits: [8, 8, 8, 8],
+            drmFormat: drmFourCC(65, 66, 50, 52),
+            vulkanFormat: 37,
+            planes: [Plane(bytesPerElement: 4)]),
+        Self(
+            name: "RGBA_FP16",
+            androidFormat: 22,
+            bytesPerPixel: 8,
+            componentBits: [16, 16, 16, 16],
+            drmFormat: drmFourCC(65, 66, 52, 72),
+            vulkanFormat: 97,
+            planes: [Plane(bytesPerElement: 8)]),
+        Self(
+            name: "RGBA_1010102",
+            androidFormat: 43,
+            bytesPerPixel: 4,
+            componentBits: [10, 10, 10, 2],
+            drmFormat: drmFourCC(65, 66, 51, 48),
+            vulkanFormat: 64,
+            planes: [Plane(bytesPerElement: 4)]),
+    ]
+}
+
+private func drmFourCC(
+    _ a: UInt32, _ b: UInt32, _ c: UInt32, _ d: UInt32
+) -> UInt32 {
+    a | b << 8 | c << 16 | d << 24
+}
+
 public enum AndroidGraphicsProtocol {
     public static let version: UInt16 = 2
     public static let maximumPacketBytes = 1 << 20
