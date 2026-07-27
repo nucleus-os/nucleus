@@ -578,7 +578,7 @@ private func frameworkBootFreshnessFixture() -> (
     let productLock = AndroidProductLock(
         product: "nucleus_x86_64",
         release: "cp2a",
-        variant: "userdebug",
+        variant: "user",
         buildNumber: "nucleus-android17-r1",
         buildTimestamp: 1_781_652_681,
         platformSDK: 37,

@@ -439,6 +439,10 @@ public enum DrmFormats {
     public static let argb8888 = nucleus_android_drm_format_argb8888()
     public static let xbgr8888 = nucleus_android_drm_format_xbgr8888()
     public static let abgr8888 = nucleus_android_drm_format_abgr8888()
+    public static let abgr16161616f =
+        nucleus_android_drm_format_abgr16161616f()
+    public static let abgr2101010 =
+        nucleus_android_drm_format_abgr2101010()
     public static let linearModifier = nucleus_android_drm_modifier_linear()
 }
 

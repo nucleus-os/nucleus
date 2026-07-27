@@ -505,7 +505,16 @@ final class SceneFeeder: BackgroundEffectDelegate, KdeBlurDelegate {
             let area = Self.overlapArea(x: x, y: y, w: w, h: h, rx: r.x, ry: r.y, rw: r.width, rh: r.height)
             guard area > 0 else { continue }
             ids.insert(display.id)
-            if area > dominantArea { dominantArea = area; dominantID = display.id }
+            if area > dominantArea {
+                dominantArea = area
+                dominantID = display.id
+            } else if area == dominantArea,
+                display.id == window.currentOutputID
+            {
+                // An exact boundary tie retains affinity so tiny coordinate
+                // changes cannot oscillate an Android task between displays.
+                dominantID = display.id
+            }
         }
         if window.isManagedAppWindow() { window.currentOutputID = dominantID }
         if window.surfaceObjectId != 0, let surface = compositor?.surface(id: window.surfaceObjectId) {

@@ -40,6 +40,7 @@ public struct AndroidContainerConfiguration: Hashable, Sendable {
     public let seccompProfile: String
     public let kernelLogDevice: String
     public let tombstones: String
+    public let persistentData: String
     public let gfxstreamSocketDirectory: String
     public let hostKernelConfigurationDirectory: String
     public let hostUIDStart: UInt32
@@ -55,6 +56,7 @@ public struct AndroidContainerConfiguration: Hashable, Sendable {
         seccompProfile: String,
         kernelLogDevice: String,
         tombstones: String,
+        persistentData: String,
         gfxstreamSocketDirectory: String,
         hostKernelConfigurationDirectory: String,
         hostUIDStart: UInt32,
@@ -69,6 +71,7 @@ public struct AndroidContainerConfiguration: Hashable, Sendable {
         self.seccompProfile = seccompProfile
         self.kernelLogDevice = kernelLogDevice
         self.tombstones = tombstones
+        self.persistentData = persistentData
         self.gfxstreamSocketDirectory = gfxstreamSocketDirectory
         self.hostKernelConfigurationDirectory =
             hostKernelConfigurationDirectory
@@ -122,6 +125,10 @@ public struct AndroidContainerConfiguration: Hashable, Sendable {
             "lxc.seccomp.profile = \(seccompProfile)",
             "lxc.apparmor.profile = \(nucleusAndroidAppArmorProfileName)",
             "lxc.cgroup.relative = 1",
+            "lxc.cgroup.dir.container = payload",
+            "lxc.cgroup.dir.container.inner = android",
+            "lxc.cgroup.dir.monitor = monitor",
+            "lxc.cgroup.dir.monitor.pivot = monitor-retired",
             "lxc.cgroup2.devices.deny = a",
             "lxc.cgroup2.devices.allow = c 1:3 rwm",
             "lxc.cgroup2.devices.allow = c 1:5 rwm",
@@ -139,7 +146,7 @@ public struct AndroidContainerConfiguration: Hashable, Sendable {
             "lxc.mount.entry = \(kernelLogDevice) dev/kmsg none bind,create=file 0 0",
             "lxc.mount.entry = \(kernelLogDevice) dev/kmsg_debug none bind,create=file 0 0",
             "lxc.mount.entry = \(gfxstreamSocketDirectory) dev/nucleus none bind,ro,create=dir 0 0",
-            "lxc.mount.entry = tmpfs data tmpfs rw,nosuid,nodev,mode=0771,create=dir 0 0",
+            "lxc.mount.entry = \(persistentData) data none bind,rw,nosuid,nodev,create=dir 0 0",
             "lxc.mount.entry = \(tombstones) data/tombstones none bind,create=dir 0 0",
             "lxc.mount.entry = tmpfs metadata tmpfs rw,nosuid,nodev,noexec,mode=0755,create=dir 0 0",
             "lxc.mount.entry = \(hostKernelConfigurationDirectory) metadata/nucleus none bind,ro,create=dir 0 0",
@@ -167,6 +174,7 @@ public struct AndroidContainerConfiguration: Hashable, Sendable {
         try validateAbsolutePath(seccompProfile, field: "seccompProfile")
         try validateAbsolutePath(kernelLogDevice, field: "kernelLogDevice")
         try validateAbsolutePath(tombstones, field: "tombstones")
+        try validateAbsolutePath(persistentData, field: "persistentData")
         try validateAbsolutePath(
             gfxstreamSocketDirectory,
             field: "gfxstreamSocketDirectory")

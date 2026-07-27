@@ -69,7 +69,7 @@ import Testing
                 signingIdentity: root.appending("signing-identity"),
                 product: "nucleus_x86_64",
                 release: "cp2a",
-                variant: "userdebug",
+                variant: "user",
                 buildNumber: "nucleus",
                 buildTimestamp: 1,
                 buildJobs: jobs,

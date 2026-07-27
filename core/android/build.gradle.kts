@@ -1,3 +1,5 @@
+import org.gradle.util.GradleVersion
+
 plugins {
     base
     alias(libs.plugins.androidApplication) apply false
@@ -5,6 +7,16 @@ plugins {
 }
 
 val repoRoot = layout.projectDirectory.dir("..")
+val requiredGradle = libs.versions.gradle.get()
+check(GradleVersion.current() == GradleVersion.version(requiredGradle)) {
+    "Nucleus Android requires Gradle $requiredGradle; the running version is "
+        .plus(GradleVersion.current().version)
+}
+val requiredJava = JavaVersion.toVersion(libs.versions.jvm.get())
+check(JavaVersion.current() == requiredJava) {
+    "Nucleus Android requires Java $requiredJava; the running version is "
+        .plus(JavaVersion.current())
+}
 
 tasks.register("assembleDebug") {
     group = "build"

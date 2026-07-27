@@ -23,6 +23,16 @@ private func elapsedMicroseconds(
     ).partialValue
 }
 
+/// Converts the millihertz unit used by `wl_output.mode` to the exact nearest
+/// integral nanosecond period used by Composer3.
+public func composerRefreshPeriodNanoseconds(
+    refreshMillihertz: Int32
+) -> UInt64? {
+    guard refreshMillihertz > 0 else { return nil }
+    let divisor = UInt64(refreshMillihertz)
+    return (1_000_000_000_000 + divisor / 2) / divisor
+}
+
 public enum DisplayHostError: Error, CustomStringConvertible {
     case invalidArguments(String)
     case systemCall(String, Int32)
@@ -71,6 +81,10 @@ public enum DisplayHostError: Error, CustomStringConvertible {
         unsafe nucleus_android_syncobj_bridge_signal_acquire(native, point) == 0
     }
 
+    func watchRelease(point: UInt64) -> Bool {
+        unsafe nucleus_android_syncobj_bridge_watch_release(native, point) == 0
+    }
+
     var releaseNotificationFileDescriptor: Int32 {
         unsafe nucleus_android_syncobj_bridge_release_notification_fd(native)
     }
@@ -86,10 +100,10 @@ public enum DisplayHostError: Error, CustomStringConvertible {
         return point
     }
 
-    func exportReleaseSyncFile(point: UInt64) throws -> Int32 {
+    func exportPresentSyncFile(point: UInt64) throws -> Int32 {
         var error = [CChar](repeating: 0, count: 1_024)
         let descriptor =
-            unsafe nucleus_android_syncobj_bridge_export_release_sync_file(
+            unsafe nucleus_android_syncobj_bridge_export_present_sync_file(
                 native, point, &error, error.count)
         guard descriptor >= 0 else {
             throw DisplayHostError.wayland(
@@ -98,6 +112,10 @@ public enum DisplayHostError: Error, CustomStringConvertible {
                 })
         }
         return descriptor
+    }
+
+    func signalPresent(point: UInt64) -> Bool {
+        unsafe nucleus_android_syncobj_bridge_signal_present(native, point) == 0
     }
 
     func exportAcquireTimeline() -> Int32 {
@@ -121,6 +139,7 @@ public enum DisplayHostError: Error, CustomStringConvertible {
     private let listener: Int32
     private let reactor: LinuxHostReactor
     private let presenter: AndroidDisplayPresenter
+    private var topologySubscriber: Int32?
 
     public init(
         socketPath: String,
@@ -151,6 +170,9 @@ public enum DisplayHostError: Error, CustomStringConvertible {
             _ = socketPath.withCString { unsafe unlink($0) }
             throw error
         }
+        presenter.topologySink = { [weak self] update in
+            self?.publishTopology(update)
+        }
     }
 
     public func run() async throws {
@@ -167,12 +189,26 @@ public enum DisplayHostError: Error, CustomStringConvertible {
             }
             do {
                 try requirePeer(connection)
-                try await serve(connection)
+                Task { @MainActor [weak self] in
+                    guard let self else {
+                        _ = close(connection)
+                        return
+                    }
+                    defer { _ = close(connection) }
+                    do {
+                        try await self.serve(connection)
+                    } catch {
+                        let diagnostic =
+                            "{\"component\":\"nucleus-android-display-host\","
+                            + "\"stage\":\"composer.connection.failed\","
+                            + "\"error\":\"\(String(describing: error))\"}\n"
+                        FileHandle.standardError.write(Data(diagnostic.utf8))
+                    }
+                }
             } catch {
                 _ = close(connection)
                 throw error
             }
-            _ = close(connection)
         }
     }
 
@@ -189,30 +225,93 @@ public enum DisplayHostError: Error, CustomStringConvertible {
     }
 
     private func serve(_ connection: Int32) async throws {
+        try await waitForReadable(connection)
+        var bytes = [UInt8](
+            repeating: 0,
+            count: Int(NUCLEUS_COMPOSER_MAX_MESSAGE_BYTES))
+        var descriptors = [Int32](
+            repeating: -1,
+            count: Int(NUCLEUS_COMPOSER_MAX_FDS))
+        var descriptorCount = 0
+        let received = bytes.withUnsafeMutableBytes { message in
+            descriptors.withUnsafeMutableBufferPointer { fds in
+                unsafe nucleus_android_ipc_receive(
+                    connection,
+                    message.baseAddress,
+                    message.count,
+                    fds.baseAddress,
+                    fds.count,
+                    &descriptorCount)
+            }
+        }
+        guard received >= MemoryLayout<nucleus_composer_message_header>.size else {
+            throw DisplayHostError.invalidRequest
+        }
+        let header = bytes.withUnsafeBytes {
+            unsafe $0.loadUnaligned(
+                as: nucleus_composer_message_header.self)
+        }
+        guard header.magic == NUCLEUS_COMPOSER_PROTOCOL_MAGIC,
+              header.version == NUCLEUS_COMPOSER_PROTOCOL_VERSION,
+              header.byte_count == received,
+              header.fd_count == descriptorCount
+        else { throw DisplayHostError.invalidRequest }
+        if header.operation
+            == UInt16(NUCLEUS_COMPOSER_SUBSCRIBE_TOPOLOGY.rawValue)
+        {
+            guard received
+                == MemoryLayout<nucleus_composer_topology_subscribe_request>.size,
+                  descriptorCount == 0
+            else { throw DisplayHostError.invalidRequest }
+            let request = bytes.withUnsafeBytes {
+                unsafe $0.loadUnaligned(
+                    as: nucleus_composer_topology_subscribe_request.self)
+            }
+            try subscribeTopology(connection, request: request)
+            return
+        }
+        guard header.operation == UInt16(NUCLEUS_COMPOSER_PRESENT.rawValue),
+              received == MemoryLayout<nucleus_composer_present_request>.size
+        else { throw DisplayHostError.invalidRequest }
+        var firstRequest: nucleus_composer_present_request? =
+            bytes.withUnsafeBytes {
+                unsafe $0.loadUnaligned(
+                    as: nucleus_composer_present_request.self)
+            }
+        descriptors.removeSubrange(descriptorCount..<descriptors.count)
         while true {
-            try await presenter.dispatchUntilReadable(connection)
-            var request = nucleus_composer_present_request()
-            var descriptors = [Int32](
-                repeating: -1,
-                count: Int(NUCLEUS_COMPOSER_MAX_FDS))
-            var descriptorCount = 0
-            let requestSize = MemoryLayout.size(ofValue: request)
-            let received = descriptors.withUnsafeMutableBufferPointer { fds in
-                withUnsafeMutablePointer(to: &request) { bytes in
-                    unsafe nucleus_android_ipc_receive(
-                        connection,
-                        bytes,
-                        requestSize,
-                        fds.baseAddress,
-                        fds.count,
-                        &descriptorCount)
+            var request: nucleus_composer_present_request
+            if let initial = firstRequest {
+                request = initial
+                firstRequest = nil
+            } else {
+                try await presenter.dispatchUntilReadable(connection)
+                request = nucleus_composer_present_request()
+                descriptors = [Int32](
+                    repeating: -1,
+                    count: Int(NUCLEUS_COMPOSER_MAX_FDS))
+                descriptorCount = 0
+                let requestSize = MemoryLayout.size(ofValue: request)
+                let received = descriptors.withUnsafeMutableBufferPointer { fds in
+                    withUnsafeMutablePointer(to: &request) { bytes in
+                        unsafe nucleus_android_ipc_receive(
+                            connection,
+                            bytes,
+                            requestSize,
+                            fds.baseAddress,
+                            fds.count,
+                            &descriptorCount)
+                    }
                 }
+                if received < 0 {
+                    if errno == ECONNRESET { return }
+                    throw systemError("recvmsg")
+                }
+                guard received == requestSize else {
+                    throw DisplayHostError.invalidRequest
+                }
+                descriptors.removeSubrange(descriptorCount..<descriptors.count)
             }
-            if received < 0 {
-                if errno == ECONNRESET { return }
-                throw systemError("recvmsg")
-            }
-            descriptors.removeSubrange(descriptorCount..<descriptors.count)
             do {
                 try validate(request, descriptorCount: descriptorCount)
                 let releaseFence = try await presenter.present(
@@ -251,6 +350,128 @@ public enum DisplayHostError: Error, CustomStringConvertible {
         }
     }
 
+    private func subscribeTopology(
+        _ connection: Int32,
+        request: nucleus_composer_topology_subscribe_request
+    ) throws {
+        if let existing = topologySubscriber {
+            var state = pollfd(
+                fd: existing,
+                events: Int16(POLLIN),
+                revents: 0)
+            if unsafe poll(&state, 1, 0) > 0,
+               LinuxPollResult(
+                returnedEvents: state.revents).isTerminal
+            {
+                _ = close(existing)
+                topologySubscriber = nil
+            }
+        }
+        if topologySubscriber != nil {
+            try sendTopologyStatus(
+                connection,
+                status: NUCLEUS_COMPOSER_STATUS_DUPLICATE_SUBSCRIBER)
+            return
+        }
+        let generation = presenter.topologyGeneration
+        guard request.last_generation <= generation else {
+            try sendTopologyStatus(
+                connection,
+                status: NUCLEUS_COMPOSER_STATUS_STALE_GENERATION)
+            return
+        }
+        let retained = dup(connection)
+        guard retained >= 0 else { throw systemError("dup") }
+        topologySubscriber = retained
+        do {
+            for output in presenter.connectedOutputs {
+                try sendTopology(
+                    output,
+                    operation: NUCLEUS_COMPOSER_TOPOLOGY_SNAPSHOT,
+                    to: retained)
+            }
+            try sendTopologyStatus(
+                retained,
+                status: NUCLEUS_COMPOSER_STATUS_OK)
+        } catch {
+            _ = close(retained)
+            topologySubscriber = nil
+            throw error
+        }
+    }
+
+    private func publishTopology(_ update: AndroidOutputTopology.Update) {
+        guard let subscriber = topologySubscriber else { return }
+        do {
+            try sendTopology(
+                update.output,
+                operation: update.operation,
+                to: subscriber)
+        } catch {
+            _ = close(subscriber)
+            topologySubscriber = nil
+        }
+    }
+
+    private func sendTopology(
+        _ output: AndroidOutputTopology.Output,
+        operation: nucleus_composer_operation,
+        to connection: Int32
+    ) throws {
+        var event = nucleus_composer_topology_event()
+        event.magic = NUCLEUS_COMPOSER_PROTOCOL_MAGIC
+        event.version = NUCLEUS_COMPOSER_PROTOCOL_VERSION
+        event.operation = UInt16(operation.rawValue)
+        event.byte_count = UInt32(MemoryLayout.size(ofValue: event))
+        event.generation = output.generation
+        event.display_id = output.displayID
+        event.refresh_period_ns = output.refreshPeriodNanoseconds
+        event.mode_width = output.width
+        event.mode_height = output.height
+        event.refresh_millihertz = output.refreshMillihertz
+        event.status = UInt32(NUCLEUS_COMPOSER_STATUS_OK.rawValue)
+        event.connected = output.connected ? 1 : 0
+        withUnsafeMutableBytes(of: &event.output_name) { destination in
+            let utf8 = output.name.utf8.prefix(destination.count - 1)
+            unsafe destination.copyBytes(from: utf8)
+            unsafe destination[utf8.count] = 0
+        }
+        let eventSize = MemoryLayout.size(ofValue: event)
+        let sent = withUnsafePointer(to: &event) {
+            unsafe nucleus_android_ipc_send(
+                connection,
+                $0,
+                eventSize,
+                nil,
+                0)
+        }
+        guard sent == 0 else { throw systemError("sending topology event") }
+    }
+
+    private func sendTopologyStatus(
+        _ connection: Int32,
+        status: nucleus_composer_status
+    ) throws {
+        var event = nucleus_composer_topology_event()
+        event.magic = NUCLEUS_COMPOSER_PROTOCOL_MAGIC
+        event.version = NUCLEUS_COMPOSER_PROTOCOL_VERSION
+        event.operation = UInt16(NUCLEUS_COMPOSER_TOPOLOGY_SNAPSHOT.rawValue)
+        event.byte_count = UInt32(MemoryLayout.size(ofValue: event))
+        event.generation = presenter.topologyGeneration
+        event.display_id = UInt64.max
+        event.status = UInt32(status.rawValue)
+        let eventSize = MemoryLayout.size(ofValue: event)
+        let sent = withUnsafePointer(to: &event) {
+            unsafe nucleus_android_ipc_send(
+                connection,
+                $0,
+                eventSize,
+                nil,
+                0)
+        }
+        guard sent == 0 else { throw systemError("sending topology status") }
+    }
+
     private func validate(
         _ request: nucleus_composer_present_request,
         descriptorCount: Int
@@ -262,7 +483,7 @@ public enum DisplayHostError: Error, CustomStringConvertible {
               request.byte_count == UInt32(MemoryLayout.size(ofValue: request)),
               request.fd_count == expectedDescriptors,
               descriptorCount == Int(expectedDescriptors),
-              request.display_id == 0,
+              presenter.isConnected(displayID: request.display_id),
               request.allocation_id != 0,
               request.frame_number != 0,
               request.width > 0,
@@ -293,6 +514,173 @@ public enum DisplayHostError: Error, CustomStringConvertible {
 }
 
 @MainActor
+@safe private final class AndroidOutputTopology: WlOutputEvents {
+    struct Output: Equatable {
+        let name: String
+        let displayID: UInt64
+        let connected: Bool
+        let width: Int32
+        let height: Int32
+        let refreshMillihertz: Int32
+        let refreshPeriodNanoseconds: UInt64
+        let generation: UInt64
+    }
+
+    struct Update {
+        let operation: nucleus_composer_operation
+        let output: Output
+    }
+
+    private struct Pending {
+        let globalName: UInt32
+        let proxy: WaylandProxy<WlOutputClient>
+        var name: String?
+        var width: Int32?
+        var height: Int32?
+        var refreshMillihertz: Int32?
+        var published: Output?
+    }
+
+    var sink: ((Update) -> Void)?
+    private var pendingByProxy: [UInt: Pending] = [:]
+    private var proxyByGlobal: [UInt32: UInt] = [:]
+    private var displayIDByName: [String: UInt64] = [:]
+    private var nextDisplayID: UInt64 = 0
+    private(set) var generation: UInt64 = 0
+
+    var connectedOutputs: [Output] {
+        pendingByProxy.values.compactMap(\.published)
+            .filter(\.connected)
+            .sorted { $0.displayID < $1.displayID }
+    }
+
+    func bind(_ global: BoundGlobal<WlOutputClient>) {
+        let identity = global.proxy.identity
+        pendingByProxy[identity] = Pending(
+            globalName: global.name,
+            proxy: global.proxy)
+        proxyByGlobal[global.name] = identity
+        try? global.proxy.installListener(self)
+    }
+
+    func remove(globalName: UInt32) {
+        guard let identity = proxyByGlobal.removeValue(forKey: globalName),
+              var pending = pendingByProxy.removeValue(forKey: identity),
+              let published = pending.published
+        else { return }
+        generation &+= 1
+        pending.published = Output(
+            name: published.name,
+            displayID: published.displayID,
+            connected: false,
+            width: published.width,
+            height: published.height,
+            refreshMillihertz: published.refreshMillihertz,
+            refreshPeriodNanoseconds: published.refreshPeriodNanoseconds,
+            generation: generation)
+        sink?(Update(
+            operation: NUCLEUS_COMPOSER_OUTPUT_DISCONNECTED,
+            output: pending.published!))
+        try? pending.proxy.release()
+    }
+
+    func isConnected(displayID: UInt64) -> Bool {
+        connectedOutputs.contains { $0.displayID == displayID }
+    }
+
+    func geometry(
+        _ proxy: WaylandBorrowedProxy<WlOutputClient>,
+        x: Int32, y: Int32,
+        physical_width: Int32, physical_height: Int32,
+        subpixel: WlOutputSubpixel,
+        make: String, model: String,
+        transform: WlOutputTransform
+    ) {}
+
+    func mode(
+        _ proxy: WaylandBorrowedProxy<WlOutputClient>,
+        flags: WlOutputMode,
+        width: Int32,
+        height: Int32,
+        refresh: Int32
+    ) {
+        guard flags.contains(.current),
+              var pending = pendingByProxy[proxy.identity]
+        else { return }
+        pending.width = width
+        pending.height = height
+        pending.refreshMillihertz = refresh
+        pendingByProxy[proxy.identity] = pending
+    }
+
+    func done(_ proxy: WaylandBorrowedProxy<WlOutputClient>) {
+        publish(proxy.identity)
+    }
+
+    func scale(
+        _ proxy: WaylandBorrowedProxy<WlOutputClient>,
+        factor: Int32
+    ) {}
+
+    func name(
+        _ proxy: WaylandBorrowedProxy<WlOutputClient>,
+        name: String
+    ) {
+        guard var pending = pendingByProxy[proxy.identity] else { return }
+        pending.name = name
+        pendingByProxy[proxy.identity] = pending
+    }
+
+    func description(
+        _ proxy: WaylandBorrowedProxy<WlOutputClient>,
+        description: String
+    ) {}
+
+    private func publish(_ identity: UInt) {
+        guard var pending = pendingByProxy[identity],
+              let name = pending.name,
+              let width = pending.width,
+              let height = pending.height,
+              let refreshMillihertz = pending.refreshMillihertz,
+              let period = composerRefreshPeriodNanoseconds(
+                refreshMillihertz: refreshMillihertz)
+        else { return }
+        let displayID: UInt64
+        if let existing = displayIDByName[name] {
+            displayID = existing
+        } else {
+            displayID = nextDisplayID
+            nextDisplayID &+= 1
+            displayIDByName[name] = displayID
+        }
+        let unchanged = pending.published.map {
+            $0.name == name
+                && $0.width == width
+                && $0.height == height
+                && $0.refreshMillihertz == refreshMillihertz
+        } ?? false
+        guard !unchanged else { return }
+        generation &+= 1
+        let operation: nucleus_composer_operation =
+            pending.published == nil
+            ? NUCLEUS_COMPOSER_OUTPUT_CONNECTED
+            : NUCLEUS_COMPOSER_OUTPUT_MODE_CHANGED
+        let output = Output(
+            name: name,
+            displayID: displayID,
+            connected: true,
+            width: width,
+            height: height,
+            refreshMillihertz: refreshMillihertz,
+            refreshPeriodNanoseconds: period,
+            generation: generation)
+        pending.published = output
+        pendingByProxy[identity] = pending
+        sink?(Update(operation: operation, output: output))
+    }
+}
+
+@MainActor
 @safe private final class AndroidDisplayPresenter:
     @MainActor XdgSurfaceEvents,
     @MainActor XdgToplevelEvents,
@@ -311,6 +699,15 @@ public enum DisplayHostError: Error, CustomStringConvertible {
         WaylandProxy<WpLinuxDrmSyncobjManagerV1Client>
     private let presentation:
         WaylandProxy<WpPresentationClient>
+    private let outputTopology: AndroidOutputTopology
+    var topologySink: ((AndroidOutputTopology.Update) -> Void)? {
+        get { outputTopology.sink }
+        set { outputTopology.sink = newValue }
+    }
+    var topologyGeneration: UInt64 { outputTopology.generation }
+    var connectedOutputs: [AndroidOutputTopology.Output] {
+        outputTopology.connectedOutputs
+    }
     private var surface: WaylandProxy<WlSurfaceClient>?
     private var xdgSurface: WaylandProxy<XdgSurfaceClient>?
     private var toplevel: WaylandProxy<XdgToplevelClient>?
@@ -323,16 +720,19 @@ public enum DisplayHostError: Error, CustomStringConvertible {
     private var buffers: [UInt64: DisplayBuffer] = [:]
     private var configured = false
     private var closed = false
-    private var reportedRelease = false
+    private var reportedBufferRelease = false
     private var nextAcquirePoint: UInt64 = 1
     private var nextReleasePoint: UInt64 = 1
+    private var nextPresentPoint: UInt64 = 1
+    private var deferredFailure: DisplayHostError?
     private var presentationDiagnosticBudget = 16
-    private var pendingPresentations:
+    private var pendingBufferReleases:
         [UInt64: (frameNumber: UInt64, committed: ContinuousClock.Instant)] = [:]
     private var presentationFeedback:
         [UInt: (
             proxy: WaylandProxy<WpPresentationFeedbackClient>,
             frameNumber: UInt64,
+            presentPoint: UInt64,
             committed: ContinuousClock.Instant
         )] = [:]
 
@@ -359,7 +759,10 @@ public enum DisplayHostError: Error, CustomStringConvertible {
             selectedRenderDevice = renderDevice
         }
         guard let connection = WaylandConnection(socket: waylandSocket),
-              let registry = WaylandRegistry(connection, wanting: [
+              true
+        else { throw DisplayHostError.wayland("connection failed") }
+        let outputTopology = AndroidOutputTopology()
+        guard let registry = WaylandRegistry(connection, wanting: [
                 DesiredGlobal<WlCompositorClient>(maximumVersion: 6),
                 DesiredGlobal<ZwpLinuxDmabufV1Client>(maximumVersion: 5),
                 DesiredGlobal<XdgWmBaseClient>(maximumVersion: 6),
@@ -367,10 +770,20 @@ public enum DisplayHostError: Error, CustomStringConvertible {
                     maximumVersion: 1),
                 DesiredGlobal<WpPresentationClient>(
                     maximumVersion: 1),
+                DesiredGlobal<WlOutputClient>(
+                    maximumVersion: 4,
+                    allowsMultiple: true,
+                    onBind: { outputTopology.bind($0) },
+                    onRemove: {
+                        outputTopology.remove(globalName: $0.name)
+                    }),
             ])
-        else { throw DisplayHostError.wayland("connection failed") }
+        else { throw DisplayHostError.wayland("registry creation failed") }
         guard connection.bootstrapRoundtrip() >= 0 else {
             throw DisplayHostError.wayland("registry roundtrip failed")
+        }
+        guard connection.bootstrapRoundtrip() >= 0 else {
+            throw DisplayHostError.wayland("output-state roundtrip failed")
         }
         guard let compositor = registry.singleton(WlCompositorClient.self),
               let dmabuf = registry.singleton(ZwpLinuxDmabufV1Client.self),
@@ -390,8 +803,13 @@ public enum DisplayHostError: Error, CustomStringConvertible {
         self.wmBase = wmBase
         self.syncobjManager = syncobjManager
         self.presentation = presentation
+        self.outputTopology = outputTopology
         wmHandler.proxy = wmBase
         try wmBase.installListener(wmHandler)
+    }
+
+    func isConnected(displayID: UInt64) -> Bool {
+        outputTopology.isConnected(displayID: displayID)
     }
 
     func present(
@@ -426,11 +844,19 @@ public enum DisplayHostError: Error, CustomStringConvertible {
         let acquireMicroseconds = elapsedMicroseconds(since: acquireBegan)
         let releasePoint = nextReleasePoint
         nextReleasePoint &+= 1
-        let releaseExportBegan = ContinuousClock.now
-        let releaseFence = try bridge.exportReleaseSyncFile(
-            point: releasePoint)
-        let releaseExportMicroseconds = elapsedMicroseconds(
-            since: releaseExportBegan)
+        let presentPoint = nextPresentPoint
+        nextPresentPoint &+= 1
+        let presentExportBegan = ContinuousClock.now
+        let presentFence = try bridge.exportPresentSyncFile(
+            point: presentPoint)
+        var ownsPresentFence = true
+        defer {
+            if ownsPresentFence {
+                _ = Glibc.close(presentFence)
+            }
+        }
+        let presentExportMicroseconds = elapsedMicroseconds(
+            since: presentExportBegan)
         let commitBegan = ContinuousClock.now
         try syncSurface.setAcquirePoint(
             timeline: acquireTimeline,
@@ -440,6 +866,9 @@ public enum DisplayHostError: Error, CustomStringConvertible {
             timeline: releaseTimeline,
             point_hi: UInt32(releasePoint >> 32),
             point_lo: UInt32(truncatingIfNeeded: releasePoint))
+        guard bridge.watchRelease(point: releasePoint) else {
+            throw systemError("arming compositor buffer-release notification")
+        }
         try surface.attach(buffer: buffer.proxy, x: 0, y: 0)
         try surface.damageBuffer(
             x: request.damage_left,
@@ -452,16 +881,16 @@ public enum DisplayHostError: Error, CustomStringConvertible {
         presentationFeedback[feedback.identity] = (
             proxy: feedback,
             frameNumber: request.frame_number,
+            presentPoint: presentPoint,
             committed: ContinuousClock.now)
         try surface.commit()
         guard connection.flush() >= 0 || errno == EAGAIN else {
-            _ = Glibc.close(releaseFence)
             throw DisplayHostError.wayland("commit flush failed")
         }
         let commitMicroseconds = elapsedMicroseconds(since: commitBegan)
         let totalMicroseconds = elapsedMicroseconds(
             since: presentationBegan)
-        pendingPresentations[releasePoint] = (
+        pendingBufferReleases[releasePoint] = (
             frameNumber: request.frame_number,
             committed: ContinuousClock.now)
         if presentationDiagnosticBudget > 0
@@ -478,17 +907,19 @@ public enum DisplayHostError: Error, CustomStringConvertible {
                 "\"allocationId\":\(request.allocation_id)",
                 "\"acquirePoint\":\(acquirePoint)",
                 "\"releasePoint\":\(releasePoint)",
+                "\"presentPoint\":\(presentPoint)",
                 "\"hasAcquireFence\":\(request.has_acquire_fence)",
                 "\"bufferImportMicroseconds\":\(bufferImportMicroseconds)",
                 "\"acquireMicroseconds\":\(acquireMicroseconds)",
-                "\"releaseExportMicroseconds\":\(releaseExportMicroseconds)",
+                "\"presentExportMicroseconds\":\(presentExportMicroseconds)",
                 "\"commitMicroseconds\":\(commitMicroseconds)",
                 "\"totalMicroseconds\":\(totalMicroseconds)",
             ]
             let diagnostic = "{\(fields.joined(separator: ","))}\n"
             FileHandle.standardError.write(Data(diagnostic.utf8))
         }
-        return releaseFence
+        ownsPresentFence = false
+        return presentFence
     }
 
     func dispatchUntilReadable(_ descriptor: Int32) async throws {
@@ -541,6 +972,9 @@ public enum DisplayHostError: Error, CustomStringConvertible {
             guard preparation.read.complete(readable: displayReadable) >= 0 else {
                 throw DisplayHostError.wayland("event dispatch failed")
             }
+            if let deferredFailure {
+                throw deferredFailure
+            }
             if closed { throw DisplayHostError.wayland("surface closed") }
             if let releaseEvent,
                LinuxPollResult(
@@ -548,21 +982,21 @@ public enum DisplayHostError: Error, CustomStringConvertible {
                 guard let completedPoint = bridge.dispatchReleases() else {
                     throw systemError("forwarding compositor release fences")
                 }
-                let released = pendingPresentations
+                let released = pendingBufferReleases
                     .filter { $0.key <= completedPoint }
                 for point in released.keys {
-                    pendingPresentations.removeValue(forKey: point)
+                    pendingBufferReleases.removeValue(forKey: point)
                 }
                 let releaseMicroseconds = released.values.map {
                     elapsedMicroseconds(since: $0.committed)
                 }.max() ?? 0
-                if !reportedRelease
+                if !reportedBufferRelease
                     || releaseMicroseconds >= 50_000
                 {
-                    reportedRelease = true
+                    reportedBufferRelease = true
                     let diagnostic =
                         "{\"component\":\"nucleus-android-display-host\","
-                        + "\"stage\":\"presentation.released\","
+                        + "\"stage\":\"buffer.released\","
                         + "\"completedPoint\":\(completedPoint),"
                         + "\"releasedFrames\":\(released.count),"
                         + "\"releaseMicroseconds\":\(releaseMicroseconds)}\n"
@@ -708,6 +1142,9 @@ public enum DisplayHostError: Error, CustomStringConvertible {
         guard preparation.read.complete(readable: readable) >= 0 else {
             throw DisplayHostError.wayland("event dispatch failed")
         }
+        if let deferredFailure {
+            throw deferredFailure
+        }
         if closed { throw DisplayHostError.wayland("surface closed") }
     }
 
@@ -757,6 +1194,11 @@ public enum DisplayHostError: Error, CustomStringConvertible {
         guard let entry = presentationFeedback.removeValue(
             forKey: proxy.identity)
         else { return }
+        guard bridge.signalPresent(point: entry.presentPoint) else {
+            deferredFailure = systemError(
+                "signaling Composer physical-present fence")
+            return
+        }
         let sequence =
             UInt64(seq_hi) << 32 | UInt64(seq_lo)
         let latency = elapsedMicroseconds(
@@ -765,6 +1207,7 @@ public enum DisplayHostError: Error, CustomStringConvertible {
             "{\"component\":\"nucleus-android-display-host\","
             + "\"stage\":\"presentation.physically-presented\","
             + "\"frameNumber\":\(entry.frameNumber),"
+            + "\"presentPoint\":\(entry.presentPoint),"
             + "\"sequence\":\(sequence),"
             + "\"refreshNanoseconds\":\(refresh),"
             + "\"presentationLatencyMicroseconds\":\(latency)}\n"
@@ -778,12 +1221,21 @@ public enum DisplayHostError: Error, CustomStringConvertible {
         guard let entry = presentationFeedback.removeValue(
             forKey: proxy.identity)
         else { return }
+        if !bridge.signalPresent(point: entry.presentPoint) {
+            deferredFailure = systemError(
+                "signaling discarded Composer present fence")
+            return
+        }
         let diagnostic =
             "{\"component\":\"nucleus-android-display-host\","
             + "\"stage\":\"presentation.discarded\","
-            + "\"frameNumber\":\(entry.frameNumber)}\n"
+            + "\"frameNumber\":\(entry.frameNumber),"
+            + "\"presentPoint\":\(entry.presentPoint)}\n"
         FileHandle.standardError.write(
             Data(diagnostic.utf8))
+        deferredFailure = .wayland(
+            "physical presentation discarded for Composer3 frame "
+                + "\(entry.frameNumber)")
     }
     func configureBounds(
         _ proxy: WaylandBorrowedProxy<XdgToplevelClient>,

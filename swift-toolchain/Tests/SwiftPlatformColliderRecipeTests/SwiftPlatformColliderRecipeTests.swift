@@ -10,6 +10,7 @@ import Testing
             androidInstallRoot: FilePath("/generation/android"),
             ndkRoot: FilePath("/ndk"),
             architectures: ["aarch64"],
+            apiLevel: 24,
             jobs: 8,
             environment: ["PATH": "/usr/bin:/bin"]))
     let ordered = try TaskGraph(taskSet.tasks).orderedTasks(
@@ -35,6 +36,7 @@ import Testing
                 androidInstallRoot: FilePath("/generation/android"),
                 ndkRoot: FilePath("/ndk"),
                 architectures: ["mips"],
+                apiLevel: 24,
                 jobs: 8,
                 environment: [:]))
     }
@@ -46,6 +48,7 @@ import Testing
         androidInstallRoot: FilePath("/platform/candidate/android"),
         ndkRoot: FilePath("/ndk"),
         architectures: ["aarch64"],
+        apiLevel: 24,
         jobs: 8,
         environment: ["PATH": "/usr/bin:/bin"])
     let taskSet = try SwiftPlatformColliderRecipe.generation(

@@ -269,6 +269,8 @@ public enum AndroidRuntimeColliderRecipe {
         let images = buildRoot.appending("images")
         let unsigned = buildRoot.appending(
             "unsigned/\(lock.product)-target_files.zip")
+        let unsignedDigest = buildRoot.appending(
+            "unsigned/\(lock.product)-target_files.zip.sha256")
         let staged = buildRoot.appending("staged")
         let stagedTargetFiles = staged.appending(
             "\(lock.product)-target_files.zip")
@@ -338,6 +340,9 @@ public enum AndroidRuntimeColliderRecipe {
             outputs: [
                 OutputDeclaration(
                     path: unsigned,
+                    validation: .regularFile),
+                OutputDeclaration(
+                    path: unsignedDigest,
                     validation: .regularFile),
                 OutputDeclaration(
                     path: hostTools,
@@ -847,7 +852,7 @@ private struct AOSPProductLock: Decodable {
     func validate() throws {
         guard product == "nucleus_x86_64",
               release == "cp2a",
-              variant == "userdebug",
+              variant == "user",
               buildNumber == "nucleus-android17-r1",
               buildTimestamp == 1_781_652_681,
               platformSDK == 37,

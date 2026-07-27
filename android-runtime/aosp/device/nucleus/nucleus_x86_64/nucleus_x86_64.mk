@@ -14,18 +14,46 @@
 # limitations under the License.
 #
 
-# Framework and architecture.
+# Framework and architecture. Nucleus assembles the application-runtime
+# substrate directly; phone/tablet and telephony products are not inherited.
 $(call inherit-product, $(SRC_TARGET_DIR)/product/core_64_bit_only.mk)
-$(call inherit-product, $(SRC_TARGET_DIR)/product/generic_system.mk)
+$(call inherit-product, $(SRC_TARGET_DIR)/product/media_system.mk)
+$(call inherit-product, $(SRC_TARGET_DIR)/product/media_system_ext.mk)
+$(call inherit-product, $(SRC_TARGET_DIR)/product/media_vendor.mk)
+$(call inherit-product, $(SRC_TARGET_DIR)/product/media_product.mk)
+$(call inherit-product, $(SRC_TARGET_DIR)/product/languages_default.mk)
+$(call inherit-product, $(SRC_TARGET_DIR)/product/updatable_apex.mk)
+$(call inherit-product, $(SRC_TARGET_DIR)/product/emulated_storage.mk)
 $(call inherit-product, frameworks/native/build/tablet-10in-xhdpi-2048-dalvik-heap.mk)
 
-# Framework extensions and the current AOSP application/WebView product.
-$(call inherit-product, $(SRC_TARGET_DIR)/product/handheld_system_ext.mk)
-$(call inherit-product, $(SRC_TARGET_DIR)/product/telephony_system_ext.mk)
-$(call inherit-product, $(SRC_TARGET_DIR)/product/aosp_product.mk)
+# Desktop application-runtime surface.
+PRODUCT_PACKAGES += \
+    DocumentsUI \
+    LatinIME \
+    Settings \
+    SettingsIntelligence \
+    frameworks-base-overlays \
+    preinstalled-packages-platform-handheld-product.xml
 
 # Container-owned vendor surface.
 $(call inherit-product, device/nucleus/nucleus_x86_64/device.mk)
+
+# Remove optional hardware and lifecycle services inherited by the reusable
+# media/base partitions. Their absence is reported truthfully.
+PRODUCT_PACKAGES -= \
+    Camera2 \
+    com.android.bt \
+    com.android.devicelock \
+    com.android.hardware.biometrics.fingerprint.virtual \
+    com.android.healthfitness \
+    com.android.ondevicepersonalization \
+    com.android.uprobestats \
+    com.android.uwb \
+    gsid \
+    recovery \
+    recovery-refresh \
+    update_engine \
+    update_verifier
 
 PRODUCT_NAME := nucleus_x86_64
 PRODUCT_DEVICE := nucleus_x86_64

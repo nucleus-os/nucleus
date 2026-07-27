@@ -400,6 +400,10 @@ let package = Package(
                 "NucleusAndroidSurfaceProbeCore",
             ],
             swiftSettings: [.interoperabilityMode(.Cxx)]),
+        .testTarget(
+            name: "NucleusAndroidDisplayHostCoreTests",
+            dependencies: ["NucleusAndroidDisplayHostCore"],
+            swiftSettings: [.interoperabilityMode(.Cxx)]),
     ],
     cxxLanguageStandard: .cxx20)
 

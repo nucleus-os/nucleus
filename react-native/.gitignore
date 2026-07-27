@@ -3,4 +3,5 @@
 *.o
 .rn-build/
 .cxx-build/
-third-party/boost/
+third-party/.boost-generations/
+third-party/boost

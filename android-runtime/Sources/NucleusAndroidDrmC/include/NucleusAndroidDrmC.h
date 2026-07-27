@@ -202,22 +202,30 @@ int nucleus_android_syncobj_bridge_import_acquire_sync_file(
 int nucleus_android_syncobj_bridge_signal_acquire(
     nucleus_android_syncobj_bridge *bridge,
     uint64_t point);
+int nucleus_android_syncobj_bridge_watch_release(
+    nucleus_android_syncobj_bridge *bridge,
+    uint64_t point);
 int nucleus_android_syncobj_bridge_release_notification_fd(
     nucleus_android_syncobj_bridge *bridge);
 int nucleus_android_syncobj_bridge_dispatch_releases(
     nucleus_android_syncobj_bridge *bridge);
 uint64_t nucleus_android_syncobj_bridge_forwarded_release_point(
     nucleus_android_syncobj_bridge *bridge);
-int nucleus_android_syncobj_bridge_export_release_sync_file(
+int nucleus_android_syncobj_bridge_export_present_sync_file(
     nucleus_android_syncobj_bridge *bridge,
     uint64_t point,
     char *error_message,
     size_t error_capacity);
+int nucleus_android_syncobj_bridge_signal_present(
+    nucleus_android_syncobj_bridge *bridge,
+    uint64_t point);
 
 uint32_t nucleus_android_drm_format_xrgb8888(void);
 uint32_t nucleus_android_drm_format_argb8888(void);
 uint32_t nucleus_android_drm_format_xbgr8888(void);
 uint32_t nucleus_android_drm_format_abgr8888(void);
+uint32_t nucleus_android_drm_format_abgr16161616f(void);
+uint32_t nucleus_android_drm_format_abgr2101010(void);
 uint64_t nucleus_android_drm_modifier_linear(void);
 
 #ifdef __cplusplus

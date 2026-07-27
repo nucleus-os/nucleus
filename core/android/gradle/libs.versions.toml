@@ -1,11 +1,13 @@
 [versions]
 agp = "9.3.1"
+gradle = "9.5.0"
 compileSdkApi = "37"
 compileSdkMinor = "0"
 minSdk = "24"
 targetSdkApi = "37"
 buildTools = "37.0.0"
 ndk = "30.0.15729638"
+jvm = "17"
 
 [plugins]
 androidApplication = { id = "com.android.application", version.ref = "agp" }

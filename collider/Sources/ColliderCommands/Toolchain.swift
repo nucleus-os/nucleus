@@ -107,6 +107,10 @@ struct ToolchainCommand {
     let context: WorkspaceContext
 
     func rebuild(_ options: RebuildOptions) async throws {
+        let androidToolchain = try AndroidToolchainVersions.load(
+            workspaceRoot: context.root)
+        let androidNDKHome = try androidToolchain.ndkRoot(
+            environment: context.environment)
         let sourceID = context.environment["NUCLEUS_SWIFT_SOURCE_ID"] ?? "release-6.4.x"
         let sourceRef: String
         let sourceScheme: String
@@ -193,7 +197,7 @@ struct ToolchainCommand {
             androidInstallRoot: FilePath(androidInstall.path),
             ndkRoot: FilePath(androidNDKHome.path),
             architectures: options.architectures.map(\.rawValue),
-            apiLevel: 37,
+            apiLevel: androidToolchain.minimumSDK,
             jobs: UInt32(min(
                 ProcessInfo.processInfo.activeProcessorCount, 16)),
             environment: environment)
@@ -286,24 +290,6 @@ struct ToolchainCommand {
             return URL(fileURLWithPath: home, isDirectory: true)
         }
         return FileManager.default.homeDirectoryForCurrentUser
-    }
-
-    private var androidNDKHome: URL {
-        if let explicit = context.environment["NUCLEUS_ANDROID_NDK_HOME"]
-            ?? context.environment["ANDROID_NDK_HOME"],
-           !explicit.isEmpty
-        {
-            return URL(fileURLWithPath: explicit, isDirectory: true)
-        }
-        let version = context.environment["NUCLEUS_ANDROID_NDK_VERSION"]
-            ?? "30.0.15729638"
-        #if os(macOS)
-        return homeDirectory.appendingPathComponent(
-            "Library/Android/sdk/ndk/\(version)", isDirectory: true)
-        #else
-        return homeDirectory.appendingPathComponent(
-            "Android/Sdk/ndk/\(version)", isDirectory: true)
-        #endif
     }
 
     private var validationWorkRoot: URL {

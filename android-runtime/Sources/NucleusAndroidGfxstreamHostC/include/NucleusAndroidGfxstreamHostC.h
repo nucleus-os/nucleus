@@ -15,6 +15,26 @@ typedef struct nucleus_android_gfxstream_host_renderer
 typedef struct nucleus_android_gfxstream_host_connection
     nucleus_android_gfxstream_host_connection;
 
+typedef enum nucleus_android_gfxstream_log_level {
+    NUCLEUS_ANDROID_GFXSTREAM_LOG_FATAL = 1,
+    NUCLEUS_ANDROID_GFXSTREAM_LOG_ERROR = 2,
+    NUCLEUS_ANDROID_GFXSTREAM_LOG_WARNING = 3,
+    NUCLEUS_ANDROID_GFXSTREAM_LOG_INFO = 4,
+    NUCLEUS_ANDROID_GFXSTREAM_LOG_DEBUG = 5,
+    NUCLEUS_ANDROID_GFXSTREAM_LOG_VERBOSE = 6,
+} nucleus_android_gfxstream_log_level;
+
+typedef void (*nucleus_android_gfxstream_log_callback)(
+    nucleus_android_gfxstream_log_level level,
+    const char *file,
+    int line,
+    const char *function,
+    const char *message);
+
+void nucleus_android_gfxstream_host_set_logger(
+    nucleus_android_gfxstream_log_callback callback,
+    nucleus_android_gfxstream_log_level level);
+
 typedef void (*nucleus_android_gfxstream_host_fence_completion)(
     void *context,
     int status);

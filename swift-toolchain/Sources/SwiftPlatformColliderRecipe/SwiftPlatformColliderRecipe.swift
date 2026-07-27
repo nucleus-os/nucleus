@@ -17,7 +17,7 @@ public struct SwiftAndroidFoundationConfiguration: Sendable {
         androidInstallRoot: FilePath,
         ndkRoot: FilePath,
         architectures: [String],
-        apiLevel: UInt32 = 36,
+        apiLevel: UInt32,
         jobs: UInt32,
         environment: [String: String]
     ) {

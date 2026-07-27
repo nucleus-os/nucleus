@@ -59,9 +59,10 @@ public enum CoreColliderRecipe {
 
     public static func buildSkiaAndroid(
         root: FilePath,
+        ndk: FilePath,
+        minimumAndroidAPI: UInt32,
         environment: [String: String]
     ) -> TaskDeclaration {
-        let ndk = androidNDKPath(environment)
         return skiaTask(
             id: "core.skia.android-arm64",
             root: root,
@@ -70,8 +71,8 @@ public enum CoreColliderRecipe {
             gnArguments: [
                 #"target_os="android""#,
                 #"target_cpu="arm64""#,
-                #"ndk="\#(ndk)""#,
-                "ndk_api=24",
+                #"ndk="\#(ndk.string)""#,
+                "ndk_api=\(minimumAndroidAPI)",
                 "skia_use_fontconfig=false",
             ] + commonGNArguments)
     }
@@ -118,6 +119,7 @@ public enum CoreColliderRecipe {
     public static func validateAndroidHost(
         root: FilePath,
         library: FilePath? = nil,
+        ndk: FilePath,
         environment: [String: String],
         dependencies: [TaskID] = [TaskID(rawValue: "core.android-host.build")]
     ) -> TaskDeclaration {
@@ -127,7 +129,6 @@ public enum CoreColliderRecipe {
         let kotlinContract = root.appending(
             "android/nucleus/src/main/kotlin/dev/nucleus/android/"
                 + "NucleusNative.kt")
-        let ndk = FilePath(androidNDKPath(environment))
         return TaskDeclaration(
             id: TaskID(rawValue: "core.android-host.validate"),
             component: ComponentID(rawValue: "core"),
@@ -187,7 +188,6 @@ public enum CoreColliderRecipe {
     }
 }
 
-private let androidNDKVersion = "30.0.15729638"
 private let ninjaTargets = ["skia", "skshaper", "skparagraph", "skunicode", "svg"]
 private let requiredArchives = [
     "libskia.a", "libskshaper.a", "libskparagraph.a",
@@ -221,22 +221,6 @@ private let hostGNArguments = [
     #"cc="clang""#,
     #"cxx="clang++""#,
 ] + commonGNArguments
-
-private func androidNDKPath(_ environment: [String: String]) -> String {
-    if let path = environment["NUCLEUS_ANDROID_NDK_HOME"] {
-        return path
-    }
-    if let path = environment["ANDROID_NDK_HOME"] {
-        return path
-    }
-    if let sdk = environment["ANDROID_SDK_ROOT"] ?? environment["ANDROID_HOME"] {
-        return "\(sdk)/ndk/\(androidNDKVersion)"
-    }
-    if let home = environment["HOME"] {
-        return "\(home)/Android/Sdk/ndk/\(androidNDKVersion)"
-    }
-    return "/Android/Sdk/ndk/\(androidNDKVersion)"
-}
 
 private func androidNDKReadELFPath(_ ndk: FilePath) -> FilePath {
     #if os(macOS)

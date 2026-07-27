@@ -16,7 +16,8 @@
     {
       "path": "device/generic/goldfish",
       "patches": [
-        "aosp/patches/device-generic-goldfish/0001-export-composer3-framework-sources-for-nucleus.patch"
+        "aosp/patches/device-generic-goldfish/0001-export-composer3-framework-sources-for-nucleus.patch",
+        "aosp/patches/device-generic-goldfish/0002-make-composer-contract-output-aware.patch"
       ]
     },
     {
@@ -126,7 +127,8 @@
     {
       "path": "external/mesa3d",
       "patches": [
-        "aosp/patches/platform-external-mesa3d/0001-Nucleus-forward-patches-external-mesa3d.patch"
+        "aosp/patches/platform-external-mesa3d/0001-Nucleus-forward-patches-external-mesa3d.patch",
+        "aosp/patches/platform-external-mesa3d/0002-external-iostream-skips-virtgpu-probe.patch"
       ]
     }
   ]

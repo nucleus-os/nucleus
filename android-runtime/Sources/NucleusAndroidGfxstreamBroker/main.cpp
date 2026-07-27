@@ -1,5 +1,4 @@
 #include <errno.h>
-#include <execinfo.h>
 #include <poll.h>
 #include <signal.h>
 #include <sys/eventfd.h>
@@ -14,6 +13,7 @@
 #include <charconv>
 #include <chrono>
 #include <condition_variable>
+#include <cstdarg>
 #include <cstdlib>
 #include <cstdio>
 #include <cstring>
@@ -63,8 +63,18 @@ struct BrokerStatistics {
 };
 
 BrokerStatistics statistics;
+std::mutex logMutex;
 
 using MonotonicClock = std::chrono::steady_clock;
+
+void writeLog(const char *format, ...) {
+    std::lock_guard<std::mutex> lock(logMutex);
+    va_list arguments;
+    va_start(arguments, format);
+    std::vfprintf(stderr, format, arguments);
+    va_end(arguments);
+    std::fflush(stderr);
+}
 
 uint64_t elapsedMicroseconds(MonotonicClock::time_point began) {
     return static_cast<uint64_t>(
@@ -107,9 +117,7 @@ void fatalSignal(
         _exit(128 + signalNumber);
     }
     writeFatalSignalMessage(signalNumber);
-    void *frames[64] = {};
-    const int frameCount = backtrace(frames, std::size(frames));
-    backtrace_symbols_fd(frames, frameCount, STDERR_FILENO);
+    (void)kill(getpid(), signalNumber);
     _exit(128 + signalNumber);
 }
 
@@ -192,14 +200,50 @@ bool restoreCoreFileLimit() {
     return setrlimit(RLIMIT_CORE, &limit) == 0;
 }
 
+std::string jsonEscape(const char *value) {
+    std::string result;
+    if (!value) return result;
+    for (const unsigned char byte : std::string_view(value)) {
+        switch (byte) {
+            case '"': result += "\\\""; break;
+            case '\\': result += "\\\\"; break;
+            case '\n': result += "\\n"; break;
+            case '\r': result += "\\r"; break;
+            case '\t': result += "\\t"; break;
+            default:
+                if (byte >= 0x20) result.push_back(static_cast<char>(byte));
+                break;
+        }
+    }
+    return result;
+}
+
 void trace(const char *stage, const std::string &detail = {}) {
-    std::fprintf(
-        stderr,
+    const auto escapedDetail = jsonEscape(detail.c_str());
+    writeLog(
         "{\"component\":\"nucleus-android-gfxstream-broker\","
         "\"stage\":\"%s\",\"detail\":\"%s\"}\n",
         stage,
-        detail.c_str());
-    std::fflush(stderr);
+        escapedDetail.c_str());
+}
+
+void gfxstreamLog(
+    nucleus_android_gfxstream_log_level level,
+    const char *file,
+    int line,
+    const char *function,
+    const char *message) {
+    const auto escapedFile = jsonEscape(file);
+    const auto escapedFunction = jsonEscape(function);
+    const auto escapedMessage = jsonEscape(message);
+    writeLog(
+        "{\"component\":\"gfxstream\",\"level\":%d,\"file\":\"%s\","
+        "\"line\":%d,\"function\":\"%s\",\"message\":\"%s\"}\n",
+        static_cast<int>(level),
+        escapedFile.c_str(),
+        line,
+        escapedFunction.c_str(),
+        escapedMessage.c_str());
 }
 
 void traceEndpoint(
@@ -218,8 +262,8 @@ void traceEndpoint(
         statistics.connectionsClosed.fetch_add(1, std::memory_order_relaxed);
         return;
     }
-    std::fprintf(
-        stderr,
+    const auto escapedDetail = jsonEscape(detail);
+    writeLog(
         "{\"component\":\"nucleus-android-gfxstream-broker\","
         "\"stage\":\"%s\",\"endpointId\":%llu,\"peerPid\":%u,"
         "\"errno\":%d,\"detail\":\"%s\"}\n",
@@ -227,8 +271,7 @@ void traceEndpoint(
         static_cast<unsigned long long>(endpointIdentifier),
         peerPID,
         errorNumber,
-        detail);
-    std::fflush(stderr);
+        escapedDetail.c_str());
 }
 
 void traceBuffer(
@@ -261,8 +304,7 @@ void traceBuffer(
             return;
         }
     }
-    std::fprintf(
-        stderr,
+    writeLog(
         "{\"component\":\"nucleus-android-gfxstream-broker\","
         "\"stage\":\"%s\",\"allocationId\":%llu,\"colorBufferHandle\":%u,"
         "\"width\":%u,\"height\":%u,\"androidFormat\":%u,\"drmFormat\":%u,"
@@ -278,7 +320,6 @@ void traceBuffer(
         static_cast<unsigned long long>(request.usage),
         stride,
         status);
-    std::fflush(stderr);
 }
 
 void traceHostMemory(
@@ -292,8 +333,7 @@ void traceHostMemory(
             1, std::memory_order_relaxed);
         return;
     }
-    std::fprintf(
-        stderr,
+    writeLog(
         "{\"component\":\"nucleus-android-gfxstream-broker\","
         "\"stage\":\"%s\",\"blobId\":%llu,\"peerPid\":%u,"
         "\"size\":%llu,\"status\":%d}\n",
@@ -302,7 +342,6 @@ void traceHostMemory(
         peerPID,
         static_cast<unsigned long long>(size),
         status);
-    std::fflush(stderr);
 }
 
 void traceVulkanFence(
@@ -330,8 +369,7 @@ void traceVulkanFence(
         durationMicroseconds < slowOperationMicroseconds) {
         return;
     }
-    std::fprintf(
-        stderr,
+    writeLog(
         "{\"component\":\"nucleus-android-gfxstream-broker\","
         "\"stage\":\"%s\",\"deviceHandle\":%llu,\"fenceHandle\":%llu,"
         "\"peerPid\":%u,\"threadId\":%ld,\"status\":%d,"
@@ -343,7 +381,6 @@ void traceVulkanFence(
         currentThreadIdentifier(),
         status,
         static_cast<unsigned long long>(durationMicroseconds));
-    std::fflush(stderr);
 }
 
 void traceVulkanSemaphore(
@@ -364,8 +401,7 @@ void traceVulkanSemaphore(
         durationMicroseconds < slowOperationMicroseconds) {
         return;
     }
-    std::fprintf(
-        stderr,
+    writeLog(
         "{\"component\":\"nucleus-android-gfxstream-broker\","
         "\"stage\":\"%s\",\"deviceHandle\":%llu,"
         "\"semaphoreHandle\":%llu,\"peerPid\":%u,"
@@ -378,7 +414,6 @@ void traceVulkanSemaphore(
         currentThreadIdentifier(),
         status,
         static_cast<unsigned long long>(durationMicroseconds));
-    std::fflush(stderr);
 }
 
 void traceVulkanQsri(
@@ -419,8 +454,7 @@ void traceVulkanQsri(
         !firstSuccessfulSignal) {
         return;
     }
-    std::fprintf(
-        stderr,
+    writeLog(
         "{\"component\":\"nucleus-android-gfxstream-broker\","
         "\"stage\":\"%s\",\"imageHandle\":%llu,\"peerPid\":%u,"
         "\"threadId\":%ld,\"status\":%d,"
@@ -431,12 +465,10 @@ void traceVulkanQsri(
         currentThreadIdentifier(),
         status,
         static_cast<unsigned long long>(durationMicroseconds));
-    std::fflush(stderr);
 }
 
 void traceStatistics() {
-    std::fprintf(
-        stderr,
+    writeLog(
         "{\"component\":\"nucleus-android-gfxstream-broker\","
         "\"stage\":\"statistics\","
         "\"connectionsOpened\":%llu,\"connectionsClosed\":%llu,"
@@ -483,7 +515,6 @@ void traceStatistics() {
         static_cast<unsigned long long>(
             statistics.vulkanQsriWaitMaxMicroseconds.load(
                 std::memory_order_relaxed)));
-    std::fflush(stderr);
 }
 
 void signalEventFd(int descriptor) {
@@ -1005,6 +1036,11 @@ int sendControlResponse(
 }  // namespace
 
 int main(int argc, char **argv) {
+    nucleus_android_gfxstream_host_set_logger(
+        gfxstreamLog,
+        std::getenv("VK_INSTANCE_LAYERS")
+            ? NUCLEUS_ANDROID_GFXSTREAM_LOG_INFO
+            : NUCLEUS_ANDROID_GFXSTREAM_LOG_WARNING);
     const char *socketPath = nullptr;
     const char *renderNode = nullptr;
     uint32_t uidRangeStart = 0;
@@ -1029,7 +1065,7 @@ int main(int argc, char **argv) {
         } else if (argument == "--render-node" && ++index < argc) {
             renderNode = argv[index];
         } else {
-            std::fprintf(stderr, "invalid argument: %s\n", argv[index]);
+            trace("invocation.invalid-argument", argv[index]);
             return 2;
         }
     }
@@ -1039,7 +1075,7 @@ int main(int argc, char **argv) {
         uidRangeEnd > static_cast<uint64_t>(UINT32_MAX) + 1 ||
         parentPID == 0 ||
         nucleus_android_ipc_require_parent_lifetime(SIGTERM, parentPID) < 0) {
-        std::fprintf(stderr, "invalid or incomplete broker invocation\n");
+        trace("invocation.invalid");
         return 2;
     }
     signal(SIGTERM, stop);
@@ -1051,34 +1087,22 @@ int main(int argc, char **argv) {
             "address-sanitizer.enabled",
             scope != nullptr ? scope : "broker");
         if (!restoreCoreFileLimit()) {
-            std::fprintf(
-                stderr,
-                "restoring the core-file limit failed: %s\n",
-                std::strerror(errno));
+            trace("core-dump.limit-failed", std::strerror(errno));
             return 1;
         }
         trace("core-dump.enabled", "systemd-coredump");
     } else if (!installFatalSignalDiagnostics()) {
-        std::fprintf(
-            stderr,
-            "installing fatal-signal diagnostics failed: %s\n",
-            std::strerror(errno));
+        trace("fatal-signal.install-failed", std::strerror(errno));
         return 1;
     }
     if (!raiseFileDescriptorLimit()) {
-        std::fprintf(
-            stderr,
-            "raising file descriptor limit failed: %s\n",
-            std::strerror(errno));
+        trace("file-descriptor-limit.failed", std::strerror(errno));
         return 1;
     }
 
     const std::string selectedRenderNode = selectRenderNode(renderNode);
     if (selectedRenderNode.empty()) {
-        std::fprintf(
-            stderr,
-            "could not select exactly one display-connected GPU: %s\n",
-            std::strerror(errno));
+        trace("gpu.selection-failed", std::strerror(errno));
         return 1;
     }
     char error[512] = {};
@@ -1090,7 +1114,7 @@ int main(int argc, char **argv) {
     nucleus_android_gpu_diagnostic diagnostic = {};
     if (!gpu ||
         nucleus_android_gpu_get_diagnostic(gpu.get(), &diagnostic) < 0) {
-        std::fprintf(stderr, "GPU discovery failed: %s\n", error);
+        trace("gpu.discovery-failed", error);
         return 1;
     }
     std::unique_ptr<
@@ -1101,22 +1125,19 @@ int main(int argc, char **argv) {
                 1, 1, diagnostic.device_uuid, error, sizeof(error)),
             nucleus_android_gfxstream_host_renderer_destroy);
     if (!renderer) {
-        std::fprintf(stderr, "gfxstream renderer failed: %s\n", error);
+        trace("gfxstream.renderer-failed", error);
         return 1;
     }
     const int listener = nucleus_android_ipc_listen(socketPath, 0666);
     if (listener < 0) {
-        std::fprintf(stderr, "listen failed: %s\n", std::strerror(errno));
+        trace("listener.failed", std::strerror(errno));
         return 1;
     }
     listenerDescriptor.store(listener, std::memory_order_release);
     const int endpointCompletionDescriptor =
         eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK);
     if (endpointCompletionDescriptor < 0) {
-        std::fprintf(
-            stderr,
-            "endpoint completion eventfd failed: %s\n",
-            std::strerror(errno));
+        trace("endpoint-completion.failed", std::strerror(errno));
         close(listener);
         return 1;
     }
@@ -1151,7 +1172,7 @@ int main(int argc, char **argv) {
             if (stopping.load(std::memory_order_acquire)) {
                 break;
             }
-            std::fprintf(stderr, "poll failed: %s\n", std::strerror(errno));
+            trace("poll.failed", std::strerror(errno));
             return 1;
         }
         if ((pollDescriptors[1].revents & POLLIN) != 0) {
@@ -1194,7 +1215,7 @@ int main(int argc, char **argv) {
             if (errno == EINTR) {
                 continue;
             }
-            std::fprintf(stderr, "accept failed: %s\n", std::strerror(errno));
+            trace("accept.failed", std::strerror(errno));
             return 1;
         }
         nucleus_android_peer_credentials credentials = {};

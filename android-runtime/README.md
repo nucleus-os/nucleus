@@ -45,8 +45,11 @@ bounded container and presentation workflows.
   SurfaceFlinger's client-target dma-buf and acquire fence through an authenticated
   instance socket. `nucleus-android-display-host` is the production continuation of
   the Phase 1 surface: it owns the one Android `xdg_toplevel`, commits the real client
-  target with Wayland explicit synchronization, and returns a release fence to
-  SurfaceFlinger. No synthetic color workload runs during framework boot.
+  target with Wayland explicit synchronization, and returns an independent Composer
+  present fence that signals only when the exact commit receives physical
+  `wp_presentation` feedback. Wayland release points remain exclusively responsible
+  for client-allocation retirement. No synthetic color workload runs during framework
+  boot.
 - `NucleusAndroidContainerContract` defines the system-as-root LXC configuration,
   enforced project-owned AppArmor confinement, seccomp policy, subordinate-ID mapping,
   exact device surface, and APEX archive validation.

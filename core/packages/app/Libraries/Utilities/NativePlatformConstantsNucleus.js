@@ -16,9 +16,9 @@ function getConstants() {
   // Get React Native version
   let reactNativeVersion = {
     major: 0,
-    minor: 86,
+    minor: 87,
     patch: 0,
-    prerelease: 'rc.0',
+    prerelease: 'rc.3',
   };
   try {
     const versionModule = require('react-native/Libraries/Core/ReactNativeVersion');

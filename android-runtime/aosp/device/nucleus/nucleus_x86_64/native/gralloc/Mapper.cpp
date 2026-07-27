@@ -26,6 +26,7 @@
 #include <vector>
 
 #include "NucleusGrallocBrokerClient.h"
+#include "NucleusGrallocFormats.h"
 #include "NucleusGrallocHandle.h"
 
 namespace {
@@ -68,6 +69,28 @@ PlaneLayout planeLayout(const nucleus_gralloc_handle &handle) {
              .offsetInBits = 24,
              .sizeInBits = 8},
         };
+    } else if (handle.drm_format == DRM_FORMAT_ABGR16161616F) {
+        result.components = {
+            {.type = android::gralloc4::PlaneLayoutComponentType_R,
+             .offsetInBits = 0, .sizeInBits = 16},
+            {.type = android::gralloc4::PlaneLayoutComponentType_G,
+             .offsetInBits = 16, .sizeInBits = 16},
+            {.type = android::gralloc4::PlaneLayoutComponentType_B,
+             .offsetInBits = 32, .sizeInBits = 16},
+            {.type = android::gralloc4::PlaneLayoutComponentType_A,
+             .offsetInBits = 48, .sizeInBits = 16},
+        };
+    } else if (handle.drm_format == DRM_FORMAT_ABGR2101010) {
+        result.components = {
+            {.type = android::gralloc4::PlaneLayoutComponentType_R,
+             .offsetInBits = 0, .sizeInBits = 10},
+            {.type = android::gralloc4::PlaneLayoutComponentType_G,
+             .offsetInBits = 10, .sizeInBits = 10},
+            {.type = android::gralloc4::PlaneLayoutComponentType_B,
+             .offsetInBits = 20, .sizeInBits = 10},
+            {.type = android::gralloc4::PlaneLayoutComponentType_A,
+             .offsetInBits = 30, .sizeInBits = 2},
+        };
     } else {
         result.components = {
             {.type = android::gralloc4::PlaneLayoutComponentType_R,
@@ -85,7 +108,9 @@ PlaneLayout planeLayout(const nucleus_gralloc_handle &handle) {
         };
     }
     result.offsetInBytes = handle.plane_offset;
-    result.sampleIncrementInBits = 32;
+    const auto *format = nucleus_gralloc_format_for_drm(handle.drm_format);
+    result.sampleIncrementInBits =
+        format == nullptr ? 0 : format->bytes_per_pixel * 8;
     result.strideInBytes = handle.plane_stride;
     result.widthInSamples = handle.width;
     result.heightInSamples = handle.height;

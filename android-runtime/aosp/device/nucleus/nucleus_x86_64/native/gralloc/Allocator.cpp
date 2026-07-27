@@ -16,6 +16,7 @@
 #include <vector>
 
 #include "NucleusGrallocBrokerClient.h"
+#include "NucleusGrallocFormats.h"
 #include "NucleusGrallocHandle.h"
 
 namespace {
@@ -33,18 +34,8 @@ ndk::ScopedAStatus error(AllocationError value) {
 }
 
 uint32_t drmFormat(PixelFormat format) {
-    switch (format) {
-        case PixelFormat::RGBA_8888:
-            return DRM_FORMAT_ABGR8888;
-        case PixelFormat::RGBX_8888:
-            return DRM_FORMAT_XBGR8888;
-        case PixelFormat::BGRA_8888:
-            return DRM_FORMAT_ARGB8888;
-        case PixelFormat::IMPLEMENTATION_DEFINED:
-            return DRM_FORMAT_ABGR8888;
-        default:
-            return 0;
-    }
+    const auto *contract = nucleus_gralloc_format_for_android(format);
+    return contract == nullptr ? 0 : contract->drm;
 }
 
 bool supported(const BufferDescriptorInfo &descriptor) {

@@ -176,7 +176,7 @@ public enum ReactNativeColliderRecipe {
             id: TaskID(rawValue: "rn.hermes"),
             component: ComponentID(rawValue: "rn"),
             inputs: [
-                .dependencyOutput(source),
+                .tree(source),
                 .tree(host.icuIncludeDirectory),
                 .file(host.icuUCLibrary),
                 .file(host.icuI18NLibrary),
@@ -233,8 +233,8 @@ public enum ReactNativeColliderRecipe {
             id: TaskID(rawValue: "rn.support"),
             component: ComponentID(rawValue: "rn"),
             inputs: [
-                .dependencyOutput(root.appending("third-party/fmt")),
-                .dependencyOutput(root.appending(
+                .tree(root.appending("third-party/fmt")),
+                .tree(root.appending(
                     "third-party/double-conversion")),
                 .tool(.named("cmake")),
                 .tool(.named("ninja")),
@@ -292,12 +292,12 @@ public enum ReactNativeColliderRecipe {
                 TaskID(rawValue: "rn.hermes"),
             ],
             inputs: [
-                .dependencyOutput(root.appending("third-party/glog")),
-                .dependencyOutput(root.appending("third-party/folly")),
-                .dependencyOutput(root.appending("third-party/fast_float")),
+                .tree(root.appending("third-party/glog")),
+                .tree(root.appending("third-party/folly")),
+                .tree(root.appending("third-party/fast_float")),
                 .dependencyOutput(root.appending("third-party/boost")),
-                .dependencyOutput(root.appending("third-party/hermes")),
-                .dependencyOutput(reactNative.appending("ReactCommon")),
+                .tree(root.appending("third-party/hermes")),
+                .tree(reactNative.appending("ReactCommon")),
                 .dependencyOutput(root.appending(".rn-build/generated")),
                 .tree(root.appending("../core/swiftpm/cmake/reactnative")),
                 .tool(.named("cmake")),
@@ -572,6 +572,7 @@ private func cmake(
     .command(CommandSpec(
         executable: .named("cmake"),
         arguments: [
+            "--fresh",
             "-S", source.string,
             "-B", build.string,
         ] + commonCMakeArguments + arguments,

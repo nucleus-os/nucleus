@@ -14,7 +14,6 @@
 # limitations under the License.
 #
 
-$(call inherit-product, $(SRC_TARGET_DIR)/product/handheld_vendor.mk)
 $(call inherit-product, hardware/interfaces/audio/aidl/default/audio_effects.mk)
 
 PRODUCT_SOONG_NAMESPACES += \
@@ -23,8 +22,6 @@ PRODUCT_SOONG_NAMESPACES += \
 PRODUCT_PACKAGES += \
     android.hardware.graphics.composer3-service.nucleus \
     android.hardware.graphics.allocator-service.nucleus \
-    android.hardware.health-service.example \
-    android.hardware.power-service.example \
     audio_policy_configuration.xml \
     com.android.hardware.audio \
     android.hardware.security.keymint-service.nonsecure \

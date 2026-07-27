@@ -89,6 +89,10 @@ struct AndroidFrameworkBootCommand {
             context: context,
             layout: layout,
             host: host,
+            dataProvenanceKey:
+                provenance.sourceManifestSHA256
+                + "-"
+                + provenance.productTreeSHA256,
             gfxstreamBrokerEnvironment: brokerLaunch.environment)
         try await frameworkSession.initializeDiagnostics()
         let statusFile = layout.diagnostics.appendingPathComponent(
@@ -548,6 +552,7 @@ struct AndroidFrameworkBootCommand {
             "modinfo",
             "uname",
             "journalctl",
+            "fsverity",
             "kitty",
             "tail",
         ]
@@ -719,6 +724,7 @@ private actor AndroidFrameworkBootSession {
     let context: WorkspaceContext
     let layout: AndroidFrameworkBootLayout
     let host: AndroidFrameworkBootHost
+    let persistentData: URL
     let gfxstreamBrokerEnvironment: [String: String]
     var mounts = AndroidFrameworkMountLedger()
     var binderMounted = false
@@ -734,11 +740,15 @@ private actor AndroidFrameworkBootSession {
         context: WorkspaceContext,
         layout: AndroidFrameworkBootLayout,
         host: AndroidFrameworkBootHost,
+        dataProvenanceKey: String,
         gfxstreamBrokerEnvironment: [String: String]
     ) {
         self.context = context
         self.layout = layout
         self.host = host
+        self.persistentData = layout.androidRoot
+            .appendingPathComponent(".runtime-data", isDirectory: true)
+            .appendingPathComponent(dataProvenanceKey, isDirectory: true)
         self.gfxstreamBrokerEnvironment = gfxstreamBrokerEnvironment
     }
 
@@ -956,6 +966,48 @@ private actor AndroidFrameworkBootSession {
                 "0775",
                 layout.containerTombstones.path,
             ])
+        try await context.run(
+            "sudo",
+            [
+                "--non-interactive",
+                "install",
+                "--directory",
+                "--owner=\(host.userID)",
+                "--group=\(host.groupID)",
+                "--mode=0771",
+                persistentData.path,
+            ])
+        try await qualifyPersistentDataFileSystem()
+        try await context.run(
+            "sudo",
+            [
+                "--non-interactive",
+                "chown",
+                "\(mappedSystemUser):\(mappedSystemGroup)",
+                persistentData.path,
+            ])
+    }
+
+    private func qualifyPersistentDataFileSystem() async throws {
+        let probe = persistentData.appendingPathComponent(
+            ".nucleus-fsverity-probe")
+        try Data("nucleus-fsverity\n".utf8).write(
+            to: probe,
+            options: .atomic)
+        defer { try? FileManager.default.removeItem(at: probe) }
+        do {
+            try await context.run(
+                "fsverity",
+                ["enable", probe.path])
+            _ = try await context.run(
+                "fsverity",
+                ["digest", probe.path],
+                capture: true)
+        } catch {
+            throw WorkspaceFailure.message(
+                "persistent Android data filesystem does not support "
+                    + "fs-verity: \(persistentData.path)")
+        }
     }
 
     func mountImages(
@@ -1278,6 +1330,7 @@ private actor AndroidFrameworkBootSession {
             seccompProfile: layout.seccompProfile.path,
             kernelLogDevice: kernelLog.slavePath,
             tombstones: layout.containerTombstones.path,
+            persistentData: persistentData.path,
             gfxstreamSocketDirectory:
                 layout.gfxstreamBrokerDirectory.path,
             hostKernelConfigurationDirectory:

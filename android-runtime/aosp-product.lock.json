@@ -1,7 +1,7 @@
 {
   "product": "nucleus_x86_64",
   "release": "cp2a",
-  "variant": "userdebug",
+  "variant": "user",
   "buildNumber": "nucleus-android17-r1",
   "buildTimestamp": 1781652681,
   "platformSDK": 37,

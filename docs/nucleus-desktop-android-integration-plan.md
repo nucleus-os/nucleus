@@ -41,8 +41,10 @@ by the selected device. Android gralloc handles identify those allocations and b
 GPU work renders directly into them. The Composer3 HAL submits the same allocation and
 its acquire fence to a project-owned host display service. That service is the
 authenticated Wayland client: it converts Android sync-file fences to syncobj timeline
-points, commits the dma-buf to Nucleus, and returns the compositor release point to
-SurfaceFlinger as a release fence.
+points and commits the dma-buf to Nucleus. It returns a distinct Composer present
+fence to SurfaceFlinger and signals that fence only after the exact Wayland commit is
+physically presented. The Wayland release point remains internal to allocation
+retirement and is never exposed as the Composer present fence.
 
 This is one graphics architecture for every GPU vendor. There is no direct-Mesa guest
 path, NVIDIA-only guest path, SwiftShader fallback, VM, or pixel-streaming path.
@@ -58,12 +60,14 @@ Wayland transaction, damage, explicit-synchronization, composition, and direct-s
 rules without an Android-specific render path.
 
 Nucleus adopts Android 17's desktop-windowing substrate and rejects its desktop shell.
-The runtime presents one freeform synthetic display: its root task area runs in
-`WINDOWING_MODE_FREEFORM` with enter-desktop-by-default, so every task is born a
-resizable freeform window instead of a fullscreen phone activity. The Nucleus Android
+Every enabled compositor output is a distinct Android Composer display with one
+`WINDOWING_MODE_FREEFORM` root-task area. Android display geometry remains logical,
+while the display's exact refresh period follows its host output. Tasks are born as
+resizable freeform windows instead of fullscreen phone activities. The Nucleus Android
 task service is the Android `ShellTaskOrganizer`; it receives each freeform task with its
-surface leash and owns the task-to-Wayland mapping and every task bound, minimize,
-maximize, tile, focus, stack, and workspace decision. AOSP's own desktop shell
+surface leash and owns the task-to-Wayland mapping, monitor-specific root-task
+placement, and every task bound, minimize, maximize, tile, focus, stack, and workspace
+decision. AOSP's own desktop shell
 is disabled: the WM Shell `DesktopTasksController` bounds policy, caption and handle
 window decorations, snap indicators, desktop wallpaper and scrim, education overlays, the
 Launcher taskbar, split-screen, and one-handed mode never run. Android contributes only
@@ -451,11 +455,12 @@ allocation metadata, damage, and acquire fence through an authenticated instance
 socket. The host `nucleus-android-display-host` promotes the Phase 1 presentation demo
 into a persistent service. It owns the Android `xdg_toplevel`, imports each allocation
 once, translates Android sync-file fences to Wayland syncobj timeline points, commits
-damage, and returns a release fence to SurfaceFlinger. Because a future DRM syncobj
-point cannot itself be exported as a `sync_file`, the host registers an eventfd for
-each compositor release point and forwards completed values into a private Vulkan
-timeline. Vulkan queue waits materialize immediately exportable Android fences that
-remain unsignaled until the compositor releases the matching buffer. The demo does not
+damage, and returns a physical-present fence to SurfaceFlinger. A private Vulkan
+timeline materializes immediately exportable Android sync files because the selected
+NVIDIA DRM driver cannot directly export an unsignaled future syncobj point. Exact
+`wp_presentation` feedback advances that present timeline. The independent Wayland
+release timeline continues to gate allocation retirement; release notification
+eventfds are observational and never drive Composer present fences. The demo does not
 survive as a second renderer or synthetic workload path.
 
 The image build is reproducible and produces signed system, vendor, product, and
@@ -673,9 +678,9 @@ Phase 2 begins with one strict four-step bring-up sequence:
    XBGR8888/ABGR8888 to Vulkan RGBA, advertises all four importable families, and
    rejects unknown fourcc values instead of silently interpreting them as BGRA. The
    gfxstream broker raises its soft descriptor limit to the host-approved hard limit
-   at startup. The display host reports the first compositor-released frame, and
-   Collider continuously supervises both graphics services and requires that release
-   marker alongside `sys.boot_completed=1`. A display-host or broker failure now
+   at startup. The display host reports the first physically presented frame, and
+   Collider continuously supervises both graphics services and requires that physical
+   presentation marker alongside `sys.boot_completed=1`. A display-host or broker failure now
    terminates the framework attempt and its container immediately instead of allowing
    an Android presentation retry loop.
 
@@ -710,20 +715,21 @@ configuration exercise.
 ## Phase 3 — Per-task presentation, input, and unified lifecycle
 
 Phase 3 combines the remaining display work with Android desktop integration. It
-expands the single production Android display surface landed in Phase 2 into normal
-Nucleus windows and makes Nucleus the driver of Android 17's freeform
-desktop-windowing substrate. The existing host display service keeps its authenticated
+expands the output-aware Android display surfaces landed in Phase 2 into normal Nucleus
+windows and makes Nucleus the driver of Android 17's freeform desktop-windowing
+substrate. The existing host display service keeps its authenticated
 Composer3 socket and Wayland connection, then adds xdg-shell task toplevels,
 subsurfaces, viewporter, fractional scale, presentation feedback, typed task metadata,
 input forwarding, and lifecycle control. There is no display-host replacement,
 synthetic color workload, or second presentation path in this phase.
 
-The Android runtime presents one freeform synthetic display. Its root task area runs in
-`WINDOWING_MODE_FREEFORM` with enter-desktop-by-default, so every launched task is a
-resizable freeform window. The Nucleus Android task service registers as the Android
-`ShellTaskOrganizer`, receives each freeform task with its surface leash through the
-freeform task listener, and is the authority for task bounds, minimize, maximize,
-tiling, focus, stacking, and workspace membership. The product images built in
+The Android runtime presents one Composer display and freeform root-task area for every
+enabled compositor output. Each root task runs in `WINDOWING_MODE_FREEFORM` with
+enter-desktop-by-default, so every launched task is a resizable freeform window. The
+Nucleus Android task service registers as the Android `ShellTaskOrganizer`, receives
+each freeform task with its surface leash through the freeform task listener, and is
+the authority for task bounds, monitor assignment, minimize, maximize, tiling, focus,
+stacking, and workspace membership. The product images built in
 Phase 2 carry the configuration this requires: the freeform-display and
 enter-desktop-by-default settings, the `DesktopModeFlags` and `DesktopExperienceFlags`
 enablement, and the removal of the Launcher taskbar and SystemUI desktop surfaces that
@@ -738,8 +744,10 @@ socket marks the client as Android-owned, so an arbitrary Wayland client cannot 
 that provenance.
 
 The xdg configure loop updates the bounds of the corresponding Android freeform task
-through the task service. It does not resize or hotplug a single global Android display
-for every host-window change. The runtime uses one logical display scale; per-output
+through the task service. Moving a task between host outputs reparents it to the
+destination output's root task as one acknowledged transaction; monitor mode changes
+retain display and task identities. The runtime uses logical display geometry;
+per-output
 fractional scale is presented through `wp_fractional_scale_v1` and viewporter exactly as
 any other Nucleus surface, and there is no Android-specific density or scale-management
 path. Android remains responsible for application layout, orientation, configuration
@@ -822,9 +830,9 @@ Acceptance gates:
   dialog;
 - keyboard, pointer, touch, scroll, tablet, relative pointer, grabs, focus transitions,
   and close requests reach only the correct task;
-- every committed dma-buf carries valid acquire and release points and returns a valid
-  release fence to SurfaceFlinger without blocking a framework, Wayland, render, or
-  compositor thread;
+- every committed dma-buf carries valid acquire and release points, every Composer
+  present returns an independent fence tied to physical presentation, and neither
+  contract blocks a framework, Wayland, render, or compositor thread;
 - runtime crash and restart remove stale windows and never leave Nucleus-owned focus,
   grabs, buffers, or syncobj handles behind.
 - launcher search, launch, activation, switcher, taskbar, workspace, close, and restore
@@ -1038,11 +1046,10 @@ than a packaging epilogue.
   handle decorations, desk switcher, snap indicators, desktop wallpaper, split-screen,
   one-handed mode, and desktop AI never run; Nucleus provides the shell. Only the
   freeform windowing substrate is adopted.
-- **Android does not own a physical output.** The runtime presents one synthetic
-  freeform display at one logical scale; Nucleus never maps a physical monitor to an
-  Android display and never hotplugs an Android display per host output. Per-monitor
-  scale reaches applications through Wayland fractional scale, not per-app density or
-  multiple Android displays.
+- **Android display identity and cadence follow compositor outputs.** Every enabled
+  output maps to a stable Composer display and freeform root-task area. Geometry and
+  density remain logical; physical monitor pixels and density still reach application
+  surfaces through ordinary Wayland scaling.
 - **There is no direct guest GPU access or vendor-specific guest GPU path.** The host
   broker is the only GPU authority for Android on every vendor.
 - **There is no software GPU fallback.** Missing Vulkan, external-memory, modifier,

@@ -159,10 +159,12 @@ extension ColliderRuntime {
     ) async throws {
         guard build.buildJobs > 0,
               build.expectedPlatformSDK > 0,
-              build.expectedVendorAPILevel > 0
+              build.expectedVendorAPILevel > 0,
+              build.variant == "user"
         else {
             throw RuntimeFailure.invalidOutput(
-                "AOSP product build concurrency and API levels must be positive")
+                "AOSP production builds require positive concurrency/API "
+                    + "levels and the user variant")
         }
         let sourceProvenance = try JSONDecoder().decode(
             AOSPBuildSourceProvenance.self,
@@ -271,6 +273,15 @@ extension ColliderRuntime {
         environment["CCACHE_DIR"] = "/src/out/nucleus/.ccache"
         environment["CCACHE_COMPILERCHECK"] = "content"
 
+        try await qualifyAOSPBuildSandbox(
+            build,
+            writableMounts: [
+                (output, "/src/out/nucleus"),
+                (distribution, "/src/out/nucleus-dist"),
+            ],
+            environment: environment,
+            stage: stage)
+
         let result = try await execute(
             CommandSpec(
                 executable: .named("podman"),
@@ -311,6 +322,13 @@ extension ColliderRuntime {
         try DurableFile.copy(
             from: builtTargetFiles,
             to: unsignedTargetFiles)
+        let unsignedDigest = try ArtifactHasher.digest(
+            file: unsignedTargetFiles).sha256Hex
+        try DurableFile.write(
+            Data(
+                "\(unsignedDigest)  \(build.product)-target_files.zip\n".utf8),
+            to: unsigned.appending(
+                "\(build.product)-target_files.zip.sha256"))
     }
 
     func signAOSPProduct(
@@ -620,10 +638,12 @@ extension ColliderRuntime {
         let fingerprint =
             systemProperties["ro.system.build.fingerprint"] ?? ""
         guard fingerprint.contains("/\(build.product):"),
-              fingerprint.hasSuffix("release-keys")
+              fingerprint.hasSuffix(":user/release-keys"),
+              build.variant == "user"
         else {
             throw RuntimeFailure.invalidOutput(
-                "signed product fingerprint is invalid: \(fingerprint)")
+                "signed production product fingerprint is invalid: "
+                    + fingerprint)
         }
         try await requireAOSPReleaseSigning(
             archive: signedTargetCandidate,
@@ -1224,6 +1244,171 @@ func aospContainerArguments(
     arguments.append(imageID)
     arguments += command
     return arguments
+}
+
+private extension ColliderRuntime {
+    func qualifyAOSPBuildSandbox(
+        _ build: AOSPProductBuild,
+        writableMounts: [(FilePath, String)],
+        environment: [String: String],
+        stage: TaskID
+    ) async throws {
+        let qualification = build.buildRoot.appending(
+            ".sandbox-qualification-\(UUID().uuidString)")
+        defer {
+            try? FileManager.default.removeItem(
+                atPath: qualification.string)
+        }
+        try FileManager.default.createDirectory(
+            atPath: qualification.string,
+            withIntermediateDirectories: false)
+        try DurableFile.write(
+            Data("host-visible\n".utf8),
+            to: qualification.appending("host-canary"))
+        let brokenNSJail = qualification.appending("broken-nsjail")
+        try DurableFile.write(
+            Data("#!/bin/sh\nexit 1\n".utf8),
+            to: brokenNSJail)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o755],
+            ofItemAtPath: brokenNSJail.string)
+
+        let isolationProbe = """
+            import socket
+            import subprocess
+            import sys
+
+            listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            listener.bind(("127.0.0.1", 0))
+            listener.listen(1)
+            port = listener.getsockname()[1]
+            child = f'''
+            import os
+            import socket
+            import sys
+
+            if os.path.exists("/qualification/host-canary"):
+                sys.exit(41)
+            print("NUCLEUS_NSJAIL_FILE_HIDDEN")
+            connection = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            connection.settimeout(0.5)
+            try:
+                connection.connect(("127.0.0.1", {port}))
+            except OSError:
+                print("NUCLEUS_NSJAIL_NETWORK_ISOLATED")
+                sys.exit(0)
+            sys.exit(42)
+            '''
+            result = subprocess.run(
+                [
+                    "/src/prebuilts/build-tools/linux-x86/bin/nsjail",
+                    "-Q",
+                    "-H", "android-build",
+                    "--disable_clone_newuts",
+                    "-e",
+                    "-u", "nobody",
+                    "-g", "nogroup",
+                    "-R", "/",
+                    "-B", "/tmp",
+                    "-T", "/qualification",
+                    "--disable_clone_newcgroup",
+                    "--",
+                    "/usr/bin/python3", "-c", child,
+                ],
+                capture_output=True,
+                text=True,
+            )
+            listener.close()
+            sys.stdout.write(result.stdout)
+            sys.stderr.write(result.stderr)
+            if result.returncode != 0:
+                sys.exit(result.returncode)
+            print("NUCLEUS_NSJAIL_ISOLATION_OK")
+            """
+        let containerEnvironment = aospContainerToolEnvironment().merging(
+            environment,
+            uniquingKeysWith: { _, requested in requested })
+        let isolation = try await execute(
+            CommandSpec(
+                executable: .named("podman"),
+                arguments: try aospContainerArguments(
+                    build: build,
+                    writableMounts: writableMounts + [
+                        (qualification, "/qualification"),
+                    ],
+                    readOnlyMounts: [
+                        (build.source, "/src"),
+                    ],
+                    environment: containerEnvironment,
+                    command: [
+                        "/usr/bin/python3",
+                        "-c",
+                        isolationProbe,
+                    ]),
+                workingDirectory: build.source,
+                environment: build.environment,
+                output: .combined(limit: 4 * 1_024 * 1_024)),
+            stage: stage)
+        try validateAOSPSandboxIsolationProbe(
+            isolation.standardOutput,
+            status: isolation.status)
+
+        let broken = try await execute(
+            CommandSpec(
+                executable: .named("podman"),
+                arguments: try aospContainerArguments(
+                    build: build,
+                    writableMounts: writableMounts,
+                    readOnlyMounts: [
+                        (build.source, "/src"),
+                        (
+                            brokenNSJail,
+                            "/src/prebuilts/build-tools/linux-x86/bin/nsjail"
+                        ),
+                    ],
+                    environment: containerEnvironment,
+                    command: [
+                        "/src/build/soong/soong_ui.bash",
+                        "--dumpvars-mode",
+                        "--vars=TARGET_PRODUCT",
+                    ]),
+                workingDirectory: build.source,
+                environment: build.environment,
+                output: .combined(limit: 4 * 1_024 * 1_024)),
+            stage: stage)
+        try validateAOSPBrokenSandboxProbe(
+            broken.standardOutput,
+            status: broken.status)
+    }
+}
+
+func validateAOSPSandboxIsolationProbe(
+    _ output: String,
+    status: Int32
+) throws {
+    guard status == 0,
+          output.contains("NUCLEUS_NSJAIL_FILE_HIDDEN"),
+          output.contains("NUCLEUS_NSJAIL_NETWORK_ISOLATED"),
+          output.contains("NUCLEUS_NSJAIL_ISOLATION_OK")
+    else {
+        throw RuntimeFailure.invalidOutput(
+            "nsjail did not prove file and network isolation")
+    }
+}
+
+func validateAOSPBrokenSandboxProbe(
+    _ output: String,
+    status: Int32
+) throws {
+    let lowercased = output.lowercased()
+    guard status != 0,
+          lowercased.contains("nsjail sandbox probe failed"),
+          !lowercased.contains(
+            "build sandboxing disabled due to nsjail error")
+    else {
+        throw RuntimeFailure.invalidOutput(
+            "Soong did not fail closed for a broken nsjail executable")
+    }
 }
 
 func rejectAOSPSandboxDegradation(

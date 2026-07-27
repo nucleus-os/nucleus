@@ -11,11 +11,13 @@ private struct RawGraphicsTestError: Error, CustomStringConvertible {
 
 @safe private final class RawGraphicsTestGPU: @unchecked Sendable {
     let handle: OpaquePointer
-    let format = nucleus_android_drm_format_xrgb8888()
+    let format: UInt32
     let modifier: UInt64
 
-    init(candidate: DrmDeviceCandidate) throws {
-        let rawFormat = nucleus_android_drm_format_xrgb8888()
+    init(
+        candidate: DrmDeviceCandidate,
+        format rawFormat: UInt32 = nucleus_android_drm_format_xrgb8888()
+    ) throws {
         var error = [CChar](repeating: 0, count: 1_024)
         guard let handle = candidate.renderNode.withCString({ path in
             unsafe nucleus_android_gpu_create(path, &error, error.count)
@@ -30,7 +32,8 @@ private struct RawGraphicsTestError: Error, CustomStringConvertible {
             0)
         guard modifierCount > 0 else {
             unsafe nucleus_android_gpu_destroy(handle)
-            throw RawGraphicsTestError(description: "GPU exposes no XRGB8888 modifiers")
+            throw RawGraphicsTestError(
+                description: "GPU exposes no required format modifiers")
         }
         var modifiers = [nucleus_android_format_modifier_properties](
             repeating: .init(),
@@ -52,10 +55,11 @@ private struct RawGraphicsTestError: Error, CustomStringConvertible {
         guard let selected else {
             unsafe nucleus_android_gpu_destroy(handle)
             throw RawGraphicsTestError(
-                description: "GPU exposes no renderable XRGB8888 modifier")
+                description: "GPU exposes no renderable required format modifier")
         }
 
         unsafe self.handle = handle
+        format = rawFormat
         modifier = selected.modifier
     }
 
@@ -94,6 +98,27 @@ private struct RawGraphicsTestError: Error, CustomStringConvertible {
         error.withUnsafeBufferPointer { storage in
             unsafe String(cString: storage.baseAddress!)
         }
+    }
+}
+
+@Test func higherPrecisionBufferContractsAllocateAndImport() throws {
+    guard let candidate = try DrmDeviceDiscovery.enumerate().first else { return }
+    for format in [
+        nucleus_android_drm_format_abgr16161616f(),
+        nucleus_android_drm_format_abgr2101010(),
+    ] {
+        let gpu = try RawGraphicsTestGPU(
+            candidate: candidate,
+            format: format)
+        let baseline = try gpu.diagnostic()
+        let buffer = try RawGraphicsTestBuffer(gpu: gpu)
+        #expect(
+            try gpu.diagnostic().live_buffer_count
+                == baseline.live_buffer_count + 1)
+        buffer.release()
+        #expect(
+            try gpu.diagnostic().live_buffer_count
+                == baseline.live_buffer_count)
     }
 }
 
@@ -349,7 +374,7 @@ private struct RawGraphicsTestError: Error, CustomStringConvertible {
     #expect(isSignaled == 1)
 }
 
-@Test func releaseBridgeMaterializesFutureTimelinePointAsSyncFile() throws {
+@Test func composerPresentFenceIsIndependentFromBufferRelease() throws {
     guard let candidate = try DrmDeviceDiscovery.enumerate().first else { return }
     var bridgeError = [CChar](repeating: 0, count: 1_024)
     let bridge = candidate.renderNode.withCString { path in
@@ -392,37 +417,44 @@ private struct RawGraphicsTestError: Error, CustomStringConvertible {
     _ = close(timelineFD)
     defer { unsafe nucleus_android_syncobj_timeline_destroy(timeline) }
 
-    var releaseError = [CChar](repeating: 0, count: 1_024)
-    let releaseFence = unsafe nucleus_android_syncobj_bridge_export_release_sync_file(
-        bridge, 7, &releaseError, releaseError.count)
-    guard releaseFence >= 0 else {
-        throw RawGraphicsTestError(
-            description: releaseError.withUnsafeBufferPointer {
-                unsafe String(cString: $0.baseAddress!)
-            })
-    }
-    defer { _ = close(releaseFence) }
-    let nextReleaseFence =
-        unsafe nucleus_android_syncobj_bridge_export_release_sync_file(
-            bridge, 8, &releaseError, releaseError.count)
-    guard nextReleaseFence >= 0 else {
-        throw RawGraphicsTestError(
-            description: releaseError.withUnsafeBufferPointer {
-                unsafe String(cString: $0.baseAddress!)
-            })
-    }
-    defer { _ = close(nextReleaseFence) }
+    #expect(unsafe nucleus_android_syncobj_bridge_watch_release(
+        bridge, 7) == 0)
 
-    var descriptor = pollfd(
-        fd: releaseFence,
+    var presentError = [CChar](repeating: 0, count: 1_024)
+    let firstPresentFence =
+        unsafe nucleus_android_syncobj_bridge_export_present_sync_file(
+            bridge, 1, &presentError, presentError.count)
+    guard firstPresentFence >= 0 else {
+        throw RawGraphicsTestError(
+            description: presentError.withUnsafeBufferPointer {
+                unsafe String(cString: $0.baseAddress!)
+            })
+    }
+    defer { _ = close(firstPresentFence) }
+    let secondPresentFence =
+        unsafe nucleus_android_syncobj_bridge_export_present_sync_file(
+            bridge, 2, &presentError, presentError.count)
+    guard secondPresentFence >= 0 else {
+        throw RawGraphicsTestError(
+            description: presentError.withUnsafeBufferPointer {
+                unsafe String(cString: $0.baseAddress!)
+            })
+    }
+    defer { _ = close(secondPresentFence) }
+
+    var firstPresent = pollfd(
+        fd: firstPresentFence,
         events: Int16(POLLIN),
         revents: 0)
-    var nextDescriptor = pollfd(
-        fd: nextReleaseFence,
+    var secondPresent = pollfd(
+        fd: secondPresentFence,
         events: Int16(POLLIN),
         revents: 0)
-    #expect(unsafe poll(&descriptor, 1, 0) == 0)
-    #expect(unsafe poll(&nextDescriptor, 1, 0) == 0)
+    #expect(unsafe poll(&firstPresent, 1, 0) == 0)
+    #expect(unsafe poll(&secondPresent, 1, 0) == 0)
+
+    // Retiring the Wayland allocation must not impersonate a physical display
+    // presentation.
     #expect(unsafe nucleus_android_syncobj_timeline_signal(timeline, 7) == 0)
     var notification = pollfd(
         fd: unsafe nucleus_android_syncobj_bridge_release_notification_fd(
@@ -432,14 +464,18 @@ private struct RawGraphicsTestError: Error, CustomStringConvertible {
     #expect(unsafe poll(&notification, 1, 1_000) == 1)
     #expect(unsafe nucleus_android_syncobj_bridge_dispatch_releases(
         bridge) == 0)
-    #expect(unsafe poll(&descriptor, 1, 1_000) == 1)
-    #expect(unsafe poll(&nextDescriptor, 1, 0) == 0)
-    #expect(unsafe nucleus_android_syncobj_timeline_signal(timeline, 8) == 0)
-    notification.revents = 0
-    #expect(unsafe poll(&notification, 1, 1_000) == 1)
-    #expect(unsafe nucleus_android_syncobj_bridge_dispatch_releases(
-        bridge) == 0)
-    #expect(unsafe poll(&nextDescriptor, 1, 1_000) == 1)
+    #expect(unsafe nucleus_android_syncobj_bridge_forwarded_release_point(
+        bridge) == 7)
+    #expect(unsafe poll(&firstPresent, 1, 0) == 0)
+    #expect(unsafe poll(&secondPresent, 1, 0) == 0)
+
+    #expect(unsafe nucleus_android_syncobj_bridge_signal_present(
+        bridge, 1) == 0)
+    #expect(unsafe poll(&firstPresent, 1, 1_000) == 1)
+    #expect(unsafe poll(&secondPresent, 1, 0) == 0)
+    #expect(unsafe nucleus_android_syncobj_bridge_signal_present(
+        bridge, 2) == 0)
+    #expect(unsafe poll(&secondPresent, 1, 1_000) == 1)
 }
 
 @Test func nativeFenceExportsUnsignaledSyncFileThenSignalsIt() throws {

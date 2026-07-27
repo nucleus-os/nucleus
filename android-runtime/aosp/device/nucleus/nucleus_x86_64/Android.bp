@@ -136,6 +136,9 @@ cc_library_static {
         "android.hardware.graphics.allocator-V3-ndk",
         "libcutils",
     ],
+    header_libs: [
+        "libdrm_headers",
+    ],
     c_std: "c17",
     cpp_std: "c++20",
     cflags: [

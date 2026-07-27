@@ -80,7 +80,7 @@ diff --git a/libprocessgroup/setup/cgroup_map_write.cpp b/libprocessgroup/setup/
  static bool MountV2CgroupController(const CgroupDescriptor& descriptor) {
      const CgroupController* controller = descriptor.controller();
  
-@@ -135,21 +175,29 @@ static bool MountV2CgroupController(const CgroupDescriptor& descriptor) {
+@@ -135,21 +175,30 @@ static bool MountV2CgroupController(const CgroupDescriptor& descriptor) {
          return false;
      }
  
@@ -120,9 +120,10 @@ diff --git a/libprocessgroup/setup/cgroup_map_write.cpp b/libprocessgroup/setup/
 -    // selinux permissions change after mounting, so it's ok to change mode and owner now
 -    if (!ChangeDirModeAndOwner(controller->path(), descriptor.mode(), descriptor.uid(),
 -                               descriptor.gid())) {
-+    // A pre-mounted hierarchy is already owned by the runtime that delegated it.
-+    if (!is_pre_mounted && !ChangeDirModeAndOwner(controller->path(), descriptor.mode(),
-+                                                  descriptor.uid(), descriptor.gid())) {
++    // The runtime delegates the process-free hierarchy to init; transfer the
++    // Android-visible root to AID_SYSTEM before framework services adopt it.
++    if (!ChangeDirModeAndOwner(controller->path(), descriptor.mode(),
++                               descriptor.uid(), descriptor.gid())) {
          PLOG(ERROR) << "Change of ownership or mode failed for controller " << controller->name();
 diff --git a/libprocessgroup/task_profiles.cpp b/libprocessgroup/task_profiles.cpp
 --- a/libprocessgroup/task_profiles.cpp

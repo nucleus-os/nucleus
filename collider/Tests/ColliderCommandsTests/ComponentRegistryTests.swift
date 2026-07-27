@@ -9,6 +9,54 @@ import VulkanColliderRecipe
 import WaylandColliderRecipe
 @testable import ColliderCommands
 
+@Test func androidToolchainCatalogDrivesColliderVersionsAndNDKSelection() throws {
+    let workspace = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-android-toolchain-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: workspace) }
+    let catalog = workspace.appendingPathComponent(
+        "core/android/gradle/libs.versions.toml")
+    try FileManager.default.createDirectory(
+        at: catalog.deletingLastPathComponent(),
+        withIntermediateDirectories: true)
+    try Data("""
+        [versions]
+        agp = "9.3.1"
+        gradle = "9.5.0"
+        compileSdkApi = "37"
+        compileSdkMinor = "0"
+        minSdk = "24"
+        targetSdkApi = "37"
+        buildTools = "37.0.0"
+        ndk = "30.0.15729638"
+        jvm = "17"
+
+        [plugins]
+        ignored = { id = "example" }
+        """.utf8).write(to: catalog)
+    let ndk = workspace.appendingPathComponent("selected-ndk")
+    try FileManager.default.createDirectory(
+        at: ndk, withIntermediateDirectories: true)
+    try Data("""
+        Pkg.Revision = 30.0.15729638-beta2
+        Pkg.BaseRevision = 30.0.15729638
+        """.utf8).write(to: ndk.appendingPathComponent("source.properties"))
+
+    let versions = try AndroidToolchainVersions.load(workspaceRoot: workspace)
+
+    #expect(versions.androidGradlePlugin == "9.3.1")
+    #expect(versions.gradle == "9.5.0")
+    #expect(versions.compileSDKAPI == 37)
+    #expect(versions.compileSDKMinor == 0)
+    #expect(versions.minimumSDK == 24)
+    #expect(versions.targetSDKAPI == 37)
+    #expect(versions.buildTools == "37.0.0")
+    #expect(versions.ndk == "30.0.15729638")
+    #expect(versions.java == 17)
+    #expect(try versions.ndkRoot(environment: [
+        "NUCLEUS_ANDROID_NDK_HOME": ndk.path,
+    ]).standardizedFileURL.path == ndk.standardizedFileURL.path)
+}
+
 @Test func componentTestSelectionPreservesTheRepositoryOrder() throws {
     let registry = ComponentRegistry(context: WorkspaceContext(
         root: URL(fileURLWithPath: FileManager.default.currentDirectoryPath),
@@ -163,7 +211,10 @@ import WaylandColliderRecipe
     for task in [
         CoreColliderRecipe.buildSkia(root: root, environment: environment),
         CoreColliderRecipe.buildSkiaAndroid(
-            root: root, environment: environment),
+            root: root,
+            ndk: FilePath("/opt/android-ndk"),
+            minimumAndroidAPI: 24,
+            environment: environment),
     ] {
         guard case .sequence(let operations) = task.operation else {
             Issue.record("Skia provisioning must be an ordered task sequence")

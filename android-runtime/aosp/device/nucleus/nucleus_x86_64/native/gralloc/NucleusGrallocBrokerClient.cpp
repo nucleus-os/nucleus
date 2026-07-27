@@ -1,4 +1,5 @@
 #include "NucleusGrallocBrokerClient.h"
+#include "NucleusGrallocFormats.h"
 
 #include <cerrno>
 #include <cstring>
@@ -99,7 +100,15 @@ native_handle_t *nucleus_gralloc_broker_allocate(
     handle->drm_format = response.drm_format;
     handle->plane_offset = response.plane_offset;
     handle->plane_stride = response.plane_stride;
-    handle->pixel_stride = response.plane_stride / 4;
+    const auto *format = nucleus_gralloc_format_for_drm(response.drm_format);
+    if (format == nullptr ||
+        response.plane_stride % format->bytes_per_pixel != 0) {
+        native_handle_close(native);
+        native_handle_delete(native);
+        return nullptr;
+    }
+    handle->pixel_stride =
+        response.plane_stride / format->bytes_per_pixel;
     handle->dataspace = 0;
     handle->blend_mode = 0;
     return native;

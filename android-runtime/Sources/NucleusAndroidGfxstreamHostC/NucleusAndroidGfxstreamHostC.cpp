@@ -52,6 +52,24 @@ struct nucleus_android_gfxstream_host_connection {
 
 namespace {
 
+nucleus_android_gfxstream_log_callback sLogCallback = nullptr;
+
+void forwardGfxstreamLog(
+    gfxstream_logging_level level,
+    const char *file,
+    int line,
+    const char *function,
+    const char *message) {
+    if (sLogCallback) {
+        sLogCallback(
+            static_cast<nucleus_android_gfxstream_log_level>(level),
+            file,
+            line,
+            function,
+            message);
+    }
+}
+
 struct VulkanFenceCallback {
     nucleus_android_gfxstream_host_renderer *renderer;
     nucleus_android_gfxstream_host_fence_completion completion;
@@ -199,6 +217,17 @@ int drainNotification(int notificationFd) {
 }
 
 }  // namespace
+
+extern "C" void nucleus_android_gfxstream_host_set_logger(
+    nucleus_android_gfxstream_log_callback callback,
+    nucleus_android_gfxstream_log_level level) {
+    sLogCallback = callback;
+    auto library = gfxstream::initLibrary();
+    if (library) {
+        library->setLogger(callback ? forwardGfxstreamLog : nullptr);
+        library->setLogLevel(static_cast<gfxstream_logging_level>(level));
+    }
+}
 
 extern "C" nucleus_android_gfxstream_host_renderer *
 nucleus_android_gfxstream_host_renderer_create(

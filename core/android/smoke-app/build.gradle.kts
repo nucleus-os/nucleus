@@ -9,12 +9,13 @@ val androidSdkRoot = providers.gradleProperty("nucleus.androidSdk")
     .orElse(providers.environmentVariable("ANDROID_HOME"))
     .orElse(providers.environmentVariable("ANDROID_SDK_ROOT"))
     .orElse("${System.getProperty("user.home")}/Android/Sdk")
-val buildTools = providers.gradleProperty("nucleus.androidBuildTools")
-    .orElse(androidSdkRoot.map { "$it/build-tools/${libs.versions.buildTools.get()}" })
+val buildTools = androidSdkRoot.map {
+    "$it/build-tools/${libs.versions.buildTools.get()}"
+}
 val adbPath = providers.gradleProperty("nucleus.adb")
     .orElse(androidSdkRoot.map { "$it/platform-tools/adb" })
-val minSdkVersion = providers.gradleProperty("nucleus.minSdk").orElse(libs.versions.minSdk)
-val targetSdkVersion = providers.gradleProperty("nucleus.targetSdk").orElse(libs.versions.targetSdkApi)
+val minSdkVersion = libs.versions.minSdk
+val targetSdkVersion = libs.versions.targetSdkApi
 
 extensions.configure<com.android.build.api.dsl.ApplicationExtension>("android") {
     namespace = "dev.nucleus.android.smoke"
@@ -38,8 +39,8 @@ extensions.configure<com.android.build.api.dsl.ApplicationExtension>("android") 
     }
 
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
+        sourceCompatibility = JavaVersion.toVersion(libs.versions.jvm.get())
+        targetCompatibility = JavaVersion.toVersion(libs.versions.jvm.get())
     }
 
     packaging {

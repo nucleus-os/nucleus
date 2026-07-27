@@ -30,8 +30,8 @@ val nucleusSourceId = providers.gradleProperty("nucleus.swiftSourceId").orElse("
 // using the paired Swift platform generation selected by the workspace entry
 // point, then verify the JNI export contract.
 val nucleusCommand = "collider"
-val nucleusMinSdkVersion = providers.gradleProperty("nucleus.minSdk").orElse(libs.versions.minSdk)
-val nucleusTargetSdkVersion = providers.gradleProperty("nucleus.targetSdk").orElse(libs.versions.targetSdkApi)
+val nucleusMinSdkVersion = libs.versions.minSdk
+val nucleusTargetSdkVersion = libs.versions.targetSdkApi
 
 fun String.capitalizedTaskName(): String =
     replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
@@ -140,8 +140,8 @@ extensions.configure<com.android.build.api.dsl.LibraryExtension>("android") {
     }
 
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
+        sourceCompatibility = JavaVersion.toVersion(libs.versions.jvm.get())
+        targetCompatibility = JavaVersion.toVersion(libs.versions.jvm.get())
     }
 
     sourceSets {

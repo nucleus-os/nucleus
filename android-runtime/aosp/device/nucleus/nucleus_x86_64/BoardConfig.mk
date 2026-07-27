@@ -21,6 +21,7 @@ TARGET_BOOTLOADER_BOARD_NAME := nucleus
 
 TARGET_ARCH := x86_64
 TARGET_ARCH_VARIANT := x86_64
+TARGET_CPU_VARIANT := generic
 TARGET_CPU_ABI := x86_64
 
 # The host kernel and Nucleus runtime manager own boot and containment.

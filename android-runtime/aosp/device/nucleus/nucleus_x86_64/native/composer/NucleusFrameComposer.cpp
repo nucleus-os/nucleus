@@ -2,9 +2,12 @@
 
 #include <android-base/properties.h>
 #include <android-base/unique_fd.h>
+#include <algorithm>
 #include <cerrno>
 #include <cstring>
 #include <inttypes.h>
+#include <limits>
+#include <sys/socket.h>
 #include <unistd.h>
 
 #include "Display.h"
@@ -28,17 +31,147 @@ HWC3::Error NucleusFrameComposer::init() {
         ALOGE("Nucleus Composer3 cannot connect to %s: %s", path.c_str(), strerror(errno));
         return HWC3::Error::NoResources;
     }
+    topology_socket_.reset(nucleus_android_ipc_connect(path.c_str()));
+    if (!topology_socket_.ok()) {
+        ALOGE("Nucleus Composer3 topology cannot connect to %s: %s",
+              path.c_str(), strerror(errno));
+        socket_.reset();
+        return HWC3::Error::NoResources;
+    }
+    const nucleus_composer_topology_subscribe_request subscribe = {
+        .magic = NUCLEUS_COMPOSER_PROTOCOL_MAGIC,
+        .version = NUCLEUS_COMPOSER_PROTOCOL_VERSION,
+        .operation = NUCLEUS_COMPOSER_SUBSCRIBE_TOPOLOGY,
+        .byte_count = sizeof(subscribe),
+        .fd_count = 0,
+        .last_generation = 0,
+    };
+    if (nucleus_android_ipc_send(
+            topology_socket_.get(), &subscribe, sizeof(subscribe), nullptr, 0) != 0) {
+        ALOGE("Nucleus Composer3 topology subscription failed: %s", strerror(errno));
+        topology_socket_.reset();
+        socket_.reset();
+        return HWC3::Error::NoResources;
+    }
+    topology_thread_ = std::thread(&NucleusFrameComposer::topologyLoop, this);
     return HWC3::Error::None;
+}
+
+NucleusFrameComposer::~NucleusFrameComposer() {
+    stopping_.store(true);
+    if (topology_socket_.ok()) {
+        shutdown(topology_socket_.get(), SHUT_RDWR);
+    }
+    if (topology_thread_.joinable()) topology_thread_.join();
 }
 
 HWC3::Error NucleusFrameComposer::registerOnHotplugCallback(
     const HotplugCallback& callback) {
-    callback(true, 0, 1280, 720, 160, 160, 60);
+    std::vector<DisplayTopology> snapshot;
+    {
+        std::lock_guard<std::mutex> lock(topology_mutex_);
+        hotplug_callback_ = callback;
+        snapshot.reserve(displays_.size());
+        for (const auto& [_, display] : displays_) snapshot.push_back(display);
+    }
+    for (const auto& display : snapshot) {
+        callback(true, display.id, 1280, 720, 160, 160, display.vsync_period_ns);
+    }
     return HWC3::Error::None;
 }
 
 HWC3::Error NucleusFrameComposer::unregisterOnHotplugCallback() {
+    std::lock_guard<std::mutex> lock(topology_mutex_);
+    hotplug_callback_ = {};
     return HWC3::Error::None;
+}
+
+std::vector<Capability> NucleusFrameComposer::getCapabilities() const {
+    return {};
+}
+
+std::vector<DisplayCapability> NucleusFrameComposer::getDisplayCapabilities(
+    int64_t) const {
+    return {};
+}
+
+void NucleusFrameComposer::topologyLoop() {
+    while (!stopping_.load()) {
+        nucleus_composer_topology_event event = {};
+        size_t fd_count = 0;
+        const int received = nucleus_android_ipc_receive(
+            topology_socket_.get(), &event, sizeof(event), nullptr, 0, &fd_count);
+        if (received < 0) {
+            if (!stopping_.load()) {
+                ALOGE("Nucleus Composer3 topology receive failed: %s", strerror(errno));
+            }
+            return;
+        }
+        if (received != sizeof(event) ||
+            event.magic != NUCLEUS_COMPOSER_PROTOCOL_MAGIC ||
+            event.version != NUCLEUS_COMPOSER_PROTOCOL_VERSION ||
+            event.byte_count != sizeof(event) ||
+            event.fd_count != 0 ||
+            fd_count != 0) {
+            ALOGE("Nucleus Composer3 received an invalid topology event");
+            return;
+        }
+        if (event.status != NUCLEUS_COMPOSER_STATUS_OK) {
+            ALOGE("Nucleus Composer3 topology subscription rejected: status=%" PRIu32,
+                  event.status);
+            return;
+        }
+        handleTopologyEvent(event);
+    }
+}
+
+void NucleusFrameComposer::handleTopologyEvent(
+    const nucleus_composer_topology_event& event) {
+    if (event.operation == NUCLEUS_COMPOSER_TOPOLOGY_SNAPSHOT &&
+        event.display_id == std::numeric_limits<uint64_t>::max()) {
+        std::lock_guard<std::mutex> lock(topology_mutex_);
+        topology_generation_ = std::max(topology_generation_, event.generation);
+        return;
+    }
+    if (event.display_id > std::numeric_limits<uint32_t>::max() ||
+        event.refresh_period_ns == 0 ||
+        event.refresh_period_ns > std::numeric_limits<int32_t>::max()) {
+        ALOGE("Nucleus Composer3 received invalid output topology values");
+        return;
+    }
+
+    HotplugCallback callback;
+    bool connected = event.operation != NUCLEUS_COMPOSER_OUTPUT_DISCONNECTED;
+    DisplayTopology display = {
+        .id = static_cast<uint32_t>(event.display_id),
+        .vsync_period_ns = static_cast<int32_t>(event.refresh_period_ns),
+    };
+    {
+        std::lock_guard<std::mutex> lock(topology_mutex_);
+        if (event.operation != NUCLEUS_COMPOSER_TOPOLOGY_SNAPSHOT &&
+            event.generation <= topology_generation_) {
+            ALOGW("Nucleus Composer3 ignored stale topology generation %" PRIu64,
+                  event.generation);
+            return;
+        }
+        topology_generation_ = std::max(topology_generation_, event.generation);
+        if (connected) {
+            displays_[display.id] = display;
+        } else {
+            displays_.erase(display.id);
+        }
+        callback = hotplug_callback_;
+    }
+    if (callback) {
+        callback(
+            connected,
+            display.id,
+            1280,
+            720,
+            160,
+            160,
+            display.vsync_period_ns);
+    }
 }
 
 HWC3::Error NucleusFrameComposer::onDisplayCreate(Display*) {

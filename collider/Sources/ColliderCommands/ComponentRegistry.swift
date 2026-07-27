@@ -363,6 +363,9 @@ struct ComponentRegistry {
         controls: TaskControls
     ) async throws {
         let core = FilePath(context.layout.core.path)
+        let toolchain = try AndroidToolchainVersions.load(
+            workspaceRoot: context.root)
+        let ndk = try toolchain.ndkRoot(environment: context.environment)
         let supplied = library.map {
             FilePath(URL(
                 fileURLWithPath: $0,
@@ -371,6 +374,7 @@ struct ComponentRegistry {
         let task = CoreColliderRecipe.validateAndroidHost(
             root: core,
             library: supplied,
+            ndk: FilePath(ndk.path),
             environment: context.taskEnvironment,
             dependencies: [])
         try await context.execute(
@@ -512,10 +516,17 @@ struct ComponentRegistry {
     private func androidHostTasks() async throws -> [TaskDeclaration] {
         let root = FilePath(context.layout.core.path)
         let environment = context.taskEnvironment
+        let toolchain = try AndroidToolchainVersions.load(
+            workspaceRoot: context.root)
+        let ndk = FilePath(
+            try toolchain.ndkRoot(environment: context.environment).path)
         let source = CoreColliderRecipe.prepareSkiaDependencies(
             root: root, environment: environment)
         let skia = CoreColliderRecipe.buildSkiaAndroid(
-            root: root, environment: environment)
+            root: root,
+            ndk: ndk,
+            minimumAndroidAPI: toolchain.minimumSDK,
+            environment: environment)
         let sdk = CoreColliderRecipe.publishRenderSDK(
             root: root,
             sdkRoot: nativeSDKRoot,
@@ -529,6 +540,7 @@ struct ComponentRegistry {
             dependencies: [sdk.id])
         let validate = CoreColliderRecipe.validateAndroidHost(
             root: root,
+            ndk: ndk,
             environment: environment,
             dependencies: [build.id])
         return [source, skia, sdk, build, validate]
