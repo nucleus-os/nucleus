@@ -22,10 +22,9 @@ diff --git a/libprocessgroup/profiles/Android.bp b/libprocessgroup/profiles/Andr
 diff --git a/libprocessgroup/setup/cgroup_map_write.cpp b/libprocessgroup/setup/cgroup_map_write.cpp
 --- a/libprocessgroup/setup/cgroup_map_write.cpp
 +++ b/libprocessgroup/setup/cgroup_map_write.cpp
-@@ -24,10 +24,13 @@
+@@ -24,10 +24,12 @@
  #include <grp.h>
  #include <pwd.h>
-+#include <sstream>
  #include <sys/mount.h>
  #include <sys/stat.h>
  #include <sys/types.h>
@@ -36,7 +35,7 @@ diff --git a/libprocessgroup/setup/cgroup_map_write.cpp b/libprocessgroup/setup/
  #include <android-base/logging.h>
  #include <processgroup/cgroup_descriptor.h>
  #include <processgroup/processgroup.h>
-@@ -125,6 +128,43 @@ static bool IsOptionalController(const CgroupController* controller) {
+@@ -125,6 +127,49 @@ static bool IsOptionalController(const CgroupController* controller) {
      return controller->flags() & CGROUPRC_CONTROLLER_FLAG_OPTIONAL;
  }
  
@@ -45,33 +44,39 @@ diff --git a/libprocessgroup/setup/cgroup_map_write.cpp b/libprocessgroup/setup/
 +    return statfs(path.c_str(), &filesystem) == 0 && filesystem.f_type == CGROUP2_SUPER_MAGIC;
 +}
 +
-+static bool EvacuateCgroupRoot(const CgroupDescriptor& descriptor) {
++static bool ValidateDelegatedCgroupRoot(const CgroupDescriptor& descriptor) {
 +    const std::string& root = descriptor.controller()->path();
-+    const std::string init = root + "/init";
++    const passwd* expected_user = getpwnam(descriptor.uid().c_str());
++    if (expected_user == nullptr) {
++        LOG(ERROR) << "Unable to decode delegated cgroup UID '" << descriptor.uid() << "'";
++        return false;
++    }
++    const group* expected_group = getgrnam(descriptor.gid().c_str());
++    if (expected_group == nullptr) {
++        LOG(ERROR) << "Unable to decode delegated cgroup GID '" << descriptor.gid() << "'";
++        return false;
++    }
 +    std::string processes;
 +    if (!android::base::ReadFileToString(root + "/cgroup.procs", &processes)) {
 +        PLOG(ERROR) << "Failed to read processes from delegated cgroup root";
 +        return false;
 +    }
-+    if (!Mkdir(init, 0, "", "")) {
-+        PLOG(ERROR) << "Failed to create delegated init cgroup";
-+        return false;
-+    }
-+    std::istringstream identifiers(processes);
-+    for (std::string identifier; identifiers >> identifier;) {
-+        if (!android::base::WriteStringToFile(identifier, init + "/cgroup.procs")) {
-+            PLOG(ERROR) << "Failed to move PID " << identifier
-+                        << " out of delegated cgroup root";
-+            return false;
-+        }
-+    }
-+    processes.clear();
-+    if (!android::base::ReadFileToString(root + "/cgroup.procs", &processes)) {
-+        PLOG(ERROR) << "Failed to verify delegated cgroup root";
-+        return false;
-+    }
 +    if (processes.find_first_not_of(" \t\r\n") != std::string::npos) {
 +        LOG(ERROR) << "Delegated cgroup root still contains processes";
++        return false;
++    }
++    struct stat root_stat{};
++    if (lstat(root.c_str(), &root_stat) != 0) {
++        PLOG(ERROR) << "Failed to inspect delegated cgroup root";
++        return false;
++    }
++    if (root_stat.st_uid != expected_user->pw_uid || root_stat.st_gid != expected_group->gr_gid ||
++        (root_stat.st_mode & 0777) != descriptor.mode()) {
++        LOG(ERROR) << "Delegated cgroup root has uid " << root_stat.st_uid << ", gid "
++                   << root_stat.st_gid << ", mode " << (root_stat.st_mode & 0777)
++                   << "; expected uid " << expected_user->pw_uid << " (" << descriptor.uid()
++                   << "), gid " << expected_group->gr_gid << " (" << descriptor.gid() << ")"
++                   << ", mode " << descriptor.mode();
 +        return false;
 +    }
 +    return true;
@@ -80,7 +85,7 @@ diff --git a/libprocessgroup/setup/cgroup_map_write.cpp b/libprocessgroup/setup/
  static bool MountV2CgroupController(const CgroupDescriptor& descriptor) {
      const CgroupController* controller = descriptor.controller();
  
-@@ -135,21 +175,30 @@ static bool MountV2CgroupController(const CgroupDescriptor& descriptor) {
+@@ -135,21 +180,32 @@ static bool MountV2CgroupController(const CgroupDescriptor& descriptor) {
          return false;
      }
  
@@ -97,7 +102,7 @@ diff --git a/libprocessgroup/setup/cgroup_map_write.cpp b/libprocessgroup/setup/
 -            return IsOptionalController(controller);
 +    const bool is_pre_mounted = IsCgroup2MountedAt(controller->path());
 +    if (is_pre_mounted) {
-+        if (!EvacuateCgroupRoot(descriptor)) {
++        if (!ValidateDelegatedCgroupRoot(descriptor)) {
 +            return false;
 +        }
 +        LOG(INFO) << "Adopting pre-mounted cgroup v2 hierarchy at " << controller->path();
@@ -120,9 +125,11 @@ diff --git a/libprocessgroup/setup/cgroup_map_write.cpp b/libprocessgroup/setup/
 -    // selinux permissions change after mounting, so it's ok to change mode and owner now
 -    if (!ChangeDirModeAndOwner(controller->path(), descriptor.mode(), descriptor.uid(),
 -                               descriptor.gid())) {
-+    // The runtime delegates the process-free hierarchy to init; transfer the
-+    // Android-visible root to AID_SYSTEM before framework services adopt it.
-+    if (!ChangeDirModeAndOwner(controller->path(), descriptor.mode(),
++    // A pre-mounted hierarchy was delegated by the privileged container
++    // runtime and has already been validated above. Only a hierarchy mounted
++    // by Android itself still needs ownership initialized here.
++    if (!is_pre_mounted &&
++        !ChangeDirModeAndOwner(controller->path(), descriptor.mode(),
 +                               descriptor.uid(), descriptor.gid())) {
          PLOG(ERROR) << "Change of ownership or mode failed for controller " << controller->name();
 diff --git a/libprocessgroup/task_profiles.cpp b/libprocessgroup/task_profiles.cpp

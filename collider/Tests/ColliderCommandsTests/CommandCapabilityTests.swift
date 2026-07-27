@@ -175,6 +175,9 @@ func privilegedModesRequireAnExactFirstTokenAndStayOutOfRootHelp() {
         colliderPrivilegedMode(for: [androidBPFMountCommandName])
             == .androidBPFMount)
     #expect(
+        colliderPrivilegedMode(for: [androidCgroupDelegateCommandName])
+            == .androidCgroupDelegate)
+    #expect(
         colliderPrivilegedMode(for: [
             "status",
             androidApexMountCommandName,
@@ -188,6 +191,7 @@ func privilegedModesRequireAnExactFirstTokenAndStayOutOfRootHelp() {
     #expect(!rootHelp.contains(androidApexMountCommandName))
     #expect(!rootHelp.contains(androidBPFBrokerCommandName))
     #expect(!rootHelp.contains(androidBPFMountCommandName))
+    #expect(!rootHelp.contains(androidCgroupDelegateCommandName))
 }
 
 private func awaitRejects(_ path: [String], options: [String]) {

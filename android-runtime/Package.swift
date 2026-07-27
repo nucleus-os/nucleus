@@ -358,6 +358,9 @@ let package = Package(
             name: "NucleusAndroidGraphicsContractTests",
             dependencies: ["NucleusAndroidGraphicsContract"]),
         .testTarget(
+            name: "NucleusAndroidContainerContractTests",
+            dependencies: ["NucleusAndroidContainerContract"]),
+        .testTarget(
             name: "NucleusAndroidIPCTests",
             dependencies: ["NucleusAndroidGraphicsContract", "NucleusAndroidIPC"]),
         .testTarget(

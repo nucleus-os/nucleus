@@ -8,6 +8,7 @@ public enum ColliderPrivilegedMode: Equatable {
     case androidApexMount
     case androidBPFBroker
     case androidBPFMount
+    case androidCgroupDelegate
 }
 
 public func colliderPrivilegedMode(
@@ -20,6 +21,8 @@ public func colliderPrivilegedMode(
         .androidBPFBroker
     case androidBPFMountCommandName:
         .androidBPFMount
+    case androidCgroupDelegateCommandName:
+        .androidCgroupDelegate
     default:
         nil
     }
@@ -126,6 +129,10 @@ public func runColliderPrivilegedMode(
         try command.run()
     case .androidBPFMount:
         var command = try AndroidBPFMountPrivilegedCommand.parse(arguments)
+        try command.run()
+    case .androidCgroupDelegate:
+        var command = try AndroidCgroupDelegatePrivilegedCommand.parse(
+            arguments)
         try command.run()
     }
 }

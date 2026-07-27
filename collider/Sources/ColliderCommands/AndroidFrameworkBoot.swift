@@ -979,6 +979,35 @@ private actor AndroidFrameworkBootSession {
                 "\(mappedSystemUser):\(mappedSystemGroup)",
                 persistentData.path,
             ])
+        try await context.run(
+            "sudo",
+            [
+                "--non-interactive",
+                "install",
+                "--directory",
+                "--owner=root",
+                "--group=root",
+                "--mode=0755",
+                layout.persistentDataMountPoint.path,
+            ])
+        try await context.run(
+            "sudo",
+            [
+                "--non-interactive",
+                "mount",
+                "--bind",
+                persistentData.path,
+                layout.persistentDataMountPoint.path,
+            ])
+        mounts.record(layout.persistentDataMountPoint)
+        try await context.run(
+            "sudo",
+            [
+                "--non-interactive",
+                "mount",
+                "--options=remount,bind,rw,nosuid,nodev",
+                layout.persistentDataMountPoint.path,
+            ])
     }
 
     private func qualifyPersistentDataFileSystem() async throws {
@@ -1323,7 +1352,7 @@ private actor AndroidFrameworkBootSession {
             seccompProfile: layout.seccompProfile.path,
             kernelLogDevice: kernelLog.slavePath,
             tombstones: layout.containerTombstones.path,
-            persistentData: persistentData.path,
+            persistentData: layout.persistentDataMountPoint.path,
             gfxstreamSocketDirectory:
                 layout.gfxstreamBrokerDirectory.path,
             hostKernelConfigurationDirectory:
@@ -1351,6 +1380,25 @@ private actor AndroidFrameworkBootSession {
                     layout.rootFileSystem.path,
                     "--container",
                     layout.name,
+                ]),
+            startHostHook: AndroidContainerMountHook(
+                executable: "/usr/bin/env",
+                arguments: [
+                    "LD_LIBRARY_PATH="
+                        + layout.swiftRuntime
+                        .appendingPathComponent(
+                            swiftRuntimeLoaderSearchPath,
+                            isDirectory: true
+                        )
+                        .path,
+                    layout.bpfHookExecutable.path,
+                    androidCgroupDelegateCommandName,
+                    "--container",
+                    layout.name,
+                    "--system-uid",
+                    "\(UInt64(host.subordinateUID) + 1_000)",
+                    "--system-gid",
+                    "\(UInt64(host.subordinateGID) + 1_000)",
                 ]))
         try Data(
             try configuration.lxcConfiguration().utf8
@@ -1650,9 +1698,14 @@ private actor AndroidFrameworkBootSession {
             }
             if !(await container.isRunning) {
                 let status = try await container.wait().status
+                let primaryFailure = androidLXCPrimaryFailure(
+                    logFile: layout.lxcLog)
                 throw WorkspaceFailure.message(
-                    "Android container exited before mounting its delegated "
-                        + "BPF filesystem (lxc-start status \(status)); "
+                    "Android container exited during LXC setup, before BPF "
+                        + "delegation (lxc-start status \(status))"
+                        + (primaryFailure.map { "; primary LXC failure: \($0)" }
+                            ?? "")
+                        + "; "
                         + "diagnostics: \(layout.diagnostics.path)")
             }
             try await ContinuousClock().sleep(for: .milliseconds(50))
@@ -2073,12 +2126,29 @@ struct AndroidFrameworkMountLedger {
     }
 }
 
+func androidPersistentDataMountPoint(instance: URL) -> URL {
+    instance.appendingPathComponent(
+        "persistent-data",
+        isDirectory: true)
+}
+
+func androidLXCPrimaryFailure(logFile: URL) -> String? {
+    guard let contents = try? String(
+        contentsOf: logFile,
+        encoding: .utf8)
+    else { return nil }
+    return contents.split(separator: "\n").lazy
+        .map(String.init)
+        .first { $0.contains(" ERROR ") }
+}
+
 private struct AndroidFrameworkBootLayout {
     let androidRoot: URL
     let name: String
     let runtime: URL
     let instance: URL
     let rootFileSystem: URL
+    let persistentDataMountPoint: URL
     let binder: URL
     let bpfBrokerDirectory: URL
     let bpfBrokerSocket: URL
@@ -2132,6 +2202,8 @@ private struct AndroidFrameworkBootLayout {
         rootFileSystem = instance.appendingPathComponent(
             "rootfs",
             isDirectory: true)
+        persistentDataMountPoint = androidPersistentDataMountPoint(
+            instance: instance)
         binder = instance.appendingPathComponent(
             "binder",
             isDirectory: true)

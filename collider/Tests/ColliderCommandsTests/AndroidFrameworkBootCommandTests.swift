@@ -102,6 +102,41 @@ func frameworkBootDrainsEveryCompletedMountInReverseOrder() {
 }
 
 @Test
+func frameworkBootExposesPersistentDataThroughTheSessionRuntime() {
+    let instance = URL(
+        fileURLWithPath: "/run/nucleus/android/nucleus-framework-1234",
+        isDirectory: true)
+
+    #expect(
+        androidPersistentDataMountPoint(instance: instance).path
+            == "/run/nucleus/android/nucleus-framework-1234/persistent-data")
+}
+
+@Test
+func frameworkBootReportsTheFirstCausalLXCFailure() throws {
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent(
+            "collider-lxc-failure-\(UUID().uuidString)",
+            isDirectory: true)
+    try FileManager.default.createDirectory(
+        at: directory,
+        withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let log = directory.appendingPathComponent("lxc.log")
+    try Data((
+        "TRACE setup began\n"
+            + "lxc-start nucleus ERROR utils - Permission denied - "
+            + "Failed to mount persistent data\n"
+            + "lxc-start nucleus ERROR start - Failed to spawn container\n"
+    ).utf8).write(to: log)
+
+    #expect(
+        androidLXCPrimaryFailure(logFile: log)
+            == "lxc-start nucleus ERROR utils - Permission denied - "
+                + "Failed to mount persistent data")
+}
+
+@Test
 func frameworkBootFailsOnARepeatedSurfaceFlingerCrash() throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
         "collider-framework-health-\(UUID().uuidString)",

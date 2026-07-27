@@ -49,6 +49,7 @@ public struct AndroidContainerConfiguration: Hashable, Sendable {
     public let hostGIDCount: UInt32
     public let binderDevices: [AndroidContainerDevice]
     public let mountHook: AndroidContainerMountHook
+    public let startHostHook: AndroidContainerMountHook
 
     public init(
         name: String,
@@ -64,7 +65,8 @@ public struct AndroidContainerConfiguration: Hashable, Sendable {
         hostUIDCount: UInt32,
         hostGIDCount: UInt32,
         binderDevices: [AndroidContainerDevice],
-        mountHook: AndroidContainerMountHook
+        mountHook: AndroidContainerMountHook,
+        startHostHook: AndroidContainerMountHook
     ) {
         self.name = name
         self.rootFileSystem = rootFileSystem
@@ -81,6 +83,7 @@ public struct AndroidContainerConfiguration: Hashable, Sendable {
         self.hostGIDCount = hostGIDCount
         self.binderDevices = binderDevices
         self.mountHook = mountHook
+        self.startHostHook = startHostHook
     }
 
     public func lxcConfiguration() throws -> String {
@@ -103,6 +106,9 @@ public struct AndroidContainerConfiguration: Hashable, Sendable {
             "lxc.hook.version = 1",
             "lxc.hook.mount = "
                 + ([mountHook.executable] + mountHook.arguments)
+                .joined(separator: " "),
+            "lxc.hook.start-host = "
+                + ([startHostHook.executable] + startHostHook.arguments)
                 .joined(separator: " "),
             "lxc.net.0.type = empty",
             "lxc.mount.auto = proc:rw sys:ro cgroup:rw",
@@ -189,6 +195,14 @@ public struct AndroidContainerConfiguration: Hashable, Sendable {
         else {
             throw AndroidContainerConfigurationError.invalidMountHook
         }
+        try validateAbsolutePath(
+            startHostHook.executable,
+            field: "startHostHook.executable")
+        guard !startHostHook.arguments.isEmpty,
+            startHostHook.arguments.allSatisfy(isSafeScalar)
+        else {
+            throw AndroidContainerConfigurationError.invalidStartHostHook
+        }
         guard hostUIDStart > 0,
             hostGIDStart > 0,
             hostUIDCount > 0,
@@ -233,6 +247,7 @@ public enum AndroidContainerConfigurationError: Error, Equatable {
     case invalidBinderDevices([String])
     case invalidBinderDevice(String)
     case invalidMountHook
+    case invalidStartHostHook
 }
 
 private func isValidName(_ value: String) -> Bool {
