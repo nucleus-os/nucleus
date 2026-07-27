@@ -7,5 +7,6 @@
 **/.rn-build/
 **/.skia-build/
 **/.cxx-build/
+**/.runtime-data/
 **/__pycache__/
 *.py[cod]
