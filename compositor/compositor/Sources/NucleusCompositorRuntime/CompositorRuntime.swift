@@ -47,6 +47,7 @@ final class CompositorRuntime {
         case exitSignal = 22
         case renderWake = 23
         case accessibility = 24
+        case configFile = 25
     }
 
     private let reactor: LinuxHostReactor
@@ -65,6 +66,12 @@ final class CompositorRuntime {
     let shellServices: ShellServices
     var readinessReporter: SessionReadinessReporter?
     let configuration: SessionConfiguration
+    /// Installed by bring-up once the session configuration has been read.
+    /// Absent when no configuration location is resolvable at all.
+    var configReload: ConfigReloadCoordinator?
+    /// The on-screen configuration-error notice, so successive failed saves
+    /// replace one notice instead of stacking, and a later success clears it.
+    var configNoticeID: UInt32 = 0
     private var exitRequested = false
     private var paused = false
     private var retirement = RendererRetirementCoordinator(
@@ -338,6 +345,10 @@ final class CompositorRuntime {
         appendLinuxSource(
             .accessibility,
             source: shellServices.accessibilityReactorSource,
+            to: &interests)
+        appendLinuxSource(
+            .configFile,
+            source: configReload?.reactorSource,
             to: &interests)
         appendInterest(
             .udev,
@@ -654,6 +665,11 @@ final class CompositorRuntime {
                 shellServices.accessibilityReactorSource,
                 pollResult: result,
                 failureOperation: "accessibility bus descriptor closed")
+        case .configFile:
+            processLinuxSource(
+                configReload?.reactorSource,
+                pollResult: result,
+                failureOperation: "configuration watch descriptor closed")
         case .udev:
             if result.isReadable {
                 if waylandRuntime.drainDrmHotplug(),

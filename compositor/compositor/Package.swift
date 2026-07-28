@@ -189,6 +189,31 @@ let package = Package(
             ]
         ),
 
+        // Configuration reload policy. The coordinator's apply seam is a
+        // closure, so what a load result does to live state is testable
+        // without bringing up a compositor, a GPU, or a seat.
+        .testTarget(
+            name: "NucleusCompositorRuntimeTests",
+            dependencies: [
+                "NucleusCompositorRuntime",
+                .product(name: "NucleusConfig", package: "NucleusConfigPackage"),
+            ],
+            path: "Tests/NucleusCompositorRuntimeTests",
+            swiftSettings: [
+                .interoperabilityMode(.Cxx),
+                .unsafeFlags([
+                    "-enable-experimental-feature", "Lifetimes",
+                    "-Xcc", "-I", "-Xcc",
+                    skiaRoot + "/third_party/externals/vulkan-headers/include",
+                ] + drmGbmCcFlags + waylandRuntimeCcFlags),
+            ],
+            linkerSettings: [
+                .unsafeFlags(
+                    skiaLinkFlags + drmGbmLinkFlags + waylandRuntimeLinkFlags
+                    + ["-lfontconfig", "-lfreetype", "-lz"]),
+            ]
+        ),
+
         .executableTarget(
             name: "NucleusCompositorThreadSanitizerHarness",
             dependencies: [

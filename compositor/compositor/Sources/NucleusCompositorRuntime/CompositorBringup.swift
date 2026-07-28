@@ -49,6 +49,10 @@ extension CompositorRuntime {
             }
             logRuntime("config: continuing with built-in defaults")
         }
+        // Diagnostics raised here cannot be shown: the overlay scene does not
+        // exist until the render runtime is up. Startup diagnostics stay in the
+        // log; reload diagnostics reach the screen, which is where they matter,
+        // because by then the user is looking at a session they just changed.
 
         // ── DRM device discovery (Swift-owned, over libdrm) ───────────────
         guard let drmDevice = discoverDrmDevice(
@@ -258,6 +262,9 @@ extension CompositorRuntime {
         logRuntime("Wayland compositor listening on the libwayland router")
         shellServices.activateEnvironment()
 
+        // ── Configuration reload ──────────────────────────────────────────
+        installConfigReload(initial: sessionConfiguration)
+
         // ── XWayland (lazy spawn) ─────────────────────────────────────────
         if let xwaylandExecutablePath =
                 configuration.xwaylandExecutablePath
@@ -283,6 +290,63 @@ extension CompositorRuntime {
         shellServices.cursorTheme.applyDefault()
         frameDemand.requestFrame(reason: .outputChange)
         return true
+    }
+
+    /// Start watching the configuration file and route every reload outcome to
+    /// the log and, when it matters, to the screen.
+    private func installConfigReload(initial: NucleusConfiguration) {
+        guard let coordinator = ConfigReloadCoordinator(
+            initial: initial,
+            applyInput: { [waylandRuntime] input in
+                waylandRuntime.updateInputConfiguration(input)
+            })
+        else {
+            logRuntime("config: no configuration location; reload disabled")
+            return
+        }
+        coordinator.onOutcome = { [weak self] outcome in
+            self?.reportConfigReload(outcome)
+        }
+        configReload = coordinator
+        if !coordinator.isWatching {
+            // The directory does not exist yet, so there is nothing to watch.
+            // Creating a configuration is deliberate enough that following it
+            // with one restart is reasonable; inventing a watch on a missing
+            // tree is not.
+            logRuntime(
+                "config: no configuration directory; reload starts once one exists")
+        }
+    }
+
+    private func reportConfigReload(
+        _ outcome: ConfigReloadCoordinator.Outcome
+    ) {
+        for diagnostic in outcome.diagnostics {
+            logRuntime("config: \(diagnostic.display)")
+        }
+        guard let failure = outcome.diagnostics.first(
+            where: { $0.severity == .error })
+        else {
+            if outcome.applied { logRuntime("config: reloaded") }
+            // A save that resolves clears any standing error notice: the file
+            // on disk is now good, so a notice saying otherwise is a lie.
+            if configNoticeID > 0 {
+                shellServices.notifications.dismiss(
+                    id: configNoticeID, reason: 2)
+                configNoticeID = 0
+                frameDemand.requestFrame()
+            }
+            return
+        }
+        // The previous configuration is still in force; say so, because the
+        // useful thing to know is that the session did not silently change.
+        configNoticeID = shellServices.notifications.notify(
+            appName: "Nucleus",
+            replacesID: configNoticeID,
+            summary: "Configuration not applied",
+            body: failure.summary,
+            expireTimeout: 0)
+        frameDemand.requestFrame()
     }
 
     /// Tear down in reverse acquisition order. Retained Wayland scene resources
