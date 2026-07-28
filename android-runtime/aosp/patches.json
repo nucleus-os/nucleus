@@ -37,7 +37,8 @@
     {
       "path": "frameworks/base",
       "patches": [
-        "aosp/patches/platform-frameworks-base/0001-zygote-support-nucleus-container.patch"
+        "aosp/patches/platform-frameworks-base/0001-zygote-support-nucleus-container.patch",
+        "aosp/patches/platform-frameworks-base/0002-support-absent-power-hal.patch"
       ]
     },
     {

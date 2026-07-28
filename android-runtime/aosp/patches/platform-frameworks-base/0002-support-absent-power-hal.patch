@@ -1,0 +1,97 @@
+diff --git a/services/core/java/com/android/server/power/hint/HintManagerService.java b/services/core/java/com/android/server/power/hint/HintManagerService.java
+index 5d9e51289a1d..074abaeb2303 100644
+--- a/services/core/java/com/android/server/power/hint/HintManagerService.java
++++ b/services/core/java/com/android/server/power/hint/HintManagerService.java
+@@ -324,12 +324,10 @@ public final class HintManagerService extends SystemService {
+         mPowerHalVersion = 0;
+         mVendorApiLevel = Integer.parseInt(SystemProperties.get(PROPERTY_VENDOR_API_LEVEL, ""));
+         mUsesFmq = false;
+-        if (mPowerHal != null) {
+-            try {
+-                mSupportInfo = getSupportInfo();
+-            } catch (RemoteException e) {
+-                throw new IllegalStateException("Could not contact PowerHAL!", e);
+-            }
++        try {
++            mSupportInfo = getSupportInfo();
++        } catch (RemoteException e) {
++            throw new IllegalStateException("Could not contact PowerHAL!", e);
+         }
+         if (mSupportInfo.headroom.isCpuSupported) {
+             mCpuHeadroomCache = new HeadroomCache<>(2, mSupportInfo.headroom.cpuMinIntervalMillis);
+@@ -362,13 +360,15 @@ public final class HintManagerService extends SystemService {
+     }
+ 
+     SupportInfo getSupportInfo() throws RemoteException {
+-        try {
+-            mPowerHalVersion = mPowerHal.getInterfaceVersion();
+-            if (mPowerHalVersion >= 6) {
+-                return mPowerHal.getSupportInfo();
++        if (mPowerHal != null) {
++            try {
++                mPowerHalVersion = mPowerHal.getInterfaceVersion();
++                if (mPowerHalVersion >= 6) {
++                    return mPowerHal.getSupportInfo();
++                }
++            } catch (RemoteException e) {
++                throw new IllegalStateException("Could not contact PowerHAL!", e);
+             }
+-        } catch (RemoteException e) {
+-            throw new IllegalStateException("Could not contact PowerHAL!", e);
+         }
+ 
+         SupportInfo supportInfo = new SupportInfo();
+diff --git a/services/tests/performancehinttests/src/com/android/server/power/hint/HintManagerServiceTest.java b/services/tests/performancehinttests/src/com/android/server/power/hint/HintManagerServiceTest.java
+index 875c85d74f93..edb3ef84b3d0 100644
+--- a/services/tests/performancehinttests/src/com/android/server/power/hint/HintManagerServiceTest.java
++++ b/services/tests/performancehinttests/src/com/android/server/power/hint/HintManagerServiceTest.java
+@@ -360,6 +360,21 @@ public class HintManagerServiceTest {
+         return mService;
+     }
+ 
++    private HintManagerService createServiceWithoutPowerHal() {
++        mService = new HintManagerService(mContext, new Injector() {
++            NativeWrapper createNativeWrapper() {
++                return mNativeWrapperMock;
++            }
++            IPower createIPower() {
++                return null;
++            }
++            IActivityManager getIActivityManager() {
++                return mIActivityManagerMock;
++            }
++        });
++        return mService;
++    }
++
+     private HintManagerService createServiceWithFakeWrapper() {
+         mService = new HintManagerService(mContext, new Injector() {
+             NativeWrapper createNativeWrapper() {
+@@ -387,6 +402,27 @@ public class HintManagerServiceTest {
+         assertThat(service.mHintSessionPreferredRate).isEqualTo(DEFAULT_HINT_PREFERRED_RATE);
+     }
+ 
++    @Test
++    public void testInitializeServiceWithoutPowerHal() throws Exception {
++        when(mNativeWrapperMock.halGetHintSessionPreferredRate()).thenReturn(-1L);
++
++        HintManagerService service = createServiceWithoutPowerHal();
++        IHintManager.HintManagerClientData data = service.getBinderServiceInstance()
++                .registerClient(mClientCallback);
++
++        assertNotNull(data.supportInfo);
++        assertNotNull(data.supportInfo.headroom);
++        assertNotNull(data.supportInfo.compositionData);
++        assertFalse(data.supportInfo.usesSessions);
++        assertFalse(data.supportInfo.headroom.isCpuSupported);
++        assertFalse(data.supportInfo.headroom.isGpuSupported);
++        assertFalse(data.supportInfo.compositionData.isSupported);
++        assertThrows(UnsupportedOperationException.class,
++                () -> service.getBinderServiceInstance().getCpuHeadroomMinIntervalMillis());
++        assertThrows(UnsupportedOperationException.class,
++                () -> service.getBinderServiceInstance().getGpuHeadroomMinIntervalMillis());
++    }
++
+     @Test
+     public void testCreateHintSessionInvalidPid() throws Exception {
+         HintManagerService service = createService();
