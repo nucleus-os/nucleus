@@ -22,6 +22,7 @@ PRODUCT_SOONG_NAMESPACES += \
 PRODUCT_PACKAGES += \
     android.hardware.graphics.composer3-service.nucleus \
     android.hardware.graphics.allocator-service.nucleus \
+    android.hardware.health-service.nucleus \
     audio_policy_configuration.xml \
     com.android.hardware.audio \
     android.hardware.security.keymint-service.nonsecure \

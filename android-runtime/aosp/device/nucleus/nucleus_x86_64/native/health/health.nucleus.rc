@@ -1,0 +1,5 @@
+service vendor.health-nucleus /vendor/bin/hw/android.hardware.health-service.nucleus
+    class hal
+    user system
+    group system
+    capabilities WAKE_ALARM BLOCK_SUSPEND

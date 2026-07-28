@@ -262,3 +262,20 @@ cc_binary {
         "-Werror",
     ],
 }
+
+cc_binary {
+    name: "android.hardware.health-service.nucleus",
+    relative_install_path: "hw",
+    vendor: true,
+    defaults: ["libhealth_aidl_impl_user"],
+    srcs: ["native/health/Main.cpp"],
+    init_rc: ["native/health/health.nucleus.rc"],
+    vintf_fragments: ["native/health/health.nucleus.xml"],
+    static_libs: ["libhealth_aidl_impl"],
+    cpp_std: "c++20",
+    cflags: [
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+    ],
+}

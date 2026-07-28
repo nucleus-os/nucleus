@@ -115,16 +115,34 @@ NucleusFrameComposer::~NucleusFrameComposer() {
 
 HWC3::Error NucleusFrameComposer::registerOnHotplugCallback(
     const HotplugCallback& callback) {
-    std::vector<DisplayTopology> snapshot;
-    {
-        std::lock_guard<std::mutex> callback_lock(callback_mutex_);
-        std::lock_guard<std::mutex> lock(topology_mutex_);
-        hotplug_callback_ = callback;
-        snapshot.reserve(displays_.size());
-        for (const auto& [_, display] : displays_) snapshot.push_back(display);
+    std::lock_guard<std::mutex> callback_lock(callback_mutex_);
+    hotplug_callback_ = callback;
+    return HWC3::Error::None;
+}
+
+HWC3::Error NucleusFrameComposer::getDisplayConfigurations(
+    std::vector<DisplayMultiConfigs>* out_displays) {
+    if (out_displays == nullptr) {
+        return HWC3::Error::BadParameter;
     }
-    for (const auto& display : snapshot) {
-        callback(true, display.id, 1280, 720, 160, 160, display.vsync_period_ns);
+
+    std::lock_guard<std::mutex> lock(topology_mutex_);
+    out_displays->clear();
+    out_displays->reserve(displays_.size());
+    for (const auto& [_, display] : displays_) {
+        DisplayConfig config(
+            static_cast<int32_t>(display.id),
+            /*width=*/1280,
+            /*height=*/720,
+            /*dpiX=*/160,
+            /*dpiY=*/160,
+            display.vsync_period_ns);
+        config.setConfigGroup(0);
+        out_displays->push_back(DisplayMultiConfigs{
+            .displayId = static_cast<int64_t>(display.id),
+            .activeConfigId = static_cast<int32_t>(display.id),
+            .configs = {std::move(config)},
+        });
     }
     return HWC3::Error::None;
 }

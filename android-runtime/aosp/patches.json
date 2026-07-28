@@ -18,7 +18,8 @@
       "patches": [
         "aosp/patches/device-generic-goldfish/0001-export-composer3-framework-sources-for-nucleus.patch",
         "aosp/patches/device-generic-goldfish/0002-make-composer-contract-output-aware.patch",
-        "aosp/patches/device-generic-goldfish/0003-rephase-vsync-from-physical-presentation.patch"
+        "aosp/patches/device-generic-goldfish/0003-rephase-vsync-from-physical-presentation.patch",
+        "aosp/patches/device-generic-goldfish/0004-discover-initial-displays-before-hotplug-events.patch"
       ]
     },
     {

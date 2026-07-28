@@ -16,6 +16,8 @@ class NucleusFrameComposer final : public FrameComposer {
   public:
     ~NucleusFrameComposer() override;
     HWC3::Error init() override;
+    HWC3::Error getDisplayConfigurations(
+        std::vector<DisplayMultiConfigs>* out_displays) override;
     HWC3::Error registerOnHotplugCallback(const HotplugCallback& callback) override;
     HWC3::Error unregisterOnHotplugCallback() override;
     HWC3::Error registerOnPhysicalVsyncCallback(

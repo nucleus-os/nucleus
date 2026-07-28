@@ -13,3 +13,4 @@
 # limitations under the License.
 
 /vendor/etc/init/init\.nucleus\.rc    u:object_r:vendor_configs_file:s0
+/vendor/bin/hw/android\.hardware\.health-service\.nucleus    u:object_r:hal_health_default_exec:s0
