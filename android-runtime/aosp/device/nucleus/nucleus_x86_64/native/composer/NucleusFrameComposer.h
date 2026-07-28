@@ -50,6 +50,9 @@ class NucleusFrameComposer final : public FrameComposer {
     std::mutex topology_connection_mutex_;
     ::android::base::unique_fd topology_socket_;
     std::thread topology_thread_;
+    std::mutex topology_ready_mutex_;
+    std::condition_variable topology_ready_condition_;
+    bool initial_topology_ready_ = false;
     std::atomic<bool> stopping_ = false;
     std::mutex stop_mutex_;
     std::condition_variable stop_condition_;

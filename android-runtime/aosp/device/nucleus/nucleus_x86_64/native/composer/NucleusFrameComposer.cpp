@@ -21,23 +21,46 @@ namespace aidl::android::hardware::graphics::composer3::impl {
 namespace {
 
 constexpr const char* kDefaultSocket = "/dev/nucleus/composer.sock";
+constexpr auto kInitialTopologyTimeout = std::chrono::seconds(5);
 
 }  // namespace
 
 HWC3::Error NucleusFrameComposer::init() {
     socket_path_ = ::android::base::GetProperty(
         "ro.vendor.nucleus.composer_socket", kDefaultSocket);
+    topology_thread_ = std::thread(&NucleusFrameComposer::topologyLoop, this);
+    {
+        std::unique_lock<std::mutex> lock(topology_ready_mutex_);
+        if (!topology_ready_condition_.wait_for(
+                lock,
+                kInitialTopologyTimeout,
+                [this] {
+                    return initial_topology_ready_ || stopping_.load();
+                }) ||
+            !initial_topology_ready_) {
+            ALOGE(
+                "Nucleus Composer3 timed out waiting for the initial topology "
+                "snapshot from %s",
+                socket_path_.c_str());
+            stopping_.store(true);
+            stop_condition_.notify_all();
+            {
+                std::lock_guard<std::mutex> connection_lock(
+                    topology_connection_mutex_);
+                if (topology_socket_.ok()) {
+                    shutdown(topology_socket_.get(), SHUT_RDWR);
+                }
+            }
+            return HWC3::Error::NoResources;
+        }
+    }
     socket_.reset(nucleus_android_ipc_connect(socket_path_.c_str()));
     if (!socket_.ok()) {
-        ALOGE("Nucleus Composer3 cannot connect to %s: %s",
+        ALOGE("Nucleus Composer3 presentation cannot connect to %s: %s",
               socket_path_.c_str(), strerror(errno));
         return HWC3::Error::NoResources;
     }
-    if (!connectTopologySubscriber()) {
-        socket_.reset();
-        return HWC3::Error::NoResources;
-    }
-    topology_thread_ = std::thread(&NucleusFrameComposer::topologyLoop, this);
+    ALOGI("Nucleus Composer3 initial topology is ready");
     return HWC3::Error::None;
 }
 
@@ -67,13 +90,9 @@ bool NucleusFrameComposer::connectTopologySubscriber() {
         ALOGE("Nucleus Composer3 topology subscription failed: %s", strerror(errno));
         return false;
     }
-    bool initial_snapshot_complete = false;
-    while (!initial_snapshot_complete) {
-        if (!receiveTopologyEvent(
-                subscriber.get(), &initial_snapshot_complete)) {
-            return false;
-        }
-    }
+    ALOGI(
+        "Nucleus Composer3 topology subscription sent at generation %" PRIu64,
+        last_generation);
     {
         std::lock_guard<std::mutex> lock(topology_connection_mutex_);
         topology_socket_ = std::move(subscriber);
@@ -84,6 +103,7 @@ bool NucleusFrameComposer::connectTopologySubscriber() {
 NucleusFrameComposer::~NucleusFrameComposer() {
     stopping_.store(true);
     stop_condition_.notify_all();
+    topology_ready_condition_.notify_all();
     {
         std::lock_guard<std::mutex> lock(topology_connection_mutex_);
         if (topology_socket_.ok()) {
@@ -193,7 +213,8 @@ void NucleusFrameComposer::topologyLoop() {
                 [this] { return stopping_.load(); });
             continue;
         }
-        if (!receiveTopologyEvent(topology_fd, nullptr)) {
+        bool snapshot_complete = false;
+        if (!receiveTopologyEvent(topology_fd, &snapshot_complete)) {
             {
                 std::lock_guard<std::mutex> lock(topology_connection_mutex_);
                 if (topology_socket_.get() == topology_fd) {
@@ -201,6 +222,31 @@ void NucleusFrameComposer::topologyLoop() {
                 }
             }
             continue;
+        }
+        if (snapshot_complete) {
+            bool became_ready = false;
+            {
+                std::lock_guard<std::mutex> lock(topology_ready_mutex_);
+                if (!initial_topology_ready_) {
+                    initial_topology_ready_ = true;
+                    became_ready = true;
+                }
+            }
+            if (became_ready) {
+                size_t display_count = 0;
+                uint64_t generation = 0;
+                {
+                    std::lock_guard<std::mutex> lock(topology_mutex_);
+                    display_count = displays_.size();
+                    generation = topology_generation_;
+                }
+                ALOGI(
+                    "Nucleus Composer3 received initial topology snapshot: "
+                    "generation=%" PRIu64 " displays=%zu",
+                    generation,
+                    display_count);
+                topology_ready_condition_.notify_all();
+            }
         }
     }
 }

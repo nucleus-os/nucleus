@@ -216,6 +216,10 @@ func waitForDisplayHostReadable(
             }
             do {
                 try requirePeer(connection)
+                let diagnostic =
+                    "{\"component\":\"nucleus-android-display-host\","
+                    + "\"stage\":\"composer.connection.accepted\"}\n"
+                FileHandle.standardError.write(Data(diagnostic.utf8))
                 Task { @MainActor [weak self] in
                     guard let self else {
                         _ = close(connection)
@@ -384,6 +388,12 @@ func waitForDisplayHostReadable(
         _ connection: Int32,
         request: nucleus_composer_topology_subscribe_request
     ) throws {
+        let subscriptionDiagnostic =
+            "{\"component\":\"nucleus-android-display-host\","
+            + "\"stage\":\"topology.subscription.received\","
+            + "\"lastGeneration\":\(request.last_generation)}\n"
+        FileHandle.standardError.write(
+            Data(subscriptionDiagnostic.utf8))
         if let existing = topologySubscriber {
             var state = pollfd(
                 fd: existing,
@@ -414,7 +424,8 @@ func waitForDisplayHostReadable(
         guard retained >= 0 else { throw systemError("dup") }
         topologySubscriber = retained
         do {
-            for output in presenter.connectedOutputs {
+            let outputs = presenter.connectedOutputs
+            for output in outputs {
                 try sendTopology(
                     output,
                     operation: NUCLEUS_COMPOSER_TOPOLOGY_SNAPSHOT,
@@ -423,6 +434,13 @@ func waitForDisplayHostReadable(
             try sendTopologyStatus(
                 retained,
                 status: NUCLEUS_COMPOSER_STATUS_OK)
+            let snapshotDiagnostic =
+                "{\"component\":\"nucleus-android-display-host\","
+                + "\"stage\":\"topology.snapshot.sent\","
+                + "\"generation\":\(presenter.topologyGeneration),"
+                + "\"displays\":\(outputs.count)}\n"
+            FileHandle.standardError.write(
+                Data(snapshotDiagnostic.utf8))
         } catch {
             _ = close(retained)
             topologySubscriber = nil

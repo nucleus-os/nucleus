@@ -409,6 +409,7 @@ let package = Package(
             name: "NucleusAndroidDisplayHostCoreTests",
             dependencies: [
                 "NucleusAndroidDisplayHostCore",
+                "NucleusAndroidIPCC",
                 .product(
                     name: "NucleusLinuxReactor",
                     package: "NucleusLinuxPlatform"),
